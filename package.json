@@ -7,7 +7,7 @@
     "dev:all": "npm run dev",
     "build": "next build apps/dashboard",
     "start": "next start apps/dashboard",
-    "lint": "eslint .",
+    "lint": "eslint apps/dashboard --ignore-pattern **/.next --ignore-pattern **/node_modules",
     "clean": "next clean apps/dashboard"
   },
   "dependencies": {

@@ -33,6 +33,44 @@ import {
   Zap
 } from 'lucide-react';
 
+const LEAVE_BREAKDOWN = [
+  { name: 'Vacation', value: 76, color: '#22c55e' },
+  { name: 'Sick Leave', value: 56, color: '#3b82f6' },
+  { name: 'Approval Leave', value: 40, color: '#f59e0b' },
+  { name: 'Maternity/Paternity', value: 24, color: '#a855f7' },
+] as const;
+
+const TOTAL_LEAVES = LEAVE_BREAKDOWN.reduce((sum, item) => sum + item.value, 0);
+
+function AttendanceChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  const value = payload[0]?.value;
+  return (
+    <div className="bg-white/95 backdrop-blur border border-slate-200 rounded-xl shadow-lg px-3 py-2">
+      <div className="text-xs font-bold text-slate-900">{label}</div>
+      <div className="text-xs text-slate-600 mt-0.5">
+        Present: <span className="font-extrabold text-blue-700">{Number(value).toLocaleString()}</span>
+      </div>
+    </div>
+  );
+}
+
+function LeaveDonutTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0]?.payload;
+  if (!p) return null;
+  const total = typeof p.totalLeaves === 'number' ? p.totalLeaves : TOTAL_LEAVES;
+  const pct = total ? Math.round((p.value / total) * 1000) / 10 : 0;
+  return (
+    <div className="bg-white/95 backdrop-blur border border-slate-200 rounded-xl shadow-lg px-3 py-2">
+      <div className="text-xs font-bold text-slate-900">{p.name}</div>
+      <div className="text-xs text-slate-600 mt-0.5">
+        {p.value} <span className="text-slate-400">•</span> <span className="font-bold text-slate-700">{pct}%</span>
+      </div>
+    </div>
+  );
+}
+
 export default function ExecutiveHRDashboard() {
   const [range, setRange] = useState<'this-month' | 'last-month'>('this-month');
 
@@ -43,17 +81,8 @@ export default function ExecutiveHRDashboard() {
     return base.map((value, idx) => ({ day: `May ${idx + 1}`, present: value }));
   }, [range]);
 
-  const leaveBreakdown = useMemo(
-    () => [
-      { name: 'Vacation', value: 76, color: '#22c55e' },
-      { name: 'Sick Leave', value: 56, color: '#3b82f6' },
-      { name: 'Approval Leave', value: 40, color: '#f59e0b' },
-      { name: 'Maternity/Paternity', value: 24, color: '#a855f7' },
-    ],
-    []
-  );
-
-  const totalLeaves = leaveBreakdown.reduce((sum, item) => sum + item.value, 0);
+  const leaveBreakdown = useMemo(() => LEAVE_BREAKDOWN.map((x) => ({ ...x, totalLeaves: TOTAL_LEAVES })), []);
+  const totalLeaves = TOTAL_LEAVES;
 
   const attendanceSummary = useMemo(
     () => ({
@@ -151,34 +180,6 @@ export default function ExecutiveHRDashboard() {
     ],
     []
   );
-
-  const ChartTooltip = ({ active, payload, label }: any) => {
-    if (!active || !payload?.length) return null;
-    const value = payload[0]?.value;
-    return (
-      <div className="bg-white/95 backdrop-blur border border-slate-200 rounded-xl shadow-lg px-3 py-2">
-        <div className="text-xs font-bold text-slate-900">{label}</div>
-        <div className="text-xs text-slate-600 mt-0.5">
-          Present: <span className="font-extrabold text-blue-700">{Number(value).toLocaleString()}</span>
-        </div>
-      </div>
-    );
-  };
-
-  const DonutTooltip = ({ active, payload }: any) => {
-    if (!active || !payload?.length) return null;
-    const p = payload[0]?.payload;
-    if (!p) return null;
-    const pct = totalLeaves ? Math.round((p.value / totalLeaves) * 1000) / 10 : 0;
-    return (
-      <div className="bg-white/95 backdrop-blur border border-slate-200 rounded-xl shadow-lg px-3 py-2">
-        <div className="text-xs font-bold text-slate-900">{p.name}</div>
-        <div className="text-xs text-slate-600 mt-0.5">
-          {p.value} <span className="text-slate-400">•</span> <span className="font-bold text-slate-700">{pct}%</span>
-        </div>
-      </div>
-    );
-  };
 
   return (
     <div className="relative">
@@ -280,7 +281,7 @@ export default function ExecutiveHRDashboard() {
                     <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} interval={2} />
                     <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} width={40} />
-                    <Tooltip content={<ChartTooltip />} cursor={{ stroke: '#94a3b8', strokeDasharray: '4 4' }} />
+                    <Tooltip content={AttendanceChartTooltip} cursor={{ stroke: '#94a3b8', strokeDasharray: '4 4' }} />
                     <Area type="monotone" dataKey="present" stroke="#2563eb" strokeWidth={2.25} fill="url(#presentGradient)" />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -338,7 +339,7 @@ export default function ExecutiveHRDashboard() {
                       <Cell key={entry.name} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip content={<DonutTooltip />} />
+                  <Tooltip content={LeaveDonutTooltip} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">

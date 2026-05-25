@@ -1,7 +1,7 @@
 'use client';
 
 import type * as React from 'react';
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
@@ -16,18 +16,12 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
   const pathname = usePathname();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
+  const activeGroupId = useMemo(() => {
     const activeGroup = navigationConfig.find((item) => {
       if (!item.subItems?.length) return false;
       return item.subItems.some((sub) => sub.route === pathname);
     });
-
-    if (!activeGroup) return;
-
-    setExpandedGroups((prev) => {
-      if (prev[activeGroup.id]) return prev;
-      return { ...prev, [activeGroup.id]: true };
-    });
+    return activeGroup?.id;
   }, [pathname]);
 
   const toggleGroup = (id: string) => {
@@ -50,7 +44,7 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
         <div className="flex flex-col gap-1">
           {items.map((item) => {
             const hasSubMenu = item.subItems && item.subItems.length > 0;
-            const isExpanded = expandedGroups[item.id];
+            const isExpanded = !!expandedGroups[item.id] || item.id === activeGroupId;
             
             // For simple paths, determine active state
             const isActivePrimary = pathname === item.route || (item.subItems && item.subItems.some(sub => pathname === sub.route));
