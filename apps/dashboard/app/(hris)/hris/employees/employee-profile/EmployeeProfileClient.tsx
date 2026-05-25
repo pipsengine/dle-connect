@@ -874,23 +874,21 @@ export default function EmployeeProfileClient({ employeeId, initialNow }: { empl
       { key: 'audit', label: 'Audit Trail', icon: ShieldCheck, show: perms.canViewAudit },
     ];
     return base.filter((t) => t.show);
-  }, [perms.canViewAudit, perms.canViewDisciplinary, perms.canViewDocuments, perms.canViewMedical, perms.canViewPayroll]);
+  }, [perms.canViewAudit, perms.canViewDisciplinary, perms.canViewDocuments, perms.canViewMedical, perms.canViewPayroll, perms.isSelf]);
 
   useEffect(() => {
     if (!perms.canViewProfile) {
-      setProfile({ status: 'error', error: 'Permission denied' });
-      setOverview({ status: 'error', error: 'Permission denied' });
-      setInsights({ status: 'error', error: 'Permission denied' });
-      setAudit({ status: 'error', error: 'Permission denied' });
-      return;
+      const t = setTimeout(() => {
+        setProfile({ status: 'error', error: 'Permission denied' });
+        setOverview({ status: 'error', error: 'Permission denied' });
+        setInsights({ status: 'error', error: 'Permission denied' });
+        setAudit({ status: 'error', error: 'Permission denied' });
+      }, 0);
+      return () => clearTimeout(t);
     }
 
     let cancelled = false;
     const load = async () => {
-      setProfile({ status: 'loading' });
-      setOverview({ status: 'loading' });
-      setInsights({ status: 'loading' });
-      setAudit({ status: 'loading' });
       try {
         const [p, a] = await Promise.all([
           apiFetch<EmployeeProfilePayload>(employeeId, 'profile', { role, viewerEmployeeId }),
@@ -909,16 +907,27 @@ export default function EmployeeProfileClient({ employeeId, initialNow }: { empl
         setAudit({ status: 'error', error: e instanceof Error ? e.message : 'Unable to load profile' });
       }
     };
-    void load();
+    const t = setTimeout(() => {
+      if (cancelled) return;
+      setProfile({ status: 'loading' });
+      setOverview({ status: 'loading' });
+      setInsights({ status: 'loading' });
+      setAudit({ status: 'loading' });
+      void load();
+    }, 0);
     return () => {
       cancelled = true;
+      clearTimeout(t);
     };
   }, [employeeId, perms.canViewProfile, role, viewerEmployeeId]);
 
   useEffect(() => {
     if (tabs.length === 0) return;
     const exists = tabs.some((t) => t.key === tab);
-    if (!exists) setTab(tabs[0].key);
+    if (!exists) {
+      const t = setTimeout(() => setTab(tabs[0].key), 0);
+      return () => clearTimeout(t);
+    }
   }, [tab, tabs]);
 
   const pushAudit = (evt: AuditLog) => {

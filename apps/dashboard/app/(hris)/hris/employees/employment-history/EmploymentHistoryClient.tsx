@@ -420,6 +420,18 @@ export default function EmploymentHistoryClient({ initialNow, employeeId }: { in
 
   const [selected, setSelected] = useState<DetailItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [workflowOpen, setWorkflowOpen] = useState(false);
+  const [documentsOpen, setDocumentsOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<Partial<DetailItem>>({});
+  const [docAttachName, setDocAttachName] = useState('');
+  const [docAttachBusy, setDocAttachBusy] = useState(false);
+  const [rowActionsFor, setRowActionsFor] = useState<string | null>(null);
+  const [reverseConfirm, setReverseConfirm] = useState<{ id: string; referenceNo: string } | null>(null);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [compareState, setCompareState] = useState<ApiState<{ a: DetailItem; b: DetailItem }>>({ status: 'idle' });
 
   const [addOpen, setAddOpen] = useState(false);
   const [addProfile, setAddProfile] = useState<ApiState<ProfileSnapshot>>({ status: 'idle' });
@@ -432,7 +444,17 @@ export default function EmploymentHistoryClient({ initialNow, employeeId }: { in
   const [toast, setToast] = useState<{ title: string; detail: string; tone: 'ok' | 'warn' | 'err' } | null>(null);
   const [exportFormat, setExportFormat] = useState<ExportFormat>('csv');
 
-  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const [savedViews, setSavedViews] = useState<SavedView[]>(() => {
+    try {
+      const raw = localStorage.getItem('dle.hris.employmentHistory.savedViews.v1');
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as SavedView[];
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((v) => v && typeof v === 'object' && typeof (v as any).name === 'string');
+    } catch {
+      return [];
+    }
+  });
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState('');
   const [viewsMenuOpen, setViewsMenuOpen] = useState(false);
@@ -444,16 +466,6 @@ export default function EmploymentHistoryClient({ initialNow, employeeId }: { in
   }, [activeFilters, dateFrom, dateTo]);
 
   const viewsStorageKey = 'dle.hris.employmentHistory.savedViews.v1';
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(viewsStorageKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as SavedView[];
-      if (Array.isArray(parsed)) setSavedViews(parsed.filter((v) => v && typeof v === 'object' && typeof (v as any).name === 'string'));
-    } catch {
-      return;
-    }
-  }, []);
 
   useEffect(() => {
     try {
@@ -466,8 +478,8 @@ export default function EmploymentHistoryClient({ initialNow, employeeId }: { in
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      setFormOptions({ status: 'loading' });
       try {
+        setFormOptions({ status: 'loading' });
         const raw = await apiFetch<any>(`/api/hris/employees/form-options`, { method: 'GET', role, viewerEmployeeId });
         const payload: FormOptions = {
           departments: Array.isArray(raw?.departments) ? raw.departments : [],
@@ -481,9 +493,10 @@ export default function EmploymentHistoryClient({ initialNow, employeeId }: { in
         if (!cancelled) setFormOptions({ status: 'error', error: e instanceof Error ? e.message : 'Unable to load form options' });
       }
     };
-    void load();
+    const t = setTimeout(() => void load(), 0);
     return () => {
       cancelled = true;
+      clearTimeout(t);
     };
   }, [role, viewerEmployeeId]);
 
@@ -548,7 +561,8 @@ export default function EmploymentHistoryClient({ initialNow, employeeId }: { in
   };
 
   useEffect(() => {
-    void loadAll();
+    const t = setTimeout(() => void loadAll(), 0);
+    return () => clearTimeout(t);
   }, [debouncedQuery, employeeId, role, viewerEmployeeId, dateFrom, dateTo, activeFilters]);
 
   const openDetails = async (id: string) => {
@@ -561,6 +575,186 @@ export default function EmploymentHistoryClient({ initialNow, employeeId }: { in
       setToast({ title: 'Unable to load details', detail: e instanceof Error ? e.message : 'Request failed', tone: 'err' });
       setDrawerOpen(false);
     }
+  };
+
+  const ensureSelected = async (id: string) => {
+    if (selected?.id === id) return selected;
+    const d = await apiFetch<DetailItem>(`/api/hris/employment-history/${encodeURIComponent(id)}`, { method: 'GET', role, viewerEmployeeId });
+    setSelected(d);
+    return d;
+  };
+
+  const openEditEvent = async (id: string) => {
+    if (list.data?.permissions?.canCreate === false) {
+      setToast({ title: 'Permission denied', detail: 'You do not have permission to edit history events.', tone: 'err' });
+      return;
+    }
+    try {
+      const d = await ensureSelected(id);
+      if (d.approvalStatus !== 'Draft' && d.approvalStatus !== 'Rejected') {
+        setToast({ title: 'Edit blocked', detail: 'Only Draft/Rejected events can be edited.', tone: 'warn' });
+        return;
+      }
+      setEditForm({ ...d });
+      setEditOpen(true);
+    } catch (e) {
+      setToast({ title: 'Unable to open edit', detail: e instanceof Error ? e.message : 'Request failed', tone: 'err' });
+    }
+  };
+
+  const saveEditEvent = async () => {
+    try {
+      if (!editForm.id) return;
+      const body = {
+        employeeId: (editForm.employeeId || '').toString().trim(),
+        employeeName: (editForm.employeeName || '').toString().trim(),
+        eventType: editForm.eventType,
+        effectiveDate: editForm.effectiveDate,
+        reason: (editForm.reason || '').toString().trim(),
+        notes: (editForm.notes || '').toString().trim() || null,
+        previousDepartment: editForm.previousDepartment || null,
+        newDepartment: editForm.newDepartment || null,
+        previousJobTitle: editForm.previousJobTitle || null,
+        newJobTitle: editForm.newJobTitle || null,
+        previousGrade: editForm.previousGrade || null,
+        newGrade: editForm.newGrade || null,
+        previousManager: editForm.previousManager || null,
+        newManager: editForm.newManager || null,
+        previousStatus: editForm.previousStatus || null,
+        newStatus: editForm.newStatus || null,
+        previousLocation: editForm.previousLocation || null,
+        newLocation: editForm.newLocation || null,
+        supportingDocument: editForm.supportingDocument || null,
+      };
+      const updated = await apiMutate<DetailItem>(`/api/hris/employment-history/${encodeURIComponent(editForm.id)}`, { method: 'PATCH', role, viewerEmployeeId, body: JSON.stringify(body) });
+      setSelected(updated);
+      setEditOpen(false);
+      setToast({ title: 'Event updated', detail: `${updated.referenceNo} saved.`, tone: 'ok' });
+      await loadAll();
+    } catch (e) {
+      setToast({ title: 'Update failed', detail: e instanceof Error ? e.message : 'Request failed', tone: 'err' });
+    }
+  };
+
+  const openWorkflowViewer = async (id: string) => {
+    try {
+      await ensureSelected(id);
+      setWorkflowOpen(true);
+    } catch (e) {
+      setToast({ title: 'Unable to load workflow', detail: e instanceof Error ? e.message : 'Request failed', tone: 'err' });
+    }
+  };
+
+  const openDocumentsViewer = async (id: string) => {
+    try {
+      await ensureSelected(id);
+      setDocumentsOpen(true);
+    } catch (e) {
+      setToast({ title: 'Unable to load documents', detail: e instanceof Error ? e.message : 'Request failed', tone: 'err' });
+    }
+  };
+
+  const openAuditViewer = async (id: string) => {
+    try {
+      await ensureSelected(id);
+      setAuditOpen(true);
+    } catch (e) {
+      setToast({ title: 'Unable to load audit log', detail: e instanceof Error ? e.message : 'Request failed', tone: 'err' });
+    }
+  };
+
+  const toggleCompare = (id: string) => {
+    setCompareIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= 2) return [prev[1], id];
+      return [...prev, id];
+    });
+  };
+
+  const openCompare = async () => {
+    if (compareIds.length !== 2) {
+      setToast({ title: 'Select 2 events', detail: 'Choose exactly two events to compare.', tone: 'warn' });
+      return;
+    }
+    setCompareState({ status: 'loading' });
+    setCompareOpen(true);
+    try {
+      const [a, b] = await Promise.all(compareIds.map((id) => apiFetch<DetailItem>(`/api/hris/employment-history/${encodeURIComponent(id)}`, { method: 'GET', role, viewerEmployeeId })));
+      setCompareState({ status: 'ready', data: { a, b } });
+    } catch (e) {
+      setCompareState({ status: 'error', error: e instanceof Error ? e.message : 'Unable to compare' });
+    }
+  };
+
+  const downloadChangeLetter = (d: DetailItem) => {
+    const escapePdf = (s: string) => s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+    const clean = (s: string) => escapePdf(s.replace(/\r?\n/g, ' ').slice(0, 160));
+    const fontSize = 11;
+    const lineHeight = 14;
+    const startY = 760;
+    const x = 40;
+    const lines = [
+      'Dorman Long Engineering Limited',
+      'HRIS — Employment Change Letter',
+      '',
+      `Reference: ${d.referenceNo}`,
+      `Employee: ${d.employeeName} (${d.employeeId})`,
+      `Event Type: ${d.eventType}`,
+      `Effective Date: ${d.effectiveDate.slice(0, 10)}`,
+      `Approval Status: ${d.approvalStatus}`,
+      d.approvedBy ? `Approved By: ${d.approvedBy}` : '',
+      '',
+      `Reason: ${d.reason}`,
+      '',
+      `Previous Department: ${d.previousDepartment || '—'}`,
+      `New Department: ${d.newDepartment || '—'}`,
+      `Previous Job Title: ${d.previousJobTitle || '—'}`,
+      `New Job Title: ${d.newJobTitle || '—'}`,
+      `Previous Grade: ${d.previousGrade || '—'}`,
+      `New Grade: ${d.newGrade || '—'}`,
+      `Previous Manager: ${d.previousManager || '—'}`,
+      `New Manager: ${d.newManager || '—'}`,
+      `Previous Status: ${d.previousStatus || '—'}`,
+      `New Status: ${d.newStatus || '—'}`,
+      '',
+      `Generated: ${formatDateTimeUtc(new Date().toISOString())}`,
+    ].filter((l) => l !== '');
+
+    const contentParts: string[] = [];
+    contentParts.push(`BT /F1 ${fontSize} Tf ${x} ${startY} Td`);
+    for (let i = 0; i < lines.length; i++) {
+      contentParts.push(`(${clean(lines[i])}) Tj`);
+      if (i !== lines.length - 1) contentParts.push(`0 -${lineHeight} Td`);
+    }
+    contentParts.push('ET');
+    const stream = contentParts.join('\n');
+    const encoder = new TextEncoder();
+    const xref: number[] = [0];
+    let out = '%PDF-1.4\n';
+    const pushObj = (obj: string) => {
+      xref.push(out.length);
+      out += obj;
+    };
+    pushObj('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+    pushObj('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
+    pushObj('3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n');
+    pushObj('4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n');
+    const streamBytes = encoder.encode(stream);
+    pushObj(`5 0 obj\n<< /Length ${streamBytes.length} >>\nstream\n${stream}\nendstream\nendobj\n`);
+    const startXref = out.length;
+    out += `xref\n0 ${xref.length}\n0000000000 65535 f \n`;
+    for (let i = 1; i < xref.length; i++) out += `${String(xref[i]).padStart(10, '0')} 00000 n \n`;
+    out += `trailer\n<< /Size ${xref.length} /Root 1 0 R >>\nstartxref\n${startXref}\n%%EOF\n`;
+    const bytes = encoder.encode(out);
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `change-letter_${d.referenceNo}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
 
   const openAdd = async () => {
@@ -687,6 +881,29 @@ export default function EmploymentHistoryClient({ initialNow, employeeId }: { in
     }
   };
 
+  const generateReport = async () => {
+    const prev = exportFormat;
+    try {
+      setExportFormat('pdf');
+      const qs = serializeFilters();
+      const data = await apiFetch<ArrayBuffer>(`/api/hris/employment-history/export?format=pdf&${qs}`, { method: 'GET', role, viewerEmployeeId });
+      const blob = new Blob([data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = employeeId ? `employment-history_report_${employeeId}.pdf` : `employment-history_report.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setToast({ title: 'Report generated', detail: 'PDF report downloaded.', tone: 'ok' });
+    } catch (e) {
+      setToast({ title: 'Report failed', detail: e instanceof Error ? e.message : 'Request failed', tone: 'err' });
+    } finally {
+      setExportFormat(prev);
+    }
+  };
+
   const persistCurrentView = () => {
     const name = saveViewName.trim();
     if (!name) {
@@ -786,13 +1003,18 @@ export default function EmploymentHistoryClient({ initialNow, employeeId }: { in
             <Download className="w-4 h-4" />
             Export History
           </button>
-          <button type="button" onClick={() => setToast({ title: 'Report', detail: 'Report generation is stubbed in this build.', tone: 'warn' })} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+          <button type="button" onClick={generateReport} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
             <FileText className="w-4 h-4" />
             Generate Report
           </button>
-          <button type="button" onClick={() => setToast({ title: 'Compare', detail: 'Compare changes is stubbed in this build.', tone: 'warn' })} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+          <button
+            type="button"
+            onClick={openCompare}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors"
+          >
             <GitCompare className="w-4 h-4" />
             Compare Changes
+            <span className="text-[11px] font-extrabold px-2 py-1 rounded-full bg-slate-100 text-slate-700">{formatNumber(compareIds.length)}</span>
           </button>
           <button type="button" onClick={loadAll} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
             <RefreshCcw className="w-4 h-4" />
@@ -982,9 +1204,9 @@ export default function EmploymentHistoryClient({ initialNow, employeeId }: { in
               Open Profile
             </Link>
           ) : null}
-          <button type="button" onClick={() => setToast({ title: 'Compare', detail: 'Compare changes is stubbed in this build.', tone: 'warn' })} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+          <button type="button" onClick={openCompare} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
             <GitCompare className="w-4 h-4" />
-            Compare
+            Compare ({formatNumber(compareIds.length)}/2)
           </button>
         </div>
       </div>
@@ -1058,11 +1280,53 @@ export default function EmploymentHistoryClient({ initialNow, employeeId }: { in
           Showing: {list.status === 'ready' && list.data ? formatNumber(list.data.items.length) : '—'}
         </span>
       </div>
-      <div className="overflow-auto">
+      <div className="md:hidden p-4 space-y-3">
+        {list.status === 'ready' && list.data ? (
+          list.data.items.slice(0, 40).map((r) => {
+            const tone = approvalTone(r.approvalStatus);
+            return (
+              <div key={r.id} className="rounded-2xl border border-slate-200/60 bg-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Pill label={r.eventType} tone={eventTone(r.eventType)} />
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-extrabold ${tone.bg} ${tone.fg}`}>{r.approvalStatus}</span>
+                      <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">{r.referenceNo}</span>
+                    </div>
+                    <div className="text-sm font-extrabold text-slate-900 mt-2">{r.employeeName}</div>
+                    <div className="text-xs text-slate-500 font-semibold mt-1">
+                      {r.employeeId} <span className="mx-2">•</span> Effective: {formatDateUtc(r.effectiveDate)}
+                    </div>
+                    <div className="text-xs text-slate-600 font-semibold mt-2 line-clamp-2">{r.reason}</div>
+                  </div>
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={compareIds.includes(r.id)}
+                      onChange={() => toggleCompare(r.id)}
+                      className="h-4 w-4 rounded border-slate-300 text-dle-blue focus:ring-dle-blue/30"
+                      aria-label={`Compare ${r.referenceNo}`}
+                    />
+                    <button type="button" onClick={() => openDetails(r.id)} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+                      View
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="px-2 py-8 text-center text-sm text-slate-600 font-semibold">{list.status === 'loading' ? 'Loading history…' : list.error || 'No history found.'}</div>
+        )}
+      </div>
+
+      <div className="hidden md:block overflow-auto">
         <table className="w-full text-left">
           <thead className="bg-slate-50 border-b border-slate-100">
             <tr>
               {[
+                'Compare',
                 'Reference',
                 'Employee ID',
                 'Name',
@@ -1092,6 +1356,15 @@ export default function EmploymentHistoryClient({ initialNow, employeeId }: { in
                 const tone = approvalTone(r.approvalStatus);
                 return (
                   <tr key={r.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="px-4 py-3 text-xs whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={compareIds.includes(r.id)}
+                        onChange={() => toggleCompare(r.id)}
+                        className="h-4 w-4 rounded border-slate-300 text-dle-blue focus:ring-dle-blue/30"
+                        aria-label={`Compare ${r.referenceNo}`}
+                      />
+                    </td>
                     <td className="px-4 py-3 text-xs font-extrabold text-slate-900 whitespace-nowrap">{r.referenceNo}</td>
                     <td className="px-4 py-3 text-xs font-extrabold text-slate-900 whitespace-nowrap">{r.employeeId}</td>
                     <td className="px-4 py-3 text-sm font-extrabold text-slate-900 whitespace-nowrap">{r.employeeName}</td>
@@ -1112,16 +1385,110 @@ export default function EmploymentHistoryClient({ initialNow, employeeId }: { in
                     <td className="px-4 py-3 text-xs font-semibold text-slate-600 whitespace-nowrap">{r.createdBy}</td>
                     <td className="px-4 py-3 text-xs font-semibold text-slate-600 whitespace-nowrap">{formatDateUtc(r.createdAt)}</td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap">
-                      <button type="button" onClick={() => openDetails(r.id)} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
-                        View Details
-                      </button>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setRowActionsFor((p) => (p === r.id ? null : r.id))}
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                          Actions
+                          <ChevronDown className="w-4 h-4" />
+                        </button>
+                        {rowActionsFor === r.id ? (
+                          <div className="absolute right-0 top-[calc(100%+8px)] z-20 w-[260px] rounded-2xl border border-slate-200 bg-white shadow-lg overflow-hidden">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRowActionsFor(null);
+                                void openDetails(r.id);
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-slate-50"
+                            >
+                              <div className="text-xs font-extrabold text-slate-900">View Details</div>
+                              <div className="text-[11px] text-slate-500 font-semibold mt-0.5">Workflow + changes + audit</div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRowActionsFor(null);
+                                void openEditEvent(r.id);
+                              }}
+                              className="w-full text-left px-4 py-3 border-t border-slate-100 hover:bg-slate-50"
+                            >
+                              <div className="text-xs font-extrabold text-slate-900">Edit Event</div>
+                              <div className="text-[11px] text-slate-500 font-semibold mt-0.5">Draft/Rejected only</div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRowActionsFor(null);
+                                void openWorkflowViewer(r.id);
+                              }}
+                              className="w-full text-left px-4 py-3 border-t border-slate-100 hover:bg-slate-50"
+                            >
+                              <div className="text-xs font-extrabold text-slate-900">View Approval Workflow</div>
+                              <div className="text-[11px] text-slate-500 font-semibold mt-0.5">Statuses + approvals</div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRowActionsFor(null);
+                                void openDocumentsViewer(r.id);
+                              }}
+                              className="w-full text-left px-4 py-3 border-t border-slate-100 hover:bg-slate-50"
+                            >
+                              <div className="text-xs font-extrabold text-slate-900">View Supporting Documents</div>
+                              <div className="text-[11px] text-slate-500 font-semibold mt-0.5">Access-controlled viewer</div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setRowActionsFor(null);
+                                try {
+                                  const d = await ensureSelected(r.id);
+                                  downloadChangeLetter(d);
+                                  setToast({ title: 'Downloaded', detail: `Change letter: ${d.referenceNo}`, tone: 'ok' });
+                                } catch (e) {
+                                  setToast({ title: 'Download failed', detail: e instanceof Error ? e.message : 'Request failed', tone: 'err' });
+                                }
+                              }}
+                              className="w-full text-left px-4 py-3 border-t border-slate-100 hover:bg-slate-50"
+                            >
+                              <div className="text-xs font-extrabold text-slate-900">Download Change Letter</div>
+                              <div className="text-[11px] text-slate-500 font-semibold mt-0.5">PDF letter</div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRowActionsFor(null);
+                                setReverseConfirm({ id: r.id, referenceNo: r.referenceNo });
+                              }}
+                              className="w-full text-left px-4 py-3 border-t border-slate-100 hover:bg-slate-50"
+                            >
+                              <div className="text-xs font-extrabold text-slate-900">Reverse Event</div>
+                              <div className="text-[11px] text-slate-500 font-semibold mt-0.5">Approved events only</div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRowActionsFor(null);
+                                void openAuditViewer(r.id);
+                              }}
+                              className="w-full text-left px-4 py-3 border-t border-slate-100 hover:bg-slate-50"
+                            >
+                              <div className="text-xs font-extrabold text-slate-900">Audit Log</div>
+                              <div className="text-[11px] text-slate-500 font-semibold mt-0.5">Audit-ready metadata</div>
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 );
               })
             ) : (
               <tr>
-                <td colSpan={16} className="px-6 py-12 text-center">
+                <td colSpan={17} className="px-6 py-12 text-center">
                   <div className="text-sm text-slate-600 font-semibold">{list.status === 'loading' ? 'Loading history…' : list.error || 'No history found.'}</div>
                 </td>
               </tr>
@@ -1564,11 +1931,26 @@ export default function EmploymentHistoryClient({ initialNow, employeeId }: { in
           <div className="text-xs font-extrabold text-slate-700">Previous → New values</div>
           <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
             <Field label="Previous Department" value={(addForm.previousDepartment || '').toString()} onChange={(v) => setAddForm((p) => ({ ...p, previousDepartment: v }))} />
-            <Field label="New Department" value={(addForm.newDepartment || '').toString()} onChange={(v) => setAddForm((p) => ({ ...p, newDepartment: v }))} />
+            <Select
+              label="New Department"
+              value={(addForm.newDepartment || '').toString()}
+              onChange={(v) => setAddForm((p) => ({ ...p, newDepartment: v }))}
+              options={formOptions.status === 'ready' && formOptions.data?.departments.length ? formOptions.data.departments : derivedOptions.departments}
+            />
             <Field label="Previous Job Title" value={(addForm.previousJobTitle || '').toString()} onChange={(v) => setAddForm((p) => ({ ...p, previousJobTitle: v }))} />
-            <Field label="New Job Title" value={(addForm.newJobTitle || '').toString()} onChange={(v) => setAddForm((p) => ({ ...p, newJobTitle: v }))} />
+            <Select
+              label="New Job Title"
+              value={(addForm.newJobTitle || '').toString()}
+              onChange={(v) => setAddForm((p) => ({ ...p, newJobTitle: v }))}
+              options={formOptions.status === 'ready' && formOptions.data?.jobTitles.length ? formOptions.data.jobTitles : derivedOptions.jobTitles}
+            />
             <Field label="Previous Grade" value={(addForm.previousGrade || '').toString()} onChange={(v) => setAddForm((p) => ({ ...p, previousGrade: v }))} />
-            <Field label="New Grade" value={(addForm.newGrade || '').toString()} onChange={(v) => setAddForm((p) => ({ ...p, newGrade: v }))} />
+            <Select
+              label="New Grade"
+              value={(addForm.newGrade || '').toString()}
+              onChange={(v) => setAddForm((p) => ({ ...p, newGrade: v }))}
+              options={formOptions.status === 'ready' && formOptions.data?.jobGrades.length ? formOptions.data.jobGrades : derivedOptions.jobGrades}
+            />
             <Field label="Previous Manager" value={(addForm.previousManager || '').toString()} onChange={(v) => setAddForm((p) => ({ ...p, previousManager: v }))} />
             <Field label="New Manager" value={(addForm.newManager || '').toString()} onChange={(v) => setAddForm((p) => ({ ...p, newManager: v }))} />
             <Field label="Previous Status" value={(addForm.previousStatus || '').toString()} onChange={(v) => setAddForm((p) => ({ ...p, previousStatus: v }))} />
@@ -1713,6 +2095,463 @@ export default function EmploymentHistoryClient({ initialNow, employeeId }: { in
     </AnimatePresence>
   );
 
+  const workflowStages: ApprovalStatus[] = [
+    'Draft',
+    'Submitted',
+    'Pending HR Review',
+    'Pending Department Head Approval',
+    'Pending HR Director Approval',
+    'Approved',
+    'Rejected',
+    'Reversed',
+    'Cancelled',
+  ];
+
+  const workflowModal = (
+    <Modal open={workflowOpen} onClose={() => setWorkflowOpen(false)}>
+      <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center">
+            <ShieldCheck className="w-5 h-5" />
+          </span>
+          <div>
+            <div className="text-sm font-extrabold text-slate-900">Approval Workflow</div>
+            <div className="text-xs text-slate-500 font-semibold mt-0.5">Audit-ready workflow view for the selected event.</div>
+          </div>
+        </div>
+        <button type="button" onClick={() => setWorkflowOpen(false)} className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50">
+          <X className="w-4 h-4 text-slate-600" />
+        </button>
+      </div>
+      <div className="p-6 space-y-4">
+        {!selected ? (
+          <div className="text-sm text-slate-600 font-semibold">Loading…</div>
+        ) : (
+          <>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Chip label={selected.referenceNo} />
+                <Chip label={selected.employeeId} />
+                <Pill label={selected.eventType} tone={eventTone(selected.eventType)} />
+                <Pill label={selected.approvalStatus} tone={approvalTone(selected.approvalStatus)} />
+              </div>
+              <div className="text-sm font-extrabold text-slate-900 mt-2">{selected.employeeName}</div>
+              <div className="text-xs text-slate-500 font-semibold mt-1">
+                Approval ID: {selected.approvalId || '—'} <span className="mx-2">•</span> Approved By: {selected.approvedBy || '—'} <span className="mx-2">•</span> Approved At: {selected.approvedAt ? formatDateTimeUtc(selected.approvedAt) : '—'}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="text-xs font-extrabold text-slate-700">Stages</div>
+              <div className="mt-3 space-y-2">
+                {workflowStages.map((s) => {
+                  const isCurrent = selected.approvalStatus === s;
+                  const tone = approvalTone(isCurrent ? s : 'Draft');
+                  return (
+                    <div key={s} className={`flex items-center justify-between gap-3 rounded-2xl border border-slate-100 p-3 ${isCurrent ? 'bg-slate-50' : 'bg-white'}`}>
+                      <div className="text-xs font-extrabold text-slate-900">{s}</div>
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-extrabold ${isCurrent ? tone.bg + ' ' + tone.fg : 'bg-slate-100 text-slate-700'}`}>{isCurrent ? 'Current' : '—'}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+
+  const documentsModal = (
+    <Modal
+      open={documentsOpen}
+      onClose={() => {
+        setDocumentsOpen(false);
+        setDocAttachName('');
+      }}
+    >
+      <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center">
+            <FileText className="w-5 h-5" />
+          </span>
+          <div>
+            <div className="text-sm font-extrabold text-slate-900">Supporting Documents</div>
+            <div className="text-xs text-slate-500 font-semibold mt-0.5">Controlled access + audit-ready document list.</div>
+          </div>
+        </div>
+        <button type="button" onClick={() => setDocumentsOpen(false)} className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50">
+          <X className="w-4 h-4 text-slate-600" />
+        </button>
+      </div>
+      <div className="p-6 space-y-4">
+        {!selected ? (
+          <div className="text-sm text-slate-600 font-semibold">Loading…</div>
+        ) : (
+          <>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Chip label={selected.referenceNo} />
+                <Chip label={selected.employeeId} />
+                <Pill label={selected.eventType} tone={eventTone(selected.eventType)} />
+              </div>
+              <div className="text-xs text-slate-500 font-semibold mt-2">Current document: {selected.supportingDocument ? selected.supportingDocument.name : '—'}</div>
+              {selected.supportingDocument ? (
+                <div className="mt-3 flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const blob = new Blob([`Document: ${selected.supportingDocument?.name}\nReference: ${selected.referenceNo}`], { type: 'text/plain;charset=utf-8' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = selected.supportingDocument?.name || 'document.txt';
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                      URL.revokeObjectURL(url);
+                    }}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-extrabold hover:bg-slate-800 transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
+            {list.data?.permissions?.canCreate && (selected.approvalStatus === 'Draft' || selected.approvalStatus === 'Rejected') ? (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="text-xs font-extrabold text-slate-700">Attach document metadata</div>
+                <div className="text-[11px] text-slate-500 font-semibold mt-1">Document uploads are represented as metadata in this build.</div>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field label="Document Name" value={docAttachName} onChange={setDocAttachName} placeholder="e.g., transfer-letter.pdf" required />
+                  <div className="rounded-2xl border border-slate-200 bg-white p-3 flex items-end">
+                    <button
+                      type="button"
+                      disabled={docAttachBusy || !docAttachName.trim()}
+                      onClick={async () => {
+                        if (!selected) return;
+                        setDocAttachBusy(true);
+                        try {
+                          const payload = { supportingDocument: { id: `doc-${Math.random().toString(16).slice(2)}`, name: docAttachName.trim() } };
+                          const updated = await apiMutate<DetailItem>(`/api/hris/employment-history/${encodeURIComponent(selected.id)}`, { method: 'PATCH', role, viewerEmployeeId, body: JSON.stringify(payload) });
+                          setSelected(updated);
+                          setDocAttachName('');
+                          setToast({ title: 'Document attached', detail: updated.supportingDocument?.name || 'Updated', tone: 'ok' });
+                          await loadAll();
+                        } catch (e) {
+                          setToast({ title: 'Attach failed', detail: e instanceof Error ? e.message : 'Request failed', tone: 'err' });
+                        } finally {
+                          setDocAttachBusy(false);
+                        }
+                      }}
+                      className={`w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold transition-colors ${docAttachBusy || !docAttachName.trim() ? 'bg-slate-200 text-slate-500' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      Attach
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+
+  const auditModal = (
+    <Modal open={auditOpen} onClose={() => setAuditOpen(false)}>
+      <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center">
+            <Fingerprint className="w-5 h-5" />
+          </span>
+          <div>
+            <div className="text-sm font-extrabold text-slate-900">Audit Log</div>
+            <div className="text-xs text-slate-500 font-semibold mt-0.5">Action, actor, timestamp, device, and change payloads.</div>
+          </div>
+        </div>
+        <button type="button" onClick={() => setAuditOpen(false)} className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50">
+          <X className="w-4 h-4 text-slate-600" />
+        </button>
+      </div>
+      <div className="p-6">
+        {!selected ? (
+          <div className="text-sm text-slate-600 font-semibold">Loading…</div>
+        ) : (
+          <div className="overflow-auto rounded-2xl border border-slate-200">
+            <table className="min-w-[980px] w-full text-left">
+              <thead className="bg-slate-50 border-b border-slate-100">
+                <tr>
+                  {['Timestamp', 'Action', 'Performed By', 'IP', 'Device', 'Reason', 'Old Value', 'New Value'].map((h) => (
+                    <th key={h} className="px-4 py-3 text-[11px] font-extrabold text-slate-600 whitespace-nowrap">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(selected.audit || []).map((a) => (
+                  <tr key={a.id} className="border-b border-slate-100">
+                    <td className="px-4 py-3 text-xs font-semibold text-slate-700 whitespace-nowrap">{formatDateTimeUtc(a.at)}</td>
+                    <td className="px-4 py-3 text-xs font-extrabold text-slate-900 whitespace-nowrap">{a.action}</td>
+                    <td className="px-4 py-3 text-xs font-semibold text-slate-700 whitespace-nowrap">{a.performedBy}</td>
+                    <td className="px-4 py-3 text-xs font-semibold text-slate-700 whitespace-nowrap">{a.ipAddress || '—'}</td>
+                    <td className="px-4 py-3 text-xs font-semibold text-slate-700 whitespace-nowrap">{a.device || '—'}</td>
+                    <td className="px-4 py-3 text-xs font-semibold text-slate-700">{a.reason || '—'}</td>
+                    <td className="px-4 py-3 text-[11px] font-semibold text-slate-600 max-w-[320px] truncate">{a.oldValue || '—'}</td>
+                    <td className="px-4 py-3 text-[11px] font-semibold text-slate-600 max-w-[320px] truncate">{a.newValue || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+
+  const editModal = (
+    <Modal
+      open={editOpen}
+      onClose={() => {
+        setEditOpen(false);
+        setEditForm({});
+      }}
+    >
+      <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center">
+            <Plus className="w-5 h-5" />
+          </span>
+          <div>
+            <div className="text-sm font-extrabold text-slate-900">Edit History Event</div>
+            <div className="text-xs text-slate-500 font-semibold mt-0.5">Allowed for Draft/Rejected events only.</div>
+          </div>
+        </div>
+        <button type="button" onClick={() => setEditOpen(false)} className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50">
+          <X className="w-4 h-4 text-slate-600" />
+        </button>
+      </div>
+      <div className="p-6 space-y-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          <Field label="Employee ID" value={(editForm.employeeId || '').toString()} onChange={(v) => setEditForm((p) => ({ ...p, employeeId: v }))} required />
+          <Field label="Employee Name" value={(editForm.employeeName || '').toString()} onChange={(v) => setEditForm((p) => ({ ...p, employeeName: v }))} required />
+          <Select label="Event Type" value={(editForm.eventType as string) || ''} onChange={(v) => setEditForm((p) => ({ ...p, eventType: v as EmploymentEventType }))} options={eventTypes} required />
+          <Field label="Effective Date (ISO)" value={(editForm.effectiveDate as string) || ''} onChange={(v) => setEditForm((p) => ({ ...p, effectiveDate: v }))} required />
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <Field label="Reason" value={(editForm.reason || '').toString()} onChange={(v) => setEditForm((p) => ({ ...p, reason: v }))} required />
+          <Field label="Notes" value={(editForm.notes || '').toString()} onChange={(v) => setEditForm((p) => ({ ...p, notes: v }))} />
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="text-xs font-extrabold text-slate-700">Previous → New values</div>
+          <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <Select
+              label="Previous Department"
+              value={(editForm.previousDepartment || '').toString()}
+              onChange={(v) => setEditForm((p) => ({ ...p, previousDepartment: v }))}
+              options={formOptions.status === 'ready' && formOptions.data?.departments.length ? formOptions.data.departments : derivedOptions.departments}
+            />
+            <Select
+              label="New Department"
+              value={(editForm.newDepartment || '').toString()}
+              onChange={(v) => setEditForm((p) => ({ ...p, newDepartment: v }))}
+              options={formOptions.status === 'ready' && formOptions.data?.departments.length ? formOptions.data.departments : derivedOptions.departments}
+            />
+            <Select
+              label="Previous Job Title"
+              value={(editForm.previousJobTitle || '').toString()}
+              onChange={(v) => setEditForm((p) => ({ ...p, previousJobTitle: v }))}
+              options={formOptions.status === 'ready' && formOptions.data?.jobTitles.length ? formOptions.data.jobTitles : derivedOptions.jobTitles}
+            />
+            <Select
+              label="New Job Title"
+              value={(editForm.newJobTitle || '').toString()}
+              onChange={(v) => setEditForm((p) => ({ ...p, newJobTitle: v }))}
+              options={formOptions.status === 'ready' && formOptions.data?.jobTitles.length ? formOptions.data.jobTitles : derivedOptions.jobTitles}
+            />
+            <Select
+              label="Previous Grade"
+              value={(editForm.previousGrade || '').toString()}
+              onChange={(v) => setEditForm((p) => ({ ...p, previousGrade: v }))}
+              options={formOptions.status === 'ready' && formOptions.data?.jobGrades.length ? formOptions.data.jobGrades : derivedOptions.jobGrades}
+            />
+            <Select
+              label="New Grade"
+              value={(editForm.newGrade || '').toString()}
+              onChange={(v) => setEditForm((p) => ({ ...p, newGrade: v }))}
+              options={formOptions.status === 'ready' && formOptions.data?.jobGrades.length ? formOptions.data.jobGrades : derivedOptions.jobGrades}
+            />
+            <Field label="Previous Manager" value={(editForm.previousManager || '').toString()} onChange={(v) => setEditForm((p) => ({ ...p, previousManager: v }))} />
+            <Field label="New Manager" value={(editForm.newManager || '').toString()} onChange={(v) => setEditForm((p) => ({ ...p, newManager: v }))} />
+            <Field label="Previous Status" value={(editForm.previousStatus || '').toString()} onChange={(v) => setEditForm((p) => ({ ...p, previousStatus: v }))} />
+            <Field label="New Status" value={(editForm.newStatus || '').toString()} onChange={(v) => setEditForm((p) => ({ ...p, newStatus: v }))} />
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setEditOpen(false);
+              setEditForm({});
+            }}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button type="button" onClick={saveEditEvent} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-extrabold hover:bg-slate-800 transition-colors">
+            <CheckCircle2 className="w-4 h-4" />
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+
+  const reverseConfirmModal = (
+    <Modal open={!!reverseConfirm} onClose={() => setReverseConfirm(null)}>
+      <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="w-10 h-10 rounded-2xl bg-red-600 text-white flex items-center justify-center">
+            <AlertTriangle className="w-5 h-5" />
+          </span>
+          <div>
+            <div className="text-sm font-extrabold text-slate-900">Reverse Event</div>
+            <div className="text-xs text-slate-500 font-semibold mt-0.5">Reversal restores previously applied profile values where possible.</div>
+          </div>
+        </div>
+        <button type="button" onClick={() => setReverseConfirm(null)} className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50">
+          <X className="w-4 h-4 text-slate-600" />
+        </button>
+      </div>
+      <div className="p-6 space-y-4">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 font-semibold">
+          Only Approved events can be reversed. This action is audit-logged.
+        </div>
+        <div className="flex items-center justify-end gap-2">
+          <button type="button" onClick={() => setReverseConfirm(null)} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              if (!reverseConfirm) return;
+              const id = reverseConfirm.id;
+              setReverseConfirm(null);
+              await workflow(id, 'reverse');
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-extrabold hover:bg-red-700 transition-colors"
+          >
+            <X className="w-4 h-4" />
+            Reverse
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+
+  const compareModal = (
+    <Modal
+      open={compareOpen}
+      onClose={() => {
+        setCompareOpen(false);
+        setCompareState({ status: 'idle' });
+      }}
+    >
+      <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center">
+            <GitCompare className="w-5 h-5" />
+          </span>
+          <div>
+            <div className="text-sm font-extrabold text-slate-900">Compare Changes</div>
+            <div className="text-xs text-slate-500 font-semibold mt-0.5">Field-level diff between two history events.</div>
+          </div>
+        </div>
+        <button type="button" onClick={() => setCompareOpen(false)} className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50">
+          <X className="w-4 h-4 text-slate-600" />
+        </button>
+      </div>
+      <div className="p-6 space-y-4">
+        {compareState.status === 'loading' ? (
+          <div className="text-sm text-slate-600 font-semibold">Loading comparison…</div>
+        ) : compareState.status === 'error' ? (
+          <div className="text-sm text-slate-600 font-semibold">{compareState.error || 'Unable to compare'}</div>
+        ) : compareState.status === 'ready' && compareState.data ? (
+          (() => {
+            const a = compareState.data.a;
+            const b = compareState.data.b;
+            const rows: { label: string; a: string; b: string }[] = [
+              { label: 'Reference', a: a.referenceNo, b: b.referenceNo },
+              { label: 'Employee', a: `${a.employeeName} (${a.employeeId})`, b: `${b.employeeName} (${b.employeeId})` },
+              { label: 'Event Type', a: a.eventType, b: b.eventType },
+              { label: 'Effective Date', a: a.effectiveDate.slice(0, 10), b: b.effectiveDate.slice(0, 10) },
+              { label: 'Approval Status', a: a.approvalStatus, b: b.approvalStatus },
+              { label: 'Prev Department', a: a.previousDepartment || '—', b: b.previousDepartment || '—' },
+              { label: 'New Department', a: a.newDepartment || '—', b: b.newDepartment || '—' },
+              { label: 'Prev Job Title', a: a.previousJobTitle || '—', b: b.previousJobTitle || '—' },
+              { label: 'New Job Title', a: a.newJobTitle || '—', b: b.newJobTitle || '—' },
+              { label: 'Prev Grade', a: a.previousGrade || '—', b: b.previousGrade || '—' },
+              { label: 'New Grade', a: a.newGrade || '—', b: b.newGrade || '—' },
+              { label: 'Prev Manager', a: a.previousManager || '—', b: b.previousManager || '—' },
+              { label: 'New Manager', a: a.newManager || '—', b: b.newManager || '—' },
+              { label: 'Prev Status', a: a.previousStatus || '—', b: b.previousStatus || '—' },
+              { label: 'New Status', a: a.newStatus || '—', b: b.newStatus || '—' },
+              { label: 'Reason', a: a.reason, b: b.reason },
+            ];
+            return (
+              <div className="overflow-auto rounded-2xl border border-slate-200">
+                <table className="min-w-[920px] w-full text-left">
+                  <thead className="bg-slate-50 border-b border-slate-100">
+                    <tr>
+                      <th className="px-4 py-3 text-[11px] font-extrabold text-slate-600 whitespace-nowrap">Field</th>
+                      <th className="px-4 py-3 text-[11px] font-extrabold text-slate-600 whitespace-nowrap">{a.referenceNo}</th>
+                      <th className="px-4 py-3 text-[11px] font-extrabold text-slate-600 whitespace-nowrap">{b.referenceNo}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r) => {
+                      const diff = r.a !== r.b;
+                      return (
+                        <tr key={r.label} className={`border-b border-slate-100 ${diff ? 'bg-amber-50' : 'bg-white'}`}>
+                          <td className="px-4 py-3 text-xs font-extrabold text-slate-900 whitespace-nowrap">{r.label}</td>
+                          <td className="px-4 py-3 text-xs font-semibold text-slate-700">{r.a}</td>
+                          <td className="px-4 py-3 text-xs font-semibold text-slate-700">{r.b}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()
+        ) : (
+          <div className="text-sm text-slate-600 font-semibold">Select two events to compare.</div>
+        )}
+
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setCompareIds([]);
+              setCompareOpen(false);
+              setCompareState({ status: 'idle' });
+            }}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            Clear Selection
+          </button>
+          <button type="button" onClick={() => setCompareOpen(false)} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-extrabold hover:bg-slate-800 transition-colors">
+            Close
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+
   const loading = list.status === 'loading';
   const hasError = list.status === 'error';
 
@@ -1730,8 +2569,15 @@ export default function EmploymentHistoryClient({ initialNow, employeeId }: { in
       {table}
 
       {filterDrawer}
+      {saveViewModal}
       {addModal}
       {drawer}
+      {editModal}
+      {workflowModal}
+      {documentsModal}
+      {auditModal}
+      {reverseConfirmModal}
+      {compareModal}
 
       <AnimatePresence>
         {toast && (

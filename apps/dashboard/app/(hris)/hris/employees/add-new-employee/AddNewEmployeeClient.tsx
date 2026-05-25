@@ -584,6 +584,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
 
   const stepIndex = useMemo(() => STEP_ORDER.findIndex((s) => s.key === step), [step]);
   const nowStamp = useMemo(() => formatDateTimeUtc(initialNow), [initialNow]);
+  const nowMs = useMemo(() => new Date(initialNow).getTime(), [initialNow]);
 
   const countryDefault = 'Nigeria';
 
@@ -632,7 +633,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
     if (p.dateOfBirth.trim()) {
       const dobMs = parseDate(p.dateOfBirth);
       if (dobMs) {
-        const age = Math.floor((Date.now() - dobMs) / (365.25 * 24 * 3600 * 1000));
+        const age = Math.floor((nowMs - dobMs) / (365.25 * 24 * 3600 * 1000));
         if (age < 18) errs['personal.dateOfBirth'] = 'Min age 18';
       }
     }
@@ -649,7 +650,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
     if (!e.dateJoined.trim()) errs['employment.dateJoined'] = 'Required';
     if (e.dateJoined.trim()) {
       const dj = parseDate(e.dateJoined);
-      if (dj && dj > Date.now() && !e.onboardingScheduled) errs['employment.dateJoined'] = 'Future date requires scheduling';
+      if (dj && dj > nowMs && !e.onboardingScheduled) errs['employment.dateJoined'] = 'Future date requires scheduling';
     }
     if (e.employmentType === 'Permanent') {
       if (!e.probationStartDate.trim()) errs['employment.probationStartDate'] = 'Required';
@@ -680,7 +681,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
     }
 
     return errs;
-  }, [draft]);
+  }, [draft, nowMs]);
 
   const runAI = async () => {
     setValidation({ status: 'loading' });
@@ -1866,4 +1867,3 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
     </div>
   );
 }
-
