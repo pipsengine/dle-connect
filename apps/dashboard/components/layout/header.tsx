@@ -1,16 +1,12 @@
 'use client';
 
-import { Search, Bell, Sparkles, Menu, AlertCircle } from 'lucide-react';
+import { Search, Bell, Menu } from 'lucide-react';
 import Image from 'next/image';
 
 export function Header({ 
-  toggleSidebar, 
-  toggleRightPanel, 
-  rightPanelOpen 
+  toggleSidebar
 }: { 
   toggleSidebar: () => void; 
-  toggleRightPanel: () => void;
-  rightPanelOpen: boolean;
 }) {
   return (
     <header className="h-16 bg-white/80 backdrop-blur-md border-b border-slate-100 flex items-center justify-between px-6 sticky top-0 z-10">
@@ -38,15 +34,6 @@ export function Header({
         <button className="relative w-9 h-9 flex items-center justify-center text-slate-500 hover:bg-slate-50 rounded-full transition-colors">
           <Bell className="w-5 h-5" />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-dle-red border-2 border-white"></span>
-        </button>
-
-        <button 
-          onClick={toggleRightPanel}
-          className={`relative w-9 h-9 flex items-center justify-center rounded-full transition-colors ${
-            rightPanelOpen ? 'bg-dle-purple/10 text-dle-purple' : 'text-slate-500 hover:bg-slate-50'
-          }`}
-        >
-          <Sparkles className="w-5 h-5" />
         </button>
 
         <div className="h-6 w-px bg-slate-200 mx-1"></div>

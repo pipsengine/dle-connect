@@ -1,4 +1,4 @@
-import { navigationConfig } from '@/lib/config/navigation';
+import { navigationConfig } from '../../../lib/config/navigation';
 import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {

@@ -24,7 +24,7 @@
     "paths": {
       "@/*": ["./*"],
       "@modules/*": ["../../modules/*"],
-      "@hris/*": ["../../modules/human-capital-management/dle-smart-hris/*"]
+      "@hris/*": ["../../modules/dle-smart-hris/*"]
     }
   },
   "include": [
@@ -32,8 +32,8 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "../../modules/human-capital-management/dle-smart-hris/**/*.ts",
-    "../../modules/human-capital-management/dle-smart-hris/**/*.tsx"
+    "../../modules/dle-smart-hris/**/*.ts",
+    "../../modules/dle-smart-hris/**/*.tsx"
   ],
   "exclude": ["node_modules"]
 }

@@ -1,11 +1,17 @@
-import { PageTemplate } from '@/components/layout/page-template';
-import { navigationConfig, NavItem, SubMenu } from '@/lib/config/navigation';
+import { PageTemplate } from '../../../components/layout/page-template';
+import { navigationConfig, NavItem, SubMenu } from '../../../lib/config/navigation';
 import { FileUp, Target, Plus, AlertCircle } from 'lucide-react';
 import { notFound } from 'next/navigation';
 
 export default async function GenericModulePage({ params }: { params: Promise<{ slug: string[] }> }) {
+  const HRIS_BASE = '/hris';
   const resolvedParams = await params;
   const path = `/${resolvedParams.slug.join('/')}`;
+  const toHref = (route?: string) => {
+    if (!route) return '#';
+    if (route.startsWith(HRIS_BASE)) return route;
+    return `${HRIS_BASE}${route.startsWith('/') ? route : `/${route}`}`;
+  };
   
   // Find the requested item in config
   let currentGroup: NavItem | undefined;
@@ -30,7 +36,7 @@ export default async function GenericModulePage({ params }: { params: Promise<{ 
   }
 
   const breadcrumbs: { label: string; href?: string }[] = [
-    { label: currentGroup.label, href: currentGroup.route || '#' },
+    { label: currentGroup.label, href: toHref(currentGroup.route) },
   ];
 
   if (currentItem !== currentGroup) {

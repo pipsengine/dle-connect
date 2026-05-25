@@ -10,11 +10,19 @@ import {
   ChevronRight,
   ChevronDown
 } from 'lucide-react';
-import { navigationConfig, NavItem } from '@/lib/config/navigation';
+import { navigationConfig, NavItem } from '../../lib/config/navigation';
 
 export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => void }) {
   const pathname = usePathname();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const HRIS_BASE = '/hris';
+  const currentPath = pathname.startsWith(HRIS_BASE) ? pathname.slice(HRIS_BASE.length) || '/' : pathname;
+
+  const toHref = (route?: string) => {
+    if (!route) return '#';
+    if (route.startsWith(HRIS_BASE)) return route;
+    return `${HRIS_BASE}${route.startsWith('/') ? route : `/${route}`}`;
+  };
 
   const toggleGroup = (id: string) => {
     setExpandedGroups(prev => ({
@@ -39,7 +47,7 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
             const isExpanded = expandedGroups[item.id];
             
             // For simple paths, determine active state
-            const isActivePrimary = pathname === item.route || (item.subItems && item.subItems.some(sub => pathname === sub.route));
+            const isActivePrimary = currentPath === item.route || (item.subItems && item.subItems.some(sub => currentPath === sub.route));
 
             return (
               <div key={item.id}>
@@ -76,14 +84,14 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
                   </button>
                 ) : (
                   <Link
-                    href={item.route || '#'}
+                    href={toHref(item.route)}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group whitespace-nowrap ${
-                      pathname === item.route
+                      currentPath === item.route
                         ? 'bg-dle-blue/5 text-dle-blue font-medium' 
                         : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
-                    <item.icon className={`w-5 h-5 shrink-0 ${pathname === item.route ? 'text-dle-blue' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                    <item.icon className={`w-5 h-5 shrink-0 ${currentPath === item.route ? 'text-dle-blue' : 'text-slate-400 group-hover:text-slate-600'}`} />
                     {isOpen && (
                       <span className="text-sm font-medium flex-1">
                         {item.label}
@@ -105,11 +113,11 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
                       >
                         <div className="py-1 px-4 ml-5 mt-1 border-l border-slate-100 flex flex-col gap-1">
                           {item.subItems?.map((sub) => {
-                            const isSubActive = pathname === sub.route;
+                            const isSubActive = currentPath === sub.route;
                             return (
                               <Link
                                 key={sub.slug}
-                                href={sub.route}
+                                href={toHref(sub.route)}
                                 className={`text-[13px] py-2 px-3 rounded-md transition-colors ${
                                   isSubActive 
                                     ? 'text-dle-blue font-semibold bg-dle-blue/5' 
