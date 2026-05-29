@@ -132,6 +132,103 @@ export type JobGradeRecord = {
   description: string;
 };
 
+export type JobTitleRecord = {
+  id: string;
+  code: string;
+  title: string;
+  family: JobGradeRecord['family'];
+  level: JobGradeRecord['level'];
+  gradeCode: string;
+  gradeName: string;
+  reportingLevel: 'Enterprise' | 'Division' | 'Department' | 'Team';
+  benchmarkSalaryUsd: number;
+  employeeCount: number;
+  openPositions: number;
+  departmentCount: number;
+  locationCount: number;
+  successionCoveragePct: number;
+  attritionRiskPct: number;
+  internalMobilityPct: number;
+  healthStatus: HealthStatus;
+  standardizationStatus: 'Standard' | 'Variant' | 'Needs Review';
+  benchmarkPosition: string;
+  jobPurpose: string;
+  commonLocations: string[];
+  departments: string[];
+  keyResponsibilities: string[];
+};
+
+export type ReportingHierarchyRecord = {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  jobTitle: string;
+  department: string;
+  businessUnit: string;
+  location: string;
+  layer: 'Executive' | 'Division' | 'Department' | 'Team';
+  managerId: string | null;
+  managerName: string | null;
+  managerTitle: string | null;
+  directReports: number;
+  indirectReports: number;
+  totalReports: number;
+  spanOfControl: number;
+  successionCoveragePct: number;
+  attritionRiskPct: number;
+  openCriticalRoles: number;
+  approvalCoveragePct: number;
+  healthStatus: HealthStatus;
+  actingCoverage: 'Covered' | 'At Risk' | 'Unassigned';
+  escalationPath: string[];
+  primaryTeams: string[];
+  responsibilityScope: string;
+};
+
+export type PositionRecord = {
+  id: string;
+  code: string;
+  title: string;
+  department: string;
+  businessUnit: string;
+  location: string;
+  gradeCode: string;
+  family: JobGradeRecord['family'];
+  level: JobGradeRecord['level'];
+  reportingTo: string;
+  positionType: 'Permanent' | 'Contract' | 'Project' | 'Temporary';
+  positionStatus: 'Filled' | 'Vacant' | 'Frozen' | 'Under Review';
+  incumbentName: string | null;
+  incumbentEmployeeId: string | null;
+  benchmarkSalaryUsd: number;
+  fte: number;
+  criticality: 'Critical' | 'Core' | 'Support';
+  successionCoveragePct: number;
+  attritionRiskPct: number;
+  approvalCoveragePct: number;
+  healthStatus: HealthStatus;
+  replacementPriority: 'Immediate' | 'Planned' | 'Monitor';
+  standardPosition: boolean;
+  openDays: number;
+  jobTitleCode: string;
+  responsibilityScope: string;
+  requiredCapabilities: string[];
+};
+
+export type OrganogramNodeRecord = EnhancedOrgNode & {
+  depth: number;
+  parentName: string | null;
+  parentKind: NodeKind | null;
+  parentChain: string[];
+  branchHeadcount: number;
+  branchOpenRoles: number;
+  branchCriticalUnits: number;
+  branchAttentionUnits: number;
+  directChildNames: string[];
+  leaderTitle: string;
+  managerialScope: 'Enterprise' | 'Strategic' | 'Operational' | 'Delivery';
+};
+
 export const organizationNodes: OrgNode[] = [
   {
     id: 'org-root',
@@ -1163,6 +1260,1285 @@ export const getJobGradesData = () => {
       healthStatuses: ['Healthy', 'Needs Attention', 'Critical'] as HealthStatus[],
     },
     grades,
+    insights,
+  };
+};
+
+export const getJobTitlesData = () => {
+  const titles: JobTitleRecord[] = [
+    {
+      id: 'jt-001',
+      code: 'JT-001',
+      title: 'Executive Director, Operations',
+      family: 'Executive',
+      level: 'Strategic',
+      gradeCode: 'G01',
+      gradeName: 'Executive Leadership',
+      reportingLevel: 'Enterprise',
+      benchmarkSalaryUsd: 248000,
+      employeeCount: 1,
+      openPositions: 0,
+      departmentCount: 4,
+      locationCount: 2,
+      successionCoveragePct: 78,
+      attritionRiskPct: 5,
+      internalMobilityPct: 10,
+      healthStatus: 'Healthy',
+      standardizationStatus: 'Standard',
+      benchmarkPosition: 'Executive Director',
+      jobPurpose: 'Provides enterprise leadership for operations delivery, asset readiness, and regional execution performance.',
+      commonLocations: ['Port Harcourt', 'Lagos HQ'],
+      departments: ['Operations Division', 'Fabrication', 'Field Execution', 'Maintenance'],
+      keyResponsibilities: ['Lead operations strategy', 'Own delivery performance', 'Drive governance and risk controls'],
+    },
+    {
+      id: 'jt-002',
+      code: 'JT-002',
+      title: 'General Manager, Fabrication',
+      family: 'Management',
+      level: 'Senior',
+      gradeCode: 'G02',
+      gradeName: 'General Management',
+      reportingLevel: 'Division',
+      benchmarkSalaryUsd: 142000,
+      employeeCount: 1,
+      openPositions: 0,
+      departmentCount: 3,
+      locationCount: 1,
+      successionCoveragePct: 71,
+      attritionRiskPct: 7,
+      internalMobilityPct: 14,
+      healthStatus: 'Healthy',
+      standardizationStatus: 'Standard',
+      benchmarkPosition: 'General Manager / Head of Function',
+      jobPurpose: 'Leads fabrication planning, yard operations, and production quality across the fabrication footprint.',
+      commonLocations: ['Warri Yard'],
+      departments: ['Fabrication', 'Quality Assurance', 'Project Controls'],
+      keyResponsibilities: ['Manage yard operations', 'Control fabrication budget', 'Coordinate delivery milestones'],
+    },
+    {
+      id: 'jt-003',
+      code: 'JT-003',
+      title: 'Head, Human Capital',
+      family: 'Management',
+      level: 'Senior',
+      gradeCode: 'G02',
+      gradeName: 'General Management',
+      reportingLevel: 'Enterprise',
+      benchmarkSalaryUsd: 136000,
+      employeeCount: 1,
+      openPositions: 1,
+      departmentCount: 2,
+      locationCount: 2,
+      successionCoveragePct: 68,
+      attritionRiskPct: 8,
+      internalMobilityPct: 18,
+      healthStatus: 'Needs Attention',
+      standardizationStatus: 'Standard',
+      benchmarkPosition: 'General Manager / Head of Function',
+      jobPurpose: 'Owns workforce planning, talent governance, employee relations, and HR service delivery across the enterprise.',
+      commonLocations: ['Lagos HQ', 'Port Harcourt'],
+      departments: ['Human Capital', 'Corporate Services'],
+      keyResponsibilities: ['Lead HR strategy', 'Control people policies', 'Drive talent and succession planning'],
+    },
+    {
+      id: 'jt-004',
+      code: 'JT-004',
+      title: 'Lead Project Engineer',
+      family: 'Management',
+      level: 'Senior',
+      gradeCode: 'G03',
+      gradeName: 'Functional Leadership',
+      reportingLevel: 'Department',
+      benchmarkSalaryUsd: 94500,
+      employeeCount: 6,
+      openPositions: 2,
+      departmentCount: 2,
+      locationCount: 3,
+      successionCoveragePct: 66,
+      attritionRiskPct: 11,
+      internalMobilityPct: 20,
+      healthStatus: 'Needs Attention',
+      standardizationStatus: 'Standard',
+      benchmarkPosition: 'Manager / Lead Specialist',
+      jobPurpose: 'Directs engineering workpacks, technical assurance, and multi-discipline project execution for major jobs.',
+      commonLocations: ['Lagos HQ', 'Bonny Island', 'Port Harcourt'],
+      departments: ['Projects', 'Project Controls'],
+      keyResponsibilities: ['Lead engineering scope', 'Coordinate discipline leads', 'Assure schedule and quality alignment'],
+    },
+    {
+      id: 'jt-005',
+      code: 'JT-005',
+      title: 'Manager, Planning',
+      family: 'Management',
+      level: 'Senior',
+      gradeCode: 'G03',
+      gradeName: 'Functional Leadership',
+      reportingLevel: 'Department',
+      benchmarkSalaryUsd: 90200,
+      employeeCount: 3,
+      openPositions: 1,
+      departmentCount: 2,
+      locationCount: 2,
+      successionCoveragePct: 64,
+      attritionRiskPct: 10,
+      internalMobilityPct: 19,
+      healthStatus: 'Needs Attention',
+      standardizationStatus: 'Variant',
+      benchmarkPosition: 'Manager / Lead Specialist',
+      jobPurpose: 'Owns integrated planning, progress measurement, schedule recovery, and planning governance across projects.',
+      commonLocations: ['Lagos HQ', 'Port Harcourt'],
+      departments: ['Project Controls', 'Projects'],
+      keyResponsibilities: ['Control project schedules', 'Run performance reporting', 'Manage recovery planning'],
+    },
+    {
+      id: 'jt-006',
+      code: 'JT-006',
+      title: 'Project Engineer',
+      family: 'Professional',
+      level: 'Mid',
+      gradeCode: 'G04',
+      gradeName: 'Professional Core',
+      reportingLevel: 'Department',
+      benchmarkSalaryUsd: 48800,
+      employeeCount: 38,
+      openPositions: 4,
+      departmentCount: 3,
+      locationCount: 4,
+      successionCoveragePct: 73,
+      attritionRiskPct: 10,
+      internalMobilityPct: 28,
+      healthStatus: 'Healthy',
+      standardizationStatus: 'Standard',
+      benchmarkPosition: 'Engineer / Analyst / Officer',
+      jobPurpose: 'Delivers assigned engineering packages, technical coordination, and field support across active projects.',
+      commonLocations: ['Lagos HQ', 'Port Harcourt', 'Warri Yard', 'Bonny Island'],
+      departments: ['Projects', 'Civil Engineering', 'Mechanical Engineering'],
+      keyResponsibilities: ['Prepare technical deliverables', 'Support site execution', 'Coordinate with planners and QA'],
+    },
+    {
+      id: 'jt-007',
+      code: 'JT-007',
+      title: 'HR Analyst',
+      family: 'Professional',
+      level: 'Mid',
+      gradeCode: 'G04',
+      gradeName: 'Professional Core',
+      reportingLevel: 'Department',
+      benchmarkSalaryUsd: 45200,
+      employeeCount: 9,
+      openPositions: 1,
+      departmentCount: 1,
+      locationCount: 2,
+      successionCoveragePct: 75,
+      attritionRiskPct: 8,
+      internalMobilityPct: 24,
+      healthStatus: 'Healthy',
+      standardizationStatus: 'Standard',
+      benchmarkPosition: 'Engineer / Analyst / Officer',
+      jobPurpose: 'Supports people analytics, org reporting, workforce planning, and employee lifecycle data quality.',
+      commonLocations: ['Lagos HQ', 'Port Harcourt'],
+      departments: ['Human Capital'],
+      keyResponsibilities: ['Produce workforce analytics', 'Maintain HR data quality', 'Support talent reporting'],
+    },
+    {
+      id: 'jt-008',
+      code: 'JT-008',
+      title: 'Cost Controller',
+      family: 'Professional',
+      level: 'Mid',
+      gradeCode: 'G04',
+      gradeName: 'Professional Core',
+      reportingLevel: 'Department',
+      benchmarkSalaryUsd: 47600,
+      employeeCount: 11,
+      openPositions: 1,
+      departmentCount: 2,
+      locationCount: 2,
+      successionCoveragePct: 72,
+      attritionRiskPct: 9,
+      internalMobilityPct: 25,
+      healthStatus: 'Healthy',
+      standardizationStatus: 'Standard',
+      benchmarkPosition: 'Engineer / Analyst / Officer',
+      jobPurpose: 'Tracks project cost performance, commitments, forecasts, and cost-control governance.',
+      commonLocations: ['Lagos HQ', 'Port Harcourt'],
+      departments: ['Finance', 'Project Controls'],
+      keyResponsibilities: ['Monitor cost variance', 'Prepare forecasts', 'Support earned value reporting'],
+    },
+    {
+      id: 'jt-009',
+      code: 'JT-009',
+      title: 'Site Supervisor',
+      family: 'Technical',
+      level: 'Mid',
+      gradeCode: 'G05',
+      gradeName: 'Technical Specialists',
+      reportingLevel: 'Team',
+      benchmarkSalaryUsd: 37200,
+      employeeCount: 27,
+      openPositions: 5,
+      departmentCount: 4,
+      locationCount: 3,
+      successionCoveragePct: 61,
+      attritionRiskPct: 14,
+      internalMobilityPct: 17,
+      healthStatus: 'Critical',
+      standardizationStatus: 'Needs Review',
+      benchmarkPosition: 'Supervisor / Specialist Technician',
+      jobPurpose: 'Supervises site crews, workfronts, safety compliance, and daily execution quality in the field.',
+      commonLocations: ['Bonny Island', 'Port Harcourt', 'Warri Yard'],
+      departments: ['Field Execution', 'Maintenance', 'HSE', 'Projects'],
+      keyResponsibilities: ['Supervise crews', 'Enforce safety controls', 'Track workfront productivity'],
+    },
+    {
+      id: 'jt-010',
+      code: 'JT-010',
+      title: 'Instrument Specialist',
+      family: 'Technical',
+      level: 'Mid',
+      gradeCode: 'G05',
+      gradeName: 'Technical Specialists',
+      reportingLevel: 'Team',
+      benchmarkSalaryUsd: 38400,
+      employeeCount: 19,
+      openPositions: 4,
+      departmentCount: 2,
+      locationCount: 3,
+      successionCoveragePct: 62,
+      attritionRiskPct: 13,
+      internalMobilityPct: 18,
+      healthStatus: 'Needs Attention',
+      standardizationStatus: 'Standard',
+      benchmarkPosition: 'Supervisor / Specialist Technician',
+      jobPurpose: 'Maintains instrumentation integrity, commissioning readiness, and troubleshooting for operating assets and projects.',
+      commonLocations: ['Port Harcourt', 'Bonny Island', 'Warri Yard'],
+      departments: ['Electrical & Instrumentation', 'Maintenance'],
+      keyResponsibilities: ['Maintain instrument systems', 'Support commissioning', 'Troubleshoot field issues'],
+    },
+    {
+      id: 'jt-011',
+      code: 'JT-011',
+      title: 'Project Coordinator',
+      family: 'Operations Support',
+      level: 'Entry',
+      gradeCode: 'G06',
+      gradeName: 'Operations Support',
+      reportingLevel: 'Department',
+      benchmarkSalaryUsd: 19100,
+      employeeCount: 34,
+      openPositions: 3,
+      departmentCount: 3,
+      locationCount: 4,
+      successionCoveragePct: 72,
+      attritionRiskPct: 9,
+      internalMobilityPct: 26,
+      healthStatus: 'Healthy',
+      standardizationStatus: 'Variant',
+      benchmarkPosition: 'Coordinator / Assistant / Technician',
+      jobPurpose: 'Coordinates administrative, scheduling, logistics, and reporting tasks that support project execution teams.',
+      commonLocations: ['Lagos HQ', 'Port Harcourt', 'Warri Yard', 'Bonny Island'],
+      departments: ['Projects', 'Project Controls', 'Operations'],
+      keyResponsibilities: ['Coordinate execution support', 'Manage reporting packs', 'Track action closures'],
+    },
+    {
+      id: 'jt-012',
+      code: 'JT-012',
+      title: 'Administrative Officer',
+      family: 'Operations Support',
+      level: 'Entry',
+      gradeCode: 'G06',
+      gradeName: 'Operations Support',
+      reportingLevel: 'Department',
+      benchmarkSalaryUsd: 17600,
+      employeeCount: 25,
+      openPositions: 2,
+      departmentCount: 4,
+      locationCount: 3,
+      successionCoveragePct: 74,
+      attritionRiskPct: 8,
+      internalMobilityPct: 23,
+      healthStatus: 'Healthy',
+      standardizationStatus: 'Standard',
+      benchmarkPosition: 'Coordinator / Assistant / Technician',
+      jobPurpose: 'Supports records, office administration, workflow coordination, and service operations across functions.',
+      commonLocations: ['Lagos HQ', 'Port Harcourt', 'Warri Yard'],
+      departments: ['Human Capital', 'Finance', 'Procurement', 'Legal & Compliance'],
+      keyResponsibilities: ['Support office workflows', 'Maintain records', 'Coordinate routine administration'],
+    },
+  ];
+
+  const totalEmployees = titles.reduce((sum, title) => sum + title.employeeCount, 0);
+  const totalOpenPositions = titles.reduce((sum, title) => sum + title.openPositions, 0);
+  const avgSuccessionCoverage = Math.round((titles.reduce((sum, title) => sum + title.successionCoveragePct, 0) / titles.length) * 10) / 10;
+  const avgAttritionRisk = Math.round((titles.reduce((sum, title) => sum + title.attritionRiskPct, 0) / titles.length) * 10) / 10;
+  const avgMobility = Math.round((titles.reduce((sum, title) => sum + title.internalMobilityPct, 0) / titles.length) * 10) / 10;
+
+  const mostPressuredTitle = [...titles].sort((a, b) => b.attritionRiskPct - a.attritionRiskPct)[0];
+  const highestHiringTitle = [...titles].sort((a, b) => b.openPositions - a.openPositions)[0];
+  const reviewTitle = [...titles].filter((title) => title.standardizationStatus === 'Needs Review').sort((a, b) => b.employeeCount - a.employeeCount)[0];
+
+  const insights: StructureInsight[] = [
+    {
+      id: 'job-title-ins-1',
+      severity: mostPressuredTitle && mostPressuredTitle.attritionRiskPct >= 14 ? 'high' : 'medium',
+      title: `${mostPressuredTitle?.title || 'A title'} has the highest attrition pressure`,
+      recommendation: 'Review role design, reward alignment, and workload distribution for this title family.',
+    },
+    {
+      id: 'job-title-ins-2',
+      severity: highestHiringTitle && highestHiringTitle.openPositions >= 4 ? 'medium' : 'low',
+      title: `${highestHiringTitle?.title || 'A title'} carries the largest hiring demand`,
+      recommendation: 'Prioritize talent pipeline planning and clarify standardized requirements for repeated openings.',
+    },
+    {
+      id: 'job-title-ins-3',
+      severity: reviewTitle ? 'high' : 'low',
+      title: `${reviewTitle?.title || 'No title'} needs architecture review`,
+      recommendation: 'Consolidate naming variants, clarify grade mapping, and align reporting scope with the target job architecture.',
+    },
+  ];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    permissions: {
+      canEdit: true,
+      canExport: true,
+      canViewCosts: true,
+    },
+    summary: {
+      totalTitles: titles.length,
+      totalEmployees,
+      totalOpenPositions,
+      avgSuccessionCoverage,
+      avgAttritionRisk,
+      avgInternalMobility: avgMobility,
+      titlesNeedingReview: titles.filter((title) => title.standardizationStatus === 'Needs Review').length,
+      titleVariants: titles.filter((title) => title.standardizationStatus === 'Variant').length,
+    },
+    filterOptions: {
+      families: Array.from(new Set(titles.map((title) => title.family))),
+      levels: Array.from(new Set(titles.map((title) => title.level))),
+      grades: Array.from(new Set(titles.map((title) => title.gradeCode))).sort((a, b) => a.localeCompare(b)),
+      reportingLevels: Array.from(new Set(titles.map((title) => title.reportingLevel))),
+      standardizationStatuses: ['Standard', 'Variant', 'Needs Review'] as Array<'Standard' | 'Variant' | 'Needs Review'>,
+      healthStatuses: ['Healthy', 'Needs Attention', 'Critical'] as HealthStatus[],
+    },
+    titles,
+    insights,
+  };
+};
+
+export const getReportingHierarchyData = () => {
+  const hierarchy: ReportingHierarchyRecord[] = [
+    {
+      id: 'rh-001',
+      employeeId: 'DLE-EMP-90001',
+      employeeName: 'Group Managing Director',
+      jobTitle: 'Group Managing Director',
+      department: 'Executive Office',
+      businessUnit: 'Corporate',
+      location: 'Lagos HQ',
+      layer: 'Executive',
+      managerId: null,
+      managerName: null,
+      managerTitle: null,
+      directReports: 3,
+      indirectReports: 18,
+      totalReports: 21,
+      spanOfControl: 8,
+      successionCoveragePct: 82,
+      attritionRiskPct: 5,
+      openCriticalRoles: 1,
+      approvalCoveragePct: 100,
+      healthStatus: 'Healthy',
+      actingCoverage: 'Covered',
+      escalationPath: ['Board of Directors'],
+      primaryTeams: ['Operations Division', 'Projects Division', 'Corporate Services Division'],
+      responsibilityScope: 'Enterprise leadership, strategy execution, governance, and final escalation authority.',
+    },
+    {
+      id: 'rh-002',
+      employeeId: 'DLE-EMP-90002',
+      employeeName: 'Executive Director, Operations',
+      jobTitle: 'Executive Director, Operations',
+      department: 'Operations Division',
+      businessUnit: 'Operations',
+      location: 'Port Harcourt',
+      layer: 'Division',
+      managerId: 'rh-001',
+      managerName: 'Group Managing Director',
+      managerTitle: 'Group Managing Director',
+      directReports: 3,
+      indirectReports: 9,
+      totalReports: 12,
+      spanOfControl: 6,
+      successionCoveragePct: 79,
+      attritionRiskPct: 9,
+      openCriticalRoles: 2,
+      approvalCoveragePct: 94,
+      healthStatus: 'Healthy',
+      actingCoverage: 'Covered',
+      escalationPath: ['Group Managing Director', 'Board of Directors'],
+      primaryTeams: ['Fabrication', 'Field Execution', 'Maintenance'],
+      responsibilityScope: 'Owns operations delivery, regional yard execution, maintenance, and field-service performance.',
+    },
+    {
+      id: 'rh-003',
+      employeeId: 'DLE-EMP-90003',
+      employeeName: 'Executive Director, Projects',
+      jobTitle: 'Executive Director, Projects',
+      department: 'Projects Division',
+      businessUnit: 'Projects',
+      location: 'Lagos HQ',
+      layer: 'Division',
+      managerId: 'rh-001',
+      managerName: 'Group Managing Director',
+      managerTitle: 'Group Managing Director',
+      directReports: 3,
+      indirectReports: 10,
+      totalReports: 13,
+      spanOfControl: 7,
+      successionCoveragePct: 74,
+      attritionRiskPct: 11,
+      openCriticalRoles: 3,
+      approvalCoveragePct: 91,
+      healthStatus: 'Needs Attention',
+      actingCoverage: 'At Risk',
+      escalationPath: ['Group Managing Director', 'Board of Directors'],
+      primaryTeams: ['Engineering', 'Project Controls', 'Site Delivery'],
+      responsibilityScope: 'Leads project execution governance, engineering coordination, controls, and site-delivery assurance.',
+    },
+    {
+      id: 'rh-004',
+      employeeId: 'DLE-EMP-90004',
+      employeeName: 'Executive Director, Corporate Services',
+      jobTitle: 'Executive Director, Corporate Services',
+      department: 'Corporate Services Division',
+      businessUnit: 'Corporate Services',
+      location: 'Lagos HQ',
+      layer: 'Division',
+      managerId: 'rh-001',
+      managerName: 'Group Managing Director',
+      managerTitle: 'Group Managing Director',
+      directReports: 3,
+      indirectReports: 7,
+      totalReports: 10,
+      spanOfControl: 5,
+      successionCoveragePct: 81,
+      attritionRiskPct: 7,
+      openCriticalRoles: 1,
+      approvalCoveragePct: 96,
+      healthStatus: 'Healthy',
+      actingCoverage: 'Covered',
+      escalationPath: ['Group Managing Director', 'Board of Directors'],
+      primaryTeams: ['Human Capital', 'Finance', 'Procurement'],
+      responsibilityScope: 'Leads people, finance, procurement, and corporate governance shared services.',
+    },
+    {
+      id: 'rh-005',
+      employeeId: 'DLE-EMP-90005',
+      employeeName: 'General Manager, Fabrication',
+      jobTitle: 'General Manager, Fabrication',
+      department: 'Fabrication',
+      businessUnit: 'Operations',
+      location: 'Warri Yard',
+      layer: 'Department',
+      managerId: 'rh-002',
+      managerName: 'Executive Director, Operations',
+      managerTitle: 'Executive Director, Operations',
+      directReports: 2,
+      indirectReports: 4,
+      totalReports: 6,
+      spanOfControl: 7,
+      successionCoveragePct: 71,
+      attritionRiskPct: 8,
+      openCriticalRoles: 1,
+      approvalCoveragePct: 92,
+      healthStatus: 'Healthy',
+      actingCoverage: 'Covered',
+      escalationPath: ['Executive Director, Operations', 'Group Managing Director', 'Board of Directors'],
+      primaryTeams: ['Fabrication Planning', 'Structural Fabrication'],
+      responsibilityScope: 'Runs fabrication output, yard planning, production quality, and execution readiness.',
+    },
+    {
+      id: 'rh-006',
+      employeeId: 'DLE-EMP-90006',
+      employeeName: 'General Manager, Field Execution',
+      jobTitle: 'General Manager, Field Execution',
+      department: 'Field Execution',
+      businessUnit: 'Operations',
+      location: 'Bonny Island',
+      layer: 'Department',
+      managerId: 'rh-002',
+      managerName: 'Executive Director, Operations',
+      managerTitle: 'Executive Director, Operations',
+      directReports: 2,
+      indirectReports: 5,
+      totalReports: 7,
+      spanOfControl: 8,
+      successionCoveragePct: 65,
+      attritionRiskPct: 13,
+      openCriticalRoles: 2,
+      approvalCoveragePct: 88,
+      healthStatus: 'Needs Attention',
+      actingCoverage: 'At Risk',
+      escalationPath: ['Executive Director, Operations', 'Group Managing Director', 'Board of Directors'],
+      primaryTeams: ['Site Supervision', 'Execution Support'],
+      responsibilityScope: 'Owns field deployment, supervisor coverage, workfront controls, and safe site execution.',
+    },
+    {
+      id: 'rh-007',
+      employeeId: 'DLE-EMP-90007',
+      employeeName: 'Head, Maintenance',
+      jobTitle: 'Head, Maintenance',
+      department: 'Maintenance',
+      businessUnit: 'Operations',
+      location: 'Port Harcourt',
+      layer: 'Department',
+      managerId: 'rh-002',
+      managerName: 'Executive Director, Operations',
+      managerTitle: 'Executive Director, Operations',
+      directReports: 2,
+      indirectReports: 3,
+      totalReports: 5,
+      spanOfControl: 6,
+      successionCoveragePct: 73,
+      attritionRiskPct: 9,
+      openCriticalRoles: 1,
+      approvalCoveragePct: 90,
+      healthStatus: 'Healthy',
+      actingCoverage: 'Covered',
+      escalationPath: ['Executive Director, Operations', 'Group Managing Director', 'Board of Directors'],
+      primaryTeams: ['Mechanical Maintenance', 'E&I Maintenance'],
+      responsibilityScope: 'Leads maintenance reliability, shutdown readiness, and technical service continuity.',
+    },
+    {
+      id: 'rh-008',
+      employeeId: 'DLE-EMP-90008',
+      employeeName: 'Head, Engineering',
+      jobTitle: 'Head, Engineering',
+      department: 'Engineering',
+      businessUnit: 'Projects',
+      location: 'Lagos HQ',
+      layer: 'Department',
+      managerId: 'rh-003',
+      managerName: 'Executive Director, Projects',
+      managerTitle: 'Executive Director, Projects',
+      directReports: 2,
+      indirectReports: 4,
+      totalReports: 6,
+      spanOfControl: 7,
+      successionCoveragePct: 69,
+      attritionRiskPct: 10,
+      openCriticalRoles: 2,
+      approvalCoveragePct: 89,
+      healthStatus: 'Needs Attention',
+      actingCoverage: 'At Risk',
+      escalationPath: ['Executive Director, Projects', 'Group Managing Director', 'Board of Directors'],
+      primaryTeams: ['Civil Engineering', 'Mechanical Engineering'],
+      responsibilityScope: 'Owns engineering discipline delivery, assurance, and technical integration across projects.',
+    },
+    {
+      id: 'rh-009',
+      employeeId: 'DLE-EMP-90009',
+      employeeName: 'Manager, Project Controls',
+      jobTitle: 'Manager, Project Controls',
+      department: 'Project Controls',
+      businessUnit: 'Projects',
+      location: 'Lagos HQ',
+      layer: 'Department',
+      managerId: 'rh-003',
+      managerName: 'Executive Director, Projects',
+      managerTitle: 'Executive Director, Projects',
+      directReports: 2,
+      indirectReports: 3,
+      totalReports: 5,
+      spanOfControl: 6,
+      successionCoveragePct: 67,
+      attritionRiskPct: 12,
+      openCriticalRoles: 2,
+      approvalCoveragePct: 86,
+      healthStatus: 'Needs Attention',
+      actingCoverage: 'Unassigned',
+      escalationPath: ['Executive Director, Projects', 'Group Managing Director', 'Board of Directors'],
+      primaryTeams: ['Planning', 'Cost Control'],
+      responsibilityScope: 'Owns planning, cost control, performance reporting, and schedule governance.',
+    },
+    {
+      id: 'rh-010',
+      employeeId: 'DLE-EMP-90010',
+      employeeName: 'Site Delivery Manager',
+      jobTitle: 'Site Delivery Manager',
+      department: 'Site Delivery',
+      businessUnit: 'Projects',
+      location: 'Bonny Island',
+      layer: 'Department',
+      managerId: 'rh-003',
+      managerName: 'Executive Director, Projects',
+      managerTitle: 'Executive Director, Projects',
+      directReports: 2,
+      indirectReports: 3,
+      totalReports: 5,
+      spanOfControl: 8,
+      successionCoveragePct: 63,
+      attritionRiskPct: 14,
+      openCriticalRoles: 3,
+      approvalCoveragePct: 84,
+      healthStatus: 'Critical',
+      actingCoverage: 'At Risk',
+      escalationPath: ['Executive Director, Projects', 'Group Managing Director', 'Board of Directors'],
+      primaryTeams: ['Site Coordination', 'Commissioning Support'],
+      responsibilityScope: 'Leads site delivery execution, contractor control, and handover readiness.',
+    },
+    {
+      id: 'rh-011',
+      employeeId: 'DLE-EMP-90011',
+      employeeName: 'Head, Human Capital',
+      jobTitle: 'Head, Human Capital',
+      department: 'Human Capital',
+      businessUnit: 'Corporate Services',
+      location: 'Lagos HQ',
+      layer: 'Department',
+      managerId: 'rh-004',
+      managerName: 'Executive Director, Corporate Services',
+      managerTitle: 'Executive Director, Corporate Services',
+      directReports: 2,
+      indirectReports: 3,
+      totalReports: 5,
+      spanOfControl: 5,
+      successionCoveragePct: 72,
+      attritionRiskPct: 8,
+      openCriticalRoles: 1,
+      approvalCoveragePct: 95,
+      healthStatus: 'Healthy',
+      actingCoverage: 'Covered',
+      escalationPath: ['Executive Director, Corporate Services', 'Group Managing Director', 'Board of Directors'],
+      primaryTeams: ['HR Operations', 'People Analytics'],
+      responsibilityScope: 'Owns workforce planning, HR operations, talent governance, and employee-relations escalation.',
+    },
+    {
+      id: 'rh-012',
+      employeeId: 'DLE-EMP-90012',
+      employeeName: 'Head, Finance',
+      jobTitle: 'Head, Finance',
+      department: 'Finance',
+      businessUnit: 'Corporate Services',
+      location: 'Lagos HQ',
+      layer: 'Department',
+      managerId: 'rh-004',
+      managerName: 'Executive Director, Corporate Services',
+      managerTitle: 'Executive Director, Corporate Services',
+      directReports: 2,
+      indirectReports: 3,
+      totalReports: 5,
+      spanOfControl: 5,
+      successionCoveragePct: 77,
+      attritionRiskPct: 7,
+      openCriticalRoles: 1,
+      approvalCoveragePct: 97,
+      healthStatus: 'Healthy',
+      actingCoverage: 'Covered',
+      escalationPath: ['Executive Director, Corporate Services', 'Group Managing Director', 'Board of Directors'],
+      primaryTeams: ['Financial Control', 'Treasury'],
+      responsibilityScope: 'Owns financial governance, reporting control, treasury, and budget assurance.',
+    },
+  ];
+
+  const totalEmployees = hierarchy.reduce((sum, row) => sum + row.totalReports + 1, 0);
+  const totalOpenCriticalRoles = hierarchy.reduce((sum, row) => sum + row.openCriticalRoles, 0);
+  const avgSuccessionCoverage = Math.round((hierarchy.reduce((sum, row) => sum + row.successionCoveragePct, 0) / hierarchy.length) * 10) / 10;
+  const avgSpanOfControl = Math.round((hierarchy.reduce((sum, row) => sum + row.spanOfControl, 0) / hierarchy.length) * 10) / 10;
+
+  const highestSpan = [...hierarchy].sort((a, b) => b.spanOfControl - a.spanOfControl)[0];
+  const weakestCoverage = [...hierarchy].sort((a, b) => a.successionCoveragePct - b.successionCoveragePct)[0];
+  const unassignedCoverage = hierarchy.filter((row) => row.actingCoverage === 'Unassigned');
+
+  const insights: StructureInsight[] = [
+    {
+      id: 'rep-hier-ins-1',
+      severity: highestSpan && highestSpan.spanOfControl >= 8 ? 'high' : 'medium',
+      title: `${highestSpan?.employeeName || 'A manager'} is carrying the widest span of control`,
+      recommendation: 'Review layer design, team supervisor coverage, and escalation load for this reporting line.',
+    },
+    {
+      id: 'rep-hier-ins-2',
+      severity: weakestCoverage && weakestCoverage.successionCoveragePct <= 65 ? 'high' : 'medium',
+      title: `${weakestCoverage?.employeeName || 'A manager'} has the weakest succession coverage`,
+      recommendation: 'Strengthen bench depth, interim coverage, and successor readiness for this leadership role.',
+    },
+    {
+      id: 'rep-hier-ins-3',
+      severity: unassignedCoverage.length ? 'high' : 'low',
+      title: `${unassignedCoverage.length} reporting lane${unassignedCoverage.length === 1 ? '' : 's'} lack acting coverage`,
+      recommendation: 'Assign fallback approvers and acting leads to reduce approval or escalation disruption.',
+    },
+  ];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    permissions: {
+      canEdit: true,
+      canExport: true,
+      canViewCosts: true,
+    },
+    summary: {
+      totalManagers: hierarchy.length,
+      totalEmployees,
+      totalOpenCriticalRoles,
+      avgSuccessionCoverage,
+      avgSpanOfControl,
+      executiveLayers: hierarchy.filter((row) => row.layer === 'Executive').length,
+      rolesAtRisk: hierarchy.filter((row) => row.healthStatus !== 'Healthy').length,
+      uncoveredActingRoles: unassignedCoverage.length,
+    },
+    filterOptions: {
+      layers: ['Executive', 'Division', 'Department', 'Team'] as Array<'Executive' | 'Division' | 'Department' | 'Team'>,
+      businessUnits: Array.from(new Set(hierarchy.map((row) => row.businessUnit))).sort((a, b) => a.localeCompare(b)),
+      locations: Array.from(new Set(hierarchy.map((row) => row.location))).sort((a, b) => a.localeCompare(b)),
+      actingCoverage: ['Covered', 'At Risk', 'Unassigned'] as Array<'Covered' | 'At Risk' | 'Unassigned'>,
+      healthStatuses: ['Healthy', 'Needs Attention', 'Critical'] as HealthStatus[],
+    },
+    hierarchy,
+    insights,
+  };
+};
+
+export const getPositionsData = () => {
+  const positions: PositionRecord[] = [
+    {
+      id: 'pos-001',
+      code: 'POS-OPS-001',
+      title: 'Executive Director, Operations',
+      department: 'Operations Division',
+      businessUnit: 'Operations',
+      location: 'Port Harcourt',
+      gradeCode: 'G01',
+      family: 'Executive',
+      level: 'Strategic',
+      reportingTo: 'Group Managing Director',
+      positionType: 'Permanent',
+      positionStatus: 'Filled',
+      incumbentName: 'Executive Director, Operations',
+      incumbentEmployeeId: 'DLE-EMP-90002',
+      benchmarkSalaryUsd: 248000,
+      fte: 1,
+      criticality: 'Critical',
+      successionCoveragePct: 79,
+      attritionRiskPct: 9,
+      approvalCoveragePct: 94,
+      healthStatus: 'Healthy',
+      replacementPriority: 'Planned',
+      standardPosition: true,
+      openDays: 0,
+      jobTitleCode: 'JT-001',
+      responsibilityScope: 'Owns operations strategy, field execution, and regional delivery performance.',
+      requiredCapabilities: ['Enterprise leadership', 'Operational governance', 'Regional execution control'],
+    },
+    {
+      id: 'pos-002',
+      code: 'POS-OPS-014',
+      title: 'General Manager, Fabrication',
+      department: 'Fabrication',
+      businessUnit: 'Operations',
+      location: 'Warri Yard',
+      gradeCode: 'G02',
+      family: 'Management',
+      level: 'Senior',
+      reportingTo: 'Executive Director, Operations',
+      positionType: 'Permanent',
+      positionStatus: 'Filled',
+      incumbentName: 'General Manager, Fabrication',
+      incumbentEmployeeId: 'DLE-EMP-90005',
+      benchmarkSalaryUsd: 142000,
+      fte: 1,
+      criticality: 'Critical',
+      successionCoveragePct: 71,
+      attritionRiskPct: 8,
+      approvalCoveragePct: 92,
+      healthStatus: 'Healthy',
+      replacementPriority: 'Planned',
+      standardPosition: true,
+      openDays: 0,
+      jobTitleCode: 'JT-002',
+      responsibilityScope: 'Leads fabrication planning, yard operations, and production execution.',
+      requiredCapabilities: ['Yard operations', 'Production control', 'Quality governance'],
+    },
+    {
+      id: 'pos-003',
+      code: 'POS-HR-001',
+      title: 'Head, Human Capital',
+      department: 'Human Capital',
+      businessUnit: 'Corporate Services',
+      location: 'Lagos HQ',
+      gradeCode: 'G02',
+      family: 'Management',
+      level: 'Senior',
+      reportingTo: 'Executive Director, Corporate Services',
+      positionType: 'Permanent',
+      positionStatus: 'Vacant',
+      incumbentName: null,
+      incumbentEmployeeId: null,
+      benchmarkSalaryUsd: 136000,
+      fte: 1,
+      criticality: 'Critical',
+      successionCoveragePct: 68,
+      attritionRiskPct: 8,
+      approvalCoveragePct: 95,
+      healthStatus: 'Needs Attention',
+      replacementPriority: 'Immediate',
+      standardPosition: true,
+      openDays: 41,
+      jobTitleCode: 'JT-003',
+      responsibilityScope: 'Owns workforce planning, HR operations, and enterprise people governance.',
+      requiredCapabilities: ['Talent strategy', 'Employee relations', 'HR governance'],
+    },
+    {
+      id: 'pos-004',
+      code: 'POS-PRJ-011',
+      title: 'Lead Project Engineer',
+      department: 'Projects',
+      businessUnit: 'Projects',
+      location: 'Lagos HQ',
+      gradeCode: 'G03',
+      family: 'Management',
+      level: 'Senior',
+      reportingTo: 'Executive Director, Projects',
+      positionType: 'Permanent',
+      positionStatus: 'Filled',
+      incumbentName: 'Lead Project Engineer',
+      incumbentEmployeeId: 'DLE-EMP-93104',
+      benchmarkSalaryUsd: 94500,
+      fte: 1,
+      criticality: 'Core',
+      successionCoveragePct: 66,
+      attritionRiskPct: 11,
+      approvalCoveragePct: 89,
+      healthStatus: 'Needs Attention',
+      replacementPriority: 'Planned',
+      standardPosition: true,
+      openDays: 0,
+      jobTitleCode: 'JT-004',
+      responsibilityScope: 'Leads engineering workpacks and technical coordination for priority projects.',
+      requiredCapabilities: ['Technical assurance', 'Multi-discipline coordination', 'Project delivery'],
+    },
+    {
+      id: 'pos-005',
+      code: 'POS-PC-007',
+      title: 'Manager, Planning',
+      department: 'Project Controls',
+      businessUnit: 'Projects',
+      location: 'Lagos HQ',
+      gradeCode: 'G03',
+      family: 'Management',
+      level: 'Senior',
+      reportingTo: 'Manager, Project Controls',
+      positionType: 'Permanent',
+      positionStatus: 'Under Review',
+      incumbentName: 'Manager, Planning',
+      incumbentEmployeeId: 'DLE-EMP-93105',
+      benchmarkSalaryUsd: 90200,
+      fte: 1,
+      criticality: 'Core',
+      successionCoveragePct: 64,
+      attritionRiskPct: 10,
+      approvalCoveragePct: 86,
+      healthStatus: 'Needs Attention',
+      replacementPriority: 'Monitor',
+      standardPosition: false,
+      openDays: 0,
+      jobTitleCode: 'JT-005',
+      responsibilityScope: 'Controls integrated planning, progress measurement, and schedule recovery.',
+      requiredCapabilities: ['Integrated planning', 'Performance reporting', 'Recovery management'],
+    },
+    {
+      id: 'pos-006',
+      code: 'POS-ENG-023',
+      title: 'Project Engineer',
+      department: 'Engineering',
+      businessUnit: 'Projects',
+      location: 'Bonny Island',
+      gradeCode: 'G04',
+      family: 'Professional',
+      level: 'Mid',
+      reportingTo: 'Head, Engineering',
+      positionType: 'Project',
+      positionStatus: 'Filled',
+      incumbentName: 'Project Engineer',
+      incumbentEmployeeId: 'DLE-EMP-94201',
+      benchmarkSalaryUsd: 48800,
+      fte: 1,
+      criticality: 'Core',
+      successionCoveragePct: 73,
+      attritionRiskPct: 10,
+      approvalCoveragePct: 90,
+      healthStatus: 'Healthy',
+      replacementPriority: 'Planned',
+      standardPosition: true,
+      openDays: 0,
+      jobTitleCode: 'JT-006',
+      responsibilityScope: 'Delivers engineering packages and field technical coordination on active sites.',
+      requiredCapabilities: ['Engineering execution', 'Site coordination', 'Technical documentation'],
+    },
+    {
+      id: 'pos-007',
+      code: 'POS-HR-018',
+      title: 'HR Analyst',
+      department: 'Human Capital',
+      businessUnit: 'Corporate Services',
+      location: 'Lagos HQ',
+      gradeCode: 'G04',
+      family: 'Professional',
+      level: 'Mid',
+      reportingTo: 'Head, Human Capital',
+      positionType: 'Permanent',
+      positionStatus: 'Filled',
+      incumbentName: 'HR Analyst',
+      incumbentEmployeeId: 'DLE-EMP-94211',
+      benchmarkSalaryUsd: 45200,
+      fte: 1,
+      criticality: 'Core',
+      successionCoveragePct: 75,
+      attritionRiskPct: 8,
+      approvalCoveragePct: 94,
+      healthStatus: 'Healthy',
+      replacementPriority: 'Monitor',
+      standardPosition: true,
+      openDays: 0,
+      jobTitleCode: 'JT-007',
+      responsibilityScope: 'Supports people analytics, workforce reporting, and HR data governance.',
+      requiredCapabilities: ['People analytics', 'Data quality control', 'Workforce reporting'],
+    },
+    {
+      id: 'pos-008',
+      code: 'POS-FIN-012',
+      title: 'Cost Controller',
+      department: 'Finance',
+      businessUnit: 'Corporate Services',
+      location: 'Port Harcourt',
+      gradeCode: 'G04',
+      family: 'Professional',
+      level: 'Mid',
+      reportingTo: 'Head, Finance',
+      positionType: 'Permanent',
+      positionStatus: 'Vacant',
+      incumbentName: null,
+      incumbentEmployeeId: null,
+      benchmarkSalaryUsd: 47600,
+      fte: 1,
+      criticality: 'Core',
+      successionCoveragePct: 72,
+      attritionRiskPct: 9,
+      approvalCoveragePct: 90,
+      healthStatus: 'Needs Attention',
+      replacementPriority: 'Immediate',
+      standardPosition: true,
+      openDays: 28,
+      jobTitleCode: 'JT-008',
+      responsibilityScope: 'Tracks cost performance, commitments, forecasts, and control reporting.',
+      requiredCapabilities: ['Cost control', 'Forecasting', 'Project financial reporting'],
+    },
+    {
+      id: 'pos-009',
+      code: 'POS-FLD-034',
+      title: 'Site Supervisor',
+      department: 'Field Execution',
+      businessUnit: 'Operations',
+      location: 'Bonny Island',
+      gradeCode: 'G05',
+      family: 'Technical',
+      level: 'Mid',
+      reportingTo: 'General Manager, Field Execution',
+      positionType: 'Project',
+      positionStatus: 'Vacant',
+      incumbentName: null,
+      incumbentEmployeeId: null,
+      benchmarkSalaryUsd: 37200,
+      fte: 1,
+      criticality: 'Critical',
+      successionCoveragePct: 61,
+      attritionRiskPct: 14,
+      approvalCoveragePct: 84,
+      healthStatus: 'Critical',
+      replacementPriority: 'Immediate',
+      standardPosition: false,
+      openDays: 54,
+      jobTitleCode: 'JT-009',
+      responsibilityScope: 'Supervises field crews, workfront progress, and site safety compliance.',
+      requiredCapabilities: ['Crew supervision', 'Field HSE control', 'Execution reporting'],
+    },
+    {
+      id: 'pos-010',
+      code: 'POS-EI-029',
+      title: 'Instrument Specialist',
+      department: 'Electrical & Instrumentation',
+      businessUnit: 'Operations',
+      location: 'Warri Yard',
+      gradeCode: 'G05',
+      family: 'Technical',
+      level: 'Mid',
+      reportingTo: 'Head, Maintenance',
+      positionType: 'Permanent',
+      positionStatus: 'Filled',
+      incumbentName: 'Instrument Specialist',
+      incumbentEmployeeId: 'DLE-EMP-95234',
+      benchmarkSalaryUsd: 38400,
+      fte: 1,
+      criticality: 'Core',
+      successionCoveragePct: 62,
+      attritionRiskPct: 13,
+      approvalCoveragePct: 88,
+      healthStatus: 'Needs Attention',
+      replacementPriority: 'Planned',
+      standardPosition: true,
+      openDays: 0,
+      jobTitleCode: 'JT-010',
+      responsibilityScope: 'Maintains instrumentation integrity, testing readiness, and site troubleshooting support.',
+      requiredCapabilities: ['Instrumentation maintenance', 'Commissioning support', 'Fault diagnosis'],
+    },
+    {
+      id: 'pos-011',
+      code: 'POS-PRJ-051',
+      title: 'Project Coordinator',
+      department: 'Projects',
+      businessUnit: 'Projects',
+      location: 'Port Harcourt',
+      gradeCode: 'G06',
+      family: 'Operations Support',
+      level: 'Entry',
+      reportingTo: 'Site Delivery Manager',
+      positionType: 'Project',
+      positionStatus: 'Filled',
+      incumbentName: 'Project Coordinator',
+      incumbentEmployeeId: 'DLE-EMP-96310',
+      benchmarkSalaryUsd: 19100,
+      fte: 1,
+      criticality: 'Support',
+      successionCoveragePct: 72,
+      attritionRiskPct: 9,
+      approvalCoveragePct: 89,
+      healthStatus: 'Healthy',
+      replacementPriority: 'Monitor',
+      standardPosition: false,
+      openDays: 0,
+      jobTitleCode: 'JT-011',
+      responsibilityScope: 'Coordinates reporting packs, logistics, and administrative support for execution teams.',
+      requiredCapabilities: ['Coordination', 'Reporting support', 'Project administration'],
+    },
+    {
+      id: 'pos-012',
+      code: 'POS-ADM-017',
+      title: 'Administrative Officer',
+      department: 'Procurement',
+      businessUnit: 'Corporate Services',
+      location: 'Lagos HQ',
+      gradeCode: 'G06',
+      family: 'Operations Support',
+      level: 'Entry',
+      reportingTo: 'Head, Finance',
+      positionType: 'Temporary',
+      positionStatus: 'Frozen',
+      incumbentName: null,
+      incumbentEmployeeId: null,
+      benchmarkSalaryUsd: 17600,
+      fte: 1,
+      criticality: 'Support',
+      successionCoveragePct: 74,
+      attritionRiskPct: 8,
+      approvalCoveragePct: 91,
+      healthStatus: 'Healthy',
+      replacementPriority: 'Monitor',
+      standardPosition: true,
+      openDays: 73,
+      jobTitleCode: 'JT-012',
+      responsibilityScope: 'Supports records, workflow coordination, and routine administration across support functions.',
+      requiredCapabilities: ['Records administration', 'Workflow support', 'Office coordination'],
+    },
+  ];
+
+  const totalIncumbents = positions.filter((position) => position.incumbentEmployeeId).length;
+  const totalVacant = positions.filter((position) => position.positionStatus === 'Vacant').length;
+  const avgSuccessionCoverage = Math.round((positions.reduce((sum, position) => sum + position.successionCoveragePct, 0) / positions.length) * 10) / 10;
+  const avgApprovalCoverage = Math.round((positions.reduce((sum, position) => sum + position.approvalCoveragePct, 0) / positions.length) * 10) / 10;
+
+  const longestOpenPosition = [...positions].sort((a, b) => b.openDays - a.openDays)[0];
+  const mostCriticalVacancy = [...positions].filter((position) => position.positionStatus === 'Vacant').sort((a, b) => b.openDays - a.openDays)[0];
+  const reviewVariant = [...positions].filter((position) => !position.standardPosition).sort((a, b) => b.attritionRiskPct - a.attritionRiskPct)[0];
+
+  const insights: StructureInsight[] = [
+    {
+      id: 'pos-ins-1',
+      severity: longestOpenPosition && longestOpenPosition.openDays >= 45 ? 'high' : 'medium',
+      title: `${longestOpenPosition?.title || 'A position'} has been open the longest`,
+      recommendation: 'Escalate recruitment or redesign the position if the role remains difficult to fill.',
+    },
+    {
+      id: 'pos-ins-2',
+      severity: mostCriticalVacancy && mostCriticalVacancy.criticality === 'Critical' ? 'high' : 'medium',
+      title: `${mostCriticalVacancy?.title || 'A role'} is the highest-priority vacancy`,
+      recommendation: 'Prioritize immediate replacement planning and assign interim coverage until the position is filled.',
+    },
+    {
+      id: 'pos-ins-3',
+      severity: reviewVariant ? 'medium' : 'low',
+      title: `${reviewVariant?.title || 'A position'} deviates from the standard architecture`,
+      recommendation: 'Review title, grade, and position design alignment to reduce structural drift.',
+    },
+  ];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    permissions: {
+      canEdit: true,
+      canExport: true,
+      canViewCosts: true,
+    },
+    summary: {
+      totalPositions: positions.length,
+      totalIncumbents,
+      totalVacant,
+      avgSuccessionCoverage,
+      avgApprovalCoverage,
+      criticalPositions: positions.filter((position) => position.criticality === 'Critical').length,
+      nonStandardPositions: positions.filter((position) => !position.standardPosition).length,
+    },
+    filterOptions: {
+      businessUnits: Array.from(new Set(positions.map((position) => position.businessUnit))).sort((a, b) => a.localeCompare(b)),
+      grades: Array.from(new Set(positions.map((position) => position.gradeCode))).sort((a, b) => a.localeCompare(b)),
+      positionTypes: ['Permanent', 'Contract', 'Project', 'Temporary'] as Array<'Permanent' | 'Contract' | 'Project' | 'Temporary'>,
+      positionStatuses: ['Filled', 'Vacant', 'Frozen', 'Under Review'] as Array<'Filled' | 'Vacant' | 'Frozen' | 'Under Review'>,
+      criticalities: ['Critical', 'Core', 'Support'] as Array<'Critical' | 'Core' | 'Support'>,
+      healthStatuses: ['Healthy', 'Needs Attention', 'Critical'] as HealthStatus[],
+    },
+    positions,
+    insights,
+  };
+};
+
+export const getOrganogramData = () => {
+  const nodes = buildEnhancedNodes(organizationNodes);
+  const nodeMap = buildNodeMap(organizationNodes);
+  const childrenByParent = buildChildrenMap(organizationNodes);
+  const enhancedMap = new Map(nodes.map((node) => [node.id, node]));
+
+  const getDepth = (node: OrgNode) => {
+    let depth = 0;
+    let current = node.parentId ? nodeMap.get(node.parentId) || null : null;
+    while (current) {
+      depth += 1;
+      current = current.parentId ? nodeMap.get(current.parentId) || null : null;
+    }
+    return depth;
+  };
+
+  const getParentChain = (parentId: string | null) => {
+    const chain: string[] = [];
+    let current = parentId ? nodeMap.get(parentId) || null : null;
+    while (current) {
+      chain.unshift(current.name);
+      current = current.parentId ? nodeMap.get(current.parentId) || null : null;
+    }
+    return chain;
+  };
+
+  const getDescendants = (id: string): EnhancedOrgNode[] => {
+    const children = childrenByParent[id] || [];
+    return children.flatMap((child) => {
+      const enhanced = enhancedMap.get(child.id);
+      return enhanced ? [enhanced, ...getDescendants(child.id)] : getDescendants(child.id);
+    });
+  };
+
+  const leaderTitleByKind: Record<NodeKind, string> = {
+    Company: 'Group Managing Director',
+    Division: 'Executive Director',
+    'Business Unit': 'General Manager',
+    Department: 'Head of Department',
+    Team: 'Team Lead',
+  };
+
+  const managerialScopeByKind: Record<NodeKind, OrganogramNodeRecord['managerialScope']> = {
+    Company: 'Enterprise',
+    Division: 'Strategic',
+    'Business Unit': 'Operational',
+    Department: 'Operational',
+    Team: 'Delivery',
+  };
+
+  const records: OrganogramNodeRecord[] = nodes.map((node) => {
+    const descendants = getDescendants(node.id);
+    const parent = node.parentId ? nodeMap.get(node.parentId) || null : null;
+
+    return {
+      ...node,
+      depth: getDepth(node),
+      parentName: parent?.name || null,
+      parentKind: parent?.kind || null,
+      parentChain: getParentChain(node.parentId),
+      branchHeadcount: node.headcount + descendants.reduce((sum, item) => sum + item.headcount, 0),
+      branchOpenRoles: node.openRoles + descendants.reduce((sum, item) => sum + item.openRoles, 0),
+      branchCriticalUnits: [node, ...descendants].filter((item) => item.healthStatus === 'Critical').length,
+      branchAttentionUnits: [node, ...descendants].filter((item) => item.healthStatus === 'Needs Attention').length,
+      directChildNames: (childrenByParent[node.id] || []).map((child) => child.name),
+      leaderTitle: leaderTitleByKind[node.kind],
+      managerialScope: managerialScopeByKind[node.kind],
+    };
+  });
+
+  const totalHeadcount = records.reduce((sum, node) => sum + node.headcount, 0);
+  const totalOpenRoles = records.reduce((sum, node) => sum + node.openRoles, 0);
+  const avgSpanOfControl = Math.round((records.reduce((sum, node) => sum + node.spanOfControl, 0) / records.length) * 10) / 10;
+  const maxDepth = Math.max(...records.map((node) => node.depth));
+  const branchRiskNodes = records.filter((node) => node.branchCriticalUnits > 0 || node.branchAttentionUnits >= 2);
+
+  const deepestNode = [...records].sort((a, b) => b.depth - a.depth)[0];
+  const widestBranch = [...records].sort((a, b) => b.branchHeadcount - a.branchHeadcount)[0];
+  const weakestBranch = [...records].sort((a, b) => a.successionCoveragePct - b.successionCoveragePct)[0];
+
+  const insights: StructureInsight[] = [
+    {
+      id: 'orggram-ins-1',
+      severity: deepestNode && deepestNode.depth >= 4 ? 'medium' : 'low',
+      title: `${deepestNode?.name || 'The hierarchy'} sits at the deepest reporting layer`,
+      recommendation: 'Review whether the deepest branch still supports clear escalation and manageable managerial span.',
+    },
+    {
+      id: 'orggram-ins-2',
+      severity: widestBranch && widestBranch.branchHeadcount >= 300 ? 'high' : 'medium',
+      title: `${widestBranch?.name || 'A branch'} carries the largest workforce footprint`,
+      recommendation: 'Use this branch as a focal point for org design governance, vacancy planning, and control capacity.',
+    },
+    {
+      id: 'orggram-ins-3',
+      severity: weakestBranch && weakestBranch.successionCoveragePct <= 70 ? 'high' : 'medium',
+      title: `${weakestBranch?.name || 'A branch'} has the weakest succession coverage in the chart`,
+      recommendation: 'Strengthen successor readiness and leadership continuity in this branch of the organogram.',
+    },
+  ];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    permissions: {
+      canEdit: true,
+      canExport: true,
+      canViewCosts: true,
+    },
+    summary: {
+      totalNodes: records.length,
+      totalHeadcount,
+      totalOpenRoles,
+      avgSpanOfControl,
+      maxDepth,
+      rootLeaders: records.filter((node) => node.depth <= 1).length,
+      branchesAtRisk: branchRiskNodes.length,
+    },
+    filterOptions: {
+      kinds: Array.from(new Set(records.map((node) => node.kind))),
+      locations: Array.from(new Set(records.map((node) => node.location))).sort((a, b) => a.localeCompare(b)),
+      depths: Array.from(new Set(records.map((node) => node.depth))).sort((a, b) => a - b),
+      healthStatuses: ['Healthy', 'Needs Attention', 'Critical'] as HealthStatus[],
+    },
+    nodes: records,
     insights,
   };
 };
