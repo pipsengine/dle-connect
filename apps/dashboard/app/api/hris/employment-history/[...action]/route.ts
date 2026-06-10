@@ -144,6 +144,21 @@ const listStore = (() => {
   return g.__dleHrisEmploymentHistory;
 })();
 
+const isSeededHistoryItem = (item: Partial<EmploymentHistoryItem> | any) =>
+  typeof item?.referenceNo === 'string' &&
+  /^HIST-10\d{4}$/.test(item.referenceNo) &&
+  typeof item?.reason === 'string' &&
+  item.reason.endsWith('recorded for compliance traceability.');
+
+const removeSeededHistoryData = () => {
+  for (const [id, item] of Array.from(historyStore.entries())) {
+    if (isSeededHistoryItem(item)) historyStore.delete(id);
+  }
+  for (const [id, item] of Array.from(listStore.entries())) {
+    if (isSeededHistoryItem(item)) listStore.delete(id);
+  }
+};
+
 const overridesStore = (() => {
   const g = globalThis as unknown as { __dleHrisEmployeeOverrides?: Map<string, any> };
   if (!g.__dleHrisEmployeeOverrides) g.__dleHrisEmployeeOverrides = new Map();
@@ -450,6 +465,8 @@ const toListItem = (evt: EmploymentHistoryItem) => {
 };
 
 const ensureSeedFromListStore = () => {
+  removeSeededHistoryData();
+  if (process.env.HRIS_ENABLE_DEMO_EMPLOYMENT_HISTORY !== 'true') return;
   if (historyStore.size > 0) return;
   for (const r of Array.from(listStore.values()).slice(0, 260)) {
     if (r && r.id && !historyStore.has(r.id)) {
@@ -493,6 +510,7 @@ const summary = (items: EmploymentHistoryItem[]) => {
 };
 
 const aiInsights = (items: EmploymentHistoryItem[], canSeePayrollSignals: boolean): AIInsight[] => {
+  if (items.length === 0) return [];
   const overdueConfirmations = items.filter((i) => i.eventType === 'Probation Change' && i.approvalStatus !== 'Approved').length;
   const transfersWithoutManager = items.filter((i) => i.eventType === 'Transfer' && (!i.newManager || i.newManager === '—')).length;
   const gradeChangesNoApproval = items.filter((i) => (i.eventType === 'Grade Change' || i.eventType === 'Promotion') && !i.approvalId && i.approvalStatus === 'Approved').length;
@@ -507,9 +525,12 @@ const aiInsights = (items: EmploymentHistoryItem[], canSeePayrollSignals: boolea
   ];
 
   if (canSeePayrollSignals) {
-    base.splice(4, 0, { id: 'ai-6', severity: 'high', confidence: 0.9, title: '2 exited employees still appear active in payroll', recommendation: 'Reconcile exit events with payroll linkage and lock payment processing.', actionLabel: 'Open exits', action: 'filter:exit-payroll' });
+    const exitedWithoutApproval = items.filter((i) => ['Resignation', 'Termination', 'Retirement', 'Exit Clearance'].includes(i.eventType) && i.approvalStatus !== 'Approved').length;
+    if (exitedWithoutApproval > 0) {
+      base.push({ id: 'ai-6', severity: 'high', confidence: 0.9, title: `${exitedWithoutApproval} exit events still need approval`, recommendation: 'Complete exit approvals before payroll closure or final settlement.', actionLabel: 'Open exits', action: 'filter:exit-payroll' });
+    }
   }
-  return base;
+  return base.filter((item) => !item.title.startsWith('0 ') && item.id !== 'ai-5');
 };
 
 const parseCsv = (v: string | null) => (v ? v.split(',').map((s) => s.trim()).filter(Boolean) : []);

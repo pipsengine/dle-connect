@@ -64,7 +64,7 @@ type EmployeeOverview = {
   leaveBalanceDays: number;
   attendanceScore: number;
   trainingCompliancePct: number;
-  performanceRating: 'A' | 'B' | 'C' | 'D' | '—';
+  performanceRating: 'A' | 'B' | 'C' | 'D' | '-';
   payrollStatus: 'Verified' | 'Pending Validation' | 'Masked';
   documentStatus: 'Compliant' | 'Missing' | 'Expiring';
   assetStatus: 'Assigned' | 'None';
@@ -219,7 +219,7 @@ type PayrollSummary = {
 };
 
 type PerformanceSummary = {
-  currentRating: 'A' | 'B' | 'C' | 'D' | '—';
+  currentRating: 'A' | 'B' | 'C' | 'D' | '-';
   lastReviewAt?: string | null;
   goals: { id: string; title: string; progressPct: number; status: 'On Track' | 'At Risk' | 'Completed' }[];
   managerFeedback?: string | null;
@@ -664,6 +664,140 @@ const auditEntry = (action: string, performedBy: string, extra?: Partial<AuditLo
 });
 
 const makeRecord = (employeeId: string): EmployeeRecord => {
+  const emptyOverview: EmployeeOverview = {
+    profileCompletionPct: 0,
+    leaveBalanceDays: 0,
+    attendanceScore: 0,
+    trainingCompliancePct: 0,
+    performanceRating: '-',
+    payrollStatus: 'Pending Validation',
+    documentStatus: 'Missing',
+    assetStatus: 'None',
+    currentLeaveStatus: 'None',
+    recentActivity: [],
+  };
+  const emptyProfile: EmployeeProfile = {
+    id: employeeId,
+    employeeId,
+    fullName: `Employee ${employeeId}`,
+    jobTitle: 'Not assigned',
+    department: 'Not assigned',
+    businessUnit: 'Not assigned',
+    location: 'Not assigned',
+    employmentStatus: 'Active',
+    employmentType: 'Not assigned',
+    reportingManager: 'Not assigned',
+    dateJoined: nowIso(),
+    yearsOfService: 0,
+    personalInfo: {
+      title: null,
+      firstName: null,
+      middleName: null,
+      lastName: null,
+      preferredName: null,
+      gender: null,
+      dateOfBirth: null,
+      maritalStatus: null,
+      nationality: null,
+      stateOfOrigin: null,
+      localGovernmentArea: null,
+      religion: null,
+      languagesSpoken: null,
+      personalEmail: null,
+      personalPhone: null,
+      residentialAddress: null,
+      permanentAddress: null,
+    },
+    employmentDetails: {
+      employeeId,
+      employmentType: null,
+      employmentStatus: 'Active',
+      dateJoined: null,
+      confirmationDate: null,
+      probationStartDate: null,
+      probationEndDate: null,
+      contractStartDate: null,
+      contractEndDate: null,
+      exitDate: null,
+      exitReason: null,
+      rehireEligibility: null,
+      workLocation: null,
+      workMode: null,
+      shiftPattern: null,
+      staffCategory: null,
+      employeeCategory: null,
+      unionStatus: null,
+    },
+    jobDetails: {
+      jobTitle: null,
+      designation: null,
+      jobGrade: null,
+      department: null,
+      division: null,
+      businessUnit: null,
+      costCenter: null,
+      projectSite: null,
+      reportingManager: null,
+      functionalManager: null,
+      departmentHead: null,
+      hrBusinessPartner: null,
+      roleProfile: null,
+      jobDescription: null,
+      keyResponsibilities: null,
+    },
+    contacts: {
+      officialEmail: null,
+      personalEmail: null,
+      officeExtension: null,
+      primaryPhone: null,
+      alternativePhone: null,
+      nearestBusStop: null,
+      city: null,
+      state: null,
+      country: null,
+      postalCode: null,
+    },
+  };
+
+  return {
+    profile: emptyProfile,
+    overview: emptyOverview,
+    emergencyContacts: [],
+    nextOfKin: [],
+    documents: [],
+    leaveSummary: { balances: {}, history: [] },
+    attendanceSummary: { score: 0, presentDays: 0, absentDays: 0, lateComing: 0, earlyDeparture: 0, overtimeHours: 0, biometricLogs: [] },
+    payrollSummary: {
+      payrollStatus: 'Pending Validation',
+      salaryGrade: 'Not assigned',
+      basicSalary: null,
+      allowances: null,
+      deductions: null,
+      bankName: null,
+      accountNumberMasked: null,
+      pensionProvider: null,
+      taxId: null,
+      payrollGroup: null,
+      lastPayrollProcessed: null,
+    },
+    performanceSummary: { currentRating: '-', lastReviewAt: null, goals: [], managerFeedback: null, aiSignals: [] },
+    training: [],
+    assets: [],
+    medicalHse: {
+      medicalFitnessStatus: null,
+      bloodGroup: null,
+      knownAllergies: null,
+      medicalRestrictions: null,
+      fitToWorkStatus: null,
+      incidentHistory: [],
+      hseCertifications: [],
+    },
+    disciplinary: [],
+    history: [],
+    audit: [],
+    aiInsights: [],
+  };
+
   const seed = seedFromId(employeeId);
   const rng = createSeeded(seed);
   const first = ['Juan', 'Amina', 'Chinedu', 'Halima', 'Tunde', 'Ngozi', 'Michael', 'Fatima', 'Ade', 'Rita', 'Samuel', 'Zainab', 'Ibrahim', 'Grace', 'Kehinde', 'Bola', 'Chika', 'Emeka', 'Mary', 'David'];
@@ -1001,7 +1135,7 @@ const makeRecord = (employeeId: string): EmployeeRecord => {
   };
 
   const performanceSummary: PerformanceSummary = {
-    currentRating: pick(rng, ['A', 'B', 'B', 'C', '—'] as PerformanceSummary['currentRating'][]),
+    currentRating: pick(rng, ['A', 'B', 'B', 'C', '-'] as PerformanceSummary['currentRating'][]),
     lastReviewAt: rng() < 0.55 ? `${isoDate(rng, 2025, 2026)}T00:00:00.000Z` : null,
     goals: Array.from({ length: 3 + Math.floor(rng() * 3) }).map((_, i) => ({
       id: `g-${employeeId}-${i}`,
@@ -2198,9 +2332,68 @@ const applyOverrides = (employeeId: string, rec: EmployeeRecord) => {
   return rec;
 };
 
+const stripSeededProfilePageData = (employeeId: string, rec: EmployeeRecord) => {
+  const generatedProfile = typeof rec.profile.photoUrl === 'string' && rec.profile.photoUrl.includes('picsum.photos');
+  const generatedInsights = Array.isArray(rec.aiInsights) && rec.aiInsights.some((x) => typeof x?.id === 'string' && x.id.startsWith(`ai-${employeeId}-`));
+  if (!generatedProfile && !generatedInsights) return rec;
+
+  rec.profile.photoUrl = undefined;
+  rec.profile.fullName = `Employee ${employeeId}`;
+  rec.profile.jobTitle = 'Not assigned';
+  rec.profile.department = 'Not assigned';
+  rec.profile.businessUnit = 'Not assigned';
+  rec.profile.location = 'Not assigned';
+  rec.profile.employmentType = 'Not assigned';
+  rec.profile.reportingManager = 'Not assigned';
+  rec.profile.yearsOfService = 0;
+  rec.profile.personalInfo = Object.fromEntries(Object.keys(rec.profile.personalInfo || {}).map((key) => [key, key === 'employeeId' ? employeeId : null]));
+  rec.profile.employmentDetails = { employeeId, employmentStatus: rec.profile.employmentStatus };
+  rec.profile.jobDetails = {};
+  rec.profile.contacts = {};
+  rec.overview = {
+    profileCompletionPct: 0,
+    leaveBalanceDays: 0,
+    attendanceScore: 0,
+    trainingCompliancePct: 0,
+    performanceRating: '-',
+    payrollStatus: 'Pending Validation',
+    documentStatus: 'Missing',
+    assetStatus: 'None',
+    currentLeaveStatus: 'None',
+    recentActivity: [],
+  };
+  rec.emergencyContacts = [];
+  rec.nextOfKin = [];
+  rec.documents = [];
+  rec.leaveSummary = { balances: {}, history: [] };
+  rec.attendanceSummary = { score: 0, presentDays: 0, absentDays: 0, lateComing: 0, earlyDeparture: 0, overtimeHours: 0, biometricLogs: [] };
+  rec.payrollSummary = {
+    payrollStatus: 'Pending Validation',
+    salaryGrade: 'Not assigned',
+    basicSalary: null,
+    allowances: null,
+    deductions: null,
+    bankName: null,
+    accountNumberMasked: null,
+    pensionProvider: null,
+    taxId: null,
+    payrollGroup: null,
+    lastPayrollProcessed: null,
+  };
+  rec.performanceSummary = { currentRating: '-', lastReviewAt: null, goals: [], managerFeedback: null, aiSignals: [] };
+  rec.training = [];
+  rec.assets = [];
+  rec.medicalHse = { medicalFitnessStatus: null, bloodGroup: null, knownAllergies: null, medicalRestrictions: null, fitToWorkStatus: null, incidentHistory: [], hseCertifications: [] };
+  rec.disciplinary = [];
+  rec.history = [];
+  rec.audit = [];
+  rec.aiInsights = [];
+  return rec;
+};
+
 const ensureRecord = (employeeId: string) => {
   const existing = store.get(employeeId);
-  if (existing) return applyOverrides(employeeId, existing);
+  if (existing) return applyOverrides(employeeId, stripSeededProfilePageData(employeeId, existing));
   const next = makeRecord(employeeId);
   const merged = applyOverrides(employeeId, next);
   store.set(employeeId, merged);

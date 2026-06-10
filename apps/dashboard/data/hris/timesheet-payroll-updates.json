@@ -1,0 +1,1190 @@
+[
+  {
+    "id": "payroll-per-2026-06-1781017530036",
+    "periodId": "per-2026-06",
+    "periodName": "June 2026 Period",
+    "acknowledgedAt": "2026-06-09T15:05:30.036Z",
+    "acknowledgedBy": "HRIS Administrator",
+    "headerIds": [
+      "hdr-2026-06-09-hris-administrator-material-preparation"
+    ],
+    "employeeAttendance": [
+      {
+        "employeeId": "C2225",
+        "employeeName": "ABEL DANIEL",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 9,
+        "idleHours": 1
+      },
+      {
+        "employeeId": "C2526",
+        "employeeName": "ABLE ROMANUS",
+        "daysWorked": 1,
+        "attendanceHours": 0.4,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1938",
+        "employeeName": "ABRAHAM ONYEMERI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2052",
+        "employeeName": "ACHEM OGWUCHE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1720",
+        "employeeName": "ADANOU RAYMOND",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2011",
+        "employeeName": "ADEBAYO AJAYI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2443",
+        "employeeName": "ADEBIYI GANIYU",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1966",
+        "employeeName": "ADEMOLA BELLO",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2343",
+        "employeeName": "ADESOJI ADEYEYE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1162",
+        "employeeName": "ADEWALE ADEKOYA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C0129",
+        "employeeName": "AGWU OKWARA KALU",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1955",
+        "employeeName": "AIYEDE OKERE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2395",
+        "employeeName": "AKINGBADE AKEEM",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2699",
+        "employeeName": "AKINLABI KOLAJO AKINMOLADUN",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2460",
+        "employeeName": "AKPO JACOB",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1824",
+        "employeeName": "ALPHONSUS ADAOWO",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2129",
+        "employeeName": "ANDREW OSINEKE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2222",
+        "employeeName": "ANTHONY EZEAGU",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2622",
+        "employeeName": "AUDU JOHN",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2410",
+        "employeeName": "AYODELE AFENIFORO",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2491",
+        "employeeName": "AYODELE OGUNYEMI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2632",
+        "employeeName": "AYUBA OGUNBONA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1920",
+        "employeeName": "AZEEZ LATEEF",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2795",
+        "employeeName": "BABA IDOKO",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C0585",
+        "employeeName": "BELLO FEMI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1883",
+        "employeeName": "BELLO YAYA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2626",
+        "employeeName": "BONIFACE OKPE",
+        "daysWorked": 1,
+        "attendanceHours": 0,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2615",
+        "employeeName": "CECILIA HART",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2002",
+        "employeeName": "CHIBUEZE NWOSU",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2438",
+        "employeeName": "CHIBUZOR EZENWA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2507",
+        "employeeName": "CHINEMERE ONWUNTA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1144",
+        "employeeName": "CHRIS OGWUA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2224",
+        "employeeName": "CHRISTIAN AGBATA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2728",
+        "employeeName": "CHRISTIAN AMOS UDOH",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2665",
+        "employeeName": "CHRISTOPHER OSAUZO",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1607",
+        "employeeName": "CHUKWUDUMEBI OJIKA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2380",
+        "employeeName": "CLETUS ABAH",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2341",
+        "employeeName": "DANIEL UDECHUKWU",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2023",
+        "employeeName": "DAVID IDIKA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2193",
+        "employeeName": "DAVID NWACHUKWU EMEH",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1035",
+        "employeeName": "DONATUS EJEH",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1096",
+        "employeeName": "DUROJAYE ADEDOYIN",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1983",
+        "employeeName": "EMEKA EBEYE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2536",
+        "employeeName": "EMMANUEL SUNDAY",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2431",
+        "employeeName": "EZEBIRO EMEKA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1931",
+        "employeeName": "EZEKIEL ABIODUN",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2098",
+        "employeeName": "FEMI OLAITAN",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2015",
+        "employeeName": "FESTUS AMUNE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2294",
+        "employeeName": "FESTUS EKOYO",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1840",
+        "employeeName": "FRIDAY ISINGUZO",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2605",
+        "employeeName": "FRIDAY ONAJI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2751",
+        "employeeName": "FUAD SAYO ODUNNIYI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2477",
+        "employeeName": "GAMBO SULE MOHAMMED",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2445",
+        "employeeName": "GODWIN AKOR",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2725",
+        "employeeName": "HENRY AUDU AMODU",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2614",
+        "employeeName": "IDOWU ADELEKE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1772",
+        "employeeName": "IDOWU GANIYU",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2394",
+        "employeeName": "IDOWU HAMMED",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2664",
+        "employeeName": "IME JIMMY UDO",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1889",
+        "employeeName": "ISMAILA OGUNYEMI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2136",
+        "employeeName": "JAMES NGELE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2522",
+        "employeeName": "JAMIU RASAK",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2463",
+        "employeeName": "JANET JAMES",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2663",
+        "employeeName": "JEREMIAH DAVID",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1001",
+        "employeeName": "JIMOH GBADAMOSI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1788",
+        "employeeName": "JONAH EMEWU SAMUEL",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1544",
+        "employeeName": "JOSEPH ADENIYI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C0695",
+        "employeeName": "JULIUS AWOYEMI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2121",
+        "employeeName": "JULIUS TAIWO",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2221",
+        "employeeName": "KAMORUDEEN YUNUS",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2515",
+        "employeeName": "KAZEEM OYEWOLE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1771",
+        "employeeName": "KEHINDE BADEJO",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2236",
+        "employeeName": "KELVIN NDUBUISI IWUAGWU",
+        "daysWorked": 1,
+        "attendanceHours": 0,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1779",
+        "employeeName": "KENNEDY EBUNO",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2387",
+        "employeeName": "KOLAWOLE ADEKUNLE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1954",
+        "employeeName": "KUFREOBONG AKPAN",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2080",
+        "employeeName": "LATEEF OYELEYE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2408",
+        "employeeName": "LAWRENCE ANTHONY",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2404",
+        "employeeName": "MATHEW AMEH",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1078",
+        "employeeName": "MATHIAS LUKPATA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1705",
+        "employeeName": "MATTHEW ROTIMI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1736",
+        "employeeName": "MICHAEL JEROME",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2506",
+        "employeeName": "MICHAEL ONOJA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2402",
+        "employeeName": "MOHAMMED ALIYU",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1728",
+        "employeeName": "MOHAMMED IBRAHIM",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2566",
+        "employeeName": "MOHAMMED ROTIMI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1775",
+        "employeeName": "MOMODU BASHRU",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2623",
+        "employeeName": "MONDAY NWACHUKWU",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2724",
+        "employeeName": "MOSES AMANOKHAI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2698",
+        "employeeName": "MURPHY OKEKE KALU",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2396",
+        "employeeName": "MUSBAU AKINDELE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2462",
+        "employeeName": "NASIRU JAMIU",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2516",
+        "employeeName": "NDUBUISI OZILI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2319",
+        "employeeName": "NDUBUISI TORTI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2291",
+        "employeeName": "NGELE OKEY UMA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1491",
+        "employeeName": "NNAMDI VINCENT",
+        "daysWorked": 1,
+        "attendanceHours": 0,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1926",
+        "employeeName": "NZEDURU NGOZIKA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2469",
+        "employeeName": "OBIEJE KINGSLEY",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2456",
+        "employeeName": "OGAH IMONI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2082",
+        "employeeName": "OKEOWO ADEBANJO",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2421",
+        "employeeName": "OKPE DANIEL",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2338",
+        "employeeName": "OLADIPUPO AKANLE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C0293",
+        "employeeName": "OLAKUNLE OLANIYAN",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2776",
+        "employeeName": "OLANREWAJU ISAIAH SUNDAY",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1888",
+        "employeeName": "OLATUNJI YEKINI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1989",
+        "employeeName": "OLAWALE SADIQ",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2513",
+        "employeeName": "OLAYIWOLA OWOLABI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1783",
+        "employeeName": "OLUGBENGA DARAMOLA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2790",
+        "employeeName": "OLUWASEYI ADEBANJO",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2523",
+        "employeeName": "OMOGBOLAHAN RASAK",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2484",
+        "employeeName": "ONUOHA OBINNA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2534",
+        "employeeName": "OVAT STANLEY",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2597",
+        "employeeName": "OYABUGBE IRIKEFE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2412",
+        "employeeName": "OYELEYE BABATUNDE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2383",
+        "employeeName": "OYEWOLE ABIODUN",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 9,
+        "idleHours": 1
+      },
+      {
+        "employeeId": "C2604",
+        "employeeName": "PATRICK OHEME ADAH",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2690",
+        "employeeName": "PETER OLAMILEKAN OJO",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2482",
+        "employeeName": "RAPHAEL OBILIKWU",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2607",
+        "employeeName": "RASAK ADEKUNLE ADEOSUN",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1612",
+        "employeeName": "RICHARD MBAMARA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2337",
+        "employeeName": "SAHEED OLOWU",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1793",
+        "employeeName": "SAVIOUR UDO ITORO",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1229",
+        "employeeName": "SHITTU OLAWALE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2130",
+        "employeeName": "SHOLA ATOYEBI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2537",
+        "employeeName": "SIMIRE SUNDAY",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2427",
+        "employeeName": "SIMON EBELE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2154",
+        "employeeName": "SOLOMON BANKOLE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2138",
+        "employeeName": "STANLEY AIGBEVBOILE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C0974",
+        "employeeName": "STEPHEN ETUERI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1849",
+        "employeeName": "SUCCESS JAMES OKORIE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1967",
+        "employeeName": "SUNDAY ADESUGBA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2097",
+        "employeeName": "SUNDAY COKER",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2633",
+        "employeeName": "SUNDAY KENECHUKWU",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1820",
+        "employeeName": "SUNDAY OKORO",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2512",
+        "employeeName": "SUNDAY OVAT",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1933",
+        "employeeName": "TAJUDEEN ADESEYE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2760",
+        "employeeName": "TEMIDAYO JOHNSON AJAYI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2492",
+        "employeeName": "TIMOTHY OGWUA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1975",
+        "employeeName": "TOYIN AKINNIFESI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2422",
+        "employeeName": "UDEH ANTHONY DAVID",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2555",
+        "employeeName": "UDENZI JUDE EZE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1804",
+        "employeeName": "UMA KALU",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2805",
+        "employeeName": "VERONICA UZOMA",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1065",
+        "employeeName": "VINCENT OGHENERIE",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1982",
+        "employeeName": "WASIU BUSARI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C2470",
+        "employeeName": "YEKINI LAWAL",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      },
+      {
+        "employeeId": "C1979",
+        "employeeName": "YUSUF WAHABI",
+        "daysWorked": 1,
+        "attendanceHours": 9,
+        "bookedHours": 0,
+        "idleHours": 0
+      }
+    ]
+  }
+]

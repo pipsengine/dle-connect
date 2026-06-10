@@ -9,14 +9,16 @@ export type HrisRole =
 export type HrisPermission =
   | 'organization.view'
   | 'attendance.manage'
+  | 'timesheet.approve'
+  | 'timesheet.period.manage'
   | 'positions.manage'
   | 'vacancy.manage'
   | 'workforce.manage'
   | 'audit.view';
 
 const rolePermissions: Record<HrisRole, HrisPermission[]> = {
-  OrganizationAdmin: ['organization.view', 'attendance.manage', 'positions.manage', 'vacancy.manage', 'workforce.manage', 'audit.view'],
-  HRBusinessPartner: ['organization.view', 'attendance.manage', 'positions.manage', 'vacancy.manage', 'workforce.manage', 'audit.view'],
+  OrganizationAdmin: ['organization.view', 'attendance.manage', 'timesheet.approve', 'timesheet.period.manage', 'positions.manage', 'vacancy.manage', 'workforce.manage', 'audit.view'],
+  HRBusinessPartner: ['organization.view', 'attendance.manage', 'timesheet.approve', 'timesheet.period.manage', 'positions.manage', 'vacancy.manage', 'workforce.manage', 'audit.view'],
   Recruiter: ['organization.view', 'vacancy.manage', 'audit.view'],
   WorkforcePlanner: ['organization.view', 'workforce.manage', 'audit.view'],
   Auditor: ['organization.view', 'audit.view'],
@@ -48,6 +50,8 @@ export const getUiPermissions = (context: HrisAccessContext) => ({
   actor: context.actor,
   role: context.role,
   canEditAttendance: hasPermission(context, 'attendance.manage'),
+  canApproveTimesheet: hasPermission(context, 'timesheet.approve'),
+  canManageTimesheetPeriods: hasPermission(context, 'timesheet.period.manage'),
   canEditPositions: hasPermission(context, 'positions.manage'),
   canEditVacancies: hasPermission(context, 'vacancy.manage'),
   canEditWorkforce: hasPermission(context, 'workforce.manage'),

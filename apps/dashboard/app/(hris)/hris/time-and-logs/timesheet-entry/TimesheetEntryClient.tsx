@@ -1,8 +1,9 @@
 'use client';
 /* eslint-disable react-hooks/set-state-in-effect */
 
-import { useEffect, useState, Suspense } from 'react';
+import { useCallback, useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { PageTemplate } from '@/components/layout/page-template';
 import {
   AlertTriangle,
@@ -18,6 +19,7 @@ import {
   XCircle,
   Clock,
   Briefcase,
+  Edit3,
   ChevronRight,
   ArrowRight,
   LayoutGrid,
@@ -26,7 +28,12 @@ import {
 } from 'lucide-react';
 import type { StructureInsight } from '@/lib/organization-data';
 
-type TimesheetStatus = 'Draft' | 'Submitted' | 'HR_Reviewed' | 'Project_Control_Reviewed' | 'Approved' | 'Locked' | 'Rejected';
+type TimesheetStatus = 'Draft' | 'Submitted' | 'Project_Manager_Reviewed' | 'Cost_Control_Reviewed' | 'HR_Acknowledged' | 'HR_Reviewed' | 'Project_Control_Reviewed' | 'Approved' | 'Locked' | 'Rejected' | 'Returned';
+const STANDARD_TIMESHEET_HOURS = 9;
+const DEFAULT_IDLE_REASON_ID = 'idl-009';
+const DEFAULT_IDLE_REASON_NAME = 'Break Time';
+const editableTimesheetStatuses: TimesheetStatus[] = ['Draft', 'Returned', 'Rejected'];
+const payrollReadyStatuses: TimesheetStatus[] = ['HR_Acknowledged', 'Approved', 'Locked'];
 type TimesheetEntryMode = 'Supervisor Entry';
 
 type WorkflowStage = {
@@ -128,10 +135,24 @@ type Payload = {
   workflowStages: WorkflowStage[];
   biometricDevices: Array<{
     id: string;
+    deviceCode: string;
     deviceName: string;
+    location: string;
     site: string;
+    deviceType: string;
     operationalStatus: string;
+    syncHealth: string;
     lastSyncAt: string;
+    lastPunchAt: string | null;
+    enrolledEmployees: number;
+    matchedPunches: number;
+    unmatchedPunches: number;
+    supervisorOverrides: number;
+  }>;
+  attendanceWorkCenters: Array<{
+    location: string;
+    site: string;
+    deviceName: string;
   }>;
   permissions: {
     actor: string;
@@ -139,6 +160,7 @@ type Payload = {
     canEdit: boolean;
     canExport: boolean;
     canApprove: boolean;
+    canManagePeriod: boolean;
     canViewCosts: boolean;
     canViewAudit: boolean;
   };
@@ -170,7 +192,60 @@ type Payload = {
   aiInsights: StructureInsight[];
 };
 
+const DEFAULT_WORK_CENTERS = [
+  'Material Preparation',
+  'Cutting',
+  'Fitting',
+  'Welding',
+  'Rigging',
+  'Machining',
+  'Rolling & Forming',
+  'Structural Assembly',
+  'Surface Preparation',
+  'Blasting',
+  'Painting',
+  'Galvanizing Preparation',
+  'Galvanizing',
+  'Galvanizing Finishing',
+  'QA/QC',
+  'NDT',
+  'Dimensional Control',
+  'Warehouse',
+  'Logistics',
+  'Loading & Offloading',
+  'Packing & Preservation',
+  'Mechanical Maintenance',
+  'Electrical Maintenance',
+  'Instrumentation',
+  'Utilities',
+  'Engineering Support',
+  'Planning & Production Control',
+  'Project Control',
+  'HSE',
+  'Security',
+];
+
 const round1 = (value: number) => Math.round(value * 10) / 10;
+
+const todayDateInputValue = () => {
+  const now = new Date();
+  const offsetMs = now.getTimezoneOffset() * 60 * 1000;
+  return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
+};
+
+const formatShortTime = (value?: string | null) => {
+  if (!value) return 'Awaiting...';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Awaiting...';
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const formatHandshake = (value?: string | null) => {
+  if (!value) return 'Awaiting...';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Awaiting...';
+  return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${formatShortTime(value)}`;
+};
 
 export default function TimesheetEntryClient() {
   const searchParams = useSearchParams();
@@ -183,9 +258,10 @@ export default function TimesheetEntryClient() {
   const [submitting, setSubmitting] = useState(false);
   const [viewMode, setViewMode] = useState<'matrix' | 'cards'>('matrix');
   
-  const [selectedDate, setSelectedDate] = useState(dateParam || '2026-06-03');
+  const [selectedDate, setSelectedDate] = useState(dateParam || todayDateInputValue());
   const [selectedSupervisor, setSelectedSupervisor] = useState(supervisorParam || '');
-  const [selectedWorkCenter, setSelectedWorkCenter] = useState('Fabrication Yard');
+  const [selectedWorkCenter, setSelectedWorkCenter] = useState('');
+  const [autoSyncKey, setAutoSyncKey] = useState('');
 
   const [localLines, setLocalLines] = useState<TimesheetLine[]>([]);
   const [query, setQuery] = useState('');
@@ -197,16 +273,22 @@ export default function TimesheetEntryClient() {
   const [bulkHours, setBulkHours] = useState(8);
 
   const [showProjectModal, setShowProjectModal] = useState(false);
+  const [newProjectCode, setNewProjectCode] = useState('');
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectSite, setNewProjectSite] = useState('');
+  const [showWorkCenterManager, setShowWorkCenterManager] = useState(false);
+  const [workCenters, setWorkCenters] = useState(DEFAULT_WORK_CENTERS);
+  const [workCenterDraft, setWorkCenterDraft] = useState('');
+  const [editingWorkCenter, setEditingWorkCenter] = useState<string | null>(null);
 
-  const load = async (date?: string, supervisor?: string) => {
+  const load = useCallback(async (date?: string, supervisor?: string, workCenter?: string) => {
     setLoading(true);
     setError(null);
     try {
       const url = new URL('/api/hris/time-and-logs/timesheet-entry', window.location.origin);
       if (date) url.searchParams.set('date', date);
       if (supervisor) url.searchParams.set('supervisorId', supervisor);
+      if (workCenter) url.searchParams.set('workCenterName', workCenter);
       
       const res = await fetch(url.toString(), { cache: 'no-store' });
       const json = await res.json();
@@ -219,18 +301,31 @@ export default function TimesheetEntryClient() {
         setMatrixColumns(data.matrixColumns);
       }
       if (!selectedSupervisor) setSelectedSupervisor(data.permissions.actor);
+      setSelectedWorkCenter((current) => {
+        if (current && workCenters.includes(current)) return current;
+        if (data.header?.workCenterName && workCenters.includes(data.header.workCenterName)) return data.header.workCenterName;
+        return workCenters[0] || '';
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to load timesheet entry');
     } finally {
       setLoading(false);
     }
-  };
+  }, [matrixColumns.length, selectedSupervisor, workCenters]);
 
   useEffect(() => {
-    void load(selectedDate, selectedSupervisor);
-  }, [selectedDate, selectedSupervisor]);
+    void load(selectedDate, selectedSupervisor, selectedWorkCenter);
+  }, [load, selectedDate, selectedSupervisor, selectedWorkCenter]);
 
-  const handleSyncAttendance = async () => {
+  const handleSyncAttendance = useCallback(async () => {
+    if (payload?.period.status !== 'Open') {
+      setError('This timesheet period is closed. Reopen it before syncing attendance.');
+      return;
+    }
+    if (!selectedWorkCenter) {
+      setError('No biometric device work center is available from the time and attendance system.');
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch('/api/hris/time-and-logs/timesheet-entry', {
@@ -247,26 +342,97 @@ export default function TimesheetEntryClient() {
       if (!res.ok || json?.status !== 'success') throw new Error(json?.error || 'Sync failed');
       setPayload(json.data);
       setLocalLines(json.data.lines);
+      setAutoSyncKey(`${selectedDate}|${selectedSupervisor}|${selectedWorkCenter}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Sync failed');
     } finally {
       setSubmitting(false);
+    }
+  }, [payload?.period.status, selectedDate, selectedSupervisor, selectedWorkCenter]);
+
+  useEffect(() => {
+    const key = `${selectedDate}|${selectedSupervisor}|${selectedWorkCenter}`;
+    if (
+      loading ||
+      submitting ||
+      !payload ||
+      payload.header ||
+      payload.period.status !== 'Open' ||
+      !selectedSupervisor ||
+      !selectedWorkCenter ||
+      autoSyncKey === key
+    ) {
+      return;
+    }
+
+    setAutoSyncKey(key);
+    void handleSyncAttendance();
+  }, [autoSyncKey, handleSyncAttendance, loading, payload, selectedDate, selectedSupervisor, selectedWorkCenter, submitting]);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem('dle-timesheet-work-centers');
+    if (!stored) return;
+    try {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')) {
+        setWorkCenters(parsed.filter(Boolean));
+      }
+    } catch {
+      window.localStorage.removeItem('dle-timesheet-work-centers');
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem('dle-timesheet-work-centers', JSON.stringify(workCenters));
+  }, [workCenters]);
+
+  const saveWorkCenter = () => {
+    const nextName = workCenterDraft.trim();
+    if (!nextName) return;
+    setWorkCenters((current) => {
+      if (editingWorkCenter) {
+        return current.map((item) => (item === editingWorkCenter ? nextName : item));
+      }
+      if (current.some((item) => item.toLowerCase() === nextName.toLowerCase())) return current;
+      return [...current, nextName].sort((a, b) => a.localeCompare(b));
+    });
+    if (editingWorkCenter && selectedWorkCenter === editingWorkCenter) setSelectedWorkCenter(nextName);
+    setWorkCenterDraft('');
+    setEditingWorkCenter(null);
+  };
+
+  const editWorkCenter = (name: string) => {
+    setEditingWorkCenter(name);
+    setWorkCenterDraft(name);
+  };
+
+  const deleteWorkCenter = (name: string) => {
+    setWorkCenters((current) => current.filter((item) => item !== name));
+    if (selectedWorkCenter === name) setSelectedWorkCenter('');
+    if (editingWorkCenter === name) {
+      setEditingWorkCenter(null);
+      setWorkCenterDraft('');
     }
   };
 
   const handleUpdateLine = (index: number, updates: Partial<TimesheetLine>) => {
     const next = [...localLines];
     const line = { ...next[index], ...updates };
+    line.idleAllocations = line.idleAllocations.map((allocation) =>
+      allocation.reasonId || allocation.hours <= 0
+        ? allocation
+        : { ...allocation, reasonId: DEFAULT_IDLE_REASON_ID, reasonName: DEFAULT_IDLE_REASON_NAME },
+    );
     
     line.usedHours = round1(line.projectAllocations.reduce((sum, p) => sum + p.hours, 0));
     line.idleHours = round1(line.idleAllocations.reduce((sum, i) => sum + i.hours, 0));
     line.totalHours = round1(line.usedHours + line.idleHours);
-    line.variance = round1(line.totalHours - 8);
+    line.variance = round1(line.totalHours - STANDARD_TIMESHEET_HOURS);
     
-    if (line.totalHours > 8.001) {
+    if (line.totalHours > STANDARD_TIMESHEET_HOURS + 0.001) {
       line.validationStatus = 'Error';
-      line.validationMessage = 'Total hours cannot exceed 8 hours per day.';
-    } else if (line.totalHours === 8) {
+      line.validationMessage = `Total hours cannot exceed ${STANDARD_TIMESHEET_HOURS} hours per day.`;
+    } else if (line.totalHours === STANDARD_TIMESHEET_HOURS) {
       line.validationStatus = 'Valid';
       line.validationMessage = null;
     } else if (line.idleHours > 0 && line.idleAllocations.some(a => a.hours > 0 && !a.reasonId)) {
@@ -274,7 +440,7 @@ export default function TimesheetEntryClient() {
       line.validationMessage = 'Idle time requires a valid reason.';
     } else {
       line.validationStatus = 'Incomplete';
-      line.validationMessage = `Awaiting full 8-hour allocation. Current: ${line.totalHours} hrs.`;
+      line.validationMessage = `Awaiting full ${STANDARD_TIMESHEET_HOURS}-hour allocation. Current: ${line.totalHours} hrs.`;
     }
 
     next[index] = line;
@@ -282,6 +448,10 @@ export default function TimesheetEntryClient() {
   };
 
   const handleCopyPrevious = async () => {
+    if (payload?.period.status !== 'Open') {
+      setError('This timesheet period is closed. Reopen it before copying allocations.');
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch('/api/hris/time-and-logs/timesheet-entry', {
@@ -307,6 +477,10 @@ export default function TimesheetEntryClient() {
   };
 
   const handleSave = async (isSubmit = false) => {
+    if (payload?.period.status !== 'Open') {
+      setError('This timesheet period is closed. Reopen it before saving or submitting timesheets.');
+      return;
+    }
     if (!payload?.header?.id && !isSubmit) {
       setError('No active timesheet header. Please sync attendance first.');
       return;
@@ -336,6 +510,10 @@ export default function TimesheetEntryClient() {
   };
 
   const handleBulkApply = async () => {
+    if (payload?.period.status !== 'Open') {
+      setError('This timesheet period is closed. Reopen it before applying bulk allocations.');
+      return;
+    }
     if (selectedEmployees.length === 0 || !bulkProject) return;
     setSubmitting(true);
     try {
@@ -390,7 +568,8 @@ export default function TimesheetEntryClient() {
   };
 
   const handleCreateProject = async () => {
-    if (!newProjectName || !newProjectSite) return;
+    const projectCode = newProjectCode.trim();
+    if (!projectCode || !newProjectName || !newProjectSite) return;
     setSubmitting(true);
     try {
       const res = await fetch('/api/hris/time-and-logs/timesheet-entry', {
@@ -399,7 +578,7 @@ export default function TimesheetEntryClient() {
         body: JSON.stringify({
           action: 'CREATE_PROJECT',
           project: {
-            code: payload?.nextProjectCode,
+            code: projectCode,
             name: newProjectName,
             site: newProjectSite,
             status: 'Active',
@@ -410,6 +589,7 @@ export default function TimesheetEntryClient() {
       if (!res.ok || json?.status !== 'success') throw new Error(json?.error || 'Failed to create project');
       setPayload(json.data);
       setShowProjectModal(false);
+      setNewProjectCode('');
       setNewProjectName('');
       setNewProjectSite('');
     } catch (e) {
@@ -444,8 +624,8 @@ export default function TimesheetEntryClient() {
         projectAllocations: nextAllocations,
         usedHours,
         totalHours,
-        variance: round1(totalHours - 8),
-        validationStatus: totalHours === 8 ? 'Valid' : (totalHours > 8.001 ? 'Error' : 'Incomplete')
+        variance: round1(totalHours - STANDARD_TIMESHEET_HOURS),
+        validationStatus: totalHours === STANDARD_TIMESHEET_HOURS ? 'Valid' : (totalHours > STANDARD_TIMESHEET_HOURS + 0.001 ? 'Error' : 'Incomplete')
       } as TimesheetLine;
     });
     setLocalLines(nextLines);
@@ -468,14 +648,45 @@ export default function TimesheetEntryClient() {
     );
   }
 
+  const workCenterOptions = workCenters;
+  const siteLocationOptions = Array.from(
+    new Set([...(payload?.filterOptions.locations ?? []), ...(payload?.projects.map((project) => project.site) ?? [])].filter(Boolean)),
+  ).sort((a, b) => a.localeCompare(b));
   const currentStageIdx = payload?.workflowStages.findIndex(s => s.id === payload?.header?.status) ?? 0;
+  const periodStatus = payload?.period.status ?? 'Open';
+  const periodIsOpen = periodStatus === 'Open';
+  const headerStatus = payload?.header?.status ?? 'Draft';
+  const isPayrollReady = payrollReadyStatuses.includes(headerStatus);
+  const canEditTimesheet = periodIsOpen && editableTimesheetStatuses.includes(headerStatus);
+  const activeSiteDevices = payload?.attendanceWorkCenters.filter((workCenter) => workCenter.location === selectedWorkCenter) ?? [];
+  const onlineSiteDevices = activeSiteDevices;
+  const primarySiteDevice = [...activeSiteDevices].sort((a, b) => {
+    return a.deviceName.localeCompare(b.deviceName);
+  })[0];
+  const lastHandshakeAt = payload?.biometricDevices
+    .filter((device) => device.location === selectedWorkCenter)
+    .map((device) => device.lastSyncAt)
+    .filter(Boolean)
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
+  const matchedPunches = payload?.summary.presentEmployees ?? 0;
+  const exceptionPunches = payload?.summary.absentEmployees ?? 0;
+  const biometricTone = onlineSiteDevices.length > 0
+    ? 'text-emerald-400'
+    : activeSiteDevices.length > 0
+      ? 'text-amber-300'
+      : 'text-slate-300';
+  const biometricLabel = onlineSiteDevices.length > 0
+    ? 'Biometric Integrated'
+    : activeSiteDevices.length > 0
+      ? 'Biometric Attention'
+      : 'No Site Device';
 
   return (
     <PageTemplate
       title="Timesheet Entry"
       description="Record daily work hour allocations across projects and tasks."
       breadcrumbs={[{ label: 'HRIS', href: '/hris' }, { label: 'Time & Logs', href: '/hris/time-and-logs' }, { label: 'Timesheet Entry' }]}
-      primaryAction={{ label: 'Sync Attendance', onClick: handleSyncAttendance, icon: RefreshCcw }}
+      primaryAction={{ label: canEditTimesheet ? 'Sync Attendance' : periodIsOpen ? 'Read Only' : 'Period Closed', onClick: canEditTimesheet ? handleSyncAttendance : () => undefined, icon: RefreshCcw }}
       secondaryAction={{ label: 'Create Project', onClick: () => setShowProjectModal(true), icon: Plus }}
     >
       <div className="space-y-8">
@@ -488,10 +699,13 @@ export default function TimesheetEntryClient() {
                 <span className="flex items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-1 text-indigo-700">
                   <Clock className="h-3.5 w-3.5" /> Period: {payload?.period.startDate} to {payload?.period.endDate}
                 </span>
-                <span className={`rounded-full px-2.5 py-1 border ${payload?.period.status === 'Open' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>{payload?.period.status}</span>
+                <span className={`rounded-full px-2.5 py-1 border ${periodIsOpen ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>{periodStatus}</span>
               </div>
             </div>
-            <div className="flex items-center gap-6">
+            <div className="flex flex-wrap items-center justify-end gap-6">
+              <Link href="/hris/time-and-logs/timesheet-period" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-white">
+                Manage Periods
+              </Link>
               <div className="text-right">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Supervisor</p>
                 <select value={selectedSupervisor} onChange={(e) => setSelectedSupervisor(e.target.value)} className="bg-transparent text-sm font-black text-slate-900 focus:outline-none">
@@ -501,12 +715,24 @@ export default function TimesheetEntryClient() {
               </div>
               <div className="text-right">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Work Center</p>
-                <select value={selectedWorkCenter} onChange={(e) => setSelectedWorkCenter(e.target.value)} className="bg-transparent text-sm font-black text-slate-900 focus:outline-none">
-                  <option value="Fabrication Yard">Fabrication Yard</option>
-                  <option value="Onne Yard">Onne Yard</option>
-                  <option value="Marine Base">Marine Base</option>
-                  <option value="Liaison Office">Liaison Office</option>
-                </select>
+                <div className="flex items-center justify-end gap-2">
+                  <select value={selectedWorkCenter} onChange={(e) => setSelectedWorkCenter(e.target.value)} className="bg-transparent text-sm font-black text-slate-900 focus:outline-none">
+                    {workCenterOptions.length === 0 && <option value="">No work center</option>}
+                    {workCenterOptions.map((workCenter) => (
+                    <option key={workCenter} value={workCenter}>
+                      {workCenter}
+                    </option>
+                  ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setShowWorkCenterManager(true)}
+                    className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50 hover:text-indigo-600"
+                    title="Manage work centers"
+                  >
+                    <Edit3 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
               <div className="text-right">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Working Date</p>
@@ -530,6 +756,46 @@ export default function TimesheetEntryClient() {
             </div>
           </div>
         </div>
+
+        {!periodIsOpen && (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-xl bg-slate-900 p-2 text-white"><Info className="h-4 w-4" /></div>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-widest text-slate-900">Timesheet Period Closed</h3>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">Attendance sync, copying, allocations, saving, and submission are paused for this period.</p>
+                </div>
+              </div>
+              <Link href="/hris/time-and-logs/timesheet-period" className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-slate-800">
+                Manage Period
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {periodIsOpen && !canEditTimesheet && payload?.header && (
+          <div className={`rounded-2xl border p-5 ${isPayrollReady ? 'border-emerald-200 bg-emerald-50' : 'border-indigo-200 bg-indigo-50'}`}>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className={`rounded-xl p-2 text-white ${isPayrollReady ? 'bg-emerald-600' : 'bg-indigo-600'}`}><Info className="h-4 w-4" /></div>
+                <div>
+                  <h3 className={`text-sm font-black uppercase tracking-widest ${isPayrollReady ? 'text-emerald-900' : 'text-indigo-900'}`}>
+                    {isPayrollReady ? 'Payroll Ready Timesheet' : 'Timesheet Under Approval'}
+                  </h3>
+                  <p className={`mt-1 text-xs font-semibold ${isPayrollReady ? 'text-emerald-700' : 'text-indigo-700'}`}>
+                    {isPayrollReady
+                      ? 'HR has acknowledged this timesheet for payroll. Editing is locked and any correction must follow a formal return/reversal process.'
+                      : 'This timesheet has been submitted for approval. It can only be edited again if it is returned or rejected.'}
+                  </p>
+                </div>
+              </div>
+              <Link href="/hris/time-and-logs/timesheet-approval" className={`rounded-xl px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white ${isPayrollReady ? 'bg-emerald-700 hover:bg-emerald-800' : 'bg-indigo-700 hover:bg-indigo-800'}`}>
+                Approval Workflow
+              </Link>
+            </div>
+          </div>
+        )}
 
         {/* Dashboard Metrics */}
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
@@ -556,19 +822,40 @@ export default function TimesheetEntryClient() {
         </div>
 
         {/* Biometric Bar */}
-        <div className="flex flex-wrap items-center justify-between rounded-xl bg-slate-900 px-5 py-3 text-[11px] text-white shadow-lg">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-emerald-400" /><span className="font-black uppercase tracking-widest text-emerald-400">Biometric Integrated</span></div>
-            <span className="opacity-30">|</span>
-            <div className="flex items-center gap-3"><span className="font-bold uppercase tracking-widest opacity-60">Active Site Devices:</span><div className="flex gap-2">
-              {payload?.biometricDevices.filter(d => d.site === selectedWorkCenter).map(device => (
-                <span key={device.id} className="flex items-center gap-1.5 rounded-md bg-white/5 px-2 py-0.5 font-bold"><span className={`h-1.5 w-1.5 rounded-full ${device.operationalStatus === 'Online' ? 'bg-emerald-500' : 'bg-amber-500'}`} />{device.deviceName}</span>
-              ))}
-            </div></div>
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-slate-950 px-5 py-3 text-[11px] text-white shadow-lg">
+          <div className="flex flex-wrap items-center gap-5">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className={`h-4 w-4 ${biometricTone}`} />
+              <span className={`font-black uppercase tracking-widest ${biometricTone}`}>{biometricLabel}</span>
+            </div>
+            <span className="hidden h-5 w-px bg-white/15 sm:block" />
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="font-bold uppercase tracking-widest text-white/50">Work Center Devices:</span>
+              <div className="flex flex-wrap gap-2">
+                {activeSiteDevices.length > 0 ? activeSiteDevices.map((device) => (
+                  <span key={`${device.location}-${device.site}-${device.deviceName}`} className="flex items-center gap-1.5 rounded-md bg-white/[0.07] px-2 py-1 font-bold text-white ring-1 ring-white/10">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                    {device.deviceName}
+                  </span>
+                )) : (
+                  <span className="rounded-md bg-white/[0.07] px-2 py-1 font-bold text-white/60 ring-1 ring-white/10">No reader assigned</span>
+                )}
+              </div>
+            </div>
+            <div className="hidden flex-wrap items-center gap-2 lg:flex">
+              <span className="rounded-md bg-emerald-500/10 px-2 py-1 font-black text-emerald-300 ring-1 ring-emerald-400/20">{matchedPunches} matched</span>
+              <span className="rounded-md bg-amber-500/10 px-2 py-1 font-black text-amber-200 ring-1 ring-amber-300/20">{exceptionPunches} exceptions</span>
+              {primarySiteDevice && <span className="rounded-md bg-indigo-500/10 px-2 py-1 font-black text-indigo-200 ring-1 ring-indigo-300/20">{primarySiteDevice.site}</span>}
+            </div>
           </div>
           <div className="flex items-center gap-4 text-right">
-            <div><p className="text-[9px] font-bold uppercase opacity-50">Last Handshake</p><p className="font-black text-indigo-300">{payload?.header?.lastSyncAt ? new Date(payload.header.lastSyncAt).toLocaleTimeString() : 'Awaiting...'}</p></div>
-            <button onClick={handleSyncAttendance} disabled={submitting} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500 disabled:opacity-50">Fetch Punches</button>
+            <div>
+              <p className="text-[9px] font-bold uppercase text-white/45">Last Handshake</p>
+              <p className="font-black text-indigo-200">{payload?.header?.lastSyncAt ? formatHandshake(payload.header.lastSyncAt) : formatHandshake(lastHandshakeAt)}</p>
+            </div>
+            <button onClick={handleSyncAttendance} disabled={submitting || !canEditTimesheet} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">
+              {submitting ? 'Fetching...' : 'Fetch Punches'}
+            </button>
           </div>
         </div>
 
@@ -579,7 +866,7 @@ export default function TimesheetEntryClient() {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input type="text" placeholder="Search employee..." value={query} onChange={(e) => setQuery(e.target.value)} className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-4 text-sm font-medium focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
             </div>
-            {selectedEmployees.length > 0 && (
+            {selectedEmployees.length > 0 && periodIsOpen && (
               <button 
                 onClick={() => setShowBulkModal(true)}
                 className="flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-xs font-black text-white hover:bg-amber-700 shadow-lg shadow-amber-100 animate-in fade-in slide-in-from-left-2"
@@ -594,9 +881,9 @@ export default function TimesheetEntryClient() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={handleCopyPrevious} disabled={submitting || payload?.header?.status === 'Approved' || payload?.header?.status === 'Locked'} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Copy className="h-3.5 w-3.5" />COPY PREVIOUS</button>
-            <button onClick={() => handleSave(false)} disabled={submitting || payload?.header?.status === 'Approved' || payload?.header?.status === 'Locked'} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50">SAVE DRAFT</button>
-            <button onClick={() => handleSave(true)} disabled={submitting || payload?.header?.status === 'Approved' || payload?.header?.status === 'Locked'} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-2.5 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50">SUBMIT</button>
+            <button onClick={handleCopyPrevious} disabled={submitting || !canEditTimesheet} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Copy className="h-3.5 w-3.5" />COPY PREVIOUS</button>
+            <button onClick={() => handleSave(false)} disabled={submitting || !canEditTimesheet} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50">SAVE DRAFT</button>
+            <button onClick={() => handleSave(true)} disabled={submitting || !canEditTimesheet} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-2.5 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50">SUBMIT</button>
           </div>
         </div>
 
@@ -627,19 +914,19 @@ export default function TimesheetEntryClient() {
                       <th key={colIdx} className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-slate-500 min-w-[160px] border-l border-slate-100">
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center justify-between">
-                            <select value={col.code} onChange={(e) => updateColumnProject(colIdx, e.target.value)} className="bg-transparent font-black text-indigo-600 focus:outline-none text-[11px]">
+                            <select value={col.code} disabled={!canEditTimesheet} onChange={(e) => updateColumnProject(colIdx, e.target.value)} className="bg-transparent font-black text-indigo-600 focus:outline-none text-[11px] disabled:opacity-50">
                               <option value={col.code}>{col.label}</option>
                               {payload?.projects.map(p => <option key={p.id} value={p.code}>{p.code}</option>)}
                             </select>
-                            <button onClick={() => removeProjectColumn(colIdx)} className="text-slate-300 hover:text-red-500"><XCircle className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => removeProjectColumn(colIdx)} disabled={!canEditTimesheet} className="text-slate-300 hover:text-red-500 disabled:opacity-40"><XCircle className="h-3.5 w-3.5" /></button>
                           </div>
                           <span className="truncate text-[9px] font-bold text-slate-400">{payload?.projects.find(p => p.code === col.code)?.name || 'Select...'}</span>
                         </div>
                       </th>
                     ))}
-                    <th className="px-4 py-5 border-l border-slate-100"><button onClick={addProjectColumn} className="rounded-lg bg-indigo-50 p-2 text-indigo-600 hover:bg-indigo-100"><Plus className="h-4 w-4" /></button></th>
+                    <th className="px-4 py-5 border-l border-slate-100"><button onClick={addProjectColumn} disabled={!canEditTimesheet} className="rounded-lg bg-indigo-50 p-2 text-indigo-600 hover:bg-indigo-100 disabled:opacity-40"><Plus className="h-4 w-4" /></button></th>
                     <th className="px-4 py-5 border-l border-slate-100 min-w-[60px] text-center">
-                      <button onClick={addProjectColumn} className="rounded-lg bg-indigo-50 p-2 text-indigo-600 hover:bg-indigo-100 transition-colors">
+                      <button onClick={addProjectColumn} disabled={!canEditTimesheet} className="rounded-lg bg-indigo-50 p-2 text-indigo-600 hover:bg-indigo-100 transition-colors disabled:opacity-40">
                         <Plus className="h-4 w-4" />
                       </button>
                     </th>
@@ -677,7 +964,7 @@ export default function TimesheetEntryClient() {
                         <td className="px-4 py-4 whitespace-nowrap">{isAbsent ? <span className="text-[10px] font-black text-red-600">ABSENT</span> : <div className="flex flex-col gap-0.5 text-[10px] font-black text-slate-700"><span>IN: {line.clockIn}</span><span>OUT: {line.clockOut || '--:--'}</span></div>}</td>
                         <td className="px-4 py-4 text-center text-[11px] font-black text-slate-600 tabular-nums">{line.attendanceDuration}h</td>
                         {matrixColumns.map((col) => (
-                          <td key={col.code} className="px-4 py-4 border-l border-slate-100"><input type="number" step="0.5" disabled={isAbsent || payload?.header?.status === 'Approved'} value={line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
+                          <td key={col.code} className="px-4 py-4 border-l border-slate-100"><input type="number" step="0.5" disabled={isAbsent || !canEditTimesheet} value={line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
                             const val = parseFloat(e.target.value) || 0;
                             const allocations = [...line.projectAllocations];
                             const pIdx = allocations.findIndex(p => p.projectCode === col.code);
@@ -688,24 +975,24 @@ export default function TimesheetEntryClient() {
                         ))}
                         <td className="px-4 py-4 border-l border-slate-100"></td>
                         <td className="px-4 py-4 text-center font-black text-blue-700 bg-blue-50/20">{line.usedHours}</td>
-                        <td className="px-4 py-4 bg-amber-50/20 border-l border-slate-100"><div className="flex flex-col gap-2">{(line.idleAllocations.length === 0 ? [{ reasonId: '', hours: 0 }] : line.idleAllocations).map((alloc, iIdx) => (
-                          <div key={iIdx} className="flex items-center gap-1.5"><input type="number" step="0.5" placeholder="Hrs" disabled={isAbsent} value={alloc.hours || ''} onChange={(e) => {
+                        <td className="px-4 py-4 bg-amber-50/20 border-l border-slate-100"><div className="flex flex-col gap-2">{(line.idleAllocations.length === 0 ? [{ reasonId: DEFAULT_IDLE_REASON_ID, reasonName: DEFAULT_IDLE_REASON_NAME, hours: 0, remarks: null }] : line.idleAllocations).map((alloc, iIdx) => (
+                          <div key={iIdx} className="flex items-center gap-1.5"><input type="number" step="0.5" placeholder="Hrs" disabled={isAbsent || !canEditTimesheet} value={alloc.hours || ''} onChange={(e) => {
                             const next = [...line.idleAllocations];
                             if (next[iIdx]) next[iIdx].hours = parseFloat(e.target.value) || 0;
-                            else next.push({ reasonId: '', reasonName: '', hours: parseFloat(e.target.value) || 0, remarks: null });
+                            else next.push({ reasonId: DEFAULT_IDLE_REASON_ID, reasonName: DEFAULT_IDLE_REASON_NAME, hours: parseFloat(e.target.value) || 0, remarks: null });
                             handleUpdateLine(originalIdx, { idleAllocations: next });
                           }} className="w-12 rounded-lg border border-slate-200 py-1 text-center text-[10px] font-black" />
-                          <select value={alloc.reasonId} onChange={(e) => {
+                          <select value={alloc.reasonId || DEFAULT_IDLE_REASON_ID} disabled={!canEditTimesheet} onChange={(e) => {
+                            const reason = payload?.idleReasons.find((item) => item.id === e.target.value);
                             const next = [...line.idleAllocations];
-                            if (next[iIdx]) next[iIdx].reasonId = e.target.value;
+                            if (next[iIdx]) next[iIdx] = { ...next[iIdx], reasonId: e.target.value, reasonName: reason?.name || DEFAULT_IDLE_REASON_NAME };
                             handleUpdateLine(originalIdx, { idleAllocations: next });
                           }} className="flex-1 rounded-lg border border-slate-200 py-1 text-[9px] font-bold">
-                            <option value="">Reason...</option>
                             {payload?.idleReasons.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                           </select>
-                          {iIdx === line.idleAllocations.length - 1 && !isAbsent && <button onClick={() => handleUpdateLine(originalIdx, { idleAllocations: [...line.idleAllocations, { reasonId: '', reasonName: '', hours: 0, remarks: null }] })} className="p-1 text-slate-400 hover:text-indigo-600"><Plus className="h-3 w-3" /></button>}</div>
+                          {iIdx === line.idleAllocations.length - 1 && !isAbsent && canEditTimesheet && <button onClick={() => handleUpdateLine(originalIdx, { idleAllocations: [...line.idleAllocations, { reasonId: DEFAULT_IDLE_REASON_ID, reasonName: DEFAULT_IDLE_REASON_NAME, hours: 0, remarks: null }] })} className="p-1 text-slate-400 hover:text-indigo-600"><Plus className="h-3 w-3" /></button>}</div>
                         ))}</div></td>
-                        <td className="px-4 py-4 text-center bg-indigo-50/20"><span className={`font-black ${line.totalHours === 8 ? 'text-emerald-600' : 'text-indigo-600'}`}>{line.totalHours}</span></td>
+                        <td className="px-4 py-4 text-center bg-indigo-50/20"><span className={`font-black ${line.totalHours === STANDARD_TIMESHEET_HOURS ? 'text-emerald-600' : 'text-indigo-600'}`}>{line.totalHours}</span></td>
                         <td className="px-4 py-4 text-center"><span className={`text-[10px] font-black ${line.variance === 0 ? 'text-emerald-600' : 'text-amber-600'}`}>{line.variance > 0 ? `+${line.variance}` : line.variance}</span></td>
                         <td className="px-4 py-4 text-center"><div className="flex flex-col items-center gap-1 group relative">
                           {line.validationStatus === 'Valid' ? <><CheckCircle2 className="h-5 w-5 text-emerald-500" /><span className="text-[9px] font-black text-emerald-600">COMPLETE</span></> : <><AlertTriangle className={`h-5 w-5 ${line.validationStatus === 'Error' ? 'text-red-500' : 'text-amber-500'}`} /><span className={`text-[9px] font-black ${line.validationStatus === 'Error' ? 'text-red-600' : 'text-amber-600'}`}>{line.validationStatus}</span></>}
@@ -748,7 +1035,7 @@ export default function TimesheetEntryClient() {
                       {matrixColumns.map(col => (
                         <div key={col.code} className="flex items-center justify-between gap-3">
                           <span className="text-xs font-bold text-slate-600 truncate flex-1">{col.label}</span>
-                          <input type="number" step="0.5" disabled={isAbsent} value={line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
+                          <input type="number" step="0.5" disabled={isAbsent || !canEditTimesheet} value={line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
                             const val = parseFloat(e.target.value) || 0;
                             const next = [...line.projectAllocations];
                             const pIdx = next.findIndex(p => p.projectCode === col.code);
@@ -764,20 +1051,22 @@ export default function TimesheetEntryClient() {
                       {line.idleAllocations.map((alloc, iIdx) => (
                         <div key={iIdx} className="flex items-center gap-2">
                           <select 
-                            value={alloc.reasonId} 
+                            value={alloc.reasonId || DEFAULT_IDLE_REASON_ID} 
+                            disabled={!canEditTimesheet}
                             onChange={(e) => {
+                              const reason = payload?.idleReasons.find((item) => item.id === e.target.value);
                               const next = [...line.idleAllocations];
-                              next[iIdx].reasonId = e.target.value;
+                              next[iIdx] = { ...next[iIdx], reasonId: e.target.value, reasonName: reason?.name || DEFAULT_IDLE_REASON_NAME };
                               handleUpdateLine(originalIdx, { idleAllocations: next });
                             }}
                             className="flex-1 rounded-lg border border-slate-200 py-1.5 text-[10px] font-bold bg-amber-50/30"
                           >
-                            <option value="">Select Reason...</option>
                             {payload?.idleReasons.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                           </select>
                           <input 
                             type="number" 
                             step="0.5" 
+                            disabled={!canEditTimesheet}
                             value={alloc.hours || ''} 
                             onChange={(e) => {
                               const next = [...line.idleAllocations];
@@ -788,9 +1077,9 @@ export default function TimesheetEntryClient() {
                           />
                         </div>
                       ))}
-                      {!isAbsent && (
+                      {!isAbsent && canEditTimesheet && (
                         <button 
-                          onClick={() => handleUpdateLine(originalIdx, { idleAllocations: [...line.idleAllocations, { reasonId: '', reasonName: '', hours: 0, remarks: null }] })}
+                          onClick={() => handleUpdateLine(originalIdx, { idleAllocations: [...line.idleAllocations, { reasonId: DEFAULT_IDLE_REASON_ID, reasonName: DEFAULT_IDLE_REASON_NAME, hours: 0, remarks: null }] })}
                           className="w-full rounded-lg border border-dashed border-slate-200 py-1.5 text-[10px] font-black text-slate-400 hover:border-indigo-300 hover:text-indigo-600 transition-all"
                         >
                           + ADD IDLE REASON
@@ -800,7 +1089,7 @@ export default function TimesheetEntryClient() {
                     <div className="flex justify-between border-t border-slate-100 pt-4 text-center font-black">
                       <div><p className="text-[8px] text-slate-400">USED</p><p className="text-blue-700">{line.usedHours}h</p></div>
                       <div><p className="text-[8px] text-slate-400">IDLE</p><p className="text-amber-700">{line.idleHours}h</p></div>
-                      <div><p className="text-[8px] text-slate-400">TOTAL</p><p className={line.totalHours === 8 ? 'text-emerald-600' : 'text-indigo-600'}>{line.totalHours}h</p></div>
+                      <div><p className="text-[8px] text-slate-400">TOTAL</p><p className={line.totalHours === STANDARD_TIMESHEET_HOURS ? 'text-emerald-600' : 'text-indigo-600'}>{line.totalHours}h</p></div>
                     </div>
                   </div>
                 </div>
@@ -810,7 +1099,7 @@ export default function TimesheetEntryClient() {
         )}
 
         {/* Approval Decisions Panel */}
-        {payload?.permissions.canApprove && payload.header?.status !== 'Approved' && payload.header?.status !== 'Locked' && payload.header?.status !== 'Draft' && (
+        {periodIsOpen && payload?.permissions.canApprove && payload.header?.status !== 'Approved' && payload.header?.status !== 'HR_Acknowledged' && payload.header?.status !== 'Locked' && payload.header?.status !== 'Draft' && (
           <div className="rounded-2xl border-2 border-indigo-200 bg-white p-8 shadow-2xl">
             <div className="flex flex-wrap items-center justify-between gap-8">
               <div className="space-y-2">
@@ -848,11 +1137,46 @@ export default function TimesheetEntryClient() {
             <div className="mb-8 flex items-center justify-between"><div className="space-y-1"><h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Register Project</h3><p className="text-sm font-medium text-slate-500">Add a new project code to the company registry.</p></div><button onClick={() => setShowProjectModal(false)} className="rounded-full p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors"><XCircle className="h-8 w-8" /></button></div>
             <div className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Project Code (Auto)</label><div className="rounded-xl border-2 border-slate-100 bg-slate-50 px-4 py-3 text-sm font-black text-slate-400">{payload?.nextProjectCode}</div></div>
-                <div><label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Site Location</label><select value={newProjectSite} onChange={(e) => setNewProjectSite(e.target.value)} className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 focus:border-indigo-500 focus:outline-none transition-all"><option value="">Select Site...</option><option value="Fabrication Yard">Fabrication Yard</option><option value="Onne Yard">Onne Yard</option><option value="Marine Base">Marine Base</option><option value="Liaison Office">Liaison Office</option><option value="Head Office">Head Office</option></select></div>
+                <div><label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Project Code</label><input type="text" placeholder="e.g. DL26005" value={newProjectCode} onChange={(e) => setNewProjectCode(e.target.value.toUpperCase())} className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 placeholder:text-slate-300 focus:border-indigo-500 focus:outline-none transition-all" /></div>
+                <div><label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Site Location</label><select value={newProjectSite} onChange={(e) => setNewProjectSite(e.target.value)} className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 focus:border-indigo-500 focus:outline-none transition-all"><option value="">Select Site...</option>{siteLocationOptions.map((site) => <option key={site} value={site}>{site}</option>)}</select></div>
               </div>
               <div><label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Project Name</label><input type="text" placeholder="e.g. NLNG Train 7 - Piping Works" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 placeholder:text-slate-300 focus:border-indigo-500 focus:outline-none transition-all" /></div>
-              <div className="pt-4 flex gap-3"><button onClick={() => setShowProjectModal(false)} className="flex-1 rounded-2xl border-2 border-slate-100 py-4 text-xs font-black text-slate-400 hover:bg-slate-50 transition-all uppercase tracking-widest">Cancel</button><button onClick={handleCreateProject} disabled={submitting || !newProjectName || !newProjectSite} className="flex-[2] rounded-2xl bg-indigo-600 py-4 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50 shadow-xl shadow-indigo-100 transition-all uppercase tracking-widest">{submitting ? 'Creating...' : 'Register Project'}</button></div>
+              <div className="pt-4 flex gap-3"><button onClick={() => setShowProjectModal(false)} className="flex-1 rounded-2xl border-2 border-slate-100 py-4 text-xs font-black text-slate-400 hover:bg-slate-50 transition-all uppercase tracking-widest">Cancel</button><button onClick={handleCreateProject} disabled={submitting || !newProjectCode.trim() || !newProjectName || !newProjectSite} className="flex-[2] rounded-2xl bg-indigo-600 py-4 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50 shadow-xl shadow-indigo-100 transition-all uppercase tracking-widest">{submitting ? 'Creating...' : 'Register Project'}</button></div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Work Center Manager */}
+      {showWorkCenterManager && (
+        <div className="fixed inset-0 z-[105] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-md">
+          <div className="w-full max-w-2xl rounded-3xl bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="mb-6 flex items-center justify-between">
+              <div className="space-y-1">
+                <h3 className="text-2xl font-black uppercase tracking-tight text-slate-900">Work Centers</h3>
+                <p className="text-sm font-medium text-slate-500">Manage production work centers for timesheet entry.</p>
+              </div>
+              <button onClick={() => setShowWorkCenterManager(false)} className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600"><XCircle className="h-8 w-8" /></button>
+            </div>
+            <div className="flex gap-3">
+              <input value={workCenterDraft} onChange={(e) => setWorkCenterDraft(e.target.value)} placeholder="Work center name" className="min-w-0 flex-1 rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 placeholder:text-slate-300 focus:border-indigo-500 focus:outline-none" />
+              <button onClick={saveWorkCenter} disabled={!workCenterDraft.trim()} className="rounded-xl bg-indigo-600 px-5 py-3 text-xs font-black uppercase tracking-widest text-white hover:bg-indigo-700 disabled:opacity-50">{editingWorkCenter ? 'Update' : 'Add'}</button>
+              {editingWorkCenter && <button onClick={() => { setEditingWorkCenter(null); setWorkCenterDraft(''); }} className="rounded-xl border border-slate-200 px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50">Cancel</button>}
+            </div>
+            <div className="mt-5 max-h-[360px] overflow-y-auto rounded-2xl border border-slate-200">
+              {workCenters.map((workCenter) => (
+                <div key={workCenter} className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0">
+                  <button onClick={() => setSelectedWorkCenter(workCenter)} className={`min-w-0 flex-1 truncate text-left text-sm font-black ${selectedWorkCenter === workCenter ? 'text-indigo-700' : 'text-slate-800'}`}>{workCenter}</button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => editWorkCenter(workCenter)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 hover:text-indigo-600"><Edit3 className="h-4 w-4" /></button>
+                    <button onClick={() => deleteWorkCenter(workCenter)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-red-50 hover:text-red-600"><XCircle className="h-4 w-4" /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 flex justify-between gap-3">
+              <button onClick={() => setWorkCenters(DEFAULT_WORK_CENTERS)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50">Reset Default</button>
+              <button onClick={() => setShowWorkCenterManager(false)} className="rounded-xl bg-slate-900 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-slate-800">Done</button>
             </div>
           </div>
         </div>
@@ -900,7 +1224,7 @@ export default function TimesheetEntryClient() {
                 <button onClick={() => setShowBulkModal(false)} className="flex-1 rounded-2xl border-2 border-slate-100 py-3 text-[10px] font-black text-slate-400 hover:bg-slate-50 transition-all uppercase tracking-widest">Cancel</button>
                 <button 
                   onClick={handleBulkApply} 
-                  disabled={submitting || !bulkProject} 
+                  disabled={submitting || !bulkProject || !canEditTimesheet} 
                   className="flex-[2] rounded-2xl bg-amber-600 py-3 text-[10px] font-black text-white hover:bg-amber-700 disabled:opacity-50 shadow-xl shadow-amber-100 transition-all uppercase tracking-widest"
                 >
                   {submitting ? 'Applying...' : 'Apply Allocation'}

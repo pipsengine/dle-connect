@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
+import { readLiveDailyAttendance, type LiveAttendanceRecord } from '@/lib/biometric-live-attendance-store';
+import { getUiPermissions, resolveAccessContext } from '@/lib/hris-access';
 import type { StructureInsight } from '@/lib/organization-data';
-import { buildBaseAttendanceRecords, type AttendanceStatus, type BaseAttendanceRecord, type Shift } from '@/lib/attendance-data';
-
-type AttendanceRecord = BaseAttendanceRecord;
 
 type AttendanceSegment = {
   id: string;
@@ -18,172 +17,145 @@ type AttendanceSegment = {
   attendanceRatePct: number;
   punctualityPct: number;
   overtimeHours: number;
-  shiftCoverage: Array<{ shift: Shift; planned: number; present: number }>;
+  shiftCoverage: Array<{ shift: 'Day' | 'Night' | 'Rotational'; planned: number; present: number }>;
   health: 'Healthy' | 'Needs Attention' | 'Critical';
   lead: string;
 };
 
-type DailyAttendancePayload = {
-  generatedAt: string;
-  permissions: {
-    actor: string;
-    role: string;
-    canEdit: boolean;
-    canExport: boolean;
-    canViewAudit: boolean;
-  };
-  summary: {
-    totalEmployees: number;
-    present: number;
-    late: number;
-    absent: number;
-    remote: number;
-    onLeave: number;
-    attendanceRatePct: number;
-    punctualityPct: number;
-    overtimeHours: number;
-    flaggedSites: number;
-  };
-  filterOptions: {
-    businessUnits: string[];
-    locations: string[];
-    sites: string[];
-    shifts: Shift[];
-    statuses: AttendanceStatus[];
-  };
-  segments: AttendanceSegment[];
-  records: AttendanceRecord[];
-  insights: StructureInsight[];
-};
-
 const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
+const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
+const pct = (part: number, total: number) => (total > 0 ? Math.round((part / total) * 1000) / 10 : 0);
 
-const attendanceRate = (records: AttendanceRecord[]) => {
-  if (!records.length) return 0;
-  const available = records.filter((item) => item.status !== 'On Leave' && item.status !== 'Excused');
-  if (!available.length) return 100;
-  const effectivePresent = available.filter((item) => item.status === 'Present' || item.status === 'Late' || item.status === 'Remote').length;
-  return Math.round((effectivePresent / available.length) * 1000) / 10;
-};
-
-const punctualityRate = (records: AttendanceRecord[]) => {
-  const checkedIn = records.filter((item) => item.status === 'Present' || item.status === 'Late');
-  if (!checkedIn.length) return 100;
-  const punctual = checkedIn.filter((item) => item.minutesLate <= 5).length;
-  return Math.round((punctual / checkedIn.length) * 1000) / 10;
-};
-
-const buildPayload = (): DailyAttendancePayload => {
-  const records: AttendanceRecord[] = buildBaseAttendanceRecords();
-
-  const segmentMap = records.reduce<Map<string, AttendanceRecord[]>>((acc, record) => {
+const buildSegments = (records: LiveAttendanceRecord[]): AttendanceSegment[] => {
+  const grouped = new Map<string, LiveAttendanceRecord[]>();
+  for (const record of records) {
     const key = `${record.location}||${record.site}`;
-    const current = acc.get(key) || [];
-    current.push(record);
-    acc.set(key, current);
-    return acc;
-  }, new Map());
+    grouped.set(key, [...(grouped.get(key) || []), record]);
+  }
 
-  const segments: AttendanceSegment[] = Array.from(segmentMap.entries()).map(([key, group], index) => {
-    const [location, site] = key.split('||');
-    const present = group.filter((item) => item.status === 'Present').length;
-    const late = group.filter((item) => item.status === 'Late').length;
-    const absent = group.filter((item) => item.status === 'Absent').length;
-    const remote = group.filter((item) => item.status === 'Remote').length;
-    const onLeave = group.filter((item) => item.status === 'On Leave').length;
-    const rate = attendanceRate(group);
-    const punctuality = punctualityRate(group);
-    const overtime = Math.round(group.reduce((sum, item) => sum + item.overtimeHours, 0) * 10) / 10;
-    const shifts: Shift[] = ['Day', 'Night', 'Rotational'];
-    const health = absent > 1 || rate < 80 ? 'Critical' : late > 1 || rate < 90 ? 'Needs Attention' : 'Healthy';
-
-    return {
-      id: `seg-${index + 1}`,
-      label: `${site} Attendance`,
-      location,
-      site,
-      headcount: group.length,
-      present,
-      late,
-      absent,
-      remote,
-      onLeave,
-      attendanceRatePct: rate,
-      punctualityPct: punctuality,
-      overtimeHours: overtime,
-      shiftCoverage: shifts.map((shift) => {
-        const members = group.filter((item) => item.shift === shift);
-        const presentCount = members.filter((item) => item.status === 'Present' || item.status === 'Late' || item.status === 'Remote').length;
+  return Array.from(grouped.entries())
+    .map(([key, rows]) => {
+      const [location, site] = key.split('||');
+      const present = rows.filter((row) => row.status === 'Present' || row.status === 'Late').length;
+      const late = rows.filter((row) => row.status === 'Late').length;
+      const absent = rows.filter((row) => row.status === 'Absent').length;
+      const remote = rows.filter((row) => row.status === 'Remote').length;
+      const onLeave = rows.filter((row) => row.status === 'On Leave' || row.status === 'Excused').length;
+      const attendanceRatePct = pct(present + remote + onLeave, rows.length);
+      const punctualityPct = pct(present - late, Math.max(1, present));
+      const shiftCoverage = (['Day', 'Night', 'Rotational'] as const).map((shift) => {
+        const planned = rows.filter((row) => row.shift === shift).length;
         return {
           shift,
-          planned: members.length,
-          present: presentCount,
+          planned,
+          present: rows.filter((row) => row.shift === shift && row.checkInTime).length,
         };
-      }),
-      health,
-      lead: group[0]?.supervisor || 'Unassigned',
-    };
-  });
+      });
+      const health: AttendanceSegment['health'] =
+        attendanceRatePct < 70 || late >= 5
+          ? 'Critical'
+          : attendanceRatePct < 90 || late >= 2
+            ? 'Needs Attention'
+            : 'Healthy';
 
-  const worstSegment = [...segments].sort((a, b) => a.attendanceRatePct - b.attendanceRatePct)[0];
-  const highestAbsence = [...segments].sort((a, b) => b.absent - a.absent)[0];
-  const highestLate = [...segments].sort((a, b) => b.late - a.late)[0];
-
-  const insights: StructureInsight[] = [
-    {
-      id: 'att-ins-1',
-      severity: worstSegment && worstSegment.attendanceRatePct < 85 ? 'high' : 'medium',
-      title: `${worstSegment?.site || 'A site'} has the weakest attendance rate`,
-      recommendation: 'Escalate supervisor follow-up, confirm roster adherence, and validate transport or access constraints affecting daily turn-up.',
-    },
-    {
-      id: 'att-ins-2',
-      severity: highestAbsence && highestAbsence.absent >= 2 ? 'high' : 'medium',
-      title: `${highestAbsence?.site || 'A site'} is carrying the highest absence exposure`,
-      recommendation: 'Review exception reasons, secure temporary cover for operational roles, and trigger attendance exception management where required.',
-    },
-    {
-      id: 'att-ins-3',
-      severity: highestLate && highestLate.late >= 2 ? 'medium' : 'low',
-      title: `${highestLate?.site || 'A site'} shows the highest lateness pressure`,
-      recommendation: 'Monitor gate access timing, shift handover discipline, and reporting-time compliance for the affected team.',
-    },
-  ];
-
-  return {
-    generatedAt: new Date().toISOString(),
-    permissions: {
-      actor: 'Attendance Control Desk',
-      role: 'HR Officer',
-      canEdit: false,
-      canExport: true,
-      canViewAudit: false,
-    },
-    summary: {
-      totalEmployees: records.length,
-      present: records.filter((item) => item.status === 'Present').length,
-      late: records.filter((item) => item.status === 'Late').length,
-      absent: records.filter((item) => item.status === 'Absent').length,
-      remote: records.filter((item) => item.status === 'Remote').length,
-      onLeave: records.filter((item) => item.status === 'On Leave').length,
-      attendanceRatePct: attendanceRate(records),
-      punctualityPct: punctualityRate(records),
-      overtimeHours: Math.round(records.reduce((sum, item) => sum + item.overtimeHours, 0) * 10) / 10,
-      flaggedSites: segments.filter((segment) => segment.health !== 'Healthy').length,
-    },
-    filterOptions: {
-      businessUnits: Array.from(new Set(records.map((item) => item.businessUnit))).sort((a, b) => a.localeCompare(b)),
-      locations: Array.from(new Set(records.map((item) => item.location))).sort((a, b) => a.localeCompare(b)),
-      sites: Array.from(new Set(records.map((item) => item.site))).sort((a, b) => a.localeCompare(b)),
-      shifts: ['Day', 'Night', 'Rotational'],
-      statuses: ['Present', 'Late', 'Absent', 'On Leave', 'Remote', 'Excused'],
-    },
-    segments: segments.sort((a, b) => a.attendanceRatePct - b.attendanceRatePct),
-    records: records.sort((a, b) => a.employeeName.localeCompare(b.employeeName)),
-    insights,
-  };
+      return {
+        id: `${location}-${site}`.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        label: site === location ? location : `${location} / ${site}`,
+        location,
+        site,
+        headcount: rows.length,
+        present,
+        late,
+        absent,
+        remote,
+        onLeave,
+        attendanceRatePct,
+        punctualityPct,
+        overtimeHours: Math.round(rows.reduce((sum, row) => sum + row.overtimeHours, 0) * 10) / 10,
+        shiftCoverage,
+        health,
+        lead: rows[0]?.supervisor || location,
+      };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label));
 };
 
-export async function GET() {
-  return ok(buildPayload());
+const buildInsights = (records: LiveAttendanceRecord[], segments: AttendanceSegment[]): StructureInsight[] => {
+  const late = records.filter((record) => record.status === 'Late');
+  const absent = records.filter((record) => record.status === 'Absent');
+  const critical = segments.filter((segment) => segment.health === 'Critical');
+
+  return [
+    {
+      id: 'daily-att-late',
+      severity: late.length >= 10 ? 'high' : late.length >= 3 ? 'medium' : 'low',
+      title: `${late.length} late clock-in${late.length === 1 ? '' : 's'} recorded`,
+      recommendation: late.length > 0 ? 'Review late arrivals by site and confirm whether production start times need supervisor follow-up.' : 'No meaningful lateness pattern detected for this attendance date.',
+    },
+    {
+      id: 'daily-att-absence',
+      severity: absent.length >= 10 ? 'high' : absent.length >= 3 ? 'medium' : 'low',
+      title: `${absent.length} absent employee${absent.length === 1 ? '' : 's'} in the live register`,
+      recommendation: absent.length > 0 ? 'Validate absent lines against approved leave, sick notes, and supervisor overrides before payroll processing.' : 'No absence pressure detected in the current scope.',
+    },
+    {
+      id: 'daily-att-site-health',
+      severity: critical.length > 0 ? 'high' : 'low',
+      title: `${critical.length} site segment${critical.length === 1 ? '' : 's'} need attention`,
+      recommendation: critical.length > 0 ? 'Prioritize critical site segments with low attendance or high lateness before shift close.' : 'All site segments are within acceptable attendance thresholds.',
+    },
+  ];
+};
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const access = resolveAccessContext(request);
+    const uiPermissions = getUiPermissions(access);
+    const liveAttendance = await readLiveDailyAttendance(searchParams.get('date') || undefined);
+    const records = liveAttendance.records;
+    const present = records.filter((record) => record.status === 'Present' || record.status === 'Late').length;
+    const late = records.filter((record) => record.status === 'Late').length;
+    const absent = records.filter((record) => record.status === 'Absent').length;
+    const remote = records.filter((record) => record.status === 'Remote').length;
+    const onLeave = records.filter((record) => record.status === 'On Leave' || record.status === 'Excused').length;
+    const segments = buildSegments(records);
+
+    return ok({
+      generatedAt: new Date().toISOString(),
+      attendanceDate: liveAttendance.attendanceDate,
+      source: 'Live Biometric Database' as const,
+      permissions: {
+        actor: uiPermissions.actor,
+        role: uiPermissions.role,
+        canEdit: uiPermissions.canEditAttendance,
+        canExport: true,
+        canViewAudit: uiPermissions.canViewAudit,
+      },
+      summary: {
+        totalEmployees: records.length,
+        present,
+        late,
+        absent,
+        remote,
+        onLeave,
+        attendanceRatePct: pct(present + remote + onLeave, records.length),
+        punctualityPct: pct(present - late, present),
+        overtimeHours: Math.round(records.reduce((sum, record) => sum + record.overtimeHours, 0) * 10) / 10,
+        flaggedSites: segments.filter((segment) => segment.health !== 'Healthy').length,
+      },
+      filterOptions: {
+        businessUnits: Array.from(new Set(records.map((record) => record.businessUnit))).sort(),
+        locations: Array.from(new Set(records.map((record) => record.location))).sort(),
+        sites: Array.from(new Set(records.map((record) => record.site))).sort(),
+        shifts: Array.from(new Set(records.map((record) => record.shift))).sort(),
+        statuses: Array.from(new Set(records.map((record) => record.status))).sort(),
+      },
+      segments,
+      records,
+      insights: buildInsights(records, segments),
+    });
+  } catch (error) {
+    return err(500, error instanceof Error ? error.message : 'Unable to load daily attendance');
+  }
 }

@@ -1,10 +1,21 @@
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { buildBaseAttendanceRecords } from '@/lib/attendance-data';
+import { readLiveClockingActivity } from '@/lib/biometric-live-attendance-store';
+import { normalizePayrollMatchKey, readActiveSagePayrollEmployeeKeys, type SagePayrollEmployee } from '@/lib/sage-people-payroll-store';
 
-import { readClockingRecords } from './attendance-clocking-store';
-
-export type TimesheetStatus = 'Draft' | 'Submitted' | 'HR_Reviewed' | 'Project_Control_Reviewed' | 'Approved' | 'Locked' | 'Rejected';
+export type TimesheetStatus =
+  | 'Draft'
+  | 'Submitted'
+  | 'Project_Manager_Reviewed'
+  | 'Cost_Control_Reviewed'
+  | 'HR_Acknowledged'
+  | 'HR_Reviewed'
+  | 'Project_Control_Reviewed'
+  | 'Approved'
+  | 'Locked'
+  | 'Rejected'
+  | 'Returned';
 
 export type WorkflowStage = {
   id: TimesheetStatus;
@@ -15,9 +26,9 @@ export type WorkflowStage = {
 export const workflowStages: WorkflowStage[] = [
   { id: 'Draft', label: 'Draft', order: 1 },
   { id: 'Submitted', label: 'Supervisor Submitted', order: 2 },
-  { id: 'HR_Reviewed', label: 'HR Review', order: 3 },
-  { id: 'Project_Control_Reviewed', label: 'Project Control Review', order: 4 },
-  { id: 'Approved', label: 'Operations Approval', order: 5 },
+  { id: 'Project_Manager_Reviewed', label: 'Project Manager Review', order: 3 },
+  { id: 'Cost_Control_Reviewed', label: 'Cost Control Review', order: 4 },
+  { id: 'HR_Acknowledged', label: 'HR Payroll Acknowledgement', order: 5 },
   { id: 'Locked', label: 'Payroll Lock', order: 6 },
 ];
 export type TimesheetApprovalDecision = 'Pending' | 'Approved' | 'Rejected' | 'Returned' | 'Locked';
@@ -34,6 +45,21 @@ export type TimesheetPeriod = {
   startDate: string;
   endDate: string;
   status: 'Open' | 'Closed' | 'Locked';
+  openedAt?: string | null;
+  openedBy?: string | null;
+  closedAt?: string | null;
+  closedBy?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+};
+
+export type TimesheetPeriodSummary = TimesheetPeriod & {
+  totalHeaders: number;
+  draftHeaders: number;
+  submittedHeaders: number;
+  approvedHeaders: number;
+  totalEmployees: number;
+  totalHours: number;
 };
 
 export type IdleReason = {
@@ -57,6 +83,36 @@ export type TimesheetHeader = {
   approvedAt: string | null;
   approvedBy: string | null;
   lastSyncAt: string | null;
+  workflowHistory?: TimesheetWorkflowEvent[];
+  payrollAcknowledgedAt?: string | null;
+  payrollAcknowledgedBy?: string | null;
+};
+
+export type TimesheetWorkflowStage = 'Supervisor' | 'Project Manager' | 'Cost Control' | 'HR';
+export type TimesheetWorkflowDecision = 'Submitted' | 'Approved' | 'Acknowledged' | 'Rejected' | 'Returned';
+export type TimesheetWorkflowEvent = {
+  stage: TimesheetWorkflowStage;
+  decision: TimesheetWorkflowDecision;
+  by: string;
+  actedAt: string;
+  comment: string | null;
+};
+
+export type TimesheetPayrollUpdate = {
+  id: string;
+  periodId: string;
+  periodName: string;
+  acknowledgedAt: string;
+  acknowledgedBy: string;
+  headerIds: string[];
+  employeeAttendance: Array<{
+    employeeId: string;
+    employeeName: string;
+    daysWorked: number;
+    attendanceHours: number;
+    bookedHours: number;
+    idleHours: number;
+  }>;
 };
 
 export type TimesheetLine = {
@@ -226,6 +282,7 @@ const resolveDashboardRoot = () => {
 const DATA_DIR = path.join(resolveDashboardRoot(), 'data', 'hris');
 const FILE_PATH = path.join(DATA_DIR, 'timesheet-entry.json');
 const TIMESHEET_DATE = '2026-06-03';
+export const STANDARD_TIMESHEET_HOURS = 9;
 
 const projectCatalog: ProjectCatalogItem[] = [
   { code: 'PRJ-001', label: 'PRJ-001', name: 'Dangote Refinery Pipe Fabrication', kind: 'project', hourType: 'Project Work', billable: true, phase: 'Mechanical', workPackage: 'Pipe Shop', activity: 'Pipe Fabrication', task: 'Fit-Up and Welding', costCode: 'FAB-001', wbs: 'PRJ-001.MEC.PSHOP.FAB', client: 'Dangote Refinery' },
@@ -277,6 +334,21 @@ const bucketForHourType = (hourType: HourType): AllocationBucket => {
 
 const catalogByCode = new Map(projectCatalog.map((item) => [item.code, item]));
 
+const cleanNamePart = (value: string | null | undefined) => String(value ?? '').trim().replace(/\s+/g, ' ');
+
+const formatSageEmployeeFullName = (employee: SagePayrollEmployee, fallback: string) => {
+  const firstNames = cleanNamePart(employee.firstNames);
+  const lastName = cleanNamePart(employee.lastName);
+  const fullName = [firstNames, lastName].filter(Boolean).join(' ');
+  return fullName || cleanNamePart(employee.displayName) || fallback;
+};
+
+const sageTimesheetEmployeeCode = (employee: SagePayrollEmployee, fallback: string) =>
+  (employee.directoryEmployeeCode || employee.employeeCode || fallback).trim().toUpperCase();
+
+const isContractTimesheetEmployee = (employee: SagePayrollEmployee, fallback: string) =>
+  sageTimesheetEmployeeCode(employee, fallback).startsWith('C');
+
 const buildAllocation = (employeeId: string, code: string, hours: number, labourRateNgn: number, suffix: string): TimesheetAllocation => {
   const meta = catalogByCode.get(code) || projectCatalog[0];
   return {
@@ -309,9 +381,9 @@ const buildDefaultAllocations = (
   labourRateNgn: number,
   index: number,
 ): TimesheetAllocation[] => {
-  if (status === 'On Leave') return [buildAllocation(employeeId, 'LEAVE', 8, labourRateNgn, 'leave')];
-  if (status === 'Excused') return [buildAllocation(employeeId, 'LEAVE', 8, labourRateNgn, 'excused')];
-  if (status === 'Absent') return [buildAllocation(employeeId, 'NO_ASSIGNMENT', 8, labourRateNgn, 'absent')];
+  if (status === 'On Leave') return [buildAllocation(employeeId, 'LEAVE', STANDARD_TIMESHEET_HOURS, labourRateNgn, 'leave')];
+  if (status === 'Excused') return [buildAllocation(employeeId, 'LEAVE', STANDARD_TIMESHEET_HOURS, labourRateNgn, 'excused')];
+  if (status === 'Absent') return [buildAllocation(employeeId, 'NO_ASSIGNMENT', STANDARD_TIMESHEET_HOURS, labourRateNgn, 'absent')];
 
   if (location === 'Bonny') {
     return [
@@ -389,11 +461,11 @@ const buildDefaultRecords = (): TimesheetRecord[] =>
     const labourRateNgn = rateForEmployee(index, employee.jobTitle);
     let allocations = normalizeHours(buildDefaultAllocations(employee.employeeId, employee.jobTitle, employee.businessUnit, employee.location, employee.status, labourRateNgn, index));
     const totalHours = allocations.reduce((sum, item) => sum + item.hours, 0);
-    if (totalHours < 8 && employee.status !== 'On Leave' && employee.status !== 'Excused' && employee.status !== 'Absent') {
-      allocations = normalizeHours([...allocations, buildAllocation(employee.employeeId, 'IDLE', Math.round((8 - totalHours) * 10) / 10, labourRateNgn, 'topup')]);
+    if (totalHours < STANDARD_TIMESHEET_HOURS && employee.status !== 'On Leave' && employee.status !== 'Excused' && employee.status !== 'Absent') {
+      allocations = normalizeHours([...allocations, buildAllocation(employee.employeeId, 'IDLE', Math.round((STANDARD_TIMESHEET_HOURS - totalHours) * 10) / 10, labourRateNgn, 'topup')]);
     }
     const adjustedTotal = allocations.reduce((sum, item) => sum + item.hours, 0);
-    const overtimeHours = Math.max(0, Math.round((adjustedTotal - 8) * 10) / 10);
+    const overtimeHours = Math.max(0, Math.round((adjustedTotal - STANDARD_TIMESHEET_HOURS) * 10) / 10);
     const approvedOvertimeHours = index % 6 === 0 ? overtimeHours : 0;
     const status: TimesheetStatus = overtimeHours > approvedOvertimeHours ? 'Draft' : employee.status === 'Absent' ? 'Returned' : index % 5 === 0 ? 'Submitted' : 'Draft';
 
@@ -409,7 +481,7 @@ const buildDefaultRecords = (): TimesheetRecord[] =>
       supervisor: employee.supervisor,
       shift: employee.shift,
       labourRateNgn,
-      standardHours: 8,
+      standardHours: STANDARD_TIMESHEET_HOURS,
       overtimeHours,
       approvedOvertimeHours,
       mode: employee.location === 'Bonny' ? 'Foreman Entry' : index % 4 === 0 ? 'Project Engineer Entry' : 'Employee Self-Service',
@@ -490,6 +562,16 @@ export const idleReasons: IdleReason[] = [
   { id: 'idl-008', code: 'SAFETY', name: 'Safety restriction', description: 'Work halted for safety inspections or incidents.' },
   { id: 'idl-009', code: 'BREAK', name: 'Break Time', description: 'Standard daily break time (lunch/rest).' },
 ];
+export const defaultIdleReason = idleReasons.find((reason) => reason.code === 'BREAK') || idleReasons[0];
+
+export const withDefaultIdleReason = <T extends { reasonId: string; reasonName: string; hours: number; remarks: string | null }>(allocation: T): T => {
+  if (allocation.reasonId || allocation.hours <= 0) return allocation;
+  return {
+    ...allocation,
+    reasonId: defaultIdleReason.id,
+    reasonName: defaultIdleReason.name,
+  };
+};
 
 export const calculateTimesheetPeriod = (date: Date = new Date()): TimesheetPeriod => {
   const year = date.getFullYear();
@@ -536,10 +618,18 @@ export const calculateTimesheetPeriod = (date: Date = new Date()): TimesheetPeri
   };
 };
 
+export const calculateTimesheetPeriodForMonth = (year: number, month: number): TimesheetPeriod => {
+  const endDate = new Date(year, month - 1, 15);
+  const startDate = new Date(year, month - 2, 16);
+  return calculateTimesheetPeriod(endDate);
+};
+
 export const getTimesheetDate = () => TIMESHEET_DATE;
 
 const DATA_FILE_V2 = path.join(DATA_DIR, 'timesheet-v2.json');
 const PROJECTS_FILE = path.join(DATA_DIR, 'projects.json');
+const PERIODS_FILE = path.join(DATA_DIR, 'timesheet-periods.json');
+const PAYROLL_UPDATES_FILE = path.join(DATA_DIR, 'timesheet-payroll-updates.json');
 
 async function ensureStoreV2() {
   await mkdir(DATA_DIR, { recursive: true });
@@ -559,6 +649,137 @@ async function ensureStoreV2() {
     ];
     await writeFile(PROJECTS_FILE, JSON.stringify(defaultProjects, null, 2), 'utf8');
   }
+  try {
+    await access(PERIODS_FILE);
+  } catch {
+    await writeFile(PERIODS_FILE, JSON.stringify([], null, 2), 'utf8');
+  }
+  try {
+    await access(PAYROLL_UPDATES_FILE);
+  } catch {
+    await writeFile(PAYROLL_UPDATES_FILE, JSON.stringify([], null, 2), 'utf8');
+  }
+}
+
+export async function readTimesheetPeriods(): Promise<TimesheetPeriod[]> {
+  await ensureStoreV2();
+  try {
+    const raw = await readFile(PERIODS_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed as TimesheetPeriod[] : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function writeTimesheetPeriods(periods: TimesheetPeriod[]) {
+  await ensureStoreV2();
+  await writeFile(PERIODS_FILE, JSON.stringify(periods, null, 2), 'utf8');
+}
+
+export async function readTimesheetPeriod(date: Date = new Date()): Promise<TimesheetPeriod> {
+  const calculated = calculateTimesheetPeriod(date);
+  const periods = await readTimesheetPeriods();
+  const stored = periods.find((period) => period.id === calculated.id);
+
+  if (stored) {
+    return {
+      ...calculated,
+      ...stored,
+      startDate: calculated.startDate,
+      endDate: calculated.endDate,
+      name: calculated.name,
+    };
+  }
+
+  const now = new Date().toISOString();
+  const currentPeriodId = calculateTimesheetPeriod(new Date()).id;
+  const shouldAutoOpen = calculated.id === currentPeriodId && !periods.some((period) => period.status === 'Open');
+  const period: TimesheetPeriod = {
+    ...calculated,
+    status: shouldAutoOpen ? 'Open' : 'Closed',
+    openedAt: shouldAutoOpen ? now : null,
+    openedBy: shouldAutoOpen ? 'System' : null,
+    closedAt: shouldAutoOpen ? null : now,
+    closedBy: shouldAutoOpen ? null : 'System',
+    updatedAt: now,
+    updatedBy: 'System',
+  };
+
+  await writeTimesheetPeriods([...periods, period]);
+  return period;
+}
+
+export async function updateTimesheetPeriodStatus(date: Date, status: TimesheetPeriod['status'], actor: string): Promise<TimesheetPeriod> {
+  const calculated = calculateTimesheetPeriod(date);
+  const currentPeriodId = calculateTimesheetPeriod(new Date()).id;
+  if (status === 'Open' && calculated.id !== currentPeriodId) {
+    throw new Error('Only the current timesheet period can be opened.');
+  }
+  const current = await readTimesheetPeriod(date);
+  if (current.status === 'Locked' && status !== 'Locked') {
+    throw new Error('Locked timesheet periods cannot be reopened.');
+  }
+
+  const now = new Date().toISOString();
+  const next: TimesheetPeriod = {
+    ...current,
+    status,
+    openedAt: status === 'Open' ? now : current.openedAt,
+    openedBy: status === 'Open' ? actor : current.openedBy,
+    closedAt: status === 'Closed' || status === 'Locked' ? now : null,
+    closedBy: status === 'Closed' || status === 'Locked' ? actor : null,
+    updatedAt: now,
+    updatedBy: actor,
+  };
+
+  const periods = await readTimesheetPeriods();
+  const existingIndex = periods.findIndex((period) => period.id === next.id);
+  const updatedPeriods = periods.map((period) => {
+    if (status !== 'Open' || period.id === next.id || period.status !== 'Open') return period;
+    return {
+      ...period,
+      status: 'Closed' as const,
+      closedAt: now,
+      closedBy: actor,
+      updatedAt: now,
+      updatedBy: actor,
+    };
+  });
+  if (existingIndex >= 0) updatedPeriods[existingIndex] = next;
+  else updatedPeriods.push(next);
+
+  await writeTimesheetPeriods(updatedPeriods);
+  return next;
+}
+
+export async function readTimesheetPeriodSummaries(windowMonths = 12): Promise<TimesheetPeriodSummary[]> {
+  const current = calculateTimesheetPeriod(new Date());
+  const currentEnd = new Date(`${current.endDate}T00:00:00`);
+  const periods = await Promise.all(
+    Array.from({ length: windowMonths }, (_, index) => {
+      const end = new Date(currentEnd);
+      end.setMonth(currentEnd.getMonth() - index);
+      return readTimesheetPeriod(end);
+    }),
+  );
+  const { headers, lines } = await readTimesheetData();
+
+  return periods.map((period) => {
+    const periodHeaders = headers.filter((header) => header.periodId === period.id);
+    const headerIds = new Set(periodHeaders.map((header) => header.id));
+    const periodLines = lines.filter((line) => headerIds.has(line.headerId));
+
+    return {
+      ...period,
+      totalHeaders: periodHeaders.length,
+      draftHeaders: periodHeaders.filter((header) => header.status === 'Draft').length,
+      submittedHeaders: periodHeaders.filter((header) => ['Submitted', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed', 'HR_Reviewed', 'Project_Control_Reviewed'].includes(header.status)).length,
+      approvedHeaders: periodHeaders.filter((header) => ['HR_Acknowledged', 'Approved', 'Locked'].includes(header.status)).length,
+      totalEmployees: periodLines.length,
+      totalHours: Math.round(periodLines.reduce((sum, line) => sum + line.totalHours, 0) * 10) / 10,
+    };
+  });
 }
 
 export async function readProjects(): Promise<Project[]> {
@@ -597,31 +818,190 @@ export async function writeTimesheetData(data: { headers: TimesheetHeader[]; lin
   await writeFile(DATA_FILE_V2, JSON.stringify(data, null, 2), 'utf8');
 }
 
+export async function readTimesheetPayrollUpdates(): Promise<TimesheetPayrollUpdate[]> {
+  await ensureStoreV2();
+  try {
+    const raw = await readFile(PAYROLL_UPDATES_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed as TimesheetPayrollUpdate[] : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function writeTimesheetPayrollUpdates(updates: TimesheetPayrollUpdate[]) {
+  await ensureStoreV2();
+  await writeFile(PAYROLL_UPDATES_FILE, JSON.stringify(updates, null, 2), 'utf8');
+}
+
+const workflowEvent = (
+  stage: TimesheetWorkflowStage,
+  decision: TimesheetWorkflowDecision,
+  actor: string,
+  comment?: string | null,
+): TimesheetWorkflowEvent => ({
+  stage,
+  decision,
+  by: actor,
+  actedAt: new Date().toISOString(),
+  comment: comment?.trim() || null,
+});
+
+export const normalizeTimesheetStatus = (status: TimesheetStatus): TimesheetStatus => {
+  if (status === 'HR_Reviewed') return 'Project_Manager_Reviewed';
+  if (status === 'Project_Control_Reviewed') return 'Cost_Control_Reviewed';
+  if (status === 'Approved') return 'HR_Acknowledged';
+  return status;
+};
+
+export const isTimesheetEditableStatus = (status: TimesheetStatus) =>
+  ['Draft', 'Returned', 'Rejected'].includes(normalizeTimesheetStatus(status));
+
+export const isTimesheetPayrollReadyStatus = (status: TimesheetStatus) =>
+  ['HR_Acknowledged', 'Locked'].includes(normalizeTimesheetStatus(status));
+
+const createPayrollUpdateForPeriod = async (periodId: string, actor: string): Promise<TimesheetPayrollUpdate> => {
+  const { headers, lines } = await readTimesheetData();
+  const period = await readTimesheetPeriod(new Date(`${periodId.replace('per-', '')}-15T00:00:00`));
+  const periodHeaders = headers.filter((header) => header.periodId === periodId && normalizeTimesheetStatus(header.status) === 'HR_Acknowledged');
+  const headerIds = new Set(periodHeaders.map((header) => header.id));
+  const totals = new Map<string, TimesheetPayrollUpdate['employeeAttendance'][number]>();
+
+  for (const line of lines.filter((item) => headerIds.has(item.headerId))) {
+    const current = totals.get(line.employeeId) || {
+      employeeId: line.employeeId,
+      employeeName: line.employeeName,
+      daysWorked: 0,
+      attendanceHours: 0,
+      bookedHours: 0,
+      idleHours: 0,
+    };
+    current.daysWorked += line.clockIn ? 1 : 0;
+    current.attendanceHours = Math.round((current.attendanceHours + line.attendanceDuration) * 10) / 10;
+    current.bookedHours = Math.round((current.bookedHours + line.totalHours) * 10) / 10;
+    current.idleHours = Math.round((current.idleHours + line.idleHours) * 10) / 10;
+    totals.set(line.employeeId, current);
+  }
+
+  const update: TimesheetPayrollUpdate = {
+    id: `payroll-${periodId}-${Date.now()}`,
+    periodId,
+    periodName: period.name,
+    acknowledgedAt: new Date().toISOString(),
+    acknowledgedBy: actor,
+    headerIds: Array.from(headerIds),
+    employeeAttendance: Array.from(totals.values()).sort((a, b) => a.employeeName.localeCompare(b.employeeName)),
+  };
+  const updates = await readTimesheetPayrollUpdates();
+  await writeTimesheetPayrollUpdates([update, ...updates.filter((item) => item.periodId !== periodId)]);
+  return update;
+};
+
+export async function advanceTimesheetWorkflow(
+  headerId: string,
+  action: 'APPROVE' | 'REJECT' | 'RETURN',
+  actor: string,
+  comment?: string | null,
+): Promise<{ header: TimesheetHeader; payrollUpdate: TimesheetPayrollUpdate | null }> {
+  const { headers, lines } = await readTimesheetData();
+  const header = headers.find((item) => item.id === headerId);
+  if (!header) throw new Error('Timesheet header not found.');
+
+  const status = normalizeTimesheetStatus(header.status);
+  const now = new Date().toISOString();
+  let event: TimesheetWorkflowEvent;
+
+  if (action === 'REJECT') {
+    if (!['Submitted', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed'].includes(status)) {
+      throw new Error('Only in-progress timesheets can be rejected.');
+    }
+    const stage: TimesheetWorkflowStage = status === 'Submitted' ? 'Project Manager' : status === 'Project_Manager_Reviewed' ? 'Cost Control' : 'HR';
+    header.status = 'Rejected';
+    event = workflowEvent(stage, 'Rejected', actor, comment);
+  } else if (action === 'RETURN') {
+    if (!['Submitted', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed'].includes(status)) {
+      throw new Error('Only in-progress timesheets can be returned.');
+    }
+    const stage: TimesheetWorkflowStage = status === 'Submitted' ? 'Project Manager' : status === 'Project_Manager_Reviewed' ? 'Cost Control' : 'HR';
+    header.status = 'Returned';
+    event = workflowEvent(stage, 'Returned', actor, comment);
+  } else if (status === 'Submitted') {
+    header.status = 'Project_Manager_Reviewed';
+    event = workflowEvent('Project Manager', 'Approved', actor, comment);
+  } else if (status === 'Project_Manager_Reviewed') {
+    header.status = 'Cost_Control_Reviewed';
+    event = workflowEvent('Cost Control', 'Approved', actor, comment);
+  } else if (status === 'Cost_Control_Reviewed') {
+    header.status = 'HR_Acknowledged';
+    header.approvedAt = now;
+    header.approvedBy = actor;
+    header.payrollAcknowledgedAt = now;
+    header.payrollAcknowledgedBy = actor;
+    event = workflowEvent('HR', 'Acknowledged', actor, comment || 'Acknowledged for payroll update.');
+  } else {
+    throw new Error('This timesheet is not waiting for approval.');
+  }
+
+  header.workflowHistory = [...(header.workflowHistory || []), event];
+  await writeTimesheetData({ headers, lines });
+  const payrollUpdate = header.status === 'HR_Acknowledged' ? await createPayrollUpdateForPeriod(header.periodId, actor) : null;
+  return { header, payrollUpdate };
+}
+
 export async function syncAttendanceForTimesheet(date: string, supervisorId: string, workCenterName: string) {
-  const clockingRecords = await readClockingRecords();
+  const liveAttendance = await readLiveClockingActivity(date);
+  const clockingRecords = liveAttendance.records;
+  const activePayroll = await readActiveSagePayrollEmployeeKeys();
+  const activeEmployeeByKey = new Map<string, SagePayrollEmployee>();
+
+  for (const employee of activePayroll.employees) {
+    [
+      employee.employeeId,
+      employee.employeeCode,
+      employee.entityCode,
+      employee.displayName,
+    ].forEach((value) => {
+      const key = normalizePayrollMatchKey(value);
+      if (key && !activeEmployeeByKey.has(key)) activeEmployeeByKey.set(key, employee);
+    });
+  }
   
   // Business Rule: A timesheet is created for a Work Center / Site.
   // We should find all employees who clocked in at this site OR are assigned to this supervisor.
-  const attendanceForDay = clockingRecords.filter(
-    (r) => 
+  const exactWorkCenterRecords = clockingRecords.filter(
+    (r) =>
       r.site === workCenterName ||
       r.location === workCenterName ||
-      r.supervisor === supervisorId || 
-      r.supervisor.includes(supervisorId)
+      r.supervisor === supervisorId ||
+      r.supervisor.includes(supervisorId),
   );
+  const recordsInScope = exactWorkCenterRecords.length > 0 ? exactWorkCenterRecords : clockingRecords;
+  const attendanceForDay = recordsInScope
+    .map((attendance) => {
+      const payrollEmployee = [
+        attendance.employeeId,
+        attendance.employeeName,
+      ]
+        .map((value) => activeEmployeeByKey.get(normalizePayrollMatchKey(value)))
+        .find(Boolean);
+
+      return payrollEmployee && isContractTimesheetEmployee(payrollEmployee, attendance.employeeId) ? { attendance, payrollEmployee } : null;
+    })
+    .filter((record): record is { attendance: (typeof clockingRecords)[number]; payrollEmployee: SagePayrollEmployee } => Boolean(record));
 
   const { headers, lines } = await readTimesheetData();
   const period = calculateTimesheetPeriod(new Date(date));
 
-  let header = headers.find((h) => h.timesheetDate === date && h.supervisorId === supervisorId);
+  const workCenterId = workCenterName.toLowerCase().replace(/\s+/g, '-');
+  let header = headers.find((h) => h.timesheetDate === date && h.supervisorId === supervisorId && h.workCenterName === workCenterName);
   if (!header) {
     header = {
-      id: `hdr-${date}-${supervisorId.toLowerCase().replace(/\s+/g, '-')}`,
+      id: `hdr-${date}-${supervisorId.toLowerCase().replace(/\s+/g, '-')}-${workCenterId}`,
       periodId: period.id,
       timesheetDate: date,
       supervisorId,
       supervisorName: supervisorId,
-      workCenterId: workCenterName.toLowerCase().replace(/\s+/g, '-'),
+      workCenterId,
       workCenterName,
       status: 'Draft',
       submittedAt: null,
@@ -637,27 +1017,29 @@ export async function syncAttendanceForTimesheet(date: string, supervisorId: str
 
   // Filter out lines for this header and rebuild
   const otherLines = lines.filter((l) => l.headerId !== header!.id);
-  const newLines: TimesheetLine[] = attendanceForDay.map((att) => {
-    const existingLine = lines.find((l) => l.headerId === header!.id && l.employeeId === att.employeeId);
+  const newLines: TimesheetLine[] = attendanceForDay.map(({ attendance: att, payrollEmployee }) => {
+    const employeeCode = sageTimesheetEmployeeCode(payrollEmployee, att.employeeId);
+    const employeeName = formatSageEmployeeFullName(payrollEmployee, att.employeeName);
+    const existingLine = lines.find((l) => l.headerId === header!.id && l.employeeId === employeeCode);
     
     // Attendance duration in hours
-    const duration = att.clockInTime && att.clockOutTime 
-      ? (new Date(`2026-01-01T${att.clockOutTime}`).getTime() - new Date(`2026-01-01T${att.clockInTime}`).getTime()) / (1000 * 60 * 60)
-      : att.clockInTime ? 9 : 0; // Default to 9 if clocked in but not out yet (7:30 to 16:30 is 9 hours)
+    const duration = att.checkInTime && att.checkOutTime 
+      ? (new Date(`2026-01-01T${att.checkOutTime}`).getTime() - new Date(`2026-01-01T${att.checkInTime}`).getTime()) / (1000 * 60 * 60)
+      : att.checkInTime ? 9 : 0; // Default to 9 if clocked in but not out yet (7:30 to 16:30 is 9 hours)
 
     return {
-      id: existingLine?.id || `line-${header!.id}-${att.employeeId}`,
+      id: existingLine?.id || `line-${header!.id}-${employeeCode}`,
       headerId: header!.id,
-      employeeId: att.employeeId,
-      employeeNo: att.employeeId, // Map ID to NO for now
-      employeeName: att.employeeName,
+      employeeId: employeeCode,
+      employeeNo: employeeCode,
+      employeeName,
       biometricId: att.id,
       attendanceId: att.id,
-      clockIn: att.clockInTime,
-      clockOut: att.clockOutTime,
+      clockIn: att.checkInTime,
+      clockOut: att.checkOutTime,
       attendanceDuration: Math.round(duration * 10) / 10,
       projectAllocations: existingLine?.projectAllocations || [],
-      idleAllocations: existingLine?.idleAllocations || [],
+      idleAllocations: (existingLine?.idleAllocations || []).map(withDefaultIdleReason),
       usedHours: existingLine?.usedHours || 0,
       idleHours: existingLine?.idleHours || 0,
       totalHours: existingLine?.totalHours || 0,

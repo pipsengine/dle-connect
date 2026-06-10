@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'motion/react';
 import {
@@ -47,9 +47,10 @@ type EmploymentStatus =
   | 'On Leave'
   | 'Field Assignment'
   | 'Travel Assignment'
-  | 'Inactive';
+  | 'Inactive'
+  | string;
 
-type EmploymentType = 'Permanent' | 'Contract' | 'Intern' | 'Consultant' | 'Secondment';
+type EmploymentType = 'Permanent' | 'Contract' | 'Intern' | 'Consultant' | 'Secondment' | 'Payroll' | string;
 
 type Employee = {
   id: string;
@@ -81,6 +82,26 @@ type Employee = {
   contractEndDate?: string;
   emergencyContactsComplete: boolean;
   hasManagerAssigned: boolean;
+  payrollSource?: string;
+  sageEmployeeId?: number;
+  sageEmployeeCode?: string;
+  sageEntityCode?: string;
+  sageCompanyCode?: string;
+  sageCompanyName?: string;
+  sageStatusCode?: string;
+  sageStatusName?: string;
+};
+
+type EmployeeDirectoryPayload = {
+  source: string;
+  syncedAt: string;
+  employees: Employee[];
+};
+
+type ApiResponse<T> = {
+  status: 'success' | 'error';
+  data?: T;
+  error?: string;
 };
 
 type Role =
@@ -119,7 +140,9 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
 const formatDate = (iso: string) => {
+  if (!iso) return 'Not recorded';
   const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'Not recorded';
   return `${pad2(d.getUTCDate())} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 };
 
@@ -177,141 +200,6 @@ const trainingStyle = (s: Employee['trainingCompliance']) => {
   if (s === 'Compliant') return { fg: 'text-emerald-700', bg: 'bg-emerald-600/10', icon: CheckCircle2 };
   if (s === 'At Risk') return { fg: 'text-amber-700', bg: 'bg-amber-600/10', icon: CircleAlert };
   return { fg: 'text-red-700', bg: 'bg-red-600/10', icon: AlertTriangle };
-};
-
-const createSeeded = (seed: number) => {
-  let s = seed >>> 0;
-  return () => {
-    s = (1664525 * s + 1013904223) >>> 0;
-    return s / 0xffffffff;
-  };
-};
-
-const pick = <T,>(rng: () => number, arr: T[]) => arr[Math.floor(rng() * arr.length)];
-
-const generateEmployees = (count: number, nowMs: number) => {
-  const rng = createSeeded(42);
-  const first = ['Juan', 'Amina', 'Chinedu', 'Halima', 'Tunde', 'Ngozi', 'Michael', 'Fatima', 'Ade', 'Rita', 'Samuel', 'Zainab', 'Ibrahim', 'Grace', 'Kehinde', 'Bola', 'Chika', 'Emeka', 'Mary', 'David'];
-  const last = ['Dela Cruz', 'Okafor', 'Adeoye', 'Bello', 'Eze', 'Uche', 'Johnson', 'Adebayo', 'Aliyu', 'Okonkwo', 'Ibrahim', 'Mohammed', 'Sule', 'Okoro', 'Nwankwo', 'Garcia', 'Torres', 'Mendoza', 'Valdez', 'Reyes'];
-  const departments = [
-    'Civil Engineering',
-    'Mechanical Engineering',
-    'Electrical & Instrumentation',
-    'Project Controls',
-    'HSE',
-    'Quality Assurance',
-    'Procurement',
-    'Finance',
-    'Human Capital',
-    'IT & Support',
-    'Legal & Compliance',
-    'Executive Office',
-  ];
-  const divisions = ['Engineering', 'Operations', 'Corporate Services', 'Projects', 'Commercial'];
-  const businessUnits = ['DLE Projects', 'DLE Fabrication', 'DLE Marine', 'DLE Corporate', 'DLE Energy'];
-  const jobTitles = [
-    'Senior Civil Engineer',
-    'Mechanical Supervisor',
-    'E&I Technician',
-    'Project Manager',
-    'Planning Engineer',
-    'Quantity Surveyor',
-    'HSE Officer',
-    'QA/QC Engineer',
-    'HR Officer',
-    'Payroll Specialist',
-    'IT Support Engineer',
-    'Legal Counsel',
-    'Executive Assistant',
-  ];
-  const locations = ['Lagos HQ', 'Port Harcourt Office', 'Warri Yard', 'Abuja Office', 'Onne Site', 'Kaduna Site', 'Offshore Platform'];
-  const projectSites = ['Lekki Project', 'NLNG Train 7', 'Bonny Island', 'Onshore Pipeline', 'Bridgeworks', 'Fabrication Bay', 'N/A'];
-  const nationalities = ['Nigerian', 'Ghanaian', 'British', 'Indian', 'Filipino', 'South African'];
-  const employmentTypes: EmploymentType[] = ['Permanent', 'Contract', 'Intern', 'Consultant', 'Secondment'];
-  const statuses: EmploymentStatus[] = [
-    'Active',
-    'Probation',
-    'Contract',
-    'On Leave',
-    'Field Assignment',
-    'Travel Assignment',
-    'Seconded',
-    'Inactive',
-    'Suspended',
-  ];
-
-  const start = new Date('2012-01-01').getTime();
-  const end = new Date('2026-04-01').getTime();
-
-  const rows: Employee[] = [];
-  for (let i = 0; i < count; i++) {
-    const fn = pick(rng, first);
-    const ln = pick(rng, last);
-    const fullName = `${fn} ${ln}`;
-    const dept = pick(rng, departments);
-    const div = pick(rng, divisions);
-    const bu = pick(rng, businessUnits);
-    const job = pick(rng, jobTitles);
-    const loc = pick(rng, locations);
-    const project = pick(rng, projectSites);
-    const employmentType = pick(rng, employmentTypes);
-    const status = employmentType === 'Contract' ? pick(rng, ['Contract', 'Active', 'On Leave'] as EmploymentStatus[]) : pick(rng, statuses);
-    const joinedAt = new Date(start + Math.floor(rng() * (end - start)));
-    const years = Math.max(0, Math.min(25, Math.floor((nowMs - joinedAt.getTime()) / (365.25 * 24 * 3600 * 1000))));
-    const risk = Math.floor(rng() * 100);
-    const expatriate = rng() < 0.12;
-    const fieldWorker = rng() < 0.28 || status === 'Field Assignment';
-    const remoteWorker = rng() < 0.08;
-    const emergencyContactsComplete = rng() > 0.08;
-    const hasManagerAssigned = rng() > 0.06;
-    const managerName = hasManagerAssigned ? `${pick(rng, first)} ${pick(rng, last)}` : undefined;
-    const trainingCompliance: Employee['trainingCompliance'] = rng() < 0.72 ? 'Compliant' : rng() < 0.88 ? 'At Risk' : 'Overdue';
-    const performanceRating: Employee['performanceRating'] = rng() < 0.18 ? 'A' : rng() < 0.62 ? 'B' : rng() < 0.9 ? 'C' : 'D';
-
-    const contractEndDate =
-      employmentType === 'Contract' || status === 'Contract'
-        ? new Date(nowMs + (10 + Math.floor(rng() * 220)) * 24 * 3600 * 1000).toISOString().slice(0, 10)
-        : undefined;
-
-    const lastPromotion = rng() < 0.65 ? new Date(joinedAt.getTime() + (180 + Math.floor(rng() * 2400)) * 24 * 3600 * 1000).toISOString().slice(0, 10) : undefined;
-
-    const employeeId = `DLE-${String(100000 + i)}`;
-    const preferredName = rng() < 0.35 ? fn : undefined;
-
-    rows.push({
-      id: employeeId,
-      employeeId,
-      fullName,
-      preferredName,
-      email: `${fn.toLowerCase()}.${ln.toLowerCase().replace(/\s+/g, '')}@dormanlongeng.com`,
-      phone: `+234 ${Math.floor(7000000000 + rng() * 1999999999)}`,
-      jobTitle: job,
-      department: dept,
-      division: div,
-      businessUnit: bu,
-      managerName,
-      location: loc,
-      projectSite: project === 'N/A' ? undefined : project,
-      shift: fieldWorker ? pick(rng, ['Day', 'Night', 'Rotational'] as const) : undefined,
-      employmentType,
-      status,
-      nationality: pick(rng, nationalities),
-      expatriate,
-      fieldWorker,
-      remoteWorker,
-      dateJoined: joinedAt.toISOString().slice(0, 10),
-      yearsOfService: years,
-      lastPromotion,
-      aiRiskScore: risk,
-      trainingCompliance,
-      performanceRating,
-      contractEndDate,
-      emergencyContactsComplete,
-      hasManagerAssigned,
-    });
-  }
-
-  return rows;
 };
 
 type ViewMode = 'table' | 'grid' | 'org' | 'geo';
@@ -614,7 +502,58 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
     aiRisk: new Set(),
   });
 
-  const employees = useMemo(() => generateEmployees(250, nowMs), [nowMs]);
+  const [audit, setAudit] = useState<AuditEvent[]>(() => [
+    { id: 'audit-0', type: 'directory.view', at: initialNow, actorRole: role, message: 'Employee Directory opened' },
+  ]);
+
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [directorySource, setDirectorySource] = useState('Sage 300 People Payroll');
+  const [syncedAt, setSyncedAt] = useState<string | null>(null);
+  const [directoryLoading, setDirectoryLoading] = useState(true);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
+  const syncedStamp = useMemo(() => (syncedAt ? formatTimeUtc(syncedAt) : nowStamp), [nowStamp, syncedAt]);
+
+  const loadEmployees = useCallback(async () => {
+    setDirectoryLoading(true);
+    setDirectoryError(null);
+    try {
+      const res = await fetch('/api/hris/employees', {
+        method: 'GET',
+        headers: { 'x-hris-role': role },
+        cache: 'no-store',
+      });
+      const payload = (await res.json().catch(() => null)) as ApiResponse<EmployeeDirectoryPayload> | null;
+      if (!res.ok || !payload || payload.status !== 'success' || !payload.data) {
+        throw new Error(payload?.error || `Employee directory request failed (${res.status})`);
+      }
+      const data = payload.data;
+      setEmployees(data.employees);
+      setDirectorySource(data.source);
+      setSyncedAt(data.syncedAt);
+      setPage(1);
+      setAudit((prev) => [
+        {
+          id: crypto.randomUUID(),
+          type: 'directory.view',
+          at: new Date().toISOString(),
+          actorRole: role,
+          message: `Directory synced from ${data.source} (${data.employees.length} employees)`,
+        },
+        ...prev,
+      ]);
+    } catch (error) {
+      setEmployees([]);
+      setDirectoryError(error instanceof Error ? error.message : 'Unable to load Sage payroll employees');
+    } finally {
+      setDirectoryLoading(false);
+    }
+  }, [role]);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void loadEmployees();
+    });
+  }, [loadEmployees]);
 
   const options = useMemo(() => {
     const uniq = (values: string[]) => Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
@@ -644,10 +583,6 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
     };
   }, [role]);
 
-  const [audit, setAudit] = useState<AuditEvent[]>(() => [
-    { id: 'audit-0', type: 'directory.view', at: initialNow, actorRole: role, message: 'Employee Directory opened' },
-  ]);
-
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query.trim()), 250);
     return () => clearTimeout(t);
@@ -664,14 +599,25 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
   }, [filters]);
 
   const aiInsights = useMemo(
-    () => [
-      { severity: 'high' as const, icon: AlertTriangle, title: '4 contract employees expiring within 14 days', confidence: 0.92, action: 'Open Contract Expiry Queue' },
-      { severity: 'high' as const, icon: Fingerprint, title: '6 duplicate records detected (email / phone match)', confidence: 0.84, action: 'Run De-dup Workflow' },
-      { severity: 'medium' as const, icon: CircleAlert, title: '8 employees without assigned managers', confidence: 0.88, action: 'Assign Managers' },
-      { severity: 'medium' as const, icon: Phone, title: '12 employees missing emergency contacts', confidence: 0.9, action: 'Request Emergency Contacts' },
-      { severity: 'low' as const, icon: BarChart3, title: 'Civil Engineering exceeded approved headcount by 11%', confidence: 0.76, action: 'Review Headcount' },
-    ],
-    []
+    () => {
+      const missingManagers = employees.filter((e) => !e.hasManagerAssigned).length;
+      const missingEmergencyContacts = employees.filter((e) => !e.emergencyContactsComplete).length;
+      const contractExpiring = employees.filter((e) => {
+        if (!e.contractEndDate) return false;
+        const days = Math.ceil((new Date(e.contractEndDate).getTime() - nowMs) / (24 * 3600 * 1000));
+        return days >= 0 && days <= 14;
+      }).length;
+      const staleProfileFields = employees.filter((e) => !e.email || !e.phone || !e.dateJoined).length;
+
+      return [
+        { severity: contractExpiring > 0 ? ('high' as const) : ('low' as const), icon: AlertTriangle, title: `${formatNumber(contractExpiring)} contract employees expiring within 14 days`, confidence: 0.86, action: 'Open Contract Expiry Queue' },
+        { severity: missingManagers > 0 ? ('medium' as const) : ('low' as const), icon: CircleAlert, title: `${formatNumber(missingManagers)} employees without assigned managers`, confidence: 0.88, action: 'Assign Managers' },
+        { severity: missingEmergencyContacts > 0 ? ('medium' as const) : ('low' as const), icon: Phone, title: `${formatNumber(missingEmergencyContacts)} employees missing emergency contacts`, confidence: 0.84, action: 'Request Emergency Contacts' },
+        { severity: staleProfileFields > 0 ? ('medium' as const) : ('low' as const), icon: Fingerprint, title: `${formatNumber(staleProfileFields)} Sage records missing HR profile fields`, confidence: 0.9, action: 'Review Sage Profile Fields' },
+        { severity: 'low' as const, icon: BarChart3, title: `${formatNumber(employees.length)} employees loaded from ${directorySource}`, confidence: 0.99, action: 'Review Headcount' },
+      ];
+    },
+    [directorySource, employees, nowMs]
   );
 
   const suggestions = useMemo(() => {
@@ -1240,11 +1186,14 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
       </button>
       <button
         type="button"
-        onClick={() => setAudit((prev) => [{ id: crypto.randomUUID(), type: 'directory.view', at: new Date().toISOString(), actorRole: role, message: 'Directory refreshed' }, ...prev])}
-        className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors"
+        onClick={loadEmployees}
+        disabled={directoryLoading}
+        className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold border border-slate-200 bg-white text-slate-700 transition-colors ${
+          directoryLoading ? 'opacity-60 cursor-wait' : 'hover:bg-slate-50'
+        }`}
       >
-        <RefreshCcw className="w-4 h-4" />
-        Refresh
+        <RefreshCcw className={`w-4 h-4 ${directoryLoading ? 'animate-spin' : ''}`} />
+        {directoryLoading ? 'Syncing' : 'Refresh'}
       </button>
     </div>
   );
@@ -1296,6 +1245,23 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
         </div>
       </div>
 
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-extrabold text-slate-700">
+          <ShieldCheck className="w-4 h-4 text-emerald-600" />
+          Source: {directorySource}
+        </span>
+        <span className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700">
+          <RefreshCcw className={`w-4 h-4 text-dle-blue ${directoryLoading ? 'animate-spin' : ''}`} />
+          {directoryLoading ? 'Syncing payroll records' : `Last sync: ${syncedAt ? formatDateTimeUtc(syncedAt) : 'Not synced yet'}`}
+        </span>
+      </div>
+
+      {directoryError && (
+        <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+          {directoryError}
+        </div>
+      )}
+
       <div className="mt-6 bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
         <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
@@ -1310,7 +1276,7 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
 
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-emerald-600/10 text-emerald-700">Confidence: 0.86</span>
-            <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-slate-700/10 text-slate-700">Last scan: {nowStamp}</span>
+            <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-slate-700/10 text-slate-700">Last scan: {syncedStamp}</span>
           </div>
         </div>
 
@@ -1579,8 +1545,8 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
                     <tr>
                       <td colSpan={visibleColumns.length} className="px-6 py-16 text-center">
                         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-sm font-extrabold">
-                          <Minus className="w-4 h-4" />
-                          No employees match your search/filters.
+                          {directoryLoading ? <RefreshCcw className="w-4 h-4 animate-spin" /> : <Minus className="w-4 h-4" />}
+                          {directoryLoading ? 'Syncing employees from Sage payroll...' : directoryError ? 'Unable to load Sage payroll employees.' : 'No employees match your search/filters.'}
                         </div>
                       </td>
                     </tr>

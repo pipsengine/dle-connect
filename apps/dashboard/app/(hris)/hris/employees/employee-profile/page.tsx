@@ -7,7 +7,6 @@ export default async function EmployeeProfilePage({
 }) {
   const sp = (await searchParams) || {};
   const raw = sp.employeeId;
-  const employeeId = typeof raw === 'string' && raw.trim() ? raw.trim() : 'DLE-EMP-00001';
+  const employeeId = typeof raw === 'string' && raw.trim() ? raw.trim() : '';
   return <EmployeeProfileClient employeeId={employeeId} initialNow={new Date().toISOString()} />;
 }
-

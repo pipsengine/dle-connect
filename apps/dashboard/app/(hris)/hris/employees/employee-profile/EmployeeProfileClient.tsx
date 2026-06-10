@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
@@ -146,7 +145,7 @@ type PayrollSummary = {
 };
 
 type PerformanceSummary = {
-  currentRating: 'A' | 'B' | 'C' | 'D' | '—';
+  currentRating: 'A' | 'B' | 'C' | 'D' | '-';
   lastReviewAt?: string | null;
   goals: { id: string; title: string; progressPct: number; status: 'On Track' | 'At Risk' | 'Completed' }[];
   managerFeedback?: string | null;
@@ -222,7 +221,7 @@ type EmployeeOverview = {
   leaveBalanceDays: number;
   attendanceScore: number;
   trainingCompliancePct: number;
-  performanceRating: 'A' | 'B' | 'C' | 'D' | '—';
+  performanceRating: 'A' | 'B' | 'C' | 'D' | '-';
   payrollStatus: 'Verified' | 'Pending Validation' | 'Masked';
   documentStatus: 'Compliant' | 'Missing' | 'Expiring';
   assetStatus: 'Assigned' | 'None';
@@ -319,15 +318,20 @@ const rolePermissions = (role: Role, subjectEmployeeId: string, viewerEmployeeId
 };
 
 const Card = ({ children, className }: { children: React.ReactNode; className?: string }) => (
-  <div className={`bg-white border border-slate-200/60 rounded-2xl shadow-sm ${className || ''}`}>{children}</div>
+  <div className={`bg-white border border-slate-200/70 rounded-xl shadow-sm ${className || ''}`}>{children}</div>
 );
 
 const Pill = ({ label, tone }: { label: string; tone: { bg: string; fg: string; dot: string } }) => (
-  <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-extrabold ${tone.bg} ${tone.fg}`}>
+  <span className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-[11px] font-extrabold ${tone.bg} ${tone.fg}`}>
     <span className={`w-2 h-2 rounded-full ${tone.dot}`} />
     {label}
   </span>
 );
+
+const initialsFor = (name: string) => {
+  const parts = name.split(/\s+/).filter(Boolean).slice(0, 2);
+  return (parts.map((p) => p[0]).join('') || 'EP').toUpperCase();
+};
 
 const Skeleton = ({ className }: { className: string }) => <div className={`animate-pulse rounded-xl bg-slate-100 ${className}`} />;
 
@@ -365,7 +369,7 @@ const TabButton = ({
 };
 
 const Field = ({ label, value, masked }: { label: string; value: string; masked?: boolean }) => (
-  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+  <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-2.5">
     <div className="text-[11px] font-extrabold text-slate-600">{label}</div>
     <div className={`text-sm font-extrabold mt-1 ${masked ? 'text-slate-400' : 'text-slate-900'}`}>{masked ? '••••••' : value}</div>
   </div>
@@ -384,7 +388,7 @@ const EditField = ({
   disabled?: boolean;
   placeholder?: string;
 }) => (
-  <div className={`rounded-2xl border p-3 ${disabled ? 'border-slate-100 bg-slate-50' : 'border-slate-200 bg-white'}`}>
+  <div className={`rounded-xl border p-2.5 ${disabled ? 'border-slate-100 bg-slate-50' : 'border-slate-200 bg-white'}`}>
     <div className="text-[11px] font-extrabold text-slate-600">{label}</div>
     <input
       value={value}
@@ -397,11 +401,11 @@ const EditField = ({
 );
 
 const SummaryCard = ({ label, value, tone }: { label: string; value: string; tone: { bg: string; fg: string } }) => (
-  <div className="rounded-2xl border border-slate-200/60 bg-white p-4 relative overflow-hidden">
+  <div className="rounded-xl border border-slate-200/70 bg-white p-3.5 relative overflow-hidden">
     <div className={`absolute inset-0 ${tone.bg}`} />
     <div className="relative">
       <div className="text-[11px] font-extrabold text-slate-600">{label}</div>
-      <div className={`text-xl font-extrabold mt-1 ${tone.fg}`}>{value}</div>
+      <div className={`text-lg font-extrabold mt-1 ${tone.fg}`}>{value}</div>
     </div>
   </div>
 );
@@ -487,27 +491,25 @@ const ProfileHeader = ({
     <Card className="p-6">
       <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-6">
         <div className="flex items-start gap-5 min-w-0">
-          <div className="w-20 h-20 rounded-2xl border border-slate-200 overflow-hidden bg-slate-50 shrink-0">
-            <Image
-              src={profile.photoUrl || `https://picsum.photos/seed/${encodeURIComponent(profile.employeeId)}/160/160`}
-              alt={profile.fullName}
-              width={160}
-              height={160}
-              referrerPolicy="no-referrer"
-              className="w-full h-full object-cover"
-            />
+          <div className="w-16 h-16 rounded-xl border border-blue-200 overflow-hidden bg-blue-600/10 text-blue-700 shrink-0 flex items-center justify-center text-lg font-black">
+            {profile.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={profile.photoUrl} alt={profile.fullName} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+            ) : (
+              initialsFor(profile.fullName)
+            )}
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight truncate">{profile.fullName}</h1>
+              <h1 className="text-xl font-extrabold text-slate-900 tracking-tight truncate">{profile.fullName}</h1>
               <Pill label={profile.employmentStatus} tone={tone} />
-              <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 text-slate-700 text-[11px] font-extrabold">
+              <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-[11px] font-extrabold">
                 <Fingerprint className="w-3.5 h-3.5 text-slate-500" />
                 {profile.employeeId}
               </span>
-              <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-600/10 text-emerald-700 text-[11px] font-extrabold">
+              <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-blue-600/10 text-blue-700 text-[11px] font-extrabold">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                Audit Ready
+                HR Profile
               </span>
             </div>
             <div className="text-sm text-slate-600 font-semibold mt-1 truncate">
@@ -606,9 +608,11 @@ const InsightBanner = ({
   insights: AIInsight[];
   onAction: (action: string) => void;
 }) => {
+  if (insights.length === 0) return null;
+
   return (
     <Card className="overflow-hidden">
-      <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between gap-4 flex-wrap">
+      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
           <span className="w-10 h-10 rounded-2xl bg-violet-600/10 border border-slate-200/60 flex items-center justify-center text-violet-700">
             <Sparkles className="w-5 h-5" />
@@ -623,14 +627,14 @@ const InsightBanner = ({
           Confidence-weighted
         </span>
       </div>
-      <div className="p-6 grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="p-5 grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
         {insights.map((i) => {
           const st = severityStyle(i.severity);
           const Icon = st.icon;
           return (
-            <div key={i.id} className={`rounded-2xl border ${st.border} bg-white p-4`}>
+            <div key={i.id} className={`rounded-xl border ${st.border} bg-white p-3.5`}>
               <div className="flex items-start gap-3">
-                <span className={`w-10 h-10 rounded-2xl flex items-center justify-center ${st.bg} ${st.fg}`}>
+                <span className={`w-9 h-9 rounded-xl flex items-center justify-center ${st.bg} ${st.fg}`}>
                   <Icon className="w-5 h-5" />
                 </span>
                 <div className="min-w-0">
@@ -771,7 +775,7 @@ const OverviewTab = ({
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <Card className="p-6 xl:col-span-2">
+        <Card className="p-5 xl:col-span-2">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-3">
               <span className="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center">
@@ -791,21 +795,24 @@ const OverviewTab = ({
           <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <Field label="Current Leave Status" value={overview.currentLeaveStatus} />
             <Field label="Leave Balance" value={`${overview.leaveBalanceDays} days`} />
-            <Field label="Performance Rating" value={overview.performanceRating === '—' ? 'Not available' : overview.performanceRating} />
+            <Field label="Performance Rating" value={overview.performanceRating === '-' ? 'Not available' : overview.performanceRating} />
             <Field label="Document Status" value={overview.documentStatus} />
             <Field label="Training Compliance" value={`${overview.trainingCompliancePct}%`} />
             <Field label="Assets" value={overview.assetStatus} />
           </div>
         </Card>
 
-        <Card className="p-6">
+        <Card className="p-5">
           <div className="flex items-center justify-between">
             <div className="text-sm font-extrabold text-slate-900">Recent Activity</div>
             <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">{formatNumber(overview.recentActivity.length)}</span>
           </div>
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 space-y-2.5">
+            {overview.recentActivity.length === 0 ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-xs font-semibold text-slate-600">No recent activity recorded.</div>
+            ) : null}
             {overview.recentActivity.slice(0, 6).map((a) => (
-              <div key={a.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+              <div key={a.id} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
                 <div className="text-xs font-extrabold text-slate-900">{a.title}</div>
                 <div className="text-[11px] text-slate-500 font-semibold mt-1">
                   {formatDateTimeUtc(a.at)} <span className="mx-2">•</span> {a.actor}
@@ -971,8 +978,8 @@ export default function EmployeeProfileClient({ employeeId, initialNow }: { empl
     });
   };
 
-  const v = (x: unknown) => (typeof x === 'string' && x.trim() ? x.trim() : '—');
-  const naira = (n: number | null) => (typeof n === 'number' ? `₦ ${formatNumber(Math.round(n))}` : '—');
+  const v = (x: unknown) => (typeof x === 'string' && x.trim() ? x.trim() : '-');
+  const naira = (n: number | null) => (typeof n === 'number' ? `NGN ${formatNumber(Math.round(n))}` : '-');
 
   const breadcrumb = (
     <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
@@ -1850,7 +1857,7 @@ export default function EmployeeProfileClient({ employeeId, initialNow }: { empl
                     <div className="space-y-6">
                       <Section title="Performance Summary" icon={BadgeCheck}>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                          <Field label="Current Rating" value={profileData.performanceSummary.currentRating === '—' ? 'Not available' : profileData.performanceSummary.currentRating} />
+                          <Field label="Current Rating" value={profileData.performanceSummary.currentRating === '-' ? 'Not available' : profileData.performanceSummary.currentRating} />
                           <Field label="Last Review" value={profileData.performanceSummary.lastReviewAt ? formatDateUtc(profileData.performanceSummary.lastReviewAt) : '—'} />
                           <Field label="Manager Feedback" value={v(profileData.performanceSummary.managerFeedback)} />
                         </div>

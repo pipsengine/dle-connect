@@ -1,0 +1,36 @@
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dle-digital-dashboard:latest
+    container_name: dle-digital-dashboard
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/dashboard/data:/app/apps/dashboard/data
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      BIOMETRIC_DB_HOST: ${BIOMETRIC_DB_HOST:-192.168.5.5}
+      BIOMETRIC_DB_PORT: ${BIOMETRIC_DB_PORT:-3306}
+      BIOMETRIC_DB_NAME: ${BIOMETRIC_DB_NAME:-unis}
+      BIOMETRIC_DB_USER: ${BIOMETRIC_DB_USER:-root}
+      BIOMETRIC_DB_PASSWORD: ${BIOMETRIC_DB_PASSWORD:-}
+      SAGE_PAYROLL_DB_HOST: ${SAGE_PAYROLL_DB_HOST:-192.168.5.8}
+      SAGE_PAYROLL_DB_PORT: ${SAGE_PAYROLL_DB_PORT:-1433}
+      SAGE_PAYROLL_DB_INSTANCE: ${SAGE_PAYROLL_DB_INSTANCE:-MSSQLSERVERPEOPL}
+      SAGE_PAYROLL_DB_NAME: ${SAGE_PAYROLL_DB_NAME:-DLE_JUNE}
+      SAGE_PAYROLL_DB_USER: ${SAGE_PAYROLL_DB_USER:-sa}
+      SAGE_PAYROLL_DB_PASSWORD: ${SAGE_PAYROLL_DB_PASSWORD:-}
+      DLE_ENTERPRISE_DB_HOST: ${DLE_ENTERPRISE_DB_HOST:-host.docker.internal}
+      DLE_ENTERPRISE_DB_PORT: ${DLE_ENTERPRISE_DB_PORT:-1433}
+      DLE_ENTERPRISE_DB_NAME: ${DLE_ENTERPRISE_DB_NAME:-DLE_Enterprise}
+      DLE_ENTERPRISE_DB_USER: ${DLE_ENTERPRISE_DB_USER:-sa}
+      DLE_ENTERPRISE_DB_PASSWORD: ${DLE_ENTERPRISE_DB_PASSWORD:-}
+      DLE_ENTERPRISE_DB_ENCRYPT: ${DLE_ENTERPRISE_DB_ENCRYPT:-true}
+      DLE_ENTERPRISE_DB_TRUST_SERVER_CERTIFICATE: ${DLE_ENTERPRISE_DB_TRUST_SERVER_CERTIFICATE:-true}
+    restart: unless-stopped

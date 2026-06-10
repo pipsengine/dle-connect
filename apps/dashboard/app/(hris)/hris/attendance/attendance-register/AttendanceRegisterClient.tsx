@@ -54,6 +54,8 @@ type AuditEvent = {
 
 type Payload = {
   generatedAt: string;
+  attendanceDate: string;
+  source: 'Live Biometric Database';
   permissions: {
     actor: string;
     role: string;
@@ -280,7 +282,10 @@ export default function AttendanceRegisterClient() {
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 flex flex-col xl:flex-row gap-3 xl:items-center xl:justify-between">
         <div>
           <div className="text-sm font-semibold text-slate-900">Attendance Register Desk</div>
-          <div className="text-xs text-slate-500 mt-1">Formal employee register for attendance verification, exception review, and payroll readiness control.</div>
+          <div className="text-xs text-slate-500 mt-1">
+            Formal employee register from {payload?.source || 'the attendance database'}
+            {payload?.attendanceDate ? ` for ${payload.attendanceDate}` : ''}.
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap text-xs">
           <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-semibold">Actor: {payload?.permissions.actor || '—'}</span>

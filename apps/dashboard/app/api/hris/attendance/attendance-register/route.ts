@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { buildBaseAttendanceRecords } from '@/lib/attendance-data';
-import { readClockingRecords } from '@/lib/attendance-clocking-store';
+import { readLiveDailyAttendance, type LiveAttendanceRecord } from '@/lib/biometric-live-attendance-store';
 import { appendOrganizationAuditEvent } from '@/lib/organization-audit-store';
 import { getUiPermissions, hasPermission, resolveAccessContext } from '@/lib/hris-access';
 import {
@@ -40,6 +39,8 @@ type AttendanceRegisterRow = {
 
 type Payload = {
   generatedAt: string;
+  attendanceDate: string;
+  source: 'Live Biometric Database';
   permissions: {
     actor: string;
     role: string;
@@ -81,21 +82,28 @@ const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 const isNonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
 
+const resolveClockingMode = (record: LiveAttendanceRecord) => {
+  if (record.status === 'Absent' || !record.checkInTime) return 'Exception';
+  if (record.checkInTime && !record.checkOutTime) return 'Clocked In';
+  return 'Clocked Out';
+};
+
 const buildPayload = async (request: Request): Promise<Payload> => {
+  const { searchParams } = new URL(request.url);
   const access = resolveAccessContext(request);
   const uiPermissions = getUiPermissions(access);
-  const attendance = buildBaseAttendanceRecords();
-  const clocking = await readClockingRecords();
+  const liveAttendance = await readLiveDailyAttendance(searchParams.get('date') || undefined);
+  const attendance = liveAttendance.records;
   const controls = await readAttendanceRegisterControls();
   const controlByEmployee = new Map(controls.map((item) => [item.employeeId, item]));
 
   const rows: AttendanceRegisterRow[] = attendance.map((record) => {
-    const clock = clocking.find((item) => item.employeeId === record.employeeId);
+    const clockingMode = resolveClockingMode(record);
     const control = controlByEmployee.get(record.employeeId);
     const defaultStatus: RegisterReviewStatus =
-      record.status === 'Absent' || record.minutesLate >= 20 || clock?.clockingMode === 'Exception'
+      record.status === 'Absent' || record.minutesLate >= 20 || clockingMode === 'Exception'
         ? 'Flagged'
-        : clock?.clockingMode === 'Clocked In'
+        : clockingMode === 'Clocked In'
           ? 'Pending Review'
           : 'Verified';
     const payrollReady = control?.payrollReady ?? (defaultStatus === 'Verified');
@@ -110,19 +118,19 @@ const buildPayload = async (request: Request): Promise<Payload> => {
       site: record.site,
       shift: record.shift,
       attendanceStatus: record.status,
-      clockingMode: clock?.clockingMode || 'Ready To Clock In',
-      checkInTime: clock?.clockInTime ?? record.checkInTime,
-      checkOutTime: clock?.clockOutTime ?? record.checkOutTime,
+      clockingMode,
+      checkInTime: record.checkInTime,
+      checkOutTime: record.checkOutTime,
       scheduledStart: record.scheduledStart,
       scheduledEnd: record.scheduledEnd,
-      minutesLate: clock?.minutesLate ?? record.minutesLate,
-      overtimeHours: clock?.overtimeHours ?? record.overtimeHours,
-      source: clock?.source ?? record.biometricSource,
+      minutesLate: record.minutesLate,
+      overtimeHours: record.overtimeHours,
+      source: record.biometricSource,
       supervisor: record.supervisor,
       reviewStatus: control?.reviewStatus ?? defaultStatus,
-      verifiedBy: control?.verifiedBy || 'Attendance Control Desk',
+      verifiedBy: control?.verifiedBy || uiPermissions.actor,
       payrollReady,
-      note: control?.note || clock?.exceptionNote || null,
+      note: control?.note || (clockingMode === 'Exception' ? 'No live biometric punch was found for the attendance date.' : null),
       reviewedAt: control?.reviewedAt || new Date().toISOString(),
     };
   }).sort((a, b) => a.employeeName.localeCompare(b.employeeName));
@@ -153,6 +161,8 @@ const buildPayload = async (request: Request): Promise<Payload> => {
 
   return {
     generatedAt: new Date().toISOString(),
+    attendanceDate: liveAttendance.attendanceDate,
+    source: 'Live Biometric Database',
     permissions: {
       actor: uiPermissions.actor,
       role: uiPermissions.role,
@@ -193,7 +203,12 @@ const validatePayload = (payload: UpdatePayload, controls: AttendanceRegisterCon
 };
 
 export async function GET(request: Request) {
-  return ok(await buildPayload(request));
+  try {
+    return ok(await buildPayload(request));
+  } catch (error) {
+    console.error('Attendance Register API Error:', error);
+    return err(500, error instanceof Error ? error.message : 'Unable to load live attendance register');
+  }
 }
 
 export async function PATCH(request: Request) {

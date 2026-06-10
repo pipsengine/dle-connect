@@ -1,4 +1,11 @@
 import { NextResponse } from 'next/server';
+import {
+  deleteEmployeeDraftFromDb,
+  findEmployeeDuplicatesInDb,
+  getEmployeeDraftFromDb,
+  previewNextEmployeeCodeFromDb,
+  saveEmployeeDraftToDb,
+} from '@/lib/dle-enterprise-db';
 
 type Role =
   | 'Super Admin'
@@ -102,6 +109,14 @@ type FormOptions = {
   roleProfiles: string[];
 };
 
+const employeeTypePrefix = (employeeType: unknown) => {
+  const normalized = typeof employeeType === 'string' ? employeeType.trim().toLowerCase() : '';
+  if (normalized === 'permanent') return 'P';
+  if (normalized === 'lumpsum') return 'L';
+  if (normalized === 'daily rate') return 'C';
+  return '';
+};
+
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 
@@ -163,6 +178,22 @@ const parseDate = (yyyyMmDd: string) => (/^\d{4}-\d{2}-\d{2}$/.test(yyyyMmDd) ? 
 
 const draftIdGen = () => `DRAFT-${Math.random().toString(16).slice(2, 8).toUpperCase()}${Math.random().toString(16).slice(2, 6).toUpperCase()}`;
 
+const nextPreviewFallback = (employeeType: string) => {
+  const prefix = employeeTypePrefix(employeeType);
+  if (!prefix) return null;
+  let latest = 0;
+  for (const [employeeId] of storeOverrides.entries()) {
+    const m = employeeId.match(new RegExp(`^${prefix}(\\d+)$`, 'i'));
+    if (m) latest = Math.max(latest, Number(m[1]));
+  }
+  for (const d of storeDrafts.values()) {
+    const code = normalize(d.draft?.employment?.employeeId);
+    const m = code.match(new RegExp(`^${prefix}(\\d+)$`, 'i'));
+    if (m) latest = Math.max(latest, Number(m[1]));
+  }
+  return `${prefix}${String(latest + 1).padStart(4, '0')}`;
+};
+
 const validateDraft = (draft: EmployeeDraftPayload): ValidationResult => {
   const errors: ValidationResult['errors'] = [];
   const warnings: ValidationResult['warnings'] = [];
@@ -202,6 +233,9 @@ const validateDraft = (draft: EmployeeDraftPayload): ValidationResult => {
   if (normalize(c.alternatePhone) && !isPhone(normalize(c.alternatePhone))) warnings.push({ path: 'contact.alternatePhone', message: 'Alternate phone number format may be invalid', severity: 'low' });
 
   req('employment.employmentType', normalize(e.employmentType));
+  if (normalize(e.employmentType) && !['Permanent', 'Lumpsum', 'Daily Rate'].includes(normalize(e.employmentType))) {
+    errors.push({ path: 'employment.employmentType', message: 'Employee Type must be Permanent, Lumpsum, or Daily Rate', severity: 'high' });
+  }
   req('employment.employmentStatus', normalize(e.employmentStatus));
   req('employment.dateJoined', normalize(e.dateJoined));
   if (normalize(e.dateJoined)) {
@@ -215,12 +249,10 @@ const validateDraft = (draft: EmployeeDraftPayload): ValidationResult => {
     const pe = parseDate(normalize(e.probationEndDate));
     if (Number.isFinite(ps) && Number.isFinite(pe) && pe < ps) errors.push({ path: 'employment.probationEndDate', message: 'Probation end date cannot be before probation start date', severity: 'high' });
   }
-  if (normalize(e.employmentType) === 'Contract') {
-    req('employment.contractStartDate', normalize(e.contractStartDate), 'Required for Contract');
-    req('employment.contractEndDate', normalize(e.contractEndDate), 'Required for Contract');
+  if (normalize(e.employmentType) === 'Lumpsum' || normalize(e.employmentType) === 'Daily Rate') {
     const cs = parseDate(normalize(e.contractStartDate));
     const ce = parseDate(normalize(e.contractEndDate));
-    if (Number.isFinite(cs) && Number.isFinite(ce) && ce < cs) errors.push({ path: 'employment.contractEndDate', message: 'Contract end date cannot be before contract start date', severity: 'high' });
+    if (Number.isFinite(cs) && Number.isFinite(ce) && ce < cs) errors.push({ path: 'employment.contractEndDate', message: 'Engagement end date cannot be before engagement start date', severity: 'high' });
   }
 
   req('job.department', normalize(j.department));
@@ -242,9 +274,9 @@ const validateDraft = (draft: EmployeeDraftPayload): ValidationResult => {
   }
 
   if (!Array.isArray(draft.documents) || draft.documents.length < 1) warnings.push({ path: 'documents', message: 'No documents attached yet', severity: 'low' });
-  if (normalize(e.employmentType) === 'Contract' && Array.isArray(draft.documents)) {
-    const hasAgreement = draft.documents.some((d) => normalizeLower(d.category).includes('contract'));
-    if (!hasAgreement) warnings.push({ path: 'documents.contractAgreement', message: 'Contract employees should upload Contract Agreement', severity: 'medium' });
+  if ((normalize(e.employmentType) === 'Lumpsum' || normalize(e.employmentType) === 'Daily Rate') && Array.isArray(draft.documents)) {
+    const hasAgreement = draft.documents.some((d) => normalizeLower(d.category).includes('contract') || normalizeLower(d.category).includes('agreement'));
+    if (!hasAgreement) warnings.push({ path: 'documents.engagementAgreement', message: 'Project-based employees should upload an engagement agreement', severity: 'medium' });
   }
 
   const requiredTotal = 12;
@@ -260,7 +292,7 @@ const validateDraft = (draft: EmployeeDraftPayload): ValidationResult => {
   };
 };
 
-const duplicateCheck = (payload: any): DuplicateResult => {
+const duplicateCheck = async (payload: any): Promise<DuplicateResult> => {
   const matches: DuplicateResult['matches'] = [];
   const fullName = normalizeLower(payload.fullName);
   const officialEmail = normalizeLower(payload.officialEmail);
@@ -292,6 +324,8 @@ const duplicateCheck = (payload: any): DuplicateResult => {
     if (primaryPhone && phone2 && primaryPhone === phone2) matches.push({ draftId, reason: 'Draft with same phone number' });
     if (fullName && name2 && fullName === name2 && dob && normalize(p.dateOfBirth) === dob) matches.push({ draftId, reason: 'Draft with same name and date of birth' });
   }
+
+  matches.push(...(await findEmployeeDuplicatesInDb(payload)));
 
   const unique = new Map<string, { employeeId?: string; draftId?: string; reason: string }>();
   for (const m of matches) unique.set(`${m.employeeId || ''}:${m.draftId || ''}:${m.reason}`, m);
@@ -382,10 +416,18 @@ export async function GET(request: Request, ctx: { params: Promise<{ action: str
 
   if (seg0 === 'form-options') return jsonOk(optionsPayload());
   if (seg0 === 'onboarding' && action[1] === 'checklist-template') return jsonOk(templateChecklist());
+  if (seg0 === 'employee-code' && action[1] === 'next') {
+    const employeeType = new URL(request.url).searchParams.get('employeeType') || '';
+    const prefix = employeeTypePrefix(employeeType);
+    if (!prefix) return jsonErr(400, 'employeeType must be Permanent, Lumpsum, or Daily Rate');
+    const employeeCode = (await previewNextEmployeeCodeFromDb(employeeType)) || nextPreviewFallback(employeeType);
+    return jsonOk({ employeeCode, prefix, employeeType });
+  }
   if (seg0 === 'draft' && action[1]) {
     const draftId = action[1];
-    const rec = storeDrafts.get(draftId);
+    const rec = storeDrafts.get(draftId) || ((await getEmployeeDraftFromDb(draftId)) as DraftRecord | null);
     if (!rec) return jsonErr(404, 'Draft not found');
+    storeDrafts.set(draftId, rec);
     return jsonOk({ draft: rec.draft, meta: { draftId: rec.draftId, status: rec.status, updatedAt: rec.updatedAt } });
   }
 
@@ -415,6 +457,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
     };
     audit(rec, role, 'Draft created');
     storeDrafts.set(draftId, rec);
+    await saveEmployeeDraftToDb(rec);
     return jsonOk({ draftId, status: rec.status, updatedAt: rec.updatedAt });
   }
 
@@ -427,7 +470,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
 
   if (seg0 === 'duplicate-check') {
     if (!body || typeof body !== 'object') return jsonErr(400, 'Invalid JSON body');
-    return jsonOk(duplicateCheck(body));
+    return jsonOk(await duplicateCheck(body));
   }
 
   if (seg0 === 'documents' && action[1] === 'upload') {
@@ -461,6 +504,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
     rec.draft.documents = nextDocs;
     rec.updatedAt = nowIso();
     audit(rec, role, 'Document uploaded');
+    await saveEmployeeDraftToDb(rec);
     return jsonOk({ uploaded });
   }
 
@@ -475,6 +519,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
     rec.status = 'submitted';
     rec.updatedAt = nowIso();
     audit(rec, role, 'Employee submitted for approval');
+    await saveEmployeeDraftToDb(rec);
     return jsonOk({ draftId: rec.draftId, status: 'submitted' });
   }
 
@@ -518,6 +563,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ action: s
   rec.draft = draft;
   rec.updatedAt = nowIso();
   audit(rec, role, 'Draft updated', { oldValue: prev, newValue: rec.updatedAt });
+  await saveEmployeeDraftToDb(rec);
   return jsonOk({ draftId: rec.draftId, status: rec.status, updatedAt: rec.updatedAt });
 }
 
@@ -532,6 +578,6 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ action: 
   const rec = storeDrafts.get(draftId);
   if (!rec) return jsonErr(404, 'Draft not found');
   storeDrafts.delete(draftId);
+  await deleteEmployeeDraftFromDb(draftId);
   return jsonOk({ deleted: true });
 }
-

@@ -1,4 +1,11 @@
 import { NextResponse } from 'next/server';
+import {
+  createEmployeeFromDraftInDb,
+  getEmployeeDraftFromDb,
+  nextEmployeeCodeFromDb,
+  saveEmployeeDraftToDb,
+} from '@/lib/dle-enterprise-db';
+import { readActiveSagePayrollEmployees } from '@/lib/sage-people-payroll-store';
 
 type Role =
   | 'Super Admin'
@@ -15,6 +22,8 @@ type Role =
 
 type EmploymentType =
   | 'Permanent'
+  | 'Lumpsum'
+  | 'Daily Rate'
   | 'Contract'
   | 'Temporary'
   | 'Intern'
@@ -36,6 +45,53 @@ type EmploymentStatus =
   | 'Contract'
   | 'Seconded'
   | 'Field Assignment';
+
+type DirectoryEmployee = {
+  id: string;
+  employeeId: string;
+  fullName: string;
+  preferredName?: string;
+  email: string;
+  phone: string;
+  jobTitle: string;
+  department: string;
+  division: string;
+  businessUnit: string;
+  managerName?: string;
+  location: string;
+  projectSite?: string;
+  shift?: 'Day' | 'Night' | 'Rotational';
+  employmentType: string;
+  status: string;
+  nationality: string;
+  expatriate: boolean;
+  fieldWorker: boolean;
+  remoteWorker: boolean;
+  dateJoined: string;
+  yearsOfService: number;
+  lastPromotion?: string;
+  aiRiskScore: number;
+  trainingCompliance: 'Compliant' | 'Overdue' | 'At Risk';
+  performanceRating?: 'A' | 'B' | 'C' | 'D';
+  contractEndDate?: string;
+  emergencyContactsComplete: boolean;
+  hasManagerAssigned: boolean;
+  payrollSource: 'Sage 300 People';
+  sageEmployeeId: number;
+  sageEmployeeCode: string;
+  sageEntityCode: string;
+  sageCompanyCode: string;
+  sageCompanyName: string;
+  sageStatusCode: string;
+  sageStatusName: string;
+  sageRawEmployeeCode: string;
+  sageJobGrade: string;
+  sageDepartmentCode: string;
+  sageSiteCode: string;
+  sageEmployeeTypeCode: string;
+  sageEmployeeTypeName: string;
+  sageManagerEmployeeCode: string;
+};
 
 type EmployeeDraftPayload = {
   personal: Record<string, any>;
@@ -59,6 +115,114 @@ type DraftRecord = {
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
+
+const clean = (value: unknown, fallback = '') => {
+  if (value === null || value === undefined) return fallback;
+  const str = String(value).trim();
+  return str || fallback;
+};
+
+const isoDate = (value: unknown) => {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+};
+
+const yearsSince = (value: unknown) => {
+  const date = value instanceof Date ? value : value ? new Date(String(value)) : null;
+  if (!date || Number.isNaN(date.getTime())) return 0;
+  return Math.max(0, Math.floor((Date.now() - date.getTime()) / (365.25 * 24 * 3600 * 1000)));
+};
+
+const employmentTypeFromCode = (code: string) => {
+  const upper = code.trim().toUpperCase();
+  if (upper.startsWith('C') || upper.startsWith('L')) return 'Contract';
+  return 'Permanent';
+};
+
+const cleanHierarchyDisplay = (value: unknown, fallback = '') => {
+  const str = clean(value, fallback);
+  return str.replace(/^[A-Z0-9_]+\s+-\s+/i, '').trim() || fallback;
+};
+
+const cleanNamePart = (value: unknown) => clean(value).replace(/\s+/g, ' ');
+
+const sageFullName = (employee: Awaited<ReturnType<typeof readActiveSagePayrollEmployees>>[number], fallback: string) => {
+  const firstNames = cleanNamePart(employee.firstNames);
+  const lastName = cleanNamePart(employee.lastName);
+  return [firstNames, lastName].filter(Boolean).join(' ') || clean(employee.displayName, fallback);
+};
+
+const normalizeStatus = (statusName: string, statusCode: string) => {
+  if (statusName.toLowerCase() === 'active' || statusCode.toUpperCase() === 'A') return 'Active';
+  return statusName || 'Active';
+};
+
+const toDirectoryEmployee = (employee: Awaited<ReturnType<typeof readActiveSagePayrollEmployees>>[number]): DirectoryEmployee => {
+  const rawEmployeeCode = clean(employee.employeeCode, String(employee.employeeId));
+  const employeeCode = clean(employee.directoryEmployeeCode, rawEmployeeCode);
+  const companyName = clean(employee.companyName, 'Sage Payroll');
+  const companyCode = clean(employee.companyCode, companyName);
+  const statusName = clean(employee.statusName, 'Active');
+  const statusCode = clean(employee.statusCode);
+  const employmentType = employmentTypeFromCode(employeeCode);
+  const department = cleanHierarchyDisplay(
+    employee.departmentName || employee.hierarchyDepartmentName,
+    'Unassigned Department',
+  );
+  const location = cleanHierarchyDisplay(
+    employee.siteName || employee.hierarchyLocationName,
+    clean(employee.departmentName, companyName),
+  );
+  const jobTitle = clean(employee.jobTitle, 'Unassigned Job Title');
+  const managerName = clean(employee.managerName).replace(/^[A-Z0-9_]+\s+-\s+/i, '');
+  const nationality = clean(employee.nationality, 'Not recorded');
+  const isContract = employmentType === 'Contract';
+
+  return {
+    id: employeeCode,
+    employeeId: employeeCode,
+    fullName: sageFullName(employee, employeeCode),
+    email: clean(employee.emailAddress),
+    phone: clean(employee.cellNo || employee.workTelNo),
+    jobTitle,
+    department,
+    division: clean(employee.departmentCode, department),
+    businessUnit: companyCode,
+    managerName: managerName || undefined,
+    location,
+    projectSite: clean(employee.siteCode) || undefined,
+    employmentType,
+    status: normalizeStatus(statusName, statusCode),
+    nationality,
+    expatriate: nationality.toLowerCase() !== 'nigerian' && nationality !== 'Not recorded',
+    fieldWorker: isContract || !['IDI_ORO', 'CORPORATE OFFICE'].includes(location.toUpperCase()),
+    remoteWorker: false,
+    dateJoined: isoDate(employee.dateEngaged || employee.dateJoinedGroup),
+    yearsOfService: yearsSince(employee.dateEngaged || employee.dateJoinedGroup),
+    aiRiskScore: 0,
+    trainingCompliance: 'Compliant',
+    contractEndDate: isContract ? isoDate(employee.contractExpiryDate) || undefined : undefined,
+    emergencyContactsComplete: true,
+    hasManagerAssigned: Boolean(managerName),
+    payrollSource: 'Sage 300 People',
+    sageEmployeeId: employee.employeeId,
+    sageEmployeeCode: employeeCode,
+    sageEntityCode: clean(employee.entityCode),
+    sageCompanyCode: companyCode,
+    sageCompanyName: companyName,
+    sageStatusCode: statusCode,
+    sageStatusName: statusName,
+    sageRawEmployeeCode: rawEmployeeCode,
+    sageJobGrade: clean(employee.jobGrade),
+    sageDepartmentCode: clean(employee.departmentCode || employee.hierarchyDepartmentCode),
+    sageSiteCode: clean(employee.siteCode || employee.hierarchyLocationCode),
+    sageEmployeeTypeCode: clean(employee.hierarchyEmployeeTypeCode),
+    sageEmployeeTypeName: cleanHierarchyDisplay(employee.hierarchyEmployeeTypeName),
+    sageManagerEmployeeCode: clean(employee.managerEmployeeCode),
+  };
+};
 
 const getRole = (request: Request): Role => {
   const v = request.headers.get('x-hris-role');
@@ -111,6 +275,14 @@ const normalizeEmployeeId = (v: unknown) => {
   return v.trim().toUpperCase();
 };
 
+const employeeTypePrefix = (employeeType: unknown) => {
+  const normalized = typeof employeeType === 'string' ? employeeType.trim().toLowerCase() : '';
+  if (normalized === 'permanent') return 'P';
+  if (normalized === 'lumpsum') return 'L';
+  if (normalized === 'daily rate') return 'C';
+  return '';
+};
+
 const isUniqueEmployeeId = (employeeId: string) => {
   if (!employeeId) return true;
   if (storeOverrides.has(employeeId)) return false;
@@ -121,15 +293,15 @@ const isUniqueEmployeeId = (employeeId: string) => {
   return true;
 };
 
-const finalizeEmployeeId = (draft: EmployeeDraftPayload) => {
-  const manual = normalizeEmployeeId(draft.employment?.employeeId);
-  if (manual) {
-    if (!isUniqueEmployeeId(manual)) throw new Error('Employee ID must be unique');
-    return manual;
-  }
+const finalizeEmployeeId = async (draft: EmployeeDraftPayload) => {
+  const employeeType = draft.employment?.employmentType;
+  const prefix = employeeTypePrefix(employeeType);
+  if (!prefix) throw new Error('Employee Type must be Permanent, Lumpsum, or Daily Rate');
+  const dbEmployeeCode = await nextEmployeeCodeFromDb(employeeType);
+  if (dbEmployeeCode) return dbEmployeeCode;
   for (let i = 0; i < 1000; i++) {
     const n = nextSeq();
-    const gen = `DLE-EMP-${String(n).padStart(5, '0')}`;
+    const gen = `${prefix}${String(n).padStart(4, '0')}`;
     if (isUniqueEmployeeId(gen)) return gen;
   }
   throw new Error('Unable to allocate employee ID');
@@ -250,19 +422,33 @@ export async function POST(request: Request) {
   const draftId = typeof body.draftId === 'string' ? body.draftId.trim() : '';
   const mode = typeof body.mode === 'string' ? body.mode : 'create';
   if (!draftId) return jsonErr(400, 'draftId is required');
-  const draftRec = storeDrafts.get(draftId);
+  const draftRec = storeDrafts.get(draftId) || ((await getEmployeeDraftFromDb(draftId)) as DraftRecord | null);
   if (!draftRec) return jsonErr(404, 'Draft not found');
+  storeDrafts.set(draftId, draftRec);
   if (draftRec.status === 'created') return jsonErr(400, 'Draft already created');
 
-  const employeeId = finalizeEmployeeId(draftRec.draft);
+  let employeeId = '';
+  try {
+    employeeId = await finalizeEmployeeId(draftRec.draft);
+  } catch (error) {
+    return jsonErr(409, error instanceof Error ? error.message : 'Unable to allocate employee code');
+  }
+  draftRec.draft.employment.employeeId = employeeId;
   const override = toProfileOverride(employeeId, draftRec.draft);
+  const startOnboarding = mode === 'create-and-start-onboarding';
+  try {
+    await createEmployeeFromDraftInDb(draftId, employeeId, draftRec.draft, role, startOnboarding);
+  } catch (error) {
+    return jsonErr(409, error instanceof Error ? error.message : 'Unable to create employee in DLE_Enterprise');
+  }
   storeOverrides.set(employeeId, override);
 
   draftRec.status = 'created';
   draftRec.updatedAt = nowIso();
   draftRec.audit.unshift({ id: `audit-${Math.random().toString(16).slice(2)}`, at: draftRec.updatedAt, action: 'Employee created', performedBy: role });
+  await saveEmployeeDraftToDb(draftRec);
 
-  if (mode === 'create-and-start-onboarding') {
+  if (startOnboarding) {
     draftRec.audit.unshift({ id: `audit-${Math.random().toString(16).slice(2)}`, at: nowIso(), action: 'Onboarding started', performedBy: role });
     return jsonOk({ employeeId, startedOnboarding: true });
   }
@@ -270,3 +456,15 @@ export async function POST(request: Request) {
   return jsonOk({ employeeId, startedOnboarding: false });
 }
 
+export async function GET() {
+  try {
+    const employees = await readActiveSagePayrollEmployees();
+    return jsonOk({
+      source: 'Sage 300 People Payroll',
+      syncedAt: nowIso(),
+      employees: employees.map(toDirectoryEmployee),
+    });
+  } catch (error) {
+    return jsonErr(502, error instanceof Error ? `Unable to read Sage payroll employees: ${error.message}` : 'Unable to read Sage payroll employees');
+  }
+}

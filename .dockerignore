@@ -1,0 +1,12 @@
+.git
+.next
+apps/dashboard/.next
+node_modules
+apps/dashboard/node_modules
+npm-debug.log*
+*.log
+.env
+.env.*
+!.env.example
+Dockerfile
+docker-compose*.yml

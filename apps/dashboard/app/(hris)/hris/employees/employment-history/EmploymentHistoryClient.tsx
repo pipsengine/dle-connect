@@ -581,9 +581,12 @@ export default function EmploymentHistoryClient({
   const viewsStorageKey = 'dle.hris.employmentHistory.savedViews.v1';
 
   useEffect(() => {
-    setActiveFilters(createDefaultFilters(viewMode));
-    setDateFrom('');
-    setDateTo('');
+    const t = setTimeout(() => {
+      setActiveFilters(createDefaultFilters(viewMode));
+      setDateFrom('');
+      setDateTo('');
+    }, 0);
+    return () => clearTimeout(t);
   }, [viewMode]);
 
   useEffect(() => {
@@ -1676,7 +1679,8 @@ export default function EmploymentHistoryClient({
     </Card>
   );
 
-  const insightPanel = (
+  const hasInsights = insights.status !== 'ready' || !!insights.data?.length;
+  const insightPanel = hasInsights ? (
     <Card className="overflow-hidden">
       <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
@@ -1740,7 +1744,7 @@ export default function EmploymentHistoryClient({
         )}
       </div>
     </Card>
-  );
+  ) : null;
 
   const eventTypes: EmploymentEventType[] = isPromotionView
     ? ['Promotion']

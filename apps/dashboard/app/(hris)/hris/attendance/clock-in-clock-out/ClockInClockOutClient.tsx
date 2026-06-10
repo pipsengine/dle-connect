@@ -23,11 +23,12 @@ type ClockingMode = 'Ready To Clock In' | 'Clocked In' | 'Clocked Out' | 'Except
 type ClockingEvent = {
   id: string;
   employeeId: string;
-  action: 'CLOCK_IN' | 'CLOCK_OUT' | 'MANUAL_OVERRIDE';
+  action: 'CLOCK_IN' | 'CLOCK_OUT' | 'PUNCH';
   timestamp: string;
   source: BiometricSource;
   actor: string;
   note: string | null;
+  terminalName: string;
 };
 
 type ClockingRecord = {
@@ -45,6 +46,7 @@ type ClockingRecord = {
   scheduledEnd: string;
   clockInTime: string | null;
   clockOutTime: string | null;
+  punchCount: number;
   minutesLate: number;
   overtimeHours: number;
   source: BiometricSource;
@@ -58,6 +60,8 @@ type ClockingRecord = {
 
 type Payload = {
   generatedAt: string;
+  attendanceDate: string;
+  source: 'Live Biometric Database';
   permissions: {
     actor: string;
     role: string;
@@ -74,6 +78,7 @@ type Payload = {
     latePunches: number;
     averageLateMinutes: number;
     activeSites: number;
+    totalPunches: number;
   };
   filterOptions: {
     businessUnits: string[];
@@ -197,7 +202,7 @@ export default function ClockInClockOutClient() {
   const exportCsv = () => {
     if (!payload?.permissions.canExport) return;
     const rows = [
-      ['Employee ID', 'Employee Name', 'Business Unit', 'Department', 'Site', 'Shift', 'Status', 'Clocking Mode', 'Clock In', 'Clock Out', 'Minutes Late', 'Source', 'Supervisor'],
+      ['Employee ID', 'Employee Name', 'Business Unit', 'Department', 'Site', 'Shift', 'Status', 'Clocking Mode', 'Clock In', 'Clock Out', 'Punch Count', 'Minutes Late', 'Source', 'Supervisor'],
       ...filteredRecords.map((record) => [
         record.employeeId,
         record.employeeName,
@@ -209,6 +214,7 @@ export default function ClockInClockOutClient() {
         record.clockingMode,
         record.clockInTime || '',
         record.clockOutTime || '',
+        String(record.punchCount),
         String(record.minutesLate),
         record.source,
         record.supervisor,
@@ -273,20 +279,23 @@ export default function ClockInClockOutClient() {
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 flex flex-col xl:flex-row gap-3 xl:items-center xl:justify-between">
         <div>
           <div className="text-sm font-semibold text-slate-900">Clocking Operations Desk</div>
-          <div className="text-xs text-slate-500 mt-1">Manage employee punch readiness, open sessions, completed shifts, and attendance exceptions.</div>
+          <div className="text-xs text-slate-500 mt-1">
+            Live biometric clocking feed from {payload?.source || 'the attendance database'}
+            {payload?.attendanceDate ? ` for ${payload.attendanceDate}` : ''}.
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap text-xs">
           <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-semibold">Actor: {payload?.permissions.actor || '—'}</span>
           <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-semibold">Role: {payload?.permissions.role || '—'}</span>
           <span className={`px-2.5 py-1 rounded-full border font-semibold ${payload?.permissions.canEdit ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>
-            {payload?.permissions.canEdit ? 'Clocking Enabled' : 'Read Only'}
+            {payload?.permissions.canEdit ? 'Clocking Enabled' : 'Live Read Only'}
           </span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
         <MetricCard icon={Users} label="Employees" value={payload ? formatNumber(payload.summary.totalEmployees) : '—'} detail="Clocking roster in scope" />
-        <MetricCard icon={Clock3} label="Ready" value={payload ? formatNumber(payload.summary.readyToClockIn) : '—'} detail="Awaiting clock-in" />
+        <MetricCard icon={Clock3} label="Punches" value={payload ? formatNumber(payload.summary.totalPunches) : '—'} detail="Raw biometric events" />
         <MetricCard icon={LogIn} label="Clocked In" value={payload ? formatNumber(payload.summary.clockedIn) : '—'} detail="Active open sessions" />
         <MetricCard icon={LogOut} label="Clocked Out" value={payload ? formatNumber(payload.summary.clockedOut) : '—'} detail="Completed shift punches" />
         <MetricCard icon={AlertTriangle} label="Exceptions" value={payload ? formatNumber(payload.summary.exceptions) : '—'} detail="Missing or overridden attendance" />
@@ -362,7 +371,7 @@ export default function ClockInClockOutClient() {
                       <span>In: {record.clockInTime || '—'}</span>
                       <span>Out: {record.clockOutTime || '—'}</span>
                       <span>Late: {formatNumber(record.minutesLate)}m</span>
-                      <span>Device: {record.deviceName}</span>
+                      <span>Punches: {formatNumber(record.punchCount)}</span>
                     </div>
                   </button>
                 );
@@ -403,6 +412,7 @@ export default function ClockInClockOutClient() {
                     <DetailStat label="Scheduled End" value={selectedRecord.scheduledEnd} />
                     <DetailStat label="Clock In" value={selectedRecord.clockInTime || '—'} />
                     <DetailStat label="Clock Out" value={selectedRecord.clockOutTime || '—'} />
+                    <DetailStat label="Punch Count" value={formatNumber(selectedRecord.punchCount)} />
                     <DetailStat label="Minutes Late" value={`${selectedRecord.minutesLate}m`} />
                     <DetailStat label="Device" value={selectedRecord.deviceName} />
                   </div>
@@ -414,8 +424,8 @@ export default function ClockInClockOutClient() {
 
                   <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-4">
                     <div>
-                      <div className="text-sm font-semibold text-slate-900">Clocking Controls</div>
-                      <div className="text-xs text-slate-500 mt-1">Trigger clock-in, clock-out, or manual attendance override for the selected employee.</div>
+                      <div className="text-sm font-semibold text-slate-900">Live Clocking Controls</div>
+                      <div className="text-xs text-slate-500 mt-1">Punch creation is controlled by the biometric terminals; refresh this page after the device records a clock-in or clock-out.</div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -424,34 +434,34 @@ export default function ClockInClockOutClient() {
                       <SelectField label="Override Status" value={overrideStatus} onChange={(value) => setOverrideStatus(value as AttendanceStatus)} options={['Present', 'Late', 'Absent', 'On Leave', 'Remote', 'Excused']} />
                     </div>
 
-                    <TextAreaField label="Note" value={note} onChange={setNote} placeholder="Provide a short reason for the punch action or manual override." />
+                    <TextAreaField label="Review Note" value={note} onChange={setNote} placeholder="Capture an internal review note before resolving this line in Attendance Register." />
 
                     {submitError ? <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{submitError}</div> : null}
 
                     <div className="flex items-center gap-2 flex-wrap">
                       <button
                         type="button"
-                        disabled={submitting || !payload?.permissions.canEdit}
+                        disabled
                         onClick={() => void runAction('CLOCK_IN')}
                         className="px-3 py-2 rounded-lg bg-dle-blue text-white text-xs font-semibold hover:bg-dle-blue-deep disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        Clock In
+                        Device Clock In
                       </button>
                       <button
                         type="button"
-                        disabled={submitting || !payload?.permissions.canEdit}
+                        disabled
                         onClick={() => void runAction('CLOCK_OUT')}
                         className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        Clock Out
+                        Device Clock Out
                       </button>
                       <button
                         type="button"
-                        disabled={submitting || !payload?.permissions.canEdit}
+                        disabled
                         onClick={() => void runAction('MANUAL_OVERRIDE')}
                         className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        Manual Override
+                        Resolve In Register
                       </button>
                     </div>
                   </div>
@@ -470,7 +480,7 @@ export default function ClockInClockOutClient() {
                               <div className="text-xs text-slate-500">{formatDateTime(event.timestamp)}</div>
                             </div>
                             <div className="text-xs text-slate-500 mt-1">
-                              {event.actor} <span className="mx-2">•</span> {event.source}
+                              {event.terminalName || event.actor} <span className="mx-2">•</span> {event.source}
                             </div>
                             <div className="text-sm text-slate-600 mt-2">{event.note || 'No note provided for this action.'}</div>
                           </div>
@@ -513,7 +523,7 @@ export default function ClockInClockOutClient() {
           <table className="w-full text-left">
             <thead className="bg-slate-50">
               <tr>
-                {['Employee', 'Site', 'Shift', 'Attendance Status', 'Clocking Mode', 'Clock In', 'Clock Out', 'Late (min)', 'Device', 'Supervisor'].map((header) => (
+                {['Employee', 'Site', 'Shift', 'Attendance Status', 'Clocking Mode', 'Clock In', 'Clock Out', 'Punches', 'Late (min)', 'Device', 'Supervisor'].map((header) => (
                   <th key={header} className="px-4 py-3 text-[11px] font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">{header}</th>
                 ))}
               </tr>
@@ -534,6 +544,7 @@ export default function ClockInClockOutClient() {
                   <td className="px-4 py-3"><span className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold ${modeTone(record.clockingMode)}`}>{record.clockingMode}</span></td>
                   <td className="px-4 py-3 text-sm text-slate-700">{record.clockInTime || '—'}</td>
                   <td className="px-4 py-3 text-sm text-slate-700">{record.clockOutTime || '—'}</td>
+                  <td className="px-4 py-3 text-sm text-slate-700">{formatNumber(record.punchCount)}</td>
                   <td className="px-4 py-3 text-sm text-slate-700">{formatNumber(record.minutesLate)}</td>
                   <td className="px-4 py-3 text-sm text-slate-700">{record.deviceName}</td>
                   <td className="px-4 py-3 text-sm text-slate-700">{record.supervisor}</td>

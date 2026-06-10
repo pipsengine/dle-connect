@@ -142,7 +142,22 @@ const isoDate = (rng: () => number, y0: number, y1: number) => {
   return `${y}-${m}-${d}T00:00:00.000Z`;
 };
 
+const isSeededHistoryItem = (item: EmploymentHistoryItem) =>
+  typeof item?.referenceNo === 'string' &&
+  /^HIST-10\d{4}$/.test(item.referenceNo) &&
+  typeof item?.reason === 'string' &&
+  item.reason.endsWith('recorded for compliance traceability.');
+
+const removeSeededHistoryData = () => {
+  for (const [id, item] of Array.from(store.entries())) {
+    if (isSeededHistoryItem(item)) store.delete(id);
+  }
+};
+
 const ensureSeedData = () => {
+  removeSeededHistoryData();
+  if (process.env.HRIS_ENABLE_DEMO_EMPLOYMENT_HISTORY !== 'true') return;
+
   if (store.size > 0) return;
   const rng = createSeeded(777);
   const first = ['Juan', 'Amina', 'Chinedu', 'Halima', 'Tunde', 'Ngozi', 'Michael', 'Fatima', 'Ade', 'Rita', 'Samuel', 'Zainab', 'Ibrahim', 'Grace', 'Kehinde', 'Bola', 'Chika', 'Emeka', 'Mary', 'David'];

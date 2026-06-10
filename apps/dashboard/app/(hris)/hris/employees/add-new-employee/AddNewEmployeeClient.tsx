@@ -51,14 +51,8 @@ type Role =
 
 type EmploymentType =
   | 'Permanent'
-  | 'Contract'
-  | 'Temporary'
-  | 'Intern'
-  | 'Consultant'
-  | 'Expatriate'
-  | 'Industrial Trainee'
-  | 'NYSC'
-  | 'Outsourced Staff';
+  | 'Lumpsum'
+  | 'Daily Rate';
 
 type EmploymentStatus =
   | 'Active'
@@ -251,6 +245,7 @@ type DuplicateResult = {
 type DraftResponse = { draftId: string; status: 'draft' | 'submitted' | 'approved' | 'created'; updatedAt: string };
 
 type CreateEmployeeResponse = { employeeId: string; startedOnboarding: boolean };
+type EmployeeCodePreviewResponse = { employeeCode: string; prefix: string; employeeType: string };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 const pad2 = (n: number) => String(n).padStart(2, '0');
@@ -578,6 +573,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<{ title: string; detail: string; tone: 'ok' | 'warn' | 'err' } | null>(null);
+  const [codePreview, setCodePreview] = useState<ApiState<EmployeeCodePreviewResponse>>({ status: 'idle' });
 
   const [validation, setValidation] = useState<ApiState<ValidationResult>>({ status: 'idle' });
   const [duplicate, setDuplicate] = useState<ApiState<DuplicateResult>>({ status: 'idle' });
@@ -620,6 +616,33 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
     void loadDraft();
   }, [draftId, nowStamp, role]);
 
+  useEffect(() => {
+    const employeeType = draft.employment.employmentType;
+    if (!employeeType) {
+      setCodePreview({ status: 'idle' });
+      setDraft((d) => (d.employment.employeeId ? { ...d, employment: { ...d.employment, employeeId: '' } } : d));
+      return;
+    }
+
+    let alive = true;
+    setCodePreview({ status: 'loading' });
+    apiCall<EmployeeCodePreviewResponse>(`/api/hris/employees/employee-code/next?employeeType=${encodeURIComponent(employeeType)}`, { method: 'GET', role })
+      .then((res) => {
+        if (!alive) return;
+        setCodePreview({ status: 'ready', data: res });
+        setDraft((d) => ({ ...d, employment: { ...d.employment, employeeId: res.employeeCode } }));
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setCodePreview({ status: 'error', error: e instanceof Error ? e.message : 'Unable to generate employee code' });
+        setDraft((d) => (d.employment.employeeId ? { ...d, employment: { ...d.employment, employeeId: '' } } : d));
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [draft.employment.employmentType, role]);
+
   const requiredErrors = useMemo(() => {
     const errs: Record<string, string> = {};
     const p = draft.personal;
@@ -659,9 +682,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
       const pe = parseDate(e.probationEndDate);
       if (ps && pe && pe < ps) errs['employment.probationEndDate'] = 'End before start';
     }
-    if (e.employmentType === 'Contract') {
-      if (!e.contractStartDate.trim()) errs['employment.contractStartDate'] = 'Required';
-      if (!e.contractEndDate.trim()) errs['employment.contractEndDate'] = 'Required';
+    if (e.employmentType === 'Lumpsum' || e.employmentType === 'Daily Rate') {
       const cs = parseDate(e.contractStartDate);
       const ce = parseDate(e.contractEndDate);
       if (cs && ce && ce < cs) errs['employment.contractEndDate'] = 'End before start';
@@ -698,7 +719,6 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
             personalEmail: draft.contact.personalEmail,
             primaryPhone: draft.contact.primaryPhone,
             dateOfBirth: draft.personal.dateOfBirth,
-            employeeId: draft.employment.employeeId,
           }),
         }),
       ]);
@@ -771,7 +791,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
         body: JSON.stringify({ draftId: did, mode: startOnboarding ? 'create-and-start-onboarding' : 'create' }),
       });
       setDraftStatus('created');
-      setToast({ title: 'Employee created', detail: `Employee ID ${res.employeeId} created. Redirecting to profile…`, tone: 'ok' });
+      setToast({ title: 'Employee created', detail: `Employee Code ${res.employeeId} created. Redirecting to profile...`, tone: 'ok' });
       router.push(`/hris/employees/employee-profile/${encodeURIComponent(res.employeeId)}`);
     } catch (e) {
       setToast({ title: 'Create failed', detail: e instanceof Error ? e.message : 'Unable to create employee', tone: 'err' });
@@ -989,7 +1009,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
                 Probation end date recommendation: {addMonths(draft.employment.dateJoined, 6) || '—'} (6 months after date joined)
               </div>
             ) : null}
-            {draft.employment.employmentType === 'Contract' && draft.employment.contractEndDate.trim() ? (
+            {(draft.employment.employmentType === 'Lumpsum' || draft.employment.employmentType === 'Daily Rate') && draft.employment.contractEndDate.trim() ? (
               <div>
                 Contract expires on {draft.employment.contractEndDate} • Ensure employment letter and contract agreement uploaded.
               </div>
@@ -1113,14 +1133,21 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
     BriefcaseBusiness,
     <div className="space-y-5">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        <Field label="Employee ID (optional)" value={draft.employment.employeeId} onChange={(v) => setDraft((d) => ({ ...d, employment: { ...d.employment, employeeId: v } }))} placeholder="Auto-generated if blank" />
         <SelectField
-          label="Employment Type"
+          label="Employee Type"
           required
           value={draft.employment.employmentType}
-          onChange={(v) => setDraft((d) => ({ ...d, employment: { ...d.employment, employmentType: v as EmploymentType } }))}
-          options={['Permanent', 'Contract', 'Temporary', 'Intern', 'Consultant', 'Expatriate', 'Industrial Trainee', 'NYSC', 'Outsourced Staff']}
+          onChange={(v) => setDraft((d) => ({ ...d, employment: { ...d.employment, employmentType: v as EmploymentType, employeeId: '' } }))}
+          options={['Permanent', 'Lumpsum', 'Daily Rate']}
           error={requiredErrors['employment.employmentType']}
+        />
+        <Field
+          label="Employee Code"
+          value={codePreview.status === 'loading' ? 'Generating...' : draft.employment.employeeId}
+          onChange={() => {}}
+          placeholder="Select employee type"
+          disabled
+          error={codePreview.status === 'error' ? codePreview.error : undefined}
         />
         <SelectField
           label="Employment Status"
@@ -1165,12 +1192,12 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
         </div>
       )}
 
-      {draft.employment.employmentType === 'Contract' && (
+      {(draft.employment.employmentType === 'Lumpsum' || draft.employment.employmentType === 'Daily Rate') && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
-          <div className="text-xs font-extrabold text-slate-700">Contract setup (required for Contract)</div>
+          <div className="text-xs font-extrabold text-slate-700">Project-based employee setup</div>
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <Field label="Contract Start Date" required type="date" value={draft.employment.contractStartDate} onChange={(v) => setDraft((d) => ({ ...d, employment: { ...d.employment, contractStartDate: v } }))} error={requiredErrors['employment.contractStartDate']} />
-            <Field label="Contract End Date" required type="date" value={draft.employment.contractEndDate} onChange={(v) => setDraft((d) => ({ ...d, employment: { ...d.employment, contractEndDate: v } }))} error={requiredErrors['employment.contractEndDate']} />
+            <Field label="Engagement Start Date" type="date" value={draft.employment.contractStartDate} onChange={(v) => setDraft((d) => ({ ...d, employment: { ...d.employment, contractStartDate: v } }))} error={requiredErrors['employment.contractStartDate']} />
+            <Field label="Engagement End Date" type="date" value={draft.employment.contractEndDate} onChange={(v) => setDraft((d) => ({ ...d, employment: { ...d.employment, contractEndDate: v } }))} error={requiredErrors['employment.contractEndDate']} />
             <Field label="Union Status" value={draft.employment.unionStatus} onChange={(v) => setDraft((d) => ({ ...d, employment: { ...d.employment, unionStatus: v } }))} />
           </div>
         </div>

@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable react-hooks/set-state-in-effect */
 
 import { useEffect, useMemo, useState } from 'react';
 import { PageTemplate } from '@/components/layout/page-template';
@@ -62,6 +63,8 @@ type AttendanceSegment = {
 
 type Payload = {
   generatedAt: string;
+  attendanceDate: string;
+  source: 'Live Biometric Database';
   permissions: {
     actor: string;
     role: string;
@@ -241,7 +244,10 @@ export default function DailyAttendanceClient() {
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 flex flex-col xl:flex-row gap-3 xl:items-center xl:justify-between">
         <div>
           <div className="text-sm font-semibold text-slate-900">Attendance Control Room</div>
-          <div className="text-xs text-slate-500 mt-1">Daily operational attendance monitoring for business units, locations, and active sites.</div>
+          <div className="text-xs text-slate-500 mt-1">
+            Live biometric attendance from {payload?.source || 'the attendance database'}
+            {payload?.attendanceDate ? ` for ${payload.attendanceDate}` : ''}.
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap text-xs">
           <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-semibold">Actor: {payload?.permissions.actor || '—'}</span>
