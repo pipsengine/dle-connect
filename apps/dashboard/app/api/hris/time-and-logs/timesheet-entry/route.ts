@@ -11,10 +11,15 @@ import {
   readProjects,
   readTimesheetPeriod,
   readTimesheetData,
+  readTimesheetWorkCenters,
+  readSystemTimesheetDepartments,
+  readSystemTimesheetLocations,
   isTimesheetEditableStatus,
   isTimesheetPayrollReadyStatus,
   syncAttendanceForTimesheet,
   normalizeTimesheetStatus,
+  upsertTimesheetWorkCenter,
+  deactivateTimesheetWorkCenter,
   writeProjects,
   writeTimesheetData,
   workflowStages,
@@ -30,10 +35,13 @@ import {
   type TimesheetRecord,
   type TimesheetStatus,
   type Project,
+  type TimesheetDepartment,
+  type TimesheetLocation,
+  type TimesheetWorkCenter,
   type WorkflowStage,
 } from '@/lib/timesheet-entry-store';
 import { readBiometricDevices, type BiometricDeviceRecord } from '@/lib/biometric-attendance-store';
-import { readLiveClockingActivity } from '@/lib/biometric-live-attendance-store';
+import { readEmployeeDirectoryFromDb } from '@/lib/dle-enterprise-db';
 import type { StructureInsight } from '@/lib/organization-data';
 
 type TimesheetPayload = {
@@ -51,6 +59,18 @@ type TimesheetPayload = {
     location: string;
     site: string;
     deviceName: string;
+  }>;
+  workCenters: TimesheetWorkCenter[];
+  departments: TimesheetDepartment[];
+  locations: TimesheetLocation[];
+  projectManagers: Array<{
+    employeeId: string;
+    employeeCode: string;
+    fullName: string;
+    jobTitle: string;
+    department: string;
+    location: string;
+    status: string;
   }>;
   permissions: {
     actor: string;
@@ -99,6 +119,8 @@ type UpdatePayload = {
     | 'REJECT'
     | 'MATRIX_SAVE'
     | 'CREATE_PROJECT'
+    | 'UPSERT_WORK_CENTER'
+    | 'DELETE_WORK_CENTER'
     | 'COPY_PREVIOUS_DAY'
     | 'BULK_APPLY';
   date?: string;
@@ -108,6 +130,7 @@ type UpdatePayload = {
   lines?: TimesheetLine[];
   reviewerNote?: string;
   project?: Omit<Project, 'id'>;
+  workCenter?: Partial<TimesheetWorkCenter> & { name: string };
   bulkAllocation?: {
     employeeIds: string[];
     projectCode: string;
@@ -235,6 +258,26 @@ async function handleCopyPreviousDay(request: Request, date: string, supervisorI
 const ok = <T,>(data: T, status = 200) => NextResponse.json({ status: 'success', data }, { status });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 const round1 = (value: number) => Math.round(value * 10) / 10;
+const resolveProjectManagerForSubmission = (lines: TimesheetLine[], projects: Project[]) => {
+  const hoursByProject = new Map<string, number>();
+  for (const line of lines) {
+    for (const allocation of line.projectAllocations || []) {
+      if (!allocation.projectCode || allocation.hours <= 0) continue;
+      hoursByProject.set(allocation.projectCode, (hoursByProject.get(allocation.projectCode) || 0) + allocation.hours);
+    }
+  }
+  const primaryProjectCode = [...hoursByProject.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  if (!primaryProjectCode) return null;
+  const project = projects.find((item) => item.code.toLowerCase() === primaryProjectCode.toLowerCase());
+  if (!project?.projectManager?.trim()) {
+    throw new Error(`Project Manager is required for project ${primaryProjectCode} before this timesheet can be submitted.`);
+  }
+  return {
+    projectCode: project.code,
+    projectName: project.name,
+    projectManager: project.projectManager.trim(),
+  };
+};
 const todayDateInputValue = () => {
   const now = new Date();
   const offsetMs = now.getTimezoneOffset() * 60 * 1000;
@@ -245,44 +288,42 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
   const access = resolveAccessContext(request);
   const uiPermissions = getUiPermissions(access);
   const { headers, lines: allLines } = await readTimesheetData();
+  const [departments, locations] = await Promise.all([
+    readSystemTimesheetDepartments(),
+    readSystemTimesheetLocations(),
+  ]);
+  const workCenters = await readTimesheetWorkCenters();
   const projects = await readProjects();
   const nextProjectCode = await generateProjectCode();
   const biometricDevices = await readBiometricDevices();
+  const employees = (await readEmployeeDirectoryFromDb().catch(() => null)) || [];
+  const projectManagers = employees
+    .filter((employee) => !['Resigned', 'Terminated', 'Retired'].includes(employee.status))
+    .map((employee) => ({
+      employeeId: employee.employeeId,
+      employeeCode: employee.employeeCode,
+      fullName: employee.fullName,
+      jobTitle: employee.jobTitle,
+      department: employee.department,
+      location: employee.location || employee.workLocation || employee.officeLocation,
+      status: employee.status,
+    }))
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
 
   const targetDate = date || todayDateInputValue();
   const targetSupervisor = supervisorId || access.actor;
   const targetWorkCenter = workCenterName?.trim();
-  let attendanceWorkCenters: TimesheetPayload['attendanceWorkCenters'] = [];
-  let liveRecords: Awaited<ReturnType<typeof readLiveClockingActivity>>['records'] = [];
-  try {
-    const liveAttendance = await readLiveClockingActivity(targetDate);
-    liveRecords = liveAttendance.records;
-    const workCenterByLocation = new Map<string, TimesheetPayload['attendanceWorkCenters'][number]>();
-    for (const record of liveAttendance.records) {
-      if (!record.location) continue;
-      if (!workCenterByLocation.has(record.location)) {
-        workCenterByLocation.set(record.location, {
-          location: record.location,
-          site: record.site,
-          deviceName: record.site || record.location,
-        });
-      }
-    }
-    attendanceWorkCenters = Array.from(workCenterByLocation.values()).sort((a, b) => a.location.localeCompare(b.location));
-  } catch {
-    attendanceWorkCenters = [];
-  }
+  const attendanceWorkCenters = workCenters.map((workCenter) => ({
+    location: workCenter.location || workCenter.name,
+    site: workCenter.site || workCenter.location || workCenter.name,
+    deviceName: workCenter.name,
+  }));
 
   const header =
     headers.find((h) => h.timesheetDate === targetDate && h.supervisorId === targetSupervisor && (!targetWorkCenter || h.workCenterName === targetWorkCenter)) ||
     headers.find((h) => h.timesheetDate === targetDate && h.supervisorId === targetSupervisor) ||
     null;
   const lines = header ? allLines.filter((l) => l.headerId === header.id) : [];
-  const selectedWorkCenter = targetWorkCenter || header?.workCenterName || attendanceWorkCenters[0]?.location || '';
-  const exactLiveRecordsForWorkCenter = selectedWorkCenter
-    ? liveRecords.filter((record) => record.location === selectedWorkCenter || record.site === selectedWorkCenter)
-    : liveRecords;
-  const liveRecordsForWorkCenter = exactLiveRecordsForWorkCenter.length > 0 ? exactLiveRecordsForWorkCenter : liveRecords;
 
   const activeProjects = projects.filter(p => ['Active', 'Approved', 'Open'].includes(p.status));
 
@@ -292,7 +333,7 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
     absentEmployees: lines.filter((l) => !l.clockIn).length,
     onLeaveEmployees: lines.filter((l) => l.idleAllocations.some((item) => item.reasonName.toLowerCase().includes('leave'))).length,
     sickEmployees: 0,
-    notSyncedEmployees: Math.max(0, liveRecordsForWorkCenter.length - lines.length),
+    notSyncedEmployees: 0,
     bookedHours: round1(lines.reduce((sum, l) => sum + l.totalHours, 0)),
     usedHours: round1(lines.reduce((sum, l) => sum + l.usedHours, 0)),
     idleHours: round1(lines.reduce((sum, l) => sum + l.idleHours, 0)),
@@ -314,6 +355,10 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
     workflowStages,
     biometricDevices,
     attendanceWorkCenters,
+    workCenters,
+    departments,
+    locations,
+    projectManagers,
     permissions: {
       actor: uiPermissions.actor,
       role: uiPermissions.role,
@@ -326,12 +371,12 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
     },
     summary,
     filterOptions: {
-      departments: Array.from(new Set(liveRecords.map((record) => record.department).filter(Boolean))).sort(),
+      departments: departments.map((department) => department.name),
       projects: activeProjects.map(p => p.code),
-      locations: attendanceWorkCenters.map((workCenter) => workCenter.location),
+      locations: locations.map((location) => location.name),
       supervisors: Array.from(new Set([uiPermissions.actor, 'HRIS Administrator'].filter(Boolean))).sort(),
-      shifts: Array.from(new Set(liveRecords.map((record) => record.shift))).sort(),
-      businessUnits: Array.from(new Set(liveRecords.map((record) => record.businessUnit).filter(Boolean))).sort(),
+      shifts: [],
+      businessUnits: [],
       modes: ['Supervisor Entry'],
       statuses: ['Draft', 'Submitted', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed', 'HR_Acknowledged', 'Rejected', 'Returned', 'Locked'],
     },
@@ -392,6 +437,7 @@ export async function PATCH(request: Request) {
       if (!payload.project) return err(400, 'Project details are required.');
       const projectCode = payload.project.code?.trim();
       if (!projectCode) return err(400, 'Project code is required.');
+      if (!payload.project.projectManager?.trim()) return err(400, 'Project Manager is required.');
       const projects = await readProjects();
       if (projects.some((project) => project.code.toLowerCase() === projectCode.toLowerCase())) {
         return err(409, `Project code ${projectCode} already exists.`);
@@ -399,10 +445,23 @@ export async function PATCH(request: Request) {
       const newProject: Project = {
         ...payload.project,
         code: projectCode,
+        projectManager: payload.project.projectManager.trim(),
         id: `prj-${Date.now()}`,
       };
       projects.push(newProject);
       await writeProjects(projects);
+      return ok(await buildPayload(request, date, supervisorId, workCenterName));
+    }
+
+    if (action === 'UPSERT_WORK_CENTER') {
+      if (!payload.workCenter?.name?.trim()) return err(400, 'Work center name is required.');
+      await upsertTimesheetWorkCenter(payload.workCenter);
+      return ok(await buildPayload(request, date, supervisorId, payload.workCenter.name));
+    }
+
+    if (action === 'DELETE_WORK_CENTER') {
+      if (!payload.workCenter?.id) return err(400, 'Work center ID is required.');
+      await deactivateTimesheetWorkCenter(payload.workCenter.id);
       return ok(await buildPayload(request, date, supervisorId, workCenterName));
     }
 
@@ -463,9 +522,21 @@ export async function PATCH(request: Request) {
       const otherLines = allLines.filter(l => l.headerId !== headerId);
       
       if (action === 'SUBMIT') {
+        const projects = await readProjects();
+        let projectManagerAssignment: ReturnType<typeof resolveProjectManagerForSubmission>;
+        try {
+          projectManagerAssignment = resolveProjectManagerForSubmission(normalizedLines, projects);
+        } catch (error) {
+          return err(400, error instanceof Error ? error.message : 'Unable to resolve project manager for submission.');
+        }
+        if (!projectManagerAssignment) return err(400, 'At least one project allocation is required before submitting this timesheet.');
         header.status = 'Submitted';
         header.submittedAt = new Date().toISOString();
         header.submittedBy = access.actor;
+        header.projectManager = projectManagerAssignment.projectManager;
+        header.projectManagerProjectCode = projectManagerAssignment.projectCode;
+        header.currentApprovalStage = 'Project Manager';
+        header.currentApprover = projectManagerAssignment.projectManager;
         header.workflowHistory = [
           ...(header.workflowHistory || []),
           {
@@ -473,11 +544,13 @@ export async function PATCH(request: Request) {
             decision: 'Submitted',
             by: access.actor,
             actedAt: header.submittedAt,
-            comment: payload.reviewerNote?.trim() || 'Submitted for Project Manager review.',
+            comment: payload.reviewerNote?.trim() || `Submitted to ${projectManagerAssignment.projectManager} for Project Manager review on ${projectManagerAssignment.projectCode} - ${projectManagerAssignment.projectName}.`,
           },
         ];
       } else {
         header.status = 'Draft';
+        header.currentApprovalStage = null;
+        header.currentApprover = null;
       }
 
       await writeTimesheetData({ headers, lines: [...otherLines, ...normalizedLines] });

@@ -46,7 +46,7 @@ export const navigationConfig: NavItem[] = [
     slug: 'dashboard',
     icon: LayoutDashboard,
     group: 'main',
-    route: '/dashboard/executive-hr-dashboard',
+    route: '/',
     permissionKey: 'view_dashboard'
   },
   {
@@ -60,12 +60,16 @@ export const navigationConfig: NavItem[] = [
   },
   {
     id: 'hris',
-    label: 'HRIS',
-    slug: 'hris',
+    label: 'Human Resources',
+    slug: 'human-resources',
     icon: Users,
     group: 'main',
     route: '/hris',
-    permissionKey: 'view_hris'
+    permissionKey: 'view_hris',
+    subItems: [
+      { title: 'HR Management', slug: 'hr-management', route: '/hris', permissionKey: 'view_hris' },
+      { title: 'Workforce Portal', slug: 'workforce-portal', route: '/workforce-portal', permissionKey: 'view_workforce_portal' },
+    ]
   },
   {
     id: 'erp',

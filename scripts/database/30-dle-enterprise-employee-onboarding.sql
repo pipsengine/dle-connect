@@ -301,6 +301,16 @@ BEGIN
     pension_pin nvarchar(80) NULL,
     tax_identification_number nvarchar(80) NULL,
     benefit_group nvarchar(120) NULL,
+    pay_currency nvarchar(10) NULL,
+    payment_type nvarchar(100) NULL,
+    payment_run nvarchar(150) NULL,
+    remuneration_structure nvarchar(250) NULL,
+    annual_salary decimal(19,4) NULL,
+    period_salary decimal(19,4) NULL,
+    rate_per_hour decimal(19,4) NULL,
+    rate_per_day decimal(19,4) NULL,
+    hours_per_day decimal(9,4) NULL,
+    hours_per_period decimal(9,4) NULL,
     setup_assigned_to_payroll bit NOT NULL CONSTRAINT DF_EmployeePayrollSetup_assigned DEFAULT (0),
     created_at datetime2(0) NOT NULL CONSTRAINT DF_EmployeePayrollSetup_created_at DEFAULT SYSUTCDATETIME(),
     modified_at datetime2(0) NULL,
@@ -310,6 +320,18 @@ BEGIN
     CONSTRAINT CK_EmployeePayrollSetup_salary CHECK (basic_salary IS NULL OR basic_salary >= 0)
   );
 END;
+GO
+
+IF COL_LENGTH(N'hris.EmployeePayrollSetup', N'pay_currency') IS NULL ALTER TABLE [hris].[EmployeePayrollSetup] ADD pay_currency nvarchar(10) NULL;
+IF COL_LENGTH(N'hris.EmployeePayrollSetup', N'payment_type') IS NULL ALTER TABLE [hris].[EmployeePayrollSetup] ADD payment_type nvarchar(100) NULL;
+IF COL_LENGTH(N'hris.EmployeePayrollSetup', N'payment_run') IS NULL ALTER TABLE [hris].[EmployeePayrollSetup] ADD payment_run nvarchar(150) NULL;
+IF COL_LENGTH(N'hris.EmployeePayrollSetup', N'remuneration_structure') IS NULL ALTER TABLE [hris].[EmployeePayrollSetup] ADD remuneration_structure nvarchar(250) NULL;
+IF COL_LENGTH(N'hris.EmployeePayrollSetup', N'annual_salary') IS NULL ALTER TABLE [hris].[EmployeePayrollSetup] ADD annual_salary decimal(19,4) NULL;
+IF COL_LENGTH(N'hris.EmployeePayrollSetup', N'period_salary') IS NULL ALTER TABLE [hris].[EmployeePayrollSetup] ADD period_salary decimal(19,4) NULL;
+IF COL_LENGTH(N'hris.EmployeePayrollSetup', N'rate_per_hour') IS NULL ALTER TABLE [hris].[EmployeePayrollSetup] ADD rate_per_hour decimal(19,4) NULL;
+IF COL_LENGTH(N'hris.EmployeePayrollSetup', N'rate_per_day') IS NULL ALTER TABLE [hris].[EmployeePayrollSetup] ADD rate_per_day decimal(19,4) NULL;
+IF COL_LENGTH(N'hris.EmployeePayrollSetup', N'hours_per_day') IS NULL ALTER TABLE [hris].[EmployeePayrollSetup] ADD hours_per_day decimal(9,4) NULL;
+IF COL_LENGTH(N'hris.EmployeePayrollSetup', N'hours_per_period') IS NULL ALTER TABLE [hris].[EmployeePayrollSetup] ADD hours_per_period decimal(9,4) NULL;
 GO
 
 IF OBJECT_ID(N'[hris].[EmployeeOnboardingChecklist]', N'U') IS NULL
@@ -368,6 +390,64 @@ BEGIN
     CONSTRAINT FK_EmployeeAuditLog_Employees FOREIGN KEY (employee_id) REFERENCES [hris].[Employees](employee_id)
   );
 END;
+GO
+
+IF OBJECT_ID(N'[hris].[EmployeeSourceRecords]', N'U') IS NULL
+BEGIN
+  CREATE TABLE [hris].[EmployeeSourceRecords] (
+    employee_source_record_id bigint IDENTITY(1,1) NOT NULL,
+    employee_id bigint NULL,
+    source_system nvarchar(80) NOT NULL,
+    source_employee_id nvarchar(80) NOT NULL,
+    source_employee_code nvarchar(80) NULL,
+    source_entity_code nvarchar(80) NULL,
+    source_company_code nvarchar(80) NULL,
+    source_company_currency nvarchar(10) NULL,
+    source_pay_run nvarchar(150) NULL,
+    source_remuneration_definition nvarchar(250) NULL,
+    source_status_code nvarchar(80) NULL,
+    source_status_name nvarchar(150) NULL,
+    raw_payload_json nvarchar(max) NOT NULL,
+    imported_at datetime2(0) NOT NULL CONSTRAINT DF_EmployeeSourceRecords_imported_at DEFAULT SYSUTCDATETIME(),
+    imported_by sysname NOT NULL CONSTRAINT DF_EmployeeSourceRecords_imported_by DEFAULT SUSER_SNAME(),
+    row_version rowversion NOT NULL,
+    CONSTRAINT PK_EmployeeSourceRecords PRIMARY KEY CLUSTERED (employee_source_record_id),
+    CONSTRAINT FK_EmployeeSourceRecords_Employees FOREIGN KEY (employee_id) REFERENCES [hris].[Employees](employee_id),
+    CONSTRAINT UQ_EmployeeSourceRecords_source UNIQUE (source_system, source_employee_id),
+    CONSTRAINT CK_EmployeeSourceRecords_payload_json CHECK (ISJSON(raw_payload_json) = 1)
+  );
+END;
+GO
+
+IF COL_LENGTH(N'hris.EmployeeSourceRecords', N'source_company_currency') IS NULL ALTER TABLE [hris].[EmployeeSourceRecords] ADD source_company_currency nvarchar(10) NULL;
+IF COL_LENGTH(N'hris.EmployeeSourceRecords', N'source_pay_run') IS NULL ALTER TABLE [hris].[EmployeeSourceRecords] ADD source_pay_run nvarchar(150) NULL;
+IF COL_LENGTH(N'hris.EmployeeSourceRecords', N'source_remuneration_definition') IS NULL ALTER TABLE [hris].[EmployeeSourceRecords] ADD source_remuneration_definition nvarchar(250) NULL;
+GO
+
+IF OBJECT_ID(N'[hris].[EmployeeSourceFieldValues]', N'U') IS NULL
+BEGIN
+  CREATE TABLE [hris].[EmployeeSourceFieldValues] (
+    employee_source_field_id bigint IDENTITY(1,1) NOT NULL,
+    employee_source_record_id bigint NOT NULL,
+    source_system nvarchar(80) NOT NULL,
+    source_employee_id nvarchar(80) NOT NULL,
+    source_table nvarchar(160) NOT NULL,
+    source_column_name nvarchar(160) NOT NULL,
+    source_value nvarchar(max) NULL,
+    imported_at datetime2(0) NOT NULL CONSTRAINT DF_EmployeeSourceFieldValues_imported_at DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT PK_EmployeeSourceFieldValues PRIMARY KEY CLUSTERED (employee_source_field_id),
+    CONSTRAINT FK_EmployeeSourceFieldValues_SourceRecords FOREIGN KEY (employee_source_record_id) REFERENCES [hris].[EmployeeSourceRecords](employee_source_record_id) ON DELETE CASCADE,
+    CONSTRAINT UQ_EmployeeSourceFieldValues_field UNIQUE (employee_source_record_id, source_table, source_column_name)
+  );
+END;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'[hris].[EmployeeSourceFieldValues]') AND name = N'IX_EmployeeSourceFieldValues_lookup')
+  CREATE INDEX IX_EmployeeSourceFieldValues_lookup ON [hris].[EmployeeSourceFieldValues](source_system, source_employee_id, source_table, source_column_name);
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'[hris].[EmployeeSourceRecords]') AND name = N'IX_EmployeeSourceRecords_employee')
+  CREATE INDEX IX_EmployeeSourceRecords_employee ON [hris].[EmployeeSourceRecords](employee_id, source_system);
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'[hris].[EmployeeDrafts]') AND name = N'IX_EmployeeDrafts_status_modified')

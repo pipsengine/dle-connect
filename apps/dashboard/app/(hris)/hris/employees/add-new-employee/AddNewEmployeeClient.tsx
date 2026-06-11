@@ -618,14 +618,9 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
 
   useEffect(() => {
     const employeeType = draft.employment.employmentType;
-    if (!employeeType) {
-      setCodePreview({ status: 'idle' });
-      setDraft((d) => (d.employment.employeeId ? { ...d, employment: { ...d.employment, employeeId: '' } } : d));
-      return;
-    }
+    if (!employeeType) return;
 
     let alive = true;
-    setCodePreview({ status: 'loading' });
     apiCall<EmployeeCodePreviewResponse>(`/api/hris/employees/employee-code/next?employeeType=${encodeURIComponent(employeeType)}`, { method: 'GET', role })
       .then((res) => {
         if (!alive) return;
@@ -1137,7 +1132,10 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
           label="Employee Type"
           required
           value={draft.employment.employmentType}
-          onChange={(v) => setDraft((d) => ({ ...d, employment: { ...d.employment, employmentType: v as EmploymentType, employeeId: '' } }))}
+          onChange={(v) => {
+            setCodePreview(v ? { status: 'loading' } : { status: 'idle' });
+            setDraft((d) => ({ ...d, employment: { ...d.employment, employmentType: v as EmploymentType, employeeId: '' } }));
+          }}
           options={['Permanent', 'Lumpsum', 'Daily Rate']}
           error={requiredErrors['employment.employmentType']}
         />

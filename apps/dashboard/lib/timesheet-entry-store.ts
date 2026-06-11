@@ -1,7 +1,9 @@
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import sql from 'mssql';
 import { buildBaseAttendanceRecords } from '@/lib/attendance-data';
 import { readLiveClockingActivity } from '@/lib/biometric-live-attendance-store';
+import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { normalizePayrollMatchKey, readActiveSagePayrollEmployeeKeys, type SagePayrollEmployee } from '@/lib/sage-people-payroll-store';
 
 export type TimesheetStatus =
@@ -25,7 +27,7 @@ export type WorkflowStage = {
 
 export const workflowStages: WorkflowStage[] = [
   { id: 'Draft', label: 'Draft', order: 1 },
-  { id: 'Submitted', label: 'Supervisor Submitted', order: 2 },
+  { id: 'Submitted', label: 'Supervisor', order: 2 },
   { id: 'Project_Manager_Reviewed', label: 'Project Manager Review', order: 3 },
   { id: 'Cost_Control_Reviewed', label: 'Cost Control Review', order: 4 },
   { id: 'HR_Acknowledged', label: 'HR Payroll Acknowledgement', order: 5 },
@@ -86,6 +88,10 @@ export type TimesheetHeader = {
   workflowHistory?: TimesheetWorkflowEvent[];
   payrollAcknowledgedAt?: string | null;
   payrollAcknowledgedBy?: string | null;
+  projectManager?: string | null;
+  projectManagerProjectCode?: string | null;
+  currentApprovalStage?: TimesheetWorkflowStage | null;
+  currentApprover?: string | null;
 };
 
 export type TimesheetWorkflowStage = 'Supervisor' | 'Project Manager' | 'Cost Control' | 'HR';
@@ -195,8 +201,38 @@ export type Project = {
   code: string;
   name: string;
   site: string;
+  projectManager: string;
   status: 'Active' | 'Approved' | 'Open' | 'Completed' | 'Suspended' | 'Closed' | 'Archived';
   tasks?: ProjectTask[];
+};
+
+export type TimesheetWorkCenter = {
+  id: string;
+  code: string;
+  name: string;
+  location: string | null;
+  site: string | null;
+  status: 'Active' | 'Inactive';
+  sourceSystem: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export type TimesheetDepartment = {
+  id: string;
+  code: string;
+  name: string;
+  sourceSystem: string;
+  updatedAt?: string | null;
+};
+
+export type TimesheetLocation = {
+  id: string;
+  code: string;
+  name: string;
+  site: string | null;
+  sourceSystem: string;
+  updatedAt?: string | null;
 };
 
 export type DisplayColumn = {
@@ -626,55 +662,306 @@ export const calculateTimesheetPeriodForMonth = (year: number, month: number): T
 
 export const getTimesheetDate = () => TIMESHEET_DATE;
 
-const DATA_FILE_V2 = path.join(DATA_DIR, 'timesheet-v2.json');
-const PROJECTS_FILE = path.join(DATA_DIR, 'projects.json');
-const PERIODS_FILE = path.join(DATA_DIR, 'timesheet-periods.json');
-const PAYROLL_UPDATES_FILE = path.join(DATA_DIR, 'timesheet-payroll-updates.json');
+const dbReady = { value: false };
 
-async function ensureStoreV2() {
-  await mkdir(DATA_DIR, { recursive: true });
-  try {
-    await access(DATA_FILE_V2);
-  } catch {
-    await writeFile(DATA_FILE_V2, JSON.stringify({ headers: [], lines: [] }, null, 2), 'utf8');
+const officialTimesheetWorkCenters = [
+  'Material Preparation',
+  'Cutting',
+  'Fitting',
+  'Welding',
+  'Rigging',
+  'Machining',
+  'Rolling & Forming',
+  'Structural Assembly',
+  'Surface Preparation',
+  'Blasting',
+  'Painting',
+  'Galvanizing Preparation',
+  'Galvanizing',
+  'Galvanizing Finishing',
+  'QA/QC',
+  'NDT',
+  'Dimensional Control',
+  'Warehouse',
+  'Logistics',
+  'Loading & Offloading',
+  'Packing & Preservation',
+  'Mechanical Maintenance',
+  'Electrical Maintenance',
+  'Instrumentation',
+  'Utilities',
+  'Engineering Support',
+  'Planning & Production Control',
+  'Project Control',
+  'HSE',
+  'Security',
+];
+
+const workCenterCode = (name: string) =>
+  name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80);
+
+const workCenterId = (name: string) => `wc-${workCenterCode(name).toLowerCase()}`;
+
+const toIso = (value: unknown) => {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
+const toDateOnly = (value: unknown) => {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(String(value));
+  if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+};
+
+const db = async () => {
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) {
+    throw new Error('DLE Enterprise database is not configured. Timesheet entry data must be stored in the database before this page can be used.');
   }
-  try {
-    await access(PROJECTS_FILE);
-  } catch {
-    const defaultProjects: Project[] = [
-      { id: 'prj-001', code: 'DL26001', name: 'Dangote Refinery Pipe Fabrication', site: 'Fabrication Yard', status: 'Active', tasks: [{ id: 't-1', name: 'Pipe Welding' }, { id: 't-2', name: 'Fit-up' }] },
-      { id: 'prj-002', code: 'DL26002', name: 'NLNG Train 7 E&I Works', site: 'Onne Yard', status: 'Active', tasks: [{ id: 't-3', name: 'Instrumentation Calibration' }, { id: 't-4', name: 'Loop Testing' }] },
-      { id: 'prj-003', code: 'DL26003', name: 'Bonga Shutdown Support', site: 'Marine Base', status: 'Active', tasks: [{ id: 't-5', name: 'Shutdown Maintenance' }, { id: 't-6', name: 'NDT Support' }] },
-      { id: 'prj-004', code: 'DL26004', name: 'Marine Logistics Operations', site: 'Marine Base', status: 'Active', tasks: [{ id: 't-7', name: 'Crew Dispatch' }, { id: 't-8', name: 'Materials Dispatch' }] },
-    ];
-    await writeFile(PROJECTS_FILE, JSON.stringify(defaultProjects, null, 2), 'utf8');
+  if (!dbReady.value) {
+    await pool.request().query(`
+IF SCHEMA_ID(N'hris') IS NULL EXEC(N'CREATE SCHEMA [hris]');
+IF OBJECT_ID(N'[hris].[TimesheetProjects]', N'U') IS NULL
+CREATE TABLE [hris].[TimesheetProjects] (
+  [Id] NVARCHAR(80) NOT NULL CONSTRAINT [PK_TimesheetProjects] PRIMARY KEY,
+  [Code] NVARCHAR(50) NOT NULL CONSTRAINT [UQ_TimesheetProjects_Code] UNIQUE,
+  [Name] NVARCHAR(255) NOT NULL,
+  [Site] NVARCHAR(160) NOT NULL,
+  [ProjectManager] NVARCHAR(220) NULL,
+  [Status] NVARCHAR(40) NOT NULL CONSTRAINT [DF_TimesheetProjects_Status] DEFAULT N'Active',
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TimesheetProjects_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TimesheetProjects_UpdatedAt] DEFAULT SYSUTCDATETIME()
+);
+IF COL_LENGTH(N'hris.TimesheetProjects', N'ProjectManager') IS NULL
+ALTER TABLE [hris].[TimesheetProjects] ADD [ProjectManager] NVARCHAR(220) NULL;
+IF OBJECT_ID(N'[hris].[TimesheetProjectTasks]', N'U') IS NULL
+CREATE TABLE [hris].[TimesheetProjectTasks] (
+  [Id] NVARCHAR(80) NOT NULL CONSTRAINT [PK_TimesheetProjectTasks] PRIMARY KEY,
+  [ProjectId] NVARCHAR(80) NOT NULL,
+  [Name] NVARCHAR(255) NOT NULL,
+  [ActivityId] NVARCHAR(80) NULL,
+  [ActivityName] NVARCHAR(255) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TimesheetProjectTasks_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT [FK_TimesheetProjectTasks_Project] FOREIGN KEY ([ProjectId]) REFERENCES [hris].[TimesheetProjects]([Id]) ON DELETE CASCADE
+);
+IF OBJECT_ID(N'[hris].[TimesheetDepartments]', N'U') IS NULL
+CREATE TABLE [hris].[TimesheetDepartments] (
+  [Id] NVARCHAR(100) NOT NULL CONSTRAINT [PK_TimesheetDepartments] PRIMARY KEY,
+  [Code] NVARCHAR(80) NOT NULL,
+  [Name] NVARCHAR(180) NOT NULL,
+  [SourceSystem] NVARCHAR(40) NOT NULL CONSTRAINT [DF_TimesheetDepartments_SourceSystem] DEFAULT N'Sage Payroll',
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TimesheetDepartments_UpdatedAt] DEFAULT SYSUTCDATETIME()
+);
+IF OBJECT_ID(N'[hris].[TimesheetLocations]', N'U') IS NULL
+CREATE TABLE [hris].[TimesheetLocations] (
+  [Id] NVARCHAR(100) NOT NULL CONSTRAINT [PK_TimesheetLocations] PRIMARY KEY,
+  [Code] NVARCHAR(80) NOT NULL,
+  [Name] NVARCHAR(180) NOT NULL,
+  [Site] NVARCHAR(180) NULL,
+  [SourceSystem] NVARCHAR(40) NOT NULL CONSTRAINT [DF_TimesheetLocations_SourceSystem] DEFAULT N'Sage Payroll',
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TimesheetLocations_UpdatedAt] DEFAULT SYSUTCDATETIME()
+);
+IF OBJECT_ID(N'[hris].[TimesheetWorkCenters]', N'U') IS NULL
+CREATE TABLE [hris].[TimesheetWorkCenters] (
+  [Id] NVARCHAR(100) NOT NULL CONSTRAINT [PK_TimesheetWorkCenters] PRIMARY KEY,
+  [Code] NVARCHAR(80) NOT NULL CONSTRAINT [UQ_TimesheetWorkCenters_Code] UNIQUE,
+  [Name] NVARCHAR(180) NOT NULL,
+  [Location] NVARCHAR(180) NULL,
+  [Site] NVARCHAR(180) NULL,
+  [Status] NVARCHAR(20) NOT NULL CONSTRAINT [DF_TimesheetWorkCenters_Status] DEFAULT N'Active',
+  [SourceSystem] NVARCHAR(40) NOT NULL CONSTRAINT [DF_TimesheetWorkCenters_SourceSystem] DEFAULT N'HRIS',
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TimesheetWorkCenters_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TimesheetWorkCenters_UpdatedAt] DEFAULT SYSUTCDATETIME()
+);
+IF OBJECT_ID(N'[hris].[TimesheetPeriods]', N'U') IS NULL
+CREATE TABLE [hris].[TimesheetPeriods] (
+  [Id] NVARCHAR(40) NOT NULL CONSTRAINT [PK_TimesheetPeriods] PRIMARY KEY,
+  [Name] NVARCHAR(80) NOT NULL,
+  [StartDate] DATE NOT NULL,
+  [EndDate] DATE NOT NULL,
+  [Status] NVARCHAR(20) NOT NULL,
+  [OpenedAt] DATETIME2(0) NULL,
+  [OpenedBy] NVARCHAR(120) NULL,
+  [ClosedAt] DATETIME2(0) NULL,
+  [ClosedBy] NVARCHAR(120) NULL,
+  [UpdatedAt] DATETIME2(0) NULL,
+  [UpdatedBy] NVARCHAR(120) NULL
+);
+IF OBJECT_ID(N'[hris].[TimesheetHeaders]', N'U') IS NULL
+CREATE TABLE [hris].[TimesheetHeaders] (
+  [Id] NVARCHAR(160) NOT NULL CONSTRAINT [PK_TimesheetHeaders] PRIMARY KEY,
+  [PeriodId] NVARCHAR(40) NOT NULL,
+  [TimesheetDate] DATE NOT NULL,
+  [SupervisorId] NVARCHAR(120) NOT NULL,
+  [SupervisorName] NVARCHAR(180) NOT NULL,
+  [WorkCenterId] NVARCHAR(100) NOT NULL,
+  [WorkCenterName] NVARCHAR(180) NOT NULL,
+  [Status] NVARCHAR(50) NOT NULL,
+  [SubmittedAt] DATETIME2(0) NULL,
+  [SubmittedBy] NVARCHAR(120) NULL,
+  [ApprovedAt] DATETIME2(0) NULL,
+  [ApprovedBy] NVARCHAR(120) NULL,
+  [LastSyncAt] DATETIME2(0) NULL,
+  [PayrollAcknowledgedAt] DATETIME2(0) NULL,
+  [PayrollAcknowledgedBy] NVARCHAR(120) NULL
+);
+IF COL_LENGTH(N'hris.TimesheetHeaders', N'ProjectManager') IS NULL
+ALTER TABLE [hris].[TimesheetHeaders] ADD [ProjectManager] NVARCHAR(220) NULL;
+IF COL_LENGTH(N'hris.TimesheetHeaders', N'ProjectManagerProjectCode') IS NULL
+ALTER TABLE [hris].[TimesheetHeaders] ADD [ProjectManagerProjectCode] NVARCHAR(50) NULL;
+IF COL_LENGTH(N'hris.TimesheetHeaders', N'CurrentApprovalStage') IS NULL
+ALTER TABLE [hris].[TimesheetHeaders] ADD [CurrentApprovalStage] NVARCHAR(60) NULL;
+IF COL_LENGTH(N'hris.TimesheetHeaders', N'CurrentApprover') IS NULL
+ALTER TABLE [hris].[TimesheetHeaders] ADD [CurrentApprover] NVARCHAR(220) NULL;
+IF OBJECT_ID(N'[hris].[TimesheetLines]', N'U') IS NULL
+CREATE TABLE [hris].[TimesheetLines] (
+  [Id] NVARCHAR(220) NOT NULL CONSTRAINT [PK_TimesheetLines] PRIMARY KEY,
+  [HeaderId] NVARCHAR(160) NOT NULL,
+  [EmployeeId] NVARCHAR(80) NOT NULL,
+  [EmployeeNo] NVARCHAR(80) NOT NULL,
+  [EmployeeName] NVARCHAR(220) NOT NULL,
+  [BiometricId] NVARCHAR(120) NULL,
+  [AttendanceId] NVARCHAR(120) NULL,
+  [ClockIn] NVARCHAR(40) NULL,
+  [ClockOut] NVARCHAR(40) NULL,
+  [AttendanceDuration] DECIMAL(9,2) NOT NULL CONSTRAINT [DF_TimesheetLines_AttendanceDuration] DEFAULT 0,
+  [UsedHours] DECIMAL(9,2) NOT NULL CONSTRAINT [DF_TimesheetLines_UsedHours] DEFAULT 0,
+  [IdleHours] DECIMAL(9,2) NOT NULL CONSTRAINT [DF_TimesheetLines_IdleHours] DEFAULT 0,
+  [TotalHours] DECIMAL(9,2) NOT NULL CONSTRAINT [DF_TimesheetLines_TotalHours] DEFAULT 0,
+  [Variance] DECIMAL(9,2) NOT NULL CONSTRAINT [DF_TimesheetLines_Variance] DEFAULT 0,
+  [Remarks] NVARCHAR(500) NULL,
+  [ValidationStatus] NVARCHAR(30) NOT NULL,
+  [ValidationMessage] NVARCHAR(500) NULL,
+  CONSTRAINT [FK_TimesheetLines_Header] FOREIGN KEY ([HeaderId]) REFERENCES [hris].[TimesheetHeaders]([Id]) ON DELETE CASCADE
+);
+IF OBJECT_ID(N'[hris].[TimesheetProjectAllocations]', N'U') IS NULL
+CREATE TABLE [hris].[TimesheetProjectAllocations] (
+  [Id] BIGINT IDENTITY(1,1) NOT NULL CONSTRAINT [PK_TimesheetProjectAllocations] PRIMARY KEY,
+  [LineId] NVARCHAR(220) NOT NULL,
+  [ProjectId] NVARCHAR(80) NOT NULL,
+  [ProjectCode] NVARCHAR(50) NOT NULL,
+  [ProjectName] NVARCHAR(255) NOT NULL,
+  [TaskId] NVARCHAR(80) NULL,
+  [TaskName] NVARCHAR(255) NULL,
+  [ActivityId] NVARCHAR(80) NULL,
+  [Hours] DECIMAL(9,2) NOT NULL,
+  [Remarks] NVARCHAR(500) NULL,
+  CONSTRAINT [FK_TimesheetProjectAllocations_Line] FOREIGN KEY ([LineId]) REFERENCES [hris].[TimesheetLines]([Id]) ON DELETE CASCADE
+);
+IF OBJECT_ID(N'[hris].[TimesheetIdleAllocations]', N'U') IS NULL
+CREATE TABLE [hris].[TimesheetIdleAllocations] (
+  [Id] BIGINT IDENTITY(1,1) NOT NULL CONSTRAINT [PK_TimesheetIdleAllocations] PRIMARY KEY,
+  [LineId] NVARCHAR(220) NOT NULL,
+  [ReasonId] NVARCHAR(80) NOT NULL,
+  [ReasonName] NVARCHAR(180) NOT NULL,
+  [Hours] DECIMAL(9,2) NOT NULL,
+  [Remarks] NVARCHAR(500) NULL,
+  CONSTRAINT [FK_TimesheetIdleAllocations_Line] FOREIGN KEY ([LineId]) REFERENCES [hris].[TimesheetLines]([Id]) ON DELETE CASCADE
+);
+IF OBJECT_ID(N'[hris].[TimesheetWorkflowEvents]', N'U') IS NULL
+CREATE TABLE [hris].[TimesheetWorkflowEvents] (
+  [Id] BIGINT IDENTITY(1,1) NOT NULL CONSTRAINT [PK_TimesheetWorkflowEvents] PRIMARY KEY,
+  [HeaderId] NVARCHAR(160) NOT NULL,
+  [Stage] NVARCHAR(60) NOT NULL,
+  [Decision] NVARCHAR(60) NOT NULL,
+  [Actor] NVARCHAR(120) NOT NULL,
+  [ActedAt] DATETIME2(0) NOT NULL,
+  [Comment] NVARCHAR(500) NULL,
+  CONSTRAINT [FK_TimesheetWorkflowEvents_Header] FOREIGN KEY ([HeaderId]) REFERENCES [hris].[TimesheetHeaders]([Id]) ON DELETE CASCADE
+);
+IF OBJECT_ID(N'[hris].[TimesheetPayrollUpdates]', N'U') IS NULL
+CREATE TABLE [hris].[TimesheetPayrollUpdates] (
+  [Id] NVARCHAR(160) NOT NULL CONSTRAINT [PK_TimesheetPayrollUpdates] PRIMARY KEY,
+  [PeriodId] NVARCHAR(40) NOT NULL,
+  [PeriodName] NVARCHAR(80) NOT NULL,
+  [AcknowledgedAt] DATETIME2(0) NOT NULL,
+  [AcknowledgedBy] NVARCHAR(120) NOT NULL
+);
+IF OBJECT_ID(N'[hris].[TimesheetPayrollUpdateHeaders]', N'U') IS NULL
+CREATE TABLE [hris].[TimesheetPayrollUpdateHeaders] (
+  [PayrollUpdateId] NVARCHAR(160) NOT NULL,
+  [HeaderId] NVARCHAR(160) NOT NULL,
+  CONSTRAINT [PK_TimesheetPayrollUpdateHeaders] PRIMARY KEY ([PayrollUpdateId], [HeaderId]),
+  CONSTRAINT [FK_TimesheetPayrollUpdateHeaders_Update] FOREIGN KEY ([PayrollUpdateId]) REFERENCES [hris].[TimesheetPayrollUpdates]([Id]) ON DELETE CASCADE
+);
+IF OBJECT_ID(N'[hris].[TimesheetPayrollUpdateEmployees]', N'U') IS NULL
+CREATE TABLE [hris].[TimesheetPayrollUpdateEmployees] (
+  [PayrollUpdateId] NVARCHAR(160) NOT NULL,
+  [EmployeeId] NVARCHAR(80) NOT NULL,
+  [EmployeeName] NVARCHAR(220) NOT NULL,
+  [DaysWorked] INT NOT NULL,
+  [AttendanceHours] DECIMAL(9,2) NOT NULL,
+  [BookedHours] DECIMAL(9,2) NOT NULL,
+  [IdleHours] DECIMAL(9,2) NOT NULL,
+  CONSTRAINT [PK_TimesheetPayrollUpdateEmployees] PRIMARY KEY ([PayrollUpdateId], [EmployeeId]),
+  CONSTRAINT [FK_TimesheetPayrollUpdateEmployees_Update] FOREIGN KEY ([PayrollUpdateId]) REFERENCES [hris].[TimesheetPayrollUpdates]([Id]) ON DELETE CASCADE
+);
+`);
+    for (const name of officialTimesheetWorkCenters) {
+      const code = workCenterCode(name);
+      await pool.request()
+        .input('Id', sql.NVarChar(100), workCenterId(name))
+        .input('Code', sql.NVarChar(80), code)
+        .input('Name', sql.NVarChar(180), name)
+        .query(`
+MERGE [hris].[TimesheetWorkCenters] AS target
+USING (SELECT @Id AS [Id]) AS source ON target.[Id] = source.[Id]
+WHEN MATCHED THEN UPDATE SET [Code]=@Code,[Name]=@Name,[Location]=@Name,[Site]=@Name,[Status]=N'Active',[SourceSystem]=N'HRIS',[UpdatedAt]=SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[Location],[Site],[Status],[SourceSystem]) VALUES (@Id,@Code,@Name,@Name,@Name,N'Active',N'HRIS');`);
+    }
+    await pool.request().query(`UPDATE [hris].[TimesheetWorkCenters] SET [Status]=N'Inactive',[UpdatedAt]=SYSUTCDATETIME() WHERE [SourceSystem]=N'Sage Payroll'`);
+    dbReady.value = true;
   }
-  try {
-    await access(PERIODS_FILE);
-  } catch {
-    await writeFile(PERIODS_FILE, JSON.stringify([], null, 2), 'utf8');
-  }
-  try {
-    await access(PAYROLL_UPDATES_FILE);
-  } catch {
-    await writeFile(PAYROLL_UPDATES_FILE, JSON.stringify([], null, 2), 'utf8');
-  }
-}
+  return pool;
+};
+
+const bindPeriod = (request: sql.Request, period: TimesheetPeriod) => request
+  .input('Id', sql.NVarChar(40), period.id)
+  .input('Name', sql.NVarChar(80), period.name)
+  .input('StartDate', sql.Date, period.startDate)
+  .input('EndDate', sql.Date, period.endDate)
+  .input('Status', sql.NVarChar(20), period.status)
+  .input('OpenedAt', sql.DateTime2, period.openedAt ? new Date(period.openedAt) : null)
+  .input('OpenedBy', sql.NVarChar(120), period.openedBy ?? null)
+  .input('ClosedAt', sql.DateTime2, period.closedAt ? new Date(period.closedAt) : null)
+  .input('ClosedBy', sql.NVarChar(120), period.closedBy ?? null)
+  .input('UpdatedAt', sql.DateTime2, period.updatedAt ? new Date(period.updatedAt) : null)
+  .input('UpdatedBy', sql.NVarChar(120), period.updatedBy ?? null);
+
+const upsertPeriod = async (pool: sql.ConnectionPool, period: TimesheetPeriod) => {
+  await bindPeriod(new sql.Request(pool), period).query(`
+MERGE [hris].[TimesheetPeriods] AS target
+USING (SELECT @Id AS [Id]) AS source ON target.[Id] = source.[Id]
+WHEN MATCHED THEN UPDATE SET [Name]=@Name,[StartDate]=@StartDate,[EndDate]=@EndDate,[Status]=@Status,[OpenedAt]=@OpenedAt,[OpenedBy]=@OpenedBy,[ClosedAt]=@ClosedAt,[ClosedBy]=@ClosedBy,[UpdatedAt]=@UpdatedAt,[UpdatedBy]=@UpdatedBy
+WHEN NOT MATCHED THEN INSERT ([Id],[Name],[StartDate],[EndDate],[Status],[OpenedAt],[OpenedBy],[ClosedAt],[ClosedBy],[UpdatedAt],[UpdatedBy])
+VALUES (@Id,@Name,@StartDate,@EndDate,@Status,@OpenedAt,@OpenedBy,@ClosedAt,@ClosedBy,@UpdatedAt,@UpdatedBy);`);
+};
 
 export async function readTimesheetPeriods(): Promise<TimesheetPeriod[]> {
-  await ensureStoreV2();
-  try {
-    const raw = await readFile(PERIODS_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed as TimesheetPeriod[] : [];
-  } catch {
-    return [];
-  }
+  const pool = await db();
+  const result = await pool.request().query(`SELECT * FROM [hris].[TimesheetPeriods] ORDER BY [StartDate] DESC`);
+  return result.recordset.map((row) => ({
+    id: row.Id,
+    name: row.Name,
+    startDate: toDateOnly(row.StartDate),
+    endDate: toDateOnly(row.EndDate),
+    status: row.Status,
+    openedAt: toIso(row.OpenedAt),
+    openedBy: row.OpenedBy,
+    closedAt: toIso(row.ClosedAt),
+    closedBy: row.ClosedBy,
+    updatedAt: toIso(row.UpdatedAt),
+    updatedBy: row.UpdatedBy,
+  }));
 }
 
 export async function writeTimesheetPeriods(periods: TimesheetPeriod[]) {
-  await ensureStoreV2();
-  await writeFile(PERIODS_FILE, JSON.stringify(periods, null, 2), 'utf8');
+  const pool = await db();
+  for (const period of periods) {
+    await upsertPeriod(pool, period);
+  }
 }
 
 export async function readTimesheetPeriod(date: Date = new Date()): Promise<TimesheetPeriod> {
@@ -783,14 +1070,62 @@ export async function readTimesheetPeriodSummaries(windowMonths = 12): Promise<T
 }
 
 export async function readProjects(): Promise<Project[]> {
-  await ensureStoreV2();
-  const raw = await readFile(PROJECTS_FILE, 'utf8');
-  return JSON.parse(raw) as Project[];
+  const pool = await db();
+  const [projectsResult, tasksResult] = await Promise.all([
+    pool.request().query(`SELECT * FROM [hris].[TimesheetProjects] ORDER BY [Code]`),
+    pool.request().query(`SELECT * FROM [hris].[TimesheetProjectTasks] ORDER BY [Name]`),
+  ]);
+  const tasksByProject = new Map<string, ProjectTask[]>();
+  for (const row of tasksResult.recordset) {
+    const tasks = tasksByProject.get(row.ProjectId) || [];
+    tasks.push({ id: row.Id, name: row.Name, activityId: row.ActivityId ?? undefined, activityName: row.ActivityName ?? undefined });
+    tasksByProject.set(row.ProjectId, tasks);
+  }
+  return projectsResult.recordset.map((row) => ({
+    id: row.Id,
+    code: row.Code,
+    name: row.Name,
+    site: row.Site,
+    projectManager: row.ProjectManager || '',
+    status: row.Status,
+    tasks: tasksByProject.get(row.Id) || [],
+  }));
 }
 
 export async function writeProjects(projects: Project[]) {
-  await ensureStoreV2();
-  await writeFile(PROJECTS_FILE, JSON.stringify(projects, null, 2), 'utf8');
+  const pool = await db();
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    for (const project of projects) {
+      await new sql.Request(tx)
+        .input('Id', sql.NVarChar(80), project.id)
+        .input('Code', sql.NVarChar(50), project.code)
+        .input('Name', sql.NVarChar(255), project.name)
+        .input('Site', sql.NVarChar(160), project.site)
+        .input('ProjectManager', sql.NVarChar(220), project.projectManager || null)
+        .input('Status', sql.NVarChar(40), project.status)
+        .query(`
+MERGE [hris].[TimesheetProjects] AS target
+USING (SELECT @Id AS [Id]) AS source ON target.[Id] = source.[Id]
+WHEN MATCHED THEN UPDATE SET [Code]=@Code,[Name]=@Name,[Site]=@Site,[ProjectManager]=@ProjectManager,[Status]=@Status,[UpdatedAt]=SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[Site],[ProjectManager],[Status]) VALUES (@Id,@Code,@Name,@Site,@ProjectManager,@Status);`);
+      await new sql.Request(tx).input('ProjectId', sql.NVarChar(80), project.id).query(`DELETE FROM [hris].[TimesheetProjectTasks] WHERE [ProjectId]=@ProjectId`);
+      for (const task of project.tasks || []) {
+        await new sql.Request(tx)
+          .input('Id', sql.NVarChar(80), task.id)
+          .input('ProjectId', sql.NVarChar(80), project.id)
+          .input('Name', sql.NVarChar(255), task.name)
+          .input('ActivityId', sql.NVarChar(80), task.activityId ?? null)
+          .input('ActivityName', sql.NVarChar(255), task.activityName ?? null)
+          .query(`INSERT INTO [hris].[TimesheetProjectTasks] ([Id],[ProjectId],[Name],[ActivityId],[ActivityName]) VALUES (@Id,@ProjectId,@Name,@ActivityId,@ActivityName)`);
+      }
+    }
+    await tx.commit();
+  } catch (error) {
+    await tx.rollback();
+    throw error;
+  }
 }
 
 export async function generateProjectCode(): Promise<string> {
@@ -808,30 +1143,421 @@ export async function generateProjectCode(): Promise<string> {
 }
 
 export async function readTimesheetData() {
-  await ensureStoreV2();
-  const raw = await readFile(DATA_FILE_V2, 'utf8');
-  return JSON.parse(raw) as { headers: TimesheetHeader[]; lines: TimesheetLine[] };
+  const pool = await db();
+  const [headersResult, eventsResult, linesResult, projectAllocationsResult, idleAllocationsResult] = await Promise.all([
+    pool.request().query(`SELECT * FROM [hris].[TimesheetHeaders] ORDER BY [TimesheetDate] DESC, [SupervisorName], [WorkCenterName]`),
+    pool.request().query(`SELECT * FROM [hris].[TimesheetWorkflowEvents] ORDER BY [Id]`),
+    pool.request().query(`SELECT * FROM [hris].[TimesheetLines] ORDER BY [EmployeeName]`),
+    pool.request().query(`SELECT * FROM [hris].[TimesheetProjectAllocations] ORDER BY [Id]`),
+    pool.request().query(`SELECT * FROM [hris].[TimesheetIdleAllocations] ORDER BY [Id]`),
+  ]);
+  const eventsByHeader = new Map<string, TimesheetWorkflowEvent[]>();
+  for (const row of eventsResult.recordset) {
+    const events = eventsByHeader.get(row.HeaderId) || [];
+    events.push({ stage: row.Stage, decision: row.Decision, by: row.Actor, actedAt: toIso(row.ActedAt) || new Date().toISOString(), comment: row.Comment });
+    eventsByHeader.set(row.HeaderId, events);
+  }
+  const projectByLine = new Map<string, TimesheetLine['projectAllocations']>();
+  for (const row of projectAllocationsResult.recordset) {
+    const allocations = projectByLine.get(row.LineId) || [];
+    allocations.push({
+      projectId: row.ProjectId,
+      projectCode: row.ProjectCode,
+      projectName: row.ProjectName,
+      taskId: row.TaskId ?? undefined,
+      taskName: row.TaskName ?? undefined,
+      activityId: row.ActivityId ?? undefined,
+      hours: Number(row.Hours || 0),
+      remarks: row.Remarks,
+    });
+    projectByLine.set(row.LineId, allocations);
+  }
+  const idleByLine = new Map<string, TimesheetLine['idleAllocations']>();
+  for (const row of idleAllocationsResult.recordset) {
+    const allocations = idleByLine.get(row.LineId) || [];
+    allocations.push({ reasonId: row.ReasonId, reasonName: row.ReasonName, hours: Number(row.Hours || 0), remarks: row.Remarks });
+    idleByLine.set(row.LineId, allocations);
+  }
+  const headers: TimesheetHeader[] = headersResult.recordset.map((row) => ({
+    id: row.Id,
+    periodId: row.PeriodId,
+    timesheetDate: toDateOnly(row.TimesheetDate),
+    supervisorId: row.SupervisorId,
+    supervisorName: row.SupervisorName,
+    workCenterId: row.WorkCenterId,
+    workCenterName: row.WorkCenterName,
+    status: row.Status,
+    submittedAt: toIso(row.SubmittedAt),
+    submittedBy: row.SubmittedBy,
+    approvedAt: toIso(row.ApprovedAt),
+    approvedBy: row.ApprovedBy,
+    lastSyncAt: toIso(row.LastSyncAt),
+    payrollAcknowledgedAt: toIso(row.PayrollAcknowledgedAt),
+    payrollAcknowledgedBy: row.PayrollAcknowledgedBy,
+    projectManager: row.ProjectManager,
+    projectManagerProjectCode: row.ProjectManagerProjectCode,
+    currentApprovalStage: row.CurrentApprovalStage,
+    currentApprover: row.CurrentApprover,
+    workflowHistory: eventsByHeader.get(row.Id) || [],
+  }));
+  const lines: TimesheetLine[] = linesResult.recordset.map((row) => ({
+    id: row.Id,
+    headerId: row.HeaderId,
+    employeeId: row.EmployeeId,
+    employeeNo: row.EmployeeNo,
+    employeeName: row.EmployeeName,
+    biometricId: row.BiometricId,
+    attendanceId: row.AttendanceId,
+    clockIn: row.ClockIn,
+    clockOut: row.ClockOut,
+    attendanceDuration: Number(row.AttendanceDuration || 0),
+    projectAllocations: projectByLine.get(row.Id) || [],
+    idleAllocations: (idleByLine.get(row.Id) || []).map(withDefaultIdleReason),
+    usedHours: Number(row.UsedHours || 0),
+    idleHours: Number(row.IdleHours || 0),
+    totalHours: Number(row.TotalHours || 0),
+    variance: Number(row.Variance || 0),
+    remarks: row.Remarks,
+    validationStatus: row.ValidationStatus,
+    validationMessage: row.ValidationMessage,
+  }));
+  return { headers, lines };
 }
 
 export async function writeTimesheetData(data: { headers: TimesheetHeader[]; lines: TimesheetLine[] }) {
-  await ensureStoreV2();
-  await writeFile(DATA_FILE_V2, JSON.stringify(data, null, 2), 'utf8');
-}
-
-export async function readTimesheetPayrollUpdates(): Promise<TimesheetPayrollUpdate[]> {
-  await ensureStoreV2();
+  const pool = await db();
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
   try {
-    const raw = await readFile(PAYROLL_UPDATES_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed as TimesheetPayrollUpdate[] : [];
-  } catch {
-    return [];
+    for (const header of data.headers) {
+      await new sql.Request(tx)
+        .input('Id', sql.NVarChar(160), header.id)
+        .input('PeriodId', sql.NVarChar(40), header.periodId)
+        .input('TimesheetDate', sql.Date, header.timesheetDate)
+        .input('SupervisorId', sql.NVarChar(120), header.supervisorId)
+        .input('SupervisorName', sql.NVarChar(180), header.supervisorName)
+        .input('WorkCenterId', sql.NVarChar(100), header.workCenterId)
+        .input('WorkCenterName', sql.NVarChar(180), header.workCenterName)
+        .input('Status', sql.NVarChar(50), header.status)
+        .input('SubmittedAt', sql.DateTime2, header.submittedAt ? new Date(header.submittedAt) : null)
+        .input('SubmittedBy', sql.NVarChar(120), header.submittedBy)
+        .input('ApprovedAt', sql.DateTime2, header.approvedAt ? new Date(header.approvedAt) : null)
+        .input('ApprovedBy', sql.NVarChar(120), header.approvedBy)
+        .input('LastSyncAt', sql.DateTime2, header.lastSyncAt ? new Date(header.lastSyncAt) : null)
+        .input('PayrollAcknowledgedAt', sql.DateTime2, header.payrollAcknowledgedAt ? new Date(header.payrollAcknowledgedAt) : null)
+        .input('PayrollAcknowledgedBy', sql.NVarChar(120), header.payrollAcknowledgedBy ?? null)
+        .input('ProjectManager', sql.NVarChar(220), header.projectManager ?? null)
+        .input('ProjectManagerProjectCode', sql.NVarChar(50), header.projectManagerProjectCode ?? null)
+        .input('CurrentApprovalStage', sql.NVarChar(60), header.currentApprovalStage ?? null)
+        .input('CurrentApprover', sql.NVarChar(220), header.currentApprover ?? null)
+        .query(`
+MERGE [hris].[TimesheetHeaders] AS target
+USING (SELECT @Id AS [Id]) AS source ON target.[Id]=source.[Id]
+WHEN MATCHED THEN UPDATE SET [PeriodId]=@PeriodId,[TimesheetDate]=@TimesheetDate,[SupervisorId]=@SupervisorId,[SupervisorName]=@SupervisorName,[WorkCenterId]=@WorkCenterId,[WorkCenterName]=@WorkCenterName,[Status]=@Status,[SubmittedAt]=@SubmittedAt,[SubmittedBy]=@SubmittedBy,[ApprovedAt]=@ApprovedAt,[ApprovedBy]=@ApprovedBy,[LastSyncAt]=@LastSyncAt,[PayrollAcknowledgedAt]=@PayrollAcknowledgedAt,[PayrollAcknowledgedBy]=@PayrollAcknowledgedBy,[ProjectManager]=@ProjectManager,[ProjectManagerProjectCode]=@ProjectManagerProjectCode,[CurrentApprovalStage]=@CurrentApprovalStage,[CurrentApprover]=@CurrentApprover
+WHEN NOT MATCHED THEN INSERT ([Id],[PeriodId],[TimesheetDate],[SupervisorId],[SupervisorName],[WorkCenterId],[WorkCenterName],[Status],[SubmittedAt],[SubmittedBy],[ApprovedAt],[ApprovedBy],[LastSyncAt],[PayrollAcknowledgedAt],[PayrollAcknowledgedBy],[ProjectManager],[ProjectManagerProjectCode],[CurrentApprovalStage],[CurrentApprover])
+VALUES (@Id,@PeriodId,@TimesheetDate,@SupervisorId,@SupervisorName,@WorkCenterId,@WorkCenterName,@Status,@SubmittedAt,@SubmittedBy,@ApprovedAt,@ApprovedBy,@LastSyncAt,@PayrollAcknowledgedAt,@PayrollAcknowledgedBy,@ProjectManager,@ProjectManagerProjectCode,@CurrentApprovalStage,@CurrentApprover);`);
+      await new sql.Request(tx).input('HeaderId', sql.NVarChar(160), header.id).query(`DELETE FROM [hris].[TimesheetWorkflowEvents] WHERE [HeaderId]=@HeaderId`);
+      for (const event of header.workflowHistory || []) {
+        await new sql.Request(tx)
+          .input('HeaderId', sql.NVarChar(160), header.id)
+          .input('Stage', sql.NVarChar(60), event.stage)
+          .input('Decision', sql.NVarChar(60), event.decision)
+          .input('Actor', sql.NVarChar(120), event.by)
+          .input('ActedAt', sql.DateTime2, new Date(event.actedAt))
+          .input('Comment', sql.NVarChar(500), event.comment)
+          .query(`INSERT INTO [hris].[TimesheetWorkflowEvents] ([HeaderId],[Stage],[Decision],[Actor],[ActedAt],[Comment]) VALUES (@HeaderId,@Stage,@Decision,@Actor,@ActedAt,@Comment)`);
+      }
+    }
+    const lineIdsByHeader = new Map<string, Set<string>>();
+    for (const line of data.lines) {
+      const ids = lineIdsByHeader.get(line.headerId) || new Set<string>();
+      ids.add(line.id);
+      lineIdsByHeader.set(line.headerId, ids);
+    }
+    for (const header of data.headers) {
+      const existing = await new sql.Request(tx)
+        .input('HeaderId', sql.NVarChar(160), header.id)
+        .query(`SELECT [Id] FROM [hris].[TimesheetLines] WHERE [HeaderId]=@HeaderId`);
+      const currentIds = lineIdsByHeader.get(header.id) || new Set<string>();
+      for (const row of existing.recordset) {
+        if (currentIds.has(row.Id)) continue;
+        await new sql.Request(tx)
+          .input('Id', sql.NVarChar(220), row.Id)
+          .query(`DELETE FROM [hris].[TimesheetLines] WHERE [Id]=@Id`);
+      }
+    }
+    for (const line of data.lines) {
+      await new sql.Request(tx)
+        .input('Id', sql.NVarChar(220), line.id)
+        .input('HeaderId', sql.NVarChar(160), line.headerId)
+        .input('EmployeeId', sql.NVarChar(80), line.employeeId)
+        .input('EmployeeNo', sql.NVarChar(80), line.employeeNo)
+        .input('EmployeeName', sql.NVarChar(220), line.employeeName)
+        .input('BiometricId', sql.NVarChar(120), line.biometricId)
+        .input('AttendanceId', sql.NVarChar(120), line.attendanceId)
+        .input('ClockIn', sql.NVarChar(40), line.clockIn)
+        .input('ClockOut', sql.NVarChar(40), line.clockOut)
+        .input('AttendanceDuration', sql.Decimal(9, 2), line.attendanceDuration)
+        .input('UsedHours', sql.Decimal(9, 2), line.usedHours)
+        .input('IdleHours', sql.Decimal(9, 2), line.idleHours)
+        .input('TotalHours', sql.Decimal(9, 2), line.totalHours)
+        .input('Variance', sql.Decimal(9, 2), line.variance)
+        .input('Remarks', sql.NVarChar(500), line.remarks)
+        .input('ValidationStatus', sql.NVarChar(30), line.validationStatus)
+        .input('ValidationMessage', sql.NVarChar(500), line.validationMessage)
+        .query(`
+MERGE [hris].[TimesheetLines] AS target
+USING (SELECT @Id AS [Id]) AS source ON target.[Id]=source.[Id]
+WHEN MATCHED THEN UPDATE SET [HeaderId]=@HeaderId,[EmployeeId]=@EmployeeId,[EmployeeNo]=@EmployeeNo,[EmployeeName]=@EmployeeName,[BiometricId]=@BiometricId,[AttendanceId]=@AttendanceId,[ClockIn]=@ClockIn,[ClockOut]=@ClockOut,[AttendanceDuration]=@AttendanceDuration,[UsedHours]=@UsedHours,[IdleHours]=@IdleHours,[TotalHours]=@TotalHours,[Variance]=@Variance,[Remarks]=@Remarks,[ValidationStatus]=@ValidationStatus,[ValidationMessage]=@ValidationMessage
+WHEN NOT MATCHED THEN INSERT ([Id],[HeaderId],[EmployeeId],[EmployeeNo],[EmployeeName],[BiometricId],[AttendanceId],[ClockIn],[ClockOut],[AttendanceDuration],[UsedHours],[IdleHours],[TotalHours],[Variance],[Remarks],[ValidationStatus],[ValidationMessage])
+VALUES (@Id,@HeaderId,@EmployeeId,@EmployeeNo,@EmployeeName,@BiometricId,@AttendanceId,@ClockIn,@ClockOut,@AttendanceDuration,@UsedHours,@IdleHours,@TotalHours,@Variance,@Remarks,@ValidationStatus,@ValidationMessage);`);
+      await new sql.Request(tx).input('LineId', sql.NVarChar(220), line.id).query(`DELETE FROM [hris].[TimesheetProjectAllocations] WHERE [LineId]=@LineId; DELETE FROM [hris].[TimesheetIdleAllocations] WHERE [LineId]=@LineId;`);
+      for (const allocation of line.projectAllocations || []) {
+        await new sql.Request(tx)
+          .input('LineId', sql.NVarChar(220), line.id)
+          .input('ProjectId', sql.NVarChar(80), allocation.projectId)
+          .input('ProjectCode', sql.NVarChar(50), allocation.projectCode)
+          .input('ProjectName', sql.NVarChar(255), allocation.projectName)
+          .input('TaskId', sql.NVarChar(80), allocation.taskId ?? null)
+          .input('TaskName', sql.NVarChar(255), allocation.taskName ?? null)
+          .input('ActivityId', sql.NVarChar(80), allocation.activityId ?? null)
+          .input('Hours', sql.Decimal(9, 2), allocation.hours)
+          .input('Remarks', sql.NVarChar(500), allocation.remarks)
+          .query(`INSERT INTO [hris].[TimesheetProjectAllocations] ([LineId],[ProjectId],[ProjectCode],[ProjectName],[TaskId],[TaskName],[ActivityId],[Hours],[Remarks]) VALUES (@LineId,@ProjectId,@ProjectCode,@ProjectName,@TaskId,@TaskName,@ActivityId,@Hours,@Remarks)`);
+      }
+      for (const allocation of (line.idleAllocations || []).map(withDefaultIdleReason)) {
+        await new sql.Request(tx)
+          .input('LineId', sql.NVarChar(220), line.id)
+          .input('ReasonId', sql.NVarChar(80), allocation.reasonId)
+          .input('ReasonName', sql.NVarChar(180), allocation.reasonName)
+          .input('Hours', sql.Decimal(9, 2), allocation.hours)
+          .input('Remarks', sql.NVarChar(500), allocation.remarks)
+          .query(`INSERT INTO [hris].[TimesheetIdleAllocations] ([LineId],[ReasonId],[ReasonName],[Hours],[Remarks]) VALUES (@LineId,@ReasonId,@ReasonName,@Hours,@Remarks)`);
+      }
+    }
+    await tx.commit();
+  } catch (error) {
+    await tx.rollback();
+    throw error;
   }
 }
 
+export async function readTimesheetPayrollUpdates(): Promise<TimesheetPayrollUpdate[]> {
+  const pool = await db();
+  const [updatesResult, headersResult, employeesResult] = await Promise.all([
+    pool.request().query(`SELECT * FROM [hris].[TimesheetPayrollUpdates] ORDER BY [AcknowledgedAt] DESC`),
+    pool.request().query(`SELECT * FROM [hris].[TimesheetPayrollUpdateHeaders]`),
+    pool.request().query(`SELECT * FROM [hris].[TimesheetPayrollUpdateEmployees] ORDER BY [EmployeeName]`),
+  ]);
+  return updatesResult.recordset.map((row) => ({
+    id: row.Id,
+    periodId: row.PeriodId,
+    periodName: row.PeriodName,
+    acknowledgedAt: toIso(row.AcknowledgedAt) || new Date().toISOString(),
+    acknowledgedBy: row.AcknowledgedBy,
+    headerIds: headersResult.recordset.filter((item) => item.PayrollUpdateId === row.Id).map((item) => item.HeaderId),
+    employeeAttendance: employeesResult.recordset.filter((item) => item.PayrollUpdateId === row.Id).map((item) => ({
+      employeeId: item.EmployeeId,
+      employeeName: item.EmployeeName,
+      daysWorked: Number(item.DaysWorked || 0),
+      attendanceHours: Number(item.AttendanceHours || 0),
+      bookedHours: Number(item.BookedHours || 0),
+      idleHours: Number(item.IdleHours || 0),
+    })),
+  }));
+}
+
 export async function writeTimesheetPayrollUpdates(updates: TimesheetPayrollUpdate[]) {
-  await ensureStoreV2();
-  await writeFile(PAYROLL_UPDATES_FILE, JSON.stringify(updates, null, 2), 'utf8');
+  const pool = await db();
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    for (const update of updates) {
+      await new sql.Request(tx)
+        .input('Id', sql.NVarChar(160), update.id)
+        .input('PeriodId', sql.NVarChar(40), update.periodId)
+        .input('PeriodName', sql.NVarChar(80), update.periodName)
+        .input('AcknowledgedAt', sql.DateTime2, new Date(update.acknowledgedAt))
+        .input('AcknowledgedBy', sql.NVarChar(120), update.acknowledgedBy)
+        .query(`
+MERGE [hris].[TimesheetPayrollUpdates] AS target
+USING (SELECT @Id AS [Id]) AS source ON target.[Id]=source.[Id]
+WHEN MATCHED THEN UPDATE SET [PeriodId]=@PeriodId,[PeriodName]=@PeriodName,[AcknowledgedAt]=@AcknowledgedAt,[AcknowledgedBy]=@AcknowledgedBy
+WHEN NOT MATCHED THEN INSERT ([Id],[PeriodId],[PeriodName],[AcknowledgedAt],[AcknowledgedBy]) VALUES (@Id,@PeriodId,@PeriodName,@AcknowledgedAt,@AcknowledgedBy);`);
+      await new sql.Request(tx).input('Id', sql.NVarChar(160), update.id).query(`DELETE FROM [hris].[TimesheetPayrollUpdateHeaders] WHERE [PayrollUpdateId]=@Id; DELETE FROM [hris].[TimesheetPayrollUpdateEmployees] WHERE [PayrollUpdateId]=@Id;`);
+      for (const headerId of update.headerIds) {
+        await new sql.Request(tx)
+          .input('PayrollUpdateId', sql.NVarChar(160), update.id)
+          .input('HeaderId', sql.NVarChar(160), headerId)
+          .query(`INSERT INTO [hris].[TimesheetPayrollUpdateHeaders] ([PayrollUpdateId],[HeaderId]) VALUES (@PayrollUpdateId,@HeaderId)`);
+      }
+      for (const employee of update.employeeAttendance) {
+        await new sql.Request(tx)
+          .input('PayrollUpdateId', sql.NVarChar(160), update.id)
+          .input('EmployeeId', sql.NVarChar(80), employee.employeeId)
+          .input('EmployeeName', sql.NVarChar(220), employee.employeeName)
+          .input('DaysWorked', sql.Int, employee.daysWorked)
+          .input('AttendanceHours', sql.Decimal(9, 2), employee.attendanceHours)
+          .input('BookedHours', sql.Decimal(9, 2), employee.bookedHours)
+          .input('IdleHours', sql.Decimal(9, 2), employee.idleHours)
+          .query(`INSERT INTO [hris].[TimesheetPayrollUpdateEmployees] ([PayrollUpdateId],[EmployeeId],[EmployeeName],[DaysWorked],[AttendanceHours],[BookedHours],[IdleHours]) VALUES (@PayrollUpdateId,@EmployeeId,@EmployeeName,@DaysWorked,@AttendanceHours,@BookedHours,@IdleHours)`);
+      }
+    }
+    await tx.commit();
+  } catch (error) {
+    await tx.rollback();
+    throw error;
+  }
+}
+
+export async function readTimesheetWorkCenters(): Promise<TimesheetWorkCenter[]> {
+  const pool = await db();
+  const result = await pool.request().query(`
+SELECT [Id],[Code],[Name],[Location],[Site],[Status],[SourceSystem],[CreatedAt],[UpdatedAt]
+FROM [hris].[TimesheetWorkCenters]
+WHERE [Status] = N'Active'
+ORDER BY [Name]`);
+  return result.recordset.map((row) => ({
+    id: row.Id,
+    code: row.Code,
+    name: row.Name,
+    location: row.Location,
+    site: row.Site,
+    status: row.Status,
+    sourceSystem: row.SourceSystem,
+    createdAt: toIso(row.CreatedAt),
+    updatedAt: toIso(row.UpdatedAt),
+  }));
+}
+
+export async function readSystemTimesheetDepartments(): Promise<TimesheetDepartment[]> {
+  const pool = await db();
+  const table = await pool.request().query(`SELECT OBJECT_ID(N'[hris].[OrganizationDepartments]', N'U') AS [TableId]`);
+  if (!table.recordset[0]?.TableId) return [];
+
+  const result = await pool.request().query(`
+SELECT [Id],[SourceCode],[Name],[SourceSystem],[LastSyncedAt]
+FROM [hris].[OrganizationDepartments]
+ORDER BY CASE WHEN [Name]=N'Unassigned Department' THEN 1 ELSE 0 END, [Name]`);
+
+  return result.recordset.map((row) => ({
+    id: row.Id,
+    code: row.SourceCode,
+    name: row.Name,
+    sourceSystem: row.SourceSystem || 'DLE Enterprise',
+    updatedAt: toIso(row.LastSyncedAt),
+  }));
+}
+
+export async function readSystemTimesheetLocations(): Promise<TimesheetLocation[]> {
+  const pool = await db();
+  const table = await pool.request().query(`SELECT OBJECT_ID(N'[hris].[OrganizationLocationsSites]', N'U') AS [TableId]`);
+  if (!table.recordset[0]?.TableId) return [];
+
+  const result = await pool.request().query(`
+SELECT [Id],[SourceCode],[Name],[Location],[SourceSystem],[LastSyncedAt]
+FROM [hris].[OrganizationLocationsSites]
+WHERE [RecordType]=N'Site'
+ORDER BY CASE WHEN [Name]=N'Unassigned Location' THEN 1 ELSE 0 END, [Name]`);
+
+  return result.recordset.map((row) => ({
+    id: row.Id,
+    code: row.SourceCode,
+    name: row.Name,
+    site: row.Location || row.Name,
+    sourceSystem: row.SourceSystem || 'DLE Enterprise',
+    updatedAt: toIso(row.LastSyncedAt),
+  }));
+}
+
+export async function upsertTimesheetWorkCenter(input: Partial<TimesheetWorkCenter> & { name: string }): Promise<TimesheetWorkCenter> {
+  const pool = await db();
+  const name = input.name.trim();
+  if (!name) throw new Error('Work center name is required.');
+  const code = workCenterCode(input.code || name) || `WC-${Date.now()}`;
+  const id = input.id || workCenterId(name);
+  await pool.request()
+    .input('Id', sql.NVarChar(100), id)
+    .input('Code', sql.NVarChar(80), code)
+    .input('Name', sql.NVarChar(180), name)
+    .input('Location', sql.NVarChar(180), input.location ?? null)
+    .input('Site', sql.NVarChar(180), input.site ?? input.location ?? null)
+    .input('Status', sql.NVarChar(20), input.status || 'Active')
+    .input('SourceSystem', sql.NVarChar(40), input.sourceSystem || 'HRIS')
+    .query(`
+MERGE [hris].[TimesheetWorkCenters] AS target
+USING (SELECT @Id AS [Id]) AS source ON target.[Id] = source.[Id]
+WHEN MATCHED THEN UPDATE SET [Code]=@Code,[Name]=@Name,[Location]=@Location,[Site]=@Site,[Status]=@Status,[SourceSystem]=@SourceSystem,[UpdatedAt]=SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[Location],[Site],[Status],[SourceSystem]) VALUES (@Id,@Code,@Name,@Location,@Site,@Status,@SourceSystem);`);
+  const [workCenter] = (await readTimesheetWorkCenters()).filter((item) => item.id === id);
+  return workCenter || { id, code, name, location: input.location ?? null, site: input.site ?? input.location ?? null, status: 'Active', sourceSystem: input.sourceSystem || 'HRIS' };
+}
+
+export async function deactivateTimesheetWorkCenter(id: string) {
+  const pool = await db();
+  await pool.request()
+    .input('Id', sql.NVarChar(100), id)
+    .query(`UPDATE [hris].[TimesheetWorkCenters] SET [Status]=N'Inactive',[UpdatedAt]=SYSUTCDATETIME() WHERE [Id]=@Id`);
+}
+
+export async function syncSageTimesheetDimensions(): Promise<{ departments: TimesheetDepartment[]; locations: TimesheetLocation[]; workCenters: TimesheetWorkCenter[] }> {
+  const pool = await db();
+  const activePayroll = await readActiveSagePayrollEmployeeKeys();
+  const departments = new Map<string, TimesheetDepartment>();
+  const locations = new Map<string, TimesheetLocation>();
+
+  for (const employee of activePayroll.employees) {
+    const departmentName = employee.hierarchyDepartmentName || employee.departmentName;
+    const departmentCode = employee.hierarchyDepartmentCode || employee.departmentCode || departmentName;
+    if (departmentName && departmentCode) {
+      const code = String(departmentCode).trim();
+      departments.set(code.toLowerCase(), { id: `sage-dept-${code.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, code, name: departmentName.trim(), sourceSystem: 'Sage Payroll' });
+    }
+
+    const locationName = employee.hierarchyLocationName || employee.siteName;
+    const locationCode = employee.hierarchyLocationCode || employee.siteCode || locationName;
+    if (locationName && locationCode) {
+      const code = String(locationCode).trim();
+      locations.set(code.toLowerCase(), { id: `sage-loc-${code.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, code, name: locationName.trim(), site: employee.siteName || locationName.trim(), sourceSystem: 'Sage Payroll' });
+    }
+  }
+
+  for (const department of departments.values()) {
+    await pool.request()
+      .input('Id', sql.NVarChar(100), department.id)
+      .input('Code', sql.NVarChar(80), department.code)
+      .input('Name', sql.NVarChar(180), department.name)
+      .query(`
+MERGE [hris].[TimesheetDepartments] AS target
+USING (SELECT @Id AS [Id]) AS source ON target.[Id]=source.[Id]
+WHEN MATCHED THEN UPDATE SET [Code]=@Code,[Name]=@Name,[UpdatedAt]=SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[SourceSystem]) VALUES (@Id,@Code,@Name,N'Sage Payroll');`);
+  }
+
+  for (const location of locations.values()) {
+    await pool.request()
+      .input('Id', sql.NVarChar(100), location.id)
+      .input('Code', sql.NVarChar(80), location.code)
+      .input('Name', sql.NVarChar(180), location.name)
+      .input('Site', sql.NVarChar(180), location.site)
+      .query(`
+MERGE [hris].[TimesheetLocations] AS target
+USING (SELECT @Id AS [Id]) AS source ON target.[Id]=source.[Id]
+WHEN MATCHED THEN UPDATE SET [Code]=@Code,[Name]=@Name,[Site]=@Site,[UpdatedAt]=SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[Site],[SourceSystem]) VALUES (@Id,@Code,@Name,@Site,N'Sage Payroll');`);
+  }
+
+  const [departmentRows, locationRows, workCenters] = await Promise.all([
+    pool.request().query(`SELECT [Id],[Code],[Name],[SourceSystem],[UpdatedAt] FROM [hris].[TimesheetDepartments] ORDER BY [Name]`),
+    pool.request().query(`SELECT [Id],[Code],[Name],[Site],[SourceSystem],[UpdatedAt] FROM [hris].[TimesheetLocations] ORDER BY [Name]`),
+    readTimesheetWorkCenters(),
+  ]);
+
+  return {
+    departments: departmentRows.recordset.map((row) => ({ id: row.Id, code: row.Code, name: row.Name, sourceSystem: row.SourceSystem, updatedAt: toIso(row.UpdatedAt) })),
+    locations: locationRows.recordset.map((row) => ({ id: row.Id, code: row.Code, name: row.Name, site: row.Site, sourceSystem: row.SourceSystem, updatedAt: toIso(row.UpdatedAt) })),
+    workCenters,
+  };
 }
 
 const workflowEvent = (
@@ -927,9 +1653,13 @@ export async function advanceTimesheetWorkflow(
     event = workflowEvent(stage, 'Returned', actor, comment);
   } else if (status === 'Submitted') {
     header.status = 'Project_Manager_Reviewed';
+    header.currentApprovalStage = 'Cost Control';
+    header.currentApprover = 'Cost Control';
     event = workflowEvent('Project Manager', 'Approved', actor, comment);
   } else if (status === 'Project_Manager_Reviewed') {
     header.status = 'Cost_Control_Reviewed';
+    header.currentApprovalStage = 'HR';
+    header.currentApprover = 'HR';
     event = workflowEvent('Cost Control', 'Approved', actor, comment);
   } else if (status === 'Cost_Control_Reviewed') {
     header.status = 'HR_Acknowledged';
@@ -937,6 +1667,8 @@ export async function advanceTimesheetWorkflow(
     header.approvedBy = actor;
     header.payrollAcknowledgedAt = now;
     header.payrollAcknowledgedBy = actor;
+    header.currentApprovalStage = null;
+    header.currentApprover = null;
     event = workflowEvent('HR', 'Acknowledged', actor, comment || 'Acknowledged for payroll update.');
   } else {
     throw new Error('This timesheet is not waiting for approval.');

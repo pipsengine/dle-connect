@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { readEmployeeDirectoryFromDb, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 
 type Role =
   | 'Super Admin'
@@ -2400,6 +2401,205 @@ const ensureRecord = (employeeId: string) => {
   return merged;
 };
 
+const dateOnly = (value?: string | null) => {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value.slice(0, 10);
+  return d.toISOString().slice(0, 10);
+};
+
+const isoOrNow = (value?: string | null) => {
+  if (!value) return nowIso();
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? nowIso() : d.toISOString();
+};
+
+const valueOrNull = (value?: string | number | boolean | null) => {
+  const s = String(value ?? '').trim();
+  return s ? s : null;
+};
+
+const buildDbProfileRecord = (row: DleEmployeeDirectoryRow): EmployeeRecord => {
+  const rec = makeRecord(row.employeeCode);
+  const profileCompletionFields = [
+    row.fullName,
+    row.firstName,
+    row.lastName,
+    row.gender,
+    row.dateOfBirth,
+    row.nationality,
+    row.officialEmail,
+    row.primaryPhone,
+    row.dateJoined,
+    row.jobTitle,
+    row.department,
+    row.workLocation,
+    row.managerName,
+    row.payrollGroup,
+    row.sourceEmployeeId,
+  ];
+  const profileCompletionPct = Math.round((profileCompletionFields.filter((x) => valueOrNull(x)).length / profileCompletionFields.length) * 100);
+  const documentStatus: EmployeeOverview['documentStatus'] = row.documentCount > 0 ? 'Compliant' : 'Missing';
+  const payrollStatus: PayrollSummary['payrollStatus'] = row.setupAssignedToPayroll ? 'Verified' : 'Pending Validation';
+  const joinedIso = isoOrNow(row.dateJoined);
+
+  rec.profile = {
+    ...rec.profile,
+    id: row.employeeCode,
+    employeeId: row.employeeCode,
+    fullName: row.fullName,
+    jobTitle: row.jobTitle || 'Unassigned Job Title',
+    department: row.department || 'Unassigned Department',
+    businessUnit: row.businessUnit || 'Unassigned Business Unit',
+    location: row.location || row.workLocation || 'Unassigned Location',
+    employmentStatus: row.status as EmployeeStatus,
+    employmentType: row.employmentType || 'Not assigned',
+    reportingManager: row.managerName || 'Unassigned',
+    dateJoined: joinedIso,
+    yearsOfService: row.yearsOfService,
+    personalInfo: {
+      title: valueOrNull(row.title),
+      firstName: valueOrNull(row.firstName),
+      middleName: valueOrNull(row.middleName),
+      lastName: valueOrNull(row.lastName),
+      preferredName: valueOrNull(row.preferredName),
+      gender: valueOrNull(row.gender),
+      dateOfBirth: dateOnly(row.dateOfBirth),
+      maritalStatus: valueOrNull(row.maritalStatus),
+      nationality: valueOrNull(row.nationality),
+      stateOfOrigin: null,
+      localGovernmentArea: null,
+      religion: null,
+      languagesSpoken: null,
+      personalEmail: valueOrNull(row.personalEmail),
+      personalPhone: valueOrNull(row.primaryPhone),
+      residentialAddress: valueOrNull(row.residentialAddress),
+      permanentAddress: valueOrNull(row.permanentAddress),
+    },
+    employmentDetails: {
+      employeeId: row.employeeCode,
+      employmentType: valueOrNull(row.employmentType),
+      employmentStatus: valueOrNull(row.status),
+      dateJoined: dateOnly(row.dateJoined),
+      confirmationDate: dateOnly(row.confirmationDueDate),
+      probationStartDate: dateOnly(row.probationStartDate),
+      probationEndDate: dateOnly(row.probationEndDate),
+      contractStartDate: dateOnly(row.contractStartDate),
+      contractEndDate: dateOnly(row.contractEndDate),
+      exitDate: row.status === 'Terminated' || row.status === 'Resigned' || row.status === 'Retired' ? dateOnly(row.modifiedAt) : null,
+      exitReason: row.status === 'Terminated' ? 'Sage payroll terminated status' : null,
+      rehireEligibility: null,
+      workLocation: valueOrNull(row.workLocation || row.location),
+      workMode: row.remoteWorker ? 'Remote' : 'Onsite',
+      shiftPattern: valueOrNull(row.shift),
+      staffCategory: valueOrNull(row.staffCategory),
+      employeeCategory: valueOrNull(row.employeeCategory),
+      unionStatus: null,
+    },
+    jobDetails: {
+      jobTitle: valueOrNull(row.jobTitle),
+      designation: valueOrNull(row.designation),
+      jobGrade: valueOrNull(row.jobGrade),
+      department: valueOrNull(row.department),
+      division: valueOrNull(row.division),
+      businessUnit: valueOrNull(row.businessUnit),
+      costCenter: valueOrNull(row.costCenter),
+      projectSite: valueOrNull(row.projectSite),
+      reportingManager: valueOrNull(row.managerName),
+      functionalManager: valueOrNull(row.functionalManager),
+      departmentHead: valueOrNull(row.departmentHead),
+      hrBusinessPartner: valueOrNull(row.hrBusinessPartner),
+      roleProfile: valueOrNull(row.staffCategory || row.employeeCategory),
+      jobDescription: valueOrNull(row.jobTitle) ? `Role imported from ${row.sourceSystem || 'DLE_Enterprise HRIS'}.` : null,
+      keyResponsibilities: null,
+    },
+    contacts: {
+      officialEmail: valueOrNull(row.officialEmail),
+      personalEmail: valueOrNull(row.personalEmail),
+      officeExtension: valueOrNull(row.officeExtension),
+      primaryPhone: valueOrNull(row.primaryPhone),
+      alternativePhone: valueOrNull(row.alternatePhone),
+      nearestBusStop: null,
+      city: valueOrNull(row.city),
+      state: valueOrNull(row.state),
+      country: valueOrNull(row.country),
+      postalCode: valueOrNull(row.postalCode),
+    },
+  };
+
+  rec.overview = {
+    profileCompletionPct,
+    leaveBalanceDays: 0,
+    attendanceScore: row.status === 'Active' ? 92 : 0,
+    trainingCompliancePct: row.trainingCompliance === 'Compliant' ? 100 : row.trainingCompliance === 'At Risk' ? 65 : 30,
+    performanceRating: '-',
+    payrollStatus,
+    documentStatus,
+    assetStatus: 'None',
+    currentLeaveStatus: row.status === 'On Leave' ? 'On Leave' : 'None',
+    recentActivity: [
+      { id: `ra-${row.employeeCode}-source`, at: row.modifiedAt || row.createdAt || nowIso(), title: 'Source record synchronized', detail: `${row.sourceSystem || 'DLE_Enterprise HRIS'} employee profile loaded.`, actor: 'System' },
+      { id: `ra-${row.employeeCode}-profile`, at: nowIso(), title: 'Profile opened', detail: '360 profile generated from DLE_Enterprise employee entities.', actor: 'HRIS' },
+    ],
+  };
+
+  rec.payrollSummary = {
+    payrollStatus,
+    salaryGrade: row.salaryGrade || row.jobGrade || 'Not assigned',
+    basicSalary: row.periodSalary,
+    allowances: null,
+    deductions: null,
+    bankName: null,
+    accountNumberMasked: null,
+    pensionProvider: null,
+    taxId: null,
+    payrollGroup: [row.payrollGroup, row.payCurrency, row.paymentRun].filter(Boolean).join(' / ') || null,
+    lastPayrollProcessed: row.modifiedAt || row.createdAt || null,
+  };
+
+  rec.emergencyContacts = [];
+  rec.documents = row.documentCount > 0 ? rec.documents.slice(0, row.documentCount) : [];
+  rec.leaveSummary = { balances: { Annual: 0, Sick: 0, Compassionate: 0 }, history: [] };
+  rec.attendanceSummary = { score: rec.overview.attendanceScore, presentDays: 0, absentDays: 0, lateComing: 0, earlyDeparture: 0, overtimeHours: 0, biometricLogs: [] };
+  rec.performanceSummary = { currentRating: '-', lastReviewAt: null, goals: [], managerFeedback: null, aiSignals: [] };
+  rec.training = [];
+  rec.assets = [];
+  rec.medicalHse = { medicalFitnessStatus: null, bloodGroup: null, knownAllergies: null, medicalRestrictions: null, fitToWorkStatus: null, incidentHistory: [], hseCertifications: [] };
+  rec.disciplinary = [];
+  rec.history = [
+    { id: `hist-${row.employeeCode}-joined`, at: joinedIso, type: 'Date Joined', detail: `Employee joined as ${row.employmentType || 'employee'}.`, actor: row.sourceSystem || 'DLE_Enterprise HRIS' },
+    { id: `hist-${row.employeeCode}-source`, at: row.createdAt || nowIso(), type: 'Source Import', detail: `Source employee ID ${row.sourceEmployeeId || 'not recorded'} imported into HRIS.`, actor: 'Sage Payroll Import' },
+  ];
+  rec.audit = [
+    auditEntry('Viewed profile', 'HR Manager'),
+    auditEntry('Loaded from DLE_Enterprise HRIS', 'System', { newValue: row.employeeCode }),
+  ];
+  rec.aiInsights = [
+    ...(row.emergencyContactCount === 0
+      ? [{ id: `ai-${row.employeeCode}-emergency`, severity: 'high' as const, confidence: 0.92, title: 'Emergency contact missing', recommendation: 'Add at least one verified emergency contact and next of kin record.', actionLabel: 'Open Emergency', action: 'tab.emergency' }]
+      : []),
+    ...(row.documentCount === 0
+      ? [{ id: `ai-${row.employeeCode}-docs`, severity: 'medium' as const, confidence: 0.86, title: 'No employee documents recorded', recommendation: 'Upload employment letter, government ID and onboarding documents.', actionLabel: 'Open Documents', action: 'tab.documents' }]
+      : []),
+    ...(row.hasManagerAssigned
+      ? []
+      : [{ id: `ai-${row.employeeCode}-manager`, severity: 'medium' as const, confidence: 0.84, title: 'Reporting manager unassigned', recommendation: 'Assign a reporting manager to complete organization controls.', actionLabel: 'Open Job', action: 'tab.job' }]),
+  ];
+
+  return rec;
+};
+
+const ensureRecordFromDb = async (employeeId: string) => {
+  const rows = await readEmployeeDirectoryFromDb().catch(() => null);
+  const found = rows?.find((row) => row.employeeCode.toLowerCase() === employeeId.toLowerCase() || row.employeeId.toLowerCase() === employeeId.toLowerCase());
+  if (!found) return ensureRecord(employeeId);
+  const existing = store.get(found.employeeCode);
+  if (existing) return applyOverrides(found.employeeCode, stripSeededProfilePageData(found.employeeCode, existing));
+  const record = applyOverrides(found.employeeCode, buildDbProfileRecord(found));
+  store.set(found.employeeCode, record);
+  return record;
+};
+
 const getRole = (request: Request): Role => {
   const v = request.headers.get('x-hris-role');
   const all: Role[] = [
@@ -2547,7 +2747,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string;
   const perms = rolePermissions(role, employeeId, viewerEmployeeId);
   if (!perms.canViewProfile) return jsonErr(403, 'Permission denied');
 
-  const rec = ensureRecord(employeeId);
+  const rec = await ensureRecordFromDb(employeeId);
   const { root, rest } = getResource(resource);
   if (!root) return jsonErr(404, 'Not found');
 

@@ -29,11 +29,13 @@ import {
 import type { StructureInsight } from '@/lib/organization-data';
 
 type TimesheetStatus = 'Draft' | 'Submitted' | 'Project_Manager_Reviewed' | 'Cost_Control_Reviewed' | 'HR_Acknowledged' | 'HR_Reviewed' | 'Project_Control_Reviewed' | 'Approved' | 'Locked' | 'Rejected' | 'Returned';
+type TimesheetWorkflowStage = 'Supervisor' | 'Project Manager' | 'Cost Control' | 'HR';
 const STANDARD_TIMESHEET_HOURS = 9;
 const DEFAULT_IDLE_REASON_ID = 'idl-009';
 const DEFAULT_IDLE_REASON_NAME = 'Break Time';
 const editableTimesheetStatuses: TimesheetStatus[] = ['Draft', 'Returned', 'Rejected'];
 const payrollReadyStatuses: TimesheetStatus[] = ['HR_Acknowledged', 'Approved', 'Locked'];
+const EMPLOYEE_CARD_PAGE_SIZE = 12;
 type TimesheetEntryMode = 'Supervisor Entry';
 
 type WorkflowStage = {
@@ -71,6 +73,10 @@ type TimesheetHeader = {
   approvedAt: string | null;
   approvedBy: string | null;
   lastSyncAt: string | null;
+  projectManager?: string | null;
+  projectManagerProjectCode?: string | null;
+  currentApprovalStage?: TimesheetWorkflowStage | null;
+  currentApprover?: string | null;
 };
 
 type TimesheetLine = {
@@ -119,6 +125,7 @@ type Project = {
   code: string;
   name: string;
   site: string;
+  projectManager: string;
   status: string;
   tasks?: Array<{ id: string; name: string }>;
 };
@@ -153,6 +160,26 @@ type Payload = {
     location: string;
     site: string;
     deviceName: string;
+  }>;
+  workCenters: Array<{
+    id: string;
+    code: string;
+    name: string;
+    location: string | null;
+    site: string | null;
+    status: 'Active' | 'Inactive';
+    sourceSystem: string;
+  }>;
+  departments: Array<{ id: string; code: string; name: string; sourceSystem: string }>;
+  locations: Array<{ id: string; code: string; name: string; site: string | null; sourceSystem: string }>;
+  projectManagers: Array<{
+    employeeId: string;
+    employeeCode: string;
+    fullName: string;
+    jobTitle: string;
+    department: string;
+    location: string;
+    status: string;
   }>;
   permissions: {
     actor: string;
@@ -192,39 +219,6 @@ type Payload = {
   aiInsights: StructureInsight[];
 };
 
-const DEFAULT_WORK_CENTERS = [
-  'Material Preparation',
-  'Cutting',
-  'Fitting',
-  'Welding',
-  'Rigging',
-  'Machining',
-  'Rolling & Forming',
-  'Structural Assembly',
-  'Surface Preparation',
-  'Blasting',
-  'Painting',
-  'Galvanizing Preparation',
-  'Galvanizing',
-  'Galvanizing Finishing',
-  'QA/QC',
-  'NDT',
-  'Dimensional Control',
-  'Warehouse',
-  'Logistics',
-  'Loading & Offloading',
-  'Packing & Preservation',
-  'Mechanical Maintenance',
-  'Electrical Maintenance',
-  'Instrumentation',
-  'Utilities',
-  'Engineering Support',
-  'Planning & Production Control',
-  'Project Control',
-  'HSE',
-  'Security',
-];
-
 const round1 = (value: number) => Math.round(value * 10) / 10;
 
 const todayDateInputValue = () => {
@@ -247,6 +241,31 @@ const formatHandshake = (value?: string | null) => {
   return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${formatShortTime(value)}`;
 };
 
+const metricCardTone: Record<string, { card: string; label: string; value: string; bar: string; sub: string }> = {
+  indigo: { card: 'bg-indigo-50 border-indigo-100', label: 'text-indigo-700/70', value: 'text-indigo-950', bar: 'bg-indigo-600', sub: 'text-indigo-700' },
+  emerald: { card: 'bg-emerald-50 border-emerald-100', label: 'text-emerald-700/70', value: 'text-emerald-950', bar: 'bg-emerald-600', sub: 'text-emerald-700' },
+  red: { card: 'bg-red-50 border-red-100', label: 'text-red-700/70', value: 'text-red-950', bar: 'bg-red-600', sub: 'text-red-700' },
+  amber: { card: 'bg-amber-50 border-amber-100', label: 'text-amber-700/70', value: 'text-amber-950', bar: 'bg-amber-500', sub: 'text-amber-700' },
+  blue: { card: 'bg-sky-50 border-sky-100', label: 'text-sky-700/70', value: 'text-sky-950', bar: 'bg-sky-600', sub: 'text-sky-700' },
+  slate: { card: 'bg-slate-100 border-slate-200', label: 'text-slate-500', value: 'text-slate-950', bar: 'bg-slate-500', sub: 'text-slate-600' },
+};
+
+const employeeCardTone = (line: TimesheetLine) => {
+  if (!line.clockIn) return 'border-slate-200 bg-slate-100';
+  if (line.validationStatus === 'Valid') return 'border-emerald-100 bg-emerald-50';
+  if (line.validationStatus === 'Error') return 'border-red-100 bg-red-50';
+  if (line.validationStatus === 'Warning') return 'border-amber-100 bg-amber-50';
+  return 'border-sky-100 bg-sky-50';
+};
+
+const employeeStatusBadgeTone = (line: TimesheetLine) => {
+  if (!line.clockIn) return 'border-slate-200 bg-white/70 text-slate-700';
+  if (line.validationStatus === 'Valid') return 'border-emerald-200 bg-white/70 text-emerald-800';
+  if (line.validationStatus === 'Error') return 'border-red-200 bg-white/70 text-red-800';
+  if (line.validationStatus === 'Warning') return 'border-amber-200 bg-white/70 text-amber-800';
+  return 'border-sky-200 bg-white/70 text-sky-800';
+};
+
 export default function TimesheetEntryClient() {
   const searchParams = useSearchParams();
   const dateParam = searchParams.get('date');
@@ -260,12 +279,13 @@ export default function TimesheetEntryClient() {
   
   const [selectedDate, setSelectedDate] = useState(dateParam || todayDateInputValue());
   const [selectedSupervisor, setSelectedSupervisor] = useState(supervisorParam || '');
+  const [selectedLocation, setSelectedLocation] = useState('');
   const [selectedWorkCenter, setSelectedWorkCenter] = useState('');
-  const [autoSyncKey, setAutoSyncKey] = useState('');
 
   const [localLines, setLocalLines] = useState<TimesheetLine[]>([]);
   const [query, setQuery] = useState('');
   const [matrixColumns, setMatrixColumns] = useState<DisplayColumn[]>([]);
+  const [employeeCardPage, setEmployeeCardPage] = useState(1);
 
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   const [showBulkModal, setShowBulkModal] = useState(false);
@@ -276,18 +296,20 @@ export default function TimesheetEntryClient() {
   const [newProjectCode, setNewProjectCode] = useState('');
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectSite, setNewProjectSite] = useState('');
+  const [newProjectManager, setNewProjectManager] = useState('');
   const [showWorkCenterManager, setShowWorkCenterManager] = useState(false);
-  const [workCenters, setWorkCenters] = useState(DEFAULT_WORK_CENTERS);
+  const [workCenters, setWorkCenters] = useState<Payload['workCenters']>([]);
   const [workCenterDraft, setWorkCenterDraft] = useState('');
-  const [editingWorkCenter, setEditingWorkCenter] = useState<string | null>(null);
+  const [editingWorkCenter, setEditingWorkCenter] = useState<Payload['workCenters'][number] | null>(null);
 
-  const load = useCallback(async (date?: string, supervisor?: string, workCenter?: string) => {
+  const load = useCallback(async (date?: string, supervisor?: string, location?: string, workCenter?: string) => {
     setLoading(true);
     setError(null);
     try {
       const url = new URL('/api/hris/time-and-logs/timesheet-entry', window.location.origin);
       if (date) url.searchParams.set('date', date);
       if (supervisor) url.searchParams.set('supervisorId', supervisor);
+      if (location) url.searchParams.set('locationName', location);
       if (workCenter) url.searchParams.set('workCenterName', workCenter);
       
       const res = await fetch(url.toString(), { cache: 'no-store' });
@@ -295,27 +317,35 @@ export default function TimesheetEntryClient() {
       if (!res.ok || json?.status !== 'success') throw new Error(json?.error || 'Unable to load timesheet entry');
       
       const data = json.data as Payload;
+      const dbWorkCenters = data.workCenters || [];
+      const dbWorkCenterNames = dbWorkCenters.map((item) => item.name);
+      const dbLocationNames = (data.locations || []).map((item) => item.name);
       setPayload(data);
       setLocalLines(data.lines);
+      setWorkCenters(dbWorkCenters);
       if (data.matrixColumns && matrixColumns.length === 0) {
         setMatrixColumns(data.matrixColumns);
       }
       if (!selectedSupervisor) setSelectedSupervisor(data.permissions.actor);
+      setSelectedLocation((current) => {
+        if (current && dbLocationNames.includes(current)) return current;
+        return dbLocationNames[0] || '';
+      });
       setSelectedWorkCenter((current) => {
-        if (current && workCenters.includes(current)) return current;
-        if (data.header?.workCenterName && workCenters.includes(data.header.workCenterName)) return data.header.workCenterName;
-        return workCenters[0] || '';
+        if (current && dbWorkCenterNames.includes(current)) return current;
+        if (data.header?.workCenterName && dbWorkCenterNames.includes(data.header.workCenterName)) return data.header.workCenterName;
+        return dbWorkCenterNames[0] || '';
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to load timesheet entry');
     } finally {
       setLoading(false);
     }
-  }, [matrixColumns.length, selectedSupervisor, workCenters]);
+  }, [matrixColumns.length, selectedSupervisor]);
 
   useEffect(() => {
-    void load(selectedDate, selectedSupervisor, selectedWorkCenter);
-  }, [load, selectedDate, selectedSupervisor, selectedWorkCenter]);
+    void load(selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter);
+  }, [load, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter]);
 
   const handleSyncAttendance = useCallback(async () => {
     if (payload?.period.status !== 'Open') {
@@ -342,7 +372,6 @@ export default function TimesheetEntryClient() {
       if (!res.ok || json?.status !== 'success') throw new Error(json?.error || 'Sync failed');
       setPayload(json.data);
       setLocalLines(json.data.lines);
-      setAutoSyncKey(`${selectedDate}|${selectedSupervisor}|${selectedWorkCenter}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Sync failed');
     } finally {
@@ -350,68 +379,78 @@ export default function TimesheetEntryClient() {
     }
   }, [payload?.period.status, selectedDate, selectedSupervisor, selectedWorkCenter]);
 
-  useEffect(() => {
-    const key = `${selectedDate}|${selectedSupervisor}|${selectedWorkCenter}`;
-    if (
-      loading ||
-      submitting ||
-      !payload ||
-      payload.header ||
-      payload.period.status !== 'Open' ||
-      !selectedSupervisor ||
-      !selectedWorkCenter ||
-      autoSyncKey === key
-    ) {
-      return;
-    }
-
-    setAutoSyncKey(key);
-    void handleSyncAttendance();
-  }, [autoSyncKey, handleSyncAttendance, loading, payload, selectedDate, selectedSupervisor, selectedWorkCenter, submitting]);
-
-  useEffect(() => {
-    const stored = window.localStorage.getItem('dle-timesheet-work-centers');
-    if (!stored) return;
-    try {
-      const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')) {
-        setWorkCenters(parsed.filter(Boolean));
-      }
-    } catch {
-      window.localStorage.removeItem('dle-timesheet-work-centers');
-    }
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem('dle-timesheet-work-centers', JSON.stringify(workCenters));
-  }, [workCenters]);
-
-  const saveWorkCenter = () => {
+  const saveWorkCenter = async () => {
     const nextName = workCenterDraft.trim();
     if (!nextName) return;
-    setWorkCenters((current) => {
-      if (editingWorkCenter) {
-        return current.map((item) => (item === editingWorkCenter ? nextName : item));
-      }
-      if (current.some((item) => item.toLowerCase() === nextName.toLowerCase())) return current;
-      return [...current, nextName].sort((a, b) => a.localeCompare(b));
-    });
-    if (editingWorkCenter && selectedWorkCenter === editingWorkCenter) setSelectedWorkCenter(nextName);
-    setWorkCenterDraft('');
-    setEditingWorkCenter(null);
-  };
-
-  const editWorkCenter = (name: string) => {
-    setEditingWorkCenter(name);
-    setWorkCenterDraft(name);
-  };
-
-  const deleteWorkCenter = (name: string) => {
-    setWorkCenters((current) => current.filter((item) => item !== name));
-    if (selectedWorkCenter === name) setSelectedWorkCenter('');
-    if (editingWorkCenter === name) {
-      setEditingWorkCenter(null);
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/hris/time-and-logs/timesheet-entry', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'UPSERT_WORK_CENTER',
+          date: selectedDate,
+          supervisorId: selectedSupervisor,
+          workCenterName: selectedWorkCenter,
+          workCenter: {
+            id: editingWorkCenter?.id,
+            code: editingWorkCenter?.code,
+            name: nextName,
+            location: editingWorkCenter?.location || nextName,
+            site: editingWorkCenter?.site || nextName,
+            sourceSystem: editingWorkCenter?.sourceSystem || 'HRIS',
+          },
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || json?.status !== 'success') throw new Error(json?.error || 'Unable to save work center');
+      setPayload(json.data);
+      setLocalLines(json.data.lines);
+      setWorkCenters(json.data.workCenters || []);
+      setSelectedWorkCenter(nextName);
       setWorkCenterDraft('');
+      setEditingWorkCenter(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to save work center');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const editWorkCenter = (workCenter: Payload['workCenters'][number]) => {
+    setEditingWorkCenter(workCenter);
+    setWorkCenterDraft(workCenter.name);
+  };
+
+  const deleteWorkCenter = async (workCenter: Payload['workCenters'][number]) => {
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/hris/time-and-logs/timesheet-entry', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'DELETE_WORK_CENTER',
+          date: selectedDate,
+          supervisorId: selectedSupervisor,
+          workCenterName: selectedWorkCenter === workCenter.name ? undefined : selectedWorkCenter,
+          workCenter: { id: workCenter.id, name: workCenter.name },
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || json?.status !== 'success') throw new Error(json?.error || 'Unable to delete work center');
+      setPayload(json.data);
+      setLocalLines(json.data.lines);
+      const nextWorkCenters = json.data.workCenters || [];
+      setWorkCenters(nextWorkCenters);
+      if (selectedWorkCenter === workCenter.name) setSelectedWorkCenter(nextWorkCenters[0]?.name || '');
+      if (editingWorkCenter?.id === workCenter.id) {
+        setEditingWorkCenter(null);
+        setWorkCenterDraft('');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to delete work center');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -569,7 +608,13 @@ export default function TimesheetEntryClient() {
 
   const handleCreateProject = async () => {
     const projectCode = newProjectCode.trim();
-    if (!projectCode || !newProjectName || !newProjectSite) return;
+    const projectManager = newProjectManager.trim();
+    const projectManagerExists = (payload?.projectManagers ?? []).some((employee) => `${employee.employeeCode} - ${employee.fullName}`.toLowerCase() === projectManager.toLowerCase());
+    if (!projectCode || !newProjectName || !newProjectSite || !projectManager) return;
+    if (!projectManagerExists) {
+      setError('Select a Project Manager from the employee directory.');
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch('/api/hris/time-and-logs/timesheet-entry', {
@@ -581,6 +626,7 @@ export default function TimesheetEntryClient() {
             code: projectCode,
             name: newProjectName,
             site: newProjectSite,
+            projectManager,
             status: 'Active',
           },
         }),
@@ -592,6 +638,7 @@ export default function TimesheetEntryClient() {
       setNewProjectCode('');
       setNewProjectName('');
       setNewProjectSite('');
+      setNewProjectManager('');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create project');
     } finally {
@@ -635,6 +682,22 @@ export default function TimesheetEntryClient() {
     l.employeeName.toLowerCase().includes(query.toLowerCase()) ||
     l.employeeNo.toLowerCase().includes(query.toLowerCase())
   );
+  const totalEmployeeCardPages = Math.max(1, Math.ceil(filteredLines.length / EMPLOYEE_CARD_PAGE_SIZE));
+  const safeEmployeeCardPage = Math.min(employeeCardPage, totalEmployeeCardPages);
+  const paginatedCardLines = filteredLines.slice(
+    (safeEmployeeCardPage - 1) * EMPLOYEE_CARD_PAGE_SIZE,
+    safeEmployeeCardPage * EMPLOYEE_CARD_PAGE_SIZE,
+  );
+  const employeeCardStart = filteredLines.length === 0 ? 0 : (safeEmployeeCardPage - 1) * EMPLOYEE_CARD_PAGE_SIZE + 1;
+  const employeeCardEnd = Math.min(safeEmployeeCardPage * EMPLOYEE_CARD_PAGE_SIZE, filteredLines.length);
+
+  useEffect(() => {
+    setEmployeeCardPage(1);
+  }, [query, viewMode, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter]);
+
+  useEffect(() => {
+    if (employeeCardPage > totalEmployeeCardPages) setEmployeeCardPage(totalEmployeeCardPages);
+  }, [employeeCardPage, totalEmployeeCardPages]);
 
   if (loading && !payload) {
     return (
@@ -648,10 +711,13 @@ export default function TimesheetEntryClient() {
     );
   }
 
-  const workCenterOptions = workCenters;
+  const workCenterOptions = workCenters.map((workCenter) => workCenter.name);
+  const locationOptions = Array.from(new Set((payload?.locations.map((location) => location.name) ?? []).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   const siteLocationOptions = Array.from(
-    new Set([...(payload?.filterOptions.locations ?? []), ...(payload?.projects.map((project) => project.site) ?? [])].filter(Boolean)),
+    new Set((payload?.locations.map((location) => location.name) ?? []).filter((location) => location && location !== 'Unassigned Location')),
   ).sort((a, b) => a.localeCompare(b));
+  const projectManagerOptions = payload?.projectManagers ?? [];
+  const projectManagerIsSelected = projectManagerOptions.some((employee) => `${employee.employeeCode} - ${employee.fullName}`.toLowerCase() === newProjectManager.trim().toLowerCase());
   const currentStageIdx = payload?.workflowStages.findIndex(s => s.id === payload?.header?.status) ?? 0;
   const periodStatus = payload?.period.status ?? 'Open';
   const periodIsOpen = periodStatus === 'Open';
@@ -700,6 +766,11 @@ export default function TimesheetEntryClient() {
                   <Clock className="h-3.5 w-3.5" /> Period: {payload?.period.startDate} to {payload?.period.endDate}
                 </span>
                 <span className={`rounded-full px-2.5 py-1 border ${periodIsOpen ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>{periodStatus}</span>
+                {payload?.header?.currentApprover && (
+                  <span className="flex items-center gap-1.5 rounded-full bg-sky-50 px-2.5 py-1 text-sky-700">
+                    Next: {payload.header.currentApprovalStage} - {payload.header.currentApprover}
+                  </span>
+                )}
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-6">
@@ -711,6 +782,17 @@ export default function TimesheetEntryClient() {
                 <select value={selectedSupervisor} onChange={(e) => setSelectedSupervisor(e.target.value)} className="bg-transparent text-sm font-black text-slate-900 focus:outline-none">
                   <option value={payload?.permissions.actor}>{payload?.permissions.actor}</option>
                   {payload?.filterOptions.supervisors.filter(s => s !== payload?.permissions.actor).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Location</p>
+                <select value={selectedLocation} onChange={(e) => setSelectedLocation(e.target.value)} className="bg-transparent text-sm font-black text-slate-900 focus:outline-none">
+                  {locationOptions.length === 0 && <option value="">No location</option>}
+                  {locationOptions.map((location) => (
+                    <option key={location} value={location}>
+                      {location}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="text-right">
@@ -807,15 +889,15 @@ export default function TimesheetEntryClient() {
             { label: 'Productive Hrs', value: payload?.summary.usedHours, color: 'blue', sub: `${payload?.summary.productivityPct}% Productivity` },
             { label: 'Idle Hrs', value: payload?.summary.idleHours, color: 'slate', sub: `${round1(100 - payload!.summary.productivityPct)}% Idle Rate` },
           ].map((m, i) => (
-            <div key={i} className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{m.label}</p>
-              <p className="mt-1 text-2xl font-black text-slate-900">{m.value}</p>
+            <div key={i} className={`rounded-2xl border p-4 shadow-sm ${metricCardTone[m.color].card}`}>
+              <p className={`text-[10px] font-bold uppercase tracking-widest ${metricCardTone[m.color].label}`}>{m.label}</p>
+              <p className={`mt-1 text-2xl font-black ${metricCardTone[m.color].value}`}>{m.value}</p>
               {m.pct !== undefined ? (
-                <div className="mt-2 h-1 w-full rounded-full bg-slate-100"><div className={`h-full rounded-full bg-${m.color}-500`} style={{ width: `${m.pct}%` }} /></div>
+                <div className="mt-2 h-1 w-full rounded-full bg-white/70"><div className={`h-full rounded-full ${metricCardTone[m.color].bar}`} style={{ width: `${m.pct}%` }} /></div>
               ) : m.sub ? (
-                <p className={`mt-1 text-[10px] font-bold text-${m.color}-500`}>{m.sub}</p>
+                <p className={`mt-1 text-[10px] font-bold ${metricCardTone[m.color].sub}`}>{m.sub}</p>
               ) : (
-                <div className="mt-2 h-1 w-full rounded-full bg-slate-100"><div className="h-full w-full rounded-full bg-indigo-600" /></div>
+                <div className="mt-2 h-1 w-full rounded-full bg-white/70"><div className={`h-full w-full rounded-full ${metricCardTone[m.color].bar}`} /></div>
               )}
             </div>
           ))}
@@ -1006,13 +1088,44 @@ export default function TimesheetEntryClient() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredLines.map((line) => {
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Employees</p>
+                <p className="text-sm font-bold text-slate-700">
+                  Showing {employeeCardStart}-{employeeCardEnd} of {filteredLines.length}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEmployeeCardPage((page) => Math.max(1, page - 1))}
+                  disabled={safeEmployeeCardPage === 1}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <span className="min-w-20 text-center text-xs font-black text-slate-500">
+                  {safeEmployeeCardPage} / {totalEmployeeCardPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setEmployeeCardPage((page) => Math.min(totalEmployeeCardPages, page + 1))}
+                  disabled={safeEmployeeCardPage === totalEmployeeCardPages}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+            <div className="max-h-[720px] overflow-y-auto pr-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {paginatedCardLines.map((line) => {
               const originalIdx = localLines.findIndex(l => l.id === line.id);
               const isAbsent = !line.clockIn;
               return (
-                <div key={line.id} className={`rounded-2xl border-2 p-5 shadow-sm ${line.validationStatus === 'Valid' ? 'border-emerald-100 bg-emerald-50/10' : line.validationStatus === 'Error' ? 'border-red-100 bg-red-50/10' : 'border-slate-200 bg-white'}`}>
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+                <div key={line.id} className={`rounded-2xl border p-5 shadow-sm ${employeeCardTone(line)}`}>
+                  <div className="mb-4 flex items-center justify-between border-b border-white/60 pb-4">
                     <div className="flex items-center gap-3">
                       <input 
                         type="checkbox" 
@@ -1026,7 +1139,7 @@ export default function TimesheetEntryClient() {
                       {!isAbsent && <ShieldCheck className="h-4 w-4 text-emerald-600" />}
                       <div><p className="text-[10px] font-black text-indigo-600 leading-none">{line.employeeNo}</p><h3 className="text-sm font-black text-slate-900 mt-1">{line.employeeName}</h3></div>
                     </div>
-                    <div className={`rounded-full px-2 py-0.5 text-[9px] font-black border ${line.validationStatus === 'Valid' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{line.validationStatus === 'Valid' ? 'COMPLETE' : line.validationStatus}</div>
+                    <div className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${employeeStatusBadgeTone(line)}`}>{isAbsent ? 'ABSENT' : line.validationStatus === 'Valid' ? 'COMPLETE' : line.validationStatus}</div>
                   </div>
                   <div className="space-y-4">
                     <div className="flex justify-between text-[11px] font-bold text-slate-500"><span>Attendance:</span><span>{isAbsent ? 'Absent' : `${line.clockIn}-${line.clockOut || '--'} (${line.attendanceDuration}h)`}</span></div>
@@ -1095,6 +1208,8 @@ export default function TimesheetEntryClient() {
                 </div>
               );
             })}
+              </div>
+            </div>
           </div>
         )}
 
@@ -1141,7 +1256,28 @@ export default function TimesheetEntryClient() {
                 <div><label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Site Location</label><select value={newProjectSite} onChange={(e) => setNewProjectSite(e.target.value)} className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 focus:border-indigo-500 focus:outline-none transition-all"><option value="">Select Site...</option>{siteLocationOptions.map((site) => <option key={site} value={site}>{site}</option>)}</select></div>
               </div>
               <div><label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Project Name</label><input type="text" placeholder="e.g. NLNG Train 7 - Piping Works" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 placeholder:text-slate-300 focus:border-indigo-500 focus:outline-none transition-all" /></div>
-              <div className="pt-4 flex gap-3"><button onClick={() => setShowProjectModal(false)} className="flex-1 rounded-2xl border-2 border-slate-100 py-4 text-xs font-black text-slate-400 hover:bg-slate-50 transition-all uppercase tracking-widest">Cancel</button><button onClick={handleCreateProject} disabled={submitting || !newProjectCode.trim() || !newProjectName || !newProjectSite} className="flex-[2] rounded-2xl bg-indigo-600 py-4 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50 shadow-xl shadow-indigo-100 transition-all uppercase tracking-widest">{submitting ? 'Creating...' : 'Register Project'}</button></div>
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Project Manager</label>
+                <input
+                  type="text"
+                  list="project-manager-directory-options"
+                  placeholder="Search employee directory..."
+                  value={newProjectManager}
+                  onChange={(e) => setNewProjectManager(e.target.value)}
+                  className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 placeholder:text-slate-300 focus:border-indigo-500 focus:outline-none transition-all"
+                />
+                <datalist id="project-manager-directory-options">
+                  {projectManagerOptions.map((employee) => {
+                    const label = `${employee.employeeCode} - ${employee.fullName}`;
+                    return (
+                      <option key={employee.employeeId || employee.employeeCode} value={label}>
+                        {employee.jobTitle ? `${employee.jobTitle} | ${employee.department || 'No department'}` : employee.department || employee.status}
+                      </option>
+                    );
+                  })}
+                </datalist>
+              </div>
+              <div className="pt-4 flex gap-3"><button onClick={() => setShowProjectModal(false)} className="flex-1 rounded-2xl border-2 border-slate-100 py-4 text-xs font-black text-slate-400 hover:bg-slate-50 transition-all uppercase tracking-widest">Cancel</button><button onClick={handleCreateProject} disabled={submitting || !newProjectCode.trim() || !newProjectName || !newProjectSite || !projectManagerIsSelected} className="flex-[2] rounded-2xl bg-indigo-600 py-4 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50 shadow-xl shadow-indigo-100 transition-all uppercase tracking-widest">{submitting ? 'Creating...' : 'Register Project'}</button></div>
             </div>
           </div>
         </div>
@@ -1165,17 +1301,21 @@ export default function TimesheetEntryClient() {
             </div>
             <div className="mt-5 max-h-[360px] overflow-y-auto rounded-2xl border border-slate-200">
               {workCenters.map((workCenter) => (
-                <div key={workCenter} className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0">
-                  <button onClick={() => setSelectedWorkCenter(workCenter)} className={`min-w-0 flex-1 truncate text-left text-sm font-black ${selectedWorkCenter === workCenter ? 'text-indigo-700' : 'text-slate-800'}`}>{workCenter}</button>
+                <div key={workCenter.id} className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0">
+                  <button onClick={() => setSelectedWorkCenter(workCenter.name)} className={`min-w-0 flex-1 truncate text-left text-sm font-black ${selectedWorkCenter === workCenter.name ? 'text-indigo-700' : 'text-slate-800'}`}>
+                    {workCenter.name}
+                    <span className="ml-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">{workCenter.sourceSystem}</span>
+                  </button>
                   <div className="flex items-center gap-2">
                     <button onClick={() => editWorkCenter(workCenter)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 hover:text-indigo-600"><Edit3 className="h-4 w-4" /></button>
                     <button onClick={() => deleteWorkCenter(workCenter)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-red-50 hover:text-red-600"><XCircle className="h-4 w-4" /></button>
                   </div>
                 </div>
               ))}
+              {workCenters.length === 0 && <div className="px-4 py-6 text-center text-sm font-bold text-slate-400">No work centers found in the database.</div>}
             </div>
             <div className="mt-5 flex justify-between gap-3">
-              <button onClick={() => setWorkCenters(DEFAULT_WORK_CENTERS)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50">Reset Default</button>
+              <span className="px-1 py-2.5 text-xs font-bold text-slate-400">Stored in HRIS database</span>
               <button onClick={() => setShowWorkCenterManager(false)} className="rounded-xl bg-slate-900 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-slate-800">Done</button>
             </div>
           </div>

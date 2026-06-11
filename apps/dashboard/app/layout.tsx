@@ -13,7 +13,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'DLE Smart HRIS',
+  title: 'DLE Digital Enterprise',
   description: 'AI-Powered Industrial Enterprise Command Center',
 };
 

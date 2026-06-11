@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server';
-import { getLocationsSitesData } from '@/lib/organization-data';
+import { syncSageLocationsToOrganizationDb } from '@/lib/organization-locations-store';
 
 export async function GET() {
-  return NextResponse.json({ status: 'success', data: getLocationsSitesData() });
+  try {
+    return NextResponse.json({ status: 'success', data: await syncSageLocationsToOrganizationDb() });
+  } catch (error) {
+    console.error('Location migration error:', error);
+    return NextResponse.json(
+      { status: 'error', error: error instanceof Error ? error.message : 'Unable to load locations and sites' },
+      { status: 500 },
+    );
+  }
 }

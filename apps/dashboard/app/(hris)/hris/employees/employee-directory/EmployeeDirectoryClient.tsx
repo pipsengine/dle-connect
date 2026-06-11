@@ -18,9 +18,13 @@ import {
   CircleAlert,
   Clock,
   Download,
+  Eye,
   Filter,
   Fingerprint,
+  FileText,
   Globe2,
+  History,
+  IdCard,
   MapPinned,
   Minus,
   MoreHorizontal,
@@ -31,6 +35,8 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  UserCheck,
+  UserCog,
   Users,
   X,
 } from 'lucide-react';
@@ -55,18 +61,48 @@ type EmploymentType = 'Permanent' | 'Contract' | 'Intern' | 'Consultant' | 'Seco
 type Employee = {
   id: string;
   employeeId: string;
+  employeeCode?: string;
+  employeeDbId?: number;
   fullName: string;
   preferredName?: string;
+  title?: string;
+  firstName?: string;
+  middleName?: string;
+  lastName?: string;
+  gender?: string;
+  dateOfBirth?: string;
+  maritalStatus?: string;
   email: string;
+  officialEmail?: string;
+  personalEmail?: string;
   phone: string;
+  primaryPhone?: string;
+  alternatePhone?: string;
+  officeExtension?: string;
+  residentialAddress?: string;
+  permanentAddress?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postalCode?: string;
   jobTitle: string;
+  designation?: string;
+  jobGrade?: string;
   department: string;
   division: string;
   businessUnit: string;
+  costCenter?: string;
   managerName?: string;
+  functionalManager?: string;
+  departmentHead?: string;
+  hrBusinessPartner?: string;
   location: string;
+  workLocation?: string;
+  officeLocation?: string;
   projectSite?: string;
   shift?: 'Day' | 'Night' | 'Rotational';
+  staffCategory?: string;
+  employeeCategory?: string;
   employmentType: EmploymentType;
   status: EmploymentStatus;
   nationality: string;
@@ -74,6 +110,10 @@ type Employee = {
   fieldWorker: boolean;
   remoteWorker: boolean;
   dateJoined: string;
+  probationStartDate?: string;
+  probationEndDate?: string;
+  confirmationDueDate?: string;
+  contractStartDate?: string;
   yearsOfService: number;
   lastPromotion?: string;
   aiRiskScore: number;
@@ -81,8 +121,24 @@ type Employee = {
   performanceRating?: 'A' | 'B' | 'C' | 'D';
   contractEndDate?: string;
   emergencyContactsComplete: boolean;
+  emergencyContactCount?: number;
+  documentCount?: number;
   hasManagerAssigned: boolean;
   payrollSource?: string;
+  payrollGroup?: string;
+  salaryGrade?: string;
+  benefitGroup?: string;
+  payCurrency?: string;
+  paymentRun?: string;
+  paymentType?: string;
+  periodSalary?: number | null;
+  annualSalary?: number | null;
+  setupAssignedToPayroll?: boolean;
+  sourceSystem?: string;
+  sourceEmployeeId?: string;
+  sourceDraftId?: string;
+  createdAt?: string;
+  modifiedAt?: string;
   sageEmployeeId?: number;
   sageEmployeeCode?: string;
   sageEntityCode?: string;
@@ -158,6 +214,11 @@ const formatDateTimeUtc = (iso: string) => {
 
 const numberFmt = new Intl.NumberFormat('en-GB');
 const formatNumber = (n: number) => numberFmt.format(n);
+const formatMoney = (value?: number | null, currency?: string) => {
+  if (value == null || !Number.isFinite(value)) return '';
+  const suffix = currency ? ` ${currency}` : '';
+  return `${formatNumber(Number(value.toFixed(2)))}${suffix}`;
+};
 
 const statusStyle = (status: EmploymentStatus) => {
   switch (status) {
@@ -218,16 +279,23 @@ type SortKey =
 
 type ColumnKey =
   | 'employee'
+  | 'personal'
   | 'job'
+  | 'jobMeta'
   | 'org'
   | 'manager'
   | 'location'
   | 'employment'
+  | 'employmentDates'
   | 'status'
   | 'contact'
+  | 'address'
+  | 'payroll'
+  | 'records'
   | 'joined'
   | 'yos'
   | 'promotion'
+  | 'source'
   | 'risk'
   | 'actions';
 
@@ -240,16 +308,23 @@ type ColumnDef = {
 };
 
 const DEFAULT_COLUMNS: ColumnDef[] = [
-  { key: 'employee', label: 'Employee', defaultVisible: true, stickyLeft: true, widthClass: 'min-w-[320px]' },
+  { key: 'employee', label: 'Employee Identity', defaultVisible: true, stickyLeft: true, widthClass: 'min-w-[330px]' },
+  { key: 'personal', label: 'Personal Info', defaultVisible: true, widthClass: 'min-w-[220px]' },
   { key: 'job', label: 'Job Title', defaultVisible: true, widthClass: 'min-w-[220px]' },
+  { key: 'jobMeta', label: 'Grade / Designation', defaultVisible: true, widthClass: 'min-w-[190px]' },
   { key: 'org', label: 'Dept / Division / BU', defaultVisible: true, widthClass: 'min-w-[260px]' },
   { key: 'manager', label: 'Manager', defaultVisible: true, widthClass: 'min-w-[200px]' },
-  { key: 'location', label: 'Location', defaultVisible: true, widthClass: 'min-w-[180px]' },
-  { key: 'employment', label: 'Employment', defaultVisible: true, widthClass: 'min-w-[190px]' },
+  { key: 'location', label: 'Work Location / Site', defaultVisible: true, widthClass: 'min-w-[220px]' },
+  { key: 'employment', label: 'Employment Type', defaultVisible: true, widthClass: 'min-w-[210px]' },
+  { key: 'employmentDates', label: 'Employment Dates', defaultVisible: true, widthClass: 'min-w-[240px]' },
   { key: 'status', label: 'Status', defaultVisible: true, widthClass: 'min-w-[170px]' },
-  { key: 'contact', label: 'Contact', defaultVisible: true, widthClass: 'min-w-[220px]' },
+  { key: 'contact', label: 'Official Contact', defaultVisible: true, widthClass: 'min-w-[250px]' },
+  { key: 'address', label: 'Address', defaultVisible: true, widthClass: 'min-w-[260px]' },
+  { key: 'payroll', label: 'Payroll Setup', defaultVisible: true, widthClass: 'min-w-[220px]' },
+  { key: 'records', label: 'Records', defaultVisible: true, widthClass: 'min-w-[170px]' },
   { key: 'joined', label: 'Date Joined', defaultVisible: true, widthClass: 'min-w-[140px]' },
   { key: 'yos', label: 'Years', defaultVisible: true, widthClass: 'min-w-[110px]' },
+  { key: 'source', label: 'System Source', defaultVisible: true, widthClass: 'min-w-[180px]' },
   { key: 'promotion', label: 'Last Promotion', defaultVisible: false, widthClass: 'min-w-[160px]' },
   { key: 'risk', label: 'AI Risk', defaultVisible: true, widthClass: 'min-w-[140px]' },
   { key: 'actions', label: 'Actions', defaultVisible: true, widthClass: 'min-w-[120px]' },
@@ -439,6 +514,117 @@ function MetricCard({
   );
 }
 
+function EmployeeActionsMenu({
+  employee,
+  canChangeStatus,
+  onQuickView,
+}: {
+  employee: Employee;
+  canChangeStatus: boolean;
+  onQuickView: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const employeeId = encodeURIComponent(employee.employeeId);
+
+  useOutsideClick(ref, () => setOpen(false), open);
+
+  const primaryActions = [
+    { label: 'Open profile', href: `/hris/employees/employee-profile/${employeeId}`, icon: Eye },
+    { label: 'Edit profile', href: `/hris/employees/employee-profile/${employeeId}?mode=edit`, icon: UserCog },
+    { label: 'Job information', href: `/hris/employees/job-information/${employeeId}`, icon: IdCard },
+    { label: 'Employment history', href: `/hris/employees/employment-history/${employeeId}`, icon: History },
+    { label: 'Documents', href: `/hris/employees/employee-documents/${employeeId}`, icon: FileText },
+    { label: 'Emergency contacts', href: `/hris/employees/emergency-contacts/${employeeId}`, icon: Phone },
+    { label: 'Reporting line', href: `/hris/employees/reporting-line/${employeeId}`, icon: Users },
+  ];
+
+  const changeActions = [
+    { label: 'Status change', href: `/hris/employees/employee-status/${employeeId}`, icon: ShieldCheck },
+    { label: 'Transfer', href: `/hris/employees/employee-transfer?employeeId=${employeeId}`, icon: ArrowDownUp },
+    { label: 'Promotion', href: `/hris/employees/employee-promotion?employeeId=${employeeId}`, icon: UserCheck },
+  ];
+
+  return (
+    <div className="relative flex justify-end" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="px-2.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-colors"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Actions for ${employee.fullName}`}
+      >
+        <MoreHorizontal className="w-4 h-4 text-slate-600" />
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.98 }}
+            transition={{ duration: 0.14 }}
+            className="absolute right-0 top-full z-40 mt-2 w-[240px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
+            role="menu"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onQuickView();
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors"
+              role="menuitem"
+            >
+              <Eye className="w-4 h-4 text-dle-blue" />
+              <span className="text-sm font-extrabold text-slate-800">Quick view</span>
+            </button>
+
+            <div className="border-t border-slate-100 py-1">
+              {primaryActions.map((action) => {
+                const Icon = action.icon;
+                return (
+                  <Link
+                    key={action.href}
+                    href={action.href}
+                    onClick={() => setOpen(false)}
+                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors"
+                    role="menuitem"
+                  >
+                    <Icon className="w-4 h-4 text-slate-500" />
+                    <span className="text-sm font-bold text-slate-700">{action.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+
+            {canChangeStatus && (
+              <div className="border-t border-slate-100 py-1">
+                {changeActions.map((action) => {
+                  const Icon = action.icon;
+                  return (
+                    <Link
+                      key={action.href}
+                      href={action.href}
+                      onClick={() => setOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors"
+                      role="menuitem"
+                    >
+                      <Icon className="w-4 h-4 text-slate-500" />
+                      <span className="text-sm font-bold text-slate-700">{action.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function DrawerSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
@@ -507,7 +693,7 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
   ]);
 
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [directorySource, setDirectorySource] = useState('Sage 300 People Payroll');
+  const [directorySource, setDirectorySource] = useState('DLE_Enterprise HRIS');
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [directoryLoading, setDirectoryLoading] = useState(true);
   const [directoryError, setDirectoryError] = useState<string | null>(null);
@@ -543,7 +729,7 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
       ]);
     } catch (error) {
       setEmployees([]);
-      setDirectoryError(error instanceof Error ? error.message : 'Unable to load Sage payroll employees');
+      setDirectoryError(error instanceof Error ? error.message : 'Unable to load DLE_Enterprise HRIS employees');
     } finally {
       setDirectoryLoading(false);
     }
@@ -613,7 +799,7 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
         { severity: contractExpiring > 0 ? ('high' as const) : ('low' as const), icon: AlertTriangle, title: `${formatNumber(contractExpiring)} contract employees expiring within 14 days`, confidence: 0.86, action: 'Open Contract Expiry Queue' },
         { severity: missingManagers > 0 ? ('medium' as const) : ('low' as const), icon: CircleAlert, title: `${formatNumber(missingManagers)} employees without assigned managers`, confidence: 0.88, action: 'Assign Managers' },
         { severity: missingEmergencyContacts > 0 ? ('medium' as const) : ('low' as const), icon: Phone, title: `${formatNumber(missingEmergencyContacts)} employees missing emergency contacts`, confidence: 0.84, action: 'Request Emergency Contacts' },
-        { severity: staleProfileFields > 0 ? ('medium' as const) : ('low' as const), icon: Fingerprint, title: `${formatNumber(staleProfileFields)} Sage records missing HR profile fields`, confidence: 0.9, action: 'Review Sage Profile Fields' },
+        { severity: staleProfileFields > 0 ? ('medium' as const) : ('low' as const), icon: Fingerprint, title: `${formatNumber(staleProfileFields)} system records missing HR profile fields`, confidence: 0.9, action: 'Review HRIS Profile Fields' },
         { severity: 'low' as const, icon: BarChart3, title: `${formatNumber(employees.length)} employees loaded from ${directorySource}`, confidence: 0.99, action: 'Review Headcount' },
       ];
     },
@@ -785,7 +971,7 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
   const summary = useMemo(() => {
     const total = filteredEmployees.length;
     const active = filteredEmployees.filter((e) => e.status === 'Active').length;
-    const contract = filteredEmployees.filter((e) => e.employmentType === 'Contract' || e.status === 'Contract').length;
+      const contract = filteredEmployees.filter((e) => ['Lumpsum', 'Daily Rate', 'Contract'].includes(e.employmentType) || e.status === 'Contract').length;
     const probation = filteredEmployees.filter((e) => e.status === 'Probation').length;
     const onLeave = filteredEmployees.filter((e) => e.status === 'On Leave').length;
     const inactive = filteredEmployees.filter((e) => e.status === 'Inactive').length;
@@ -939,13 +1125,44 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
               {e.expatriate && <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-600/10 text-indigo-700">Expat</span>}
               {e.fieldWorker && <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-cyan-600/10 text-cyan-700">Field</span>}
             </div>
-            <div className="text-xs text-slate-500 font-semibold mt-0.5">{e.employeeId}</div>
+            <div className="text-xs text-slate-500 font-semibold mt-0.5">
+              Code: {e.employeeCode || e.employeeId}
+              {e.employeeDbId ? <span className="ml-1 text-slate-400">DB #{e.employeeDbId}</span> : null}
+            </div>
           </div>
         </div>
       );
     }
 
-    if (col === 'job') return <div className="text-sm font-semibold text-slate-800">{e.jobTitle}</div>;
+    if (col === 'personal')
+      return (
+        <div className="text-sm">
+          <div className="font-extrabold text-slate-800 truncate">{[e.title, e.gender].filter(Boolean).join(' / ') || 'Not recorded'}</div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">
+            DOB: {formatDate(e.dateOfBirth || '')}
+            {e.maritalStatus ? <span className="ml-1">/ {e.maritalStatus}</span> : null}
+          </div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">Nationality: {e.nationality || 'Not recorded'}</div>
+        </div>
+      );
+
+    if (col === 'job')
+      return (
+        <div className="text-sm">
+          <div className="font-semibold text-slate-800">{e.jobTitle}</div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5">
+            {e.designation || 'No designation'} {e.jobGrade ? <span className="mx-1">•</span> : null} {e.jobGrade || ''}
+          </div>
+        </div>
+      );
+    if (col === 'jobMeta')
+      return (
+        <div className="text-sm">
+          <div className="font-extrabold text-slate-800 truncate">{e.jobGrade || 'No grade'}</div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">{e.designation || 'No designation'}</div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">{e.costCenter || 'No cost center'}</div>
+        </div>
+      );
     if (col === 'org')
       return (
         <div className="text-sm">
@@ -959,7 +1176,8 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
       return (
         <div className="text-sm">
           <div className="font-extrabold text-slate-800 truncate">{e.managerName || 'Unassigned'}</div>
-          <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">Reporting line</div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">Functional: {e.functionalManager || 'Unassigned'}</div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">HRBP: {e.hrBusinessPartner || 'Unassigned'}</div>
         </div>
       );
     if (col === 'location')
@@ -967,25 +1185,71 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
         <div className="text-sm">
           <div className="font-extrabold text-slate-800 truncate">{e.location}</div>
           <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">{e.projectSite || 'No project site'}</div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">{e.workLocation || e.officeLocation || 'No work location'}</div>
         </div>
       );
     if (col === 'employment')
       return (
         <div className="text-sm">
           <div className="font-extrabold text-slate-800">{e.employmentType}</div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5">{e.staffCategory || e.employeeCategory || 'Unclassified'}</div>
           <div className="text-xs text-slate-500 font-semibold mt-0.5">{e.shift ? `${e.shift} shift` : 'Standard schedule'}</div>
+        </div>
+      );
+    if (col === 'employmentDates')
+      return (
+        <div className="text-sm">
+          <div className="font-extrabold text-slate-800">Joined: {formatDate(e.dateJoined)}</div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">Probation: {e.probationStartDate || 'N/A'} to {e.probationEndDate || 'N/A'}</div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">Confirm due: {e.confirmationDueDate ? formatDate(e.confirmationDueDate) : 'Not set'}</div>
         </div>
       );
     if (col === 'status') return <StatusBadge status={e.status} />;
     if (col === 'contact')
       return (
         <div className="text-sm">
-          <div className="font-extrabold text-slate-800 truncate">{e.email}</div>
-          <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">{e.phone}</div>
+          <div className="font-extrabold text-slate-800 truncate">{e.officialEmail || e.email || 'No official email'}</div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">{e.primaryPhone || e.phone || 'No primary phone'}</div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">{e.officeExtension ? `Ext. ${e.officeExtension}` : e.personalEmail || 'No personal email'}</div>
+        </div>
+      );
+    if (col === 'address')
+      return (
+        <div className="text-sm">
+          <div className="font-extrabold text-slate-800 truncate">{[e.city, e.state].filter(Boolean).join(', ') || 'No city/state'}</div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">{e.country || 'No country'} {e.postalCode ? `/ ${e.postalCode}` : ''}</div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">{e.residentialAddress || e.permanentAddress || 'No address recorded'}</div>
+        </div>
+      );
+    if (col === 'payroll')
+      return (
+        <div className="text-sm">
+          <div className="font-extrabold text-slate-800 truncate">{e.payrollGroup || e.payrollSource || 'Not assigned'} {e.payCurrency ? <span className="text-slate-500">/ {e.payCurrency}</span> : null}</div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">{e.paymentRun || e.paymentType || 'No pay run'} {e.salaryGrade ? <span>/ {e.salaryGrade}</span> : null}</div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">{formatMoney(e.periodSalary, e.payCurrency) || e.benefitGroup || 'No salary record'}</div>
+          <div className={`text-[11px] font-extrabold mt-1 ${e.setupAssignedToPayroll ? 'text-emerald-700' : 'text-amber-700'}`}>
+            {e.setupAssignedToPayroll ? 'Assigned to payroll' : 'Payroll pending'}
+          </div>
+        </div>
+      );
+    if (col === 'records')
+      return (
+        <div className="text-sm">
+          <div className="font-extrabold text-slate-800">{formatNumber(e.documentCount || 0)} documents</div>
+          <div className="text-xs text-slate-500 font-semibold mt-0.5">{formatNumber(e.emergencyContactCount || 0)} emergency contacts</div>
+          <div className={`text-[11px] font-extrabold mt-1 ${e.emergencyContactsComplete ? 'text-emerald-700' : 'text-red-700'}`}>
+            {e.emergencyContactsComplete ? 'Emergency complete' : 'Emergency missing'}
+          </div>
         </div>
       );
     if (col === 'joined') return <div className="text-sm font-extrabold text-slate-800">{formatDate(e.dateJoined)}</div>;
     if (col === 'yos') return <div className="text-sm font-extrabold text-slate-800">{e.yearsOfService}y</div>;
+    if (col === 'source') return (
+      <div className="text-sm">
+        <div className="font-extrabold text-slate-800 truncate">{e.sourceSystem || 'DLE_Enterprise'}</div>
+        <div className="text-xs text-slate-500 font-semibold mt-0.5 truncate">{e.sourceDraftId ? `Draft ${e.sourceDraftId}` : e.sourceEmployeeId || 'System record'}</div>
+      </div>
+    );
     if (col === 'promotion') return <div className="text-sm font-extrabold text-slate-800">{e.lastPromotion ? formatDate(e.lastPromotion) : '—'}</div>;
     if (col === 'risk') {
       if (!permissions.canViewRisk) return <span className="text-sm font-extrabold text-slate-400">—</span>;
@@ -994,11 +1258,7 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
     }
     if (col === 'actions')
       return (
-        <div className="flex items-center justify-end gap-2">
-          <button type="button" onClick={() => openEmployee(e)} className="px-2.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-colors" aria-label="Quick view">
-            <MoreHorizontal className="w-4 h-4 text-slate-600" />
-          </button>
-        </div>
+        <EmployeeActionsMenu employee={e} canChangeStatus={permissions.canChangeStatus} onQuickView={() => openEmployee(e)} />
       );
 
     return null;
@@ -1252,7 +1512,7 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
         </span>
         <span className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700">
           <RefreshCcw className={`w-4 h-4 text-dle-blue ${directoryLoading ? 'animate-spin' : ''}`} />
-          {directoryLoading ? 'Syncing payroll records' : `Last sync: ${syncedAt ? formatDateTimeUtc(syncedAt) : 'Not synced yet'}`}
+          {directoryLoading ? 'Loading HRIS records' : `Last load: ${syncedAt ? formatDateTimeUtc(syncedAt) : 'Not loaded yet'}`}
         </span>
       </div>
 
@@ -1520,12 +1780,12 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
       <div className="mt-4">
         {view === 'table' && (
           <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
-            <div className="overflow-auto">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50 border-b border-slate-100">
+            <div className="max-h-[calc(100vh-230px)] overflow-auto">
+              <table className="w-full text-left border-separate border-spacing-0">
+                <thead className="bg-slate-50">
                   <tr>
                     {visibleColumns.map((c) => (
-                      <th key={c.key} className={`px-4 py-3 text-[11px] font-extrabold text-slate-600 ${c.widthClass || ''}`}>
+                      <th key={c.key} className={`sticky top-0 z-10 bg-slate-50 px-4 py-3 text-[11px] font-extrabold text-slate-600 border-b border-slate-100 shadow-[0_1px_0_rgba(15,23,42,0.08)] ${c.widthClass || ''}`}>
                         {c.label}
                       </th>
                     ))}
@@ -1546,7 +1806,7 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
                       <td colSpan={visibleColumns.length} className="px-6 py-16 text-center">
                         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-sm font-extrabold">
                           {directoryLoading ? <RefreshCcw className="w-4 h-4 animate-spin" /> : <Minus className="w-4 h-4" />}
-                          {directoryLoading ? 'Syncing employees from Sage payroll...' : directoryError ? 'Unable to load Sage payroll employees.' : 'No employees match your search/filters.'}
+                          {directoryLoading ? 'Loading employees from DLE_Enterprise HRIS...' : directoryError ? 'Unable to load DLE_Enterprise HRIS employees.' : 'No employees match your search/filters.'}
                         </div>
                       </td>
                     </tr>

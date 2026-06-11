@@ -20,7 +20,7 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
   const activeGroupId = useMemo(() => {
     const activeGroup = navigationConfig.find((item) => {
       if (!item.subItems?.length) return false;
-      return item.subItems.some((sub) => sub.route === pathname);
+      return item.subItems.some((sub) => pathname === sub.route || pathname.startsWith(`${sub.route}/`));
     });
     return activeGroup?.id;
   }, [pathname]);
@@ -48,32 +48,31 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
             const isExpanded = !!expandedGroups[item.id] || item.id === activeGroupId;
             
             // For simple paths, determine active state
-            const isActivePrimary = pathname === item.route || (item.subItems && item.subItems.some(sub => pathname === sub.route));
+            const isActivePrimary = pathname === item.route || (item.route ? pathname.startsWith(`${item.route}/`) : false) || (item.subItems && item.subItems.some(sub => pathname === sub.route || pathname.startsWith(`${sub.route}/`)));
 
             return (
               <div key={item.id}>
                 {hasSubMenu ? (
-                  <div
-                    className={`flex items-center justify-between px-3 py-2.5 rounded-lg transition-all duration-200 w-full group whitespace-nowrap ${
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isOpen) toggle();
+                      toggleGroup(item.id);
+                    }}
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition-all duration-200 group whitespace-nowrap ${
                       isActivePrimary
                         ? 'bg-dle-blue/5 text-dle-blue font-medium'
                         : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
-                    <Link
-                      href={item.route || '#'}
-                      className="flex items-center gap-3 flex-1 min-w-0"
-                      onClick={() => {
-                        if (!isOpen) toggle();
-                      }}
-                    >
+                    <span className="flex min-w-0 flex-1 items-center gap-3">
                       <item.icon className={`w-5 h-5 shrink-0 ${isActivePrimary ? 'text-dle-blue' : 'text-slate-400 group-hover:text-slate-600'}`} />
                       {isOpen && (
                         <span className="text-sm font-medium truncate">
                           {item.label}
                         </span>
                       )}
-                    </Link>
+                    </span>
                     {isOpen && (
                       <div className="flex items-center gap-2 shrink-0">
                         {item.badgeCount && (
@@ -81,21 +80,12 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
                             {item.badgeCount}
                           </span>
                         )}
-                        <button
-                          type="button"
-                          onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            toggleGroup(item.id);
-                          }}
-                          className="p-1 rounded-md hover:bg-white/60 transition-colors"
-                          aria-label={isExpanded ? `Collapse ${item.label}` : `Expand ${item.label}`}
-                        >
+                        <span className="rounded-md p-1 transition-colors group-hover:bg-white/60" aria-hidden="true">
                           <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-dle-blue' : 'text-slate-400'}`} />
-                        </button>
+                        </span>
                       </div>
                     )}
-                  </div>
+                  </button>
                 ) : (
                   <Link
                     href={item.route || '#'}
@@ -127,7 +117,7 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
                       >
                         <div className="py-1 px-4 ml-5 mt-1 border-l border-slate-100 flex flex-col gap-1">
                           {item.subItems?.map((sub) => {
-                            const isSubActive = pathname === sub.route;
+                            const isSubActive = pathname === sub.route || pathname.startsWith(`${sub.route}/`);
                             return (
                               <Link
                                 key={sub.slug}
@@ -166,7 +156,7 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
       className="bg-white border-r border-slate-100 flex flex-col relative z-20 shadow-sm shrink-0"
     >
       <div className="h-16 flex items-center justify-between px-4 border-b border-slate-100 whitespace-nowrap overflow-hidden">
-        <Link href="/dashboard/executive-hr-dashboard" className="flex items-center w-full px-3">
+        <Link href="/" className="flex items-center w-full px-3" aria-label="Go to home page">
           <div className="relative overflow-hidden h-14 w-full max-w-[220px]">
             <Image src="/brand/dorman-long-logo.jpg" alt="Dorman Long Engineering Limited" fill sizes="220px" className="object-contain" priority />
           </div>

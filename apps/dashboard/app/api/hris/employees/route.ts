@@ -3,9 +3,9 @@ import {
   createEmployeeFromDraftInDb,
   getEmployeeDraftFromDb,
   nextEmployeeCodeFromDb,
+  readEmployeeDirectoryFromDb,
   saveEmployeeDraftToDb,
 } from '@/lib/dle-enterprise-db';
-import { readActiveSagePayrollEmployees } from '@/lib/sage-people-payroll-store';
 
 type Role =
   | 'Super Admin'
@@ -46,53 +46,6 @@ type EmploymentStatus =
   | 'Seconded'
   | 'Field Assignment';
 
-type DirectoryEmployee = {
-  id: string;
-  employeeId: string;
-  fullName: string;
-  preferredName?: string;
-  email: string;
-  phone: string;
-  jobTitle: string;
-  department: string;
-  division: string;
-  businessUnit: string;
-  managerName?: string;
-  location: string;
-  projectSite?: string;
-  shift?: 'Day' | 'Night' | 'Rotational';
-  employmentType: string;
-  status: string;
-  nationality: string;
-  expatriate: boolean;
-  fieldWorker: boolean;
-  remoteWorker: boolean;
-  dateJoined: string;
-  yearsOfService: number;
-  lastPromotion?: string;
-  aiRiskScore: number;
-  trainingCompliance: 'Compliant' | 'Overdue' | 'At Risk';
-  performanceRating?: 'A' | 'B' | 'C' | 'D';
-  contractEndDate?: string;
-  emergencyContactsComplete: boolean;
-  hasManagerAssigned: boolean;
-  payrollSource: 'Sage 300 People';
-  sageEmployeeId: number;
-  sageEmployeeCode: string;
-  sageEntityCode: string;
-  sageCompanyCode: string;
-  sageCompanyName: string;
-  sageStatusCode: string;
-  sageStatusName: string;
-  sageRawEmployeeCode: string;
-  sageJobGrade: string;
-  sageDepartmentCode: string;
-  sageSiteCode: string;
-  sageEmployeeTypeCode: string;
-  sageEmployeeTypeName: string;
-  sageManagerEmployeeCode: string;
-};
-
 type EmployeeDraftPayload = {
   personal: Record<string, any>;
   contact: Record<string, any>;
@@ -115,114 +68,6 @@ type DraftRecord = {
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
-
-const clean = (value: unknown, fallback = '') => {
-  if (value === null || value === undefined) return fallback;
-  const str = String(value).trim();
-  return str || fallback;
-};
-
-const isoDate = (value: unknown) => {
-  if (!value) return '';
-  const date = value instanceof Date ? value : new Date(String(value));
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toISOString().slice(0, 10);
-};
-
-const yearsSince = (value: unknown) => {
-  const date = value instanceof Date ? value : value ? new Date(String(value)) : null;
-  if (!date || Number.isNaN(date.getTime())) return 0;
-  return Math.max(0, Math.floor((Date.now() - date.getTime()) / (365.25 * 24 * 3600 * 1000)));
-};
-
-const employmentTypeFromCode = (code: string) => {
-  const upper = code.trim().toUpperCase();
-  if (upper.startsWith('C') || upper.startsWith('L')) return 'Contract';
-  return 'Permanent';
-};
-
-const cleanHierarchyDisplay = (value: unknown, fallback = '') => {
-  const str = clean(value, fallback);
-  return str.replace(/^[A-Z0-9_]+\s+-\s+/i, '').trim() || fallback;
-};
-
-const cleanNamePart = (value: unknown) => clean(value).replace(/\s+/g, ' ');
-
-const sageFullName = (employee: Awaited<ReturnType<typeof readActiveSagePayrollEmployees>>[number], fallback: string) => {
-  const firstNames = cleanNamePart(employee.firstNames);
-  const lastName = cleanNamePart(employee.lastName);
-  return [firstNames, lastName].filter(Boolean).join(' ') || clean(employee.displayName, fallback);
-};
-
-const normalizeStatus = (statusName: string, statusCode: string) => {
-  if (statusName.toLowerCase() === 'active' || statusCode.toUpperCase() === 'A') return 'Active';
-  return statusName || 'Active';
-};
-
-const toDirectoryEmployee = (employee: Awaited<ReturnType<typeof readActiveSagePayrollEmployees>>[number]): DirectoryEmployee => {
-  const rawEmployeeCode = clean(employee.employeeCode, String(employee.employeeId));
-  const employeeCode = clean(employee.directoryEmployeeCode, rawEmployeeCode);
-  const companyName = clean(employee.companyName, 'Sage Payroll');
-  const companyCode = clean(employee.companyCode, companyName);
-  const statusName = clean(employee.statusName, 'Active');
-  const statusCode = clean(employee.statusCode);
-  const employmentType = employmentTypeFromCode(employeeCode);
-  const department = cleanHierarchyDisplay(
-    employee.departmentName || employee.hierarchyDepartmentName,
-    'Unassigned Department',
-  );
-  const location = cleanHierarchyDisplay(
-    employee.siteName || employee.hierarchyLocationName,
-    clean(employee.departmentName, companyName),
-  );
-  const jobTitle = clean(employee.jobTitle, 'Unassigned Job Title');
-  const managerName = clean(employee.managerName).replace(/^[A-Z0-9_]+\s+-\s+/i, '');
-  const nationality = clean(employee.nationality, 'Not recorded');
-  const isContract = employmentType === 'Contract';
-
-  return {
-    id: employeeCode,
-    employeeId: employeeCode,
-    fullName: sageFullName(employee, employeeCode),
-    email: clean(employee.emailAddress),
-    phone: clean(employee.cellNo || employee.workTelNo),
-    jobTitle,
-    department,
-    division: clean(employee.departmentCode, department),
-    businessUnit: companyCode,
-    managerName: managerName || undefined,
-    location,
-    projectSite: clean(employee.siteCode) || undefined,
-    employmentType,
-    status: normalizeStatus(statusName, statusCode),
-    nationality,
-    expatriate: nationality.toLowerCase() !== 'nigerian' && nationality !== 'Not recorded',
-    fieldWorker: isContract || !['IDI_ORO', 'CORPORATE OFFICE'].includes(location.toUpperCase()),
-    remoteWorker: false,
-    dateJoined: isoDate(employee.dateEngaged || employee.dateJoinedGroup),
-    yearsOfService: yearsSince(employee.dateEngaged || employee.dateJoinedGroup),
-    aiRiskScore: 0,
-    trainingCompliance: 'Compliant',
-    contractEndDate: isContract ? isoDate(employee.contractExpiryDate) || undefined : undefined,
-    emergencyContactsComplete: true,
-    hasManagerAssigned: Boolean(managerName),
-    payrollSource: 'Sage 300 People',
-    sageEmployeeId: employee.employeeId,
-    sageEmployeeCode: employeeCode,
-    sageEntityCode: clean(employee.entityCode),
-    sageCompanyCode: companyCode,
-    sageCompanyName: companyName,
-    sageStatusCode: statusCode,
-    sageStatusName: statusName,
-    sageRawEmployeeCode: rawEmployeeCode,
-    sageJobGrade: clean(employee.jobGrade),
-    sageDepartmentCode: clean(employee.departmentCode || employee.hierarchyDepartmentCode),
-    sageSiteCode: clean(employee.siteCode || employee.hierarchyLocationCode),
-    sageEmployeeTypeCode: clean(employee.hierarchyEmployeeTypeCode),
-    sageEmployeeTypeName: cleanHierarchyDisplay(employee.hierarchyEmployeeTypeName),
-    sageManagerEmployeeCode: clean(employee.managerEmployeeCode),
-  };
-};
 
 const getRole = (request: Request): Role => {
   const v = request.headers.get('x-hris-role');
@@ -458,13 +303,14 @@ export async function POST(request: Request) {
 
 export async function GET() {
   try {
-    const employees = await readActiveSagePayrollEmployees();
+    const employees = await readEmployeeDirectoryFromDb();
+    if (!employees) return jsonErr(503, 'DLE_Enterprise HRIS database is not available');
     return jsonOk({
-      source: 'Sage 300 People Payroll',
+      source: 'DLE_Enterprise HRIS',
       syncedAt: nowIso(),
-      employees: employees.map(toDirectoryEmployee),
+      employees,
     });
   } catch (error) {
-    return jsonErr(502, error instanceof Error ? `Unable to read Sage payroll employees: ${error.message}` : 'Unable to read Sage payroll employees');
+    return jsonErr(502, error instanceof Error ? `Unable to read DLE_Enterprise HRIS employees: ${error.message}` : 'Unable to read DLE_Enterprise HRIS employees');
   }
 }

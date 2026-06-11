@@ -3,9 +3,11 @@ import {
   deleteEmployeeDraftFromDb,
   findEmployeeDuplicatesInDb,
   getEmployeeDraftFromDb,
+  importSagePayrollEmployeesToDb,
   previewNextEmployeeCodeFromDb,
   saveEmployeeDraftToDb,
 } from '@/lib/dle-enterprise-db';
+import { readActiveSagePayrollEmployees } from '@/lib/sage-people-payroll-store';
 
 type Role =
   | 'Super Admin'
@@ -539,6 +541,15 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
   }
 
   if (seg0 === 'form-options') return jsonOk(optionsPayload());
+
+  if (seg0 === 'import-sage') {
+    if (!(role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager')) return jsonErr(403, 'Permission denied');
+    const employees = await readActiveSagePayrollEmployees();
+    const result = await importSagePayrollEmployeesToDb(employees);
+    if (!result) return jsonErr(503, 'DLE_Enterprise HRIS database is not available');
+    if (result.failed > 0) return NextResponse.json({ status: 'partial', data: result }, { status: 207 });
+    return jsonOk(result);
+  }
 
   if (seg0 === 'employees') return jsonErr(404, 'Not found');
 

@@ -4,15 +4,35 @@ export type SagePayrollEmployee = {
   employeeId: number;
   employeeCode: string;
   directoryEmployeeCode: string;
+  employeeCodeDisplay: string | null;
   entityCode: string;
   displayName: string;
+  title: string | null;
   firstNames: string | null;
+  middleName: string | null;
+  knownAsName: string | null;
   lastName: string | null;
+  gender: string | null;
+  birthDate: Date | string | null;
+  maritalStatus: string | null;
+  idNumber: string | null;
+  passportNo: string | null;
   emailAddress: string | null;
+  homeTelNo: string | null;
   cellNo: string | null;
   workTelNo: string | null;
+  physicalAddress: string | null;
+  physicalCityTown: string | null;
+  physicalProvince: string | null;
+  physicalCountryCode: string | null;
+  physicalPostalCode: string | null;
+  postalAddress: string | null;
+  postalCityTown: string | null;
+  postalPostalCode: string | null;
   jobTitle: string | null;
+  jobTitleCode: string | null;
   jobGrade: string | null;
+  jobGradeCode: string | null;
   departmentCode: string | null;
   departmentName: string | null;
   siteCode: string | null;
@@ -34,9 +54,42 @@ export type SagePayrollEmployee = {
   contractExpiryDate: Date | string | null;
   companyCode: string;
   companyName: string;
+  companyCurrency: string | null;
+  paymentRunShort: string | null;
+  paymentRunLong: string | null;
+  paymentTypeCode: string | null;
+  paymentType: string | null;
+  remunerationDefinition: string | null;
+  taxNo: string | null;
+  bankName: string | null;
+  bankCode: string | null;
+  branchName: string | null;
+  branchCode: string | null;
+  accountNo: string | null;
+  accountName: string | null;
+  accountTypeId: number | null;
+  annualSalary: number | null;
+  periodSalary: number | null;
+  ratePerHour: number | null;
+  ratePerDay: number | null;
+  hoursPerDay: number | null;
+  hoursPerPeriod: number | null;
+  workMonday: boolean | null;
+  workTuesday: boolean | null;
+  workWednesday: boolean | null;
+  workThursday: boolean | null;
+  workFriday: boolean | null;
+  workSaturday: boolean | null;
+  workSunday: boolean | null;
   statusCode: string;
   statusName: string;
   terminationDate: string | null;
+  sageEmployeeJson: string | null;
+  sageEmployeeDetailJson: string | null;
+  sageEmployeeContractJson: string | null;
+  sageEntityJson: string | null;
+  sageCompanyJson: string | null;
+  sageEmployeeStatusJson: string | null;
 };
 
 export const normalizePayrollMatchKey = (value: string | number | null | undefined) => {
@@ -77,6 +130,21 @@ WITH latestContract AS (
         ec.EmployeeContractID DESC
     ) AS rn
   FROM Employee.EmployeeContract ec
+),
+activeEmployeeCodes AS (
+  SELECT DISTINCT UPPER(REPLACE(LTRIM(RTRIM(e.EmployeeCode)), '_', '')) AS normalizedEmployeeCode
+  FROM Employee.Employee e
+  JOIN Entity.GenEntity ge
+    ON ge.GenEntityID = e.GenEntityID
+  JOIN Company.Company c
+    ON c.CompanyID = e.CompanyID
+  LEFT JOIN Employee.EmployeeStatus es
+    ON es.EmployeeStatusID = e.EmployeeStatusID
+  WHERE
+    e.TerminationDate IS NULL
+    AND ISNULL(es.Code, 'A') = 'A'
+    AND ge.Status = 'A'
+    AND c.Status = 'A'
 )
 SELECT
   e.EmployeeID AS employeeId,
@@ -86,17 +154,54 @@ SELECT
       THEN LTRIM(RTRIM(e.EmployeeCode))
     WHEN UPPER(LTRIM(RTRIM(e.EmployeeCode))) LIKE 'P%'
       THEN LTRIM(RTRIM(e.EmployeeCode))
-    ELSE CONCAT('P', REPLACE(LTRIM(RTRIM(e.EmployeeCode)), '_', ''))
+    ELSE CONCAT('P', LTRIM(RTRIM(e.EmployeeCode)))
   END AS directoryEmployeeCode,
+  ed.EmployeeCodeDisplay AS employeeCodeDisplay,
   ge.EntityCode AS entityCode,
   COALESCE(NULLIF(LTRIM(RTRIM(ed.DisplayName)), ''), ge.DisplayName) AS displayName,
+  ed.Title AS title,
   ed.FirstNames AS firstNames,
+  ed.SecondName AS middleName,
+  ed.KnownAsName AS knownAsName,
   ed.LastName AS lastName,
+  ed.Gender AS gender,
+  ed.BirthDate AS birthDate,
+  COALESCE(NULLIF(LTRIM(RTRIM(ed.MaritalStatusDisplay)), ''), NULLIF(LTRIM(RTRIM(ed.MaritalStatusShortDescription)), '')) AS maritalStatus,
+  ed.IDNumber AS idNumber,
+  ed.PassportNo AS passportNo,
   COALESCE(NULLIF(LTRIM(RTRIM(sd.email)), ''), NULLIF(LTRIM(RTRIM(ed.EmailAddress)), '')) AS emailAddress,
+  ed.HomeTelNo AS homeTelNo,
   COALESCE(NULLIF(LTRIM(RTRIM(sd.phone_number)), ''), NULLIF(LTRIM(RTRIM(ed.CellNo)), ''), NULLIF(LTRIM(RTRIM(ed.WorkTelNo)), '')) AS cellNo,
   ed.WorkTelNo AS workTelNo,
+  CONCAT_WS(', ',
+    NULLIF(LTRIM(RTRIM(ed.PhysicalUnitPostalNumber)), ''),
+    NULLIF(LTRIM(RTRIM(ed.PhysicalComplex)), ''),
+    NULLIF(LTRIM(RTRIM(ed.PhysicalStreetNumber)), ''),
+    NULLIF(LTRIM(RTRIM(ed.PhysicalStreetFarmName)), ''),
+    NULLIF(LTRIM(RTRIM(ed.PhysicalSuburbDistrict)), ''),
+    NULLIF(LTRIM(RTRIM(ed.PhysicalCityTown)), ''),
+    NULLIF(LTRIM(RTRIM(ed.PhysicalProvince)), ''),
+    NULLIF(LTRIM(RTRIM(ed.PhysicalCountryCode)), '')
+  ) AS physicalAddress,
+  ed.PhysicalCityTown AS physicalCityTown,
+  ed.PhysicalProvince AS physicalProvince,
+  ed.PhysicalCountryCode AS physicalCountryCode,
+  ed.PhysicalPostalCode AS physicalPostalCode,
+  COALESCE(NULLIF(LTRIM(RTRIM(ed.PostalConcat)), ''), CONCAT_WS(', ',
+    NULLIF(LTRIM(RTRIM(ed.PostalUnitPostalNumber)), ''),
+    NULLIF(LTRIM(RTRIM(ed.PostalComplex)), ''),
+    NULLIF(LTRIM(RTRIM(ed.PostalStreetNumber)), ''),
+    NULLIF(LTRIM(RTRIM(ed.PostalStreetFarmName)), ''),
+    NULLIF(LTRIM(RTRIM(ed.PostalSuburbDistrict)), ''),
+    NULLIF(LTRIM(RTRIM(ed.PostalCityTown)), ''),
+    NULLIF(LTRIM(RTRIM(ed.PostalProvince)), '')
+  )) AS postalAddress,
+  ed.PostalCityTown AS postalCityTown,
+  ed.PostalPostalCode AS postalPostalCode,
   COALESCE(NULLIF(LTRIM(RTRIM(sd.job_title)), ''), NULLIF(LTRIM(RTRIM(ed.JobTitle)), '')) AS jobTitle,
+  ed.JobTitleCode AS jobTitleCode,
   ed.JobGrade AS jobGrade,
+  ed.JobGradeCode AS jobGradeCode,
   COALESCE(NULLIF(LTRIM(RTRIM(sd.department_code)), ''), NULLIF(LTRIM(RTRIM(ed.HierarchyCodeB)), '')) AS departmentCode,
   COALESCE(NULLIF(LTRIM(RTRIM(sd.department_name)), ''), NULLIF(LTRIM(RTRIM(ed.HANameB)), ''), NULLIF(LTRIM(RTRIM(ed.HierarchyNameB)), '')) AS departmentName,
   COALESCE(NULLIF(LTRIM(RTRIM(sd.site_code)), ''), NULLIF(LTRIM(RTRIM(ed.HierarchyCode)), '')) AS siteCode,
@@ -122,9 +227,42 @@ SELECT
   lc.ContractExpiryDate AS contractExpiryDate,
   c.CompanyCode AS companyCode,
   cge.DisplayName AS companyName,
+  c.CompanyCCY AS companyCurrency,
+  ed.PaymentRunDefShort AS paymentRunShort,
+  ed.PaymentRunDefLong AS paymentRunLong,
+  ed.PaymentTypeCode AS paymentTypeCode,
+  ed.PaymentType AS paymentType,
+  ed.RemunerationDefinitionHeaderDisplay AS remunerationDefinition,
+  ed.TaxNo AS taxNo,
+  ed.BankName AS bankName,
+  ed.BankCode AS bankCode,
+  ed.BranchName AS branchName,
+  ed.BranchCode AS branchCode,
+  ed.AccountNo AS accountNo,
+  ed.AccountName AS accountName,
+  ed.AccountTypeID AS accountTypeId,
+  ed.AnnualSalary AS annualSalary,
+  ed.PeriodSalary AS periodSalary,
+  ed.RatePerHour AS ratePerHour,
+  ed.RatePerDay AS ratePerDay,
+  ed.HoursPerDay AS hoursPerDay,
+  ed.HoursPerPeriod AS hoursPerPeriod,
+  ed.WorkMonday AS workMonday,
+  ed.WorkTuesday AS workTuesday,
+  ed.WorkWednesday AS workWednesday,
+  ed.WorkThursday AS workThursday,
+  ed.WorkFriday AS workFriday,
+  ed.WorkSaturday AS workSaturday,
+  ed.WorkSunday AS workSunday,
   es.Code AS statusCode,
   es.ShortDescription AS statusName,
-  e.TerminationDate AS terminationDate
+  e.TerminationDate AS terminationDate,
+  (SELECT e.* FOR JSON PATH, WITHOUT_ARRAY_WRAPPER, INCLUDE_NULL_VALUES) AS sageEmployeeJson,
+  (SELECT ed.* FOR JSON PATH, WITHOUT_ARRAY_WRAPPER, INCLUDE_NULL_VALUES) AS sageEmployeeDetailJson,
+  (SELECT lc.* FOR JSON PATH, WITHOUT_ARRAY_WRAPPER, INCLUDE_NULL_VALUES) AS sageEmployeeContractJson,
+  (SELECT ge.* FOR JSON PATH, WITHOUT_ARRAY_WRAPPER, INCLUDE_NULL_VALUES) AS sageEntityJson,
+  (SELECT c.* FOR JSON PATH, WITHOUT_ARRAY_WRAPPER, INCLUDE_NULL_VALUES) AS sageCompanyJson,
+  (SELECT es.* FOR JSON PATH, WITHOUT_ARRAY_WRAPPER, INCLUDE_NULL_VALUES) AS sageEmployeeStatusJson
 FROM Employee.Employee e
 JOIN Entity.GenEntity ge
   ON ge.GenEntityID = e.GenEntityID
@@ -152,10 +290,12 @@ LEFT JOIN latestContract lc
   ON lc.EmployeeID = e.EmployeeID
   AND lc.rn = 1
 WHERE
-  e.TerminationDate IS NULL
-  AND ISNULL(es.Code, 'A') = 'A'
-  AND ge.Status = 'A'
+  ge.Status = 'A'
   AND c.Status = 'A'
+  AND (
+    (e.TerminationDate IS NULL AND ISNULL(es.Code, 'A') = 'A')
+    OR UPPER(REPLACE(LTRIM(RTRIM(e.EmployeeCode)), '_', '')) IN (SELECT normalizedEmployeeCode FROM activeEmployeeCodes)
+  )
 ORDER BY e.EmployeeCode;
 `;
 
