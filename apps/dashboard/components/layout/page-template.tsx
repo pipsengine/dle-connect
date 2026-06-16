@@ -1,4 +1,5 @@
 'use client';
+import { useEffect } from 'react';
 import { ChevronRight, Download, Plus } from 'lucide-react';
 import Link from 'next/link';
 
@@ -12,6 +13,10 @@ interface PageTemplateProps {
 }
 
 export function PageTemplate({ title, description, breadcrumbs = [], children, primaryAction, secondaryAction }: PageTemplateProps) {
+  useEffect(() => {
+    document.title = `${title} | DLE Digital Enterprise`;
+  }, [title]);
+
   return (
     <div className="space-y-6">
       {/* Breadcrumbs */}

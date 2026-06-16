@@ -85,6 +85,15 @@ type TimesheetPayload = {
     managerName: string | null;
     status: string;
   }>;
+  supervisorProfile: {
+    employeeId: string;
+    employeeCode: string;
+    fullName: string;
+    jobTitle: string;
+    department: string;
+    location: string;
+    status: string;
+  } | null;
   permissions: {
     actor: string;
     role: string;
@@ -281,6 +290,19 @@ const matchKey = (value: unknown) => {
   const compact = raw.replace(/[^A-Z0-9]/g, '');
   return compact.replace(/^0+/, '') || compact;
 };
+const matchKeys = (...values: unknown[]) => {
+  const keys = new Set<string>();
+  for (const value of values) {
+    const base = matchKey(value);
+    if (!base) continue;
+    keys.add(base);
+    const withoutTypePrefix = base.replace(/^[PCLNI]+(?=\d)/, '').replace(/^0+/, '');
+    if (withoutTypePrefix) keys.add(withoutTypePrefix);
+    const numeric = base.replace(/^[A-Z]+/, '').replace(/^0+/, '');
+    if (numeric) keys.add(numeric);
+  }
+  return [...keys];
+};
 
 const normalizeLineForGrossDay = (line: TimesheetLine): TimesheetLine => {
   const usedHours = round1(line.projectAllocations.reduce((sum, item) => sum + Number(item.hours || 0), 0));
@@ -320,6 +342,74 @@ const managerMatches = (employee: { managerName?: string | null }, supervisor: s
   const managerName = clean(employee.managerName).toLowerCase();
   return managerName === selected || managerName === selectedName || managerName.includes(selected) || managerName.includes(selectedCode);
 };
+
+const employeeLocation = (employee: {
+  location?: string | null;
+  workLocation?: string | null;
+  officeLocation?: string | null;
+  projectSite?: string | null;
+}) => clean(employee.location || employee.workLocation || employee.officeLocation || employee.projectSite);
+
+const employeeMatchesLocation = (employee: Parameters<typeof employeeLocation>[0], locationName?: string) => {
+  const selected = clean(locationName).toLowerCase();
+  if (!selected) return true;
+  return [employee.location, employee.workLocation, employee.officeLocation, employee.projectSite]
+    .map((value) => clean(value).toLowerCase())
+    .filter(Boolean)
+    .some((value) => value === selected || value.includes(selected) || selected.includes(value));
+};
+
+const employeeMatchesWorkCenter = (employee: {
+  department?: string | null;
+  division?: string | null;
+  businessUnit?: string | null;
+  costCenter?: string | null;
+  projectSite?: string | null;
+  workLocation?: string | null;
+  officeLocation?: string | null;
+  location?: string | null;
+}, workCenterName?: string) => {
+  const selected = clean(workCenterName).toLowerCase();
+  if (!selected) return true;
+  return [employee.department, employee.division, employee.businessUnit, employee.costCenter, employee.projectSite, employee.workLocation, employee.officeLocation, employee.location]
+    .map((value) => clean(value).toLowerCase())
+    .filter(Boolean)
+    .some((value) => value === selected || value.includes(selected) || selected.includes(value));
+};
+
+const supervisorMatchesSelection = (employee: {
+  employeeCode?: string | null;
+  employeeId?: string | null;
+  fullName?: string | null;
+}, supervisor: string) => {
+  const selected = clean(supervisor).toLowerCase();
+  if (!selected) return false;
+  const selectedCode = selected.split(' - ')[0]?.replace(/[()]/g, '').trim();
+  const selectedName = selected.includes(' - ') ? selected.split(' - ').slice(1).join(' - ').replace(/\(\d+\)\s*$/, '').trim() : selected.replace(/\(\d+\)\s*$/, '').trim();
+  const code = clean(employee.employeeCode || employee.employeeId).toLowerCase();
+  const name = clean(employee.fullName).toLowerCase();
+  return Boolean((selectedCode && code === selectedCode) || (selectedName && (name === selectedName || name.includes(selectedName))));
+};
+
+const employeeSummary = (employee: {
+  employeeId: string;
+  employeeCode: string;
+  fullName: string;
+  jobTitle: string;
+  department: string;
+  location?: string;
+  workLocation?: string;
+  officeLocation?: string;
+  status: string;
+}) => ({
+  employeeId: employee.employeeId,
+  employeeCode: employee.employeeCode,
+  fullName: employee.fullName,
+  jobTitle: employee.jobTitle,
+  department: employee.department,
+  location: employee.location || employee.workLocation || employee.officeLocation,
+  status: employee.status,
+});
 const resolveProjectManagerForSubmission = (lines: TimesheetLine[], projects: Project[]) => {
   const hoursByProject = new Map<string, number>();
   for (const line of lines) {
@@ -353,7 +443,7 @@ const todayDateInputValue = () => {
   return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
 };
 
-const buildPayload = async (request: Request, date?: string, supervisorId?: string, workCenterName?: string): Promise<TimesheetPayload> => {
+const buildPayload = async (request: Request, date?: string, supervisorId?: string, workCenterName?: string, locationName?: string): Promise<TimesheetPayload> => {
   const access = resolveAccessContext(request);
   const uiPermissions = getUiPermissions(access);
   const { headers, lines: allLines } = await readTimesheetData();
@@ -382,6 +472,8 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
   const targetDate = date || todayDateInputValue();
   const targetSupervisor = supervisorId || access.actor;
   const targetWorkCenter = workCenterName?.trim();
+  const targetLocation = locationName?.trim();
+  const period = await readTimesheetPeriod(new Date(targetDate));
   const employeesBySupervisor = new Map<string, typeof activeEmployees>();
   for (const employee of activeEmployees) {
     const keys = [employee.managerName].map(clean).filter(Boolean);
@@ -404,15 +496,21 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
     })
     .filter((item) => item.employeeCount > 0)
     .sort((a, b) => a.label.localeCompare(b.label));
-  const selectedSupervisorEmployees = activeEmployees
+  const selectedSupervisorProfile = activeEmployees.find((employee) => supervisorMatchesSelection(employee, targetSupervisor));
+  const selectedSupervisorDirectReports = activeEmployees
     .filter((employee) => managerMatches(employee, targetSupervisor))
+    .filter((employee) => employeeMatchesLocation(employee, targetLocation));
+  const selectedSupervisorWorkCenterReports = targetWorkCenter
+    ? selectedSupervisorDirectReports.filter((employee) => employeeMatchesWorkCenter(employee, targetWorkCenter))
+    : [];
+  const selectedSupervisorEmployees = (selectedSupervisorWorkCenterReports.length ? selectedSupervisorWorkCenterReports : selectedSupervisorDirectReports)
     .map((employee) => ({
       employeeId: employee.employeeId,
       employeeCode: employee.employeeCode,
       fullName: employee.fullName,
       jobTitle: employee.jobTitle,
       department: employee.department,
-      location: employee.location || employee.workLocation || employee.officeLocation,
+      location: employeeLocation(employee),
       managerEmployeeCode: null,
       managerName: clean(employee.managerName) || null,
       status: employee.status,
@@ -424,17 +522,30 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
     deviceName: workCenter.name,
   }));
 
-  const header =
-    headers.find((h) => h.timesheetDate === targetDate && h.supervisorId === targetSupervisor && (!targetWorkCenter || h.workCenterName === targetWorkCenter)) ||
-    headers.find((h) => h.timesheetDate === targetDate && h.supervisorId === targetSupervisor) ||
+  let header =
+    (targetWorkCenter
+      ? headers.find((h) => h.timesheetDate === targetDate && h.supervisorId === targetSupervisor && h.workCenterName === targetWorkCenter)
+      : headers.find((h) => h.timesheetDate === targetDate && h.supervisorId === targetSupervisor)) ||
     null;
-  const selectedEmployeeKeys = new Set(selectedSupervisorEmployees.map((employee) => matchKey(employee.employeeCode)).filter(Boolean));
-  const lines = header
+  const selectedEmployeeKeys = new Set(selectedSupervisorEmployees.flatMap((employee) => matchKeys(employee.employeeCode, employee.fullName)).filter(Boolean));
+  let lines = header
     ? allLines
         .filter((l) => l.headerId === header.id)
         .map(normalizeLineForGrossDay)
-        .filter((line) => selectedEmployeeKeys.size === 0 || selectedEmployeeKeys.has(matchKey(line.employeeNo)) || selectedEmployeeKeys.has(matchKey(line.employeeId)))
+        .filter((line) => selectedEmployeeKeys.size === 0 || matchKeys(line.employeeNo, line.employeeId, line.employeeName).some((key) => selectedEmployeeKeys.has(key)))
     : [];
+
+  if ((!header || lines.length === 0) && targetSupervisor && targetWorkCenter) {
+    try {
+      const preview = await syncAttendanceForTimesheet(targetDate, targetSupervisor, targetWorkCenter, targetLocation, { persist: period.status === 'Open' });
+      header = preview.header;
+      lines = preview.lines
+        .map(normalizeLineForGrossDay)
+        .filter((line) => selectedEmployeeKeys.size === 0 || matchKeys(line.employeeNo, line.employeeId, line.employeeName).some((key) => selectedEmployeeKeys.has(key)));
+    } catch (error) {
+      console.warn('Timesheet attendance preview could not be loaded:', error);
+    }
+  }
 
   const activeProjects = projects.filter(p => ['Active', 'Approved', 'Open'].includes(p.status));
 
@@ -457,7 +568,7 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
   return {
     generatedAt: new Date().toISOString(),
     timesheetDate: targetDate,
-    period: await readTimesheetPeriod(new Date(targetDate)),
+    period,
     header,
     lines,
     idleReasons,
@@ -471,6 +582,7 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
     locations,
     projectManagers,
     supervisorEmployees: selectedSupervisorEmployees,
+    supervisorProfile: selectedSupervisorProfile ? employeeSummary(selectedSupervisorProfile) : null,
     permissions: {
       actor: uiPermissions.actor,
       role: uiPermissions.role,
@@ -540,8 +652,9 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const date = searchParams.get('date') || undefined;
   const supervisorId = searchParams.get('supervisorId') || undefined;
+  const locationName = searchParams.get('locationName') || undefined;
   const workCenterName = searchParams.get('workCenterName') || undefined;
-  return ok(await buildPayload(request, date, supervisorId, workCenterName));
+  return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName));
 }
 
 export async function PATCH(request: Request) {
@@ -567,19 +680,19 @@ export async function PATCH(request: Request) {
       };
       projects.push(newProject);
       await writeProjects(projects);
-      return ok(await buildPayload(request, date, supervisorId, workCenterName));
+      return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName));
     }
 
     if (action === 'UPSERT_WORK_CENTER') {
       if (!payload.workCenter?.name?.trim()) return err(400, 'Work center name is required.');
       await upsertTimesheetWorkCenter(payload.workCenter);
-      return ok(await buildPayload(request, date, supervisorId, payload.workCenter.name));
+      return ok(await buildPayload(request, date, supervisorId, payload.workCenter.name, locationName));
     }
 
     if (action === 'DELETE_WORK_CENTER') {
       if (!payload.workCenter?.id) return err(400, 'Work center ID is required.');
       await deactivateTimesheetWorkCenter(payload.workCenter.id);
-      return ok(await buildPayload(request, date, supervisorId, workCenterName));
+      return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName));
     }
 
     if (action === 'COPY_PREVIOUS_DAY') {
@@ -589,7 +702,7 @@ export async function PATCH(request: Request) {
       const currentHeader = headers.find(h => h.timesheetDate === date && h.supervisorId === supervisorId && h.workCenterName === workCenterName);
       if (currentHeader) requireEditableTimesheet(currentHeader);
       await handleCopyPreviousDay(request, date, supervisorId, workCenterName);
-      return ok(await buildPayload(request, date, supervisorId, workCenterName));
+      return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName));
     }
 
     if (action === 'BULK_APPLY') {
@@ -600,7 +713,7 @@ export async function PATCH(request: Request) {
       await requireOpenPeriod(header.timesheetDate);
       requireEditableTimesheet(header);
       await handleBulkApply(request, payload);
-      return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName));
+      return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName));
     }
 
     const { headers, lines: allLines } = await readTimesheetData();
@@ -611,7 +724,7 @@ export async function PATCH(request: Request) {
       const existingHeader = headers.find(h => h.timesheetDate === date && h.supervisorId === supervisorId && h.workCenterName === workCenterName);
       if (existingHeader) requireEditableTimesheet(existingHeader);
       await syncAttendanceForTimesheet(date, supervisorId, workCenterName, locationName);
-      return ok(await buildPayload(request, date, supervisorId, workCenterName));
+      return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName));
     }
 
     if (action === 'MATRIX_SAVE' || action === 'SAVE_DRAFT' || action === 'SUBMIT') {
@@ -674,7 +787,7 @@ export async function PATCH(request: Request) {
       }
 
       await writeTimesheetData({ headers, lines: [...otherLines, ...normalizedLines] });
-      return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName));
+      return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName));
     }
 
     if (action === 'APPROVE' || action === 'REJECT') {
@@ -688,7 +801,7 @@ export async function PATCH(request: Request) {
         await advanceTimesheetWorkflow(header.id, 'REJECT', access.actor, payload.reviewerNote);
       }
 
-      return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName));
+      return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName));
     }
 
     return err(400, 'Invalid action.');

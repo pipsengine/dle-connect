@@ -1875,8 +1875,8 @@ export async function advanceProjectTimesheetApproval(
 
 const normalizeAttendanceScope = (value: string | null | undefined) =>
   String(value || '').trim().toLowerCase();
-const TIMESHEET_SAGE_ENRICH_TIMEOUT_MS = Number(process.env.TIMESHEET_SAGE_ENRICH_TIMEOUT_MS || 2500);
-const TIMESHEET_SUPERVISOR_SCOPE_TIMEOUT_MS = Number(process.env.TIMESHEET_SUPERVISOR_SCOPE_TIMEOUT_MS || 5000);
+const TIMESHEET_SAGE_ENRICH_TIMEOUT_MS = Number(process.env.TIMESHEET_SAGE_ENRICH_TIMEOUT_MS || 700);
+const TIMESHEET_SUPERVISOR_SCOPE_TIMEOUT_MS = Number(process.env.TIMESHEET_SUPERVISOR_SCOPE_TIMEOUT_MS || 700);
 
 const withSyncTimeout = async <T,>(promise: Promise<T>, ms: number, message: string): Promise<T> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1904,6 +1904,20 @@ const supervisorMatchesEmployee = (managerName: string | null | undefined, super
   return manager === selected || manager === selectedName || manager.includes(selected) || (selectedCode ? manager.includes(selectedCode) : false);
 };
 
+const attendanceMatchKeys = (...values: Array<string | number | null | undefined>) => {
+  const keys = new Set<string>();
+  for (const value of values) {
+    const normalized = normalizePayrollMatchKey(value);
+    if (!normalized) continue;
+    keys.add(normalized);
+    const withoutTypePrefix = normalized.replace(/^[PCLNI]+(?=\d)/, '').replace(/^0+/, '');
+    if (withoutTypePrefix) keys.add(withoutTypePrefix);
+    const numeric = normalized.replace(/^[A-Z]+/, '').replace(/^0+/, '');
+    if (numeric) keys.add(numeric);
+  }
+  return [...keys];
+};
+
 const supervisorEmployeeScope = async (supervisorId: string) => {
   const selected = cleanSupervisorLabel(supervisorId);
   if (!selected) return { keys: new Set<string>(), employees: [] as Array<{ employeeCode: string; fullName: string }> };
@@ -1923,49 +1937,60 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
       employee.employeeCode,
       employee.fullName,
       employee.sourceEmployeeId,
-    ].forEach((value) => {
-      const key = normalizePayrollMatchKey(value);
-      if (key) keys.add(key);
-    });
+    ].flatMap((value) => attendanceMatchKeys(value)).forEach((key) => keys.add(key));
   }
   return { keys, employees };
 };
 
-export async function syncAttendanceForTimesheet(date: string, supervisorId: string, workCenterName: string, locationName?: string) {
-  const liveAttendance = await readLiveClockingActivity(date);
+export async function syncAttendanceForTimesheet(
+  date: string,
+  supervisorId: string,
+  workCenterName: string,
+  locationName?: string,
+  options: { persist?: boolean } = {},
+) {
+  const persist = options.persist !== false;
+  const liveAttendancePromise = readLiveClockingActivity(date);
+  const scopePromise = withSyncTimeout(
+    supervisorEmployeeScope(supervisorId),
+    TIMESHEET_SUPERVISOR_SCOPE_TIMEOUT_MS,
+    'Supervisor employee scope timed out.',
+  );
+  const activePayrollPromise = withSyncTimeout(
+    readActiveSagePayrollEmployeeKeys(),
+    TIMESHEET_SAGE_ENRICH_TIMEOUT_MS,
+    'Sage payroll enrichment timed out.',
+  );
+
+  const liveAttendance = await liveAttendancePromise;
   const clockingRecords = liveAttendance.records;
   const activeEmployeeByKey = new Map<string, SagePayrollEmployee>();
   let allowedSupervisorKeys = new Set<string>();
   let assignedSupervisorEmployees: Array<{ employeeCode: string; fullName: string }> = [];
 
-  try {
-    const scope = await supervisorEmployeeScope(supervisorId);
-    allowedSupervisorKeys = scope.keys;
-    assignedSupervisorEmployees = scope.employees;
-  } catch (error) {
-    console.warn('Timesheet attendance sync could not resolve supervisor employee scope:', error);
+  const [scopeResult, activePayrollResult] = await Promise.allSettled([scopePromise, activePayrollPromise]);
+  if (scopeResult.status === 'fulfilled') {
+    allowedSupervisorKeys = scopeResult.value.keys;
+    assignedSupervisorEmployees = scopeResult.value.employees;
+  } else {
+    console.warn('Timesheet attendance sync could not resolve supervisor employee scope:', scopeResult.reason);
   }
 
-  try {
-    const activePayroll = await withSyncTimeout(
-      readActiveSagePayrollEmployeeKeys(),
-      TIMESHEET_SAGE_ENRICH_TIMEOUT_MS,
-      'Sage payroll enrichment timed out.',
-    );
+  if (activePayrollResult.status === 'fulfilled') {
+    const activePayroll = activePayrollResult.value;
     for (const employee of activePayroll.employees) {
-      [
+      attendanceMatchKeys(
         employee.employeeId,
         employee.employeeCode,
         employee.directoryEmployeeCode,
         employee.entityCode,
         employee.displayName,
-      ].forEach((value) => {
-        const key = normalizePayrollMatchKey(value);
+      ).forEach((key) => {
         if (key && !activeEmployeeByKey.has(key)) activeEmployeeByKey.set(key, employee);
       });
     }
-  } catch (error) {
-    console.warn('Timesheet attendance sync proceeding without Sage payroll enrichment:', error);
+  } else {
+    console.warn('Timesheet attendance sync proceeding without Sage payroll enrichment:', activePayrollResult.reason);
   }
   
   // Business Rule: A timesheet is created for a Work Center / Site.
@@ -1988,21 +2013,22 @@ export async function syncAttendanceForTimesheet(date: string, supervisorId: str
         attendance.employeeId,
         attendance.employeeName,
       ]
-        .map((value) => activeEmployeeByKey.get(normalizePayrollMatchKey(value)))
+        .flatMap((value) => attendanceMatchKeys(value))
+        .map((key) => activeEmployeeByKey.get(key))
         .find(Boolean);
 
       return { attendance, payrollEmployee };
     })
     .filter(({ attendance, payrollEmployee }) => {
-      if (allowedSupervisorKeys.size === 0) return false;
-      return [
+      if (allowedSupervisorKeys.size === 0) return true;
+      return attendanceMatchKeys(
         attendance.employeeId,
         attendance.employeeName,
         payrollEmployee?.employeeCode,
         payrollEmployee?.directoryEmployeeCode,
         payrollEmployee?.entityCode,
         payrollEmployee?.displayName,
-      ].some((value) => allowedSupervisorKeys.has(normalizePayrollMatchKey(value)));
+      ).some((key) => allowedSupervisorKeys.has(key));
     });
   const attendanceCandidateKeys = (candidate: (typeof attendanceCandidates)[number]) => [
     candidate.attendance.employeeId,
@@ -2011,10 +2037,10 @@ export async function syncAttendanceForTimesheet(date: string, supervisorId: str
     candidate.payrollEmployee?.directoryEmployeeCode,
     candidate.payrollEmployee?.entityCode,
     candidate.payrollEmployee?.displayName,
-  ].map(normalizePayrollMatchKey).filter(Boolean);
+  ].flatMap((value) => attendanceMatchKeys(value));
   const attendanceForDay = assignedSupervisorEmployees.length
     ? assignedSupervisorEmployees.map((employee) => {
-        const employeeKeys = [employee.employeeCode, employee.fullName].map(normalizePayrollMatchKey).filter(Boolean);
+        const employeeKeys = attendanceMatchKeys(employee.employeeCode, employee.fullName);
         const matched = attendanceCandidates.find((candidate) => attendanceCandidateKeys(candidate).some((key) => employeeKeys.includes(key)));
         return matched || {
           attendance: {
@@ -2064,7 +2090,7 @@ export async function syncAttendanceForTimesheet(date: string, supervisorId: str
       approvedBy: null,
       lastSyncAt: new Date().toISOString(),
     };
-    headers.push(header);
+    if (persist) headers.push(header);
   } else {
     header.lastSyncAt = new Date().toISOString();
   }
@@ -2105,7 +2131,9 @@ export async function syncAttendanceForTimesheet(date: string, supervisorId: str
     };
   });
 
-  await writeTimesheetData({ headers, lines: [...otherLines, ...newLines] });
+  if (persist) {
+    await writeTimesheetData({ headers, lines: [...otherLines, ...newLines] });
+  }
   return { header, lines: newLines };
 }
 

@@ -194,6 +194,15 @@ type Payload = {
     managerName: string | null;
     status: string;
   }>;
+  supervisorProfile: {
+    employeeId: string;
+    employeeCode: string;
+    fullName: string;
+    jobTitle: string;
+    department: string;
+    location: string;
+    status: string;
+  } | null;
   permissions: {
     actor: string;
     role: string;
@@ -309,6 +318,20 @@ const employeeStatusBadgeTone = (line: TimesheetLine) => {
   return 'border-sky-200 bg-white/70 text-sky-800';
 };
 
+const workCenterMatchesLocation = (workCenter: Payload['workCenters'][number], location: string) => {
+  const selected = location.trim().toLowerCase();
+  if (!selected) return true;
+  return [workCenter.location, workCenter.site, workCenter.name]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean)
+    .some((value) => value === selected || value.includes(selected) || selected.includes(value));
+};
+
+const workCenterNamesForLocation = (workCenters: Payload['workCenters'], location: string) => {
+  const matching = workCenters.filter((workCenter) => workCenterMatchesLocation(workCenter, location)).map((workCenter) => workCenter.name);
+  return matching.length ? matching : workCenters.map((workCenter) => workCenter.name);
+};
+
 export default function TimesheetEntryClient() {
   const searchParams = useSearchParams();
   const dateParam = searchParams.get('date');
@@ -362,7 +385,6 @@ export default function TimesheetEntryClient() {
       
       const data = json.data as Payload;
       const dbWorkCenters = data.workCenters || [];
-      const dbWorkCenterNames = dbWorkCenters.map((item) => item.name);
       const dbLocationNames = (data.locations || []).map((item) => item.name);
       setPayload(data);
       setLocalLines(data.lines);
@@ -376,6 +398,8 @@ export default function TimesheetEntryClient() {
         return dbLocationNames[0] || '';
       });
       setSelectedWorkCenter((current) => {
+        const locationName = location || selectedLocation || dbLocationNames[0] || '';
+        const dbWorkCenterNames = workCenterNamesForLocation(dbWorkCenters, locationName);
         if (current && dbWorkCenterNames.includes(current)) return current;
         if (data.header?.workCenterName && dbWorkCenterNames.includes(data.header.workCenterName)) return data.header.workCenterName;
         return dbWorkCenterNames[0] || '';
@@ -385,7 +409,7 @@ export default function TimesheetEntryClient() {
     } finally {
       setLoading(false);
     }
-  }, [matrixColumns.length, selectedSupervisor]);
+  }, [matrixColumns.length, selectedLocation, selectedSupervisor]);
 
   useEffect(() => {
     void load(selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter);
@@ -436,6 +460,15 @@ export default function TimesheetEntryClient() {
     void handleSyncAttendance();
   }, [handleSyncAttendance, loading, localLines.length, payload, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, submitting]);
 
+  useEffect(() => {
+    if (!selectedLocation || workCenters.length === 0) return;
+    const availableWorkCenters = workCenterNamesForLocation(workCenters, selectedLocation);
+    if (availableWorkCenters.length > 0 && !availableWorkCenters.includes(selectedWorkCenter)) {
+      setSelectedWorkCenter(availableWorkCenters[0]);
+    }
+  }, [selectedLocation, selectedWorkCenter, workCenters]);
+
+
   const saveWorkCenter = async () => {
     const nextName = workCenterDraft.trim();
     if (!nextName) return;
@@ -448,6 +481,7 @@ export default function TimesheetEntryClient() {
           action: 'UPSERT_WORK_CENTER',
           date: selectedDate,
           supervisorId: selectedSupervisor,
+          locationName: selectedLocation,
           workCenterName: selectedWorkCenter,
           workCenter: {
             id: editingWorkCenter?.id,
@@ -560,6 +594,7 @@ export default function TimesheetEntryClient() {
           action: 'COPY_PREVIOUS_DAY',
           date: selectedDate,
           supervisorId: selectedSupervisor,
+          locationName: selectedLocation,
           workCenterName: selectedWorkCenter,
         }),
       });
@@ -592,6 +627,7 @@ export default function TimesheetEntryClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: isSubmit ? 'SUBMIT' : 'MATRIX_SAVE',
+          locationName: selectedLocation,
           headerId: payload?.header?.id,
           lines: localLines,
         }),
@@ -621,6 +657,7 @@ export default function TimesheetEntryClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'BULK_APPLY',
+          locationName: selectedLocation,
           headerId: payload?.header?.id,
           bulkAllocation: {
             employeeIds: selectedEmployees,
@@ -652,6 +689,7 @@ export default function TimesheetEntryClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: decision,
+          locationName: selectedLocation,
           headerId: payload.header.id,
         }),
       });
@@ -682,6 +720,10 @@ export default function TimesheetEntryClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'CREATE_PROJECT',
+          date: selectedDate,
+          supervisorId: selectedSupervisor,
+          locationName: selectedLocation,
+          workCenterName: selectedWorkCenter,
           project: {
             code: projectCode,
             name: newProjectName,
@@ -771,7 +813,7 @@ export default function TimesheetEntryClient() {
     );
   }
 
-  const workCenterOptions = workCenters.map((workCenter) => workCenter.name);
+  const workCenterOptions = workCenterNamesForLocation(workCenters, selectedLocation);
   const locationOptions = Array.from(new Set((payload?.locations.map((location) => location.name) ?? []).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   const siteLocationOptions = Array.from(
     new Set((payload?.locations.map((location) => location.name) ?? []).filter((location) => location && location !== 'Unassigned Location')),
@@ -816,6 +858,7 @@ export default function TimesheetEntryClient() {
   const exceptionPunches = payload?.summary.absentEmployees ?? 0;
   const supervisorDirectory = payload?.filterOptions.supervisorDirectory ?? [];
   const supervisorLabel = supervisorDirectory.find((item) => item.value === selectedSupervisor)?.label || selectedSupervisor || payload?.permissions.actor || 'Select supervisor';
+  const supervisorProfile = payload?.supervisorProfile ?? null;
   const supervisorEmployees = payload?.supervisorEmployees ?? [];
   const biometricTone = onlineSiteDevices.length > 0
     ? 'text-emerald-400'
@@ -882,7 +925,15 @@ export default function TimesheetEntryClient() {
               </div>
               <div className="text-right">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Location</p>
-                <select value={selectedLocation} onChange={(e) => setSelectedLocation(e.target.value)} className="bg-transparent text-sm font-black text-slate-900 focus:outline-none">
+                <select
+                  value={selectedLocation}
+                  onChange={(e) => {
+                    setSelectedLocation(e.target.value);
+                    setSelectedEmployees([]);
+                    setQuery('');
+                  }}
+                  className="bg-transparent text-sm font-black text-slate-900 focus:outline-none"
+                >
                   {locationOptions.length === 0 && <option value="">No location</option>}
                   {locationOptions.map((location) => (
                     <option key={location} value={location}>
@@ -894,7 +945,15 @@ export default function TimesheetEntryClient() {
               <div className="text-right">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Work Center</p>
                 <div className="flex items-center justify-end gap-2">
-                  <select value={selectedWorkCenter} onChange={(e) => setSelectedWorkCenter(e.target.value)} className="bg-transparent text-sm font-black text-slate-900 focus:outline-none">
+                  <select
+                    value={selectedWorkCenter}
+                    onChange={(e) => {
+                      setSelectedWorkCenter(e.target.value);
+                      setSelectedEmployees([]);
+                      setQuery('');
+                    }}
+                    className="bg-transparent text-sm font-black text-slate-900 focus:outline-none"
+                  >
                     {workCenterOptions.length === 0 && <option value="">No work center</option>}
                     {workCenterOptions.map((workCenter) => (
                     <option key={workCenter} value={workCenter}>
@@ -981,13 +1040,32 @@ export default function TimesheetEntryClient() {
               <p className="text-[10px] font-black uppercase tracking-widest text-sky-700/70">Selected Supervisor</p>
               <h3 className="mt-1 text-lg font-black text-slate-950">{supervisorLabel}</h3>
               <p className="mt-1 text-xs font-semibold text-slate-600">
-                {supervisorEmployees.length ? `${supervisorEmployees.length} employee${supervisorEmployees.length === 1 ? '' : 's'} assigned to this supervisor.` : 'No employees are currently assigned to this supervisor in the system database.'}
+                {supervisorEmployees.length ? `${supervisorEmployees.length} employee${supervisorEmployees.length === 1 ? '' : 's'} assigned for ${selectedLocation || 'all locations'}${selectedWorkCenter ? ` / ${selectedWorkCenter}` : ''}.` : 'No employees match this supervisor, location, and work center selection.'}
               </p>
             </div>
             <span className="rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-black text-sky-800">{supervisorEmployees.length} assigned</span>
           </div>
-          {supervisorEmployees.length ? (
-            <div className="mt-4 grid max-h-[260px] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-4 grid grid-cols-1 gap-2 xl:grid-cols-3">
+            {supervisorProfile ? (
+              <div className="rounded-xl border border-sky-200 bg-white p-3 ring-1 ring-sky-100">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-sky-700">Supervisor Detail</p>
+                  <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-black text-sky-800">{supervisorProfile.status || 'Unknown'}</span>
+                </div>
+                <div className="mt-2 text-xs font-black text-slate-950">{supervisorProfile.employeeCode} - {supervisorProfile.fullName}</div>
+                <div className="mt-1 text-[11px] font-semibold text-slate-600">{supervisorProfile.jobTitle || 'Unassigned role'} / {supervisorProfile.department || 'Unassigned department'}</div>
+                <div className="mt-1 text-[11px] font-semibold text-slate-500">{supervisorProfile.location || 'No location'}</div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-amber-200 bg-white p-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Supervisor Detail</p>
+                <div className="mt-2 text-xs font-black text-slate-950">{supervisorLabel}</div>
+                <div className="mt-1 text-[11px] font-semibold text-slate-500">Supervisor profile is not linked to an employee record yet.</div>
+              </div>
+            )}
+            <div className="xl:col-span-2">
+              {supervisorEmployees.length ? (
+                <div className="grid max-h-[260px] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
               {supervisorEmployees.map((employee) => (
                 <div key={employee.employeeCode} className="rounded-xl border border-slate-200 bg-white p-3">
                   <div className="text-xs font-black text-slate-950">{employee.employeeCode} - {employee.fullName}</div>
@@ -995,8 +1073,14 @@ export default function TimesheetEntryClient() {
                   <div className="mt-1 text-[11px] font-semibold text-slate-500">{employee.location || 'No location'} / {employee.status || 'Unknown status'}</div>
                 </div>
               ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-slate-200 bg-white p-4 text-xs font-bold text-slate-500">
+                  No assigned employees found for the selected filters.
+                </div>
+              )}
             </div>
-          ) : null}
+          </div>
         </div>
 
         {/* Dashboard Metrics */}

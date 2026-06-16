@@ -92,6 +92,10 @@ function MetricCard({ label, value, detail, icon: Icon, tone }: { label: string;
 }
 
 export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: string }) {
+  useEffect(() => {
+    document.title = 'Employee Salary Setup | DLE Digital Enterprise';
+  }, []);
+
   const [role, setRole] = useState<Role>('Payroll Officer');
   const [payload, setPayload] = useState<PayrollPayload | null>(null);
   const [loading, setLoading] = useState(true);

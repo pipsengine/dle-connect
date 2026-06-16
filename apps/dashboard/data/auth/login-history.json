@@ -1,5 +1,32 @@
 [
   {
+    "id": "login-1781539138525-583d840e",
+    "at": "2026-06-15T15:58:58.525Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "::1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1781539122174-1470203c",
+    "at": "2026-06-15T15:58:42.175Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "::1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1781539089139-2aae044b",
+    "at": "2026-06-15T15:58:09.140Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "::1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
     "id": "login-1781536078200-85367be5",
     "at": "2026-06-15T15:07:58.200Z",
     "userId": "global-admin",
