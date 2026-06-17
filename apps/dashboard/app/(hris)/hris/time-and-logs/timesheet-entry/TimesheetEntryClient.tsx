@@ -35,7 +35,7 @@ const DAILY_BREAK_HOURS = 1;
 const GROSS_TIMESHEET_HOURS = STANDARD_TIMESHEET_HOURS + DAILY_BREAK_HOURS;
 const DEFAULT_IDLE_REASON_ID = 'idl-009';
 const DEFAULT_IDLE_REASON_NAME = 'Break Time';
-const editableTimesheetStatuses: TimesheetStatus[] = ['Draft', 'Returned', 'Rejected'];
+const editableTimesheetStatuses: TimesheetStatus[] = ['Draft', 'Submitted', 'Returned', 'Rejected'];
 const payrollReadyStatuses: TimesheetStatus[] = ['HR_Acknowledged', 'Approved', 'Locked'];
 const EMPLOYEE_CARD_PAGE_SIZE = 12;
 type TimesheetEntryMode = 'Supervisor Entry';
@@ -340,6 +340,7 @@ export default function TimesheetEntryClient() {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [viewMode, setViewMode] = useState<'matrix' | 'cards'>('matrix');
   
@@ -373,6 +374,7 @@ export default function TimesheetEntryClient() {
   const load = useCallback(async (date?: string, supervisor?: string, location?: string, workCenter?: string) => {
     setLoading(true);
     setError(null);
+    setNotice(null);
     try {
       const url = new URL('/api/hris/time-and-logs/timesheet-entry', window.location.origin);
       if (date) url.searchParams.set('date', date);
@@ -613,7 +615,9 @@ export default function TimesheetEntryClient() {
     }
   };
 
-  const handleSave = async (isSubmit = false) => {
+  const handleSave = async (isSubmit = false, saveAsDraft = false) => {
+    setError(null);
+    setNotice(null);
     if (payload?.period.status !== 'Open') {
       setError('This timesheet period is closed. Reopen it before saving or submitting timesheets.');
       return;
@@ -629,7 +633,7 @@ export default function TimesheetEntryClient() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: isSubmit ? 'SUBMIT' : 'MATRIX_SAVE',
+          action: isSubmit ? 'SUBMIT' : saveAsDraft ? 'SAVE_DRAFT' : 'MATRIX_SAVE',
           locationName: selectedLocation,
           headerId: payload?.header?.id,
           lines: localLines,
@@ -641,7 +645,11 @@ export default function TimesheetEntryClient() {
       setLocalLines(json.data.lines);
       if (isSubmit) {
         setShowSubmitReview(false);
-        alert('Timesheet submitted successfully.');
+        setNotice('Timesheet submitted for supervisor review. You can still edit it before release to the project manager.');
+      } else if (saveAsDraft) {
+        setNotice('Draft saved. You can continue editing this timesheet before submission.');
+      } else {
+        setNotice('Changes saved.');
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
@@ -964,22 +972,27 @@ export default function TimesheetEntryClient() {
               <div className="text-right">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Work Center</p>
                 <div className="flex items-center justify-end gap-2">
-                  <select
-                    value={selectedWorkCenter}
-                    onChange={(e) => {
-                      setSelectedWorkCenter(e.target.value);
-                      setSelectedEmployees([]);
-                      setQuery('');
-                    }}
-                    className="bg-transparent text-sm font-black text-slate-900 focus:outline-none"
-                  >
-                    {workCenterOptions.length === 0 && <option value="">No work center</option>}
-                    {workCenterOptions.map((workCenter) => (
-                    <option key={workCenter} value={workCenter}>
-                      {workCenter}
-                    </option>
-                  ))}
-                  </select>
+                  {workCenterOptions.length > 0 ? (
+                    <select
+                      value={selectedWorkCenter}
+                      onChange={(e) => {
+                        setSelectedWorkCenter(e.target.value);
+                        setSelectedEmployees([]);
+                        setQuery('');
+                      }}
+                      className="max-w-[180px] truncate bg-white text-sm font-black text-slate-900 focus:outline-none"
+                    >
+                      {workCenterOptions.map((workCenter) => (
+                        <option key={workCenter} value={workCenter}>
+                          {workCenter}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="block max-w-[180px] truncate text-sm font-black text-slate-900">
+                      No work center
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={() => setShowWorkCenterManager(true)}
@@ -1013,6 +1026,12 @@ export default function TimesheetEntryClient() {
           </div>
         </div>
 
+        {(error || notice) && (
+          <div className={`rounded-xl border px-4 py-3 text-sm font-bold ${error ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+            {error || notice}
+          </div>
+        )}
+
         {!periodIsOpen && (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
             <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1042,7 +1061,7 @@ export default function TimesheetEntryClient() {
                   <p className={`mt-1 text-xs font-semibold ${isPayrollReady ? 'text-emerald-700' : 'text-indigo-700'}`}>
                     {isPayrollReady
                       ? 'HR has acknowledged this timesheet for payroll. Editing is locked and any correction must follow a formal return/reversal process.'
-                      : 'This timesheet has been submitted for approval. It can only be edited again if it is returned or rejected.'}
+                      : 'This timesheet has moved beyond supervisor review. It can only be edited again if it is returned or rejected.'}
                   </p>
                 </div>
               </div>
@@ -1193,7 +1212,7 @@ export default function TimesheetEntryClient() {
             <Link href="/hris/time-and-logs/timesheet-approval" className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50">SUBMITTED STATUS</Link>
             <Link href="/hris/time-and-logs/timesheet-reports" className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50">REPORTS</Link>
             <button onClick={handleCopyPrevious} disabled={submitting || !canEditTimesheet} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Copy className="h-3.5 w-3.5" />COPY PREVIOUS</button>
-            <button onClick={() => handleSave(false)} disabled={submitting || !canEditTimesheet} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50">SAVE DRAFT</button>
+            <button onClick={() => handleSave(false, true)} disabled={submitting || !canEditTimesheet} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50">SAVE DRAFT</button>
             <button onClick={() => setShowSubmitReview(true)} disabled={submitting || !canOpenSubmitReview} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-2.5 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50"><ShieldCheck className="h-3.5 w-3.5" />REVIEW & SUBMIT</button>
           </div>
         </div>
@@ -1253,7 +1272,7 @@ export default function TimesheetEntryClient() {
                     const isAbsent = !line.clockIn;
                     const originalIdx = localLines.findIndex(l => l.id === line.id);
                     return (
-                      <tr key={line.id} className={`hover:bg-slate-50/80 transition-colors ${isAbsent ? 'opacity-60 bg-slate-50/30' : line.validationStatus === 'Valid' ? 'bg-emerald-50/30' : line.validationStatus === 'Error' ? 'bg-red-50/30' : 'bg-white'}`}>
+                      <tr key={line.id} className={`hover:bg-slate-50/80 transition-colors ${isAbsent ? 'bg-slate-50/30' : line.validationStatus === 'Valid' ? 'bg-emerald-50/30' : line.validationStatus === 'Error' ? 'bg-red-50/30' : 'bg-white'}`}>
                         <td className={`sticky left-0 z-10 px-4 py-4 border-r border-slate-100 shadow-[2px_0_5px_rgba(0,0,0,0.03)] ${isAbsent ? 'bg-slate-50' : line.validationStatus === 'Valid' ? 'bg-[#f0fdf4]' : line.validationStatus === 'Error' ? 'bg-[#fef2f2]' : 'bg-white'}`}>
                           <div className="flex items-center gap-3 min-w-max">
                             <input 
@@ -1275,7 +1294,7 @@ export default function TimesheetEntryClient() {
                         <td className="px-4 py-4 whitespace-nowrap">{isAbsent ? <span className="text-[10px] font-black text-red-600">ABSENT</span> : <div className="flex flex-col gap-0.5 text-[10px] font-black text-slate-700"><span>IN: {line.clockIn}</span><span>OUT: {line.clockOut || '--:--'}</span></div>}</td>
                         <td className="px-4 py-4 text-center text-[11px] font-black text-slate-600 tabular-nums">{line.attendanceDuration}h</td>
                         {matrixColumns.map((col) => (
-                          <td key={col.code} className="px-4 py-4 border-l border-slate-100"><input type="number" step="0.5" disabled={isAbsent || !canEditTimesheet} value={line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
+                          <td key={col.code} className="px-4 py-4 border-l border-slate-100"><input type="number" step="0.5" disabled={!canEditTimesheet} value={line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
                             const val = parseFloat(e.target.value) || 0;
                             const allocations = [...line.projectAllocations];
                             const pIdx = allocations.findIndex(p => p.projectCode === col.code);
@@ -1287,7 +1306,7 @@ export default function TimesheetEntryClient() {
                         <td className="px-4 py-4 border-l border-slate-100"></td>
                         <td className="px-4 py-4 text-center font-black text-blue-700 bg-blue-50/20">{line.usedHours}</td>
                         <td className="px-4 py-4 bg-amber-50/20 border-l border-slate-100"><div className="flex flex-col gap-2">{(line.idleAllocations.length === 0 ? [{ reasonId: DEFAULT_IDLE_REASON_ID, reasonName: DEFAULT_IDLE_REASON_NAME, hours: 0, remarks: null }] : line.idleAllocations).map((alloc, iIdx) => (
-                          <div key={iIdx} className="flex items-center gap-1.5"><input type="number" step="0.5" placeholder="Hrs" disabled={isAbsent || !canEditTimesheet} value={alloc.hours || ''} onChange={(e) => {
+                          <div key={iIdx} className="flex items-center gap-1.5"><input type="number" step="0.5" placeholder="Hrs" disabled={!canEditTimesheet} value={alloc.hours || ''} onChange={(e) => {
                             const next = [...line.idleAllocations];
                             if (next[iIdx]) next[iIdx].hours = parseFloat(e.target.value) || 0;
                             else next.push({ reasonId: DEFAULT_IDLE_REASON_ID, reasonName: DEFAULT_IDLE_REASON_NAME, hours: parseFloat(e.target.value) || 0, remarks: null });
@@ -1301,7 +1320,7 @@ export default function TimesheetEntryClient() {
                           }} className="flex-1 rounded-lg border border-slate-200 py-1 text-[9px] font-bold">
                             {payload?.idleReasons.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                           </select>
-                          {iIdx === line.idleAllocations.length - 1 && !isAbsent && canEditTimesheet && <button onClick={() => handleUpdateLine(originalIdx, { idleAllocations: [...line.idleAllocations, { reasonId: DEFAULT_IDLE_REASON_ID, reasonName: DEFAULT_IDLE_REASON_NAME, hours: 0, remarks: null }] })} className="p-1 text-slate-400 hover:text-indigo-600"><Plus className="h-3 w-3" /></button>}</div>
+                          {iIdx === line.idleAllocations.length - 1 && canEditTimesheet && <button onClick={() => handleUpdateLine(originalIdx, { idleAllocations: [...line.idleAllocations, { reasonId: DEFAULT_IDLE_REASON_ID, reasonName: DEFAULT_IDLE_REASON_NAME, hours: 0, remarks: null }] })} className="p-1 text-slate-400 hover:text-indigo-600"><Plus className="h-3 w-3" /></button>}</div>
                         ))}</div></td>
                         <td className="px-4 py-4 text-center bg-indigo-50/20"><span className={`font-black ${line.totalHours === GROSS_TIMESHEET_HOURS ? 'text-emerald-600' : 'text-indigo-600'}`}>{line.totalHours}</span></td>
                         <td className="px-4 py-4 text-center"><span className={`text-[10px] font-black ${line.variance === 0 ? 'text-emerald-600' : 'text-amber-600'}`}>{line.variance > 0 ? `+${line.variance}` : line.variance}</span></td>
@@ -1377,7 +1396,7 @@ export default function TimesheetEntryClient() {
                       {matrixColumns.map(col => (
                         <div key={col.code} className="flex items-center justify-between gap-3">
                           <span className="text-xs font-bold text-slate-600 truncate flex-1">{col.label}</span>
-                          <input type="number" step="0.5" disabled={isAbsent || !canEditTimesheet} value={line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
+                          <input type="number" step="0.5" disabled={!canEditTimesheet} value={line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
                             const val = parseFloat(e.target.value) || 0;
                             const next = [...line.projectAllocations];
                             const pIdx = next.findIndex(p => p.projectCode === col.code);
@@ -1419,7 +1438,7 @@ export default function TimesheetEntryClient() {
                           />
                         </div>
                       ))}
-                      {!isAbsent && canEditTimesheet && (
+                      {canEditTimesheet && (
                         <button 
                           onClick={() => handleUpdateLine(originalIdx, { idleAllocations: [...line.idleAllocations, { reasonId: DEFAULT_IDLE_REASON_ID, reasonName: DEFAULT_IDLE_REASON_NAME, hours: 0, remarks: null }] })}
                           className="w-full rounded-lg border border-dashed border-slate-200 py-1.5 text-[10px] font-black text-slate-400 hover:border-indigo-300 hover:text-indigo-600 transition-all"
@@ -1556,7 +1575,7 @@ export default function TimesheetEntryClient() {
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 p-5">
-              <p className="text-xs font-semibold text-slate-500">Submitting locks this draft for approval review. Returned or rejected timesheets can be edited again.</p>
+              <p className="text-xs font-semibold text-slate-500">Submitting places this timesheet in supervisor review. You can keep correcting it until it is approved and released to the project manager.</p>
               <div className="flex items-center gap-3">
                 <button onClick={() => setShowSubmitReview(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50">Back to Edit</button>
                 <button onClick={() => handleSave(true)} disabled={submitting || reviewErrorCount > 0 || reviewLineCount === 0} className="rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-indigo-700 disabled:opacity-50">

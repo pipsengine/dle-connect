@@ -16,6 +16,7 @@ import {
   readTimesheetWorkCenters,
   readSystemTimesheetDepartments,
   readSystemTimesheetLocations,
+  readTimesheetRecords,
   isTimesheetEditableStatus,
   isTimesheetPayrollReadyStatus,
   syncAttendanceForTimesheet,
@@ -504,6 +505,19 @@ const employeeSummary = (employee: {
   location: employee.location || employee.workLocation || employee.officeLocation || '',
   status: employee.status,
 });
+
+const timesheetRecordEmployeeSummary = (record: TimesheetRecord) => ({
+  employeeId: record.employeeId,
+  employeeCode: record.employeeId,
+  fullName: record.employeeName,
+  jobTitle: record.mode,
+  department: record.department,
+  location: clean(record.location || record.site),
+  managerEmployeeCode: null,
+  managerName: clean(record.supervisor) || null,
+  status: record.status === 'Returned' ? 'Needs Review' : 'Active',
+});
+
 const resolveProjectManagerForSubmission = (lines: TimesheetLine[], projects: Project[]) => {
   const hoursByProject = new Map<string, number>();
   for (const line of lines) {
@@ -549,6 +563,7 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
   const projects = await readProjects();
   const nextProjectCode = await generateProjectCode();
   const biometricDevices = await readBiometricDevices();
+  const timesheetRecords = await readTimesheetRecords();
   const employees = (await readPayrollEmployees()).employees;
   const activeEmployees = employees.filter((employee) => !['Resigned', 'Terminated', 'Retired'].includes(employee.status));
   const supervisorIndex = buildSupervisorIndex(activeEmployees);
@@ -569,6 +584,7 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
   const targetWorkCenter = workCenterName?.trim();
   const targetLocation = locationName?.trim();
   const period = await readTimesheetPeriod(new Date(targetDate));
+  const recordSupervisors = Array.from(new Set(timesheetRecords.map((record) => record.supervisor).map(clean).filter(Boolean)));
   const employeesBySupervisor = new Map<string, typeof activeEmployees>();
   for (const employee of activeEmployees) {
     const keys = [canonicalSupervisorValue(employee.managerName, supervisorIndex)].map(clean).filter(Boolean);
@@ -594,7 +610,7 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
     })
     .filter((item) => item.employeeCount > 0)
     .sort((a, b) => a.label.localeCompare(b.label));
-  const targetSupervisor = canonicalSupervisorValue(requestedSupervisor || supervisorDirectory[0]?.value || access.actor, supervisorIndex);
+  const targetSupervisor = canonicalSupervisorValue(requestedSupervisor || supervisorDirectory[0]?.value || recordSupervisors[0] || access.actor, supervisorIndex);
   const selectedSupervisorProfile = findSupervisorEmployee(targetSupervisor, supervisorIndex) || activeEmployees.find((employee) => supervisorMatchesSelection(employee, targetSupervisor));
   const selectedSupervisorAllDirectReports = activeEmployees.filter((employee) => {
     const canonicalManager = canonicalSupervisorValue(employee.managerName, supervisorIndex);
@@ -604,7 +620,7 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
   const selectedSupervisorWorkCenterReports = targetWorkCenter
     ? selectedSupervisorDirectReports.filter((employee) => employeeMatchesWorkCenter(employee, targetWorkCenter))
     : [];
-  const selectedSupervisorEmployees = (selectedSupervisorWorkCenterReports.length ? selectedSupervisorWorkCenterReports : selectedSupervisorDirectReports)
+  const selectedSupervisorEmployeesFromDirectory = (selectedSupervisorWorkCenterReports.length ? selectedSupervisorWorkCenterReports : selectedSupervisorDirectReports)
     .map((employee) => ({
       employeeId: employee.employeeId,
       employeeCode: employee.employeeCode,
@@ -617,6 +633,16 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
       status: employee.status,
     }))
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
+  const selectedSupervisorEmployeesFromRecords = timesheetRecords
+    .filter((record) => {
+      if (!managerMatches({ managerName: record.supervisor }, targetSupervisor)) return false;
+      if (targetLocation && !employeeMatchesLocation({ location: record.location, workLocation: record.location, officeLocation: record.site, projectSite: record.site }, targetLocation)) return false;
+      if (targetWorkCenter && !employeeMatchesWorkCenter({ department: record.department, businessUnit: record.businessUnit, projectSite: record.site, workLocation: record.location, officeLocation: record.site, location: record.location }, targetWorkCenter)) return false;
+      return true;
+    })
+    .map(timesheetRecordEmployeeSummary)
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+  const selectedSupervisorEmployees = selectedSupervisorEmployeesFromDirectory.length ? selectedSupervisorEmployeesFromDirectory : selectedSupervisorEmployeesFromRecords;
   const attendanceWorkCenters = workCenters.map((workCenter) => ({
     location: workCenter.location || workCenter.name,
     site: workCenter.site || workCenter.location || workCenter.name,
@@ -653,12 +679,12 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
   const systemLocationNames = Array.from(
     new Set(
       [
+        ...timesheetRecords.flatMap((record) => [record.location, record.site]),
         ...activeEmployees.map(employeeLocation),
         ...locations.flatMap((location) => [location.name, location.site]),
       ].map(clean).filter(Boolean),
     ),
   ).sort((a, b) => a.localeCompare(b));
-
   const summary = {
     totalEmployees: lines.length,
     presentEmployees: lines.filter((l) => l.clockIn).length,
@@ -711,7 +737,7 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
       departments: departments.map((department) => department.name),
       projects: activeProjects.map(p => p.code),
       locations: systemLocationNames,
-      supervisors: Array.from(new Set([targetSupervisor, ...supervisorDirectory.map((item) => item.value)].map(clean).filter(Boolean))).sort((a, b) => {
+      supervisors: Array.from(new Set([targetSupervisor, ...supervisorDirectory.map((item) => item.value), ...recordSupervisors].map(clean).filter(Boolean))).sort((a, b) => {
         const aLabel = supervisorDirectory.find((item) => item.value === a)?.label || a;
         const bLabel = supervisorDirectory.find((item) => item.value === b)?.label || b;
         return aLabel.localeCompare(bLabel);
@@ -757,7 +783,7 @@ const requireEditableTimesheet = (header: TimesheetHeader) => {
     throw new Error('This timesheet has been acknowledged by HR and is payroll-ready. It cannot be edited.');
   }
   if (!isTimesheetEditableStatus(header.status)) {
-    throw new Error(`This timesheet is currently ${status.replace(/_/g, ' ')} and cannot be edited unless it is returned or rejected.`);
+    throw new Error(`This timesheet is currently ${status.replace(/_/g, ' ')} and cannot be edited unless it is still in supervisor review or has been returned/rejected.`);
   }
 };
 
@@ -893,10 +919,12 @@ export async function PATCH(request: Request) {
             comment: payload.reviewerNote?.trim() || `Submitted for supervisor review before release to ${projectManagerAssignment.projectManager} on ${projectManagerAssignment.projectCode} - ${projectManagerAssignment.projectName}.`,
           },
         ];
-      } else {
+      } else if (action === 'SAVE_DRAFT') {
         header.status = 'Draft';
         header.currentApprovalStage = null;
         header.currentApprover = null;
+      } else {
+        header.status = normalizeTimesheetStatus(header.status);
       }
 
       await writeTimesheetData({ headers, lines: [...otherLines, ...normalizedLines] });

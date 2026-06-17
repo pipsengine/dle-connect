@@ -981,20 +981,40 @@ export async function readTimesheetPeriod(date: Date = new Date()): Promise<Time
   const calculated = calculateTimesheetPeriod(date);
   const periods = await readTimesheetPeriods();
   const stored = periods.find((period) => period.id === calculated.id);
+  const now = new Date().toISOString();
+  const currentPeriodId = calculateTimesheetPeriod(new Date()).id;
+  const isCurrentPeriod = calculated.id === currentPeriodId;
 
   if (stored) {
-    return {
+    const normalized = {
       ...calculated,
       ...stored,
       startDate: calculated.startDate,
       endDate: calculated.endDate,
       name: calculated.name,
     };
+    if (isCurrentPeriod && stored.status === 'Closed' && (!stored.closedBy || stored.closedBy === 'System')) {
+      const reopened: TimesheetPeriod = {
+        ...normalized,
+        status: 'Open',
+        openedAt: stored.openedAt || now,
+        openedBy: stored.openedBy || 'System',
+        closedAt: null,
+        closedBy: null,
+        updatedAt: now,
+        updatedBy: 'System',
+      };
+      try {
+        await writeTimesheetPeriods(periods.map((period) => (period.id === reopened.id ? reopened : period)));
+      } catch {
+        // Read-only fallback: the page can still render when SQL is temporarily unavailable.
+      }
+      return reopened;
+    }
+    return normalized;
   }
 
-  const now = new Date().toISOString();
-  const currentPeriodId = calculateTimesheetPeriod(new Date()).id;
-  const shouldAutoOpen = calculated.id === currentPeriodId && !periods.some((period) => period.status === 'Open');
+  const shouldAutoOpen = isCurrentPeriod;
   const period: TimesheetPeriod = {
     ...calculated,
     status: shouldAutoOpen ? 'Open' : 'Closed',
@@ -1450,7 +1470,7 @@ SELECT [Id],[Code],[Name],[Location],[Site],[Status],[SourceSystem],[CreatedAt],
 FROM [hris].[TimesheetWorkCenters]
 WHERE [Status] = N'Active'
 ORDER BY [Name]`);
-    return result.recordset.map((row) => ({
+    const workCenters = result.recordset.map((row) => ({
       id: row.Id,
       code: row.Code,
       name: row.Name,
@@ -1461,61 +1481,69 @@ ORDER BY [Name]`);
       createdAt: toIso(row.CreatedAt),
       updatedAt: toIso(row.UpdatedAt),
     }));
+    if (workCenters.length) return workCenters;
   } catch {
-    const now = new Date().toISOString();
-    return officialTimesheetWorkCenters.map((name) => ({
-      id: workCenterId(name),
-      code: workCenterCode(name),
-      name,
-      location: name,
-      site: name,
-      status: 'Active',
-      sourceSystem: 'Local HRIS fallback',
-      createdAt: now,
-      updatedAt: now,
-    }));
   }
+  const now = new Date().toISOString();
+  return officialTimesheetWorkCenters.map((name) => ({
+    id: workCenterId(name),
+    code: workCenterCode(name),
+    name,
+    location: name,
+    site: name,
+    status: 'Active',
+    sourceSystem: 'Local HRIS fallback',
+    createdAt: now,
+    updatedAt: now,
+  }));
 }
 
 export async function readSystemTimesheetDepartments(): Promise<TimesheetDepartment[]> {
-  let pool: sql.ConnectionPool;
-  try {
-    pool = await db();
-  } catch {
+  const fallbackDepartments = async () => {
     const records = await readTimesheetRecords();
     return Array.from(new Set(records.map((record) => record.department).filter(Boolean)))
       .sort((a, b) => a.localeCompare(b))
       .map((name) => ({ id: `fallback-dept-${workCenterCode(name).toLowerCase()}`, code: workCenterCode(name), name, sourceSystem: 'Local HRIS fallback' }));
+  };
+  let pool: sql.ConnectionPool;
+  try {
+    pool = await db();
+  } catch {
+    return fallbackDepartments();
   }
   const table = await pool.request().query(`SELECT OBJECT_ID(N'[hris].[OrganizationDepartments]', N'U') AS [TableId]`);
-  if (!table.recordset[0]?.TableId) return [];
+  if (!table.recordset[0]?.TableId) return fallbackDepartments();
 
   const result = await pool.request().query(`
 SELECT [Id],[SourceCode],[Name],[SourceSystem],[LastSyncedAt]
 FROM [hris].[OrganizationDepartments]
 ORDER BY CASE WHEN [Name]=N'Unassigned Department' THEN 1 ELSE 0 END, [Name]`);
 
-  return result.recordset.map((row) => ({
+  const departments = result.recordset.map((row) => ({
     id: row.Id,
     code: row.SourceCode,
     name: row.Name,
     sourceSystem: row.SourceSystem || 'DLE Enterprise',
     updatedAt: toIso(row.LastSyncedAt),
   }));
+  return departments.length ? departments : fallbackDepartments();
 }
 
 export async function readSystemTimesheetLocations(): Promise<TimesheetLocation[]> {
-  let pool: sql.ConnectionPool;
-  try {
-    pool = await db();
-  } catch {
+  const fallbackLocations = async () => {
     const records = await readTimesheetRecords();
     return Array.from(new Set(records.map((record) => record.location).filter(Boolean)))
       .sort((a, b) => a.localeCompare(b))
       .map((name) => ({ id: `fallback-loc-${workCenterCode(name).toLowerCase()}`, code: workCenterCode(name), name, site: name, sourceSystem: 'Local HRIS fallback' }));
+  };
+  let pool: sql.ConnectionPool;
+  try {
+    pool = await db();
+  } catch {
+    return fallbackLocations();
   }
   const table = await pool.request().query(`SELECT OBJECT_ID(N'[hris].[OrganizationLocationsSites]', N'U') AS [TableId]`);
-  if (!table.recordset[0]?.TableId) return [];
+  if (!table.recordset[0]?.TableId) return fallbackLocations();
 
   const result = await pool.request().query(`
 SELECT [Id],[SourceCode],[Name],[Location],[SourceSystem],[LastSyncedAt]
@@ -1523,7 +1551,7 @@ FROM [hris].[OrganizationLocationsSites]
 WHERE [RecordType]=N'Site'
 ORDER BY CASE WHEN [Name]=N'Unassigned Location' THEN 1 ELSE 0 END, [Name]`);
 
-  return result.recordset.map((row) => ({
+  const locations = result.recordset.map((row) => ({
     id: row.Id,
     code: row.SourceCode,
     name: row.Name,
@@ -1531,6 +1559,7 @@ ORDER BY CASE WHEN [Name]=N'Unassigned Location' THEN 1 ELSE 0 END, [Name]`);
     sourceSystem: row.SourceSystem || 'DLE Enterprise',
     updatedAt: toIso(row.LastSyncedAt),
   }));
+  return locations.length ? locations : fallbackLocations();
 }
 
 export async function upsertTimesheetWorkCenter(input: Partial<TimesheetWorkCenter> & { name: string }): Promise<TimesheetWorkCenter> {
@@ -1644,7 +1673,7 @@ export const normalizeTimesheetStatus = (status: TimesheetStatus): TimesheetStat
 };
 
 export const isTimesheetEditableStatus = (status: TimesheetStatus) =>
-  ['Draft', 'Returned', 'Rejected'].includes(normalizeTimesheetStatus(status));
+  ['Draft', 'Submitted', 'Returned', 'Rejected'].includes(normalizeTimesheetStatus(status));
 
 export const isTimesheetPayrollReadyStatus = (status: TimesheetStatus) =>
   ['HR_Acknowledged', 'Locked'].includes(normalizeTimesheetStatus(status));

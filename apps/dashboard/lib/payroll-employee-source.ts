@@ -248,6 +248,8 @@ const readCachedPayrollEmployees = async () => {
     employee.workLocation = employee.location;
     employee.officeLocation = employee.location;
     employee.jobTitle = str(row.mode) || employee.jobTitle;
+    employee.managerName = str(row.supervisor) || employee.managerName;
+    employee.hasManagerAssigned = Boolean(employee.managerName);
     employee.payrollGroup = str(row.mode).toLowerCase().includes('daily') ? 'Daily Rate' : 'Monthly Payroll';
     employee.employmentType = str(row.employeeId).startsWith('C') ? 'Contract' : 'Permanent';
     employee.salaryGrade = 'Cache';
