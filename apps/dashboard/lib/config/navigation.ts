@@ -212,7 +212,12 @@ export const navigationConfig: NavItem[] = [
     icon: UserCog,
     group: 'administration',
     route: '/administration',
-    permissionKey: 'view_administration'
+    permissionKey: 'view_administration',
+    subItems: [
+      { title: 'Access Control Centre', slug: 'access-control', route: '/administration/access-control', permissionKey: 'admin.roles.view' },
+      { title: 'User Management', slug: 'user-management', route: '/hris/administration/user-management', permissionKey: 'admin.users.view' },
+      { title: 'Audit Trail', slug: 'audit-trail', route: '/hris/administration/audit-trail', permissionKey: 'audit.view' },
+    ]
   },
   {
     id: 'system-settings',

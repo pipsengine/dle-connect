@@ -15,6 +15,8 @@ import { navigationConfig, NavItem } from '@/lib/config/navigation';
 
 const requiredPermission = (route?: string) => {
   if (!route || route === '/') return 'enterprise.view';
+  if (route === '/administration') return 'admin.roles.view';
+  if (route.startsWith('/administration/access-control')) return 'admin.roles.view';
   if (route.startsWith('/hris/administration/user-management')) return 'admin.users.view';
   if (route.startsWith('/hris/administration/roles-and-permissions')) return 'admin.roles.view';
   if (route.startsWith('/hris/administration/audit-trail')) return 'audit.view';

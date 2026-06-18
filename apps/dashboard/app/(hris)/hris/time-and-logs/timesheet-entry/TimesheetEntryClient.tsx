@@ -230,6 +230,7 @@ type Payload = {
     departments: string[];
     projects: string[];
     locations: string[];
+    projectSites: string[];
     supervisors: string[];
     shifts: string[];
     businessUnits: string[];
@@ -830,7 +831,7 @@ export default function TimesheetEntryClient() {
   const workCenterOptions = workCenterNamesForLocation(workCenters, selectedLocation);
   const locationOptions = Array.from(new Set((payload?.filterOptions.locations ?? []).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   const siteLocationOptions = Array.from(
-    new Set((payload?.locations.map((location) => location.name) ?? []).filter((location) => location && location !== 'Unassigned Location')),
+    new Set((payload?.filterOptions.projectSites ?? []).filter((location) => location && location !== 'Unassigned Location')),
   ).sort((a, b) => a.localeCompare(b));
   const projectManagerOptions = payload?.projectManagers ?? [];
   const projectManagerIsSelected = projectManagerOptions.some((employee) => `${employee.employeeCode} - ${employee.fullName}`.toLowerCase() === newProjectManager.trim().toLowerCase());

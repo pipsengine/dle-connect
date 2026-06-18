@@ -1,5 +1,5 @@
-import RolesPermissionsClient from '../RolesPermissionsClient';
+import { redirect } from 'next/navigation';
 
 export default function RolesPermissionsSectionPage() {
-  return <RolesPermissionsClient />;
+  redirect('/administration/access-control');
 }

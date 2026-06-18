@@ -706,10 +706,13 @@ const officialTimesheetWorkCenters = [
   'Security',
 ];
 
+const defaultProjectSites = ['Abuja', 'Bonny', 'Lagos HQ', 'Port Harcourt', 'Warri'];
+
 const workCenterCode = (name: string) =>
   name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80);
 
 const workCenterId = (name: string) => `wc-${workCenterCode(name).toLowerCase()}`;
+const locationId = (name: string) => `loc-${workCenterCode(name).toLowerCase()}`;
 
 const toIso = (value: unknown) => {
   if (!value) return null;
@@ -1175,6 +1178,67 @@ WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[Site],[ProjectManager],[Status
   }
 }
 
+export async function upsertProject(project: Project): Promise<Project> {
+  const pool = await db();
+  const id = project.id || `prj-${Date.now()}`;
+  const code = project.code.trim().toUpperCase();
+  const name = project.name.trim();
+  const site = project.site.trim();
+  const status = project.status || 'Active';
+  if (!code) throw new Error('Project code is required.');
+  if (!name) throw new Error('Project name is required.');
+  if (!site) throw new Error('Project site location is required.');
+
+  const duplicate = await pool.request()
+    .input('Id', sql.NVarChar(80), id)
+    .input('Code', sql.NVarChar(50), code)
+    .query(`SELECT TOP (1) [Id] FROM [hris].[TimesheetProjects] WHERE [Code]=@Code AND [Id]<>@Id`);
+  if (duplicate.recordset.length) throw new Error(`Project code ${code} already exists.`);
+
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    await new sql.Request(tx)
+      .input('Id', sql.NVarChar(80), id)
+      .input('Code', sql.NVarChar(50), code)
+      .input('Name', sql.NVarChar(255), name)
+      .input('Site', sql.NVarChar(160), site)
+      .input('ProjectManager', sql.NVarChar(220), project.projectManager?.trim() || null)
+      .input('Status', sql.NVarChar(40), status)
+      .query(`
+MERGE [hris].[TimesheetProjects] AS target
+USING (SELECT @Id AS [Id]) AS source ON target.[Id] = source.[Id]
+WHEN MATCHED THEN UPDATE SET [Code]=@Code,[Name]=@Name,[Site]=@Site,[ProjectManager]=@ProjectManager,[Status]=@Status,[UpdatedAt]=SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[Site],[ProjectManager],[Status]) VALUES (@Id,@Code,@Name,@Site,@ProjectManager,@Status);`);
+
+    await new sql.Request(tx).input('ProjectId', sql.NVarChar(80), id).query(`DELETE FROM [hris].[TimesheetProjectTasks] WHERE [ProjectId]=@ProjectId`);
+    for (const task of project.tasks?.length ? project.tasks : [{ id: `task-${id}`, name: 'General Project Work' }]) {
+      await new sql.Request(tx)
+        .input('Id', sql.NVarChar(80), task.id || `task-${Date.now()}`)
+        .input('ProjectId', sql.NVarChar(80), id)
+        .input('Name', sql.NVarChar(255), task.name || 'General Project Work')
+        .input('ActivityId', sql.NVarChar(80), task.activityId ?? null)
+        .input('ActivityName', sql.NVarChar(255), task.activityName ?? null)
+        .query(`INSERT INTO [hris].[TimesheetProjectTasks] ([Id],[ProjectId],[Name],[ActivityId],[ActivityName]) VALUES (@Id,@ProjectId,@Name,@ActivityId,@ActivityName)`);
+    }
+
+    await tx.commit();
+  } catch (error) {
+    await tx.rollback();
+    throw error;
+  }
+
+  return {
+    ...project,
+    id,
+    code,
+    name,
+    site,
+    status,
+    tasks: project.tasks?.length ? project.tasks : [{ id: `task-${id}`, name: 'General Project Work' }],
+  };
+}
+
 export async function generateProjectCode(): Promise<string> {
   const projects = await readProjects();
   const year = new Date().getFullYear().toString().slice(-2);
@@ -1543,7 +1607,11 @@ export async function readSystemTimesheetLocations(): Promise<TimesheetLocation[
     return fallbackLocations();
   }
   const table = await pool.request().query(`SELECT OBJECT_ID(N'[hris].[OrganizationLocationsSites]', N'U') AS [TableId]`);
-  if (!table.recordset[0]?.TableId) return fallbackLocations();
+  if (!table.recordset[0]?.TableId) {
+    await ensureDefaultTimesheetLocations(pool);
+    const stored = await readStoredTimesheetLocations(pool);
+    return stored.length ? stored : fallbackLocations();
+  }
 
   const result = await pool.request().query(`
 SELECT [Id],[SourceCode],[Name],[Location],[SourceSystem],[LastSyncedAt]
@@ -1559,7 +1627,39 @@ ORDER BY CASE WHEN [Name]=N'Unassigned Location' THEN 1 ELSE 0 END, [Name]`);
     sourceSystem: row.SourceSystem || 'DLE Enterprise',
     updatedAt: toIso(row.LastSyncedAt),
   }));
-  return locations.length ? locations : fallbackLocations();
+  if (locations.length) return locations;
+  await ensureDefaultTimesheetLocations(pool);
+  const stored = await readStoredTimesheetLocations(pool);
+  return stored.length ? stored : fallbackLocations();
+}
+
+async function ensureDefaultTimesheetLocations(pool: sql.ConnectionPool) {
+  const count = await pool.request().query(`SELECT COUNT(*) AS [Count] FROM [hris].[TimesheetLocations]`);
+  if (Number(count.recordset[0]?.Count || 0) > 0) return;
+  for (const name of defaultProjectSites) {
+    await pool.request()
+      .input('Id', sql.NVarChar(100), locationId(name))
+      .input('Code', sql.NVarChar(80), workCenterCode(name))
+      .input('Name', sql.NVarChar(180), name)
+      .input('Site', sql.NVarChar(180), name)
+      .query(`
+MERGE [hris].[TimesheetLocations] AS target
+USING (SELECT @Id AS [Id]) AS source ON target.[Id]=source.[Id]
+WHEN MATCHED THEN UPDATE SET [Code]=@Code,[Name]=@Name,[Site]=@Site,[SourceSystem]=N'DLE Enterprise',[UpdatedAt]=SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[Site],[SourceSystem]) VALUES (@Id,@Code,@Name,@Site,N'DLE Enterprise');`);
+  }
+}
+
+async function readStoredTimesheetLocations(pool: sql.ConnectionPool): Promise<TimesheetLocation[]> {
+  const result = await pool.request().query(`SELECT [Id],[Code],[Name],[Site],[SourceSystem],[UpdatedAt] FROM [hris].[TimesheetLocations] ORDER BY [Name]`);
+  return result.recordset.map((row) => ({
+    id: row.Id,
+    code: row.Code,
+    name: row.Name,
+    site: row.Site || row.Name,
+    sourceSystem: row.SourceSystem || 'DLE Enterprise',
+    updatedAt: toIso(row.UpdatedAt),
+  }));
 }
 
 export async function upsertTimesheetWorkCenter(input: Partial<TimesheetWorkCenter> & { name: string }): Promise<TimesheetWorkCenter> {

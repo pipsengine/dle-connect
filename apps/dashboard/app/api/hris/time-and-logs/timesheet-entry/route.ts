@@ -23,7 +23,7 @@ import {
   normalizeTimesheetStatus,
   upsertTimesheetWorkCenter,
   deactivateTimesheetWorkCenter,
-  writeProjects,
+  upsertProject,
   writeTimesheetData,
   workflowStages,
   type TimesheetHeader,
@@ -122,6 +122,7 @@ type TimesheetPayload = {
     departments: string[];
     projects: string[];
     locations: string[];
+    projectSites: string[];
     supervisors: string[];
     shifts: string[];
     businessUnits: string[];
@@ -676,6 +677,14 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
   }
 
   const activeProjects = projects.filter(p => ['Active', 'Approved', 'Open'].includes(p.status));
+  const projectSiteOptions = Array.from(
+    new Set(
+      [
+        ...locations.flatMap((location) => [location.site, location.name]),
+        ...activeProjects.map((project) => project.site),
+      ].map(clean).filter((site) => site && site !== 'Unassigned Location'),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
   const systemLocationNames = Array.from(
     new Set(
       [
@@ -737,6 +746,7 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
       departments: departments.map((department) => department.name),
       projects: activeProjects.map(p => p.code),
       locations: systemLocationNames,
+      projectSites: projectSiteOptions,
       supervisors: Array.from(new Set([targetSupervisor, ...supervisorDirectory.map((item) => item.value), ...recordSupervisors].map(clean).filter(Boolean))).sort((a, b) => {
         const aLabel = supervisorDirectory.find((item) => item.value === a)?.label || a;
         const bLabel = supervisorDirectory.find((item) => item.value === b)?.label || b;
@@ -804,21 +814,20 @@ export async function PATCH(request: Request) {
   try {
     if (action === 'CREATE_PROJECT') {
       if (!payload.project) return err(400, 'Project details are required.');
-      const projectCode = payload.project.code?.trim();
+      const projectCode = payload.project.code?.trim().toUpperCase();
       if (!projectCode) return err(400, 'Project code is required.');
+      if (!payload.project.name?.trim()) return err(400, 'Project name is required.');
+      if (!payload.project.site?.trim()) return err(400, 'Site location is required.');
       if (!payload.project.projectManager?.trim()) return err(400, 'Project Manager is required.');
-      const projects = await readProjects();
-      if (projects.some((project) => project.code.toLowerCase() === projectCode.toLowerCase())) {
-        return err(409, `Project code ${projectCode} already exists.`);
-      }
-      const newProject: Project = {
+      await upsertProject({
         ...payload.project,
         code: projectCode,
+        name: payload.project.name.trim(),
+        site: payload.project.site.trim(),
         projectManager: payload.project.projectManager.trim(),
         id: `prj-${Date.now()}`,
-      };
-      projects.push(newProject);
-      await writeProjects(projects);
+        tasks: payload.project.tasks?.length ? payload.project.tasks : [{ id: `task-prj-${Date.now()}`, name: 'General Project Work' }],
+      });
       return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName));
     }
 

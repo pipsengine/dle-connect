@@ -1,6 +1,8 @@
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import crypto from 'node:crypto';
 import path from 'node:path';
+import sql from 'mssql';
+import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { enterpriseRoles, permissionsForRoles, roleDefinitions } from '@/lib/auth/rbac';
 import type { SessionPayload } from '@/lib/auth/session';
 
@@ -71,6 +73,7 @@ const resolveDashboardRoot = () => {
 
 const DATA_DIR = path.join(resolveDashboardRoot(), 'data', 'auth');
 const ACCESS_PATH = path.join(DATA_DIR, 'access-control.json');
+const ACCESS_STATE_KEY = 'global-access-control-centre';
 
 const nowIso = () => new Date().toISOString();
 const compact = (value: unknown) => String(value || '').trim();
@@ -151,18 +154,9 @@ const defaultTemplates = (): PermissionTemplate[] => [
 
 const defaultState = (): AccessControlState => ({ published: [], drafts: [], templates: defaultTemplates(), audit: [] });
 
-const ensure = async () => {
-  await mkdir(DATA_DIR, { recursive: true });
+const readLegacyState = async () => {
   try {
     await access(ACCESS_PATH);
-  } catch {
-    await writeFile(ACCESS_PATH, JSON.stringify(defaultState(), null, 2), 'utf8');
-  }
-};
-
-const readState = async () => {
-  await ensure();
-  try {
     const parsed = JSON.parse(await readFile(ACCESS_PATH, 'utf8')) as AccessControlState;
     return { ...defaultState(), ...parsed, templates: parsed.templates?.length ? parsed.templates : defaultTemplates() };
   } catch {
@@ -170,9 +164,73 @@ const readState = async () => {
   }
 };
 
+const db = async () => {
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) throw new Error('DLE Enterprise database is not configured. Access Control Centre data must be stored in the database.');
+  await pool.request().query(`
+IF SCHEMA_ID(N'security') IS NULL EXEC(N'CREATE SCHEMA [security]');
+IF OBJECT_ID(N'[security].[AccessControlState]', N'U') IS NULL
+CREATE TABLE [security].[AccessControlState] (
+  [StateKey] NVARCHAR(120) NOT NULL CONSTRAINT [PK_AccessControlState] PRIMARY KEY,
+  [StateJson] NVARCHAR(MAX) NOT NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_AccessControlState_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_AccessControlState_UpdatedAt] DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT [CK_AccessControlState_StateJson] CHECK (ISJSON([StateJson]) = 1)
+);
+IF OBJECT_ID(N'[security].[AccessControlAudit]', N'U') IS NULL
+CREATE TABLE [security].[AccessControlAudit] (
+  [Id] NVARCHAR(80) NOT NULL CONSTRAINT [PK_AccessControlAudit] PRIMARY KEY,
+  [ModifiedBy] NVARCHAR(150) NOT NULL,
+  [ModifiedAt] DATETIME2(0) NOT NULL,
+  [RoleOrUserAffected] NVARCHAR(260) NOT NULL,
+  [PermissionChanged] NVARCHAR(MAX) NOT NULL,
+  [OldValue] NVARCHAR(MAX) NOT NULL,
+  [NewValue] NVARCHAR(MAX) NOT NULL,
+  [Reason] NVARCHAR(600) NOT NULL,
+  [IpAddress] NVARCHAR(100) NOT NULL,
+  [Device] NVARCHAR(600) NOT NULL
+);`);
+  const existing = await pool.request()
+    .input('StateKey', sql.NVarChar(120), ACCESS_STATE_KEY)
+    .query(`SELECT [StateKey] FROM [security].[AccessControlState] WHERE [StateKey]=@StateKey`);
+  if (!existing.recordset.length) {
+    const legacy = await readLegacyState();
+    await pool.request()
+      .input('StateKey', sql.NVarChar(120), ACCESS_STATE_KEY)
+      .input('StateJson', sql.NVarChar(sql.MAX), JSON.stringify(legacy))
+      .query(`INSERT [security].[AccessControlState] ([StateKey],[StateJson]) VALUES (@StateKey,@StateJson)`);
+  }
+  return pool;
+};
+
+const normalizeState = (state: AccessControlState): AccessControlState => ({
+  ...defaultState(),
+  ...state,
+  templates: state.templates?.length ? state.templates : defaultTemplates(),
+  published: Array.isArray(state.published) ? state.published : [],
+  drafts: Array.isArray(state.drafts) ? state.drafts : [],
+  audit: Array.isArray(state.audit) ? state.audit : [],
+});
+
+const readState = async () => {
+  const pool = await db();
+  const result = await pool.request()
+    .input('StateKey', sql.NVarChar(120), ACCESS_STATE_KEY)
+    .query(`SELECT [StateJson] FROM [security].[AccessControlState] WHERE [StateKey]=@StateKey`);
+  const state = result.recordset[0]?.StateJson ? JSON.parse(result.recordset[0].StateJson) as AccessControlState : defaultState();
+  return normalizeState(state);
+};
+
 const writeState = async (state: AccessControlState) => {
-  await ensure();
-  await writeFile(ACCESS_PATH, JSON.stringify(state, null, 2), 'utf8');
+  const pool = await db();
+  await pool.request()
+    .input('StateKey', sql.NVarChar(120), ACCESS_STATE_KEY)
+    .input('StateJson', sql.NVarChar(sql.MAX), JSON.stringify(normalizeState(state)))
+    .query(`
+MERGE [security].[AccessControlState] AS target
+USING (SELECT @StateKey AS [StateKey]) AS source ON target.[StateKey]=source.[StateKey]
+WHEN MATCHED THEN UPDATE SET [StateJson]=@StateJson,[UpdatedAt]=SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([StateKey],[StateJson]) VALUES (@StateKey,@StateJson);`);
 };
 
 const isProtectedPermission = (permission: string) => permission === '*' || ['admin.roles', 'admin.users', 'audit', 'security'].some((prefix) => permission === `${prefix}.*` || permission.startsWith(`${prefix}.`));
@@ -257,7 +315,7 @@ export const saveAccessAssignment = async (
   state[targetList].unshift(assignment);
 
   const { ip, device } = client(headers);
-  state.audit.unshift({
+  const auditRecord: AccessAuditRecord = {
     id: id('acl'),
     modifiedBy: actor.username,
     modifiedAt: nowIso(),
@@ -268,10 +326,34 @@ export const saveAccessAssignment = async (
     reason: assignment.reason || (status === 'draft' ? 'Saved as draft' : 'Published permission change'),
     ipAddress: ip,
     device,
-  });
+  };
+  state.audit.unshift(auditRecord);
   state.audit = state.audit.slice(0, 1000);
   await writeState(state);
+  await appendAccessAuditRecord(auditRecord);
   return { assignment, warnings: buildPermissionWarnings(requested, subjectId), risky };
+};
+
+const appendAccessAuditRecord = async (record: AccessAuditRecord) => {
+  const pool = await db();
+  await pool.request()
+    .input('Id', sql.NVarChar(80), record.id)
+    .input('ModifiedBy', sql.NVarChar(150), record.modifiedBy)
+    .input('ModifiedAt', sql.DateTime2, new Date(record.modifiedAt))
+    .input('RoleOrUserAffected', sql.NVarChar(260), record.roleOrUserAffected)
+    .input('PermissionChanged', sql.NVarChar(sql.MAX), record.permissionChanged)
+    .input('OldValue', sql.NVarChar(sql.MAX), record.oldValue)
+    .input('NewValue', sql.NVarChar(sql.MAX), record.newValue)
+    .input('Reason', sql.NVarChar(600), record.reason)
+    .input('IpAddress', sql.NVarChar(100), record.ipAddress)
+    .input('Device', sql.NVarChar(600), record.device)
+    .query(`
+IF NOT EXISTS (SELECT 1 FROM [security].[AccessControlAudit] WHERE [Id]=@Id)
+INSERT [security].[AccessControlAudit] (
+  [Id],[ModifiedBy],[ModifiedAt],[RoleOrUserAffected],[PermissionChanged],[OldValue],[NewValue],[Reason],[IpAddress],[Device]
+) VALUES (
+  @Id,@ModifiedBy,@ModifiedAt,@RoleOrUserAffected,@PermissionChanged,@OldValue,@NewValue,@Reason,@IpAddress,@Device
+);`);
 };
 
 export const cloneRolePermissions = async (sourceRole: string, targetRole: string, headers: Headers, actor: SessionPayload, reason = '') => {

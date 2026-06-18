@@ -4,7 +4,7 @@ import { AUTH_COOKIE, hasPermission, isPublicPath, verifySessionToken } from '@/
 const requiredPermission = (pathname: string) => {
   if (pathname.startsWith('/api/current-user') || pathname.startsWith('/api/auth/me') || pathname.startsWith('/api/notifications')) return '';
   if (pathname.startsWith('/api/admin/users') || pathname.startsWith('/hris/administration/user-management')) return 'admin.users.view';
-  if (pathname.startsWith('/api/admin/roles') || pathname.startsWith('/api/admin/access-control') || pathname.startsWith('/hris/administration/roles-and-permissions')) return 'admin.roles.view';
+  if (pathname.startsWith('/api/admin/roles') || pathname.startsWith('/api/admin/access-control') || pathname.startsWith('/administration/access-control') || pathname.startsWith('/hris/administration/roles-and-permissions')) return 'admin.roles.view';
   if (pathname.startsWith('/api/admin/audit') || pathname.startsWith('/hris/administration/audit-trail')) return 'audit.view';
   if (pathname.startsWith('/api/hris/payroll') || pathname.startsWith('/hris/payroll')) return 'payroll.view';
   if (pathname.startsWith('/api/hris/employees') || pathname.startsWith('/hris/employees')) return 'employees.view';
