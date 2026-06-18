@@ -5,6 +5,7 @@ import {
   BadgeCheck,
   Banknote,
   BarChart4,
+  Box,
   Building2,
   Clock,
   FileKey,
@@ -32,12 +33,13 @@ export default function Home() {
     { title: 'Document Management', href: '/document-management', icon: Files, status: 'Ready', signal: 'Enterprise records and controlled documents' },
     { title: 'Reports & Analytics', href: '/reports-analytics', icon: BarChart4, status: 'Ready', signal: 'Cross-functional intelligence layer' },
     { title: 'Logistics & Fleet', href: '/logistics-fleet', icon: Clock, status: 'Ready', signal: 'Fleet usage and movement planning' },
+    { title: 'Operations Center', href: '/operations-center', icon: Box, status: 'Live', signal: 'Workforce execution, labor allocation and production tracking' },
     { title: 'IT & Support', href: '/it-support', icon: HelpCircle, status: 'Ready', signal: 'Service desk and platform support' },
   ];
 
   const enterpriseKpis = [
-    { label: 'Enterprise Modules', value: '12', detail: 'Core business capabilities tracked' },
-    { label: 'Live Module', value: 'Human Resources', detail: 'Connected to DLE enterprise workforce data' },
+    { label: 'Enterprise Modules', value: '13', detail: 'Core business capabilities tracked' },
+    { label: 'Live Modules', value: 'HR + Operations', detail: 'Connected to DLE workforce and execution data' },
     { label: 'Control Plane', value: 'Active', detail: 'Navigation, RBAC and audit-ready shell' },
     { label: 'Data Sources', value: 'Staged', detail: 'Operational modules ready for integration' },
   ];

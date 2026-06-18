@@ -17,6 +17,13 @@ const requiredPermission = (route?: string) => {
   if (!route || route === '/') return 'enterprise.view';
   if (route === '/administration') return 'admin.roles.view';
   if (route.startsWith('/administration/access-control')) return 'admin.roles.view';
+  if (route.startsWith('/administration/user-management')) return 'admin.users.view';
+  if (route.startsWith('/administration/audit-trail')) return 'audit.view';
+  if (route.startsWith('/administration/approval-workflow')) return 'workflow.configure';
+  if (route.startsWith('/administration/system-settings')) return 'security.configure';
+  if (route.startsWith('/administration/integrations')) return 'integration.view';
+  if (route.startsWith('/administration/ai-and-automation')) return 'it.view';
+  if (route.startsWith('/administration/compliance-and-governance')) return 'audit.view';
   if (route.startsWith('/hris/administration/user-management')) return 'admin.users.view';
   if (route.startsWith('/hris/administration/roles-and-permissions')) return 'admin.roles.view';
   if (route.startsWith('/hris/administration/audit-trail')) return 'audit.view';
@@ -24,7 +31,13 @@ const requiredPermission = (route?: string) => {
   if (route.startsWith('/hris/employees')) return 'employees.view';
   if (route.startsWith('/hris/leave-management')) return 'leave.view';
   if (route.startsWith('/hris')) return 'hris.view';
-  if (route.startsWith('/workforce-portal')) return 'ess.view';
+  if (route.startsWith('/workforce-portal')) return '';
+  if (route.startsWith('/operations-center/timesheets')) return 'operations.timesheets.submit';
+  if (route.startsWith('/operations-center/workforce-allocation')) return 'operations.allocation.view';
+  if (route.startsWith('/operations-center/resource-planning')) return 'operations.resource-planning.view';
+  if (route.startsWith('/operations-center/daily-activity-reports')) return 'operations.daily-reports.create';
+  if (route.startsWith('/operations-center/production-tracking')) return 'operations.production.view';
+  if (route.startsWith('/operations-center')) return 'operations.view';
   if (route.startsWith('/finance-accounting')) return 'finance.view';
   if (route.startsWith('/procurement')) return 'procurement.view';
   if (route.startsWith('/projects-engineering')) return 'project.view';
@@ -40,29 +53,68 @@ const canAccess = (permissions: string[], required: string) => {
   return permissions.includes(`${required.split('.')[0]}.*`);
 };
 
-export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => void }) {
+export function Sidebar({
+  isOpen,
+  toggle,
+  variant = 'desktop',
+  onNavigate,
+}: {
+  isOpen: boolean;
+  toggle: () => void;
+  variant?: 'desktop' | 'mobile';
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
-  const [permissions, setPermissions] = useState<string[]>(['*']);
+  const [permissions, setPermissions] = useState<string[]>([]);
+  const [sessionContext, setSessionContext] = useState<{ roles: string[]; department: string; unit: string; isGlobalAdmin: boolean }>({
+    roles: [],
+    department: '',
+    unit: '',
+    isGlobalAdmin: false,
+  });
 
   useEffect(() => {
     fetch('/api/auth/me', { cache: 'no-store' })
       .then((res) => res.ok ? res.json() : null)
       .then((json) => {
         if (json?.data?.permissions) setPermissions(json.data.permissions);
+        if (json?.data) {
+          setSessionContext({
+            roles: Array.isArray(json.data.roles) ? json.data.roles : [],
+            department: String(json.data.department || ''),
+            unit: String(json.data.unit || ''),
+            isGlobalAdmin: Boolean(json.data.isGlobalAdmin),
+          });
+        }
       })
       .catch(() => setPermissions([]));
   }, []);
 
   const visibleNavigation = useMemo(() => {
+    const hrText = `${sessionContext.department} ${sessionContext.unit} ${sessionContext.roles.join(' ')}`.toLowerCase();
+    const canUseHrManagement =
+      sessionContext.isGlobalAdmin ||
+      sessionContext.roles.includes('Super Administrator') ||
+      /\bhr\b/.test(hrText) ||
+      hrText.includes('human resources') ||
+      hrText.includes('human resource') ||
+      hrText.includes('human capital');
+
     return navigationConfig
       .map((item) => {
-        const subItems = item.subItems?.filter((sub) => canAccess(permissions, requiredPermission(sub.route)));
-        const canSeeItem = canAccess(permissions, requiredPermission(item.route)) || !!subItems?.length;
+        const subItems = item.subItems?.filter((sub) => {
+          if (sub.route === '/hris') return canUseHrManagement && canAccess(permissions, requiredPermission(sub.route));
+          if (sub.route === '/workforce-portal') return true;
+          return canAccess(permissions, requiredPermission(sub.route));
+        });
+        const canSeeItem = item.id === 'hris'
+          ? !!subItems?.length
+          : canAccess(permissions, requiredPermission(item.route)) || !!subItems?.length;
         return canSeeItem ? { ...item, subItems } : null;
       })
       .filter(Boolean) as NavItem[];
-  }, [permissions]);
+  }, [permissions, sessionContext]);
 
   const activeGroupId = useMemo(() => {
     const activeGroup = visibleNavigation.find((item) => {
@@ -136,6 +188,7 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
                 ) : (
                   <Link
                     href={item.route || '#'}
+                    onClick={onNavigate}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group whitespace-nowrap ${
                       pathname === item.route
                         ? 'bg-dle-blue/5 text-dle-blue font-medium' 
@@ -169,6 +222,7 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
                               <Link
                                 key={sub.slug}
                                 href={sub.route}
+                                onClick={onNavigate}
                                 className={`text-[13px] py-2 px-3 rounded-md transition-colors ${
                                   isSubActive 
                                     ? 'text-dle-blue font-semibold bg-dle-blue/5' 
@@ -199,8 +253,10 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
   return (
     <motion.aside 
       initial={false}
-      animate={{ width: isOpen ? 280 : 120 }}
-      className="bg-white border-r border-slate-100 flex flex-col relative z-20 shadow-sm shrink-0"
+      animate={{ width: variant === 'mobile' ? 280 : isOpen ? 280 : 80 }}
+      className={`bg-white border-r border-slate-100 flex flex-col shadow-sm shrink-0 ${
+        variant === 'mobile' ? 'absolute inset-y-0 left-0 z-10 max-w-[86vw]' : 'relative z-20 hidden lg:flex'
+      }`}
     >
       <div className="h-16 flex items-center justify-between px-4 border-b border-slate-100 whitespace-nowrap overflow-hidden">
         <Link href="/" className="flex items-center w-full px-3" aria-label="Go to home page">
@@ -213,8 +269,9 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
       <button 
         onClick={toggle}
         className="absolute -right-3 top-20 w-6 h-6 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-400 hover:text-dle-blue hover:border-dle-blue transition-colors shadow-sm z-30"
+        aria-label={variant === 'mobile' ? 'Close navigation' : 'Toggle navigation'}
       >
-        {isOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+        {isOpen || variant === 'mobile' ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
       </button>
 
       <div className="flex-1 py-6 px-4 flex flex-col overflow-y-auto overflow-x-hidden custom-scrollbar">

@@ -45,6 +45,9 @@ export const enterpriseRoles = [
   'Project Engineer',
   'Project Planner',
   'Project Cost Controller',
+  'Operations Manager',
+  'Operations Officer',
+  'Cost Control Officer',
   'Asset Administrator',
   'Maintenance Manager',
   'Maintenance Planner',
@@ -109,10 +112,10 @@ export const roleDefinitions: RoleDefinition[] = [
   role('Security Administrator', 'Global / System', ['security.*', 'admin.users.view', 'admin.users.edit', 'audit.view'], 'Identity, session, lockout, MFA, and access control operations.'),
   role('Audit Administrator', 'Global / System', ['audit.*', 'admin.roles.view', 'admin.users.view'], 'Security and compliance audit administration.'),
   role('Integration Administrator', 'Global / System', ['integration.*', 'admin.roles.view', 'audit.view'], 'ERP, AD, SSO, API, and service integration administration.'),
-  role('Executive User', 'General Enterprise', ['enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', 'hris.view'], 'Executive dashboard and reports access.'),
-  role('Department Head', 'General Enterprise', ['hris.view', 'employees.view', 'workflow.approve', 'reports.view'], 'Department-level visibility and approvals.'),
-  role('Manager', 'General Enterprise', ['hris.view', 'employees.view', 'workflow.approve', 'leave.approve', 'timesheet.approve'], 'Team management and approvals.'),
-  role('Supervisor', 'General Enterprise', ['hris.view', 'employees.view', 'timesheet.submit', 'timesheet.approve', 'attendance.view'], 'Supervisor timesheet and attendance review.'),
+  role('Executive User', 'General Enterprise', ['enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', 'hris.view', 'operations.view', 'operations.dashboard.view', 'operations.reports.view'], 'Executive dashboard and reports access.'),
+  role('Department Head', 'General Enterprise', ['hris.view', 'employees.view', 'workflow.approve', 'reports.view', 'operations.view', 'operations.allocation.view', 'operations.dashboard.view'], 'Department-level visibility and approvals.'),
+  role('Manager', 'General Enterprise', ['hris.view', 'employees.view', 'workflow.approve', 'leave.approve', 'timesheet.approve', 'operations.view', 'operations.timesheets.approve', 'operations.allocation.view'], 'Team management and approvals.'),
+  role('Supervisor', 'General Enterprise', ['hris.view', 'employees.view', 'timesheet.submit', 'timesheet.approve', 'attendance.view', 'operations.view', 'operations.timesheets.submit', 'operations.timesheets.approve', 'operations.daily-reports.create'], 'Supervisor timesheet and attendance review.'),
   role('Employee', 'General Enterprise', ['ess.view', 'profile.view', 'leave.submit', 'timesheet.submit', 'payroll.payslip.view'], 'Employee self-service access.'),
   role('Auditor', 'General Enterprise', ['audit.view', 'reports.view', 'reports.export'], 'Read-oriented compliance review.'),
   role('Read-Only User', 'General Enterprise', ['enterprise.view', 'hris.view', 'reports.view'], 'Read-only enterprise visibility.'),
@@ -142,10 +145,13 @@ export const roleDefinitions: RoleDefinition[] = [
   role('Vendor Manager', 'Procurement', ['vendor.view', 'vendor.create', 'vendor.edit', 'vendor.approve'], 'Vendor administration.'),
   role('Purchase Request Approver', 'Procurement', ['procurement.view', 'procurement.approve', 'procurement.reject'], 'Purchase request approvals.'),
   role('Project Administrator', 'Project', ['project.*'], 'Project module administration.'),
-  role('Project Manager', 'Project', ['project.view', 'project.create', 'project.edit', 'project.approve', 'timesheet.approve'], 'Project delivery and approvals.'),
-  role('Project Engineer', 'Project', ['project.view', 'project.edit', 'timesheet.submit'], 'Engineering project execution.'),
-  role('Project Planner', 'Project', ['project.view', 'planning.view', 'planning.create', 'planning.edit'], 'Project planning.'),
-  role('Project Cost Controller', 'Project', ['project.view', 'cost.view', 'cost.approve', 'timesheet.approve'], 'Project cost control.'),
+  role('Project Manager', 'Project', ['project.view', 'project.create', 'project.edit', 'project.approve', 'timesheet.approve', 'operations.view', 'operations.timesheets.approve', 'operations.production.view', 'operations.reports.view'], 'Project delivery and approvals.'),
+  role('Project Engineer', 'Project', ['project.view', 'project.edit', 'timesheet.submit', 'operations.view', 'operations.daily-reports.create', 'operations.production.view'], 'Engineering project execution.'),
+  role('Project Planner', 'Project', ['project.view', 'planning.view', 'planning.create', 'planning.edit', 'operations.view', 'operations.resource-planning.view', 'operations.resource-planning.edit'], 'Project planning.'),
+  role('Project Cost Controller', 'Project', ['project.view', 'cost.view', 'cost.approve', 'timesheet.approve', 'operations.view', 'operations.cost-control.view', 'operations.timesheets.approve', 'operations.reports.view'], 'Project cost control.'),
+  role('Operations Manager', 'Operations', ['operations.*', 'timesheet.approve', 'reports.view', 'reports.export'], 'Operations execution, workforce allocation, and production oversight.'),
+  role('Operations Officer', 'Operations', ['operations.view', 'operations.timesheets.submit', 'operations.allocation.view', 'operations.daily-reports.create', 'operations.production.view'], 'Daily operations execution and reporting.'),
+  role('Cost Control Officer', 'Operations', ['operations.view', 'operations.cost-control.view', 'operations.timesheets.approve', 'operations.reports.view', 'cost.view', 'cost.approve'], 'Operations cost control and labor allocation review.'),
   role('Asset Administrator', 'EAM / CMMS', ['asset.*'], 'Asset administration.'),
   role('Maintenance Manager', 'EAM / CMMS', ['maintenance.view', 'maintenance.approve', 'asset.view'], 'Maintenance management.'),
   role('Maintenance Planner', 'EAM / CMMS', ['maintenance.view', 'maintenance.create', 'maintenance.edit'], 'Maintenance planning.'),
@@ -171,7 +177,7 @@ export const roleDefinitions: RoleDefinition[] = [
   role('Logistics Officer', 'Logistics & Fleet', ['logistics.view', 'logistics.create', 'logistics.edit'], 'Logistics operations.'),
   role('Driver Supervisor', 'Logistics & Fleet', ['driver.view', 'driver.approve', 'fleet.view'], 'Driver supervision.'),
   role('Vehicle Custodian', 'Logistics & Fleet', ['fleet.view', 'fleet.submit'], 'Vehicle custody.'),
-  role('IT Administrator', 'IT Support', ['it.*', 'admin.users.view'], 'IT administration.'),
+  role('IT Administrator', 'IT Support', ['it.*', 'admin.users.view', 'admin.roles.view', 'audit.view', 'integration.view', 'security.configure', 'workflow.configure'], 'IT administration.'),
   role('IT Support Officer', 'IT Support', ['it.view', 'it.create', 'it.edit'], 'IT support operations.'),
   role('Service Desk Agent', 'IT Support', ['service-desk.view', 'service-desk.create', 'service-desk.edit'], 'Service desk operations.'),
   role('Infrastructure Officer', 'IT Support', ['infrastructure.view', 'infrastructure.edit'], 'Infrastructure support.'),
@@ -200,6 +206,7 @@ export const defaultRoleForEmployee = (jobTitle: string, department: string) => 
   if (text.includes('procurement') || text.includes('purchase')) return 'Procurement Officer';
   if (text.includes('hse') || text.includes('safety')) return 'HSE Officer';
   if (text.includes('quality') || text.includes('qc')) return 'Quality Inspector';
+  if (text.includes('information technology') || /\bit\b/.test(text) || text.includes('ict') || text.includes('technology') || text.includes('systems administrator') || text.includes('system administrator')) return 'IT Administrator';
   if (text.includes('manager') || text.includes('head')) return 'Manager';
   if (text.includes('supervisor')) return 'Supervisor';
   return 'Employee';

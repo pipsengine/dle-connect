@@ -1,10 +1,11 @@
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import crypto from 'node:crypto';
 import path from 'node:path';
+import sql from 'mssql';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
-import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import { getDleEnterpriseDbPool, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { defaultRoleForEmployee, enterpriseRoles, permissionsForRoles, roleDefinitions } from '@/lib/auth/rbac';
-import type { SessionUser } from '@/lib/auth/session';
+import type { SessionPayload, SessionUser } from '@/lib/auth/session';
 import { passwordPolicyErrors } from '@/lib/auth/session';
 import { effectivePermissionsForRoles, effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 
@@ -80,18 +81,22 @@ type GlobalAdminState = {
 };
 
 const resolveDashboardRoot = () => {
+  if (process.env.DLE_AUTH_DATA_DIR) return path.dirname(path.dirname(process.env.DLE_AUTH_DATA_DIR));
   const cwd = process.cwd();
   const dashboardSuffix = path.join('apps', 'dashboard');
   return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
 };
 
-const DATA_DIR = path.join(resolveDashboardRoot(), 'data', 'auth');
+const DATA_DIR = process.env.DLE_AUTH_DATA_DIR || path.join(resolveDashboardRoot(), 'data', 'auth');
 const USERS_PATH = path.join(DATA_DIR, 'users.json');
 const AUDIT_PATH = path.join(DATA_DIR, 'security-audit.json');
 const LOGIN_PATH = path.join(DATA_DIR, 'login-history.json');
 const GLOBAL_ADMIN_PATH = path.join(DATA_DIR, 'global-admin.json');
 const LOCKOUT_LIMIT = 5;
 const LOCKOUT_MINUTES = 30;
+const GLOBAL_ADMIN_KEY = 'Admin';
+
+let authDbReady: Promise<sql.ConnectionPool | null> | null = null;
 
 const nowIso = () => new Date().toISOString();
 const compact = (value: unknown) => String(value || '').trim();
@@ -118,9 +123,111 @@ const readJson = async <T,>(file: string, fallback: T): Promise<T> => {
   }
 };
 
+const authMirrorPath = (file: string) => {
+  const normalizedFile = path.normalize(file);
+  const deployedMarker = path.normalize(path.join('deployment', 'iis', 'site', 'apps', 'dashboard', 'data', 'auth'));
+  const markerIndex = normalizedFile.toLowerCase().lastIndexOf(deployedMarker.toLowerCase());
+  if (markerIndex === -1) return null;
+  const repoRoot = normalizedFile.slice(0, markerIndex);
+  const fileName = path.basename(normalizedFile);
+  return path.join(repoRoot, 'apps', 'dashboard', 'data', 'auth', fileName);
+};
+
 const writeJson = async (file: string, value: unknown) => {
   await ensure();
-  await writeFile(file, JSON.stringify(value, null, 2), 'utf8');
+  const content = JSON.stringify(value, null, 2);
+  await writeFile(file, content, 'utf8');
+  const mirror = authMirrorPath(file);
+  if (mirror && path.normalize(mirror) !== path.normalize(file)) {
+    try {
+      await mkdir(path.dirname(mirror), { recursive: true });
+      await writeFile(mirror, content, 'utf8');
+    } catch {
+      // The IIS runtime must remain writable even when the deployed repo mirror is read-only.
+    }
+  }
+};
+
+const ensureAuthDb = async () => {
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) return null;
+  await pool.request().query(`
+IF SCHEMA_ID(N'security') IS NULL EXEC(N'CREATE SCHEMA [security]');
+IF OBJECT_ID(N'[security].[AuthUsers]', N'U') IS NULL
+CREATE TABLE [security].[AuthUsers] (
+  [UserId] NVARCHAR(120) NOT NULL CONSTRAINT [PK_AuthUsers] PRIMARY KEY,
+  [Username] NVARCHAR(120) NOT NULL,
+  [EmployeeCode] NVARCHAR(120) NULL,
+  [EmployeeId] NVARCHAR(120) NULL,
+  [Email] NVARCHAR(320) NULL,
+  [UserJson] NVARCHAR(MAX) NOT NULL,
+  [Deleted] BIT NOT NULL CONSTRAINT [DF_AuthUsers_Deleted] DEFAULT 0,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_AuthUsers_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_AuthUsers_UpdatedAt] DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT [CK_AuthUsers_UserJson] CHECK (ISJSON([UserJson]) = 1)
+);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_AuthUsers_Username' AND object_id = OBJECT_ID(N'[security].[AuthUsers]'))
+CREATE INDEX [IX_AuthUsers_Username] ON [security].[AuthUsers]([Username]);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_AuthUsers_EmployeeCode' AND object_id = OBJECT_ID(N'[security].[AuthUsers]'))
+CREATE INDEX [IX_AuthUsers_EmployeeCode] ON [security].[AuthUsers]([EmployeeCode]);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_AuthUsers_EmployeeId' AND object_id = OBJECT_ID(N'[security].[AuthUsers]'))
+CREATE INDEX [IX_AuthUsers_EmployeeId] ON [security].[AuthUsers]([EmployeeId]);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_AuthUsers_Email' AND object_id = OBJECT_ID(N'[security].[AuthUsers]'))
+CREATE INDEX [IX_AuthUsers_Email] ON [security].[AuthUsers]([Email]);
+IF OBJECT_ID(N'[security].[AuthGlobalAdmin]', N'U') IS NULL
+CREATE TABLE [security].[AuthGlobalAdmin] (
+  [Username] NVARCHAR(120) NOT NULL CONSTRAINT [PK_AuthGlobalAdmin] PRIMARY KEY,
+  [StateJson] NVARCHAR(MAX) NOT NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_AuthGlobalAdmin_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_AuthGlobalAdmin_UpdatedAt] DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT [CK_AuthGlobalAdmin_StateJson] CHECK (ISJSON([StateJson]) = 1)
+);
+IF OBJECT_ID(N'[security].[AuthLoginHistory]', N'U') IS NULL
+CREATE TABLE [security].[AuthLoginHistory] (
+  [Id] NVARCHAR(80) NOT NULL CONSTRAINT [PK_AuthLoginHistory] PRIMARY KEY,
+  [UserId] NVARCHAR(120) NOT NULL,
+  [Username] NVARCHAR(150) NOT NULL,
+  [At] DATETIME2(0) NOT NULL,
+  [LogoutAt] DATETIME2(0) NULL,
+  [IpAddress] NVARCHAR(100) NOT NULL,
+  [Device] NVARCHAR(600) NOT NULL,
+  [Status] NVARCHAR(30) NOT NULL,
+  [Reason] NVARCHAR(600) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_AuthLoginHistory_CreatedAt] DEFAULT SYSUTCDATETIME()
+);
+IF OBJECT_ID(N'[security].[AuthSecurityAudit]', N'U') IS NULL
+CREATE TABLE [security].[AuthSecurityAudit] (
+  [Id] NVARCHAR(80) NOT NULL CONSTRAINT [PK_AuthSecurityAudit] PRIMARY KEY,
+  [User] NVARCHAR(150) NOT NULL,
+  [Action] NVARCHAR(150) NOT NULL,
+  [At] DATETIME2(0) NOT NULL,
+  [IpAddress] NVARCHAR(100) NOT NULL,
+  [Device] NVARCHAR(600) NOT NULL,
+  [OldValue] NVARCHAR(MAX) NULL,
+  [NewValue] NVARCHAR(MAX) NULL,
+  [PerformedBy] NVARCHAR(150) NOT NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_AuthSecurityAudit_CreatedAt] DEFAULT SYSUTCDATETIME()
+);`);
+  return pool;
+};
+
+const authDb = async () => {
+  if (!authDbReady) {
+    authDbReady = ensureAuthDb().catch((error) => {
+      authDbReady = null;
+      console.warn('[Auth] SQL persistence unavailable; falling back to local JSON:', error instanceof Error ? error.message : error);
+      return null;
+    });
+  }
+  return authDbReady;
+};
+
+const parseJson = <T,>(value: unknown, fallback: T): T => {
+  try {
+    return JSON.parse(String(value || '')) as T;
+  } catch {
+    return fallback;
+  }
 };
 
 export const hashPassword = (password: string, salt = crypto.randomBytes(16).toString('hex')) => ({
@@ -131,6 +238,56 @@ export const hashPassword = (password: string, salt = crypto.randomBytes(16).toS
 const verifyPassword = (password: string, hash: string, salt: string) => {
   const next = hashPassword(password, salt).hash;
   return crypto.timingSafeEqual(Buffer.from(next, 'hex'), Buffer.from(hash, 'hex'));
+};
+
+const upsertDbUser = async (pool: sql.ConnectionPool, user: UserAccount) => {
+  await pool.request()
+    .input('UserId', sql.NVarChar(120), user.id)
+    .input('Username', sql.NVarChar(120), user.username)
+    .input('EmployeeCode', sql.NVarChar(120), compact(user.employeeCode) || null)
+    .input('EmployeeId', sql.NVarChar(120), compact(user.employeeId) || null)
+    .input('Email', sql.NVarChar(320), compact(user.email) || null)
+    .input('UserJson', sql.NVarChar(sql.MAX), JSON.stringify(user))
+    .input('Deleted', sql.Bit, Boolean(user.deleted))
+    .query(`
+MERGE [security].[AuthUsers] AS target
+USING (SELECT @UserId AS [UserId]) AS source
+ON target.[UserId] = source.[UserId]
+WHEN MATCHED THEN UPDATE SET
+  [Username] = @Username,
+  [EmployeeCode] = @EmployeeCode,
+  [EmployeeId] = @EmployeeId,
+  [Email] = @Email,
+  [UserJson] = @UserJson,
+  [Deleted] = @Deleted,
+  [UpdatedAt] = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([UserId], [Username], [EmployeeCode], [EmployeeId], [Email], [UserJson], [Deleted])
+VALUES (@UserId, @Username, @EmployeeCode, @EmployeeId, @Email, @UserJson, @Deleted);`);
+};
+
+const seedDbUsersFromJsonIfEmpty = async (pool: sql.ConnectionPool) => {
+  const count = await pool.request().query(`SELECT COUNT_BIG(1) AS [count] FROM [security].[AuthUsers]`);
+  if (Number(count.recordset[0]?.count || 0) > 0) return;
+  const legacy = await readJson<UserAccount[]>(USERS_PATH, []);
+  for (const user of legacy) await upsertDbUser(pool, user);
+};
+
+const readUsersStoreRaw = async () => {
+  const pool = await authDb();
+  if (!pool) return readJson<UserAccount[]>(USERS_PATH, []);
+  await seedDbUsersFromJsonIfEmpty(pool);
+  const result = await pool.request().query(`SELECT [UserJson] FROM [security].[AuthUsers] WHERE [Deleted] = 0 ORDER BY [Username]`);
+  return result.recordset.map((row) => parseJson<UserAccount>(row.UserJson, null as unknown as UserAccount)).filter(Boolean);
+};
+
+const writeUsersStore = async (users: UserAccount[]) => {
+  const pool = await authDb();
+  if (!pool) {
+    await writeJson(USERS_PATH, users);
+    return;
+  }
+  for (const user of users) await upsertDbUser(pool, user);
+  await writeJson(USERS_PATH, users).catch(() => undefined);
 };
 
 const surnameOf = (employee: DleEmployeeDirectoryRow) => compact(employee.lastName || employee.fullName.split(/\s+/).slice(-1)[0] || employee.employeeCode);
@@ -199,35 +356,98 @@ const mergeEmployee = (user: UserAccount, employee: DleEmployeeDirectoryRow): Us
 };
 
 export const appendAudit = async (event: Omit<SecurityAudit, 'id' | 'at'>) => {
+  const record = { id: `sec-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`, at: nowIso(), ...event };
+  const pool = await authDb();
+  if (pool) {
+    await pool.request()
+      .input('Id', sql.NVarChar(80), record.id)
+      .input('User', sql.NVarChar(150), record.user)
+      .input('Action', sql.NVarChar(150), record.action)
+      .input('At', sql.DateTime2, new Date(record.at))
+      .input('IpAddress', sql.NVarChar(100), record.ipAddress)
+      .input('Device', sql.NVarChar(600), record.device)
+      .input('OldValue', sql.NVarChar(sql.MAX), record.oldValue || null)
+      .input('NewValue', sql.NVarChar(sql.MAX), record.newValue || null)
+      .input('PerformedBy', sql.NVarChar(150), record.performedBy)
+      .query(`INSERT [security].[AuthSecurityAudit] ([Id],[User],[Action],[At],[IpAddress],[Device],[OldValue],[NewValue],[PerformedBy])
+VALUES (@Id,@User,@Action,@At,@IpAddress,@Device,@OldValue,@NewValue,@PerformedBy)`);
+  }
   const audit = await readJson<SecurityAudit[]>(AUDIT_PATH, []);
-  audit.unshift({ id: `sec-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`, at: nowIso(), ...event });
+  audit.unshift(record);
   await writeJson(AUDIT_PATH, audit.slice(0, 1000));
 };
 
 const appendLogin = async (event: Omit<LoginHistory, 'id' | 'at'>) => {
+  const record = { id: `login-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`, at: nowIso(), ...event };
+  const pool = await authDb();
+  if (pool) {
+    await pool.request()
+      .input('Id', sql.NVarChar(80), record.id)
+      .input('UserId', sql.NVarChar(120), record.userId)
+      .input('Username', sql.NVarChar(150), record.username)
+      .input('At', sql.DateTime2, new Date(record.at))
+      .input('LogoutAt', sql.DateTime2, record.logoutAt ? new Date(record.logoutAt) : null)
+      .input('IpAddress', sql.NVarChar(100), record.ipAddress)
+      .input('Device', sql.NVarChar(600), record.device)
+      .input('Status', sql.NVarChar(30), record.status)
+      .input('Reason', sql.NVarChar(600), record.reason || null)
+      .query(`INSERT [security].[AuthLoginHistory] ([Id],[UserId],[Username],[At],[LogoutAt],[IpAddress],[Device],[Status],[Reason])
+VALUES (@Id,@UserId,@Username,@At,@LogoutAt,@IpAddress,@Device,@Status,@Reason)`);
+  }
   const history = await readJson<LoginHistory[]>(LOGIN_PATH, []);
-  history.unshift({ id: `login-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`, at: nowIso(), ...event });
+  history.unshift(record);
   await writeJson(LOGIN_PATH, history.slice(0, 1000));
 };
 
-export const readSecurityAudit = () => readJson<SecurityAudit[]>(AUDIT_PATH, []);
-export const readLoginHistory = () => readJson<LoginHistory[]>(LOGIN_PATH, []);
+export const readSecurityAudit = async () => {
+  const pool = await authDb();
+  if (!pool) return readJson<SecurityAudit[]>(AUDIT_PATH, []);
+  const result = await pool.request().query(`SELECT TOP (1000) [Id],[User],[Action],[At],[IpAddress],[Device],[OldValue],[NewValue],[PerformedBy] FROM [security].[AuthSecurityAudit] ORDER BY [At] DESC, [CreatedAt] DESC`);
+  return result.recordset.map((row) => ({
+    id: row.Id,
+    user: row.User,
+    action: row.Action,
+    at: row.At instanceof Date ? row.At.toISOString() : String(row.At),
+    ipAddress: row.IpAddress,
+    device: row.Device,
+    oldValue: row.OldValue,
+    newValue: row.NewValue,
+    performedBy: row.PerformedBy,
+  } satisfies SecurityAudit));
+};
+
+export const readLoginHistory = async () => {
+  const pool = await authDb();
+  if (!pool) return readJson<LoginHistory[]>(LOGIN_PATH, []);
+  const result = await pool.request().query(`SELECT TOP (1000) [Id],[UserId],[Username],[At],[LogoutAt],[IpAddress],[Device],[Status],[Reason] FROM [security].[AuthLoginHistory] ORDER BY [At] DESC, [CreatedAt] DESC`);
+  return result.recordset.map((row) => ({
+    id: row.Id,
+    userId: row.UserId,
+    username: row.Username,
+    at: row.At instanceof Date ? row.At.toISOString() : String(row.At),
+    logoutAt: row.LogoutAt instanceof Date ? row.LogoutAt.toISOString() : row.LogoutAt,
+    ipAddress: row.IpAddress,
+    device: row.Device,
+    status: row.Status,
+    reason: row.Reason,
+  } satisfies LoginHistory));
+};
 
 export const syncUsersFromEmployeeDirectory = async () => {
   const source = await readPayrollEmployees();
-  const stored = await readJson<UserAccount[]>(USERS_PATH, []);
+  const stored = await readUsersStoreRaw();
   const byCode = new Map(stored.map((user) => [lower(user.employeeCode || user.employeeId), user]));
   const next = source.employees.map((employee) => {
     const key = lower(employee.employeeCode || employee.employeeId);
     const existing = byCode.get(key);
     return existing ? mergeEmployee(existing, employee) : userFromEmployee(employee);
   });
-  await writeJson(USERS_PATH, next);
+  await writeUsersStore(next);
   return { users: next.filter((user) => !user.deleted), source };
 };
 
 export const readUsers = async () => {
-  const stored = await readJson<UserAccount[]>(USERS_PATH, []);
+  const stored = await readUsersStoreRaw();
   const activeUsers = stored.filter((user) => !user.deleted);
   return Promise.all(activeUsers.map(async (user) => ({ ...user, permissions: await effectivePermissionsForUser(user.id, user.roles) })));
 };
@@ -248,6 +468,16 @@ const globalAdminDefault = (): GlobalAdminState => {
 };
 
 const readGlobalAdmin = async () => {
+  const pool = await authDb();
+  if (pool) {
+    const result = await pool.request()
+      .input('Username', sql.NVarChar(120), GLOBAL_ADMIN_KEY)
+      .query(`SELECT [StateJson] FROM [security].[AuthGlobalAdmin] WHERE [Username] = @Username`);
+    if (result.recordset[0]?.StateJson) return parseJson<GlobalAdminState>(result.recordset[0].StateJson, globalAdminDefault());
+    const legacy = await readJson<GlobalAdminState>(GLOBAL_ADMIN_PATH, globalAdminDefault());
+    await writeGlobalAdmin(legacy);
+    return legacy;
+  }
   await ensure();
   try {
     await access(GLOBAL_ADMIN_PATH);
@@ -257,12 +487,35 @@ const readGlobalAdmin = async () => {
   return readJson<GlobalAdminState>(GLOBAL_ADMIN_PATH, globalAdminDefault());
 };
 
-const writeGlobalAdmin = (state: GlobalAdminState) => writeJson(GLOBAL_ADMIN_PATH, state);
+const writeGlobalAdmin = async (state: GlobalAdminState) => {
+  const pool = await authDb();
+  if (pool) {
+    await pool.request()
+      .input('Username', sql.NVarChar(120), GLOBAL_ADMIN_KEY)
+      .input('StateJson', sql.NVarChar(sql.MAX), JSON.stringify(state))
+      .query(`
+MERGE [security].[AuthGlobalAdmin] AS target
+USING (SELECT @Username AS [Username]) AS source
+ON target.[Username] = source.[Username]
+WHEN MATCHED THEN UPDATE SET [StateJson] = @StateJson, [UpdatedAt] = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([Username], [StateJson]) VALUES (@Username, @StateJson);`);
+  }
+  await writeJson(GLOBAL_ADMIN_PATH, state);
+};
 
 const client = (headers: Headers) => ({
   ip: compact(headers.get('x-forwarded-for')).split(',')[0] || compact(headers.get('x-real-ip')) || 'local',
   device: compact(headers.get('user-agent')) || 'Unknown device',
 });
+
+const findLoginUser = (users: UserAccount[], login: string) => {
+  const key = lower(login);
+  if (!key) return undefined;
+  return users.find((item) => lower(item.username) === key)
+    || users.find((item) => lower(item.employeeCode) === key)
+    || users.find((item) => lower(item.employeeId) === key)
+    || users.find((item) => lower(item.email) === key);
+};
 
 const publicUser = async (user: UserAccount): Promise<SessionUser> => ({
   userId: user.id,
@@ -271,6 +524,8 @@ const publicUser = async (user: UserAccount): Promise<SessionUser> => ({
   employeeCode: user.employeeCode,
   fullName: user.fullName,
   email: user.email,
+  department: user.department,
+  unit: user.unit,
   roles: user.roles,
   permissions: await effectivePermissionsForUser(user.id, user.roles),
   status: user.status,
@@ -282,6 +537,8 @@ const globalSessionUser = (state: GlobalAdminState): SessionUser => ({
   userId: 'global-admin',
   username: 'Admin',
   fullName: 'Global Super Administrator',
+  department: 'System Administration',
+  unit: 'Global Administration',
   roles: ['Super Administrator'],
   permissions: ['*'],
   status: 'Active',
@@ -317,11 +574,15 @@ export const authenticate = async (login: string, password: string, headers: Hea
     return globalSessionUser(state);
   }
 
-  let users = await readUsers();
-  let user = users.find((item) => [item.username, item.employeeCode, item.employeeId, item.email].map(lower).includes(lower(username)));
+  let users = await readUsersStoreRaw();
+  if (!username || !password) {
+    await appendLogin({ userId: 'unknown', username: username || '(blank)', ipAddress: ip, device, status: 'Failed', reason: 'Missing username or password' });
+    throw new Error('Invalid username or password.');
+  }
+  let user = findLoginUser(users, username);
   if (!user) {
     users = (await syncUsersFromEmployeeDirectory()).users;
-    user = users.find((item) => [item.username, item.employeeCode, item.employeeId, item.email].map(lower).includes(lower(username)));
+    user = findLoginUser(users, username);
   }
   if (!user || user.deleted) {
     await appendLogin({ userId: 'unknown', username, ipAddress: ip, device, status: 'Failed', reason: 'Unknown user' });
@@ -347,13 +608,13 @@ export const authenticate = async (login: string, password: string, headers: Hea
         updatedAt: nowIso(),
       };
     });
-    await writeJson(USERS_PATH, nextUsers);
+    await writeUsersStore(nextUsers);
     await appendLogin({ userId: user.id, username: user.username, ipAddress: ip, device, status: 'Failed', reason: 'Invalid password' });
     await appendAudit({ user: user.username, action: 'Failed login', ipAddress: ip, device, performedBy: 'System', newValue: `Failed attempts: ${user.failedAttempts + 1}` });
     throw new Error('Invalid username or password.');
   }
   const nextUsers = users.map((item) => item.id === user.id ? { ...item, failedAttempts: 0, lockedUntil: null, lastLoginAt: nowIso(), status: item.status === 'Pending First Login' ? item.status : 'Active' as UserStatus, updatedAt: nowIso() } : item);
-  await writeJson(USERS_PATH, nextUsers);
+  await writeUsersStore(nextUsers);
   const fresh = nextUsers.find((item) => item.id === user.id) || user;
   await appendLogin({ userId: user.id, username: user.username, ipAddress: ip, device, status: 'Success' });
   await appendAudit({ user: user.username, action: 'Login', ipAddress: ip, device, performedBy: user.username });
@@ -372,7 +633,7 @@ export const changePassword = async (userId: string, currentPassword: string | u
     await appendAudit({ user: 'Admin', action: 'Password change', ipAddress: ip, device, performedBy: performedBy || 'Admin' });
     return globalSessionUser(await readGlobalAdmin());
   }
-  const users = await readUsers();
+  const users = await readUsersStoreRaw();
   const target = users.find((item) => item.id === userId);
   if (!target) throw new Error('User account was not found.');
   if (currentPassword && !verifyPassword(currentPassword, target.passwordHash, target.passwordSalt)) throw new Error('Current password is not correct.');
@@ -388,13 +649,24 @@ export const changePassword = async (userId: string, currentPassword: string | u
     lockedUntil: null,
     updatedAt: nowIso(),
   } : item);
-  await writeJson(USERS_PATH, nextUsers);
+  await writeUsersStore(nextUsers);
   await appendAudit({ user: target.username, action: 'Password change', ipAddress: ip, device, performedBy: performedBy || target.username });
   return publicUser(nextUsers.find((item) => item.id === userId) || target);
 };
 
-export const updateUser = async (userId: string, action: string, payload: any, headers: Headers, performedBy = 'Admin') => {
-  const users = await readUsers();
+const canManageSuperAdministratorRole = (actor?: Pick<SessionPayload, 'sub' | 'username' | 'isGlobalAdmin'> | null) => {
+  return actor?.isGlobalAdmin === true || actor?.sub === 'global-admin' || lower(actor?.username) === 'admin';
+};
+
+export const updateUser = async (
+  userId: string,
+  action: string,
+  payload: any,
+  headers: Headers,
+  performedBy = 'Admin',
+  actor?: Pick<SessionPayload, 'sub' | 'username' | 'isGlobalAdmin'> | null,
+) => {
+  const users = await readUsersStoreRaw();
   const target = users.find((item) => item.id === userId);
   if (!target) throw new Error('User account was not found.');
   let updated: UserAccount = target;
@@ -410,6 +682,10 @@ export const updateUser = async (userId: string, action: string, payload: any, h
   }
   if (action === 'assign-roles') {
     const roles = Array.isArray(payload.roles) ? payload.roles.filter((item: string) => enterpriseRoles.includes(item as any)) : target.roles;
+    const touchesSuperAdministrator = roles.includes('Super Administrator') || target.roles.includes('Super Administrator');
+    if (touchesSuperAdministrator && !canManageSuperAdministratorRole(actor)) {
+      throw new Error('Only the protected default Global Super Administrator account can grant, remove, or modify the Super Administrator role.');
+    }
     updated = { ...target, roles, permissions: await effectivePermissionsForRoles(roles), updatedAt: nowIso() };
   }
   if (action === 'assign-access') {
@@ -421,7 +697,7 @@ export const updateUser = async (userId: string, action: string, payload: any, h
     };
   }
   const nextUsers = users.map((item) => item.id === userId ? updated : item);
-  await writeJson(USERS_PATH, nextUsers);
+  await writeUsersStore(nextUsers);
   const { ip, device } = client(headers);
   await appendAudit({ user: target.username, action: `User ${action}`, ipAddress: ip, device, oldValue, newValue: JSON.stringify({ status: updated.status, roles: updated.roles, departmentAccess: updated.departmentAccess, moduleAccess: updated.moduleAccess }), performedBy });
   return updated;

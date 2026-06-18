@@ -8,6 +8,8 @@ export type SessionUser = {
   employeeCode?: string;
   fullName: string;
   email?: string;
+  department?: string;
+  unit?: string;
   roles: string[];
   permissions: string[];
   status: string;
@@ -22,6 +24,8 @@ export type SessionPayload = {
   fullName: string;
   employeeId?: string;
   employeeCode?: string;
+  department?: string;
+  unit?: string;
   roles: string[];
   permissions: string[];
   status: string;
@@ -84,6 +88,8 @@ export const createSessionToken = async (user: SessionUser) => {
     fullName: user.fullName,
     employeeId: user.employeeId,
     employeeCode: user.employeeCode,
+    department: user.department,
+    unit: user.unit,
     roles: user.roles,
     permissions: user.permissions,
     status: user.status,

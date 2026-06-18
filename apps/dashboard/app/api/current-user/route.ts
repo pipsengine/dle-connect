@@ -77,14 +77,10 @@ const configuredEmployeeIdentities = (request: Request, context: CurrentUserCont
       `${prefix}_USER_EMAIL`,
       'CURRENT_USER_EMPLOYEE_CODE',
       'CURRENT_EMPLOYEE_ID',
-      'CURRENT_USER_EMAIL',
-      'ESS_EMPLOYEE_ID',
-      'DEFAULT_EMPLOYEE_ID'
+      'CURRENT_USER_EMAIL'
     ),
   ].filter(Boolean);
 };
-
-const demoEmployeeIdentity = () => envFirst('ESS_EMPLOYEE_ID', 'DEFAULT_EMPLOYEE_ID') || 'P0146';
 
 const profileHref = (context: CurrentUserContext, employee: DleEmployeeDirectoryRow | null) => {
   if (context === 'ess') return '/workforce-portal?tab=profile';
@@ -170,12 +166,8 @@ export async function GET(request: Request) {
     });
   }
 
-  const configuredIdentities = [
-    session?.employeeCode,
-    session?.employeeId,
-    session?.username,
-    ...configuredEmployeeIdentities(request, context),
-  ].filter(Boolean) as string[];
+  const sessionIdentities = [session?.employeeCode, session?.employeeId, session?.username].filter(Boolean) as string[];
+  const configuredIdentities = session ? sessionIdentities : configuredEmployeeIdentities(request, context);
   const configuredEmployee = findEmployee(employeeSource.employees, configuredIdentities);
   const employee = configuredEmployee;
   const linked = Boolean(employee);

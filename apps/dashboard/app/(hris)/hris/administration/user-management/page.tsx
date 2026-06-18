@@ -1,5 +1,5 @@
-import UserManagementClient from './UserManagementClient';
+import { redirect } from 'next/navigation';
 
 export default function UserManagementPage() {
-  return <UserManagementClient section="user-accounts" />;
+  redirect('/administration/user-management');
 }

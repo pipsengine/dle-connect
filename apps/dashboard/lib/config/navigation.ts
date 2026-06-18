@@ -13,7 +13,6 @@ import {
   BarChart4,
   UserCog,
   ShieldCheck,
-  Settings2,
   FileKey,
   Webhook,
   Bot,
@@ -168,7 +167,15 @@ export const navigationConfig: NavItem[] = [
     icon: Box,
     group: 'main',
     route: '/operations-center',
-    permissionKey: 'view_operations_center'
+    permissionKey: 'operations.view',
+    subItems: [
+      { title: 'Operations Dashboard', slug: 'operations-dashboard', route: '/operations-center', permissionKey: 'operations.dashboard.view' },
+      { title: 'Timesheets', slug: 'timesheets', route: '/operations-center/timesheets', permissionKey: 'operations.timesheets.submit' },
+      { title: 'Workforce Allocation', slug: 'workforce-allocation', route: '/operations-center/workforce-allocation', permissionKey: 'operations.allocation.view' },
+      { title: 'Resource Planning', slug: 'resource-planning', route: '/operations-center/resource-planning', permissionKey: 'operations.resource-planning.view' },
+      { title: 'Daily Activity Reports', slug: 'daily-activity-reports', route: '/operations-center/daily-activity-reports', permissionKey: 'operations.daily-reports.create' },
+      { title: 'Production Tracking', slug: 'production-tracking', route: '/operations-center/production-tracking', permissionKey: 'operations.production.view' },
+    ]
   },
   {
     id: 'document-management',
@@ -214,18 +221,14 @@ export const navigationConfig: NavItem[] = [
     route: '/administration',
     permissionKey: 'view_administration',
     subItems: [
-      { title: 'Access Control Centre', slug: 'access-control', route: '/administration/access-control', permissionKey: 'admin.roles.view' },
-      { title: 'User Management', slug: 'user-management', route: '/hris/administration/user-management', permissionKey: 'admin.users.view' },
-      { title: 'Audit Trail', slug: 'audit-trail', route: '/hris/administration/audit-trail', permissionKey: 'audit.view' },
+      { title: 'User Management', slug: 'user-management', route: '/administration/user-management', permissionKey: 'admin.users.view' },
+      { title: 'Roles & Permissions', slug: 'roles-and-permissions', route: '/administration/access-control', permissionKey: 'admin.roles.view' },
+      { title: 'Approval Workflow', slug: 'approval-workflow', route: '/administration/approval-workflow', permissionKey: 'workflow.configure' },
+      { title: 'System Settings', slug: 'system-settings', route: '/administration/system-settings', permissionKey: 'security.configure' },
+      { title: 'Audit Trail', slug: 'audit-trail', route: '/administration/audit-trail', permissionKey: 'audit.view' },
+      { title: 'Integrations', slug: 'integrations', route: '/administration/integrations', permissionKey: 'integration.view' },
+      { title: 'AI & Automation', slug: 'ai-and-automation', route: '/administration/ai-and-automation', permissionKey: 'it.view' },
+      { title: 'Compliance & Governance', slug: 'compliance-and-governance', route: '/administration/compliance-and-governance', permissionKey: 'audit.view' },
     ]
   },
-  {
-    id: 'system-settings',
-    label: 'System Settings',
-    slug: 'system-settings',
-    icon: Settings2,
-    group: 'administration',
-    route: '/system-settings',
-    permissionKey: 'view_system_settings'
-  }
 ];

@@ -7,6 +7,7 @@ import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { normalizePayrollMatchKey, readActiveSagePayrollEmployeeKeys, type SagePayrollEmployee } from '@/lib/sage-people-payroll-store';
 import { approvedPaidLeaveForDate } from '@/lib/leave-management-store';
+import { readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
 
 export type TimesheetStatus =
   | 'Draft'
@@ -203,6 +204,7 @@ export type Project = {
   id: string;
   code: string;
   name: string;
+  clientName: string;
   site: string;
   projectManager: string;
   status: 'Active' | 'Approved' | 'Open' | 'Completed' | 'Suspended' | 'Closed' | 'Archived';
@@ -740,6 +742,7 @@ CREATE TABLE [hris].[TimesheetProjects] (
   [Id] NVARCHAR(80) NOT NULL CONSTRAINT [PK_TimesheetProjects] PRIMARY KEY,
   [Code] NVARCHAR(50) NOT NULL CONSTRAINT [UQ_TimesheetProjects_Code] UNIQUE,
   [Name] NVARCHAR(255) NOT NULL,
+  [ClientName] NVARCHAR(220) NULL,
   [Site] NVARCHAR(160) NOT NULL,
   [ProjectManager] NVARCHAR(220) NULL,
   [Status] NVARCHAR(40) NOT NULL CONSTRAINT [DF_TimesheetProjects_Status] DEFAULT N'Active',
@@ -748,6 +751,8 @@ CREATE TABLE [hris].[TimesheetProjects] (
 );
 IF COL_LENGTH(N'hris.TimesheetProjects', N'ProjectManager') IS NULL
 ALTER TABLE [hris].[TimesheetProjects] ADD [ProjectManager] NVARCHAR(220) NULL;
+IF COL_LENGTH(N'hris.TimesheetProjects', N'ClientName') IS NULL
+ALTER TABLE [hris].[TimesheetProjects] ADD [ClientName] NVARCHAR(220) NULL;
 IF OBJECT_ID(N'[hris].[TimesheetProjectTasks]', N'U') IS NULL
 CREATE TABLE [hris].[TimesheetProjectTasks] (
   [Id] NVARCHAR(80) NOT NULL CONSTRAINT [PK_TimesheetProjectTasks] PRIMARY KEY,
@@ -1122,6 +1127,7 @@ export async function readProjects(): Promise<Project[]> {
       id: row.Id,
       code: row.Code,
       name: row.Name,
+      clientName: row.ClientName || '',
       site: row.Site,
       projectManager: row.ProjectManager || '',
       status: row.Status,
@@ -1134,6 +1140,7 @@ export async function readProjects(): Promise<Project[]> {
         id: `fallback-${item.code.toLowerCase()}`,
         code: item.code,
         name: item.name,
+        clientName: item.client || '',
         site: item.client || item.phase,
         projectManager: '',
         status: 'Active',
@@ -1152,14 +1159,15 @@ export async function writeProjects(projects: Project[]) {
         .input('Id', sql.NVarChar(80), project.id)
         .input('Code', sql.NVarChar(50), project.code)
         .input('Name', sql.NVarChar(255), project.name)
+        .input('ClientName', sql.NVarChar(220), project.clientName || null)
         .input('Site', sql.NVarChar(160), project.site)
         .input('ProjectManager', sql.NVarChar(220), project.projectManager || null)
         .input('Status', sql.NVarChar(40), project.status)
         .query(`
 MERGE [hris].[TimesheetProjects] AS target
 USING (SELECT @Id AS [Id]) AS source ON target.[Id] = source.[Id]
-WHEN MATCHED THEN UPDATE SET [Code]=@Code,[Name]=@Name,[Site]=@Site,[ProjectManager]=@ProjectManager,[Status]=@Status,[UpdatedAt]=SYSUTCDATETIME()
-WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[Site],[ProjectManager],[Status]) VALUES (@Id,@Code,@Name,@Site,@ProjectManager,@Status);`);
+WHEN MATCHED THEN UPDATE SET [Code]=@Code,[Name]=@Name,[ClientName]=@ClientName,[Site]=@Site,[ProjectManager]=@ProjectManager,[Status]=@Status,[UpdatedAt]=SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[ClientName],[Site],[ProjectManager],[Status]) VALUES (@Id,@Code,@Name,@ClientName,@Site,@ProjectManager,@Status);`);
       await new sql.Request(tx).input('ProjectId', sql.NVarChar(80), project.id).query(`DELETE FROM [hris].[TimesheetProjectTasks] WHERE [ProjectId]=@ProjectId`);
       for (const task of project.tasks || []) {
         await new sql.Request(tx)
@@ -1183,10 +1191,12 @@ export async function upsertProject(project: Project): Promise<Project> {
   const id = project.id || `prj-${Date.now()}`;
   const code = project.code.trim().toUpperCase();
   const name = project.name.trim();
+  const clientName = project.clientName?.trim() || '';
   const site = project.site.trim();
   const status = project.status || 'Active';
   if (!code) throw new Error('Project code is required.');
   if (!name) throw new Error('Project name is required.');
+  if (!clientName) throw new Error('Client name is required.');
   if (!site) throw new Error('Project site location is required.');
 
   const duplicate = await pool.request()
@@ -1213,14 +1223,15 @@ WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[Site],[SourceSystem]) VALUES (
       .input('Id', sql.NVarChar(80), id)
       .input('Code', sql.NVarChar(50), code)
       .input('Name', sql.NVarChar(255), name)
+      .input('ClientName', sql.NVarChar(220), clientName)
       .input('Site', sql.NVarChar(160), site)
       .input('ProjectManager', sql.NVarChar(220), project.projectManager?.trim() || null)
       .input('Status', sql.NVarChar(40), status)
       .query(`
 MERGE [hris].[TimesheetProjects] AS target
 USING (SELECT @Id AS [Id]) AS source ON target.[Id] = source.[Id]
-WHEN MATCHED THEN UPDATE SET [Code]=@Code,[Name]=@Name,[Site]=@Site,[ProjectManager]=@ProjectManager,[Status]=@Status,[UpdatedAt]=SYSUTCDATETIME()
-WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[Site],[ProjectManager],[Status]) VALUES (@Id,@Code,@Name,@Site,@ProjectManager,@Status);`);
+WHEN MATCHED THEN UPDATE SET [Code]=@Code,[Name]=@Name,[ClientName]=@ClientName,[Site]=@Site,[ProjectManager]=@ProjectManager,[Status]=@Status,[UpdatedAt]=SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[ClientName],[Site],[ProjectManager],[Status]) VALUES (@Id,@Code,@Name,@ClientName,@Site,@ProjectManager,@Status);`);
 
     await new sql.Request(tx).input('ProjectId', sql.NVarChar(80), id).query(`DELETE FROM [hris].[TimesheetProjectTasks] WHERE [ProjectId]=@ProjectId`);
     for (const task of project.tasks?.length ? project.tasks : [{ id: `task-${id}`, name: 'General Project Work' }]) {
@@ -1244,7 +1255,9 @@ WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[Site],[ProjectManager],[Status
     id,
     code,
     name,
+    clientName,
     site,
+    projectManager: project.projectManager?.trim() || '',
     status,
     tasks: project.tasks?.length ? project.tasks : [{ id: `task-${id}`, name: 'General Project Work' }],
   };
@@ -1462,6 +1475,119 @@ VALUES (@Id,@HeaderId,@EmployeeId,@EmployeeNo,@EmployeeName,@BiometricId,@Attend
           .query(`INSERT INTO [hris].[TimesheetIdleAllocations] ([LineId],[ReasonId],[ReasonName],[Hours],[Remarks]) VALUES (@LineId,@ReasonId,@ReasonName,@Hours,@Remarks)`);
       }
     }
+    await tx.commit();
+  } catch (error) {
+    await tx.rollback();
+    throw error;
+  }
+}
+
+export async function writeTimesheetHeaderLines(header: TimesheetHeader, lines: TimesheetLine[]) {
+  const pool = await db();
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    await new sql.Request(tx)
+      .input('Id', sql.NVarChar(160), header.id)
+      .input('PeriodId', sql.NVarChar(40), header.periodId)
+      .input('TimesheetDate', sql.Date, header.timesheetDate)
+      .input('SupervisorId', sql.NVarChar(120), header.supervisorId)
+      .input('SupervisorName', sql.NVarChar(180), header.supervisorName)
+      .input('WorkCenterId', sql.NVarChar(100), header.workCenterId)
+      .input('WorkCenterName', sql.NVarChar(180), header.workCenterName)
+      .input('Status', sql.NVarChar(50), header.status)
+      .input('SubmittedAt', sql.DateTime2, header.submittedAt ? new Date(header.submittedAt) : null)
+      .input('SubmittedBy', sql.NVarChar(120), header.submittedBy)
+      .input('ApprovedAt', sql.DateTime2, header.approvedAt ? new Date(header.approvedAt) : null)
+      .input('ApprovedBy', sql.NVarChar(120), header.approvedBy)
+      .input('LastSyncAt', sql.DateTime2, header.lastSyncAt ? new Date(header.lastSyncAt) : null)
+      .input('PayrollAcknowledgedAt', sql.DateTime2, header.payrollAcknowledgedAt ? new Date(header.payrollAcknowledgedAt) : null)
+      .input('PayrollAcknowledgedBy', sql.NVarChar(120), header.payrollAcknowledgedBy ?? null)
+      .input('ProjectManager', sql.NVarChar(220), header.projectManager ?? null)
+      .input('ProjectManagerProjectCode', sql.NVarChar(50), header.projectManagerProjectCode ?? null)
+      .input('CurrentApprovalStage', sql.NVarChar(60), header.currentApprovalStage ?? null)
+      .input('CurrentApprover', sql.NVarChar(220), header.currentApprover ?? null)
+      .query(`
+MERGE [hris].[TimesheetHeaders] AS target
+USING (SELECT @Id AS [Id]) AS source ON target.[Id]=source.[Id]
+WHEN MATCHED THEN UPDATE SET [PeriodId]=@PeriodId,[TimesheetDate]=@TimesheetDate,[SupervisorId]=@SupervisorId,[SupervisorName]=@SupervisorName,[WorkCenterId]=@WorkCenterId,[WorkCenterName]=@WorkCenterName,[Status]=@Status,[SubmittedAt]=@SubmittedAt,[SubmittedBy]=@SubmittedBy,[ApprovedAt]=@ApprovedAt,[ApprovedBy]=@ApprovedBy,[LastSyncAt]=@LastSyncAt,[PayrollAcknowledgedAt]=@PayrollAcknowledgedAt,[PayrollAcknowledgedBy]=@PayrollAcknowledgedBy,[ProjectManager]=@ProjectManager,[ProjectManagerProjectCode]=@ProjectManagerProjectCode,[CurrentApprovalStage]=@CurrentApprovalStage,[CurrentApprover]=@CurrentApprover
+WHEN NOT MATCHED THEN INSERT ([Id],[PeriodId],[TimesheetDate],[SupervisorId],[SupervisorName],[WorkCenterId],[WorkCenterName],[Status],[SubmittedAt],[SubmittedBy],[ApprovedAt],[ApprovedBy],[LastSyncAt],[PayrollAcknowledgedAt],[PayrollAcknowledgedBy],[ProjectManager],[ProjectManagerProjectCode],[CurrentApprovalStage],[CurrentApprover])
+VALUES (@Id,@PeriodId,@TimesheetDate,@SupervisorId,@SupervisorName,@WorkCenterId,@WorkCenterName,@Status,@SubmittedAt,@SubmittedBy,@ApprovedAt,@ApprovedBy,@LastSyncAt,@PayrollAcknowledgedAt,@PayrollAcknowledgedBy,@ProjectManager,@ProjectManagerProjectCode,@CurrentApprovalStage,@CurrentApprover);`);
+
+    await new sql.Request(tx).input('HeaderId', sql.NVarChar(160), header.id).query(`DELETE FROM [hris].[TimesheetWorkflowEvents] WHERE [HeaderId]=@HeaderId`);
+    for (const event of header.workflowHistory || []) {
+      await new sql.Request(tx)
+        .input('HeaderId', sql.NVarChar(160), header.id)
+        .input('Stage', sql.NVarChar(60), event.stage)
+        .input('Decision', sql.NVarChar(60), event.decision)
+        .input('Actor', sql.NVarChar(120), event.by)
+        .input('ActedAt', sql.DateTime2, new Date(event.actedAt))
+        .input('Comment', sql.NVarChar(500), event.comment)
+        .query(`INSERT INTO [hris].[TimesheetWorkflowEvents] ([HeaderId],[Stage],[Decision],[Actor],[ActedAt],[Comment]) VALUES (@HeaderId,@Stage,@Decision,@Actor,@ActedAt,@Comment)`);
+    }
+
+    const currentIds = new Set(lines.map((line) => line.id));
+    const existing = await new sql.Request(tx)
+      .input('HeaderId', sql.NVarChar(160), header.id)
+      .query(`SELECT [Id] FROM [hris].[TimesheetLines] WHERE [HeaderId]=@HeaderId`);
+    for (const row of existing.recordset) {
+      if (currentIds.has(row.Id)) continue;
+      await new sql.Request(tx)
+        .input('Id', sql.NVarChar(220), row.Id)
+        .query(`DELETE FROM [hris].[TimesheetLines] WHERE [Id]=@Id`);
+    }
+
+    for (const line of lines) {
+      await new sql.Request(tx)
+        .input('Id', sql.NVarChar(220), line.id)
+        .input('HeaderId', sql.NVarChar(160), line.headerId)
+        .input('EmployeeId', sql.NVarChar(80), line.employeeId)
+        .input('EmployeeNo', sql.NVarChar(80), line.employeeNo)
+        .input('EmployeeName', sql.NVarChar(220), line.employeeName)
+        .input('BiometricId', sql.NVarChar(120), line.biometricId)
+        .input('AttendanceId', sql.NVarChar(120), line.attendanceId)
+        .input('ClockIn', sql.NVarChar(40), line.clockIn)
+        .input('ClockOut', sql.NVarChar(40), line.clockOut)
+        .input('AttendanceDuration', sql.Decimal(9, 2), line.attendanceDuration)
+        .input('UsedHours', sql.Decimal(9, 2), line.usedHours)
+        .input('IdleHours', sql.Decimal(9, 2), line.idleHours)
+        .input('TotalHours', sql.Decimal(9, 2), line.totalHours)
+        .input('Variance', sql.Decimal(9, 2), line.variance)
+        .input('Remarks', sql.NVarChar(500), line.remarks)
+        .input('ValidationStatus', sql.NVarChar(30), line.validationStatus)
+        .input('ValidationMessage', sql.NVarChar(500), line.validationMessage)
+        .query(`
+MERGE [hris].[TimesheetLines] AS target
+USING (SELECT @Id AS [Id]) AS source ON target.[Id]=source.[Id]
+WHEN MATCHED THEN UPDATE SET [HeaderId]=@HeaderId,[EmployeeId]=@EmployeeId,[EmployeeNo]=@EmployeeNo,[EmployeeName]=@EmployeeName,[BiometricId]=@BiometricId,[AttendanceId]=@AttendanceId,[ClockIn]=@ClockIn,[ClockOut]=@ClockOut,[AttendanceDuration]=@AttendanceDuration,[UsedHours]=@UsedHours,[IdleHours]=@IdleHours,[TotalHours]=@TotalHours,[Variance]=@Variance,[Remarks]=@Remarks,[ValidationStatus]=@ValidationStatus,[ValidationMessage]=@ValidationMessage
+WHEN NOT MATCHED THEN INSERT ([Id],[HeaderId],[EmployeeId],[EmployeeNo],[EmployeeName],[BiometricId],[AttendanceId],[ClockIn],[ClockOut],[AttendanceDuration],[UsedHours],[IdleHours],[TotalHours],[Variance],[Remarks],[ValidationStatus],[ValidationMessage])
+VALUES (@Id,@HeaderId,@EmployeeId,@EmployeeNo,@EmployeeName,@BiometricId,@AttendanceId,@ClockIn,@ClockOut,@AttendanceDuration,@UsedHours,@IdleHours,@TotalHours,@Variance,@Remarks,@ValidationStatus,@ValidationMessage);`);
+
+      await new sql.Request(tx).input('LineId', sql.NVarChar(220), line.id).query(`DELETE FROM [hris].[TimesheetProjectAllocations] WHERE [LineId]=@LineId; DELETE FROM [hris].[TimesheetIdleAllocations] WHERE [LineId]=@LineId;`);
+      for (const allocation of line.projectAllocations || []) {
+        await new sql.Request(tx)
+          .input('LineId', sql.NVarChar(220), line.id)
+          .input('ProjectId', sql.NVarChar(80), allocation.projectId)
+          .input('ProjectCode', sql.NVarChar(50), allocation.projectCode)
+          .input('ProjectName', sql.NVarChar(255), allocation.projectName)
+          .input('TaskId', sql.NVarChar(80), allocation.taskId ?? null)
+          .input('TaskName', sql.NVarChar(255), allocation.taskName ?? null)
+          .input('ActivityId', sql.NVarChar(80), allocation.activityId ?? null)
+          .input('Hours', sql.Decimal(9, 2), allocation.hours)
+          .input('Remarks', sql.NVarChar(500), allocation.remarks)
+          .query(`INSERT INTO [hris].[TimesheetProjectAllocations] ([LineId],[ProjectId],[ProjectCode],[ProjectName],[TaskId],[TaskName],[ActivityId],[Hours],[Remarks]) VALUES (@LineId,@ProjectId,@ProjectCode,@ProjectName,@TaskId,@TaskName,@ActivityId,@Hours,@Remarks)`);
+      }
+      for (const allocation of (line.idleAllocations || []).map(withDefaultIdleReason)) {
+        await new sql.Request(tx)
+          .input('LineId', sql.NVarChar(220), line.id)
+          .input('ReasonId', sql.NVarChar(80), allocation.reasonId)
+          .input('ReasonName', sql.NVarChar(180), allocation.reasonName)
+          .input('Hours', sql.Decimal(9, 2), allocation.hours)
+          .input('Remarks', sql.NVarChar(500), allocation.remarks)
+          .query(`INSERT INTO [hris].[TimesheetIdleAllocations] ([LineId],[ReasonId],[ReasonName],[Hours],[Remarks]) VALUES (@LineId,@ReasonId,@ReasonName,@Hours,@Remarks)`);
+      }
+    }
+
     await tx.commit();
   } catch (error) {
     await tx.rollback();
@@ -1894,7 +2020,7 @@ export async function advanceTimesheetWorkflow(
   }
 
   header.workflowHistory = [...(header.workflowHistory || []), event];
-  await writeTimesheetData({ headers, lines });
+  await writeTimesheetHeaderLines(header, lines.filter((line) => line.headerId === header.id));
   const payrollUpdate = header.status === 'HR_Acknowledged' ? await createPayrollUpdateForPeriod(header.periodId, actor) : null;
   return { header, payrollUpdate };
 }
@@ -1976,7 +2102,7 @@ export async function advanceProjectTimesheetApproval(
   headerId: string,
   action: 'APPROVE' | 'REJECT' | 'RETURN',
   actor: string,
-  options: { projectCode: string; stage: 'Project Manager' | 'Cost Control'; comment?: string | null },
+  options: { projectCode: string; stage: 'Project Manager' | 'Cost Control'; comment?: string | null; bypassAssigneeCheck?: boolean },
 ): Promise<{ header: TimesheetHeader; projectApprovals: ProjectTimesheetApproval[] }> {
   const { headers, lines } = await readTimesheetData();
   const projects = await readProjects();
@@ -1996,7 +2122,7 @@ export async function advanceProjectTimesheetApproval(
   const projectApprovals = buildProjectTimesheetApprovals(header, headerLines, projects);
   const target = projectApprovals.find((item) => item.projectCode.toLowerCase() === options.projectCode.toLowerCase());
   if (!target) throw new Error(`Project ${options.projectCode} was not found on this timesheet.`);
-  if (options.stage === 'Project Manager' && target.projectManager && target.projectManager !== 'Unassigned' && !target.projectManager.toLowerCase().includes(actor.toLowerCase()) && !['cost control', 'hr', 'payroll', 'system', 'admin'].some((term) => actor.toLowerCase().includes(term))) {
+  if (!options.bypassAssigneeCheck && options.stage === 'Project Manager' && target.projectManager && target.projectManager !== 'Unassigned' && !target.projectManager.toLowerCase().includes(actor.toLowerCase()) && !['cost control', 'hr', 'payroll', 'system', 'admin'].some((term) => actor.toLowerCase().includes(term))) {
     throw new Error(`Only ${target.projectManager} can approve project ${target.projectCode}.`);
   }
 
@@ -2033,7 +2159,7 @@ export async function advanceProjectTimesheetApproval(
     }
   }
 
-  await writeTimesheetData({ headers, lines });
+  await writeTimesheetHeaderLines(header, headerLines);
   return { header, projectApprovals: buildProjectTimesheetApprovals(header, headerLines, projects) };
 }
 
@@ -2134,6 +2260,22 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
   );
   const keys = new Set<string>();
   const employees: Array<{ employeeCode: string; fullName: string }> = [];
+  const selectedCode = selected.split(' - ')[0]?.trim();
+  try {
+    const assignments = selectedCode ? await readSupervisorAssignments({ supervisorEmployeeCode: selectedCode }) : [];
+    const matchedAssignments = assignments.filter((assignment) => assignment.employeeCode && assignment.matchedStatus !== 'Unresolved');
+    if (matchedAssignments.length) {
+      for (const assignment of matchedAssignments) {
+        const employeeCode = assignment.employeeCode || '';
+        const fullName = assignment.employeeName || employeeCode;
+        employees.push({ employeeCode, fullName });
+        attendanceMatchKeys(employeeCode, fullName).forEach((key) => keys.add(key));
+      }
+      return { keys, employees };
+    }
+  } catch (error) {
+    console.warn('Timesheet supervisor assignment scope could not be loaded; falling back to reporting manager data:', error);
+  }
   for (const employee of source.employees) {
     if (['Resigned', 'Terminated', 'Retired'].includes(employee.status)) continue;
     if (!supervisorMatchesEmployee(employee.managerName, selected)) continue;
@@ -2174,9 +2316,11 @@ export async function syncAttendanceForTimesheet(
   const activeEmployeeByKey = new Map<string, SagePayrollEmployee>();
   let allowedSupervisorKeys = new Set<string>();
   let assignedSupervisorEmployees: Array<{ employeeCode: string; fullName: string }> = [];
+  let supervisorScopeResolved = false;
 
   const [scopeResult, activePayrollResult, approvedLeaveResult] = await Promise.allSettled([scopePromise, activePayrollPromise, approvedLeavePromise]);
   if (scopeResult.status === 'fulfilled') {
+    supervisorScopeResolved = true;
     allowedSupervisorKeys = scopeResult.value.keys;
     assignedSupervisorEmployees = scopeResult.value.employees;
   } else {
@@ -2237,7 +2381,8 @@ export async function syncAttendanceForTimesheet(
       return { attendance, payrollEmployee };
     })
     .filter(({ attendance, payrollEmployee }) => {
-      if (allowedSupervisorKeys.size === 0) return true;
+      if (!supervisorScopeResolved) return false;
+      if (allowedSupervisorKeys.size === 0) return false;
       return attendanceMatchKeys(
         attendance.employeeId,
         attendance.employeeName,
@@ -2284,7 +2429,7 @@ export async function syncAttendanceForTimesheet(
           payrollEmployee: undefined,
         };
       })
-    : attendanceCandidates;
+    : supervisorScopeResolved ? [] : attendanceCandidates;
 
   const { headers, lines } = await readTimesheetData();
   const period = calculateTimesheetPeriod(new Date(date));
@@ -2360,7 +2505,7 @@ export async function syncAttendanceForTimesheet(
   });
 
   if (persist) {
-    await writeTimesheetData({ headers, lines: [...otherLines, ...newLines] });
+    await writeTimesheetHeaderLines(header, newLines);
   }
   return { header, lines: newLines };
 }

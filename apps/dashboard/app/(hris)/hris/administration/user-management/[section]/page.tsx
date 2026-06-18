@@ -1,6 +1,6 @@
-import UserManagementClient from '../UserManagementClient';
+import { redirect } from 'next/navigation';
 
 export default async function UserManagementSectionPage({ params }: { params: Promise<{ section: string }> }) {
   const { section } = await params;
-  return <UserManagementClient section={section} />;
+  redirect(`/administration/user-management/${section}`);
 }

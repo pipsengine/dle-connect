@@ -1,5 +1,5 @@
-import AuditTrailClient from './AuditTrailClient';
+import { redirect } from 'next/navigation';
 
 export default function AuditTrailPage() {
-  return <AuditTrailClient />;
+  redirect('/administration/audit-trail');
 }

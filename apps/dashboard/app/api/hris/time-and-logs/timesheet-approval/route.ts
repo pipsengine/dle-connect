@@ -161,6 +161,7 @@ export async function PATCH(request: Request) {
         projectCode: payload.projectCode,
         stage: payload.stage,
         comment: payload.comment,
+        bypassAssigneeCheck: isSuperAdministrator(access.role),
       });
     } else {
       await advanceTimesheetWorkflow(payload.headerId, payload.action, access.actor, payload.comment);

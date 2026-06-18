@@ -126,6 +126,7 @@ type Project = {
   id: string;
   code: string;
   name: string;
+  clientName: string;
   site: string;
   projectManager: string;
   status: string;
@@ -333,7 +334,8 @@ const workCenterNamesForLocation = (workCenters: Payload['workCenters'], locatio
   return matching.length ? matching : workCenters.map((workCenter) => workCenter.name);
 };
 
-export default function TimesheetEntryClient() {
+export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 'admin' | 'workforce-supervisor' }) {
+  const isWorkforceSupervisor = variant === 'workforce-supervisor';
   const searchParams = useSearchParams();
   const dateParam = searchParams.get('date');
   const supervisorParam = searchParams.get('supervisorId');
@@ -362,8 +364,10 @@ export default function TimesheetEntryClient() {
   const [bulkHours, setBulkHours] = useState(8);
 
   const [showProjectModal, setShowProjectModal] = useState(false);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [newProjectCode, setNewProjectCode] = useState('');
   const [newProjectName, setNewProjectName] = useState('');
+  const [newProjectClientName, setNewProjectClientName] = useState('');
   const [newProjectSite, setNewProjectSite] = useState('');
   const [newProjectManager, setNewProjectManager] = useState('');
   const [databaseProjectSites, setDatabaseProjectSites] = useState<string[]>([]);
@@ -381,6 +385,7 @@ export default function TimesheetEntryClient() {
     setNotice(null);
     try {
       const url = new URL('/api/hris/time-and-logs/timesheet-entry', window.location.origin);
+      if (isWorkforceSupervisor) url.searchParams.set('mode', 'supervisor');
       if (date) url.searchParams.set('date', date);
       if (supervisor) url.searchParams.set('supervisorId', supervisor);
       if (location) url.searchParams.set('locationName', location);
@@ -416,7 +421,7 @@ export default function TimesheetEntryClient() {
     } finally {
       setLoading(false);
     }
-  }, [matrixColumns.length, selectedLocation, selectedSupervisor]);
+  }, [isWorkforceSupervisor, matrixColumns.length, selectedLocation, selectedSupervisor]);
 
   const loadProjectSites = useCallback(async () => {
     setProjectSiteLoading(true);
@@ -461,6 +466,7 @@ export default function TimesheetEntryClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'SYNC_ATTENDANCE',
+          mode: isWorkforceSupervisor ? 'supervisor' : undefined,
           date: selectedDate,
           supervisorId: selectedSupervisor,
           locationName: selectedLocation,
@@ -476,7 +482,7 @@ export default function TimesheetEntryClient() {
     } finally {
       setSubmitting(false);
     }
-  }, [payload?.period.status, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter]);
+  }, [isWorkforceSupervisor, payload?.period.status, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter]);
 
   useEffect(() => {
     if (!payload || loading || submitting) return;
@@ -511,6 +517,7 @@ export default function TimesheetEntryClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'UPSERT_WORK_CENTER',
+          mode: isWorkforceSupervisor ? 'supervisor' : undefined,
           date: selectedDate,
           supervisorId: selectedSupervisor,
           locationName: selectedLocation,
@@ -553,6 +560,7 @@ export default function TimesheetEntryClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'DELETE_WORK_CENTER',
+          mode: isWorkforceSupervisor ? 'supervisor' : undefined,
           date: selectedDate,
           supervisorId: selectedSupervisor,
           workCenterName: selectedWorkCenter === workCenter.name ? undefined : selectedWorkCenter,
@@ -624,6 +632,7 @@ export default function TimesheetEntryClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'COPY_PREVIOUS_DAY',
+          mode: isWorkforceSupervisor ? 'supervisor' : undefined,
           date: selectedDate,
           supervisorId: selectedSupervisor,
           locationName: selectedLocation,
@@ -661,6 +670,7 @@ export default function TimesheetEntryClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: isSubmit ? 'SUBMIT' : saveAsDraft ? 'SAVE_DRAFT' : 'MATRIX_SAVE',
+          mode: isWorkforceSupervisor ? 'supervisor' : undefined,
           locationName: selectedLocation,
           headerId: payload?.header?.id,
           lines: localLines,
@@ -698,6 +708,7 @@ export default function TimesheetEntryClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'BULK_APPLY',
+          mode: isWorkforceSupervisor ? 'supervisor' : undefined,
           locationName: selectedLocation,
           headerId: payload?.header?.id,
           bulkAllocation: {
@@ -730,6 +741,7 @@ export default function TimesheetEntryClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: decision,
+          mode: isWorkforceSupervisor ? 'supervisor' : undefined,
           locationName: selectedLocation,
           headerId: payload.header.id,
         }),
@@ -745,11 +757,42 @@ export default function TimesheetEntryClient() {
     }
   };
 
-  const handleCreateProject = async () => {
+  const resetProjectForm = () => {
+    setEditingProjectId(null);
+    setNewProjectCode('');
+    setNewProjectName('');
+    setNewProjectClientName('');
+    setNewProjectSite('');
+    setNewProjectManager('');
+  };
+
+  const openCreateProjectModal = () => {
+    resetProjectForm();
+    setShowProjectModal(true);
+  };
+
+  const openEditProjectModal = (project: Project) => {
+    setEditingProjectId(project.id);
+    setNewProjectCode(project.code);
+    setNewProjectName(project.name);
+    setNewProjectClientName(project.clientName || '');
+    setNewProjectSite(project.site);
+    setNewProjectManager(project.projectManager);
+    setShowProjectModal(true);
+  };
+
+  const closeProjectModal = () => {
+    setShowProjectModal(false);
+    resetProjectForm();
+  };
+
+  const handleSaveProject = async () => {
     const projectCode = newProjectCode.trim();
+    const projectName = newProjectName.trim();
+    const clientName = newProjectClientName.trim();
     const projectManager = newProjectManager.trim();
     const projectManagerExists = (payload?.projectManagers ?? []).some((employee) => `${employee.employeeCode} - ${employee.fullName}`.toLowerCase() === projectManager.toLowerCase());
-    if (!projectCode || !newProjectName || !newProjectSite || !projectManager) return;
+    if (!projectCode || !projectName || !clientName || !newProjectSite || !projectManager) return;
     if (!projectManagerExists) {
       setError('Select a Project Manager from the employee directory.');
       return;
@@ -760,14 +803,17 @@ export default function TimesheetEntryClient() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'CREATE_PROJECT',
+          action: editingProjectId ? 'UPSERT_PROJECT' : 'CREATE_PROJECT',
+          mode: isWorkforceSupervisor ? 'supervisor' : undefined,
           date: selectedDate,
           supervisorId: selectedSupervisor,
           locationName: selectedLocation,
           workCenterName: selectedWorkCenter,
           project: {
+            id: editingProjectId || undefined,
             code: projectCode,
-            name: newProjectName,
+            name: projectName,
+            clientName,
             site: newProjectSite,
             projectManager,
             status: 'Active',
@@ -775,15 +821,11 @@ export default function TimesheetEntryClient() {
         }),
       });
       const json = await res.json();
-      if (!res.ok || json?.status !== 'success') throw new Error(json?.error || 'Failed to create project');
+      if (!res.ok || json?.status !== 'success') throw new Error(json?.error || 'Failed to save project');
       setPayload(json.data);
-      setShowProjectModal(false);
-      setNewProjectCode('');
-      setNewProjectName('');
-      setNewProjectSite('');
-      setNewProjectManager('');
+      closeProjectModal();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create project');
+      setError(e instanceof Error ? e.message : 'Failed to save project');
     } finally {
       setSubmitting(false);
     }
@@ -914,6 +956,17 @@ export default function TimesheetEntryClient() {
   const reviewTotalHours = round1(localLines.reduce((sum, line) => sum + line.totalHours, 0));
   const reviewProjectCodes = Array.from(new Set(localLines.flatMap((line) => line.projectAllocations.map((item) => item.projectCode).filter(Boolean)))).sort();
   const canOpenSubmitReview = canEditTimesheet && reviewLineCount > 0 && reviewErrorCount === 0;
+  const canManageTimesheetSetup = !isWorkforceSupervisor && Boolean(payload?.permissions.canManagePeriod);
+  const pageTitle = isWorkforceSupervisor ? 'Workforce Timesheet Entry' : 'Timesheet Entry';
+  const pageDescription = isWorkforceSupervisor
+    ? 'Record daily crew work hours for your assigned employees.'
+    : 'Record daily work hour allocations across projects and tasks.';
+  const pageBreadcrumbs = isWorkforceSupervisor
+    ? [{ label: 'HRIS', href: '/hris' }, { label: 'Workforce Management', href: '/hris/workforce-management' }, { label: 'Timesheet Entry' }]
+    : [{ label: 'HRIS', href: '/hris' }, { label: 'Time & Logs', href: '/hris/time-and-logs' }, { label: 'Timesheet Entry' }];
+  const primaryPageAction = isWorkforceSupervisor
+    ? (canEditTimesheet ? { label: 'Sync Attendance', onClick: handleSyncAttendance, icon: RefreshCcw } : undefined)
+    : { label: canEditTimesheet ? 'Sync Attendance' : periodIsOpen ? 'Read Only' : 'Period Closed', onClick: canEditTimesheet ? handleSyncAttendance : () => undefined, icon: RefreshCcw };
   const biometricTone = onlineSiteDevices.length > 0
     ? 'text-emerald-400'
     : activeSiteDevices.length > 0
@@ -927,18 +980,18 @@ export default function TimesheetEntryClient() {
 
   return (
     <PageTemplate
-      title="Timesheet Entry"
-      description="Record daily work hour allocations across projects and tasks."
-      breadcrumbs={[{ label: 'HRIS', href: '/hris' }, { label: 'Time & Logs', href: '/hris/time-and-logs' }, { label: 'Timesheet Entry' }]}
-      primaryAction={{ label: canEditTimesheet ? 'Sync Attendance' : periodIsOpen ? 'Read Only' : 'Period Closed', onClick: canEditTimesheet ? handleSyncAttendance : () => undefined, icon: RefreshCcw }}
-      secondaryAction={{ label: 'Create Project', onClick: () => setShowProjectModal(true), icon: Plus }}
+      title={pageTitle}
+      description={pageDescription}
+      breadcrumbs={pageBreadcrumbs}
+      primaryAction={primaryPageAction}
+      secondaryAction={canManageTimesheetSetup ? { label: 'Create Project', onClick: openCreateProjectModal, icon: Plus } : undefined}
     >
       <div className="space-y-8">
         {/* Header Card */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-6 border-b border-slate-100 pb-6">
             <div className="space-y-1">
-              <h1 className="text-2xl font-black tracking-tight text-slate-900 uppercase">Timesheet Entry</h1>
+              <h1 className="text-2xl font-black tracking-tight text-slate-900 uppercase">{pageTitle}</h1>
               <div className="flex items-center gap-3 text-sm font-bold text-slate-500">
                 <span className="flex items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-1 text-indigo-700">
                   <Clock className="h-3.5 w-3.5" /> Period: {periodLabel}
@@ -952,54 +1005,68 @@ export default function TimesheetEntryClient() {
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-6">
-              <Link href="/hris/time-and-logs/timesheet-period" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-white">
-                Manage Periods
-              </Link>
+              {canManageTimesheetSetup ? (
+                <Link href="/hris/time-and-logs/timesheet-period" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-white">
+                  Manage Periods
+                </Link>
+              ) : null}
               <div className="text-right">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Supervisor</p>
-                <select
-                  value={selectedSupervisor}
-                  onChange={(e) => {
-                    setSelectedSupervisor(e.target.value);
-                    setSelectedEmployees([]);
-                    setQuery('');
-                  }}
-                  className="max-w-[260px] bg-transparent text-sm font-black text-slate-900 focus:outline-none"
-                >
-                  {!selectedSupervisor && <option value="">Select supervisor</option>}
-                  {payload?.filterOptions.supervisors.map((s) => {
-                    const item = supervisorDirectory.find((entry) => entry.value === s);
-                    return (
-                      <option key={s} value={s}>
-                        {item?.label || s}
-                      </option>
-                    );
-                  })}
-                </select>
+                {isWorkforceSupervisor ? (
+                  <div className="max-w-[260px] truncate text-sm font-black text-slate-900">{supervisorLabel}</div>
+                ) : (
+                  <select
+                    value={selectedSupervisor}
+                    onChange={(e) => {
+                      setSelectedSupervisor(e.target.value);
+                      setSelectedEmployees([]);
+                      setQuery('');
+                    }}
+                    className="max-w-[260px] bg-transparent text-sm font-black text-slate-900 focus:outline-none"
+                  >
+                    {!selectedSupervisor && <option value="">Select supervisor</option>}
+                    {payload?.filterOptions.supervisors.map((s) => {
+                      const item = supervisorDirectory.find((entry) => entry.value === s);
+                      return (
+                        <option key={s} value={s}>
+                          {item?.label || s}
+                        </option>
+                      );
+                    })}
+                  </select>
+                )}
               </div>
               <div className="text-right">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Location</p>
-                <select
-                  value={selectedLocation}
-                  onChange={(e) => {
-                    setSelectedLocation(e.target.value);
-                    setSelectedEmployees([]);
-                    setQuery('');
-                  }}
-                  className="bg-transparent text-sm font-black text-slate-900 focus:outline-none"
-                >
-                  {locationOptions.length === 0 && <option value="">No location</option>}
-                  {locationOptions.map((location) => (
-                    <option key={location} value={location}>
-                      {location}
-                    </option>
-                  ))}
-                </select>
+                {isWorkforceSupervisor ? (
+                  <div className="text-sm font-black text-slate-900">{selectedLocation || 'No location'}</div>
+                ) : (
+                  <select
+                    value={selectedLocation}
+                    onChange={(e) => {
+                      setSelectedLocation(e.target.value);
+                      setSelectedEmployees([]);
+                      setQuery('');
+                    }}
+                    className="bg-transparent text-sm font-black text-slate-900 focus:outline-none"
+                  >
+                    {locationOptions.length === 0 && <option value="">No location</option>}
+                    {locationOptions.map((location) => (
+                      <option key={location} value={location}>
+                        {location}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div className="text-right">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Work Center</p>
                 <div className="flex items-center justify-end gap-2">
-                  {workCenterOptions.length > 0 ? (
+                  {isWorkforceSupervisor ? (
+                    <span className="block max-w-[180px] truncate text-sm font-black text-slate-900">
+                      {selectedWorkCenter || 'No work center'}
+                    </span>
+                  ) : workCenterOptions.length > 0 ? (
                     <select
                       value={selectedWorkCenter}
                       onChange={(e) => {
@@ -1020,14 +1087,16 @@ export default function TimesheetEntryClient() {
                       No work center
                     </span>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setShowWorkCenterManager(true)}
-                    className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50 hover:text-indigo-600"
-                    title="Manage work centers"
-                  >
-                    <Edit3 className="h-3.5 w-3.5" />
-                  </button>
+                  {canManageTimesheetSetup ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowWorkCenterManager(true)}
+                      className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50 hover:text-indigo-600"
+                      title="Manage work centers"
+                    >
+                      <Edit3 className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
                 </div>
               </div>
               <div className="text-right">
@@ -1069,9 +1138,11 @@ export default function TimesheetEntryClient() {
                   <p className="mt-1 text-xs font-semibold text-slate-500">Attendance sync, copying, allocations, saving, and submission are paused for this period.</p>
                 </div>
               </div>
-              <Link href="/hris/time-and-logs/timesheet-period" className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-slate-800">
-                Manage Period
-              </Link>
+              {canManageTimesheetSetup ? (
+                <Link href="/hris/time-and-logs/timesheet-period" className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-slate-800">
+                  Manage Period
+                </Link>
+              ) : null}
             </div>
           </div>
         )}
@@ -1092,9 +1163,11 @@ export default function TimesheetEntryClient() {
                   </p>
                 </div>
               </div>
-              <Link href="/hris/time-and-logs/timesheet-approval" className={`rounded-xl px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white ${isPayrollReady ? 'bg-emerald-700 hover:bg-emerald-800' : 'bg-indigo-700 hover:bg-indigo-800'}`}>
-                Approval Workflow
-              </Link>
+              {!isWorkforceSupervisor ? (
+                <Link href="/hris/time-and-logs/timesheet-approval" className={`rounded-xl px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white ${isPayrollReady ? 'bg-emerald-700 hover:bg-emerald-800' : 'bg-indigo-700 hover:bg-indigo-800'}`}>
+                  Approval Workflow
+                </Link>
+              ) : null}
             </div>
           </div>
         )}
@@ -1615,13 +1688,34 @@ export default function TimesheetEntryClient() {
       )}
 
       {/* Project Modal */}
-      {showProjectModal && (
+      {canManageTimesheetSetup && showProjectModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
-          <div className="w-full max-w-lg rounded-3xl bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="mb-8 flex items-center justify-between"><div className="space-y-1"><h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Register Project</h3><p className="text-sm font-medium text-slate-500">Add a new project code to the company registry.</p></div><button onClick={() => setShowProjectModal(false)} className="rounded-full p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors"><XCircle className="h-8 w-8" /></button></div>
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="mb-8 flex items-center justify-between"><div className="space-y-1"><h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight">{editingProjectId ? 'Edit Project' : 'Register Project'}</h3><p className="text-sm font-medium text-slate-500">{editingProjectId ? 'Update project details in the company registry.' : 'Add a new project code to the company registry.'}</p></div><button onClick={closeProjectModal} className="rounded-full p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors"><XCircle className="h-8 w-8" /></button></div>
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Project Code</label><input type="text" placeholder="e.g. DL26005" value={newProjectCode} onChange={(e) => setNewProjectCode(e.target.value.toUpperCase())} className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 placeholder:text-slate-300 focus:border-indigo-500 focus:outline-none transition-all" /></div>
+              {(payload?.projects?.length ?? 0) > 0 && (
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Project Registry</label>
+                    {editingProjectId && <button onClick={resetProjectForm} className="text-[10px] font-black uppercase tracking-widest text-indigo-600 hover:text-indigo-800">New Project</button>}
+                  </div>
+                  <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-200">
+                    {payload?.projects.map((project) => (
+                      <div key={project.id} className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0">
+                        <button onClick={() => openEditProjectModal(project)} className="min-w-0 flex-1 text-left">
+                          <div className="truncate text-sm font-black text-slate-900">{project.code} - {project.name}</div>
+                          <div className="truncate text-[11px] font-bold text-slate-500">{project.clientName || 'No client'} | {project.site || 'No site'} | {project.projectManager || 'No manager'}</div>
+                        </button>
+                        <button onClick={() => openEditProjectModal(project)} className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600" title="Edit project">
+                          <Edit3 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div><label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Project Code</label><input type="text" placeholder="e.g. DL26005" value={newProjectCode} onChange={(e) => setNewProjectCode(e.target.value.toUpperCase())} disabled={!!editingProjectId} className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 placeholder:text-slate-300 focus:border-indigo-500 focus:outline-none transition-all disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500" /></div>
                 <div>
                   <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Site Location</label>
                   <select
@@ -1638,7 +1732,10 @@ export default function TimesheetEntryClient() {
                   )}
                 </div>
               </div>
-              <div><label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Project Name</label><input type="text" placeholder="e.g. NLNG Train 7 - Piping Works" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 placeholder:text-slate-300 focus:border-indigo-500 focus:outline-none transition-all" /></div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div><label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Project Name</label><input type="text" placeholder="e.g. NLNG Train 7 - Piping Works" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 placeholder:text-slate-300 focus:border-indigo-500 focus:outline-none transition-all" /></div>
+                <div><label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Client Name</label><input type="text" placeholder="e.g. NLNG" value={newProjectClientName} onChange={(e) => setNewProjectClientName(e.target.value)} className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 placeholder:text-slate-300 focus:border-indigo-500 focus:outline-none transition-all" /></div>
+              </div>
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Project Manager</label>
                 <input
@@ -1660,14 +1757,14 @@ export default function TimesheetEntryClient() {
                   })}
                 </datalist>
               </div>
-              <div className="pt-4 flex gap-3"><button onClick={() => setShowProjectModal(false)} className="flex-1 rounded-2xl border-2 border-slate-100 py-4 text-xs font-black text-slate-400 hover:bg-slate-50 transition-all uppercase tracking-widest">Cancel</button><button onClick={handleCreateProject} disabled={submitting || projectSiteLoading || !!projectSiteError || !newProjectCode.trim() || !newProjectName || !newProjectSite || !projectManagerIsSelected} className="flex-[2] rounded-2xl bg-indigo-600 py-4 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50 shadow-xl shadow-indigo-100 transition-all uppercase tracking-widest">{submitting ? 'Creating...' : 'Register Project'}</button></div>
+              <div className="pt-4 flex gap-3"><button onClick={closeProjectModal} className="flex-1 rounded-2xl border-2 border-slate-100 py-4 text-xs font-black text-slate-400 hover:bg-slate-50 transition-all uppercase tracking-widest">Cancel</button><button onClick={handleSaveProject} disabled={submitting || projectSiteLoading || !!projectSiteError || !newProjectCode.trim() || !newProjectName.trim() || !newProjectClientName.trim() || !newProjectSite || !projectManagerIsSelected} className="flex-[2] rounded-2xl bg-indigo-600 py-4 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50 shadow-xl shadow-indigo-100 transition-all uppercase tracking-widest">{submitting ? 'Saving...' : editingProjectId ? 'Update Project' : 'Register Project'}</button></div>
             </div>
           </div>
         </div>
       )}
 
       {/* Work Center Manager */}
-      {showWorkCenterManager && (
+      {canManageTimesheetSetup && showWorkCenterManager && (
         <div className="fixed inset-0 z-[105] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-md">
           <div className="w-full max-w-2xl rounded-3xl bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="mb-6 flex items-center justify-between">
