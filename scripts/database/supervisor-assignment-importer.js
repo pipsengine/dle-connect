@@ -1,49 +1,52 @@
-import sql from 'mssql';
+const fs = require('fs');
+const path = require('path');
+const sql = require('mssql');
 
-import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
+const dryRun = process.argv.includes('--dry-run');
+const fileArg = process.argv.find((arg) => arg.endsWith('.json'));
 
-export type SupervisorAssignmentRow = {
-  assignmentId: number;
-  assignmentBatch: string;
-  assignmentGroup: string;
-  sourceLabel: string;
-  supervisorEmployeeId: number | null;
-  supervisorEmployeeCode: string | null;
-  supervisorName: string | null;
-  employeeId: number | null;
-  employeeCode: string | null;
-  employeeName: string | null;
-  tradeRole: string | null;
-  matchedStatus: string;
-  matchConfidence: string | null;
-  matchNote: string | null;
-  previousReportingManager: string | null;
-  newReportingManager: string | null;
-  assignedAt: string;
-  assignedBy: string;
-};
+if (!fileArg) {
+  console.error('Usage: node scripts/database/supervisor-assignment-importer.js <roster.json> [--dry-run]');
+  process.exit(1);
+}
 
-export type AssignEmployeesToSupervisorInput = {
-  supervisorEmployeeCode: string;
-  employeeCodes: string[];
-  assignmentBatch?: string;
-  assignmentGroup?: string;
-  reason?: string;
-  performedBy?: string;
-  sourceRows?: Array<{
-    employeeCode?: string | null;
-    sourceLabel?: string | null;
-    tradeRole?: string | null;
-    matchConfidence?: string | null;
-    matchNote?: string | null;
-  }>;
-};
+function loadWorkspaceEnv() {
+  const envPath = path.resolve('.env');
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+    if (!match) continue;
+    let value = match[2].trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (!process.env[match[1]]) process.env[match[1]] = value;
+  }
+}
 
-const clean = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
-const nullable = (value: unknown) => clean(value) || null;
-const nowBatch = () => `supervisor-assignment-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
+function dbConfig() {
+  return {
+    server: process.env.DLE_ENTERPRISE_DB_HOST,
+    port: Number(process.env.DLE_ENTERPRISE_DB_PORT || 1433),
+    database: process.env.DLE_ENTERPRISE_DB_NAME || 'DLE_Enterprise',
+    user: process.env.DLE_ENTERPRISE_DB_USER,
+    password: process.env.DLE_ENTERPRISE_DB_PASSWORD,
+    options: {
+      encrypt: String(process.env.DLE_ENTERPRISE_DB_ENCRYPT).toLowerCase() !== 'false',
+      trustServerCertificate: String(process.env.DLE_ENTERPRISE_DB_TRUST_SERVER_CERTIFICATE).toLowerCase() === 'true',
+    },
+  };
+}
 
-const ensureSupervisorAssignmentTable = async (request: sql.Request) => {
+function clean(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function displayName(row) {
+  return [row.first_name, row.middle_name, row.last_name].map(clean).filter(Boolean).join(' ') || clean(row.full_name) || clean(row.employee_code);
+}
+
+async function ensureAssignmentTable(request) {
   await request.query(`
 IF OBJECT_ID(N'[hris].[SupervisorEmployeeAssignments]', N'U') IS NULL
 BEGIN
@@ -74,33 +77,10 @@ BEGIN
     ON [hris].[SupervisorEmployeeAssignments](assignment_batch, source_label);
 END;
 `);
-};
+}
 
-const employeeDisplayName = (row: any) =>
-  [row.first_name, row.middle_name, row.last_name].map(clean).filter(Boolean).join(' ') || clean(row.full_name) || clean(row.employee_code);
-
-const mapAssignmentRow = (row: any): SupervisorAssignmentRow => ({
-  assignmentId: Number(row.assignment_id),
-  assignmentBatch: clean(row.assignment_batch),
-  assignmentGroup: clean(row.assignment_group),
-  sourceLabel: clean(row.source_label),
-  supervisorEmployeeId: row.supervisor_employee_id == null ? null : Number(row.supervisor_employee_id),
-  supervisorEmployeeCode: clean(row.supervisor_employee_code) || null,
-  supervisorName: clean(row.supervisor_name) || null,
-  employeeId: row.employee_id == null ? null : Number(row.employee_id),
-  employeeCode: clean(row.employee_code) || null,
-  employeeName: clean(row.employee_name) || null,
-  tradeRole: clean(row.trade_role) || null,
-  matchedStatus: clean(row.matched_status),
-  matchConfidence: clean(row.match_confidence) || null,
-  matchNote: clean(row.match_note) || null,
-  previousReportingManager: clean(row.previous_reporting_manager) || null,
-  newReportingManager: clean(row.new_reporting_manager) || null,
-  assignedAt: row.assigned_at instanceof Date ? row.assigned_at.toISOString() : clean(row.assigned_at),
-  assignedBy: clean(row.assigned_by),
-});
-
-const readEmployeeByCode = async (tx: sql.Transaction, employeeCode: string) => {
+async function findEmployee(tx, employeeCode) {
+  if (!employeeCode) return null;
   const result = await new sql.Request(tx)
     .input('employee_code', sql.NVarChar(50), employeeCode)
     .query(`
@@ -114,9 +94,9 @@ WHERE e.employee_code = @employee_code
 ORDER BY e.employee_id;
 `);
   return result.recordset[0] || null;
-};
+}
 
-const upsertAssignmentRecord = async (tx: sql.Transaction, values: Record<string, unknown>) => {
+async function upsertAssignment(tx, values) {
   await new sql.Request(tx)
     .input('assignment_batch', sql.NVarChar(120), values.assignmentBatch)
     .input('assignment_group', sql.NVarChar(120), values.assignmentGroup)
@@ -164,51 +144,28 @@ WHEN NOT MATCHED THEN INSERT (
   @match_confidence, @match_note, @previous_reporting_manager, @new_reporting_manager, @assigned_by
 );
 `);
-};
-
-export async function readSupervisorAssignments(filters: { assignmentBatch?: string; supervisorEmployeeCode?: string } = {}) {
-  const pool = await getDleEnterpriseDbPool();
-  await ensureSupervisorAssignmentTable(pool.request());
-  const request = pool.request()
-    .input('assignment_batch', sql.NVarChar(120), nullable(filters.assignmentBatch))
-    .input('supervisor_employee_code', sql.NVarChar(50), nullable(filters.supervisorEmployeeCode));
-  const result = await request.query(`
-SELECT TOP 1000 *
-FROM [hris].[SupervisorEmployeeAssignments]
-WHERE (@assignment_batch IS NULL OR assignment_batch = @assignment_batch)
-  AND (@supervisor_employee_code IS NULL OR supervisor_employee_code = @supervisor_employee_code)
-ORDER BY assigned_at DESC, assignment_id DESC;
-`);
-  return result.recordset.map(mapAssignmentRow);
 }
 
-export async function assignEmployeesToSupervisor(input: AssignEmployeesToSupervisorInput) {
-  const supervisorEmployeeCode = clean(input.supervisorEmployeeCode);
-  const employeeCodes = Array.from(new Set(input.employeeCodes.map(clean).filter(Boolean))).filter((code) => code !== supervisorEmployeeCode);
-  if (!supervisorEmployeeCode) throw new Error('Supervisor employee code is required.');
-  if (!employeeCodes.length) throw new Error('At least one employee code is required.');
-
-  const pool = await getDleEnterpriseDbPool();
+async function main() {
+  loadWorkspaceEnv();
+  const rosterPath = path.resolve(fileArg);
+  const config = JSON.parse(fs.readFileSync(rosterPath, 'utf8'));
+  const pool = await sql.connect(dbConfig());
   const tx = new sql.Transaction(pool);
-  let committed = false;
   await tx.begin();
 
   try {
-    await ensureSupervisorAssignmentTable(new sql.Request(tx));
-
-    const supervisor = await readEmployeeByCode(tx, supervisorEmployeeCode);
-    if (!supervisor) throw new Error(`Supervisor ${supervisorEmployeeCode} was not found in the employee database.`);
+    await ensureAssignmentTable(new sql.Request(tx));
+    const supervisor = await findEmployee(tx, config.supervisorEmployeeCode);
+    if (!supervisor) throw new Error(`Supervisor ${config.supervisorEmployeeCode} was not found.`);
     if (/inactive|terminated|resigned|retired|deceased/i.test(clean(supervisor.employment_status))) {
-      throw new Error(`Supervisor ${supervisorEmployeeCode} is not active.`);
+      throw new Error(`Supervisor ${config.supervisorEmployeeCode} is not active.`);
     }
 
-    const assignmentBatch = clean(input.assignmentBatch) || nowBatch();
-    const assignmentGroup = clean(input.assignmentGroup) || 'Reporting Line';
-    const performedBy = clean(input.performedBy) || 'system';
-    const reason = clean(input.reason) || 'Supervisor assignment updated from application.';
     const supervisorLabel = `${clean(supervisor.employee_code)} - ${clean(supervisor.full_name)}`;
-    const supervisorName = employeeDisplayName(supervisor);
-    const sourceByCode = new Map((input.sourceRows || []).map((row) => [clean(row.employeeCode), row]));
+    const supervisorName = displayName(supervisor);
+    const results = [];
+
     await new sql.Request(tx)
       .input('employee_id', sql.BigInt, supervisor.employee_id)
       .query(`
@@ -220,32 +177,30 @@ WHEN NOT MATCHED THEN INSERT (employee_id, is_people_manager, is_budget_owner)
 VALUES (@employee_id, 1, 0);
 `);
 
-    for (const employeeCode of employeeCodes) {
-      const source = sourceByCode.get(employeeCode);
-      const employee = await readEmployeeByCode(tx, employeeCode);
-      const previousReportingManager = clean(employee?.reporting_manager) || null;
+    for (const row of config.rows || []) {
+      const employee = await findEmployee(tx, row.employeeCode);
       const matchedStatus = employee ? 'Matched' : 'Unresolved';
-      const employeeName = employee ? employeeDisplayName(employee) : null;
-      const sourceLabel = clean(source?.sourceLabel) || employeeName || employeeCode;
+      const previousReportingManager = clean(employee?.reporting_manager) || null;
+      const employeeName = employee ? displayName(employee) : null;
       const newReportingManager = employee ? supervisorLabel : null;
 
-      await upsertAssignmentRecord(tx, {
-        assignmentBatch,
-        assignmentGroup,
-        sourceLabel,
+      await upsertAssignment(tx, {
+        assignmentBatch: config.assignmentBatch,
+        assignmentGroup: config.assignmentGroup,
+        sourceLabel: clean(row.sourceName) || clean(row.employeeCode),
         supervisorEmployeeId: supervisor.employee_id,
         supervisorEmployeeCode: supervisor.employee_code,
         supervisorName,
         employeeId: employee?.employee_id || null,
-        employeeCode,
+        employeeCode: employee?.employee_code || clean(row.employeeCode),
         employeeName,
-        tradeRole: nullable(source?.tradeRole),
+        tradeRole: clean(row.tradeRole) || null,
         matchedStatus,
-        matchConfidence: nullable(source?.matchConfidence) || (employee ? 'DirectEmployeeCode' : 'Unresolved'),
-        matchNote: nullable(source?.matchNote),
+        matchConfidence: clean(row.matchConfidence) || (employee ? 'EmployeeCode' : 'Unresolved'),
+        matchNote: clean(row.matchNote) || null,
         previousReportingManager,
         newReportingManager,
-        assignedBy: performedBy,
+        assignedBy: clean(config.performedBy) || 'codex.database-import',
       });
 
       if (employee) {
@@ -264,15 +219,18 @@ VALUES (@employee_id, @reporting_manager, 0, 0);
         if (previousReportingManager !== supervisorLabel) {
           await new sql.Request(tx)
             .input('employee_id', sql.BigInt, employee.employee_id)
-            .input('audit_action', sql.NVarChar(150), 'Supervisor assignment updated')
-            .input('performed_by', sql.NVarChar(128), performedBy)
-            .input('reason', sql.NVarChar(1000), reason)
+            .input('audit_action', sql.NVarChar(150), 'Supervisor assignment import')
+            .input('performed_by', sql.NVarChar(128), clean(config.performedBy) || 'codex.database-import')
+            .input('reason', sql.NVarChar(1000), clean(config.reason) || 'Supervisor assignment import.')
             .input('old_value', sql.NVarChar(sql.MAX), JSON.stringify({ reportingManager: previousReportingManager }))
             .input('new_value', sql.NVarChar(sql.MAX), JSON.stringify({
               reportingManager: supervisorLabel,
-              assignmentBatch,
-              assignmentGroup,
-              sourceLabel,
+              assignmentBatch: config.assignmentBatch,
+              assignmentGroup: config.assignmentGroup,
+              sourceName: row.sourceName,
+              tradeRole: row.tradeRole,
+              matchConfidence: row.matchConfidence,
+              matchNote: row.matchNote || null,
             }))
             .query(`
 INSERT [hris].[EmployeeAuditLog](employee_id, audit_action, performed_by, reason, old_value, new_value)
@@ -280,22 +238,32 @@ VALUES (@employee_id, @audit_action, @performed_by, @reason, @old_value, @new_va
 `);
         }
       }
+
+      results.push({
+        sourceName: row.sourceName,
+        employeeCode: employee?.employee_code || clean(row.employeeCode),
+        employeeName: employeeName || '',
+        status: matchedStatus,
+        previousReportingManager,
+        newReportingManager,
+        note: row.matchNote || '',
+      });
     }
 
-    await tx.commit();
-    committed = true;
-    return {
-      assignmentBatch,
-      assignmentGroup,
-      supervisor: {
-        employeeCode: clean(supervisor.employee_code),
-        employeeName: supervisorName,
-        reportingManagerLabel: supervisorLabel,
-      },
-      assignments: await readSupervisorAssignments({ assignmentBatch }),
-    };
+    if (dryRun) await tx.rollback();
+    else await tx.commit();
+
+    console.table(results);
+    console.log(`${dryRun ? 'Dry run complete' : 'Assignment committed'}: ${results.filter((x) => x.status === 'Matched').length} matched, ${results.filter((x) => x.status !== 'Matched').length} unresolved.`);
   } catch (error) {
-    if (!committed) await tx.rollback().catch(() => undefined);
+    await tx.rollback().catch(() => undefined);
     throw error;
+  } finally {
+    await pool.close();
   }
 }
+
+main().catch((error) => {
+  console.error(error.message || error);
+  process.exit(1);
+});

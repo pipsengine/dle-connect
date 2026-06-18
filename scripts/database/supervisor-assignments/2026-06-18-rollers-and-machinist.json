@@ -1,0 +1,12 @@
+{
+  "assignmentBatch": "2026-06-18-rollers-and-machinist-supervisor",
+  "assignmentGroup": "ROLLERS AND MACHINIST",
+  "supervisorEmployeeCode": "P0044",
+  "performedBy": "codex.database-import",
+  "reason": "Rollers and machinist supervisor assignment from provided ROLLERS AND MACHINIST schedule.",
+  "rows": [
+    { "sourceName": "Stephen Etueri", "tradeRole": "Machinist", "employeeCode": "C0974", "matchConfidence": "Exact", "matchNote": "Database job title is MACHINE SHOP SUPRITENDENT." },
+    { "sourceName": "Kelvin Iwuagwu", "tradeRole": "Rolling Maching Operator", "employeeCode": "C2236", "matchConfidence": "ExactWithMiddleName", "matchNote": "Database job title is MACHINIST." },
+    { "sourceName": "Ayodele Okike", "tradeRole": "Rolling Maching Operator", "employeeCode": null, "matchConfidence": "Unresolved", "matchNote": "No safe database match found for OKIKE or rolling-machine operator." }
+  ]
+}

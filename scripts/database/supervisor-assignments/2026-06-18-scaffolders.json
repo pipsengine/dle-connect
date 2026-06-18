@@ -1,0 +1,14 @@
+{
+  "assignmentBatch": "2026-06-18-scaffolders-supervisor",
+  "assignmentGroup": "SCAFFOLDERS",
+  "supervisorEmployeeCode": "C0585",
+  "performedBy": "codex.database-import",
+  "reason": "Scaffolders supervisor assignment from provided SCAFFOLDERS schedule.",
+  "rows": [
+    { "sourceName": "Famous Ojada", "tradeRole": "Scafolder", "employeeCode": "C2116", "matchConfidence": "Exact" },
+    { "sourceName": "Gambo Mohammed", "tradeRole": "Scafolder", "employeeCode": "C2477", "matchConfidence": "ExactWithMiddleName" },
+    { "sourceName": "Ameh Mattew", "tradeRole": "Scafolder", "employeeCode": "C2404", "matchConfidence": "SpellingAliasReversed", "matchNote": "Database name is MATHEW AMEH." },
+    { "sourceName": "Boniface Okpe", "tradeRole": "Scafolder", "employeeCode": "C2626", "matchConfidence": "Exact" },
+    { "sourceName": "Aliyu Mohammed", "tradeRole": "Scafolder", "employeeCode": "C2402", "matchConfidence": "ExactReversed", "matchNote": "Database name is MOHAMMED ALIYU." }
+  ]
+}

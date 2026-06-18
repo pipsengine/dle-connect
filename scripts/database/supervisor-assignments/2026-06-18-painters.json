@@ -1,0 +1,13 @@
+{
+  "assignmentBatch": "2026-06-18-painters-supervisor",
+  "assignmentGroup": "PAINTERS",
+  "supervisorEmployeeCode": "P0289",
+  "performedBy": "codex.database-import",
+  "reason": "Painters supervisor assignment from provided PAINTERS schedule.",
+  "rows": [
+    { "sourceName": "Busari Wasiu", "tradeRole": "Blaster/Painter", "employeeCode": "C1982", "matchConfidence": "ExactReversed", "matchNote": "Database job title spells BLASTER as BLSATER." },
+    { "sourceName": "EBEYE EMEKA", "tradeRole": "Blaster/Painter", "employeeCode": "C1983", "matchConfidence": "ExactReversed" },
+    { "sourceName": "LATEEF AZEEZ", "tradeRole": "Blaster/Painter", "employeeCode": "C1920", "matchConfidence": "ExactReversed" },
+    { "sourceName": "Shola Atoyebi", "tradeRole": "Blaster/Painter", "employeeCode": "C2130", "matchConfidence": "Exact", "matchNote": "Database job title spells BLASTER as BLSATER." }
+  ]
+}

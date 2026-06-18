@@ -1,0 +1,17 @@
+{
+  "assignmentBatch": "2026-06-18-riggers-supervisor",
+  "assignmentGroup": "RIGGERS",
+  "supervisorEmployeeCode": "P0045",
+  "performedBy": "codex.database-import",
+  "reason": "Riggers supervisor assignment from provided RIGGERS schedule.",
+  "rows": [
+    { "sourceName": "Bello Ademola", "tradeRole": "Rigger/Crane operator", "employeeCode": "C1966", "matchConfidence": "ExactReversed" },
+    { "sourceName": "Adesugba Sunday", "tradeRole": "Rigger/Crane operator", "employeeCode": "C1967", "matchConfidence": "ExactReversed" },
+    { "sourceName": "OYELEYE LATEEF", "tradeRole": "Rigger/Crane operator", "employeeCode": "C2080", "matchConfidence": "ExactReversed" },
+    { "sourceName": "Eje Donatus", "tradeRole": "Rigger/Crane operator", "employeeCode": "C1035", "matchConfidence": "SpellingAliasReversed", "matchNote": "Database surname is EJEH." },
+    { "sourceName": "OYEWOLE KAZEEM", "tradeRole": "Rigger/Crane operator", "employeeCode": "C2515", "matchConfidence": "ExactReversed" },
+    { "sourceName": "Ogah Imoni", "tradeRole": "Rigger/Crane operator", "employeeCode": "C2456", "matchConfidence": "Exact" },
+    { "sourceName": "Audu John", "tradeRole": "Rigger/Crane operator", "employeeCode": "C2622", "matchConfidence": "Exact" },
+    { "sourceName": "Amodu Henry", "tradeRole": "Rigger/Crane operator", "employeeCode": "C2725", "matchConfidence": "ExactWithMiddleNameReversed" }
+  ]
+}
