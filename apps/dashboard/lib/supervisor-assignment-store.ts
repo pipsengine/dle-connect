@@ -168,6 +168,7 @@ WHEN NOT MATCHED THEN INSERT (
 
 export async function readSupervisorAssignments(filters: { assignmentBatch?: string; supervisorEmployeeCode?: string } = {}) {
   const pool = await getDleEnterpriseDbPool();
+  if (!pool) throw new Error('DLE Enterprise database is not configured.');
   await ensureSupervisorAssignmentTable(pool.request());
   const request = pool.request()
     .input('assignment_batch', sql.NVarChar(120), nullable(filters.assignmentBatch))
@@ -189,6 +190,7 @@ export async function assignEmployeesToSupervisor(input: AssignEmployeesToSuperv
   if (!employeeCodes.length) throw new Error('At least one employee code is required.');
 
   const pool = await getDleEnterpriseDbPool();
+  if (!pool) throw new Error('DLE Enterprise database is not configured.');
   const tx = new sql.Transaction(pool);
   let committed = false;
   await tx.begin();
