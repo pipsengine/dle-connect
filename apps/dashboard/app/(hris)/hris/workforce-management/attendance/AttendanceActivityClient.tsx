@@ -74,6 +74,28 @@ type Tone = 'blue' | 'green' | 'amber' | 'red' | 'slate';
 const numberFmt = new Intl.NumberFormat('en-GB');
 const number = (value: number | undefined) => numberFmt.format(value || 0);
 const todayInput = () => new Date().toISOString().slice(0, 10);
+const minutesFromTime = (value: string | null) => {
+  if (!value) return null;
+  const [hourText, minuteText] = value.split(':');
+  const hours = Number(hourText);
+  const minutes = Number(minuteText);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return hours * 60 + minutes;
+};
+const totalWorkedMinutes = (record: Pick<ClockingRecord, 'clockInTime' | 'clockOutTime'>) => {
+  const clockIn = minutesFromTime(record.clockInTime);
+  const clockOut = minutesFromTime(record.clockOutTime);
+  if (clockIn === null || clockOut === null) return 0;
+  const adjustedClockOut = clockOut < clockIn ? clockOut + 24 * 60 : clockOut;
+  return Math.max(0, adjustedClockOut - clockIn);
+};
+const totalWorkedHours = (record: Pick<ClockingRecord, 'clockInTime' | 'clockOutTime'>) => Math.round((totalWorkedMinutes(record) / 60) * 100) / 100;
+const formatWorkedHours = (record: Pick<ClockingRecord, 'clockInTime' | 'clockOutTime'>) => {
+  const minutes = totalWorkedMinutes(record);
+  const hoursPart = Math.floor(minutes / 60);
+  const minutesPart = minutes % 60;
+  return `${hoursPart}h ${String(minutesPart).padStart(2, '0')}m`;
+};
 
 const toneClass: Record<Tone, string> = {
   blue: 'border-blue-200 bg-blue-50 text-blue-800',
@@ -179,8 +201,8 @@ export default function AttendanceActivityClient({ initialNow }: { initialNow: s
 
   const exportCsv = () => {
     const rows = [
-      ['Employee ID', 'Employee', 'Department', 'Location', 'Site', 'Shift', 'Status', 'Clocking Mode', 'Scheduled Start', 'Scheduled End', 'Clock In', 'Clock Out', 'Punches', 'Late Minutes', 'Overtime Hours', 'Device', 'Supervisor', 'Exception'],
-      ...filtered.map((item) => [item.employeeId, item.employeeName, item.department, item.location, item.site, item.shift, item.attendanceStatus, item.clockingMode, item.scheduledStart, item.scheduledEnd, item.clockInTime || '', item.clockOutTime || '', item.punchCount, item.minutesLate, item.overtimeHours, item.deviceName, item.supervisor, item.exceptionNote || '']),
+      ['Employee ID', 'Employee', 'Department', 'Location', 'Site', 'Shift', 'Status', 'Clocking Mode', 'Scheduled Start', 'Scheduled End', 'Clock In', 'Clock Out', 'Punches', 'Late Minutes', 'Overtime Hours', 'Device', 'Supervisor', 'Total Hours Worked'],
+      ...filtered.map((item) => [item.employeeId, item.employeeName, item.department, item.location, item.site, item.shift, item.attendanceStatus, item.clockingMode, item.scheduledStart, item.scheduledEnd, item.clockInTime || '', item.clockOutTime || '', item.punchCount, item.minutesLate, item.overtimeHours, item.deviceName, item.supervisor, totalWorkedHours(item)]),
     ];
     const blob = new Blob([rows.map((row) => row.map(csvValue).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -257,7 +279,7 @@ export default function AttendanceActivityClient({ initialNow }: { initialNow: s
             <table className="w-full min-w-[1120px] divide-y divide-slate-100">
               <thead className="bg-slate-50">
                 <tr>
-                  {['Employee', 'Time Activity', 'Schedule', 'Punches', 'Lateness', 'Location / Device', 'Status', 'Exception'].map((header) => (
+                  {['Employee', 'Time Activity', 'Schedule', 'Punches', 'Lateness', 'Location / Device', 'Status', 'Total Hours Worked'].map((header) => (
                     <th key={header} className="px-4 py-3 text-left text-[11px] font-black uppercase text-slate-500">{header}</th>
                   ))}
                 </tr>
@@ -287,7 +309,10 @@ export default function AttendanceActivityClient({ initialNow }: { initialNow: s
                         <Chip value={item.attendanceStatus} />
                       </div>
                     </td>
-                    <td className="max-w-[260px] px-4 py-3 text-xs font-semibold text-slate-600">{item.exceptionNote || 'None'}</td>
+                    <td className="px-4 py-3">
+                      <div className="text-sm font-black text-slate-900 tabular-nums">{formatWorkedHours(item)}</div>
+                      <div className="mt-1 text-[11px] font-semibold text-slate-500">{item.clockOutTime ? 'Clock-in to clock-out' : 'Awaiting clock-out'}</div>
+                    </td>
                   </tr>
                 ))}
                 {!filtered.length ? (
@@ -310,6 +335,7 @@ export default function AttendanceActivityClient({ initialNow }: { initialNow: s
                 <Detail label="Attendance" value={selected.attendanceStatus} />
                 <Detail label="Clock In" value={selected.clockInTime || '--'} />
                 <Detail label="Clock Out" value={selected.clockOutTime || '--'} />
+                <Detail label="Total Hours Worked" value={formatWorkedHours(selected)} />
                 <Detail label="Punches" value={number(selected.punchCount)} />
                 <Detail label="Late" value={`${number(selected.minutesLate)} min`} />
                 <Detail label="Overtime" value={`${number(selected.overtimeHours)} hrs`} />

@@ -13,6 +13,51 @@ $BuildPath = Join-Path $AppPath ".next"
 $StandalonePath = Join-Path $BuildPath "standalone"
 $ResolvedOutputPath = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot $OutputPath))
 
+function Copy-DirectoryContents {
+  param(
+    [Parameter(Mandatory = $true)][string]$SourcePath,
+    [Parameter(Mandatory = $true)][string]$DestinationPath
+  )
+
+  if (-not (Test-Path -LiteralPath $SourcePath)) {
+    throw "Required source path was not found: $SourcePath"
+  }
+
+  if (Test-Path -LiteralPath $DestinationPath) {
+    Remove-Item -LiteralPath $DestinationPath -Recurse -Force
+  }
+
+  New-Item -ItemType Directory -Path $DestinationPath -Force | Out-Null
+  Copy-Item -Path (Join-Path $SourcePath "*") -Destination $DestinationPath -Recurse -Force
+}
+
+function Test-NextTraceFiles {
+  param(
+    [Parameter(Mandatory = $true)][string]$NextRootPath
+  )
+
+  $TraceFiles = Get-ChildItem -LiteralPath (Join-Path $NextRootPath "server") -Recurse -Filter "*.nft.json"
+  $RequiredFiles = New-Object "System.Collections.Generic.HashSet[string]"
+  foreach ($TraceFile in $TraceFiles) {
+    $Trace = Get-Content -Raw -LiteralPath $TraceFile.FullName | ConvertFrom-Json
+    $TraceDir = Split-Path -Parent $TraceFile.FullName
+    foreach ($RelativeFile in $Trace.files) {
+      if ($RelativeFile -notmatch "(^|/|\\)(chunks|webpack-runtime\.js)(/|\\|$)") {
+        continue
+      }
+
+      $RequiredFile = [System.IO.Path]::GetFullPath((Join-Path $TraceDir $RelativeFile))
+      [void]$RequiredFiles.Add($RequiredFile)
+    }
+  }
+
+  foreach ($RequiredFile in $RequiredFiles) {
+    if (-not (Test-Path -LiteralPath $RequiredFile)) {
+      throw "Deployment package is missing traced Next.js server file: $RequiredFile"
+    }
+  }
+}
+
 Push-Location $RepoRoot
 try {
   if (-not $SkipInstall) {
@@ -33,13 +78,15 @@ try {
 
   Copy-Item -Path (Join-Path $StandalonePath "*") -Destination $ResolvedOutputPath -Recurse -Force
 
+  $ServerSource = Join-Path $BuildPath "server"
+  $ServerTarget = Join-Path $ResolvedOutputPath "apps\dashboard\.next\server"
+  Copy-DirectoryContents -SourcePath $ServerSource -DestinationPath $ServerTarget
+
   $StaticTarget = Join-Path $ResolvedOutputPath "apps\dashboard\.next\static"
-  New-Item -ItemType Directory -Path $StaticTarget -Force | Out-Null
-  Copy-Item -Path (Join-Path $BuildPath "static\*") -Destination $StaticTarget -Recurse -Force
+  Copy-DirectoryContents -SourcePath (Join-Path $BuildPath "static") -DestinationPath $StaticTarget
 
   $PublicTarget = Join-Path $ResolvedOutputPath "apps\dashboard\public"
-  New-Item -ItemType Directory -Path $PublicTarget -Force | Out-Null
-  Copy-Item -Path (Join-Path $AppPath "public\*") -Destination $PublicTarget -Recurse -Force
+  Copy-DirectoryContents -SourcePath (Join-Path $AppPath "public") -DestinationPath $PublicTarget
 
   $WebConfigSource = if ($HostingMode -eq "HttpPlatform") {
     Join-Path $RepoRoot "deployment\iis\web.httpplatform.config"
@@ -52,6 +99,8 @@ try {
   if (Test-Path -LiteralPath $EnvPath) {
     Copy-Item -LiteralPath $EnvPath -Destination (Join-Path $ResolvedOutputPath ".env") -Force
   }
+
+  Test-NextTraceFiles -NextRootPath (Join-Path $ResolvedOutputPath "apps\dashboard\.next")
 
   Write-Host "IIS deployment package created at $ResolvedOutputPath"
   Write-Host "Hosting mode: $HostingMode"
