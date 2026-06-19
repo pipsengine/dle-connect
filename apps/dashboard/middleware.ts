@@ -20,6 +20,12 @@ const requiredPermission = (pathname: string) => {
   if (pathname.startsWith('/api/hris/time-and-logs') || pathname.startsWith('/api/hris/workforce-management') || pathname.startsWith('/hris/workforce-management')) return 'hris.view';
   if (pathname.startsWith('/api/hris') || pathname.startsWith('/hris')) return 'hris.view';
   if (pathname.startsWith('/workforce-portal')) return '';
+  if (pathname.startsWith('/api/operations-center') || pathname.startsWith('/operations-center/timesheets')) return 'operations.view';
+  if (pathname.startsWith('/operations-center/workforce-allocation')) return 'operations.allocation.view';
+  if (pathname.startsWith('/operations-center/resource-planning')) return 'operations.resource-planning.view';
+  if (pathname.startsWith('/operations-center/daily-activity-reports')) return 'operations.daily-reports.create';
+  if (pathname.startsWith('/operations-center/production-tracking')) return 'operations.production.view';
+  if (pathname.startsWith('/operations-center')) return 'operations.view';
   if (pathname.startsWith('/finance-accounting')) return 'finance.view';
   if (pathname.startsWith('/procurement')) return 'procurement.view';
   if (pathname.startsWith('/projects-engineering')) return 'project.view';

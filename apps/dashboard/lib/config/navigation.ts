@@ -167,7 +167,15 @@ export const navigationConfig: NavItem[] = [
     icon: Box,
     group: 'main',
     route: '/operations-center',
-    permissionKey: 'view_operations_center'
+    permissionKey: 'operations.view',
+    subItems: [
+      { title: 'Operations Dashboard', slug: 'operations-dashboard', route: '/operations-center', permissionKey: 'operations.dashboard.view' },
+      { title: 'Timesheets', slug: 'timesheets', route: '/operations-center/timesheets', permissionKey: 'operations.timesheets.submit' },
+      { title: 'Workforce Allocation', slug: 'workforce-allocation', route: '/operations-center/workforce-allocation', permissionKey: 'operations.allocation.view' },
+      { title: 'Resource Planning', slug: 'resource-planning', route: '/operations-center/resource-planning', permissionKey: 'operations.resource-planning.view' },
+      { title: 'Daily Activity Reports', slug: 'daily-activity-reports', route: '/operations-center/daily-activity-reports', permissionKey: 'operations.daily-reports.create' },
+      { title: 'Production Tracking', slug: 'production-tracking', route: '/operations-center/production-tracking', permissionKey: 'operations.production.view' },
+    ]
   },
   {
     id: 'document-management',

@@ -1,6 +1,8 @@
 import sql from 'mssql';
 import { loadWorkspaceEnv } from '@/lib/dle-enterprise-db';
 
+loadWorkspaceEnv();
+
 export type SagePayrollEmployee = {
   employeeId: number;
   employeeCode: string;
@@ -133,7 +135,24 @@ const config = () => {
   };
 };
 
-const activeEmployeeQuery = `
+const payrollPeriod = () => {
+  const value = String(process.env.HRIS_ACTIVE_PAYROLL_PERIOD || '2026-05').trim();
+  return /^\d{4}-\d{2}$/.test(value) ? value : '2026-05';
+};
+
+const payrollPeriodSql = () => {
+  const [year, month] = payrollPeriod().split('-').map(Number);
+  const start = `${year}-${String(month).padStart(2, '0')}-01`;
+  const end = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
+  return { start, end };
+};
+
+const activeEmployeeQuery = () => {
+  const { start, end } = payrollPeriodSql();
+  return `
+DECLARE @PayrollPeriodStart date = '${start}';
+DECLARE @PayrollPeriodEnd date = '${end}';
+
 WITH latestContract AS (
   SELECT
     ec.EmployeeID,
@@ -229,6 +248,8 @@ stipendGrossPeriods AS (
   JOIN Payroll.PayslipEarnLine pel
     ON pel.PayslipID = p.PayslipID
   WHERE ISNULL(pel.Total, 0) <> 0
+    AND epp.LastCalcDate >= @PayrollPeriodStart
+    AND epp.LastCalcDate < @PayrollPeriodEnd
   GROUP BY se.EmployeeID, epp.EmployeePayPeriodID
 ),
 stipendGross AS (
@@ -247,6 +268,8 @@ latestPayslipPeriods AS (
     ON epp.EmployeeID = ae.EmployeeID
   JOIN Payroll.Payslip p
     ON p.EmployeePayPeriodID = epp.EmployeePayPeriodID
+  WHERE epp.LastCalcDate >= @PayrollPeriodStart
+    AND epp.LastCalcDate < @PayrollPeriodEnd
 ),
 latestPayslipDeductions AS (
   SELECT
@@ -309,6 +332,8 @@ contractWeekdayRates AS (
   WHERE
     edef.DefCode IN ('JCWEEKDAY', 'JCWEEKDAY_NT')
     AND ISNULL(peu.EmployeeRate, 0) > 0
+    AND epp.LastCalcDate >= @PayrollPeriodStart
+    AND epp.LastCalcDate < @PayrollPeriodEnd
   GROUP BY ce.EmployeeID, epp.EmployeePayPeriodID, edef.DefCode
 ),
 contractRatePeriods AS (
@@ -527,12 +552,13 @@ WHERE
   )
 ORDER BY e.EmployeeCode;
 `;
+};
 
 export async function readActiveSagePayrollEmployees() {
   const pool = new sql.ConnectionPool(config());
   await pool.connect();
   try {
-    const result = await pool.request().query(activeEmployeeQuery);
+    const result = await pool.request().query(activeEmployeeQuery());
     return result.recordset as SagePayrollEmployee[];
   } finally {
     await pool.close();
@@ -548,7 +574,12 @@ type SagePayslipLine = {
   ytdTotal?: number | null;
 };
 
-const latestPayslipLinesQuery = `
+const latestPayslipLinesQuery = () => {
+  const { start, end } = payrollPeriodSql();
+  return `
+DECLARE @PayrollPeriodStart date = '${start}';
+DECLARE @PayrollPeriodEnd date = '${end}';
+
 IF OBJECT_ID('tempdb..#LatestPayslipPeriods') IS NOT NULL DROP TABLE #LatestPayslipPeriods;
 
 WITH activeEmployees AS (
@@ -577,6 +608,8 @@ latestPayslipPeriods AS (
     ON epp.EmployeeID = ae.EmployeeID
   JOIN Payroll.Payslip p
     ON p.EmployeePayPeriodID = epp.EmployeePayPeriodID
+  WHERE epp.LastCalcDate >= @PayrollPeriodStart
+    AND epp.LastCalcDate < @PayrollPeriodEnd
 )
 SELECT EmployeeID, EmployeePayPeriodID, PayslipID
 INTO #LatestPayslipPeriods
@@ -628,6 +661,7 @@ ORDER BY lp.EmployeeID, ccd.DefCode;
 
 DROP TABLE #LatestPayslipPeriods;
 `;
+};
 
 const groupLinesByEmployee = (lines: SagePayslipLine[]) => lines.reduce((map, line) => {
   const current = map.get(line.employeeId) || [];
@@ -647,7 +681,7 @@ export async function readActiveSagePayrollEmployeesWithLatestPayslipLines() {
   const pool = new sql.ConnectionPool(config());
   await pool.connect();
   try {
-    const result = await pool.request().query(latestPayslipLinesQuery);
+    const result = await pool.request().query(latestPayslipLinesQuery());
     const recordsets = (Array.isArray(result.recordsets) ? result.recordsets : []) as unknown[];
     const earningsByEmployee = groupLinesByEmployee((recordsets[0] || []) as SagePayslipLine[]);
     const deductionsByEmployee = groupLinesByEmployee((recordsets[1] || []) as SagePayslipLine[]);

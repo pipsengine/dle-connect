@@ -436,7 +436,7 @@ function PayslipWorkspace({ payload, employee }: { payload: Payload | null; empl
     ['NHF Number', statutory.nhfNumber || 'Not applicable'],
     ['Tax Number', statutory.taxNumber || selected.payeReference || 'Not configured'],
     ['NHIA Number', statutory.nhiaNumber || 'Not applicable'],
-    ['Employee Address', info.address || '03 Osoba Street, Igbogila Ipaja, Lagos State'],
+    ['Employee Address', info.address || 'Not configured'],
   ];
 
   const printPayslip = () => window.print();
@@ -450,15 +450,106 @@ function PayslipWorkspace({ payload, employee }: { payload: Payload | null; empl
     <section className="space-y-4">
       <style jsx global>{`
         #ess-payslip-print {
-          width: 210mm;
+          width: min(100%, 210mm);
           min-height: 297mm;
-          max-height: 297mm;
-          overflow: hidden;
+          overflow: visible;
         }
         @media print {
+          html, body {
+            width: 210mm !important;
+            height: 297mm !important;
+            margin: 0 !important;
+            overflow: hidden !important;
+            background: #ffffff !important;
+          }
           body * { visibility: hidden !important; }
           #ess-payslip-print, #ess-payslip-print * { visibility: visible !important; }
-          #ess-payslip-print { position: absolute !important; inset: 0 auto auto 0 !important; width: 210mm !important; height: 297mm !important; min-height: 297mm !important; max-height: 297mm !important; box-shadow: none !important; overflow: hidden !important; }
+          #ess-payslip-print {
+            position: fixed !important;
+            inset: 0 auto auto 0 !important;
+            width: 210mm !important;
+            height: 297mm !important;
+            min-height: 0 !important;
+            max-height: 297mm !important;
+            padding: 4mm !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            overflow: hidden !important;
+            font-size: 7.6px !important;
+            line-height: 1.06 !important;
+          }
+          #ess-payslip-print header {
+            padding-bottom: 1.4mm !important;
+            gap: 1.5mm !important;
+          }
+          #ess-payslip-print header .relative {
+            height: 11mm !important;
+            width: 34mm !important;
+          }
+          #ess-payslip-print h2 {
+            font-size: 18px !important;
+            line-height: 1 !important;
+          }
+          #ess-payslip-print h3 {
+            padding: 0.8mm 1.6mm !important;
+            font-size: 7.8px !important;
+            line-height: 1 !important;
+          }
+          #ess-payslip-print section,
+          #ess-payslip-print footer {
+            margin-top: 1.4mm !important;
+          }
+          #ess-payslip-print .p-3,
+          #ess-payslip-print .p-2\\.5 {
+            padding: 1.3mm !important;
+          }
+          #ess-payslip-print .px-3 {
+            padding-left: 1.6mm !important;
+            padding-right: 1.6mm !important;
+          }
+          #ess-payslip-print .py-3 {
+            padding-top: 1.4mm !important;
+            padding-bottom: 1.4mm !important;
+          }
+          #ess-payslip-print .gap-3 {
+            gap: 1.4mm !important;
+          }
+          #ess-payslip-print .gap-2 {
+            gap: 1mm !important;
+          }
+          #ess-payslip-print table {
+            font-size: 7.1px !important;
+            line-height: 1.03 !important;
+          }
+          #ess-payslip-print th,
+          #ess-payslip-print td {
+            padding: 0.45mm 0.8mm !important;
+          }
+          #ess-payslip-print .text-xs,
+          #ess-payslip-print .text-\\[11px\\] {
+            font-size: 7.5px !important;
+            line-height: 1.06 !important;
+          }
+          #ess-payslip-print .text-lg {
+            font-size: 12px !important;
+            line-height: 1.05 !important;
+          }
+          #ess-payslip-print .text-xl {
+            font-size: 13px !important;
+            line-height: 1.05 !important;
+          }
+          #ess-payslip-print .leading-5 {
+            line-height: 1.18 !important;
+          }
+          #ess-payslip-print .h-20 {
+            height: 14mm !important;
+          }
+          #ess-payslip-print .w-20 {
+            width: 14mm !important;
+          }
+          #ess-payslip-print .rounded-lg {
+            border-radius: 2px !important;
+          }
           .ess-no-print { display: none !important; }
           @page { size: A4 portrait; margin: 0; }
         }
@@ -903,19 +994,19 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
   const selectedLoanProduct = payload?.loanManagement.products.find((product) => product.id === loanProductId) || null;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-dvh bg-slate-50">
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-[1600px] flex-col gap-3 px-3 py-3 sm:px-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="relative h-10 w-32 overflow-hidden rounded-md border border-slate-200 bg-white">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <div className="relative h-9 w-24 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white sm:h-10 sm:w-32">
               <Image src="/brand/dorman-long-logo.jpg" alt="Dorman Long" fill className="object-contain p-1" priority />
             </div>
-            <div className="min-w-0 border-l border-slate-200 pl-3">
-              <h1 className="truncate text-base font-black text-slate-950 sm:text-lg">Employee Self-Service Portal</h1>
+            <div className="min-w-0 border-l border-slate-200 pl-2 sm:pl-3">
+              <h1 className="truncate text-sm font-black text-slate-950 sm:text-lg">Employee Self-Service Portal</h1>
               <p className="truncate text-xs font-semibold text-slate-500">{employee ? `${employee.fullName} - ${employee.department}` : 'Loading employee workspace'}</p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 lg:justify-end">
             <Link href="/" aria-label="Go to enterprise landing page" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 text-xs font-extrabold text-slate-700 hover:bg-slate-50 sm:px-3">
               <Building2 className="h-4 w-4" /><span className="hidden sm:inline">Enterprise Home</span>
             </Link>
@@ -940,16 +1031,16 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1600px] grid-cols-1 gap-4 px-4 py-4 lg:grid-cols-[240px_1fr]">
-        <aside className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm lg:sticky lg:top-20 lg:h-[calc(100vh-6rem)]">
-          <nav className="grid grid-cols-2 gap-1 lg:grid-cols-1">
+      <div className="mx-auto grid max-w-[1600px] grid-cols-1 gap-4 px-3 py-3 sm:px-4 sm:py-4 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <aside className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm lg:sticky lg:top-20 lg:flex lg:max-h-[calc(100dvh-6rem)] lg:flex-col lg:overflow-hidden">
+          <nav className="flex gap-1 overflow-x-auto pb-1 lg:grid lg:min-h-0 lg:flex-1 lg:grid-cols-1 lg:overflow-y-auto lg:overflow-x-hidden lg:pb-0 lg:pr-1">
             {navItems.map((item) => (
-              <button key={item.id} type="button" onClick={() => setTab(item.id)} className={`flex h-10 items-center gap-2 rounded-lg px-3 text-left text-xs font-black transition-colors ${tab === item.id ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-50'}`}>
-                <item.icon className="h-4 w-4" />{item.label}
+              <button key={item.id} type="button" onClick={() => setTab(item.id)} className={`flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-left text-xs font-black transition-colors lg:h-9 lg:w-full ${tab === item.id ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-50'}`}>
+                <item.icon className="h-4 w-4 shrink-0" /><span className="whitespace-nowrap">{item.label}</span>
               </button>
             ))}
           </nav>
-          <div className="mt-3 hidden rounded-lg border border-emerald-200 bg-emerald-50 p-3 lg:block">
+          <div className="mt-3 hidden shrink-0 rounded-lg border border-emerald-200 bg-emerald-50 p-3 lg:block">
             <p className="text-xs font-black uppercase tracking-normal text-slate-500">Access Context</p>
             <div className="mt-3 space-y-2 text-xs font-semibold text-slate-600">
               <div className="flex items-center gap-2"><LockKeyhole className="h-4 w-4 text-emerald-600" />RBAC Employee</div>
@@ -965,23 +1056,23 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
 
           <section className="overflow-hidden rounded-lg border border-blue-200 bg-blue-50/40 shadow-sm">
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px]">
-              <div className="p-5">
+              <div className="p-4 sm:p-5">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-black text-blue-800">Standalone ESS Module</span>
                   <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">Cloud-ready</span>
                   <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">Loaded {stableDateTime(payload?.generatedAt || initialNow)}</span>
                 </div>
-                <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">My HR workspace</h2>
+                <h2 className="mt-4 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">My HR workspace</h2>
                 <p className="mt-2 max-w-4xl text-sm font-semibold leading-6 text-slate-600">
                   Secure access to profile, leave, time, payroll, documents, learning, claims, loans, travel, assets, communications, workflow tracking, and exit services.
                 </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button type="button" onClick={() => setTab('services')} className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-black text-white hover:bg-blue-700"><Send className="h-4 w-4" />New Request</button>
-                  <button type="button" onClick={() => setTab('loans')} className="inline-flex h-10 items-center gap-2 rounded-lg border border-cyan-200 bg-cyan-50 px-4 text-sm font-black text-cyan-900 hover:bg-white"><Landmark className="h-4 w-4" />Apply for Loan</button>
-                  <button type="button" onClick={() => setTab('payroll')} className="inline-flex h-10 items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-4 text-sm font-black text-violet-900 hover:bg-white"><Download className="h-4 w-4" />Payslips</button>
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
+                  <button type="button" onClick={() => setTab('services')} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-black text-white hover:bg-blue-700 sm:justify-start"><Send className="h-4 w-4" />New Request</button>
+                  <button type="button" onClick={() => setTab('loans')} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-cyan-200 bg-cyan-50 px-4 text-sm font-black text-cyan-900 hover:bg-white sm:justify-start"><Landmark className="h-4 w-4" />Apply for Loan</button>
+                  <button type="button" onClick={() => setTab('payroll')} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-4 text-sm font-black text-violet-900 hover:bg-white sm:justify-start"><Download className="h-4 w-4" />Payslips</button>
                 </div>
               </div>
-              <div className="border-t border-blue-200 bg-white/80 p-5 lg:border-l lg:border-t-0">
+              <div className="border-t border-blue-200 bg-white/80 p-4 sm:p-5 lg:border-l lg:border-t-0">
                 <div className="flex items-center gap-3">
                   <div className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white">
                     <Image src="/brand/dorman-long-logo.jpg" alt="" fill className="object-contain p-2" />

@@ -1472,29 +1472,29 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
 
   return (
     <div className="bg-white">
-      <div className="flex items-center justify-between gap-4 flex-wrap pt-0">
+      <div className="flex flex-col gap-4 pt-0 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="w-8 h-8 rounded-xl bg-dle-blue/10 border border-slate-200 flex items-center justify-center text-dle-blue">
+          <div className="flex min-w-0 items-start gap-2">
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-dle-blue/10 text-dle-blue">
               <Users className="w-5 h-5" />
             </span>
-            <div>
-              <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Employee Directory</h1>
-              <p className="text-sm text-slate-600 mt-0.5">
+            <div className="min-w-0">
+              <h1 className="text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl">Employee Directory</h1>
+              <p className="mt-0.5 max-w-3xl text-sm font-medium leading-6 text-slate-600">
                 Centralized workforce registry and employee intelligence hub for all DLE employees, departments, locations, and reporting structures.
               </p>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
           <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white">
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
             <span className="text-xs font-extrabold text-slate-700">Audit Ready</span>
           </div>
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white">
+          <div className="flex min-w-[180px] flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 sm:flex-none">
             <span className="text-xs font-extrabold text-slate-600">Role</span>
-            <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="text-xs font-extrabold text-slate-800 bg-white focus:outline-none">
+            <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="min-w-0 flex-1 bg-white text-xs font-extrabold text-slate-800 focus:outline-none sm:flex-none">
               {[
                 'Super Admin',
                 'HR Director',
@@ -1539,7 +1539,7 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
         </div>
       )}
 
-      <div className="mt-6 mb-6 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4">
+      <div className="mt-6 mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 xl:gap-4">
         <MetricCard
           label="Total Employees"
           value={formatNumber(summary.total)}
@@ -1584,10 +1584,10 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
         />
       </div>
 
-      <div className="sticky top-0 z-20 bg-white border border-slate-200/60 rounded-2xl shadow-sm">
-        <div className="p-4 flex flex-col xl:flex-row xl:items-center gap-3 justify-between">
+      <div className="sticky top-0 z-20 rounded-lg border border-slate-200/60 bg-white shadow-sm sm:rounded-2xl">
+        <div className="flex flex-col justify-between gap-3 p-3 sm:p-4 xl:flex-row xl:items-center">
           <div className="flex-1 flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="relative flex-1 min-w-[260px]">
+            <div className="relative min-w-0 flex-1">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 value={query}
@@ -1632,7 +1632,7 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
               </AnimatePresence>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0">
               <button
                 type="button"
                 onClick={() => setFilterPanelOpen(true)}
@@ -1652,8 +1652,8 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap justify-between">
-            <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
               {(['table', 'grid', 'org', 'geo'] as const).map((m) => (
                 <button
                   key={m}
@@ -1668,8 +1668,8 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
               ))}
             </div>
 
-            <div className="flex items-center gap-2">
-              <select value={activePreset} onChange={(e) => applyPreset(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 focus:outline-none">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+              <select value={activePreset} onChange={(e) => applyPreset(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 focus:outline-none sm:w-auto">
                 {presets.map((p) => (
                   <option key={p.name} value={p.name}>
                     Preset: {p.name}
@@ -1677,12 +1677,12 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
                 ))}
               </select>
 
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white">
+              <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
                 <input
                   value={presetName}
                   onChange={(e) => setPresetName(e.target.value)}
                   placeholder="Save preset..."
-                  className="w-[140px] text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                  className="min-w-0 flex-1 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none sm:w-[140px]"
                 />
                 <button
                   type="button"
@@ -1744,9 +1744,9 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
 
       <div className="mt-4">
         {view === 'table' && (
-          <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
-            <div className="max-h-[calc(100vh-230px)] overflow-auto">
-              <table className="w-full text-left border-separate border-spacing-0">
+          <div className="overflow-hidden rounded-lg border border-slate-200/60 bg-white shadow-sm sm:rounded-2xl">
+            <div className="max-h-[calc(100dvh-220px)] overflow-auto">
+              <table className="min-w-[980px] w-full border-separate border-spacing-0 text-left">
                 <thead className="bg-slate-50">
                   <tr>
                     {visibleColumns.map((c) => (

@@ -48,6 +48,8 @@ import {
 import { readBiometricDevices, type BiometricDeviceRecord } from '@/lib/biometric-attendance-store';
 import { readPayrollEmployees, type PayrollEmployeeSource } from '@/lib/payroll-employee-source';
 import type { StructureInsight } from '@/lib/organization-data';
+import { AUTH_COOKIE, hasPermission as hasSessionPermission, verifySessionToken, type SessionPayload } from '@/lib/auth/session';
+import { readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
 
 type ProjectManagerOption = {
   employeeId: string;
@@ -162,6 +164,7 @@ type UpdatePayload = {
   reviewerNote?: string;
   project?: Partial<Project> & Pick<Project, 'code' | 'name' | 'site' | 'projectManager'>;
   workCenter?: Partial<TimesheetWorkCenter> & { name: string };
+  mode?: 'supervisor';
   bulkAllocation?: {
     employeeIds: string[];
     projectCode: string;
@@ -289,6 +292,8 @@ const err = (status: number, error: string) => NextResponse.json({ status: 'erro
 const round1 = (value: number) => Math.round(value * 10) / 10;
 const GROSS_TIMESHEET_HOURS = STANDARD_TIMESHEET_HOURS + DAILY_BREAK_HOURS;
 const clean = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+const tokenFrom = (request: Request) => request.headers.get('cookie')?.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${AUTH_COOKIE}=`))?.split('=').slice(1).join('=');
+const sessionFrom = (request: Request) => verifySessionToken(tokenFrom(request) ? decodeURIComponent(tokenFrom(request) || '') : '');
 const matchKey = (value: unknown) => {
   const raw = String(value ?? '').trim().toUpperCase();
   if (!raw) return '';
@@ -316,6 +321,15 @@ type SupervisorSourceEmployee = {
   fullName?: string | null;
   jobTitle?: string | null;
   department?: string | null;
+  division?: string | null;
+  businessUnit?: string | null;
+  costCenter?: string | null;
+  projectSite?: string | null;
+  workLocation?: string | null;
+  officeLocation?: string | null;
+  location?: string | null;
+  managerName?: string | null;
+  status?: string | null;
 };
 
 type SupervisorIndex<T extends SupervisorSourceEmployee> = {
@@ -583,6 +597,114 @@ const buildProjectManagerOptions = async (employees: PayrollEmployeeSource['empl
   return Array.from(byCode.values()).sort((a, b) => a.fullName.localeCompare(b.fullName) || a.employeeCode.localeCompare(b.employeeCode));
 };
 
+const sessionIdentityKeys = (session: SessionPayload | null) =>
+  matchKeys(session?.employeeCode, session?.employeeId, session?.username);
+
+const employeeForSession = <T extends SupervisorSourceEmployee>(employees: T[], session: SessionPayload | null) => {
+  const keys = new Set(sessionIdentityKeys(session));
+  if (!keys.size) return null;
+  return employees.find((employee) => matchKeys(employee.employeeCode, employee.employeeId, employee.sourceEmployeeId).some((key) => keys.has(key))) || null;
+};
+
+const modeLockedSupervisor = (session: SessionPayload | null, employees: SupervisorSourceEmployee[], supervisorIndex: SupervisorIndex<SupervisorSourceEmployee>) => {
+  const employee = employeeForSession(employees, session);
+  const display = employee ? supervisorDisplay(employee) : [clean(session?.employeeCode || session?.username), clean(session?.fullName)].filter(Boolean).join(' - ');
+  return canonicalSupervisorValue(display || clean(session?.fullName) || clean(session?.username), supervisorIndex);
+};
+
+const mostCommon = (values: unknown[]) => {
+  const counts = new Map<string, number>();
+  for (const value of values.map(clean).filter(Boolean)) counts.set(value, (counts.get(value) || 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] || '';
+};
+
+const preferredLocationFromDirectory = (
+  directReports: Array<{ location?: string | null; workLocation?: string | null; officeLocation?: string | null; projectSite?: string | null }>,
+  locations: TimesheetLocation[],
+  workCenters: TimesheetWorkCenter[],
+) => {
+  const workCenterNames = new Set(workCenters.map((workCenter) => clean(workCenter.name).toLowerCase()).filter(Boolean));
+  const directReportLocation = mostCommon(directReports.map(employeeLocation));
+  if (directReportLocation && !workCenterNames.has(directReportLocation.toLowerCase())) return directReportLocation;
+
+  const systemLocations = locations
+    .flatMap((location) => [location.name, location.site])
+    .map(clean)
+    .filter((value): value is string => Boolean(value))
+    .filter((value) => !workCenterNames.has(value.toLowerCase()));
+  return systemLocations.find((value) => /^idi[_\-\s]?oro$/i.test(value)) || mostCommon(systemLocations);
+};
+
+const assignedEmployeesForSupervisor = async (supervisor: string, employees: SupervisorSourceEmployee[]) => {
+  const supervisorCode = clean(supervisor).split(' - ')[0]?.trim();
+  if (!supervisorCode) return [];
+  try {
+    const assignments = await readSupervisorAssignments({ supervisorEmployeeCode: supervisorCode });
+    const byEmployeeCode = new Map(employees.map((employee) => [clean(employee.employeeCode).toLowerCase(), employee]));
+    return assignments
+      .filter((assignment) => assignment.employeeCode && assignment.matchedStatus !== 'Unresolved')
+      .map((assignment) => {
+        const employee = byEmployeeCode.get(clean(assignment.employeeCode).toLowerCase());
+        return employee || {
+          employeeId: assignment.employeeCode || '',
+          employeeCode: assignment.employeeCode || '',
+          sourceEmployeeId: assignment.employeeCode || '',
+          fullName: assignment.employeeName || assignment.employeeCode || '',
+          jobTitle: assignment.tradeRole || 'Assigned Crew',
+          department: assignment.assignmentGroup || 'Operations',
+          division: assignment.assignmentGroup || '',
+          businessUnit: assignment.assignmentGroup || '',
+          costCenter: '',
+          projectSite: 'IDI_ORO',
+          workLocation: 'IDI_ORO',
+          officeLocation: 'IDI_ORO',
+          location: 'IDI_ORO',
+          managerName: supervisor,
+          status: 'Active',
+        } as SupervisorSourceEmployee;
+      });
+  } catch (error) {
+    console.warn('Timesheet supervisor assignment list could not be loaded; falling back to reporting manager data:', error);
+    return [];
+  }
+};
+
+const defaultWorkCenterForEmployees = (
+  employees: Array<{ department?: string | null; division?: string | null; businessUnit?: string | null; costCenter?: string | null; projectSite?: string | null; workLocation?: string | null; officeLocation?: string | null; location?: string | null }>,
+  workCenters: TimesheetWorkCenter[],
+  locationName?: string,
+) => {
+  const available = workCenters.filter((workCenter) => {
+    const selected = clean(locationName).toLowerCase();
+    if (!selected) return true;
+    return [workCenter.location, workCenter.site, workCenter.name].map((value) => clean(value).toLowerCase()).filter(Boolean).some((value) => value === selected || value.includes(selected) || selected.includes(value));
+  });
+  const scored = available.map((workCenter) => ({
+    name: workCenter.name,
+    score: employees.filter((employee) => employeeMatchesWorkCenter(employee, workCenter.name)).length,
+  })).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  return scored.find((item) => item.score > 0)?.name || scored[0]?.name || '';
+};
+
+const workCenterFromSupervisorProfile = (profile: SupervisorSourceEmployee | null | undefined, workCenters: TimesheetWorkCenter[]) => {
+  const title = clean(profile?.jobTitle).toLowerCase();
+  if (!title) return '';
+  const aliases: Array<[RegExp, string]> = [
+    [/\bfitter|fitting\b/i, 'Fitting'],
+    [/\bwelder|welding\b/i, 'Welding'],
+    [/\bpainter|painting|coating\b/i, 'Painting'],
+    [/\brigger|rigging\b/i, 'Rigging'],
+    [/\bscaffold/i, 'Structural Assembly'],
+    [/\broller|rolling|machinist|machining\b/i, 'Machining'],
+  ];
+  const alias = aliases.find(([pattern]) => pattern.test(title))?.[1];
+  if (alias) {
+    const match = workCenters.find((workCenter) => clean(workCenter.name).toLowerCase() === alias.toLowerCase());
+    if (match) return match.name;
+  }
+  return workCenters.find((workCenter) => title.includes(clean(workCenter.name).toLowerCase()))?.name || '';
+};
+
 const resolveProjectManagerForSubmission = (lines: TimesheetLine[], projects: Project[]) => {
   const hoursByProject = new Map<string, number>();
   for (const line of lines) {
@@ -616,9 +738,11 @@ const todayDateInputValue = () => {
   return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
 };
 
-const buildPayload = async (request: Request, date?: string, supervisorId?: string, workCenterName?: string, locationName?: string): Promise<TimesheetPayload> => {
+const buildPayload = async (request: Request, date?: string, supervisorId?: string, workCenterName?: string, locationName?: string, mode?: 'supervisor'): Promise<TimesheetPayload> => {
   const access = resolveAccessContext(request);
   const uiPermissions = getUiPermissions(access);
+  const session = await sessionFrom(request);
+  const supervisorMode = mode === 'supervisor';
   const { headers, lines: allLines } = await readTimesheetData();
   const [departments, locations] = await Promise.all([
     readSystemTimesheetDepartments(),
@@ -635,9 +759,10 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
   const projectManagers = await buildProjectManagerOptions(activeEmployees);
 
   const targetDate = date || todayDateInputValue();
-  const requestedSupervisor = clean(supervisorId);
-  const targetWorkCenter = workCenterName?.trim();
-  const targetLocation = locationName?.trim();
+  if (supervisorMode && !session) throw new Error('Authenticated supervisor session is required.');
+  let requestedSupervisor = clean(supervisorId);
+  let targetWorkCenter = clean(workCenterName);
+  let targetLocation = clean(locationName);
   const period = await readTimesheetPeriod(new Date(targetDate));
   const recordSupervisors = Array.from(new Set(timesheetRecords.map((record) => record.supervisor).map(clean).filter(Boolean)));
   const employeesBySupervisor = new Map<string, typeof activeEmployees>();
@@ -665,27 +790,51 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
     })
     .filter((item) => item.employeeCount > 0)
     .sort((a, b) => a.label.localeCompare(b.label));
+  if (supervisorMode) {
+    requestedSupervisor = modeLockedSupervisor(session, activeEmployees, supervisorIndex);
+    targetLocation = '';
+    targetWorkCenter = '';
+  }
   const targetSupervisor = canonicalSupervisorValue(requestedSupervisor || supervisorDirectory[0]?.value || recordSupervisors[0] || access.actor, supervisorIndex);
   const selectedSupervisorProfile = findSupervisorEmployee(targetSupervisor, supervisorIndex) || activeEmployees.find((employee) => supervisorMatchesSelection(employee, targetSupervisor));
-  const selectedSupervisorAllDirectReports = activeEmployees.filter((employee) => {
+  const assignedSupervisorEmployees = await assignedEmployeesForSupervisor(targetSupervisor, activeEmployees);
+  const reportingManagerEmployees = activeEmployees.filter((employee) => {
     const canonicalManager = canonicalSupervisorValue(employee.managerName, supervisorIndex);
     return canonicalManager === targetSupervisor || managerMatches({ managerName: canonicalManager || employee.managerName }, targetSupervisor);
   });
-  const selectedSupervisorDirectReports = selectedSupervisorAllDirectReports.filter((employee) => employeeMatchesLocation(employee, targetLocation));
-  const selectedSupervisorWorkCenterReports = targetWorkCenter
+  const selectedSupervisorAllDirectReports = assignedSupervisorEmployees.length ? assignedSupervisorEmployees : reportingManagerEmployees;
+  if (supervisorMode) {
+    const supervisorRecordsForDefault = timesheetRecords.filter((record) => managerMatches({ managerName: record.supervisor }, targetSupervisor));
+    targetLocation =
+      preferredLocationFromDirectory(selectedSupervisorAllDirectReports, locations, workCenters) ||
+      mostCommon(supervisorRecordsForDefault.flatMap((record) => [record.location, record.site]));
+    targetWorkCenter =
+      workCenterFromSupervisorProfile(selectedSupervisorProfile, workCenters) ||
+      defaultWorkCenterForEmployees(selectedSupervisorAllDirectReports, workCenters, targetLocation) ||
+      mostCommon(supervisorRecordsForDefault.flatMap((record) => [record.department, record.businessUnit, record.site, record.location]));
+    targetLocation =
+      targetLocation ||
+      preferredLocationFromDirectory([], locations, workCenters) ||
+      clean(workCenters.find((workCenter) => workCenter.name === targetWorkCenter)?.site || workCenters.find((workCenter) => workCenter.name === targetWorkCenter)?.location) ||
+      mostCommon(locations.flatMap((location) => [location.name, location.site]));
+  }
+  const selectedSupervisorDirectReports = supervisorMode
+    ? selectedSupervisorAllDirectReports
+    : selectedSupervisorAllDirectReports.filter((employee) => employeeMatchesLocation(employee, targetLocation));
+  const selectedSupervisorWorkCenterReports = !supervisorMode && targetWorkCenter
     ? selectedSupervisorDirectReports.filter((employee) => employeeMatchesWorkCenter(employee, targetWorkCenter))
     : [];
   const selectedSupervisorEmployeesFromDirectory = (selectedSupervisorWorkCenterReports.length ? selectedSupervisorWorkCenterReports : selectedSupervisorDirectReports)
     .map((employee) => ({
-      employeeId: employee.employeeId,
-      employeeCode: employee.employeeCode,
-      fullName: employee.fullName,
-      jobTitle: employee.jobTitle,
-      department: employee.department,
+      employeeId: clean(employee.employeeId),
+      employeeCode: clean(employee.employeeCode),
+      fullName: clean(employee.fullName) || clean(employee.employeeCode),
+      jobTitle: clean(employee.jobTitle),
+      department: clean(employee.department),
       location: employeeLocation(employee),
       managerEmployeeCode: null,
       managerName: clean(employee.managerName) || null,
-      status: employee.status,
+      status: clean(employee.status) || 'Active',
     }))
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
   const selectedSupervisorEmployeesFromRecords = timesheetRecords
@@ -710,12 +859,16 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
       : headers.find((h) => h.timesheetDate === targetDate && canonicalSupervisorValue(h.supervisorId, supervisorIndex) === targetSupervisor)) ||
     null;
   const selectedEmployeeKeys = new Set(selectedSupervisorEmployees.flatMap((employee) => matchKeys(employee.employeeCode, employee.fullName)).filter(Boolean));
+  const lineBelongsToSelectedCrew = (line: TimesheetLine) =>
+    selectedEmployeeKeys.size > 0
+      ? matchKeys(line.employeeNo, line.employeeId, line.employeeName).some((key) => selectedEmployeeKeys.has(key))
+      : !supervisorMode;
   const headerId = header?.id;
   let lines = headerId
     ? allLines
         .filter((l) => l.headerId === headerId)
         .map(normalizeLineForGrossDay)
-        .filter((line) => selectedEmployeeKeys.size === 0 || matchKeys(line.employeeNo, line.employeeId, line.employeeName).some((key) => selectedEmployeeKeys.has(key)))
+        .filter(lineBelongsToSelectedCrew)
     : [];
 
   if ((!header || lines.length === 0) && targetSupervisor && targetWorkCenter) {
@@ -724,7 +877,7 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
       header = preview.header;
       lines = preview.lines
         .map(normalizeLineForGrossDay)
-        .filter((line) => selectedEmployeeKeys.size === 0 || matchKeys(line.employeeNo, line.employeeId, line.employeeName).some((key) => selectedEmployeeKeys.has(key)));
+        .filter(lineBelongsToSelectedCrew);
     } catch (error) {
       console.warn('Timesheet attendance preview could not be loaded:', error);
     }
@@ -779,29 +932,31 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
     workflowStages,
     biometricDevices,
     attendanceWorkCenters,
-    workCenters,
+    workCenters: supervisorMode && targetWorkCenter ? workCenters.filter((workCenter) => workCenter.name === targetWorkCenter) : workCenters,
     departments,
     locations,
     projectManagers,
     supervisorEmployees: selectedSupervisorEmployees,
     supervisorProfile: selectedSupervisorProfile ? employeeSummary(selectedSupervisorProfile) : null,
     permissions: {
-      actor: uiPermissions.actor,
-      role: uiPermissions.role,
-      canEdit: uiPermissions.canEditAttendance,
+      actor: session?.fullName || uiPermissions.actor,
+      role: supervisorMode ? 'Viewer' : uiPermissions.role,
+      canEdit: supervisorMode
+        ? Boolean(session && (hasSessionPermission(session.permissions, 'operations.timesheets.submit') || hasSessionPermission(session.permissions, 'timesheet.submit')))
+        : uiPermissions.canEditAttendance,
       canExport: true,
-      canApprove: uiPermissions.canApproveTimesheet || uiPermissions.role === 'OrganizationAdmin',
-      canManagePeriod: uiPermissions.canManageTimesheetPeriods || uiPermissions.role === 'OrganizationAdmin',
-      canViewCosts: true,
-      canViewAudit: uiPermissions.canViewAudit,
+      canApprove: supervisorMode ? false : uiPermissions.canApproveTimesheet || uiPermissions.role === 'OrganizationAdmin',
+      canManagePeriod: supervisorMode ? false : uiPermissions.canManageTimesheetPeriods || uiPermissions.role === 'OrganizationAdmin',
+      canViewCosts: !supervisorMode,
+      canViewAudit: supervisorMode ? false : uiPermissions.canViewAudit,
     },
     summary,
     filterOptions: {
       departments: departments.map((department) => department.name),
       projects: activeProjects.map(p => p.code),
-      locations: systemLocationNames,
+      locations: supervisorMode ? [targetLocation].filter(Boolean) : systemLocationNames,
       projectSites: projectSiteOptions,
-      supervisors: Array.from(new Set([targetSupervisor, ...supervisorDirectory.map((item) => item.value), ...recordSupervisors].map(clean).filter(Boolean))).sort((a, b) => {
+      supervisors: supervisorMode ? [targetSupervisor].filter(Boolean) : Array.from(new Set([targetSupervisor, ...supervisorDirectory.map((item) => item.value), ...recordSupervisors].map(clean).filter(Boolean))).sort((a, b) => {
         const aLabel = supervisorDirectory.find((item) => item.value === a)?.label || a;
         const bLabel = supervisorDirectory.find((item) => item.value === b)?.label || b;
         return aLabel.localeCompare(bLabel);
@@ -857,15 +1012,24 @@ export async function GET(request: Request) {
   const supervisorId = searchParams.get('supervisorId') || undefined;
   const locationName = searchParams.get('locationName') || undefined;
   const workCenterName = searchParams.get('workCenterName') || undefined;
-  return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName));
+  const mode = searchParams.get('mode') === 'supervisor' ? 'supervisor' : undefined;
+  return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName, mode));
 }
 
 export async function PATCH(request: Request) {
   const access = resolveAccessContext(request);
+  const session = await sessionFrom(request);
+  const actor = session?.fullName || access.actor;
   const payload = (await request.json()) as UpdatePayload;
   const { action, date, supervisorId, locationName, workCenterName, headerId, lines: updatedLines } = payload;
+  const mode = payload.mode === 'supervisor' ? 'supervisor' : undefined;
+  const isSupervisorMode = mode === 'supervisor';
 
   try {
+    if (isSupervisorMode && ['CREATE_PROJECT', 'UPSERT_PROJECT', 'UPSERT_WORK_CENTER', 'DELETE_WORK_CENTER', 'APPROVE', 'REJECT'].includes(String(action))) {
+      return err(403, 'Supervisors cannot create projects, manage work centers, manage periods, or perform workflow administration from timesheet entry.');
+    }
+
     if (action === 'CREATE_PROJECT' || action === 'UPSERT_PROJECT') {
       if (!payload.project) return err(400, 'Project details are required.');
       const projectCode = payload.project.code?.trim().toUpperCase();
@@ -886,29 +1050,40 @@ export async function PATCH(request: Request) {
         status: payload.project.status || 'Active',
         tasks: payload.project.tasks?.length ? payload.project.tasks : [{ id: `task-${projectId}`, name: 'General Project Work' }],
       });
-      return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName));
+      return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName, mode));
     }
 
     if (action === 'UPSERT_WORK_CENTER') {
       if (!payload.workCenter?.name?.trim()) return err(400, 'Work center name is required.');
       await upsertTimesheetWorkCenter(payload.workCenter);
-      return ok(await buildPayload(request, date, supervisorId, payload.workCenter.name, locationName));
+      return ok(await buildPayload(request, date, supervisorId, payload.workCenter.name, locationName, mode));
     }
 
     if (action === 'DELETE_WORK_CENTER') {
       if (!payload.workCenter?.id) return err(400, 'Work center ID is required.');
       await deactivateTimesheetWorkCenter(payload.workCenter.id);
-      return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName));
+      return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName, mode));
     }
 
     if (action === 'COPY_PREVIOUS_DAY') {
-      if (!date || !supervisorId || !workCenterName) return err(400, 'Date, supervisor, and work center are required for copy.');
-      await requireOpenPeriod(date);
+      let scopedDate = date;
+      let scopedSupervisorId = supervisorId;
+      let scopedWorkCenterName = workCenterName;
+      let scopedLocationName = locationName;
+      if (isSupervisorMode) {
+        const scoped = await buildPayload(request, date, undefined, undefined, undefined, mode);
+        scopedDate = scoped.timesheetDate;
+        scopedSupervisorId = scoped.filterOptions.supervisors[0];
+        scopedLocationName = scoped.filterOptions.locations[0];
+        scopedWorkCenterName = scoped.workCenters[0]?.name || scoped.header?.workCenterName || '';
+      }
+      if (!scopedDate || !scopedSupervisorId || !scopedWorkCenterName) return err(400, 'Date, supervisor, and work center are required for copy.');
+      await requireOpenPeriod(scopedDate);
       const { headers } = await readTimesheetData();
-      const currentHeader = headers.find(h => h.timesheetDate === date && h.supervisorId === supervisorId && h.workCenterName === workCenterName);
+      const currentHeader = headers.find(h => h.timesheetDate === scopedDate && h.supervisorId === scopedSupervisorId && h.workCenterName === scopedWorkCenterName);
       if (currentHeader) requireEditableTimesheet(currentHeader);
-      await handleCopyPreviousDay(request, date, supervisorId, workCenterName);
-      return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName));
+      await handleCopyPreviousDay(request, scopedDate, scopedSupervisorId, scopedWorkCenterName);
+      return ok(await buildPayload(request, scopedDate, scopedSupervisorId, scopedWorkCenterName, scopedLocationName, mode));
     }
 
     if (action === 'BULK_APPLY') {
@@ -916,21 +1091,36 @@ export async function PATCH(request: Request) {
       const { headers } = await readTimesheetData();
       const header = headers.find(h => h.id === payload.headerId);
       if (!header) return err(404, 'Timesheet header not found.');
+      if (isSupervisorMode) {
+        const scoped = await buildPayload(request, header.timesheetDate, undefined, undefined, undefined, mode);
+        if (header.supervisorId !== scoped.filterOptions.supervisors[0]) return err(403, 'Supervisors can only update their own crew timesheets.');
+      }
       await requireOpenPeriod(header.timesheetDate);
       requireEditableTimesheet(header);
       await handleBulkApply(request, payload);
-      return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName));
+      return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName, mode));
     }
 
     const { headers, lines: allLines } = await readTimesheetData();
 
     if (action === 'SYNC_ATTENDANCE') {
-      if (!date || !supervisorId || !workCenterName) return err(400, 'Date, Supervisor ID, and Work Center Name are required.');
-      await requireOpenPeriod(date);
-      const existingHeader = headers.find(h => h.timesheetDate === date && h.supervisorId === supervisorId && h.workCenterName === workCenterName);
+      let scopedDate = date;
+      let scopedSupervisorId = supervisorId;
+      let scopedWorkCenterName = workCenterName;
+      let scopedLocationName = locationName;
+      if (isSupervisorMode) {
+        const scoped = await buildPayload(request, date, undefined, undefined, undefined, mode);
+        scopedDate = scoped.timesheetDate;
+        scopedSupervisorId = scoped.filterOptions.supervisors[0];
+        scopedLocationName = scoped.filterOptions.locations[0];
+        scopedWorkCenterName = scoped.workCenters[0]?.name || scoped.header?.workCenterName || '';
+      }
+      if (!scopedDate || !scopedSupervisorId || !scopedWorkCenterName) return err(400, 'Date, Supervisor ID, and Work Center Name are required.');
+      await requireOpenPeriod(scopedDate);
+      const existingHeader = headers.find(h => h.timesheetDate === scopedDate && h.supervisorId === scopedSupervisorId && h.workCenterName === scopedWorkCenterName);
       if (existingHeader) requireEditableTimesheet(existingHeader);
-      await syncAttendanceForTimesheet(date, supervisorId, workCenterName, locationName);
-      return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName));
+      await syncAttendanceForTimesheet(scopedDate, scopedSupervisorId, scopedWorkCenterName, scopedLocationName);
+      return ok(await buildPayload(request, scopedDate, scopedSupervisorId, scopedWorkCenterName, scopedLocationName, mode));
     }
 
     if (action === 'MATRIX_SAVE' || action === 'SAVE_DRAFT' || action === 'SUBMIT') {
@@ -938,6 +1128,10 @@ export async function PATCH(request: Request) {
       
       const header = headers.find(h => h.id === headerId);
       if (!header) return err(404, 'Timesheet header not found.');
+      if (isSupervisorMode) {
+        const scoped = await buildPayload(request, header.timesheetDate, undefined, undefined, undefined, mode);
+        if (header.supervisorId !== scoped.filterOptions.supervisors[0]) return err(403, 'Supervisors can only save or submit their own crew timesheets.');
+      }
       await requireOpenPeriod(header.timesheetDate);
       requireEditableTimesheet(header);
 
@@ -969,7 +1163,7 @@ export async function PATCH(request: Request) {
         if (!projectManagerAssignment) return err(400, 'At least one project allocation is required before submitting this timesheet.');
         header.status = 'Submitted';
         header.submittedAt = new Date().toISOString();
-        header.submittedBy = access.actor;
+        header.submittedBy = actor;
         header.projectManager = projectManagerAssignment.projectManager;
         header.projectManagerProjectCode = projectManagerAssignment.projectCode;
         header.currentApprovalStage = 'Supervisor';
@@ -979,7 +1173,7 @@ export async function PATCH(request: Request) {
           {
             stage: 'Supervisor',
             decision: 'Submitted',
-            by: access.actor,
+            by: actor,
             actedAt: header.submittedAt,
             comment: payload.reviewerNote?.trim() || `Submitted for supervisor review before release to ${projectManagerAssignment.projectManager} on ${projectManagerAssignment.projectCode} - ${projectManagerAssignment.projectName}.`,
           },
@@ -993,7 +1187,7 @@ export async function PATCH(request: Request) {
       }
 
       await writeTimesheetHeaderLines(header, normalizedLines);
-      return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName));
+      return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName, mode));
     }
 
     if (action === 'APPROVE' || action === 'REJECT') {
@@ -1007,7 +1201,7 @@ export async function PATCH(request: Request) {
         await advanceTimesheetWorkflow(header.id, 'REJECT', access.actor, payload.reviewerNote);
       }
 
-      return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName));
+      return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName, mode));
     }
 
     return err(400, 'Invalid action.');

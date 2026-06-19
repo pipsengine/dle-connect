@@ -39,17 +39,24 @@ export default function UserManagementClient({ section = 'user-accounts' }: { se
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [toast, setToast] = useState('');
   const [loading, setLoading] = useState(true);
+  const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
 
   const load = async (sync = false) => {
     setLoading(true);
     try {
-      const [usersRes, rolesRes] = await Promise.all([fetch(`/api/admin/users${sync ? '?sync=1' : ''}`, { cache: 'no-store' }), fetch('/api/admin/roles', { cache: 'no-store' })]);
+      const [usersRes, rolesRes, currentUserRes] = await Promise.all([
+        fetch(`/api/admin/users${sync ? '?sync=1' : ''}`, { cache: 'no-store' }),
+        fetch('/api/admin/roles', { cache: 'no-store' }),
+        fetch('/api/current-user?context=enterprise', { cache: 'no-store' }),
+      ]);
       const usersJson = await usersRes.json();
       const rolesJson = await rolesRes.json();
+      const currentUserJson = await currentUserRes.json().catch(() => null);
       if (!usersRes.ok) throw new Error(usersJson.error || 'Unable to load users');
       setUsers(usersJson.data.users || []);
       setHistory(usersJson.data.loginHistory || []);
       setRoles(rolesRes.ok ? rolesJson.data || [] : []);
+      setIsGlobalAdmin(currentUserJson?.data?.source === 'application-level-global-admin' || currentUserJson?.data?.employeeCode === 'Admin');
     } catch (error) {
       setToast(error instanceof Error ? error.message : 'Unable to load users');
     } finally {
@@ -65,6 +72,7 @@ export default function UserManagementClient({ section = 'user-accounts' }: { se
   }, [query, users]);
 
   const activeUser = users.find((user) => user.id === selected) || filtered[0];
+  const assignableRoles = useMemo(() => roles.filter((role) => isGlobalAdmin || role.name !== 'Super Administrator'), [roles, isGlobalAdmin]);
 
   useEffect(() => {
     if (activeUser) setSelectedRoles(activeUser.roles || []);
@@ -173,7 +181,7 @@ export default function UserManagementClient({ section = 'user-accounts' }: { se
               <div className="mt-5">
                 <p className="text-xs font-black uppercase text-slate-500">Assign Roles</p>
                 <div className="mt-2 max-h-48 overflow-auto rounded-xl border border-slate-200 p-3">
-                  {roles.map((role) => (
+                  {assignableRoles.map((role) => (
                     <label key={role.name} className="flex items-center gap-2 py-1 text-xs font-bold text-slate-700">
                       <input type="checkbox" checked={selectedRoles.includes(role.name)} onChange={(event) => setSelectedRoles((prev) => event.target.checked ? [...prev, role.name] : prev.filter((item) => item !== role.name))} />
                       {role.name} <span className="text-slate-400">({role.category})</span>

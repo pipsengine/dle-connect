@@ -25,7 +25,7 @@ export async function PATCH(request: Request) {
   if (auth.error) return auth.error;
   try {
     const body = await request.json().catch(() => ({}));
-    const user = await updateUser(String(body.userId || ''), String(body.action || ''), body, request.headers, auth.session?.username || 'Admin');
+    const user = await updateUser(String(body.userId || ''), String(body.action || ''), body, request.headers, auth.session?.username || 'Admin', auth.session);
     return NextResponse.json({ status: 'success', data: user });
   } catch (error) {
     return NextResponse.json({ status: 'error', error: error instanceof Error ? error.message : 'Unable to update user.' }, { status: 400 });

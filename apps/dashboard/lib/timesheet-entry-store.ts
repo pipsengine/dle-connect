@@ -7,6 +7,7 @@ import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { normalizePayrollMatchKey, readActiveSagePayrollEmployeeKeys, type SagePayrollEmployee } from '@/lib/sage-people-payroll-store';
 import { approvedPaidLeaveForDate } from '@/lib/leave-management-store';
+import { readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
 
 export type TimesheetStatus =
   | 'Draft'
@@ -2259,6 +2260,22 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
   );
   const keys = new Set<string>();
   const employees: Array<{ employeeCode: string; fullName: string }> = [];
+  const selectedCode = selected.split(' - ')[0]?.trim();
+  try {
+    const assignments = selectedCode ? await readSupervisorAssignments({ supervisorEmployeeCode: selectedCode }) : [];
+    const matchedAssignments = assignments.filter((assignment) => assignment.employeeCode && assignment.matchedStatus !== 'Unresolved');
+    if (matchedAssignments.length) {
+      for (const assignment of matchedAssignments) {
+        const employeeCode = assignment.employeeCode || '';
+        const fullName = assignment.employeeName || employeeCode;
+        employees.push({ employeeCode, fullName });
+        attendanceMatchKeys(employeeCode, fullName).forEach((key) => keys.add(key));
+      }
+      return { keys, employees };
+    }
+  } catch (error) {
+    console.warn('Timesheet supervisor assignment scope could not be loaded; falling back to reporting manager data:', error);
+  }
   for (const employee of source.employees) {
     if (['Resigned', 'Terminated', 'Retired'].includes(employee.status)) continue;
     if (!supervisorMatchesEmployee(employee.managerName, selected)) continue;
@@ -2299,9 +2316,11 @@ export async function syncAttendanceForTimesheet(
   const activeEmployeeByKey = new Map<string, SagePayrollEmployee>();
   let allowedSupervisorKeys = new Set<string>();
   let assignedSupervisorEmployees: Array<{ employeeCode: string; fullName: string }> = [];
+  let supervisorScopeResolved = false;
 
   const [scopeResult, activePayrollResult, approvedLeaveResult] = await Promise.allSettled([scopePromise, activePayrollPromise, approvedLeavePromise]);
   if (scopeResult.status === 'fulfilled') {
+    supervisorScopeResolved = true;
     allowedSupervisorKeys = scopeResult.value.keys;
     assignedSupervisorEmployees = scopeResult.value.employees;
   } else {
@@ -2362,7 +2381,8 @@ export async function syncAttendanceForTimesheet(
       return { attendance, payrollEmployee };
     })
     .filter(({ attendance, payrollEmployee }) => {
-      if (allowedSupervisorKeys.size === 0) return true;
+      if (!supervisorScopeResolved) return false;
+      if (allowedSupervisorKeys.size === 0) return false;
       return attendanceMatchKeys(
         attendance.employeeId,
         attendance.employeeName,
@@ -2409,7 +2429,7 @@ export async function syncAttendanceForTimesheet(
           payrollEmployee: undefined,
         };
       })
-    : attendanceCandidates;
+    : supervisorScopeResolved ? [] : attendanceCandidates;
 
   const { headers, lines } = await readTimesheetData();
   const period = calculateTimesheetPeriod(new Date(date));

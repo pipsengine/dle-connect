@@ -54,6 +54,11 @@ type PayrollRecord = {
   employmentStatus: string;
   payrollGroup: string;
   salaryGrade: string;
+  salaryStructure?: string;
+  isDailyRate?: boolean;
+  ratePerDay?: number | null;
+  ratePerHour?: number | null;
+  hoursPerDay?: number | null;
   payCurrency: string;
   paymentRun: string;
   paymentType: string;
@@ -173,6 +178,13 @@ const numberFmt = new Intl.NumberFormat('en-GB');
 const pctFmt = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 });
 const money = (value: number | null | undefined, canView = true) => (!canView || value == null ? 'Restricted' : moneyFmt.format(value));
 const number = (value: number | null | undefined) => numberFmt.format(Number(value || 0));
+const payrollRate = (record: PayrollRecord, canView = true) => {
+  if (!record.isDailyRate) return record.salaryStructure || record.salaryGrade || 'Unassigned';
+  if (!canView) return 'Restricted';
+  if (record.ratePerDay) return `${money(record.ratePerDay)}/day`;
+  if (record.ratePerHour) return `${money(record.ratePerHour)}/hr`;
+  return 'Rate missing';
+};
 
 const toneStyles: Record<Tone, { card: string; icon: string; chip: string; button: string; bar: string; text: string }> = {
   blue: { card: 'bg-blue-50 border-blue-200', icon: 'bg-blue-600 text-white', chip: 'bg-blue-100 text-blue-800', button: 'bg-blue-600 hover:bg-blue-700 text-white', bar: 'bg-blue-600', text: 'text-blue-700' },
@@ -662,7 +674,7 @@ function SalaryManagementWorkspace({ activeTab, payload, canViewMoney }: { activ
   const records = payload?.records || [];
   const gradeMap = new Map<string, { employees: number; grossPay: number; netPay: number; exceptions: number }>();
   records.forEach((record) => {
-    const grade = record.salaryGrade || 'Unassigned';
+    const grade = record.isDailyRate ? payrollRate(record, canViewMoney) : record.salaryGrade || 'Unassigned';
     const current = gradeMap.get(grade) || { employees: 0, grossPay: 0, netPay: 0, exceptions: 0 };
     current.employees += 1;
     current.grossPay += record.grossPay || 0;
@@ -706,6 +718,15 @@ function SalaryManagementWorkspace({ activeTab, payload, canViewMoney }: { activ
       value: number(permanentCount + lumpSumCount),
       label: 'migration records',
     },
+    {
+      title: 'Daily Rate Pay',
+      detail: 'Contract daily-rate employees, day rates, hourly equivalent, and payroll-ready days.',
+      href: '/hris/payroll/daily-rate-pay',
+      tone: 'amber' as Tone,
+      icon: CalendarClock,
+      value: number(dailyRateCount),
+      label: 'daily-rate employees',
+    },
   ];
   const profileRows = [
     { label: 'Permanent Staff', employees: permanentCount, detail: 'Monthly gross salary and permanent earning profile', tone: 'blue' as Tone },
@@ -734,7 +755,7 @@ function SalaryManagementWorkspace({ activeTab, payload, canViewMoney }: { activ
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
         {salaryWorkspaces.map((item) => {
           const Icon = item.icon;
           return (
@@ -886,7 +907,18 @@ export default function PayrollManagementClient({ initialNow, initialSection = '
     return (payload?.records || []).filter((record) => {
       if (status !== 'All' && record.payrollStatus !== status) return false;
       if (!q) return true;
-      return [record.employeeId, record.fullName, record.department, record.jobTitle, record.payrollGroup, record.salaryGrade].some((value) => String(value || '').toLowerCase().includes(q));
+      return [
+        record.employeeId,
+        record.fullName,
+        record.department,
+        record.jobTitle,
+        record.payrollGroup,
+        record.salaryGrade,
+        record.salaryStructure,
+        record.isDailyRate ? 'daily rate contract' : '',
+        record.ratePerDay,
+        record.ratePerHour,
+      ].some((value) => String(value || '').toLowerCase().includes(q));
     });
   }, [payload?.records, query, status]);
 
@@ -1152,10 +1184,13 @@ function DashboardWorkspace({
               <h3 className="text-sm font-black text-slate-950">Payroll Register & Exceptions</h3>
               <p className="mt-1 text-xs font-semibold text-slate-500">Search, filter, drill down, export, and resolve exceptions.</p>
             </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_160px]">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[auto_1fr_160px]">
+              <Link href="/hris/payroll/daily-rate-pay" className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-black text-amber-900 hover:bg-white">
+                <CalendarClock className="h-4 w-4" /> Daily Rate List
+              </Link>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search employee, group, grade, department" className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-10 text-sm font-semibold outline-none focus:border-dle-blue focus:ring-2 focus:ring-dle-blue/20" />
+                <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search employee, group, rate, department" className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-10 text-sm font-semibold outline-none focus:border-dle-blue focus:ring-2 focus:ring-dle-blue/20" />
                 {query ? <button type="button" onClick={() => setQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"><X className="h-4 w-4" /></button> : null}
               </div>
               <select value={status} onChange={(e) => setStatus(e.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold outline-none">
@@ -1165,16 +1200,17 @@ function DashboardWorkspace({
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-[1100px] w-full text-left">
+          <table className="min-w-[1220px] w-full text-left">
             <thead className="bg-slate-50 text-xs font-black uppercase tracking-normal text-slate-500">
-              <tr>{['Employee', 'Group', 'Type', 'Gross', 'Deductions', 'Net', 'Status', 'Exceptions'].map((head) => <th key={head} className="px-4 py-3">{head}</th>)}</tr>
+              <tr>{['Employee', 'Group', 'Type', 'Rate / Structure', 'Gross', 'Deductions', 'Net', 'Status', 'Exceptions'].map((head) => <th key={head} className="px-4 py-3">{head}</th>)}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredRecords.slice(0, 80).map((record) => (
                 <tr key={record.employeeId} className="hover:bg-slate-50">
                   <td className="px-4 py-3"><p className="text-sm font-black text-slate-950">{record.fullName}</p><p className="text-xs font-semibold text-slate-500">{record.employeeId} - {record.department}</p></td>
-                  <td className="px-4 py-3 text-xs font-bold text-slate-700">{record.payrollGroup}<br /><span className="text-slate-400">{record.salaryGrade}</span></td>
+                  <td className="px-4 py-3 text-xs font-bold text-slate-700">{record.payrollGroup}<br /><span className="text-slate-400">{record.isDailyRate ? 'Daily rate structure' : record.salaryGrade}</span></td>
                   <td className="px-4 py-3 text-xs font-bold text-slate-700">{record.employmentType}<br /><span className="text-slate-400">{record.paymentRun}</span></td>
+                  <td className="px-4 py-3 text-sm font-black text-slate-900">{payrollRate(record, canViewMoney)}</td>
                   <td className="px-4 py-3 text-sm font-black text-slate-900">{money(record.grossPay, canViewMoney)}</td>
                   <td className="px-4 py-3 text-sm font-black text-slate-900">{money(record.deductions, canViewMoney)}</td>
                   <td className="px-4 py-3 text-sm font-black text-slate-900">{money(record.netPay, canViewMoney)}</td>

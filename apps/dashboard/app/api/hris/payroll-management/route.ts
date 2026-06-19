@@ -5,6 +5,7 @@ import { calculatePayrollEarnings, sageOpeningPayslipReconciliation } from '@/li
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig, type PayrollTaxVersion } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig, type PensionVersion } from '@/lib/payroll-pension-engine';
 import { syncSageLeaveAllowanceEvents } from '@/lib/payroll-leave-allowance-store';
+import { activePayrollPeriod } from '@/lib/payroll-periods';
 
 type Role =
   | 'Super Admin'
@@ -64,7 +65,7 @@ const jsonErr = (status: number, error: string) => NextResponse.json({ status: '
 const nowIso = () => new Date().toISOString();
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 const compact = (value: unknown) => String(value || '').trim();
-const PAYROLL_SETUP_PREVIEW_PERIOD = '2026-06';
+const PAYROLL_SETUP_PREVIEW_PERIOD = activePayrollPeriod();
 
 const getRole = (request: Request): Role => {
   const value = request.headers.get('x-hris-role');
@@ -101,15 +102,21 @@ const logAudit = (request: Request, entry: Omit<PayrollAuditEntry, 'id' | 'at' |
   if (auditStore.length > 300) auditStore.length = 300;
 };
 
-const monthPeriod = () => {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-};
+const monthPeriod = activePayrollPeriod;
 
 const periodLabel = (period: string) => {
   const [year, month] = period.split('-').map(Number);
   const date = new Date(Date.UTC(year || new Date().getUTCFullYear(), (month || 1) - 1, 1));
   return date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+};
+
+const isDailyRateEmployee = (employee: DleEmployeeDirectoryRow, earningProfileId?: string) => {
+  const code = compact(employee.employeeCode || employee.employeeId).toUpperCase();
+  const text = [employee.employmentType, employee.payrollGroup, employee.paymentRun, employee.paymentType, employee.staffCategory, employee.employeeCategory]
+    .map(compact)
+    .join(' ')
+    .toLowerCase();
+  return code.startsWith('C') || earningProfileId === 'contract-day-rate' || text.includes('daily') || text.includes('day rate');
 };
 
 const employeeCost = (employee: DleEmployeeDirectoryRow, taxVersion: PayrollTaxVersion, pensionVersion: PensionVersion) => {
@@ -161,9 +168,12 @@ const employeeCost = (employee: DleEmployeeDirectoryRow, taxVersion: PayrollTaxV
 
 const riskFor = (employee: DleEmployeeDirectoryRow, cost: ReturnType<typeof employeeCost>) => {
   const issues: string[] = [];
+  const dailyRateEmployee = isDailyRateEmployee(employee, cost.earningProfileId);
+  const hasDailyRate = Number(employee.ratePerDay || 0) > 0 || Number(employee.ratePerHour || 0) > 0;
   if (!employee.setupAssignedToPayroll) issues.push('Payroll setup is not assigned');
   if (cost.basePay <= 0) issues.push('Pay amount is missing');
-  if (!compact(employee.salaryGrade || employee.jobGrade)) issues.push('Salary grade is missing');
+  if (dailyRateEmployee && !hasDailyRate) issues.push('Daily rate is missing');
+  if (!dailyRateEmployee && !compact(employee.salaryGrade || employee.jobGrade)) issues.push('Salary grade is missing');
   if (!compact(employee.payrollGroup)) issues.push('Payroll group is missing');
   if (compact(employee.status).toLowerCase().match(/terminated|resigned|retired|inactive/)) issues.push('Employee status is not payroll active');
   if (compact(employee.payCurrency) && compact(employee.payCurrency).toUpperCase() !== 'NGN') issues.push('Foreign currency review required');
@@ -175,6 +185,9 @@ const buildRecords = (employees: DleEmployeeDirectoryRow[], taxVersion: PayrollT
   employees.map((employee) => {
     const cost = employeeCost(employee, taxVersion, pensionVersion);
     const risk = riskFor(employee, cost);
+    const dailyRateEmployee = isDailyRateEmployee(employee, cost.earningProfileId);
+    const ratePerDay = Number(employee.ratePerDay || 0) || (Number(employee.ratePerHour || 0) > 0 ? Number(employee.ratePerHour) * Number(employee.hoursPerDay || 8) : 0);
+    const ratePerHour = Number(employee.ratePerHour || 0) || (ratePerDay > 0 ? ratePerDay / Number(employee.hoursPerDay || 8) : 0);
     const payrollStatus = risk.issues.length === 0 ? 'Ready' : risk.severity === 'High' ? 'Blocked' : 'Review';
     return {
       employeeId: employee.employeeId,
@@ -187,7 +200,12 @@ const buildRecords = (employees: DleEmployeeDirectoryRow[], taxVersion: PayrollT
       employmentType: employee.employmentType,
       employmentStatus: employee.status,
       payrollGroup: employee.payrollGroup || 'Unassigned',
-      salaryGrade: employee.salaryGrade || employee.jobGrade || 'Unassigned',
+      salaryGrade: dailyRateEmployee ? (ratePerDay > 0 ? 'Daily Rate' : 'Rate Missing') : employee.salaryGrade || employee.jobGrade || 'Unassigned',
+      salaryStructure: dailyRateEmployee ? (ratePerDay > 0 ? 'Daily Rate' : 'Daily Rate Missing') : employee.salaryGrade || employee.jobGrade || 'Unassigned',
+      isDailyRate: dailyRateEmployee,
+      ratePerDay: ratePerDay || null,
+      ratePerHour: ratePerHour || null,
+      hoursPerDay: Number(employee.hoursPerDay || 8) || 8,
       payCurrency: employee.payCurrency || 'NGN',
       paymentRun: employee.paymentRun || 'Monthly',
       paymentType: employee.paymentType || 'Bank Transfer',
@@ -348,7 +366,7 @@ const buildPayload = async (request: Request) => {
 };
 
 const csv = (records: any[]) => {
-  const headers = ['Employee ID', 'Name', 'Department', 'Type', 'Status', 'Payroll Group', 'Grade', 'Currency', 'Gross Pay', 'Deductions', 'Net Pay', 'Payroll Status', 'Exceptions'];
+  const headers = ['Employee ID', 'Name', 'Department', 'Type', 'Status', 'Payroll Group', 'Salary Structure', 'Daily Rate', 'Hourly Rate', 'Currency', 'Gross Pay', 'Deductions', 'Net Pay', 'Payroll Status', 'Exceptions'];
   const lines = records.map((r) =>
     [
       r.employeeId,
@@ -357,7 +375,9 @@ const csv = (records: any[]) => {
       r.employmentType,
       r.employmentStatus,
       r.payrollGroup,
-      r.salaryGrade,
+      r.salaryStructure || r.salaryGrade,
+      r.ratePerDay ?? '',
+      r.ratePerHour ?? '',
       r.payCurrency,
       r.grossPay,
       r.deductions,

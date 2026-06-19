@@ -6,5 +6,5 @@ export const metadata: Metadata = {
 };
 
 export default function PayrollPage() {
-  redirect('/hris/payroll-management');
+  redirect('/hris/payroll/payroll-processing');
 }

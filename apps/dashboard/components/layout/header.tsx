@@ -5,16 +5,23 @@ import { NotificationCenter } from '@/components/layout/notification-center';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
 
 export function Header({ 
-  toggleSidebar
+  toggleSidebar,
+  toggleDesktopSidebar,
 }: { 
   toggleSidebar: () => void; 
+  toggleDesktopSidebar?: () => void;
 }) {
   return (
     <header className="h-16 bg-white border-b border-slate-100 flex items-center justify-between px-3 sm:px-6 sticky top-0 z-30">
       <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
-        <button onClick={toggleSidebar} className="p-2 -ml-2 text-slate-500 hover:text-slate-900 lg:hidden">
+        <button onClick={toggleSidebar} className="p-2 -ml-2 text-slate-500 hover:text-slate-900 lg:hidden" aria-label="Open navigation">
           <Menu className="w-5 h-5" />
         </button>
+        {toggleDesktopSidebar && (
+          <button onClick={toggleDesktopSidebar} className="hidden p-2 -ml-2 text-slate-500 hover:text-slate-900 lg:inline-flex" aria-label="Toggle navigation">
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
         
         <div className="relative max-w-md w-full hidden md:block">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />

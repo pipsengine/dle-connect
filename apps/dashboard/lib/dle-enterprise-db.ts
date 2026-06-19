@@ -419,6 +419,18 @@ const isLocalNationality = (value: unknown) => {
   return ['nigeria', 'nigerian', 'ng'].includes(normalized);
 };
 
+const composedEmployeeFullName = (row: Record<string, unknown>, fallback: string) => {
+  const firstName = str(row.first_name);
+  const middleName = str(row.middle_name);
+  const parts = [
+    str(row.title),
+    firstName,
+    middleName && !firstName.toLowerCase().includes(middleName.toLowerCase()) ? middleName : '',
+    str(row.last_name),
+  ].filter(Boolean);
+  return parts.join(' ') || str(row.full_name) || fallback;
+};
+
 const employeeTypeCode = (employeeType: string) => {
   const normalized = employeeType.trim().toLowerCase();
   if (normalized === 'permanent') return 'P';
@@ -893,7 +905,7 @@ export const readEmployeeDirectoryFromDb = async (): Promise<DleEmployeeDirector
       employeeId: employeeCode,
       employeeCode,
       employeeDbId: Number(row.employee_id),
-      fullName: str(row.full_name) || employeeCode,
+      fullName: composedEmployeeFullName(row, employeeCode),
       preferredName: str(row.preferred_name) || undefined,
       title: str(row.title),
       firstName: str(row.first_name),

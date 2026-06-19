@@ -9,6 +9,7 @@ import { activeStatutoryFundsVersion, calculateStatutoryFunds, readStatutoryFund
 import { activeLoansVersion, calculateLoanRecovery, loanInputsFromApplications, readPayrollLoanApplications, readPayrollLoansConfig } from '@/lib/payroll-loans-engine';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { syncSageLeaveAllowanceEvents } from '@/lib/payroll-leave-allowance-store';
+import { activePayrollPeriod } from '@/lib/payroll-periods';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Payroll Officer' | 'Finance Controller' | 'Executive Management' | 'Auditor' | 'Employee';
 type PayslipStatus = 'Ready' | 'Review' | 'Blocked';
@@ -56,10 +57,7 @@ const permissions = (role: Role) => ({
   canExport: role !== 'Employee',
 });
 
-const monthPeriod = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-};
+const monthPeriod = activePayrollPeriod;
 
 const periodLabel = (period: string) => {
   const [year, month] = period.split('-').map(Number);

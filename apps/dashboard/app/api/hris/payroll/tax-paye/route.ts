@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig, writePayrollTaxConfig, type PayrollTaxConfig, type PayrollTaxVersion } from '@/lib/payroll-tax-engine';
+import { activePayrollPeriod } from '@/lib/payroll-periods';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Payroll Officer' | 'Finance Controller' | 'Executive Management' | 'Auditor' | 'Employee';
 
@@ -21,10 +22,7 @@ const permissions = (role: Role) => ({
   canExport: role !== 'Employee',
 });
 
-const monthPeriod = () => {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-};
+const monthPeriod = activePayrollPeriod;
 
 const periodLabel = (period: string) => {
   const [year, month] = period.split('-').map(Number);

@@ -2,12 +2,14 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { AUTH_COOKIE, verifySessionToken, type SessionPayload } from '@/lib/auth/session';
 import { calculatePayrollEarnings, sageOpeningPayslipReconciliation } from '@/lib/payroll-earnings-engine';
 import { activeLoansVersion, readPayrollLoanApplications, readPayrollLoansConfig } from '@/lib/payroll-loans-engine';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
 import { hasLeaveAllowanceInYear, syncSageLeaveAllowanceEvents } from '@/lib/payroll-leave-allowance-store';
 import { annualLeaveEntitlementForEmployee, dormantLongPolicy, isFourteenDayPaidLeaveEmployee } from '@/lib/leave-management-store';
+import { activePayrollPeriod } from '@/lib/payroll-periods';
 
 type EssRequest = {
   id: string;
@@ -49,7 +51,11 @@ const maskAccount = (value: string) => {
   return `${'*'.repeat(Math.max(0, text.length - 4))}${text.slice(-4)}`;
 };
 const configured = (value: unknown) => compact(value) || 'Not configured';
-const knownTaxReference = (employeeCode: string) => (['P0146', '0146'].includes(compact(employeeCode).toUpperCase()) ? 'N-708169' : '');
+const employeeAddress = (employee: Awaited<ReturnType<typeof readPayrollEmployees>>['employees'][number]) => {
+  const street = compact(employee.residentialAddress) || compact(employee.permanentAddress);
+  const parts = [street, employee.city, employee.state, employee.country].map(compact).filter(Boolean);
+  return parts.join(', ') || 'Not configured';
+};
 
 const resolveDashboardRoot = () => {
   const cwd = process.cwd();
@@ -86,11 +92,23 @@ const serviceCatalog = [
   { id: 'exit', label: 'Exit & Separation', area: 'Exit', workflow: ['Employee', 'Line Manager', 'HR', 'Finance', 'IT'], slaHours: 120 },
 ];
 
-const resolveEssEmployeeId = () => compact(process.env.ESS_EMPLOYEE_ID) || 'P0146';
-const ESS_CURRENT_PAYROLL_PERIOD = '2026-06';
-const resolveEssEmployee = (employees: Awaited<ReturnType<typeof readPayrollEmployees>>['employees']) => {
-  const viewerEmployeeId = resolveEssEmployeeId();
-  return employees.find((item) => item.employeeId === viewerEmployeeId || item.employeeCode === viewerEmployeeId) || employees[0];
+const ESS_CURRENT_PAYROLL_PERIOD = activePayrollPeriod();
+const normalize = (value: unknown) => compact(value).toLowerCase();
+const tokenFrom = (request: Request) => request.headers.get('cookie')?.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${AUTH_COOKIE}=`))?.split('=').slice(1).join('=');
+const getSession = (request: Request) => verifySessionToken(tokenFrom(request) ? decodeURIComponent(tokenFrom(request) || '') : '');
+const employeeKeys = (employee: Awaited<ReturnType<typeof readPayrollEmployees>>['employees'][number]) => [
+  employee.employeeId,
+  employee.employeeCode,
+  employee.sourceEmployeeId,
+  String(employee.employeeDbId || ''),
+  employee.officialEmail,
+  employee.email,
+  employee.personalEmail,
+].map(normalize).filter(Boolean);
+const resolveEssEmployee = (employees: Awaited<ReturnType<typeof readPayrollEmployees>>['employees'], session: SessionPayload) => {
+  const identities = [session.employeeCode, session.employeeId, session.username].map(normalize).filter(Boolean);
+  if (!identities.length) return null;
+  return employees.find((employee) => identities.some((identity) => employeeKeys(employee).includes(identity))) || null;
 };
 
 const moduleCatalog = [
@@ -127,10 +145,13 @@ const dateAdd = (days: number) => {
 
 export async function GET(request: Request) {
   try {
+    const session = await getSession(request);
+    if (!session) return err(401, 'Unauthenticated.');
+    if (session.isGlobalAdmin) return err(403, 'Global administrator is not linked to an employee self-service profile.');
     const locale = compact(request.headers.get('x-ess-locale')) || 'en-NG';
     const [employeeSource, allRequests, loanApplications, loansConfig, taxConfig, pensionConfig] = await Promise.all([readPayrollEmployees(), readRequests(), readPayrollLoanApplications(), readPayrollLoansConfig(), readPayrollTaxConfig(), readPayrollPensionConfig()]);
-    const employee = resolveEssEmployee(employeeSource.employees);
-    if (!employee) return err(404, 'No employee record is available for the ESS portal.');
+    const employee = resolveEssEmployee(employeeSource.employees, session);
+    if (!employee) return err(403, 'Employee identity is not linked to the logged-in account.');
     await syncSageLeaveAllowanceEvents();
 
     const employeeRequests = allRequests.filter((item) => item.employeeId === employee.employeeId);
@@ -168,7 +189,7 @@ export async function GET(request: Request) {
         payPeriodEnd: monthEndDate(period),
         payDate: monthEndDate(period),
         payrollNumber: `DLE-${period.replace('-', '')}-${employee.employeeId}`,
-        payeReference: employeeAny.taxIdentificationNumber || employeeAny.taxNo || knownTaxReference(employee.employeeCode || employee.employeeId) || 'Not configured',
+        payeReference: employeeAny.taxIdentificationNumber || employeeAny.taxNo || 'Not configured',
         grossPay: earnings.grossPay,
         deductions,
         netPay: roundMoney(Math.max(0, earnings.grossPay - deductions)),
@@ -198,7 +219,7 @@ export async function GET(request: Request) {
           employmentType: employee.employmentType || 'Permanent',
           dateOfEmployment: employee.dateJoined || employee.contractStartDate || '',
           employeeStatus: employee.status || 'Active',
-          address: employee.residentialAddress || employee.permanentAddress || '03 Osoba Street, Igbogila Ipaja, Church B/Stop Lagos State',
+          address: employeeAddress(employee),
         },
         statutoryInfo: {
           bankName: employeeAny.bankName || 'Stanbic IBTC',
@@ -206,7 +227,7 @@ export async function GET(request: Request) {
           pensionFundAdministrator: configured(employeeAny.pensionProvider),
           pensionNumber: configured(employeeAny.pensionPin),
           nhfNumber: employeeAny.nhfNumber || 'Not applicable',
-          taxNumber: employeeAny.taxIdentificationNumber || employeeAny.taxNo || knownTaxReference(employee.employeeCode || employee.employeeId) || 'Not configured',
+          taxNumber: employeeAny.taxIdentificationNumber || employeeAny.taxNo || 'Not configured',
           nhiaNumber: employeeAny.nhiaNumber || 'Not applicable',
         },
         leaveInfo: {
@@ -331,14 +352,14 @@ export async function GET(request: Request) {
         loans: { applications: employeeLoans.length, outstanding: employeeLoans.reduce((sum, item) => sum + Number(item.outstandingBalance || 0), 0) },
       },
       announcements: [
-        { id: 'ann-001', title: 'June payroll window is open', channel: 'Payroll', publishedAt: dateAdd(-1), priority: 'High' },
+        { id: 'ann-001', title: 'May payroll window is open', channel: 'Payroll', publishedAt: dateAdd(-1), priority: 'High' },
         { id: 'ann-002', title: 'Updated HSE handbook published', channel: 'Policy', publishedAt: dateAdd(-5), priority: 'Normal' },
         { id: 'ann-003', title: 'Q3 learning calendar available', channel: 'Learning', publishedAt: dateAdd(-8), priority: 'Normal' },
       ],
       notifications: [
         { id: 'ntf-001', title: 'Leave request awaiting line manager review', type: 'Workflow', status: 'Unread', createdAt: dateAdd(-1) },
         { id: 'ntf-002', title: 'Employee handbook acknowledgement due', type: 'Document', status: 'Unread', createdAt: dateAdd(-2) },
-        { id: 'ntf-003', title: 'June payslip is ready for download', type: 'Payroll', status: 'Read', createdAt: dateAdd(-4) },
+        { id: 'ntf-003', title: 'May payslip is ready for download', type: 'Payroll', status: 'Read', createdAt: dateAdd(-4) },
       ],
       birthdays: [
         { id: 'bd-001', fullName: 'Olamide Badetan', department: 'Human Resources', date: sampleDate(3) },
@@ -541,6 +562,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const session = await getSession(request);
+    if (!session) return err(401, 'Unauthenticated.');
+    if (session.isGlobalAdmin) return err(403, 'Global administrator is not linked to an employee self-service profile.');
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const category = compact(body.category);
     const title = compact(body.title);
@@ -549,8 +573,8 @@ export async function POST(request: Request) {
     if (!title) return err(400, 'title is required');
 
     const employeeSource = await readPayrollEmployees();
-    const employee = resolveEssEmployee(employeeSource.employees);
-    if (!employee) return err(404, 'No employee record is available for the ESS portal.');
+    const employee = resolveEssEmployee(employeeSource.employees, session);
+    if (!employee) return err(403, 'Employee identity is not linked to the logged-in account.');
 
     const catalogItem = serviceCatalog.find((item) => item.label === category || item.id === category);
     const now = new Date().toISOString();
