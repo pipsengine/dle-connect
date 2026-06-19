@@ -459,12 +459,13 @@ export default function EmployeeDocumentsClient({ employeeId }: { employeeId: st
 
   const employees = employeesState.data;
   const docs = documentsState.data;
+  const [renderedAt] = useState(() => Date.now());
   const activeEmployee = employees.find((employee) => employee.employeeId === activeEmployeeId);
   const readiness = useMemo(() => readinessFor(docs), [docs]);
   const verifiedCount = docs.filter((doc) => doc.status === 'Verified').length;
   const pendingCount = docs.filter((doc) => doc.status === 'Pending Verification' || doc.status === 'Uploaded').length;
   const rejectedCount = docs.filter((doc) => doc.status === 'Rejected').length;
-  const expiredCount = docs.filter((doc) => doc.status === 'Expired' || (doc.expiresAt && new Date(doc.expiresAt).getTime() < Date.now())).length;
+  const expiredCount = docs.filter((doc) => doc.status === 'Expired' || (doc.expiresAt && new Date(doc.expiresAt).getTime() < renderedAt)).length;
   const confidentialCount = docs.filter((doc) => doc.confidentialityLevel === 'Confidential' || doc.confidentialityLevel === 'Restricted').length;
   const lastUpdated = docs
     .map((doc) => doc.uploadedAt || doc.verifiedAt || doc.archivedAt)
