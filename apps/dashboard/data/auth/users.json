@@ -22144,8 +22144,8 @@
     "location": "IDI_ORO",
     "employmentStatus": "Active",
     "reportingManager": "0413 - Mr IJELI",
-    "passwordHash": "894b66321b56bfeaecb9d41e96cf5bab3073ca423ce64d89a3bc0d4d5f2acdd8",
-    "passwordSalt": "1027c6ae240af3f185b3606188f992ba",
+    "passwordHash": "101af9d0df78ad4127e74ceff55a25e637bd5a8889357f6d00c263227e96d4df",
+    "passwordSalt": "5395bf7074415962c3862e94670f909e",
     "status": "Pending First Login",
     "roles": [
       "Manager"
