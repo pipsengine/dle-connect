@@ -78,7 +78,7 @@ const round4 = (value: number) => Math.round((Number.isFinite(value) ? value : 0
 const compact = (value: unknown) => String(value || '').trim();
 const employeeType = (input: PayrollTaxInput) => compact(input.employee?.employmentType || input.employee?.staffCategory || input.employee?.employeeCategory || 'Payroll');
 const normalizedTextKey = (value: unknown) => compact(value).toUpperCase().replace(/\s+/g, '');
-const NHF_EXCLUDED_GRADES = new Set(['MGT6', 'MGT7', 'SMGT10']);
+const NHF_EXCLUDED_GRADES = new Set(['MGT6', 'SMGT10']);
 const isNhfExcludedGrade = (employee?: DleEmployeeDirectoryRow) => {
   if (!employee) return false;
   return [employee.salaryGrade, employee.jobGrade].map(normalizedTextKey).some((grade) => NHF_EXCLUDED_GRADES.has(grade));

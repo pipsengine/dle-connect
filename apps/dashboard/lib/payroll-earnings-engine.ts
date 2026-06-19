@@ -88,6 +88,9 @@ type PayrollPeriodEarningAdjustment = {
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 const compact = (value: unknown) => String(value || '').trim();
+const normalizedTextKey = (value: unknown) => compact(value).toUpperCase().replace(/\s+/g, '');
+const employeeGradeKey = (employee: Pick<DleEmployeeDirectoryRow, 'salaryGrade' | 'jobGrade'>) =>
+  normalizedTextKey(employee.salaryGrade || employee.jobGrade);
 const num = (value: unknown) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
@@ -104,7 +107,6 @@ const PERIOD_ADJUSTMENTS_PATH = process.env.DLE_PAYROLL_EARNING_ADJUSTMENTS_PATH
 let periodAdjustmentCache: { mtime: number; rows: PayrollPeriodEarningAdjustment[] } | null = null;
 const normalizedPeriod = (period?: string) => compact(period).replace(/\//g, '-').slice(0, 7);
 const normalizedEmployeeKey = (value: unknown) => compact(value).toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^P(?=\d+$)/, '');
-const normalizedTextKey = (value: unknown) => compact(value).toUpperCase().replace(/\s+/g, '');
 const readPeriodEarningAdjustmentsSync = () => {
   try {
     if (!existsSync(PERIOD_ADJUSTMENTS_PATH)) return [];
@@ -183,8 +185,7 @@ export const PAYROLL_EARNING_PROFILES: Record<Exclude<PayrollEarningProfileId, '
   'contract-lumpsum': {
     name: 'Contract Staff on Lumpsum',
     definitions: [
-      { code: 'BASIC_LUMPSUM', name: 'LUMPSUM AMOUNT', taxable: true, percentOfGross: 0.6 },
-      { code: 'BASIC_LUMPSUM_NT', name: 'LUMPSUM AMOUNT NONTAXABLE', taxable: false, percentOfGross: 0.4 },
+      { code: 'BASIC1_LUMPSUM', name: 'LUMPSUM AMOUNT', taxable: true, percentOfGross: 1 },
     ],
   },
 };
@@ -341,6 +342,7 @@ export const resolvePayrollEarningProfile = (employee: DleEmployeeDirectoryRow):
   if (/^C\d+/.test(employeeCode) || /DAILY RATE|DAY RATE/.test(groupText)) return 'contract-day-rate';
   const isOtherContract = /CONTRACT|TEMPORARY|CASUAL/.test(groupText);
   if (isOtherContract) return 'fallback';
+  if (employeeGradeKey(employee) === 'MGT7') return 'senior-management-permanent';
   if (/MGTCOLA|MGT COLA|MANAGEMENTCOLA|MANAGEMENT COLA/.test(grade) || /\b(MGTCOLA|MGT COLA|MANAGEMENTCOLA|MANAGEMENT COLA)\b/.test(groupText)) return 'management-cola-permanent';
   if (/^(SNM|SMGT|SENIOR MANAGEMENT)/.test(grade) || /\b(SNM|SMGT|SENIOR MANAGEMENT)\b/.test(groupText)) return 'senior-management-permanent';
   if (/^(MGT|MGMT|MANAGEMENT)/.test(grade) || /\b(MGT|MGMT|MANAGEMENT)\b/.test(groupText)) return 'management-permanent';
@@ -523,8 +525,10 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
     };
   }
 
+  const gradeKey = employeeGradeKey(employee);
   const regularLines = profile.definitions.map((definition) => ({
     ...definition,
+    taxable: gradeKey === 'MGT7' && definition.code === 'SNM_UTILITY' ? false : definition.taxable,
     amount: roundMoney(gross * definition.percentOfGross),
   }));
   const fixedMonthlyLines = [...seniorFixedMonthlyEarningLines(profileId), ...juniorFixedMonthlyEarningLines(profileId)];

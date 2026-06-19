@@ -40,5 +40,27 @@
     "amount": 1375,
     "taxable": false,
     "source": "May 2026 JS1 payroll adjustment"
+  },
+  {
+    "period": "2026-05",
+    "salaryGrades": [
+      "SMGT10"
+    ],
+    "code": "SMGT10_TAXADJ",
+    "name": "SMGT10 Taxable Adjustment",
+    "amount": 27872.62,
+    "taxable": true,
+    "source": "May 2026 SMGT10 taxable payroll adjustment"
+  },
+  {
+    "period": "2026-05",
+    "salaryGrades": [
+      "MGT7"
+    ],
+    "code": "REFUND",
+    "name": "Refund",
+    "amount": 9764.12,
+    "taxable": false,
+    "source": "May 2026 MGT7 payroll adjustment"
   }
 ]
