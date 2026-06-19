@@ -18,7 +18,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 
-type AccessAction = 'view' | 'create' | 'edit' | 'delete' | 'approve' | 'reject' | 'export' | 'print' | 'upload' | 'download' | 'enable' | 'disable' | 'assign' | 'override';
+type AccessAction = 'view' | 'create' | 'edit' | 'delete' | 'submit' | 'approve' | 'reject' | 'export' | 'import' | 'print' | 'upload' | 'download' | 'configure' | 'audit' | 'enable' | 'disable' | 'assign' | 'override';
 type PermissionNode = {
   module: string;
   subModule: string;

@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import Link from 'next/link';
 import {
   ArrowRight,
@@ -11,19 +12,37 @@ import {
   UserRound,
   Users,
 } from 'lucide-react';
+import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
+import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 
 const quickLinks = [
-  { title: 'Executive HR Dashboard', href: '/hris/dashboard/executive-hr-dashboard', icon: BarChart3, detail: 'Strategic workforce metrics and HR risk signals' },
-  { title: 'HR Operations Dashboard', href: '/hris/dashboard/hr-operations-dashboard', icon: ShieldCheck, detail: 'Operational workload, compliance, attendance, and employee actions' },
-  { title: 'Employee Directory', href: '/hris/employees/employee-directory', icon: Users, detail: 'Search employee records, departments, locations, and job details' },
-  { title: 'Employee Profile', href: '/hris/employees/employee-profile', icon: UserRound, detail: 'Open personal, job, contact, document, and payroll profile records' },
-  { title: 'Attendance Register', href: '/hris/attendance/attendance-register', icon: CalendarCheck, detail: 'Daily attendance, review status, payroll readiness, and exceptions' },
-  { title: 'Timesheet Entry', href: '/hris/time-and-logs/timesheet-entry', icon: Clock, detail: 'Project time, overtime, employee self-service entries, and approvals' },
-  { title: 'Payroll Dashboard', href: '/hris/payroll/payroll-dashboard', icon: Banknote, detail: 'Payroll setup, processing, approval, payslips, tax, and deductions' },
-  { title: 'Documents', href: '/hris/employees/employee-documents', icon: FileText, detail: 'Employee documents, expiries, evidence, and controlled records' },
+  { title: 'Executive HR Dashboard', href: '/hris/dashboard/executive-hr-dashboard', icon: BarChart3, detail: 'Strategic workforce metrics and HR risk signals', permissions: ['dashboard.view', 'hris.view'] },
+  { title: 'HR Operations Dashboard', href: '/hris/dashboard/hr-operations-dashboard', icon: ShieldCheck, detail: 'Operational workload, compliance, attendance, and employee actions', permissions: ['hris.view', 'employees.view', 'attendance.view'] },
+  { title: 'Employee Directory', href: '/hris/employees/employee-directory', icon: Users, detail: 'Search employee records, departments, locations, and job details', permissions: ['employees.view', 'employees.*'] },
+  { title: 'Employee Profile', href: '/hris/employees/employee-profile', icon: UserRound, detail: 'Open personal, job, contact, document, and payroll profile records', permissions: ['employees.view', 'profile.view'] },
+  { title: 'Attendance Register', href: '/hris/attendance/attendance-register', icon: CalendarCheck, detail: 'Daily attendance, review status, payroll readiness, and exceptions', permissions: ['attendance.view', 'attendance.*'] },
+  { title: 'Timesheet Entry', href: '/hris/time-and-logs/timesheet-entry', icon: Clock, detail: 'Project time, overtime, employee self-service entries, and approvals', permissions: ['timesheet.submit', 'timesheet.approve', 'timesheet.view'] },
+  { title: 'Payroll Dashboard', href: '/hris/payroll/payroll-dashboard', icon: Banknote, detail: 'Payroll setup, processing, approval, payslips, tax, and deductions', permissions: ['payroll.view', 'payroll.*'] },
+  { title: 'Workforce Portal', href: '/workforce-portal', icon: UserRound, detail: 'Employee self-service dashboard, profile, leave, time, payroll, and documents', permissions: ['ess.view', 'profile.view'] },
+  { title: 'Documents', href: '/hris/employees/employee-documents', icon: FileText, detail: 'Employee documents, expiries, evidence, and controlled records', permissions: ['documents.view', 'employees.view'] },
 ];
 
-export default function HRISHomePage() {
+const can = (permissions: string[], required: string) => {
+  if (permissions.includes('*') || permissions.includes(required)) return true;
+  return permissions.includes(`${required.split('.')[0]}.*`);
+};
+
+const getPermissions = async () => {
+  const token = (await cookies()).get(AUTH_COOKIE)?.value;
+  const session = await verifySessionToken(token);
+  if (!session) return [] as string[];
+  return effectivePermissionsForUser(session.sub, session.roles).catch(() => session.permissions);
+};
+
+export default async function HRISHomePage() {
+  const permissions = await getPermissions();
+  const visibleQuickLinks = quickLinks.filter((item) => item.permissions.some((permission) => can(permissions, permission)));
+
   return (
     <div className="space-y-5">
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -63,23 +82,29 @@ export default function HRISHomePage() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-black text-slate-950">Open HRIS Module</h2>
-            <p className="mt-1 text-xs font-semibold text-slate-500">Choose a work area. Heavy dashboards load only when selected.</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">Choose a work area available to your published access.</p>
           </div>
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {quickLinks.map((item) => (
-            <Link key={item.href} href={item.href} className="group rounded-lg border border-slate-200 bg-slate-50 p-4 transition-colors hover:border-blue-300 hover:bg-white">
-              <div className="flex items-start justify-between gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-blue-600 ring-1 ring-slate-200">
-                  <item.icon className="h-5 w-5" />
-                </span>
-                <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-blue-600" />
-              </div>
-              <p className="mt-4 text-sm font-black text-slate-950 group-hover:text-blue-700">{item.title}</p>
-              <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">{item.detail}</p>
-            </Link>
-          ))}
-        </div>
+        {visibleQuickLinks.length ? (
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {visibleQuickLinks.map((item) => (
+              <Link key={item.href} href={item.href} className="group rounded-lg border border-slate-200 bg-slate-50 p-4 transition-colors hover:border-blue-300 hover:bg-white">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-blue-600 ring-1 ring-slate-200">
+                    <item.icon className="h-5 w-5" />
+                  </span>
+                  <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-blue-600" />
+                </div>
+                <p className="mt-4 text-sm font-black text-slate-950 group-hover:text-blue-700">{item.title}</p>
+                <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">{item.detail}</p>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">
+            No HRIS work area has been published for this account. Use Enterprise Home or ask an administrator to assign page access.
+          </div>
+        )}
       </section>
     </div>
   );

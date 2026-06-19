@@ -17,7 +17,7 @@ export type PermissionNode = {
   subModule: string;
   feature: string;
   functionName: string;
-  category: 'Module' | 'Workflow' | 'Report' | 'Dashboard' | 'API' | 'System';
+  category: 'Module' | 'Workflow' | 'Report' | 'Dashboard' | 'API' | 'System' | 'Page' | 'Button' | 'Dropdown';
   approvalLevel: string;
   dataScope: 'Own' | 'Team' | 'Department' | 'Location' | 'Company' | 'Global';
   permissionPrefix: string;
@@ -105,6 +105,16 @@ export const permissionCatalog: PermissionNode[] = [
   node('Integration', 'APIs', 'External Interfaces', 'API Access', 'API', 'L3 - Super Admin', 'Global', 'integration'),
   node('Enterprise', 'Home', 'Enterprise Shell', 'Application Access', 'Module', 'L1 - User', 'Company', 'enterprise'),
   node('Dashboard', 'Executive', 'Executive HR Dashboard', 'Dashboard Access', 'Dashboard', 'L2 - Manager', 'Company', 'dashboard'),
+  node('Page Access', 'Enterprise', 'Enterprise Home', 'Landing Dashboard Page', 'Page', 'L1 - User', 'Company', 'page.enterprise.home'),
+  node('Page Access', 'HRIS', 'HR Management', 'HRIS Portal Page', 'Page', 'L2 - HR Admin', 'Company', 'page.hris.management'),
+  node('Page Access', 'Employee Self Service', 'Workforce Portal', 'ESS Portal Page', 'Page', 'L1 - User', 'Own', 'page.workforce.portal'),
+  node('Page Access', 'Payroll', 'Payroll Management', 'Payroll Workspace Page', 'Page', 'L3 - Payroll Approver', 'Company', 'page.payroll.management'),
+  node('Page Access', 'Operations', 'Operations Center', 'Operations Workspace Page', 'Page', 'L2 - Manager', 'Company', 'page.operations.center'),
+  node('Page Access', 'Administration', 'Access Control Centre', 'Access Control Page', 'Page', 'L3 - Super Admin', 'Global', 'page.admin.access-control', true),
+  node('Button Access', 'Administration', 'Access Control Centre', 'Publish Permissions Button', 'Button', 'L3 - Super Admin', 'Global', 'button.admin.access-control.publish', true),
+  node('Button Access', 'Administration', 'Access Control Centre', 'Save Draft Button', 'Button', 'L3 - Super Admin', 'Global', 'button.admin.access-control.save-draft', true),
+  node('Button Access', 'Payroll', 'Employee Salary Setup', 'Export Button', 'Button', 'L3 - Payroll Approver', 'Company', 'button.payroll.employee-salary-setup.export'),
+  node('Button Access', 'Operations', 'Operations Center', 'Export Button', 'Button', 'L2 - Manager', 'Company', 'button.operations-center.export'),
   node('Reports & Analytics', 'Reports', 'Enterprise Reports', 'Report Exports', 'Report', 'L2 - Manager', 'Company', 'reports'),
   node('Human Resources', 'HRIS', 'HR Management', 'HRIS Module', 'Module', 'L2 - HR Admin', 'Company', 'hris'),
   node('Human Resources', 'Employees', 'Employee Records', 'Employee Lifecycle', 'Module', 'L2 - HR Admin', 'Department', 'employees'),
@@ -117,10 +127,10 @@ export const permissionCatalog: PermissionNode[] = [
   node('Operations Center', 'Module Access', 'Operations Center', 'Operations Module Access', 'Module', 'L2 - Manager', 'Company', 'operations'),
   node('Operations Center', 'Dashboard', 'Operations Dashboard', 'Operational KPIs', 'Dashboard', 'L2 - Manager', 'Company', 'operations.dashboard'),
   node('Operations Center', 'Timesheets', 'Crew Timesheets', 'Timesheet Execution', 'Workflow', 'L2 - Supervisor', 'Team', 'operations.timesheets'),
-  node('Operations Center', 'Timesheet Controls', 'Supervisor Selector', 'Enable Supervisor Dropdown', 'System', 'L2 - Manager', 'Company', 'operations.timesheets.controls.supervisor'),
-  node('Operations Center', 'Timesheet Controls', 'Location Selector', 'Enable Location Dropdown', 'System', 'L2 - Manager', 'Company', 'operations.timesheets.controls.location'),
-  node('Operations Center', 'Timesheet Controls', 'Work Center Selector', 'Enable Work Center Dropdown', 'System', 'L2 - Manager', 'Company', 'operations.timesheets.controls.work-center'),
-  node('Operations Center', 'Timesheet Controls', 'Working Date Selector', 'Enable Working Date Control', 'System', 'L2 - Manager', 'Company', 'operations.timesheets.controls.working-date'),
+  node('Operations Center', 'Timesheet Controls', 'Supervisor Selector', 'Enable Supervisor Dropdown', 'Dropdown', 'L2 - Manager', 'Company', 'operations.timesheets.controls.supervisor'),
+  node('Operations Center', 'Timesheet Controls', 'Location Selector', 'Enable Location Dropdown', 'Dropdown', 'L2 - Manager', 'Company', 'operations.timesheets.controls.location'),
+  node('Operations Center', 'Timesheet Controls', 'Work Center Selector', 'Enable Work Center Dropdown', 'Dropdown', 'L2 - Manager', 'Company', 'operations.timesheets.controls.work-center'),
+  node('Operations Center', 'Timesheet Controls', 'Working Date Selector', 'Enable Working Date Control', 'Dropdown', 'L2 - Manager', 'Company', 'operations.timesheets.controls.working-date'),
   node('Operations Center', 'Workforce Allocation', 'Crew Allocation', 'Manpower Distribution', 'Module', 'L2 - Manager', 'Location', 'operations.allocation'),
   node('Operations Center', 'Resource Planning', 'Resource Demand', 'Capacity Planning', 'Module', 'L2 - Manager', 'Company', 'operations.resource-planning'),
   node('Operations Center', 'Daily Activity Reports', 'Daily Activity Reports', 'Site Reporting', 'Workflow', 'L2 - Supervisor', 'Location', 'operations.daily-reports'),
