@@ -25,6 +25,10 @@ type PayrollRecord = {
   riskSeverity: 'Low' | 'Medium' | 'High';
   exceptionCount: number;
   exceptions: string[];
+  isDailyRate: boolean;
+  ratePerDay: number | null;
+  ratePerHour: number | null;
+  hoursPerDay: number;
   earningProfile: string;
   earningProfileId: string;
   basePay: number | null;
@@ -59,6 +63,7 @@ const pctFmt = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 });
 const money = (value: number | null | undefined, canView = true) => (!canView || value === null || value === undefined ? 'Restricted' : moneyFmt.format(value));
 const number = (value: number) => numberFmt.format(value);
 const percent = (value: number | null | undefined) => `${pctFmt.format(Number(value || 0) * 100)}%`;
+const rateMoney = (value: number | null | undefined, canView = true) => (value === null || value === undefined || value <= 0 ? 'N/A' : money(value, canView));
 
 const toneStyles: Record<Tone, { card: string; icon: string; chip: string; bar: string }> = {
   blue: { card: 'bg-blue-50 border-blue-200', icon: 'bg-blue-600 text-white', chip: 'bg-blue-100 text-blue-800', bar: 'bg-blue-600' },
@@ -152,7 +157,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
   const lastLoaded = payload?.generatedAt || initialNow;
 
   const exportCsv = () => {
-    const headers = ['Employee ID', 'Name', 'Department', 'Job Title', 'Payroll Group', 'Salary Grade', 'Earning Profile', 'Currency', 'Payment Run', 'Payment Type', 'Basic Pay', 'Allowances', 'Taxable Pay', 'Non-Taxable Pay', 'Gross Pay', 'Net Pay', 'Components', 'Status', 'Exceptions'];
+    const headers = ['Employee ID', 'Name', 'Department', 'Job Title', 'Payroll Group', 'Salary Grade', 'Earning Profile', 'Daily Rate', 'Hourly Rate', 'Currency', 'Payment Run', 'Payment Type', 'Basic Pay', 'Allowances', 'Taxable Pay', 'Non-Taxable Pay', 'Gross Pay', 'Net Pay', 'Components', 'Status', 'Exceptions'];
     const lines = filtered.map((record) =>
       [
         record.employeeId,
@@ -162,6 +167,8 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
         record.payrollGroup,
         record.salaryGrade,
         record.earningProfile,
+        record.ratePerDay,
+        record.ratePerHour,
         record.payCurrency,
         record.paymentRun,
         record.paymentType,
@@ -267,9 +274,9 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-[1050px] w-full text-left">
+            <table className="min-w-[1160px] w-full text-left">
               <thead className="bg-slate-50 text-xs font-black uppercase tracking-normal text-slate-500">
-                <tr>{['Employee', 'Grade', 'Group', 'Profile', 'Basic', 'Gross', 'Net', 'Setup', 'Status'].map((head) => <th key={head} className="px-4 py-3">{head}</th>)}</tr>
+                <tr>{['Employee', 'Grade', 'Group', 'Profile', 'Daily Rate', 'Basic', 'Gross', 'Net', 'Setup', 'Status'].map((head) => <th key={head} className="px-4 py-3">{head}</th>)}</tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.slice(0, 120).map((record) => {
@@ -285,6 +292,10 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                       <td className="px-4 py-3">
                         <p className="text-xs font-black text-slate-800">{record.earningProfile}</p>
                         <p className="text-[11px] font-semibold text-slate-500">{number(record.earningLines.length)} monthly components</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className={`text-sm font-black ${record.isDailyRate ? 'text-cyan-800' : 'text-slate-400'}`}>{rateMoney(record.ratePerDay, canViewMoney)}</p>
+                        {record.isDailyRate ? <p className="text-[11px] font-semibold text-slate-500">{rateMoney(record.ratePerHour, canViewMoney)} / hr</p> : null}
                       </td>
                       <td className="px-4 py-3 text-sm font-black text-slate-900">{money(record.basePay, canViewMoney)}</td>
                       <td className="px-4 py-3 text-sm font-black text-slate-900">{money(record.grossPay, canViewMoney)}</td>
@@ -336,6 +347,19 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                   <span className="text-right text-xs font-black text-slate-900">{value}</span>
                 </div>
               ))}
+              {selected.isDailyRate ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3">
+                    <p className="text-xs font-black text-cyan-800">Daily Rate</p>
+                    <p className="mt-1 text-sm font-black text-slate-950">{rateMoney(selected.ratePerDay, canViewMoney)}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-black text-slate-600">Hourly Rate</p>
+                    <p className="mt-1 text-sm font-black text-slate-950">{rateMoney(selected.ratePerHour, canViewMoney)}</p>
+                    <p className="mt-1 text-[11px] font-semibold text-slate-500">{number(selected.hoursPerDay || 8)} hours per day</p>
+                  </div>
+                </div>
+              ) : null}
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
                   <p className="text-xs font-black text-blue-800">Basic</p>
