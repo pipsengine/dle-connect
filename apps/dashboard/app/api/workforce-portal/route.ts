@@ -9,6 +9,7 @@ import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPa
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
 import { hasLeaveAllowanceInYear, syncSageLeaveAllowanceEvents } from '@/lib/payroll-leave-allowance-store';
 import { annualLeaveEntitlementForEmployee, dormantLongPolicy, isFourteenDayPaidLeaveEmployee } from '@/lib/leave-management-store';
+import { activePayrollPeriod } from '@/lib/payroll-periods';
 
 type EssRequest = {
   id: string;
@@ -91,7 +92,7 @@ const serviceCatalog = [
   { id: 'exit', label: 'Exit & Separation', area: 'Exit', workflow: ['Employee', 'Line Manager', 'HR', 'Finance', 'IT'], slaHours: 120 },
 ];
 
-const ESS_CURRENT_PAYROLL_PERIOD = '2026-06';
+const ESS_CURRENT_PAYROLL_PERIOD = activePayrollPeriod();
 const normalize = (value: unknown) => compact(value).toLowerCase();
 const tokenFrom = (request: Request) => request.headers.get('cookie')?.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${AUTH_COOKIE}=`))?.split('=').slice(1).join('=');
 const getSession = (request: Request) => verifySessionToken(tokenFrom(request) ? decodeURIComponent(tokenFrom(request) || '') : '');
@@ -351,14 +352,14 @@ export async function GET(request: Request) {
         loans: { applications: employeeLoans.length, outstanding: employeeLoans.reduce((sum, item) => sum + Number(item.outstandingBalance || 0), 0) },
       },
       announcements: [
-        { id: 'ann-001', title: 'June payroll window is open', channel: 'Payroll', publishedAt: dateAdd(-1), priority: 'High' },
+        { id: 'ann-001', title: 'May payroll window is open', channel: 'Payroll', publishedAt: dateAdd(-1), priority: 'High' },
         { id: 'ann-002', title: 'Updated HSE handbook published', channel: 'Policy', publishedAt: dateAdd(-5), priority: 'Normal' },
         { id: 'ann-003', title: 'Q3 learning calendar available', channel: 'Learning', publishedAt: dateAdd(-8), priority: 'Normal' },
       ],
       notifications: [
         { id: 'ntf-001', title: 'Leave request awaiting line manager review', type: 'Workflow', status: 'Unread', createdAt: dateAdd(-1) },
         { id: 'ntf-002', title: 'Employee handbook acknowledgement due', type: 'Document', status: 'Unread', createdAt: dateAdd(-2) },
-        { id: 'ntf-003', title: 'June payslip is ready for download', type: 'Payroll', status: 'Read', createdAt: dateAdd(-4) },
+        { id: 'ntf-003', title: 'May payslip is ready for download', type: 'Payroll', status: 'Read', createdAt: dateAdd(-4) },
       ],
       birthdays: [
         { id: 'bd-001', fullName: 'Olamide Badetan', department: 'Human Resources', date: sampleDate(3) },

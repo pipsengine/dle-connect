@@ -9,6 +9,7 @@ import { activePensionVersion, calculatePension, pensionInputFromEmployee, readP
 import { activeStatutoryFundsVersion, calculateStatutoryFunds, readStatutoryFundsConfig, statutoryFundInputFromEmployee } from '@/lib/payroll-statutory-funds-engine';
 import { activeLoansVersion, calculateLoanRecovery, loanInputsFromApplications, readPayrollLoanApplications, readPayrollLoansConfig } from '@/lib/payroll-loans-engine';
 import { syncSageLeaveAllowanceEvents } from '@/lib/payroll-leave-allowance-store';
+import { activePayrollPeriod } from '@/lib/payroll-periods';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Payroll Officer' | 'Finance Controller' | 'Executive Management' | 'Auditor' | 'Employee';
 type RunStatus = 'Draft' | 'Calculated' | 'Submitted' | 'Finance Approved' | 'HR Approved' | 'Locked' | 'Posted' | 'Rejected';
@@ -63,13 +64,10 @@ const permissions = (role: Role) => ({
   canExport: role !== 'Employee',
 });
 
-const monthPeriod = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-};
+const monthPeriod = activePayrollPeriod;
 
 const knownPayrollPeriods = (runs: PayrollRunHistory[], currentPeriod: string) => {
-  const seeded = ['2026-04', '2026-05', '2026-06', currentPeriod];
+  const seeded = ['2026-04', activePayrollPeriod(), currentPeriod];
   return Array.from(new Set([...seeded, ...runs.map((run) => run.period)]))
     .filter(Boolean)
     .sort((a, b) => b.localeCompare(a))

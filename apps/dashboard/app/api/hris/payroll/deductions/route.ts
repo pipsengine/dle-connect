@@ -3,6 +3,7 @@ import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { calculatePayrollEarnings } from '@/lib/payroll-earnings-engine';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig, type PayrollTaxVersion } from '@/lib/payroll-tax-engine';
+import { activePayrollPeriod } from '@/lib/payroll-periods';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Payroll Officer' | 'Finance Controller' | 'Executive Management' | 'Auditor' | 'Employee';
 type Tone = 'blue' | 'green' | 'amber' | 'red' | 'violet' | 'cyan' | 'slate';
@@ -29,10 +30,7 @@ const permissions = (role: Role) => ({
   canExport: role !== 'Employee',
 });
 
-const monthPeriod = () => {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-};
+const monthPeriod = activePayrollPeriod;
 
 const periodLabel = (period: string) => {
   const [year, month] = period.split('-').map(Number);
@@ -40,8 +38,8 @@ const periodLabel = (period: string) => {
 };
 
 const employeeCost = (employee: DleEmployeeDirectoryRow, taxVersion: PayrollTaxVersion) => {
-  const earnings = calculatePayrollEarnings(employee);
-  const tax = calculatePayrollTax(payrollInputFromEmployee(employee), taxVersion);
+  const earnings = calculatePayrollEarnings(employee, { period: activePayrollPeriod(), includePeriodAdjustments: true });
+  const tax = calculatePayrollTax(payrollInputFromEmployee(employee, { period: activePayrollPeriod(), includePeriodAdjustments: true }), taxVersion);
   const annualComponent = (id: string) => tax.statutoryItems.find((item) => item.id === id)?.amount || 0;
   const pension = annualComponent('pension') / 12;
   const paye = tax.monthlyPaye;
