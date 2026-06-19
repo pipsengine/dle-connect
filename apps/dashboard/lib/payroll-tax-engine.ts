@@ -77,20 +77,6 @@ const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value
 const round4 = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 10000) / 10000;
 const compact = (value: unknown) => String(value || '').trim();
 const employeeType = (input: PayrollTaxInput) => compact(input.employee?.employmentType || input.employee?.staffCategory || input.employee?.employeeCategory || 'Payroll');
-const moneyOrNull = (value: unknown) => {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-};
-const isSageBackedEmployee = (employee?: DleEmployeeDirectoryRow) => Boolean(employee?.sagePayrollDeductions || employee?.sagePayrollEarnings);
-const sageMonthlyDeduction = (employee: DleEmployeeDirectoryRow | undefined, key: keyof NonNullable<DleEmployeeDirectoryRow['sagePayrollDeductions']>) => {
-  if (!isSageBackedEmployee(employee)) return null;
-  return moneyOrNull(employee?.sagePayrollDeductions?.[key]);
-};
-const sageDeductionLineTotal = (employee: DleEmployeeDirectoryRow | undefined, predicate: (code: string) => boolean) => {
-  if (!isSageBackedEmployee(employee)) return null;
-  const lines = employee?.sagePayrollDeductions?.lines || [];
-  return roundMoney(lines.filter((line) => predicate(compact(line.code).toUpperCase())).reduce((sum, line) => sum + Number(line.amount || 0), 0));
-};
 
 export const readPayrollTaxConfig = async (): Promise<PayrollTaxConfig> => {
   const raw = await readFile(CONFIG_PATH, 'utf8');
@@ -137,22 +123,6 @@ const capAnnual = (amount: number, component: TaxComponentConfig) => {
 
 const calculateComponent = (component: TaxComponentConfig, input: PayrollTaxInput) => {
   const profileId = input.employee ? resolvePayrollEarningProfile(input.employee) : 'fallback';
-  if (component.id === 'pension') {
-    const sagePension = sageMonthlyDeduction(input.employee, 'pensionEmployee');
-    if (sagePension !== null) return roundMoney(sagePension * 12);
-  }
-  if (component.id === 'nhf') {
-    const sageNhf = sageMonthlyDeduction(input.employee, 'nhf');
-    if (sageNhf !== null) return roundMoney(sageNhf * 12);
-  }
-  if (component.id === 'union-dues' && isSageBackedEmployee(input.employee)) {
-    const sageUnion = sageDeductionLineTotal(input.employee, (code) => code.includes('UNION'));
-    return roundMoney((sageUnion ?? 0) * 12);
-  }
-  if (component.id === 'other-statutory' && isSageBackedEmployee(input.employee)) {
-    const sageOther = sageDeductionLineTotal(input.employee, (code) => !['PAYE', 'PENSION_EE', 'NHF'].includes(code) && !code.includes('UNION'));
-    return roundMoney((sageOther ?? 0) * 12);
-  }
   if (!appliesToEmployee(component, input)) return 0;
   if ((component.id === 'pension' || component.id === 'nhf') && String(profileId).startsWith('contract-')) return 0;
   if (component.id === 'union-dues' && input.employee) return calculatePermanentUnionDues(input.employee).amount * 12;
@@ -204,8 +174,7 @@ export const calculatePayrollTax = (input: PayrollTaxInput, version: PayrollTaxV
       remaining = Math.max(0, remaining - taxable);
       return { ...band, taxable: roundMoney(taxable), tax: roundMoney(tax), rate: round4(Number(band.rate || 0)) };
     });
-  const sagePaye = sageMonthlyDeduction(input.employee, 'paye');
-  const annualPaye = roundMoney(sagePaye !== null ? sagePaye * 12 : bandResults.reduce((sum, band) => sum + band.tax, 0));
+  const annualPaye = roundMoney(bandResults.reduce((sum, band) => sum + band.tax, 0));
   const postTaxDeductions = roundMoney(statutoryItems.filter((item) => !item.preTax).reduce((sum, item) => sum + item.amount, 0));
   return {
     annualGrossIncome,

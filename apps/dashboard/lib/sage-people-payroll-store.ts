@@ -1,5 +1,6 @@
 import sql from 'mssql';
 import { loadWorkspaceEnv } from '@/lib/dle-enterprise-db';
+import { activePayrollPeriod } from '@/lib/payroll-periods';
 
 loadWorkspaceEnv();
 
@@ -136,8 +137,8 @@ const config = () => {
 };
 
 const payrollPeriod = () => {
-  const value = String(process.env.HRIS_ACTIVE_PAYROLL_PERIOD || '2026-05').trim();
-  return /^\d{4}-\d{2}$/.test(value) ? value : '2026-05';
+  const value = String(process.env.HRIS_ACTIVE_PAYROLL_PERIOD || activePayrollPeriod()).trim();
+  return /^\d{4}-\d{2}$/.test(value) ? value : activePayrollPeriod();
 };
 
 const payrollPeriodSql = () => {

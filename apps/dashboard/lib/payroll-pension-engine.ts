@@ -66,11 +66,6 @@ const resolveConfigPath = () => {
 const CONFIG_PATH = resolveConfigPath();
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 const compact = (value: unknown) => String(value || '').trim();
-const moneyOrNull = (value: unknown) => {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-};
-const isSageBackedEmployee = (employee: DleEmployeeDirectoryRow) => Boolean(employee.sagePayrollDeductions || employee.sagePayrollContributions);
 
 export const readPayrollPensionConfig = async (): Promise<PensionConfig> => JSON.parse(await readFile(CONFIG_PATH, 'utf8')) as PensionConfig;
 
@@ -106,11 +101,9 @@ export const calculatePension = (input: PensionInput, version: PensionVersion) =
     version.rules.eligibleEmploymentTypes.some((item) => typeLower.includes(item.toLowerCase())) &&
     !version.rules.excludedEmploymentTypes.some((item) => typeLower.includes(item.toLowerCase()));
   const pensionableEmolument = roundMoney(Math.max(0, Number(input.monthlyBasePay || 0) + Number(input.monthlyAllowances || 0)));
-  const sageEmployeeContribution = isSageBackedEmployee(input.employee) ? moneyOrNull(input.employee.sagePayrollDeductions?.pensionEmployee) : null;
-  const sageEmployerContribution = isSageBackedEmployee(input.employee) ? moneyOrNull(input.employee.sagePayrollContributions?.pensionEmployer) : null;
-  const eligible = configEligible || sageEmployeeContribution !== null || sageEmployerContribution !== null;
-  const employeeContribution = sageEmployeeContribution !== null ? roundMoney(sageEmployeeContribution) : configEligible ? roundMoney(pensionableEmolument * Number(version.rules.employeeRate || 0)) : 0;
-  const employerContribution = sageEmployerContribution !== null ? roundMoney(sageEmployerContribution) : configEligible ? roundMoney(pensionableEmolument * Number(version.rules.employerRate || 0)) : 0;
+  const eligible = configEligible;
+  const employeeContribution = configEligible ? roundMoney(pensionableEmolument * Number(version.rules.employeeRate || 0)) : 0;
+  const employerContribution = configEligible ? roundMoney(pensionableEmolument * Number(version.rules.employerRate || 0)) : 0;
   const voluntaryContribution = eligible ? roundMoney(Number(input.voluntaryContributionMonthly || 0) || pensionableEmolument * Number(version.rules.voluntaryContributionRate || 0)) : 0;
   const totalContribution = roundMoney(employeeContribution + employerContribution + voluntaryContribution);
   const combinedRate = pensionableEmolument ? roundMoney((employeeContribution + employerContribution) / pensionableEmolument) : 0;

@@ -116,12 +116,10 @@ const enrichEmployeesFromSagePayroll = async (employees: DleEmployeeDirectoryRow
       const earningLines = sageLineItems(sage.latestEarningLinesJson);
       const deductionLines = sageLineItems(sage.latestDeductionLinesJson);
       const contributionLines = sageLineItems(sage.latestContributionLinesJson);
-      const hoursPerDay = moneyFrom(employee.hoursPerDay, sage.hoursPerDay, 8) || 8;
-      const sageRatePerDay = moneyFrom(sage.ratePerDay, Number(sage.ratePerHour || 0) * hoursPerDay, sage.periodSalary);
-      const sageRatePerHour = moneyFrom(sage.ratePerHour, sageRatePerDay ? sageRatePerDay / hoursPerDay : null);
-      const ratePerDay = moneyFrom(employee.ratePerDay, sageRatePerDay);
-      const ratePerHour = moneyFrom(employee.ratePerHour, sageRatePerHour);
-      const periodSalary = moneyFrom(employee.periodSalary, sage.periodSalary, ratePerDay);
+      const hoursPerDay = moneyFrom(employee.hoursPerDay, 8) || 8;
+      const ratePerDay = moneyFrom(employee.ratePerDay);
+      const ratePerHour = moneyFrom(employee.ratePerHour);
+      const periodSalary = moneyFrom(employee.periodSalary);
       return {
         ...employee,
         bankName: employee.bankName || sage.bankName || '',
@@ -134,11 +132,11 @@ const enrichEmployeesFromSagePayroll = async (employees: DleEmployeeDirectoryRow
         paymentRun: employee.paymentRun || sage.paymentRunLong || sage.paymentRunShort || '',
         paymentType: employee.paymentType || sage.paymentType || '',
         periodSalary,
-        annualSalary: moneyFrom(employee.annualSalary, sage.annualSalary, periodSalary ? periodSalary * 12 : null),
+        annualSalary: moneyFrom(employee.annualSalary, periodSalary ? periodSalary * 12 : null),
         ratePerDay,
         ratePerHour,
         hoursPerDay,
-        hoursPerPeriod: moneyFrom(employee.hoursPerPeriod, sage.hoursPerPeriod) || employee.hoursPerPeriod,
+        hoursPerPeriod: moneyFrom(employee.hoursPerPeriod) || employee.hoursPerPeriod,
         sagePayrollEarnings: earningLines,
         sagePayrollDeductions: {
           paye: moneyOrNull(sage.latestPaye),

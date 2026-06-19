@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { calculateContractDayRateEarnings, calculatePayrollEarnings, sageOpeningPayslipReconciliation, type PayrollEarningsResult } from '@/lib/payroll-earnings-engine';
+import { calculateContractDayRateEarnings, calculatePayrollEarnings, type PayrollEarningsResult } from '@/lib/payroll-earnings-engine';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
 import { activeStatutoryFundsVersion, calculateStatutoryFunds, readStatutoryFundsConfig, statutoryFundInputFromEmployee } from '@/lib/payroll-statutory-funds-engine';
@@ -39,10 +39,6 @@ const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value
 const num = (value: unknown) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
-};
-const moneyOrNull = (value: unknown) => {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
 };
 const activeEmployee = (employee: DleEmployeeDirectoryRow) => !compact(employee.status).toLowerCase().match(/terminated|resigned|retired|inactive|deceased/);
 const isDailyRateEmployee = (employee: DleEmployeeDirectoryRow, earningProfileId?: string) => {
@@ -262,15 +258,12 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
     const pension = calculatePension(dailyRateEmployee ? { employee: calculationEmployee, monthlyBasePay: amounts.basicPay, monthlyAllowances: Math.max(0, amounts.taxablePay - amounts.basicPay) } : pensionInputFromEmployee(employee, standardOptions), pensionVersion);
     const funds = calculateStatutoryFunds(dailyRateEmployee ? { employee: calculationEmployee, monthlyBasePay: amounts.basicPay, monthlyAllowances: amounts.allowances, organizationEmployeeCount: employeeSource.employees.length } : statutoryFundInputFromEmployee(employee, employeeSource.employees.length, standardOptions), fundsVersion);
     const loans = (loanInputs.get(employee.employeeId) || []).map((loanInput) => calculateLoanRecovery(loanInput, loansVersion));
-    const sageReconciliation = sageOpeningPayslipReconciliation(employee, requestedPeriod);
-    const currentSagePaye = requestedPeriod === monthPeriod() ? moneyOrNull(employee.sagePayrollDeductions?.paye) : null;
-    const currentSagePension = requestedPeriod === monthPeriod() ? moneyOrNull(employee.sagePayrollDeductions?.pensionEmployee) : null;
-    const paye = roundMoney(sageReconciliation?.paye ?? currentSagePaye ?? tax.monthlyPaye);
-    const pensionEmployee = roundMoney(sageReconciliation?.pensionEmployee ?? currentSagePension ?? pension.employeeContribution);
+    const paye = roundMoney(tax.monthlyPaye);
+    const pensionEmployee = roundMoney(pension.employeeContribution);
     const statutoryEmployee = roundMoney(funds.employeeDeductions);
     const loanRecovery = roundMoney(loans.reduce((sum, loan) => sum + loan.payrollRecovery, 0));
     const taxComponentMonthly = (id: string) => (tax.statutoryItems.find((item) => item.id === id)?.amount || 0) / 12;
-    const otherDeductions = sageReconciliation ? 0 : roundMoney(taxComponentMonthly('union-dues') + taxComponentMonthly('other-statutory'));
+    const otherDeductions = roundMoney(taxComponentMonthly('union-dues') + taxComponentMonthly('other-statutory'));
     const totalDeductions = roundMoney(paye + pensionEmployee + statutoryEmployee + loanRecovery + otherDeductions);
     const netPay = roundMoney(Math.max(0, amounts.grossPay - totalDeductions));
     const issues = [

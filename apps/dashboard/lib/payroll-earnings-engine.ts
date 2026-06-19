@@ -43,6 +43,7 @@ export type PayrollEarningsResult = {
 export type PayrollEarningsOptions = {
   period?: string;
   includePeriodAdjustments?: boolean;
+  useSagePayslipLines?: boolean;
   ignoreSagePayslipLines?: boolean;
 };
 
@@ -204,8 +205,8 @@ const JUNIOR_OVERTIME_EARNING_LINES: PayrollEarningLine[] = [
 ];
 
 export const SENIOR_FIXED_MONTHLY_EARNING_DEFINITIONS: PayrollEarningDefinition[] = [
-  { code: 'PER_MEAL', name: 'Meal Allowance', taxable: true, percentOfGross: 0, calculation: 'Fixed monthly Sage senior earning' },
-  { code: 'SNR_NJIC', name: 'SNR NJIC', taxable: true, percentOfGross: 0, calculation: 'Fixed monthly Sage senior earning' },
+  { code: 'PER_MEAL', name: 'Meal Allowance', taxable: true, percentOfGross: 0, calculation: 'Fixed monthly senior earning' },
+  { code: 'SNR_NJIC', name: 'SNR NJIC', taxable: true, percentOfGross: 0, calculation: 'Fixed monthly senior earning' },
 ];
 
 const seniorFixedMonthlyEarningLines = (profileId: PayrollEarningProfileId): PayrollEarningLine[] => {
@@ -294,50 +295,9 @@ export const resolvePayrollEarningProfile = (employee: DleEmployeeDirectoryRow):
   return 'fallback';
 };
 
-const normalizedPeriod = (period?: string) => compact(period).replace(/\//g, '-').slice(0, 7);
-const normalizedEmployeeCode = (employee: DleEmployeeDirectoryRow) => compact(employee.employeeCode || employee.employeeId).toUpperCase().replace(/[^A-Z0-9]/g, '');
-
-export const sageOpeningPayslipReconciliation = (employee: DleEmployeeDirectoryRow, period?: string) => {
-  const employeeCode = normalizedEmployeeCode(employee);
-  const payrollPeriod = normalizedPeriod(period);
-  if (!['P0146', '0146'].includes(employeeCode)) return null;
-  if (payrollPeriod === '2026-05') {
-    return {
-      source: 'Sage 300 May 2026 opening payslip',
-      paye: 180709.4,
-      pensionEmployee: 50660,
-      netPay: 1009323.8,
-    };
-  }
-  if (payrollPeriod === '2026-04' || payrollPeriod === '2026-06') {
-    return {
-      source: `Sage 300 ${payrollPeriod} normal monthly payslip`,
-      paye: 129215,
-      pensionEmployee: 50660,
-      netPay: 727535,
-    };
-  }
-  return null;
-};
-
-const periodAdjustmentLines = (employee: DleEmployeeDirectoryRow, profileId: PayrollEarningProfileId, lines: PayrollEarningLine[], options?: PayrollEarningsOptions): PayrollEarningLine[] => {
+const periodAdjustmentLines = (options?: PayrollEarningsOptions): PayrollEarningLine[] => {
   if (!options?.includePeriodAdjustments) return [];
-  const period = normalizedPeriod(options.period);
-  const employeeCode = normalizedEmployeeCode(employee);
   const adjustments: PayrollEarningLine[] = [];
-
-  if (period === '2026-05' && ['P0146', '0146'].includes(employeeCode)) {
-    adjustments.push({
-      code: 'REFUND',
-      name: 'REFUND',
-      taxable: false,
-      percentOfGross: 0,
-      calculation: 'May 2026 Sage payslip refund adjustment',
-      runFrequency: 'formula',
-      includeInMonthlyPayroll: true,
-      amount: 47203.2,
-    });
-  }
 
   return adjustments;
 };
@@ -394,7 +354,7 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
   const profileId = resolvePayrollEarningProfile(employee);
   const gross = monthlyGrossFromEmployee(employee);
   const profile = profileId === 'fallback' || profileId === 'contract-day-rate' || profileId === 'stipend-non-taxable' ? null : PAYROLL_EARNING_PROFILES[profileId];
-  const sageLines = options?.ignoreSagePayslipLines ? [] : sagePayslipEarningLines(employee);
+  const sageLines = options?.useSagePayslipLines && !options.ignoreSagePayslipLines ? sagePayslipEarningLines(employee) : [];
   if (sageLines.length > 0) {
     const fallbackProfileName = profileId === 'contract-day-rate'
       ? 'Contract Staff on Day Rate'
@@ -496,7 +456,7 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
   const fixedMonthlyLines = seniorFixedMonthlyEarningLines(profileId);
   const lines = withCategoryFormulaLines(profileId, [...regularLines, ...fixedMonthlyLines]);
   const periodAdjustments = [
-    ...periodAdjustmentLines(employee, profileId, lines, options),
+    ...periodAdjustmentLines(options),
     ...leavePayrollEventLines(employee, gross, lines, options),
   ];
   const monthlyLines = [...monthlyPayrollLines(lines), ...periodAdjustments];

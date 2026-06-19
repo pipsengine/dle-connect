@@ -64,18 +64,6 @@ const resolveDashboardRoot = () => {
 const CONFIG_PATH = path.join(resolveDashboardRoot(), 'data', 'hris', 'payroll-statutory-funds-config.json');
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 const compact = (value: unknown) => String(value || '').trim();
-const moneyOrNull = (value: unknown) => {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-};
-const isSageBackedEmployee = (employee: DleEmployeeDirectoryRow) => Boolean(employee.sagePayrollDeductions || employee.sagePayrollContributions);
-const sageFundAmount = (employee: DleEmployeeDirectoryRow, ruleId: string) => {
-  if (!isSageBackedEmployee(employee)) return null;
-  if (ruleId === 'nhf') return moneyOrNull(employee.sagePayrollDeductions?.nhf);
-  if (ruleId === 'nsitf') return moneyOrNull(employee.sagePayrollContributions?.nsitf);
-  if (ruleId === 'itf') return moneyOrNull(employee.sagePayrollContributions?.itf);
-  return null;
-};
 
 export const readStatutoryFundsConfig = async (): Promise<StatutoryFundsConfig> => JSON.parse(await readFile(CONFIG_PATH, 'utf8')) as StatutoryFundsConfig;
 
@@ -128,21 +116,18 @@ export const calculateStatutoryFunds = (input: StatutoryFundInput, version: Stat
   const monthlyGross = roundMoney(Number(input.monthlyBasePay || 0) + Number(input.monthlyAllowances || 0));
   const monthlyBase = roundMoney(Number(input.monthlyBasePay || 0));
   const fundResults = version.funds.map((rule) => {
-    const sageAmount = sageFundAmount(input.employee, rule.id);
-    const isEligible = sageAmount !== null ? true : eligible(rule, input);
+    const isEligible = eligible(rule, input);
     let amount = 0;
-    if (sageAmount !== null) amount = sageAmount;
-    if (sageAmount === null && isEligible && rule.calculationBasis === 'percent_of_monthly_base') amount = monthlyBase * Number(rule.rate || 0);
-    if (sageAmount === null && isEligible && rule.calculationBasis === 'percent_of_monthly_emolument') amount = monthlyGross * Number(rule.rate || 0);
-    if (sageAmount === null && isEligible && rule.calculationBasis === 'percent_of_annual_payroll') amount = (monthlyGross * 12 * Number(rule.rate || 0)) / 12;
+    if (isEligible && rule.calculationBasis === 'percent_of_monthly_base') amount = monthlyBase * Number(rule.rate || 0);
+    if (isEligible && rule.calculationBasis === 'percent_of_monthly_emolument') amount = monthlyGross * Number(rule.rate || 0);
+    if (isEligible && rule.calculationBasis === 'percent_of_annual_payroll') amount = (monthlyGross * 12 * Number(rule.rate || 0)) / 12;
     amount = roundMoney(cap(amount, rule));
-    const deductFromEmployee = sageAmount !== null && rule.id === 'nhf' ? amount > 0 : rule.deductFromEmployee;
     return {
       id: rule.id,
       label: rule.label,
       shortName: rule.shortName,
       payer: rule.payer,
-      deductFromEmployee,
+      deductFromEmployee: rule.deductFromEmployee,
       eligible: isEligible,
       monthlyAmount: amount,
       annualAmount: roundMoney(amount * 12),

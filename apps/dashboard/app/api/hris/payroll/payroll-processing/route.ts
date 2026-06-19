@@ -166,7 +166,7 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
       employee.id,
       employee.fullName,
     ].map(normalizePayrollMatchKey).map((key) => sageByKey.get(key)).find(Boolean) || null;
-    const paye = sageActual?.paye !== null && sageActual?.paye !== undefined ? Number(sageActual.paye) : tax.monthlyPaye;
+    const paye = tax.monthlyPaye;
     const employeePension = pension.employeeContribution;
     const statutoryEmployee = funds.employeeDeductions;
     const loanRecovery = roundMoney(loans.reduce((sum, loan) => sum + loan.payrollRecovery, 0));

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { calculatePayrollEarnings, sageOpeningPayslipReconciliation } from '@/lib/payroll-earnings-engine';
+import { calculatePayrollEarnings } from '@/lib/payroll-earnings-engine';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig, type PayrollTaxVersion } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig, type PensionVersion } from '@/lib/payroll-pension-engine';
 import { syncSageLeaveAllowanceEvents } from '@/lib/payroll-leave-allowance-store';
@@ -65,10 +65,6 @@ const jsonErr = (status: number, error: string) => NextResponse.json({ status: '
 const nowIso = () => new Date().toISOString();
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 const compact = (value: unknown) => String(value || '').trim();
-const moneyOrNull = (value: unknown) => {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-};
 const PAYROLL_SETUP_PREVIEW_PERIOD = activePayrollPeriod();
 const inputOnlyEmployee = (employee: DleEmployeeDirectoryRow): DleEmployeeDirectoryRow => ({
   ...employee,
@@ -134,15 +130,11 @@ const employeeCost = (employee: DleEmployeeDirectoryRow, taxVersion: PayrollTaxV
   const calculationOptions = { period: PAYROLL_SETUP_PREVIEW_PERIOD, includePeriodAdjustments: true, ignoreSagePayslipLines: true };
   const earnings = calculatePayrollEarnings(calculationEmployee, calculationOptions);
   const tax = calculatePayrollTax(payrollInputFromEmployee(calculationEmployee, calculationOptions), taxVersion);
-  const sageReconciliation = sageOpeningPayslipReconciliation(employee, PAYROLL_SETUP_PREVIEW_PERIOD);
-  const sagePaye = moneyOrNull(employee.sagePayrollDeductions?.paye);
-  const sagePension = moneyOrNull(employee.sagePayrollDeductions?.pensionEmployee);
-  const sageNhf = moneyOrNull(employee.sagePayrollDeductions?.nhf);
-  const pension = sageReconciliation?.pensionEmployee ?? sagePension ?? calculatePension(pensionInputFromEmployee(calculationEmployee, calculationOptions), pensionVersion).employeeContribution;
-  const paye = sageReconciliation?.paye ?? sagePaye ?? tax.monthlyPaye;
-  const nhf = sageNhf ?? (sageReconciliation ? 0 : (tax.statutoryItems.find((item) => item.id === 'nhf')?.amount || 0) / 12);
-  const unionDues = sageReconciliation ? 0 : (tax.statutoryItems.find((item) => item.id === 'union-dues')?.amount || 0) / 12;
-  const otherDeductions = (sageReconciliation ? 0 : (tax.statutoryItems.find((item) => item.id === 'other-statutory')?.amount || 0) / 12) + nhf + unionDues;
+  const pension = calculatePension(pensionInputFromEmployee(calculationEmployee, calculationOptions), pensionVersion).employeeContribution;
+  const paye = tax.monthlyPaye;
+  const nhf = (tax.statutoryItems.find((item) => item.id === 'nhf')?.amount || 0) / 12;
+  const unionDues = (tax.statutoryItems.find((item) => item.id === 'union-dues')?.amount || 0) / 12;
+  const otherDeductions = ((tax.statutoryItems.find((item) => item.id === 'other-statutory')?.amount || 0) / 12) + nhf + unionDues;
   const grossPay = earnings.grossPay;
   const deductions = pension + paye + otherDeductions;
   return {
