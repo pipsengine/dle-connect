@@ -292,6 +292,11 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                       <td className="px-4 py-3">
                         <p className="text-xs font-black text-slate-800">{record.earningProfile}</p>
                         <p className="text-[11px] font-semibold text-slate-500">{number(record.earningLines.length)} monthly components</p>
+                        {record.isDailyRate ? (
+                          <p className="mt-1 rounded-md bg-cyan-50 px-2 py-1 text-[11px] font-black text-cyan-800 ring-1 ring-cyan-100">
+                            Daily rate: {rateMoney(record.ratePerDay, canViewMoney)}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3">
                         <p className={`text-sm font-black ${record.isDailyRate ? 'text-cyan-800' : 'text-slate-400'}`}>{rateMoney(record.ratePerDay, canViewMoney)}</p>

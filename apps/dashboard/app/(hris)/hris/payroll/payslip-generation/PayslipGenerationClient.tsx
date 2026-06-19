@@ -21,6 +21,11 @@ type Payslip = {
   location: string;
   payrollGroup: string;
   salaryGrade: string;
+  isDailyRate?: boolean;
+  payBasis?: string;
+  ratePerDay?: number | null;
+  ratePerHour?: number | null;
+  hoursPerDay?: number;
   payCurrency: string;
   paymentRun: string;
   bankName: string;
@@ -108,6 +113,7 @@ function MetricCard({ label, value, detail, icon: Icon, tone }: { label: string;
 
 function PayslipPreview({ payload, slip, canViewMoney }: { payload: Payload; slip: Payslip; canViewMoney: boolean }) {
   const tableRows = (items: Array<{ label: string; amount: number | null }>) => items.length ? items : [{ label: 'No items', amount: 0 }];
+  const payslipTitle = slip.isDailyRate ? 'Daily Rate Payslip' : 'Official Payslip';
   return (
     <div className="rounded-3xl border border-slate-200 bg-slate-100 p-4 sm:p-6 lg:p-8 print:border-0 print:bg-white print:p-0">
       <div id="payslip-print-area" className="mx-auto w-full max-w-[980px] overflow-hidden rounded-[14px] border border-slate-200 bg-white shadow-sm print:max-w-none print:rounded-none print:border-0 print:shadow-none">
@@ -125,7 +131,7 @@ function PayslipPreview({ payload, slip, canViewMoney }: { payload: Payload; sli
               </div>
             </div>
             <div className="rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4 text-left sm:text-right">
-              <p className="text-xs font-black uppercase tracking-normal text-blue-700">Official Payslip</p>
+              <p className="text-xs font-black uppercase tracking-normal text-blue-700">{payslipTitle}</p>
               <p className="mt-1 text-2xl font-black text-slate-950">{slip.periodLabel}</p>
               <p className="mt-1 text-xs font-semibold text-slate-500">{slip.payslipId}</p>
             </div>
@@ -144,6 +150,7 @@ function PayslipPreview({ payload, slip, canViewMoney }: { payload: Payload; sli
                   ['Business Unit', slip.businessUnit],
                   ['Location', slip.location],
                   ['Grade / Group', `${slip.salaryGrade} / ${slip.payrollGroup}`],
+                  ['Pay Basis', slip.payBasis || (slip.isDailyRate ? 'Daily Rate' : 'Monthly Salary')],
                   ['Payment Run', slip.paymentRun],
                   ['Bank', `${slip.bankName} ${slip.maskedAccount}`],
                 ].map(([label, value]) => (
@@ -163,6 +170,22 @@ function PayslipPreview({ payload, slip, canViewMoney }: { payload: Payload; sli
               <span className={`mt-4 inline-flex w-fit rounded-full px-2.5 py-1 text-[11px] font-black ${toneStyles[statusTone(slip.status)].chip}`}>{slip.status}</span>
             </div>
           </div>
+          {slip.isDailyRate ? (
+            <div className="mt-4 grid grid-cols-1 gap-3 rounded-2xl border border-cyan-200 bg-cyan-50 p-4 sm:grid-cols-3">
+              <div>
+                <p className="text-[11px] font-black uppercase text-cyan-700">Daily Rate</p>
+                <p className="mt-1 text-sm font-black text-slate-950">{money(slip.ratePerDay, canViewMoney)}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-black uppercase text-cyan-700">Hourly Rate</p>
+                <p className="mt-1 text-sm font-black text-slate-950">{money(slip.ratePerHour, canViewMoney)}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-black uppercase text-cyan-700">Basis</p>
+                <p className="mt-1 text-sm font-black text-slate-950">{number(slip.hoursPerDay || 8)} hours per day</p>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="grid grid-cols-1 gap-4 px-6 pb-6 sm:px-8 lg:grid-cols-2">

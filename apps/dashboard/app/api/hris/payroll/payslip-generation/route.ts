@@ -35,6 +35,14 @@ const err = (status: number, error: string) => NextResponse.json({ status: 'erro
 const compact = (value: unknown) => String(value || '').trim();
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 const activeEmployee = (employee: DleEmployeeDirectoryRow) => !compact(employee.status).toLowerCase().match(/terminated|resigned|retired|inactive|deceased/);
+const isDailyRateEmployee = (employee: DleEmployeeDirectoryRow, earningProfileId?: string) => {
+  const code = compact(employee.employeeCode || employee.employeeId).toUpperCase();
+  const text = [employee.employmentType, employee.payrollGroup, employee.paymentRun, employee.paymentType, employee.staffCategory, employee.employeeCategory]
+    .map(compact)
+    .join(' ')
+    .toLowerCase();
+  return code.startsWith('C') || earningProfileId === 'contract-day-rate' || text.includes('daily') || text.includes('day rate');
+};
 
 const resolveDashboardRoot = () => {
   const cwd = process.cwd();
@@ -128,10 +136,14 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
     const otherDeductions = sageReconciliation ? 0 : roundMoney(taxComponentMonthly('union-dues') + taxComponentMonthly('other-statutory'));
     const totalDeductions = roundMoney(paye + pensionEmployee + statutoryEmployee + loanRecovery + otherDeductions);
     const netPay = roundMoney(Math.max(0, amounts.grossPay - totalDeductions));
+    const dailyRateEmployee = isDailyRateEmployee(employee, amounts.profileId);
+    const ratePerDay = Number(employee.ratePerDay || 0) || (Number(employee.ratePerHour || 0) > 0 ? Number(employee.ratePerHour) * Number(employee.hoursPerDay || 8) : 0) || (dailyRateEmployee ? Number(employee.periodSalary || 0) : 0);
+    const ratePerHour = Number(employee.ratePerHour || 0) || (ratePerDay > 0 ? ratePerDay / Number(employee.hoursPerDay || 8) : 0);
     const issues = [
       ...amounts.grossPay <= 0 ? ['Gross pay is missing'] : [],
       ...netPay <= 0 && amounts.grossPay > 0 ? ['Net pay is zero after deductions'] : [],
       ...!employee.setupAssignedToPayroll ? ['Payroll setup is not assigned'] : [],
+      ...dailyRateEmployee && ratePerDay <= 0 ? ['Daily rate is missing'] : [],
       ...!compact(employee.payrollGroup) ? ['Payroll group is missing'] : [],
       ...!activeEmployee(employee) ? ['Employee is not payroll active'] : [],
       ...pension.issues.filter((issue) => issue.includes('missing') || issue.includes('not payroll active')).map((issue) => `Pension: ${issue}`),
@@ -150,7 +162,12 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
       businessUnit: employee.businessUnit,
       location: employee.location,
       payrollGroup: employee.payrollGroup || 'Unassigned',
-      salaryGrade: employee.salaryGrade || employee.jobGrade || 'Unassigned',
+      salaryGrade: dailyRateEmployee ? (ratePerDay > 0 ? 'Daily Rate' : 'Rate Missing') : employee.salaryGrade || employee.jobGrade || 'Unassigned',
+      isDailyRate: dailyRateEmployee,
+      payBasis: dailyRateEmployee ? 'Daily Rate' : 'Monthly Salary',
+      ratePerDay: ratePerDay || null,
+      ratePerHour: ratePerHour || null,
+      hoursPerDay: Number(employee.hoursPerDay || 8) || 8,
       payCurrency: employee.payCurrency || 'NGN',
       paymentRun: employee.paymentRun || 'Monthly',
       bankName: 'Configured in payroll bank setup',
@@ -254,9 +271,9 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
 };
 
 const csv = (records: any[]) => {
-  const headers = ['Payslip ID', 'Employee ID', 'Name', 'Department', 'Payroll Group', 'Gross Pay', 'Deductions', 'Net Pay', 'Status', 'Delivery', 'Issues'];
+  const headers = ['Payslip ID', 'Employee ID', 'Name', 'Department', 'Payroll Group', 'Pay Basis', 'Daily Rate', 'Hourly Rate', 'Gross Pay', 'Deductions', 'Net Pay', 'Status', 'Delivery', 'Issues'];
   const lines = records.map((record) =>
-    [record.payslipId, record.employeeId, record.fullName, record.department, record.payrollGroup, record.grossPay, record.totalDeductions, record.netPay, record.status, record.deliveryStatus, record.issues.join('; ')]
+    [record.payslipId, record.employeeId, record.fullName, record.department, record.payrollGroup, record.payBasis, record.ratePerDay, record.ratePerHour, record.grossPay, record.totalDeductions, record.netPay, record.status, record.deliveryStatus, record.issues.join('; ')]
       .map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`)
       .join(',')
   );

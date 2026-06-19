@@ -186,7 +186,7 @@ const buildRecords = (employees: DleEmployeeDirectoryRow[], taxVersion: PayrollT
     const cost = employeeCost(employee, taxVersion, pensionVersion);
     const risk = riskFor(employee, cost);
     const dailyRateEmployee = isDailyRateEmployee(employee, cost.earningProfileId);
-    const ratePerDay = Number(employee.ratePerDay || 0) || (Number(employee.ratePerHour || 0) > 0 ? Number(employee.ratePerHour) * Number(employee.hoursPerDay || 8) : 0);
+    const ratePerDay = Number(employee.ratePerDay || 0) || (Number(employee.ratePerHour || 0) > 0 ? Number(employee.ratePerHour) * Number(employee.hoursPerDay || 8) : 0) || (dailyRateEmployee ? Number(employee.periodSalary || 0) : 0);
     const ratePerHour = Number(employee.ratePerHour || 0) || (ratePerDay > 0 ? ratePerDay / Number(employee.hoursPerDay || 8) : 0);
     const payrollStatus = risk.issues.length === 0 ? 'Ready' : risk.severity === 'High' ? 'Blocked' : 'Review';
     return {

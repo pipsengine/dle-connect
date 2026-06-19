@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import OperationsCenterClient from '../OperationsCenterClient';
 import type { OperationsSection } from '@/lib/operations-center-store';
 
@@ -13,5 +13,6 @@ const sections: OperationsSection[] = [
 export default async function OperationsCenterSectionPage({ params }: { params: Promise<{ section: string }> }) {
   const { section } = await params;
   if (!sections.includes(section as OperationsSection)) notFound();
+  if (section === 'timesheets') redirect('/hris/workforce-management/timesheet-entry');
   return <OperationsCenterClient initialSection={section as OperationsSection} />;
 }
