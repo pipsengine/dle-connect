@@ -133,7 +133,7 @@ export async function GET(request: Request) {
   const context = contexts.has(contextParam as CurrentUserContext) ? contextParam as CurrentUserContext : 'enterprise';
   const token = cookieFirst(request, AUTH_COOKIE);
   const session = await verifySessionToken(token);
-  const notificationCount = session ? (await listEnterpriseNotifications(session, 'all')).counts.unread : 0;
+  const notificationCount = session ? await listEnterpriseNotifications(session, 'all').then((result) => result.counts.unread).catch(() => 0) : 0;
 
   const employeeSource = await readPayrollEmployees();
   if (session?.isGlobalAdmin) {

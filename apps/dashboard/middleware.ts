@@ -52,6 +52,15 @@ const isHrSensitivePath = (pathname: string) => {
   );
 };
 
+const hasOperationsCenterAccess = (permissions: string[]) => {
+  return permissions.some((permission) => (
+    permission === '*' ||
+    permission === 'operations.view' ||
+    permission === 'operations.*' ||
+    permission.startsWith('operations.')
+  ));
+};
+
 const denied = (request: NextRequest, status = 403) => {
   if (request.nextUrl.pathname.startsWith('/api')) {
     return NextResponse.json({ status: 'error', error: status === 401 ? 'Unauthenticated' : 'Forbidden' }, { status });
@@ -88,6 +97,19 @@ export async function middleware(request: NextRequest) {
   if (isHrSensitivePath(pathname) && !isHrDepartmentUser(session)) return denied(request, 403);
 
   const permission = requiredPermission(pathname);
+  if (permission === 'operations.view' && hasOperationsCenterAccess(session.permissions)) {
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('x-auth-user', session.username);
+    requestHeaders.set('x-auth-roles', session.roles.join(','));
+    requestHeaders.set('x-hris-actor', session.fullName || session.username);
+    if (!requestHeaders.get('x-hris-role')) {
+      requestHeaders.set('x-hris-role', session.roles.includes('Super Administrator') ? 'Super Administrator' : 'OrganizationAdmin');
+    }
+    const response = NextResponse.next({ request: { headers: requestHeaders } });
+    response.headers.set('x-auth-user', session.username);
+    response.headers.set('x-auth-roles', session.roles.join(','));
+    return response;
+  }
   if (permission && !hasPermission(session.permissions, permission)) return denied(request, 403);
 
   const requestHeaders = new Headers(request.headers);

@@ -55,15 +55,17 @@ const secret = () => process.env.AUTH_SESSION_SECRET || process.env.NEXTAUTH_SEC
 export const shouldUseSecureAuthCookie = (request?: Request) => {
   const configured = process.env.AUTH_COOKIE_SECURE;
   if (configured != null && configured !== '') return !['0', 'false', 'no', 'off'].includes(configured.toLowerCase());
-  const forwardedProto = request?.headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase();
-  if (forwardedProto) return forwardedProto === 'https';
   if (request?.url) {
     try {
-      return new URL(request.url).protocol === 'https:';
+      const protocol = new URL(request.url).protocol;
+      if (protocol === 'http:') return false;
+      if (protocol === 'https:') return true;
     } catch {
       return false;
     }
   }
+  const forwardedProto = request?.headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase();
+  if (forwardedProto) return forwardedProto === 'https';
   return process.env.NODE_ENV === 'production';
 };
 

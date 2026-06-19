@@ -18,7 +18,10 @@ const scopeFrom = (request: NextRequest): NotificationScope => {
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ status: 'error', error: 'Unauthenticated' }, { status: 401 });
-  const data = await listEnterpriseNotifications(session, scopeFrom(request));
+  const data = await listEnterpriseNotifications(session, scopeFrom(request)).catch(() => ({
+    notifications: [],
+    counts: { unread: 0, notifications: 0, messages: 0, approvals: 0, critical: 0 },
+  }));
   return NextResponse.json({ status: 'success', data });
 }
 
