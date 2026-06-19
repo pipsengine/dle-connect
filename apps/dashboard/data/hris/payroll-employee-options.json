@@ -29,5 +29,12 @@
     "annualRentRelief": 521880,
     "updatedAt": "2026-06-19T00:00:00.000Z",
     "updatedBy": "Payroll Officer"
+  },
+  {
+    "employeeId": "P0146",
+    "employeeCode": "P0146",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-19T00:00:00.000Z",
+    "updatedBy": "Payroll Officer"
   }
 ]

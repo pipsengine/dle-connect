@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
-import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { invalidatePayrollEmployeeCache, payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { calculatePayrollEarnings, calculatePermanentUnionDues } from '@/lib/payroll-earnings-engine';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig, type PayrollTaxVersion } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig, type PensionVersion } from '@/lib/payroll-pension-engine';
 import { syncSageLeaveAllowanceEvents } from '@/lib/payroll-leave-allowance-store';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
+import { writePayrollEmployeeOption } from '@/lib/payroll-employee-options-store';
 
 type Role =
   | 'Super Admin'
@@ -225,6 +226,7 @@ const buildRecords = (employees: DleEmployeeDirectoryRow[], taxVersion: PayrollT
       payCurrency: employee.payCurrency || 'NGN',
       paymentRun: employee.paymentRun || 'Monthly',
       paymentType: employee.paymentType || 'Bank Transfer',
+      nhfApplicable: (cost.deductionLines || []).some((line) => line.code === 'NHF' && line.amount > 0),
       setupAssignedToPayroll: employee.setupAssignedToPayroll,
       payrollStatus,
       riskSeverity: risk.severity,
@@ -517,6 +519,31 @@ export async function POST(request: Request) {
   const actor = compact(body.actor) || role;
   const reason = compact(body.reason);
   const comment = compact(body.comment);
+
+  if (action === 'set-nhf-applicability') {
+    if (!perms.canManageRun && !perms.canConfigure) return jsonErr(403, 'Permission denied');
+    const employeeId = compact(body.employeeId || body.employeeCode);
+    if (!employeeId) return jsonErr(400, 'Employee ID is required.');
+    if (typeof body.nhfApplicable !== 'boolean') return jsonErr(400, 'NHF applicability must be true or false.');
+    const option = await writePayrollEmployeeOption({
+      employeeId,
+      employeeCode: employeeId,
+      nhfApplicable: body.nhfApplicable,
+      updatedBy: actor,
+    });
+    invalidatePayrollEmployeeCache();
+    logAudit(request, {
+      user: actor,
+      role,
+      action,
+      record: employeeId,
+      oldValue: null,
+      newValue: body.nhfApplicable ? 'NHF enabled' : 'NHF disabled',
+      reason,
+      comment,
+    });
+    return jsonOk({ option });
+  }
 
   if (action === 'create-run') {
     if (!perms.canManageRun) return jsonErr(403, 'Permission denied');

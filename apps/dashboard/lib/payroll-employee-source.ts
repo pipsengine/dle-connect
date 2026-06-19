@@ -52,6 +52,10 @@ const EMPLOYEE_SOURCE_FALLBACK_STALE_MS = Number(process.env.HRIS_EMPLOYEE_SOURC
 const EMPLOYEE_SOURCE_DB_TIMEOUT_MS = Number(process.env.HRIS_EMPLOYEE_SOURCE_DB_TIMEOUT_MS || 5000);
 let employeeSourceCache: EmployeeSourceCache | null = null;
 
+export const invalidatePayrollEmployeeCache = () => {
+  employeeSourceCache = null;
+};
+
 const cacheWindow = (source: PayrollEmployeeSource) => {
   if (source.databaseAvailable) {
     return { expiresIn: EMPLOYEE_SOURCE_CACHE_MS, staleFor: EMPLOYEE_SOURCE_STALE_MS };

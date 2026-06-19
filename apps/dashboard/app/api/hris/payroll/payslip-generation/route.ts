@@ -295,14 +295,14 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
     const loans = (loanInputs.get(employee.employeeId) || []).map((loanInput) => calculateLoanRecovery(loanInput, loansVersion));
     const paye = roundMoney(tax.monthlyPaye);
     const pensionEmployee = roundMoney(pension.employeeContribution);
-    const statutoryEmployee = roundMoney(funds.employeeDeductions);
+    const nhf = roundMoney((tax.statutoryItems.find((item) => item.id === 'nhf')?.amount || 0) / 12);
     const loanRecovery = roundMoney(loans.reduce((sum, loan) => sum + loan.payrollRecovery, 0));
     const taxComponentMonthly = (id: string) => (tax.statutoryItems.find((item) => item.id === id)?.amount || 0) / 12;
     const unionDues = roundMoney(taxComponentMonthly('union-dues'));
     const unionRule = calculatePermanentUnionDues(calculationEmployee);
     const otherStatutory = roundMoney(taxComponentMonthly('other-statutory'));
     const otherDeductions = roundMoney(unionDues + otherStatutory);
-    const totalDeductions = roundMoney(paye + pensionEmployee + statutoryEmployee + loanRecovery + otherDeductions);
+    const totalDeductions = roundMoney(paye + pensionEmployee + nhf + loanRecovery + otherDeductions);
     const netPay = roundMoney(Math.max(0, amounts.grossPay - totalDeductions));
     const issues = [
       ...amounts.grossPay <= 0 ? ['Gross pay is missing'] : [],
@@ -362,7 +362,7 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
       deductions: [
         { label: 'PAYE', amount: paye },
         { label: 'Pension', amount: pensionEmployee },
-        { label: 'NHF', amount: statutoryEmployee },
+        { label: 'NHF', amount: nhf },
         { label: unionRule.name, amount: unionDues },
         { label: 'Other Deductions', amount: otherStatutory },
         { label: 'Loan / Salary Advance', amount: loanRecovery },

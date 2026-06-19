@@ -18,28 +18,41 @@ const resolveDashboardRoot = () => {
   return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
 };
 
-const resolveOptionsPath = () => {
+const resolveRuntimeDataDirs = () => {
+  const cwd = process.cwd();
+  const dirs = [path.join(cwd, 'data', 'hris')];
+  if (path.basename(cwd).toLowerCase() === 'site') {
+    dirs.push(path.join(path.dirname(cwd), 'runtime-data', 'hris'));
+  }
+  dirs.push(path.join(cwd, 'runtime-data', 'hris'));
+  return dirs;
+};
+
+const resolveOptionsPaths = () => {
   const candidates = [
     process.env.DLE_PAYROLL_EMPLOYEE_OPTIONS_PATH,
     process.env.DLE_HRIS_DATA_DIR ? path.join(process.env.DLE_HRIS_DATA_DIR, 'payroll-employee-options.json') : null,
+    ...resolveRuntimeDataDirs().map((dir) => path.join(dir, 'payroll-employee-options.json')),
     path.join(resolveDashboardRoot(), 'data', 'hris', 'payroll-employee-options.json'),
     path.join(process.cwd(), 'apps', 'dashboard', 'data', 'hris', 'payroll-employee-options.json'),
-    path.join(process.cwd(), 'data', 'hris', 'payroll-employee-options.json'),
   ].filter(Boolean) as string[];
-  return candidates.find((candidate) => existsSync(candidate)) || candidates[0];
+  return Array.from(new Set(candidates.map((candidate) => path.resolve(candidate))));
 };
 
-const OPTIONS_PATH = resolveOptionsPath();
+const OPTIONS_PATHS = resolveOptionsPaths();
 const compact = (value: unknown) => String(value || '').trim();
 const keyFor = (value: unknown) => compact(value).toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 export const readPayrollEmployeeOptions = async (): Promise<PayrollEmployeeOption[]> => {
-  try {
-    const parsed = JSON.parse(await readFile(OPTIONS_PATH, 'utf8'));
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+  for (const optionsPath of OPTIONS_PATHS) {
+    try {
+      const parsed = JSON.parse(await readFile(optionsPath, 'utf8'));
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      // Try the next configured/runtime location.
+    }
   }
+  return [];
 };
 
 export const writePayrollEmployeeOption = async (option: Omit<PayrollEmployeeOption, 'updatedAt'> & { updatedAt?: string }) => {
@@ -48,9 +61,22 @@ export const writePayrollEmployeeOption = async (option: Omit<PayrollEmployeeOpt
   const keys = [nextOption.employeeId, nextOption.employeeCode].map(keyFor).filter(Boolean);
   const next = current.filter((item) => ![item.employeeId, item.employeeCode].map(keyFor).some((key) => keys.includes(key)));
   next.push(nextOption);
-  await mkdir(path.dirname(OPTIONS_PATH), { recursive: true });
-  await writeFile(OPTIONS_PATH, JSON.stringify(next.sort((a, b) => keyFor(a.employeeId).localeCompare(keyFor(b.employeeId))), null, 2), 'utf8');
-  return nextOption;
+  const payload = JSON.stringify(next.sort((a, b) => keyFor(a.employeeId).localeCompare(keyFor(b.employeeId))), null, 2);
+  let lastError: unknown = null;
+  const writePaths = [
+    ...OPTIONS_PATHS.filter((optionsPath) => existsSync(optionsPath)),
+    ...OPTIONS_PATHS.filter((optionsPath) => !existsSync(optionsPath)),
+  ];
+  for (const optionsPath of writePaths) {
+    try {
+      await mkdir(path.dirname(optionsPath), { recursive: true });
+      await writeFile(optionsPath, payload, 'utf8');
+      return nextOption;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
 };
 
 export const applyPayrollEmployeeOptions = async (employees: DleEmployeeDirectoryRow[]) => {
