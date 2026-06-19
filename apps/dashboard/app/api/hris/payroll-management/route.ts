@@ -138,11 +138,11 @@ const employeeCost = (employee: DleEmployeeDirectoryRow, taxVersion: PayrollTaxV
   const sagePaye = moneyOrNull(employee.sagePayrollDeductions?.paye);
   const sagePension = moneyOrNull(employee.sagePayrollDeductions?.pensionEmployee);
   const sageNhf = moneyOrNull(employee.sagePayrollDeductions?.nhf);
-  const pension = sageReconciliation?.pensionEmployee ?? sagePension ?? calculatePension(pensionInputFromEmployee(calculationEmployee, calculationOptions), pensionVersion).employeeContribution;
-  const paye = sageReconciliation?.paye ?? sagePaye ?? tax.monthlyPaye;
-  const nhf = sageReconciliation ? 0 : (tax.statutoryItems.find((item) => item.id === 'nhf')?.amount || 0) / 12;
+  const pension = sagePension ?? sageReconciliation?.pensionEmployee ?? calculatePension(pensionInputFromEmployee(calculationEmployee, calculationOptions), pensionVersion).employeeContribution;
+  const paye = sagePaye ?? sageReconciliation?.paye ?? tax.monthlyPaye;
+  const nhf = sageNhf ?? (sageReconciliation ? 0 : (tax.statutoryItems.find((item) => item.id === 'nhf')?.amount || 0) / 12);
   const unionDues = sageReconciliation ? 0 : (tax.statutoryItems.find((item) => item.id === 'union-dues')?.amount || 0) / 12;
-  const otherDeductions = sageReconciliation ? 0 : ((tax.statutoryItems.find((item) => item.id === 'other-statutory')?.amount || 0) / 12) + (sageNhf ?? nhf) + unionDues;
+  const otherDeductions = (sageReconciliation ? 0 : (tax.statutoryItems.find((item) => item.id === 'other-statutory')?.amount || 0) / 12) + nhf + unionDues;
   const grossPay = earnings.grossPay;
   const deductions = pension + paye + otherDeductions;
   return {

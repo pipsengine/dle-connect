@@ -35,6 +35,10 @@ const err = (status: number, error: string) => NextResponse.json({ status: 'erro
 const compact = (value: unknown) => String(value || '').trim();
 const round = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 10) / 10;
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
+const moneyOrNull = (value: unknown) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
 const monthEndDate = (period: string) => {
   const [year, month] = period.split('-').map(Number);
   return new Date(Date.UTC(year || 2026, month || 1, 0)).toISOString().slice(0, 10);
@@ -171,8 +175,10 @@ export async function GET(request: Request) {
       const tax = taxVersion ? calculatePayrollTax(taxInput, taxVersion) : null;
       const pension = pensionVersion ? calculatePension(pensionInputFromEmployee(employee, { period, includePeriodAdjustments: includeAdjustments }), pensionVersion) : null;
       const sageReconciliation = sageOpeningPayslipReconciliation(employee, period);
-      const paye = roundMoney(sageReconciliation?.paye ?? tax?.monthlyPaye ?? 0);
-      const pensionEmployee = roundMoney(sageReconciliation?.pensionEmployee ?? pension?.employeeContribution ?? 0);
+      const currentSagePaye = period === ESS_CURRENT_PAYROLL_PERIOD ? moneyOrNull(employee.sagePayrollDeductions?.paye) : null;
+      const currentSagePension = period === ESS_CURRENT_PAYROLL_PERIOD ? moneyOrNull(employee.sagePayrollDeductions?.pensionEmployee) : null;
+      const paye = roundMoney(currentSagePaye ?? sageReconciliation?.paye ?? tax?.monthlyPaye ?? 0);
+      const pensionEmployee = roundMoney(currentSagePension ?? sageReconciliation?.pensionEmployee ?? pension?.employeeContribution ?? 0);
       const nhf = sageReconciliation ? 0 : roundMoney((tax?.statutoryItems.find((item) => item.id === 'nhf')?.amount || 0) / 12);
       const unionDues = sageReconciliation ? 0 : roundMoney((tax?.statutoryItems.find((item) => item.id === 'union-dues')?.amount || 0) / 12);
       const otherDeductions = sageReconciliation ? 0 : roundMoney(((tax?.statutoryItems.find((item) => item.id === 'other-statutory')?.amount || 0) / 12) + nhf + unionDues);

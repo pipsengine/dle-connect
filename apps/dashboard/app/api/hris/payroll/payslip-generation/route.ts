@@ -34,6 +34,10 @@ const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 const compact = (value: unknown) => String(value || '').trim();
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
+const moneyOrNull = (value: unknown) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
 const activeEmployee = (employee: DleEmployeeDirectoryRow) => !compact(employee.status).toLowerCase().match(/terminated|resigned|retired|inactive|deceased/);
 const isDailyRateEmployee = (employee: DleEmployeeDirectoryRow, earningProfileId?: string) => {
   const code = compact(employee.employeeCode || employee.employeeId).toUpperCase();
@@ -128,8 +132,10 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
     const funds = calculateStatutoryFunds(statutoryFundInputFromEmployee(employee, employeeSource.employees.length, { period: requestedPeriod, includePeriodAdjustments: true }), fundsVersion);
     const loans = (loanInputs.get(employee.employeeId) || []).map((loanInput) => calculateLoanRecovery(loanInput, loansVersion));
     const sageReconciliation = sageOpeningPayslipReconciliation(employee, requestedPeriod);
-    const paye = roundMoney(sageReconciliation?.paye ?? tax.monthlyPaye);
-    const pensionEmployee = roundMoney(sageReconciliation?.pensionEmployee ?? pension.employeeContribution);
+    const currentSagePaye = requestedPeriod === monthPeriod() ? moneyOrNull(employee.sagePayrollDeductions?.paye) : null;
+    const currentSagePension = requestedPeriod === monthPeriod() ? moneyOrNull(employee.sagePayrollDeductions?.pensionEmployee) : null;
+    const paye = roundMoney(currentSagePaye ?? sageReconciliation?.paye ?? tax.monthlyPaye);
+    const pensionEmployee = roundMoney(currentSagePension ?? sageReconciliation?.pensionEmployee ?? pension.employeeContribution);
     const statutoryEmployee = roundMoney(funds.employeeDeductions);
     const loanRecovery = roundMoney(loans.reduce((sum, loan) => sum + loan.payrollRecovery, 0));
     const taxComponentMonthly = (id: string) => (tax.statutoryItems.find((item) => item.id === id)?.amount || 0) / 12;
