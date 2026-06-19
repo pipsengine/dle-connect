@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "notifications": [
+    {
+      "recipientUserId": "global-admin",
+      "recipientUsername": "Admin",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "security-session-global-admin",
+      "kind": "Security",
+      "module": "Security & MFA",
+      "title": "Enterprise session secured",
+      "body": "Your current enterprise access is protected by RBAC, session controls, and activity logging.",
+      "severity": "success",
+      "status": "Archived",
+      "href": "/hris/administration/audit-trail",
+      "createdAt": "2026-06-16T07:19:47.677Z",
+      "actor": "Security Service",
+      "metadata": {
+        "persistentSeed": true
+      },
+      "readAt": "2026-06-16T15:50:42.819Z",
+      "archivedAt": "2026-06-16T15:50:58.373Z"
+    },
+    {
+      "recipientUserId": "global-admin",
+      "recipientUsername": "Admin",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "profile-review-global-admin",
+      "kind": "Notification",
+      "module": "Employee Profile",
+      "title": "Review your employee profile",
+      "body": "Keep contact details, emergency contacts, bank details, and supporting documents up to date.",
+      "severity": "info",
+      "status": "Archived",
+      "href": "/hris/employees/employee-profile",
+      "createdAt": "2026-06-16T07:19:47.677Z",
+      "actor": "HRIS",
+      "metadata": {
+        "persistentSeed": true
+      },
+      "readAt": "2026-06-16T15:50:43.674Z",
+      "archivedAt": "2026-06-16T15:50:51.961Z"
+    },
+    {
+      "recipientUserId": "global-admin",
+      "recipientUsername": "Admin",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "payslip-ready-global-admin",
+      "kind": "Notification",
+      "module": "Payroll Management",
+      "title": "Payroll self-service available",
+      "body": "Payslips, deductions, pension contributions, allowances, and loan deductions can be reviewed from payroll self-service.",
+      "severity": "info",
+      "status": "Archived",
+      "href": "/hris/payroll/payslip-generation",
+      "createdAt": "2026-06-16T07:19:47.677Z",
+      "actor": "Payroll Service",
+      "metadata": {
+        "persistentSeed": true
+      },
+      "readAt": "2026-06-16T15:50:44.762Z",
+      "archivedAt": "2026-06-16T15:50:52.645Z"
+    },
+    {
+      "recipientUserId": "global-admin",
+      "recipientUsername": "Admin",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "hr-message-global-admin",
+      "kind": "Message",
+      "module": "Communication Center",
+      "title": "HR communication center is active",
+      "body": "Company announcements, policy updates, request comments, and service messages will appear here.",
+      "severity": "info",
+      "status": "Archived",
+      "href": "/hris/announcements",
+      "createdAt": "2026-06-16T07:19:47.677Z",
+      "actor": "Human Capital",
+      "metadata": {
+        "persistentSeed": true
+      },
+      "readAt": "2026-06-16T15:50:40.142Z",
+      "archivedAt": "2026-06-16T15:50:53.290Z"
+    },
+    {
+      "recipientUserId": "global-admin",
+      "recipientUsername": "Admin",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "approval-queue-global-admin",
+      "kind": "Approval",
+      "module": "Workflow & Approvals",
+      "title": "Approval queue requires review",
+      "body": "Review pending HR, payroll, leave, workforce, and employee service requests according to your role permissions.",
+      "severity": "warning",
+      "status": "Archived",
+      "href": "/hris/administration/approval-workflow",
+      "createdAt": "2026-06-16T07:19:47.677Z",
+      "actor": "Workflow Engine",
+      "metadata": {
+        "persistentSeed": true
+      },
+      "archivedAt": "2026-06-16T15:50:54.066Z",
+      "readAt": "2026-06-16T15:50:54.066Z"
+    },
+    {
+      "recipientUserId": "global-admin",
+      "recipientUsername": "Admin",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "timesheet-approval-global-admin",
+      "kind": "Workflow",
+      "module": "Workforce Management",
+      "title": "Timesheet and attendance actions available",
+      "body": "Timesheet periods, project approvals, attendance exceptions, and payroll-ready hours are available for review.",
+      "severity": "warning",
+      "status": "Archived",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-06-16T07:19:47.677Z",
+      "actor": "Workforce Management",
+      "metadata": {
+        "persistentSeed": true
+      },
+      "archivedAt": "2026-06-16T15:50:54.542Z",
+      "readAt": "2026-06-16T15:50:54.542Z"
+    }
+  ]
+}
