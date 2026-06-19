@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { calculateContractDayRateEarnings, calculatePayrollEarnings, type PayrollEarningsResult } from '@/lib/payroll-earnings-engine';
+import { calculateContractDayRateEarnings, calculatePayrollEarnings, calculatePermanentUnionDues, type PayrollEarningsResult } from '@/lib/payroll-earnings-engine';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
 import { activeStatutoryFundsVersion, calculateStatutoryFunds, readStatutoryFundsConfig, statutoryFundInputFromEmployee } from '@/lib/payroll-statutory-funds-engine';
@@ -263,7 +263,10 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
     const statutoryEmployee = roundMoney(funds.employeeDeductions);
     const loanRecovery = roundMoney(loans.reduce((sum, loan) => sum + loan.payrollRecovery, 0));
     const taxComponentMonthly = (id: string) => (tax.statutoryItems.find((item) => item.id === id)?.amount || 0) / 12;
-    const otherDeductions = roundMoney(taxComponentMonthly('union-dues') + taxComponentMonthly('other-statutory'));
+    const unionDues = roundMoney(taxComponentMonthly('union-dues'));
+    const unionRule = calculatePermanentUnionDues(calculationEmployee);
+    const otherStatutory = roundMoney(taxComponentMonthly('other-statutory'));
+    const otherDeductions = roundMoney(unionDues + otherStatutory);
     const totalDeductions = roundMoney(paye + pensionEmployee + statutoryEmployee + loanRecovery + otherDeductions);
     const netPay = roundMoney(Math.max(0, amounts.grossPay - totalDeductions));
     const issues = [
@@ -321,8 +324,9 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
       deductions: [
         { label: 'PAYE', amount: paye },
         { label: 'Pension', amount: pensionEmployee },
-        { label: 'NHF / Statutory', amount: statutoryEmployee },
-        { label: 'Other Deductions', amount: otherDeductions },
+        { label: 'NHF', amount: statutoryEmployee },
+        { label: unionRule.name, amount: unionDues },
+        { label: 'Other Deductions', amount: otherStatutory },
         { label: 'Loan / Salary Advance', amount: loanRecovery },
       ].filter((item) => item.amount > 0),
       employerContributions: [

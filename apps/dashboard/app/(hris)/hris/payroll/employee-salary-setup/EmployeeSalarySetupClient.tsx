@@ -40,6 +40,7 @@ type PayrollRecord = {
   pension: number | null;
   paye: number | null;
   otherDeductions: number | null;
+  deductionLines?: Array<{ code: string; label: string; amount: number | null }>;
   grossPay: number | null;
   deductions: number | null;
   netPay: number | null;
@@ -446,17 +447,20 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                   <p className="text-xs font-semibold text-slate-500">Estimated deductions from current payroll configuration.</p>
                 </div>
                 <div className="divide-y divide-slate-100">
-                  {[
-                    ['PAYE', selected.paye],
-                    ['Pension', selected.pension],
-                    ['Other Deductions', selected.otherDeductions],
-                    ['Total Deductions', selected.deductions],
-                  ].map(([label, value]) => (
+                  {(selected.deductionLines?.length ? selected.deductionLines : [
+                    { label: 'PAYE', amount: selected.paye },
+                    { label: 'Pension', amount: selected.pension },
+                    { label: 'Other Deductions', amount: selected.otherDeductions },
+                  ]).map(({ label, amount }) => (
                     <div key={label as string} className="flex items-center justify-between gap-3 p-3">
                       <span className="text-xs font-black text-slate-600">{label as string}</span>
-                      <span className="text-xs font-black text-slate-950">{money(value as number | null, canViewMoney)}</span>
+                      <span className="text-xs font-black text-slate-950">{money(amount, canViewMoney)}</span>
                     </div>
                   ))}
+                  <div className="flex items-center justify-between gap-3 bg-slate-50 p-3">
+                    <span className="text-xs font-black text-slate-700">Total Deductions</span>
+                    <span className="text-xs font-black text-slate-950">{money(selected.deductions, canViewMoney)}</span>
+                  </div>
                 </div>
               </div>
               <div className="rounded-2xl border border-slate-200 p-4">

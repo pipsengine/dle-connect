@@ -3,7 +3,7 @@ import path from 'node:path';
 import { NextResponse } from 'next/server';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { AUTH_COOKIE, verifySessionToken, type SessionPayload } from '@/lib/auth/session';
-import { calculatePayrollEarnings } from '@/lib/payroll-earnings-engine';
+import { calculatePayrollEarnings, calculatePermanentUnionDues } from '@/lib/payroll-earnings-engine';
 import { activeLoansVersion, readPayrollLoanApplications, readPayrollLoansConfig } from '@/lib/payroll-loans-engine';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
@@ -174,8 +174,9 @@ export async function GET(request: Request) {
       const pensionEmployee = roundMoney(pension?.employeeContribution ?? 0);
       const nhf = roundMoney((tax?.statutoryItems.find((item) => item.id === 'nhf')?.amount || 0) / 12);
       const unionDues = roundMoney((tax?.statutoryItems.find((item) => item.id === 'union-dues')?.amount || 0) / 12);
-      const otherDeductions = roundMoney(((tax?.statutoryItems.find((item) => item.id === 'other-statutory')?.amount || 0) / 12) + nhf + unionDues);
-      const deductions = roundMoney(paye + pensionEmployee + otherDeductions);
+      const unionRule = calculatePermanentUnionDues(employee);
+      const otherStatutory = roundMoney((tax?.statutoryItems.find((item) => item.id === 'other-statutory')?.amount || 0) / 12);
+      const deductions = roundMoney(paye + pensionEmployee + nhf + unionDues + otherStatutory);
       const employerPension = roundMoney(pension?.employerContribution || 0);
       const nsitf = roundMoney(earnings.grossPay * 0.01);
       const itf = roundMoney(earnings.grossPay * 0.01);
@@ -197,7 +198,9 @@ export async function GET(request: Request) {
         deductionLines: [
           { code: 'PAYE', label: 'PAYE Tax', units: paye > 0 ? 1 : 0, amount: paye },
           { code: 'PENSION_EMPLOYEE', label: 'Pension Employee Contribution', units: pensionEmployee > 0 ? 1 : 0, amount: pensionEmployee },
-          { code: 'OTHER_DEDUCTIONS', label: 'Other Deductions', units: otherDeductions > 0 ? 1 : 0, amount: otherDeductions },
+          { code: 'NHF', label: 'NHF', units: nhf > 0 ? 1 : 0, amount: nhf },
+          { code: unionRule.code, label: unionRule.name, units: unionDues > 0 ? 1 : 0, amount: unionDues },
+          { code: 'OTHER_DEDUCTIONS', label: 'Other Deductions', units: otherStatutory > 0 ? 1 : 0, amount: otherStatutory },
         ].filter((line) => line.amount > 0),
         employerContributionLines: [
           { code: 'PENSION_EMPLOYER', label: 'Pension Employer Contribution', units: employerPension > 0 ? 1 : 0, amount: employerPension },

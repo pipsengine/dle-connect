@@ -77,6 +77,7 @@ const num = (value: unknown) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
 };
+const titleCase = (value: string) => value.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 export const PAYROLL_EARNING_PROFILES: Record<Exclude<PayrollEarningProfileId, 'contract-day-rate' | 'stipend-non-taxable' | 'fallback'>, { name: string; definitions: PayrollEarningDefinition[] }> = {
   'junior-permanent': {
@@ -540,7 +541,7 @@ export const calculatePermanentUnionDues = (employee: DleEmployeeDirectoryRow) =
   if (earnings.profileId === 'junior-permanent') {
     return {
       code: 'JNR_UNION_DUES',
-      name: 'JUNIOR UNION DUES',
+      name: 'Jnr Union Dues',
       basis: '3% of Basic Earning',
       amount: roundMoney(earnings.basicPay * 0.03),
     };
@@ -549,14 +550,14 @@ export const calculatePermanentUnionDues = (employee: DleEmployeeDirectoryRow) =
     const duesBasis = monthlyGrossFromEmployee(employee) || earnings.grossPay;
     return {
       code: 'SNR_UNION_DUES',
-      name: 'SENIOR UNION DUES',
+      name: 'Snr Union Dues',
       basis: '(Monthly Salary * 26%) * 4%',
       amount: roundMoney(duesBasis * 0.26 * 0.04),
     };
   }
   return {
     code: 'UNION_DUES',
-    name: 'UNION DUES',
+    name: titleCase('UNION DUES'),
     basis: 'Fallback payroll configuration',
     amount: 0,
   };

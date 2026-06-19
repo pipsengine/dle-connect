@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { calculatePayrollEarnings } from '@/lib/payroll-earnings-engine';
+import { calculatePayrollEarnings, calculatePermanentUnionDues } from '@/lib/payroll-earnings-engine';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig, type PayrollTaxVersion } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig, type PensionVersion } from '@/lib/payroll-pension-engine';
 import { syncSageLeaveAllowanceEvents } from '@/lib/payroll-leave-allowance-store';
@@ -134,7 +134,9 @@ const employeeCost = (employee: DleEmployeeDirectoryRow, taxVersion: PayrollTaxV
   const paye = tax.monthlyPaye;
   const nhf = (tax.statutoryItems.find((item) => item.id === 'nhf')?.amount || 0) / 12;
   const unionDues = (tax.statutoryItems.find((item) => item.id === 'union-dues')?.amount || 0) / 12;
-  const otherDeductions = ((tax.statutoryItems.find((item) => item.id === 'other-statutory')?.amount || 0) / 12) + nhf + unionDues;
+  const unionRule = calculatePermanentUnionDues(calculationEmployee);
+  const otherStatutory = (tax.statutoryItems.find((item) => item.id === 'other-statutory')?.amount || 0) / 12;
+  const otherDeductions = otherStatutory + nhf + unionDues;
   const grossPay = earnings.grossPay;
   const deductions = pension + paye + otherDeductions;
   return {
@@ -167,6 +169,13 @@ const employeeCost = (employee: DleEmployeeDirectoryRow, taxVersion: PayrollTaxV
     pension: roundMoney(pension),
     paye: roundMoney(paye),
     otherDeductions: roundMoney(otherDeductions),
+    deductionLines: [
+      { code: 'PAYE', label: 'PAYE', amount: roundMoney(paye) },
+      { code: 'PENSION_EE', label: 'Pension', amount: roundMoney(pension) },
+      { code: 'NHF', label: 'NHF', amount: roundMoney(nhf) },
+      { code: unionRule.code, label: unionRule.name, amount: roundMoney(unionDues) },
+      { code: 'OTHERDEDUCTION', label: 'Other Deductions', amount: roundMoney(otherStatutory) },
+    ].filter((line) => line.amount > 0),
     grossPay: roundMoney(grossPay),
     deductions: roundMoney(deductions),
     netPay: roundMoney(Math.max(0, grossPay - deductions)),
@@ -294,6 +303,7 @@ const maskMoney = (record: any) => ({
   pension: null,
   paye: null,
   otherDeductions: null,
+  deductionLines: (record.deductionLines || []).map((line: any) => ({ ...line, amount: null })),
   taxablePay: null,
   nonTaxablePay: null,
   earningLines: record.earningLines.map((line: any) => ({ ...line, amount: null })),
