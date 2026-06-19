@@ -177,8 +177,8 @@ export async function GET(request: Request) {
       const sageReconciliation = sageOpeningPayslipReconciliation(employee, period);
       const currentSagePaye = period === ESS_CURRENT_PAYROLL_PERIOD ? moneyOrNull(employee.sagePayrollDeductions?.paye) : null;
       const currentSagePension = period === ESS_CURRENT_PAYROLL_PERIOD ? moneyOrNull(employee.sagePayrollDeductions?.pensionEmployee) : null;
-      const paye = roundMoney(currentSagePaye ?? sageReconciliation?.paye ?? tax?.monthlyPaye ?? 0);
-      const pensionEmployee = roundMoney(currentSagePension ?? sageReconciliation?.pensionEmployee ?? pension?.employeeContribution ?? 0);
+      const paye = roundMoney(sageReconciliation?.paye ?? currentSagePaye ?? tax?.monthlyPaye ?? 0);
+      const pensionEmployee = roundMoney(sageReconciliation?.pensionEmployee ?? currentSagePension ?? pension?.employeeContribution ?? 0);
       const nhf = sageReconciliation ? 0 : roundMoney((tax?.statutoryItems.find((item) => item.id === 'nhf')?.amount || 0) / 12);
       const unionDues = sageReconciliation ? 0 : roundMoney((tax?.statutoryItems.find((item) => item.id === 'union-dues')?.amount || 0) / 12);
       const otherDeductions = sageReconciliation ? 0 : roundMoney(((tax?.statutoryItems.find((item) => item.id === 'other-statutory')?.amount || 0) / 12) + nhf + unionDues);

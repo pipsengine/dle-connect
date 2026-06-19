@@ -26,6 +26,10 @@ type Payslip = {
   ratePerDay?: number | null;
   ratePerHour?: number | null;
   hoursPerDay?: number;
+  daysWorked?: number | null;
+  attendanceHours?: number | null;
+  bookedHours?: number | null;
+  idleHours?: number | null;
   payCurrency: string;
   paymentRun: string;
   bankName: string;
@@ -171,7 +175,7 @@ function PayslipPreview({ payload, slip, canViewMoney }: { payload: Payload; sli
             </div>
           </div>
           {slip.isDailyRate ? (
-            <div className="mt-4 grid grid-cols-1 gap-3 rounded-2xl border border-cyan-200 bg-cyan-50 p-4 sm:grid-cols-3">
+            <div className="mt-4 grid grid-cols-2 gap-3 rounded-2xl border border-cyan-200 bg-cyan-50 p-4 sm:grid-cols-3 lg:grid-cols-6">
               <div>
                 <p className="text-[11px] font-black uppercase text-cyan-700">Daily Rate</p>
                 <p className="mt-1 text-sm font-black text-slate-950">{money(slip.ratePerDay, canViewMoney)}</p>
@@ -179,6 +183,18 @@ function PayslipPreview({ payload, slip, canViewMoney }: { payload: Payload; sli
               <div>
                 <p className="text-[11px] font-black uppercase text-cyan-700">Hourly Rate</p>
                 <p className="mt-1 text-sm font-black text-slate-950">{money(slip.ratePerHour, canViewMoney)}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-black uppercase text-cyan-700">Days Worked</p>
+                <p className="mt-1 text-sm font-black text-slate-950">{number(slip.daysWorked)}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-black uppercase text-cyan-700">Booked Hours</p>
+                <p className="mt-1 text-sm font-black text-slate-950">{number(slip.bookedHours)}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-black uppercase text-cyan-700">Attendance Hours</p>
+                <p className="mt-1 text-sm font-black text-slate-950">{number(slip.attendanceHours)}</p>
               </div>
               <div>
                 <p className="text-[11px] font-black uppercase text-cyan-700">Basis</p>

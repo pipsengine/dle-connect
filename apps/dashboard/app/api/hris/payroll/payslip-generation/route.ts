@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { calculatePayrollEarnings, sageOpeningPayslipReconciliation } from '@/lib/payroll-earnings-engine';
+import { calculateContractDayRateEarnings, calculatePayrollEarnings, sageOpeningPayslipReconciliation, type PayrollEarningsResult } from '@/lib/payroll-earnings-engine';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
 import { activeStatutoryFundsVersion, calculateStatutoryFunds, readStatutoryFundsConfig, statutoryFundInputFromEmployee } from '@/lib/payroll-statutory-funds-engine';
@@ -10,6 +10,8 @@ import { activeLoansVersion, calculateLoanRecovery, loanInputsFromApplications, 
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { syncSageLeaveAllowanceEvents } from '@/lib/payroll-leave-allowance-store';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
+import { readTimesheetPayrollUpdates } from '@/lib/timesheet-entry-store';
+import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Payroll Officer' | 'Finance Controller' | 'Executive Management' | 'Auditor' | 'Employee';
 type PayslipStatus = 'Ready' | 'Review' | 'Blocked';
@@ -34,6 +36,10 @@ const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 const compact = (value: unknown) => String(value || '').trim();
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
+const num = (value: unknown) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+};
 const moneyOrNull = (value: unknown) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -95,10 +101,122 @@ const statusFrom = (issues: string[]): PayslipStatus => {
   return issues.length ? 'Review' : 'Ready';
 };
 
+type DailyAttendanceSummary = {
+  daysWorked: number;
+  attendanceHours: number;
+  bookedHours: number;
+  idleHours: number;
+};
+
+const emptyDailyAttendance = (): DailyAttendanceSummary => ({ daysWorked: 0, attendanceHours: 0, bookedHours: 0, idleHours: 0 });
+
+const buildDailyAttendanceByKey = async (period: string) => {
+  const updates = await readTimesheetPayrollUpdates();
+  const byKey = new Map<string, DailyAttendanceSummary>();
+  const periodId = `per-${period}`;
+
+  const add = (key: string, attendance: DailyAttendanceSummary) => {
+    if (!key) return;
+    const current = byKey.get(key) || emptyDailyAttendance();
+    current.daysWorked += attendance.daysWorked;
+    current.attendanceHours += attendance.attendanceHours;
+    current.bookedHours += attendance.bookedHours;
+    current.idleHours += attendance.idleHours;
+    byKey.set(key, current);
+  };
+
+  updates
+    .filter((update) => update.periodId === periodId)
+    .forEach((update) => {
+      update.employeeAttendance.forEach((employee) => {
+        const attendance = {
+          daysWorked: num(employee.daysWorked),
+          attendanceHours: num(employee.attendanceHours),
+          bookedHours: num(employee.bookedHours),
+          idleHours: num(employee.idleHours),
+        };
+        [employee.employeeId, employee.employeeName].map(normalizePayrollMatchKey).forEach((key) => add(key, attendance));
+      });
+    });
+
+  return byKey;
+};
+
+const dailyAttendanceForEmployee = (employee: DleEmployeeDirectoryRow, byKey: Map<string, DailyAttendanceSummary>) =>
+  [employee.employeeId, employee.employeeCode, employee.sourceEmployeeId, employee.fullName]
+    .map(normalizePayrollMatchKey)
+    .map((key) => byKey.get(key))
+    .find(Boolean) || emptyDailyAttendance();
+
+const contractDayRatePayrollResult = (input: {
+  ratePerDay: number;
+  daysWorked: number;
+}): PayrollEarningsResult => {
+  const result = calculateContractDayRateEarnings({
+    ratePerDay: input.ratePerDay,
+    weekdayDays: input.daysWorked,
+  });
+  const lines = result.earningLines.map((line) => ({
+    ...line,
+    percentOfGross: result.grossPay > 0 ? roundMoney(line.amount / result.grossPay) : 0,
+    runFrequency: 'formula' as const,
+    includeInMonthlyPayroll: true,
+  }));
+  const basePay = roundMoney(lines.find((line) => line.code === 'JCWEEKDAY')?.amount || 0);
+  return {
+    profileId: result.profileId,
+    profileName: result.profileName,
+    grossPay: result.grossPay,
+    basePay,
+    basicPay: basePay,
+    allowances: roundMoney(result.grossPay - basePay),
+    taxablePay: result.taxablePay,
+    nonTaxablePay: result.nonTaxablePay,
+    earningLines: lines,
+    annualBenefitLines: [],
+    paidEarningLines: lines,
+  };
+};
+
+const mergeDailySupplementalEarnings = (base: PayrollEarningsResult, source: PayrollEarningsResult): PayrollEarningsResult => {
+  const baseCodes = new Set(['JCWEEKDAY', 'JCWEEKDAY_NT']);
+  const supplemental = source.paidEarningLines
+    .filter((line) => !baseCodes.has(compact(line.code).toUpperCase()))
+    .filter((line) => roundMoney(line.amount) !== 0)
+    .map((line) => ({
+      ...line,
+      calculation: line.calculation || 'Daily-rate supplemental earning',
+      runFrequency: line.runFrequency || 'monthly',
+      includeInMonthlyPayroll: line.includeInMonthlyPayroll !== false,
+      amount: roundMoney(line.amount),
+    }));
+  if (!supplemental.length) return base;
+  const paidEarningLines = [...base.paidEarningLines, ...supplemental];
+  const grossPay = roundMoney(paidEarningLines.reduce((sum, line) => sum + line.amount, 0));
+  const taxablePay = roundMoney(paidEarningLines.filter((line) => line.taxable).reduce((sum, line) => sum + line.amount, 0));
+  const basicPay = roundMoney(base.basicPay);
+  const normalizedLines = paidEarningLines.map((line) => ({
+    ...line,
+    percentOfGross: grossPay > 0 ? roundMoney(line.amount / grossPay) : 0,
+  }));
+  return {
+    ...base,
+    profileName: `${base.profileName} with Supplemental Components`,
+    grossPay,
+    basePay: basicPay,
+    basicPay,
+    allowances: roundMoney(grossPay - basicPay),
+    taxablePay,
+    nonTaxablePay: roundMoney(grossPay - taxablePay),
+    earningLines: normalizedLines,
+    paidEarningLines: normalizedLines,
+  };
+};
+
 const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) => {
   const role = getRole(request);
   const perms = permissions(role);
-  const [employeeSource, taxConfig, pensionConfig, fundsConfig, loansConfig, loanApplications, batches] = await Promise.all([
+  const [employeeSource, taxConfig, pensionConfig, fundsConfig, loansConfig, loanApplications, batches, dailyAttendanceByKey] = await Promise.all([
     readPayrollEmployees(),
     readPayrollTaxConfig(),
     readPayrollPensionConfig(),
@@ -106,6 +224,7 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
     readPayrollLoansConfig(),
     readPayrollLoanApplications(),
     readBatches(),
+    buildDailyAttendanceByKey(requestedPeriod),
   ]);
   const taxVersion = activeTaxVersion(taxConfig);
   const pensionVersion = activePensionVersion(pensionConfig);
@@ -122,34 +241,44 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
     return map;
   }, new Map<string, ReturnType<typeof loanInputsFromApplications>>());
   const payslips = employeeSource.employees.map((employee) => {
-    const amounts = calculatePayrollEarnings(employee, { period: requestedPeriod, includePeriodAdjustments: true });
+    const standardOptions = { period: requestedPeriod, includePeriodAdjustments: true };
+    const standardAmounts = calculatePayrollEarnings(employee, standardOptions);
+    const dailyRateEmployee = isDailyRateEmployee(employee, standardAmounts.profileId);
+    const ratePerDay = Number(employee.ratePerDay || 0) || (Number(employee.ratePerHour || 0) > 0 ? Number(employee.ratePerHour) * Number(employee.hoursPerDay || 8) : 0) || (dailyRateEmployee ? Number(employee.periodSalary || 0) : 0);
+    const ratePerHour = Number(employee.ratePerHour || 0) || (ratePerDay > 0 ? ratePerDay / Number(employee.hoursPerDay || 8) : 0);
+    const dailyAttendance = dailyRateEmployee ? dailyAttendanceForEmployee(employee, dailyAttendanceByKey) : emptyDailyAttendance();
+    const dailyTimesheetAmounts = dailyRateEmployee ? mergeDailySupplementalEarnings(contractDayRatePayrollResult({ ratePerDay, daysWorked: dailyAttendance.daysWorked }), standardAmounts) : null;
+    const amounts = dailyTimesheetAmounts && dailyTimesheetAmounts.grossPay > 0 ? dailyTimesheetAmounts : standardAmounts;
+    const calculationEmployee = dailyRateEmployee ? { ...employee, sagePayrollEarnings: [] } : employee;
     const tax = calculatePayrollTax({
-      ...payrollInputFromEmployee(employee, { period: requestedPeriod, includePeriodAdjustments: true }),
+      ...(dailyRateEmployee ? {
+        employee: calculationEmployee,
+        monthlyBasePay: amounts.basicPay,
+        monthlyAllowances: Math.max(0, amounts.taxablePay - amounts.basicPay),
+      } : payrollInputFromEmployee(employee, standardOptions)),
       monthlyGrossPay: amounts.grossPay,
       monthlyTaxablePay: amounts.taxablePay,
     }, taxVersion);
-    const pension = calculatePension(pensionInputFromEmployee(employee, { period: requestedPeriod, includePeriodAdjustments: true }), pensionVersion);
-    const funds = calculateStatutoryFunds(statutoryFundInputFromEmployee(employee, employeeSource.employees.length, { period: requestedPeriod, includePeriodAdjustments: true }), fundsVersion);
+    const pension = calculatePension(dailyRateEmployee ? { employee: calculationEmployee, monthlyBasePay: amounts.basicPay, monthlyAllowances: Math.max(0, amounts.taxablePay - amounts.basicPay) } : pensionInputFromEmployee(employee, standardOptions), pensionVersion);
+    const funds = calculateStatutoryFunds(dailyRateEmployee ? { employee: calculationEmployee, monthlyBasePay: amounts.basicPay, monthlyAllowances: amounts.allowances, organizationEmployeeCount: employeeSource.employees.length } : statutoryFundInputFromEmployee(employee, employeeSource.employees.length, standardOptions), fundsVersion);
     const loans = (loanInputs.get(employee.employeeId) || []).map((loanInput) => calculateLoanRecovery(loanInput, loansVersion));
     const sageReconciliation = sageOpeningPayslipReconciliation(employee, requestedPeriod);
     const currentSagePaye = requestedPeriod === monthPeriod() ? moneyOrNull(employee.sagePayrollDeductions?.paye) : null;
     const currentSagePension = requestedPeriod === monthPeriod() ? moneyOrNull(employee.sagePayrollDeductions?.pensionEmployee) : null;
-    const paye = roundMoney(currentSagePaye ?? sageReconciliation?.paye ?? tax.monthlyPaye);
-    const pensionEmployee = roundMoney(currentSagePension ?? sageReconciliation?.pensionEmployee ?? pension.employeeContribution);
+    const paye = roundMoney(sageReconciliation?.paye ?? currentSagePaye ?? tax.monthlyPaye);
+    const pensionEmployee = roundMoney(sageReconciliation?.pensionEmployee ?? currentSagePension ?? pension.employeeContribution);
     const statutoryEmployee = roundMoney(funds.employeeDeductions);
     const loanRecovery = roundMoney(loans.reduce((sum, loan) => sum + loan.payrollRecovery, 0));
     const taxComponentMonthly = (id: string) => (tax.statutoryItems.find((item) => item.id === id)?.amount || 0) / 12;
     const otherDeductions = sageReconciliation ? 0 : roundMoney(taxComponentMonthly('union-dues') + taxComponentMonthly('other-statutory'));
     const totalDeductions = roundMoney(paye + pensionEmployee + statutoryEmployee + loanRecovery + otherDeductions);
     const netPay = roundMoney(Math.max(0, amounts.grossPay - totalDeductions));
-    const dailyRateEmployee = isDailyRateEmployee(employee, amounts.profileId);
-    const ratePerDay = Number(employee.ratePerDay || 0) || (Number(employee.ratePerHour || 0) > 0 ? Number(employee.ratePerHour) * Number(employee.hoursPerDay || 8) : 0) || (dailyRateEmployee ? Number(employee.periodSalary || 0) : 0);
-    const ratePerHour = Number(employee.ratePerHour || 0) || (ratePerDay > 0 ? ratePerDay / Number(employee.hoursPerDay || 8) : 0);
     const issues = [
       ...amounts.grossPay <= 0 ? ['Gross pay is missing'] : [],
       ...netPay <= 0 && amounts.grossPay > 0 ? ['Net pay is zero after deductions'] : [],
       ...!employee.setupAssignedToPayroll ? ['Payroll setup is not assigned'] : [],
       ...dailyRateEmployee && ratePerDay <= 0 ? ['Daily rate is missing'] : [],
+      ...dailyRateEmployee && dailyAttendance.daysWorked <= 0 ? ['No payroll-ready daily timesheet found'] : [],
       ...!compact(employee.payrollGroup) ? ['Payroll group is missing'] : [],
       ...!activeEmployee(employee) ? ['Employee is not payroll active'] : [],
       ...pension.issues.filter((issue) => issue.includes('missing') || issue.includes('not payroll active')).map((issue) => `Pension: ${issue}`),
@@ -174,6 +303,10 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
       ratePerDay: ratePerDay || null,
       ratePerHour: ratePerHour || null,
       hoursPerDay: Number(employee.hoursPerDay || 8) || 8,
+      daysWorked: dailyRateEmployee ? roundMoney(dailyAttendance.daysWorked) : null,
+      attendanceHours: dailyRateEmployee ? roundMoney(dailyAttendance.attendanceHours) : null,
+      bookedHours: dailyRateEmployee ? roundMoney(dailyAttendance.bookedHours) : null,
+      idleHours: dailyRateEmployee ? roundMoney(dailyAttendance.idleHours) : null,
       payCurrency: employee.payCurrency || 'NGN',
       paymentRun: employee.paymentRun || 'Monthly',
       bankName: 'Configured in payroll bank setup',
