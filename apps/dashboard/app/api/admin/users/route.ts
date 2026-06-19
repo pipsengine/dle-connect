@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { readLoginHistory, readUsers, syncUsersFromEmployeeDirectory, updateUser } from '@/lib/auth/auth-store';
 import { AUTH_COOKIE, hasPermission, verifySessionToken } from '@/lib/auth/session';
 
@@ -7,8 +8,9 @@ const tokenFrom = (request: Request) => request.headers.get('cookie')?.split(';'
 const authorize = async (request: Request, permission: string) => {
   const session = await verifySessionToken(tokenFrom(request) ? decodeURIComponent(tokenFrom(request) || '') : '');
   if (!session) return { error: NextResponse.json({ status: 'error', error: 'Unauthenticated' }, { status: 401 }) };
-  if (!hasPermission(session.permissions, permission) && !hasPermission(session.permissions, 'admin.*')) return { error: NextResponse.json({ status: 'error', error: 'Forbidden' }, { status: 403 }) };
-  return { session };
+  const permissions = await effectivePermissionsForUser(session.sub, session.roles);
+  if (!hasPermission(permissions, permission) && !hasPermission(permissions, 'admin.*')) return { error: NextResponse.json({ status: 'error', error: 'Forbidden' }, { status: 403 }) };
+  return { session: { ...session, permissions } };
 };
 
 export async function GET(request: Request) {

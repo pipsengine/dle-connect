@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   cloneRolePermissions,
   compareRolePermissions,
+  effectivePermissionsForUser,
   readAccessControlPayload,
   saveAccessAssignment,
 } from '@/lib/auth/access-control-store';
@@ -14,10 +15,11 @@ const authorize = async (request: Request, write = false) => {
   const token = tokenFrom(request);
   const session = await verifySessionToken(token ? decodeURIComponent(token) : '');
   if (!session) return { error: NextResponse.json({ status: 'error', error: 'Unauthenticated' }, { status: 401 }) };
-  const canView = hasPermission(session.permissions, 'admin.roles.view') || hasPermission(session.permissions, 'admin.*');
-  const canWrite = session.roles.includes('Super Administrator') || hasPermission(session.permissions, 'admin.roles.assign') || hasPermission(session.permissions, 'admin.roles.edit') || hasPermission(session.permissions, 'admin.*');
+  const permissions = await effectivePermissionsForUser(session.sub, session.roles);
+  const canView = hasPermission(permissions, 'admin.roles.view') || hasPermission(permissions, 'admin.*');
+  const canWrite = session.roles.includes('Super Administrator') || hasPermission(permissions, 'admin.roles.assign') || hasPermission(permissions, 'admin.roles.edit') || hasPermission(permissions, 'admin.*');
   if (!canView || (write && !canWrite)) return { error: NextResponse.json({ status: 'error', error: 'Forbidden' }, { status: 403 }) };
-  return { session };
+  return { session: { ...session, permissions } };
 };
 
 export async function GET(request: Request) {

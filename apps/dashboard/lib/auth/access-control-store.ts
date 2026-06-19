@@ -6,7 +6,7 @@ import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { enterpriseRoles, permissionsForRoles, roleDefinitions } from '@/lib/auth/rbac';
 import type { SessionPayload } from '@/lib/auth/session';
 
-export const accessActions = ['view', 'create', 'edit', 'delete', 'approve', 'reject', 'export', 'print', 'upload', 'download', 'enable', 'disable', 'assign', 'override'] as const;
+export const accessActions = ['view', 'create', 'edit', 'delete', 'submit', 'approve', 'reject', 'export', 'import', 'print', 'upload', 'download', 'configure', 'audit', 'enable', 'disable', 'assign', 'override'] as const;
 
 export type AccessAction = typeof accessActions[number];
 export type PermissionScope = 'role' | 'user';
