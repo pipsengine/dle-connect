@@ -320,7 +320,7 @@ const resolveDashboardRoot = () => {
   return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
 };
 
-const DATA_DIR = path.join(resolveDashboardRoot(), 'data', 'hris');
+const DATA_DIR = process.env.DLE_HRIS_DATA_DIR ? path.resolve(process.env.DLE_HRIS_DATA_DIR) : path.join(resolveDashboardRoot(), 'data', 'hris');
 const FILE_PATH = path.join(DATA_DIR, 'timesheet-entry.json');
 const TIMESHEET_DATE = '2026-06-03';
 export const STANDARD_TIMESHEET_HOURS = 8;

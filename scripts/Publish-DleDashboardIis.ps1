@@ -12,6 +12,7 @@ $AppPath = Join-Path $RepoRoot "apps\dashboard"
 $BuildPath = Join-Path $AppPath ".next"
 $StandalonePath = Join-Path $BuildPath "standalone"
 $ResolvedOutputPath = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot $OutputPath))
+$RuntimeDataBackupPath = Join-Path $RepoRoot "deployment\iis\.runtime-data-backup"
 
 function Copy-DirectoryContents {
   param(
@@ -70,6 +71,13 @@ try {
     throw "Standalone build output was not found at $StandalonePath."
   }
 
+  $ExistingRuntimeData = Join-Path $ResolvedOutputPath "data"
+  if (Test-Path -LiteralPath $ExistingRuntimeData) {
+    Copy-DirectoryContents -SourcePath $ExistingRuntimeData -DestinationPath $RuntimeDataBackupPath
+  } elseif (Test-Path -LiteralPath $RuntimeDataBackupPath) {
+    Remove-Item -LiteralPath $RuntimeDataBackupPath -Recurse -Force
+  }
+
   if (Test-Path -LiteralPath $ResolvedOutputPath) {
     Remove-Item -LiteralPath $ResolvedOutputPath -Recurse -Force
   }
@@ -92,6 +100,12 @@ try {
   if (Test-Path -LiteralPath $DataSource) {
     $DataTarget = Join-Path $ResolvedOutputPath "apps\dashboard\data"
     Copy-DirectoryContents -SourcePath $DataSource -DestinationPath $DataTarget
+    $RootDataTarget = Join-Path $ResolvedOutputPath "data"
+    if (Test-Path -LiteralPath $RuntimeDataBackupPath) {
+      Copy-DirectoryContents -SourcePath $RuntimeDataBackupPath -DestinationPath $RootDataTarget
+    } else {
+      Copy-DirectoryContents -SourcePath $DataSource -DestinationPath $RootDataTarget
+    }
   }
 
   $WebConfigSource = if ($HostingMode -eq "HttpPlatform") {
@@ -107,6 +121,10 @@ try {
   }
 
   Test-NextTraceFiles -NextRootPath (Join-Path $ResolvedOutputPath "apps\dashboard\.next")
+
+  if (Test-Path -LiteralPath $RuntimeDataBackupPath) {
+    Remove-Item -LiteralPath $RuntimeDataBackupPath -Recurse -Force
+  }
 
   Write-Host "IIS deployment package created at $ResolvedOutputPath"
   Write-Host "Hosting mode: $HostingMode"
