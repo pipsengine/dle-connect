@@ -11,6 +11,7 @@ const titleOverrides: Record<string, string> = {
   '/hris': 'HRIS',
   '/workforce-portal': 'Employee Self-Service Portal',
   '/hris/payroll/payroll-processing': 'Payroll Processing',
+  '/hris/payroll/payroll-workflow': 'Payroll Workflow',
   '/hris/payroll/employee-salary-setup': 'Employee Salary Setup',
   '/hris/payroll/sage-migration-review': 'Sage Payroll Migration Review',
   '/hris/time-and-logs/timesheet-entry': 'Timesheet Entry',
