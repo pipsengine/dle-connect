@@ -1,96 +1,15 @@
 import { NextResponse } from 'next/server';
 import { appendOrganizationAuditEvent } from '@/lib/organization-audit-store';
 import { getUiPermissions, hasPermission, resolveAccessContext } from '@/lib/hris-access';
-import type { HealthStatus, PositionRecord, StructureInsight } from '@/lib/organization-data';
-import { readPositions } from '@/lib/positions-store';
 import {
+  readWorkforcePlanningData,
   readWorkforcePlanningRequests,
   writeWorkforcePlanningRequests,
+  type WorkforcePlanRecord,
   type WorkforcePlanningRequestRecord,
   type WorkforceRequestStatus,
   type WorkforceRequestType,
 } from '@/lib/workforce-planning-store';
-
-type WorkforcePlanningRole = {
-  id: string;
-  code: string;
-  title: string;
-  gradeCode: string;
-  positionType: PositionRecord['positionType'];
-  positionStatus: PositionRecord['positionStatus'];
-  criticality: PositionRecord['criticality'];
-  replacementPriority: PositionRecord['replacementPriority'];
-  incumbentName: string | null;
-  openDays: number;
-  fte: number;
-  benchmarkSalaryNgn: number;
-  healthStatus: HealthStatus;
-};
-
-type WorkforcePlanRecord = {
-  id: string;
-  businessUnit: string;
-  department: string;
-  location: string;
-  approvedPositions: number;
-  approvedFte: number;
-  filledFte: number;
-  openDemandFte: number;
-  vacantFte: number;
-  frozenFte: number;
-  reviewFte: number;
-  vacancyRatePct: number;
-  criticalPositions: number;
-  criticalGapRoles: number;
-  immediateBackfills: number;
-  averageOpenDays: number;
-  successionCoveragePct: number;
-  attritionRiskPct: number;
-  approvalCoveragePct: number;
-  payrollRunRateNgn: number;
-  openBudgetNgn: number;
-  standardizationPct: number;
-  healthStatus: HealthStatus;
-  planningPriority: 'Immediate' | 'Planned' | 'Monitor';
-  topRisks: string[];
-  recommendedAction: string;
-  roles: WorkforcePlanningRole[];
-};
-
-type WorkforcePlanningPayload = {
-  generatedAt: string;
-  permissions: {
-    actor: string;
-    role: string;
-    canEdit: boolean;
-    canExport: boolean;
-    canViewCosts: boolean;
-    canViewAudit: boolean;
-  };
-  summary: {
-    totalPlans: number;
-    totalApprovedFte: number;
-    totalFilledFte: number;
-    totalOpenDemandFte: number;
-    vacancyRatePct: number;
-    criticalGapRoles: number;
-    immediateBackfills: number;
-    openBudgetNgn: number;
-    avgSuccessionCoverage: number;
-    avgAttritionRisk: number;
-    pendingRequests: number;
-    requestedFte: number;
-  };
-  filterOptions: {
-    businessUnits: string[];
-    locations: string[];
-    planningPriorities: Array<WorkforcePlanRecord['planningPriority']>;
-    healthStatuses: HealthStatus[];
-  };
-  plans: WorkforcePlanRecord[];
-  requests: WorkforcePlanningRequestRecord[];
-  insights: StructureInsight[];
-};
 
 type CreateWorkforceRequestPayload = {
   planId?: string;
@@ -109,57 +28,12 @@ type UpdateWorkforceRequestPayload = {
 const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 
-const average = (values: number[]) => {
-  if (!values.length) return 0;
-  return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10;
-};
-
 const round1 = (value: number) => Math.round(value * 10) / 10;
 const isNonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
 const asNumber = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : Number.NaN);
 
-const resolveHealth = ({
-  vacancyRatePct,
-  criticalGapRoles,
-  successionCoveragePct,
-  attritionRiskPct,
-  reviewFte,
-}: {
-  vacancyRatePct: number;
-  criticalGapRoles: number;
-  successionCoveragePct: number;
-  attritionRiskPct: number;
-  reviewFte: number;
-}): HealthStatus => {
-  if (criticalGapRoles > 0 || vacancyRatePct >= 20 || successionCoveragePct < 65 || attritionRiskPct >= 12) return 'Critical';
-  if (reviewFte > 0 || vacancyRatePct >= 8 || successionCoveragePct < 78 || attritionRiskPct >= 8) return 'Needs Attention';
-  return 'Healthy';
-};
-
-const getPlanningPriority = ({
-  criticalGapRoles,
-  vacancyRatePct,
-  immediateBackfills,
-  reviewFte,
-}: {
-  criticalGapRoles: number;
-  vacancyRatePct: number;
-  immediateBackfills: number;
-  reviewFte: number;
-}): WorkforcePlanRecord['planningPriority'] => {
-  if (criticalGapRoles > 0 || immediateBackfills > 0 || vacancyRatePct >= 20) return 'Immediate';
-  if (reviewFte > 0 || vacancyRatePct >= 8) return 'Planned';
-  return 'Monitor';
-};
-
-const getRecommendedAction = (priority: WorkforcePlanRecord['planningPriority']) => {
-  if (priority === 'Immediate') return 'Prioritize recruitment, assign interim coverage, and confirm budget release for exposed roles.';
-  if (priority === 'Planned') return 'Sequence hiring, succession, and role-design reviews into the next workforce cycle.';
-  return 'Maintain current staffing posture and monitor readiness indicators through periodic reviews.';
-};
-
 const buildProjection = (plan: WorkforcePlanRecord, requestType: WorkforceRequestType, requestedFte: number) => {
-  const averageRoleCost = plan.approvedFte ? plan.payrollRunRateNgn / Math.max(plan.filledFte, 1) : 0;
+  const averageRoleCost = plan.filledFte ? plan.payrollRunRateNgn / Math.max(plan.filledFte, 1) : 0;
 
   if (requestType === 'Add Headcount') {
     const projectedApprovedFte = round1(plan.approvedFte + requestedFte);
@@ -170,7 +44,7 @@ const buildProjection = (plan: WorkforcePlanRecord, requestType: WorkforceReques
       projectedFilledFte,
       projectedGapFte,
       incrementalBudgetNgn: Math.round(averageRoleCost * requestedFte),
-      impactSummary: `Adds ${requestedFte} FTE to the approved structure and lifts target filled capacity to ${projectedFilledFte} FTE when the request is fully actioned.`,
+      impactSummary: `Adds ${requestedFte} FTE to the approved workforce plan and lifts target filled capacity to ${projectedFilledFte} FTE when completed.`,
     };
   }
 
@@ -183,7 +57,7 @@ const buildProjection = (plan: WorkforcePlanRecord, requestType: WorkforceReques
       projectedFilledFte,
       projectedGapFte,
       incrementalBudgetNgn: Math.round(averageRoleCost * requestedFte),
-      impactSummary: `Backfills up to ${requestedFte} FTE from the current gap and reduces the unresolved demand to ${projectedGapFte} FTE.`,
+      impactSummary: `Backfills up to ${requestedFte} FTE from the current review/demand exposure and reduces unresolved demand to ${projectedGapFte} FTE.`,
     };
   }
 
@@ -196,7 +70,7 @@ const buildProjection = (plan: WorkforcePlanRecord, requestType: WorkforceReques
       projectedFilledFte,
       projectedGapFte,
       incrementalBudgetNgn: Math.round(averageRoleCost * requestedFte * 0.6),
-      impactSummary: `Introduces temporary cover for ${requestedFte} FTE and reduces short-term delivery risk while permanent action is completed.`,
+      impactSummary: `Introduces temporary cover for ${requestedFte} FTE and reduces short-term operational risk while permanent action is completed.`,
     };
   }
 
@@ -209,166 +83,15 @@ const buildProjection = (plan: WorkforcePlanRecord, requestType: WorkforceReques
   };
 };
 
-const getTopRisks = (positions: PositionRecord[], metrics: Omit<WorkforcePlanRecord, 'id' | 'businessUnit' | 'department' | 'location' | 'topRisks' | 'recommendedAction' | 'roles'>) => {
-  const risks: string[] = [];
-  const oldestVacancy = [...positions].filter((position) => position.positionStatus === 'Vacant').sort((a, b) => b.openDays - a.openDays)[0];
-  const reviewRoles = positions.filter((position) => position.positionStatus === 'Under Review').length;
-  const nonStandardRoles = positions.filter((position) => !position.standardPosition).length;
-
-  if (metrics.criticalGapRoles > 0) risks.push(`${metrics.criticalGapRoles} critical role${metrics.criticalGapRoles === 1 ? '' : 's'} remain unfilled.`);
-  if (oldestVacancy && oldestVacancy.openDays > 0) risks.push(`${oldestVacancy.title} is the longest open role at ${oldestVacancy.openDays} days.`);
-  if (metrics.successionCoveragePct < 75) risks.push(`Succession coverage is below target at ${metrics.successionCoveragePct}%.`);
-  if (metrics.attritionRiskPct >= 8) risks.push(`Attrition risk is elevated at ${metrics.attritionRiskPct}%.`);
-  if (reviewRoles > 0) risks.push(`${reviewRoles} role${reviewRoles === 1 ? '' : 's'} are under review and may shift plan assumptions.`);
-  if (nonStandardRoles > 0) risks.push(`${nonStandardRoles} non-standard role${nonStandardRoles === 1 ? '' : 's'} may require structure alignment.`);
-
-  return risks.slice(0, 3);
-};
-
-const buildPlanRecord = (groupKey: string, positions: PositionRecord[]): WorkforcePlanRecord => {
-  const [businessUnit, department, location] = groupKey.split('||');
-  const approvedPositions = positions.length;
-  const approvedFte = round1(positions.reduce((sum, position) => sum + position.fte, 0));
-  const filled = positions.filter((position) => position.positionStatus === 'Filled');
-  const openDemand = positions.filter((position) => position.positionStatus === 'Vacant' || position.positionStatus === 'Under Review');
-  const vacant = positions.filter((position) => position.positionStatus === 'Vacant');
-  const frozen = positions.filter((position) => position.positionStatus === 'Frozen');
-  const review = positions.filter((position) => position.positionStatus === 'Under Review');
-  const criticalPositions = positions.filter((position) => position.criticality === 'Critical').length;
-  const criticalGapRoles = positions.filter((position) => position.criticality === 'Critical' && position.positionStatus !== 'Filled').length;
-  const immediateBackfills = positions.filter((position) => position.replacementPriority === 'Immediate' && position.positionStatus !== 'Filled').length;
-  const filledFte = round1(filled.reduce((sum, position) => sum + position.fte, 0));
-  const openDemandFte = round1(openDemand.reduce((sum, position) => sum + position.fte, 0));
-  const vacantFte = round1(vacant.reduce((sum, position) => sum + position.fte, 0));
-  const frozenFte = round1(frozen.reduce((sum, position) => sum + position.fte, 0));
-  const reviewFte = round1(review.reduce((sum, position) => sum + position.fte, 0));
-  const vacancyRatePct = approvedFte ? round1((openDemandFte / approvedFte) * 100) : 0;
-  const averageOpenDays = round1(average(openDemand.map((position) => position.openDays)));
-  const successionCoveragePct = average(positions.map((position) => position.successionCoveragePct));
-  const attritionRiskPct = average(positions.map((position) => position.attritionRiskPct));
-  const approvalCoveragePct = average(positions.map((position) => position.approvalCoveragePct));
-  const payrollRunRateNgn = Math.round(filled.reduce((sum, position) => sum + position.benchmarkSalaryNgn, 0));
-  const openBudgetNgn = Math.round(openDemand.reduce((sum, position) => sum + position.benchmarkSalaryNgn, 0));
-  const standardizationPct = approvedPositions ? round1((positions.filter((position) => position.standardPosition).length / approvedPositions) * 100) : 0;
-  const healthStatus = resolveHealth({ vacancyRatePct, criticalGapRoles, successionCoveragePct, attritionRiskPct, reviewFte });
-  const planningPriority = getPlanningPriority({ criticalGapRoles, vacancyRatePct, immediateBackfills, reviewFte });
-
-  const recordBase = {
-    approvedPositions,
-    approvedFte,
-    filledFte,
-    openDemandFte,
-    vacantFte,
-    frozenFte,
-    reviewFte,
-    vacancyRatePct,
-    criticalPositions,
-    criticalGapRoles,
-    immediateBackfills,
-    averageOpenDays,
-    successionCoveragePct,
-    attritionRiskPct,
-    approvalCoveragePct,
-    payrollRunRateNgn,
-    openBudgetNgn,
-    standardizationPct,
-    healthStatus,
-    planningPriority,
-  };
-
-  return {
-    id: `wfp-${businessUnit.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${department.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${location.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-    businessUnit,
-    department,
-    location,
-    ...recordBase,
-    topRisks: getTopRisks(positions, recordBase),
-    recommendedAction: getRecommendedAction(planningPriority),
-    roles: [...positions]
-      .sort((a, b) => {
-        if (a.positionStatus !== b.positionStatus) return a.positionStatus.localeCompare(b.positionStatus);
-        if (a.criticality !== b.criticality) return a.criticality.localeCompare(b.criticality);
-        return a.title.localeCompare(b.title);
-      })
-      .map((position) => ({
-        id: position.id,
-        code: position.code,
-        title: position.title,
-        gradeCode: position.gradeCode,
-        positionType: position.positionType,
-        positionStatus: position.positionStatus,
-        criticality: position.criticality,
-        replacementPriority: position.replacementPriority,
-        incumbentName: position.incumbentName,
-        openDays: position.openDays,
-        fte: position.fte,
-        benchmarkSalaryNgn: position.benchmarkSalaryNgn,
-        healthStatus: position.healthStatus,
-      })),
-  };
-};
-
-const buildPayload = async (request: Request): Promise<WorkforcePlanningPayload> => {
+const buildPayload = async (request: Request) => {
   const access = resolveAccessContext(request);
   const uiPermissions = getUiPermissions(access);
-  const positions = await readPositions();
+  const planning = await readWorkforcePlanningData();
   const requests = (await readWorkforcePlanningRequests()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const grouped = positions.reduce<Map<string, PositionRecord[]>>((acc, position) => {
-    const key = [position.businessUnit, position.department, position.location].join('||');
-    const current = acc.get(key) || [];
-    current.push(position);
-    acc.set(key, current);
-    return acc;
-  }, new Map());
-
-  const plans = Array.from(grouped.entries())
-    .map(([key, group]) => buildPlanRecord(key, group))
-    .sort((a, b) => {
-      const priorityOrder = ['Immediate', 'Planned', 'Monitor'];
-      const priorityCompare = priorityOrder.indexOf(a.planningPriority) - priorityOrder.indexOf(b.planningPriority);
-      if (priorityCompare !== 0) return priorityCompare;
-      if (b.openDemandFte !== a.openDemandFte) return b.openDemandFte - a.openDemandFte;
-      return a.department.localeCompare(b.department);
-    });
-
-  const totalApprovedFte = round1(plans.reduce((sum, plan) => sum + plan.approvedFte, 0));
-  const totalFilledFte = round1(plans.reduce((sum, plan) => sum + plan.filledFte, 0));
-  const totalOpenDemandFte = round1(plans.reduce((sum, plan) => sum + plan.openDemandFte, 0));
-  const vacancyRatePct = totalApprovedFte ? round1((totalOpenDemandFte / totalApprovedFte) * 100) : 0;
-  const criticalGapRoles = plans.reduce((sum, plan) => sum + plan.criticalGapRoles, 0);
-  const immediateBackfills = plans.reduce((sum, plan) => sum + plan.immediateBackfills, 0);
-  const openBudgetNgn = Math.round(plans.reduce((sum, plan) => sum + plan.openBudgetNgn, 0));
-  const avgSuccessionCoverage = average(plans.map((plan) => plan.successionCoveragePct));
-  const avgAttritionRisk = average(plans.map((plan) => plan.attritionRiskPct));
-
-  const highestGapPlan = [...plans].sort((a, b) => b.openDemandFte - a.openDemandFte)[0];
-  const weakestCoveragePlan = [...plans].sort((a, b) => a.successionCoveragePct - b.successionCoveragePct)[0];
-  const highestVacancyPlan = [...plans].sort((a, b) => b.vacancyRatePct - a.vacancyRatePct)[0];
-
-  const insights: StructureInsight[] = [
-    {
-      id: 'wfp-ins-1',
-      severity: highestGapPlan && highestGapPlan.openDemandFte >= 2 ? 'high' : 'medium',
-      title: `${highestGapPlan?.department || 'A workforce segment'} has the largest open demand`,
-      recommendation: 'Sequence recruiting, temporary cover, and budget release for the segment carrying the highest workforce gap.',
-    },
-    {
-      id: 'wfp-ins-2',
-      severity: weakestCoveragePlan && weakestCoveragePlan.successionCoveragePct < 70 ? 'high' : 'medium',
-      title: `${weakestCoveragePlan?.department || 'A segment'} has the weakest succession depth`,
-      recommendation: 'Build successor pools, cross-training plans, and emergency cover for low-readiness roles.',
-    },
-    {
-      id: 'wfp-ins-3',
-      severity: highestVacancyPlan && highestVacancyPlan.vacancyRatePct >= 20 ? 'high' : 'low',
-      title: `${highestVacancyPlan?.department || 'A segment'} is running the highest vacancy rate`,
-      recommendation: 'Review whether the current approved structure remains realistic or needs reprioritization in the next planning cycle.',
-    },
-  ];
-
-  const requestedFte = round1(requests.reduce((sum, request) => sum + request.requestedFte, 0));
+  const requestedFte = round1(requests.reduce((sum, item) => sum + item.requestedFte, 0));
 
   return {
+    ...planning,
     generatedAt: new Date().toISOString(),
     permissions: {
       actor: uiPermissions.actor,
@@ -379,28 +102,11 @@ const buildPayload = async (request: Request): Promise<WorkforcePlanningPayload>
       canViewAudit: uiPermissions.canViewAudit,
     },
     summary: {
-      totalPlans: plans.length,
-      totalApprovedFte,
-      totalFilledFte,
-      totalOpenDemandFte,
-      vacancyRatePct,
-      criticalGapRoles,
-      immediateBackfills,
-      openBudgetNgn,
-      avgSuccessionCoverage,
-      avgAttritionRisk,
-      pendingRequests: requests.filter((request) => request.status === 'Submitted' || request.status === 'Under Review').length,
+      ...planning.summary,
+      pendingRequests: requests.filter((item) => item.status === 'Submitted' || item.status === 'Under Review').length,
       requestedFte,
     },
-    filterOptions: {
-      businessUnits: Array.from(new Set(plans.map((plan) => plan.businessUnit))).sort((a, b) => a.localeCompare(b)),
-      locations: Array.from(new Set(plans.map((plan) => plan.location))).sort((a, b) => a.localeCompare(b)),
-      planningPriorities: ['Immediate', 'Planned', 'Monitor'] as Array<WorkforcePlanRecord['planningPriority']>,
-      healthStatuses: ['Healthy', 'Needs Attention', 'Critical'] as HealthStatus[],
-    },
-    plans,
     requests,
-    insights,
   };
 };
 
@@ -446,7 +152,11 @@ const validateStatusUpdate = (payload: UpdateWorkforceRequestPayload, requests: 
 };
 
 export async function GET(request: Request) {
-  return ok(await buildPayload(request));
+  try {
+    return ok(await buildPayload(request));
+  } catch (error) {
+    return err(500, error instanceof Error ? error.message : 'Unable to load workforce planning.');
+  }
 }
 
 export async function POST(request: Request) {
@@ -511,7 +221,7 @@ export async function PATCH(request: Request) {
   const previousRecord = existing.find((item) => item.id === payload.requestId) || null;
   const next = existing.map((item) => {
     if (item.id !== payload.requestId) return item;
-    return { ...item, status: payload.status! };
+    return { ...item, status: payload.status!, updatedAt: new Date().toISOString() };
   });
 
   const updatedRecord = next.find((item) => item.id === targetRequestId) || null;

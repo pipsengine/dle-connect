@@ -311,21 +311,6 @@ export default function JobGradesClient() {
       primaryAction={{ label: 'Add Job Grade', onClick: () => setShowCreateForm((v) => !v), icon: Plus }}
       secondaryAction={{ label: 'Export CSV', onClick: exportCsv, icon: Download }}
     >
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 flex items-center justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-slate-900">Production Persistence</div>
-          <div className="text-xs text-slate-500 mt-1">Job grades are migrated from Sage payroll into the DLE HRIS database and remain independent of the Sage database after storage.</div>
-        </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-        >
-          <RefreshCcw className="w-4 h-4" />
-          Reload Data
-        </button>
-      </div>
-
       {payload?.dataSource ? (
         <div className={`rounded-2xl border p-4 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 ${payload.dataSource.warning || payload.dataSource.migrationWarning ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
           <div className="flex items-start gap-3">

@@ -36,6 +36,7 @@ type WorkforcePlanRecord = {
   businessUnit: string;
   department: string;
   location: string;
+  costCenter: string;
   approvedPositions: number;
   approvedFte: number;
   filledFte: number;
@@ -51,11 +52,13 @@ type WorkforcePlanRecord = {
   successionCoveragePct: number;
   attritionRiskPct: number;
   approvalCoveragePct: number;
-  payrollRunRateUsd: number;
-  openBudgetUsd: number;
+  payrollRunRateNgn: number;
+  openBudgetNgn: number;
   standardizationPct: number;
   healthStatus: HealthStatus;
   planningPriority: 'Immediate' | 'Planned' | 'Monitor';
+  employmentMix: Array<{ label: string; count: number }>;
+  gradeMix: Array<{ label: string; count: number }>;
   topRisks: string[];
   recommendedAction: string;
   roles: WorkforcePlanningRole[];
@@ -76,7 +79,7 @@ type WorkforcePlanningRequestRecord = {
   projectedApprovedFte: number;
   projectedFilledFte: number;
   projectedGapFte: number;
-  incrementalBudgetUsd: number;
+  incrementalBudgetNgn: number;
   status: 'Submitted' | 'Under Review' | 'Approved' | 'Declined';
   createdAt: string;
 };
@@ -84,9 +87,22 @@ type WorkforcePlanningRequestRecord = {
 type Payload = {
   generatedAt: string;
   permissions: {
+    actor?: string;
+    role?: string;
     canEdit: boolean;
     canExport: boolean;
     canViewCosts: boolean;
+    canViewAudit?: boolean;
+  };
+  dataSource: {
+    source: string;
+    databaseAvailable: boolean;
+    warning: string | null;
+    employeeCount: number;
+    planningSource: string;
+    migratedPlanCount: number;
+    migrationWarning: string | null;
+    independence: string;
   };
   summary: {
     totalPlans: number;
@@ -96,15 +112,19 @@ type Payload = {
     vacancyRatePct: number;
     criticalGapRoles: number;
     immediateBackfills: number;
-    openBudgetUsd: number;
+    openBudgetNgn: number;
     avgSuccessionCoverage: number;
     avgAttritionRisk: number;
     pendingRequests: number;
     requestedFte: number;
+    payrollRunRateNgn: number;
+    reviewFte: number;
   };
   filterOptions: {
     businessUnits: string[];
+    departments: string[];
     locations: string[];
+    costCenters: string[];
     planningPriorities: Array<WorkforcePlanRecord['planningPriority']>;
     healthStatuses: HealthStatus[];
   };
@@ -170,10 +190,12 @@ export default function WorkforcePlanningClient({
   const [updatingRequestId, setUpdatingRequestId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [businessUnitFilter, setBusinessUnitFilter] = useState<'All' | string>('All');
+  const [departmentFilter, setDepartmentFilter] = useState<'All' | string>('All');
   const [locationFilter, setLocationFilter] = useState<'All' | string>('All');
+  const [costCenterFilter, setCostCenterFilter] = useState<'All' | string>('All');
   const [priorityFilter, setPriorityFilter] = useState<'All' | WorkforcePlanRecord['planningPriority']>('All');
   const [healthFilter, setHealthFilter] = useState<'All' | HealthStatus>('All');
-  const [sortBy, setSortBy] = useState<'openDemandFte' | 'vacancyRatePct' | 'openBudgetUsd' | 'successionCoveragePct'>('openDemandFte');
+  const [sortBy, setSortBy] = useState<'openDemandFte' | 'vacancyRatePct' | 'openBudgetNgn' | 'successionCoveragePct'>('openDemandFte');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [requestForm, setRequestForm] = useState({
@@ -205,13 +227,15 @@ export default function WorkforcePlanningClient({
     void load();
   }, []);
 
-  const plans = payload?.plans || [];
+  const plans = useMemo(() => payload?.plans || [], [payload?.plans]);
 
   const visiblePlans = useMemo(() => {
     const q = query.trim().toLowerCase();
     const filtered = plans.filter((plan) => {
       if (businessUnitFilter !== 'All' && plan.businessUnit !== businessUnitFilter) return false;
+      if (departmentFilter !== 'All' && plan.department !== departmentFilter) return false;
       if (locationFilter !== 'All' && plan.location !== locationFilter) return false;
+      if (costCenterFilter !== 'All' && plan.costCenter !== costCenterFilter) return false;
       if (priorityFilter !== 'All' && plan.planningPriority !== priorityFilter) return false;
       if (healthFilter !== 'All' && plan.healthStatus !== healthFilter) return false;
       if (!q) return true;
@@ -231,11 +255,11 @@ export default function WorkforcePlanningClient({
 
     return [...filtered].sort((a, b) => {
       if (sortBy === 'vacancyRatePct') return b.vacancyRatePct - a.vacancyRatePct;
-      if (sortBy === 'openBudgetUsd') return b.openBudgetUsd - a.openBudgetUsd;
+      if (sortBy === 'openBudgetNgn') return b.openBudgetNgn - a.openBudgetNgn;
       if (sortBy === 'successionCoveragePct') return a.successionCoveragePct - b.successionCoveragePct;
       return b.openDemandFte - a.openDemandFte;
     });
-  }, [plans, query, businessUnitFilter, locationFilter, priorityFilter, healthFilter, sortBy]);
+  }, [plans, query, businessUnitFilter, departmentFilter, locationFilter, costCenterFilter, priorityFilter, healthFilter, sortBy]);
 
   const selectedPlan = useMemo(() => visiblePlans.find((plan) => plan.id === selectedId) || visiblePlans[0] || null, [visiblePlans, selectedId]);
 
@@ -252,14 +276,14 @@ export default function WorkforcePlanningClient({
   const comparison = useMemo(() => {
     if (!selectedPlan) return null;
     const requestedFte = Number(requestForm.requestedFte) || 0;
-    const averageRoleCost = selectedPlan.filledFte > 0 ? selectedPlan.payrollRunRateUsd / selectedPlan.filledFte : 0;
+    const averageRoleCost = selectedPlan.filledFte > 0 ? selectedPlan.payrollRunRateNgn / selectedPlan.filledFte : 0;
 
     if (requestForm.requestType === 'Add Headcount') {
       return {
         proposedApprovedFte: selectedPlan.approvedFte + requestedFte,
         proposedFilledFte: selectedPlan.filledFte + requestedFte,
         proposedGapFte: Math.max(selectedPlan.openDemandFte, 0),
-        incrementalBudgetUsd: Math.round(averageRoleCost * requestedFte),
+        incrementalBudgetNgn: Math.round(averageRoleCost * requestedFte),
       };
     }
 
@@ -268,7 +292,7 @@ export default function WorkforcePlanningClient({
         proposedApprovedFte: selectedPlan.approvedFte,
         proposedFilledFte: Math.min(selectedPlan.approvedFte, selectedPlan.filledFte + requestedFte),
         proposedGapFte: Math.max(selectedPlan.openDemandFte - requestedFte, 0),
-        incrementalBudgetUsd: Math.round(averageRoleCost * requestedFte),
+        incrementalBudgetNgn: Math.round(averageRoleCost * requestedFte),
       };
     }
 
@@ -277,7 +301,7 @@ export default function WorkforcePlanningClient({
         proposedApprovedFte: selectedPlan.approvedFte,
         proposedFilledFte: Math.min(selectedPlan.approvedFte, selectedPlan.filledFte + requestedFte),
         proposedGapFte: Math.max(selectedPlan.openDemandFte - requestedFte, 0),
-        incrementalBudgetUsd: Math.round(averageRoleCost * requestedFte * 0.6),
+        incrementalBudgetNgn: Math.round(averageRoleCost * requestedFte * 0.6),
       };
     }
 
@@ -285,7 +309,7 @@ export default function WorkforcePlanningClient({
       proposedApprovedFte: selectedPlan.approvedFte,
       proposedFilledFte: selectedPlan.filledFte,
       proposedGapFte: selectedPlan.openDemandFte,
-      incrementalBudgetUsd: 0,
+      incrementalBudgetNgn: 0,
     };
   }, [requestForm.requestType, requestForm.requestedFte, selectedPlan]);
 
@@ -322,7 +346,7 @@ export default function WorkforcePlanningClient({
         String(plan.immediateBackfills),
         String(plan.successionCoveragePct),
         String(plan.attritionRiskPct),
-        String(plan.openBudgetUsd),
+        String(plan.openBudgetNgn),
         plan.planningPriority,
         plan.healthStatus,
       ]),
@@ -410,6 +434,29 @@ export default function WorkforcePlanningClient({
       primaryAction={{ label: showRequestForm ? 'Close Request' : 'Submit Request', onClick: () => setShowRequestForm((value) => !value), icon: Plus }}
       secondaryAction={{ label: 'Export CSV', onClick: exportCsv, icon: Download }}
     >
+      {payload?.dataSource ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+          <div>
+            <div className="text-sm font-bold text-emerald-950">Production workforce planning source</div>
+            <div className="text-xs text-emerald-800 mt-1">
+              {payload.dataSource.planningSource} produced {formatNumber(payload.dataSource.migratedPlanCount)} planning segments from {formatNumber(payload.dataSource.employeeCount)} employee records.
+            </div>
+            <div className="text-xs font-semibold text-emerald-900 mt-2">{payload.dataSource.independence}</div>
+            {payload.dataSource.warning || payload.dataSource.migrationWarning ? (
+              <div className="text-xs font-semibold text-amber-700 mt-2">{payload.dataSource.warning || payload.dataSource.migrationWarning}</div>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="px-3 py-1 rounded-full border border-emerald-200 bg-white text-xs font-semibold text-emerald-800">
+              HRIS DB: {payload.dataSource.databaseAvailable ? 'Available' : 'Unavailable'}
+            </span>
+            <span className="px-3 py-1 rounded-full border border-emerald-200 bg-white text-xs font-semibold text-emerald-800">
+              Generated: {new Date(payload.generatedAt).toLocaleString('en-NG')}
+            </span>
+          </div>
+        </div>
+      ) : null}
+
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 flex flex-col xl:flex-row gap-3 xl:items-center xl:justify-between">
         <div>
           <div className="text-sm font-semibold text-slate-900">Planning Action Mode</div>
@@ -417,9 +464,9 @@ export default function WorkforcePlanningClient({
         </div>
         <div className="flex items-center gap-3">
           <div className="text-xs text-slate-500">
-            Pending requests: <span className="font-semibold text-slate-700">{payload ? formatNumber(payload.summary.pendingRequests) : '—'}</span>
-            {' '}<span className="mx-2">•</span>
-            Requested FTE: <span className="font-semibold text-slate-700">{payload ? formatNumber(payload.summary.requestedFte) : '—'}</span>
+            Pending requests: <span className="font-semibold text-slate-700">{payload ? formatNumber(payload.summary.pendingRequests) : '-'}</span>
+            {' '}<span className="mx-2">/</span>
+            Requested FTE: <span className="font-semibold text-slate-700">{payload ? formatNumber(payload.summary.requestedFte) : '-'}</span>
           </div>
           <button
             type="button"
@@ -487,7 +534,7 @@ export default function WorkforcePlanningClient({
                     <DetailStat label="Projected Gap FTE" value={formatNumber(comparison.proposedGapFte)} />
                   </div>
                   <div className="mt-3 text-sm text-slate-600">
-                    Incremental budget impact (NGN): <span className="font-semibold text-slate-900">{formatCurrency(comparison.incrementalBudgetUsd)}</span>
+                    Incremental budget impact (NGN): <span className="font-semibold text-slate-900">{formatCurrency(comparison.incrementalBudgetNgn)}</span>
                   </div>
                 </div>
               ) : null}
@@ -502,7 +549,7 @@ export default function WorkforcePlanningClient({
                 >
                   {submitting ? 'Submitting...' : 'Submit Request'}
                 </button>
-                <span className="text-xs text-slate-500">The request is saved to the local planning queue and immediately reflected in the request tracker.</span>
+                <span className="text-xs text-slate-500">The request is persisted in the HRIS planning queue and immediately reflected in the request tracker.</span>
               </div>
             </form>
           ) : (
@@ -511,16 +558,18 @@ export default function WorkforcePlanningClient({
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
-        <MetricCard icon={BriefcaseBusiness} label="Plan Segments" value={payload ? formatNumber(payload.summary.totalPlans) : '—'} detail="Department planning views" />
-        <MetricCard icon={Users} label="Approved FTE" value={payload ? formatNumber(payload.summary.totalApprovedFte) : '—'} detail="Budgeted workforce capacity" />
-        <MetricCard icon={Users} label="Filled FTE" value={payload ? formatNumber(payload.summary.totalFilledFte) : '—'} detail="Covered workforce capacity" />
-        <MetricCard icon={ArrowUpRight} label="Open Demand" value={payload ? formatNumber(payload.summary.totalOpenDemandFte) : '—'} detail="Vacant or review FTE" />
-        <MetricCard icon={AlertTriangle} label="Critical Gaps" value={payload ? formatNumber(payload.summary.criticalGapRoles) : '—'} detail="Unfilled critical roles" />
-        <MetricCard icon={ShieldCheck} label="Succession" value={payload ? `${payload.summary.avgSuccessionCoverage}%` : '—'} detail="Average coverage readiness" />
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <MetricCard icon={BriefcaseBusiness} label="Plan Segments" value={payload ? formatNumber(payload.summary.totalPlans) : '-'} detail="Department planning views" />
+        <MetricCard icon={Users} label="Approved FTE" value={payload ? formatNumber(payload.summary.totalApprovedFte) : '-'} detail="Budgeted workforce capacity" />
+        <MetricCard icon={Users} label="Filled FTE" value={payload ? formatNumber(payload.summary.totalFilledFte) : '-'} detail="Covered workforce capacity" />
+        <MetricCard icon={ArrowUpRight} label="Planning Review FTE" value={payload ? formatNumber(payload.summary.reviewFte) : '-'} detail="Records needing HR action" />
+        <MetricCard icon={AlertTriangle} label="Critical Gaps" value={payload ? formatNumber(payload.summary.criticalGapRoles) : '-'} detail="Critical records under review" />
+        <MetricCard icon={ShieldCheck} label="Succession" value={payload ? `${payload.summary.avgSuccessionCoverage}%` : '-'} detail="Average coverage readiness" />
+        <MetricCard icon={BriefcaseBusiness} label="Payroll Run Rate" value={payload ? formatCurrency(payload.summary.payrollRunRateNgn) : '-'} detail="Monthly payroll cost baseline" />
+        <MetricCard icon={AlertTriangle} label="Open Budget Exposure" value={payload ? formatCurrency(payload.summary.openBudgetNgn) : '-'} detail="Cost tied to review exposure" />
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-8 gap-3">
         <label className="relative xl:col-span-2">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -531,7 +580,9 @@ export default function WorkforcePlanningClient({
           />
         </label>
         <Select value={businessUnitFilter} onChange={(value) => setBusinessUnitFilter(value as 'All' | string)} options={['All', ...(payload?.filterOptions.businessUnits || [])]} labels={{ All: 'All Business Units' }} />
+        <Select value={departmentFilter} onChange={(value) => setDepartmentFilter(value as 'All' | string)} options={['All', ...(payload?.filterOptions.departments || [])]} labels={{ All: 'All Departments' }} />
         <Select value={locationFilter} onChange={(value) => setLocationFilter(value as 'All' | string)} options={['All', ...(payload?.filterOptions.locations || [])]} labels={{ All: 'All Locations' }} />
+        <Select value={costCenterFilter} onChange={(value) => setCostCenterFilter(value as 'All' | string)} options={['All', ...(payload?.filterOptions.costCenters || [])]} labels={{ All: 'All Cost Centres' }} />
         <Select value={priorityFilter} onChange={(value) => setPriorityFilter(value as 'All' | WorkforcePlanRecord['planningPriority'])} options={['All', ...(payload?.filterOptions.planningPriorities || [])]} labels={{ All: 'All Priorities' }} />
         <Select value={healthFilter} onChange={(value) => setHealthFilter(value as 'All' | HealthStatus)} options={['All', ...(payload?.filterOptions.healthStatuses || [])]} labels={{ All: 'All Health States' }} />
       </div>
@@ -541,27 +592,29 @@ export default function WorkforcePlanningClient({
           <Select
             value={sortBy}
             onChange={(value) => setSortBy(value as typeof sortBy)}
-            options={['openDemandFte', 'vacancyRatePct', 'openBudgetUsd', 'successionCoveragePct']}
+            options={['openDemandFte', 'vacancyRatePct', 'openBudgetNgn', 'successionCoveragePct']}
             labels={{
               openDemandFte: 'Sort: Open Demand',
               vacancyRatePct: 'Sort: Vacancy Rate',
-              openBudgetUsd: 'Sort: Open Budget',
+              openBudgetNgn: 'Sort: Open Budget',
               successionCoveragePct: 'Sort: Succession Risk',
             }}
           />
         </div>
         <div className="flex items-center gap-3">
           <div className="text-xs text-slate-500">
-            Vacancy rate: <span className="font-semibold text-slate-700">{payload ? `${payload.summary.vacancyRatePct}%` : '—'}</span>
-            {' '}<span className="mx-2">•</span>
-            Open budget: <span className="font-semibold text-slate-700">{payload ? formatCurrency(payload.summary.openBudgetUsd) : '—'}</span>
+            Vacancy rate: <span className="font-semibold text-slate-700">{payload ? `${payload.summary.vacancyRatePct}%` : '-'}</span>
+            {' '}<span className="mx-2">/</span>
+            Open budget: <span className="font-semibold text-slate-700">{payload ? formatCurrency(payload.summary.openBudgetNgn) : '-'}</span>
           </div>
           <button
             type="button"
             onClick={() => {
               setQuery('');
               setBusinessUnitFilter('All');
+              setDepartmentFilter('All');
               setLocationFilter('All');
+              setCostCenterFilter('All');
               setPriorityFilter('All');
               setHealthFilter('All');
               setSortBy('openDemandFte');
@@ -601,16 +654,16 @@ export default function WorkforcePlanningClient({
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-slate-900">{plan.department}</div>
                         <div className="text-xs text-slate-500 mt-1">
-                          {plan.businessUnit} <span className="mx-2">•</span> {plan.location}
+                          {plan.businessUnit} <span className="mx-2">/</span> {plan.location}
                         </div>
                       </div>
                       <span className={`px-2 py-1 rounded-full border text-[11px] font-semibold ${priorityTone(plan.planningPriority)}`}>{plan.planningPriority}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-2 mt-3 text-xs text-slate-600">
-                      <span>Gap FTE: {formatNumber(plan.openDemandFte)}</span>
-                      <span>Vacancy: {plan.vacancyRatePct}%</span>
+                      <span>Review FTE: {formatNumber(plan.openDemandFte)}</span>
+                      <span>Review: {plan.vacancyRatePct}%</span>
                       <span>Critical Gaps: {formatNumber(plan.criticalGapRoles)}</span>
-                      <span>Open Budget: {formatCurrency(plan.openBudgetUsd)}</span>
+                      <span>Cost Exposure: {formatCurrency(plan.openBudgetNgn)}</span>
                     </div>
                   </button>
                 );
@@ -637,7 +690,7 @@ export default function WorkforcePlanningClient({
                       <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-[11px] font-semibold">{selectedPlan.location}</span>
                     </div>
                     <h3 className="text-xl font-bold text-slate-900 mt-3">{selectedPlan.department}</h3>
-                    <p className="text-sm text-slate-500 mt-1">{selectedPlan.businessUnit}</p>
+                    <p className="text-sm text-slate-500 mt-1">{selectedPlan.businessUnit} / {selectedPlan.costCenter}</p>
                     <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">{selectedPlan.recommendedAction}</div>
                   </div>
 
@@ -652,8 +705,8 @@ export default function WorkforcePlanningClient({
                     <DetailStat label="Vacancy Rate" value={`${selectedPlan.vacancyRatePct}%`} />
                     <DetailStat label="Critical Gaps" value={formatNumber(selectedPlan.criticalGapRoles)} />
                     <DetailStat label="Immediate Backfills" value={formatNumber(selectedPlan.immediateBackfills)} />
-                    <DetailStat label="Open Budget" value={formatCurrency(selectedPlan.openBudgetUsd)} />
-                    <DetailStat label="Payroll Run Rate" value={formatCurrency(selectedPlan.payrollRunRateUsd)} />
+                    <DetailStat label="Open Budget" value={formatCurrency(selectedPlan.openBudgetNgn)} />
+                    <DetailStat label="Payroll Run Rate" value={formatCurrency(selectedPlan.payrollRunRateNgn)} />
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -676,6 +729,10 @@ export default function WorkforcePlanningClient({
                   ) : null}
 
                   <InfoListCard title="Top Risks" items={selectedPlan.topRisks.length ? selectedPlan.topRisks : ['No major planning risks flagged for this segment.']} />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <InfoListCard title="Employment Mix" items={selectedPlan.employmentMix.map((item) => `${item.label}: ${formatNumber(item.count)}`)} />
+                    <InfoListCard title="Grade Mix" items={selectedPlan.gradeMix.slice(0, 8).map((item) => `${item.label}: ${formatNumber(item.count)}`)} />
+                  </div>
 
                   <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
                     <div className="px-4 py-3 border-b border-slate-100">
@@ -688,7 +745,7 @@ export default function WorkforcePlanningClient({
                           <div>
                             <div className="text-sm font-semibold text-slate-900">{role.title}</div>
                             <div className="text-xs text-slate-500 mt-1">
-                              {role.code} <span className="mx-2">•</span> {role.gradeCode} <span className="mx-2">•</span> {role.positionType}
+                              {role.code} <span className="mx-2">/</span> {role.gradeCode} <span className="mx-2">/</span> {role.positionType}
                             </div>
                           </div>
                           <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -722,7 +779,7 @@ export default function WorkforcePlanningClient({
                               <span className={`px-2 py-1 rounded-full border text-[11px] font-semibold ${requestStatusTone(request.status)}`}>{request.status}</span>
                             </div>
                             <div className="text-xs text-slate-500">
-                              {request.requestedBy} <span className="mx-2">•</span> {request.targetQuarter} <span className="mx-2">•</span> Requested FTE: {formatNumber(request.requestedFte)}
+                              {request.requestedBy} <span className="mx-2">/</span> {request.targetQuarter} <span className="mx-2">/</span> Requested FTE: {formatNumber(request.requestedFte)}
                             </div>
                             <div className="text-sm text-slate-600">{request.impactSummary}</div>
                           </button>
@@ -744,7 +801,7 @@ export default function WorkforcePlanningClient({
                           <div>
                             <div className="text-sm font-semibold text-slate-900">{selectedRequest.requestType}</div>
                             <div className="text-xs text-slate-500 mt-1">
-                              {selectedRequest.requestedBy} <span className="mx-2">•</span> {selectedRequest.targetQuarter}
+                              {selectedRequest.requestedBy} <span className="mx-2">/</span> {selectedRequest.targetQuarter}
                             </div>
                           </div>
                           <span className={`px-2 py-1 rounded-full border text-[11px] font-semibold ${requestStatusTone(selectedRequest.status)}`}>{selectedRequest.status}</span>
@@ -752,7 +809,7 @@ export default function WorkforcePlanningClient({
 
                         <div className="grid grid-cols-2 gap-3">
                           <DetailStat label="Requested FTE" value={formatNumber(selectedRequest.requestedFte)} />
-                          <DetailStat label="Incremental Budget" value={formatCurrency(selectedRequest.incrementalBudgetUsd)} />
+                          <DetailStat label="Incremental Budget" value={formatCurrency(selectedRequest.incrementalBudgetNgn)} />
                           <DetailStat label="Projected Approved FTE" value={formatNumber(selectedRequest.projectedApprovedFte)} />
                           <DetailStat label="Projected Filled FTE" value={formatNumber(selectedRequest.projectedFilledFte)} />
                           <DetailStat label="Projected Gap FTE" value={formatNumber(selectedRequest.projectedGapFte)} />
@@ -861,7 +918,7 @@ export default function WorkforcePlanningClient({
                     <span className={`px-2 py-1 rounded-full border text-[11px] font-semibold ${requestStatusTone(request.status)}`}>{request.status}</span>
                   </div>
                   <div className="text-xs text-slate-500 mt-1">
-                    {request.requestType} <span className="mx-2">•</span> {request.targetQuarter} <span className="mx-2">•</span> {request.businessUnit}
+                    {request.requestType} <span className="mx-2">/</span> {request.targetQuarter} <span className="mx-2">/</span> {request.businessUnit}
                   </div>
                   <div className="text-sm text-slate-600 mt-2">{request.impactSummary}</div>
                 </button>
@@ -881,7 +938,7 @@ export default function WorkforcePlanningClient({
           <table className="w-full text-left">
             <thead className="bg-slate-50">
               <tr>
-                {['Business Unit', 'Department', 'Location', 'Approved FTE', 'Filled FTE', 'Open Demand', 'Vacancy %', 'Critical Gaps', 'Open Budget', 'Priority', 'Health'].map((header) => (
+                {['Business Unit', 'Department', 'Location', 'Cost Centre', 'Approved FTE', 'Filled FTE', 'Review FTE', 'Review %', 'Critical Gaps', 'Open Budget', 'Priority', 'Health'].map((header) => (
                   <th key={header} className="px-4 py-3 text-[11px] font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">{header}</th>
                 ))}
               </tr>
@@ -895,12 +952,13 @@ export default function WorkforcePlanningClient({
                     <div className="text-xs text-slate-500">{formatNumber(plan.approvedPositions)} positions</div>
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-700">{plan.location}</td>
+                  <td className="px-4 py-3 text-sm text-slate-700">{plan.costCenter}</td>
                   <td className="px-4 py-3 text-sm text-slate-700">{formatNumber(plan.approvedFte)}</td>
                   <td className="px-4 py-3 text-sm text-slate-700">{formatNumber(plan.filledFte)}</td>
                   <td className="px-4 py-3 text-sm text-slate-700">{formatNumber(plan.openDemandFte)}</td>
                   <td className="px-4 py-3 text-sm text-slate-700">{plan.vacancyRatePct}%</td>
                   <td className="px-4 py-3 text-sm text-slate-700">{formatNumber(plan.criticalGapRoles)}</td>
-                  <td className="px-4 py-3 text-sm text-slate-700">{formatCurrency(plan.openBudgetUsd)}</td>
+                  <td className="px-4 py-3 text-sm text-slate-700">{formatCurrency(plan.openBudgetNgn)}</td>
                   <td className="px-4 py-3"><span className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold ${priorityTone(plan.planningPriority)}`}>{plan.planningPriority}</span></td>
                   <td className="px-4 py-3"><span className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold ${healthTone(plan.healthStatus)}`}>{plan.healthStatus}</span></td>
                 </tr>
@@ -1078,3 +1136,4 @@ function Select({ value, onChange, options, labels }: { value: string; onChange:
     </select>
   );
 }
+
