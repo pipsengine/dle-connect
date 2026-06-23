@@ -10,7 +10,7 @@ import { activeLoansVersion, calculateLoanRecovery, loanInputsFromApplications, 
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { syncSageLeaveAllowanceEvents } from '@/lib/payroll-leave-allowance-store';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
-import { readTimesheetPayrollUpdates } from '@/lib/timesheet-entry-store';
+import { calculateTimesheetPeriod, readTimesheetPayrollUpdates, readTimesheetPeriods } from '@/lib/timesheet-entry-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { payslipIdentityMap, syncPayslipIdentitiesFromSage, type PayslipEmployeeIdentity } from '@/lib/payroll-payslip-identity-store';
 
@@ -159,16 +159,25 @@ type DailyAttendanceSummary = {
 };
 
 const emptyDailyAttendance = (): DailyAttendanceSummary => ({ daysWorked: 0, attendanceHours: 0, bookedHours: 0, idleHours: 0 });
+const inclusiveDays = (startDate: string, endDate: string) => {
+  const start = new Date(`${startDate}T00:00:00Z`).getTime();
+  const end = new Date(`${endDate}T00:00:00Z`).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 31;
+  return Math.floor((end - start) / 86400000) + 1;
+};
 
 const buildDailyAttendanceByKey = async (period: string) => {
   const updates = await readTimesheetPayrollUpdates();
-  const byKey = new Map<string, DailyAttendanceSummary>();
   const periodId = `per-${period}`;
+  const periods = await readTimesheetPeriods();
+  const timesheetPeriod = periods.find((item) => item.id === periodId) || calculateTimesheetPeriod(new Date(`${period}-15T00:00:00`));
+  const maxPayableDays = inclusiveDays(timesheetPeriod.startDate, timesheetPeriod.endDate);
+  const byKey = new Map<string, DailyAttendanceSummary>();
 
   const add = (key: string, attendance: DailyAttendanceSummary) => {
     if (!key) return;
     const current = byKey.get(key) || emptyDailyAttendance();
-    current.daysWorked += attendance.daysWorked;
+    current.daysWorked = Math.min(maxPayableDays, current.daysWorked + attendance.daysWorked);
     current.attendanceHours += attendance.attendanceHours;
     current.bookedHours += attendance.bookedHours;
     current.idleHours += attendance.idleHours;

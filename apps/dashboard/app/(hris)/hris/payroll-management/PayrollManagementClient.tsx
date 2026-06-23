@@ -627,6 +627,7 @@ const canRunAction = (actionItem: PayrollAction, role: Role, payload: PayrollPay
   const run = payload?.runs[0];
   const status = run?.status || 'Draft';
   const exceptions = payload?.summary.exceptionCount || 0;
+  if (actionItem.id === 'submit-run' && exceptions > 0) return { allowed: false, reason: 'Resolve validation exceptions before submitting payroll for approval.' };
   if (['approve-run'].includes(actionItem.id) && exceptions > 0) return { allowed: false, reason: 'Resolve validation exceptions before approval.' };
   if (actionItem.id === 'release-run' && status !== 'Approved') return { allowed: false, reason: 'Payroll approval is required before release.' };
   if (['generate-payslips', 'generate-bank-schedule', 'generate-statutory-schedules', 'export-bank-file', 'post-run'].includes(actionItem.id) && !['Approved', 'Released', 'Locked', 'Posted', 'Published'].includes(status)) return { allowed: false, reason: 'Payroll approval is required first.' };
@@ -3653,6 +3654,12 @@ export default function PayrollManagementClient({ initialNow, initialSection = '
   const currentRun = payload?.runs[0] || null;
   const lastLoaded = payload?.generatedAt || initialNow;
 
+  const openSection = (targetSection: SectionId, targetTab?: string) => {
+    setSectionId(targetSection);
+    if (targetTab) setActiveTabs((prev) => ({ ...prev, [targetSection]: targetTab }));
+    window.history.pushState(null, '', sectionHref(targetSection));
+  };
+
   const load = async () => {
     setLoading(true);
     setError('');
@@ -3817,10 +3824,7 @@ export default function PayrollManagementClient({ initialNow, initialSection = '
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => {
-                    setSectionId(item.id);
-                    window.history.pushState(null, '', sectionHref(item.id));
-                  }}
+                  onClick={() => openSection(item.id)}
                   className={`flex min-h-11 items-center gap-2 rounded-lg px-3 text-left text-xs font-black transition-colors ${active ? `${toneStyles[item.tone].button}` : 'text-slate-700 hover:bg-slate-50'}`}
                 >
                   <Icon className="h-4 w-4 shrink-0" />
@@ -3876,7 +3880,7 @@ export default function PayrollManagementClient({ initialNow, initialSection = '
 
           <div className="mt-4">
             {section.id === 'dashboard' ? (
-              <DashboardWorkspace payload={payload} canViewMoney={canViewMoney} runAction={runAction} busyAction={busyAction} currentRun={currentRun} filteredRecords={filteredRecords} query={query} setQuery={setQuery} status={status} setStatus={setStatus} activePanel={dashboardPanel} setActivePanel={setDashboardPanel} />
+              <DashboardWorkspace payload={payload} canViewMoney={canViewMoney} runAction={runAction} busyAction={busyAction} currentRun={currentRun} filteredRecords={filteredRecords} query={query} setQuery={setQuery} status={status} setStatus={setStatus} activePanel={dashboardPanel} setActivePanel={setDashboardPanel} role={role} onOpenSection={openSection} />
             ) : section.id === 'payroll-computation-workflow' ? (
               <PayrollComputationWorkflowPage payload={payload} canViewMoney={canViewMoney} role={role} runAction={runAction} busyAction={busyAction} onAudit={() => setAuditOpen(true)} exportCsv={exportCsv} exportExcel={exportExcel} />
             ) : section.id === 'salary-management' ? (
@@ -3940,6 +3944,8 @@ function DashboardWorkspace({
   setStatus,
   activePanel,
   setActivePanel,
+  role,
+  onOpenSection,
 }: {
   payload: PayrollPayload | null;
   canViewMoney: boolean;
@@ -3953,6 +3959,8 @@ function DashboardWorkspace({
   setStatus: (value: string) => void;
   activePanel: DashboardPanelId;
   setActivePanel: (value: DashboardPanelId) => void;
+  role: Role;
+  onOpenSection: (section: SectionId, tab?: string) => void;
 }) {
   const records = payload?.records || [];
   const runStatus = currentRun?.status || payload?.workflow?.currentStatus || 'Draft';
@@ -3969,6 +3977,7 @@ function DashboardWorkspace({
     { label: 'Payslips', done: Boolean(currentRun?.payslipsGeneratedAt) || ['Published', 'Closed'].includes(runStatus) },
   ];
   const quickActions = [
+    { label: 'Period Control', action: 'open-period-control', icon: CalendarClock, tone: 'slate' as Tone, disabled: false },
     { label: 'Validate Payroll', action: 'validate-payroll', icon: ClipboardCheck, tone: 'blue' as Tone, disabled: !payload?.permissions.canManageRun },
     { label: 'Review Issues', action: 'view-exceptions', icon: AlertTriangle, tone: issues.length ? 'red' as Tone : 'green' as Tone, disabled: false },
     { label: 'Submit Approval', action: 'submit-run', icon: Send, tone: 'amber' as Tone, disabled: !payload?.permissions.canManageRun },
@@ -3988,6 +3997,41 @@ function DashboardWorkspace({
     { id: 'status', label: 'Workflow status', tone: statusTone(runStatus), icon: ShieldCheck },
     { id: 'approvals', label: 'Approvals & audit', tone: 'amber', icon: ClipboardCheck },
   ];
+  const periodBase = new Date();
+  const periodDates = [
+    { label: 'Payroll Period', value: payload?.periodLabel || 'Loading', detail: currentRun?.id || `payroll-${payload?.period || 'current'}` },
+    { label: 'Data Cut-Off', value: new Date(periodBase.getFullYear(), periodBase.getMonth(), 20).toLocaleDateString('en-GB'), detail: 'Attendance, payroll setup, earnings, and deductions reviewed' },
+    { label: 'Approval Deadline', value: new Date(periodBase.getFullYear(), periodBase.getMonth(), 24).toLocaleDateString('en-GB'), detail: payload?.workflow?.nextOwner || 'Workflow owner pending' },
+    { label: 'Payment Date', value: new Date(periodBase.getFullYear(), periodBase.getMonth(), 28).toLocaleDateString('en-GB'), detail: 'Used by bank schedule and payslip publication' },
+  ];
+  const endToEndSteps = [
+    { no: 1, title: 'Open Dashboard', detail: 'Current payroll status, readiness, issues, next owner, and quick actions.', section: 'dashboard' as SectionId, tab: undefined, action: undefined, owner: 'Payroll Officer', done: true },
+    { no: 2, title: 'Confirm Payroll Period', detail: `${payload?.periodLabel || 'Current period'} is the active payroll period. Open Period Management to review dates, scope, closing, and reopening controls.`, section: 'payroll-processing' as SectionId, tab: 'payroll-period-management', action: 'open-period', owner: 'Payroll Officer', done: ['Open', 'Validation', 'Validated', 'Computed', 'Ready for Approval', 'Submitted', 'Under Review', 'Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(runStatus) },
+    { no: 3, title: 'Review Pay Setup', detail: 'Salary grades, daily rates, payroll group, payment setup, NHF, and blocked employee setup.', section: 'salary-management' as SectionId, tab: 'employee-salary-setup', action: undefined, owner: 'Payroll Officer', done: (payload?.summary.blockedEmployees || 0) === 0 },
+    { no: 4, title: 'Review Earnings', detail: 'Allowances, overtime, daily-rate pay, annual benefit events, and earning profiles.', section: 'earnings-management' as SectionId, tab: 'allowances', action: undefined, owner: 'Payroll Officer', done: true },
+    { no: 5, title: 'Review Deductions', detail: 'PAYE, pension, NHF, loans, union dues, and other deductions.', section: 'deductions-management' as SectionId, tab: 'statutory-deductions', action: undefined, owner: 'Payroll Officer', done: true },
+    { no: 6, title: 'Validate Payroll', detail: 'Run validation and clear every payroll exception before approval routing.', section: 'dashboard' as SectionId, tab: undefined, action: 'validate-payroll', owner: 'Payroll Officer', done: Boolean(currentRun?.validatedAt) && !issues.length },
+    { no: 7, title: 'Process Payroll', detail: 'Create the computed payroll run after master data and setup are valid.', section: 'payroll-processing' as SectionId, tab: 'payroll-run', action: 'create-run', owner: 'Payroll Officer', done: ['Computed', 'Ready for Approval', 'Submitted', 'Under Review', 'Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(runStatus) },
+    { no: 8, title: 'Submit for Approval', detail: 'Send the clean run to HR, Finance, and executive approval.', section: 'payroll-processing' as SectionId, tab: 'payroll-approval', action: 'submit-run', owner: 'Payroll Officer', done: Boolean(currentRun?.submittedAt) || ['Submitted', 'Under Review', 'Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(runStatus) },
+    { no: 9, title: 'Approve Payroll', detail: 'Approve only after exceptions, changes, variances, and totals are reviewed.', section: 'payroll-processing' as SectionId, tab: 'payroll-approval', action: 'approve-run', owner: 'HR / Finance / CFO', done: Boolean(currentRun?.approvedAt) || ['Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(runStatus) },
+    { no: 10, title: 'Release Payroll', detail: 'Release approved payroll for payslips, bank schedule, statutory schedules, and journal posting.', section: 'payroll-computation-workflow' as SectionId, tab: undefined, action: 'release-run', owner: 'Payroll / Finance', done: Boolean(currentRun?.releasedAt) || ['Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(runStatus) },
+    { no: 11, title: 'Generate Outputs', detail: 'Publish payslips, generate bank schedule, statutory schedules, and post the payroll journal.', section: 'finance-integration' as SectionId, tab: 'bank-payment-schedule', action: undefined, owner: 'Payroll / Finance', done: Boolean(currentRun?.payslipsGeneratedAt && currentRun.bankScheduleGeneratedAt && currentRun.statutorySchedulesGeneratedAt && currentRun.postedAt) },
+    { no: 12, title: 'Close or Reopen Period', detail: 'Close after all outputs are complete; reopen closed periods only with approval and a reason.', section: 'payroll-processing' as SectionId, tab: 'payroll-closing', action: 'close-period', owner: 'Payroll Supervisor', done: runStatus === 'Closed' },
+  ];
+  const runbookAction = (step: (typeof endToEndSteps)[number]) => {
+    if (!step.action) {
+      onOpenSection(step.section, step.tab);
+      return;
+    }
+    if (step.action === 'open-period') {
+      onOpenSection(step.section, step.tab);
+      return;
+    }
+    runAction(step.action);
+  };
+  const actionAuth = (step: (typeof endToEndSteps)[number]) => step.action
+    ? canRunAction(action(step.action, step.title, 'workflow'), role, payload)
+    : { allowed: true, reason: '' };
 
   return (
     <div className="space-y-4">
@@ -4003,6 +4047,68 @@ function DashboardWorkspace({
             <span className={`rounded-full px-3 py-1 text-xs font-black ${toneStyles[statusTone(runStatus)].chip}`}>{runStatus}</span>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">Run: {currentRun?.id || 'Not started'}</span>
           </div>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase text-amber-800">Step 2: Payroll Period Control</p>
+            <h3 className="mt-1 text-xl font-black text-slate-950">Confirm the active payroll period before processing</h3>
+            <p className="mt-1 text-sm font-semibold text-slate-600">The dashboard now exposes the period review point directly. Use it to confirm the payroll month, calendar dates, payment date, scope, lock, close, and reopening controls.</p>
+          </div>
+          <button type="button" onClick={() => onOpenSection('payroll-processing', 'payroll-period-management')} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-xs font-black text-white hover:bg-slate-800">
+            Open Period Management
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {periodDates.map((item) => (
+            <div key={item.label} className="rounded-lg border border-amber-200 bg-white p-3">
+              <p className="text-xs font-black uppercase text-amber-700">{item.label}</p>
+              <p className="mt-1 text-sm font-black text-slate-950">{item.value}</p>
+              <p className="mt-1 text-xs font-semibold text-slate-500">{item.detail}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-2 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <h3 className="text-sm font-black text-slate-950">End-to-End Payroll Runbook</h3>
+            <p className="mt-1 text-xs font-semibold text-slate-500">Every step below either opens the exact payroll workspace or runs the supported workflow action.</p>
+          </div>
+          <span className={`w-fit rounded-full px-3 py-1 text-xs font-black ${issues.length ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}`}>
+            {issues.length ? `${number(issues.length)} validation issues blocking approval` : 'Ready for approval routing'}
+          </span>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
+          {endToEndSteps.map((step) => {
+            const auth = actionAuth(step);
+            const disabled = Boolean(step.action && (!auth.allowed || busyAction === step.action));
+            return (
+              <div key={step.no} className={`rounded-lg border p-3 ${step.done ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}>
+                <div className="grid grid-cols-[auto_1fr_auto] gap-3">
+                  <span className={`flex h-8 w-8 items-center justify-center rounded-lg text-xs font-black ${step.done ? 'bg-emerald-600 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200'}`}>{step.done ? <CheckCircle2 className="h-4 w-4" /> : step.no}</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-black text-slate-950">{step.title}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-600">{step.detail}</p>
+                    <p className="mt-1 text-[11px] font-black uppercase text-slate-500">Owner: {step.owner}</p>
+                    {!auth.allowed ? <p className="mt-1 text-[11px] font-bold text-amber-700">{auth.reason}</p> : null}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => runbookAction(step)}
+                    className={`h-9 rounded-lg px-3 text-[11px] font-black ${disabled ? 'cursor-not-allowed bg-slate-200 text-slate-500' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
+                  >
+                    {step.action && step.action !== 'open-period' ? 'Run' : 'Open'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -4043,7 +4149,15 @@ function DashboardWorkspace({
           <div className="mt-3 grid grid-cols-1 gap-2">
             {quickActions.map((item) => {
               const Icon = item.icon;
+              const auth = ['open-period-control', 'view-exceptions'].includes(item.action)
+                ? { allowed: true, reason: '' }
+                : canRunAction(action(item.action, item.label, 'workflow'), role, payload);
+              const disabled = item.disabled || !auth.allowed || busyAction === item.action;
               const handleClick = () => {
+                if (item.action === 'open-period-control') {
+                  onOpenSection('payroll-processing', 'payroll-period-management');
+                  return;
+                }
                 if (item.action === 'view-exceptions') {
                   setActivePanel('issues');
                   return;
@@ -4051,7 +4165,7 @@ function DashboardWorkspace({
                 runAction(item.action);
               };
               return (
-                <button key={item.action} type="button" disabled={item.disabled || busyAction === item.action} onClick={handleClick} className={`flex min-h-11 items-center justify-between rounded-lg px-3 text-left text-xs font-black ${item.disabled || busyAction === item.action ? 'cursor-not-allowed bg-slate-100 text-slate-400' : toneStyles[item.tone].button}`}>
+                <button key={item.action} type="button" disabled={disabled} title={auth.reason || item.label} onClick={handleClick} className={`flex min-h-11 items-center justify-between rounded-lg px-3 text-left text-xs font-black ${disabled ? 'cursor-not-allowed bg-slate-100 text-slate-400' : toneStyles[item.tone].button}`}>
                   <span className="inline-flex items-center gap-2"><Icon className="h-4 w-4" />{item.label}</span>
                   <ChevronRight className="h-4 w-4" />
                 </button>

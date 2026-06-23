@@ -1981,9 +1981,17 @@ const createPayrollUpdateForPeriod = async (periodId: string, actor: string): Pr
   const period = await readTimesheetPeriod(new Date(`${periodId.replace('per-', '')}-15T00:00:00`));
   const periodHeaders = headers.filter((header) => header.periodId === periodId && normalizeTimesheetStatus(header.status) === 'HR_Acknowledged');
   const headerIds = new Set(periodHeaders.map((header) => header.id));
+  const headerById = new Map(periodHeaders.map((header) => [header.id, header]));
   const totals = new Map<string, TimesheetPayrollUpdate['employeeAttendance'][number]>();
+  const countedEmployeeDates = new Set<string>();
 
   for (const line of lines.filter((item) => headerIds.has(item.headerId))) {
+    const header = headerById.get(line.headerId);
+    const dateKey = header?.timesheetDate || '';
+    const paidDay = Boolean(line.clockIn || isPaidLeaveLine(line));
+    const employeeDateKey = `${line.employeeId}::${dateKey}`;
+    if (paidDay && dateKey && countedEmployeeDates.has(employeeDateKey)) continue;
+    if (paidDay && dateKey) countedEmployeeDates.add(employeeDateKey);
     const current = totals.get(line.employeeId) || {
       employeeId: line.employeeId,
       employeeName: line.employeeName,
@@ -1992,7 +2000,7 @@ const createPayrollUpdateForPeriod = async (periodId: string, actor: string): Pr
       bookedHours: 0,
       idleHours: 0,
     };
-    current.daysWorked += line.clockIn || isPaidLeaveLine(line) ? 1 : 0;
+    current.daysWorked += paidDay ? 1 : 0;
     current.attendanceHours = Math.round((current.attendanceHours + normalizePaidWorkHours(line.attendanceDuration)) * 10) / 10;
     current.bookedHours = Math.round((current.bookedHours + normalizePaidWorkHours(line.totalHours)) * 10) / 10;
     current.idleHours = Math.round((current.idleHours + line.idleHours) * 10) / 10;

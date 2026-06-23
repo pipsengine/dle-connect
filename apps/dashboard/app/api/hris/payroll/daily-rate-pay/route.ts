@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { updateEmployeeDailyRatePayInDb } from '@/lib/dle-enterprise-db';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { isTimesheetPaidLeaveLine, normalizePaidWorkHours, readTimesheetData, readTimesheetPayrollUpdates } from '@/lib/timesheet-entry-store';
+import { calculateTimesheetPeriod, isTimesheetPaidLeaveLine, normalizePaidWorkHours, readTimesheetData, readTimesheetPayrollUpdates, readTimesheetPeriods } from '@/lib/timesheet-entry-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { calculateContractDayRateEarnings } from '@/lib/payroll-earnings-engine';
 import { activePayrollPeriod, payrollPeriodLabel } from '@/lib/payroll-periods';
@@ -22,7 +22,13 @@ const normalizePeriod = (value: unknown) => {
   return /^\d{4}-\d{2}$/.test(text) ? text : activePayrollPeriod();
 };
 const periodIdFromPayrollPeriod = (period: string) => `per-${period}`;
-const MAX_MONTHLY_PAYABLE_DAYS = Number(process.env.DAILY_RATE_MAX_PAYABLE_DAYS || 31);
+const CONFIGURED_MAX_PAYABLE_DAYS = Number(process.env.DAILY_RATE_MAX_PAYABLE_DAYS || 0);
+const inclusiveDays = (startDate: string, endDate: string) => {
+  const start = new Date(`${startDate}T00:00:00Z`).getTime();
+  const end = new Date(`${endDate}T00:00:00Z`).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 31;
+  return Math.floor((end - start) / 86400000) + 1;
+};
 
 const getRole = (request: Request): Role => {
   const value = request.headers.get('x-hris-role');
@@ -53,23 +59,34 @@ const buildPayload = async (request: Request) => {
   const dailyEmployees = employees.filter((employee) => employee.employmentType === 'Daily Rate' || employee.employeeCode.startsWith('C'));
   const { headers, lines } = await readTimesheetData();
   const payrollUpdates = await readTimesheetPayrollUpdates();
+  const period = (await readTimesheetPeriods()).find((item) => item.id === periodId) || calculateTimesheetPeriod(new Date(`${payrollPeriod}-15T00:00:00`));
+  const maxPayableDays = CONFIGURED_MAX_PAYABLE_DAYS > 0 ? Math.min(CONFIGURED_MAX_PAYABLE_DAYS, inclusiveDays(period.startDate, period.endDate)) : inclusiveDays(period.startDate, period.endDate);
   const headerById = new Map(headers.map((header) => [header.id, header]));
   const periodHeaderIds = new Set(headers.filter((header) => header.periodId === periodId).map((header) => header.id));
 
-  const attendanceByKey = new Map<string, { daysWorked: number; attendanceHours: number; bookedHours: number; idleHours: number; payrollReadyDays: number; payrollReadyHours: number; latestPayrollUpdate: string | null; source: 'payroll-update' | 'timesheet-lines' | 'none'; anomalyCount: number }>();
+  const attendanceByKey = new Map<string, { daysWorked: number; attendanceHours: number; bookedHours: number; idleHours: number; payrollReadyDays: number; payrollReadyHours: number; latestPayrollUpdate: string | null; source: 'payroll-update' | 'timesheet-lines' | 'none'; anomalyCount: number; dateKeys: Set<string> }>();
 
-  const addAttendance = (key: string, item: { daysWorked: number; attendanceHours: number; bookedHours: number; idleHours: number; payrollReady?: boolean; updateAt?: string | null }) => {
+  const addAttendance = (key: string, item: { daysWorked: number; attendanceHours: number; bookedHours: number; idleHours: number; payrollReady?: boolean; updateAt?: string | null; dateKey?: string | null }) => {
     if (!key) return;
-    const current = attendanceByKey.get(key) || { daysWorked: 0, attendanceHours: 0, bookedHours: 0, idleHours: 0, payrollReadyDays: 0, payrollReadyHours: 0, latestPayrollUpdate: null, source: 'none' as const, anomalyCount: 0 };
-    const safeDays = Math.min(Math.max(0, item.daysWorked), MAX_MONTHLY_PAYABLE_DAYS);
-    if (item.daysWorked > MAX_MONTHLY_PAYABLE_DAYS || current.daysWorked + safeDays > MAX_MONTHLY_PAYABLE_DAYS) current.anomalyCount += 1;
-    current.daysWorked = Math.min(current.daysWorked + safeDays, MAX_MONTHLY_PAYABLE_DAYS);
+    const current = attendanceByKey.get(key) || { daysWorked: 0, attendanceHours: 0, bookedHours: 0, idleHours: 0, payrollReadyDays: 0, payrollReadyHours: 0, latestPayrollUpdate: null, source: 'none' as const, anomalyCount: 0, dateKeys: new Set<string>() };
+    const dateKey = compact(item.dateKey);
+    if (dateKey && item.daysWorked > 0) {
+      if (current.dateKeys.has(dateKey)) {
+        current.anomalyCount += 1;
+        attendanceByKey.set(key, current);
+        return;
+      }
+      current.dateKeys.add(dateKey);
+    }
+    const safeDays = Math.min(Math.max(0, item.daysWorked), maxPayableDays);
+    if (item.daysWorked > maxPayableDays || current.daysWorked + safeDays > maxPayableDays) current.anomalyCount += 1;
+    current.daysWorked = Math.min(current.daysWorked + safeDays, maxPayableDays);
     current.attendanceHours += item.attendanceHours;
     current.bookedHours += item.bookedHours;
     current.idleHours += item.idleHours;
     if (item.payrollReady) {
-      if (current.payrollReadyDays + safeDays > MAX_MONTHLY_PAYABLE_DAYS) current.anomalyCount += 1;
-      current.payrollReadyDays = Math.min(current.payrollReadyDays + safeDays, MAX_MONTHLY_PAYABLE_DAYS);
+      if (current.payrollReadyDays + safeDays > maxPayableDays) current.anomalyCount += 1;
+      current.payrollReadyDays = Math.min(current.payrollReadyDays + safeDays, maxPayableDays);
       current.payrollReadyHours += item.bookedHours || item.attendanceHours;
       current.latestPayrollUpdate = item.updateAt || current.latestPayrollUpdate;
       current.source = 'payroll-update';
@@ -81,16 +98,10 @@ const buildPayload = async (request: Request) => {
 
   const periodPayrollUpdates = payrollUpdates.filter((update) => update.periodId === periodId);
   const hasPayrollUpdateForPeriod = periodPayrollUpdates.length > 0;
-  const payrollUpdateKeysForPeriod = new Set<string>();
-  for (const update of periodPayrollUpdates) {
-    for (const employee of update.employeeAttendance) {
-      [employee.employeeId, employee.employeeName].map(normalizePayrollMatchKey).filter(Boolean).forEach((key) => payrollUpdateKeysForPeriod.add(key));
-    }
-  }
+  const rawTimesheetKeysForPeriod = new Set<string>();
 
   for (const line of lines.filter((item) => periodHeaderIds.has(item.headerId))) {
     const lineKeys = new Set([line.employeeId, line.employeeNo, line.employeeName].map(normalizePayrollMatchKey).filter(Boolean));
-    if ([...lineKeys].some((key) => payrollUpdateKeysForPeriod.has(key))) continue;
     const header = headerById.get(line.headerId);
     const paidLeave = isTimesheetPaidLeaveLine(line);
     const payload = {
@@ -100,12 +111,18 @@ const buildPayload = async (request: Request) => {
       idleHours: num(line.idleHours),
       payrollReady: header?.status === 'HR_Acknowledged' || header?.status === 'Locked',
       updateAt: null,
+      dateKey: header?.timesheetDate || null,
     };
-    lineKeys.forEach((key) => addAttendance(key, payload));
+    lineKeys.forEach((key) => {
+      rawTimesheetKeysForPeriod.add(key);
+      addAttendance(key, payload);
+    });
   }
 
   for (const update of periodPayrollUpdates) {
     for (const employee of update.employeeAttendance) {
+      const updateKeys = new Set([employee.employeeId, employee.employeeName].map(normalizePayrollMatchKey).filter(Boolean));
+      if ([...updateKeys].some((key) => rawTimesheetKeysForPeriod.has(key))) continue;
       const payload = {
         daysWorked: num(employee.daysWorked),
         attendanceHours: num(employee.attendanceHours),
@@ -113,20 +130,21 @@ const buildPayload = async (request: Request) => {
         idleHours: num(employee.idleHours),
         payrollReady: true,
         updateAt: update.acknowledgedAt,
+        dateKey: null,
       };
-      new Set([employee.employeeId, employee.employeeName].map(normalizePayrollMatchKey).filter(Boolean)).forEach((key) => addAttendance(key, payload));
+      updateKeys.forEach((key) => addAttendance(key, payload));
     }
   }
 
   const records = dailyEmployees.map((employee) => {
     const keys = [employee.employeeId, employee.employeeCode, employee.fullName].map(normalizePayrollMatchKey).filter(Boolean);
-    const attendance = keys.map((key) => attendanceByKey.get(key)).find(Boolean) || { daysWorked: 0, attendanceHours: 0, bookedHours: 0, idleHours: 0, payrollReadyDays: 0, payrollReadyHours: 0, latestPayrollUpdate: null, source: 'none' as const, anomalyCount: 0 };
+    const attendance = keys.map((key) => attendanceByKey.get(key)).find(Boolean) || { daysWorked: 0, attendanceHours: 0, bookedHours: 0, idleHours: 0, payrollReadyDays: 0, payrollReadyHours: 0, latestPayrollUpdate: null, source: 'none' as const, anomalyCount: 0, dateKeys: new Set<string>() };
     const hoursPerDay = 8;
     const ratePerDay = num(employee.ratePerDay) || num(employee.periodSalary);
     const ratePerHour = num(employee.ratePerHour) || (ratePerDay && hoursPerDay ? ratePerDay / hoursPerDay : 0);
     const payMode = ratePerHour > 0 && ratePerDay <= 0 ? 'Hourly' : 'Daily';
-    const payableDays = Math.min(attendance.payrollReadyDays || attendance.daysWorked, MAX_MONTHLY_PAYABLE_DAYS);
-    const payableHours = Math.min(attendance.payrollReadyHours || attendance.bookedHours || attendance.attendanceHours, MAX_MONTHLY_PAYABLE_DAYS * hoursPerDay);
+    const payableDays = Math.min(attendance.payrollReadyDays || attendance.daysWorked, maxPayableDays);
+    const payableHours = Math.min(attendance.payrollReadyHours || attendance.bookedHours || attendance.attendanceHours, maxPayableDays * hoursPerDay);
     const dayRateEarnings = calculateContractDayRateEarnings({
       ratePerDay: ratePerDay || ratePerHour * hoursPerDay,
       weekdayDays: payMode === 'Hourly' ? payableHours / hoursPerDay : payableDays,
@@ -136,7 +154,7 @@ const buildPayload = async (request: Request) => {
     if (!ratePerDay && !ratePerHour) issues.push('Daily or hourly rate is missing');
     if (!attendance.daysWorked && !attendance.bookedHours && !attendance.attendanceHours) issues.push('No daily timesheet found');
     if (!attendance.payrollReadyDays && !attendance.payrollReadyHours) issues.push('Timesheet is not yet payroll-ready');
-    if (attendance.anomalyCount > 0) issues.push(`Timesheet days were capped at payroll period limit (${MAX_MONTHLY_PAYABLE_DAYS})`);
+    if (attendance.anomalyCount > 0) issues.push(`Duplicate or excess timesheet days were capped at payroll period limit (${maxPayableDays})`);
     if (!employee.setupAssignedToPayroll) issues.push('Employee is not assigned to payroll setup');
     return {
       employeeDbId: employee.employeeDbId,
@@ -168,6 +186,7 @@ const buildPayload = async (request: Request) => {
       earnings: dayRateEarnings.earningLines,
       latestPayrollUpdate: attendance.latestPayrollUpdate,
       attendanceSource: attendance.source,
+      uniqueTimesheetDays: attendance.dateKeys.size,
       payrollPeriod,
       setupAssignedToPayroll: employee.setupAssignedToPayroll,
       status: statusFromIssues(issues),
@@ -196,8 +215,10 @@ const buildPayload = async (request: Request) => {
     periodId,
     periodLabel: payrollPeriodLabel(payrollPeriod),
     controls: {
-      maxMonthlyPayableDays: MAX_MONTHLY_PAYABLE_DAYS,
-      sourceRule: hasPayrollUpdateForPeriod ? 'Using payroll-ready period update only' : 'Using current-period timesheet lines only',
+      maxMonthlyPayableDays: maxPayableDays,
+      periodStartDate: period.startDate,
+      periodEndDate: period.endDate,
+      sourceRule: hasPayrollUpdateForPeriod ? 'Using raw timesheet dates first, payroll-ready updates only when raw lines are unavailable' : 'Using current-period timesheet lines only',
       historicalDataExcluded: true,
       duplicateSourcePrevention: true,
     },

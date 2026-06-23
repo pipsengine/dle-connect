@@ -808,6 +808,8 @@ export async function POST(request: Request) {
   }
   if (action === 'submit-run') {
     if (!perms.canManageRun) return jsonErr(403, 'Permission denied');
+    const payload = await buildPayload(request);
+    if (payload.summary.exceptionCount > 0) return jsonErr(409, 'Resolve validation exceptions before submitting payroll for approval.');
     if (!['Ready for Approval', 'Validated', 'Computed', 'Validation', 'Draft', 'Open'].includes(existing.status)) return jsonErr(409, `Cannot submit payroll from ${existing.status}.`);
     existing.status = 'Submitted';
     existing.submittedAt = nowIso();
