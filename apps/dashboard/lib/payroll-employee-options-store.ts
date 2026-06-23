@@ -105,9 +105,9 @@ export const applyPayrollEmployeeOptions = async (employees: DleEmployeeDirector
       salaryGrade: option.salaryGrade || employee.salaryGrade,
       jobGrade: option.jobGrade || employee.jobGrade,
       setupAssignedToPayroll: typeof option.setupAssignedToPayroll === 'boolean' ? option.setupAssignedToPayroll : employee.setupAssignedToPayroll,
-      ratePerDay: Number.isFinite(Number(option.ratePerDay)) ? Number(option.ratePerDay) : employee.ratePerDay,
-      ratePerHour: Number.isFinite(Number(option.ratePerHour)) ? Number(option.ratePerHour) : employee.ratePerHour,
-      hoursPerDay: Number.isFinite(Number(option.hoursPerDay)) ? Number(option.hoursPerDay) : employee.hoursPerDay,
+      ratePerDay: option.ratePerDay !== undefined && option.ratePerDay !== null && Number.isFinite(Number(option.ratePerDay)) ? Number(option.ratePerDay) : employee.ratePerDay,
+      ratePerHour: option.ratePerHour !== undefined && option.ratePerHour !== null && Number.isFinite(Number(option.ratePerHour)) ? Number(option.ratePerHour) : employee.ratePerHour,
+      hoursPerDay: option.hoursPerDay !== undefined && option.hoursPerDay !== null && Number.isFinite(Number(option.hoursPerDay)) ? Number(option.hoursPerDay) : employee.hoursPerDay,
     };
   });
 };

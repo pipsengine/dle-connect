@@ -29,6 +29,17 @@ const inclusiveDays = (startDate: string, endDate: string) => {
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 31;
   return Math.floor((end - start) / 86400000) + 1;
 };
+const derivedDailyRate = (employee: { ratePerDay?: number | null; ratePerHour?: number | null; periodSalary?: number | null; hoursPerDay?: number | null; hoursPerPeriod?: number | null }) => {
+  const hoursPerDay = num(employee.hoursPerDay) || 8;
+  const hoursPerPeriod = num(employee.hoursPerPeriod);
+  const workingDays = hoursPerPeriod > 0 && hoursPerDay > 0 ? hoursPerPeriod / hoursPerDay : 22;
+  const explicitDayRate = num(employee.ratePerDay);
+  const explicitHourRate = num(employee.ratePerHour);
+  const periodSalary = num(employee.periodSalary);
+  const ratePerDay = explicitDayRate || (explicitHourRate ? explicitHourRate * hoursPerDay : 0) || (periodSalary ? (periodSalary > 50000 ? periodSalary / workingDays : periodSalary) : 0);
+  const ratePerHour = explicitHourRate || (ratePerDay && hoursPerDay ? ratePerDay / hoursPerDay : 0);
+  return { ratePerDay, ratePerHour, hoursPerDay };
+};
 
 const getRole = (request: Request): Role => {
   const value = request.headers.get('x-hris-role');
@@ -139,9 +150,7 @@ const buildPayload = async (request: Request) => {
   const records = dailyEmployees.map((employee) => {
     const keys = [employee.employeeId, employee.employeeCode, employee.fullName].map(normalizePayrollMatchKey).filter(Boolean);
     const attendance = keys.map((key) => attendanceByKey.get(key)).find(Boolean) || { daysWorked: 0, attendanceHours: 0, bookedHours: 0, idleHours: 0, payrollReadyDays: 0, payrollReadyHours: 0, latestPayrollUpdate: null, source: 'none' as const, anomalyCount: 0, dateKeys: new Set<string>() };
-    const hoursPerDay = 8;
-    const ratePerDay = num(employee.ratePerDay) || num(employee.periodSalary);
-    const ratePerHour = num(employee.ratePerHour) || (ratePerDay && hoursPerDay ? ratePerDay / hoursPerDay : 0);
+    const { ratePerDay, ratePerHour, hoursPerDay } = derivedDailyRate(employee);
     const payMode = ratePerHour > 0 && ratePerDay <= 0 ? 'Hourly' : 'Daily';
     const payableDays = Math.min(attendance.payrollReadyDays || attendance.daysWorked, maxPayableDays);
     const payableHours = Math.min(attendance.payrollReadyHours || attendance.bookedHours || attendance.attendanceHours, maxPayableDays * hoursPerDay);

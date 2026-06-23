@@ -219,15 +219,30 @@ const readApiResponse = async <T,>(res: Response): Promise<ApiResponse<T>> => {
 };
 
 const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 });
+const currencyFormatters = new Map<string, Intl.NumberFormat>([['NGN', moneyFmt]]);
 const numberFmt = new Intl.NumberFormat('en-GB');
 const pctFmt = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 });
-const money = (value: number | null | undefined, canView = true) => (!canView || value == null ? 'Restricted' : moneyFmt.format(value));
+const currencyCode = (value: unknown) => {
+  const text = String(value || '').toUpperCase();
+  if (text.includes('USD') || text.includes('DOLLAR') || text === '$') return 'USD';
+  return 'NGN';
+};
+const money = (value: number | null | undefined, canView = true, currency = 'NGN') => {
+  if (!canView || value == null) return 'Restricted';
+  const code = currencyCode(currency);
+  if (!currencyFormatters.has(code)) {
+    currencyFormatters.set(code, new Intl.NumberFormat(code === 'USD' ? 'en-US' : 'en-NG', { style: 'currency', currency: code, maximumFractionDigits: code === 'USD' ? 2 : 0 }));
+  }
+  return currencyFormatters.get(code)!.format(value);
+};
+const recordCurrency = (record: Pick<PayrollRecord, 'payCurrency' | 'payrollGroup'>) => currencyCode(`${record.payCurrency} ${record.payrollGroup}`);
+const recordMoney = (record: Pick<PayrollRecord, 'payCurrency' | 'payrollGroup'>, value: number | null | undefined, canView = true) => money(value, canView, recordCurrency(record));
 const number = (value: number | null | undefined) => numberFmt.format(Number(value || 0));
 const payrollRate = (record: PayrollRecord, canView = true) => {
   if (!record.isDailyRate) return record.salaryStructure || record.salaryGrade || 'Unassigned';
   if (!canView) return 'Restricted';
-  if (record.ratePerDay) return `${money(record.ratePerDay)}/day`;
-  if (record.ratePerHour) return `${money(record.ratePerHour)}/hr`;
+  if (record.ratePerDay) return `${recordMoney(record, record.ratePerDay)}/day`;
+  if (record.ratePerHour) return `${recordMoney(record, record.ratePerHour)}/hr`;
   return 'Rate missing';
 };
 
@@ -3635,6 +3650,19 @@ const groupPayrollRows = (records: PayrollRecord[], key: keyof PayrollRecord) =>
   }, new Map<string, { label: string; employees: number; grossPay: number; netPay: number; exceptions: number }>()).values(),
 ).sort((a, b) => b.employees - a.employees);
 
+const groupPayrollExceptions = (exceptions: PayrollException[]) => {
+  const severityRank: Record<PayrollException['severity'], number> = { Low: 0, Medium: 1, High: 2 };
+  return Array.from(exceptions.reduce((map, issue) => {
+    const current = map.get(issue.employeeId) || { ...issue, issues: [] as string[] };
+    current.issues.push(issue.issue);
+    current.issue = Array.from(new Set(current.issues)).join('; ');
+    current.severity = severityRank[issue.severity] > severityRank[current.severity] ? issue.severity : current.severity;
+    current.owner = current.owner === issue.owner ? current.owner : 'Payroll / HR';
+    map.set(issue.employeeId, current);
+    return map;
+  }, new Map<string, PayrollException & { issues: string[] }>()).values());
+};
+
 export default function PayrollManagementClient({ initialNow, initialSection = 'dashboard' }: { initialNow: string; initialSection?: string }) {
   const [sectionId, setSectionId] = useState<SectionId>(sectionById(initialSection).id);
   const [activeTabs, setActiveTabs] = useState<Record<string, string>>({});
@@ -4031,6 +4059,7 @@ function DashboardWorkspace({
   const records = payload?.records || [];
   const runStatus = currentRun?.status || payload?.workflow?.currentStatus || 'Draft';
   const issues = payload?.exceptions || [];
+  const groupedIssues = groupPayrollExceptions(issues);
   const readiness = payload?.summary.totalEmployees ? Math.round(((payload?.summary.readyEmployees || 0) / payload.summary.totalEmployees) * 100) : 0;
   const workflow = [
     { label: 'Draft', done: Boolean(currentRun?.createdAt) },
@@ -4293,11 +4322,11 @@ function DashboardWorkspace({
                 <h3 className="text-sm font-black text-slate-950">Issues to Fix</h3>
                 <p className="mt-1 text-xs font-semibold text-slate-500">Only items blocking approval or release appear here.</p>
               </div>
-              <span className={`rounded-full px-3 py-1 text-xs font-black ${issues.length ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}`}>{number(issues.length)} open</span>
+              <span className={`rounded-full px-3 py-1 text-xs font-black ${groupedIssues.length ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}`}>{number(groupedIssues.length)} employees</span>
             </div>
           </div>
           <div className="divide-y divide-slate-100">
-            {issues.slice(0, 5).map((issue) => (
+            {groupedIssues.slice(0, 5).map((issue) => (
               <div key={issue.id} className="grid grid-cols-1 gap-3 p-4 md:grid-cols-[1fr_auto_auto] md:items-center">
                 <div>
                   <p className="text-sm font-black text-slate-950">{issue.issue}</p>
@@ -4371,9 +4400,9 @@ function DashboardWorkspace({
                   <td className="px-4 py-3 text-xs font-bold text-slate-700">{record.payrollGroup}<br /><span className="text-slate-400">{record.isDailyRate ? 'Daily rate structure' : record.salaryGrade}</span></td>
                   <td className="px-4 py-3 text-xs font-bold text-slate-700">{record.employmentType}<br /><span className="text-slate-400">{record.paymentRun}</span></td>
                   <td className="px-4 py-3 text-sm font-black text-slate-900">{payrollRate(record, canViewMoney)}</td>
-                  <td className="px-4 py-3 text-sm font-black text-slate-900">{money(record.grossPay, canViewMoney)}</td>
-                  <td className="px-4 py-3 text-sm font-black text-slate-900">{money(record.deductions, canViewMoney)}</td>
-                  <td className="px-4 py-3 text-sm font-black text-slate-900">{money(record.netPay, canViewMoney)}</td>
+                  <td className="px-4 py-3 text-sm font-black text-slate-900">{recordMoney(record, record.grossPay, canViewMoney)}</td>
+                  <td className="px-4 py-3 text-sm font-black text-slate-900">{recordMoney(record, record.deductions, canViewMoney)}</td>
+                  <td className="px-4 py-3 text-sm font-black text-slate-900">{recordMoney(record, record.netPay, canViewMoney)}</td>
                   <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${toneStyles[statusTone(record.payrollStatus)].chip}`}>{record.payrollStatus}</span></td>
                   <td className="px-4 py-3 text-xs font-semibold text-slate-600">{record.exceptions.length ? record.exceptions.slice(0, 2).join('; ') : 'Clear'}</td>
                 </tr>
@@ -4541,6 +4570,7 @@ function DashboardDetailPanel({
 }) {
   const readyRows = records.filter((record) => record.payrollStatus === 'Ready');
   const issueRows = records.filter((record) => record.exceptionCount > 0 || record.payrollStatus !== 'Ready');
+  const groupedIssues = groupPayrollExceptions(payload?.exceptions || []);
   const deductionTotals = [
     { label: 'PAYE', value: records.reduce((sum, record) => sum + (record.paye || 0), 0), tone: 'red' as Tone },
     { label: 'Pension', value: records.reduce((sum, record) => sum + (record.pension || 0), 0), tone: 'violet' as Tone },
@@ -4654,7 +4684,7 @@ function DashboardDetailPanel({
             <InfoTile label="Exception Lines" value={number(payload?.summary.exceptionCount)} detail="Total detected issues" tone={payload?.summary.exceptionCount ? 'red' : 'green'} />
           </div>
           <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
-            {(payload?.exceptions || []).slice(0, 10).map((issue) => (
+            {groupedIssues.slice(0, 10).map((issue) => (
               <div key={issue.id} className={`rounded-lg border p-3 ${issue.severity === 'High' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
@@ -4682,11 +4712,11 @@ function DashboardDetailPanel({
                 <td className="px-4 py-3"><p className="text-sm font-black text-slate-950">{record.fullName}</p><p className="text-xs font-semibold text-slate-500">{record.employeeId} / {record.jobTitle || 'No job title'}</p></td>
                 <td className="px-4 py-3 text-xs font-bold text-slate-700">{record.department || 'Unassigned'}<br /><span className="text-slate-400">{record.location || 'No location'}</span></td>
                 <td className="px-4 py-3 text-xs font-bold text-slate-700">{record.employmentType || 'Not set'}<br /><span className="text-slate-400">{record.payrollGroup || 'No group'}</span></td>
-                <td className="px-4 py-3 text-sm font-black text-slate-900">{money(record.grossPay, canViewMoney)}</td>
-                <td className="px-4 py-3 text-sm font-black text-slate-900">{money(record.deductions, canViewMoney)}</td>
-                <td className="px-4 py-3 text-sm font-black text-slate-900">{money(record.netPay, canViewMoney)}</td>
+                <td className="px-4 py-3 text-sm font-black text-slate-900">{recordMoney(record, record.grossPay, canViewMoney)}</td>
+                <td className="px-4 py-3 text-sm font-black text-slate-900">{recordMoney(record, record.deductions, canViewMoney)}</td>
+                <td className="px-4 py-3 text-sm font-black text-slate-900">{recordMoney(record, record.netPay, canViewMoney)}</td>
                 <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${toneStyles[statusTone(record.payrollStatus)].chip}`}>{record.payrollStatus}</span></td>
-                <td className="px-4 py-3 text-xs font-semibold text-slate-600">{record.exceptions.length ? record.exceptions.slice(0, 2).join('; ') : panel === 'deductions' ? `PAYE ${money(record.paye, canViewMoney)} / Pension ${money(record.pension, canViewMoney)}` : 'Clear'}</td>
+                <td className="px-4 py-3 text-xs font-semibold text-slate-600">{record.exceptions.length ? record.exceptions.slice(0, 2).join('; ') : panel === 'deductions' ? `PAYE ${recordMoney(record, record.paye, canViewMoney)} / Pension ${recordMoney(record, record.pension, canViewMoney)}` : 'Clear'}</td>
               </tr>
             ))}
             {!tableRows.length ? <tr><td colSpan={8} className="px-4 py-6 text-sm font-black text-slate-700">No records match this dashboard view.</td></tr> : null}

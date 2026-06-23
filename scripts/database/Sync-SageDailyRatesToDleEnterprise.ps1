@@ -24,6 +24,8 @@ function Read-DotEnv {
 
 Read-DotEnv -Path (Join-Path (Get-Location) '.env')
 Read-DotEnv -Path (Join-Path (Get-Location) 'apps\dashboard\.env')
+Read-DotEnv -Path (Join-Path (Get-Location) 'deployment\iis\site\.env')
+Read-DotEnv -Path (Join-Path (Get-Location) 'deployment\iis\site\apps\dashboard\.env')
 
 function EnvOrDefault {
   param([string]$Name, [string]$Default = '')
@@ -136,10 +138,13 @@ SELECT
   wr.EmployeeCode AS sageEmployeeCode,
   REPLACE(UPPER(LTRIM(RTRIM(wr.EmployeeCode))), '_', '') AS directoryEmployeeCode,
   SUM(wr.EmployeeRate) AS ratePerDay,
-  SUM(wr.EmployeeRate) / 8.0 AS ratePerHour,
-  8.0 AS hoursPerDay,
+  SUM(wr.EmployeeRate) / COALESCE(NULLIF(MAX(ed.HoursPerDay), 0), 8.0) AS ratePerHour,
+  COALESCE(NULLIF(MAX(ed.HoursPerDay), 0), 8.0) AS hoursPerDay,
+  COALESCE(NULLIF(MAX(ed.HoursPerPeriod), 0), COALESCE(NULLIF(MAX(ed.HoursPerDay), 0), 8.0) * 22.0) AS hoursPerPeriod,
   MAX(wr.EmployeePayPeriodID) AS sourcePayPeriodId
 FROM contractWeekdayRates wr
+LEFT JOIN Employee.EmployeeDetail ed
+  ON ed.EmployeeID = wr.EmployeeID
 JOIN contractRatePeriods rp
   ON rp.EmployeeID = wr.EmployeeID
   AND rp.EmployeePayPeriodID = wr.EmployeePayPeriodID
@@ -196,6 +201,10 @@ try {
       $employeeCode = Normalize-String (Get-Field $row 'directoryEmployeeCode')
       $ratePerDay = Normalize-Money (Get-Field $row 'ratePerDay')
       $ratePerHour = Normalize-Money (Get-Field $row 'ratePerHour')
+      $hoursPerDay = Normalize-Money (Get-Field $row 'hoursPerDay')
+      $hoursPerPeriod = Normalize-Money (Get-Field $row 'hoursPerPeriod')
+      $workingDays = if ($hoursPerDay -is [DBNull] -or $hoursPerPeriod -is [DBNull] -or $hoursPerDay -le 0) { [decimal]22 } else { [decimal]$hoursPerPeriod / [decimal]$hoursPerDay }
+      $periodSalary = if ($ratePerDay -is [DBNull]) { [DBNull]::Value } else { [decimal]$ratePerDay * $workingDays }
 
       $cmd = $dle.CreateCommand()
       $cmd.Transaction = $tx
@@ -242,18 +251,19 @@ WHEN MATCHED THEN UPDATE SET
   pay_currency = COALESCE(NULLIF(target.pay_currency, N''), N'NGN'),
   payment_run = COALESCE(NULLIF(target.payment_run, N''), N'Daily Timesheet'),
   payment_type = COALESCE(NULLIF(target.payment_type, N''), N'Daily Timesheet Rate'),
-  period_salary = @rate_per_day,
+  period_salary = @period_salary,
   rate_per_day = @rate_per_day,
   rate_per_hour = @rate_per_hour,
   hours_per_day = @hours_per_day,
+  hours_per_period = @hours_per_period,
   setup_assigned_to_payroll = 1,
   modified_at = SYSUTCDATETIME()
 WHEN NOT MATCHED THEN INSERT (
   employee_id, payroll_group, salary_grade, pay_currency, payment_run, payment_type,
-  period_salary, rate_per_day, rate_per_hour, hours_per_day, setup_assigned_to_payroll
+  period_salary, rate_per_day, rate_per_hour, hours_per_day, hours_per_period, setup_assigned_to_payroll
 ) VALUES (
   @employee_id, N'Daily Rate', N'Daily Rate', N'NGN', N'Daily Timesheet', N'Daily Timesheet Rate',
-  @rate_per_day, @rate_per_day, @rate_per_hour, @hours_per_day, 1
+  @period_salary, @rate_per_day, @rate_per_hour, @hours_per_day, @hours_per_period, 1
 );
 
 INSERT hris.EmployeeAuditLog(employee_id, audit_action, performed_by, reason, new_value)
@@ -272,19 +282,21 @@ SELECT CAST(1 AS bit) AS updated, N'Updated' AS reason;
         '@sage_employee_id' = $sageEmployeeId
         '@sage_employee_code' = $sageEmployeeCode
         '@employee_code' = $employeeCode
+        '@period_salary' = $periodSalary
         '@rate_per_day' = $ratePerDay
         '@rate_per_hour' = $ratePerHour
-        '@hours_per_day' = [decimal]8
+        '@hours_per_day' = $hoursPerDay
+        '@hours_per_period' = $hoursPerPeriod
         '@overwrite' = if ($Overwrite) { 1 } else { 0 }
       }
 
       foreach ($name in $params.Keys) {
         $parameter = $cmd.Parameters.Add($name, [System.Data.SqlDbType]::NVarChar)
-        if ($name -in @('@rate_per_day', '@rate_per_hour')) {
+        if ($name -in @('@period_salary', '@rate_per_day', '@rate_per_hour')) {
           $parameter.SqlDbType = [System.Data.SqlDbType]::Decimal
           $parameter.Precision = 19
           $parameter.Scale = 4
-        } elseif ($name -eq '@hours_per_day') {
+        } elseif ($name -in @('@hours_per_day', '@hours_per_period')) {
           $parameter.SqlDbType = [System.Data.SqlDbType]::Decimal
           $parameter.Precision = 9
           $parameter.Scale = 4

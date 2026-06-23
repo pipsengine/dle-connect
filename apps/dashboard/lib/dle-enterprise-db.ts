@@ -468,7 +468,7 @@ const normalizeEmployeeCodeForType = (employeeCode: string, typeCode: string | n
   const raw = str(employeeCode).toUpperCase().replace(/_/g, '');
   if (!raw) return raw;
   if ((typeCode === 'N' || typeCode === 'I') && raw.startsWith(`P${typeCode}`)) return raw.slice(1);
-  if (typeCode && !/^[PCLNI]/.test(raw)) return `${typeCode}${raw}`;
+  if (typeCode && !/^[PCLNIF]/.test(raw)) return `${typeCode}${raw}`;
   return raw;
 };
 
@@ -477,7 +477,7 @@ const sageEmployeeCode = (employee: SagePayrollEmployeeImportRow) => {
   const typeCode =
     inferEmployeeTypeCode(employee.hierarchyEmployeeTypeName, employee.jobTitle, employee.departmentName) ||
     employeeTypeCodeFromRawCode(raw);
-  const base = normalizeEmployeeCodeForType(raw, typeCode || (/^[PCL]/.test(raw) ? null : 'P'));
+  const base = normalizeEmployeeCodeForType(raw, typeCode || (/^[PCLF]/.test(raw) ? null : 'P'));
   const currency = str(employee.companyCurrency).toUpperCase();
   const companyCode = str(employee.companyCode).toUpperCase();
   if (currency && currency !== 'NGN') return `${base}-${currency}`;

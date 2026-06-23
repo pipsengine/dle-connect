@@ -33,6 +33,12 @@ const resolveDashboardRoot = () => {
 
 const DATA_ROOT = path.join(resolveDashboardRoot(), 'data', 'hris');
 const str = (value: unknown) => String(value || '').trim();
+const isTemporaryPfCode = (value: unknown) => /^PF\d+/i.test(str(value).replace(/[^a-z0-9]/gi, ''));
+const EXCLUDED_PAYROLL_EMPLOYEE_KEYS = new Set(['P0000', 'PHUGHES', 'IT0092']);
+const employeeKey = (value: unknown) => str(value).toUpperCase().replace(/[^A-Z0-9]/g, '');
+const isExcludedFromHrisPayroll = (employee: Pick<DleEmployeeDirectoryRow, 'employeeId' | 'employeeCode' | 'sourceEmployeeId' | 'fullName'>) =>
+  [employee.employeeId, employee.employeeCode, employee.sourceEmployeeId].some((value) => EXCLUDED_PAYROLL_EMPLOYEE_KEYS.has(employeeKey(value)))
+  || employeeKey(employee.employeeCode).startsWith('PF');
 const moneyFromRate = (rate: number) => (Number.isFinite(rate) && rate > 0 ? rate * 22 : 0);
 const moneyOrNull = (value: unknown) => {
   const n = Number(value);
@@ -44,6 +50,11 @@ const moneyFrom = (...values: unknown[]) => {
     if (Number.isFinite(n) && n > 0) return n;
   }
   return null;
+};
+const dailyRateCode = (value: unknown) => /^C\d+/i.test(str(value));
+const dailyWorkingDays = (hoursPerDay: number, hoursPerPeriod: unknown) => {
+  const periodHours = Number(hoursPerPeriod || 0);
+  return Number.isFinite(periodHours) && periodHours > 0 && hoursPerDay > 0 ? periodHours / hoursPerDay : 22;
 };
 loadWorkspaceEnv();
 const EMPLOYEE_SOURCE_CACHE_MS = Number(process.env.HRIS_EMPLOYEE_SOURCE_CACHE_MS || 60000);
@@ -126,11 +137,16 @@ const enrichEmployeesFromSagePayroll = async (employees: DleEmployeeDirectoryRow
       const deductionLines = sageLineItems(sage.latestDeductionLinesJson);
       const contributionLines = sageLineItems(sage.latestContributionLinesJson);
       const hoursPerDay = moneyFrom(employee.hoursPerDay, sage.hoursPerDay, 8) || 8;
+      const hoursPerPeriod = moneyFrom(employee.hoursPerPeriod, sage.hoursPerPeriod) || hoursPerDay * 22;
+      const isDailyRate = dailyRateCode(employee.employeeCode || employee.employeeId) || dailyRateCode(sage.directoryEmployeeCode || sage.employeeCode);
       const sageRatePerDay = moneyFrom(sage.ratePerDay);
       const sageRatePerHour = moneyFrom(sage.ratePerHour);
       const ratePerDay = moneyFrom(employee.ratePerDay, sageRatePerDay, sageRatePerHour ? sageRatePerHour * hoursPerDay : null);
       const ratePerHour = moneyFrom(employee.ratePerHour, sageRatePerHour, ratePerDay ? ratePerDay / hoursPerDay : null);
-      const periodSalary = moneyFrom(employee.periodSalary, sage.periodSalary, ratePerDay ? ratePerDay * 22 : null);
+      const workingDays = dailyWorkingDays(hoursPerDay, hoursPerPeriod);
+      const periodSalary = isDailyRate && ratePerDay
+        ? Math.round(ratePerDay * workingDays * 100) / 100
+        : moneyFrom(employee.periodSalary, sage.periodSalary, ratePerDay ? ratePerDay * workingDays : null);
       return {
         ...employee,
         bankName: employee.bankName || sage.bankName || '',
@@ -147,7 +163,7 @@ const enrichEmployeesFromSagePayroll = async (employees: DleEmployeeDirectoryRow
         ratePerDay,
         ratePerHour,
         hoursPerDay,
-        hoursPerPeriod: moneyFrom(employee.hoursPerPeriod) || employee.hoursPerPeriod,
+        hoursPerPeriod,
         sagePayrollEarnings: earningLines,
         sagePayrollDeductions: {
           paye: moneyOrNull(sage.latestPaye),
@@ -296,7 +312,8 @@ const loadPayrollEmployees = async (): Promise<PayrollEmployeeSource> => {
   try {
     const employees = await withTimeout(readEmployeeDirectoryFromDb(), EMPLOYEE_SOURCE_DB_TIMEOUT_MS, 'DLE_Enterprise HRIS employee source timed out.');
     if (employees && employees.length >= MIN_HRIS_EMPLOYEES) {
-      return { employees: await applyPayrollEmployeeOptions(await enrichEmployeesFromSagePayroll(employees)), source: 'DLE_Enterprise HRIS', databaseAvailable: true, warning: null };
+      const payrollEmployees = employees.filter((employee) => ![employee.employeeId, employee.employeeCode, employee.sourceEmployeeId].some(isTemporaryPfCode) && !isExcludedFromHrisPayroll(employee));
+      return { employees: await applyPayrollEmployeeOptions(await enrichEmployeesFromSagePayroll(payrollEmployees)), source: 'DLE_Enterprise HRIS', databaseAvailable: true, warning: null };
     }
     if (REQUIRE_HRIS_DB) {
       throw new Error(`DLE_Enterprise HRIS employee source returned ${employees?.length || 0} records; expected at least ${MIN_HRIS_EMPLOYEES}. Payroll cannot use the local cache in production.`);
@@ -308,7 +325,7 @@ const loadPayrollEmployees = async (): Promise<PayrollEmployeeSource> => {
     }
   }
 
-  const cached = await applyPayrollEmployeeOptions(await readCachedPayrollEmployees());
+  const cached = await applyPayrollEmployeeOptions((await readCachedPayrollEmployees()).filter((employee) => ![employee.employeeId, employee.employeeCode, employee.sourceEmployeeId].some(isTemporaryPfCode) && !isExcludedFromHrisPayroll(employee)));
   return {
     employees: cached,
     source: 'Local HRIS payroll cache',

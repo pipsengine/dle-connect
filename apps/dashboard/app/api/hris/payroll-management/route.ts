@@ -144,6 +144,38 @@ const isDailyRateEmployee = (employee: DleEmployeeDirectoryRow, earningProfileId
   return code.startsWith('C') || earningProfileId === 'contract-day-rate' || text.includes('daily') || text.includes('day rate');
 };
 
+const dailyRateValues = (employee: DleEmployeeDirectoryRow, dailyRateEmployee: boolean) => {
+  const hoursPerDay = Number(employee.hoursPerDay || 8) || 8;
+  const hoursPerPeriod = Number(employee.hoursPerPeriod || 0);
+  const workingDays = hoursPerPeriod > 0 && hoursPerDay > 0 ? hoursPerPeriod / hoursPerDay : 22;
+  const explicitDayRate = Number(employee.ratePerDay || 0);
+  const explicitHourRate = Number(employee.ratePerHour || 0);
+  const periodSalary = Number(employee.periodSalary || 0);
+  const ratePerDay = explicitDayRate > 0
+    ? explicitDayRate
+    : explicitHourRate > 0
+      ? explicitHourRate * hoursPerDay
+      : dailyRateEmployee && periodSalary > 0
+        ? periodSalary > 50000
+          ? periodSalary / workingDays
+          : periodSalary
+        : 0;
+  const ratePerHour = explicitHourRate > 0 ? explicitHourRate : ratePerDay > 0 ? ratePerDay / hoursPerDay : 0;
+  return { ratePerDay, ratePerHour, hoursPerDay, workingDays };
+};
+
+const payrollCurrencyFor = (employee: DleEmployeeDirectoryRow, dailyRateEmployee: boolean) => {
+  const explicit = compact(employee.payCurrency).toUpperCase();
+  const group = compact(employee.payrollGroup).toUpperCase();
+  if (explicit === 'USD' || group.includes('USD') || group.includes('DOLLAR')) return 'USD';
+  const periodSalary = Number(employee.periodSalary || 0);
+  const annualSalary = Number(employee.annualSalary || 0);
+  const text = [employee.employmentType, employee.staffCategory, employee.employeeCategory].map(compact).join(' ').toLowerCase();
+  const permanentLike = !dailyRateEmployee && (text.includes('permanent') || text.includes('management') || text.includes('staff'));
+  if (permanentLike && ((periodSalary > 0 && periodSalary < 50000) || (annualSalary > 0 && annualSalary < 1000000))) return 'USD';
+  return explicit || 'NGN';
+};
+
 const employeeCost = (employee: DleEmployeeDirectoryRow, taxVersion: PayrollTaxVersion, pensionVersion: PensionVersion) => {
   const calculationEmployee = inputOnlyEmployee(employee);
   const calculationOptions = { period: PAYROLL_SETUP_PREVIEW_PERIOD, includePeriodAdjustments: true, ignoreSagePayslipLines: true };
@@ -204,14 +236,13 @@ const employeeCost = (employee: DleEmployeeDirectoryRow, taxVersion: PayrollTaxV
 const riskFor = (employee: DleEmployeeDirectoryRow, cost: ReturnType<typeof employeeCost>) => {
   const issues: string[] = [];
   const dailyRateEmployee = isDailyRateEmployee(employee, cost.earningProfileId);
-  const hasDailyRate = Number(employee.ratePerDay || 0) > 0 || Number(employee.ratePerHour || 0) > 0;
+  const rates = dailyRateValues(employee, dailyRateEmployee);
+  const hasDailyRate = rates.ratePerDay > 0 || rates.ratePerHour > 0;
   if (!employee.setupAssignedToPayroll) issues.push('Payroll setup is not assigned');
-  if (cost.basePay <= 0) issues.push('Pay amount is missing');
-  if (dailyRateEmployee && !hasDailyRate) issues.push('Daily rate is missing');
+  if (!dailyRateEmployee && cost.basePay <= 0 && cost.grossPay <= 0) issues.push('Pay amount is missing');
   if (!dailyRateEmployee && !compact(employee.salaryGrade || employee.jobGrade)) issues.push('Salary grade is missing');
   if (!compact(employee.payrollGroup)) issues.push('Payroll group is missing');
   if (compact(employee.status).toLowerCase().match(/terminated|resigned|retired|inactive/)) issues.push('Employee status is not payroll active');
-  if (compact(employee.payCurrency) && compact(employee.payCurrency).toUpperCase() !== 'NGN') issues.push('Foreign currency review required');
   const severity = issues.some((issue) => issue.includes('not payroll active') || issue.includes('Pay amount')) ? 'High' : issues.length > 0 ? 'Medium' : 'Low';
   return { issues, severity };
 };
@@ -221,8 +252,8 @@ const buildRecords = (employees: DleEmployeeDirectoryRow[], taxVersion: PayrollT
     const cost = employeeCost(employee, taxVersion, pensionVersion);
     const risk = riskFor(employee, cost);
     const dailyRateEmployee = isDailyRateEmployee(employee, cost.earningProfileId);
-    const ratePerDay = Number(employee.ratePerDay || 0) || (Number(employee.ratePerHour || 0) > 0 ? Number(employee.ratePerHour) * Number(employee.hoursPerDay || 8) : 0) || (dailyRateEmployee ? Number(employee.periodSalary || 0) : 0);
-    const ratePerHour = Number(employee.ratePerHour || 0) || (ratePerDay > 0 ? ratePerDay / Number(employee.hoursPerDay || 8) : 0);
+    const { ratePerDay, ratePerHour, hoursPerDay } = dailyRateValues(employee, dailyRateEmployee);
+    const payCurrency = payrollCurrencyFor(employee, dailyRateEmployee);
     const payrollStatus = risk.issues.length === 0 ? 'Ready' : risk.severity === 'High' ? 'Blocked' : 'Review';
     return {
       employeeId: employee.employeeId,
@@ -235,13 +266,13 @@ const buildRecords = (employees: DleEmployeeDirectoryRow[], taxVersion: PayrollT
       employmentType: employee.employmentType,
       employmentStatus: employee.status,
       payrollGroup: employee.payrollGroup || 'Unassigned',
-      salaryGrade: dailyRateEmployee ? (ratePerDay > 0 ? 'Daily Rate' : 'Rate Missing') : employee.salaryGrade || employee.jobGrade || 'Unassigned',
-      salaryStructure: dailyRateEmployee ? (ratePerDay > 0 ? 'Daily Rate' : 'Daily Rate Missing') : employee.salaryGrade || employee.jobGrade || 'Unassigned',
+      salaryGrade: dailyRateEmployee ? (ratePerDay > 0 ? 'Daily Rate' : 'Zero Sage Daily Rate') : employee.salaryGrade || employee.jobGrade || 'Unassigned',
+      salaryStructure: dailyRateEmployee ? (ratePerDay > 0 ? 'Daily Rate' : 'Zero Sage Daily Rate') : employee.salaryGrade || employee.jobGrade || 'Unassigned',
       isDailyRate: dailyRateEmployee,
       ratePerDay: ratePerDay || null,
       ratePerHour: ratePerHour || null,
-      hoursPerDay: Number(employee.hoursPerDay || 8) || 8,
-      payCurrency: employee.payCurrency || 'NGN',
+      hoursPerDay,
+      payCurrency,
       paymentRun: employee.paymentRun || 'Monthly',
       paymentType: employee.paymentType || 'Bank Transfer',
       nhfApplicable: (cost.deductionLines || []).some((line) => line.code === 'NHF' && line.amount > 0),
