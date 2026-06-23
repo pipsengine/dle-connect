@@ -222,7 +222,7 @@ const navItems: Array<{ id: Tab; label: string; icon: any }> = [
   { id: 'profile', label: 'Profile', icon: UserRound },
   { id: 'leave', label: 'Leave', icon: CalendarCheck },
   { id: 'time', label: 'Time', icon: Clock },
-  { id: 'payroll', label: 'Payroll', icon: Banknote },
+  { id: 'payroll', label: 'Payslip', icon: Banknote },
   { id: 'documents', label: 'Documents', icon: FileArchive },
   { id: 'performance', label: 'Performance', icon: Target },
   { id: 'learning', label: 'Learning', icon: GraduationCap },
@@ -636,7 +636,7 @@ function PayslipWorkspace({ payload, employee }: { payload: Payload | null; empl
             <p className="font-black">Company Name</p><p>:</p><p>DORMANLONG ENGINEERING LIMITED</p>
             <p className="font-black">Company Address</p><p>:</p><p>12/14 AGEGE MOTOR ROAD, IDI-ORO MUSHIN, LAGOS</p>
             <p className="font-black">RC Number</p><p>:</p><p>744</p>
-            <p className="font-black">TIN</p><p>:</p><p>01234567-0001</p>
+            <p className="font-black">TIN</p><p>:</p><p>01714597-0001</p>
           </div>
           <div className="grid grid-cols-[120px_10px_1fr] gap-y-1 md:border-l md:border-[#9bb9df] md:pl-6">
             <p className="font-black">Pay Period</p><p>:</p><p>{fmtDate(selected.payPeriodStart)} - {fmtDate(selected.payPeriodEnd)}</p>

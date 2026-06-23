@@ -220,7 +220,7 @@ function PayslipPreview({ payload, slip, canViewMoney }: { payload: Payload; sli
             <div className="grid grid-cols-[130px_10px_1fr] gap-y-1">
               <p className="font-black">Company Name</p><p>:</p><p>DORMANLONG ENGINEERING LIMITED</p>
               <p className="font-black">Company Address</p><p>:</p><p>12/14 AGEGE MOTOR ROAD, IDI-ORO MUSHIN, LAGOS</p>
-              <p className="font-black">TIN</p><p>:</p><p>01234567-0001</p>
+              <p className="font-black">TIN</p><p>:</p><p>01714597-0001</p>
             </div>
             <div className="grid grid-cols-[120px_10px_1fr] gap-y-1 md:border-l md:border-[#9bb9df] md:pl-5">
               <p className="font-black">Pay Period</p><p>:</p><p>{fmtDate(slip.payPeriodStart)} - {fmtDate(slip.payPeriodEnd)}</p>
