@@ -136,6 +136,7 @@ const node = (
 export const permissionCatalog: PermissionNode[] = [
   node('Administration', 'Access Control', 'Roles & Permissions', 'Access Control Centre', 'System', 'L3 - Super Admin', 'Global', 'admin.roles', true),
   node('Administration', 'User Management', 'User Accounts', 'Account Administration', 'System', 'L3 - Super Admin', 'Global', 'admin.users', true),
+  node('Administration', 'Backup & Disaster Recovery', 'Backup Centre', 'Enterprise Backup Operations', 'System', 'L3 - Super Admin', 'Global', 'backup', true),
   node('Administration', 'Audit Trail', 'Security Audit', 'Audit Review', 'System', 'L3 - Super Admin', 'Global', 'audit', true),
   node('Security', 'Authentication', 'Login & Sessions', 'Session Control', 'System', 'L3 - Super Admin', 'Global', 'security', true),
   node('Integration', 'APIs', 'External Interfaces', 'API Access', 'API', 'L3 - Super Admin', 'Global', 'integration'),
@@ -147,7 +148,10 @@ export const permissionCatalog: PermissionNode[] = [
   node('Page Access', 'Payroll', 'Payroll Management', 'Payroll Workspace Page', 'Page', 'L3 - Payroll Approver', 'Company', 'page.payroll.management'),
   node('Page Access', 'Operations', 'Operations Center', 'Operations Workspace Page', 'Page', 'L2 - Manager', 'Company', 'page.operations.center'),
   node('Page Access', 'Administration', 'Access Control Centre', 'Access Control Page', 'Page', 'L3 - Super Admin', 'Global', 'page.admin.access-control', true),
+  node('Page Access', 'Administration', 'Backup & Disaster Recovery', 'Backup Centre Page', 'Page', 'L3 - Super Admin', 'Global', 'page.admin.backup-disaster-recovery', true),
   node('Button Access', 'Administration', 'Access Control Centre', 'Publish Permissions Button', 'Button', 'L3 - Super Admin', 'Global', 'button.admin.access-control.publish', true),
+  node('Button Access', 'Administration', 'Backup & Disaster Recovery', 'Configure Backup Policy Button', 'Button', 'L3 - Super Admin', 'Global', 'button.admin.backup.configure', true),
+  node('Button Access', 'Administration', 'Backup & Disaster Recovery', 'Run Restore Drill Button', 'Button', 'L3 - Super Admin', 'Global', 'button.admin.backup.restore-drill', true),
   node('Button Access', 'Administration', 'Access Control Centre', 'Save Draft Button', 'Button', 'L3 - Super Admin', 'Global', 'button.admin.access-control.save-draft', true),
   node('Button Access', 'Payroll', 'Employee Salary Setup', 'Export Button', 'Button', 'L3 - Payroll Approver', 'Company', 'button.payroll.employee-salary-setup.export'),
   node('Button Access', 'Operations', 'Operations Center', 'Export Button', 'Button', 'L2 - Manager', 'Company', 'button.operations-center.export'),

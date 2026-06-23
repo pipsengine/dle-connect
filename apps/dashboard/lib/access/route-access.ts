@@ -100,7 +100,8 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
   if (path.startsWith('/hris/leave-management')) return hasAnyPermission(session.permissions, ['leave.view', 'hris.view']);
   if (path.startsWith('/hris/attendance')) return hasAnyPermission(session.permissions, ['attendance.view', 'attendance.manage', 'hris.view']);
   if (path.startsWith('/hris/organization')) return hasAnyPermission(session.permissions, ['positions.view', 'workforce.view', 'hris.view']);
-  if (path.startsWith('/hris/administration')) return hasAnyPermission(session.permissions, ['admin.roles.view', 'admin.users.view', 'audit.view']);
+  if (path.startsWith('/hris/administration/backup-disaster-recovery')) return hasAnyPermission(session.permissions, ['backup.view', 'backup.configure', 'page.admin.backup-disaster-recovery.view', 'security.configure']);
+  if (path.startsWith('/hris/administration')) return hasAnyPermission(session.permissions, ['admin.roles.view', 'admin.users.view', 'audit.view', 'backup.view', 'backup.configure']);
   return hasAnyPermission(session.permissions, ['page.hris.management.view', 'hris.view']);
 };
 
