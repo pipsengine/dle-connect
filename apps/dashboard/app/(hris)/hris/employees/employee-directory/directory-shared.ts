@@ -23,6 +23,7 @@ export type DirectoryEmployee = {
   division: string;
   businessUnit: string;
   location: string;
+  costCenter?: string;
   employmentType: string;
   employeeCategory?: string;
   staffCategory?: string;
@@ -78,6 +79,7 @@ export const normalizeDirectoryEmployee = (record: Partial<DirectoryEmployee>): 
     division: text(record.division, 'Unassigned'),
     businessUnit: text(record.businessUnit, 'Unassigned'),
     location: text(record.location || record.businessUnit, 'Unassigned'),
+    costCenter: optionalText(record.costCenter),
     employmentType: text(record.employmentType, 'Unassigned'),
     employeeCategory: optionalText(record.employeeCategory),
     staffCategory: optionalText(record.staffCategory),

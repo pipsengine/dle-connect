@@ -300,7 +300,7 @@ const rolePermissions = (role: Role) => {
 };
 
 const Card = ({ children, className }: { children: React.ReactNode; className?: string }) => (
-  <div className={`bg-white border border-slate-200/60 rounded-2xl shadow-sm ${className || ''}`}>{children}</div>
+  <div className={`rounded-xl border border-[#E5E7EB] bg-white shadow-sm ${className || ''}`}>{children}</div>
 );
 
 const Chip = ({ label, tone }: { label: string; tone: { bg: string; fg: string } }) => (
@@ -459,16 +459,16 @@ type StepKey =
   | 'onboarding'
   | 'review';
 
-const STEP_ORDER: { key: StepKey; label: string; icon: any }[] = [
-  { key: 'personal', label: 'Personal Information', icon: IdCard },
-  { key: 'contact', label: 'Contact Information', icon: Phone },
-  { key: 'employment', label: 'Employment Details', icon: BriefcaseBusiness },
-  { key: 'job', label: 'Job & Department', icon: Users },
-  { key: 'emergency', label: 'Emergency Contact', icon: HeartPulse },
-  { key: 'documents', label: 'Documents', icon: FileText },
-  { key: 'payroll', label: 'Payroll & Benefits', icon: BadgeCheck },
-  { key: 'onboarding', label: 'Onboarding Checklist', icon: ClipboardCheck },
-  { key: 'review', label: 'Review & Submit', icon: ShieldCheck },
+const STEP_ORDER: { key: StepKey; label: string; shortLabel: string; icon: any }[] = [
+  { key: 'personal', label: 'Personal Information', shortLabel: 'Personal', icon: IdCard },
+  { key: 'contact', label: 'Contact Information', shortLabel: 'Contact', icon: Phone },
+  { key: 'employment', label: 'Employment Details', shortLabel: 'Employment', icon: BriefcaseBusiness },
+  { key: 'job', label: 'Organization Assignment', shortLabel: 'Organization', icon: Users },
+  { key: 'emergency', label: 'Emergency Contact', shortLabel: 'Emergency', icon: HeartPulse },
+  { key: 'documents', label: 'Documents', shortLabel: 'Documents', icon: FileText },
+  { key: 'payroll', label: 'Payroll & Benefits', shortLabel: 'Payroll', icon: BadgeCheck },
+  { key: 'onboarding', label: 'Onboarding Checklist', shortLabel: 'Onboarding', icon: ClipboardCheck },
+  { key: 'review', label: 'Review & Submit', shortLabel: 'Review', icon: ShieldCheck },
 ];
 
 const makeEmptyDraft = (countryDefault: string): EmployeeDraftPayload => ({
@@ -583,6 +583,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
 
   const [validation, setValidation] = useState<ApiState<ValidationResult>>({ status: 'idle' });
   const [duplicate, setDuplicate] = useState<ApiState<DuplicateResult>>({ status: 'idle' });
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
   const stepIndex = useMemo(() => STEP_ORDER.findIndex((s) => s.key === step), [step]);
   const nowStamp = useMemo(() => formatDateTimeUtc(initialNow), [initialNow]);
@@ -705,6 +706,49 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
     return errs;
   }, [draft, nowMs]);
 
+  const completenessPct = useMemo(() => {
+    if (validation.status === 'ready' && validation.data) return validation.data.completenessPct;
+    const checks = [
+      draft.personal.firstName.trim(),
+      draft.personal.lastName.trim(),
+      draft.personal.gender.trim(),
+      draft.personal.dateOfBirth.trim(),
+      draft.contact.residentialAddress.trim(),
+      draft.contact.country.trim(),
+      draft.employment.employmentType,
+      draft.employment.dateJoined.trim(),
+      draft.job.department.trim(),
+      draft.job.jobTitle.trim(),
+      draft.job.reportingManager.trim(),
+      draft.emergencyContacts.length > 0,
+      draft.documents.length > 0,
+      draft.payroll.payrollGroup.trim(),
+    ];
+    const filled = checks.filter(Boolean).length;
+    return Math.round((filled / checks.length) * 100);
+  }, [draft, validation]);
+
+  const readinessItems = useMemo(() => {
+    const personalReady = !requiredErrors['personal.firstName'] && !requiredErrors['personal.lastName'] && !requiredErrors['personal.gender'] && !requiredErrors['personal.dateOfBirth'];
+    const employmentReady = !requiredErrors['employment.employmentType'] && !requiredErrors['employment.dateJoined'];
+    const payrollReady = Boolean(draft.payroll.payrollGroup.trim());
+    const documentsReady = draft.documents.length > 0;
+    const workflowReady = Boolean(draft.job.reportingManager.trim());
+    const complianceBlocked = validation.status === 'ready' && validation.data ? validation.data.errors.length > 0 : Object.keys(requiredErrors).length > 3;
+    const tone = (ready: boolean, blocked = false) => (blocked ? 'Blocked' : ready ? 'Ready' : 'Pending');
+    return [
+      { label: 'Personal Information', status: tone(personalReady) },
+      { label: 'Employment Information', status: tone(employmentReady) },
+      { label: 'Payroll Setup', status: tone(payrollReady) },
+      { label: 'Documents', status: tone(documentsReady) },
+      { label: 'Workflow Assignment', status: tone(workflowReady) },
+      { label: 'Compliance', status: tone(!complianceBlocked, complianceBlocked) },
+    ];
+  }, [draft, requiredErrors, validation]);
+
+  const categoryLabel = draft.employment.employmentType || 'Not selected';
+  const generatedCode = codePreview.status === 'loading' ? 'Generating...' : draft.employment.employeeId || 'Auto Generated';
+
   const runAI = async () => {
     setValidation({ status: 'loading' });
     setDuplicate({ status: 'loading' });
@@ -731,9 +775,9 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
     }
   };
 
-  const saveDraft = async (mode: 'draft' | 'submit-approval') => {
+  const saveDraft = async (mode: 'draft' | 'submit-approval', quiet = false) => {
     if (!perms.canCreate) {
-      setToast({ title: 'Permission denied', detail: 'You do not have permission to create employee records.', tone: 'err' });
+      if (!quiet) setToast({ title: 'Permission denied', detail: 'You do not have permission to create employee records.', tone: 'err' });
       return;
     }
     setSaving(true);
@@ -746,7 +790,8 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
         meta = await apiCall<DraftResponse>(`/api/hris/employees/draft/${encodeURIComponent(draftId)}`, { method: 'PATCH', role, body: JSON.stringify({ draft }) });
       }
       setDraftStatus(meta.status);
-      setToast({ title: 'Draft saved', detail: `Draft ${meta.draftId} updated at ${formatDateTimeUtc(meta.updatedAt)}`, tone: 'ok' });
+      setLastSavedAt(meta.updatedAt);
+      if (!quiet) setToast({ title: 'Draft saved', detail: `Draft ${meta.draftId} updated at ${formatDateTimeUtc(meta.updatedAt)}`, tone: 'ok' });
       if (mode === 'submit-approval') {
         if (!perms.canSubmitApproval) {
           setToast({ title: 'Permission denied', detail: 'You do not have permission to submit for approval.', tone: 'err' });
@@ -821,63 +866,71 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
   );
 
   const header = (
-    <Card className="p-6">
-      <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-6">
+    <div className="border-b border-[#E5E7EB] bg-white px-6 py-5">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Add New Employee</h1>
-            <Chip label={`Step ${stepIndex + 1} / ${STEP_ORDER.length}`} tone={{ bg: 'bg-slate-100', fg: 'text-slate-700' }} />
-            <Chip label={`Loaded: ${nowStamp}`} tone={{ bg: 'bg-slate-100', fg: 'text-slate-700' }} />
-            {draftId ? <Chip label={`Draft: ${draftId}`} tone={{ bg: 'bg-dle-blue/10', fg: 'text-dle-blue' }} /> : <Chip label="Draft: Not saved" tone={{ bg: 'bg-amber-600/10', fg: 'text-amber-700' }} />}
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-4xl font-bold tracking-tight text-[#0F172A]">Add New Employee</h1>
+            <Chip label={`Step ${stepIndex + 1} of ${STEP_ORDER.length}`} tone={{ bg: 'bg-slate-100', fg: 'text-slate-700' }} />
+            <Chip label={lastSavedAt ? `Last saved: ${formatDateTimeUtc(lastSavedAt)}` : 'Draft not saved yet'} tone={{ bg: 'bg-amber-50', fg: 'text-amber-700' }} />
+            <Chip label={draftStatus === 'draft' ? 'Draft' : draftStatus} tone={{ bg: 'bg-[#2563EB]/10', fg: 'text-[#2563EB]' }} />
           </div>
-          <div className="text-sm text-slate-600 font-semibold mt-1">
-            Create a complete employee master record and initiate onboarding, compliance, payroll, and department assignment workflows.
-          </div>
-          <div className="mt-3 flex items-center gap-2 flex-wrap">
-            <span className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white">
-              <Fingerprint className="w-4 h-4 text-slate-500" />
-              <span className="text-xs font-extrabold text-slate-700">Role</span>
-              <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="text-xs font-extrabold text-slate-800 bg-white focus:outline-none">
-                {[
-                  'Super Admin',
-                  'HR Director',
-                  'HR Manager',
-                  'HR Officer',
-                  'Admin Officer',
-                  'Payroll Officer',
-                  'Department Head',
-                  'Line Manager',
-                  'IT Administrator',
-                  'HSE Officer',
-                  'Auditor',
-                ].map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
+          <p className="mt-2 max-w-3xl text-sm text-[#64748B]">
+            Create a complete employee profile and launch onboarding, payroll, compliance, and workforce workflows.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
+              <Fingerprint className="h-3.5 w-3.5" />
+              Role
+              <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="bg-transparent font-semibold focus:outline-none">
+                {['Super Admin', 'HR Director', 'HR Manager', 'HR Officer', 'Admin Officer', 'Payroll Officer', 'Department Head', 'Line Manager', 'IT Administrator', 'HSE Officer', 'Auditor'].map((r) => (
+                  <option key={r} value={r}>{r}</option>
                 ))}
               </select>
             </span>
             {!perms.canCreate && <LockBadge />}
           </div>
         </div>
-
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          <button type="button" onClick={() => saveDraft('draft')} disabled={!perms.canCreate || saving} className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold transition-colors ${perms.canCreate ? 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50' : 'bg-slate-100 text-slate-400 border border-slate-200'}`}>
-            <Save className="w-4 h-4" />
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => saveDraft('draft')} disabled={!perms.canCreate || saving} className="inline-flex items-center gap-2 rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
+            <Save className="h-4 w-4" />
             Save Draft
           </button>
-          <button type="button" onClick={() => setToast({ title: 'Import', detail: 'Import from template is stubbed for now.', tone: 'warn' })} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
-            <Import className="w-4 h-4" />
+          <button type="button" onClick={() => setToast({ title: 'Import', detail: 'Import from template is stubbed for now.', tone: 'warn' })} className="inline-flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <Import className="h-4 w-4" />
             Import Template
           </button>
-          <button type="button" onClick={() => setToast({ title: 'Template', detail: 'Template download is stubbed for now.', tone: 'warn' })} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
-            <Download className="w-4 h-4" />
+          <button type="button" onClick={() => setToast({ title: 'Template', detail: 'Template download is stubbed for now.', tone: 'warn' })} className="inline-flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <Download className="h-4 w-4" />
             Download Template
           </button>
-          <Link href="/hris/employees/employee-directory" className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-extrabold hover:bg-slate-800 transition-colors">
-            <X className="w-4 h-4" />
+          <Link href="/hris/employees/employee-directory" className="inline-flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <X className="h-4 w-4" />
             Cancel
           </Link>
+        </div>
+      </div>
+    </div>
+  );
+
+  const snapshotCard = (
+    <Card className="p-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#64748B]">Employee Status</p>
+          <p className="mt-1 text-lg font-bold capitalize text-[#0F172A]">{draftStatus}</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#64748B]">Employee Category</p>
+          <p className="mt-1 text-lg font-bold text-[#2563EB]">{categoryLabel}</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#64748B]">Employee Code</p>
+          <p className="mt-1 text-lg font-bold text-[#0F172A]">{generatedCode}</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#64748B]">Progress</p>
+          <p className="mt-1 text-lg font-bold text-[#10B981]">{completenessPct}% Complete</p>
         </div>
       </div>
     </Card>
@@ -886,9 +939,8 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
   const progress = (
     <Card className="p-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2 flex-wrap overflow-auto">
+        <div className="flex min-w-0 items-center gap-1 overflow-x-auto pb-1">
           {STEP_ORDER.map((s, idx) => {
-            const Icon = s.icon;
             const active = s.key === step;
             const done = idx < stepIndex;
             return (
@@ -896,64 +948,70 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
                 key={s.key}
                 type="button"
                 onClick={() => setStep(s.key)}
-                className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-extrabold whitespace-nowrap transition-colors ${
-                  active ? 'border-dle-blue bg-dle-blue/5 text-dle-blue' : done ? 'border-emerald-200 bg-emerald-600/5 text-emerald-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                  active
+                    ? 'bg-[#2563EB] text-white'
+                    : done
+                      ? 'bg-emerald-50 text-emerald-700'
+                      : 'bg-[#F8FAFC] text-[#64748B] hover:bg-slate-100'
                 }`}
               >
-                <Icon className={`w-4 h-4 ${active ? '' : done ? 'text-emerald-600' : 'text-slate-400'}`} />
-                {idx + 1}. {s.label}
+                <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${active ? 'bg-white/20' : done ? 'bg-emerald-100' : 'bg-white'}`}>
+                  {done ? <CheckCircle2 className="h-4 w-4" /> : idx + 1}
+                </span>
+                {s.shortLabel}
               </button>
             );
           })}
         </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={runAI} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
-            <Sparkles className="w-4 h-4 text-violet-600" />
-            Run AI Checks
-          </button>
-        </div>
+        <button type="button" onClick={runAI} className="inline-flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+          <Sparkles className="h-4 w-4 text-[#8B5CF6]" />
+          Run All Checks
+        </button>
       </div>
     </Card>
   );
 
   const aiPanel = (
     <Card className="overflow-hidden">
-      <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between gap-4 flex-wrap">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E5E7EB] px-5 py-4">
         <div className="flex items-center gap-3">
-          <span className="w-10 h-10 rounded-2xl bg-violet-600/10 border border-slate-200/60 flex items-center justify-center text-violet-700">
-            <Sparkles className="w-5 h-5" />
+          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-50 text-[#8B5CF6]">
+            <Sparkles className="h-5 w-5" />
           </span>
           <div>
-            <div className="text-sm font-extrabold text-slate-900">AI Onboarding Assistant</div>
-            <div className="text-xs text-slate-500 font-semibold mt-0.5">Duplicate checks, policy validation, and completeness scoring.</div>
+            <div className="text-sm font-semibold text-[#0F172A]">AI Onboarding Assistant</div>
+            <div className="mt-0.5 text-xs text-[#64748B]">Duplicate checks, policy validation, and completeness scoring.</div>
           </div>
         </div>
-        <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">AI snapshot</span>
+        <button type="button" onClick={runAI} className="inline-flex items-center gap-2 rounded-lg bg-[#2563EB] px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">
+          Run AI Snapshot
+        </button>
       </div>
 
-      <div className="p-6 space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="rounded-2xl border border-slate-200/60 bg-white p-4">
-            <div className="text-[11px] font-extrabold text-slate-600">Profile completeness</div>
-            <div className="text-2xl font-extrabold text-slate-900 mt-1">
-              {validation.status === 'ready' ? `${validation.data?.completenessPct}%` : '—'}
+      <div className="space-y-4 p-5">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-[#64748B]">Profile completeness</div>
+            <div className="mt-2 text-3xl font-bold text-[#2563EB]">{completenessPct}%</div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+              <div className="h-full rounded-full bg-[#2563EB]" style={{ width: `${completenessPct}%` }} />
             </div>
-            <div className="text-xs text-slate-500 font-semibold mt-1">AI calculates based on required fields + policy dependencies.</div>
           </div>
-          <div className="rounded-2xl border border-slate-200/60 bg-white p-4">
-            <div className="text-[11px] font-extrabold text-slate-600">Duplicate detection</div>
-            <div className="text-2xl font-extrabold mt-1">
+          <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-[#64748B]">Duplicate detection</div>
+            <div className="mt-2 text-2xl font-bold">
               {duplicate.status === 'ready' ? (
                 duplicate.data?.status === 'potential-duplicate' ? (
-                  <span className="text-red-700">Potential</span>
+                  <span className="text-[#EF4444]">Potential duplicate</span>
                 ) : (
-                  <span className="text-emerald-700">Clear</span>
+                  <span className="text-[#10B981]">Low risk</span>
                 )
               ) : (
-                <span className="text-slate-900">—</span>
+                <span className="text-[#64748B]">Run checks</span>
               )}
             </div>
-            <div className="text-xs text-slate-500 font-semibold mt-1">Signals: email, phone, name, DOB.</div>
+            <div className="mt-1 text-xs text-[#64748B]">Email, phone, NIN, BVN, employee name</div>
           </div>
         </div>
 
@@ -1002,9 +1060,9 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
           </div>
         )}
 
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <div className="text-xs font-extrabold text-slate-700">Policy hints</div>
-          <div className="mt-2 space-y-1 text-xs text-slate-600 font-semibold">
+        <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4">
+          <div className="text-xs font-semibold text-[#0F172A]">AI suggestions</div>
+          <div className="mt-2 space-y-1 text-xs font-medium text-[#64748B]">
             {draft.employment.employmentType === 'Permanent' && draft.employment.dateJoined.trim() ? (
               <div>
                 Probation end date recommendation: {addMonths(draft.employment.dateJoined, 6) || '—'} (6 months after date joined)
@@ -1016,7 +1074,9 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
               </div>
             ) : null}
             {draft.emergencyContacts.length === 0 ? <div>Emergency contact is missing</div> : null}
-            {draft.documents.length === 0 ? <div>Document checklist recommendation: upload Government ID, CV/Resume, Employment/Offer letter</div> : null}
+            {draft.documents.length === 0 ? <div>Government ID missing • Offer letter recommended</div> : null}
+            {!draft.job.costCenter.trim() ? <div>Cost centre not assigned</div> : null}
+            {!draft.job.reportingManager.trim() ? <div>Supervisor / manager not assigned</div> : null}
           </div>
         </div>
       </div>
@@ -1027,12 +1087,15 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
     const Icon = icon;
     return (
       <Card className="overflow-hidden">
-        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E5E7EB] px-6 py-4">
           <div className="flex items-center gap-3">
-            <span className="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center">
-              <Icon className="w-5 h-5" />
+            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#2563EB] text-white">
+              <Icon className="h-5 w-5" />
             </span>
-            <div className="text-sm font-extrabold text-slate-900">{title}</div>
+            <div>
+              <div className="text-lg font-semibold text-[#0F172A]">{title}</div>
+              <div className="text-xs text-[#64748B]">Complete required fields to continue the onboarding journey.</div>
+            </div>
           </div>
           {actions}
         </div>
@@ -1133,6 +1196,31 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
     'Step 3 — Employment Details',
     BriefcaseBusiness,
     <div className="space-y-5">
+      <div className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4">
+        <p className="text-sm font-semibold text-[#0F172A]">Employee Category Selection</p>
+        <p className="mt-1 text-xs text-[#64748B]">Selecting a category automatically generates the employee code and loads onboarding, payroll, and leave rules.</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {(['Permanent', 'Lumpsum', 'Daily Rate', 'NYSC', 'IT', 'Intern'] as EmploymentType[]).map((type) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => {
+                setCodePreview(type ? { status: 'loading' } : { status: 'idle' });
+                setDraft((d) => ({ ...d, employment: { ...d.employment, employmentType: type, employeeId: '' } }));
+              }}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                draft.employment.employmentType === type ? 'bg-[#2563EB] text-white' : 'border border-[#E5E7EB] bg-white text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {type === 'Daily Rate' ? 'Contract' : type === 'IT' || type === 'Intern' ? 'IT / Intern' : type}
+            </button>
+          ))}
+        </div>
+        <div className="mt-4 rounded-lg border border-[#E5E7EB] bg-white p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#64748B]">Generated Employee Code</p>
+          <p className="mt-1 text-2xl font-bold text-[#2563EB]">{generatedCode}</p>
+        </div>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <SelectField
           label="Employee Type"
@@ -1776,7 +1864,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
               <ChevronLeft className="w-4 h-4" />
               Previous
             </button>
-            <button type="button" onClick={goNext} disabled={stepIndex === STEP_ORDER.length - 1} className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-extrabold transition-colors ${stepIndex === STEP_ORDER.length - 1 ? 'bg-slate-100 text-slate-400 border-slate-200' : 'bg-slate-900 text-white border-slate-900 hover:bg-slate-800'}`}>
+            <button type="button" onClick={goNext} disabled={stepIndex === STEP_ORDER.length - 1} className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors ${stepIndex === STEP_ORDER.length - 1 ? 'bg-slate-100 text-slate-400' : 'bg-[#2563EB] text-white hover:bg-blue-700'}`}>
               Continue
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -1797,39 +1885,50 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
   );
 
   const rightPanel = (
-    <div className="space-y-6">
+    <div className="space-y-4 xl:sticky xl:top-20 xl:self-start">
       {aiPanel}
-      <Card className="p-6">
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-extrabold text-slate-900">Quick Controls</div>
-          <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">Wizard</span>
+      <Card className="p-5">
+        <h3 className="text-sm font-semibold text-[#0F172A]">Enterprise Readiness</h3>
+        <div className="mt-3 space-y-2">
+          {readinessItems.map((item) => (
+            <div key={item.label} className="flex items-center justify-between gap-3 rounded-lg bg-[#F8FAFC] px-3 py-2 text-xs">
+              <span className="font-medium text-[#64748B]">{item.label}</span>
+              <span className={`font-semibold ${item.status === 'Ready' ? 'text-[#10B981]' : item.status === 'Blocked' ? 'text-[#EF4444]' : 'text-[#F59E0B]'}`}>{item.status}</span>
+            </div>
+          ))}
         </div>
-        <div className="mt-4 space-y-3">
-          <button type="button" onClick={() => saveDraft('draft')} disabled={!perms.canCreate || saving} className={`w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold transition-colors ${perms.canCreate ? 'bg-dle-blue text-white hover:bg-dle-blue-deep' : 'bg-slate-100 text-slate-400'}`}>
+      </Card>
+      <Card className="p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-semibold text-[#0F172A]">Quick Controls</div>
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">Wizard</span>
+        </div>
+        <div className="mt-4 space-y-2">
+          <button type="button" onClick={() => saveDraft('draft')} disabled={!perms.canCreate || saving} className={`w-full inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${perms.canCreate ? 'border border-[#2563EB] bg-white text-[#2563EB] hover:bg-blue-50' : 'bg-slate-100 text-slate-400'}`}>
             <Save className="w-4 h-4" />
             Save Draft
           </button>
-          <button type="button" onClick={runAI} className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
-            <Sparkles className="w-4 h-4 text-violet-600" />
-            Run AI Checks
+          <button type="button" onClick={runAI} className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <Sparkles className="w-4 h-4 text-[#8B5CF6]" />
+            Run Validation
           </button>
           <button
             type="button"
             onClick={() => saveDraft('submit-approval')}
             disabled={!perms.canSubmitApproval || saving || submitting}
-            className={`w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold transition-colors ${perms.canSubmitApproval ? 'bg-slate-900 text-white hover:bg-slate-800' : 'bg-slate-100 text-slate-400'}`}
+            className={`w-full inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${perms.canSubmitApproval ? 'bg-slate-900 text-white hover:bg-slate-800' : 'bg-slate-100 text-slate-400'}`}
           >
             <ShieldCheck className="w-4 h-4" />
-            Submit for Approval
+            Submit For Approval
           </button>
           <button
             type="button"
             onClick={() => createEmployee(true)}
             disabled={!perms.canCreate || saving || submitting}
-            className={`w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold transition-colors ${perms.canCreate ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-100 text-slate-400'}`}
+            className={`w-full inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${perms.canCreate ? 'bg-[#10B981] text-white hover:bg-emerald-700' : 'bg-slate-100 text-slate-400'}`}
           >
             <ClipboardCheck className="w-4 h-4" />
-            Create + Start Onboarding
+            Create & Start Onboarding
           </button>
         </div>
       </Card>
@@ -1838,7 +1937,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
 
   if (!perms.canCreate && role !== 'Auditor') {
     return (
-      <div className="bg-white space-y-6">
+      <div className="min-h-screen bg-[#F8FAFC] space-y-6 px-6 py-5">
         {breadcrumb}
         {header}
         <Card className="p-10 text-center">
@@ -1854,7 +1953,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
 
   if (options.status === 'error') {
     return (
-      <div className="bg-white space-y-6">
+      <div className="min-h-screen bg-[#F8FAFC] space-y-6 px-6 py-5">
         {breadcrumb}
         {header}
         <Card className="p-10 text-center">
@@ -1869,14 +1968,17 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
   }
 
   return (
-    <div className="bg-white space-y-6">
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A]" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
       {breadcrumb}
       {header}
-      {progress}
+      <div className="space-y-4 px-6 py-5">
+        {snapshotCard}
+        {progress}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-6">
-        {bodyLeft}
-        {rightPanel}
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+          {bodyLeft}
+          {rightPanel}
+        </div>
       </div>
 
       <AnimatePresence>

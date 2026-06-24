@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import EmployeeDirectoryHub from './employee-directory/EmployeeDirectoryHub';
+import EmployeeProfileManagementHub, {
+  type ProfileTabId,
+} from './profile-management/EmployeeProfileManagementHub';
 import {
   ArrowRightLeft,
   BadgeCheck,
@@ -179,8 +182,20 @@ const sections: SectionConfig[] = [
   },
 ];
 
-const aliases: Record<string, SectionId> = { reports: 'employee-reports', profile: 'employee-profile-management', lifecycle: 'employee-lifecycle', movements: 'employee-movements', documents: 'employee-documents', exit: 'employee-exit-management' };
+const aliases: Record<string, SectionId> = {
+  reports: 'employee-reports',
+  profile: 'employee-profile-management',
+  'profile-management': 'employee-profile-management',
+  lifecycle: 'employee-lifecycle',
+  movements: 'employee-movements',
+  documents: 'employee-documents',
+  exit: 'employee-exit-management',
+};
 const sectionById = (id?: string) => sections.find((s) => s.id === (aliases[id || ''] || id)) || sections[0];
+const defaultTabForSection = (sectionId: SectionId): string => {
+  if (sectionId === 'employee-profile-management') return 'personal-information';
+  return sections.find((s) => s.id === sectionId)?.tabs[0]?.id || 'directory';
+};
 const compact = (value: unknown) => String(value || '').trim();
 const numberFmt = new Intl.NumberFormat('en-GB');
 const number = (value: number | undefined | null) => numberFmt.format(Number(value || 0));
@@ -203,8 +218,24 @@ export default function EmployeeModuleClient({ initialSection = 'employee-direct
   const [error, setError] = useState('');
 
   const section = sectionById(sectionId);
-  const activeTabId = activeTabs[section.id] || section.tabs[0].id;
+  const activeTabId = activeTabs[section.id] || defaultTabForSection(section.id);
   const activeTab = section.tabs.find((tab) => tab.id === activeTabId) || section.tabs[0];
+  const profileTabIds: ProfileTabId[] = [
+    'personal-information',
+    'employment-information',
+    'job-information',
+    'organization-assignment',
+    'reporting-line',
+    'contract-information',
+    'employment-status',
+    'emergency-contacts',
+    'next-of-kin',
+    'employee-category',
+    'employee-code-management',
+  ];
+  const profileActiveTab: ProfileTabId = profileTabIds.includes(activeTabId as ProfileTabId)
+    ? (activeTabId as ProfileTabId)
+    : 'personal-information';
 
   const load = async () => {
     setLoading(true);
@@ -238,6 +269,15 @@ export default function EmployeeModuleClient({ initialSection = 'employee-direct
 
   if (section.id === 'employee-directory') {
     return <EmployeeDirectoryHub initialNow={new Date().toISOString()} />;
+  }
+
+  if (section.id === 'employee-profile-management') {
+    return (
+      <EmployeeProfileManagementHub
+        activeTab={profileActiveTab}
+        onSelectTab={(tab) => setActiveTabs((prev) => ({ ...prev, 'employee-profile-management': tab }))}
+      />
+    );
   }
 
   return (
