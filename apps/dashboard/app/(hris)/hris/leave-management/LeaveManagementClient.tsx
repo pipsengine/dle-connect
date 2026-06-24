@@ -3,6 +3,8 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import LeaveCommandCenter from './LeaveCommandCenter';
+import LeaveTransactionsCommandCenter from './LeaveTransactionsCommandCenter';
 import {
   AlertTriangle,
   Archive,
@@ -21,6 +23,7 @@ import {
   History,
   Lock,
   PlayCircle,
+  Plus,
   RefreshCcw,
   RotateCcw,
   Send,
@@ -146,6 +149,14 @@ const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: '
 const numberFmt = new Intl.NumberFormat('en-GB');
 const money = (value: number | undefined) => moneyFmt.format(value || 0);
 const number = (value: number | undefined) => numberFmt.format(value || 0);
+const compactMoney = (value: number | undefined) => {
+  const v = value || 0;
+  if (v >= 1_000_000_000) return `₦${(v / 1_000_000_000).toFixed(1)}B`;
+  if (v >= 1_000_000) return `₦${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `₦${(v / 1_000).toFixed(1)}K`;
+  return money(v);
+};
+
 const stableDateTime = (value: string) => {
   const iso = new Date(value).toISOString();
   return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
@@ -180,6 +191,26 @@ const actionIcon = (id: string) => {
   if (id.includes('delegate') || id.includes('reassign')) return UserCheck;
   return PlayCircle;
 };
+
+const applyLeaveAction = (actions: LeaveAction[]) => actions.find((item) => item.id === 'apply') || actions.find((item) => item.id === 'create');
+
+function HubMetricCard({ label, value, detail, icon: Icon, tone }: { label: string; value: string; detail: string; icon: any; tone: LeaveTone }) {
+  const styles = toneStyles[tone];
+  return (
+    <div className={`rounded-xl border bg-white p-4 shadow-sm ${styles.card}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900">{value}</p>
+          <p className="mt-1 text-xs text-slate-600">{detail}</p>
+        </div>
+        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${styles.icon}`}>
+          <Icon className="h-5 w-5" />
+        </span>
+      </div>
+    </div>
+  );
+}
 
 function MetricCard({ label, value, detail, icon: Icon, tone }: { label: string; value: string; detail: string; icon: any; tone: LeaveTone }) {
   const styles = toneStyles[tone];
@@ -332,133 +363,197 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
     return (payload?.balances || []).filter((item) => !q || [item.employeeId, item.fullName, item.department, item.leaveType, item.status].some((value) => String(value || '').toLowerCase().includes(q)));
   }, [payload?.balances, query]);
 
+  const isDashboard = section === 'dashboard';
+  const isTransactionsHub = section === 'transactions';
+  const primaryApplyAction = applyLeaveAction(payload?.actions || []);
+
+  const navigateSection = (nextSection: string) => {
+    setSection(nextSection);
+  };
+
   return (
-    <div className="min-h-screen bg-white">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-600 text-white">
-              <CalendarCheck className="h-6 w-6" />
-            </span>
-            <div>
-              <h1 className="text-2xl font-black tracking-tight text-slate-950">Leave Management</h1>
-              <p className="mt-1 max-w-5xl text-sm font-semibold text-slate-600">
-                Enterprise leave administration, planning, workflow, compliance, reporting, payroll integration, audit, notifications, and ESS self-service.
-              </p>
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A]" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+      <div className="border-b border-[#E5E7EB] bg-white px-6 py-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="flex items-center gap-3">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-600 text-white">
+                <CalendarCheck className="h-5 w-5" />
+              </span>
+              <h1 className="text-4xl font-bold tracking-tight">{isTransactionsHub ? 'Transactions' : 'Leave Management'}</h1>
             </div>
+            <p className="mt-2 max-w-3xl text-sm text-[#64748B]">
+              {isTransactionsHub
+                ? 'Manage leave applications, approvals, recalls, cancellations, encashments, withdrawals, and transaction workflows.'
+                : 'Manage employee leave requests, approvals, balances, planning, compliance, and workforce availability.'}
+            </p>
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-extrabold text-emerald-800">Production workflow ready</span>
-            <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-extrabold text-blue-800">{payload?.source || 'Loading source'}</span>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-extrabold text-slate-700">Loaded: {stableDateTime(payload?.generatedAt || initialNow)}</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <select value={role} onChange={(event) => setRole(event.target.value as LeaveRole)} className="h-10 rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-slate-800 outline-none">
+              {roles.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+            {!isTransactionsHub ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => navigateSection('leave-reports')}
+                  className="inline-flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Generate Report
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigateSection('leave-calendar')}
+                  className="inline-flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <CalendarDays className="h-4 w-4" />
+                  View Leave Calendar
+                </button>
+              </>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void load()}
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = '/api/hris/leave-management?format=csv';
+              }}
+              disabled={!payload?.permissions.canExport}
+              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50 ${
+                isTransactionsHub ? 'bg-[#2563EB] text-white hover:bg-blue-700' : 'border border-[#E5E7EB] bg-white text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <Download className="h-4 w-4" />
+              Export
+            </button>
+            {!isTransactionsHub && primaryApplyAction ? (
+              <button
+                type="button"
+                onClick={() => void runAction(primaryApplyAction)}
+                disabled={busyAction === primaryApplyAction.id}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                <Plus className="h-4 w-4" />
+                Apply Leave
+              </button>
+            ) : null}
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <select value={role} onChange={(event) => setRole(event.target.value as LeaveRole)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-800 outline-none">
-            {roles.map((item) => <option key={item}>{item}</option>)}
-          </select>
-          <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-3 text-xs font-extrabold text-white hover:bg-blue-700 disabled:cursor-wait disabled:opacity-60">
-            <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            {loading ? 'Refreshing' : 'Refresh'}
-          </button>
-          <button type="button" onClick={() => { window.location.href = '/api/hris/leave-management?format=csv'; }} disabled={!payload?.permissions.canExport} className="inline-flex h-10 items-center gap-2 rounded-xl bg-slate-900 px-3 text-xs font-extrabold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400">
-            <Download className="h-4 w-4" />
-            Export
-          </button>
         </div>
       </div>
 
-      {error ? <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
-      {toast ? <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">{toast}</div> : null}
+      <div className="space-y-4 px-6 py-5">
+        <div className="flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-[#0F172A]">Production workflow ready</p>
+            <p className="mt-1 text-xs text-[#64748B]">
+              {payload?.source || 'DLE Enterprise HRIS'} · {number(payload?.summary.totalEmployees)} employees · Generated {stableDateTime(payload?.generatedAt || initialNow)}
+            </p>
+          </div>
+          <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#10B981]">Data Source: Live</span>
+        </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <MetricCard label="Total Employees" value={number(payload?.summary.totalEmployees)} detail="Multi-company workforce scope" icon={Users} tone="blue" />
-        <MetricCard label="On Leave" value={number(payload?.summary.employeesOnLeave)} detail={`${number(payload?.summary.returningToday)} returning today`} icon={CalendarClock} tone="green" />
-        <MetricCard label="Pending Applications" value={number(payload?.summary.pendingApplications)} detail={`${number(payload?.summary.pendingApprovals)} approvals pending`} icon={ClipboardCheck} tone={(payload?.summary.pendingApprovals || 0) ? 'amber' : 'green'} />
-        <MetricCard label="Leave Utilization" value={`${number(payload?.summary.leaveUtilizationPct)}%`} detail="Used against accrued balance" icon={FileSpreadsheet} tone="violet" />
-        <MetricCard label="Leave Liability" value={money(payload?.summary.leaveLiability)} detail={`${number(payload?.summary.exceptionCount)} exception indicators`} icon={Banknote} tone={(payload?.summary.exceptionCount || 0) ? 'red' : 'cyan'} />
-      </div>
+        {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{error}</div> : null}
+        {toast ? <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800">{toast}</div> : null}
 
-      <div className="mt-6 grid grid-cols-1 gap-5 xl:grid-cols-[300px_1fr]">
-        <aside className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-          <p className="px-2 pb-2 text-xs font-black uppercase text-slate-500">Leave Management</p>
-          <nav className="grid grid-cols-2 gap-1 xl:grid-cols-1" aria-label="Leave Management pages">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <HubMetricCard label="Total Employees" value={number(payload?.summary.totalEmployees)} detail={isTransactionsHub ? 'Multi-company workforce scope' : 'Workforce in scope'} icon={Users} tone="blue" />
+          <HubMetricCard label="On Leave Today" value={number(payload?.summary.employeesOnLeave)} detail={isTransactionsHub ? 'Employees currently on leave' : `${number(payload?.summary.returningToday)} returning today`} icon={CalendarClock} tone="green" />
+          <HubMetricCard label="Pending Approvals" value={number(payload?.summary.pendingApprovals)} detail={isTransactionsHub ? 'Requests awaiting approval' : `${number(payload?.summary.pendingApplications)} applications`} icon={ClipboardCheck} tone={(payload?.summary.pendingApprovals || 0) ? 'amber' : 'green'} />
+          <HubMetricCard label="Leave Utilization" value={`${number(payload?.summary.leaveUtilizationPct)}%`} detail={isTransactionsHub ? 'Used against annual balance' : 'Used against accrued balance'} icon={FileSpreadsheet} tone="violet" />
+          <HubMetricCard label="Leave Liability" value={compactMoney(payload?.summary.leaveLiability)} detail={isTransactionsHub ? 'Current leave exposure' : 'Accrued leave exposure'} icon={Banknote} tone="red" />
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-[#E5E7EB] bg-white p-2 shadow-sm">
+          <div className="flex min-w-max gap-1">
             {workspaces.map((item) => (
               <Link
                 key={item.id}
                 href={`/hris/leave-management/${item.id}`}
                 onClick={() => setSection(item.defaultSection)}
-                className={`rounded-xl px-3 py-2.5 text-xs font-black transition-colors ${activeWorkspace.id === item.id ? 'bg-emerald-600 text-white' : 'text-slate-700 hover:bg-slate-50'}`}
+                className={`rounded-lg px-3 py-2 text-xs font-semibold whitespace-nowrap ${activeWorkspace.id === item.id ? 'bg-[#2563EB] text-white' : 'text-slate-700 hover:bg-slate-100'}`}
               >
-                {item.label}
+                {item.label === 'Dashboard' ? 'Overview' : item.label}
               </Link>
             ))}
-          </nav>
-        </aside>
-
-        <main className="min-w-0 space-y-5">
-          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <h2 className="text-xl font-black text-slate-950">{activeWorkspace.label}</h2>
-                <p className="mt-1 max-w-4xl text-sm font-semibold text-slate-600">{activeWorkspace.description}</p>
-                {activeSection && activeSection.id !== 'dashboard' ? <p className="mt-2 text-xs font-black uppercase tracking-normal text-emerald-700">{activeSection.label}</p> : null}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {(payload?.actions || []).map((item) => {
-                  const Icon = actionIcon(item.id);
-                  return (
-                    <button key={item.id} type="button" onClick={() => void runAction(item)} disabled={busyAction === item.id} className={`inline-flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-extrabold ${item.sensitive ? toneStyles.amber.button : toneStyles.blue.button} disabled:cursor-wait disabled:opacity-60`}>
-                      <Icon className="h-4 w-4" />
-                      {busyAction === item.id ? 'Processing' : item.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            {workspaceTabs.length ? (
-              <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
-                {workspaceTabs.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setSection(item.id)}
-                    className={`h-10 shrink-0 rounded-xl px-3 text-xs font-black transition-colors ${section === item.id ? 'bg-slate-950 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </section>
-
-          <StatusPanel payload={payload} />
-
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            <MetricCard label="Encashment Requests" value={number(payload?.summary.encashmentRequests)} detail="Payroll earning integration ready" icon={Banknote} tone="cyan" />
-            <MetricCard label="Recall Requests" value={number(payload?.summary.recallRequests)} detail="Manager -> HR -> employee notification" icon={RotateCcw} tone="amber" />
-            <MetricCard label="Cancellation Requests" value={number(payload?.summary.cancellationRequests)} detail="Balance restoration workflow" icon={XCircle} tone="red" />
           </div>
+        </div>
 
+        {!isDashboard && !isTransactionsHub && workspaceTabs.length ? (
+          <div className="flex gap-2 overflow-x-auto rounded-xl border border-[#E5E7EB] bg-white p-2 shadow-sm">
+            {workspaceTabs.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setSection(item.id)}
+                className={`h-9 shrink-0 rounded-lg px-3 text-xs font-semibold ${section === item.id ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {!isDashboard && !isTransactionsHub ? (
           <div className="relative">
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search leave requests, employees, departments, types, workflow status..." className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 pr-10 text-sm font-semibold outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20" />
-            {query ? <button type="button" onClick={() => setQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"><X className="h-4 w-4" /></button> : null}
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search leave requests, employees, departments, types..."
+              className="h-11 w-full rounded-xl border border-[#E5E7EB] bg-white px-4 pr-10 text-sm font-medium outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
+            />
+            {query ? (
+              <button type="button" onClick={() => setQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
           </div>
+        ) : null}
 
-          {section === 'dashboard' ? <DashboardView payload={payload} /> : null}
-          {section === 'transactions' ? <TransactionRegisterView rows={filteredApplications} payload={payload} /> : null}
-          {section === 'applications' ? <ApplicationView rows={filteredApplications} /> : null}
-          {section === 'approvals' ? <ApprovalView rows={filteredApplications} /> : null}
-          {section === 'leave-calendar' ? <CalendarView payload={payload} /> : null}
-          {section === 'leave-balances' ? <BalanceView rows={filteredBalances} /> : null}
-          {section === 'leave-types' ? <LeaveTypeView payload={payload} /> : null}
-          {['recalls', 'cancellations', 'encashments', 'team-leave-planner', 'holiday-calendar', 'leave-policies', 'leave-accruals', 'carry-forward-processing', 'balance-adjustments', 'leave-year-end-processing', 'leave-reports', 'leave-utilization', 'leave-liability', 'leave-trends', 'approval-reports'].includes(section) ? <OperationalView payload={payload} section={section} /> : null}
+        {isDashboard ? (
+          <LeaveCommandCenter
+            payload={payload}
+            onNavigate={navigateSection}
+            onAction={(actionId) => {
+              const action = payload?.actions.find((item) => item.id === actionId);
+              if (action) void runAction(action);
+              else if (actionId === 'view-audit-trail') setAuditOpen(true);
+            }}
+          />
+        ) : null}
 
-          <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <InfoList title="Notifications" icon={Bell} rows={payload?.notifications || []} primaryKey="event" secondaryKeys={['channels', 'status']} />
-            <InfoList title="Integration Readiness" icon={Lock} rows={payload?.integrations || []} primaryKey="system" secondaryKeys={['status', 'purpose']} />
-          </section>
-        </main>
+        {!isDashboard && isTransactionsHub ? (
+          <LeaveTransactionsCommandCenter
+            payload={payload}
+            busyAction={busyAction}
+            onAction={(actionId) => {
+              if (actionId === 'view-audit-trail' || actionId === 'view-history') {
+                setAuditOpen(true);
+                return;
+              }
+              const action = payload?.actions.find((item) => item.id === actionId || (actionId === 'apply' && item.id === 'create'));
+              if (action) void runAction(action);
+            }}
+            onNavigate={navigateSection}
+          />
+        ) : null}
+        {!isDashboard && section === 'applications' ? <ApplicationView rows={filteredApplications} /> : null}
+        {!isDashboard && section === 'approvals' ? <ApprovalView rows={filteredApplications} /> : null}
+        {!isDashboard && section === 'leave-calendar' ? <CalendarView payload={payload} /> : null}
+        {!isDashboard && section === 'leave-balances' ? <BalanceView rows={filteredBalances} /> : null}
+        {!isDashboard && section === 'leave-types' ? <LeaveTypeView payload={payload} /> : null}
+        {!isDashboard && ['recalls', 'cancellations', 'encashments', 'team-leave-planner', 'holiday-calendar', 'leave-policies', 'leave-accruals', 'carry-forward-processing', 'balance-adjustments', 'leave-year-end-processing', 'leave-reports', 'leave-utilization', 'leave-liability', 'leave-trends', 'approval-reports'].includes(section) ? (
+          <OperationalView payload={payload} section={section} />
+        ) : null}
       </div>
 
       {auditOpen ? <AuditPanel rows={payload?.auditTrail || []} onClose={() => setAuditOpen(false)} /> : null}
@@ -466,143 +561,6 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
   );
 }
 
-function DashboardView({ payload }: { payload: Payload | null }) {
-  return (
-    <div className="space-y-4">
-      <LeaveTypeDashboardCards payload={payload} />
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <InfoList title="Upcoming Leave Schedule" icon={CalendarDays} rows={payload?.calendar || []} primaryKey="label" secondaryKeys={['from', 'to', 'status']} />
-        <InfoList title="Workflow Matrix" icon={ShieldCheck} rows={payload?.workflowMatrix || []} primaryKey="dimension" secondaryKeys={['rule']} />
-      </section>
-    </div>
-  );
-}
-
-function LeaveTypeDashboardCards({ payload }: { payload: Payload | null }) {
-  const rows = payload?.leaveTypes || [];
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-base font-black text-slate-950">Dorman Long Leave Policy</h3>
-          <p className="mt-1 text-xs font-semibold text-slate-500">Entitlements, eligibility, payroll allowance, carry-forward, ESS visibility, and approval controls.</p>
-        </div>
-        <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">Policy configured</span>
-      </div>
-      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {rows.map((item) => (
-          <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-black text-slate-950">{item.name}</p>
-                <p className="mt-1 text-2xl font-black text-slate-900">{item.entitlementDays}</p>
-                <p className="text-xs font-bold text-slate-500">{item.durationBasis}</p>
-              </div>
-              <Chip value={item.active ? 'Active' : 'Inactive'} />
-            </div>
-            <p className="mt-3 line-clamp-3 text-xs font-semibold text-slate-600">{item.eligibility}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function TransactionRegisterView({ rows, payload }: { rows: AppRecord[]; payload: Payload | null }) {
-  const pending = rows.filter((item) => ['Draft', 'Submitted', 'Under Review'].includes(item.status)).length;
-  const approved = rows.filter((item) => ['Approved', 'Completed'].includes(item.status)).length;
-  const rejected = rows.filter((item) => ['Rejected', 'Cancelled', 'Withdrawn', 'Terminated'].includes(item.status)).length;
-  const exceptions = rows.reduce((sum, item) => sum + item.exceptions.length, 0);
-  return (
-    <div className="space-y-4">
-      <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Transactions" value={number(rows.length)} detail="Persisted HRIS leave records" icon={FileText} tone="blue" />
-        <MetricCard label="Pending Workflow" value={number(pending)} detail="Awaiting employee/manager/HR action" icon={Clock3} tone={pending ? 'amber' : 'green'} />
-        <MetricCard label="Approved / Closed" value={number(approved)} detail="Payroll and attendance ready where applicable" icon={BadgeCheck} tone="green" />
-        <MetricCard label="Exceptions" value={number(exceptions + rejected)} detail={`${number(rejected)} rejected, cancelled, withdrawn, or terminated`} icon={AlertTriangle} tone={exceptions || rejected ? 'red' : 'cyan'} />
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h3 className="text-base font-black text-slate-950">Production Data Source</h3>
-            <p className="mt-1 max-w-4xl text-xs font-semibold text-slate-600">
-              Transactions are read from HRIS persisted leave tables. Sage payroll is used only to migrate employee context and balance foundations when HRIS data is missing; normal rendering does not depend on live Sage reads.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Chip value={payload?.source.includes('HRIS') ? 'HRIS DB Active' : 'HRIS DB'} />
-            <Chip value={`${number(payload?.auditTrail.length)} audit actions`} />
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <TableHeader title="Leave Transaction Register" detail="Live HRIS leave transactions with workflow stage, approval status, reliever, source, balance impact, audit count, and exception posture." />
-        {rows.length ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-[1480px] w-full divide-y divide-slate-100">
-              <thead className="bg-slate-50">
-                <tr>{['Transaction', 'Employee', 'Department / Location', 'Leave', 'Period', 'Workflow', 'Reliever', 'Balance', 'Source / Audit', 'Exceptions'].map((header) => <th key={header} className="px-4 py-3 text-left text-xs font-black uppercase text-slate-500">{header}</th>)}</tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {rows.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3">
-                      <div className="font-black text-slate-950">{item.id}</div>
-                      <div className="mt-1 text-xs font-semibold text-slate-500">Updated {stableDateTime(item.updatedAt)}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="font-black text-slate-950">{item.fullName}</div>
-                      <div className="text-xs font-semibold text-slate-500">{item.employeeId} - {item.employeeCategory}</div>
-                    </td>
-                    <td className="px-4 py-3 text-sm font-bold text-slate-700">
-                      <div>{item.department || 'Unassigned'}</div>
-                      <div className="mt-1 text-xs font-semibold text-slate-500">{item.location || 'No location'}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="text-sm font-black text-slate-900">{item.leaveType}</div>
-                      <div className="text-xs font-semibold text-slate-500">{item.days} day(s)</div>
-                    </td>
-                    <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.startDate} to {item.endDate}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col gap-1">
-                        <Chip value={item.status} />
-                        <span className="text-xs font-bold text-slate-600">{item.stage} / {item.approvalStatus}</span>
-                        <span className="text-xs font-bold text-slate-500">Manager: {item.managerName || 'Not assigned'}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.actingOfficer || 'Not configured'}</td>
-                    <td className="px-4 py-3 text-sm font-bold text-slate-700">
-                      <div>{item.availableBalance} available</div>
-                      <div className="mt-1 text-xs font-semibold text-slate-500">{item.balanceImpact} reserved/used</div>
-                    </td>
-                    <td className="px-4 py-3 text-sm font-bold text-slate-700">
-                      <div>{item.sourceSystem}</div>
-                      <div className="mt-1 text-xs font-semibold text-slate-500">Created {stableDateTime(item.createdAt)} / {item.auditCount} audit log(s)</div>
-                    </td>
-                    <td className="px-4 py-3 text-xs font-semibold text-slate-600">
-                      {item.exceptions.length ? item.exceptions.join(', ') : <Chip value={item.policyComplianceStatus} />}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="p-6">
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6">
-              <h4 className="text-base font-black text-slate-950">No leave transactions found in HRIS</h4>
-              <p className="mt-2 max-w-3xl text-sm font-semibold text-slate-600">
-                The page is not showing mock transactions. Employee master data and leave balances can be migrated from Sage payroll into HRIS, but leave transaction records will appear only after ESS/HRIS leave applications are submitted, imported, or approved into the HRIS leave tables.
-              </p>
-            </div>
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
 
 function ApplicationView({ rows }: { rows: AppRecord[] }) {
   return (
