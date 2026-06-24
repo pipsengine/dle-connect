@@ -152,6 +152,10 @@ type PayrollPayload = {
     readyEmployees: number;
     reviewEmployees: number;
     blockedEmployees: number;
+    readinessReadyEmployees?: number;
+    readinessAwaitingTimesheetEmployees?: number;
+    readinessReviewEmployees?: number;
+    readinessBlockedEmployees?: number;
     payrollCoveragePct: number;
     grossPay: number | null;
     deductions: number | null;

@@ -46,6 +46,10 @@ type CommandCenterPayload = {
     readyEmployees: number;
     reviewEmployees: number;
     blockedEmployees: number;
+    readinessReadyEmployees?: number;
+    readinessAwaitingTimesheetEmployees?: number;
+    readinessReviewEmployees?: number;
+    readinessBlockedEmployees?: number;
     grossPay: number | null;
     netPay: number | null;
     deductions: number | null;
@@ -119,9 +123,12 @@ export default function PayrollCommandCenter({
 }: Props) {
   const status = currentRun?.status || payload?.workflow?.currentStatus || 'Draft';
   const exceptions = payload?.summary.exceptionCount || 0;
-  const blocked = payload?.summary.blockedEmployees || 0;
-  const review = payload?.summary.reviewEmployees || 0;
-  const ready = payload?.summary.readyEmployees || 0;
+  const validationBlocked = payload?.summary.blockedEmployees || 0;
+  const validationReview = payload?.summary.reviewEmployees || 0;
+  const ready = payload?.summary.readinessReadyEmployees ?? payload?.summary.readyEmployees ?? 0;
+  const awaitingTimesheet = payload?.summary.readinessAwaitingTimesheetEmployees ?? 0;
+  const review = (payload?.summary.readinessReviewEmployees ?? 0) + awaitingTimesheet;
+  const blocked = payload?.summary.readinessBlockedEmployees ?? payload?.summary.blockedEmployees ?? 0;
   const eligible = payload?.summary.payrollEligible || 0;
   const workforcePct = eligible ? Math.round((ready / eligible) * 100) : 0;
   const viewingPeriod = payload?.periods?.find((item) => item.period === (viewPeriod || payload?.period)) || null;
@@ -190,7 +197,7 @@ export default function PayrollCommandCenter({
 
   const readinessSegments = [
     { label: 'Ready', value: ready, color: '#10B981' },
-    { label: 'Review', value: review, color: '#F59E0B' },
+    { label: awaitingTimesheet > 0 ? 'Awaiting Timesheet' : 'Review', value: review, color: '#F59E0B' },
     { label: 'Blocked', value: blocked, color: '#EF4444' },
   ];
   const readinessTotal = Math.max(ready + review + blocked, 1);
@@ -334,7 +341,11 @@ export default function PayrollCommandCenter({
             <KpiCard
               title="Ready Employees"
               value={fmtNum(ready)}
-              subtitle={`${workforcePct}% of eligible workforce (${fmtNum(eligible)} eligible)`}
+              subtitle={
+                awaitingTimesheet > 0
+                  ? `${workforcePct}% ready · ${fmtNum(awaitingTimesheet)} C-code awaiting timesheet`
+                  : `${workforcePct}% ready (${fmtNum(eligible)} eligible)`
+              }
               actionLabel="View employees"
               href="/hris/employees/employee-directory"
               icon={Users}
@@ -363,7 +374,7 @@ export default function PayrollCommandCenter({
             <KpiCard
               title="Issues"
               value={fmtNum(exceptions)}
-              subtitle={`${fmtNum(blocked)} blocked, ${fmtNum(review)} to review`}
+              subtitle={`${fmtNum(validationBlocked)} blocked, ${fmtNum(validationReview)} to review`}
               actionLabel="Review issues"
               onAction={() => onNavigate('exceptions')}
               icon={AlertTriangle}

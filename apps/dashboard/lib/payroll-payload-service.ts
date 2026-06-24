@@ -13,6 +13,10 @@ import {
   type PayrollRunSnapshot,
   type UnifiedPayrollRun,
 } from '@/lib/payroll-run-store';
+import {
+  enrichCalculationRecordsWithReadiness,
+  summarizePayrollReadiness,
+} from '@/lib/payroll-readiness';
 import { managementPermissions, payrollSessionContext, processingPermissions } from '@/lib/payroll-session';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
@@ -103,8 +107,9 @@ const applySnapshotToCalculation = (
   snapshot: PayrollRunSnapshot,
   period: string,
 ) => {
-  const records = snapshot.records;
+  const records = enrichCalculationRecordsWithReadiness(snapshot.records);
   const summary = snapshotSummary(snapshot, records);
+  const readiness = summarizePayrollReadiness(records);
   return {
     ...live,
     generatedAt: snapshot.capturedAt || live.generatedAt,
@@ -118,6 +123,10 @@ const applySnapshotToCalculation = (
       readyEmployees: summary.readyEmployees,
       reviewEmployees: summary.reviewEmployees,
       blockedEmployees: summary.blockedEmployees,
+      readinessReadyEmployees: readiness.readinessReadyEmployees,
+      readinessAwaitingTimesheetEmployees: readiness.readinessAwaitingTimesheetEmployees,
+      readinessReviewEmployees: readiness.readinessReviewEmployees,
+      readinessBlockedEmployees: readiness.readinessBlockedEmployees,
       basePay: summary.basePay,
       allowances: summary.allowances,
       grossPay: summary.grossPay,
@@ -392,6 +401,10 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
       payrollEligible: calculation.summary.payrollEligible,
       readyEmployees: calculation.summary.readyEmployees,
       reviewEmployees: calculation.summary.reviewEmployees,
+      readinessReadyEmployees: calculation.summary.readinessReadyEmployees,
+      readinessAwaitingTimesheetEmployees: calculation.summary.readinessAwaitingTimesheetEmployees,
+      readinessReviewEmployees: calculation.summary.readinessReviewEmployees,
+      readinessBlockedEmployees: calculation.summary.readinessBlockedEmployees,
       blockedEmployees: calculation.summary.blockedEmployees,
       payrollCoveragePct: calculation.summary.employees
         ? Math.round((calculation.records.filter((record) => record.setupAssignedToPayroll).length / calculation.summary.employees) * 1000) / 10

@@ -10,6 +10,7 @@ import { syncSageLeaveAllowanceEvents } from '@/lib/payroll-leave-allowance-stor
 import { normalizePayrollMatchKey, readSagePayrollPeriodTotals } from '@/lib/sage-people-payroll-store';
 import { buildTimesheetHoursMapForPayrollPeriod } from '@/lib/timesheet-entry-store';
 import { payrollPeriodLabel } from '@/lib/payroll-period-store';
+import { computePayrollReadinessStatus, summarizePayrollReadiness, type PayrollReadinessStatus } from '@/lib/payroll-readiness';
 import { partitionPayrollIssues, payrollToleranceActive } from '@/lib/payroll-tolerance';
 
 export type PayrollRecordStatus = 'Ready' | 'Review' | 'Blocked';
@@ -69,6 +70,7 @@ export type PayrollCalculationRecord = {
     deductionVariance: number | null;
   };
   status: PayrollRecordStatus;
+  readinessStatus: PayrollReadinessStatus;
   issues: string[];
   payrollStatus: PayrollRecordStatus;
   riskSeverity: 'High' | 'Medium' | 'Low';
@@ -105,6 +107,10 @@ export type PayrollCalculationSummary = {
   blockedEmployees: number;
   readyEmployees: number;
   reviewEmployees: number;
+  readinessReadyEmployees: number;
+  readinessAwaitingTimesheetEmployees: number;
+  readinessReviewEmployees: number;
+  readinessBlockedEmployees: number;
   basePay: number;
   allowances: number;
   grossPay: number;
@@ -347,6 +353,13 @@ export const calculatePayrollForPeriod = async (requestedPeriod: string): Promis
 
     const { blocking, deferred } = partitionPayrollIssues(issues, toleranceMode);
     const status = statusFromIssues(blocking);
+    const readinessStatus = computePayrollReadinessStatus(employee, {
+      dailyRateEmployee,
+      timesheet,
+      grossPay: amounts.grossPay,
+      ratePerDay: rates.ratePerDay,
+      ratePerHour: rates.ratePerHour,
+    });
     const riskSeverity: 'High' | 'Medium' | 'Low' = blocking.some((issue) => /not payroll active|Gross pay is missing|Payroll setup/.test(issue))
       ? 'High'
       : blocking.length
@@ -409,6 +422,7 @@ export const calculatePayrollForPeriod = async (requestedPeriod: string): Promis
         deductionVariance,
       },
       status,
+      readinessStatus,
       issues: blocking,
       payrollStatus: status,
       riskSeverity,
@@ -492,6 +506,7 @@ export const calculatePayrollForPeriod = async (requestedPeriod: string): Promis
   const review = records.filter((record) => record.status === 'Review');
   const blocked = records.filter((record) => record.status === 'Blocked');
   const eligible = records.filter((record) => !['Terminated', 'Resigned', 'Retired', 'Inactive'].includes(record.employmentStatus));
+  const readiness = summarizePayrollReadiness(records);
 
   const summary: PayrollCalculationSummary = {
     employees: records.length,
@@ -502,6 +517,10 @@ export const calculatePayrollForPeriod = async (requestedPeriod: string): Promis
     blockedEmployees: blocked.length,
     readyEmployees: ready.length,
     reviewEmployees: review.length,
+    readinessReadyEmployees: readiness.readinessReadyEmployees,
+    readinessAwaitingTimesheetEmployees: readiness.readinessAwaitingTimesheetEmployees,
+    readinessReviewEmployees: readiness.readinessReviewEmployees,
+    readinessBlockedEmployees: readiness.readinessBlockedEmployees,
     basePay: roundMoney(totals.basePay),
     allowances: roundMoney(totals.allowances),
     grossPay: roundMoney(totals.grossPay),
