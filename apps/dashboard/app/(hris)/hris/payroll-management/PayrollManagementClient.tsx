@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
+import PayrollCommandCenter, { type CommandCenterNavTab } from './PayrollCommandCenter';
 import {
   Bar,
   BarChart,
@@ -141,6 +142,10 @@ type PayrollPayload = {
   permissions: { canViewMoney: boolean; canManageRun: boolean; canApprove: boolean; canPost: boolean; canConfigure?: boolean; canReopen?: boolean; canExport: boolean };
   period: string;
   periodLabel: string;
+  dataMode?: 'live' | 'snapshot' | 'run-header' | 'pending';
+  payrollComputed?: boolean;
+  isViewingActivePeriod?: boolean;
+  activePeriodLabel?: string;
   summary: {
     totalEmployees: number;
     payrollEligible: number;
@@ -148,11 +153,11 @@ type PayrollPayload = {
     reviewEmployees: number;
     blockedEmployees: number;
     payrollCoveragePct: number;
-    grossPay: number;
-    deductions: number;
-    netPay: number;
-    basePay: number;
-    allowances: number;
+    grossPay: number | null;
+    deductions: number | null;
+    netPay: number | null;
+    basePay: number | null;
+    allowances: number | null;
     exceptionCount: number;
     deferredExceptionCount?: number;
   };
@@ -669,7 +674,7 @@ const sectionById = (id?: string) => {
   return sections.find((section) => section.id === resolved) || sections[0];
 };
 
-const sectionHref = (id: SectionId) => id === 'dashboard' ? '/hris/payroll-management' : `/hris/payroll-management/${id}`;
+const sectionHref = (id: SectionId) => `/hris/payroll-management/${id === 'dashboard' ? 'dashboard' : id}`;
 
 const actionsFor = (section: SectionConfig, tab: TabConfig) => {
   if (section.id === 'dashboard') return dashboardActions;
@@ -3865,6 +3870,7 @@ export default function PayrollManagementClient({ initialNow, initialSection = '
   const [dashboardPanel, setDashboardPanel] = useState<DashboardPanelId>('ready');
   const [fixIssue, setFixIssue] = useState<PayrollException | null>(null);
   const [viewPeriod, setViewPeriod] = useState<string | null>(null);
+  const loadSeq = useRef(0);
 
   const section = sectionById(sectionId);
   const activeTabId = activeTabs[section.id] || (section.id === 'payroll-processing' ? 'payroll-run' : section.tabs[0].id);
@@ -3889,6 +3895,7 @@ export default function PayrollManagementClient({ initialNow, initialSection = '
   };
 
   const load = async (periodOverride?: string | null) => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     setError('');
     try {
@@ -3896,14 +3903,16 @@ export default function PayrollManagementClient({ initialNow, initialSection = '
       const url = periodQuery ? `/api/hris/payroll-management?period=${encodeURIComponent(periodQuery)}` : '/api/hris/payroll-management';
       const res = await fetch(url, { cache: 'no-store' });
       const json = await readApiResponse<PayrollPayload>(res);
+      if (seq !== loadSeq.current) return;
       if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Payroll request failed (${res.status})`);
       setPayload(json.data);
       setRole(json.data.role);
       setViewPeriod(json.data.period);
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       setError(e instanceof Error ? e.message : 'Unable to load payroll management');
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   };
 
@@ -4048,6 +4057,79 @@ export default function PayrollManagementClient({ initialNow, initialSection = '
     window.location.href = '/api/hris/payroll-management?format=xls';
   };
 
+  const navigateFromCommandCenter = (tab: CommandCenterNavTab) => {
+    const targets: Record<CommandCenterNavTab, { section: SectionId; tab?: string } | null> = {
+      overview: null,
+      processing: { section: 'payroll-processing', tab: 'payroll-run' },
+      approvals: { section: 'payroll-processing', tab: 'payroll-approval' },
+      exceptions: { section: 'payroll-processing', tab: 'payroll-validation' },
+      outputs: { section: 'finance-integration', tab: 'bank-payment-schedule' },
+      analytics: { section: 'reports-analytics', tab: 'executive-analytics' },
+      reports: { section: 'reports-analytics', tab: 'payroll-register' },
+    };
+    const target = targets[tab];
+    if (!target) {
+      openSection('dashboard');
+      return;
+    }
+    openSection(target.section, target.tab);
+  };
+
+  if (section.id === 'dashboard') {
+    return (
+      <div>
+        {error ? <div className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
+        {toast ? <div className="mx-4 mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">{toast}</div> : null}
+        {payload?.toleranceMode ? (
+          <div className="mx-4 mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950">
+            <p className="font-black">Payroll tolerance is active for {payload.periodLabel}.</p>
+            <p className="mt-1 font-semibold">Deferred checks: {number(payload.deferredExceptionCount || payload.summary.deferredExceptionCount)} items.</p>
+          </div>
+        ) : null}
+        <PayrollCommandCenter
+          key={payload?.period || viewPeriod || 'loading'}
+          payload={payload}
+          currentRun={currentRun}
+          canViewMoney={canViewMoney}
+          loading={loading}
+          lastLoaded={lastLoaded}
+          viewPeriod={viewPeriod}
+          busyAction={busyAction}
+          onRefresh={() => void load()}
+          onSelectPeriod={(period) => {
+            setViewPeriod(period);
+            void load(period);
+          }}
+          onAction={(actionId) => {
+            const actionItem = resolveProcessingAction(actionId) || action(actionId, actionId, 'workflow');
+            triggerAction(actionItem);
+          }}
+          onNavigate={navigateFromCommandCenter}
+        />
+        {confirmAction ? (
+          <ConfirmationModal
+            actionItem={confirmAction}
+            payload={payload}
+            reason={actionReason}
+            setReason={setActionReason}
+            onCancel={() => setConfirmAction(null)}
+            onConfirm={confirmSensitiveAction}
+          />
+        ) : null}
+        {fixIssue ? (
+          <IssueFixDrawer
+            issue={fixIssue}
+            record={(payload?.records || []).find((record) => record.employeeId === fixIssue.employeeId)}
+            busy={busyAction === `fix-${fixIssue.id}`}
+            onClose={() => setFixIssue(null)}
+            onSubmit={(values) => void fixPayrollIssue(fixIssue, values)}
+          />
+        ) : null}
+        {auditOpen ? <AuditPanel payload={payload} onClose={() => setAuditOpen(false)} /> : null}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-white">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -4057,8 +4139,8 @@ export default function PayrollManagementClient({ initialNow, initialSection = '
               <WalletCards className="h-6 w-6" />
             </span>
             <div>
-              <h1 className="text-2xl font-black tracking-tight text-slate-950">{section.id === 'dashboard' ? 'Payroll' : section.title}</h1>
-              <p className="mt-1 max-w-4xl text-sm font-semibold text-slate-600">{section.id === 'dashboard' ? 'Review the current payroll, fix issues, approve, release, and publish payslips from one simple workspace.' : section.description}</p>
+              <h1 className="text-2xl font-black tracking-tight text-slate-950">{section.title}</h1>
+              <p className="mt-1 max-w-4xl text-sm font-semibold text-slate-600">{section.description}</p>
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -4113,15 +4195,11 @@ export default function PayrollManagementClient({ initialNow, initialSection = '
       ) : null}
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Ready Employees" value={number(payload?.summary.payrollEligible)} detail={`${number(payload?.summary.totalEmployees)} employees loaded`} icon={Users} tone="blue" active={section.id === 'dashboard' && dashboardPanel === 'ready'} onClick={() => openDashboardPanel('ready')} />
-        <MetricCard label="Gross Pay" value={money(payload?.summary.grossPay, canViewMoney)} detail={`${money(payload?.summary.netPay, canViewMoney)} net pay`} icon={Banknote} tone="green" active={section.id === 'dashboard' && dashboardPanel === 'gross'} onClick={() => openDashboardPanel('gross')} />
-        <MetricCard label="Deductions" value={money(payload?.summary.deductions, canViewMoney)} detail="PAYE, pension and statutory items" icon={ReceiptText} tone="violet" active={section.id === 'dashboard' && dashboardPanel === 'deductions'} onClick={() => openDashboardPanel('deductions')} />
-        <MetricCard label="Issues" value={number(payload?.summary.exceptionCount)} detail={`${number(payload?.summary.blockedEmployees)} blocked, ${number(payload?.summary.reviewEmployees)} to review`} icon={AlertTriangle} tone={(payload?.summary.exceptionCount || 0) > 0 ? 'red' : 'green'} active={section.id === 'dashboard' && dashboardPanel === 'issues'} onClick={() => openDashboardPanel('issues')} />
+        <MetricCard label="Ready Employees" value={number(payload?.summary.payrollEligible)} detail={`${number(payload?.summary.totalEmployees)} employees loaded`} icon={Users} tone="blue" active={false} onClick={() => openSection('dashboard')} />
+        <MetricCard label="Gross Pay" value={money(payload?.summary.grossPay, canViewMoney)} detail={`${money(payload?.summary.netPay, canViewMoney)} net pay`} icon={Banknote} tone="green" active={false} onClick={() => openSection('dashboard')} />
+        <MetricCard label="Deductions" value={money(payload?.summary.deductions, canViewMoney)} detail="PAYE, pension and statutory items" icon={ReceiptText} tone="violet" active={false} onClick={() => openSection('dashboard')} />
+        <MetricCard label="Issues" value={number(payload?.summary.exceptionCount)} detail={`${number(payload?.summary.blockedEmployees)} blocked, ${number(payload?.summary.reviewEmployees)} to review`} icon={AlertTriangle} tone={(payload?.summary.exceptionCount || 0) > 0 ? 'red' : 'green'} active={false} onClick={() => openSection('dashboard')} />
       </div>
-
-      {section.id === 'dashboard' ? (
-        <PayrollNextStepPanel payload={payload} currentRun={currentRun} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} />
-      ) : null}
 
       <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-[250px_1fr]">
         <aside className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm xl:sticky xl:top-20">
@@ -4188,9 +4266,7 @@ export default function PayrollManagementClient({ initialNow, initialSection = '
           ) : null}
 
           <div className="mt-4">
-            {section.id === 'dashboard' ? (
-              <DashboardWorkspace payload={payload} canViewMoney={canViewMoney} runAction={runAction} busyAction={busyAction} currentRun={currentRun} filteredRecords={filteredRecords} query={query} setQuery={setQuery} status={status} setStatus={setStatus} activePanel={dashboardPanel} setActivePanel={setDashboardPanel} role={role} onOpenSection={openSection} onFixIssue={setFixIssue} />
-            ) : section.id === 'payroll-computation-workflow' ? (
+            {section.id === 'payroll-computation-workflow' ? (
               <PayrollComputationWorkflowPage payload={payload} canViewMoney={canViewMoney} role={role} runAction={runAction} busyAction={busyAction} onAudit={() => setAuditOpen(true)} exportCsv={exportCsv} exportExcel={exportExcel} />
             ) : section.id === 'salary-management' ? (
               <PaySetupWorkspace activeTab={activeTab} payload={payload} canViewMoney={canViewMoney} />

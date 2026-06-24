@@ -1,9 +1,180 @@
-import { calculatePayrollForPeriod, maskPayrollCalculationRecords } from '@/lib/payroll-calculation-service';
+import {
+  calculatePayrollForPeriod,
+  groupPayrollCalculationRecords,
+  maskPayrollCalculationRecords,
+  type PayrollCalculationRecord,
+} from '@/lib/payroll-calculation-service';
 import { getActivePayrollPeriod, listPayrollPeriods, payrollPeriodLabel } from '@/lib/payroll-period-store';
-import { getPayrollRunForPeriod, listPayrollAudit, listPayrollRuns } from '@/lib/payroll-run-store';
+import {
+  getPayrollRunForPeriod,
+  listPayrollAudit,
+  listPayrollRuns,
+  readPayrollSnapshot,
+  type PayrollRunSnapshot,
+  type UnifiedPayrollRun,
+} from '@/lib/payroll-run-store';
 import { managementPermissions, payrollSessionContext, processingPermissions } from '@/lib/payroll-session';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
+
+const FINALIZED_RUN_STATUSES = new Set([
+  'Computed',
+  'Calculated',
+  'Ready for Approval',
+  'Submitted',
+  'Under Review',
+  'Finance Approved',
+  'HR Approved',
+  'Approved',
+  'Released',
+  'Locked',
+  'Posted',
+  'Published',
+  'Closed',
+]);
+
+const isPayrollComputed = (run: UnifiedPayrollRun | null, periodRecord: { status: string } | null) => {
+  if (periodRecord?.status === 'Closed') return true;
+  if (!run) return false;
+  if (run.status === 'Closed') return true;
+  return FINALIZED_RUN_STATUSES.has(run.status);
+};
+
+const stripPendingPayrollAmounts = (calculation: Awaited<ReturnType<typeof calculatePayrollForPeriod>>) => ({
+  ...calculation,
+  summary: {
+    ...calculation.summary,
+    basePay: 0,
+    allowances: 0,
+    grossPay: 0,
+    totalDeductions: 0,
+    deductions: 0,
+    netPay: 0,
+    employerCost: 0,
+    sageGrossPay: 0,
+    sageNetPay: 0,
+    grossVariance: 0,
+    netVariance: 0,
+  },
+  breakdowns: {
+    ...calculation.breakdowns,
+    byPayrollGroup: calculation.breakdowns.byPayrollGroup.map((item) => ({ ...item, grossPay: 0, netPay: 0 })),
+    byDepartment: calculation.breakdowns.byDepartment.map((item) => ({ ...item, grossPay: 0, netPay: 0 })),
+    byEmploymentType: calculation.breakdowns.byEmploymentType.map((item) => ({ ...item, grossPay: 0, netPay: 0 })),
+    byComponent: calculation.breakdowns.byComponent.map((item) => ({ ...item, amount: 0 })),
+  },
+});
+
+const snapshotSummary = (snapshot: PayrollRunSnapshot, records: PayrollCalculationRecord[]) => {
+  const raw = snapshot.summary as Record<string, number>;
+  const ready = Number(raw.readyEmployees ?? raw.ready ?? records.filter((record) => record.payrollStatus === 'Ready').length);
+  const review = Number(raw.reviewEmployees ?? raw.review ?? records.filter((record) => record.payrollStatus === 'Review').length);
+  const blocked = Number(raw.blockedEmployees ?? raw.blocked ?? records.filter((record) => record.payrollStatus === 'Blocked').length);
+  const employees = Number(raw.employees ?? records.length);
+  const payrollEligible = Number(raw.payrollEligible ?? records.filter((record) => !['Terminated', 'Resigned', 'Retired', 'Inactive'].includes(record.employmentStatus)).length);
+  return {
+    employees,
+    payrollEligible,
+    readyEmployees: ready,
+    reviewEmployees: review,
+    blockedEmployees: blocked,
+    basePay: roundMoney(Number(raw.basePay ?? records.reduce((sum, record) => sum + Number(record.basePay || 0), 0))),
+    allowances: roundMoney(Number(raw.allowances ?? records.reduce((sum, record) => sum + Number(record.allowances || 0), 0))),
+    grossPay: roundMoney(Number(raw.grossPay ?? records.reduce((sum, record) => sum + Number(record.grossPay || 0), 0))),
+    deductions: roundMoney(Number(raw.deductions ?? raw.totalDeductions ?? records.reduce((sum, record) => sum + Number(record.deductions || 0), 0))),
+    netPay: roundMoney(Number(raw.netPay ?? records.reduce((sum, record) => sum + Number(record.netPay || 0), 0))),
+    exceptionCount: Number(raw.exceptionCount ?? records.reduce((sum, record) => sum + Number(record.exceptionCount || 0), 0)),
+    deferredExceptionCount: Number(raw.deferredExceptionCount ?? records.reduce((sum, record) => sum + Number(record.deferredWarnings?.length || 0), 0)),
+  };
+};
+
+const shouldUseSnapshot = (
+  run: UnifiedPayrollRun | null,
+  periodRecord: { status: string } | null,
+  snapshot: PayrollRunSnapshot | null,
+) => {
+  if (!run || !snapshot?.records?.length) return false;
+  if (periodRecord?.status === 'Closed' || run.status === 'Closed') return true;
+  return FINALIZED_RUN_STATUSES.has(run.status);
+};
+
+const applySnapshotToCalculation = (
+  live: Awaited<ReturnType<typeof calculatePayrollForPeriod>>,
+  snapshot: PayrollRunSnapshot,
+  period: string,
+) => {
+  const records = snapshot.records;
+  const summary = snapshotSummary(snapshot, records);
+  return {
+    ...live,
+    generatedAt: snapshot.capturedAt || live.generatedAt,
+    source: 'Frozen payroll run snapshot',
+    period,
+    periodLabel: payrollPeriodLabel(period),
+    summary: {
+      ...live.summary,
+      employees: summary.employees,
+      payrollEligible: summary.payrollEligible,
+      readyEmployees: summary.readyEmployees,
+      reviewEmployees: summary.reviewEmployees,
+      blockedEmployees: summary.blockedEmployees,
+      basePay: summary.basePay,
+      allowances: summary.allowances,
+      grossPay: summary.grossPay,
+      totalDeductions: summary.deductions,
+      deductions: summary.deductions,
+      netPay: summary.netPay,
+      exceptionCount: summary.exceptionCount,
+      deferredExceptionCount: summary.deferredExceptionCount,
+      payrollCoveragePct: summary.employees
+        ? Math.round((records.filter((record) => record.setupAssignedToPayroll).length / summary.employees) * 1000) / 10
+        : 0,
+    },
+    records,
+    breakdowns: {
+      byPayrollGroup: groupPayrollCalculationRecords(records, 'payrollGroup'),
+      byDepartment: groupPayrollCalculationRecords(records, 'department').slice(0, 12),
+      byEmploymentType: groupPayrollCalculationRecords(records, 'employmentType'),
+      byComponent: live.breakdowns.byComponent,
+    },
+  };
+};
+
+const resolvePeriodCalculation = async (period: string, run: UnifiedPayrollRun | null, periodRecord: { status: string } | null) => {
+  const live = await calculatePayrollForPeriod(period);
+  const payrollComputed = isPayrollComputed(run, periodRecord);
+
+  if (!payrollComputed) {
+    return { calculation: stripPendingPayrollAmounts(live), dataMode: 'pending' as const, payrollComputed: false };
+  }
+
+  if (!run) return { calculation: live, dataMode: 'live' as const, payrollComputed: true };
+
+  const snapshot = await readPayrollSnapshot(run.id);
+  if (shouldUseSnapshot(run, periodRecord, snapshot) && snapshot) {
+    return { calculation: applySnapshotToCalculation(live, snapshot, period), dataMode: 'snapshot' as const, payrollComputed: true };
+  }
+
+  if (run.grossPay > 0) {
+    return {
+      calculation: {
+        ...live,
+        summary: {
+          ...live.summary,
+          grossPay: roundMoney(run.grossPay),
+          deductions: roundMoney(run.deductions),
+          totalDeductions: roundMoney(run.deductions),
+          netPay: roundMoney(run.netPay),
+          payrollEligible: run.employeeCount || live.summary.payrollEligible,
+        },
+      },
+      dataMode: 'run-header' as const,
+      payrollComputed: true,
+    };
+  }
+
+  return { calculation: live, dataMode: 'live' as const, payrollComputed: true };
+};
 
 const mapRunForProcessing = (run: Awaited<ReturnType<typeof getPayrollRunForPeriod>>) =>
   run
@@ -155,14 +326,9 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
   const perms = managementPermissions(role);
   const periodState = await listPayrollPeriods();
   const period = requestedPeriod || periodState.activePeriod || (await getActivePayrollPeriod());
-  const [calculation, runs, run, auditTrail] = await Promise.all([
-    calculatePayrollForPeriod(period),
-    listPayrollRuns(),
-    getPayrollRunForPeriod(period),
-    listPayrollAudit(50),
-  ]);
-
+  const [runs, run, auditTrail] = await Promise.all([listPayrollRuns(), getPayrollRunForPeriod(period), listPayrollAudit(50)]);
   const periodRecord = periodState.periods.find((item) => item.period === period) || null;
+  const { calculation, dataMode, payrollComputed } = await resolvePeriodCalculation(period, run, periodRecord);
   const currentRun = run && run.period === period ? mapManagementRun(run) : null;
   const mappedRuns = runs.map(mapManagementRun);
   const records = perms.canViewMoney ? calculation.records : maskPayrollCalculationRecords(calculation.records);
@@ -190,7 +356,11 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
     permissions: perms,
     period,
     periodLabel: calculation.periodLabel,
+    dataMode,
+    payrollComputed,
+    isViewingActivePeriod: period === periodState.activePeriod,
     activePeriod: periodState.activePeriod,
+    activePeriodLabel: payrollPeriodLabel(periodState.activePeriod),
     periodRecord: periodRecord
       ? {
           period: periodRecord.period,
@@ -226,11 +396,11 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
       payrollCoveragePct: calculation.summary.employees
         ? Math.round((calculation.records.filter((record) => record.setupAssignedToPayroll).length / calculation.summary.employees) * 1000) / 10
         : 0,
-      grossPay: roundMoney(calculation.summary.grossPay),
-      deductions: roundMoney(calculation.summary.deductions),
-      netPay: roundMoney(calculation.summary.netPay),
-      basePay: roundMoney(calculation.summary.basePay),
-      allowances: roundMoney(calculation.summary.allowances),
+      grossPay: payrollComputed ? roundMoney(calculation.summary.grossPay) : null,
+      deductions: payrollComputed ? roundMoney(calculation.summary.deductions) : null,
+      netPay: payrollComputed ? roundMoney(calculation.summary.netPay) : null,
+      basePay: payrollComputed ? roundMoney(calculation.summary.basePay) : null,
+      allowances: payrollComputed ? roundMoney(calculation.summary.allowances) : null,
       exceptionCount: calculation.summary.exceptionCount,
       deferredExceptionCount: calculation.summary.deferredExceptionCount,
     },

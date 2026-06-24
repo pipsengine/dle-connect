@@ -153,9 +153,9 @@ const applySuperAdminEndToEndApproval = async (
   };
 
   run.employeeCount = payload.summary.payrollEligible;
-  run.grossPay = payload.summary.grossPay;
-  run.deductions = payload.summary.deductions;
-  run.netPay = payload.summary.netPay;
+  run.grossPay = payload.summary.grossPay ?? 0;
+  run.deductions = payload.summary.deductions ?? 0;
+  run.netPay = payload.summary.netPay ?? 0;
   run.updatedBy = actor;
 
   run.validatedAt = run.validatedAt || stamp;

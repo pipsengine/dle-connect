@@ -220,7 +220,7 @@ const applyDailyRateFromTimesheets = (
   };
 };
 
-const grouped = (records: PayrollCalculationRecord[], key: keyof PayrollCalculationRecord) =>
+export const groupPayrollCalculationRecords = (records: PayrollCalculationRecord[], key: keyof PayrollCalculationRecord) =>
   Array.from(
     records.reduce((map, record) => {
       const label = String(record[key] || 'Unassigned');
@@ -540,9 +540,9 @@ export const calculatePayrollForPeriod = async (requestedPeriod: string): Promis
     summary,
     records,
     breakdowns: {
-      byPayrollGroup: grouped(records, 'payrollGroup'),
-      byDepartment: grouped(records, 'department').slice(0, 12),
-      byEmploymentType: grouped(records, 'employmentType'),
+      byPayrollGroup: groupPayrollCalculationRecords(records, 'payrollGroup'),
+      byDepartment: groupPayrollCalculationRecords(records, 'department').slice(0, 12),
+      byEmploymentType: groupPayrollCalculationRecords(records, 'employmentType'),
       byComponent: [
         component('paye', 'PAYE', totals.paye, 'violet', 'Employee'),
         component('pension-employee', 'Employee Pension', totals.pensionEmployee, 'blue', 'Employee'),
