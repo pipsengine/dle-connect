@@ -244,6 +244,15 @@ export const ensurePayrollPeriod = async (period: string, actor = 'System') => {
 export const openPayrollPeriod = async (period: string, actor: string) => {
   const state = await readState();
   const stamp = nowIso();
+  for (const item of state.periods) {
+    if (item.period === period) continue;
+    if (item.status === 'Open' || item.status === 'In Progress' || item.status === 'Reopened') {
+      item.status = 'Closed';
+      item.closedAt = item.closedAt || stamp;
+      item.closedBy = item.closedBy || actor;
+      item.updatedAt = stamp;
+    }
+  }
   let record = state.periods.find((item) => item.period === period);
   if (!record) {
     record = defaultPeriod(period, 'Open');

@@ -304,6 +304,9 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     run.updatedBy = actor;
     await savePayrollRun(run);
     const periodRecord = await closePayrollPeriodRecord(period, actor, reason);
+    if (periodRecord.status !== 'Closed') {
+      throw new Error('Payroll run closed but period record could not be persisted to DLE_Enterprise.');
+    }
     await audit('close-period', before, run.status);
     return { run, calculation, periodRecord };
   }

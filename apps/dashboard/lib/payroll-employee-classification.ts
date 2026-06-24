@@ -1,6 +1,16 @@
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import { resolvePayrollEarningProfile } from '@/lib/payroll-earnings-engine';
 
 const compact = (value: unknown) => String(value || '').trim();
+
+export type ContractPayrollClassification = {
+  isContractCode: boolean;
+  isDailyRate: boolean;
+  shouldDeactivate: boolean;
+  payrollEligible: boolean;
+  label: string;
+  recommendation: string | null;
+};
 
 export const contractEmployeeCode = (employee: Pick<DleEmployeeDirectoryRow, 'employeeId' | 'employeeCode' | 'sourceEmployeeId'>) => {
   const code = compact(employee.employeeCode || employee.employeeId || employee.sourceEmployeeId).toUpperCase();
@@ -27,6 +37,26 @@ export const isDailyRatePayrollEmployee = (employee: DleEmployeeDirectoryRow, pr
 export const isInactiveNonDailyContractEmployee = (employee: DleEmployeeDirectoryRow, profileId?: string) =>
   contractEmployeeCode(employee) && !isDailyRatePayrollEmployee(employee, profileId);
 
+export const contractPayrollClassification = (employee: DleEmployeeDirectoryRow): ContractPayrollClassification => {
+  const profileId = resolvePayrollEarningProfile(employee);
+  const isContractCode = contractEmployeeCode(employee);
+  const isDailyRate = isDailyRatePayrollEmployee(employee, profileId);
+  const shouldDeactivate = isInactiveNonDailyContractEmployee(employee, profileId);
+  const payrollEligible = !shouldDeactivate && !compact(employee.status).toLowerCase().match(/terminated|resigned|retired|inactive|deceased/);
+  let label = 'Not a contract code';
+  let recommendation: string | null = null;
+  if (isContractCode && isDailyRate) {
+    label = 'Daily rate contract';
+    recommendation = null;
+  } else if (shouldDeactivate) {
+    label = 'Contract — not daily rate';
+    recommendation = 'Deactivate this employee or set up daily-rate payroll (employment type Daily Rate / DLE).';
+  } else if (isContractCode) {
+    label = 'Contract code';
+  }
+  return { isContractCode, isDailyRate, shouldDeactivate, payrollEligible, label, recommendation };
+};
+
 export const markInactiveNonDailyContractEmployees = (employees: DleEmployeeDirectoryRow[]) =>
   employees.map((employee) => {
     if (!isInactiveNonDailyContractEmployee(employee)) return employee;
@@ -39,3 +69,8 @@ export const markInactiveNonDailyContractEmployees = (employees: DleEmployeeDire
 
 export const payrollActiveEmployees = (employees: DleEmployeeDirectoryRow[]) =>
   markInactiveNonDailyContractEmployees(employees).filter((employee) => !isInactiveNonDailyContractEmployee(employee));
+
+export const withContractPayrollClassification = <T extends DleEmployeeDirectoryRow>(employee: T) => ({
+  ...employee,
+  payrollClassification: contractPayrollClassification(employee),
+});

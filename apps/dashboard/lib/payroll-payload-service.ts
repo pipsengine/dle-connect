@@ -116,10 +116,45 @@ export const buildProcessingPayload = async (request: Request, requestedPeriod?:
   };
 };
 
+const mapManagementRun = (item: Awaited<ReturnType<typeof listPayrollRuns>>[number]) => ({
+  id: item.id,
+  period: item.period,
+  status: item.status,
+  employeeCount: item.employeeCount,
+  grossPay: item.grossPay,
+  deductions: item.deductions,
+  netPay: item.netPay,
+  createdAt: item.createdAt,
+  createdBy: item.createdBy,
+  validatedAt: item.validatedAt || null,
+  validatedBy: item.validatedBy || null,
+  submittedAt: item.submittedAt || null,
+  submittedBy: item.submittedBy || null,
+  approvedAt: item.approvedAt || null,
+  approvedBy: item.approvedBy || null,
+  releasedAt: item.releasedAt || null,
+  releasedBy: item.releasedBy || null,
+  lockedAt: item.lockedAt || null,
+  payslipsGeneratedAt: item.payslipsGeneratedAt || null,
+  payslipsGeneratedBy: item.payslipsGeneratedBy || null,
+  bankScheduleGeneratedAt: item.bankScheduleGeneratedAt || null,
+  bankScheduleGeneratedBy: item.bankScheduleGeneratedBy || null,
+  statutorySchedulesGeneratedAt: item.statutorySchedulesGeneratedAt || null,
+  statutorySchedulesGeneratedBy: item.statutorySchedulesGeneratedBy || null,
+  postedAt: item.postedAt || null,
+  postedBy: item.postedBy || null,
+  closedAt: item.closedAt || null,
+  reopenedAt: item.reopenedAt || null,
+  reopenedBy: item.reopenedBy || null,
+  reopenReason: item.reopenReason || null,
+  artifacts: item.artifacts || [],
+});
+
 export const buildManagementPayload = async (request: Request, requestedPeriod?: string) => {
   const { role } = await payrollSessionContext(request);
   const perms = managementPermissions(role);
-  const period = requestedPeriod || (await getActivePayrollPeriod());
+  const periodState = await listPayrollPeriods();
+  const period = requestedPeriod || periodState.activePeriod || (await getActivePayrollPeriod());
   const [calculation, runs, run, auditTrail] = await Promise.all([
     calculatePayrollForPeriod(period),
     listPayrollRuns(),
@@ -127,7 +162,9 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
     listPayrollAudit(50),
   ]);
 
-  const currentRun = run || runs[0] || null;
+  const periodRecord = periodState.periods.find((item) => item.period === period) || null;
+  const currentRun = run && run.period === period ? mapManagementRun(run) : null;
+  const mappedRuns = runs.map(mapManagementRun);
   const records = perms.canViewMoney ? calculation.records : maskPayrollCalculationRecords(calculation.records);
   const exceptions = calculation.records
     .filter((record) => record.exceptionCount > 0)
@@ -143,7 +180,7 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
     );
 
   const blocked = calculation.summary.blockedEmployees;
-  const workflowRun = currentRun;
+  const workflowStatus = currentRun?.status || (periodRecord?.status === 'Closed' ? 'Closed' : periodRecord?.status === 'Open' ? 'Draft' : periodRecord?.status || 'Draft');
 
   return {
     generatedAt: calculation.generatedAt,
@@ -153,6 +190,33 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
     permissions: perms,
     period,
     periodLabel: calculation.periodLabel,
+    activePeriod: periodState.activePeriod,
+    periodRecord: periodRecord
+      ? {
+          period: periodRecord.period,
+          periodLabel: periodRecord.periodLabel,
+          status: periodRecord.status,
+          paymentDate: periodRecord.paymentDate,
+          openedAt: periodRecord.openedAt,
+          openedBy: periodRecord.openedBy,
+          closedAt: periodRecord.closedAt,
+          closedBy: periodRecord.closedBy,
+        }
+      : null,
+    periods: periodState.periods.map((item) => {
+      const periodRun = runs.find((row) => row.period === item.period);
+      return {
+        period: item.period,
+        periodLabel: item.periodLabel,
+        status: item.status,
+        runStatus: periodRun?.status || null,
+        runId: periodRun?.id || null,
+        isActive: item.period === periodState.activePeriod,
+        paymentDate: item.paymentDate,
+        openedAt: item.openedAt,
+        closedAt: item.closedAt,
+      };
+    }),
     summary: {
       totalEmployees: calculation.summary.employees,
       payrollEligible: calculation.summary.payrollEligible,
@@ -171,39 +235,12 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
       deferredExceptionCount: calculation.summary.deferredExceptionCount,
     },
     toleranceMode: calculation.toleranceMode,
-    runs: runs.map((item) => ({
-      id: item.id,
-      period: item.period,
-      status: item.status,
-      employeeCount: item.employeeCount,
-      grossPay: item.grossPay,
-      deductions: item.deductions,
-      netPay: item.netPay,
-      createdAt: item.createdAt,
-      createdBy: item.createdBy,
-      validatedAt: item.validatedAt || null,
-      validatedBy: item.validatedBy || null,
-      submittedAt: item.submittedAt || null,
-      submittedBy: item.submittedBy || null,
-      approvedAt: item.approvedAt || null,
-      approvedBy: item.approvedBy || null,
-      releasedAt: item.releasedAt || null,
-      releasedBy: item.releasedBy || null,
-      lockedAt: item.lockedAt || null,
-      payslipsGeneratedAt: item.payslipsGeneratedAt || null,
-      payslipsGeneratedBy: item.payslipsGeneratedBy || null,
-      bankScheduleGeneratedAt: item.bankScheduleGeneratedAt || null,
-      bankScheduleGeneratedBy: item.bankScheduleGeneratedBy || null,
-      statutorySchedulesGeneratedAt: item.statutorySchedulesGeneratedAt || null,
-      statutorySchedulesGeneratedBy: item.statutorySchedulesGeneratedBy || null,
-      postedAt: item.postedAt || null,
-      postedBy: item.postedBy || null,
-      closedAt: item.closedAt || null,
-      reopenedAt: item.reopenedAt || null,
-      reopenedBy: item.reopenedBy || null,
-      reopenReason: item.reopenReason || null,
-      artifacts: item.artifacts || [],
-    })),
+    currentRun,
+    runs: mappedRuns.sort((a, b) => {
+      if (a.period === period) return -1;
+      if (b.period === period) return 1;
+      return b.period.localeCompare(a.period);
+    }),
     records,
     exceptions,
     breakdowns: {
@@ -214,35 +251,35 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
     controls: [
       { id: 'master-data', label: 'Master Data Validation', status: blocked ? 'Attention Required' : 'Passed', tone: blocked ? 'red' : 'green' },
       { id: 'statutory', label: 'PAYE, Pension, Statutory Funds', status: 'Calculated', tone: 'blue' },
-      { id: 'approval', label: 'Segregated Approval', status: workflowRun?.status || 'Draft', tone: 'violet' },
+      { id: 'approval', label: 'Segregated Approval', status: workflowStatus, tone: 'violet' },
       { id: 'audit', label: 'Payroll Audit Trail', status: 'Enabled', tone: 'cyan' },
     ],
     workflow: {
-      currentStatus: workflowRun?.status || 'Draft',
+      currentStatus: workflowStatus,
       nextOwner: blocked
         ? 'Payroll Officer'
-        : !workflowRun?.validatedAt
+        : !currentRun?.validatedAt
           ? 'Payroll Supervisor'
-          : !workflowRun?.submittedAt
+          : !currentRun?.submittedAt
             ? 'Payroll Officer'
-            : !workflowRun?.approvedAt
+            : !currentRun?.approvedAt
               ? 'HR / Finance / CFO'
-              : !workflowRun?.releasedAt
+              : !currentRun?.releasedAt
                 ? 'Payroll Supervisor'
-                : !workflowRun?.postedAt
+                : !currentRun?.postedAt
                   ? 'Finance Manager'
                   : 'Payroll Officer',
       blockedActions: [
         ...(blocked ? ['Approval is blocked until validation exceptions are resolved.'] : []),
-        ...(!workflowRun?.approvedAt ? ['Payslip publishing, bank schedule generation, and journal posting require payroll approval.'] : []),
-        ...(workflowRun?.approvedAt && !workflowRun.bankScheduleGeneratedAt ? ['Bank schedule must be generated before posting and closing.'] : []),
-        ...(workflowRun?.approvedAt && !workflowRun.statutorySchedulesGeneratedAt ? ['Statutory schedules must be generated before posting and closing.'] : []),
-        ...(workflowRun?.postedAt && !workflowRun.payslipsGeneratedAt ? ['Payslips must be published before period close.'] : []),
+        ...(!currentRun?.approvedAt ? ['Payslip publishing, bank schedule generation, and journal posting require payroll approval.'] : []),
+        ...(currentRun?.approvedAt && !currentRun.bankScheduleGeneratedAt ? ['Bank schedule must be generated before posting and closing.'] : []),
+        ...(currentRun?.approvedAt && !currentRun.statutorySchedulesGeneratedAt ? ['Statutory schedules must be generated before posting and closing.'] : []),
+        ...(currentRun?.postedAt && !currentRun.payslipsGeneratedAt ? ['Payslips must be published before period close.'] : []),
       ],
-      approvalStage: blocked ? 'Validation' : workflowRun?.approvedAt ? 'Approved' : workflowRun?.submittedAt ? 'Awaiting Approval' : 'Preparation',
+      approvalStage: blocked ? 'Validation' : currentRun?.approvedAt ? 'Approved' : currentRun?.submittedAt ? 'Awaiting Approval' : 'Preparation',
     },
     auditTrail,
-    artifacts: workflowRun?.artifacts || [],
+    artifacts: currentRun?.artifacts || [],
     deferredExceptionCount: calculation.summary.deferredExceptionCount,
   };
 };

@@ -139,6 +139,14 @@ export type DleEmployeeDirectoryRow = {
   modifiedAt: string;
   aiRiskScore: number;
   trainingCompliance: 'Compliant' | 'Overdue' | 'At Risk';
+  payrollClassification?: {
+    isContractCode: boolean;
+    isDailyRate: boolean;
+    shouldDeactivate: boolean;
+    payrollEligible: boolean;
+    label: string;
+    recommendation: string | null;
+  };
 };
 
 export type DleContractDocumentRow = {
@@ -1729,6 +1737,46 @@ export const updateEmployeeDailyRatePayInDb = async (input: {
         @employee_id, @payroll_group, @salary_grade, @pay_currency, @payment_run, @payment_type,
         @period_salary, @rate_per_day, @rate_per_hour, @hours_per_day, @hours_per_period, 1
       );
+    `);
+  return true;
+};
+
+export const updateEmployeeContractPayrollClassificationInDb = async (input: {
+  employeeDbId: number;
+  action: 'deactivate-non-daily' | 'activate-daily-rate';
+  reason?: string | null;
+}) => {
+  const p = await pool();
+  if (!p) return false;
+  const employmentStatus = input.action === 'deactivate-non-daily' ? 'Inactive' : 'Active';
+  const employmentType = input.action === 'deactivate-non-daily' ? 'Contract' : 'Daily Rate';
+  await p.request()
+    .input('employee_id', sql.BigInt, input.employeeDbId)
+    .input('employment_status', sql.VarChar(40), employmentStatus)
+    .input('employment_type', sql.VarChar(40), employmentType)
+    .query(`
+      UPDATE [hris].[Employees]
+      SET employment_status = @employment_status,
+          employment_type = @employment_type,
+          modified_at = SYSUTCDATETIME(),
+          modified_by = SUSER_SNAME()
+      WHERE employee_id = @employee_id;
+    `);
+  if (input.action === 'activate-daily-rate') {
+    await updateEmployeeDailyRatePayInDb({
+      employeeDbId: input.employeeDbId,
+      payrollGroup: 'DLE',
+      salaryGrade: 'Daily Rate',
+      paymentRun: 'Daily Timesheet',
+      paymentType: 'Timesheet Rate',
+    });
+  }
+  await p.request()
+    .input('employee_id', sql.BigInt, input.employeeDbId)
+    .input('reason', sql.NVarChar(500), nullable(input.reason || 'Contract payroll classification updated from employee directory'))
+    .query(`
+      INSERT [hris].[EmployeeAuditLog](employee_id, audit_action, performed_by, reason)
+      VALUES (@employee_id, N'Contract payroll classification', SUSER_SNAME(), @reason);
     `);
   return true;
 };

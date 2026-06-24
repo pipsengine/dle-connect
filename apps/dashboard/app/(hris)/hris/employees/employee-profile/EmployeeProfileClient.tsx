@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { ContractPayrollClassificationPanel, type ContractPayrollClassificationView } from '../components/ContractPayrollClassificationUi';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
@@ -75,7 +76,8 @@ type EmployeeStatus =
   | 'Retired'
   | 'Contract'
   | 'Seconded'
-  | 'Field Assignment';
+  | 'Field Assignment'
+  | 'Inactive';
 
 type Severity = 'high' | 'medium' | 'low';
 
@@ -224,6 +226,7 @@ type EmployeeProfilePayload = EmployeeProfile & {
   disciplinary: DisciplinaryRecord[] | null;
   history: HistoryEvent[];
   aiInsights: AIInsight[];
+  payrollClassification?: ContractPayrollClassificationView;
 };
 
 type EmployeeOverview = {
@@ -301,6 +304,9 @@ const statusStyle = (status: EmployeeStatus) => {
     case 'Seconded':
       return { bg: 'bg-fuchsia-600/10', fg: 'text-fuchsia-700', dot: 'bg-fuchsia-500' };
     case 'Field Assignment':
+      return { bg: 'bg-cyan-600/10', fg: 'text-cyan-700', dot: 'bg-cyan-500' };
+    case 'Inactive':
+      return { bg: 'bg-slate-600/10', fg: 'text-slate-700', dot: 'bg-slate-400' };
     default:
       return { bg: 'bg-cyan-600/10', fg: 'text-cyan-700', dot: 'bg-cyan-500' };
   }
@@ -319,6 +325,8 @@ const rolePermissions = (role: Role, subjectEmployeeId: string, viewerEmployeeId
   const canViewDisciplinary = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'Compliance Officer';
   const canEdit = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'HR Officer' || role === 'Admin Officer';
   const canChangeStatus = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager';
+  const canManagePayrollClassification =
+    role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'Payroll Officer';
   const canViewAudit = role !== 'Employee' && role !== 'IT Administrator';
   const canViewSensitivePersonal = role !== 'Employee' && role !== 'IT Administrator' && role !== 'Auditor';
   const canViewDocuments = role !== 'IT Administrator';
@@ -331,6 +339,7 @@ const rolePermissions = (role: Role, subjectEmployeeId: string, viewerEmployeeId
     canViewDisciplinary,
     canEdit,
     canChangeStatus,
+    canManagePayrollClassification,
     canViewAudit,
     canViewSensitivePersonal,
     canViewDocuments,
@@ -1452,6 +1461,27 @@ export default function EmployeeProfileClient({ employeeId, initialNow }: { empl
                         </div>
                       </Section>
 
+                      <ContractPayrollClassificationPanel
+                        employeeId={profileData.employeeId}
+                        employeeName={profileData.fullName}
+                        employmentStatus={profileData.employmentStatus}
+                        classification={profileData.payrollClassification}
+                        canManage={perms.canManagePayrollClassification}
+                        onUpdated={(next) => {
+                          updateProfile((p) => ({
+                            ...p,
+                            payrollClassification: next,
+                            employmentStatus: next.isDailyRate ? 'Active' : next.shouldDeactivate ? 'Inactive' : p.employmentStatus,
+                            employmentType: next.isDailyRate ? 'Daily Rate' : p.employmentType,
+                          }));
+                          setToast({
+                            title: 'Classification updated',
+                            detail: 'Contract payroll classification saved to DLE_Enterprise.',
+                            tone: 'ok',
+                          });
+                        }}
+                      />
+
                       {perms.canChangeStatus && statusNext && (
                         <Section
                           title="Change Status (Workflow)"
@@ -1482,6 +1512,7 @@ export default function EmployeeProfileClient({ employeeId, initialNow }: { empl
                                   'Contract',
                                   'Seconded',
                                   'Field Assignment',
+                                  'Inactive',
                                 ].map((s) => (
                                   <option key={s} value={s}>
                                     {s}

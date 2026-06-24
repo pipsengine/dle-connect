@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { importSagePayrollEmployeesToDb, loadWorkspaceEnv, readEmployeeDirectoryFromDb, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
-import { isDailyRatePayrollEmployee, payrollActiveEmployees } from '@/lib/payroll-employee-classification';
+import { isDailyRatePayrollEmployee, markInactiveNonDailyContractEmployees, payrollActiveEmployees, withContractPayrollClassification } from '@/lib/payroll-employee-classification';
 import { applyPayrollEmployeeOptions } from '@/lib/payroll-employee-options-store';
 import { normalizePayrollMatchKey, readActiveSagePayrollEmployeesWithLatestPayslipLines, readSagePayrollEmployeeBankDetails } from '@/lib/sage-people-payroll-store';
 
@@ -67,8 +67,98 @@ const REQUIRE_HRIS_DB = !['0', 'false', 'no', 'off'].includes(String(process.env
 const MIN_HRIS_EMPLOYEES = Number(process.env.HRIS_MIN_EMPLOYEE_SOURCE_COUNT || 100);
 let employeeSourceCache: EmployeeSourceCache | null = null;
 
+const loadDirectoryEmployees = async (): Promise<PayrollEmployeeSource> => {
+  let dbError: unknown = null;
+  try {
+    const employees = await withTimeout(readEmployeeDirectoryFromDb(), EMPLOYEE_SOURCE_DB_TIMEOUT_MS, 'DLE_Enterprise HRIS employee source timed out.');
+    if (employees && employees.length >= MIN_HRIS_EMPLOYEES) {
+      const directoryEmployees = employees.filter((employee) => ![employee.employeeId, employee.employeeCode, employee.sourceEmployeeId].some(isTemporaryPfCode) && !isExcludedFromHrisPayroll(employee));
+      const enriched = markInactiveNonDailyContractEmployees(await enrichEmployeesFromSagePayroll(directoryEmployees));
+      return {
+        employees: (await applyPayrollEmployeeOptions(enriched)).map((employee) => withContractPayrollClassification(employee)),
+        source: 'DLE_Enterprise HRIS',
+        databaseAvailable: true,
+        warning: null,
+      };
+    }
+    if (REQUIRE_HRIS_DB) {
+      throw new Error(`DLE_Enterprise HRIS employee source returned ${employees?.length || 0} records; expected at least ${MIN_HRIS_EMPLOYEES}.`);
+    }
+  } catch (error) {
+    dbError = error;
+    if (REQUIRE_HRIS_DB) {
+      throw new Error(error instanceof Error ? `Unable to read DLE_Enterprise HRIS employees: ${error.message}` : 'Unable to read DLE_Enterprise HRIS employees.');
+    }
+  }
+
+  const cached = markInactiveNonDailyContractEmployees((await readCachedPayrollEmployees()).filter((employee) => ![employee.employeeId, employee.employeeCode, employee.sourceEmployeeId].some(isTemporaryPfCode) && !isExcludedFromHrisPayroll(employee)));
+  return {
+    employees: (await applyPayrollEmployeeOptions(cached)).map((employee) => withContractPayrollClassification(employee)),
+    source: 'Local HRIS payroll cache',
+    databaseAvailable: false,
+    warning: dbError instanceof Error
+      ? `DLE_Enterprise HRIS database is not available (${dbError.message}). Showing local cached payroll data because HRIS_REQUIRE_DB_EMPLOYEE_SOURCE is disabled.`
+      : 'DLE_Enterprise HRIS database is not available. Showing local cached payroll data because HRIS_REQUIRE_DB_EMPLOYEE_SOURCE is disabled.',
+  };
+};
+
+let directorySourceCache: EmployeeSourceCache | null = null;
+
+export const invalidateDirectoryEmployeeCache = () => {
+  directorySourceCache = null;
+};
+
+export const readDirectoryEmployees = async (): Promise<PayrollEmployeeSource> => {
+  const now = Date.now();
+  if (directorySourceCache?.value && directorySourceCache.expiresAt > now) return directorySourceCache.value;
+  if (directorySourceCache?.pending) return directorySourceCache.pending;
+  const pending = loadDirectoryEmployees().then((value) => {
+    const window = cacheWindow(value);
+    directorySourceCache = { value, expiresAt: Date.now() + window.expiresIn, staleUntil: Date.now() + window.staleFor };
+    return value;
+  });
+  directorySourceCache = { value: directorySourceCache?.value, expiresAt: 0, staleUntil: 0, pending };
+  return pending;
+};
+
+export const readPayrollEmployees = async (): Promise<PayrollEmployeeSource> => {
+  const now = Date.now();
+  if (employeeSourceCache?.value && employeeSourceCache.expiresAt > now) return employeeSourceCache.value;
+
+  if (employeeSourceCache?.value && employeeSourceCache.staleUntil > now) {
+    if (!employeeSourceCache.pending) {
+      const staleValue = employeeSourceCache.value;
+      const pending = loadPayrollEmployees()
+        .then((value) => {
+          const window = cacheWindow(value);
+          employeeSourceCache = { value, expiresAt: Date.now() + window.expiresIn, staleUntil: Date.now() + window.staleFor };
+          return value;
+        })
+        .catch(() => {
+          const window = cacheWindow(staleValue);
+          employeeSourceCache = { value: staleValue, expiresAt: Date.now() + window.expiresIn, staleUntil: Date.now() + window.staleFor };
+          return staleValue;
+        });
+      employeeSourceCache.pending = pending;
+      pending.catch(() => undefined);
+    }
+    return employeeSourceCache.value;
+  }
+
+  if (employeeSourceCache?.pending) return employeeSourceCache.pending;
+
+  const pending = loadPayrollEmployees().then((value) => {
+    const window = cacheWindow(value);
+    employeeSourceCache = { value, expiresAt: Date.now() + window.expiresIn, staleUntil: Date.now() + window.staleFor };
+    return value;
+  });
+  employeeSourceCache = { value: employeeSourceCache?.value, expiresAt: 0, staleUntil: 0, pending };
+  return pending;
+};
+
 export const invalidatePayrollEmployeeCache = () => {
   employeeSourceCache = null;
+  directorySourceCache = null;
 };
 
 const cacheWindow = (source: PayrollEmployeeSource) => {
@@ -351,39 +441,4 @@ const loadPayrollEmployees = async (): Promise<PayrollEmployeeSource> => {
       ? `DLE_Enterprise HRIS database is not available (${dbError.message}). Showing local cached payroll data because HRIS_REQUIRE_DB_EMPLOYEE_SOURCE is disabled.`
       : 'DLE_Enterprise HRIS database is not available. Showing local cached payroll data because HRIS_REQUIRE_DB_EMPLOYEE_SOURCE is disabled.',
   };
-};
-
-export const readPayrollEmployees = async (): Promise<PayrollEmployeeSource> => {
-  const now = Date.now();
-  if (employeeSourceCache?.value && employeeSourceCache.expiresAt > now) return employeeSourceCache.value;
-
-  if (employeeSourceCache?.value && employeeSourceCache.staleUntil > now) {
-    if (!employeeSourceCache.pending) {
-      const staleValue = employeeSourceCache.value;
-      const pending = loadPayrollEmployees()
-        .then((value) => {
-          const window = cacheWindow(value);
-          employeeSourceCache = { value, expiresAt: Date.now() + window.expiresIn, staleUntil: Date.now() + window.staleFor };
-          return value;
-        })
-        .catch(() => {
-          const window = cacheWindow(staleValue);
-          employeeSourceCache = { value: staleValue, expiresAt: Date.now() + window.expiresIn, staleUntil: Date.now() + window.staleFor };
-          return staleValue;
-        });
-      employeeSourceCache.pending = pending;
-      pending.catch(() => undefined);
-    }
-    return employeeSourceCache.value;
-  }
-
-  if (employeeSourceCache?.pending) return employeeSourceCache.pending;
-
-  const pending = loadPayrollEmployees().then((value) => {
-    const window = cacheWindow(value);
-    employeeSourceCache = { value, expiresAt: Date.now() + window.expiresIn, staleUntil: Date.now() + window.staleFor };
-    return value;
-  });
-  employeeSourceCache = { value: employeeSourceCache?.value, expiresAt: 0, staleUntil: 0, pending };
-  return pending;
 };

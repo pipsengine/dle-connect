@@ -5,7 +5,7 @@ import {
   nextEmployeeCodeFromDb,
   saveEmployeeDraftToDb,
 } from '@/lib/dle-enterprise-db';
-import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { payrollDataSourceInfo, readDirectoryEmployees } from '@/lib/payroll-employee-source';
 import { writePayrollEmployeeOption } from '@/lib/payroll-employee-options-store';
 
 type Role =
@@ -358,7 +358,7 @@ export async function POST(request: Request) {
 
 export async function GET() {
   try {
-    const employeeSource = await readPayrollEmployees();
+    const employeeSource = await readDirectoryEmployees();
     return jsonOk({
       source: employeeSource.source,
       dataSource: payrollDataSourceInfo(employeeSource),

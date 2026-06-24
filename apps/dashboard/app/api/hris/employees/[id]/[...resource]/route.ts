@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { readEmployeeContractsFromDb } from '@/lib/dle-enterprise-db';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
-import { readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { readDirectoryEmployees } from '@/lib/payroll-employee-source';
+import { contractPayrollClassification, type ContractPayrollClassification } from '@/lib/payroll-employee-classification';
 
 type Role =
   | 'Super Admin'
@@ -290,6 +291,7 @@ type EmployeeRecord = {
   history: HistoryEvent[];
   audit: AuditLog[];
   aiInsights: AIInsight[];
+  payrollClassification?: ContractPayrollClassification;
 };
 
 type JobChangeStatus =
@@ -2603,10 +2605,11 @@ const buildDbProfileRecord = (row: DleEmployeeDirectoryRow): EmployeeRecord => {
 };
 
 const ensureRecordFromDb = async (employeeId: string) => {
-  const employeeSource = await readPayrollEmployees();
+  const employeeSource = await readDirectoryEmployees();
   const found = employeeSource.employees.find((row) => row.employeeCode.toLowerCase() === employeeId.toLowerCase() || row.employeeId.toLowerCase() === employeeId.toLowerCase());
   if (!found) return ensureRecord(employeeId);
   const record = applyOverrides(found.employeeCode, buildDbProfileRecord(found));
+  record.payrollClassification = found.payrollClassification || contractPayrollClassification(found);
   store.set(found.employeeCode, record);
   return record;
 };
@@ -2674,6 +2677,7 @@ type ProfilePayload = EmployeeProfile & {
   disciplinary: DisciplinaryRecord[] | null;
   history: HistoryEvent[];
   aiInsights: AIInsight[];
+  payrollClassification?: ContractPayrollClassification;
 };
 
 const sanitizePayrollForRole = (payroll: PayrollSummary, perms: ReturnType<typeof rolePermissions>): PayrollSummary => {
@@ -2711,6 +2715,7 @@ const sanitizePayloadForRole = (rec: EmployeeRecord, perms: ReturnType<typeof ro
     disciplinary: perms.canViewDisciplinary ? rec.disciplinary : null,
     history: rec.history,
     aiInsights: rec.aiInsights,
+    payrollClassification: rec.payrollClassification,
   };
 };
 

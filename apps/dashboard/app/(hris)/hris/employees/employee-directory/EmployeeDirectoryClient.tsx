@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import {
+  bulkApplyContractPayrollRules,
+  ContractPayrollBadge,
+  patchContractPayrollClassification,
+  type ContractPayrollClassificationAction,
+} from '../components/ContractPayrollClassificationUi';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
@@ -123,6 +129,14 @@ type Employee = {
   hasManagerAssigned: boolean;
   createdAt?: string;
   modifiedAt?: string;
+  payrollClassification?: {
+    isContractCode: boolean;
+    isDailyRate: boolean;
+    shouldDeactivate: boolean;
+    payrollEligible: boolean;
+    label: string;
+    recommendation: string | null;
+  };
 };
 
 type EmployeeDirectoryPayload = {
@@ -230,6 +244,7 @@ const normalizeEmployee = (record: Partial<Employee>): Employee => {
     hasManagerAssigned: boolValue(record.hasManagerAssigned),
     createdAt: optionalText(record.createdAt),
     modifiedAt: optionalText(record.modifiedAt),
+    payrollClassification: record.payrollClassification || undefined,
   };
 };
 
@@ -567,15 +582,23 @@ function MetricCard({
 function EmployeeActionsMenu({
   employee,
   canChangeStatus,
+  canManagePayrollClassification,
   onQuickView,
+  onClassificationApplied,
 }: {
   employee: Employee;
   canChangeStatus: boolean;
+  canManagePayrollClassification: boolean;
   onQuickView: () => void;
+  onClassificationApplied: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [classifyBusy, setClassifyBusy] = useState<ContractPayrollClassificationAction | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const employeeId = encodeURIComponent(employee.employeeId);
+  const classification = employee.payrollClassification;
+  const showDeactivate = canManagePayrollClassification && classification?.shouldDeactivate && employee.status !== 'Inactive';
+  const showActivate = canManagePayrollClassification && classification?.isContractCode && !classification?.isDailyRate;
 
   useOutsideClick(ref, () => setOpen(false), open);
 
@@ -594,6 +617,19 @@ function EmployeeActionsMenu({
     { label: 'Transfer', href: `/hris/employees/employee-transfer?employeeId=${employeeId}`, icon: ArrowDownUp },
     { label: 'Promotion', href: `/hris/employees/employee-promotion?employeeId=${employeeId}`, icon: UserCheck },
   ];
+
+  const runClassification = async (action: ContractPayrollClassificationAction) => {
+    setClassifyBusy(action);
+    try {
+      await patchContractPayrollClassification(employee.employeeCode || employee.employeeId, action);
+      setOpen(false);
+      onClassificationApplied();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Classification update failed');
+    } finally {
+      setClassifyBusy(null);
+    }
+  };
 
   return (
     <div className="relative flex justify-end" ref={ref}>
@@ -666,6 +702,35 @@ function EmployeeActionsMenu({
                     </Link>
                   );
                 })}
+              </div>
+            )}
+
+            {(showDeactivate || showActivate) && (
+              <div className="border-t border-slate-100 py-1">
+                {showDeactivate && (
+                  <button
+                    type="button"
+                    disabled={Boolean(classifyBusy)}
+                    onClick={() => void runClassification('deactivate-non-daily')}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-amber-50 transition-colors disabled:opacity-60"
+                    role="menuitem"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-amber-700" />
+                    <span className="text-sm font-bold text-amber-900">Deactivate (non-daily contract)</span>
+                  </button>
+                )}
+                {showActivate && (
+                  <button
+                    type="button"
+                    disabled={Boolean(classifyBusy)}
+                    onClick={() => void runClassification('activate-daily-rate')}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-emerald-50 transition-colors disabled:opacity-60"
+                    role="menuitem"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                    <span className="text-sm font-bold text-emerald-900">Set up daily rate</span>
+                  </button>
+                )}
               </div>
             )}
           </motion.div>
@@ -747,6 +812,8 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [directoryLoading, setDirectoryLoading] = useState(true);
   const [directoryError, setDirectoryError] = useState<string | null>(null);
+  const [classificationNotice, setClassificationNotice] = useState<string | null>(null);
+  const [bulkClassifyBusy, setBulkClassifyBusy] = useState(false);
 
   const loadEmployees = useCallback(async () => {
     setDirectoryLoading(true);
@@ -818,8 +885,15 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
       canViewMedical: role === 'Super Admin' || role === 'HR Director' || role === 'Compliance Officer',
       canViewRisk: role !== 'Employee',
       canChangeStatus: role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager',
+      canManagePayrollClassification:
+        role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'Payroll Officer',
     };
   }, [role]);
+
+  const contractPayrollPendingCount = useMemo(
+    () => employees.filter((e) => e.payrollClassification?.shouldDeactivate && e.status !== 'Inactive').length,
+    [employees],
+  );
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query.trim()), 250);
@@ -1091,6 +1165,32 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
     ]);
   };
 
+  const applyBulkContractPayrollRules = async () => {
+    if (!permissions.canManagePayrollClassification || contractPayrollPendingCount === 0) return;
+    if (
+      !window.confirm(
+        `Deactivate ${contractPayrollPendingCount} C-code contract employee(s) who are not on daily-rate payroll?\n\nThey will be marked Inactive in DLE_Enterprise and excluded from payroll runs.`,
+      )
+    ) {
+      return;
+    }
+    setBulkClassifyBusy(true);
+    setClassificationNotice(null);
+    try {
+      const result = await bulkApplyContractPayrollRules({
+        action: 'deactivate-non-daily',
+        applyAll: true,
+        reason: 'Bulk apply contract payroll rules from Employee Directory',
+      });
+      setClassificationNotice(`Contract payroll rules applied: ${result.succeeded} of ${result.processed} employee(s) updated.`);
+      await loadEmployees();
+    } catch (error) {
+      setClassificationNotice(error instanceof Error ? error.message : 'Bulk classification failed');
+    } finally {
+      setBulkClassifyBusy(false);
+    }
+  };
+
   const orgNodes = useMemo(() => {
     const byDept = new Map<string, Employee[]>();
     for (const e of filteredEmployees) {
@@ -1176,7 +1276,13 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
     if (col === 'org') return <div className="text-sm font-extrabold text-slate-800 truncate">{e.department}</div>;
     if (col === 'manager') return <div className="text-sm font-extrabold text-slate-800 truncate">{e.managerName || 'Unassigned'}</div>;
     if (col === 'location') return <div className="text-sm font-extrabold text-slate-800 truncate">{e.location}</div>;
-    if (col === 'employment') return <div className="text-sm font-extrabold text-slate-800 truncate">{e.employmentType}</div>;
+    if (col === 'employment')
+      return (
+        <div className="space-y-1">
+          <div className="text-sm font-extrabold text-slate-800 truncate">{e.employmentType}</div>
+          <ContractPayrollBadge classification={e.payrollClassification} />
+        </div>
+      );
     if (col === 'status') return <StatusBadge status={e.status} />;
     if (col === 'contact') return <div className="text-sm font-extrabold text-slate-800 truncate">{e.officialEmail || e.email || 'No official email'}</div>;
     if (col === 'address') return <div className="text-sm font-extrabold text-slate-800 truncate">{[e.city, e.state].filter(Boolean).join(', ') || 'No city/state'}</div>;
@@ -1185,7 +1291,16 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
     if (col === 'promotion') return <div className="text-sm font-extrabold text-slate-800">{e.lastPromotion ? formatDate(e.lastPromotion) : '-'}</div>;
     if (col === 'actions')
       return (
-        <EmployeeActionsMenu employee={e} canChangeStatus={permissions.canChangeStatus} onQuickView={() => openEmployee(e)} />
+        <EmployeeActionsMenu
+          employee={e}
+          canChangeStatus={permissions.canChangeStatus}
+          canManagePayrollClassification={permissions.canManagePayrollClassification}
+          onQuickView={() => openEmployee(e)}
+          onClassificationApplied={() => {
+            void loadEmployees();
+            setClassificationNotice(`Payroll classification updated for ${e.employeeId}.`);
+          }}
+        />
       );
 
     return null;
@@ -1378,6 +1493,24 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
       </button>
       <button
         type="button"
+        disabled={!permissions.canManagePayrollClassification || contractPayrollPendingCount === 0 || bulkClassifyBusy}
+        onClick={() => void applyBulkContractPayrollRules()}
+        className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold border transition-colors ${
+          permissions.canManagePayrollClassification && contractPayrollPendingCount > 0
+            ? 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
+            : 'bg-slate-100 text-slate-400 border-slate-200'
+        }`}
+        title={
+          contractPayrollPendingCount > 0
+            ? `${contractPayrollPendingCount} non-daily C-code contract employee(s) can be deactivated`
+            : 'No pending non-daily contract employees'
+        }
+      >
+        <ShieldCheck className={`w-4 h-4 ${bulkClassifyBusy ? 'animate-pulse' : ''}`} />
+        {bulkClassifyBusy ? 'Applying rules…' : `Apply contract payroll rules${contractPayrollPendingCount > 0 ? ` (${contractPayrollPendingCount})` : ''}`}
+      </button>
+      <button
+        type="button"
         onClick={loadEmployees}
         disabled={directoryLoading}
         className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold border border-slate-200 bg-white text-slate-700 transition-colors ${
@@ -1456,6 +1589,11 @@ export default function EmployeeDirectoryClient({ initialNow }: { initialNow: st
       {directoryWarning && !directoryError && (
         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
           {directoryWarning}
+        </div>
+      )}
+      {classificationNotice && (
+        <div className="mt-4 rounded-2xl border border-dle-blue/20 bg-dle-blue/5 px-4 py-3 text-sm font-semibold text-slate-800">
+          {classificationNotice}
         </div>
       )}
 

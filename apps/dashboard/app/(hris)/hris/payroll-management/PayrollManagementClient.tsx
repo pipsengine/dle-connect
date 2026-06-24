@@ -169,7 +169,33 @@ type PayrollPayload = {
   controls: { id: string; label: string; status: string; tone: Tone }[];
   workflow?: { currentStatus: string; nextOwner: string; blockedActions: string[]; approvalStage: string };
   auditTrail?: PayrollAuditEntry[];
+  activePeriod?: string;
+  periodRecord?: {
+    period: string;
+    periodLabel: string;
+    status: string;
+    paymentDate: string | null;
+    openedAt: string | null;
+    openedBy: string | null;
+    closedAt: string | null;
+    closedBy: string | null;
+  } | null;
+  periods?: Array<{
+    period: string;
+    periodLabel: string;
+    status: string;
+    runStatus: string | null;
+    runId: string | null;
+    isActive: boolean;
+    paymentDate: string | null;
+    openedAt: string | null;
+    closedAt: string | null;
+  }>;
+  currentRun?: PayrollRun | null;
 };
+
+const payrollRunFor = (payload: PayrollPayload | null) =>
+  payload?.currentRun || payload?.runs.find((run) => run.period === payload?.period) || null;
 
 type PayrollException = PayrollPayload['exceptions'][number];
 type PayrollAuditEntry = {
@@ -658,8 +684,8 @@ const canRunAction = (actionItem: PayrollAction, role: Role, payload: PayrollPay
   }
   if (actionItem.id === 'approve-entire-workflow' && role !== 'Super Admin') return { allowed: false, reason: 'Only the Global Super Administrator can approve the entire payroll workflow end-to-end.' };
   if (actionItem.roles && !actionItem.roles.includes(role)) return { allowed: false, reason: `${role} is not authorized for this action.` };
-  const run = payload?.runs[0];
-  const status = run?.status || 'Draft';
+  const run = payrollRunFor(payload);
+  const status = run?.status || payload?.workflow?.currentStatus || 'Draft';
   const blockedEmployees = payload?.summary.blockedEmployees || 0;
   const completedStatuses = ['Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'];
   const submittedStatuses = ['Submitted', 'Under Review', ...completedStatuses];
@@ -1546,7 +1572,7 @@ function ProcessPayrollWorkspace({
   role: Role;
 }) {
   const [processView, setProcessView] = useState<'ready' | 'issues' | 'outputs' | 'audit'>('ready');
-  const currentRun = payload?.runs[0] || null;
+  const currentRun = payrollRunFor(payload);
   const status = currentRun?.status || payload?.workflow?.currentStatus || 'Draft';
   const records = payload?.records || [];
   const readyRows = records.filter((record) => record.payrollStatus === 'Ready');
@@ -1866,7 +1892,7 @@ function StatutoryWorkspace({
 }) {
   const [statutoryView, setStatutoryView] = useState<'overview' | 'paye' | 'pension' | 'schedules' | 'issues'>('overview');
   const records = payload?.records || [];
-  const currentRun = payload?.runs[0] || null;
+  const currentRun = payrollRunFor(payload);
   const payeTotal = records.reduce((sum, record) => sum + (record.paye || 0), 0);
   const pensionEeTotal = records.reduce((sum, record) => sum + (record.pension || 0), 0);
   const pensionErTotal = pensionEeTotal ? pensionEeTotal * 1.25 : 0;
@@ -2129,7 +2155,7 @@ function BankFinanceWorkspace({
 }) {
   const [financeView, setFinanceView] = useState<'payments' | 'bank-file' | 'journal' | 'reconciliation' | 'issues'>('payments');
   const records = payload?.records || [];
-  const currentRun = payload?.runs[0] || null;
+  const currentRun = payrollRunFor(payload);
   const netPay = payload?.summary.netPay || 0;
   const grossPay = payload?.summary.grossPay || 0;
   const deductions = payload?.summary.deductions || 0;
@@ -2994,7 +3020,7 @@ function SalaryManagementWorkspace({ activeTab, payload, canViewMoney }: { activ
 
 function PayrollComputationWorkflowPage({ payload, canViewMoney, role, runAction, busyAction, onAudit, exportCsv, exportExcel }: { payload: PayrollPayload | null; canViewMoney: boolean; role: Role; runAction: (action: string, reason?: string) => Promise<void>; busyAction: string; onAudit: () => void; exportCsv: () => void; exportExcel: () => void }) {
   const [activeStage, setActiveStage] = useState<WorkflowStageId>('data');
-  const currentRun = payload?.runs[0] || null;
+  const currentRun = payrollRunFor(payload);
   const status = currentRun?.status || payload?.workflow?.currentStatus || 'Draft';
   const payrollEligible = payload?.summary.payrollEligible || 0;
   const readyEmployees = payload?.summary.readyEmployees || 0;
@@ -3542,7 +3568,7 @@ function PayrollAdministrationControlCenter({
   busyAction: string;
 }) {
   const records = payload?.records || [];
-  const currentRun = payload?.runs[0] || null;
+  const currentRun = payrollRunFor(payload);
   const runStatus = currentRun?.status || payload?.workflow?.currentStatus || 'Draft';
   const taxPensionLiability = (payload?.summary.deductions || 0);
   const pendingApprovals = ['Submitted', 'Under Review', 'Ready for Approval'].includes(runStatus) ? 1 : 0;
@@ -3838,12 +3864,13 @@ export default function PayrollManagementClient({ initialNow, initialSection = '
   const [auditOpen, setAuditOpen] = useState(false);
   const [dashboardPanel, setDashboardPanel] = useState<DashboardPanelId>('ready');
   const [fixIssue, setFixIssue] = useState<PayrollException | null>(null);
+  const [viewPeriod, setViewPeriod] = useState<string | null>(null);
 
   const section = sectionById(sectionId);
-  const activeTabId = activeTabs[section.id] || section.tabs[0].id;
+  const activeTabId = activeTabs[section.id] || (section.id === 'payroll-processing' ? 'payroll-run' : section.tabs[0].id);
   const activeTab = section.tabs.find((tab) => tab.id === activeTabId) || section.tabs[0];
   const canViewMoney = Boolean(payload?.permissions.canViewMoney);
-  const currentRun = payload?.runs[0] || null;
+  const currentRun = payrollRunFor(payload);
   const lastLoaded = payload?.generatedAt || initialNow;
 
   const openSection = (targetSection: SectionId, targetTab?: string) => {
@@ -3861,15 +3888,18 @@ export default function PayrollManagementClient({ initialNow, initialSection = '
     }, 50);
   };
 
-  const load = async () => {
+  const load = async (periodOverride?: string | null) => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/hris/payroll-management', { cache: 'no-store' });
+      const periodQuery = periodOverride ?? viewPeriod;
+      const url = periodQuery ? `/api/hris/payroll-management?period=${encodeURIComponent(periodQuery)}` : '/api/hris/payroll-management';
+      const res = await fetch(url, { cache: 'no-store' });
       const json = await readApiResponse<PayrollPayload>(res);
       if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Payroll request failed (${res.status})`);
       setPayload(json.data);
       setRole(json.data.role);
+      setViewPeriod(json.data.period);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to load payroll management');
     } finally {
@@ -3920,19 +3950,21 @@ export default function PayrollManagementClient({ initialNow, initialSection = '
     });
   }, [payload?.records, query, status]);
 
-  const runAction = async (action: string, reason = '') => {
+  const runAction = async (action: string, reason = '', periodOverride?: string) => {
     setBusyAction(action);
     setToast('');
     try {
+      const period = periodOverride || payload?.period || viewPeriod || undefined;
       const res = await fetch('/api/hris/payroll-management', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action, runId: currentRun?.id, reason }),
+        body: JSON.stringify({ action, period, runId: payrollRunFor(payload)?.id, reason }),
       });
       const json = await readApiResponse<{ run: PayrollRun }>(res);
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Payroll action failed');
-      setToast(`${action.replace('-run', '').replace('-', ' ')} completed.`);
-      await load();
+      setToast(`${action.replace('-run', '').replace(/-/g, ' ')} completed.`);
+      if (period) setViewPeriod(period);
+      await load(period || null);
     } catch (e) {
       setToast(e instanceof Error ? e.message : 'Payroll action failed');
     } finally {
@@ -4031,6 +4063,26 @@ export default function PayrollManagementClient({ initialNow, initialSection = '
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-extrabold text-blue-800">Period: {payload?.periodLabel || 'Loading'}</span>
+            {(payload?.periods?.length || 0) > 0 ? (
+              <label className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-extrabold text-slate-700">
+                <span>View</span>
+                <select
+                  value={viewPeriod || payload?.period || ''}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setViewPeriod(next);
+                    void load(next);
+                  }}
+                  className="bg-transparent text-xs font-extrabold text-slate-900 focus:outline-none"
+                >
+                  {(payload?.periods || []).map((item) => (
+                    <option key={item.period} value={item.period}>
+                      {item.periodLabel} ({item.status}{item.isActive ? ' · active' : ''})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-extrabold text-emerald-800">Source: {payload?.dataSource?.source || 'DLE_Enterprise HRIS'}</span>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-extrabold text-slate-700">Employees: {number(payload?.dataSource?.employeeCount || payload?.summary.totalEmployees)}</span>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-extrabold text-slate-700">Loaded: {new Date(lastLoaded).toLocaleString('en-GB')}</span>
@@ -4147,7 +4199,22 @@ export default function PayrollManagementClient({ initialNow, initialSection = '
             ) : section.id === 'deductions-management' ? (
               <DeductionsWorkspace activeTab={activeTab} payload={payload} canViewMoney={canViewMoney} />
             ) : section.id === 'payroll-processing' ? (
-              <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} />
+              activeTab.id === 'payroll-period-management' ? (
+                <PayrollPeriodManagementPanel
+                  payload={payload}
+                  activeTabId={periodTab}
+                  setActiveTabId={setPeriodTab}
+                  busyAction={busyAction}
+                  role={role}
+                  onSelectPeriod={(period) => {
+                    setViewPeriod(period);
+                    void load(period);
+                  }}
+                  onPeriodAction={(action, period, reason) => void runAction(action, reason, period)}
+                />
+              ) : (
+                <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} />
+              )
             ) : section.id === 'compliance-statutory-management' ? (
               <StatutoryWorkspace activeTab={activeTab} payload={payload} canViewMoney={canViewMoney} runAction={runAction} busyAction={busyAction} />
             ) : section.id === 'finance-integration' ? (
@@ -5077,7 +5144,7 @@ function IssueFixDrawer({
 
 function PayrollCommandBar({ section, activeTab, role, payload, busyAction, onAction }: { section: SectionConfig; activeTab: TabConfig; role: Role; payload: PayrollPayload | null; busyAction: string; onAction: (action: PayrollAction) => void }) {
   const actions = actionsFor(section, activeTab);
-  const currentStatus = payload?.workflow?.currentStatus || payload?.runs[0]?.status || 'Draft';
+  const currentStatus = payload?.workflow?.currentStatus || payrollRunFor(payload)?.status || 'Draft';
   const blocked = payload?.workflow?.blockedActions || [];
   const primaryIds = ['validate-payroll', 'view-exceptions', 'create-run', 'submit-run', 'approve-run', 'approve-entire-workflow', 'release-run', 'generate-payslips', 'generate-report'];
   const visibleActions = actions.filter((item) => primaryIds.includes(item.id)).slice(0, 7);
@@ -5174,8 +5241,8 @@ const workflowSteps = [
 ];
 
 function WorkflowStepper({ payload, onAction }: { payload: PayrollPayload | null; onAction: (action: PayrollAction) => void }) {
-  const run = payload?.runs[0];
-  const status = run?.status || 'Draft';
+  const run = payrollRunFor(payload);
+  const status = run?.status || payload?.workflow?.currentStatus || 'Draft';
   const stepDone = (actionId: string) => {
     if (!run) return false;
     if (actionId === 'create-period') return Boolean(run.createdAt);
@@ -5245,7 +5312,7 @@ function ConfirmationModal({ actionItem, payload, reason, setReason, onCancel, o
           <p className="mt-1 text-sm font-semibold text-slate-600">Review the impact before continuing. This action will be audit logged.</p>
         </div>
         <div className="space-y-3 p-4">
-          <InfoTile label="Payroll Period" value={payload?.periodLabel || 'Current Period'} detail={payload?.runs[0]?.id || 'No run selected'} tone="blue" />
+          <InfoTile label="Payroll Period" value={payload?.periodLabel || 'Current Period'} detail={payrollRunFor(payload)?.id || 'No run started for this period'} tone="blue" />
           <InfoTile label="Affected Employees" value={number(payload?.summary.payrollEligible)} detail={`${number(payload?.summary.exceptionCount)} exceptions currently visible`} tone={(payload?.summary.exceptionCount || 0) ? 'amber' : 'green'} />
           <InfoTile label="Financial Amount" value={money(payload?.summary.netPay, payload?.permissions.canViewMoney)} detail="Current net payroll exposure" tone="violet" />
           <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-800">Sensitive payroll actions can affect employee pay, ESS visibility, bank files, journals, statutory schedules, and period locks.</div>
@@ -5365,12 +5432,49 @@ function InfoTile({ label, value, detail, tone }: { label: string; value: string
   );
 }
 
-function PayrollPeriodManagementPanel({ payload, activeTabId, setActiveTabId }: { payload: PayrollPayload | null; activeTabId: string; setActiveTabId: (value: string) => void }) {
+function PayrollPeriodManagementPanel({
+  payload,
+  activeTabId,
+  setActiveTabId,
+  busyAction,
+  role,
+  onSelectPeriod,
+  onPeriodAction,
+}: {
+  payload: PayrollPayload | null;
+  activeTabId: string;
+  setActiveTabId: (value: string) => void;
+  busyAction: string;
+  role: Role;
+  onSelectPeriod: (period: string) => void;
+  onPeriodAction: (action: string, period: string, reason?: string) => void;
+}) {
   const activeTab = payrollPeriodTabs.find((tab) => tab.id === activeTabId) || payrollPeriodTabs[0];
-  const currentRun = payload?.runs[0] || null;
-  const periodCode = currentRun?.id || `payroll-${payload?.period || 'period'}`;
+  const currentRun = payrollRunFor(payload);
   const periodName = payload?.periodLabel || 'Current Payroll Period';
   const employeeCategories = payload?.breakdowns.byEmploymentType.map((item) => item.label).slice(0, 6) || ['Permanent', 'Lumpsum', 'Daily Rate'];
+  const periods = payload?.periods || [];
+  const canManage = role === 'Super Admin' || role === 'Payroll Officer' || role === 'HR Director' || role === 'HR Manager' || role === 'Finance Manager' || role === 'CFO';
+  const canReopen = role === 'Super Admin' || role === 'CFO' || role === 'Executive Director';
+
+  const addPeriod = () => {
+    const value = window.prompt('Enter payroll period code (YYYY-MM)', '2026-07');
+    if (!value || !/^\d{4}-\d{2}$/.test(value.trim())) return;
+    onPeriodAction('create-period', value.trim());
+  };
+
+  const periodAction = (period: string, action: 'open-period' | 'close-period' | 'reopen-period') => {
+    if (action === 'reopen-period') {
+      const reason = window.prompt(`Reason for reopening ${period}`);
+      if (!reason || reason.trim().length < 3) return;
+      onPeriodAction(action, period, reason.trim());
+      return;
+    }
+    if (action === 'close-period' && !window.confirm(`Close payroll period ${period}? This locks the period after outputs are complete.`)) return;
+    if (action === 'open-period' && !window.confirm(`Open payroll period ${period} and set it as the active processing month?`)) return;
+    onPeriodAction(action, period);
+  };
+
   const completionChecks = [
     ['Employees processed', `${number(payload?.summary.payrollEligible)} eligible employees`, (payload?.summary.blockedEmployees || 0) === 0],
     ['Payslips generated', 'Generation queue available', Boolean(currentRun && ['Approved', 'Locked', 'Posted'].includes(currentRun.status))],
@@ -5389,9 +5493,74 @@ function PayrollPeriodManagementPanel({ payload, activeTabId, setActiveTabId }: 
             <p className="mt-1 max-w-4xl text-sm font-semibold text-slate-600">Create, validate, approve, close, reopen, lock, report, and audit payroll periods across frequencies, companies, locations, departments, and employee categories.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-amber-800">Current: {periodName}</span>
-            <span className={`rounded-full px-3 py-1 text-xs font-black ${toneStyles[statusTone(currentRun?.status || 'Draft')].chip}`}>{currentRun?.status || 'Draft'}</span>
+            <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-amber-800">Viewing: {periodName}</span>
+            <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-amber-800">Active: {payload?.activePeriod || '—'}</span>
+            <span className={`rounded-full px-3 py-1 text-xs font-black ${toneStyles[statusTone(payload?.periodRecord?.status || currentRun?.status || 'Draft')].chip}`}>
+              Period: {payload?.periodRecord?.status || 'Draft'}
+            </span>
+            <span className={`rounded-full px-3 py-1 text-xs font-black ${toneStyles[statusTone(currentRun?.status || 'Draft')].chip}`}>
+              Run: {currentRun?.status || 'Not started'}
+            </span>
           </div>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h3 className="text-sm font-black text-slate-950">Payroll periods (DLE_Enterprise)</h3>
+            <p className="mt-1 text-xs font-semibold text-slate-600">Open, close, or reopen any month. Changes are saved to <code>[hris].[PayrollPeriods]</code> and <code>[hris].[PayrollSettings]</code>.</p>
+          </div>
+          {canManage ? (
+            <button type="button" onClick={addPeriod} className="inline-flex min-h-10 items-center justify-center rounded-lg bg-slate-900 px-4 text-xs font-black text-white hover:bg-slate-800">
+              Create period
+            </button>
+          ) : null}
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="bg-slate-50 text-[11px] font-black uppercase text-slate-600">
+              <tr>
+                <th className="px-3 py-2">Period</th>
+                <th className="px-3 py-2">Period status</th>
+                <th className="px-3 py-2">Run</th>
+                <th className="px-3 py-2">Run status</th>
+                <th className="px-3 py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {periods.map((row) => (
+                <tr key={row.period} className={`border-t border-slate-100 ${row.period === payload?.period ? 'bg-blue-50/60' : ''}`}>
+                  <td className="px-3 py-3">
+                    <button type="button" onClick={() => onSelectPeriod(row.period)} className="text-left">
+                      <p className="font-black text-slate-950">{row.periodLabel}</p>
+                      <p className="text-[11px] font-semibold text-slate-500">{row.period}{row.isActive ? ' · system active' : ''}</p>
+                    </button>
+                  </td>
+                  <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-[11px] font-black ${toneStyles[statusTone(row.status)].chip}`}>{row.status}</span></td>
+                  <td className="px-3 py-3 text-xs font-bold text-slate-700">{row.runId || '—'}</td>
+                  <td className="px-3 py-3 text-xs font-bold text-slate-700">{row.runStatus || 'Not started'}</td>
+                  <td className="px-3 py-3">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button type="button" onClick={() => onSelectPeriod(row.period)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-black text-slate-700 hover:bg-slate-50">View</button>
+                      {canManage && row.status !== 'Open' && row.status !== 'Reopened' ? (
+                        <button type="button" disabled={Boolean(busyAction)} onClick={() => periodAction(row.period, 'open-period')} className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-black text-emerald-800 hover:bg-emerald-100 disabled:opacity-60">Open</button>
+                      ) : null}
+                      {canManage && row.runStatus === 'Posted' ? (
+                        <button type="button" disabled={Boolean(busyAction)} onClick={() => periodAction(row.period, 'close-period')} className="rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[11px] font-black text-violet-800 hover:bg-violet-100 disabled:opacity-60">Close</button>
+                      ) : null}
+                      {canReopen && row.status === 'Closed' ? (
+                        <button type="button" disabled={Boolean(busyAction)} onClick={() => periodAction(row.period, 'reopen-period')} className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-black text-red-800 hover:bg-red-100 disabled:opacity-60">Reopen</button>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {!periods.length ? (
+                <tr><td colSpan={5} className="px-3 py-8 text-center text-sm font-semibold text-slate-500">No payroll periods in DLE_Enterprise yet. Create one to begin.</td></tr>
+              ) : null}
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -5429,7 +5598,7 @@ function PayrollPeriodManagementPanel({ payload, activeTabId, setActiveTabId }: 
         <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <h3 className="text-sm font-black text-slate-950">Current Period Control</h3>
           <div className="mt-3 grid grid-cols-2 gap-2">
-            <InfoTile label="Period Code" value={periodCode} detail="Duplicate guarded" tone="blue" />
+            <InfoTile label="Period Code" value={currentRun?.id || `payroll-${payload?.period || 'period'}`} detail="Per-month payroll run" tone="blue" />
             <InfoTile label="Period Name" value={periodName} detail="Calendar mapped" tone="green" />
             <InfoTile label="Payment Date" value="Configured per calendar" detail="Bank schedule ready" tone="violet" />
             <InfoTile label="Payroll Type" value="Monthly / Weekly / Daily" detail="Frequency aware" tone="amber" />
