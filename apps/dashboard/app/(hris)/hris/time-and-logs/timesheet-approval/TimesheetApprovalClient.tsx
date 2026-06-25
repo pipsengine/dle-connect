@@ -165,6 +165,9 @@ type ApprovalPayload = {
     connected: boolean;
     headerCount: number;
     lineCount: number;
+    visibleTimesheetCount?: number;
+    awaitingApprovalCount?: number;
+    historyTimesheetCount?: number;
     writeTarget: string;
   };
   permissions: {
@@ -179,6 +182,7 @@ type ApprovalPayload = {
   };
   pendingTimesheets: TimesheetSummary[];
   historyTimesheets: TimesheetSummary[];
+  allTimesheets?: TimesheetSummary[];
   stats: Record<string, number>;
   filterOptions: {
     workCenters: string[];
@@ -395,7 +399,10 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
     }
   };
 
-  const workspaceTimesheets = mode === 'history' ? payload?.historyTimesheets || [] : payload?.pendingTimesheets || [];
+  const workspaceTimesheets = useMemo(() => {
+    if (mode === 'history') return payload?.historyTimesheets || [];
+    return payload?.allTimesheets || payload?.pendingTimesheets || [];
+  }, [mode, payload?.allTimesheets, payload?.historyTimesheets, payload?.pendingTimesheets]);
   const filteredTimesheets = useMemo(() => {
     const term = query.trim().toLowerCase();
     return workspaceTimesheets.filter((item) => {
@@ -596,8 +603,30 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
 
   if (loading && !payload) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center bg-[#F8FAFC]">
-        <RefreshCcw className="h-8 w-8 animate-spin text-[#94A3B8]" />
+      <div className="min-h-screen bg-[#F8FAFC] pb-10">
+        <div className="mx-auto max-w-[1680px] space-y-6 px-6 pt-2">
+          <header className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-start gap-4">
+                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] bg-violet-600 text-white shadow-lg shadow-violet-600/20">
+                  <ClipboardList className="h-7 w-7" />
+                </span>
+                <div>
+                  <h1 className="text-[32px] font-bold leading-tight text-[#0F172A]">
+                    {mode === 'history' ? 'Timesheet Approval History' : 'Timesheet Approval Workspace'}
+                  </h1>
+                  <p className="mt-2 text-sm text-[#64748B]">Loading approval queue from DLE_Enterprise…</p>
+                </div>
+              </div>
+            </div>
+            <RefreshCcw className="h-8 w-8 animate-spin text-[#94A3B8]" />
+          </header>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <div key={index} className="h-28 animate-pulse rounded-[18px] bg-white shadow-sm" />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -645,7 +674,7 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
             <span className="font-semibold">{payload.dataSource.system}</span>
             {' · '}
             {payload.dataSource.connected
-              ? `Connected to ${payload.dataSource.database} on ${payload.dataSource.host} (${payload.dataSource.headerCount} headers, ${payload.dataSource.lineCount} lines). Writes go to ${payload.dataSource.writeTarget}.`
+              ? `Connected to ${payload.dataSource.database} on ${payload.dataSource.host} (${payload.dataSource.headerCount} headers, ${payload.dataSource.lineCount} lines). Showing ${payload.dataSource.visibleTimesheetCount ?? payload.stats.visibleTimesheets ?? workspaceTimesheets.length} timesheets${typeof payload.dataSource.awaitingApprovalCount === 'number' ? ` · ${payload.dataSource.awaitingApprovalCount} awaiting approval` : ''}.`
               : `Not connected to ${payload.dataSource.database}. Check DLE_ENTERPRISE_DB_* settings on this server.`}
           </div>
         ) : null}
@@ -873,7 +902,11 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
                         ) : (
                           <tr>
                             <td colSpan={mode === 'active' ? 10 : 9} className="px-4 py-10 text-center text-sm text-[#64748B]">
-                              No timesheets match this workspace view.
+                              {workspaceTimesheets.length
+                                ? 'No timesheets match the current filters. Clear filters or switch workspace tabs.'
+                                : mode === 'history'
+                                  ? 'No completed or closed timesheets are available in history.'
+                                  : 'No timesheets were returned from DLE_Enterprise for this workspace view.'}
                             </td>
                           </tr>
                         )}

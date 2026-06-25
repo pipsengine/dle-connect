@@ -1417,6 +1417,124 @@ export async function readTimesheetData(options?: { softFail?: boolean }) {
   return { headers, lines };
 }
 
+export async function readTimesheetApprovalData(options?: { softFail?: boolean }) {
+  let pool: sql.ConnectionPool;
+  try {
+    pool = await db();
+  } catch (error) {
+    if (options?.softFail) return { headers: [] as TimesheetHeader[], lines: [] as TimesheetLine[] };
+    const detail = error instanceof Error ? error.message : 'connection failed';
+    throw new Error(`Timesheet data requires DLE_Enterprise (${detail}). Verify DLE_ENTERPRISE_DB_HOST, DLE_ENTERPRISE_DB_NAME, and credentials on this server.`);
+  }
+
+  const nonDraftFilter = `[Status] <> N'Draft'`;
+  const [headersResult, eventsResult, linesResult, projectAllocationsResult, idleAllocationsResult] = await Promise.all([
+    pool.request().query(`SELECT * FROM [hris].[TimesheetHeaders] WHERE ${nonDraftFilter} ORDER BY [TimesheetDate] DESC, [SupervisorName], [WorkCenterName]`),
+    pool.request().query(`
+      SELECT e.*
+      FROM [hris].[TimesheetWorkflowEvents] e
+      INNER JOIN [hris].[TimesheetHeaders] h ON h.[Id] = e.[HeaderId]
+      WHERE h.${nonDraftFilter}
+      ORDER BY e.[Id]
+    `),
+    pool.request().query(`
+      SELECT l.*
+      FROM [hris].[TimesheetLines] l
+      INNER JOIN [hris].[TimesheetHeaders] h ON h.[Id] = l.[HeaderId]
+      WHERE h.${nonDraftFilter}
+      ORDER BY l.[EmployeeName]
+    `),
+    pool.request().query(`
+      SELECT a.*
+      FROM [hris].[TimesheetProjectAllocations] a
+      INNER JOIN [hris].[TimesheetLines] l ON l.[Id] = a.[LineId]
+      INNER JOIN [hris].[TimesheetHeaders] h ON h.[Id] = l.[HeaderId]
+      WHERE h.${nonDraftFilter}
+      ORDER BY a.[Id]
+    `),
+    pool.request().query(`
+      SELECT a.*
+      FROM [hris].[TimesheetIdleAllocations] a
+      INNER JOIN [hris].[TimesheetLines] l ON l.[Id] = a.[LineId]
+      INNER JOIN [hris].[TimesheetHeaders] h ON h.[Id] = l.[HeaderId]
+      WHERE h.${nonDraftFilter}
+      ORDER BY a.[Id]
+    `),
+  ]);
+
+  const eventsByHeader = new Map<string, TimesheetWorkflowEvent[]>();
+  for (const row of eventsResult.recordset) {
+    const events = eventsByHeader.get(row.HeaderId) || [];
+    events.push({ stage: row.Stage, decision: row.Decision, by: row.Actor, actedAt: toIso(row.ActedAt) || new Date().toISOString(), comment: row.Comment });
+    eventsByHeader.set(row.HeaderId, events);
+  }
+  const projectByLine = new Map<string, TimesheetLine['projectAllocations']>();
+  for (const row of projectAllocationsResult.recordset) {
+    const allocations = projectByLine.get(row.LineId) || [];
+    allocations.push({
+      projectId: row.ProjectId,
+      projectCode: row.ProjectCode,
+      projectName: row.ProjectName,
+      taskId: row.TaskId ?? undefined,
+      taskName: row.TaskName ?? undefined,
+      activityId: row.ActivityId ?? undefined,
+      hours: Number(row.Hours || 0),
+      remarks: row.Remarks,
+    });
+    projectByLine.set(row.LineId, allocations);
+  }
+  const idleByLine = new Map<string, TimesheetLine['idleAllocations']>();
+  for (const row of idleAllocationsResult.recordset) {
+    const allocations = idleByLine.get(row.LineId) || [];
+    allocations.push({ reasonId: row.ReasonId, reasonName: row.ReasonName, hours: Number(row.Hours || 0), remarks: row.Remarks });
+    idleByLine.set(row.LineId, allocations);
+  }
+  const headers: TimesheetHeader[] = headersResult.recordset.map((row) => ({
+    id: row.Id,
+    periodId: row.PeriodId,
+    timesheetDate: toDateOnly(row.TimesheetDate),
+    supervisorId: row.SupervisorId,
+    supervisorName: row.SupervisorName,
+    workCenterId: row.WorkCenterId,
+    workCenterName: row.WorkCenterName,
+    status: row.Status,
+    submittedAt: toIso(row.SubmittedAt),
+    submittedBy: row.SubmittedBy,
+    approvedAt: toIso(row.ApprovedAt),
+    approvedBy: row.ApprovedBy,
+    lastSyncAt: toIso(row.LastSyncAt),
+    payrollAcknowledgedAt: toIso(row.PayrollAcknowledgedAt),
+    payrollAcknowledgedBy: row.PayrollAcknowledgedBy,
+    projectManager: row.ProjectManager,
+    projectManagerProjectCode: row.ProjectManagerProjectCode,
+    currentApprovalStage: row.CurrentApprovalStage,
+    currentApprover: row.CurrentApprover,
+    workflowHistory: eventsByHeader.get(row.Id) || [],
+  }));
+  const lines: TimesheetLine[] = linesResult.recordset.map((row) => ({
+    id: row.Id,
+    headerId: row.HeaderId,
+    employeeId: row.EmployeeId,
+    employeeNo: row.EmployeeNo,
+    employeeName: row.EmployeeName,
+    biometricId: row.BiometricId,
+    attendanceId: row.AttendanceId,
+    clockIn: row.ClockIn,
+    clockOut: row.ClockOut,
+    attendanceDuration: Number(row.AttendanceDuration || 0),
+    projectAllocations: projectByLine.get(row.Id) || [],
+    idleAllocations: (idleByLine.get(row.Id) || []).map(withDefaultIdleReason),
+    usedHours: Number(row.UsedHours || 0),
+    idleHours: Number(row.IdleHours || 0),
+    totalHours: Number(row.TotalHours || 0),
+    variance: Number(row.Variance || 0),
+    remarks: row.Remarks,
+    validationStatus: row.ValidationStatus,
+    validationMessage: row.ValidationMessage,
+  }));
+  return { headers, lines };
+}
+
 export async function writeTimesheetData(data: { headers: TimesheetHeader[]; lines: TimesheetLine[] }) {
   const pool = await db();
   const tx = new sql.Transaction(pool);
@@ -2026,11 +2144,30 @@ const workflowEvent = (
   comment: comment?.trim() || null,
 });
 
-export const normalizeTimesheetStatus = (status: TimesheetStatus): TimesheetStatus => {
+export const normalizeTimesheetStatus = (status: TimesheetStatus | string): TimesheetStatus => {
+  const raw = String(status || '').trim();
+  if (!raw) return 'Draft';
+  const underscored = raw.replace(/[\s-]+/g, '_');
+  const aliases: Record<string, TimesheetStatus> = {
+  draft: 'Draft',
+  submitted: 'Submitted',
+  supervisor_reviewed: 'Supervisor_Reviewed',
+  cost_control_reviewed: 'Cost_Control_Reviewed',
+  project_manager_reviewed: 'Project_Manager_Reviewed',
+  hr_reviewed: 'Project_Manager_Reviewed',
+  project_control_reviewed: 'Cost_Control_Reviewed',
+  hr_acknowledged: 'HR_Acknowledged',
+  approved: 'HR_Acknowledged',
+  locked: 'Locked',
+  rejected: 'Rejected',
+  returned: 'Returned',
+  };
+  const alias = aliases[underscored.toLowerCase()];
+  if (alias) return alias;
   if (status === 'HR_Reviewed') return 'Project_Manager_Reviewed';
   if (status === 'Project_Control_Reviewed') return 'Cost_Control_Reviewed';
   if (status === 'Approved') return 'HR_Acknowledged';
-  return status;
+  return underscored as TimesheetStatus;
 };
 
 export const isTimesheetEditableStatus = (status: TimesheetStatus) =>

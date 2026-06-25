@@ -1117,6 +1117,96 @@ export const readEmployeeDirectoryFromDb = async (): Promise<DleEmployeeDirector
   return (rs.recordset || []).map(mapDirectoryEmployeeRow);
 };
 
+export type TimesheetApprovalEmployeeMeta = {
+  employeeCode: string;
+  fullName: string;
+  department: string;
+  businessUnit: string;
+  employmentType: string;
+  salaryGrade: string;
+  costCenter: string;
+  location: string;
+  payrollGroup: string;
+  ratePerHour: number | null;
+  ratePerDay: number | null;
+};
+
+let timesheetApprovalEmployeeMetaCache: { key: string; expiresAt: number; value: Map<string, TimesheetApprovalEmployeeMeta> } | null = null;
+
+const normalizeEmployeeLookupKey = (value: unknown) => String(value || '').trim().toLowerCase();
+
+export const readTimesheetApprovalEmployeeMeta = async (keys: string[]): Promise<Map<string, TimesheetApprovalEmployeeMeta>> => {
+  const unique = Array.from(new Set(keys.map((key) => String(key || '').trim()).filter(Boolean)));
+  if (!unique.length) return new Map();
+
+  const cacheKey = unique.map(normalizeEmployeeLookupKey).sort().join('|');
+  const now = Date.now();
+  if (timesheetApprovalEmployeeMetaCache?.key === cacheKey && timesheetApprovalEmployeeMetaCache.expiresAt > now) {
+    return timesheetApprovalEmployeeMetaCache.value;
+  }
+
+  const p = await pool();
+  if (!p) return new Map();
+
+  const lookup = new Map<string, TimesheetApprovalEmployeeMeta>();
+  const chunkSize = 200;
+  for (let index = 0; index < unique.length; index += chunkSize) {
+    const chunk = unique.slice(index, index + chunkSize);
+    const request = p.request();
+    const placeholders = chunk.map((code, offset) => {
+      const param = `code${index + offset}`;
+      request.input(param, sql.NVarChar(80), code);
+      return `@${param}`;
+    });
+    const rs = await request.query(`
+      SELECT
+        v.employee_code,
+        v.full_name,
+        v.department,
+        v.business_unit,
+        v.employment_type,
+        v.cost_center,
+        COALESCE(NULLIF(v.work_location, ''), NULLIF(j.office_location, ''), '') AS location,
+        payroll.salary_grade,
+        payroll.payroll_group,
+        payroll.rate_per_hour,
+        payroll.rate_per_day
+      FROM [hris].[EmployeeMasterView] v
+      LEFT JOIN [hris].[EmployeeJobInfo] j ON j.employee_id = v.employee_id
+      LEFT JOIN [hris].[EmployeePayrollSetup] payroll ON payroll.employee_id = v.employee_id
+      WHERE v.employee_code IN (${placeholders.join(', ')})
+         OR v.employee_id IN (${placeholders.join(', ')})
+         OR v.full_name IN (${placeholders.join(', ')});
+    `);
+    for (const row of rs.recordset || []) {
+      const meta: TimesheetApprovalEmployeeMeta = {
+        employeeCode: str(row.employee_code),
+        fullName: str(row.full_name),
+        department: str(row.department) || 'Unassigned',
+        businessUnit: str(row.business_unit) || 'DLE',
+        employmentType: str(row.employment_type) || 'Unassigned',
+        salaryGrade: str(row.salary_grade) || str(row.employment_type) || 'Unassigned',
+        costCenter: str(row.cost_center) || str(row.department) || 'Unassigned',
+        location: str(row.location) || 'Unassigned',
+        payrollGroup: str(row.payroll_group) || 'Monthly Payroll',
+        ratePerHour: numOrNull(row.rate_per_hour),
+        ratePerDay: numOrNull(row.rate_per_day),
+      };
+      for (const key of [meta.employeeCode, meta.fullName]) {
+        const normalized = normalizeEmployeeLookupKey(key);
+        if (normalized) lookup.set(normalized, meta);
+      }
+    }
+  }
+
+  timesheetApprovalEmployeeMetaCache = {
+    key: cacheKey,
+    expiresAt: now + Number(process.env.HRIS_TIMESHEET_APPROVAL_EMPLOYEE_CACHE_MS || 300000),
+    value: lookup,
+  };
+  return lookup;
+};
+
 const contractTypeFromEmployment = (employmentType: string, jobTitle: string, staffCategory: string) => {
   const v = `${employmentType} ${jobTitle} ${staffCategory}`.toLowerCase();
   if (v.includes('nysc')) return 'NYSC Placement';

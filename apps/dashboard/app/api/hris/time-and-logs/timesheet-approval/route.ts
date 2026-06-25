@@ -8,6 +8,7 @@ import {
   normalizePaidWorkHours,
   normalizeTimesheetStatus,
   readProjects,
+  readTimesheetApprovalData,
   readTimesheetData,
   readTimesheetPayrollUpdates,
   readTimesheetPeriods,
@@ -19,8 +20,7 @@ import {
   type TimesheetStatus,
   type TimesheetWorkflowStage,
 } from '@/lib/timesheet-entry-store';
-import { probeDleEnterpriseDatabase } from '@/lib/dle-enterprise-db';
-import { readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { describeDleEnterpriseDatabase, readTimesheetApprovalEmployeeMeta, type TimesheetApprovalEmployeeMeta } from '@/lib/dle-enterprise-db';
 
 const ok = <T,>(data: T, status = 200) => NextResponse.json({ status: 'success', data }, { status });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -45,18 +45,6 @@ const resolvePeriod = (periods: TimesheetPeriod[], dateStr: string): TimesheetPe
   return calculated;
 };
 
-type PayrollEmployeeRow = Awaited<ReturnType<typeof readPayrollEmployees>>['employees'][number];
-
-const buildEmployeeLookup = (employees: PayrollEmployeeRow[]) => {
-  const lookup = new Map<string, PayrollEmployeeRow>();
-  for (const item of employees) {
-    for (const key of [item.employeeCode, item.employeeId, item.fullName]) {
-      const normalized = lower(key);
-      if (normalized) lookup.set(normalized, item);
-    }
-  }
-  return lookup;
-};
 
 const statusLabel = (status: TimesheetStatus) => normalizeTimesheetStatus(status).replace(/_/g, ' ');
 
@@ -133,7 +121,7 @@ const requireProjectStageAccess = (stage: ProjectApprovalStage, actor: string, r
   if (!stageAccess(stage, actor, role)) throw new Error(`Only ${stage} can perform this project-level approval.`);
 };
 
-const employeeMeta = (lookup: Map<string, PayrollEmployeeRow>, line: TimesheetLine) => {
+const employeeMeta = (lookup: Map<string, TimesheetApprovalEmployeeMeta>, line: TimesheetLine) => {
   const match =
     lookup.get(lower(line.employeeNo)) ||
     lookup.get(lower(line.employeeId)) ||
@@ -189,19 +177,20 @@ const canSeeHeader = (scope: string, header: TimesheetHeader, projectApprovals: 
 const buildPayload = async (request: Request) => {
   const access = resolveAccessContext(request);
   const uiPermissions = getUiPermissions(access);
-  const dbInfo = await probeDleEnterpriseDatabase();
-  if (!dbInfo.connected) {
-    throw new Error(dbInfo.error || `Unable to connect to ${dbInfo.database} on ${dbInfo.host || 'the configured SQL host'}.`);
+  const dbMeta = describeDleEnterpriseDatabase();
+  if (!dbMeta.configured) {
+    throw new Error('DLE_ENTERPRISE_DB_* environment variables are not fully configured on this server.');
   }
-  const [{ headers, lines }, projects, payrollUpdates, employees, periods] = await Promise.all([
-    readTimesheetData(),
+
+  const [{ headers, lines }, projects, payrollUpdates, periods] = await Promise.all([
+    readTimesheetApprovalData(),
     readProjects(),
     readTimesheetPayrollUpdates(),
-    readPayrollEmployees(),
     readTimesheetPeriods(),
   ]);
-  const payrollEmployees = employees.employees;
-  const employeeLookup = buildEmployeeLookup(payrollEmployees);
+
+  const employeeKeys = lines.flatMap((line) => [line.employeeNo, line.employeeId, line.employeeName]);
+  const employeeLookup = await readTimesheetApprovalEmployeeMeta(employeeKeys);
   const scope = roleScope(access.role, access.actor);
   const lineByHeader = new Map<string, TimesheetLine[]>();
   for (const line of lines) lineByHeader.set(line.headerId, [...(lineByHeader.get(line.headerId) || []), line]);
@@ -329,25 +318,30 @@ const buildPayload = async (request: Request) => {
     payrollPosted: historyTimesheets.filter((item) => item!.payrollPosted).length,
     returned: historyTimesheets.filter((item) => item!.status === 'Returned').length,
     rejected: historyTimesheets.filter((item) => item!.status === 'Rejected').length,
-    totalHoursWorked: round(pendingTimesheets.reduce((sum, item) => sum + item!.totalHours, 0)),
-    overtimeHours: round(pendingTimesheets.reduce((sum, item) => sum + item!.overtimeHours, 0)),
-    labourCost: round(pendingTimesheets.reduce((sum, item) => sum + item!.labourCost, 0), 0),
-    projectCostAllocation: round(pendingTimesheets.reduce((sum, item) => sum + item!.projectApprovals.reduce((pSum, project) => pSum + project.labourCost, 0), 0), 0),
-    payrollReadyHours: round(pendingTimesheets.reduce((sum, item) => sum + item!.payrollReadyHours, 0)),
+    totalHoursWorked: round(allTimesheets.reduce((sum, item) => sum + item!.totalHours, 0)),
+    overtimeHours: round(allTimesheets.reduce((sum, item) => sum + item!.overtimeHours, 0)),
+    labourCost: round(allTimesheets.reduce((sum, item) => sum + item!.labourCost, 0), 0),
+    projectCostAllocation: round(allTimesheets.reduce((sum, item) => sum + item!.projectApprovals.reduce((pSum, project) => pSum + project.labourCost, 0), 0), 0),
+    payrollReadyHours: round(allTimesheets.reduce((sum, item) => sum + item!.payrollReadyHours, 0)),
     pendingApprovals: pendingTimesheets.filter((item) => ['Submitted', 'Supervisor_Reviewed', 'Cost_Control_Reviewed', 'Project_Manager_Reviewed'].includes(item!.status)).length,
     approvalAgingHours: round(pendingTimesheets.reduce((sum, item) => sum + (item!.workflowSteps.find((step) => step.stage === item!.currentStage)?.agingHours || 0), 0) / Math.max(1, pendingTimesheets.length)),
-    workforceUtilization: round(pendingTimesheets.reduce((sum, item) => sum + item!.workforceUtilization, 0) / Math.max(1, pendingTimesheets.length)),
+    workforceUtilization: round(allTimesheets.reduce((sum, item) => sum + item!.workforceUtilization, 0) / Math.max(1, allTimesheets.length)),
+    visibleTimesheets: allTimesheets.length,
+    awaitingApproval: pendingTimesheets.length,
   };
 
   return {
     generatedAt: new Date().toISOString(),
     dataSource: {
       system: 'DLE_Enterprise',
-      database: dbInfo.database,
-      host: dbInfo.host,
-      connected: dbInfo.connected,
+      database: dbMeta.database,
+      host: dbMeta.host,
+      connected: true,
       headerCount: headers.length,
       lineCount: lines.length,
+      visibleTimesheetCount: allTimesheets.length,
+      awaitingApprovalCount: pendingTimesheets.length,
+      historyTimesheetCount: historyTimesheets.length,
       writeTarget: 'hris.TimesheetHeaders / hris.TimesheetLines / hris.TimesheetWorkflowEvents',
     },
     permissions: {
@@ -362,15 +356,16 @@ const buildPayload = async (request: Request) => {
     },
     pendingTimesheets,
     historyTimesheets,
+    allTimesheets,
     stats,
     filterOptions: {
-      workCenters: Array.from(new Set(headers.map((header) => header.workCenterName))).sort(),
-      periods: Array.from(new Set(pendingTimesheets.map((item) => item!.periodName))).sort(),
-      supervisors: Array.from(new Set(headers.map((header) => header.supervisorName))).sort(),
-      projects: Array.from(new Set(pendingTimesheets.flatMap((item) => item!.projectApprovals.map((project) => project.projectCode)))).sort(),
-      projectManagers: Array.from(new Set(pendingTimesheets.flatMap((item) => item!.projectApprovals.map((project) => project.projectManager)))).sort(),
-      costCenters: Array.from(new Set(pendingTimesheets.flatMap((item) => item!.projectApprovals.map((project) => project.costCenter)))).sort(),
-      statuses: Array.from(new Set(pendingTimesheets.map((item) => item!.status))).sort(),
+      workCenters: Array.from(new Set(allTimesheets.map((item) => item!.workCenterName))).sort(),
+      periods: Array.from(new Set(allTimesheets.map((item) => item!.periodName))).sort(),
+      supervisors: Array.from(new Set(allTimesheets.map((item) => item!.supervisorName))).sort(),
+      projects: Array.from(new Set(allTimesheets.flatMap((item) => item!.projectApprovals.map((project) => project.projectCode)))).sort(),
+      projectManagers: Array.from(new Set(allTimesheets.flatMap((item) => item!.projectApprovals.map((project) => project.projectManager)))).sort(),
+      costCenters: Array.from(new Set(allTimesheets.flatMap((item) => item!.projectApprovals.map((project) => project.costCenter)))).sort(),
+      statuses: Array.from(new Set(allTimesheets.map((item) => item!.status))).sort(),
       workflowStages: ['Supervisor', 'Cost Control', 'Project Manager', 'HR', 'Payroll Processing', 'Payroll Posted'],
     },
     audit: {
