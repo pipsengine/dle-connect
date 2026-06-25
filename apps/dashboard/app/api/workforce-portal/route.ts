@@ -5,6 +5,7 @@ import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { AUTH_COOKIE, verifySessionToken, type SessionPayload } from '@/lib/auth/session';
 import { calculatePayrollEarnings, calculatePermanentUnionDues } from '@/lib/payroll-earnings-engine';
+import { isNonPermanentPayrollEmployee } from '@/lib/payroll-employee-classification';
 import { activeLoansVersion, readPayrollLoanApplications, readPayrollLoansConfig } from '@/lib/payroll-loans-engine';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
@@ -12,7 +13,8 @@ import { hasLeaveAllowanceInYear } from '@/lib/payroll-leave-allowance-store';
 import { annualLeaveEntitlementForEmployee, dormantLongPolicy, isFourteenDayPaidLeaveEmployee } from '@/lib/leave-management-store';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
 import { listEmployeeAccessiblePayrollPeriods } from '@/lib/payroll-run-store';
-import { computeEnterpriseYtdTotals, readEnterpriseEmployeePayslipRecordsByPeriod } from '@/lib/payroll-ess-payslip-store';
+import { computeEnterpriseYtdTotals, readAuthoritativeSagePayslipSnapshotsByPeriod, readEnterpriseEmployeePayslipRecordsByPeriod } from '@/lib/payroll-ess-payslip-store';
+import type { SageEmployeePayslipSnapshot } from '@/lib/sage-people-payroll-store';
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
 import { payslipIdentityMap, syncPayslipIdentitiesFromSage } from '@/lib/payroll-payslip-identity-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
@@ -75,12 +77,7 @@ const employeeGroupText = (employee: Awaited<ReturnType<typeof readPayrollEmploy
     .map(compact)
     .join(' ')
     .toUpperCase();
-const essNonPermanentPayrollEmployee = (employee: Awaited<ReturnType<typeof readPayrollEmployees>>['employees'][number]) => {
-  const code = employeeCodeText(employee);
-  const text = employeeGroupText(employee);
-  return /^(C|L|NYSC|IT)\d+/.test(code)
-    || /\b(DAILY RATE|DAY RATE|LUMPSUM|LUMP SUM|NYSC|NATIONAL YOUTH SERVICE|INDUSTRIAL TRAINING|INDUSTRIAL TRAINEE|INTERN)\b/.test(text);
-};
+const essNonPermanentPayrollEmployee = isNonPermanentPayrollEmployee;
 const essEmployeeCategory = (employee: Awaited<ReturnType<typeof readPayrollEmployees>>['employees'][number]) => {
   const code = employeeCodeText(employee);
   const text = employeeGroupText(employee);
@@ -95,6 +92,30 @@ const employeeAddress = (employee: Awaited<ReturnType<typeof readPayrollEmployee
   const parts = [street, employee.city, employee.state, employee.country].map(compact).filter(Boolean);
   return parts.join(', ') || 'Not configured';
 };
+const mapSageEarningLines = (snapshot: SageEmployeePayslipSnapshot) =>
+  snapshot.earningLines.map((line) => ({
+    code: compact(line.code),
+    label: compact(line.name || line.code),
+    units: Number(line.amount || 0) > 0 ? 1 : 0,
+    amount: roundMoney(Number(line.amount || 0)),
+    taxable: line.taxableAmount === null || line.taxableAmount === undefined ? Number(line.amount || 0) > 0 : Number(line.taxableAmount || 0) > 0,
+  })).filter((line) => line.code && Math.abs(line.amount) > 0.004);
+
+const mapSageDeductionLines = (snapshot: SageEmployeePayslipSnapshot) =>
+  snapshot.deductionLines.map((line) => ({
+    code: compact(line.code),
+    label: compact(line.name || line.code),
+    units: Number(line.amount || 0) > 0 ? 1 : 0,
+    amount: roundMoney(Number(line.amount || 0)),
+  })).filter((line) => Math.abs(line.amount) > 0.004);
+
+const mapSageEmployerContributionLines = (snapshot: SageEmployeePayslipSnapshot) =>
+  snapshot.contributionLines.map((line) => ({
+    code: compact(line.code),
+    label: compact(line.name || line.code),
+    units: Number(line.amount || 0) > 0 ? 1 : 0,
+    amount: roundMoney(Number(line.amount || 0)),
+  })).filter((line) => Math.abs(line.amount) > 0.004);
 const mapEnterpriseEarningLines = (record: PayrollCalculationRecord) =>
   (record.earningLines || [])
     .map((line) => ({
@@ -310,9 +331,11 @@ export async function GET(request: Request) {
     const employeeAny = employee as any;
     let leaveContext = { annualEntitlement: 0, leaveUsed: 0, leaveBalance: 0, carryForward: 0 };
     let enterpriseRecordsByPeriod = new Map<string, PayrollCalculationRecord>();
+    let sagePayslipsByPeriod = new Map<string, SageEmployeePayslipSnapshot>();
     let releasedPayrollPeriods: string[] = [];
-    const payrollForPeriod = (period: string, includeAdjustments = false, enterpriseRecord?: PayrollCalculationRecord | null) => {
+    const payrollForPeriod = (period: string, includeAdjustments = false, enterpriseRecord?: PayrollCalculationRecord | null, sageSnapshot?: SageEmployeePayslipSnapshot | null) => {
       const nonPermanentPayroll = essNonPermanentPayrollEmployee(employee);
+      const payslipType = nonPermanentPayroll ? 'non-permanent' : 'permanent';
       const sharedEmployeeInfo = {
         employeeCode: employee.employeeCode || employee.employeeId,
         employeeName: employee.fullName,
@@ -342,8 +365,53 @@ export async function GET(request: Request) {
         carryForwardLeave: leaveContext.carryForward,
       };
 
+      if (sageSnapshot && sageSnapshot.grossPay > 0) {
+        const earningsLines = mapSageEarningLines(sageSnapshot);
+        const deductionLines = mapSageDeductionLines(sageSnapshot);
+        const employerContributionLines = mapSageEmployerContributionLines(sageSnapshot);
+        const totalEmployerContributions = roundMoney(sageSnapshot.employerContributions);
+        return {
+          period,
+          periodLabel: periodTitle(period),
+          payPeriodStart: periodStartDate(period),
+          payPeriodEnd: monthEndDate(period),
+          payDate: monthEndDate(period),
+          payrollNumber: `DLE-${period.replace('-', '')}-${employee.employeeId}`,
+          payeReference: payslipIdentity?.taxIdentificationNumber || employeeAny.taxIdentificationNumber || employeeAny.taxNo || 'Not configured',
+          grossPay: roundMoney(sageSnapshot.grossPay),
+          allowances: roundMoney(Math.max(0, sageSnapshot.grossPay - sageSnapshot.taxablePay)),
+          pensionEmployee: roundMoney(sageSnapshot.pensionEmployee),
+          deductions: roundMoney(sageSnapshot.totalDeductions),
+          netPay: roundMoney(sageSnapshot.netPay),
+          status: 'Released',
+          dataSource: 'sage',
+          payslipType,
+          earnings: earningsLines,
+          deductionLines,
+          employerContributionLines,
+          totalEmployerContributions,
+          employeeInfo: sharedEmployeeInfo,
+          statutoryInfo: sharedStatutoryInfo,
+          leaveInfo: sharedLeaveInfo,
+          ytd: {
+            grossEarnings: roundMoney(sageSnapshot.ytdGrossEarnings),
+            taxPaid: roundMoney(sageSnapshot.ytdTaxPaid),
+            pensionContribution: roundMoney(sageSnapshot.ytdPensionContribution),
+            deductions: roundMoney(sageSnapshot.ytdDeductions),
+            netEarnings: roundMoney(sageSnapshot.ytdNetEarnings),
+          },
+          verification: {
+            qrCode: `DLE|${employee.employeeId}|${period}|${roundMoney(sageSnapshot.netPay)}`,
+            generatedAt: new Date().toISOString(),
+            approvalStatus: 'Payroll Released',
+          },
+        };
+      }
+
       if (enterpriseRecord && enterpriseRecord.grossPay > 0) {
         const earningsLines = mapEnterpriseEarningLines(enterpriseRecord);
+        const linesGross = roundMoney(earningsLines.reduce((sum, line) => sum + line.amount, 0));
+        const grossPay = roundMoney(Math.max(enterpriseRecord.grossPay, linesGross));
         const deductionLines = mapEnterpriseDeductionLines(enterpriseRecord);
         const employerContributionLines = mapEnterpriseEmployerContributionLines(enterpriseRecord);
         const totalEmployerContributions = roundMoney(employerContributionLines.reduce((sum, line) => sum + line.amount, 0));
@@ -356,13 +424,14 @@ export async function GET(request: Request) {
           payDate: monthEndDate(period),
           payrollNumber: `DLE-${period.replace('-', '')}-${employee.employeeId}`,
           payeReference: payslipIdentity?.taxIdentificationNumber || employeeAny.taxIdentificationNumber || employeeAny.taxNo || 'Not configured',
-          grossPay: roundMoney(enterpriseRecord.grossPay),
-          allowances: roundMoney(enterpriseRecord.allowances),
+          grossPay,
+          allowances: roundMoney(Math.max(0, grossPay - (enterpriseRecord.basePay || enterpriseRecord.taxablePay || 0))),
           pensionEmployee: roundMoney(enterpriseRecord.pensionEmployee),
           deductions: roundMoney(enterpriseRecord.totalDeductions),
           netPay: roundMoney(enterpriseRecord.netPay),
           status: 'Released',
           dataSource: 'enterprise',
+          payslipType,
           earnings: earningsLines,
           deductionLines,
           employerContributionLines,
@@ -414,6 +483,7 @@ export async function GET(request: Request) {
         netPay: roundMoney(Math.max(0, earnings.grossPay - deductions)),
         status: 'Released',
         dataSource: 'calculated',
+        payslipType,
         earnings: earnings.paidEarningLines.map((line) => ({ code: line.code, label: line.name, units: line.amount > 0 ? 1 : 0, amount: line.amount, taxable: line.taxable })),
         deductionLines: [
           { code: 'PAYE', label: 'PAYE Tax', units: paye > 0 ? 1 : 0, amount: paye },
@@ -484,11 +554,17 @@ export async function GET(request: Request) {
     const annualBalance = Math.max(0, annualEntitlement - leaveUsed - pendingAnnualLeave);
     leaveContext = { annualEntitlement, leaveUsed, leaveBalance: annualBalance, carryForward };
     releasedPayrollPeriods = await listEmployeeAccessiblePayrollPeriods();
-    enterpriseRecordsByPeriod = await readEnterpriseEmployeePayslipRecordsByPeriod(
-      [employee.employeeId, employee.employeeCode, employee.sourceEmployeeId],
-      releasedPayrollPeriods,
-    ).catch(() => new Map());
-    const payrollHistory = releasedPayrollPeriods.map((period) => payrollForPeriod(period, true, enterpriseRecordsByPeriod.get(period)));
+    const employeeMatchKeys = [employee.employeeId, employee.employeeCode, employee.sourceEmployeeId];
+    [enterpriseRecordsByPeriod, sagePayslipsByPeriod] = await Promise.all([
+      readEnterpriseEmployeePayslipRecordsByPeriod(employeeMatchKeys, releasedPayrollPeriods).catch(() => new Map()),
+      readAuthoritativeSagePayslipSnapshotsByPeriod(employeeMatchKeys, releasedPayrollPeriods).catch(() => new Map()),
+    ]);
+    const payrollHistory = releasedPayrollPeriods.map((period) => payrollForPeriod(
+      period,
+      true,
+      enterpriseRecordsByPeriod.get(period),
+      sagePayslipsByPeriod.get(period),
+    ));
     const latestReleasedPayroll = payrollHistory[0] || null;
     const currentPeriodReleased = releasedPayrollPeriods.includes(ESS_CURRENT_PAYROLL_PERIOD);
     const sickUsed = employee.employeeDbId % 3;

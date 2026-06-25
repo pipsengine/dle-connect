@@ -1,6 +1,6 @@
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { calculatePayrollEarnings, resolvePayrollEarningProfile } from '@/lib/payroll-earnings-engine';
+import { calculateContractDayRateEarnings, calculatePayrollEarnings, resolvePayrollEarningProfile } from '@/lib/payroll-earnings-engine';
 import { contractEmployeeCode, isDailyRatePayrollEmployee } from '@/lib/payroll-employee-classification';
 import { enterprisePayrollSourceLabel, isEnterprisePayrollPeriod, shouldComparePayrollWithSage } from '@/lib/payroll-enterprise-source';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
@@ -221,15 +221,17 @@ const applyDailyRateFromTimesheets = (
     : rates.ratePerHour > 0 && timesheet.bookedHours > 0
       ? roundMoney(rates.ratePerHour * timesheet.bookedHours)
       : amounts.grossPay;
+  const contractEarnings = calculateContractDayRateEarnings({
+    ratePerDay: rates.ratePerDay || (rates.ratePerHour > 0 ? rates.ratePerHour * rates.hoursPerDay : 0),
+    weekdayDays: timesheet.daysWorked > 0 ? timesheet.daysWorked : (timesheet.bookedHours > 0 ? timesheet.bookedHours / rates.hoursPerDay : 0),
+  });
   return {
     ...amounts,
-    grossPay,
-    basePay: grossPay,
-    allowances: 0,
-    taxablePay: grossPay,
-    nonTaxablePay: 0,
+    ...contractEarnings,
+    grossPay: contractEarnings.grossPay || grossPay,
     profileId: 'contract-day-rate' as const,
     profileName: 'Daily Rate (Timesheet Driven)',
+    paidEarningLines: contractEarnings.earningLines,
   };
 };
 
@@ -304,10 +306,12 @@ export const calculatePayrollForPeriod = async (requestedPeriod: string): Promis
     return map;
   }, new Map<string, ReturnType<typeof loanInputsFromApplications>>());
 
-  const calculationOptions = { period: requestedPeriod, includePeriodAdjustments: true, ignoreSagePayslipLines: true };
+  const calculationOptions = shouldComparePayrollWithSage(requestedPeriod)
+    ? { period: requestedPeriod, includePeriodAdjustments: true, useSagePayslipLines: true, ignoreSagePayslipLines: false }
+    : { period: requestedPeriod, includePeriodAdjustments: true, ignoreSagePayslipLines: true };
 
   const records: PayrollCalculationRecord[] = employeeSource.employees.map((employee, index) => {
-    const calculationEmployee = inputOnlyEmployee(employee);
+    const calculationEmployee = shouldComparePayrollWithSage(requestedPeriod) ? employee : inputOnlyEmployee(employee);
     const baseAmounts = calculatePayrollEarnings(calculationEmployee, calculationOptions);
     const amounts = applyDailyRateFromTimesheets(employee, baseAmounts, timesheetHours);
     const tax = calculatePayrollTax(payrollInputFromEmployee(calculationEmployee, calculationOptions), taxVersion);

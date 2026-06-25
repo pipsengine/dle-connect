@@ -17,19 +17,38 @@ export const contractEmployeeCode = (employee: Pick<DleEmployeeDirectoryRow, 'em
   return /^C\d+/.test(code);
 };
 
-export const payrollCategoryText = (employee: DleEmployeeDirectoryRow) =>
+const payrollCategoryText = (employee: DleEmployeeDirectoryRow) =>
   [employee.employmentType, employee.payrollGroup, employee.paymentRun, employee.paymentType, employee.staffCategory, employee.employeeCategory]
     .map(compact)
     .join(' ')
     .toLowerCase();
 
+const payrollCategoryTextUpper = (employee: DleEmployeeDirectoryRow) => payrollCategoryText(employee).toUpperCase();
+
+const employeeCodeText = (employee: Pick<DleEmployeeDirectoryRow, 'employeeId' | 'employeeCode' | 'sourceEmployeeId'>) =>
+  compact(employee.employeeCode || employee.employeeId || employee.sourceEmployeeId).toUpperCase();
+
+/** Contract, lump sum, NYSC, and industrial training employees use the non-permanent payslip template. */
+export const isNonPermanentPayrollEmployee = (employee: DleEmployeeDirectoryRow) => {
+  const code = employeeCodeText(employee);
+  const text = payrollCategoryTextUpper(employee);
+  return /^(C|L|NYSC|IT)\d+/.test(code)
+    || /\b(DAILY RATE|DAY RATE|LUMPSUM|LUMP SUM|NYSC|NATIONAL YOUTH SERVICE|INDUSTRIAL TRAINING|INDUSTRIAL TRAINEE|INTERN)\b/.test(text);
+};
+
+export const isPermanentPayrollEmployee = (employee: DleEmployeeDirectoryRow) => !isNonPermanentPayrollEmployee(employee);
+
+const explicitDailyRatePayroll = (text: string) =>
+  /\b(daily rate|day rate|daily-rate|day-rate)\b/.test(text)
+  || (/\bdaily\b/.test(text) && !/\bpermanent\b/.test(text));
+
 /** True when the employee is on attendance-driven daily / day-rate payroll. */
 export const isDailyRatePayrollEmployee = (employee: DleEmployeeDirectoryRow, profileId?: string) => {
   if (profileId === 'contract-day-rate') return true;
   const text = payrollCategoryText(employee);
-  if (/\bdaily\b|day\s*rate|dle\b/.test(text)) return true;
+  if (explicitDailyRatePayroll(text)) return true;
   if (contractEmployeeCode(employee) && Number(employee.ratePerDay || 0) > 0 && !Number(employee.periodSalary || 0)) return true;
-  if (contractEmployeeCode(employee) && Number(employee.ratePerDay || 0) > 0 && /\bdaily\b|day\s*rate|dle\b/.test(text)) return true;
+  if (contractEmployeeCode(employee) && Number(employee.ratePerDay || 0) > 0 && explicitDailyRatePayroll(text)) return true;
   return false;
 };
 

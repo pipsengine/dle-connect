@@ -1,6 +1,7 @@
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
+import { isEnterprisePayrollPeriod } from '@/lib/payroll-enterprise-source';
 import { readPayrollSnapshotsByPeriods, type PayrollRunSnapshot } from '@/lib/payroll-run-store';
-import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
+import { normalizePayrollMatchKey, readSageEmployeePayslipSnapshotsForPeriods, type SageEmployeePayslipSnapshot } from '@/lib/sage-people-payroll-store';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 
@@ -47,4 +48,14 @@ export const computeEnterpriseYtdTotals = (
     deductions: sumField('totalDeductions'),
     netEarnings: sumField('netPay'),
   };
+};
+
+export async function readAuthoritativeSagePayslipSnapshotsByPeriod(
+  matchKeys: Array<string | number | null | undefined>,
+  periods: string[],
+): Promise<Map<string, SageEmployeePayslipSnapshot>> {
+  const preEnterprisePeriods = periods.filter((period) => !isEnterprisePayrollPeriod(period));
+  if (!preEnterprisePeriods.length) return new Map();
+  const snapshots = await readSageEmployeePayslipSnapshotsForPeriods(matchKeys, preEnterprisePeriods).catch(() => []);
+  return new Map(snapshots.map((snapshot) => [snapshot.period, snapshot]));
 };

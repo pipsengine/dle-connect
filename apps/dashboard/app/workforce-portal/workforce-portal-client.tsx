@@ -75,7 +75,8 @@ type PayrollHistoryRow = {
   deductions: number;
   netPay: number;
   status: string;
-  dataSource?: 'enterprise' | 'calculated';
+  dataSource?: 'enterprise' | 'calculated' | 'sage';
+  payslipType?: 'permanent' | 'non-permanent';
   earnings?: PayrollLine[];
   deductionLines?: Array<{ code?: string; label: string; units?: number; amount: number }>;
   employerContributionLines?: Array<{ code?: string; label: string; units?: number; amount: number }>;
@@ -434,11 +435,12 @@ function PayslipWorkspace({ payload, employee }: { payload: Payload | null; empl
   const leave = selected.leaveInfo || { annualLeaveEntitlement: 0, leaveTaken: 0, leaveBalance: 0, carryForwardLeave: 0 };
   const ytd = selected.ytd || { grossEarnings: 0, taxPaid: 0, pensionContribution: 0, deductions: 0, netEarnings: 0 };
   const verification = selected.verification || { qrCode: `DLE|${employee?.employeeId || ''}|${selected.period}`, generatedAt: payload?.generatedAt || new Date().toISOString(), approvalStatus: 'Payroll Approved' };
-  const earnings = standardLines(selected.earnings, [
+  const isNonPermanentPayslip = selected.payslipType === 'non-permanent';
+  const permanentEarnings = standardLines(selected.earnings, [
     ['Basic Salary', ['BASIC', 'WEEKDAY EARNING', 'JCWEEKDAY']],
     ['Housing Allowance', ['HOUSING', 'HOUSE']],
     ['Transport Allowance', ['TRANSPORT', 'TRANS']],
-    ['Other Allowance', ['OTHERALL', 'OTHER ALLOWANCE', 'WEEKDAY ALLOWANCE']],
+    ['Other Allowance', ['OTHERALL', 'OTHER ALLOWANCE']],
     ['Utility Allowance', ['UTILITY', 'UTILITIES']],
     ['Furniture Allowance', ['FURNITURE', 'FURN']],
     ['Leave Allowance', ['LEAVE ALLOWANCE', 'LEAVE_ALLOW']],
@@ -449,6 +451,10 @@ function PayslipWorkspace({ payload, employee }: { payload: Payload | null; empl
     ['Bonus', ['BONUS']],
     ['Other Earnings', ['REFUND', 'OTHER PAY', 'OTHER EARNINGS', 'HIGH TAX']],
   ]);
+  const nonPermanentEarnings = (selected.earnings || []).filter(nonZeroPayrollLine);
+  const earnings = isNonPermanentPayslip ? nonPermanentEarnings : permanentEarnings;
+  const earningsTotal = earnings.reduce((sum, line) => sum + Number(line.amount || 0), 0);
+  const grossPay = Math.max(Number(selected.grossPay || 0), earningsTotal);
   const deductions = standardLines(selected.deductionLines, [
     ['PAYE Tax', ['PAYE']],
     ['Pension Employee Contribution', ['PENSION']],
@@ -484,11 +490,13 @@ function PayslipWorkspace({ payload, employee }: { payload: Payload | null; empl
   const bankRows: Array<[string, unknown]> = [
     ['Bank Name', statutory.bankName || 'Stanbic IBTC'],
     ['Account Number', statutory.accountNumber || 'Not configured'],
-    ['Pension Fund Administrator', statutory.pensionFundAdministrator || 'Not configured'],
-    ['Pension Number', statutory.pensionNumber || 'Not configured'],
-    ['NHF Number', statutory.nhfNumber || 'Not applicable'],
+    ...(isNonPermanentPayslip ? [] : [
+      ['Pension Fund Administrator', statutory.pensionFundAdministrator || 'Not configured'],
+      ['Pension Number', statutory.pensionNumber || 'Not configured'],
+      ['NHF Number', statutory.nhfNumber || 'Not applicable'],
+    ] as Array<[string, unknown]>),
     ['Tax Number', statutory.taxNumber || selected.payeReference || 'Not configured'],
-    ['NHIA Number', statutory.nhiaNumber || 'Not applicable'],
+    ...(isNonPermanentPayslip ? [] : [['NHIA Number', statutory.nhiaNumber || 'Not applicable']] as Array<[string, unknown]>),
     ['Employee Address', info.address || 'Not configured'],
   ];
   const leaveRows: Array<[string, string]> = [
@@ -515,8 +523,8 @@ function PayslipWorkspace({ payload, employee }: { payload: Payload | null; empl
   return (
     <section className="space-y-4">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Gross Pay" value={money(selected.grossPay)} detail={selected.periodLabel || selected.period} icon={Banknote} tone="bg-violet-100 text-violet-700" />
-        <MetricCard label="Allowances" value={money(selected.allowances ?? Math.max(0, selected.grossPay - (earnings.find((line) => /BASIC|WEEKDAY EARNING/i.test(line.label || ''))?.amount || 0)))} detail={selected.dataSource === 'enterprise' ? 'From DLE Enterprise payroll' : 'Calculated payroll'} icon={WalletCards} tone="bg-emerald-100 text-emerald-700" />
+        <MetricCard label="Gross Pay" value={money(grossPay)} detail={`${selected.periodLabel || selected.period}${selected.dataSource === 'sage' ? ' · Sage payroll' : ''}`} icon={Banknote} tone="bg-violet-100 text-violet-700" />
+        <MetricCard label="Allowances" value={money(selected.allowances ?? Math.max(0, grossPay - (earnings.find((line) => /BASIC|WEEKDAY EARNING/i.test(line.label || ''))?.amount || 0)))} detail={isNonPermanentPayslip ? 'Non-permanent payroll template' : selected.dataSource === 'enterprise' || selected.dataSource === 'sage' ? 'From released payroll' : 'Calculated payroll'} icon={WalletCards} tone="bg-emerald-100 text-emerald-700" />
         <MetricCard label="Tax / Deductions" value={money(selected.deductions)} detail="PAYE and statutory deductions" icon={FileText} tone="bg-amber-100 text-amber-700" />
         <MetricCard label="Pension" value={money(selected.pensionEmployee ?? (selected.deductionLines?.find((line) => /PENSION/i.test(line.code || line.label || ''))?.amount || 0))} detail="Employee contribution" icon={Landmark} tone="bg-cyan-100 text-cyan-700" />
       </div>
@@ -682,13 +690,13 @@ function PayslipWorkspace({ payload, employee }: { payload: Payload | null; empl
         </section>
 
         <section className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <PayslipTable title="Earnings" lines={earnings} totalLabel="Total Earnings" total={selected.grossPay} />
+          <PayslipTable title="Earnings" lines={earnings} totalLabel="Total Earnings" total={grossPay} />
           <PayslipTable title="Deductions" lines={deductions} totalLabel="Total Deductions" total={selected.deductions} />
         </section>
 
         <section className="mt-3 rounded-lg border border-[#2f67b1] bg-blue-50/40 p-2.5 text-center">
           <div className="grid grid-cols-1 gap-2 text-xs font-black md:grid-cols-3">
-            <p>Gross Pay: <span className="text-[#123f82]">{money2(selected.grossPay)}</span></p>
+            <p>Gross Pay: <span className="text-[#123f82]">{money2(grossPay)}</span></p>
             <p>Total Deductions: <span className="text-red-700">{money2(selected.deductions)}</span></p>
             <p>Net Pay: <span className="text-xl text-[#123f82]">{money2(selected.netPay)}</span></p>
           </div>
