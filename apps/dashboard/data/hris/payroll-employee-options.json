@@ -31,6 +31,118 @@
     "updatedBy": "Payroll Officer"
   },
   {
+    "employeeId": "C2763",
+    "employeeCode": "C2763",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:13.954Z"
+  },
+  {
+    "employeeId": "C2765",
+    "employeeCode": "C2765",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:33.169Z"
+  },
+  {
+    "employeeId": "C2767",
+    "employeeCode": "C2767",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:33.219Z"
+  },
+  {
+    "employeeId": "C2768",
+    "employeeCode": "C2768",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:33.336Z"
+  },
+  {
+    "employeeId": "C2769",
+    "employeeCode": "C2769",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:34.849Z"
+  },
+  {
+    "employeeId": "C2772",
+    "employeeCode": "C2772",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:35.124Z"
+  },
+  {
+    "employeeId": "C2774",
+    "employeeCode": "C2774",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:36.150Z"
+  },
+  {
+    "employeeId": "C2775",
+    "employeeCode": "C2775",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:37.341Z"
+  },
+  {
+    "employeeId": "C2778",
+    "employeeCode": "C2778",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:37.841Z"
+  },
+  {
+    "employeeId": "C2780",
+    "employeeCode": "C2780",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:39.657Z"
+  },
+  {
+    "employeeId": "C2781",
+    "employeeCode": "C2781",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:39.795Z"
+  },
+  {
+    "employeeId": "C2782",
+    "employeeCode": "C2782",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:40.361Z"
+  },
+  {
+    "employeeId": "C2783",
+    "employeeCode": "C2783",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:40.591Z"
+  },
+  {
+    "employeeId": "C2785",
+    "employeeCode": "C2785",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:40.862Z"
+  },
+  {
+    "employeeId": "C2786",
+    "employeeCode": "C2786",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:42.889Z"
+  },
+  {
+    "employeeId": "C2787",
+    "employeeCode": "C2787",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:42.998Z"
+  },
+  {
     "employeeId": "P0146",
     "employeeCode": "P0146",
     "nhfApplicable": false,

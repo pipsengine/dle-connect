@@ -338,6 +338,70 @@ export async function POST(request: Request) {
     return jsonOk({ option });
   }
 
+  if (action === 'exclude-from-payroll-run') {
+    if (!perms.canManageRun && !perms.canConfigure) return jsonErr(403, 'Permission denied');
+    const employeeId = compact(body.employeeId || body.employeeCode);
+    if (!employeeId) return jsonErr(400, 'Employee ID is required.');
+    const { setPayrollRunExclusion } = await import('@/lib/payroll-run-exclusion-service');
+    const option = await setPayrollRunExclusion({ employeeId, excluded: true, updatedBy: actor, reason });
+    await appendPayrollAudit({
+      user: actor,
+      role,
+      action: 'Excluded from payroll run',
+      record: employeeId,
+      oldValue: 'Included',
+      newValue: 'Excluded',
+      reason: reason || 'Removed from payroll run — unconfigured daily-rate contract.',
+      comment: comment || null,
+      ip,
+    });
+    return jsonOk({ option, message: `${employeeId} removed from this payroll run.` });
+  }
+
+  if (action === 'include-in-payroll-run') {
+    if (!perms.canManageRun && !perms.canConfigure) return jsonErr(403, 'Permission denied');
+    const employeeId = compact(body.employeeId || body.employeeCode);
+    if (!employeeId) return jsonErr(400, 'Employee ID is required.');
+    const { setPayrollRunExclusion } = await import('@/lib/payroll-run-exclusion-service');
+    const option = await setPayrollRunExclusion({ employeeId, excluded: false, updatedBy: actor, reason });
+    await appendPayrollAudit({
+      user: actor,
+      role,
+      action: 'Included in payroll run',
+      record: employeeId,
+      oldValue: 'Excluded',
+      newValue: 'Included',
+      reason: reason || 'Restored to payroll run.',
+      comment: comment || null,
+      ip,
+    });
+    return jsonOk({ option, message: `${employeeId} restored to payroll run.` });
+  }
+
+  if (action === 'exclude-unconfigured-daily-rate-contracts') {
+    if (!perms.canManageRun && !perms.canConfigure) return jsonErr(403, 'Permission denied');
+    const { excludeUnconfiguredDailyRateContracts } = await import('@/lib/payroll-run-exclusion-service');
+    const employeeIds = Array.isArray(body.employeeIds) ? body.employeeIds.map((value: unknown) => compact(value)).filter(Boolean) : undefined;
+    const result = await excludeUnconfiguredDailyRateContracts({ period, employeeIds, updatedBy: actor });
+    await appendPayrollAudit({
+      user: actor,
+      role,
+      action: 'Bulk excluded unconfigured daily-rate contracts',
+      record: period,
+      oldValue: null,
+      newValue: `${result.succeeded}/${result.processed} excluded`,
+      reason: reason || 'Removed invalid daily-rate contract employees from payroll run.',
+      comment: comment || null,
+      ip,
+    });
+    return jsonOk({
+      ...result,
+      message: result.succeeded
+        ? `${result.succeeded} employee(s) removed from payroll run.`
+        : 'No unconfigured daily-rate contract employees matched for removal.',
+    });
+  }
+
   if (action === 'approve-entire-workflow') {
     if (role !== 'Super Admin') return jsonErr(403, 'Only the Global Super Administrator can approve the entire payroll workflow end-to-end.');
     const payload = await buildManagementPayload(request, period);

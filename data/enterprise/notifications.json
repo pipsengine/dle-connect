@@ -156,6 +156,162 @@
       },
       "readAt": "2026-06-14T13:41:05.452Z",
       "archivedAt": "2026-06-15T08:06:00.591Z"
+    },
+    {
+      "recipientUserId": "usr-P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "security-session-usr-P0146",
+      "kind": "Security",
+      "module": "Security & MFA",
+      "title": "Enterprise session secured",
+      "body": "Your current enterprise access is protected by RBAC, session controls, and activity logging.",
+      "severity": "success",
+      "status": "Read",
+      "href": "/hris/administration/audit-trail",
+      "createdAt": "2026-06-25T17:19:49.509Z",
+      "actor": "Security Service",
+      "metadata": {
+        "persistentSeed": true
+      },
+      "readAt": "2026-06-25T17:23:45.158Z"
+    },
+    {
+      "recipientUserId": "usr-P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "profile-review-usr-P0146",
+      "kind": "Notification",
+      "module": "Employee Profile",
+      "title": "Review your employee profile",
+      "body": "Keep contact details, emergency contacts, bank details, and supporting documents up to date.",
+      "severity": "info",
+      "status": "Read",
+      "href": "/hris/employees/employee-profile",
+      "createdAt": "2026-06-25T17:19:49.509Z",
+      "actor": "HRIS",
+      "metadata": {
+        "persistentSeed": true
+      },
+      "readAt": "2026-06-25T17:23:45.793Z"
+    },
+    {
+      "recipientUserId": "usr-P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "payslip-ready-usr-P0146",
+      "kind": "Notification",
+      "module": "Payroll Management",
+      "title": "Payroll self-service available",
+      "body": "Payslips, deductions, pension contributions, allowances, and loan deductions can be reviewed from payroll self-service.",
+      "severity": "info",
+      "status": "Read",
+      "href": "/hris/payroll/payslip-generation",
+      "createdAt": "2026-06-25T17:19:49.509Z",
+      "actor": "Payroll Service",
+      "metadata": {
+        "persistentSeed": true
+      },
+      "readAt": "2026-06-25T17:23:45.793Z"
+    },
+    {
+      "recipientUserId": "usr-P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "hr-message-usr-P0146",
+      "kind": "Message",
+      "module": "Communication Center",
+      "title": "HR communication center is active",
+      "body": "Company announcements, policy updates, request comments, and service messages will appear here.",
+      "severity": "info",
+      "status": "Read",
+      "href": "/hris/announcements",
+      "createdAt": "2026-06-25T17:19:49.509Z",
+      "actor": "Human Capital",
+      "metadata": {
+        "persistentSeed": true
+      },
+      "readAt": "2026-06-25T17:23:33.811Z"
+    },
+    {
+      "recipientUserId": "usr-P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "approval-queue-usr-P0146",
+      "kind": "Approval",
+      "module": "Workflow & Approvals",
+      "title": "Approval queue requires review",
+      "body": "Review pending HR, payroll, leave, workforce, and employee service requests according to your role permissions.",
+      "severity": "warning",
+      "status": "Read",
+      "href": "/hris/administration/approval-workflow",
+      "createdAt": "2026-06-25T17:19:49.509Z",
+      "actor": "Workflow Engine",
+      "metadata": {
+        "persistentSeed": true
+      },
+      "readAt": "2026-06-25T17:23:45.793Z"
+    },
+    {
+      "recipientUserId": "usr-P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "timesheet-approval-usr-P0146",
+      "kind": "Workflow",
+      "module": "Workforce Management",
+      "title": "Timesheet and attendance actions available",
+      "body": "Timesheet periods, project approvals, attendance exceptions, and payroll-ready hours are available for review.",
+      "severity": "warning",
+      "status": "Read",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-06-25T17:19:49.509Z",
+      "actor": "Workforce Management",
+      "metadata": {
+        "persistentSeed": true
+      },
+      "readAt": "2026-06-25T17:23:45.793Z"
     }
   ]
 }

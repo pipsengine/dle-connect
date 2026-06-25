@@ -274,6 +274,7 @@ permissionCatalog.push(
   node('Page Access', 'Payroll', 'Salary Structure', 'Salary Structure Page', 'Page', 'L3 - Payroll Approver', 'Company', 'page.hris.payroll.salary-structure'),
   node('Page Access', 'Payroll', 'Employee Salary Setup', 'Employee Salary Setup Page', 'Page', 'L3 - Payroll Approver', 'Company', 'page.hris.payroll.employee-salary-setup'),
   node('Page Access', 'Payroll', 'Sage Migration Review', 'Sage Migration Review Page', 'Page', 'L3 - Payroll Approver', 'Company', 'page.hris.payroll.sage-migration-review'),
+  node('Page Access', 'Payroll', 'Sage Reconciliation', 'Sage Reconciliation Page', 'Page', 'L3 - Payroll Approver', 'Company', 'page.hris.payroll.sage-reconciliation'),
   node('Page Access', 'Payroll', 'Allowances', 'Allowances Page', 'Page', 'L3 - Payroll Approver', 'Company', 'page.hris.payroll.allowances'),
   node('Page Access', 'Payroll', 'Deductions', 'Deductions Page', 'Page', 'L3 - Payroll Approver', 'Company', 'page.hris.payroll.deductions'),
   node('Page Access', 'Payroll', 'Daily Rate Pay', 'Daily Rate Pay Page', 'Page', 'L3 - Payroll Approver', 'Company', 'page.hris.payroll.daily-rate-pay'),

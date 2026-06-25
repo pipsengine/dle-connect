@@ -19,6 +19,7 @@ import {
   type UnifiedPayrollRunStatus,
 } from '@/lib/payroll-run-store';
 import type { PayrollSessionRole } from '@/lib/payroll-session';
+import { invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
 
 type WorkflowInput = {
   action: string;
@@ -72,6 +73,7 @@ const assertNotBlocked = (summary: Awaited<ReturnType<typeof calculatePayrollFor
 
 export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
   const { action, period, actor, role, reason, comment, ip, paymentDate } = input;
+  if (['calculate', 'create-run', 'validate-payroll'].includes(action)) invalidatePayrollEmployeeCache();
   const calculation = await calculatePayrollForPeriod(period);
   const periodLabel = payrollPeriodLabel(period);
   let run = await getPayrollRunForPeriod(period);
@@ -133,6 +135,12 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     if (action === 'create-run') {
       run.validatedAt = run.validatedAt || nowIso();
       run.validatedBy = run.validatedBy || actor;
+      if (['Revision Requested', 'Rejected'].includes(run.status)) {
+        run.submittedAt = null;
+        run.submittedBy = null;
+        run.approvedAt = null;
+        run.approvedBy = null;
+      }
     }
     run.updatedBy = actor;
     await savePayrollRun(run);
@@ -329,6 +337,10 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
   if (action === 'reject-run' || action === 'reject') {
     const before = run.status;
     run.status = 'Rejected';
+    run.submittedAt = null;
+    run.submittedBy = null;
+    run.approvedAt = null;
+    run.approvedBy = null;
     run.updatedBy = actor;
     await savePayrollRun(run);
     await audit(action, before, run.status);
@@ -338,6 +350,10 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
   if (action === 'request-revision') {
     const before = run.status;
     run.status = 'Revision Requested';
+    run.submittedAt = null;
+    run.submittedBy = null;
+    run.approvedAt = null;
+    run.approvedBy = null;
     run.updatedBy = actor;
     await savePayrollRun(run);
     await audit(action, before, run.status);

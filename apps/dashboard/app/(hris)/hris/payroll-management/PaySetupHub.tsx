@@ -1,6 +1,7 @@
 'use client';
 
 import type { ComponentType, ReactNode } from 'react';
+import SageReconciliationClient from '../payroll/sage-reconciliation/SageReconciliationClient';
 import {
   AlertTriangle,
   BarChart3,
@@ -66,6 +67,7 @@ export type PaySetupTabId =
   | 'salary-grades'
   | 'employee-salary-setup'
   | 'sage-migration-review'
+  | 'sage-reconciliation'
   | 'compensation-planning';
 
 type Props = {
@@ -113,6 +115,7 @@ const tabs: { id: PaySetupTabId; label: string }[] = [
   { id: 'salary-grades', label: 'Grades' },
   { id: 'employee-salary-setup', label: 'Employee Setup' },
   { id: 'sage-migration-review', label: 'Sage Migration' },
+  { id: 'sage-reconciliation', label: 'Sage Reconciliation' },
   { id: 'compensation-planning', label: 'Compensation Planning' },
 ];
 
@@ -202,6 +205,14 @@ export default function PaySetupHub({
       status: sageIssues > 0 ? 'Review Required' : 'Configured',
       tone: sageIssues > 0 ? 'amber' : 'green',
     },
+    {
+      tab: 'sage-reconciliation' as const,
+      title: 'Sage vs Enterprise Reconciliation',
+      description: 'Compare Sage payslip totals and earning lines against the enterprise engine before release.',
+      icon: DatabaseZap,
+      status: sageIssues > 0 ? 'Review Required' : 'Configured',
+      tone: sageIssues > 0 ? 'amber' : 'green',
+    },
   ];
 
   let donutOffset = 0;
@@ -233,6 +244,7 @@ export default function PaySetupHub({
     { label: 'Import Salary Setup', tab: 'employee-salary-setup', icon: Upload },
     { label: 'Validate Payroll Setup', tab: 'employee-salary-setup', icon: AlertTriangle },
     { label: 'Review Sage Migration', tab: 'sage-migration-review', icon: DatabaseZap },
+    { label: 'Sage Reconciliation', tab: 'sage-reconciliation', icon: DatabaseZap },
     { label: 'Export Setup Report', action: 'export', icon: FileSpreadsheet },
   ];
 
@@ -468,12 +480,24 @@ export default function PaySetupHub({
 }
 
 function PaySetupTabPanel({ tab, onBack }: { tab: PaySetupTabId; payload: PaySetupPayload | null; onBack: () => void }) {
+  if (tab === 'sage-reconciliation') {
+    return (
+      <div className="space-y-4">
+        <button type="button" onClick={onBack} className="text-sm font-semibold text-[#2563EB] hover:underline">
+          ← Back to Overview
+        </button>
+        <SageReconciliationClient initialReferencePeriod="2026-05" initialTargetPeriod="2026-06" />
+      </div>
+    );
+  }
+
   const tabMeta = tabs.find((item) => item.id === tab);
   const legacyLinks: Record<string, string> = {
     'salary-structure': '/hris/payroll/salary-structure',
     'salary-grades': '/hris/organization/job-grades',
     'employee-salary-setup': '/hris/payroll/employee-salary-setup',
     'sage-migration-review': '/hris/payroll/sage-migration-review',
+    'sage-reconciliation': '/hris/payroll/sage-reconciliation',
   };
   const href = legacyLinks[tab];
   return (

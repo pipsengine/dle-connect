@@ -32,12 +32,15 @@ export type PayrollEarningLine = PayrollEarningDefinition & {
 export type PayrollEarningsResult = {
   profileId: PayrollEarningProfileId;
   profileName: string;
+  /** Full monthly package salary before leave accrual is excluded from monthly pay. */
+  periodPackageGross: number;
   grossPay: number;
   basePay: number;
   basicPay: number;
   allowances: number;
   taxablePay: number;
   nonTaxablePay: number;
+  bhtPay: number;
   earningLines: PayrollEarningLine[];
   annualBenefitLines: PayrollEarningLine[];
   paidEarningLines: PayrollEarningLine[];
@@ -91,11 +94,41 @@ const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value
 const compact = (value: unknown) => String(value || '').trim();
 const normalizedTextKey = (value: unknown) => compact(value).toUpperCase().replace(/\s+/g, '');
 const employeeGradeKey = (employee: Pick<DleEmployeeDirectoryRow, 'salaryGrade' | 'jobGrade'>) =>
-  normalizedTextKey(employee.salaryGrade || employee.jobGrade);
+  normalizedTextKey(effectivePayrollGrade(employee));
 const num = (value: unknown) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
 };
+
+const GENERIC_PAYROLL_GRADES = new Set([
+  'UNASSIGNED',
+  'PERMANENT',
+  'CONTRACT',
+  'CASUAL',
+  'TEMPORARY',
+  'CACHE',
+  'DAILY RATE',
+  'NOT ASSIGNED',
+  'EMPLOYEE',
+  'STAFF',
+  'ACTIVE',
+]);
+
+export const isGenericPayrollGrade = (value: unknown) => {
+  const grade = compact(value).toUpperCase();
+  if (!grade) return true;
+  if (GENERIC_PAYROLL_GRADES.has(grade)) return true;
+  return /^(PERMANENT|CONTRACT|CASUAL|TEMPORARY|FULL[\s-]?TIME|PART[\s-]?TIME)$/i.test(grade);
+};
+
+const effectivePayrollGrade = (employee: Pick<DleEmployeeDirectoryRow, 'salaryGrade' | 'jobGrade'>) => {
+  const salaryGrade = compact(employee.salaryGrade);
+  const jobGrade = compact(employee.jobGrade);
+  if (!isGenericPayrollGrade(salaryGrade)) return salaryGrade.toUpperCase();
+  if (!isGenericPayrollGrade(jobGrade)) return jobGrade.toUpperCase();
+  return salaryGrade.toUpperCase();
+};
+
 const titleCase = (value: string) => value.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 const resolveDashboardRoot = () => {
   const cwd = process.cwd();
@@ -152,7 +185,7 @@ export const PAYROLL_EARNING_PROFILES: Record<Exclude<PayrollEarningProfileId, '
     definitions: [
       { code: 'MGT_BASIC', name: 'BASIC SALARY', taxable: true, percentOfGross: 0.25 },
       { code: 'MGT_HOUSE', name: 'HOUSING', taxable: true, percentOfGross: 0.2 },
-      { code: 'MGT_LEAVE', name: 'LEAVE', taxable: true, percentOfGross: 0.0319, runFrequency: 'leave-period', includeInMonthlyPayroll: false },
+      { code: 'MGT_LEAVE', name: 'LEAVE', taxable: true, percentOfGross: 0.0313, runFrequency: 'leave-period', includeInMonthlyPayroll: false },
       { code: 'MGT_OTHERALL', name: 'OTHER ALLOWANCE', taxable: true, percentOfGross: 0.29 },
       { code: 'MGT_TRANS', name: 'TRANSPORT ALLOWANCE', taxable: true, percentOfGross: 0.15 },
       { code: 'MGT_FURN', name: 'FURNITURE ALLOWANCE', taxable: true, percentOfGross: 0.04 },
@@ -162,13 +195,13 @@ export const PAYROLL_EARNING_PROFILES: Record<Exclude<PayrollEarningProfileId, '
   'management-cola-permanent': {
     name: 'Permanent Management COLA Staff',
     definitions: [
-      { code: 'MGTCOLA_BASIC', name: 'BASIC SALARY', taxable: true, percentOfGross: 0.4 },
-      { code: 'MGTCOLA_HOUSE', name: 'HOUSING', taxable: true, percentOfGross: 0.16 },
-      { code: 'MGTCOLA_LEAVE', name: 'LEAVE', taxable: true, percentOfGross: 0.0256, runFrequency: 'leave-period', includeInMonthlyPayroll: false },
-      { code: 'MGTCOLA_OTHERALL', name: 'OTHER ALLOWANCE', taxable: true, percentOfGross: 0.232 },
-      { code: 'MGTCOLA_TRANS', name: 'TRANSPORT ALLOWANCE', taxable: true, percentOfGross: 0.12 },
-      { code: 'MGTCOLA_FURN', name: 'FURNITURE ALLOWANCE', taxable: true, percentOfGross: 0.032 },
-      { code: 'MGTCOLA_UTILITY', name: 'UTILITIES', taxable: true, percentOfGross: 0.0304 },
+      { code: 'MGT1COLA_BASIC', name: 'BASIC SALARY', taxable: true, percentOfGross: 0.4 },
+      { code: 'MGT1COLA_HOUSIN', name: 'HOUSING', taxable: true, percentOfGross: 0.16 },
+      { code: 'MGT1COLA_LEAVE', name: 'LEAVE', taxable: true, percentOfGross: 0.0256, runFrequency: 'leave-period', includeInMonthlyPayroll: false },
+      { code: 'MGT1COLA_OTHALL', name: 'OTHER ALLOWANCE', taxable: true, percentOfGross: 0.232 },
+      { code: 'MGT1COLA_TRANSP', name: 'TRANSPORT ALLOWANCE', taxable: true, percentOfGross: 0.12 },
+      { code: 'MGT1COLA_FURN', name: 'FURNITURE ALLOWANCE', taxable: true, percentOfGross: 0.032 },
+      { code: 'MGT1COLA_UTILIT', name: 'UTILITIES', taxable: true, percentOfGross: 0.0304 },
     ],
   },
   'senior-management-permanent': {
@@ -186,7 +219,8 @@ export const PAYROLL_EARNING_PROFILES: Record<Exclude<PayrollEarningProfileId, '
   'contract-lumpsum': {
     name: 'Contract Staff on Lumpsum',
     definitions: [
-      { code: 'BASIC1_LUMPSUM', name: 'LUMPSUM AMOUNT', taxable: true, percentOfGross: 1 },
+      { code: 'BASIC1_LUMPSUM', name: 'LUMPSUM AMOUNT', taxable: true, percentOfGross: 0.6 },
+      { code: 'BASIC_LUMPSUM', name: 'LUMPSUM AMOUNT NONTAXABLE', taxable: false, percentOfGross: 0.4 },
     ],
   },
 };
@@ -280,9 +314,56 @@ const withCategoryFormulaLines = (profileId: PayrollEarningProfileId, lines: Pay
   return lines;
 };
 
-const isBasicLine = (line: PayrollEarningLine) => /BASIC|LUMPSUM|JCWEEKDAY$/.test(line.code) || /BASIC|LUMPSUM|WEEKDAY EARNING/.test(line.name);
-const isHousingLine = (line: PayrollEarningLine) => /HOUSE/.test(line.code) || /HOUSING/.test(line.name);
-const isTransportLine = (line: PayrollEarningLine) => /TRANS/.test(line.code) || /TRANSPORT/.test(line.name);
+const CONTRACT_MEAL_RATE = 500;
+
+const contractMealAllowanceLine = (daysWorked: number): PayrollEarningLine | null => {
+  const amount = roundMoney(Math.max(0, daysWorked) * CONTRACT_MEAL_RATE);
+  if (amount <= 0) return null;
+  return {
+    code: 'MEAL',
+    name: 'MEAL ALLOWANCE',
+    taxable: false,
+    percentOfGross: 0,
+    calculation: 'NGN 500 * number of days worked',
+    runFrequency: 'formula',
+    includeInMonthlyPayroll: true,
+    amount,
+  };
+};
+
+const finalizeContractDayRateEarnings = (lines: PayrollEarningLine[], weekdayDays: number, ratePerDay: number) => {
+  const mealLine = contractMealAllowanceLine(weekdayDays);
+  const paidLines = mealLine ? [...lines, mealLine] : lines;
+  const grossPay = roundMoney(paidLines.reduce((sum, line) => sum + line.amount, 0));
+  const basicPay = roundMoney(lines.filter(isBasicLine).reduce((sum, line) => sum + line.amount, 0));
+  const taxablePay = roundMoney(lines.filter((line) => line.taxable).reduce((sum, line) => sum + line.amount, 0));
+  const nonTaxablePay = roundMoney(paidLines.filter((line) => !line.taxable).reduce((sum, line) => sum + line.amount, 0));
+  const weekdayBase = roundMoney(Math.max(0, weekdayDays) * ratePerDay);
+  return {
+    periodPackageGross: weekdayBase,
+    grossPay,
+    basePay: basicPay,
+    basicPay,
+    allowances: roundMoney(grossPay - basicPay),
+    taxablePay,
+    nonTaxablePay,
+    bhtPay: basicPay,
+    earningLines: paidLines,
+    paidEarningLines: paidLines,
+    annualBenefitLines: [] as PayrollEarningLine[],
+  };
+};
+
+export const contractPayeTaxablePay = (earnings: Pick<PayrollEarningsResult, 'profileId' | 'grossPay' | 'taxablePay'>) =>
+  earnings.profileId === 'contract-day-rate' ? earnings.grossPay : earnings.taxablePay;
+
+const isBasicLine = (line: PayrollEarningLine) => {
+  const code = line.code.toUpperCase();
+  if (code === 'BASIC_LUMPSUM') return false;
+  return /BASIC|LUMPSUM|JCWEEKDAY$/.test(code) || /BASIC|LUMPSUM|WEEKDAY EARNING/.test(line.name);
+};
+const isHousingLine = (line: PayrollEarningLine) => /HOUSE|HOUSIN/.test(line.code.toUpperCase()) || /HOUSING/.test(line.name);
+const isTransportLine = (line: PayrollEarningLine) => /TRANS/.test(line.code.toUpperCase()) || /TRANSPORT/.test(line.name);
 
 const pensionablePayFromLines = (lines: PayrollEarningLine[]) => {
   const basePay = roundMoney(lines.filter(isBasicLine).reduce((sum, line) => sum + line.amount, 0));
@@ -335,7 +416,7 @@ export const monthlyGrossFromEmployee = (employee: DleEmployeeDirectoryRow) => {
 };
 
 export const resolvePayrollEarningProfile = (employee: DleEmployeeDirectoryRow): PayrollEarningProfileId => {
-  const grade = compact(employee.salaryGrade || employee.jobGrade).toUpperCase();
+  const grade = effectivePayrollGrade(employee);
   const groupText = [
     employee.payrollGroup,
     employee.staffCategory,
@@ -464,15 +545,18 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
     }, 0));
     const taxablePay = roundMoney(sageTaxablePay + leaveEventLines.filter((line) => line.taxable).reduce((sum, line) => sum + line.amount, 0));
     const basicPay = roundMoney(paidLines.filter(isBasicLine).reduce((sum, line) => sum + line.amount, 0));
+    const bhtPay = pensionablePayFromLines(paidLines).total;
     return {
       profileId,
       profileName: `${fallbackProfileName} - Sage Payslip Exact`,
+      periodPackageGross: grossPay,
       grossPay,
       basePay: basicPay,
       basicPay,
       allowances: roundMoney(grossPay - basicPay),
       taxablePay,
       nonTaxablePay: roundMoney(grossPay - taxablePay),
+      bhtPay,
       earningLines: paidLines.map((line) => ({ ...line, percentOfGross: grossPay ? line.amount / grossPay : 0 })),
       annualBenefitLines: [],
       paidEarningLines: paidLines.map((line) => ({ ...line, percentOfGross: grossPay ? line.amount / grossPay : 0 })),
@@ -485,18 +569,22 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
     return {
       profileId,
       profileName: 'NYSC / IT Non-Taxable Stipend',
+      periodPackageGross: gross,
       grossPay: roundMoney(lines.reduce((sum, line) => sum + line.amount, 0)),
       basePay: 0,
       basicPay: 0,
       allowances: roundMoney(lines.reduce((sum, line) => sum + line.amount, 0)),
       taxablePay: 0,
       nonTaxablePay: roundMoney(lines.reduce((sum, line) => sum + line.amount, 0)),
+      bhtPay: 0,
       earningLines: lines,
       annualBenefitLines: [],
       paidEarningLines: lines,
     };
   }
   if (profileId === 'contract-day-rate') {
+    const ratePerDay = num(employee.ratePerDay) || (num(employee.ratePerHour) > 0 ? num(employee.ratePerHour) * (num(employee.hoursPerDay) || 8) : 0);
+    const weekdayDays = ratePerDay > 0 ? gross / ratePerDay : (num(employee.hoursPerPeriod) > 0 && (num(employee.hoursPerDay) || 8) > 0 ? num(employee.hoursPerPeriod) / (num(employee.hoursPerDay) || 8) : 0);
     const lines = [
       { code: 'JCWEEKDAY', name: 'WEEKDAY EARNING', taxable: true, percentOfGross: 0.45, amount: roundMoney(gross * 0.45) },
       { code: 'JCWEEKDAY_NT', name: 'WEEKDAY ALLOWANCE NON TAX', taxable: false, percentOfGross: 0.55, amount: roundMoney(gross * 0.55) },
@@ -504,15 +592,7 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
     return {
       profileId,
       profileName: 'Contract Staff on Day Rate',
-      grossPay: roundMoney(lines.reduce((sum, line) => sum + line.amount, 0)),
-      basePay: roundMoney(lines.find((line) => line.code === 'JCWEEKDAY')?.amount || 0),
-      basicPay: roundMoney(lines.find((line) => line.code === 'JCWEEKDAY')?.amount || 0),
-      allowances: roundMoney(lines.filter((line) => line.code !== 'JCWEEKDAY').reduce((sum, line) => sum + line.amount, 0)),
-      taxablePay: roundMoney(lines.filter((line) => line.taxable).reduce((sum, line) => sum + line.amount, 0)),
-      nonTaxablePay: roundMoney(lines.filter((line) => !line.taxable).reduce((sum, line) => sum + line.amount, 0)),
-      earningLines: lines,
-      annualBenefitLines: [],
-      paidEarningLines: lines,
+      ...finalizeContractDayRateEarnings(lines, weekdayDays, ratePerDay || (weekdayDays > 0 ? gross / weekdayDays : 0)),
     };
   }
   if (!profile) {
@@ -522,12 +602,14 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
     return {
       profileId,
       profileName: 'Payroll Setup Fallback',
+      periodPackageGross: grossPay,
       grossPay,
       basePay: roundMoney(basePay),
       basicPay: roundMoney(basePay),
       allowances,
       taxablePay: grossPay,
       nonTaxablePay: 0,
+      bhtPay: roundMoney(basePay),
       earningLines: [
         { code: 'BASIC', name: 'BASIC SALARY', taxable: true, percentOfGross: grossPay ? basePay / grossPay : 0, amount: roundMoney(basePay) },
         { code: 'ALLOWANCE', name: 'ALLOWANCES', taxable: true, percentOfGross: grossPay ? allowances / grossPay : 0, amount: allowances },
@@ -554,17 +636,20 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
   ];
   const monthlyLines = [...monthlyPayrollLines(lines), ...periodAdjustments];
   const basicPay = lines.find((line) => line.code.endsWith('_BASIC'))?.amount || 0;
+  const bhtPay = pensionablePayFromLines(monthlyLines).total;
   const taxablePay = roundMoney(monthlyLines.filter((line) => line.taxable).reduce((sum, line) => sum + line.amount, 0));
   const nonTaxablePay = roundMoney(monthlyLines.filter((line) => !line.taxable).reduce((sum, line) => sum + line.amount, 0));
   return {
     profileId,
     profileName: profile.name,
+    periodPackageGross: gross,
     grossPay: roundMoney(monthlyLines.reduce((sum, line) => sum + line.amount, 0)),
     basePay: roundMoney(basicPay),
     basicPay: roundMoney(basicPay),
     allowances: roundMoney(monthlyLines.filter((line) => !line.code.endsWith('_BASIC')).reduce((sum, line) => sum + line.amount, 0)),
     taxablePay,
     nonTaxablePay,
+    bhtPay,
     earningLines: visibleEarningLines(lines, periodAdjustments),
     annualBenefitLines: annualLeaveAllowanceLines(lines),
     paidEarningLines: monthlyLines,
@@ -581,7 +666,8 @@ export const calculateContractDayRateEarnings = (input: {
 }) => {
   const ratePerDay = Math.max(0, num(input.ratePerDay));
   const ratePerHour = ratePerDay / 8;
-  const weekdayBase = Math.max(0, num(input.weekdayDays)) * ratePerDay;
+  const weekdayDays = Math.max(0, num(input.weekdayDays));
+  const weekdayBase = weekdayDays * ratePerDay;
   const lines = [
     { code: 'JCWEEKDAY', name: 'WEEKDAY EARNING', taxable: true, amount: roundMoney(weekdayBase * 0.45), calculation: '(No of days worked * Day rate) * 45%' },
     { code: 'JCWEEKDAY_NT', name: 'WEEKDAY ALLOWANCE NON TAX', taxable: false, amount: roundMoney(weekdayBase * 0.55), calculation: '(No of days worked * Day rate) * 55%' },
@@ -595,28 +681,28 @@ export const calculateContractDayRateEarnings = (input: {
     profileName: 'Contract Staff on Day Rate',
     ratePerDay: roundMoney(ratePerDay),
     ratePerHour: roundMoney(ratePerHour),
-    taxablePay: roundMoney(lines.filter((line) => line.taxable).reduce((sum, line) => sum + line.amount, 0)),
-    nonTaxablePay: roundMoney(lines.filter((line) => !line.taxable).reduce((sum, line) => sum + line.amount, 0)),
-    grossPay: roundMoney(lines.reduce((sum, line) => sum + line.amount, 0)),
-    earningLines: lines,
+    ...finalizeContractDayRateEarnings(lines, weekdayDays, ratePerDay),
   };
 };
 
-export const taxablePayrollInputFromEmployee = (employee: DleEmployeeDirectoryRow, options?: PayrollEarningsOptions) => {
-  const earnings = calculatePayrollEarnings(employee, options);
-  const pensionable = pensionablePayFromLines(earnings.paidEarningLines);
+export const taxablePayrollInputFromEmployee = (employee: DleEmployeeDirectoryRow, options?: PayrollEarningsOptions, earningsOverride?: PayrollEarningsResult) => {
+  const earnings = earningsOverride || calculatePayrollEarnings(employee, options);
+  const paidLines = (earnings.paidEarningLines || earnings.earningLines) as PayrollEarningLine[];
+  const pensionable = pensionablePayFromLines(paidLines);
+  const bhtPay = earnings.bhtPay || pensionable.total || earnings.basicPay;
   return {
     employee,
-    monthlyBasePay: pensionable.total || earnings.basicPay,
-    monthlyAllowances: roundMoney(Math.max(0, earnings.taxablePay - (pensionable.total || earnings.basicPay))),
+    monthlyBasePay: bhtPay,
+    monthlyAllowances: roundMoney(Math.max(0, earnings.taxablePay - (pensionable.basePay || earnings.basicPay))),
     monthlyGrossPay: earnings.grossPay,
-    monthlyTaxablePay: earnings.taxablePay,
+    monthlyTaxablePay: contractPayeTaxablePay(earnings),
   };
 };
 
 export const pensionablePayrollInputFromEmployee = (employee: DleEmployeeDirectoryRow, options?: PayrollEarningsOptions) => {
   const earnings = calculatePayrollEarnings(employee, options);
-  const pensionable = pensionablePayFromLines(earnings.paidEarningLines);
+  const paidLines = (earnings.paidEarningLines || earnings.earningLines) as PayrollEarningLine[];
+  const pensionable = pensionablePayFromLines(paidLines);
   const basePay = pensionable.basePay || earnings.basicPay;
   const pensionableAllowances = pensionable.allowances || roundMoney(Math.max(0, earnings.taxablePay - earnings.basicPay));
   return {

@@ -3,6 +3,8 @@ import path from 'node:path';
 import { importSagePayrollEmployeesToDb, loadWorkspaceEnv, readEmployeeDirectoryFromDb, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { isDailyRatePayrollEmployee, markInactiveNonDailyContractEmployees, payrollActiveEmployees, withContractPayrollClassification } from '@/lib/payroll-employee-classification';
 import { applyPayrollEmployeeOptions } from '@/lib/payroll-employee-options-store';
+import { isGenericPayrollGrade } from '@/lib/payroll-earnings-engine';
+import { payslipIdentityMap } from '@/lib/payroll-payslip-identity-store';
 import { normalizePayrollMatchKey, readActiveSagePayrollEmployeesWithLatestPayslipLines, readSagePayrollEmployeeBankDetails } from '@/lib/sage-people-payroll-store';
 
 export type PayrollEmployeeSource = {
@@ -257,8 +259,12 @@ const enrichEmployeesFromSagePayroll = async (employees: DleEmployeeDirectoryRow
       const periodSalary = isDailyRate && ratePerDay
         ? Math.round(ratePerDay * workingDays * 100) / 100
         : moneyFrom(employee.periodSalary, sage.periodSalary, ratePerDay ? ratePerDay * workingDays : null);
+      const sageGrade = str(sage.jobGradeCode) || str(sage.jobGrade);
+      const salaryGrade = !isGenericPayrollGrade(employee.salaryGrade) ? employee.salaryGrade : sageGrade || employee.salaryGrade;
       return {
         ...employee,
+        jobGrade: employee.jobGrade || str(sage.jobGrade) || sageGrade || '',
+        salaryGrade,
         bankName: employee.bankName || bankDetail?.bankName || sage.bankName || '',
         bankCode: employee.bankCode || bankDetail?.bankCode || sage.bankCode || '',
         branchName: employee.branchName || bankDetail?.branchName || sage.branchName || '',
@@ -300,6 +306,31 @@ const enrichEmployeesFromSagePayroll = async (employees: DleEmployeeDirectoryRow
     return employees;
   }
 };
+
+const enrichEmployeesFromPayslipIdentities = async (employees: DleEmployeeDirectoryRow[]) => {
+  try {
+    const identities = await payslipIdentityMap();
+    return employees.map((employee) => {
+      const keys = [employee.employeeId, employee.employeeCode, employee.sourceEmployeeId]
+        .map(normalizePayrollMatchKey)
+        .filter(Boolean);
+      const identity = keys.map((key) => identities.get(key)).find(Boolean);
+      if (!identity?.salaryGrade) return employee;
+      const authoritativeGrade = str(identity.salaryGrade);
+      if (!authoritativeGrade || !isGenericPayrollGrade(employee.salaryGrade)) return employee;
+      return {
+        ...employee,
+        salaryGrade: authoritativeGrade,
+        jobGrade: str(employee.jobGrade) || authoritativeGrade,
+      };
+    });
+  } catch {
+    return employees;
+  }
+};
+
+const enrichPayrollEmployeeMaster = async (employees: DleEmployeeDirectoryRow[]) =>
+  enrichEmployeesFromPayslipIdentities(await maybeEnrichEmployeesFromSagePayroll(employees));
 
 const emptyEmployee = (employeeId: string, fullName: string): DleEmployeeDirectoryRow => ({
   id: employeeId,
@@ -433,7 +464,7 @@ const loadPayrollEmployees = async (): Promise<PayrollEmployeeSource> => {
     const employees = await withTimeout(readEmployeeDirectoryFromDb(), EMPLOYEE_SOURCE_DB_TIMEOUT_MS, 'DLE_Enterprise HRIS employee source timed out.');
     if (employees && employees.length >= MIN_HRIS_EMPLOYEES) {
       const payrollEmployees = employees.filter((employee) => ![employee.employeeId, employee.employeeCode, employee.sourceEmployeeId].some(isTemporaryPfCode) && !isExcludedFromHrisPayroll(employee));
-      const activePayrollEmployees = payrollActiveEmployees(await maybeEnrichEmployeesFromSagePayroll(payrollEmployees));
+      const activePayrollEmployees = payrollActiveEmployees(await enrichPayrollEmployeeMaster(payrollEmployees));
       return { employees: await applyPayrollEmployeeOptions(activePayrollEmployees), source: 'DLE_Enterprise HRIS', databaseAvailable: true, warning: null };
     }
     if (REQUIRE_HRIS_DB) {

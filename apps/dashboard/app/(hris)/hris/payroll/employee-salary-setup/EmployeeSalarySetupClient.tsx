@@ -89,6 +89,135 @@ type PayrollRecord = {
   grossPay: number | null;
   deductions: number | null;
   netPay: number | null;
+  timesheetDaysWorked?: number | null;
+  timesheetBookedHours?: number | null;
+};
+
+type SalaryTableColumn = {
+  id: string;
+  label: string;
+  group: 'employee' | 'contract' | 'earnings' | 'deductions' | 'totals' | 'meta';
+  kind: 'checkbox' | 'employee' | 'text' | 'money' | 'days' | 'rate' | 'status' | 'actions';
+  sticky?: 'left-check' | 'left-employee';
+  getMoney?: (record: PayrollRecord) => number | null;
+  getText?: (record: PayrollRecord) => string;
+};
+
+const earningLineAmount = (record: PayrollRecord, pattern: RegExp) => {
+  const line = (record.earningLines || []).find((item) => pattern.test(String(item.code || '')) || pattern.test(String(item.name || '')));
+  return line?.amount ?? null;
+};
+
+const deductionLineAmount = (record: PayrollRecord, pattern: RegExp) => {
+  const line = (record.deductionLines || []).find((item) => pattern.test(String(item.code || '')) || pattern.test(String(item.label || '')));
+  if (line?.amount != null) return line.amount;
+  if (/PAYE/i.test(pattern.source)) return record.paye;
+  if (/PENSION/i.test(pattern.source)) return record.pension;
+  if (/OTHER/i.test(pattern.source)) return record.otherDeductions;
+  return null;
+};
+
+const STANDARD_EARNING_COLUMNS: Array<{ id: string; label: string; pattern: RegExp }> = [
+  { id: 'earning-basic', label: 'Basic Salary', pattern: /(_BASIC|^BASIC$)|BASIC SALARY/i },
+  { id: 'earning-housing', label: 'Housing', pattern: /HOUSIN|HOUSING/i },
+  { id: 'earning-other', label: 'Other Allowance', pattern: /OTHALL|OTHER ALLOW/i },
+  { id: 'earning-transport', label: 'Transport Allowance', pattern: /TRANSP|TRANSPORT/i },
+  { id: 'earning-furniture', label: 'Furniture Allowance', pattern: /FURN|FURNITURE/i },
+  { id: 'earning-utilities', label: 'Utilities', pattern: /UTILIT|UTILIT/i },
+];
+
+const CONTRACT_EARNING_COLUMNS: Array<{ id: string; label: string; pattern: RegExp }> = [
+  { id: 'earning-weekday', label: 'Weekday Earning', pattern: /^JCWEEKDAY$/i },
+  { id: 'earning-weekday-nt', label: 'Weekday Allowance (NT)', pattern: /JCWEEKDAY_NT|WEEKDAY ALLOWANCE NON TAX/i },
+  { id: 'earning-weekday-ovt', label: 'Weekday Overtime', pattern: /WEEKDAYOVT|WEEKDAY OVT/i },
+  { id: 'earning-pubhol', label: 'Public Holiday', pattern: /PUBHOL|PUBLIC HOLIDAY/i },
+  { id: 'earning-saturday', label: 'Saturday Earning', pattern: /SATEARN|SATURDAY EARNING/i },
+  { id: 'earning-sunday', label: 'Sunday Earning', pattern: /SUNDAYEARN|SUNDAY EARNING/i },
+  { id: 'earning-meal', label: 'Meal Allowance', pattern: /^MEAL$/i },
+];
+
+const DEDUCTION_COLUMNS: Array<{ id: string; label: string; pattern: RegExp }> = [
+  { id: 'deduction-paye', label: 'PAYE', pattern: /PAYE/i },
+  { id: 'deduction-pension', label: 'Pension', pattern: /PENSION/i },
+  { id: 'deduction-nhf', label: 'NHF', pattern: /NHF/i },
+  { id: 'deduction-loan', label: 'Loan Recovery', pattern: /LOAN/i },
+  { id: 'deduction-other', label: 'Other Deductions', pattern: /OTHER/i },
+];
+
+const SALARY_TABLE_GROUPS: Array<{ id: SalaryTableColumn['group']; label: string }> = [
+  { id: 'employee', label: 'Employee' },
+  { id: 'contract', label: 'Contract / Timesheet' },
+  { id: 'earnings', label: 'Earnings Breakdown' },
+  { id: 'deductions', label: 'Deductions' },
+  { id: 'totals', label: 'Totals' },
+  { id: 'meta', label: 'Status' },
+];
+
+const buildSalaryTableColumns = (records: PayrollRecord[]): SalaryTableColumn[] => {
+  const matchedCodes = new Set<string>();
+  [...STANDARD_EARNING_COLUMNS, ...CONTRACT_EARNING_COLUMNS].forEach((column) => {
+    records.forEach((record) => {
+      const line = (record.earningLines || []).find((item) => column.pattern.test(String(item.code || '')) || column.pattern.test(String(item.name || '')));
+      if (line?.code) matchedCodes.add(String(line.code).toUpperCase());
+    });
+  });
+
+  const extraEarningColumns = Array.from(
+    records.reduce((map, record) => {
+      (record.earningLines || []).forEach((line) => {
+        const code = String(line.code || '').trim();
+        if (!code || matchedCodes.has(code.toUpperCase())) return;
+        if (!map.has(code)) map.set(code, String(line.name || code));
+      });
+      return map;
+    }, new Map<string, string>()).entries(),
+  )
+    .sort((a, b) => a[1].localeCompare(b[1]))
+    .map(([code, label]) => ({
+      id: `earning-${code.toLowerCase()}`,
+      label,
+      pattern: new RegExp(`^${code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+    }));
+
+  const columns: SalaryTableColumn[] = [
+    { id: 'select', label: '', group: 'employee', kind: 'checkbox', sticky: 'left-check' },
+    { id: 'employee', label: 'Employee', group: 'employee', kind: 'employee', sticky: 'left-employee' },
+    { id: 'department', label: 'Department', group: 'employee', kind: 'text', getText: (record) => record.department || '—' },
+    { id: 'grade', label: 'Grade', group: 'employee', kind: 'text', getText: (record) => record.salaryGrade || '—' },
+    { id: 'payroll-group', label: 'Payroll Group', group: 'employee', kind: 'text', getText: (record) => record.payrollGroup || '—' },
+    { id: 'days-worked', label: 'Days Worked', group: 'contract', kind: 'days', getText: (record) => (record.isDailyRate ? String(record.timesheetDaysWorked ?? '—') : '—') },
+    { id: 'daily-rate', label: 'Daily Rate', group: 'contract', kind: 'rate', getMoney: (record) => (record.isDailyRate ? record.ratePerDay : null) },
+    { id: 'hours-worked', label: 'Hours Worked', group: 'contract', kind: 'text', getText: (record) => (record.isDailyRate && record.timesheetBookedHours != null ? String(record.timesheetBookedHours) : '—') },
+  ];
+
+  [...STANDARD_EARNING_COLUMNS, ...CONTRACT_EARNING_COLUMNS, ...extraEarningColumns].forEach((column) => {
+    columns.push({
+      id: column.id,
+      label: column.label,
+      group: 'earnings',
+      kind: 'money',
+      getMoney: (record) => earningLineAmount(record, column.pattern),
+    });
+  });
+
+  DEDUCTION_COLUMNS.forEach((column) => {
+    columns.push({
+      id: column.id,
+      label: column.label,
+      group: 'deductions',
+      kind: 'money',
+      getMoney: (record) => deductionLineAmount(record, column.pattern),
+    });
+  });
+
+  columns.push(
+    { id: 'gross-pay', label: 'Gross Salary', group: 'totals', kind: 'money', getMoney: (record) => record.grossPay },
+    { id: 'net-pay', label: 'Net Salary', group: 'totals', kind: 'money', getMoney: (record) => record.netPay },
+    { id: 'status', label: 'Status', group: 'meta', kind: 'status' },
+    { id: 'actions', label: 'Actions', group: 'meta', kind: 'actions' },
+  );
+
+  return columns;
 };
 
 type PayrollPayload = {
@@ -240,6 +369,8 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const selected = filtered.find((record) => record.employeeId === selectedId) || pageRows[0] || null;
+  const salaryTableColumns = useMemo(() => buildSalaryTableColumns(records), [records]);
+  const salaryTableColumnCount = salaryTableColumns.length;
 
   const missingPay = records.filter((record) => !record.basePay || record.basePay <= 0).length;
   const avgGross = records.length ? records.reduce((sum, r) => sum + (r.grossPay || 0), 0) / records.length : 0;
@@ -327,9 +458,15 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
   };
 
   const exportCsv = () => {
-    const headers = ['Employee ID', 'Name', 'Department', 'Grade', 'Payroll Group', 'Basic Pay', 'Gross Pay', 'Net Pay', 'Status', 'Exceptions'];
+    const exportColumns = salaryTableColumns.filter((column) => !['select', 'actions', 'status'].includes(column.id));
+    const headers = exportColumns.map((column) => column.label || column.id);
     const lines = filtered.map((record) =>
-      [record.employeeId, record.fullName, record.department, record.salaryGrade, record.payrollGroup, record.basePay, record.grossPay, record.netPay, record.payrollStatus, record.exceptions.join('; ')]
+      exportColumns
+        .map((column) => {
+          if (column.kind === 'money' || column.kind === 'rate') return column.getMoney?.(record) ?? '';
+          if (column.kind === 'employee') return record.fullName;
+          return column.getText?.(record) ?? '';
+        })
         .map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`)
         .join(','),
     );
@@ -500,28 +637,45 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
               <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px]">
                 <div className="min-w-0 border-r border-[#E5E7EB]">
                   <div className="max-h-[620px] overflow-auto">
-                    <table className="min-w-[1280px] w-full text-left">
+                    <table className="min-w-[2400px] w-full text-left">
                       <thead className="sticky top-0 z-10 bg-[#F8FAFC] text-[11px] font-semibold uppercase tracking-wide text-[#64748B]">
                         <tr>
-                          <th className="sticky left-0 z-20 bg-[#F8FAFC] px-4 py-3">
-                            <input type="checkbox" checked={pageRows.length > 0 && pageRows.every((row) => selectedIds.includes(row.employeeId))} onChange={togglePage} className="rounded border-slate-300" />
-                          </th>
-                          <th className="sticky left-12 z-20 bg-[#F8FAFC] px-4 py-3">Employee</th>
-                          <th className="px-4 py-3">Department</th>
-                          <th className="px-4 py-3">Grade</th>
-                          <th className="px-4 py-3">Payroll Group</th>
-                          <th className="px-4 py-3">Basic Salary</th>
-                          <th className="px-4 py-3">Gross Salary</th>
-                          <th className="px-4 py-3">Net Salary</th>
-                          <th className="px-4 py-3">Status</th>
-                          <th className="px-4 py-3">Actions</th>
+                          {SALARY_TABLE_GROUPS.map((group) => {
+                            const span = salaryTableColumns.filter((column) => column.group === group.id).length;
+                            if (!span) return null;
+                            return (
+                              <th key={group.id} colSpan={span} className="border-b border-[#E5E7EB] px-3 py-2 text-center text-[10px] font-black tracking-[0.14em] text-[#475569]">
+                                {group.label}
+                              </th>
+                            );
+                          })}
+                        </tr>
+                        <tr>
+                          {salaryTableColumns.map((column) => (
+                            <th
+                              key={column.id}
+                              className={`border-b border-[#E5E7EB] px-3 py-3 whitespace-nowrap ${
+                                column.sticky === 'left-check'
+                                  ? 'sticky left-0 z-20 bg-[#F8FAFC]'
+                                  : column.sticky === 'left-employee'
+                                    ? 'sticky left-12 z-20 bg-[#F8FAFC]'
+                                    : ''
+                              } ${column.kind === 'money' || column.kind === 'days' || column.kind === 'rate' ? 'text-right' : ''}`}
+                            >
+                              {column.kind === 'checkbox' ? (
+                                <input type="checkbox" checked={pageRows.length > 0 && pageRows.every((row) => selectedIds.includes(row.employeeId))} onChange={togglePage} className="rounded border-slate-300" />
+                              ) : (
+                                column.label
+                              )}
+                            </th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#E5E7EB]">
                         {loading ? (
                           Array.from({ length: 8 }).map((_, index) => (
                             <tr key={index} className="animate-pulse">
-                              <td colSpan={10} className="px-4 py-4">
+                              <td colSpan={salaryTableColumnCount} className="px-4 py-4">
                                 <div className="h-10 rounded-lg bg-slate-100" />
                               </td>
                             </tr>
@@ -535,48 +689,83 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                                 onClick={() => setSelectedId(record.employeeId)}
                                 className={`cursor-pointer transition-colors hover:bg-[#F1F5F9] ${active ? 'bg-blue-50/70' : indexEven(record.employeeId) ? 'bg-white' : 'bg-[#FCFDFF]'}`}
                               >
-                                <td className="sticky left-0 z-10 bg-inherit px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                                  <input type="checkbox" checked={selectedIds.includes(record.employeeId)} onChange={() => toggleRow(record.employeeId)} className="rounded border-slate-300" />
-                                </td>
-                                <td className="sticky left-12 z-10 bg-inherit px-4 py-3">
-                                  <div className="flex items-center gap-3">
-                                    <EmployeeAvatar fullName={record.fullName} employeeCode={record.employeeId} tryPhoto size="sm" />
-                                    <div className="min-w-0">
-                                      <p className="truncate text-sm font-semibold text-[#0F172A]">{record.fullName}</p>
-                                      <p className="text-xs text-[#64748B]">{record.employeeId}</p>
-                                    </div>
-                                    {record.exceptionCount > 0 ? (
-                                      <span title="Validation issue">
-                                        <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" aria-hidden />
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3 text-sm text-[#475569]">{record.department}</td>
-                                <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">{record.salaryGrade}</td>
-                                <td className="px-4 py-3 text-sm text-[#475569]">{record.payrollGroup}</td>
-                                <td className="px-4 py-3 text-sm font-semibold text-[#0F172A]">{money(record.basePay, canViewMoney)}</td>
-                                <td className="px-4 py-3 text-sm font-semibold text-[#0F172A]">{money(record.grossPay, canViewMoney)}</td>
-                                <td className="px-4 py-3 text-sm font-semibold text-emerald-700">{money(record.netPay, canViewMoney)}</td>
-                                <td className="px-4 py-3">
-                                  <StatusPill label={setupStatusLabel(record)} tone={setupStatusTone(record)} />
-                                </td>
-                                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                                  <div className="flex items-center gap-1">
-                                    <button type="button" onClick={() => setSelectedId(record.employeeId)} className="rounded-lg p-2 text-[#64748B] hover:bg-blue-50 hover:text-[#2563EB]" title="View">
-                                      <Eye className="h-4 w-4" />
-                                    </button>
-                                    <button type="button" className="rounded-lg p-2 text-[#64748B] hover:bg-slate-100" title="More">
-                                      <MoreHorizontal className="h-4 w-4" />
-                                    </button>
-                                  </div>
-                                </td>
+                                {salaryTableColumns.map((column) => {
+                                  if (column.kind === 'checkbox') {
+                                    return (
+                                      <td key={column.id} className="sticky left-0 z-10 bg-inherit px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                                        <input type="checkbox" checked={selectedIds.includes(record.employeeId)} onChange={() => toggleRow(record.employeeId)} className="rounded border-slate-300" />
+                                      </td>
+                                    );
+                                  }
+                                  if (column.kind === 'employee') {
+                                    return (
+                                      <td key={column.id} className="sticky left-12 z-10 bg-inherit px-4 py-3">
+                                        <div className="flex items-center gap-3">
+                                          <EmployeeAvatar fullName={record.fullName} employeeCode={record.employeeId} tryPhoto size="sm" />
+                                          <div className="min-w-0">
+                                            <p className="truncate text-sm font-semibold text-[#0F172A]">{record.fullName}</p>
+                                            <p className="text-xs text-[#64748B]">{record.employeeId}</p>
+                                          </div>
+                                          {record.exceptionCount > 0 ? (
+                                            <span title="Validation issue">
+                                              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" aria-hidden />
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                      </td>
+                                    );
+                                  }
+                                  if (column.kind === 'status') {
+                                    return (
+                                      <td key={column.id} className="px-4 py-3">
+                                        <StatusPill label={setupStatusLabel(record)} tone={setupStatusTone(record)} />
+                                      </td>
+                                    );
+                                  }
+                                  if (column.kind === 'actions') {
+                                    return (
+                                      <td key={column.id} className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                                        <div className="flex items-center gap-1">
+                                          <button type="button" onClick={() => setSelectedId(record.employeeId)} className="rounded-lg p-2 text-[#64748B] hover:bg-blue-50 hover:text-[#2563EB]" title="View">
+                                            <Eye className="h-4 w-4" />
+                                          </button>
+                                          <button type="button" className="rounded-lg p-2 text-[#64748B] hover:bg-slate-100" title="More">
+                                            <MoreHorizontal className="h-4 w-4" />
+                                          </button>
+                                        </div>
+                                      </td>
+                                    );
+                                  }
+                                  if (column.kind === 'money') {
+                                    const value = column.getMoney?.(record) ?? null;
+                                    const isNet = column.id === 'net-pay';
+                                    return (
+                                      <td key={column.id} className={`px-3 py-3 text-sm font-semibold whitespace-nowrap text-right ${isNet ? 'text-emerald-700' : 'text-[#0F172A]'}`}>
+                                        {value != null && value !== 0 ? money(value, canViewMoney) : '—'}
+                                      </td>
+                                    );
+                                  }
+                                  if (column.kind === 'rate') {
+                                    const value = column.getMoney?.(record) ?? null;
+                                    return (
+                                      <td key={column.id} className="px-3 py-3 text-sm font-semibold whitespace-nowrap text-right text-[#0F172A]">
+                                        {value != null && value > 0 ? money(value, canViewMoney) : '—'}
+                                      </td>
+                                    );
+                                  }
+                                  const text = column.getText?.(record) || '—';
+                                  return (
+                                    <td key={column.id} className={`px-3 py-3 text-sm whitespace-nowrap ${column.kind === 'days' ? 'text-right font-semibold text-[#0F172A]' : 'text-[#475569]'}`}>
+                                      {text}
+                                    </td>
+                                  );
+                                })}
                               </tr>
                             );
                           })
                         ) : (
                           <tr>
-                            <td colSpan={10} className="px-4 py-10 text-center text-sm font-medium text-[#64748B]">
+                            <td colSpan={salaryTableColumnCount} className="px-4 py-10 text-center text-sm font-medium text-[#64748B]">
                               No employees match the current filters.
                             </td>
                           </tr>
@@ -631,6 +820,13 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                           ['Grade', selected.salaryGrade],
                           ['Payroll Group', selected.payrollGroup],
                           ['Employment Type', selected.employmentType],
+                          ...(selected.isDailyRate
+                            ? [
+                                ['Days Worked', selected.timesheetDaysWorked != null ? String(selected.timesheetDaysWorked) : '—'],
+                                ['Hours Worked', selected.timesheetBookedHours != null ? String(selected.timesheetBookedHours) : '—'],
+                                ['Daily Rate', selected.ratePerDay ? money(selected.ratePerDay, canViewMoney) : '—'],
+                              ]
+                            : []),
                         ].map(([label, value]) => (
                           <div key={label} className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-3">
                             <p className="text-[11px] font-semibold uppercase text-[#94A3B8]">{label}</p>
@@ -652,7 +848,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
 
                       <AccordionSection title="Earnings" count={selected.earningLines.length} defaultOpen>
                         <div className="space-y-2">
-                          {selected.earningLines.slice(0, 6).map((line) => (
+                          {(selected.earningLines.length ? selected.earningLines : [{ code: 'NONE', name: 'No earning lines', amount: null }]).map((line) => (
                             <div key={line.code} className="flex items-center justify-between gap-2 text-xs">
                               <span className="truncate text-[#475569]">{line.name}</span>
                               <span className="font-semibold text-[#0F172A]">{money(line.amount, canViewMoney)}</span>

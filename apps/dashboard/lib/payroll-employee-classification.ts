@@ -89,6 +89,37 @@ export const markInactiveNonDailyContractEmployees = (employees: DleEmployeeDire
 export const payrollActiveEmployees = (employees: DleEmployeeDirectoryRow[]) =>
   markInactiveNonDailyContractEmployees(employees).filter((employee) => !isInactiveNonDailyContractEmployee(employee));
 
+export type PayrollRunExclusionEmployee = DleEmployeeDirectoryRow & { excludedFromPayrollRun?: boolean };
+
+export const isEmployeeExcludedFromPayrollRun = (employee: PayrollRunExclusionEmployee) => Boolean(employee.excludedFromPayrollRun);
+
+/** Daily-rate contract with no configured rate (blocked until rate or timesheet is set). */
+export const isUnconfiguredDailyRateContractEmployee = (employee: DleEmployeeDirectoryRow, profileId?: string) => {
+  if (!contractEmployeeCode(employee)) return false;
+  if (!isDailyRatePayrollEmployee(employee, profileId)) return false;
+  return Number(employee.ratePerDay || 0) <= 0 && Number(employee.ratePerHour || 0) <= 0;
+};
+
+export const isRemovableDailyRatePayrollRecord = (record: {
+  employeeCode: string;
+  employeeId: string;
+  payrollStatus: string;
+  isDailyRate: boolean;
+  ratePerDay: number | null;
+  ratePerHour: number | null;
+  grossPay: number;
+  exceptions: string[];
+}) => {
+  const code = compact(record.employeeCode || record.employeeId).toUpperCase();
+  if (!/^C\d+/.test(code)) return false;
+  if (!record.isDailyRate) return false;
+  if (record.payrollStatus !== 'Blocked') return false;
+  const noRate = Number(record.ratePerDay || 0) <= 0 && Number(record.ratePerHour || 0) <= 0;
+  const missingGross = record.grossPay <= 0;
+  const missingTimesheet = record.exceptions.some((issue) => /timesheet hours are not available/i.test(issue));
+  return noRate && missingGross && missingTimesheet;
+};
+
 export const withContractPayrollClassification = <T extends DleEmployeeDirectoryRow>(employee: T) => ({
   ...employee,
   payrollClassification: contractPayrollClassification(employee),

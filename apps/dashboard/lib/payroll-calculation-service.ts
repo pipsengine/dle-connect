@@ -1,7 +1,7 @@
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { calculateContractDayRateEarnings, calculatePayrollEarnings, resolvePayrollEarningProfile } from '@/lib/payroll-earnings-engine';
-import { contractEmployeeCode, isDailyRatePayrollEmployee } from '@/lib/payroll-employee-classification';
+import { contractEmployeeCode, isDailyRatePayrollEmployee, isEmployeeExcludedFromPayrollRun, type PayrollRunExclusionEmployee } from '@/lib/payroll-employee-classification';
 import { enterprisePayrollSourceLabel, isEnterprisePayrollPeriod, shouldComparePayrollWithSage } from '@/lib/payroll-enterprise-source';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
@@ -35,6 +35,7 @@ export type PayrollCalculationRecord = {
   basePay: number;
   allowances: number;
   grossPay: number;
+  periodPackageGross?: number;
   taxablePay: number;
   nonTaxablePay: number;
   earningProfile: string;
@@ -216,11 +217,6 @@ const applyDailyRateFromTimesheets = (
   const timesheet = keys.map((key) => timesheetHours.get(key) || timesheetHours.get(normalizePayrollMatchKey(key))).find(Boolean);
   const rates = dailyRateValues(employee, true);
   if (!timesheet || (timesheet.daysWorked <= 0 && timesheet.bookedHours <= 0)) return amounts;
-  const grossPay = rates.ratePerDay > 0 && timesheet.daysWorked > 0
-    ? roundMoney(rates.ratePerDay * timesheet.daysWorked)
-    : rates.ratePerHour > 0 && timesheet.bookedHours > 0
-      ? roundMoney(rates.ratePerHour * timesheet.bookedHours)
-      : amounts.grossPay;
   const contractEarnings = calculateContractDayRateEarnings({
     ratePerDay: rates.ratePerDay || (rates.ratePerHour > 0 ? rates.ratePerHour * rates.hoursPerDay : 0),
     weekdayDays: timesheet.daysWorked > 0 ? timesheet.daysWorked : (timesheet.bookedHours > 0 ? timesheet.bookedHours / rates.hoursPerDay : 0),
@@ -228,10 +224,9 @@ const applyDailyRateFromTimesheets = (
   return {
     ...amounts,
     ...contractEarnings,
-    grossPay: contractEarnings.grossPay || grossPay,
-    profileId: 'contract-day-rate' as const,
     profileName: 'Daily Rate (Timesheet Driven)',
-    paidEarningLines: contractEarnings.earningLines,
+    earningLines: contractEarnings.earningLines,
+    paidEarningLines: contractEarnings.paidEarningLines || contractEarnings.earningLines,
   };
 };
 
@@ -310,11 +305,13 @@ export const calculatePayrollForPeriod = async (requestedPeriod: string): Promis
     ? { period: requestedPeriod, includePeriodAdjustments: true, useSagePayslipLines: true, ignoreSagePayslipLines: false }
     : { period: requestedPeriod, includePeriodAdjustments: true, ignoreSagePayslipLines: true };
 
-  const records: PayrollCalculationRecord[] = employeeSource.employees.map((employee, index) => {
+  const payrollEmployees = employeeSource.employees.filter((employee) => !isEmployeeExcludedFromPayrollRun(employee as PayrollRunExclusionEmployee));
+
+  const records: PayrollCalculationRecord[] = payrollEmployees.map((employee, index) => {
     const calculationEmployee = shouldComparePayrollWithSage(requestedPeriod) ? employee : inputOnlyEmployee(employee);
     const baseAmounts = calculatePayrollEarnings(calculationEmployee, calculationOptions);
     const amounts = applyDailyRateFromTimesheets(employee, baseAmounts, timesheetHours);
-    const tax = calculatePayrollTax(payrollInputFromEmployee(calculationEmployee, calculationOptions), taxVersion);
+    const tax = calculatePayrollTax(payrollInputFromEmployee(calculationEmployee, calculationOptions, amounts), taxVersion);
     const pension = calculatePension(pensionInputFromEmployee(calculationEmployee, calculationOptions), pensionVersion);
     const funds = calculateStatutoryFunds(statutoryFundInputFromEmployee(calculationEmployee, employeeSource.employees.length, calculationOptions), fundsVersion);
     const loans = (loanInputs.get(employee.employeeId) || []).map((loanInput) => calculateLoanRecovery(loanInput, loansVersion));
@@ -330,10 +327,12 @@ export const calculatePayrollForPeriod = async (requestedPeriod: string): Promis
     const loanRecovery = roundMoney(loans.reduce((sum, loan) => sum + loan.payrollRecovery, 0));
     const taxComponentMonthly = (componentId: string) => (tax.statutoryItems.find((item) => item.id === componentId)?.amount || 0) / 12;
     const nhf = taxComponentMonthly('nhf');
+    const nhfFundDeduction = roundMoney(funds.fundResults.find((item) => item.id === 'nhf')?.monthlyAmount || 0);
+    const statutoryEmployeeDeductions = roundMoney(Math.max(0, statutoryEmployee - (nhf > 0 && nhfFundDeduction > 0 ? nhfFundDeduction : 0)));
     const unionDues = taxComponentMonthly('union-dues');
     const otherStatutory = taxComponentMonthly('other-statutory');
     const otherDeductions = roundMoney(unionDues + otherStatutory);
-    const totalDeductions = roundMoney(paye + employeePension + statutoryEmployee + loanRecovery + nhf + otherDeductions);
+    const totalDeductions = roundMoney(paye + employeePension + statutoryEmployeeDeductions + loanRecovery + nhf + otherDeductions);
     const netPay = roundMoney(Math.max(0, amounts.grossPay - totalDeductions));
     const grossVariance = sageActual ? moneyVariance(sageActual.grossPay, amounts.grossPay) : null;
     const netVariance = sageActual ? moneyVariance(sageActual.netPay, netPay) : null;
@@ -401,6 +400,7 @@ export const calculatePayrollForPeriod = async (requestedPeriod: string): Promis
       basePay: amounts.basePay,
       allowances: amounts.allowances,
       grossPay: amounts.grossPay,
+      periodPackageGross: amounts.periodPackageGross ?? amounts.grossPay,
       taxablePay: amounts.taxablePay,
       nonTaxablePay: amounts.nonTaxablePay,
       earningProfile: amounts.profileName,
@@ -408,7 +408,7 @@ export const calculatePayrollForPeriod = async (requestedPeriod: string): Promis
       paye: roundMoney(paye),
       pensionEmployee: roundMoney(employeePension),
       pensionEmployer: roundMoney(employerPension),
-      statutoryEmployee: roundMoney(statutoryEmployee),
+      statutoryEmployee: roundMoney(statutoryEmployeeDeductions),
       statutoryEmployer: roundMoney(employerStatutory),
       loanRecovery: roundMoney(loanRecovery),
       otherDeductions,
@@ -462,7 +462,7 @@ export const calculatePayrollForPeriod = async (requestedPeriod: string): Promis
       setupAssignedToPayroll: Boolean(employee.setupAssignedToPayroll),
       nhfApplicable: nhf > 0,
       salaryStructure: dailyRateEmployee ? 'Daily Rate' : employee.salaryGrade || employee.jobGrade || 'Unassigned',
-      earningLines: amounts.earningLines.map((line) => ({ ...line, amount: roundMoney(line.amount) })),
+      earningLines: (amounts.paidEarningLines || amounts.earningLines).map((line) => ({ ...line, amount: roundMoney(line.amount) })),
       annualBenefitLines: amounts.annualBenefitLines.map((line) => ({ ...line, amount: roundMoney(line.amount) })),
       deductionLines: [
         { code: 'PAYE', label: 'PAYE', amount: roundMoney(paye) },

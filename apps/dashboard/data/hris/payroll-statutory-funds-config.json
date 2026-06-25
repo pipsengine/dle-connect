@@ -20,7 +20,7 @@
           "shortName": "NHF",
           "enabled": true,
           "payer": "Employee",
-          "deductFromEmployee": true,
+          "deductFromEmployee": false,
           "calculationBasis": "percent_of_monthly_base",
           "rate": 0.025,
           "monthlyCap": null,

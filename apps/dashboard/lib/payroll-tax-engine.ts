@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
-import { calculatePayrollEarnings, calculatePermanentUnionDues, resolvePayrollEarningProfile, taxablePayrollInputFromEmployee, type PayrollEarningsOptions } from '@/lib/payroll-earnings-engine';
+import { calculatePayrollEarnings, calculatePermanentUnionDues, resolvePayrollEarningProfile, taxablePayrollInputFromEmployee, type PayrollEarningsOptions, type PayrollEarningsResult } from '@/lib/payroll-earnings-engine';
 
 export type TaxBand = { id: string; sequence: number; label: string; bandAmount: number | null; rate: number };
 export type ConfigStatus = 'Draft' | 'Active' | 'Retired';
@@ -79,9 +79,29 @@ const compact = (value: unknown) => String(value || '').trim();
 const employeeType = (input: PayrollTaxInput) => compact(input.employee?.employmentType || input.employee?.staffCategory || input.employee?.employeeCategory || 'Payroll');
 const normalizedTextKey = (value: unknown) => compact(value).toUpperCase().replace(/\s+/g, '');
 const NHF_EXCLUDED_GRADES = new Set(['MGT6', 'SMGT10']);
+const DEFAULT_ANNUAL_RENT_RELIEF = 500000;
 const isNhfExcludedGrade = (employee?: DleEmployeeDirectoryRow) => {
   if (!employee) return false;
   return [employee.salaryGrade, employee.jobGrade].map(normalizedTextKey).some((grade) => NHF_EXCLUDED_GRADES.has(grade));
+};
+
+export const defaultAnnualRentReliefForEmployee = (employee?: DleEmployeeDirectoryRow) => {
+  if (!employee) return 0;
+  const explicit = Number(employee.annualRentRelief);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const profileId = resolvePayrollEarningProfile(employee);
+  if (profileId === 'stipend-non-taxable' || String(profileId).startsWith('contract-')) return 0;
+  return DEFAULT_ANNUAL_RENT_RELIEF;
+};
+
+const resolveAnnualRentRelief = (component: TaxComponentConfig, input: PayrollTaxInput) => {
+  const annualRentPaid = Math.max(0, Number(input.annualRent || input.employee?.annualRent || 0));
+  const employeeRelief = Number(input.employee?.annualRentRelief);
+  const statutoryCap = Number(component.annualCap || DEFAULT_ANNUAL_RENT_RELIEF);
+  if (Number.isFinite(employeeRelief) && employeeRelief > 0) return employeeRelief;
+  if (annualRentPaid > 0) return annualRentPaid * Number(component.rate || 0);
+  if (component.requiresEmployeeEvidence === false) return statutoryCap;
+  return defaultAnnualRentReliefForEmployee(input.employee);
 };
 
 export const readPayrollTaxConfig = async (): Promise<PayrollTaxConfig> => {
@@ -149,8 +169,7 @@ const calculateComponent = (component: TaxComponentConfig, input: PayrollTaxInpu
   if (component.calculationBasis === 'percent_of_monthly_base_annualized') amount = monthlyBase * rate * 12;
   if (component.calculationBasis === 'percent_of_annual_gross') amount = annualGross * rate;
   if (component.calculationBasis === 'percent_of_annual_rent') {
-    const employeeRelief = Number(input.employee?.annualRentRelief);
-    amount = Number.isFinite(employeeRelief) && employeeRelief > 0 ? employeeRelief : annualRent > 0 ? annualRent * rate : Number(component.annualCap || 0);
+    amount = resolveAnnualRentRelief(component, input);
   }
   if (component.calculationBasis === 'configured_employee_amount') amount = Number(input.courtGarnisheeMonthly || 0) * 12;
   if (component.calculationBasis === 'employer_statutory_tracking_only') amount = annualGross * rate;
@@ -202,13 +221,18 @@ export const calculatePayrollTax = (input: PayrollTaxInput, version: PayrollTaxV
   };
 };
 
-export const payrollInputFromEmployee = (employee: DleEmployeeDirectoryRow, options?: PayrollEarningsOptions): PayrollTaxInput => {
-  const taxInput = taxablePayrollInputFromEmployee(employee, options);
-  const earnings = calculatePayrollEarnings(employee, options);
+export const payrollInputFromEmployee = (employee: DleEmployeeDirectoryRow, options?: PayrollEarningsOptions, earningsOverride?: PayrollEarningsResult): PayrollTaxInput => {
+  const earnings = earningsOverride || calculatePayrollEarnings(employee, options);
+  const taxInput = taxablePayrollInputFromEmployee(employee, options, earnings);
+  const annualRentRelief = defaultAnnualRentReliefForEmployee(employee);
   return {
     ...taxInput,
+    employee: {
+      ...employee,
+      annualRentRelief: annualRentRelief > 0 ? annualRentRelief : employee.annualRentRelief,
+    },
     monthlyBasicPay: earnings.basicPay,
-    annualRent: 0,
+    annualRent: Math.max(0, Number(employee.annualRent || 0)),
     courtGarnisheeMonthly: 0,
   };
 };

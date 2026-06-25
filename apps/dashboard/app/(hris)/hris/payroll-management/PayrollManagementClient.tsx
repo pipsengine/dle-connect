@@ -63,6 +63,7 @@ import {
   TrendingUp,
   UserCheck,
   Users,
+  UserX,
   WalletCards,
   X,
 } from 'lucide-react';
@@ -70,6 +71,9 @@ import {
 type Role = 'Super Admin' | 'System Administrator' | 'HR Director' | 'HR Manager' | 'HR Officer' | 'Payroll Officer' | 'Payroll Supervisor' | 'Finance Controller' | 'Finance Manager' | 'CFO' | 'Executive Director' | 'Executive Management' | 'Auditor' | 'Employee';
 type PayrollRunStatus = 'Draft' | 'Open' | 'Validation' | 'Validated' | 'Computed' | 'Ready for Approval' | 'Submitted' | 'Under Review' | 'Approved' | 'Released' | 'Rejected' | 'Revision Requested' | 'Locked' | 'Posted' | 'Closed' | 'Reopened' | 'Cancelled' | 'Published';
 type Tone = 'blue' | 'green' | 'amber' | 'red' | 'violet' | 'cyan' | 'slate';
+
+const preSubmissionRunStatuses: PayrollRunStatus[] = ['Draft', 'Open', 'Validation', 'Validated', 'Computed', 'Ready for Approval', 'Revision Requested', 'Rejected'];
+const payrollRunIsPreSubmission = (status: string) => preSubmissionRunStatuses.includes(status as PayrollRunStatus);
 
 type PayrollRecord = {
   employeeId: string;
@@ -311,6 +315,17 @@ const payrollRate = (record: PayrollRecord, canView = true) => {
   if (record.ratePerDay) return `${recordMoney(record, record.ratePerDay)}/day`;
   if (record.ratePerHour) return `${recordMoney(record, record.ratePerHour)}/hr`;
   return 'Rate missing';
+};
+
+const isRemovableDailyRatePayrollRecord = (record: PayrollRecord) => {
+  const code = String(record.employeeId || '').trim().toUpperCase();
+  if (!/^C\d+/.test(code)) return false;
+  if (!record.isDailyRate) return false;
+  if (record.payrollStatus !== 'Blocked') return false;
+  const noRate = Number(record.ratePerDay || 0) <= 0 && Number(record.ratePerHour || 0) <= 0;
+  const missingGross = Number(record.grossPay || 0) <= 0;
+  const missingTimesheet = record.exceptions.some((issue) => /timesheet hours are not available/i.test(issue));
+  return noRate && missingGross && missingTimesheet;
 };
 
 const toneStyles: Record<Tone, { card: string; icon: string; chip: string; button: string; bar: string; text: string }> = {
@@ -758,8 +773,8 @@ const canRunAction = (actionItem: PayrollAction, role: Role, payload: PayrollPay
   const submittedStatuses = ['Submitted', 'Under Review', ...completedStatuses];
   const releasedStatuses = ['Released', 'Locked', 'Posted', 'Published', 'Closed'];
   const actionCompleted = (id: string) => {
-    if (id === 'validate-payroll') return Boolean(run?.validatedAt) && blockedEmployees === 0;
-    if (id === 'create-run') return ['Computed', 'Ready for Approval', ...submittedStatuses].includes(status);
+    if (id === 'validate-payroll') return submittedStatuses.includes(status);
+    if (id === 'create-run') return submittedStatuses.includes(status);
     if (id === 'submit-run') return Boolean(run?.submittedAt) || submittedStatuses.includes(status);
     if (id === 'approve-run' || id === 'approve-entire-workflow') return Boolean(run?.approvedAt) || completedStatuses.includes(status);
     if (id === 'release-run') return Boolean(run?.releasedAt) || releasedStatuses.includes(status);
@@ -774,8 +789,9 @@ const canRunAction = (actionItem: PayrollAction, role: Role, payload: PayrollPay
   if (actionItem.id === 'create-run' && blockedEmployees > 0) return { allowed: false, reason: 'Resolve blocked payroll setup before processing.' };
   if (actionItem.id === 'submit-run' && blockedEmployees > 0) return { allowed: false, reason: 'Resolve blocked payroll setup before submitting payroll for approval.' };
   if (['approve-run'].includes(actionItem.id) && blockedEmployees > 0) return { allowed: false, reason: 'Resolve blocked payroll setup before approval.' };
-  if (actionItem.id === 'create-run' && !['Draft', 'Open', 'Validation', 'Validated', 'Ready for Approval'].includes(status)) return { allowed: false, reason: 'Run payroll validation before processing, then continue in order.' };
-  if (actionItem.id === 'submit-run' && status !== 'Computed') return { allowed: false, reason: 'Process payroll first. Submit activates after computation is complete.' };
+  if (actionItem.id === 'validate-payroll' && !payrollRunIsPreSubmission(status)) return { allowed: false, reason: 'Validation can only be repeated before payroll is submitted for approval.' };
+  if (actionItem.id === 'create-run' && !payrollRunIsPreSubmission(status)) return { allowed: false, reason: 'Payroll can only be re-run before submission. Request revision or reopen the period to recalculate.' };
+  if (actionItem.id === 'submit-run' && !['Computed', 'Calculated', 'Ready for Approval', 'Validated'].includes(status)) return { allowed: false, reason: 'Process payroll first. Submit activates after computation is complete.' };
   if (actionItem.id === 'approve-run' && !['Submitted', 'Under Review'].includes(status)) return { allowed: false, reason: 'Submit payroll for approval first. Approval activates after submission.' };
   if (actionItem.id === 'approve-entire-workflow' && !['Submitted', 'Under Review'].includes(status)) return { allowed: false, reason: 'Submit payroll first. Entire workflow approval activates after submission.' };
   if (actionItem.id === 'release-run' && status !== 'Approved') return { allowed: false, reason: 'Payroll approval is required before release.' };
@@ -1631,12 +1647,18 @@ function ProcessPayrollWorkspace({
   onAction,
   busyAction,
   role,
+  onExcludeFromPayroll,
+  onBulkExcludeInvalidContracts,
+  excludeBusy,
 }: {
   payload: PayrollPayload | null;
   canViewMoney: boolean;
   onAction: (actionItem: PayrollAction) => void;
   busyAction: string;
   role: Role;
+  onExcludeFromPayroll: (employeeId: string) => void;
+  onBulkExcludeInvalidContracts: () => void;
+  excludeBusy: string;
 }) {
   const [processView, setProcessView] = useState<'ready' | 'issues' | 'outputs' | 'audit'>('ready');
   const currentRun = payrollRunFor(payload);
@@ -1644,6 +1666,7 @@ function ProcessPayrollWorkspace({
   const records = payload?.records || [];
   const readyRows = records.filter((record) => record.payrollStatus === 'Ready');
   const issueRows = records.filter((record) => record.payrollStatus !== 'Ready' || record.exceptionCount > 0);
+  const removableIssueRows = issueRows.filter(isRemovableDailyRatePayrollRecord);
   const blockedCount = payload?.summary.blockedEmployees || 0;
   const reviewCount = payload?.summary.reviewEmployees || 0;
   const readiness = payload?.summary.payrollEligible ? Math.round(((payload?.summary.readyEmployees || 0) / payload.summary.payrollEligible) * 100) : 0;
@@ -1661,6 +1684,7 @@ function ProcessPayrollWorkspace({
 
   const workflowSteps = useMemo(() => {
     const isReleased = releasedStatuses.includes(status);
+    const preSubmission = payrollRunIsPreSubmission(status);
     const steps = [
       { id: 'validate-payroll', label: 'Validate', detail: 'Check master data and setup exceptions', done: Boolean(currentRun?.validatedAt) || ['Validated', ...computedStatuses].includes(status), phase: 'prepare' as const },
       { id: 'create-run', label: 'Run Payroll', detail: 'Compute gross, deductions and net pay', done: computedStatuses.includes(status), phase: 'prepare' as const },
@@ -1676,11 +1700,26 @@ function ProcessPayrollWorkspace({
     return steps.map((step) => {
       const actionItem = resolveProcessingAction(step.id);
       const auth = canRunAction(actionItem, role, payload);
-      return { ...step, enabled: !step.done && auth.allowed, blockedReason: step.done ? '' : auth.reason || '', current: !step.done && auth.allowed };
+      const repeatable = preSubmission && ['validate-payroll', 'create-run'].includes(step.id) && step.done;
+      const enabled = auth.allowed && (!step.done || repeatable);
+      return {
+        ...step,
+        repeatable,
+        enabled,
+        blockedReason: enabled ? '' : auth.reason || (step.done ? 'Complete the next workflow step or re-run this step to refresh calculations.' : ''),
+        current: enabled && !repeatable,
+      };
     });
   }, [currentRun, payload, role, status]);
 
-  const nextStep = workflowSteps.find((step) => step.enabled) || null;
+  const nextStep = useMemo(() => {
+    if (payrollRunIsPreSubmission(status) && computedStatuses.includes(status) && !submittedStatuses.includes(status)) {
+      const submitStep = workflowSteps.find((step) => step.id === 'submit-run' && step.enabled);
+      if (submitStep) return submitStep;
+    }
+    return workflowSteps.find((step) => step.enabled && !step.repeatable) || workflowSteps.find((step) => step.enabled) || null;
+  }, [workflowSteps, status, computedStatuses, submittedStatuses]);
+  const rerunStep = workflowSteps.find((step) => step.id === 'create-run' && step.repeatable && step.enabled) || null;
   const completedCount = workflowSteps.filter((step) => step.done).length;
 
   const readinessData = [
@@ -1751,19 +1790,21 @@ function ProcessPayrollWorkspace({
                       type="button"
                       disabled={!step.enabled && !step.done}
                       onClick={() => step.enabled && fire(step.id)}
-                      title={step.blockedReason || step.detail}
+                      title={step.repeatable ? 'Re-run to refresh calculations before submitting' : step.blockedReason || step.detail}
                       className={`flex min-w-[108px] flex-col items-center rounded-lg border px-2 py-2 text-center transition ${
-                        step.done
-                          ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
-                          : step.enabled
-                            ? 'border-violet-400 bg-white text-violet-950 shadow-sm hover:bg-violet-100'
-                            : 'border-slate-200 bg-slate-50 text-slate-400'
+                        step.repeatable
+                          ? 'border-cyan-400 bg-cyan-50 text-cyan-950 shadow-sm hover:bg-cyan-100'
+                          : step.done
+                            ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                            : step.enabled
+                              ? 'border-violet-400 bg-white text-violet-950 shadow-sm hover:bg-violet-100'
+                              : 'border-slate-200 bg-slate-50 text-slate-400'
                       }`}
                     >
-                      <span className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-black ${step.done ? 'bg-emerald-600 text-white' : step.enabled ? 'bg-violet-600 text-white' : 'bg-slate-200 text-slate-500'}`}>
-                        {step.done ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+                      <span className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-black ${step.repeatable ? 'bg-cyan-600 text-white' : step.done ? 'bg-emerald-600 text-white' : step.enabled ? 'bg-violet-600 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                        {step.repeatable ? <RefreshCcw className="h-3.5 w-3.5" /> : step.done ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
                       </span>
-                      <span className="mt-1 text-[10px] font-black leading-tight">{step.label}</span>
+                      <span className="mt-1 text-[10px] font-black leading-tight">{step.repeatable ? `Re-run ${step.label}` : step.label}</span>
                     </button>
                     {index < workflowSteps.length - 1 ? <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" /> : null}
                   </div>
@@ -1772,6 +1813,17 @@ function ProcessPayrollWorkspace({
             </div>
           </div>
           <div className="shrink-0 space-y-2 lg:w-64">
+            {rerunStep ? (
+              <button
+                type="button"
+                onClick={() => fire(rerunStep.id)}
+                disabled={busyAction === rerunStep.id}
+                className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-cyan-300 bg-cyan-50 px-4 text-sm font-black text-cyan-900 hover:bg-cyan-100 disabled:cursor-wait disabled:opacity-70"
+              >
+                <RefreshCcw className={`h-4 w-4 ${busyAction === rerunStep.id ? 'animate-spin' : ''}`} />
+                {busyAction === rerunStep.id ? 'Recalculating...' : 'Re-run Payroll'}
+              </button>
+            ) : null}
             {nextStep ? (
               <button
                 type="button"
@@ -1860,12 +1912,23 @@ function ProcessPayrollWorkspace({
               ].map((item) => (
                 <button key={item.id} type="button" onClick={() => setProcessView(item.id)} className={`rounded-lg px-3 py-2 text-xs font-black ${processView === item.id ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}>{item.label}</button>
               ))}
+              {processView === 'issues' && removableIssueRows.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => onBulkExcludeInvalidContracts()}
+                  disabled={Boolean(excludeBusy)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-800 hover:bg-red-100 disabled:cursor-wait disabled:opacity-70"
+                >
+                  <UserX className={`h-3.5 w-3.5 ${excludeBusy === 'exclude-unconfigured-daily-rate-contracts' ? 'animate-pulse' : ''}`} />
+                  {excludeBusy === 'exclude-unconfigured-daily-rate-contracts' ? 'Removing...' : `Remove invalid contracts (${removableIssueRows.length})`}
+                </button>
+              ) : null}
             </div>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-[980px] w-full text-left">
               <thead className="bg-slate-50 text-xs font-black uppercase text-slate-500">
-                <tr>{['Employee', 'Category', 'Gross', 'Deductions', 'Net', 'Status', 'Detail'].map((head) => <th key={head} className="px-4 py-3">{head}</th>)}</tr>
+                <tr>{['Employee', 'Category', 'Gross', 'Deductions', 'Net', 'Status', 'Detail', ...(processView === 'issues' ? ['Action'] : [])].map((head) => <th key={head} className="px-4 py-3">{head}</th>)}</tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {(processView === 'audit' ? [] : visibleRows).slice(0, 18).map((record) => (
@@ -1877,6 +1940,24 @@ function ProcessPayrollWorkspace({
                     <td className="px-4 py-3 text-sm font-black text-emerald-700">{money(record.netPay, canViewMoney)}</td>
                     <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${toneStyles[statusTone(record.payrollStatus)].chip}`}>{record.payrollStatus}</span></td>
                     <td className="px-4 py-3 text-xs font-semibold text-slate-600">{record.exceptions.length ? record.exceptions.slice(0, 2).join('; ') : 'Ready for payroll'}</td>
+                    {processView === 'issues' ? (
+                      <td className="px-4 py-3">
+                        {isRemovableDailyRatePayrollRecord(record) ? (
+                          <button
+                            type="button"
+                            onClick={() => onExcludeFromPayroll(record.employeeId)}
+                            disabled={excludeBusy === record.employeeId}
+                            title="Remove from payroll run (employee stays in directory)"
+                            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-black text-red-800 hover:bg-red-100 disabled:cursor-wait disabled:opacity-70"
+                          >
+                            <UserX className="h-3.5 w-3.5" />
+                            {excludeBusy === record.employeeId ? 'Removing...' : 'Remove'}
+                          </button>
+                        ) : (
+                          <span className="text-[11px] font-semibold text-slate-400">—</span>
+                        )}
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
                 {processView === 'audit' ? (
@@ -1892,7 +1973,7 @@ function ProcessPayrollWorkspace({
                     </div>
                   </td></tr>
                 ) : null}
-                {!visibleRows.length && processView !== 'audit' ? <tr><td colSpan={7} className="px-4 py-6 text-sm font-black text-slate-700">No records in this view.</td></tr> : null}
+                {!visibleRows.length && processView !== 'audit' ? <tr><td colSpan={processView === 'issues' ? 8 : 7} className="px-4 py-6 text-sm font-black text-slate-700">No records in this view.</td></tr> : null}
               </tbody>
             </table>
           </div>
@@ -1926,7 +2007,10 @@ function ProcessPayrollWorkspace({
           {issueRows.length > 0 ? (
             <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm">
               <h3 className="text-sm font-black text-slate-950">Open issues ({issueRows.length})</h3>
-              <p className="mt-1 text-xs font-semibold text-slate-600">Review items do not block posting or close. Blocked items must be fixed before calculate/submit.</p>
+              <p className="mt-1 text-xs font-semibold text-slate-600">
+                Review items do not block posting or close. Blocked items must be fixed before calculate/submit.
+                {removableIssueRows.length > 0 ? ` ${removableIssueRows.length} contract employee(s) have no daily rate or timesheet — remove them from payroll if they should not be paid this period.` : ''}
+              </p>
               <div className="mt-3 max-h-48 space-y-2 overflow-y-auto">
                 {(payload?.exceptions || []).slice(0, 6).map((item) => (
                   <div key={item.id} className={`rounded-lg border p-2 ${item.severity === 'High' ? toneStyles.red.card : toneStyles.amber.card}`}>
@@ -3935,6 +4019,7 @@ export default function PayrollManagementClient({
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('All');
   const [busyAction, setBusyAction] = useState('');
+  const [excludeBusy, setExcludeBusy] = useState('');
   const [toast, setToast] = useState('');
   const [periodTab, setPeriodTab] = useState(payrollPeriodTabs[0].id);
   const [confirmAction, setConfirmAction] = useState<PayrollAction | null>(null);
@@ -4096,6 +4181,59 @@ export default function PayrollManagementClient({
     }
   };
 
+  const excludeFromPayrollRun = async (employeeId: string) => {
+    if (!window.confirm(`Remove ${employeeId} from this payroll run?\n\nThe employee will stay in the directory but will not appear in payroll until restored.`)) return;
+    setExcludeBusy(employeeId);
+    setToast('');
+    try {
+      const res = await fetch('/api/hris/payroll-management', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'exclude-from-payroll-run',
+          employeeId,
+          period: payload?.period || viewPeriod || undefined,
+          reason: 'Unconfigured daily-rate contract removed from payroll run.',
+        }),
+      });
+      const json = await readApiResponse<{ message?: string }>(res);
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to remove employee from payroll run.');
+      setToast(json.data?.message || `${employeeId} removed from payroll run.`);
+      await load();
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'Unable to remove employee from payroll run.');
+    } finally {
+      setExcludeBusy('');
+    }
+  };
+
+  const bulkExcludeInvalidContracts = async () => {
+    const removableCount = (payload?.records || []).filter(isRemovableDailyRatePayrollRecord).length;
+    if (!removableCount) return;
+    if (!window.confirm(`Remove ${removableCount} contract employee(s) without a daily rate or timesheet from this payroll run?\n\nThey will stay in the employee directory but will not block payroll.`)) return;
+    setExcludeBusy('exclude-unconfigured-daily-rate-contracts');
+    setToast('');
+    try {
+      const res = await fetch('/api/hris/payroll-management', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'exclude-unconfigured-daily-rate-contracts',
+          period: payload?.period || viewPeriod || undefined,
+          reason: 'Bulk removal of unconfigured daily-rate contract employees from payroll run.',
+        }),
+      });
+      const json = await readApiResponse<{ message?: string; succeeded?: number }>(res);
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Bulk removal failed.');
+      setToast(json.data?.message || `${json.data?.succeeded || 0} employee(s) removed from payroll run.`);
+      await load();
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'Bulk removal failed.');
+    } finally {
+      setExcludeBusy('');
+    }
+  };
+
   const triggerAction = (actionItem: PayrollAction) => {
     if (actionItem.id === 'view-audit') {
       setAuditOpen(true);
@@ -4239,6 +4377,7 @@ export default function PayrollManagementClient({
     'salary-grades',
     'employee-salary-setup',
     'sage-migration-review',
+    'sage-reconciliation',
     'compensation-planning',
   ];
   const paySetupActiveTab: PaySetupTabId = paySetupTabIds.includes(activeTabId as PaySetupTabId)
@@ -4834,7 +4973,7 @@ export default function PayrollManagementClient({
                   onPeriodAction={(action, period, reason) => void runAction(action, reason, period)}
                 />
               ) : (
-                <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} />
+                <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} />
               )
             ) : (
               <FeaturePanel tab={activeTab} section={section} payload={payload} canViewMoney={canViewMoney} />
@@ -5908,7 +6047,11 @@ function WorkflowStepper({ payload, onAction }: { payload: PayrollPayload | null
               </div>
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${done ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>{done ? 'Done' : 'Open'}</span>
             </div>
-            {!done ? <button type="button" onClick={() => onAction(action(actionId, label, 'workflow', viewRoles, ['approve-run', 'release-run', 'close-period', 'post-run'].includes(actionId)))} className="mt-2 text-[11px] font-black text-blue-700 hover:underline">Run action</button> : null}
+            {!done || (actionId === 'create-run' && payrollRunIsPreSubmission(status) && ['Computed', 'Ready for Approval', 'Validated'].includes(status)) ? (
+              <button type="button" onClick={() => onAction(action(actionId, label, 'workflow', viewRoles, ['approve-run', 'release-run', 'close-period', 'post-run'].includes(actionId)))} className="mt-2 text-[11px] font-black text-blue-700 hover:underline">
+                {done && actionId === 'create-run' ? 'Re-run payroll' : 'Run action'}
+              </button>
+            ) : null}
           </div>
         );
       })}

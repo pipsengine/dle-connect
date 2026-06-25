@@ -1,5 +1,23 @@
 [
   {
+    "id": "login-1782407961476-74295f4d",
+    "at": "2026-06-25T17:19:21.477Z",
+    "userId": "usr-P0146",
+    "username": "P0146",
+    "ipAddress": "127.0.0.1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1782407762814-77743a69",
+    "at": "2026-06-25T17:16:02.845Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "127.0.0.1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
     "id": "login-1782369773615-c63c6d15",
     "at": "2026-06-25T06:42:53.615Z",
     "userId": "global-admin",

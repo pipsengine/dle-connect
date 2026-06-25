@@ -12,6 +12,7 @@ export type PayrollEmployeeOption = {
   salaryGrade?: string;
   jobGrade?: string;
   setupAssignedToPayroll?: boolean;
+  excludedFromPayrollRun?: boolean;
   ratePerDay?: number | null;
   ratePerHour?: number | null;
   hoursPerDay?: number | null;
@@ -105,6 +106,7 @@ export const applyPayrollEmployeeOptions = async (employees: DleEmployeeDirector
       salaryGrade: option.salaryGrade || employee.salaryGrade,
       jobGrade: option.jobGrade || employee.jobGrade,
       setupAssignedToPayroll: typeof option.setupAssignedToPayroll === 'boolean' ? option.setupAssignedToPayroll : employee.setupAssignedToPayroll,
+      excludedFromPayrollRun: typeof option.excludedFromPayrollRun === 'boolean' ? option.excludedFromPayrollRun : (employee as DleEmployeeDirectoryRow & { excludedFromPayrollRun?: boolean }).excludedFromPayrollRun,
       ratePerDay: option.ratePerDay !== undefined && option.ratePerDay !== null && Number.isFinite(Number(option.ratePerDay)) ? Number(option.ratePerDay) : employee.ratePerDay,
       ratePerHour: option.ratePerHour !== undefined && option.ratePerHour !== null && Number.isFinite(Number(option.ratePerHour)) ? Number(option.ratePerHour) : employee.ratePerHour,
       hoursPerDay: option.hoursPerDay !== undefined && option.hoursPerDay !== null && Number.isFinite(Number(option.hoursPerDay)) ? Number(option.hoursPerDay) : employee.hoursPerDay,

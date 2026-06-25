@@ -136,8 +136,9 @@ const mapEnterpriseDeductionLines = (record: PayrollCalculationRecord) =>
     }))
     .filter((line) => Math.abs(line.amount) > 0.004);
 const mapEnterpriseEmployerContributionLines = (record: PayrollCalculationRecord) => [
-  { code: 'PENSION_EMPLOYER', label: 'Pension Employer Contribution', units: record.pensionEmployer > 0 ? 1 : 0, amount: roundMoney(record.pensionEmployer) },
-  { code: 'STATUTORY_ER', label: 'Employer Statutory Contributions', units: record.statutoryEmployer > 0 ? 1 : 0, amount: roundMoney(record.statutoryEmployer) },
+  { code: 'PENSION_ER', label: 'Pension Employer Contribution', units: record.pensionEmployer > 0 ? 1 : 0, amount: roundMoney(record.pensionEmployer) },
+  { code: 'NSITF', label: 'NSITF', units: record.grossPay > 0 ? 1 : 0, amount: roundMoney(record.grossPay * 0.01) },
+  { code: 'ITF', label: 'ITF', units: record.grossPay > 0 ? 1 : 0, amount: roundMoney(record.grossPay * 0.01) },
 ].filter((line) => Math.abs(line.amount) > 0.004);
 
 const resolveDashboardRoot = () => {
