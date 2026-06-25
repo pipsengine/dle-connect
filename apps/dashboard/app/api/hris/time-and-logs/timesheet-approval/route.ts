@@ -19,6 +19,7 @@ import {
   type TimesheetStatus,
   type TimesheetWorkflowStage,
 } from '@/lib/timesheet-entry-store';
+import { probeDleEnterpriseDatabase } from '@/lib/dle-enterprise-db';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 
 const ok = <T,>(data: T, status = 200) => NextResponse.json({ status: 'success', data }, { status });
@@ -188,6 +189,10 @@ const canSeeHeader = (scope: string, header: TimesheetHeader, projectApprovals: 
 const buildPayload = async (request: Request) => {
   const access = resolveAccessContext(request);
   const uiPermissions = getUiPermissions(access);
+  const dbInfo = await probeDleEnterpriseDatabase();
+  if (!dbInfo.connected) {
+    throw new Error(dbInfo.error || `Unable to connect to ${dbInfo.database} on ${dbInfo.host || 'the configured SQL host'}.`);
+  }
   const [{ headers, lines }, projects, payrollUpdates, employees, periods] = await Promise.all([
     readTimesheetData(),
     readProjects(),
@@ -336,6 +341,15 @@ const buildPayload = async (request: Request) => {
 
   return {
     generatedAt: new Date().toISOString(),
+    dataSource: {
+      system: 'DLE_Enterprise',
+      database: dbInfo.database,
+      host: dbInfo.host,
+      connected: dbInfo.connected,
+      headerCount: headers.length,
+      lineCount: lines.length,
+      writeTarget: 'hris.TimesheetHeaders / hris.TimesheetLines / hris.TimesheetWorkflowEvents',
+    },
     permissions: {
       actor: access.actor,
       role: access.role,
@@ -487,9 +501,9 @@ export async function PATCH(request: Request) {
       comment?: string;
     };
     if (!payload.action || !['APPROVE', 'REJECT', 'RETURN', 'PROCESS_PAYROLL', 'POST_PAYROLL'].includes(payload.action)) return err(400, 'Invalid approval action.');
-    const { headers } = await readTimesheetData();
-    const requireProjectSegmentSequence = (segment: { headerId: string; projectCode: string; stage: ProjectApprovalStage }) => {
-      const header = headers.find((item) => item.id === segment.headerId);
+    let { headers } = await readTimesheetData();
+    const requireProjectSegmentSequence = (segment: { headerId: string; projectCode: string; stage: ProjectApprovalStage }, headerList = headers) => {
+      const header = headerList.find((item) => item.id === segment.headerId);
       if (!header) throw new Error(`Timesheet ${segment.headerId} was not found.`);
       const status = normalizeTimesheetStatus(header.status);
       if (segment.stage === 'Cost Control' && status !== 'Supervisor_Reviewed') {
@@ -500,8 +514,8 @@ export async function PATCH(request: Request) {
       }
     };
     const payrollHeaderIds: string[] = [];
-    const applyHeader = async (headerId: string) => {
-      const header = headers.find((item) => item.id === headerId);
+    const applyHeader = async (headerId: string, headerList = headers) => {
+      const header = headerList.find((item) => item.id === headerId);
       if (!header) throw new Error(`Timesheet ${headerId} was not found.`);
       requireHeaderStageAccess(header, payload.action!, access.actor, access.role);
       if (payload.action === 'PROCESS_PAYROLL' || payload.action === 'POST_PAYROLL') {
@@ -539,9 +553,12 @@ export async function PATCH(request: Request) {
     const handledSingleProjectAction = Boolean(payload.projectCode && payload.stage && payload.stage !== 'HR' && payload.stage !== 'Payroll');
     const hasHeaderAction = Boolean(payload.headerIds?.length || payload.headerId);
     if ((!payload.projectSegments?.length && !handledSingleProjectAction) || hasHeaderAction) {
-      const headerIds = payload.headerIds?.length ? payload.headerIds : payload.headerId ? [payload.headerId] : [];
+      if (payload.projectSegments?.length || handledSingleProjectAction) {
+        ({ headers } = await readTimesheetData());
+      }
+      const headerIds = [...new Set(payload.headerIds?.length ? payload.headerIds : payload.headerId ? [payload.headerId] : [])];
       if (!headerIds.length && !payload.projectSegments?.length) return err(400, 'Timesheet header ID is required.');
-      for (const headerId of headerIds) await applyHeader(headerId);
+      for (const headerId of headerIds) await applyHeader(headerId, headers);
       if (payrollHeaderIds.length) {
         await processPayrollBatch(payrollHeaderIds, access.actor, payload.action === 'POST_PAYROLL');
       }

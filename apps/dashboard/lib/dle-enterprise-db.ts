@@ -401,6 +401,46 @@ const pool = async () => {
 
 export const getDleEnterpriseDbPool = pool;
 
+export type DleEnterpriseDatabaseInfo = {
+  enabled: boolean;
+  configured: boolean;
+  host: string;
+  database: string;
+  connected: boolean;
+  error: string | null;
+};
+
+export const describeDleEnterpriseDatabase = (): Omit<DleEnterpriseDatabaseInfo, 'connected' | 'error'> => {
+  loadWorkspaceEnv();
+  const enabled = bool(process.env.DLE_ENTERPRISE_DB_ENABLED, true);
+  const host = String(process.env.DLE_ENTERPRISE_DB_HOST || '').trim();
+  const database = String(process.env.DLE_ENTERPRISE_DB_NAME || 'DLE_Enterprise').trim();
+  const configured = Boolean(enabled && host && process.env.DLE_ENTERPRISE_DB_USER && process.env.DLE_ENTERPRISE_DB_PASSWORD);
+  return { enabled, configured, host, database };
+};
+
+export const probeDleEnterpriseDatabase = async (): Promise<DleEnterpriseDatabaseInfo> => {
+  const meta = describeDleEnterpriseDatabase();
+  if (!meta.configured) {
+    return { ...meta, connected: false, error: 'DLE_ENTERPRISE_DB_* environment variables are not fully configured on this server.' };
+  }
+  try {
+    const connection = await getDleEnterpriseDbPool();
+    if (!connection) {
+      return { ...meta, connected: false, error: 'Unable to open a connection pool to DLE_Enterprise.' };
+    }
+    const result = await connection.request().query('SELECT DB_NAME() AS databaseName');
+    const databaseName = String(result.recordset?.[0]?.databaseName || meta.database);
+    return { ...meta, database: databaseName, connected: true, error: null };
+  } catch (error) {
+    return {
+      ...meta,
+      connected: false,
+      error: error instanceof Error ? error.message : 'DLE_Enterprise connection probe failed.',
+    };
+  }
+};
+
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
 const nullable = (v: unknown) => {
   const s = str(v);

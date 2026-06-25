@@ -263,7 +263,7 @@ export async function readTimeAndLogsPayload(section = 'timesheet-entry', roleIn
   const [period, summaries, data] = await Promise.all([
     readTimesheetPeriod().catch(() => ({ id: 'current', name: 'Current Period', startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10), status: 'Open' })),
     readTimesheetPeriodSummaries(6).catch(() => []),
-    readTimesheetData().catch(() => ({ headers: [], lines: [] })),
+    readTimesheetData({ softFail: true }).catch(() => ({ headers: [], lines: [] })),
   ]);
   const employeeSource = await readPayrollEmployees().catch(() => ({ employees: [] as Awaited<ReturnType<typeof readPayrollEmployees>>['employees'] }));
   const records = data.lines.length ? buildRecords(data.headers, data.lines) : [];

@@ -1328,12 +1328,14 @@ export async function generateProjectCode(): Promise<string> {
   return `${prefix}${nextSerial.toString().padStart(3, '0')}`;
 }
 
-export async function readTimesheetData() {
+export async function readTimesheetData(options?: { softFail?: boolean }) {
   let pool: sql.ConnectionPool;
   try {
     pool = await db();
-  } catch {
-    return { headers: [] as TimesheetHeader[], lines: [] as TimesheetLine[] };
+  } catch (error) {
+    if (options?.softFail) return { headers: [] as TimesheetHeader[], lines: [] as TimesheetLine[] };
+    const detail = error instanceof Error ? error.message : 'connection failed';
+    throw new Error(`Timesheet data requires DLE_Enterprise (${detail}). Verify DLE_ENTERPRISE_DB_HOST, DLE_ENTERPRISE_DB_NAME, and credentials on this server.`);
   }
   const [headersResult, eventsResult, linesResult, projectAllocationsResult, idleAllocationsResult] = await Promise.all([
     pool.request().query(`SELECT * FROM [hris].[TimesheetHeaders] ORDER BY [TimesheetDate] DESC, [SupervisorName], [WorkCenterName]`),

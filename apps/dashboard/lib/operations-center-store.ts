@@ -162,7 +162,7 @@ export async function readOperationsCenterPayload(input?: {
   const [employeesSource, timePayload, timesheetData, period] = await Promise.all([
     readPayrollEmployees(),
     readTimeAndLogsPayload('timesheet-entry', roles.includes('Supervisor') ? 'Supervisor' : roles.includes('Project Manager') ? 'Project Manager' : roles.includes('Project Cost Controller') ? 'Finance Team' : 'HR Manager'),
-    readTimesheetData().catch(() => ({ headers: [] as TimesheetHeader[], lines: [] as TimesheetLine[] })),
+    readTimesheetData({ softFail: true }).catch(() => ({ headers: [] as TimesheetHeader[], lines: [] as TimesheetLine[] })),
     readTimesheetPeriod().catch(() => ({ id: 'current', name: 'Current Period', startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10), status: 'Open' })),
   ]);
 

@@ -158,6 +158,15 @@ type TimesheetSummary = {
 };
 
 type ApprovalPayload = {
+  dataSource?: {
+    system: string;
+    database: string;
+    host: string;
+    connected: boolean;
+    headerCount: number;
+    lineCount: number;
+    writeTarget: string;
+  };
   permissions: {
     actor: string;
     role: string;
@@ -365,10 +374,14 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
     setSubmitting(input.headerId || input.action);
     setError(null);
     try {
+      const body = {
+        ...input,
+        headerIds: input.headerIds?.length ? [...new Set(input.headerIds)] : undefined,
+      };
       const res = await fetch('/api/hris/time-and-logs/timesheet-approval', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'x-hris-role': payload?.permissions.role || 'OrganizationAdmin', 'x-hris-actor': payload?.permissions.actor || 'HRIS Administrator' },
-        body: JSON.stringify(input),
+        body: JSON.stringify(body),
       });
       const json = await parseApiResponse(res);
       if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || 'Unable to update approval workflow');
@@ -627,6 +640,15 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
         </header>
 
         {error ? <div className="rounded-[18px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{error}</div> : null}
+        {payload?.dataSource ? (
+          <div className={`rounded-[18px] border px-4 py-3 text-sm ${payload.dataSource.connected ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+            <span className="font-semibold">{payload.dataSource.system}</span>
+            {' · '}
+            {payload.dataSource.connected
+              ? `Connected to ${payload.dataSource.database} on ${payload.dataSource.host} (${payload.dataSource.headerCount} headers, ${payload.dataSource.lineCount} lines). Writes go to ${payload.dataSource.writeTarget}.`
+              : `Not connected to ${payload.dataSource.database}. Check DLE_ENTERPRISE_DB_* settings on this server.`}
+          </div>
+        ) : null}
         {toast ? <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{toast}</div> : null}
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
