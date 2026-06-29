@@ -13,6 +13,8 @@
     "start": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" node node_modules/next/dist/bin/next start apps/dashboard -p 3010",
     "publish:iis": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Publish-DleDashboardIis.ps1",
     "repair:iis": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Repair-DleDashboardIis.ps1",
+    "deploy:server": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Deploy-ServerDashboard.ps1 -SkipInstall",
+    "deploy:server:dev": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Deploy-ServerDashboard.ps1 -DevOnly",
     "start:iis": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File deployment/iis/Start-DleDashboard.ps1",
     "lint": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" node node_modules/eslint/bin/eslint.js apps/dashboard --ignore-pattern **/.next --ignore-pattern **/node_modules",
     "clean": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" node -e \"require('fs').rmSync('apps/dashboard/.next',{recursive:true,force:true}); console.log('Cleaned apps/dashboard/.next');\"",

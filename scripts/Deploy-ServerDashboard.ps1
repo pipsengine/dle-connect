@@ -1,0 +1,30 @@
+param(
+  [switch]$SkipInstall,
+  [switch]$DevOnly
+)
+
+$ErrorActionPreference = "Stop"
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $RepoRoot
+
+Write-Host "Syncing dashboard source from origin/main..."
+git fetch origin
+git reset --hard origin/main
+
+if ($DevOnly) {
+  Write-Host "Restarting dev server on port 3020..."
+  npm run dev:3020:restart
+  exit $LASTEXITCODE
+}
+
+Write-Host "Publishing IIS dashboard package..."
+if ($SkipInstall) {
+  npm run publish:iis -- -SkipInstall
+} else {
+  npm run publish:iis
+}
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Write-Host "Repairing IIS site..."
+npm run repair:iis
+exit $LASTEXITCODE

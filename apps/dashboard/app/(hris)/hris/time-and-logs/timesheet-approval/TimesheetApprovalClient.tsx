@@ -318,6 +318,8 @@ const slaRemainingLabel = (step: WorkflowStep | undefined) => {
   return remaining >= 24 ? '1d+' : `${Math.round(remaining)}h left`;
 };
 
+const APPROVAL_WORKSPACE_BUILD = 'pending-queue-v2';
+
 const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
   { id: 'timesheets', label: 'Timesheets' },
   { id: 'exceptions', label: 'Exceptions' },
@@ -849,6 +851,7 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
                 </button>
               ) : null}
             </div>
+            <p className="mt-2 text-[11px] text-blue-800">Workspace build: {APPROVAL_WORKSPACE_BUILD}</p>
           </div>
         ) : null}
         {mode === 'active' && draftBookedTimesheets.length > 0 ? (
@@ -1034,7 +1037,7 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
                                   ) : null}
                                   <td className={`sticky ${mode === 'active' ? 'left-12' : 'left-0'} z-10 bg-inherit px-4 py-3`}>
                                     <div className="flex items-center gap-3">
-                                      <EmployeeAvatar fullName={row.employee.employeeName} employeeCode={row.employee.employeeNo} tryPhoto size="sm" />
+                                      <EmployeeAvatar fullName={row.employee.employeeName} employeeCode={row.employee.employeeNo} size="sm" />
                                       <div>
                                         <p className="text-sm font-semibold text-[#0F172A]">{row.employee.employeeName}</p>
                                         <p className="text-xs text-[#64748B]">{row.employee.employeeNo}</p>
@@ -1144,7 +1147,7 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
                   {focusedRow ? (
                     <div className="space-y-4">
                       <div className="flex items-start gap-3">
-                        <EmployeeAvatar fullName={focusedRow.employee.employeeName} employeeCode={focusedRow.employee.employeeNo} tryPhoto size="lg" />
+                        <EmployeeAvatar fullName={focusedRow.employee.employeeName} employeeCode={focusedRow.employee.employeeNo} size="lg" />
                         <div className="min-w-0 flex-1">
                           <p className="text-lg font-semibold text-[#0F172A]">{focusedRow.employee.employeeName}</p>
                           <p className="text-sm text-[#64748B]">{focusedRow.employee.employeeNo}</p>
