@@ -12,18 +12,40 @@ $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $AppPath = Join-Path $RepoRoot "apps\dashboard"
 $BuildPath = Join-Path $AppPath ".next"
 $StandalonePath = Join-Path $BuildPath "standalone"
-$ResolvedOutputPath = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot $OutputPath))
+$script:ResolvedOutputPath = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot $OutputPath))
+$ResolvedOutputPath = $script:ResolvedOutputPath
 $RuntimeDataBackupPath = Join-Path $RepoRoot "deployment\iis\.runtime-data-backup"
 
 function Get-NormalizedDirectoryPath {
-  param([Parameter(Mandatory = $true)][string]$Path)
-  return [System.IO.Path]::GetFullPath($Path).TrimEnd('\', '/').ToLowerInvariant()
+  param([Parameter(Mandatory = $true)][string]$TargetDirectory)
+
+  if ([string]::IsNullOrWhiteSpace($TargetDirectory)) {
+    throw "A directory path is required."
+  }
+
+  return [System.IO.Path]::GetFullPath($TargetDirectory).TrimEnd('\', '/').ToLowerInvariant()
+}
+
+function Test-UnderPublishSitePath {
+  param([Parameter(Mandatory = $true)][string]$TargetDirectory)
+
+  if ([string]::IsNullOrWhiteSpace($TargetDirectory) -or [string]::IsNullOrWhiteSpace($script:ResolvedOutputPath)) {
+    return $false
+  }
+
+  $candidate = Get-NormalizedDirectoryPath -TargetDirectory $TargetDirectory
+  $siteRoot = Get-NormalizedDirectoryPath -TargetDirectory $script:ResolvedOutputPath
+  return $candidate -eq $siteRoot -or $candidate.StartsWith("$siteRoot\")
 }
 
 function Stop-NodeProcessesUsingPath {
-  param([Parameter(Mandatory = $true)][string]$Path)
+  param([Parameter(Mandatory = $true)][string]$TargetDirectory)
 
-  $target = Get-NormalizedDirectoryPath -Path $Path
+  if ([string]::IsNullOrWhiteSpace($TargetDirectory)) {
+    return @()
+  }
+
+  $target = Get-NormalizedDirectoryPath -TargetDirectory $TargetDirectory
   $stopped = New-Object "System.Collections.Generic.List[string]"
 
   Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue | ForEach-Object {
@@ -48,9 +70,13 @@ function Stop-NodeProcessesUsingPath {
 }
 
 function Stop-IisSitesUsingPath {
-  param([Parameter(Mandatory = $true)][string]$Path)
+  param([Parameter(Mandatory = $true)][string]$TargetDirectory)
 
-  $target = Get-NormalizedDirectoryPath -Path $Path
+  if ([string]::IsNullOrWhiteSpace($TargetDirectory)) {
+    return @()
+  }
+
+  $target = Get-NormalizedDirectoryPath -TargetDirectory $TargetDirectory
   $stopped = New-Object "System.Collections.Generic.List[string]"
 
   if (-not (Get-Module -ListAvailable -Name WebAdministration)) {
@@ -63,7 +89,11 @@ function Stop-IisSitesUsingPath {
   }
 
   foreach ($site in Get-ChildItem IIS:\Sites) {
-    $sitePath = Get-NormalizedDirectoryPath -Path $site.physicalPath
+    if ([string]::IsNullOrWhiteSpace($site.physicalPath)) {
+      continue
+    }
+
+    $sitePath = Get-NormalizedDirectoryPath -TargetDirectory $site.physicalPath
     if ($sitePath -ne $target -and -not $sitePath.StartsWith("$target\")) {
       continue
     }
@@ -87,42 +117,53 @@ function Stop-IisSitesUsingPath {
 }
 
 function Stop-PublishTargetLocks {
-  param([Parameter(Mandatory = $true)][string]$Path)
+  param([Parameter(Mandatory = $true)][string]$TargetDirectory)
 
-  $actions = @()
-  $actions += Stop-IisSitesUsingPath -Path $Path
-  $actions += Stop-NodeProcessesUsingPath -Path $Path
+  if ([string]::IsNullOrWhiteSpace($TargetDirectory)) {
+    Write-Warning "Skipped stopping IIS/node locks because the publish target path was empty."
+    return
+  }
 
-  if ($actions.Count -gt 0) {
-    Write-Host ("Stopped publish locks: {0}" -f (($actions | Select-Object -Unique) -join ", "))
+  $lockTarget = [string]$TargetDirectory
+  $stopped = @()
+  $stopped += Stop-IisSitesUsingPath -TargetDirectory $lockTarget
+  $stopped += Stop-NodeProcessesUsingPath -TargetDirectory $lockTarget
+  $stopped = @($stopped | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+
+  if ($stopped.Count -gt 0) {
+    Write-Host ("Stopped publish locks: {0}" -f ($stopped -join ", "))
     Start-Sleep -Seconds 2
   }
 }
 
 function Remove-PathWithRetry {
   param(
-    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$TargetDirectory,
     [int]$Attempts = 8,
     [int]$DelaySeconds = 3,
     [switch]$AttemptStopLocks
   )
 
-  if (-not (Test-Path -LiteralPath $Path)) {
+  if ([string]::IsNullOrWhiteSpace($TargetDirectory)) {
+    return
+  }
+
+  if (-not (Test-Path -LiteralPath $TargetDirectory)) {
     return
   }
 
   for ($Attempt = 1; $Attempt -le $Attempts; $Attempt++) {
     try {
-      Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+      Remove-Item -LiteralPath $TargetDirectory -Recurse -Force -ErrorAction Stop
       return
     } catch {
-      if ($AttemptStopLocks -and $Attempt -eq 1) {
-        Stop-PublishTargetLocks -Path $Path
+      if ($AttemptStopLocks -and $Attempt -eq 1 -and (Test-UnderPublishSitePath -TargetDirectory $TargetDirectory)) {
+        Stop-PublishTargetLocks -TargetDirectory $script:ResolvedOutputPath
       }
 
       if ($Attempt -eq $Attempts) {
         throw @"
-Could not remove '$Path'.
+Could not remove '$TargetDirectory'.
 
 The build succeeded, but another process is still using files inside the IIS publish folder (usually IIS HttpPlatformHandler, w3wp.exe, or a running node dashboard service).
 
@@ -155,7 +196,7 @@ function Copy-DirectoryContents {
   }
 
   if (Test-Path -LiteralPath $DestinationPath) {
-    Remove-PathWithRetry -Path $DestinationPath -AttemptStopLocks:(-not $NoStop)
+    Remove-PathWithRetry -TargetDirectory $DestinationPath
   }
 
   New-Item -ItemType Directory -Path $DestinationPath -Force | Out-Null
@@ -246,15 +287,15 @@ try {
   if (Test-Path -LiteralPath $ExistingRuntimeData) {
     Copy-DirectoryContents -SourcePath $ExistingRuntimeData -DestinationPath $RuntimeDataBackupPath
   } elseif (Test-Path -LiteralPath $RuntimeDataBackupPath) {
-    Remove-PathWithRetry -Path $RuntimeDataBackupPath
+    Remove-PathWithRetry -TargetDirectory $RuntimeDataBackupPath
   }
 
   if (-not $NoStop -and (Test-Path -LiteralPath $ResolvedOutputPath)) {
-    Stop-PublishTargetLocks -Path $ResolvedOutputPath
+    Stop-PublishTargetLocks -TargetDirectory $ResolvedOutputPath
   }
 
   if (Test-Path -LiteralPath $ResolvedOutputPath) {
-    Remove-PathWithRetry -Path $ResolvedOutputPath -AttemptStopLocks:(-not $NoStop)
+    Remove-PathWithRetry -TargetDirectory $ResolvedOutputPath -AttemptStopLocks:(-not $NoStop)
   }
 
   New-Item -ItemType Directory -Path $ResolvedOutputPath | Out-Null
@@ -295,7 +336,7 @@ try {
   Test-NextTraceFiles -NextRootPath (Join-Path $ResolvedOutputPath "apps\dashboard\.next")
 
   if (Test-Path -LiteralPath $RuntimeDataBackupPath) {
-    Remove-PathWithRetry -Path $RuntimeDataBackupPath
+    Remove-PathWithRetry -TargetDirectory $RuntimeDataBackupPath
   }
 
   Write-Host "IIS deployment package created at $ResolvedOutputPath"
