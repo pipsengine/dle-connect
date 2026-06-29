@@ -1,0 +1,247 @@
+{
+  "schemaVersion": 1,
+  "country": "NG",
+  "jurisdiction": "Nigeria",
+  "activeVersionId": "ng-nita-2026",
+  "versions": [
+    {
+      "id": "ng-nita-2026",
+      "name": "Nigeria Tax Act 2025 PAYE",
+      "status": "Active",
+      "effectiveFrom": "2026-01-01",
+      "effectiveTo": null,
+      "currency": "NGN",
+      "basis": "Basic, Housing and Transport (BHT)",
+      "notes": "DLE Sage 300 payroll basis from FDD: PAYE is charged on BHT; employee pension is 8% of BHT; NHF is 2.5% of Basic; other deductions must be configured per employee/payroll run.",
+      "taxBands": [
+        {
+          "id": "band-001",
+          "sequence": 1,
+          "label": "First 800,000",
+          "bandAmount": 800000,
+          "rate": 0
+        },
+        {
+          "id": "band-002",
+          "sequence": 2,
+          "label": "Next 2,200,000",
+          "bandAmount": 2200000,
+          "rate": 0.15
+        },
+        {
+          "id": "band-003",
+          "sequence": 3,
+          "label": "Next 9,000,000",
+          "bandAmount": 9000000,
+          "rate": 0.18
+        },
+        {
+          "id": "band-004",
+          "sequence": 4,
+          "label": "Next 13,000,000",
+          "bandAmount": 13000000,
+          "rate": 0.21
+        },
+        {
+          "id": "band-005",
+          "sequence": 5,
+          "label": "Next 25,000,000",
+          "bandAmount": 25000000,
+          "rate": 0.23
+        },
+        {
+          "id": "band-006",
+          "sequence": 6,
+          "label": "Above 50,000,000",
+          "bandAmount": null,
+          "rate": 0.25
+        }
+      ],
+      "statutoryDeductions": [
+        {
+          "id": "pension",
+          "label": "Pension Contribution",
+          "enabled": true,
+          "preTax": true,
+          "calculationBasis": "percent_of_monthly_base_annualized",
+          "rate": 0.08,
+          "monthlyCap": null,
+          "appliesTo": [
+            "Permanent",
+            "Contract",
+            "Payroll"
+          ],
+          "priority": 10
+        },
+        {
+          "id": "nhf",
+          "label": "NHF Contribution",
+          "enabled": true,
+          "preTax": true,
+          "calculationBasis": "percent_of_monthly_basic_annualized",
+          "rate": 0.025,
+          "monthlyCap": null,
+          "appliesTo": [
+            "Permanent",
+            "Contract",
+            "Payroll"
+          ],
+          "priority": 20
+        },
+        {
+          "id": "nsitf",
+          "label": "NSITF",
+          "enabled": true,
+          "preTax": false,
+          "calculationBasis": "employer_statutory_tracking_only",
+          "rate": 0.01,
+          "monthlyCap": null,
+          "appliesTo": [
+            "Permanent",
+            "Contract",
+            "Payroll"
+          ],
+          "priority": 30
+        },
+        {
+          "id": "itf",
+          "label": "ITF",
+          "enabled": true,
+          "preTax": false,
+          "calculationBasis": "employer_statutory_tracking_only",
+          "rate": 0.01,
+          "monthlyCap": null,
+          "appliesTo": [
+            "Permanent",
+            "Contract",
+            "Payroll"
+          ],
+          "priority": 40
+        },
+        {
+          "id": "employee-loan",
+          "label": "Employee Loan Deductions",
+          "enabled": false,
+          "preTax": false,
+          "calculationBasis": "percent_of_monthly_base_annualized",
+          "rate": 0.015,
+          "monthlyCap": null,
+          "minimumMonthlyBase": 350000,
+          "appliesTo": [
+            "Permanent",
+            "Contract",
+            "Payroll"
+          ],
+          "priority": 50
+        },
+        {
+          "id": "union-dues",
+          "label": "Union Dues",
+          "enabled": true,
+          "preTax": false,
+          "calculationBasis": "percent_of_monthly_base_annualized",
+          "rate": 0.005,
+          "monthlyCap": 5000,
+          "appliesTo": [
+            "Permanent",
+            "Contract",
+            "Payroll"
+          ],
+          "priority": 60
+        },
+        {
+          "id": "court-garnishee",
+          "label": "Court/Garnishee Deductions",
+          "enabled": true,
+          "preTax": false,
+          "calculationBasis": "configured_employee_amount",
+          "rate": 0,
+          "monthlyCap": null,
+          "appliesTo": [
+            "Permanent",
+            "Contract",
+            "Payroll",
+            "Daily",
+            "Intern",
+            "NYSC"
+          ],
+          "priority": 70
+        },
+        {
+          "id": "other-statutory",
+          "label": "Other Statutory Deductions",
+          "enabled": false,
+          "preTax": false,
+          "calculationBasis": "percent_of_monthly_base_annualized",
+          "rate": 0,
+          "monthlyCap": null,
+          "appliesTo": [
+            "Permanent",
+            "Contract",
+            "Payroll",
+            "Daily",
+            "Intern",
+            "NYSC"
+          ],
+          "priority": 80
+        }
+      ],
+      "reliefs": [
+        {
+          "id": "rent-relief",
+          "label": "Rent Relief",
+          "enabled": true,
+          "preTax": true,
+          "calculationBasis": "percent_of_annual_rent",
+          "rate": 0.2,
+          "annualCap": 500000,
+          "requiresEmployeeEvidence": true,
+          "priority": 10
+        }
+      ],
+      "stateRules": [
+        {
+          "id": "default-state",
+          "label": "Default State PAYE",
+          "enabled": true,
+          "residencyBasis": "principal_place_of_residence",
+          "remittanceAuthority": "Relevant State Internal Revenue Service"
+        }
+      ],
+      "regulatoryChanges": [
+        {
+          "id": "nita-2025-cra-removal",
+          "title": "Consolidated Relief Allowance Removed",
+          "effectiveDate": "2026-01-01",
+          "impact": "CRA is not used in chargeable income calculation."
+        },
+        {
+          "id": "nita-2025-zero-band",
+          "title": "Expanded Zero Percent PAYE Band",
+          "effectiveDate": "2026-01-01",
+          "impact": "First NGN 800,000 annual chargeable income is taxed at 0%."
+        },
+        {
+          "id": "nita-2025-rent-relief",
+          "title": "Rent Relief Introduced",
+          "effectiveDate": "2026-01-01",
+          "impact": "Rent relief is configurable and capped in this version at NGN 500,000 annually."
+        }
+      ]
+    }
+  ],
+  "audit": [
+    {
+      "at": "2026-06-14T00:00:00.000Z",
+      "actor": "System",
+      "action": "Seed Nigeria Tax Act 2025 PAYE configuration",
+      "versionId": "ng-nita-2026"
+    },
+    {
+      "at": "2026-06-13T23:28:03.433Z",
+      "actor": "Payroll Officer",
+      "action": "Payroll tax configuration updated",
+      "versionId": "ng-nita-2026"
+    }
+  ]
+}

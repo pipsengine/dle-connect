@@ -1,0 +1,3404 @@
+[
+  {
+    "id": "sage-2026-05-L2767-SNR_LEAVETAX",
+    "employeeCode": "L2767",
+    "employeeId": "L2767",
+    "fullName": "PHILLIPS",
+    "period": "2026-05",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "SNR_LEAVETAX",
+    "description": "LEAVE",
+    "amount": 180493.72,
+    "taxableAmount": 180493.72,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "SNR_LEAVETAX 2026-05"
+      }
+    ],
+    "postedAt": "2026-05-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-05-447-LEAVEALLOW",
+    "employeeCode": "0447",
+    "employeeId": "0447",
+    "fullName": "Ms ETOKAKPAN",
+    "period": "2026-05",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 246331.85,
+    "taxableAmount": 246331.85,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-05"
+      }
+    ],
+    "postedAt": "2026-05-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-05-446-LEAVEALLOW",
+    "employeeCode": "0446",
+    "employeeId": "0446",
+    "fullName": "Mr OCHIAGHA",
+    "period": "2026-05",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 167744.6,
+    "taxableAmount": 167744.6,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-05"
+      }
+    ],
+    "postedAt": "2026-05-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-05-420-LEAVEALLOW",
+    "employeeCode": "0420",
+    "employeeId": "0420",
+    "fullName": "Mr FAGBAMILA",
+    "period": "2026-05",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 339287.39,
+    "taxableAmount": 339287.39,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-05"
+      }
+    ],
+    "postedAt": "2026-05-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-05-415-LEAVEALLOW",
+    "employeeCode": "0415",
+    "employeeId": "0415",
+    "fullName": "Mr O.O BONIRE",
+    "period": "2026-05",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 72150.8,
+    "taxableAmount": 72150.8,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-05"
+      }
+    ],
+    "postedAt": "2026-05-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-05-392-LEAVEALLOW",
+    "employeeCode": "0392",
+    "employeeId": "0392",
+    "fullName": "Mr UMUKORO",
+    "period": "2026-05",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 351401.6,
+    "taxableAmount": 351401.6,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-05"
+      }
+    ],
+    "postedAt": "2026-05-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-05-388-LEAVEALLOW",
+    "employeeCode": "0388",
+    "employeeId": "0388",
+    "fullName": "Mr ADENUGA",
+    "period": "2026-05",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 290206.09,
+    "taxableAmount": 290206.09,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-05"
+      }
+    ],
+    "postedAt": "2026-05-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-05-318-LEAVEALLOW",
+    "employeeCode": "0318",
+    "employeeId": "0318",
+    "fullName": "Mr RAHEEM",
+    "period": "2026-05",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 135311.03,
+    "taxableAmount": 135311.03,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-05"
+      }
+    ],
+    "postedAt": "2026-05-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-05-290-LEAVEALLOW",
+    "employeeCode": "0290",
+    "employeeId": "0290",
+    "fullName": "Mr ADESINA",
+    "period": "2026-05",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 200801.08,
+    "taxableAmount": 200801.08,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-05"
+      }
+    ],
+    "postedAt": "2026-05-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-05-268-LEAVEALLOW",
+    "employeeCode": "0268",
+    "employeeId": "0268",
+    "fullName": "Mr NWAEFI",
+    "period": "2026-05",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 196487.35,
+    "taxableAmount": 196487.35,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-05"
+      }
+    ],
+    "postedAt": "2026-05-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-05-146-LEAVEALLOW",
+    "employeeCode": "0146",
+    "employeeId": "0146",
+    "fullName": "Mr OGBAISI",
+    "period": "2026-05",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 286080,
+    "taxableAmount": 286080,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-05"
+      }
+    ],
+    "postedAt": "2026-05-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-05-92-LEAVEALLOW",
+    "employeeCode": "0092",
+    "employeeId": "0092",
+    "fullName": "Mr AREMU",
+    "period": "2026-05",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 506701.41,
+    "taxableAmount": 506701.41,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-05"
+      }
+    ],
+    "postedAt": "2026-05-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-05-60-LEAVEALLOW",
+    "employeeCode": "0060",
+    "employeeId": "0060",
+    "fullName": "Mrs BENSON",
+    "period": "2026-05",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 229431.18,
+    "taxableAmount": 229431.18,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-05"
+      }
+    ],
+    "postedAt": "2026-05-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-05-59-LEAVEALLOW",
+    "employeeCode": "0059",
+    "employeeId": "0059",
+    "fullName": "Mrs AJIERE",
+    "period": "2026-05",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 235134.2,
+    "taxableAmount": 235134.2,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-05"
+      }
+    ],
+    "postedAt": "2026-05-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-04-443-LEAVEALLOW",
+    "employeeCode": "0443",
+    "employeeId": "0443",
+    "fullName": "Mr ALEX",
+    "period": "2026-04",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 241663.2,
+    "taxableAmount": 241663.2,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-04"
+      }
+    ],
+    "postedAt": "2026-04-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-04-384-LEAVEALLOW",
+    "employeeCode": "0384",
+    "employeeId": "0384",
+    "fullName": "Mr OKEREKE",
+    "period": "2026-04",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 235644.95,
+    "taxableAmount": 235644.95,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-04"
+      }
+    ],
+    "postedAt": "2026-04-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-04-289-LEAVEALLOW",
+    "employeeCode": "0289",
+    "employeeId": "0289",
+    "fullName": "Mrs ONUGHA",
+    "period": "2026-04",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 349760.07,
+    "taxableAmount": 349760.07,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-04"
+      }
+    ],
+    "postedAt": "2026-04-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-04-185-LEAVEALLOW",
+    "employeeCode": "0185",
+    "employeeId": "0185",
+    "fullName": "Ms NNUKWU",
+    "period": "2026-04",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 283757.7,
+    "taxableAmount": 283757.7,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-04"
+      }
+    ],
+    "postedAt": "2026-04-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-04-182-LEAVEALLOW",
+    "employeeCode": "0182",
+    "employeeId": "0182",
+    "fullName": "Mr ERUOTOR",
+    "period": "2026-04",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 178176.05,
+    "taxableAmount": 178176.05,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-04"
+      }
+    ],
+    "postedAt": "2026-04-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-04-72-LEAVEALLOW",
+    "employeeCode": "0072",
+    "employeeId": "0072",
+    "fullName": "Mr AKANDE",
+    "period": "2026-04",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 311087.79,
+    "taxableAmount": 311087.79,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-04"
+      }
+    ],
+    "postedAt": "2026-04-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-04-61-LEAVEALLOW",
+    "employeeCode": "0061",
+    "employeeId": "0061",
+    "fullName": "Mr TIVKAA",
+    "period": "2026-04",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 242840.43,
+    "taxableAmount": 242840.43,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-04"
+      }
+    ],
+    "postedAt": "2026-04-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-03-436-LEAVEALLOW",
+    "employeeCode": "0436",
+    "employeeId": "0436",
+    "fullName": "Mr OKEWU",
+    "period": "2026-03",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 610326.48,
+    "taxableAmount": 610326.48,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-03"
+      }
+    ],
+    "postedAt": "2026-03-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-03-398-LEAVEALLOW",
+    "employeeCode": "0398",
+    "employeeId": "0398",
+    "fullName": "Mr WILCOX",
+    "period": "2026-03",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 206246.55,
+    "taxableAmount": 206246.55,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-03"
+      }
+    ],
+    "postedAt": "2026-03-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-03-370-LEAVEALLOW",
+    "employeeCode": "0370",
+    "employeeId": "0370",
+    "fullName": "Mr OCHIGBO",
+    "period": "2026-03",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 558323.33,
+    "taxableAmount": 558323.33,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-03"
+      }
+    ],
+    "postedAt": "2026-03-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-03-334-LEAVEALLOW",
+    "employeeCode": "0334",
+    "employeeId": "0334",
+    "fullName": "Mr ABIA",
+    "period": "2026-03",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 321230.88,
+    "taxableAmount": 321230.88,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-03"
+      }
+    ],
+    "postedAt": "2026-03-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-03-194-LEAVEALLOW",
+    "employeeCode": "0194",
+    "employeeId": "0194",
+    "fullName": "Mr OHAMEZE",
+    "period": "2026-03",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 189890.35,
+    "taxableAmount": 189890.35,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-03"
+      }
+    ],
+    "postedAt": "2026-03-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-03-185-LEAVEALLOW",
+    "employeeCode": "0185",
+    "employeeId": "0185",
+    "fullName": "Ms NNUKWU",
+    "period": "2026-03",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 283757.7,
+    "taxableAmount": 283757.7,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-03"
+      }
+    ],
+    "postedAt": "2026-03-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-02-454-LEAVEALLOW",
+    "employeeCode": "0454",
+    "employeeId": "0454",
+    "fullName": "Mr ISHOLA",
+    "period": "2026-02",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 387922.22,
+    "taxableAmount": 387922.22,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-02"
+      }
+    ],
+    "postedAt": "2026-02-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-02-399-LEAVEALLOW",
+    "employeeCode": "0399",
+    "employeeId": "0399",
+    "fullName": "Mr BEKESOR",
+    "period": "2026-02",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 163706.01,
+    "taxableAmount": 163706.01,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-02"
+      }
+    ],
+    "postedAt": "2026-02-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-02-371-LEAVEALLOW",
+    "employeeCode": "0371",
+    "employeeId": "0371",
+    "fullName": "Mr AUDU",
+    "period": "2026-02",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 38683.33,
+    "taxableAmount": 38683.33,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-02"
+      }
+    ],
+    "postedAt": "2026-02-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-02-366-LEAVEALLOW",
+    "employeeCode": "0366",
+    "employeeId": "0366",
+    "fullName": "Mr OJO",
+    "period": "2026-02",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 69643.57,
+    "taxableAmount": 69643.57,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-02"
+      }
+    ],
+    "postedAt": "2026-02-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-02-181-LEAVEALLOW",
+    "employeeCode": "0181",
+    "employeeId": "0181",
+    "fullName": "Mr AGHANYA",
+    "period": "2026-02",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 295102.21,
+    "taxableAmount": 295102.21,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-02"
+      }
+    ],
+    "postedAt": "2026-02-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-02-43-LEAVEALLOW",
+    "employeeCode": "0043",
+    "employeeId": "0043",
+    "fullName": "Mr OSENI",
+    "period": "2026-02",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 139739.47,
+    "taxableAmount": 139739.47,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-02"
+      }
+    ],
+    "postedAt": "2026-02-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-01-50-LEAVEALLOW",
+    "employeeCode": "0050",
+    "employeeId": "0050",
+    "fullName": "Mr OWOLABI",
+    "period": "2026-01",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 240777.48,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-01"
+      }
+    ],
+    "postedAt": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2026-01-33-LEAVEALLOW",
+    "employeeCode": "0033",
+    "employeeId": "0033",
+    "fullName": "Mr SHONDE",
+    "period": "2026-01",
+    "leaveYear": 2026,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 257311.12,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "createdAt": "2026-06-16T12:30:10.367Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:30:10.367Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2026-01"
+      }
+    ],
+    "postedAt": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "sage-2025-12-459-LEAVEALLOW",
+    "employeeId": "0459",
+    "employeeCode": "0459",
+    "fullName": "FATUROTI",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 24495.06,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-459-SNR_LEAVETAX",
+    "employeeId": "0459",
+    "employeeCode": "0459",
+    "fullName": "FATUROTI",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "SNR_LEAVETAX",
+    "description": "LEAVE",
+    "amount": -9331.45,
+    "taxableAmount": -9331.45,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "SNR_LEAVETAX 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-457-LEAVEALLOW",
+    "employeeId": "0457",
+    "employeeCode": "0457",
+    "fullName": "Miss AUSTEN-PETERS",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 237257.86,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-455-LEAVEALLOW",
+    "employeeId": "0455",
+    "employeeCode": "0455",
+    "fullName": "ABUBAKAR",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 344891.4,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-454-LEAVEALLOW",
+    "employeeId": "0454",
+    "employeeCode": "0454",
+    "fullName": "Mr ISHOLA",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 164241.26,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-452-LEAVEALLOW",
+    "employeeId": "0452",
+    "employeeCode": "0452",
+    "fullName": "Mr EHINMOWO",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 275114.96,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-450-LEAVEALLOW",
+    "employeeId": "0450",
+    "employeeCode": "0450",
+    "fullName": "Mr ALABI",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 262697.08,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-448-LEAVEALLOW",
+    "employeeId": "0448",
+    "employeeCode": "0448",
+    "fullName": "Mr IHUARULAM",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 126654.45,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-447-LEAVEALLOW",
+    "employeeId": "0447",
+    "employeeCode": "0447",
+    "fullName": "Ms ETOKAKPAN",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 219513.45,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-445-LEAVEALLOW",
+    "employeeId": "0445",
+    "employeeCode": "0445",
+    "fullName": "Mr EZEMA",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 164146.99,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-443-LEAVEALLOW",
+    "employeeId": "0443",
+    "employeeCode": "0443",
+    "fullName": "Mr ALEX",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 483326.4,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-385-LEAVEALLOW",
+    "employeeId": "0385",
+    "employeeCode": "0385",
+    "fullName": "Mr EMESIANA",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 452559.76,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-364-LEAVEALLOW",
+    "employeeId": "0364",
+    "employeeCode": "0364",
+    "fullName": "MGBEOJI",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 1109858.5,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-330-LEAVEALLOW",
+    "employeeId": "0330",
+    "employeeCode": "0330",
+    "fullName": "Mr OYELEYE",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 137719.37,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-320-LEAVEALLOW",
+    "employeeId": "0320",
+    "employeeCode": "0320",
+    "fullName": "Mr DAWODU",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 158465.74,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-316-LEAVEALLOW",
+    "employeeId": "0316",
+    "employeeCode": "0316",
+    "fullName": "Mr NDUKWE",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 115952.67,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-295-LEAVEALLOW",
+    "employeeId": "0295",
+    "employeeCode": "0295",
+    "fullName": "Mrs NWORGU",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 121518.92,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-279-LEAVEALLOW",
+    "employeeId": "0279",
+    "employeeCode": "0279",
+    "fullName": "Mrs AINA",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 182680.63,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-272-LEAVEALLOW",
+    "employeeId": "0272",
+    "employeeCode": "0272",
+    "fullName": "Mr EREMOGAMHE",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 233031.54,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-80-LEAVEALLOW",
+    "employeeId": "0080",
+    "employeeCode": "0080",
+    "fullName": "Mr OKORIE",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 200821.02,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-76-LEAVEALLOW",
+    "employeeId": "0076",
+    "employeeCode": "0076",
+    "fullName": "Mr OBUZOR",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 244038.39,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-59-LEAVEALLOW",
+    "employeeId": "0059",
+    "employeeCode": "0059",
+    "fullName": "Mrs AJIERE",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 235124.2,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-33-LEAVEALLOW",
+    "employeeId": "0033",
+    "employeeCode": "0033",
+    "fullName": "Mr SHONDE",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 257311.12,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-12-27-LEAVEALLOW",
+    "employeeId": "0027",
+    "employeeCode": "0027",
+    "fullName": "AMAUKWU",
+    "period": "2025-12",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 154316.67,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-12-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-12"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-11-453-LEAVEALLOW",
+    "employeeId": "0453",
+    "employeeCode": "0453",
+    "fullName": "EREAMA",
+    "period": "2025-11",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 109863,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-11-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-11"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-11-449-LEAVEALLOW",
+    "employeeId": "0449",
+    "employeeCode": "0449",
+    "fullName": "Mr OKE",
+    "period": "2025-11",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 714417.91,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-11-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-11"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-11-446-LEAVEALLOW",
+    "employeeId": "0446",
+    "employeeCode": "0446",
+    "fullName": "Mr OCHIAGHA",
+    "period": "2025-11",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 425511.83,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-11-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-11"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-11-433-LEAVEALLOW",
+    "employeeId": "0433",
+    "employeeCode": "0433",
+    "fullName": "ADELOWO",
+    "period": "2025-11",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 442090.46,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-11-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-11"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-11-420-LEAVEALLOW",
+    "employeeId": "0420",
+    "employeeCode": "0420",
+    "fullName": "Mr FAGBAMILA",
+    "period": "2025-11",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 827607.57,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-11-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-11"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-11-321-LEAVEALLOW",
+    "employeeId": "0321",
+    "employeeCode": "0321",
+    "fullName": "Mr SUNDAY",
+    "period": "2025-11",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 137719.37,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-11-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-11"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-11-315-LEAVEALLOW",
+    "employeeId": "0315",
+    "employeeCode": "0315",
+    "fullName": "Mr ONYEKA",
+    "period": "2025-11",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 194730.51,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-11-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-11"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-11-61-LEAVEALLOW",
+    "employeeId": "0061",
+    "employeeCode": "0061",
+    "fullName": "Mr TIVKAA",
+    "period": "2025-11",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 242840.43,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-11-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-11"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-11-45-LEAVEALLOW",
+    "employeeId": "0045",
+    "employeeCode": "0045",
+    "fullName": "Mr OLOKO",
+    "period": "2025-11",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 289021.74,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-11-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-11"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-10-439-LEAVEALLOW",
+    "employeeId": "0439",
+    "employeeCode": "0439",
+    "fullName": "Mr ALESE",
+    "period": "2025-10",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 562673.56,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-10-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-10"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-10-387-LEAVEALLOW",
+    "employeeId": "0387",
+    "employeeCode": "0387",
+    "fullName": "Miss AGBOOLA",
+    "period": "2025-10",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 156567.43,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-10-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-10"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-10-384-LEAVEALLOW",
+    "employeeId": "0384",
+    "employeeCode": "0384",
+    "fullName": "Mr OKEREKE",
+    "period": "2025-10",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 235644.95,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-10-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-10"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-09-415-LEAVEALLOW",
+    "employeeId": "0415",
+    "employeeCode": "0415",
+    "fullName": "Mr O.O BONIRE",
+    "period": "2025-09",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 112000,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-09-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-09"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-09-72-LEAVEALLOW",
+    "employeeId": "0072",
+    "employeeCode": "0072",
+    "fullName": "Mr AKANDE",
+    "period": "2025-09",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 311087.79,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-09-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-09"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-09-44-LEAVEALLOW",
+    "employeeId": "0044",
+    "employeeCode": "0044",
+    "fullName": "Mr OGUDU",
+    "period": "2025-09",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 278730.53,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-09-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-09"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-09-40-LEAVEALLOW",
+    "employeeId": "0040",
+    "employeeCode": "0040",
+    "fullName": "Mr SOKAN",
+    "period": "2025-09",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 139351.01,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-09-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-09"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-08-440-LEAVEALLOW",
+    "employeeId": "0440",
+    "employeeCode": "0440",
+    "fullName": "Mr CO CHINEDU",
+    "period": "2025-08",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 630246.75,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-08-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-08"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-08-436-LEAVEALLOW",
+    "employeeId": "0436",
+    "employeeCode": "0436",
+    "fullName": "Mr OKEWU",
+    "period": "2025-08",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 610326.48,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-08-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-08"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-08-435-LEAVEALLOW",
+    "employeeId": "0435",
+    "employeeCode": "0435",
+    "fullName": "Mr ABIOYE",
+    "period": "2025-08",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 108768.22,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-08-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-08"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-08-432-LEAVEALLOW",
+    "employeeId": "0432",
+    "employeeCode": "0432",
+    "fullName": "Ms BADETAN",
+    "period": "2025-08",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 465962.92,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-08-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-08"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-08-409-LEAVEALLOW",
+    "employeeId": "0409",
+    "employeeCode": "0409",
+    "fullName": "Ms OA ELESHA",
+    "period": "2025-08",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 464173.39,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-08-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-08"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-08-370-LEAVEALLOW",
+    "employeeId": "0370",
+    "employeeCode": "0370",
+    "fullName": "Mr OCHIGBO",
+    "period": "2025-08",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 558323.33,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-08-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-08"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-08-309-LEAVEALLOW",
+    "employeeId": "0309",
+    "employeeCode": "0309",
+    "fullName": "Mr UKPAI",
+    "period": "2025-08",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 94995.74,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-08-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-08"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-08-290-LEAVEALLOW",
+    "employeeId": "0290",
+    "employeeCode": "0290",
+    "fullName": "Mr ADESINA",
+    "period": "2025-08",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 200801.08,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-08-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-08"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-08-232-LEAVEALLOW",
+    "employeeId": "0232",
+    "employeeCode": "0232",
+    "fullName": "Mr AAA ADETUNJI",
+    "period": "2025-08",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 229339.48,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-08-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-08"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-07-441-LEAVEALLOW",
+    "employeeId": "0441",
+    "employeeCode": "0441",
+    "fullName": "Mr AJADI",
+    "period": "2025-07",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 255979.23,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-07-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-07"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-07-438-LEAVEALLOW",
+    "employeeId": "0438",
+    "employeeCode": "0438",
+    "fullName": "Mr EVBUOMWAN",
+    "period": "2025-07",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 541155.12,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-07-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-07"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-07-428-LEAVEALLOW",
+    "employeeId": "0428",
+    "employeeCode": "0428",
+    "fullName": "Mr BABASALE",
+    "period": "2025-07",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 363182.75,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-07-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-07"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-07-427-LEAVEALLOW",
+    "employeeId": "0427",
+    "employeeCode": "0427",
+    "fullName": "AHMED",
+    "period": "2025-07",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 462701.41,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-07-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-07"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-07-311-LEAVEALLOW",
+    "employeeId": "0311",
+    "employeeCode": "0311",
+    "fullName": "Mr ADESOLA",
+    "period": "2025-07",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 424869.72,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-07-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-07"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-07-181-LEAVEALLOW",
+    "employeeId": "0181",
+    "employeeCode": "0181",
+    "fullName": "Mr AGHANYA",
+    "period": "2025-07",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 295102.21,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-07-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-07"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-06-444-LEAVEALLOW",
+    "employeeId": "0444",
+    "employeeCode": "0444",
+    "fullName": "Mr OGUNYEMI",
+    "period": "2025-06",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 177969,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-06-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-06"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-06-425-LEAVEALLOW",
+    "employeeId": "0425",
+    "employeeCode": "0425",
+    "fullName": "Miss OGUNS",
+    "period": "2025-06",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 557259.19,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-06-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-06"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-06-399-LEAVEALLOW",
+    "employeeId": "0399",
+    "employeeCode": "0399",
+    "fullName": "Mr BEKESOR",
+    "period": "2025-06",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 163706.01,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-06-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-06"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-06-392-LEAVEALLOW",
+    "employeeId": "0392",
+    "employeeCode": "0392",
+    "fullName": "Mr UMUKORO",
+    "period": "2025-06",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 351401.6,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-06-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-06"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-06-383-LEAVEALLOW",
+    "employeeId": "0383",
+    "employeeCode": "0383",
+    "fullName": "Mr NWOKEDI",
+    "period": "2025-06",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 68012.49,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-06-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-06"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-06-277-LEAVEALLOW",
+    "employeeId": "0277",
+    "employeeCode": "0277",
+    "fullName": "Mr AKINSANYA",
+    "period": "2025-06",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 162662.58,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-06-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-06"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-06-13-LEAVEALLOW",
+    "employeeId": "0013",
+    "employeeCode": "0013",
+    "fullName": "Mr KARONWI",
+    "period": "2025-06",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 324454.45,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-06-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-06"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-05-434-LEAVEALLOW",
+    "employeeId": "0434",
+    "employeeCode": "0434",
+    "fullName": "Mr ESEGINE",
+    "period": "2025-05",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 327724.41,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-05-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-05"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-05-424-LEAVEALLOW",
+    "employeeId": "0424",
+    "employeeCode": "0424",
+    "fullName": "Miss AJUEYISI",
+    "period": "2025-05",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 75130.37,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-05-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-05"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-05-308-LEAVEALLOW",
+    "employeeId": "0308",
+    "employeeCode": "0308",
+    "fullName": "Mr OZOEMENA",
+    "period": "2025-05",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 375797.35,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-05-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-05"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-05-146-LEAVEALLOW",
+    "employeeId": "0146",
+    "employeeCode": "0146",
+    "fullName": "Mr OGBAISI",
+    "period": "2025-05",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 286080,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-05-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-05"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-05-92-LEAVEALLOW",
+    "employeeId": "0092",
+    "employeeCode": "0092",
+    "fullName": "Mr AREMU",
+    "period": "2025-05",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 506701.41,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-05-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-05"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-05-51-LEAVEALLOW",
+    "employeeId": "0051",
+    "employeeCode": "0051",
+    "fullName": "Mrs Kalu Eke",
+    "period": "2025-05",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 367431.49,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-05-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-05"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-04-429-LEAVEALLOW",
+    "employeeId": "0429",
+    "employeeCode": "0429",
+    "fullName": "IYANDA",
+    "period": "2025-04",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 363182.75,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-04-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-04"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-04-421-LEAVEALLOW",
+    "employeeId": "0421",
+    "employeeCode": "0421",
+    "fullName": "Mr ALABI",
+    "period": "2025-04",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 93126.32,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-04-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-04"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-04-398-LEAVEALLOW",
+    "employeeId": "0398",
+    "employeeCode": "0398",
+    "fullName": "Mr WILCOX",
+    "period": "2025-04",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 206246.55,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-04-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-04"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-04-366-JNR_LEAVE",
+    "employeeId": "0366",
+    "employeeCode": "0366",
+    "fullName": "Mr OJO",
+    "period": "2025-04",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "JNR_LEAVE",
+    "description": "LEAVE",
+    "amount": 69643.57,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-04-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "JNR_LEAVE 2025-04"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-04-334-LEAVEALLOW",
+    "employeeId": "0334",
+    "employeeCode": "0334",
+    "fullName": "Mr ABIA",
+    "period": "2025-04",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 321230.88,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-04-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-04"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-04-331-LEAVEALLOW",
+    "employeeId": "0331",
+    "employeeCode": "0331",
+    "fullName": "Mrs ONUCHUKWU",
+    "period": "2025-04",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 328837.7,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-04-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-04"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-04-194-LEAVEALLOW",
+    "employeeId": "0194",
+    "employeeCode": "0194",
+    "fullName": "Mr OHAMEZE",
+    "period": "2025-04",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 189890.35,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-04-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-04"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-04-182-LEAVEALLOW",
+    "employeeId": "0182",
+    "employeeCode": "0182",
+    "fullName": "Mr ERUOTOR",
+    "period": "2025-04",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 178176.05,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-04-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-04"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-04-60-LEAVEALLOW",
+    "employeeId": "0060",
+    "employeeCode": "0060",
+    "fullName": "Mrs BENSON",
+    "period": "2025-04",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 229431.18,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-04-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-04"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-03-397-LEAVEALLOW",
+    "employeeId": "0397",
+    "employeeCode": "0397",
+    "fullName": "Mr OKAKOSO",
+    "period": "2025-03",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 172445.52,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-03-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-03"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-03-380-LEAVEALLOW",
+    "employeeId": "0380",
+    "employeeCode": "0380",
+    "fullName": "Mr AMANZE",
+    "period": "2025-03",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 192630.46,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-03-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-03"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-03-318-LEAVEALLOW",
+    "employeeId": "0318",
+    "employeeCode": "0318",
+    "fullName": "Mr RAHEEM",
+    "period": "2025-03",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 135311.03,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-03-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-03"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-03-50-LEAVEALLOW",
+    "employeeId": "0050",
+    "employeeCode": "0050",
+    "fullName": "Mr OWOLABI",
+    "period": "2025-03",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 240777.48,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-03-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-03"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-03-43-LEAVEALLOW",
+    "employeeId": "0043",
+    "employeeCode": "0043",
+    "fullName": "Mr OSENI",
+    "period": "2025-03",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 139739.47,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-03-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-03"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-02-431-LEAVEALLOW",
+    "employeeId": "0431",
+    "employeeCode": "0431",
+    "fullName": "Ms TA ADEWUNMI",
+    "period": "2025-02",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 605111.04,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-02-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-02"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-02-418-LEAVEALLOW",
+    "employeeId": "0418",
+    "employeeCode": "0418",
+    "fullName": "Ms EKWERE",
+    "period": "2025-02",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 41527.78,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-02-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-02"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-02-393-LEAVEALLOW",
+    "employeeId": "0393",
+    "employeeCode": "0393",
+    "fullName": "Miss MERUWOMA",
+    "period": "2025-02",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 23707.6,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-02-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-02"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-02-388-LEAVEALLOW",
+    "employeeId": "0388",
+    "employeeCode": "0388",
+    "fullName": "Mr ADENUGA",
+    "period": "2025-02",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 290206.09,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-02-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-02"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-02-371-LEAVEALLOW",
+    "employeeId": "0371",
+    "employeeCode": "0371",
+    "fullName": "Mr AUDU",
+    "period": "2025-02",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 373938.89,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-02-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-02"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-02-366-LEAVEALLOW",
+    "employeeId": "0366",
+    "employeeCode": "0366",
+    "fullName": "Mr OJO",
+    "period": "2025-02",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 69643.57,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-02-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-02"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-02-185-LEAVEALLOW",
+    "employeeId": "0185",
+    "employeeCode": "0185",
+    "fullName": "Ms NNUKWU",
+    "period": "2025-02",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 283757.7,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-02-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-02"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-01-289-LEAVEALLOW",
+    "employeeId": "0289",
+    "employeeCode": "0289",
+    "fullName": "Mrs ONUGHA",
+    "period": "2025-01",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 349760.07,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-01-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-01"
+      }
+    ]
+  },
+  {
+    "id": "sage-2025-01-268-LEAVEALLOW",
+    "employeeId": "0268",
+    "employeeCode": "0268",
+    "fullName": "Mr NWAEFI",
+    "period": "2025-01",
+    "leaveYear": 2025,
+    "leaveType": "Annual Leave",
+    "days": 10,
+    "code": "LEAVEALLOW",
+    "description": "Leave Allowance",
+    "amount": 196487.35,
+    "taxableAmount": 0,
+    "status": "Paid",
+    "source": "Sage Payroll Migration",
+    "postedAt": "2025-01-01T00:00:00.000Z",
+    "createdAt": "2026-06-16T12:38:59.468Z",
+    "updatedAt": "2026-06-16T14:09:06.770Z",
+    "audit": [
+      {
+        "at": "2026-06-16T12:38:59.468Z",
+        "actor": "Sage Payroll Migration",
+        "action": "Imported paid leave allowance",
+        "note": "LEAVEALLOW 2025-01"
+      }
+    ]
+  }
+]

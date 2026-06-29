@@ -1,0 +1,30 @@
+[
+  {
+    "id": "prj-001",
+    "code": "DL26001",
+    "name": "Dangote Refinery Pipe Fabrication",
+    "site": "Fabrication Yard",
+    "status": "Active"
+  },
+  {
+    "id": "prj-002",
+    "code": "DL26002",
+    "name": "NLNG Train 7 E&I Works",
+    "site": "Onne Yard",
+    "status": "Active"
+  },
+  {
+    "id": "prj-003",
+    "code": "DL26003",
+    "name": "Bonga Shutdown Support",
+    "site": "Marine Base",
+    "status": "Active"
+  },
+  {
+    "id": "prj-004",
+    "code": "DL26004",
+    "name": "Marine Logistics Operations",
+    "site": "Marine Base",
+    "status": "Active"
+  }
+]

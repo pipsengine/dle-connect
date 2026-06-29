@@ -1,0 +1,182 @@
+[
+  {
+    "id": "login-1781861162595-5a4ba3c3",
+    "at": "2026-06-19T09:26:02.596Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "172.20.0.1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1781786354894-064b27b5",
+    "at": "2026-06-18T12:39:14.894Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "172.20.0.1",
+    "device": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8655",
+    "status": "Success"
+  },
+  {
+    "id": "login-1781785773535-43fb2526",
+    "at": "2026-06-18T12:29:33.535Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "172.20.0.1",
+    "device": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8655",
+    "status": "Success"
+  },
+  {
+    "id": "login-1781785498671-93cfecdc",
+    "at": "2026-06-18T12:24:58.672Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "172.20.0.1",
+    "device": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8655",
+    "status": "Success"
+  },
+  {
+    "id": "login-1781785434983-8441133d",
+    "at": "2026-06-18T12:23:54.983Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "172.20.0.1",
+    "device": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8655",
+    "status": "Success"
+  },
+  {
+    "id": "login-1781784708637-cd741638",
+    "at": "2026-06-18T12:11:48.638Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "172.20.0.1",
+    "device": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8655",
+    "status": "Success"
+  },
+  {
+    "id": "login-1781783574202-1945927c",
+    "at": "2026-06-18T11:52:54.203Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "172.20.0.1",
+    "device": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8655",
+    "status": "Success"
+  },
+  {
+    "id": "login-1781690578962-30880794",
+    "at": "2026-06-17T10:02:58.962Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "172.19.0.1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1781623256427-7a4f48f7",
+    "at": "2026-06-16T15:20:56.427Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "172.19.0.1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1781594387159-5f268dba",
+    "at": "2026-06-16T07:19:47.159Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "172.19.0.1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1781539138525-583d840e",
+    "at": "2026-06-15T15:58:58.525Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "::1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1781539122174-1470203c",
+    "at": "2026-06-15T15:58:42.175Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "::1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1781539089139-2aae044b",
+    "at": "2026-06-15T15:58:09.140Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "::1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1781536078200-85367be5",
+    "at": "2026-06-15T15:07:58.200Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "::1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1781507040532-9ac37a44",
+    "at": "2026-06-15T07:04:00.533Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "::1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1781441203384-2fe804b3",
+    "at": "2026-06-14T12:46:43.384Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "::1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1781441189012-24912dcd",
+    "at": "2026-06-14T12:46:29.013Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "::1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1781441188318-705e14ff",
+    "at": "2026-06-14T12:46:28.318Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "::1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1781441188129-915a6359",
+    "at": "2026-06-14T12:46:28.130Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "::1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1781440594103-8d111192",
+    "at": "2026-06-14T12:36:34.103Z",
+    "userId": "global-admin",
+    "username": "Admin",
+    "ipAddress": "::1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "status": "Success"
+  }
+]

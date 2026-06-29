@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "country": "NG",
+  "jurisdiction": "Nigeria",
+  "activeVersionId": "ng-pra-2014-current",
+  "versions": [
+    {
+      "id": "ng-pra-2014-current",
+      "name": "Nigeria Pension Reform Act Contribution Rules",
+      "status": "Active",
+      "effectiveFrom": "2014-07-01",
+      "effectiveTo": null,
+      "currency": "NGN",
+      "basis": "Monthly pensionable emoluments",
+      "notes": "Minimum combined contribution is 18% of monthly emoluments: 8% employee and 10% employer. Employer may elect higher configured rates.",
+      "rules": {
+        "employeeRate": 0.08,
+        "employerRate": 0.1,
+        "minimumCombinedRate": 0.18,
+        "employerFullResponsibilityMinimumRate": 0.2,
+        "voluntaryContributionRate": 0,
+        "remittanceDueDays": 7,
+        "basisComponents": ["basic", "housing", "transport"],
+        "fallbackBasis": "monthly_base_plus_allowances",
+        "eligibleEmploymentTypes": ["Permanent", "Contract", "Payroll"],
+        "excludedEmploymentTypes": ["Intern", "NYSC", "Daily"]
+      },
+      "providers": [
+        { "id": "unassigned", "name": "Unassigned PFA", "status": "Review", "custodian": "Unassigned PFC" },
+        { "id": "leadway", "name": "Leadway Pensure PFA", "status": "Active", "custodian": "First Pension Custodian" },
+        { "id": "stanbic", "name": "Stanbic IBTC Pension Managers", "status": "Active", "custodian": "Stanbic IBTC Pension Custodian" },
+        { "id": "arm", "name": "ARM Pension Managers", "status": "Active", "custodian": "Pension Alliance Custodian" }
+      ],
+      "regulatoryChanges": [
+        { "id": "pra-2014-minimum-rate", "title": "Minimum Contribution Rate", "effectiveDate": "2014-07-01", "impact": "Employee contributes 8%, employer contributes 10%, combined minimum is 18%." },
+        { "id": "pra-2014-employer-full-responsibility", "title": "Employer Full Responsibility Option", "effectiveDate": "2014-07-01", "impact": "Employer may bear the full contribution where configured employer contribution is not less than 20%." }
+      ]
+    }
+  ],
+  "audit": [
+    {
+      "at": "2026-06-14T00:00:00.000Z",
+      "actor": "System",
+      "action": "Seed Nigeria PRA pension configuration",
+      "versionId": "ng-pra-2014-current"
+    }
+  ]
+}

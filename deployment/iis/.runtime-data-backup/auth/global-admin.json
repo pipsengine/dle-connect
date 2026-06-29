@@ -1,0 +1,11 @@
+{
+  "username": "Admin",
+  "passwordHash": "3828373b650e80163da9851c4d9142b93e944c3b6540df367f949c9cd699fb6c",
+  "passwordSalt": "9d8079a1bd1c100cf13f50cd0c085e56",
+  "firstLoginRequired": false,
+  "passwordResetRequired": false,
+  "failedAttempts": 0,
+  "lockedUntil": null,
+  "lastLoginAt": "2026-06-19T09:26:02.558Z",
+  "updatedAt": "2026-06-14T12:37:07.831Z"
+}

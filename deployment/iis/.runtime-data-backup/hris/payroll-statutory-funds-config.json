@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "country": "NG",
+  "jurisdiction": "Nigeria",
+  "activeVersionId": "ng-statutory-funds-current",
+  "versions": [
+    {
+      "id": "ng-statutory-funds-current",
+      "name": "Nigeria NHF, NSITF and ITF Statutory Funds",
+      "status": "Active",
+      "effectiveFrom": "2026-01-01",
+      "effectiveTo": null,
+      "currency": "NGN",
+      "basis": "Payroll statutory funds and employer compliance",
+      "notes": "NHF is configured as employee housing contribution where applicable. NSITF and ITF are employer statutory obligations and must not be deducted from employee pay unless law/configuration changes.",
+      "funds": [
+        {
+          "id": "nhf",
+          "label": "National Housing Fund",
+          "shortName": "NHF",
+          "enabled": false,
+          "payer": "Employee",
+          "deductFromEmployee": false,
+          "calculationBasis": "percent_of_monthly_base",
+          "rate": 0.025,
+          "monthlyCap": null,
+          "annualCap": null,
+          "minimumMonthlyIncome": 30000,
+          "eligibilityMode": "configured_workforce_scope",
+          "eligibleEmploymentTypes": ["Permanent", "Contract", "Payroll"],
+          "remittanceFrequency": "Monthly",
+          "remittanceDueDay": 30,
+          "authority": "Federal Mortgage Bank of Nigeria",
+          "accountingTreatment": "Employee deduction payable"
+        },
+        {
+          "id": "nsitf",
+          "label": "Nigeria Social Insurance Trust Fund",
+          "shortName": "NSITF",
+          "enabled": true,
+          "payer": "Employer",
+          "deductFromEmployee": false,
+          "calculationBasis": "percent_of_monthly_emolument",
+          "rate": 0.01,
+          "monthlyCap": null,
+          "annualCap": null,
+          "minimumMonthlyIncome": 0,
+          "eligibilityMode": "all_payroll_employees",
+          "eligibleEmploymentTypes": ["Permanent", "Contract", "Payroll", "Daily"],
+          "remittanceFrequency": "Monthly",
+          "remittanceDueDay": 30,
+          "authority": "Nigeria Social Insurance Trust Fund",
+          "accountingTreatment": "Employer statutory cost"
+        },
+        {
+          "id": "itf",
+          "label": "Industrial Training Fund",
+          "shortName": "ITF",
+          "enabled": true,
+          "payer": "Employer",
+          "deductFromEmployee": false,
+          "calculationBasis": "percent_of_annual_payroll",
+          "rate": 0.01,
+          "monthlyCap": null,
+          "annualCap": null,
+          "minimumMonthlyIncome": 0,
+          "eligibilityMode": "employer_threshold",
+          "employeeThreshold": 25,
+          "turnoverThreshold": 50000000,
+          "eligibleEmploymentTypes": ["Permanent", "Contract", "Payroll", "Daily"],
+          "remittanceFrequency": "Annual",
+          "remittanceDueDate": "03-31",
+          "authority": "Industrial Training Fund",
+          "accountingTreatment": "Employer statutory cost"
+        }
+      ],
+      "regulatoryChanges": [
+        { "id": "nhf-rate", "title": "NHF Contribution", "effectiveDate": "2026-01-01", "impact": "NHF is not deducted from employee pay in the migrated Sage payroll baseline." },
+        { "id": "nsitf-employer-cost", "title": "NSITF Employer Contribution", "effectiveDate": "2026-01-01", "impact": "NSITF configured as 1% employer contribution and not an employee deduction." },
+        { "id": "itf-annual-payroll", "title": "ITF Annual Payroll Levy", "effectiveDate": "2026-01-01", "impact": "ITF configured as 1% of annual payroll with employer threshold support." }
+      ]
+    }
+  ],
+  "audit": [
+    {
+      "at": "2026-06-14T00:00:00.000Z",
+      "actor": "System",
+      "action": "Seed NHF/NSITF/ITF statutory funds configuration",
+      "versionId": "ng-statutory-funds-current"
+    }
+  ]
+}

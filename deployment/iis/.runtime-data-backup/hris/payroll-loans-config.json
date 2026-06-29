@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "country": "NG",
+  "jurisdiction": "Nigeria",
+  "activeVersionId": "dle-loans-current",
+  "versions": [
+    {
+      "id": "dle-loans-current",
+      "name": "DLE Loans and Salary Advances Policy",
+      "status": "Active",
+      "effectiveFrom": "2026-01-01",
+      "effectiveTo": null,
+      "currency": "NGN",
+      "basis": "Payroll recoveries and affordability controls",
+      "notes": "Loans and salary advances are recovered through payroll subject to approval status, deduction caps, outstanding balances, and payroll readiness.",
+      "deductionCapRate": 0.3333,
+      "defaultApprovalWorkflow": ["Employee Request", "Line Manager Review", "HR Review", "Finance Approval", "Payroll Activation"],
+      "products": [
+        {
+          "id": "salary-advance",
+          "label": "Salary Advance",
+          "enabled": true,
+          "type": "Advance",
+          "interestRate": 0,
+          "maxPrincipalMultiple": 0.5,
+          "maxTenorMonths": 3,
+          "repaymentFrequency": "Monthly",
+          "recoveryPriority": 20,
+          "requiresFinanceApproval": true,
+          "requiresGuarantor": false
+        },
+        {
+          "id": "staff-loan",
+          "label": "Staff Loan",
+          "enabled": true,
+          "type": "Loan",
+          "interestRate": 0.05,
+          "maxPrincipalMultiple": 3,
+          "maxTenorMonths": 24,
+          "repaymentFrequency": "Monthly",
+          "recoveryPriority": 40,
+          "requiresFinanceApproval": true,
+          "requiresGuarantor": true
+        },
+        {
+          "id": "emergency-loan",
+          "label": "Emergency Loan",
+          "enabled": true,
+          "type": "Loan",
+          "interestRate": 0,
+          "maxPrincipalMultiple": 1,
+          "maxTenorMonths": 6,
+          "repaymentFrequency": "Monthly",
+          "recoveryPriority": 10,
+          "requiresFinanceApproval": true,
+          "requiresGuarantor": false
+        }
+      ],
+      "regulatoryChanges": [
+        { "id": "payroll-deduction-cap", "title": "Payroll Deduction Cap", "effectiveDate": "2026-01-01", "impact": "Loan and advance recoveries are validated against configured affordability cap before payroll activation." },
+        { "id": "approval-before-recovery", "title": "Approval Before Recovery", "effectiveDate": "2026-01-01", "impact": "Only approved and active loan schedules are included in payroll recovery." }
+      ]
+    }
+  ],
+  "audit": [
+    {
+      "at": "2026-06-14T00:00:00.000Z",
+      "actor": "System",
+      "action": "Seed loans and salary advances policy",
+      "versionId": "dle-loans-current"
+    }
+  ]
+}
