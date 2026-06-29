@@ -35,7 +35,7 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { OVERTIME_HOUR_OPTIONS, DAILY_BREAK_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, timesheetDayRulesForDate, attendanceDurationFromClock, capProductiveHoursToAttendance, reconcileTimesheetLineHours, sumProjectAllocationHours } from '@/lib/timesheet-entry-shared';
+import { OVERTIME_HOUR_OPTIONS, DAILY_BREAK_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, timesheetDayRulesForDate, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import { TimesheetEntryEnterpriseView } from './TimesheetEntryEnterpriseView';
@@ -695,16 +695,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     if (isAbsentLine) {
       line.projectAllocations = line.projectAllocations.map((allocation) => ({ ...allocation, hours: 0 }));
     }
-    const primaryCode = resolvePrimaryProjectCode(
-      matrixColumns.map((col) => col.code),
-      line.projectAllocations,
-    );
-    const primaryLabel = matrixColumns.find((col) => canonicalProjectCode(col.code) === primaryCode)?.label;
-    line.projectAllocations = consolidateProjectAllocationsToPrimary(
-      normalizeProjectAllocations(line.projectAllocations || []),
-      primaryCode,
-      primaryLabel,
-    );
+    line.projectAllocations = normalizeProjectAllocations(line.projectAllocations || []);
     line.idleAllocations = normalizeIdleAllocations(
       line.idleAllocations.map((allocation) =>
         allocation.reasonId || allocation.hours <= 0
@@ -712,13 +703,6 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           : { ...allocation, reasonId: DEFAULT_BREAK_IDLE_REASON_ID, reasonName: DEFAULT_BREAK_IDLE_REASON_NAME },
       ),
     );
-    const idleHoursForCap = round1(line.idleAllocations.reduce((sum, item) => sum + Number(item.hours || 0), 0));
-    if (line.clockIn && line.projectAllocations.length > 0) {
-      line.projectAllocations = line.projectAllocations.map((allocation) => ({
-        ...allocation,
-        hours: capProductiveHoursToAttendance(Number(allocation.hours || 0), line, idleHoursForCap),
-      }));
-    }
 
     const dayContext = { date: selectedDate, holidayDates: payload?.holidayDates ?? [] };
     const authorizations = (payload?.approvedOvertimeAuthorizations ?? []) as OvertimeAuthorization[];
@@ -1133,21 +1117,15 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     if (!payload || payload.period.status !== 'Open' || !editableTimesheetStatuses.includes(payload.header?.status ?? 'Draft') || matrixColumns.length === 0) return;
     const dayRules = timesheetDayRulesForDate(selectedDate, payload.holidayDates ?? []);
     const dayContext = { date: selectedDate, holidayDates: payload.holidayDates ?? [] };
-    const primaryCol = matrixColumns[0];
-    const primaryCode = resolvePrimaryProjectCode(matrixColumns.map((col) => col.code));
     const next = localLines.map((line) => {
       if (!line.clockIn) return line;
-      const projectAllocations = consolidateProjectAllocationsToPrimary(
-        [{
-          projectId: primaryCode,
-          projectCode: primaryCode,
-          projectName: primaryCol?.label || primaryCode,
-          hours: dayRules.standardProductiveHours,
-          remarks: null,
-        }],
-        primaryCode,
-        primaryCol?.label,
-      );
+      const projectAllocations = matrixColumns.map((col, index) => ({
+        projectId: col.code,
+        projectCode: col.code,
+        projectName: col.label || col.code,
+        hours: index === 0 ? dayRules.standardProductiveHours : 0,
+        remarks: null,
+      }));
       const usedHours = round1(projectAllocations.reduce((sum, item) => sum + item.hours, 0));
       const idleAllocations = [{ reasonId: DEFAULT_BREAK_IDLE_REASON_ID, reasonName: DEFAULT_BREAK_IDLE_REASON_NAME, hours: DAILY_BREAK_HOURS, remarks: null }];
       const idleHours = DAILY_BREAK_HOURS;
@@ -1170,7 +1148,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       return draft;
     });
     setLocalLines(next);
-    setNotice(`Hours auto-distributed across active project columns (${dayRules.standardProductiveHours}h standard).`);
+    setNotice(`Standard ${dayRules.standardProductiveHours}h booked on the first project column. Split hours across columns manually as needed.`);
   };
 
   const handleClearAllProjects = () => {
@@ -2026,12 +2004,16 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                         <td className="px-4 py-4 text-center text-[11px] font-black text-slate-600 tabular-nums">{line.attendanceDuration}h</td>
                         {matrixColumns.map((col) => (
                           <td key={col.code} className="px-4 py-4 border-l border-slate-100"><input type="number" step="0.5" disabled={!canEditTimesheet || isAbsent} value={isAbsent ? 0 : line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
-                            const val = parseFloat(e.target.value) || 0;
-                            const allocations = [...line.projectAllocations];
-                            const pIdx = allocations.findIndex(p => p.projectCode === col.code);
-                            if (pIdx >= 0) allocations[pIdx].hours = val;
-                            else allocations.push({ projectId: col.code, projectCode: col.code, projectName: col.label, hours: val, remarks: null });
-                            handleUpdateLine(originalIdx, { projectAllocations: allocations });
+                            const idleHours = line.idleHours || DAILY_BREAK_HOURS;
+                            const maxTotal = matrixProductiveHoursCap(line, line.usedHours, standardTimesheetHours, idleHours);
+                            const projectAllocations = upsertMatrixProjectHours(
+                              line.projectAllocations,
+                              col.code,
+                              col.label,
+                              parseFloat(e.target.value) || 0,
+                              maxTotal,
+                            );
+                            handleUpdateLine(originalIdx, { projectAllocations });
                           }} className={`w-full rounded-lg border border-slate-200 py-1.5 text-center text-xs font-black focus:border-indigo-500 ${isAbsent ? 'bg-slate-100 text-slate-400' : ''}`} /></td>
                         ))}
                         <td className="px-4 py-4 border-l border-slate-100"></td>

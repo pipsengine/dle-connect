@@ -29,7 +29,7 @@ import {
   TimesheetKpiStrip,
   TimesheetRowActionsMenu,
 } from './timesheet-entry-ui';
-import { DAILY_BREAK_HOURS, canonicalProjectCode, normalizeProjectAllocations, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, maxBookableProductiveHours } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, canonicalProjectCode, matrixProductiveHoursCap, projectHoursForColumn, upsertMatrixProjectHours } from '@/lib/timesheet-entry-shared';
 import { overtimeProductiveHours } from '@/lib/timesheet-overtime-booking';
 
 type DisplayColumn = { code: string; label: string; kind: 'project' | 'internal' | 'idle' | 'leave' };
@@ -176,9 +176,10 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
 
   const projectTotals = props.matrixColumns.map((col) => {
     const columnCode = canonicalProjectCode(col.code);
-    const primaryCode = resolvePrimaryProjectCode(props.matrixColumns.map((item) => item.code));
-    if (columnCode !== primaryCode) return 0;
-    return props.filteredLines.reduce((sum, line) => sum + line.usedHours, 0);
+    return props.filteredLines.reduce(
+      (sum, line) => sum + projectHoursForColumn(line.projectAllocations, columnCode),
+      0,
+    );
   });
 
   const kpiItems = [
@@ -518,64 +519,45 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                           <td className="px-3 py-3 text-center text-xs font-bold text-[#475569]">{line.attendanceDuration}h</td>
                           {props.matrixColumns.map((col) => {
                             const columnCode = canonicalProjectCode(col.code);
-                            const primaryCode = resolvePrimaryProjectCode(
-                              props.matrixColumns.map((item) => item.code),
-                              line.projectAllocations,
-                            );
-                            const isPrimaryColumn = columnCode === primaryCode;
-                            const hours = isPrimaryColumn ? line.usedHours : 0;
+                            const project = props.payloadProjects.find((p) => canonicalProjectCode(p.code) === columnCode);
+                            const hours = projectHoursForColumn(line.projectAllocations, columnCode);
                             const hasOvertime = overtimeProductiveHours(line.usedHours, props.standardTimesheetHours) > 0;
-                            const isOvertimeProject = isPrimaryColumn && hasOvertime;
                             const cellTone =
-                              !isPrimaryColumn
-                                ? 'bg-[#F8FAFC]'
-                                : hours <= 0
-                                  ? 'bg-white'
-                                  : hasOvertime
-                                    ? 'bg-[#FFFBEB] ring-1 ring-inset ring-[#FCD34D]'
-                                    : line.validationStatus === 'Error'
-                                      ? 'bg-[#FEF2F2]'
-                                      : 'bg-[#EFF6FF]';
+                              hours <= 0
+                                ? 'bg-white'
+                                : hasOvertime
+                                  ? 'bg-[#FFFBEB] ring-1 ring-inset ring-[#FCD34D]'
+                                  : line.validationStatus === 'Error'
+                                    ? 'bg-[#FEF2F2]'
+                                    : 'bg-[#EFF6FF]';
                             return (
                               <td key={col.code} className={`border-l border-[#EDF2F7] px-1 py-2 ${cellTone}`}>
-                                {isPrimaryColumn ? (
                                 <input
                                   type="number"
                                   step="0.5"
+                                  min={0}
                                   disabled={!props.canEditTimesheet || !props.showCaptureMatrix || isAbsent}
                                   value={isAbsent ? 0 : hours || ''}
                                   onClick={(e) => e.stopPropagation()}
                                   onChange={(e) => {
                                     const idleHours = line.idleHours || DAILY_BREAK_HOURS;
-                                    const maxProductive = maxBookableProductiveHours(line, idleHours);
-                                    const raw = parseFloat(e.target.value) || 0;
-                                    const val = Number.isFinite(maxProductive)
-                                      ? Math.min(raw, maxProductive)
-                                      : raw;
-                                    const existingRemarks = (
-                                      line.projectAllocations.find(
-                                        (item) => canonicalProjectCode(item.projectCode) === primaryCode,
-                                      ) as { remarks?: string | null } | undefined
-                                    )?.remarks;
-                                    props.onUpdateLine(originalIdx, {
-                                      projectAllocations: consolidateProjectAllocationsToPrimary(
-                                        [{
-                                          projectId: primaryCode,
-                                          projectCode: primaryCode,
-                                          projectName: col.label,
-                                          hours: val,
-                                          remarks: val > props.standardTimesheetHours + 0.001 ? existingRemarks ?? null : null,
-                                        }],
-                                        primaryCode,
-                                        col.label,
-                                      ),
-                                    });
+                                    const maxTotal = matrixProductiveHoursCap(
+                                      line,
+                                      line.usedHours,
+                                      props.standardTimesheetHours,
+                                      idleHours,
+                                    );
+                                    const projectAllocations = upsertMatrixProjectHours(
+                                      line.projectAllocations,
+                                      col.code,
+                                      project?.name || col.label,
+                                      parseFloat(e.target.value) || 0,
+                                      maxTotal,
+                                    );
+                                    props.onUpdateLine(originalIdx, { projectAllocations });
                                   }}
                                   className="w-full rounded-lg border border-[#E5E7EB] py-1.5 text-right text-xs font-bold text-[#0F172A] focus:border-[#2563EB] focus:outline-none disabled:bg-[#F1F5F9] disabled:text-[#94A3B8]"
                                 />
-                                ) : (
-                                  <div className="py-1.5 text-center text-[10px] font-semibold text-[#CBD5E1]">—</div>
-                                )}
                               </td>
                             );
                           })}

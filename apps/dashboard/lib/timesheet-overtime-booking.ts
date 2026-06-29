@@ -10,7 +10,6 @@ import {
   resolveTimesheetHours,
   sumProjectAllocationHours,
   canonicalProjectCode,
-  consolidateProjectAllocationsToPrimary,
   resolvePrimaryProjectCode,
   attendanceDurationFromClock,
   resolveLineAttendanceDuration,
@@ -539,9 +538,11 @@ export const applyOvertimeBooking = (
     [primaryProjectCode || '', authCode].filter(Boolean),
     allocations,
   );
+  const currentUsed = sumProjectAllocationHours(allocations);
+  const retroEmptyLine = (booking.openBooking || booking.retroCorrection) && currentUsed <= 0.001;
   const targetCode =
     booking.openBooking || booking.retroCorrection
-      ? primaryCode
+      ? (retroEmptyLine ? primaryCode : authCode)
       : authCode;
 
   const idleAllocations = normalizeIdleAllocations(
@@ -560,12 +561,11 @@ export const applyOvertimeBooking = (
   }
 
   const maxProductive = maxBookableProductiveHours(workingLine, draftIdle);
-  const useSetTotal = booking.openBooking || booking.retroCorrection;
   const policyCap = round1(
     Math.min(
       otHours,
       maxOvertimeForEmployee(
-        { ...workingLine, usedHours: sumProjectAllocationHours(allocations) },
+        { ...workingLine, usedHours: currentUsed },
         [auth],
         allLines,
         workCenter,
@@ -575,13 +575,13 @@ export const applyOvertimeBooking = (
       booking.openBooking || booking.retroCorrection ? otHours : perEmployeeOvertimeCap(auth),
     ),
   );
-  const requestedProductive = useSetTotal
+  const requestedProductive = retroEmptyLine
     ? round1(standardProductiveHours + policyCap)
-    : round1(sumProjectAllocationHours(allocations) + policyCap);
+    : round1(currentUsed + policyCap);
   const targetProductive = Number.isFinite(maxProductive)
     ? capProductiveHoursToAttendance(requestedProductive, workingLine, draftIdle)
     : requestedProductive;
-  const effectiveOt = round1(Math.max(0, targetProductive - standardProductiveHours));
+  const effectiveOt = round1(Math.max(0, targetProductive - currentUsed));
   const preview = previewOvertimeBooking(workingLine, otHours, dayContext);
   if (!preview.canApply && effectiveOt <= 0) {
     return {
@@ -591,12 +591,16 @@ export const applyOvertimeBooking = (
     };
   }
 
+  const appliedOt = preview.canApply
+    ? effectiveOt
+    : round1(Math.max(0, Math.min(effectiveOt, preview.appliedOtHours)));
+
   const index = allocations.findIndex((item) => canonicalProjectCode(item.projectCode) === targetCode);
 
   if (index >= 0) {
     allocations[index] = {
       ...allocations[index],
-      hours: useSetTotal ? targetProductive : round1(allocations[index].hours + effectiveOt),
+      hours: retroEmptyLine ? targetProductive : round1(allocations[index].hours + appliedOt),
       remarks: `OT:${auth.id}`,
     };
   } else {
@@ -604,12 +608,11 @@ export const applyOvertimeBooking = (
       projectId: targetCode,
       projectCode: targetCode,
       projectName: auth.projectName,
-      hours: targetProductive,
+      hours: retroEmptyLine ? targetProductive : appliedOt,
       remarks: `OT:${auth.id}`,
     });
   }
 
-  allocations = consolidateProjectAllocationsToPrimary(allocations, primaryCode, auth.projectName);
   const normalizedAllocations = normalizeProjectAllocations(allocations);
 
   const draftUsed = sumProjectAllocationHours(normalizedAllocations);

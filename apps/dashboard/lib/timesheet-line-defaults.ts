@@ -10,20 +10,17 @@ import {
   normalizeIdleAllocations,
   normalizeProjectAllocations,
   sumProjectAllocationHours,
-  consolidateProjectAllocationsToPrimary,
-  resolvePrimaryProjectCode,
   attendanceDurationFromClock,
   repairStackedOvertimeProductiveHours,
-  canonicalProjectCode,
 } from '@/lib/timesheet-entry-shared';
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
 
-/** Apply break-time defaults (1h break) on clocked-in lines. */
+/** Apply break-time defaults (1h break) on clocked-in lines. Does not auto-book project hours from biometric. */
 export const applyTimesheetLineDefaults = (
   line: TimesheetLine,
   dayContext: TimesheetDayContext,
-  projectCodes: string[] = [],
+  _projectCodes: string[] = [],
 ): TimesheetLine => {
   if (!line.clockIn) {
     return {
@@ -34,21 +31,15 @@ export const applyTimesheetLineDefaults = (
   }
 
   const rules = timesheetDayRulesForDate(dayContext.date, dayContext.holidayDates);
-  const primaryCode = resolvePrimaryProjectCode(projectCodes, line.projectAllocations);
-  const existingProjects = normalizeProjectAllocations(line.projectAllocations);
-  const primaryName = existingProjects.find((item) => item.projectCode === primaryCode)?.projectName || primaryCode;
+  const projectAllocations = normalizeProjectAllocations(line.projectAllocations).map((item) => ({
+    ...item,
+    hours: repairStackedOvertimeProductiveHours(
+      Number(item.hours || 0),
+      rules.standardProductiveHours,
+      item.remarks,
+    ),
+  }));
 
-  let projectAllocations = existingProjects.map((item) => {
-    if (canonicalProjectCode(item.projectCode) !== primaryCode) return item;
-    return {
-      ...item,
-      hours: repairStackedOvertimeProductiveHours(
-        Number(item.hours || 0),
-        rules.standardProductiveHours,
-        item.remarks,
-      ),
-    };
-  });
   let idleAllocations = normalizeIdleAllocations(
     (line.idleAllocations || []).length
       ? line.idleAllocations || []
@@ -66,11 +57,6 @@ export const applyTimesheetLineDefaults = (
   const usedHours = sumProjectAllocationHours(projectAllocations);
   const idleHours = round1(idleAllocations.reduce((sum, item) => sum + Number(item.hours || 0), 0));
   const totalHours = round1(usedHours + idleHours);
-
-  projectAllocations = consolidateProjectAllocationsToPrimary(projectAllocations, primaryCode, primaryName);
-
-  const consolidatedUsed = sumProjectAllocationHours(projectAllocations);
-  const consolidatedTotal = round1(consolidatedUsed + idleHours);
   const clockDuration = attendanceDurationFromClock(line.clockIn, line.clockOut);
   const attendanceDuration =
     clockDuration !== null && clockDuration > 0
@@ -84,10 +70,10 @@ export const applyTimesheetLineDefaults = (
     projectAllocations,
     idleAllocations,
     attendanceDuration,
-    usedHours: consolidatedUsed,
+    usedHours,
     idleHours,
-    totalHours: consolidatedTotal,
-    variance: round1(consolidatedTotal - rules.grossHours),
+    totalHours,
+    variance: round1(totalHours - rules.grossHours),
   };
 };
 

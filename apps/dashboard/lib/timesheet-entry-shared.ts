@@ -243,7 +243,70 @@ export const resolvePrimaryProjectCode = (
   return canonicalProjectCode(booked?.projectCode) || codes[0] || 'GENERAL';
 };
 
-/** Workforce rule: all productive hours live on one project row (prevents 8h + 10h split across columns). */
+/** Read hours booked on a matrix project column. */
+export const projectHoursForColumn = (
+  allocations: Array<{ projectCode: string; hours: number }> | null | undefined,
+  columnCode: string,
+) => {
+  const code = canonicalProjectCode(columnCode);
+  const match = normalizeProjectAllocations(allocations).find((item) => canonicalProjectCode(item.projectCode) === code);
+  return round1(Number(match?.hours || 0));
+};
+
+/** Update one matrix column while keeping other project rows and capping total productive hours. */
+export const upsertMatrixProjectHours = <
+  T extends {
+    projectId?: string;
+    projectCode: string;
+    projectName?: string;
+    hours: number;
+    remarks?: string | null;
+  },
+>(
+  allocations: T[] | null | undefined,
+  columnCode: string,
+  columnName: string,
+  requestedHours: number,
+  maxTotalProductive: number,
+): T[] => {
+  const code = canonicalProjectCode(columnCode);
+  const normalized = normalizeProjectAllocations(allocations);
+  const otherSum = round1(
+    normalized
+      .filter((item) => canonicalProjectCode(item.projectCode) !== code)
+      .reduce((sum, item) => sum + Number(item.hours || 0), 0),
+  );
+  const hours = round1(Math.min(Math.max(0, requestedHours), Math.max(0, maxTotalProductive - otherSum)));
+  const existing = normalized.find((item) => canonicalProjectCode(item.projectCode) === code);
+  const rest = normalized.filter((item) => canonicalProjectCode(item.projectCode) !== code);
+  if (hours > 0.001 || existing) {
+    rest.push({
+      ...(existing || { projectId: code, projectCode: code, projectName: columnName, remarks: null }),
+      projectId: existing?.projectId || code,
+      projectCode: code,
+      projectName: columnName || existing?.projectName || code,
+      hours,
+      remarks: existing?.remarks ?? null,
+    } as T);
+  }
+  return normalizeProjectAllocations(rest);
+};
+
+/** Max total productive hours allowed across all matrix columns (8h standard, or up to biometric cap when OT is booked). */
+export const matrixProductiveHoursCap = (
+  line: { clockIn?: string | null; clockOut?: string | null; attendanceDuration?: number },
+  usedHours: number,
+  standardProductiveHours = STANDARD_TIMESHEET_HOURS,
+  idleHours = DAILY_BREAK_HOURS,
+) => {
+  const biometricCap = maxBookableProductiveHours(line, idleHours);
+  if (!Number.isFinite(biometricCap)) return standardProductiveHours;
+  const overtimeHours = round1(Math.max(0, usedHours - standardProductiveHours));
+  if (overtimeHours > 0.001) return biometricCap;
+  return round1(Math.min(standardProductiveHours, biometricCap));
+};
+
+/** Legacy OT repair: collapse mis-posted split rows onto the authorized primary project. */
 export const consolidateProjectAllocationsToPrimary = <
   T extends {
     projectId?: string;
