@@ -5,6 +5,8 @@ import {
   type OvertimeBookingOptions,
   type TimesheetDayContext,
   type TimesheetLine,
+  DEFAULT_BREAK_IDLE_REASON_ID,
+  DEFAULT_BREAK_IDLE_REASON_NAME,
   normalizeIdleAllocations,
   normalizeProjectAllocations,
   resolveTimesheetHours,
@@ -653,3 +655,71 @@ export const remainingOvertimePool = (auth: OvertimeAuthorization, lines: Timesh
 
 export const remainingOvertimeSlots = (auth: OvertimeAuthorization, lines: TimesheetLine[]) =>
   Math.max(0, auth.requestedHeadcount - employeesWithOvertimeOnProject(lines, auth.projectCode));
+
+export const lineHasOvertimeBooking = (line: TimesheetLine, standardProductiveHours = STANDARD_TIMESHEET_HOURS) =>
+  overtimeProductiveHours(line.usedHours, standardProductiveHours) > 0.001 ||
+  (line.projectAllocations || []).some((item) => String(item.remarks || '').startsWith('OT:'));
+
+/** Strip booked overtime from a line so supervisors can rebook against the correct project. */
+export const reverseOvertimeBookingOnLine = (
+  line: TimesheetLine,
+  allLines: TimesheetLine[],
+  dayContext?: TimesheetDayContext,
+): TimesheetLine => {
+  const { standardProductiveHours } = resolveTimesheetHours(dayContext);
+  if (!lineHasOvertimeBooking(line, standardProductiveHours)) return line;
+
+  const snapshot = { ...line, projectAllocations: normalizeProjectAllocations(line.projectAllocations) };
+  const allocations = snapshot.projectAllocations.flatMap((alloc) => {
+    const hasOtRemark = String(alloc.remarks || '').startsWith('OT:');
+    if (!hasOtRemark) return [alloc];
+
+    const otOnProject = overtimeHoursOnProject(snapshot, alloc.projectCode, standardProductiveHours);
+    if (otOnProject <= 0.001) {
+      const { remarks, ...rest } = alloc;
+      return [{ ...rest, remarks: null }];
+    }
+
+    const nonOtHours = round1(Math.max(0, alloc.hours - otOnProject));
+    if (nonOtHours <= 0.001) return [];
+    return [{ ...alloc, hours: nonOtHours, remarks: null }];
+  });
+
+  const idleAllocations = normalizeIdleAllocations(
+    line.idleAllocations?.length
+      ? line.idleAllocations.map((item, index) =>
+          index === 0 ? { ...item, hours: DAILY_BREAK_HOURS } : { ...item, hours: 0 },
+        )
+      : [{ reasonId: DEFAULT_BREAK_IDLE_REASON_ID, reasonName: DEFAULT_BREAK_IDLE_REASON_NAME, hours: DAILY_BREAK_HOURS, remarks: null }],
+  );
+
+  const draft: TimesheetLine = {
+    ...line,
+    projectAllocations: normalizeProjectAllocations(allocations),
+    idleAllocations,
+    validationMessage: null,
+  };
+
+  const validated = validateTimesheetLine(draft, [], allLines, null, { enabled: false }, dayContext);
+  return {
+    ...draft,
+    usedHours: validated.usedHours,
+    idleHours: validated.idleHours,
+    totalHours: validated.totalHours,
+    variance: validated.variance,
+    validationStatus: validated.validationStatus,
+    validationMessage: validated.validationMessage,
+  };
+};
+
+export const reverseOvertimeBookingOnLines = (
+  lines: TimesheetLine[],
+  dayContext?: TimesheetDayContext,
+) => {
+  let next = [...lines];
+  for (let index = 0; index < next.length; index += 1) {
+    const reversed = reverseOvertimeBookingOnLine(next[index], next, dayContext);
+    if (reversed !== next[index]) next[index] = reversed;
+  }
+  return next;
+};
