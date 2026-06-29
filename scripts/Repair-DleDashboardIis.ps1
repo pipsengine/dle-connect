@@ -8,6 +8,11 @@ $ErrorActionPreference = "Stop"
 
 function Get-NormalizedPath {
   param([Parameter(Mandatory = $true)][string]$TargetDirectory)
+
+  if ([string]::IsNullOrWhiteSpace($TargetDirectory)) {
+    throw "A directory path is required."
+  }
+
   return [System.IO.Path]::GetFullPath($TargetDirectory).TrimEnd('\', '/').ToLowerInvariant()
 }
 
@@ -89,11 +94,21 @@ if (-not (Get-Module -ListAvailable -Name WebAdministration)) {
   Import-Module WebAdministration -ErrorAction SilentlyContinue
   if (Get-PSDrive -Name IIS -ErrorAction SilentlyContinue) {
     $matchedSites = @()
+    $target = Get-NormalizedPath -TargetDirectory $siteRoot
     foreach ($site in Get-ChildItem IIS:\Sites) {
-      $sitePhysical = Get-NormalizedPath -TargetDirectory $site.physicalPath
-      $target = Get-NormalizedPath -TargetDirectory $siteRoot
       $bindingMatch = @($site.bindings.Collection | Where-Object { $_.bindingInformation -like "*:${Port}:*" })
-      if ($sitePhysical -eq $target -or $sitePhysical.StartsWith("$target\") -or $bindingMatch.Count -gt 0) {
+      $pathMatch = $false
+      $physicalPath = [string]$site.physicalPath
+      if (-not [string]::IsNullOrWhiteSpace($physicalPath)) {
+        try {
+          $sitePhysical = Get-NormalizedPath -TargetDirectory $physicalPath
+          $pathMatch = ($sitePhysical -eq $target) -or $sitePhysical.StartsWith("$target\")
+        } catch {
+          Write-Warning "Could not read physical path for IIS site '$($site.Name)': $($_.Exception.Message)"
+        }
+      }
+
+      if ($pathMatch -or $bindingMatch.Count -gt 0) {
         $matchedSites += $site
       }
     }
@@ -103,7 +118,8 @@ if (-not (Get-Module -ListAvailable -Name WebAdministration)) {
     } else {
       foreach ($site in $matchedSites) {
         $poolName = [string]$site.applicationPool
-        Write-Host "Recycling IIS site '$($site.Name)' / app pool '$poolName'..."
+        $physicalPath = if ([string]::IsNullOrWhiteSpace($site.physicalPath)) { "(not set)" } else { $site.physicalPath }
+        Write-Host "Recycling IIS site '$($site.Name)' / app pool '$poolName' (path: $physicalPath)..."
         if ($poolName) {
           Restart-WebAppPool -Name $poolName -ErrorAction SilentlyContinue
         }
