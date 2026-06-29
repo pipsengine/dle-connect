@@ -67,6 +67,11 @@ export type DleEmployeeDirectoryRow = {
   employmentType: string;
   status: string;
   nationality: string;
+  stateOfOrigin: string;
+  localGovernmentArea: string;
+  religion: string;
+  languagesSpoken: string;
+  nearestBusStop: string;
   expatriate: boolean;
   fieldWorker: boolean;
   remoteWorker: boolean;
@@ -921,6 +926,10 @@ const DIRECTORY_EMPLOYEE_SELECT_SQL = `
       pinfo.date_of_birth,
       pinfo.marital_status,
       pinfo.nationality,
+      pinfo.state_of_origin,
+      pinfo.local_government_area,
+      pinfo.religion,
+      pinfo.languages_spoken,
       v.official_email,
       v.personal_email,
       v.primary_phone,
@@ -949,6 +958,7 @@ const DIRECTORY_EMPLOYEE_SELECT_SQL = `
       contact.office_extension,
       contact.residential_address,
       contact.permanent_address,
+      contact.nearest_bus_stop,
       contact.postal_code,
       emp.staff_category,
       emp.employee_category,
@@ -1071,6 +1081,11 @@ const mapDirectoryEmployeeRow = (row: any): DleEmployeeDirectoryRow => {
     employmentType,
     status,
     nationality,
+    stateOfOrigin: str(row.state_of_origin),
+    localGovernmentArea: str(row.local_government_area),
+    religion: str(row.religion),
+    languagesSpoken: str(row.languages_spoken),
+    nearestBusStop: str(row.nearest_bus_stop),
     expatriate: str(row.expatriate_status).toLowerCase() === 'expatriate' && !isLocalNationality(nationality),
     fieldWorker: Boolean(projectSite) || ['Daily Rate', 'Lumpsum'].includes(employmentType),
     remoteWorker: workMode.toLowerCase() === 'remote',
@@ -2433,6 +2448,263 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
   } catch (error) {
     await tx.rollback().catch(() => undefined);
     throw error;
+  }
+};
+
+export type HrisEmployeeProfileSyncInput = {
+  employeeCode: string;
+  fullName?: string | null;
+  preferredName?: string | null;
+  jobTitle?: string | null;
+  department?: string | null;
+  businessUnit?: string | null;
+  reportingManager?: string | null;
+  employmentStatus?: string | null;
+  employmentType?: string | null;
+  personalInfo?: Record<string, string | null | undefined>;
+  contacts?: Record<string, string | null | undefined>;
+  employmentDetails?: Record<string, string | null | undefined>;
+  jobDetails?: Record<string, string | null | undefined>;
+};
+
+export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSyncInput): Promise<boolean> => {
+  const employeeCode = str(input.employeeCode);
+  if (!employeeCode) return false;
+  const p = await pool();
+  if (!p) return false;
+
+  const personal = input.personalInfo || {};
+  const contacts = input.contacts || {};
+  const employment = input.employmentDetails || {};
+  const job = input.jobDetails || {};
+  const fullName =
+    str(input.fullName) ||
+    `${str(personal.firstName)} ${str(personal.lastName)}`.trim() ||
+    employeeCode;
+  const preferredName = nullable(personal.preferredName ?? input.preferredName);
+  const employmentStatus = nullable(employment.employmentStatus ?? input.employmentStatus) || 'Active';
+  const employmentType = nullable(employment.employmentType ?? input.employmentType) || 'Permanent';
+
+  const tx = new sql.Transaction(p);
+  await tx.begin();
+  try {
+    const lookup = await new sql.Request(tx)
+      .input('employee_code', sql.NVarChar(50), employeeCode)
+      .query(`SELECT employee_id FROM [hris].[Employees] WHERE employee_code = @employee_code;`);
+    const employeeId = Number(lookup.recordset?.[0]?.employee_id || 0);
+    if (!employeeId) {
+      await tx.rollback().catch(() => undefined);
+      return false;
+    }
+
+    await new sql.Request(tx)
+      .input('employee_id', sql.BigInt, employeeId)
+      .input('full_name', sql.NVarChar(250), fullName)
+      .input('preferred_name', sql.NVarChar(150), preferredName)
+      .input('employment_status', sql.VarChar(40), employmentStatus)
+      .input('employment_type', sql.VarChar(40), employmentType)
+      .query(`
+        UPDATE [hris].[Employees]
+        SET full_name = @full_name,
+            preferred_name = @preferred_name,
+            employment_status = @employment_status,
+            employment_type = @employment_type,
+            modified_at = SYSUTCDATETIME(),
+            modified_by = SUSER_SNAME()
+        WHERE employee_id = @employee_id;
+      `);
+
+    await new sql.Request(tx)
+      .input('employee_id', sql.BigInt, employeeId)
+      .input('title', sql.NVarChar(30), nullable(personal.title))
+      .input('first_name', sql.NVarChar(100), nullable(personal.firstName))
+      .input('middle_name', sql.NVarChar(100), nullable(personal.middleName))
+      .input('last_name', sql.NVarChar(100), nullable(personal.lastName))
+      .input('preferred_name', sql.NVarChar(150), preferredName)
+      .input('gender', sql.NVarChar(40), nullable(personal.gender))
+      .input('date_of_birth', sql.Date, dateOrNull(personal.dateOfBirth))
+      .input('marital_status', sql.NVarChar(50), nullable(personal.maritalStatus))
+      .input('nationality', sql.NVarChar(100), nullable(personal.nationality))
+      .input('state_of_origin', sql.NVarChar(100), nullable(personal.stateOfOrigin))
+      .input('local_government_area', sql.NVarChar(120), nullable(personal.localGovernmentArea))
+      .input('religion', sql.NVarChar(80), nullable(personal.religion))
+      .input('languages_spoken', sql.NVarChar(500), nullable(personal.languagesSpoken))
+      .query(`
+        MERGE [hris].[EmployeePersonalInfo] AS target
+        USING (SELECT @employee_id AS employee_id) AS source
+        ON target.employee_id = source.employee_id
+        WHEN MATCHED THEN UPDATE SET
+          title = @title,
+          first_name = @first_name,
+          middle_name = @middle_name,
+          last_name = @last_name,
+          preferred_name = @preferred_name,
+          gender = @gender,
+          date_of_birth = @date_of_birth,
+          marital_status = @marital_status,
+          nationality = @nationality,
+          state_of_origin = @state_of_origin,
+          local_government_area = @local_government_area,
+          religion = @religion,
+          languages_spoken = @languages_spoken,
+          modified_at = SYSUTCDATETIME()
+        WHEN NOT MATCHED THEN INSERT (
+          employee_id, title, first_name, middle_name, last_name, preferred_name, gender, date_of_birth,
+          marital_status, nationality, state_of_origin, local_government_area, religion, languages_spoken
+        ) VALUES (
+          @employee_id, @title, @first_name, @middle_name, @last_name, @preferred_name, @gender, @date_of_birth,
+          @marital_status, @nationality, @state_of_origin, @local_government_area, @religion, @languages_spoken
+        );
+      `);
+
+    const officialEmail = nullable(contacts.officialEmail);
+    await new sql.Request(tx)
+      .input('employee_id', sql.BigInt, employeeId)
+      .input('official_email', sql.NVarChar(320), officialEmail)
+      .input('personal_email', sql.NVarChar(320), nullable(contacts.personalEmail ?? personal.personalEmail))
+      .input('primary_phone', sql.NVarChar(50), nullable(contacts.primaryPhone ?? personal.personalPhone))
+      .input('alternate_phone', sql.NVarChar(50), nullable(contacts.alternativePhone))
+      .input('office_extension', sql.NVarChar(30), nullable(contacts.officeExtension))
+      .input('residential_address', sql.NVarChar(1000), nullable(contacts.residentialAddress ?? personal.residentialAddress))
+      .input('permanent_address', sql.NVarChar(1000), nullable(contacts.permanentAddress ?? personal.permanentAddress))
+      .input('nearest_bus_stop', sql.NVarChar(250), nullable(contacts.nearestBusStop))
+      .input('city', sql.NVarChar(120), nullable(contacts.city))
+      .input('state', sql.NVarChar(120), nullable(contacts.state))
+      .input('country', sql.NVarChar(120), nullable(contacts.country))
+      .input('postal_code', sql.NVarChar(30), nullable(contacts.postalCode))
+      .query(`
+        MERGE [hris].[EmployeeContactInfo] AS target
+        USING (SELECT @employee_id AS employee_id) AS source
+        ON target.employee_id = source.employee_id
+        WHEN MATCHED THEN UPDATE SET
+          official_email = CASE
+            WHEN @official_email IS NOT NULL AND EXISTS (
+              SELECT 1 FROM [hris].[EmployeeContactInfo] c
+              WHERE c.official_email = @official_email AND c.employee_id <> @employee_id
+            ) THEN target.official_email
+            ELSE @official_email
+          END,
+          personal_email = @personal_email,
+          primary_phone = @primary_phone,
+          alternate_phone = @alternate_phone,
+          office_extension = @office_extension,
+          residential_address = @residential_address,
+          permanent_address = @permanent_address,
+          nearest_bus_stop = @nearest_bus_stop,
+          city = @city,
+          state = @state,
+          country = @country,
+          postal_code = @postal_code,
+          modified_at = SYSUTCDATETIME()
+        WHEN NOT MATCHED THEN INSERT (
+          employee_id, official_email, personal_email, primary_phone, alternate_phone, office_extension,
+          residential_address, permanent_address, nearest_bus_stop, city, state, country, postal_code
+        ) VALUES (
+          @employee_id,
+          CASE WHEN @official_email IS NOT NULL AND EXISTS (SELECT 1 FROM [hris].[EmployeeContactInfo] c WHERE c.official_email = @official_email) THEN NULL ELSE @official_email END,
+          @personal_email, @primary_phone, @alternate_phone, @office_extension,
+          @residential_address, @permanent_address, @nearest_bus_stop, @city, @state, @country, @postal_code
+        );
+      `);
+
+    await new sql.Request(tx)
+      .input('employee_id', sql.BigInt, employeeId)
+      .input('staff_category', sql.NVarChar(100), nullable(employment.staffCategory))
+      .input('employee_category', sql.NVarChar(100), nullable(employment.employeeCategory))
+      .input('date_joined', sql.Date, dateOrNull(employment.dateJoined))
+      .input('probation_start_date', sql.Date, dateOrNull(employment.probationStartDate))
+      .input('probation_end_date', sql.Date, dateOrNull(employment.probationEndDate))
+      .input('confirmation_due_date', sql.Date, dateOrNull(employment.confirmationDate))
+      .input('contract_start_date', sql.Date, dateOrNull(employment.contractStartDate))
+      .input('contract_end_date', sql.Date, dateOrNull(employment.contractEndDate))
+      .input('work_mode', sql.NVarChar(50), nullable(employment.workMode))
+      .input('work_location', sql.NVarChar(150), nullable(employment.workLocation))
+      .input('shift_pattern', sql.NVarChar(80), nullable(employment.shiftPattern))
+      .input('union_status', sql.NVarChar(80), nullable(employment.unionStatus))
+      .query(`
+        MERGE [hris].[EmployeeEmploymentInfo] AS target
+        USING (SELECT @employee_id AS employee_id) AS source
+        ON target.employee_id = source.employee_id
+        WHEN MATCHED THEN UPDATE SET
+          staff_category = @staff_category,
+          employee_category = @employee_category,
+          date_joined = @date_joined,
+          probation_start_date = @probation_start_date,
+          probation_end_date = @probation_end_date,
+          confirmation_due_date = @confirmation_due_date,
+          contract_start_date = @contract_start_date,
+          contract_end_date = @contract_end_date,
+          work_mode = @work_mode,
+          work_location = @work_location,
+          shift_pattern = @shift_pattern,
+          union_status = @union_status,
+          modified_at = SYSUTCDATETIME()
+        WHEN NOT MATCHED THEN INSERT (
+          employee_id, staff_category, employee_category, date_joined, probation_start_date, probation_end_date,
+          confirmation_due_date, contract_start_date, contract_end_date, work_mode, work_location, shift_pattern, union_status
+        ) VALUES (
+          @employee_id, @staff_category, @employee_category, @date_joined, @probation_start_date, @probation_end_date,
+          @confirmation_due_date, @contract_start_date, @contract_end_date, @work_mode, @work_location, @shift_pattern, @union_status
+        );
+      `);
+
+    await new sql.Request(tx)
+      .input('employee_id', sql.BigInt, employeeId)
+      .input('job_title', sql.NVarChar(150), nullable(job.jobTitle ?? input.jobTitle))
+      .input('designation', sql.NVarChar(150), nullable(job.designation))
+      .input('job_grade', sql.NVarChar(80), nullable(job.jobGrade))
+      .input('department', sql.NVarChar(150), nullable(job.department ?? input.department))
+      .input('division', sql.NVarChar(150), nullable(job.division))
+      .input('business_unit', sql.NVarChar(150), nullable(job.businessUnit ?? input.businessUnit))
+      .input('cost_center', sql.NVarChar(80), nullable(job.costCenter))
+      .input('project_site', sql.NVarChar(150), nullable(job.projectSite))
+      .input('office_location', sql.NVarChar(150), nullable(job.officeSite ?? job.location))
+      .input('reporting_manager', sql.NVarChar(250), nullable(job.reportingManager ?? input.reportingManager))
+      .input('functional_manager', sql.NVarChar(250), nullable(job.functionalManager))
+      .input('department_head', sql.NVarChar(250), nullable(job.departmentHead))
+      .input('hr_business_partner', sql.NVarChar(250), nullable(job.hrBusinessPartner))
+      .input('role_profile', sql.NVarChar(150), nullable(job.roleProfile))
+      .input('job_description', sql.NVarChar(sql.MAX), nullable(job.jobDescription))
+      .input('key_responsibilities', sql.NVarChar(sql.MAX), nullable(job.keyResponsibilities))
+      .query(`
+        MERGE [hris].[EmployeeJobInfo] AS target
+        USING (SELECT @employee_id AS employee_id) AS source
+        ON target.employee_id = source.employee_id
+        WHEN MATCHED THEN UPDATE SET
+          job_title = @job_title,
+          designation = @designation,
+          job_grade = @job_grade,
+          department = @department,
+          division = @division,
+          business_unit = @business_unit,
+          cost_center = @cost_center,
+          project_site = @project_site,
+          office_location = @office_location,
+          reporting_manager = @reporting_manager,
+          functional_manager = @functional_manager,
+          department_head = @department_head,
+          hr_business_partner = @hr_business_partner,
+          role_profile = @role_profile,
+          job_description = @job_description,
+          key_responsibilities = @key_responsibilities,
+          modified_at = SYSUTCDATETIME()
+        WHEN NOT MATCHED THEN INSERT (
+          employee_id, job_title, designation, job_grade, department, division, business_unit, cost_center,
+          project_site, office_location, reporting_manager, functional_manager, department_head, hr_business_partner,
+          role_profile, job_description, key_responsibilities
+        ) VALUES (
+          @employee_id, @job_title, @designation, @job_grade, @department, @division, @business_unit, @cost_center,
+          @project_site, @office_location, @reporting_manager, @functional_manager, @department_head, @hr_business_partner,
+          @role_profile, @job_description, @key_responsibilities
+        );
+      `);
+
+    await tx.commit();
+    return true;
+  } catch (error) {
+    await tx.rollback().catch(() => undefined);
+    console.error('syncHrisEmployeeProfileToDb failed', error);
+    return false;
   }
 };
 

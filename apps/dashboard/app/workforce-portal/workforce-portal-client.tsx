@@ -80,7 +80,7 @@ type PayrollHistoryRow = {
   deductions: number;
   netPay: number;
   status: string;
-  dataSource?: 'enterprise' | 'calculated' | 'sage';
+  dataSource?: 'enterprise' | 'enterprise-db' | 'calculated' | 'sage';
   payslipType?: 'permanent' | 'non-permanent';
   earnings?: PayrollLine[];
   deductionLines?: Array<{ code?: string; label: string; units?: number; amount: number }>;
@@ -413,8 +413,9 @@ function PayslipWorkspace({ payload, employee }: { payload: Payload | null; empl
   const selected = periods.find((item) => item.period === selectedPeriod) || periods[0];
 
   useEffect(() => {
-    if (!selectedPeriod && periods[0]?.period) setSelectedPeriod(periods[0].period);
-  }, [periods, selectedPeriod]);
+    const preferred = payload?.payrollAccess?.currentPeriod || periods[0]?.period || '';
+    if (!selectedPeriod && preferred) setSelectedPeriod(preferred);
+  }, [periods, payload?.payrollAccess?.currentPeriod, selectedPeriod]);
 
   if (!selected) {
     const pendingMessage = payload?.payrollAccess?.message

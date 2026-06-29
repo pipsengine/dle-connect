@@ -19,6 +19,7 @@ import {
   type UnifiedPayrollRunStatus,
 } from '@/lib/payroll-run-store';
 import type { PayrollSessionRole } from '@/lib/payroll-session';
+import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import { invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
 
 type WorkflowInput = {
@@ -212,7 +213,10 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     run.releasedBy = actor;
     run.lockedAt = run.lockedAt || nowIso();
     run.updatedBy = actor;
+    syncRunTotals(run, calculation.summary);
     await savePayrollRun(run);
+    await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
+    invalidateHrisEmployeeCaches();
     await audit(action, before, run.status);
     return { run, calculation };
   }
@@ -226,7 +230,10 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     run.payslipsGeneratedBy = actor;
     run.status = run.postedAt ? run.status : 'Published';
     run.updatedBy = actor;
+    syncRunTotals(run, calculation.summary);
     await savePayrollRun(run);
+    await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
+    invalidateHrisEmployeeCaches();
     await appendPayrollArtifact(run.id, {
       type: 'payslips',
       label: 'Employee payslips published to ESS',

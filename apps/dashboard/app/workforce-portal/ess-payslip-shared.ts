@@ -14,7 +14,7 @@ export type PayrollHistoryRow = {
   deductions: number;
   netPay: number;
   status: string;
-  dataSource?: 'enterprise' | 'calculated' | 'sage';
+  dataSource?: 'enterprise' | 'enterprise-db' | 'calculated' | 'sage';
   payslipType?: 'permanent' | 'non-permanent';
   earnings?: PayrollLine[];
   deductionLines?: Array<{ code?: string; label: string; units?: number; amount: number }>;

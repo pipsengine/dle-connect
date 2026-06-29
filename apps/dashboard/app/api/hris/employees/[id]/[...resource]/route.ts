@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { readEmployeeContractsFromDb } from '@/lib/dle-enterprise-db';
+import { readEmployeeContractsFromDb, syncHrisEmployeeProfileToDb } from '@/lib/dle-enterprise-db';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { readDirectoryEmployees } from '@/lib/payroll-employee-source';
+import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import { ensureEmployeeLeaveFromSage } from '@/lib/sage-leave-sync';
 import { contractPayrollClassification, type ContractPayrollClassification } from '@/lib/payroll-employee-classification';
 
@@ -2504,10 +2505,10 @@ const buildDbProfileRecord = (row: DleEmployeeDirectoryRow): EmployeeRecord => {
       dateOfBirth: dateOnly(row.dateOfBirth),
       maritalStatus: valueOrNull(row.maritalStatus),
       nationality: valueOrNull(row.nationality),
-      stateOfOrigin: null,
-      localGovernmentArea: null,
-      religion: null,
-      languagesSpoken: null,
+      stateOfOrigin: valueOrNull(row.stateOfOrigin),
+      localGovernmentArea: valueOrNull(row.localGovernmentArea),
+      religion: valueOrNull(row.religion),
+      languagesSpoken: valueOrNull(row.languagesSpoken),
       personalEmail: valueOrNull(row.personalEmail),
       personalPhone: valueOrNull(row.primaryPhone),
       residentialAddress: valueOrNull(row.residentialAddress),
@@ -2567,7 +2568,7 @@ const buildDbProfileRecord = (row: DleEmployeeDirectoryRow): EmployeeRecord => {
       officeExtension: valueOrNull(row.officeExtension),
       primaryPhone: valueOrNull(row.primaryPhone),
       alternativePhone: valueOrNull(row.alternatePhone),
-      nearestBusStop: null,
+      nearestBusStop: valueOrNull(row.nearestBusStop),
       city: valueOrNull(row.city),
       state: valueOrNull(row.state),
       country: valueOrNull(row.country),
@@ -2635,6 +2636,31 @@ const buildDbProfileRecord = (row: DleEmployeeDirectoryRow): EmployeeRecord => {
   ];
 
   return rec;
+};
+
+const persistHrisProfileToEnterprise = async (rec: EmployeeRecord) => {
+  const employeeCode = rec.profile.employeeId;
+  if (!employeeCode) return;
+  try {
+    const synced = await syncHrisEmployeeProfileToDb({
+      employeeCode,
+      fullName: rec.profile.fullName,
+      preferredName: rec.profile.personalInfo?.preferredName,
+      jobTitle: rec.profile.jobTitle,
+      department: rec.profile.department,
+      businessUnit: rec.profile.businessUnit,
+      reportingManager: rec.profile.reportingManager,
+      employmentStatus: rec.profile.employmentStatus,
+      employmentType: rec.profile.employmentType,
+      personalInfo: rec.profile.personalInfo,
+      contacts: rec.profile.contacts,
+      employmentDetails: rec.profile.employmentDetails,
+      jobDetails: rec.profile.jobDetails,
+    });
+    if (synced) invalidateHrisEmployeeCaches();
+  } catch (error) {
+    console.error('Failed to persist HRIS profile to DLE_Enterprise', error);
+  }
 };
 
 const ensureRecordFromDb = async (employeeId: string) => {
@@ -5038,6 +5064,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     if (phone) next.personalPhone = phone;
     rec.profile.personalInfo = next;
     rec.audit.unshift(auditEntry('Edited personal information', role));
+    await persistHrisProfileToEnterprise(rec);
     return jsonOk(sanitizeProfileForRole(rec, perms).personalInfo);
   }
 
@@ -5059,6 +5086,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     if (exit && dateJoined && exit < dateJoined) return jsonErr(400, 'Exit date cannot be before date joined');
     rec.profile.employmentDetails = next;
     rec.audit.unshift(auditEntry('Updated employment details', role));
+    await persistHrisProfileToEnterprise(rec);
     return jsonOk(rec.profile.employmentDetails);
   }
 
@@ -5075,6 +5103,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     if (typeof next.businessUnit === 'string' && next.businessUnit.trim()) rec.profile.businessUnit = next.businessUnit;
     if (typeof next.reportingManager === 'string' && next.reportingManager.trim()) rec.profile.reportingManager = next.reportingManager;
     rec.audit.unshift(auditEntry('Changed department/job details', role));
+    await persistHrisProfileToEnterprise(rec);
     return jsonOk(rec.profile.jobDetails);
   }
 
@@ -5089,6 +5118,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     if (phone) next.primaryPhone = phone;
     rec.profile.contacts = next;
     rec.audit.unshift(auditEntry('Updated contact information', role));
+    await persistHrisProfileToEnterprise(rec);
     return jsonOk(rec.profile.contacts);
   }
 

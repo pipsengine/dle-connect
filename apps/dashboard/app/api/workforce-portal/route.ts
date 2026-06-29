@@ -4,22 +4,25 @@ import { NextResponse } from 'next/server';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { AUTH_COOKIE, verifySessionToken, type SessionPayload } from '@/lib/auth/session';
-import { calculatePayrollEarnings, calculatePermanentUnionDues } from '@/lib/payroll-earnings-engine';
-import { isNonPermanentPayrollEmployee } from '@/lib/payroll-employee-classification';
+import { calculatePayrollEarnings, calculatePermanentUnionDues, isGenericPayrollGrade } from '@/lib/payroll-earnings-engine';
+import { isNonPermanentPayrollEmployee, permanentStyleSageEarnings, sagePayslipAcceptableForEmployee, sanitizePermanentPayslipEarnings } from '@/lib/payroll-employee-classification';
 import { activeLoansVersion, readPayrollLoanApplications, readPayrollLoansConfig } from '@/lib/payroll-loans-engine';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
 import { hasLeaveAllowanceInYear, postLeaveAllowanceOnAnnualLeaveApproval } from '@/lib/payroll-leave-allowance-store';
 import { annualLeaveEntitlementForEmployee, dormantLongPolicy, isFourteenDayPaidLeaveEmployee, readLeaveApplicationsForReconciliation } from '@/lib/leave-management-store';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
-import { listEmployeeAccessiblePayrollPeriods } from '@/lib/payroll-run-store';
-import { computeEnterpriseYtdTotals, readAuthoritativeSagePayslipSnapshotsByPeriod, readEnterpriseEmployeePayslipRecordsByPeriod } from '@/lib/payroll-ess-payslip-store';
+import { listEssReleasedPayrollPeriods, latestEssReleasedPayrollPeriod } from '@/lib/ess-payroll-periods';
+import { isEnterprisePayrollPeriod } from '@/lib/payroll-enterprise-source';
+import { ensureSagePeriodEarningAdjustments } from '@/lib/payroll-period-earning-adjustments-store';
+import { buildStoredEnterprisePayslipSnapshot, computeEnterpriseYtdTotals, readAuthoritativeSagePayslipSnapshotsByPeriod, readEnterpriseEmployeePayslipRecordsByPeriod } from '@/lib/payroll-ess-payslip-store';
 import type { SageEmployeePayslipSnapshot } from '@/lib/sage-people-payroll-store';
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
-import { payslipIdentityMap, syncPayslipIdentitiesFromSage } from '@/lib/payroll-payslip-identity-store';
+import { payslipIdentityMap, syncPayslipIdentitiesFromSage, type PayslipEmployeeIdentity } from '@/lib/payroll-payslip-identity-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
-import { buildEssDashboardContext } from '@/lib/ess-dashboard-store';
+import { buildEssDashboardContext, buildEssEmployeeLookupKeys } from '@/lib/ess-dashboard-store';
+import { invalidateEssPortalCache, readEssPortalResponseCache, writeEssPortalResponseCache } from '@/lib/ess-portal-cache';
 
 type EssRequest = {
   id: string;
@@ -152,6 +155,10 @@ const buildEssProfileSections = (
         { label: 'Gender', value: configured(employee.gender) },
         { label: 'Marital status', value: configured(employee.maritalStatus) },
         { label: 'Nationality', value: configured(employee.nationality) },
+        { label: 'State of origin', value: configured(employee.stateOfOrigin) },
+        { label: 'LGA', value: configured(employee.localGovernmentArea) },
+        { label: 'Religion', value: configured(employee.religion) },
+        { label: 'Languages spoken', value: configured(employee.languagesSpoken) },
       ],
     },
     {
@@ -196,6 +203,7 @@ const buildEssProfileSections = (
       fields: [
         { label: 'Residential address', value: configured(employee.residentialAddress) },
         { label: 'Permanent address', value: configured(employee.permanentAddress) },
+        { label: 'Nearest bus stop', value: configured(employee.nearestBusStop) },
         { label: 'City', value: configured(employee.city) },
         { label: 'State', value: configured(employee.state) },
         { label: 'Country', value: configured(employee.country) },
@@ -447,26 +455,56 @@ const serviceCatalog = [
   { id: 'exit', label: 'Exit & Separation', area: 'Exit', workflow: ['Employee', 'Line Manager', 'HR', 'Finance', 'IT'], slaHours: 120 },
 ];
 
-const ESS_CURRENT_PAYROLL_PERIOD = activePayrollPeriod();
-const ESS_RESPONSE_CACHE_MS = Number(process.env.ESS_PORTAL_RESPONSE_CACHE_MS || 30000);
-const essResponseCache = new Map<string, { expiresAt: number; payload: unknown }>();
 const normalize = (value: unknown) => compact(value).toLowerCase();
 const tokenFrom = (request: Request) => request.headers.get('cookie')?.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${AUTH_COOKIE}=`))?.split('=').slice(1).join('=');
 const getSession = (request: Request) => verifySessionToken(tokenFrom(request) ? decodeURIComponent(tokenFrom(request) || '') : '');
-const employeeKeys = (employee: Awaited<ReturnType<typeof readPayrollEmployees>>['employees'][number]) => [
-  employee.employeeId,
-  employee.employeeCode,
-  employee.sourceEmployeeId,
-  String(employee.employeeDbId || ''),
-  employee.officialEmail,
-  employee.email,
-  employee.personalEmail,
-].map(normalize).filter(Boolean);
+const employeeKeys = (employee: Awaited<ReturnType<typeof readPayrollEmployees>>['employees'][number]) =>
+  buildEssEmployeeLookupKeys(employee).map((key) => normalizePayrollMatchKey(key)).filter(Boolean);
 const resolveEssEmployee = (employees: Awaited<ReturnType<typeof readPayrollEmployees>>['employees'], session: SessionPayload) => {
-  const identities = [session.employeeCode, session.employeeId, session.username].map(normalize).filter(Boolean);
+  const identities = [session.employeeCode, session.employeeId, session.username].map((value) => normalizePayrollMatchKey(value)).filter(Boolean);
   if (!identities.length) return null;
-  return employees.find((employee) => identities.some((identity) => employeeKeys(employee).includes(identity))) || null;
+  return employees.find((employee) => {
+    const keys = employeeKeys(employee);
+    return identities.some((identity) => keys.includes(identity));
+  }) || null;
 };
+const employeeRequestMatches = (employee: Awaited<ReturnType<typeof readPayrollEmployees>>['employees'][number], requestEmployeeId: string) => {
+  const lookup = new Set(employeeKeys(employee));
+  return lookup.has(normalizePayrollMatchKey(requestEmployeeId));
+};
+
+const mergePayrollIdentity = (
+  employee: DleEmployeeDirectoryRow,
+  identity?: PayslipEmployeeIdentity | null,
+): DleEmployeeDirectoryRow => {
+  if (!identity) return employee;
+  const authoritativeGrade = identity.salaryGrade && isGenericPayrollGrade(employee.salaryGrade) ? identity.salaryGrade : employee.salaryGrade;
+  return {
+    ...employee,
+    salaryGrade: authoritativeGrade || employee.salaryGrade,
+    jobGrade: employee.jobGrade || authoritativeGrade || employee.jobGrade,
+    payrollGroup: employee.payrollGroup || identity.payrollGroup || employee.payrollGroup,
+    paymentRun: employee.paymentRun || identity.paymentRun || employee.paymentRun,
+    paymentType: employee.paymentType || identity.paymentType || employee.paymentType,
+    bankName: employee.bankName || identity.bankName || employee.bankName,
+    accountNo: employee.accountNo || identity.accountNo || employee.accountNo,
+    accountName: employee.accountName || identity.accountName || employee.accountName,
+    pensionProvider: employee.pensionProvider || identity.pensionProvider || employee.pensionProvider,
+    pensionPin: employee.pensionPin || identity.pensionPin || employee.pensionPin,
+    taxIdentificationNumber: employee.taxIdentificationNumber || identity.taxIdentificationNumber || employee.taxIdentificationNumber,
+  };
+};
+
+const sageMigrationPayslipAcceptable = (
+  snapshot: SageEmployeePayslipSnapshot | null | undefined,
+  nonPermanentPayroll: boolean,
+) => Boolean(
+  snapshot
+  && snapshot.grossPay > 0
+  && sagePayslipAcceptableForEmployee(snapshot.earningLines || [], nonPermanentPayroll),
+);
+
+const sagePayslipSnapshotUsable = sageMigrationPayslipAcceptable;
 
 const moduleCatalog = [
   'Dashboard',
@@ -507,8 +545,8 @@ export async function GET(request: Request) {
     if (session.isGlobalAdmin) return err(403, 'Global administrator is not linked to an employee self-service profile.');
     const locale = compact(request.headers.get('x-ess-locale')) || 'en-NG';
     const cacheKey = `${session.sub}:${session.employeeCode || session.employeeId || session.username}:${locale}`;
-    const cached = essResponseCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) return ok(cached.payload);
+    const cached = readEssPortalResponseCache(cacheKey);
+    if (cached) return ok(cached);
     const [employeeSource, rawRequests, loanApplications, loansConfig, taxConfig, pensionConfig, identityByKey] = await Promise.all([readPayrollEmployees(), readRequests(), readPayrollLoanApplications(), readPayrollLoansConfig(), readPayrollTaxConfig(), readPayrollPensionConfig(), payslipIdentityMap()]);
     if (identityByKey.size === 0) {
       void syncPayslipIdentitiesFromSage({ migratedBy: 'Employee Self-Service background identity sync' }).catch(() => undefined);
@@ -521,8 +559,8 @@ export async function GET(request: Request) {
       .map((key) => identityByKey.get(key))
       .find(Boolean);
 
-    const employeeRequests = allRequests.filter((item) => item.employeeId === employee.employeeId);
-    const employeeLoans = loanApplications.filter((item) => item.employeeId === employee.employeeId);
+    const employeeRequests = allRequests.filter((item) => employeeRequestMatches(employee, item.employeeId));
+    const employeeLoans = loanApplications.filter((item) => employeeRequestMatches(employee, item.employeeId));
     const loansVersion = activeLoansVersion(loansConfig);
     const taxVersion = activeTaxVersion(taxConfig);
     const pensionVersion = activePensionVersion(pensionConfig);
@@ -532,20 +570,21 @@ export async function GET(request: Request) {
     let sagePayslipsByPeriod = new Map<string, SageEmployeePayslipSnapshot>();
     let releasedPayrollPeriods: string[] = [];
     const payrollForPeriod = (period: string, includeAdjustments = false, enterpriseRecord?: PayrollCalculationRecord | null, sageSnapshot?: SageEmployeePayslipSnapshot | null) => {
-      const nonPermanentPayroll = essNonPermanentPayrollEmployee(employee);
+      const payrollEmployee = mergePayrollIdentity(employee, payslipIdentity);
+      const nonPermanentPayroll = essNonPermanentPayrollEmployee(payrollEmployee);
       const payslipType = nonPermanentPayroll ? 'non-permanent' : 'permanent';
       const sharedEmployeeInfo = {
-        employeeCode: employee.employeeCode || employee.employeeId,
-        employeeName: employee.fullName,
-        employeeCategory: essEmployeeCategory(employee),
-        department: employee.department || 'Unassigned',
-        unit: employee.businessUnit || employee.division || 'DLE',
-        designation: employee.jobTitle || employee.designation || 'Employee',
-        gradeLevel: employee.salaryGrade || employee.jobGrade || 'Unassigned',
-        employmentType: employee.employmentType || 'Permanent',
-        dateOfEmployment: employee.dateJoined || employee.contractStartDate || '',
-        employeeStatus: employee.status || 'Active',
-        address: employeeAddress(employee),
+        employeeCode: payrollEmployee.employeeCode || payrollEmployee.employeeId,
+        employeeName: payrollEmployee.fullName,
+        employeeCategory: essEmployeeCategory(payrollEmployee),
+        department: payrollEmployee.department || 'Unassigned',
+        unit: payrollEmployee.businessUnit || payrollEmployee.division || 'DLE',
+        designation: payrollEmployee.jobTitle || payrollEmployee.designation || 'Employee',
+        gradeLevel: payrollEmployee.salaryGrade || payrollEmployee.jobGrade || payslipIdentity?.salaryGrade || 'Unassigned',
+        employmentType: payrollEmployee.employmentType || 'Permanent',
+        dateOfEmployment: payrollEmployee.dateJoined || payrollEmployee.contractStartDate || '',
+        employeeStatus: payrollEmployee.status || 'Active',
+        address: employeeAddress(payrollEmployee),
       };
       const sharedStatutoryInfo = {
         bankName: payslipIdentity?.bankName || employeeAny.bankName || 'Not configured',
@@ -563,11 +602,14 @@ export async function GET(request: Request) {
         carryForwardLeave: leaveContext.carryForward,
       };
 
-      if (sageSnapshot && sageSnapshot.grossPay > 0) {
-        const earningsLines = mapSageEarningLines(sageSnapshot);
-        const deductionLines = mapSageDeductionLines(sageSnapshot);
-        const employerContributionLines = mapSageEmployerContributionLines(sageSnapshot);
-        const totalEmployerContributions = roundMoney(sageSnapshot.employerContributions);
+      const buildFromSageSnapshot = (snapshot: SageEmployeePayslipSnapshot, dataSource: 'sage' | 'enterprise-db') => {
+        const rawEarnings = mapSageEarningLines(snapshot);
+        const earningsLines = nonPermanentPayroll ? rawEarnings : sanitizePermanentPayslipEarnings(rawEarnings);
+        const linesGross = roundMoney(earningsLines.reduce((sum, line) => sum + line.amount, 0));
+        const grossPay = roundMoney(nonPermanentPayroll ? snapshot.grossPay : (linesGross > 0 ? linesGross : snapshot.grossPay));
+        const deductionLines = mapSageDeductionLines(snapshot);
+        const employerContributionLines = mapSageEmployerContributionLines(snapshot);
+        const totalEmployerContributions = roundMoney(snapshot.employerContributions);
         return {
           period,
           periodLabel: periodTitle(period),
@@ -576,13 +618,13 @@ export async function GET(request: Request) {
           payDate: monthEndDate(period),
           payrollNumber: `DLE-${period.replace('-', '')}-${employee.employeeId}`,
           payeReference: payslipIdentity?.taxIdentificationNumber || employeeAny.taxIdentificationNumber || employeeAny.taxNo || 'Not configured',
-          grossPay: roundMoney(sageSnapshot.grossPay),
-          allowances: roundMoney(Math.max(0, sageSnapshot.grossPay - sageSnapshot.taxablePay)),
-          pensionEmployee: roundMoney(sageSnapshot.pensionEmployee),
-          deductions: roundMoney(sageSnapshot.totalDeductions),
-          netPay: roundMoney(sageSnapshot.netPay),
+          grossPay,
+          allowances: roundMoney(Math.max(0, grossPay - snapshot.taxablePay)),
+          pensionEmployee: roundMoney(snapshot.pensionEmployee),
+          deductions: roundMoney(snapshot.totalDeductions),
+          netPay: roundMoney(snapshot.netPay),
           status: 'Released',
-          dataSource: 'sage',
+          dataSource,
           payslipType,
           earnings: earningsLines,
           deductionLines,
@@ -592,22 +634,38 @@ export async function GET(request: Request) {
           statutoryInfo: sharedStatutoryInfo,
           leaveInfo: sharedLeaveInfo,
           ytd: {
-            grossEarnings: roundMoney(sageSnapshot.ytdGrossEarnings),
-            taxPaid: roundMoney(sageSnapshot.ytdTaxPaid),
-            pensionContribution: roundMoney(sageSnapshot.ytdPensionContribution),
-            deductions: roundMoney(sageSnapshot.ytdDeductions),
-            netEarnings: roundMoney(sageSnapshot.ytdNetEarnings),
+            grossEarnings: roundMoney(snapshot.ytdGrossEarnings),
+            taxPaid: roundMoney(snapshot.ytdTaxPaid),
+            pensionContribution: roundMoney(snapshot.ytdPensionContribution),
+            deductions: roundMoney(snapshot.ytdDeductions),
+            netEarnings: roundMoney(snapshot.ytdNetEarnings),
           },
           verification: {
-            qrCode: `DLE|${employee.employeeId}|${period}|${roundMoney(sageSnapshot.netPay)}`,
+            qrCode: `DLE|${employee.employeeId}|${period}|${roundMoney(snapshot.netPay)}`,
             generatedAt: new Date().toISOString(),
             approvalStatus: 'Payroll Released',
           },
         };
+      };
+
+      const storedEnterpriseSnapshot = buildStoredEnterprisePayslipSnapshot(payrollEmployee, period, {
+        permanentEmployee: !nonPermanentPayroll,
+      });
+      const migrationPeriod = !isEnterprisePayrollPeriod(period);
+
+      if (migrationPeriod) {
+        if (sagePayslipSnapshotUsable(sageSnapshot, nonPermanentPayroll)) {
+          return buildFromSageSnapshot(sageSnapshot!, 'sage');
+        }
+        if (sagePayslipSnapshotUsable(storedEnterpriseSnapshot, nonPermanentPayroll)) {
+          return buildFromSageSnapshot(storedEnterpriseSnapshot!, 'enterprise-db');
+        }
       }
 
-      if (enterpriseRecord && enterpriseRecord.grossPay > 0) {
+      if (!migrationPeriod && enterpriseRecord && enterpriseRecord.grossPay > 0) {
         const earningsLines = mapEnterpriseEarningLines(enterpriseRecord);
+        const enterpriseEarningsOk = nonPermanentPayroll || permanentStyleSageEarnings(earningsLines);
+        if (enterpriseEarningsOk) {
         const linesGross = roundMoney(earningsLines.reduce((sum, line) => sum + line.amount, 0));
         const grossPay = roundMoney(Math.max(enterpriseRecord.grossPay, linesGross));
         const deductionLines = mapEnterpriseDeductionLines(enterpriseRecord);
@@ -644,24 +702,105 @@ export async function GET(request: Request) {
             approvalStatus: 'Payroll Released',
           },
         };
+        }
       }
 
-      const earnings = calculatePayrollEarnings(employee, { period, includePeriodAdjustments: includeAdjustments });
+      if (!migrationPeriod && sagePayslipSnapshotUsable(sageSnapshot, nonPermanentPayroll)) {
+        return buildFromSageSnapshot(sageSnapshot!, 'sage');
+      }
+      if (!migrationPeriod && sagePayslipSnapshotUsable(storedEnterpriseSnapshot, nonPermanentPayroll)) {
+        return buildFromSageSnapshot(storedEnterpriseSnapshot!, 'enterprise-db');
+      }
+
+      const storedPeriodMatches = payrollEmployee.sagePayslipPeriod === period;
+      const sageEarnings = payrollEmployee.sagePayrollEarnings || [];
+      const useSagePayslipLines = storedPeriodMatches && sageEarnings.length > 0
+        && (nonPermanentPayroll || permanentStyleSageEarnings(sageEarnings));
+      const earnings = calculatePayrollEarnings(payrollEmployee, {
+        period,
+        includePeriodAdjustments: includeAdjustments,
+        useSagePayslipLines,
+      });
       const tax = taxVersion
-        ? calculatePayrollTax(payrollInputFromEmployee(employee, { period, includePeriodAdjustments: includeAdjustments }, earnings), taxVersion)
+        ? calculatePayrollTax(payrollInputFromEmployee(payrollEmployee, { period, includePeriodAdjustments: includeAdjustments }, earnings), taxVersion)
         : null;
-      const pension = !nonPermanentPayroll && pensionVersion ? calculatePension(pensionInputFromEmployee(employee, { period, includePeriodAdjustments: includeAdjustments }), pensionVersion) : null;
-      const paye = roundMoney(tax?.monthlyPaye ?? 0);
-      const pensionEmployee = roundMoney(pension?.employeeContribution ?? 0);
-      const nhf = roundMoney((tax?.statutoryItems.find((item) => item.id === 'nhf')?.amount || 0) / 12);
-      const unionDues = roundMoney((tax?.statutoryItems.find((item) => item.id === 'union-dues')?.amount || 0) / 12);
-      const unionRule = calculatePermanentUnionDues(employee);
+      const pension = !nonPermanentPayroll && pensionVersion ? calculatePension(pensionInputFromEmployee(payrollEmployee, { period, includePeriodAdjustments: includeAdjustments }), pensionVersion) : null;
+      const unionRule = calculatePermanentUnionDues(payrollEmployee);
       const otherStatutory = roundMoney((tax?.statutoryItems.find((item) => item.id === 'other-statutory')?.amount || 0) / 12);
-      const deductions = roundMoney(paye + pensionEmployee + nhf + unionDues + otherStatutory);
-      const employerPension = roundMoney(pension?.employerContribution || 0);
-      const nsitf = roundMoney(earnings.grossPay * 0.01);
-      const itf = roundMoney(earnings.grossPay * 0.01);
-      const totalEmployerContributions = roundMoney(employerPension + nsitf + itf);
+      const sageDeductionLines = storedPeriodMatches ? (payrollEmployee.sagePayrollDeductions?.lines || []) : [];
+      const periodSageDeductionLines = sageSnapshot?.deductionLines || [];
+      const periodSageContributionLines = sageSnapshot?.contributionLines || [];
+      const sagePaye = roundMoney(Number(
+        sageSnapshot?.paye
+        || payrollEmployee.sagePayrollDeductions?.paye
+        || 0,
+      ));
+      const sagePensionEmployee = roundMoney(Number(
+        sageSnapshot?.pensionEmployee
+        || payrollEmployee.sagePayrollDeductions?.pensionEmployee
+        || 0,
+      ));
+      const sageNhf = roundMoney(Number(
+        sageSnapshot?.nhf
+        || payrollEmployee.sagePayrollDeductions?.nhf
+        || 0,
+      ));
+      const sageOtherDeductions = roundMoney(Number(payrollEmployee.sagePayrollDeductions?.other || 0));
+      const sageTotalDeductions = roundMoney(Number(
+        sageSnapshot?.totalDeductions
+        || payrollEmployee.sagePayrollDeductions?.totalDeductions
+        || 0,
+      ));
+      const sagePeriodSnapshotOk = Boolean(sageSnapshot && sageMigrationPayslipAcceptable(sageSnapshot, nonPermanentPayroll));
+      const usePeriodSageDeductions = migrationPeriod && sagePeriodSnapshotOk && periodSageDeductionLines.length > 0;
+      const useStoredSageDeductions = !usePeriodSageDeductions
+        && storedPeriodMatches
+        && sageDeductionLines.length > 0
+        && (nonPermanentPayroll || permanentStyleSageEarnings(sageEarnings));
+      const paye = (usePeriodSageDeductions || useStoredSageDeductions) && sagePaye > 0
+        ? sagePaye
+        : roundMoney(tax?.monthlyPaye ?? 0);
+      const pensionEmployee = (usePeriodSageDeductions || useStoredSageDeductions) && sagePensionEmployee > 0
+        ? sagePensionEmployee
+        : roundMoney(pension?.employeeContribution ?? 0);
+      const nhf = (usePeriodSageDeductions || useStoredSageDeductions) && sageNhf > 0
+        ? sageNhf
+        : roundMoney((tax?.statutoryItems.find((item) => item.id === 'nhf')?.amount || 0) / 12);
+      const unionDues = (usePeriodSageDeductions || useStoredSageDeductions) ? 0 : roundMoney((tax?.statutoryItems.find((item) => item.id === 'union-dues')?.amount || 0) / 12);
+      const otherStatutoryDeduction = useStoredSageDeductions ? sageOtherDeductions : otherStatutory;
+      const deductions = (usePeriodSageDeductions || useStoredSageDeductions) && sageTotalDeductions > 0
+        ? sageTotalDeductions
+        : roundMoney(paye + pensionEmployee + nhf + unionDues + otherStatutoryDeduction);
+      const employerPension = roundMoney(
+        periodSageContributionLines.find((line) => /PENSION/i.test(String(line.code || '')))?.amount
+        || sageSnapshot?.pensionEmployer
+        || pension?.employerContribution
+        || 0,
+      );
+      const nsitf = roundMoney(
+        periodSageContributionLines.find((line) => /NSITF/i.test(String(line.code || '')))?.amount
+        || earnings.grossPay * 0.01,
+      );
+      const itf = roundMoney(
+        periodSageContributionLines.find((line) => /ITF/i.test(String(line.code || '')))?.amount
+        || earnings.grossPay * 0.01,
+      );
+      const storedContributionLines = (usePeriodSageDeductions ? periodSageContributionLines : (payrollEmployee.sagePayrollContributions?.lines || []))
+        .map((line) => ({
+          code: compact(line.code),
+          label: compact(line.name || line.code),
+          units: Number(line.amount || 0) > 0 ? 1 : 0,
+          amount: roundMoney(Number(line.amount || 0)),
+        }))
+        .filter((line) => Math.abs(line.amount) > 0.004);
+      const employerContributionLines = storedContributionLines.length
+        ? storedContributionLines
+        : [
+          { code: 'PENSION_EMPLOYER', label: 'Pension Employer Contribution', units: employerPension > 0 ? 1 : 0, amount: employerPension },
+          { code: 'NSITF', label: 'NSITF - Nigeria Social Insurance Trust Fund', units: nsitf > 0 ? 1 : 0, amount: nsitf },
+          { code: 'ITF', label: 'ITF Levy', units: itf > 0 ? 1 : 0, amount: itf },
+        ].filter((line) => Math.abs(Number(line.amount || 0)) > 0.004);
+      const totalEmployerContributions = roundMoney(employerContributionLines.reduce((sum, line) => sum + line.amount, 0));
       const monthNumber = Number(period.slice(5, 7)) || 1;
       return {
         period,
@@ -671,34 +810,56 @@ export async function GET(request: Request) {
         payDate: monthEndDate(period),
         payrollNumber: `DLE-${period.replace('-', '')}-${employee.employeeId}`,
         payeReference: payslipIdentity?.taxIdentificationNumber || employeeAny.taxIdentificationNumber || employeeAny.taxNo || 'Not configured',
-        grossPay: earnings.grossPay,
+        grossPay: nonPermanentPayroll
+          ? earnings.grossPay
+          : roundMoney((sanitizePermanentPayslipEarnings(earnings.paidEarningLines)).reduce((sum, line) => sum + line.amount, 0) || earnings.grossPay),
         allowances: earnings.allowances,
         pensionEmployee,
         deductions,
-        netPay: roundMoney(Math.max(0, earnings.grossPay - deductions)),
+        netPay: roundMoney(
+          usePeriodSageDeductions && Number(sageSnapshot?.netPay || 0) > 0
+            ? Number(sageSnapshot?.netPay || 0)
+            : useStoredSageDeductions && sageTotalDeductions > 0 && Number(payrollEmployee.sagePayrollDeductions?.netPay || 0) > 0
+              ? Number(payrollEmployee.sagePayrollDeductions?.netPay || 0)
+              : Math.max(0, earnings.grossPay - deductions),
+        ),
         status: 'Released',
-        dataSource: 'calculated',
+        dataSource: usePeriodSageDeductions ? 'sage' : 'calculated',
         payslipType,
-        earnings: earnings.paidEarningLines.map((line) => ({ code: line.code, label: line.name, units: line.amount > 0 ? 1 : 0, amount: line.amount, taxable: line.taxable })),
-        deductionLines: [
+        earnings: (nonPermanentPayroll
+          ? earnings.paidEarningLines
+          : sanitizePermanentPayslipEarnings(earnings.paidEarningLines)
+        ).map((line) => ({ code: line.code, label: line.name, units: line.amount > 0 ? 1 : 0, amount: line.amount, taxable: line.taxable })),
+        deductionLines: usePeriodSageDeductions && sageSnapshot
+          ? mapSageDeductionLines(sageSnapshot)
+          : useStoredSageDeductions
+          ? sageDeductionLines.map((line) => ({
+              code: compact(line.code),
+              label: compact(line.name || line.code),
+              units: Number(line.amount || 0) > 0 ? 1 : 0,
+              amount: roundMoney(Number(line.amount || 0)),
+            })).filter((line) => Math.abs(line.amount) > 0.004)
+          : [
           { code: 'PAYE', label: 'PAYE Tax', units: paye > 0 ? 1 : 0, amount: paye },
           { code: 'PENSION_EMPLOYEE', label: 'Pension Employee Contribution', units: pensionEmployee > 0 ? 1 : 0, amount: pensionEmployee },
           { code: 'NHF', label: 'NHF', units: nhf > 0 ? 1 : 0, amount: nhf },
           { code: unionRule.code, label: unionRule.name, units: unionDues > 0 ? 1 : 0, amount: unionDues },
-          { code: 'OTHER_DEDUCTIONS', label: 'Other Deductions', units: otherStatutory > 0 ? 1 : 0, amount: otherStatutory },
+          { code: 'OTHER_DEDUCTIONS', label: 'Other Deductions', units: otherStatutoryDeduction > 0 ? 1 : 0, amount: otherStatutoryDeduction },
         ].filter((line) => line.amount > 0),
-        employerContributionLines: [
-          { code: 'PENSION_EMPLOYER', label: 'Pension Employer Contribution', units: employerPension > 0 ? 1 : 0, amount: employerPension },
-          { code: 'NSITF', label: 'NSITF - Nigeria Social Insurance Trust Fund', units: nsitf > 0 ? 1 : 0, amount: nsitf },
-          { code: 'ITF', label: 'ITF Levy', units: itf > 0 ? 1 : 0, amount: itf },
-          { code: 'GROUP_LIFE', label: 'Group Life Insurance', units: 0, amount: 0 },
-          { code: 'OTHER_EMPLOYER', label: 'Other Employer Contributions', units: 0, amount: 0 },
-        ].filter((line) => Math.abs(Number(line.amount || 0)) > 0.004),
+        employerContributionLines,
         totalEmployerContributions,
         employeeInfo: sharedEmployeeInfo,
         statutoryInfo: sharedStatutoryInfo,
         leaveInfo: sharedLeaveInfo,
-        ytd: {
+        ytd: usePeriodSageDeductions && sageSnapshot
+          ? {
+            grossEarnings: roundMoney(sageSnapshot.ytdGrossEarnings),
+            taxPaid: roundMoney(sageSnapshot.ytdTaxPaid),
+            pensionContribution: roundMoney(sageSnapshot.ytdPensionContribution),
+            deductions: roundMoney(sageSnapshot.ytdDeductions),
+            netEarnings: roundMoney(sageSnapshot.ytdNetEarnings),
+          }
+          : {
           grossEarnings: roundMoney(earnings.grossPay * monthNumber),
           taxPaid: roundMoney(paye * monthNumber),
           pensionContribution: roundMoney(pensionEmployee * monthNumber),
@@ -716,11 +877,25 @@ export async function GET(request: Request) {
     const leaveYear = new Date().getFullYear();
     const annualEntitlementEstimate = annualLeaveEntitlementForEmployee(employee);
     leaveContext = { annualEntitlement: annualEntitlementEstimate, leaveUsed: 0, leaveBalance: annualEntitlementEstimate, carryForward: 0 };
-    releasedPayrollPeriods = await listEmployeeAccessiblePayrollPeriods();
-    const employeeMatchKeys = [employee.employeeId, employee.employeeCode, employee.sourceEmployeeId];
+    releasedPayrollPeriods = await listEssReleasedPayrollPeriods();
+    await Promise.all(
+      releasedPayrollPeriods
+        .filter((period) => !isEnterprisePayrollPeriod(period))
+        .map((period) => ensureSagePeriodEarningAdjustments(period).catch(() => undefined)),
+    );
+    const essDisplayPeriod = latestEssReleasedPayrollPeriod(releasedPayrollPeriods);
+    const payrollEmployeeForLookup = mergePayrollIdentity(employee, payslipIdentity);
+    const employeeMatchKeys = [
+      ...buildEssEmployeeLookupKeys(employee, payslipIdentity),
+      employee.sourceEmployeeId,
+      payslipIdentity?.employeeCode,
+      payslipIdentity?.sourceEmployeeCode,
+    ].filter(Boolean);
     [enterpriseRecordsByPeriod, sagePayslipsByPeriod] = await Promise.all([
       readEnterpriseEmployeePayslipRecordsByPeriod(employeeMatchKeys, releasedPayrollPeriods).catch(() => new Map()),
-      readAuthoritativeSagePayslipSnapshotsByPeriod(employeeMatchKeys, releasedPayrollPeriods).catch(() => new Map()),
+      readAuthoritativeSagePayslipSnapshotsByPeriod(employeeMatchKeys, releasedPayrollPeriods, {
+        nonPermanentPayroll: isNonPermanentPayrollEmployee(payrollEmployeeForLookup),
+      }).catch(() => new Map()),
     ]);
     const payrollHistory = releasedPayrollPeriods.map((period) => payrollForPeriod(
       period,
@@ -729,7 +904,7 @@ export async function GET(request: Request) {
       sagePayslipsByPeriod.get(period),
     ));
     const latestReleasedPayroll = payrollHistory[0] || null;
-    const currentPeriodReleased = releasedPayrollPeriods.includes(ESS_CURRENT_PAYROLL_PERIOD);
+    const currentPeriodReleased = Boolean(essDisplayPeriod);
     const essContext = await buildEssDashboardContext({
       employee,
       employees: employeeSource.employees,
@@ -872,7 +1047,7 @@ export async function GET(request: Request) {
       },
       dashboardAnalytics: essContext.dashboardAnalytics,
       announcements: [
-        ...(currentPeriodReleased ? [{ id: 'ann-001', title: `${periodTitle(ESS_CURRENT_PAYROLL_PERIOD)} payslip is now available`, channel: 'Payroll', publishedAt: dateAdd(-1), priority: 'High' }] : []),
+        ...(currentPeriodReleased && essDisplayPeriod ? [{ id: 'ann-001', title: `${periodTitle(essDisplayPeriod)} payslip is now available`, channel: 'Payroll', publishedAt: dateAdd(-1), priority: 'High' }] : []),
       ],
       notifications: [
         ...essContext.notifications,
@@ -949,12 +1124,12 @@ export async function GET(request: Request) {
       },
       payrollHistory,
       payrollAccess: {
-        currentPeriod: ESS_CURRENT_PAYROLL_PERIOD,
+        currentPeriod: essDisplayPeriod || '',
         currentPeriodReleased,
         releasedPeriodCount: payrollHistory.length,
-        message: currentPeriodReleased
-          ? ''
-          : `Your ${periodTitle(ESS_CURRENT_PAYROLL_PERIOD)} payslip will appear here after payroll is approved and released by HR/Payroll.`,
+        message: currentPeriodReleased && essDisplayPeriod
+          ? `Your ${periodTitle(essDisplayPeriod)} payslip is available below.`
+          : 'Your payslip will appear here after payroll is approved and released by HR/Payroll.',
       },
       performance: {
         goals: [
@@ -1065,7 +1240,7 @@ export async function GET(request: Request) {
         { label: 'Mobile access share', value: 43, unit: '%' },
       ],
     };
-    essResponseCache.set(cacheKey, { expiresAt: Date.now() + ESS_RESPONSE_CACHE_MS, payload });
+    writeEssPortalResponseCache(cacheKey, payload);
     return ok(payload);
   } catch (error) {
     console.error('Workforce portal API failed', error);
@@ -1120,7 +1295,7 @@ export async function POST(request: Request) {
           : item
       );
       await writeRequests(nextRequests);
-      essResponseCache.clear();
+      invalidateEssPortalCache();
       let responseRequest = nextRequests.find((item) => item.id === requestId);
       let allowanceResult: Awaited<ReturnType<typeof postLeaveAllowanceOnAnnualLeaveApproval>> | undefined;
       if (!approved) {
@@ -1185,7 +1360,7 @@ export async function POST(request: Request) {
             };
             const allowanceUpdated = nextRequests.map((item) => (item.id === requestId ? responseRequest! : item));
             await writeRequests(allowanceUpdated);
-            essResponseCache.clear();
+            invalidateEssPortalCache();
           }
         }
       }
@@ -1261,7 +1436,7 @@ export async function POST(request: Request) {
 
     const requests = await readRequests();
     await writeRequests([requestItem, ...requests]);
-    essResponseCache.clear();
+    invalidateEssPortalCache();
     if (isLeaveRequest) {
       await notifyLeaveWorkflow(session, {
         requestId: requestItem.id,

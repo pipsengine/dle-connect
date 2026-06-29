@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
+import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import { invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
+import { calculatePayrollForPeriod } from '@/lib/payroll-calculation-service';
 import { writePayrollEmployeeOption } from '@/lib/payroll-employee-options-store';
 import { getActivePayrollPeriod } from '@/lib/payroll-period-store';
 import { buildManagementPayload } from '@/lib/payroll-payload-service';
-import { appendPayrollAudit, getPayrollRunForPeriod, listPayrollAudit, savePayrollRun, type UnifiedPayrollRun } from '@/lib/payroll-run-store';
+import { appendPayrollAudit, capturePayrollSnapshot, getPayrollRunForPeriod, listPayrollAudit, savePayrollRun, type UnifiedPayrollRun } from '@/lib/payroll-run-store';
 import { managementPermissions, payrollSessionContext } from '@/lib/payroll-session';
 import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
 import { buildExcelHtml, excelMimeType } from '@/lib/excel-export';
@@ -228,6 +230,9 @@ const applySuperAdminEndToEndApproval = async (
   run.closedAt = run.closedAt || stamp;
   run.lockedAt = run.lockedAt || stamp;
   await setStatus('close-period', 'Closed', 'Payroll period closed through Global Super Administrator end-to-end approval.');
+  const calculation = await calculatePayrollForPeriod(run.period);
+  await capturePayrollSnapshot(run.id, 'approve-entire-workflow', actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
+  invalidateHrisEmployeeCaches();
   return savePayrollRun(run);
 };
 

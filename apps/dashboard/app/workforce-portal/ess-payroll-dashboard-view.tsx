@@ -134,8 +134,9 @@ export function EssPayrollDashboardView({
   const selected = periods.find((item) => item.period === selectedPeriod) || periods[0];
 
   useEffect(() => {
-    if (!selectedPeriod && periods[0]?.period) setSelectedPeriod(periods[0].period);
-  }, [periods, selectedPeriod]);
+    const preferred = payload?.payrollAccess?.currentPeriod || periods[0]?.period || '';
+    if (!selectedPeriod && preferred) setSelectedPeriod(preferred);
+  }, [periods, payload?.payrollAccess?.currentPeriod, selectedPeriod]);
 
   const model = useMemo(
     () => (selected ? buildPayslipModel(selected, employee, payload?.generatedAt) : null),

@@ -9,6 +9,10 @@ import { activeStatutoryFundsVersion, calculateStatutoryFunds, readStatutoryFund
 import { activeLoansVersion, calculateLoanRecovery, loanInputsFromApplications, readPayrollLoanApplications, readPayrollLoansConfig } from '@/lib/payroll-loans-engine';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { enterprisePayrollSourceLabel, isEnterprisePayrollPeriod } from '@/lib/payroll-enterprise-source';
+import { calculatePayrollForPeriod } from '@/lib/payroll-calculation-service';
+import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
+import { capturePayrollSnapshot, ensurePayrollRun, getPayrollRunForPeriod, savePayrollRun } from '@/lib/payroll-run-store';
+import { syncSagePeriodEarningAdjustments } from '@/lib/payroll-period-earning-adjustments-store';
 import { syncLeaveAllowanceEventsForPayroll } from '@/lib/payroll-leave-allowance-store';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
 import { calculateTimesheetPeriod, readTimesheetPayrollUpdates, readTimesheetPeriods } from '@/lib/timesheet-entry-store';
@@ -620,6 +624,29 @@ export async function POST(request: Request) {
       ],
     };
     await writeBatches([batch, ...batches.filter((item) => item.period !== period)].sort((a, b) => b.generatedAt.localeCompare(a.generatedAt)));
+
+    if (action === 'release') {
+      if (!isEnterprisePayrollPeriod(period)) {
+        await syncSagePeriodEarningAdjustments(period).catch(() => undefined);
+      }
+      const calculation = await calculatePayrollForPeriod(period);
+      const run = (await getPayrollRunForPeriod(period)) || (await ensurePayrollRun(period, payload.periodLabel, role));
+      const stamp = now;
+      run.status = status === 'Partial' ? 'Released' : 'Released';
+      run.releasedAt = run.releasedAt || stamp;
+      run.releasedBy = role;
+      run.payslipsGeneratedAt = stamp;
+      run.payslipsGeneratedBy = role;
+      run.employeeCount = payload.summary.employees;
+      run.grossPay = Number(payload.summary.grossPay || calculation.summary.grossPay || 0);
+      run.deductions = Number(payload.summary.deductions || calculation.summary.deductions || 0);
+      run.netPay = Number(payload.summary.netPay || calculation.summary.netPay || 0);
+      run.updatedBy = role;
+      await savePayrollRun(run);
+      await capturePayrollSnapshot(run.id, 'payslip-generation-release', role, calculation.summary as unknown as Record<string, unknown>, calculation.records);
+      invalidateHrisEmployeeCaches();
+    }
+
     return ok({ batch });
   } catch (error) {
     return err(500, error instanceof Error ? error.message : 'Unable to update payslip batch.');

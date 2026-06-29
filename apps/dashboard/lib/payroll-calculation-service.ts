@@ -1,6 +1,8 @@
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { calculateContractDayRateEarnings, calculatePayrollEarnings, resolvePayrollEarningProfile } from '@/lib/payroll-earnings-engine';
+import { isNonPermanentPayrollEmployee, permanentStyleSageEarnings } from '@/lib/payroll-employee-classification';
+import { syncSagePeriodEarningAdjustments } from '@/lib/payroll-period-earning-adjustments-store';
 import { contractEmployeeCode, isDailyRatePayrollEmployee, isEmployeeExcludedFromPayrollRun, type PayrollRunExclusionEmployee } from '@/lib/payroll-employee-classification';
 import { enterprisePayrollSourceLabel, isEnterprisePayrollPeriod, shouldComparePayrollWithSage } from '@/lib/payroll-enterprise-source';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
@@ -250,6 +252,9 @@ export const calculatePayrollForPeriod = async (requestedPeriod: string): Promis
   const toleranceMode = payrollToleranceActive(requestedPeriod);
   const enterpriseSourceActive = isEnterprisePayrollPeriod(requestedPeriod);
   const compareWithSage = shouldComparePayrollWithSage(requestedPeriod);
+  if (compareWithSage) {
+    await syncSagePeriodEarningAdjustments(requestedPeriod).catch(() => undefined);
+  }
   const [
     employeeSource,
     taxConfig,
@@ -299,13 +304,23 @@ export const calculatePayrollForPeriod = async (requestedPeriod: string): Promis
     return map;
   }, new Map<string, ReturnType<typeof loanInputsFromApplications>>());
 
-  const calculationOptions = shouldComparePayrollWithSage(requestedPeriod)
-    ? { period: requestedPeriod, includePeriodAdjustments: true, useSagePayslipLines: true, ignoreSagePayslipLines: false }
-    : { period: requestedPeriod, includePeriodAdjustments: true, ignoreSagePayslipLines: true };
+  const calculationOptionsForEmployee = (employee: DleEmployeeDirectoryRow) => {
+    const base = { period: requestedPeriod, includePeriodAdjustments: true as const };
+    if (!compareWithSage) return { ...base, ignoreSagePayslipLines: true as const };
+    if (!isNonPermanentPayrollEmployee(employee)) {
+      return { ...base, ignoreSagePayslipLines: true as const };
+    }
+    const sageLines = employee.sagePayrollEarnings || [];
+    const useSagePayslipLines = permanentStyleSageEarnings(sageLines) || sageLines.length === 0;
+    return useSagePayslipLines
+      ? { ...base, useSagePayslipLines: true as const, ignoreSagePayslipLines: false as const }
+      : { ...base, ignoreSagePayslipLines: true as const };
+  };
 
   const payrollEmployees = employeeSource.employees.filter((employee) => !isEmployeeExcludedFromPayrollRun(employee as PayrollRunExclusionEmployee));
 
   const records: PayrollCalculationRecord[] = payrollEmployees.map((employee, index) => {
+    const calculationOptions = calculationOptionsForEmployee(employee);
     const calculationEmployee = shouldComparePayrollWithSage(requestedPeriod) ? employee : inputOnlyEmployee(employee);
     const baseAmounts = calculatePayrollEarnings(calculationEmployee, calculationOptions);
     const amounts = applyDailyRateFromTimesheets(employee, baseAmounts, timesheetHours);

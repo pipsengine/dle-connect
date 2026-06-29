@@ -5,7 +5,15 @@ import { isLeaveAllowancePaymentCode } from '@/lib/leave-allowance-policy';
 import { normalizePayrollPeriod } from '@/lib/payroll-leave-allowance-store';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
 import { isEnterprisePayrollPeriod } from '@/lib/payroll-enterprise-source';
-import { readActiveSagePayrollEmployeesWithLatestPayslipLines } from '@/lib/sage-people-payroll-store';
+import { invalidateEssPortalCache } from '@/lib/ess-portal-cache';
+import { readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { isContractStyleEarningLine, isPermanentPayrollEmployee, permanentStyleSageEarnings } from '@/lib/payroll-employee-classification';
+import {
+  expandSagePayslipMatchKeys,
+  normalizePayrollMatchKey,
+  readActiveSagePayrollEmployees,
+  readSageEmployeePayslipSnapshotsForPeriods,
+} from '@/lib/sage-people-payroll-store';
 
 export type PayrollPeriodEarningAdjustment = {
   period: string;
@@ -58,8 +66,7 @@ export const isSupplementalSageEarningCode = (code?: string | null) => {
   return true;
 };
 
-const adjustmentKey = (row: Pick<PayrollPeriodEarningAdjustment, 'period' | 'employeeCode' | 'employeeId' | 'code'>) =>
-  `${normalizePayrollPeriod(row.period)}|${compact(row.employeeCode || row.employeeId).toUpperCase()}|${compact(row.code).toUpperCase()}`;
+const SAGE_PAYSLIP_EARNING_SYNC_SOURCE = 'Sage payslip period earning sync';
 
 export const readPayrollPeriodEarningAdjustments = async (): Promise<PayrollPeriodEarningAdjustment[]> => {
   try {
@@ -69,7 +76,6 @@ export const readPayrollPeriodEarningAdjustments = async (): Promise<PayrollPeri
     return [];
   }
 };
-
 export const writePayrollPeriodEarningAdjustments = async (rows: PayrollPeriodEarningAdjustment[]) => {
   await mkdir(path.dirname(ADJUSTMENTS_PATH), { recursive: true });
   const sorted = [...rows].sort((left, right) =>
@@ -77,61 +83,138 @@ export const writePayrollPeriodEarningAdjustments = async (rows: PayrollPeriodEa
   await writeFile(ADJUSTMENTS_PATH, JSON.stringify(sorted, null, 2), 'utf8');
 };
 
-export const syncSageSupplementalEarningAdjustments = async (period?: string) => {
+const adjustmentKey = (row: Pick<PayrollPeriodEarningAdjustment, 'period' | 'employeeCode' | 'employeeId' | 'code'>) =>
+  `${normalizePayrollPeriod(row.period)}|${compact(row.employeeCode || row.employeeId).toUpperCase()}|${compact(row.code).toUpperCase()}`;
+
+const employeeAdjustmentIdentity = (
+  employeeCode: string,
+  employee?: { employeeCode?: string; employeeId?: string; fullName?: string; sourceEmployeeId?: string | null },
+) => {
+  const code = compact(employee?.employeeCode || employeeCode || employee?.employeeId);
+  const name = compact(employee?.fullName);
+  if (code && name) return `${code} - ${name}`;
+  return code || name;
+};
+
+/** Sync every Sage payslip earning line for a payroll period into period adjustments (authoritative for ESS + payroll calc). */
+export const syncSagePeriodEarningAdjustments = async (period?: string) => {
   const normalizedPeriod = normalizePayrollPeriod(period || activePayrollPeriod());
-  if (!normalizedPeriod || isEnterprisePayrollPeriod(normalizedPeriod)) return [];
+  if (!normalizedPeriod || isEnterprisePayrollPeriod(normalizedPeriod)) {
+    return { period: normalizedPeriod, synced: 0, changed: false, employees: 0 };
+  }
 
-  const [current, sageEmployees] = await Promise.all([
-    readPayrollPeriodEarningAdjustments(),
-    readActiveSagePayrollEmployeesWithLatestPayslipLines(),
+  const [{ employees }, sageDirectory] = await Promise.all([
+    readPayrollEmployees(),
+    readActiveSagePayrollEmployees().catch(() => []),
   ]);
+  const sageCodeById = new Map(
+    sageDirectory.map((row) => [Number(row.employeeId), compact(row.employeeCodeDisplay || row.employeeCode || row.directoryEmployeeCode)]),
+  );
+  const employeeByKey = new Map<string, (typeof employees)[number]>();
+  for (const employee of employees) {
+    [employee.employeeCode, employee.employeeId, employee.sourceEmployeeId]
+      .map((value) => normalizePayrollMatchKey(value))
+      .filter(Boolean)
+      .forEach((key) => employeeByKey.set(key, employee));
+  }
 
+  const matchKeys = employees.flatMap((employee) => [employee.employeeCode, employee.employeeId, employee.sourceEmployeeId]);
+  const snapshots = await readSageEmployeePayslipSnapshotsForPeriods(
+    expandSagePayslipMatchKeys(matchKeys),
+    [normalizedPeriod],
+  ).catch(() => []);
+
+  const current = await readPayrollPeriodEarningAdjustments();
   const byKey = new Map(current.map((row) => [adjustmentKey(row), row]));
+  let synced = 0;
   let changed = false;
 
-  for (const sageEmployee of sageEmployees) {
-    let lines: Array<{ code?: string; name?: string; amount?: number; taxableAmount?: number | null }> = [];
-    try {
-      lines = JSON.parse(String(sageEmployee.latestEarningLinesJson || '[]'));
-    } catch {
-      lines = [];
-    }
-    const employeeCode = compact(sageEmployee.employeeCodeDisplay || sageEmployee.employeeCode || sageEmployee.directoryEmployeeCode);
+  for (const snapshot of snapshots) {
+    const directoryCode = sageCodeById.get(Number(snapshot.employeeId)) || '';
+    const employee = employeeByKey.get(normalizePayrollMatchKey(directoryCode))
+      || employeeByKey.get(normalizePayrollMatchKey(snapshot.employeeId))
+      || null;
+    const employeeCode = compact(employee?.employeeCode || directoryCode);
     if (!employeeCode) continue;
+    const identity = employeeAdjustmentIdentity(employeeCode, employee || undefined);
+    const hasStructural = permanentStyleSageEarnings(snapshot.earningLines);
+    const permanentEmployee = employee ? isPermanentPayrollEmployee(employee) : hasStructural;
 
-    for (const line of lines) {
+    for (const line of snapshot.earningLines) {
       const code = compact(line.code);
       const amount = roundMoney(Number(line.amount || 0));
-      if (!code || amount === 0 || !isSupplementalSageEarningCode(code)) continue;
-
+      if (!code || Math.abs(amount) < 0.004) continue;
+      if (permanentEmployee && hasStructural && isContractStyleEarningLine({ code, name: line.name })) continue;
       const taxableAmount = line.taxableAmount === null || line.taxableAmount === undefined
         ? amount
         : roundMoney(Number(line.taxableAmount || 0));
       const next: PayrollPeriodEarningAdjustment = {
         period: normalizedPeriod,
-        employeeId: employeeCode,
-        employeeCode,
+        employeeId: identity,
+        employeeCode: identity,
         code,
         name: compact(line.name || code),
         amount,
-        taxable: taxableAmount > 0,
-        source: 'Sage payslip supplemental earning sync',
+        taxable: Math.abs(taxableAmount) > 0.004,
+        source: SAGE_PAYSLIP_EARNING_SYNC_SOURCE,
       };
       const key = adjustmentKey(next);
       const existing = byKey.get(key);
-      if (existing && existing.amount === next.amount && existing.taxable === next.taxable) continue;
+      if (existing && existing.amount === next.amount && existing.taxable === next.taxable && existing.name === next.name) continue;
       byKey.set(key, next);
       changed = true;
+      synced += 1;
+    }
+
+    if (permanentEmployee && hasStructural) {
+      for (const [key, row] of [...byKey.entries()]) {
+        if (normalizePayrollPeriod(row.period) !== normalizedPeriod) continue;
+        if (compact(row.employeeCode || row.employeeId) !== identity) continue;
+        if (!isContractStyleEarningLine({ code: row.code, name: row.name })) continue;
+        byKey.delete(key);
+        changed = true;
+      }
     }
   }
 
   const merged = Array.from(byKey.values());
-  if (changed) await writePayrollPeriodEarningAdjustments(merged);
+  if (changed) {
+    await writePayrollPeriodEarningAdjustments(merged);
+    invalidateEssPortalCache();
+  }
+  return { period: normalizedPeriod, synced, changed, employees: snapshots.length };
+};
+
+const periodSyncInFlight = new Map<string, Promise<{ period: string; synced: number; changed: boolean; employees: number }>>();
+
+/** Idempotent: loads Sage payslip earning lines for a period once per server session wave. */
+export const ensureSagePeriodEarningAdjustments = async (period?: string) => {
+  const normalizedPeriod = normalizePayrollPeriod(period || activePayrollPeriod());
+  if (!normalizedPeriod || isEnterprisePayrollPeriod(normalizedPeriod)) {
+    return { period: normalizedPeriod, synced: 0, changed: false, employees: 0 };
+  }
+  const existing = periodSyncInFlight.get(normalizedPeriod);
+  if (existing) return existing;
+  const task = syncSagePeriodEarningAdjustments(normalizedPeriod).finally(() => {
+    periodSyncInFlight.delete(normalizedPeriod);
+  });
+  periodSyncInFlight.set(normalizedPeriod, task);
+  return task;
+};
+
+export const syncSageSupplementalEarningAdjustments = async (period?: string) => {
+  const normalizedPeriod = normalizePayrollPeriod(period || activePayrollPeriod());
+  if (!normalizedPeriod || isEnterprisePayrollPeriod(normalizedPeriod)) return [];
+  const result = await syncSagePeriodEarningAdjustments(normalizedPeriod);
+  if (!result.changed) {
+    const [current] = await Promise.all([readPayrollPeriodEarningAdjustments()]);
+    return current.filter((row) => normalizePayrollPeriod(row.period) === normalizedPeriod && isSupplementalSageEarningCode(row.code));
+  }
+  const merged = await readPayrollPeriodEarningAdjustments();
   return merged.filter((row) => normalizePayrollPeriod(row.period) === normalizedPeriod && isSupplementalSageEarningCode(row.code));
 };
 
 export const adjustmentsPathForDiagnostics = () => ADJUSTMENTS_PATH;
-
 export const adjustmentsFileMtime = () => {
   try {
     if (!existsSync(ADJUSTMENTS_PATH)) return 0;

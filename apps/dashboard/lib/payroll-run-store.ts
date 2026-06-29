@@ -2,6 +2,7 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
+import { invalidateEssPortalCache } from '@/lib/ess-portal-cache';
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
 import { ensurePayrollSqlSchema, payrollJsonMirrorEnabled, payrollSqlRequired, toIso } from '@/lib/payroll-sql-schema';
 
@@ -513,6 +514,7 @@ export const capturePayrollSnapshot = async (runId: string, action: string, acto
     records,
   };
   await persistSnapshotToSql(runId, snapshot);
+  invalidateEssPortalCache();
 
   const run = await getPayrollRun(runId);
   if (run) {

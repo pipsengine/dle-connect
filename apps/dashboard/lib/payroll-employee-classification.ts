@@ -38,6 +38,45 @@ export const isNonPermanentPayrollEmployee = (employee: DleEmployeeDirectoryRow)
 
 export const isPermanentPayrollEmployee = (employee: DleEmployeeDirectoryRow) => !isNonPermanentPayrollEmployee(employee);
 
+export const isContractStyleEarningLine = (line: { code?: string; name?: string }) => {
+  const code = String(line.code || '').trim().toUpperCase();
+  const name = String(line.name || '').trim().toUpperCase();
+  return /^(JCWEEKDAY|JCWEEKDAY_NT|WEEKDAYOVT|PUBHOL|SATEARN|SUNDAYEARN|PER_MEAL|MEAL)/.test(code)
+    || /\b(WEEKDAY EARNING|MEAL ALLOWANCE|PUBLIC HOLIDAY)\b/.test(name);
+};
+
+/** Permanent-staff payslip lines use structural MGT/SNR/JNR codes — not contract day-rate JCWEEKDAY rows. */
+export const permanentStyleSageEarnings = (lines: Array<{ code?: string; name?: string }>) =>
+  lines.some((line) => /^(MGT|SNR|JNR|SNM|MGT1COLA|MONTHLY|BASIC|PER_)/i.test(String(line.code || line.name || '')));
+
+/** Contract / day-rate payslip lines that must never be shown for permanent staff. */
+export const contractStyleSageEarnings = (lines: Array<{ code?: string; name?: string }>) => {
+  if (!lines?.length) return false;
+  return lines.some((line) => isContractStyleEarningLine(line)) && !permanentStyleSageEarnings(lines);
+};
+
+/** Drop contract day-rate lines from permanent payslips (e.g. when MGT1COLA lines are also present). */
+export const sanitizePermanentPayslipEarnings = <T extends { code?: string; name?: string; amount?: number }>(lines: T[]) => {
+  if (!lines.length) return lines;
+  if (!permanentStyleSageEarnings(lines)) return lines;
+  return lines.filter((line) => !isContractStyleEarningLine(line));
+};
+
+export const sagePayslipAcceptableForEmployee = (
+  lines: Array<{ code?: string; name?: string }>,
+  nonPermanentPayroll: boolean,
+) => {
+  const positive = (lines || []).filter((line) => String(line.code || line.name || '').trim());
+  if (!positive.length) return false;
+  if (nonPermanentPayroll) return true;
+  if (!permanentStyleSageEarnings(positive)) return false;
+  if (positive.some((line) => isContractStyleEarningLine(line))) return false;
+  return true;
+};
+
+export const isSagePayslipEarningSyncSource = (value?: string | null) =>
+  /sage payslip (?:supplemental |period )?earning sync/i.test(String(value || '').trim());
+
 const explicitDailyRatePayroll = (text: string) =>
   /\b(daily rate|day rate|daily-rate|day-rate)\b/.test(text)
   || (/\bdaily\b/.test(text) && !/\bpermanent\b/.test(text));

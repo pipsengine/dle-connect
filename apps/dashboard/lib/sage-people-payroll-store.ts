@@ -933,10 +933,52 @@ export type SageEmployeePayslipSnapshot = {
 };
 
 const sanitizePayrollPeriod = (period: string) => (/^\d{4}-\d{2}$/.test(String(period || '').trim()) ? String(period).trim() : '');
-const sanitizePayrollMatchKey = (value: string) => {
-  const key = normalizePayrollMatchKey(value);
+const sanitizeSageCodeKey = (value: string) => {
+  const key = String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   return /^[A-Z0-9]{1,40}$/.test(key) ? key : '';
 };
+
+export const expandSagePayslipMatchKeys = (matchKeys: Array<string | number | null | undefined>) => {
+  const keys = new Set<string>();
+  for (const value of matchKeys) {
+    const raw = String(value ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!raw) continue;
+    keys.add(raw);
+    if (/^P\d+$/.test(raw)) {
+      const digits = raw.slice(1);
+      keys.add(digits.padStart(4, '0'));
+      keys.add(`P${digits.padStart(4, '0')}`);
+    } else if (/^\d+$/.test(raw)) {
+      keys.add(raw.padStart(4, '0'));
+      keys.add(`P${raw.padStart(4, '0')}`);
+    }
+  }
+  const all = [...keys];
+  return all.filter((key) => {
+    if (!/^\d{1,4}$/.test(key)) return true;
+    const padded = key.padStart(4, '0');
+    if (all.includes(padded) || all.includes(`P${padded}`)) return false;
+    return true;
+  });
+};
+
+/** Sage EmployeeID keys — only explicit source IDs, never stripped P-code digits (P0146 must not become 146). */
+export const sagePayrollSourceEmployeeIdKeys = (matchKeys: Array<string | number | null | undefined>) => {
+  const ids = new Set<string>();
+  for (const value of matchKeys) {
+    const raw = String(value ?? '').trim();
+    if (!/^\d{2,9}$/.test(raw)) continue;
+    const digits = raw.replace(/^0+/, '') || raw;
+    if (/^\d{2,9}$/.test(digits)) ids.add(digits);
+    if (raw !== digits) ids.add(raw);
+  }
+  return [...ids];
+};
+
+export const partitionSagePayslipLookupKeys = (matchKeys: Array<string | number | null | undefined>) => ({
+  codeKeys: expandSagePayslipMatchKeys(matchKeys),
+  sageEmployeeIds: sagePayrollSourceEmployeeIdKeys(matchKeys),
+});
 
 const periodRangeSql = (period: string) => {
   const [year, month] = period.split('-').map(Number);
@@ -945,18 +987,26 @@ const periodRangeSql = (period: string) => {
   return `SELECT '${period}' AS period_code, CAST('${start}' AS date) AS period_start, CAST('${end}' AS date) AS period_end`;
 };
 
-const employeePeriodPayslipsQuery = (periods: string[], matchKeys: string[]) => {
+const employeePeriodPayslipsQuery = (periods: string[], codeKeys: string[], sageEmployeeIds: string[]) => {
   const periodRanges = periods.map(periodRangeSql).join(' UNION ALL ');
-  const keys = matchKeys.map((key) => `('${key.replace(/'/g, "''")}')`).join(', ');
+  const codes = codeKeys.map((key) => `('${key.replace(/'/g, "''")}')`).join(', ');
+  const sageIds = sageEmployeeIds.map((key) => `('${key.replace(/'/g, "''")}')`).join(', ');
+  const sageIdMatchSql = sageEmployeeIds.length
+    ? `OR CAST(e.EmployeeID AS nvarchar(40)) IN (SELECT sage_id FROM #SageEmployeeIds)`
+    : '';
   return `
 IF OBJECT_ID('tempdb..#PeriodRanges') IS NOT NULL DROP TABLE #PeriodRanges;
 SELECT period_code, period_start, period_end
 INTO #PeriodRanges
 FROM (${periodRanges}) period_ranges;
 
-IF OBJECT_ID('tempdb..#MatchKeys') IS NOT NULL DROP TABLE #MatchKeys;
-CREATE TABLE #MatchKeys (match_key nvarchar(40) NOT NULL PRIMARY KEY);
-INSERT INTO #MatchKeys(match_key) VALUES ${keys};
+IF OBJECT_ID('tempdb..#CodeKeys') IS NOT NULL DROP TABLE #CodeKeys;
+CREATE TABLE #CodeKeys (match_key nvarchar(40) NOT NULL PRIMARY KEY);
+INSERT INTO #CodeKeys(match_key) VALUES ${codes};
+
+${sageEmployeeIds.length ? `IF OBJECT_ID('tempdb..#SageEmployeeIds') IS NOT NULL DROP TABLE #SageEmployeeIds;
+CREATE TABLE #SageEmployeeIds (sage_id nvarchar(40) NOT NULL PRIMARY KEY);
+INSERT INTO #SageEmployeeIds(sage_id) VALUES ${sageIds};` : ''}
 
 IF OBJECT_ID('tempdb..#MatchedEmployees') IS NOT NULL DROP TABLE #MatchedEmployees;
 SELECT
@@ -971,9 +1021,9 @@ SELECT
   END AS directoryEmployeeCode
 INTO #MatchedEmployees
 FROM Employee.Employee e
-WHERE REPLACE(UPPER(LTRIM(RTRIM(e.EmployeeCode))), '_', '') IN (SELECT match_key FROM #MatchKeys)
-   OR CONCAT('P', REPLACE(UPPER(LTRIM(RTRIM(e.EmployeeCode))), '_', '')) IN (SELECT match_key FROM #MatchKeys)
-   OR CAST(e.EmployeeID AS nvarchar(40)) IN (SELECT match_key FROM #MatchKeys);
+WHERE REPLACE(UPPER(LTRIM(RTRIM(e.EmployeeCode))), '_', '') IN (SELECT match_key FROM #CodeKeys)
+   OR CONCAT('P', REPLACE(UPPER(LTRIM(RTRIM(e.EmployeeCode))), '_', '')) IN (SELECT match_key FROM #CodeKeys)
+   ${sageIdMatchSql};
 
 IF OBJECT_ID('tempdb..#PeriodPayslips') IS NOT NULL DROP TABLE #PeriodPayslips;
 SELECT
@@ -1058,7 +1108,8 @@ GROUP BY pp.period_code;
 
 DROP TABLE #PeriodPayslips;
 DROP TABLE #MatchedEmployees;
-DROP TABLE #MatchKeys;
+${sageEmployeeIds.length ? 'DROP TABLE #SageEmployeeIds;' : ''}
+DROP TABLE #CodeKeys;
 DROP TABLE #PeriodRanges;
 `;
 };
@@ -1170,13 +1221,15 @@ export async function readSageEmployeePayslipSnapshotsForPeriods(
   periods: string[],
 ): Promise<SageEmployeePayslipSnapshot[]> {
   const safePeriods = Array.from(new Set(periods.map(sanitizePayrollPeriod).filter(Boolean)));
-  const safeKeys = Array.from(new Set(matchKeys.map((value) => sanitizePayrollMatchKey(String(value ?? ''))).filter(Boolean)));
-  if (!safePeriods.length || !safeKeys.length) return [];
+  const { codeKeys, sageEmployeeIds } = partitionSagePayslipLookupKeys(matchKeys);
+  const safeCodeKeys = Array.from(new Set(codeKeys.map(sanitizeSageCodeKey).filter(Boolean)));
+  const safeSageIds = Array.from(new Set(sageEmployeeIds.map((key) => key.replace(/[^0-9]/g, '')).filter(Boolean)));
+  if (!safePeriods.length || (!safeCodeKeys.length && !safeSageIds.length)) return [];
 
   const pool = new sql.ConnectionPool(config());
   await pool.connect();
   try {
-    const result = await pool.request().query(employeePeriodPayslipsQuery(safePeriods, safeKeys));
+    const result = await pool.request().query(employeePeriodPayslipsQuery(safePeriods, safeCodeKeys, safeSageIds));
     const recordsets = (Array.isArray(result.recordsets) ? result.recordsets : []) as unknown[];
     return buildSageEmployeePayslipSnapshots(
       (recordsets[0] || []) as Array<{ period: string; employeeId: number; payslipId: number; lastCalcDate: string | Date | null }>,
