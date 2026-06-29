@@ -11,9 +11,16 @@ import {
   ShieldCheck,
   Timer,
 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { BackupDisasterRecoveryState, BackupMetric, BackupPolicy, BackupReplicationTarget } from '@/lib/backup-disaster-recovery-types';
+import type {
+  BackupDisasterRecoveryState,
+  BackupFailureRecoveryRule,
+  BackupMetric,
+  BackupPolicy,
+  BackupReplicationTarget,
+  BackupStorageAutomation,
+} from '@/lib/backup-disaster-recovery-types';
 
 type Tone = 'green' | 'blue' | 'amber' | 'red' | 'slate' | 'violet';
 
@@ -60,7 +67,7 @@ function MetricCard({ item }: { item: BackupMetric }) {
 
 function StatusBadge({ value }: { value: string }) {
   const lower = value.toLowerCase();
-  const tone: Tone = lower.includes('failed') || lower.includes('critical') ? 'red' : lower.includes('warning') || lower.includes('queued') || lower.includes('watch') ? 'amber' : lower.includes('ready') || lower.includes('passed') || lower.includes('online') || lower.includes('automated') ? 'green' : 'blue';
+  const tone: Tone = lower.includes('failed') || lower.includes('critical') ? 'red' : lower.includes('warning') || lower.includes('queued') || lower.includes('watch') || lower.includes('attention') ? 'amber' : lower.includes('ready') || lower.includes('passed') || lower.includes('online') || lower.includes('automated') || lower.includes('healthy') || lower.includes('verified') || lower.includes('active') || lower.includes('completed') ? 'green' : 'blue';
   return <span className={`rounded-full px-2 py-1 text-[11px] font-black ${toneStyles[tone].badge}`}>{value}</span>;
 }
 
@@ -141,43 +148,65 @@ const cleanPolicies = (policies: BackupPolicy[]) => policies
   }))
   .filter((policy) => policy.type || policy.schedule || policy.validation || policy.retention);
 
+const policiesEqual = (left: BackupPolicy[], right: BackupPolicy[]) =>
+  JSON.stringify(cleanPolicies(left)) === JSON.stringify(cleanPolicies(right));
+
+const locationsEqual = (left: Record<string, string>, right: Record<string, string>) =>
+  JSON.stringify(left) === JSON.stringify(right);
+
+async function parseApiResponse<T>(response: Response): Promise<{ data?: T; error?: string }> {
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok || json.status === 'error') {
+    return { error: json.error || `Request failed (${response.status}).` };
+  }
+  if (json.status === 'success' && json.data) return { data: json.data as T };
+  return { error: 'Unexpected response from backup centre API.' };
+}
+
 export default function BackupDisasterRecoveryClient({ initialState }: { initialState: BackupDisasterRecoveryState }) {
   const [state, setState] = useState(initialState);
   const [locationDrafts, setLocationDrafts] = useState<Record<string, string>>(() => locationDraftsFrom(initialState.replicationTargets));
   const [policyDrafts, setPolicyDrafts] = useState<BackupPolicy[]>(() => initialState.backupPolicies.length ? initialState.backupPolicies : [newPolicy()]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTone, setMessageTone] = useState<'success' | 'error' | 'info'>('info');
   const policyPanelRef = useRef<HTMLElement | null>(null);
 
-  const recordAction = async (action: string, detail: string) => {
-    setSaving(true);
-    try {
-      const response = await fetch('/api/admin/backup-disaster-recovery', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action, detail }),
-      });
-      const json = await response.json();
-      if (json.status === 'success' && json.data) setState(json.data);
-    } finally {
-      setSaving(false);
-    }
+  const savedLocationDrafts = useMemo(() => locationDraftsFrom(state.replicationTargets), [state.replicationTargets]);
+  const policiesDirty = !policiesEqual(policyDrafts, state.backupPolicies);
+  const locationsDirty = !locationsEqual(locationDrafts, savedLocationDrafts);
+
+  useEffect(() => {
+    setState(initialState);
+    setLocationDrafts(locationDraftsFrom(initialState.replicationTargets));
+    setPolicyDrafts(initialState.backupPolicies.length ? initialState.backupPolicies : [newPolicy()]);
+  }, [initialState]);
+
+  const applyState = (next: BackupDisasterRecoveryState) => {
+    setState(next);
+    setLocationDrafts(locationDraftsFrom(next.replicationTargets));
+    setPolicyDrafts(next.backupPolicies.length ? next.backupPolicies : [newPolicy()]);
+  };
+
+  const showMessage = (text: string, tone: 'success' | 'error' | 'info' = 'info') => {
+    setMessage(text);
+    setMessageTone(tone);
   };
 
   const refreshState = async () => {
     setSaving(true);
     setMessage(null);
     try {
-      const response = await fetch('/api/admin/backup-disaster-recovery', { method: 'GET' });
-      const json = await response.json();
-      if (json.status === 'success' && json.data) {
-        setState(json.data);
-        setLocationDrafts(locationDraftsFrom(json.data.replicationTargets));
-        setPolicyDrafts(json.data.backupPolicies.length ? json.data.backupPolicies : [newPolicy()]);
-        setMessage('Backup centre status refreshed from DLE_Enterprise.');
-      } else {
-        setMessage(json.error || 'Unable to refresh backup centre status.');
+      const response = await fetch('/api/admin/backup-disaster-recovery', { method: 'GET', cache: 'no-store' });
+      const parsed = await parseApiResponse<BackupDisasterRecoveryState>(response);
+      if (parsed.error || !parsed.data) {
+        showMessage(parsed.error || 'Unable to refresh backup centre status.', 'error');
+        return;
       }
+      applyState(parsed.data);
+      showMessage('Backup centre status refreshed from DLE_Enterprise and SQL Server.', 'success');
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : 'Unable to refresh backup centre status.', 'error');
     } finally {
       setSaving(false);
     }
@@ -200,10 +229,12 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ replicationTargets }),
       });
-      const json = await response.json();
-      const savedState = json.status === 'success' && json.data ? json.data as BackupDisasterRecoveryState : state;
-      setState(savedState);
-      setLocationDrafts(locationDraftsFrom(savedState.replicationTargets));
+      const parsed = await parseApiResponse<BackupDisasterRecoveryState>(response);
+      if (parsed.error || !parsed.data) {
+        showMessage(parsed.error || 'Unable to save backup locations.', 'error');
+        return;
+      }
+      applyState(parsed.data);
 
       const auditResponse = await fetch('/api/admin/backup-disaster-recovery', {
         method: 'POST',
@@ -213,11 +244,11 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
           detail: 'Primary, secondary, disaster recovery, and cloud backup locations were saved from the administration centre.',
         }),
       });
-      const auditJson = await auditResponse.json();
-      if (auditJson.status === 'success' && auditJson.data) {
-        setState(auditJson.data);
-        setLocationDrafts(locationDraftsFrom(auditJson.data.replicationTargets));
-      }
+      const auditParsed = await parseApiResponse<BackupDisasterRecoveryState>(auditResponse);
+      if (auditParsed.data) applyState(auditParsed.data);
+      showMessage('Backup locations saved successfully.', 'success');
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : 'Unable to save backup locations.', 'error');
     } finally {
       setSaving(false);
     }
@@ -233,10 +264,12 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ backupPolicies }),
       });
-      const json = await response.json();
-      const savedState = json.status === 'success' && json.data ? json.data as BackupDisasterRecoveryState : state;
-      setState(savedState);
-      setPolicyDrafts(savedState.backupPolicies.length ? savedState.backupPolicies : [newPolicy()]);
+      const parsed = await parseApiResponse<BackupDisasterRecoveryState>(response);
+      if (parsed.error || !parsed.data) {
+        showMessage(parsed.error || 'Unable to save backup policies.', 'error');
+        return;
+      }
+      applyState(parsed.data);
 
       const auditResponse = await fetch('/api/admin/backup-disaster-recovery', {
         method: 'POST',
@@ -246,12 +279,11 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
           detail: `${backupPolicies.length} automated backup ${backupPolicies.length === 1 ? 'policy' : 'policies'} saved from the administration centre.`,
         }),
       });
-      const auditJson = await auditResponse.json();
-      if (auditJson.status === 'success' && auditJson.data) {
-        setState(auditJson.data);
-        setPolicyDrafts(auditJson.data.backupPolicies.length ? auditJson.data.backupPolicies : [newPolicy()]);
-      }
-      setMessage(backupPolicies.length ? 'Automated backup policies saved.' : 'Automated backup policies cleared.');
+      const auditParsed = await parseApiResponse<BackupDisasterRecoveryState>(auditResponse);
+      if (auditParsed.data) applyState(auditParsed.data);
+      showMessage(backupPolicies.length ? 'Automated backup policies saved.' : 'Automated backup policies cleared.', 'success');
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : 'Unable to save backup policies.', 'error');
     } finally {
       setSaving(false);
     }
@@ -270,32 +302,66 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
 
   const runFullBackup = async () => {
     setSaving(true);
-    setMessage('Running full database backup. Keep this page open until the result returns.');
+    showMessage('Running full database backup. Keep this page open until the result returns.', 'info');
     try {
       const response = await fetch('/api/admin/backup-disaster-recovery', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ operation: 'run-full-backup' }),
       });
-      const json = await response.json();
-      if (json.status === 'success' && json.data) {
-        setState(json.data);
-        setLocationDrafts(locationDraftsFrom(json.data.replicationTargets));
-        setPolicyDrafts(json.data.backupPolicies.length ? json.data.backupPolicies : [newPolicy()]);
-        const failed = json.data.executionQueue?.[0]?.status === 'Failed';
-        setMessage(failed ? 'Backup failed. Review Alerts & Incidents for the SQL Server error.' : 'Backup completed and RESTORE VERIFYONLY passed.');
-      } else {
-        setMessage(json.error || 'Backup could not be started.');
+      const parsed = await parseApiResponse<BackupDisasterRecoveryState>(response);
+      if (parsed.error || !parsed.data) {
+        showMessage(parsed.error || 'Backup could not be started.', 'error');
+        return;
       }
+      applyState(parsed.data);
+      const failed = parsed.data.executionQueue?.[0]?.status === 'Failed';
+      showMessage(failed ? 'Backup failed. Review Alerts & Incidents for the SQL Server error.' : 'Backup completed and RESTORE VERIFYONLY passed.', failed ? 'error' : 'success');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Backup could not be started.');
+      showMessage(error instanceof Error ? error.message : 'Backup could not be started.', 'error');
     } finally {
       setSaving(false);
     }
   };
 
-  const resetBackupLocations = () => setLocationDrafts(locationDraftsFrom(state.replicationTargets));
-  const resetBackupPolicies = () => setPolicyDrafts(state.backupPolicies.length ? state.backupPolicies : [newPolicy()]);
+  const runRestoreDrill = async () => {
+    setSaving(true);
+    showMessage('Running restore readiness drill (RESTORE VERIFYONLY)...', 'info');
+    try {
+      const response = await fetch('/api/admin/backup-disaster-recovery', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ operation: 'run-restore-drill' }),
+      });
+      const parsed = await parseApiResponse<BackupDisasterRecoveryState>(response);
+      if (parsed.error || !parsed.data) {
+        showMessage(parsed.error || 'Restore drill could not be started.', 'error');
+        return;
+      }
+      applyState(parsed.data);
+      const failed = parsed.data.restoreReadiness?.[0]?.result === 'Failed';
+      showMessage(failed ? 'Restore drill failed. Review Alerts & Incidents.' : 'Restore drill completed successfully.', failed ? 'error' : 'success');
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : 'Restore drill could not be started.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const resetBackupLocations = () => {
+    setLocationDrafts(savedLocationDrafts);
+    showMessage('Backup location drafts reset.', 'info');
+  };
+  const resetBackupPolicies = () => {
+    setPolicyDrafts(state.backupPolicies.length ? state.backupPolicies : [newPolicy()]);
+    showMessage('Backup policy drafts reset.', 'info');
+  };
+
+  const messageClass = messageTone === 'error'
+    ? 'border-red-200 bg-red-50 text-red-900'
+    : messageTone === 'success'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+      : 'border-blue-200 bg-blue-50 text-blue-900';
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 text-slate-950 md:p-6">
@@ -312,14 +378,14 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
             <div className="flex flex-wrap gap-2">
               <button disabled={saving} onClick={runFullBackup} className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-700 px-3 text-xs font-black text-white disabled:opacity-60"><HardDrive className="h-4 w-4" /> Run Full Backup</button>
               <button disabled={saving} onClick={scrollToPolicySetup} className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-3 text-xs font-black text-white disabled:opacity-60"><ShieldCheck className="h-4 w-4" /> Configure Policy</button>
-              <button disabled={saving} onClick={() => recordAction('Restore drill requested', 'Administrator requested a restore-readiness drill from the backup centre.')} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-800 disabled:opacity-60"><RotateCcw className="h-4 w-4" /> Restore Drill</button>
+              <button disabled={saving} onClick={runRestoreDrill} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-800 disabled:opacity-60"><RotateCcw className="h-4 w-4" /> Restore Drill</button>
               <button disabled={saving} onClick={refreshState} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-800 disabled:opacity-60"><RefreshCw className="h-4 w-4" /> Refresh</button>
             </div>
           </div>
         </section>
 
         {message ? (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-900">
+          <div className={`rounded-lg border px-4 py-3 text-sm font-bold ${messageClass}`}>
             {message}
           </div>
         ) : null}
@@ -330,13 +396,13 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
           </section>
         ) : (
           <Panel title="Backup Service Status">
-            <EmptyState message="No live backup service metrics have been recorded yet." />
+            <EmptyState message="No live backup service metrics have been recorded yet. Save backup locations, configure policies, then run a full backup or refresh." />
           </Panel>
         )}
 
         <Panel
           title="Backup Policy Configuration"
-          action={<StatusBadge value={`${cleanPolicies(policyDrafts).length} ready to save`} />}
+          action={<StatusBadge value={policiesDirty ? `${cleanPolicies(policyDrafts).length} unsaved` : 'Saved'} />}
         >
           <section ref={policyPanelRef} className="space-y-3">
             <div className="overflow-x-auto">
@@ -388,8 +454,8 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
               <p className="text-xs font-semibold text-slate-500">Policies define what should run, when it should run, how it should be validated, and how long backup files should be retained.</p>
               <div className="flex flex-wrap gap-2">
                 <button disabled={saving} onClick={addPolicyDraft} className="inline-flex h-10 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-800 disabled:opacity-60">Add Policy</button>
-                <button disabled={saving} onClick={resetBackupPolicies} className="inline-flex h-10 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-800 disabled:opacity-60">Reset</button>
-                <button disabled={saving} onClick={saveBackupPolicies} className="inline-flex h-10 items-center rounded-lg bg-blue-600 px-4 text-xs font-black text-white disabled:opacity-60">Save Policies</button>
+                <button disabled={saving || !policiesDirty} onClick={resetBackupPolicies} className="inline-flex h-10 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-800 disabled:opacity-60">Reset</button>
+                <button disabled={saving || !policiesDirty} onClick={saveBackupPolicies} className="inline-flex h-10 items-center rounded-lg bg-blue-600 px-4 text-xs font-black text-white disabled:opacity-60">Save Policies</button>
               </div>
             </div>
           </section>
@@ -404,7 +470,7 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
                 </thead>
                 <tbody>
                   {state.backupPolicies.length ? state.backupPolicies.map((policy) => (
-                    <tr key={policy.type} className="border-b border-slate-100">
+                    <tr key={`${policy.type}-${policy.schedule}`} className="border-b border-slate-100">
                       <td className="px-3 py-3 font-black text-slate-950">{policy.type}</td>
                       <td className="px-3 py-3 font-semibold text-slate-700">{policy.schedule}</td>
                       <td className="px-3 py-3 font-semibold text-slate-700">{policy.validation}</td>
@@ -423,8 +489,19 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
             </div>
           </Panel>
 
-          <Panel title="Automatic Failure Recovery">
-            <EmptyState message="No automatic failure recovery rules have been configured." />
+          <Panel title="Automatic Failure Recovery" action={<StatusBadge value={state.failureRecoveryRules.length ? 'Active' : 'Not configured'} />}>
+            <div className="space-y-2">
+              {state.failureRecoveryRules.length ? state.failureRecoveryRules.map((rule: BackupFailureRecoveryRule) => (
+                <div key={`${rule.trigger}-${rule.action}`} className="rounded-lg border border-slate-200 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-black text-slate-950">{rule.trigger}</p>
+                    <StatusBadge value={rule.status} />
+                  </div>
+                  <p className="mt-1 text-xs font-semibold text-slate-600">{rule.action}</p>
+                  <p className="mt-1 text-xs font-bold text-slate-500">{rule.retry}</p>
+                </div>
+              )) : <EmptyState message="Configure automated backup policies to generate failure recovery rules." />}
+            </div>
           </Panel>
         </section>
 
@@ -432,10 +509,10 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
           <Panel title="Execution Queue" action={<StatusBadge value={state.executionQueue.length ? 'Jobs available' : 'No queued jobs'} />}>
             <div className="space-y-2">
               {state.executionQueue.length ? state.executionQueue.map((job) => (
-                <div key={job.job} className="grid grid-cols-1 gap-2 rounded-lg border border-slate-200 p-3 md:grid-cols-[1fr_auto]">
+                <div key={`${job.job}-${job.nextRun}`} className="grid grid-cols-1 gap-2 rounded-lg border border-slate-200 p-3 md:grid-cols-[1fr_auto]">
                   <div>
                     <p className="font-black text-slate-950">{job.job}</p>
-                    <p className="text-xs font-semibold text-slate-500">{job.owner} - {job.retry}</p>
+                    <p className="text-xs font-semibold text-slate-500">{job.owner} · {job.retry}</p>
                   </div>
                   <div className="text-left md:text-right">
                     <StatusBadge value={job.status} />
@@ -469,7 +546,7 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
 
         <Panel
           title="Backup Location Configuration"
-          action={<StatusBadge value="Saved in DLE_Enterprise" />}
+          action={<StatusBadge value={locationsDirty ? 'Unsaved changes' : 'Saved in DLE_Enterprise'} />}
         >
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {state.replicationTargets.map((target) => (
@@ -495,21 +572,32 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
               These locations control the paths shown in replication status and are persisted for the backup service configuration.
             </p>
             <div className="flex gap-2">
-              <button disabled={saving} onClick={resetBackupLocations} className="inline-flex h-10 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-800 disabled:opacity-60">Reset</button>
-              <button disabled={saving} onClick={saveBackupLocations} className="inline-flex h-10 items-center rounded-lg bg-blue-600 px-4 text-xs font-black text-white disabled:opacity-60">Save Backup Locations</button>
+              <button disabled={saving || !locationsDirty} onClick={resetBackupLocations} className="inline-flex h-10 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-800 disabled:opacity-60">Reset</button>
+              <button disabled={saving || !locationsDirty} onClick={saveBackupLocations} className="inline-flex h-10 items-center rounded-lg bg-blue-600 px-4 text-xs font-black text-white disabled:opacity-60">Save Backup Locations</button>
             </div>
           </div>
         </Panel>
 
         <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-          <Panel title="Storage & Retention Automation">
-            <EmptyState message="No storage or retention automation rules have been configured." />
+          <Panel title="Storage & Retention Automation" action={<StatusBadge value={state.storageAutomation.length ? 'Configured' : 'Not configured'} />}>
+            <div className="space-y-2">
+              {state.storageAutomation.length ? state.storageAutomation.map((item: BackupStorageAutomation) => (
+                <div key={`${item.scope}-${item.rule}`} className="rounded-lg border border-slate-200 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-black text-slate-950">{item.scope}</p>
+                    <StatusBadge value={item.status} />
+                  </div>
+                  <p className="mt-1 text-xs font-semibold text-slate-600">{item.rule}</p>
+                  <p className="mt-1 text-xs font-bold text-slate-500">Schedule: {item.threshold}</p>
+                </div>
+              )) : <EmptyState message="Configure backup policies to generate storage and retention automation rules." />}
+            </div>
           </Panel>
 
           <Panel title="Restore Readiness">
             <div className="space-y-2">
               {state.restoreReadiness.length ? state.restoreReadiness.map((item) => (
-                <div key={item.control} className="rounded-lg border border-slate-200 p-3">
+                <div key={`${item.control}-${item.evidence}`} className="rounded-lg border border-slate-200 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-black text-slate-900">{item.control}</p>
                     <StatusBadge value={item.result} />
@@ -523,7 +611,7 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
           <Panel title="Alerts & Incidents" action={<AlertTriangle className="h-4 w-4 text-amber-600" />}>
             <div className="space-y-2">
               {state.incidents.length ? state.incidents.map((incident) => (
-                <div key={incident.message} className="rounded-lg border border-slate-200 p-3">
+                <div key={`${incident.message}-${incident.status}`} className="rounded-lg border border-slate-200 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <StatusBadge value={incident.severity} />
                     <span className="text-xs font-black text-slate-500">{incident.status}</span>

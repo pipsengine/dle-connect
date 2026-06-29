@@ -29,6 +29,20 @@ export type BackupExecutionJob = {
   status: string;
 };
 
+export type BackupFailureRecoveryRule = {
+  trigger: string;
+  action: string;
+  retry: string;
+  status: string;
+};
+
+export type BackupStorageAutomation = {
+  scope: string;
+  rule: string;
+  threshold: string;
+  status: string;
+};
+
 export type BackupIncident = {
   severity: string;
   message: string;
@@ -55,10 +69,11 @@ export type BackupDisasterRecoveryState = {
   backupPolicies: BackupPolicy[];
   replicationTargets: BackupReplicationTarget[];
   executionQueue: BackupExecutionJob[];
+  failureRecoveryRules: BackupFailureRecoveryRule[];
+  storageAutomation: BackupStorageAutomation[];
   incidents: BackupIncident[];
   restoreReadiness: BackupRestoreReadiness[];
   audit: BackupAuditEvent[];
   updatedAt: string;
   updatedBy: string;
 };
-

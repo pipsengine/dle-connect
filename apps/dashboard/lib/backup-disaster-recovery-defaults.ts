@@ -11,6 +11,8 @@ export const defaultBackupDisasterRecoveryState = (): BackupDisasterRecoveryStat
     { target: 'Cloud Backup', location: '', status: 'Not configured', lastCopy: '', lag: '' },
   ],
   executionQueue: [],
+  failureRecoveryRules: [],
+  storageAutomation: [],
   incidents: [],
   restoreReadiness: [],
   audit: [],

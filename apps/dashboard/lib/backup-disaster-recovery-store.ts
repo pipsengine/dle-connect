@@ -1,7 +1,7 @@
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { defaultBackupDisasterRecoveryState } from '@/lib/backup-disaster-recovery-defaults';
-import type { BackupAuditEvent, BackupDisasterRecoveryState } from '@/lib/backup-disaster-recovery-types';
+import type { BackupAuditEvent, BackupDisasterRecoveryState, BackupPolicy } from '@/lib/backup-disaster-recovery-types';
 
 const STATE_KEY = 'backup-disaster-recovery-centre';
 
@@ -42,6 +42,25 @@ END;
   schemaReady = true;
 };
 
+const cleanPolicy = (policy: BackupPolicy): BackupPolicy => ({
+  type: String(policy.type || '').trim(),
+  schedule: String(policy.schedule || '').trim(),
+  validation: String(policy.validation || '').trim(),
+  retention: String(policy.retention || '').trim(),
+  status: String(policy.status || 'Configured').trim() || 'Configured',
+});
+
+export const validateBackupPolicies = (policies: BackupPolicy[]) => {
+  const cleaned = policies.map(cleanPolicy).filter((policy) => policy.type || policy.schedule || policy.validation || policy.retention);
+  for (const [index, policy] of cleaned.entries()) {
+    const missing = ['type', 'schedule', 'validation', 'retention'].filter((field) => !policy[field as keyof BackupPolicy]);
+    if (missing.length) {
+      throw new Error(`Backup policy ${index + 1} is incomplete. Select ${missing.join(', ')}.`);
+    }
+  }
+  return cleaned;
+};
+
 const normalizeState = (value: unknown): BackupDisasterRecoveryState => {
   const fallback = defaultBackupDisasterRecoveryState();
   const parsed = value && typeof value === 'object' ? value as Partial<BackupDisasterRecoveryState> : {};
@@ -49,7 +68,7 @@ const normalizeState = (value: unknown): BackupDisasterRecoveryState => {
     if (target && SEEDED_REPLICATION_LOCATIONS.has(target.location)) {
       return { ...target, location: '', status: 'Not configured', lastCopy: '', lag: '' };
     }
-    if (target?.location && target.status === 'Not configured') {
+    if (target?.location?.trim() && target.status === 'Not configured') {
       return { ...target, status: 'Configured' };
     }
     return target;
@@ -59,15 +78,29 @@ const normalizeState = (value: unknown): BackupDisasterRecoveryState => {
     ...parsed,
     schemaVersion: 1,
     serviceMetrics: Array.isArray(parsed.serviceMetrics) ? parsed.serviceMetrics.filter((metric) => !SEEDED_METRIC_LABELS.has(metric.label)) : fallback.serviceMetrics,
-    backupPolicies: Array.isArray(parsed.backupPolicies) ? parsed.backupPolicies.filter((policy) => !SEEDED_POLICY_TYPES.has(policy.type)) : fallback.backupPolicies,
+    backupPolicies: Array.isArray(parsed.backupPolicies)
+      ? parsed.backupPolicies.filter((policy) => !SEEDED_POLICY_TYPES.has(policy.type)).map(cleanPolicy)
+      : fallback.backupPolicies,
     replicationTargets: replicationTargets.length ? replicationTargets : fallback.replicationTargets,
     executionQueue: Array.isArray(parsed.executionQueue) ? parsed.executionQueue.filter((job) => !SEEDED_QUEUE_JOBS.has(job.job)) : fallback.executionQueue,
-    incidents: Array.isArray(parsed.incidents) ? parsed.incidents.filter((incident) => !incident.message.includes('80% in 19 days') && !incident.message.includes('42 expired backup files') && !incident.message.includes('DR replication completed successfully')) : fallback.incidents,
+    failureRecoveryRules: Array.isArray(parsed.failureRecoveryRules) ? parsed.failureRecoveryRules : fallback.failureRecoveryRules,
+    storageAutomation: Array.isArray(parsed.storageAutomation) ? parsed.storageAutomation : fallback.storageAutomation,
+    incidents: Array.isArray(parsed.incidents)
+      ? parsed.incidents.filter((incident) => !incident.message.includes('80% in 19 days') && !incident.message.includes('42 expired backup files') && !incident.message.includes('DR replication completed successfully'))
+      : fallback.incidents,
     restoreReadiness: Array.isArray(parsed.restoreReadiness) ? parsed.restoreReadiness.filter((item) => !SEEDED_RESTORE_CONTROLS.has(item.control)) : fallback.restoreReadiness,
     audit: Array.isArray(parsed.audit) ? parsed.audit : fallback.audit,
     updatedAt: parsed.updatedAt || fallback.updatedAt,
     updatedBy: parsed.updatedBy || fallback.updatedBy,
   };
+};
+
+const statesEqual = (left: BackupDisasterRecoveryState, rightJson: string) => {
+  try {
+    return JSON.stringify(left) === JSON.stringify(normalizeState(JSON.parse(rightJson)));
+  } catch {
+    return false;
+  }
 };
 
 export const readBackupDisasterRecoveryState = async () => {
@@ -81,7 +114,7 @@ export const readBackupDisasterRecoveryState = async () => {
   if (row?.StateJson) {
     try {
       const normalized = normalizeState(JSON.parse(row.StateJson));
-      if (JSON.stringify(normalized) !== row.StateJson) {
+      if (!statesEqual(normalized, row.StateJson)) {
         await writeBackupDisasterRecoveryState(normalized, 'System cleanup');
       }
       return normalized;
@@ -127,4 +160,19 @@ export const appendBackupDisasterRecoveryAudit = async (event: Omit<BackupAuditE
     ...state.audit,
   ].slice(0, 100);
   return writeBackupDisasterRecoveryState({ ...state, audit: nextAudit }, event.actor);
+};
+
+export const readBackupDisasterRecoveryStateSafe = async () => {
+  try {
+    return await readBackupDisasterRecoveryState();
+  } catch (error) {
+    const fallback = defaultBackupDisasterRecoveryState();
+    fallback.incidents = [{
+      severity: 'Warning',
+      message: error instanceof Error ? error.message : 'Unable to load backup centre state from DLE_Enterprise.',
+      owner: 'Backup centre',
+      status: 'Open',
+    }];
+    return fallback;
+  }
 };
