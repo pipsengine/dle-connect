@@ -365,6 +365,9 @@ Push-Location $RepoRoot
 try {
   if (-not $SkipInstall) {
     Invoke-CheckedCommand -FilePath "npm" -ArgumentList @("ci")
+  } elseif (-not (Test-Path -LiteralPath (Join-Path $RepoRoot "node_modules\nodemailer\package.json"))) {
+    Write-Host "SkipInstall set but nodemailer is missing; installing declared dependencies..."
+    Invoke-CheckedCommand -FilePath "npm" -ArgumentList @("install", "--no-audit", "--no-fund")
   }
 
   Invoke-CheckedCommand -FilePath "npm" -ArgumentList @("run", "build")

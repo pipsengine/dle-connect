@@ -18,7 +18,7 @@ import {
 import { postLeaveAllowanceOnAnnualLeaveApproval } from '@/lib/payroll-leave-allowance-store';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
-import { sendLeaveWorkflowEmail } from '@/lib/mail-service';
+import { sendLeaveApprovalRequestEmail, sendLeaveWorkflowEmail } from '@/lib/mail-service';
 import { buildEssEmployeeLookupKeys } from '@/lib/ess-dashboard-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
@@ -232,6 +232,49 @@ const namesMatch = (left: string, right: string) => {
   return a === b || a.includes(b) || b.includes(a);
 };
 
+const resolveLineManagerRecipient = (requester: DleEmployeeDirectoryRow, employees: DleEmployeeDirectoryRow[]) => {
+  const managerName = managerOwnerFor(requester);
+  return employees.find((employee) => namesMatch(employee.fullName, managerName)
+    || namesMatch(employee.fullName, requester.managerName || '')
+    || namesMatch(employee.fullName, requester.departmentHead || '')) || null;
+};
+
+const resolveHrRecipients = (employees: DleEmployeeDirectoryRow[]) =>
+  employees.filter((employee) => /hr manager|hr head|hr officer|leave administrator/i.test(`${employee.jobTitle || ''} ${employee.designation || ''}`));
+
+export const emailLeaveApproversForRequest = async (input: {
+  request: EssLeaveRequest;
+  requester: DleEmployeeDirectoryRow;
+  baseUrl?: string | null;
+}) => {
+  const { employees } = await readPayrollEmployees();
+  if (input.request.status === 'Line Manager Review') {
+    const recipient = resolveLineManagerRecipient(input.requester, employees);
+    if (recipient) {
+      await sendLeaveApprovalRequestEmail({
+        request: input.request,
+        requester: input.requester,
+        recipient,
+        approverKind: 'line-manager',
+        baseUrl: input.baseUrl,
+      });
+    }
+    return;
+  }
+  if (input.request.status === 'HR Review') {
+    const recipients = resolveHrRecipients(employees);
+    for (const recipient of recipients.slice(0, 5)) {
+      await sendLeaveApprovalRequestEmail({
+        request: input.request,
+        requester: input.requester,
+        recipient,
+        approverKind: 'hr',
+        baseUrl: input.baseUrl,
+      });
+    }
+  }
+};
+
 const hrRoles = new Set(['hr manager', 'hr head', 'hr officer', 'leave administrator', 'system administrator', 'super administrator']);
 const managerRoles = new Set(['supervisor', 'department manager', 'line manager', 'manager', 'head of department']);
 
@@ -340,9 +383,8 @@ export const validateEssLeaveApplication = async (input: {
   endDate: string;
   days: number;
   relieverEmployeeId: string;
-  attachmentCount?: number;
 }) => {
-  const { employee, leaveType, startDate, endDate, days, relieverEmployeeId, attachmentCount = 0 } = input;
+  const { employee, leaveType, startDate, endDate, days, relieverEmployeeId } = input;
   const employeeSource = await readPayrollEmployees();
   const reliever = employeeSource.employees.find((item) => item.employeeId === relieverEmployeeId || item.employeeCode === relieverEmployeeId);
   if (!reliever) return { ok: false as const, status: 400, message: 'A department reliever must be selected.' };
@@ -366,11 +408,6 @@ export const validateEssLeaveApplication = async (input: {
     && endDate >= item.startDate,
   );
   if (overlap) return { ok: false as const, status: 409, message: 'Overlapping leave request detected.' };
-
-  const mandatoryAttachment = ['Sick Leave', 'Maternity Leave', 'Exam Leave', 'Compassionate Leave'].includes(leaveType);
-  if (mandatoryAttachment && attachmentCount <= 0) {
-    return { ok: false as const, status: 400, message: `Supporting document is required for ${leaveType}.` };
-  }
 
   const validation = validateLeaveAction('apply', 'Employee', payload, {
     employeeId: employee.employeeId,
@@ -488,6 +525,9 @@ export const transitionEssLeaveRequest = async (input: {
   roles?: string[];
   isGlobalAdmin?: boolean;
   comment?: string;
+  baseUrl?: string | null;
+  emailAction?: boolean;
+  approverKind?: LeaveApproverKind;
 }) => {
   const requests = await expireStaleLeaveRequests(await readAllEssRequests());
   const found = requests.find((item) => item.id === input.requestId && /leave/i.test(item.category));
@@ -500,13 +540,15 @@ export const transitionEssLeaveRequest = async (input: {
   const requester = employees.find((employee) => employeeRequestMatches(employee, found.employeeId));
   if (!requester) throw new Error('Requester employee record not found.');
 
-  const approverKind = resolveLeaveApproverKind({
-    actor: input.actor,
-    requester,
-    request: found,
-    roles: input.roles,
-    isGlobalAdmin: input.isGlobalAdmin,
-  });
+  const approverKind = input.emailAction
+    ? input.approverKind || null
+    : resolveLeaveApproverKind({
+      actor: input.actor,
+      requester,
+      request: found,
+      roles: input.roles,
+      isGlobalAdmin: input.isGlobalAdmin,
+    });
   if (!approverKind) throw new Error('You are not authorized to action this leave request.');
   if (input.action === 'approve' && approverKind === 'line-manager' && found.status !== 'Line Manager Review') {
     throw new Error('This request is not awaiting line manager approval.');
@@ -576,7 +618,12 @@ export const transitionEssLeaveRequest = async (input: {
     request: updated,
     requester,
     actorName: input.actorName,
+    baseUrl: input.baseUrl,
   });
+
+  if (approved && nextStatus === 'HR Review') {
+    await emailLeaveApproversForRequest({ request: updated, requester, baseUrl: input.baseUrl });
+  }
 
   return { request: updated, allowanceMessage };
 };

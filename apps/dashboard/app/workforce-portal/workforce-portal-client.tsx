@@ -794,7 +794,6 @@ function ActionGrid({ items }: { items: Array<[string, any, string?]> }) {
 const leaveTabs = ['Leave Dashboard', 'Apply Leave', 'My Applications', 'Leave Calendar', 'Leave History', 'Approvals', 'Policy & Entitlement'] as const;
 type LeaveTab = typeof leaveTabs[number];
 
-const leaveRequiresAttachment = (type: string) => ['Sick Leave', 'Maternity Leave', 'Exam Leave', 'Compassionate Leave'].includes(type);
 const dayMs = 24 * 60 * 60 * 1000;
 const calcLeaveDays = (from: string, to: string, basis: string) => {
   if (!from || !to) return 0;
@@ -835,7 +834,6 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
   const validations = [
     ...(days > balance ? ['Selected days exceed available balance.'] : []),
     ...(leaveType === 'Annual Leave' && String(selected?.eligibilityStatus || '').toLowerCase().includes('locked') ? ['Annual Leave is available only after confirmation of appointment.'] : []),
-    ...(leaveRequiresAttachment(leaveType) && attachmentNames.length === 0 ? ['Upload supporting document before submit.'] : []),
     ...(usesCarryForward && endDate > `${new Date().getFullYear()}-03-31` ? ['Carry Forward Leave must be consumed on or before 31 March.'] : []),
     ...(leaveType === 'Annual Leave' && days > 0 && days < 10 ? ['This request does not qualify for Leave Allowance.'] : []),
     ...(!reason.trim() ? ['Reason is required.'] : []),
@@ -902,7 +900,7 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
               <textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason" className="min-h-24 rounded-lg border border-slate-200 p-3 text-sm font-bold md:col-span-2" />
               <textarea value={handover} onChange={(e) => setHandover(e.target.value)} placeholder="Handover notes" className="min-h-24 rounded-lg border border-slate-200 p-3 text-sm font-bold md:col-span-2" />
               <label className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm font-bold text-slate-600 md:col-span-2">
-                <span>Supporting documents {leaveRequiresAttachment(leaveType) ? '(mandatory)' : '(optional)'}</span>
+                <span>Supporting documents (optional)</span>
                 <input
                   type="file"
                   className="mt-2 block w-full text-xs font-semibold"

@@ -30,6 +30,7 @@ import {
   syncEssLeaveRequestById,
   transitionEssLeaveRequest,
   validateEssLeaveApplication,
+  emailLeaveApproversForRequest,
   workflowDeadlineDays,
   writeAllEssRequests,
 } from '@/lib/leave-workflow-service';
@@ -1310,7 +1311,6 @@ export async function POST(request: Request) {
         endDate,
         days: leaveDays,
         relieverEmployeeId: reliever.employeeId,
-        attachmentCount: attachmentNames.length,
       });
       if (!policyCheck.ok) return err(policyCheck.status, policyCheck.message);
     }
@@ -1359,6 +1359,8 @@ export async function POST(request: Request) {
     invalidateEssPortalCache();
     if (isLeaveRequest) {
       await syncEssLeaveRequestById(requestItem.id);
+      const baseUrl = new URL(request.url).origin;
+      await emailLeaveApproversForRequest({ request: requestItem, requester: employee, baseUrl });
       await notifyLeaveWorkflow(session, {
         requestId: requestItem.id,
         recipientEmployeeCode: employee.employeeCode || employee.employeeId,
