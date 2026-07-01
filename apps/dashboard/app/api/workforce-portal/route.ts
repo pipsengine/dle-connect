@@ -19,6 +19,7 @@ import { payslipIdentityMap, syncPayslipIdentitiesFromSage, type PayslipEmployee
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import { buildEssDashboardContext, buildEssEmployeeLookupKeys } from '@/lib/ess-dashboard-store';
+import { buildEssWorkflowIntelligence } from '@/lib/ess-workflow-intelligence';
 import { invalidateEssPortalCache, readEssPortalResponseCache, writeEssPortalResponseCache } from '@/lib/ess-portal-cache';
 import {
   expireStaleLeaveRequests,
@@ -1204,6 +1205,41 @@ export async function GET(request: Request) {
         { label: 'Workflow SLA compliance', value: 91, unit: '%' },
         { label: 'Mobile access share', value: 43, unit: '%' },
       ],
+      workflowIntelligence: buildEssWorkflowIntelligence({
+        employee: {
+          employeeId: employee.employeeId,
+          fullName: employee.fullName,
+          department: employee.department || 'Unassigned',
+          manager: employee.managerName || 'Line Manager',
+          jobTitle: employee.jobTitle || employee.designation,
+        },
+        requests: employeeRequests,
+        approvalQueue: leaveApprovals.map((item) => ({
+          id: item.id,
+          employee: item.employee,
+          type: item.type,
+          days: item.days,
+          startDate: item.startDate || '',
+          endDate: item.endDate || '',
+          stage: item.stage,
+        })),
+        leaveApprovals,
+        notifications: essContext.notifications,
+        serviceCatalog,
+        claims: [
+          { id: 'clm-001', type: 'Travel Claim', status: 'Finance Review', submittedAt: dateAdd(-5), amount: 185000 },
+          { id: 'clm-002', type: 'Medical Reimbursement', status: 'Approved', submittedAt: dateAdd(-20), amount: 42000 },
+          { id: 'clm-003', type: 'Expense Advance', status: 'Line Manager Review', submittedAt: dateAdd(-2), amount: 100000 },
+        ],
+        auditTrail: [
+          { at: dateAdd(-1), actor: employee.employeeId, action: 'Viewed payslip history', channel: 'ESS' },
+          { at: dateAdd(-2), actor: employee.employeeId, action: 'Submitted leave application', channel: 'ESS' },
+          { at: dateAdd(-5), actor: 'System', action: 'Sent handbook acknowledgement notification', channel: 'Email/In-App' },
+        ],
+        analytics: [
+          { label: 'Workflow SLA compliance', value: 91, unit: '%' },
+        ],
+      }),
     };
     writeEssPortalResponseCache(cacheKey, payload);
     return ok(payload);

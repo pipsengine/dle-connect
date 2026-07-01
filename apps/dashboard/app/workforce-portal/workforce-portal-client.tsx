@@ -9,6 +9,8 @@ import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
 import { EssDashboardView, EssRightPanel } from './ess-dashboard-view';
 import { EssLeaveDashboardView, type EssLeavePayload, type LeaveWorkspaceTab } from './ess-leave-dashboard-view';
+import EssWorkflowDashboardView from './ess-workflow-dashboard-view';
+import type { WorkflowIntelligence } from '@/lib/ess-workflow-intelligence';
 import { EssProfileDashboardView, type EssProfilePayload } from './ess-profile-dashboard-view';
 import { EssPayrollDashboardView, type EssPayrollPayload } from './ess-payroll-dashboard-view';
 import { ESS_NAV_ITEMS, EssPortalShell, EssMobileNav, type EssTab } from './ess-portal-shell';
@@ -162,6 +164,7 @@ type Payload = {
       trainingProgress: { percent: number };
     };
   };
+  workflowIntelligence?: WorkflowIntelligence;
 };
 type ApiResponse<T> = { status: 'success' | 'error'; data?: T; error?: string };
 type Tab = EssTab;
@@ -1488,33 +1491,11 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
           )}
 
           {tab === 'workflow' && (
-            <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_420px]">
-              <Section title="Workflow & Approval Tracking">
-                <div className="space-y-3">
-                  {(payload?.requests || []).map((item) => (
-                    <div key={item.id} className={`rounded-lg border p-4 ${statusSurface(item.status)}`}>
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div><p className="text-sm font-black text-slate-950">{item.title}</p><p className="mt-1 text-xs font-semibold text-slate-500">{item.category} - {dateText(item.submittedAt)} - updated {dateText(item.updatedAt)}</p></div>
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-black ${statusTone(item.status)}`}>{item.status}</span>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {item.approvers.map((approver) => <span key={approver} className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-black text-slate-700">{approver}</span>)}
-                      </div>
-                      <div className="mt-3 space-y-2">
-                        {item.comments.map((comment) => <div key={`${item.id}-${comment.at}`} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-slate-700">{comment.actor}: {comment.comment}</div>)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Section>
-              <Section title="Pending Actions, Escalations & Notification Trail">
-                <DataList rows={[
-                  { id: 'act-001', title: 'Line manager approval pending', status: 'Pending', owner: 'Line Manager' },
-                  { id: 'esc-001', title: 'SLA escalation rule', status: 'Active', owner: 'Workflow Engine' },
-                  { id: 'ntf-approval', title: 'Email and in-app notification sent', status: 'Delivered', owner: 'Notification Service' },
-                ]} titleKey="title" subtitleKeys={['owner']} />
-              </Section>
-            </section>
+            <EssWorkflowDashboardView
+              payload={payload}
+              onRefresh={() => void load()}
+              onNavigate={(nextTab, options) => navigateTab(nextTab, options)}
+            />
           )}
 
           {tab === 'exit' && (
