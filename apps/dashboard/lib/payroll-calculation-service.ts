@@ -223,13 +223,23 @@ const applyDailyRateFromTimesheets = (
   period: string,
 ) => {
   const profileId = resolvePayrollEarningProfile(employee);
-  if (!isDailyRatePayrollEmployee(employee, profileId)) return amounts;
-  const timesheet = resolveTimesheetHoursForEmployee(employee, timesheetHours);
   const rates = dailyRateValues(employee, true);
-  if (!timesheet || (timesheet.daysWorked <= 0 && timesheet.bookedHours <= 0)) return amounts;
-  const daysWorked = timesheet.daysWorked > 0
-    ? timesheet.daysWorked
-    : (timesheet.bookedHours > 0 ? timesheet.bookedHours / rates.hoursPerDay : 0);
+  const contractDayRateEmployee = contractEmployeeCode(employee) && (rates.ratePerDay > 0 || rates.ratePerHour > 0);
+  if (!isDailyRatePayrollEmployee(employee, profileId) && !contractDayRateEmployee) return amounts;
+
+  const timesheet = resolveTimesheetHoursForEmployee(employee, timesheetHours);
+  let daysWorked = 0;
+  if (timesheet) {
+    daysWorked = timesheet.daysWorked > 0
+      ? timesheet.daysWorked
+      : (timesheet.bookedHours > 0 ? timesheet.bookedHours / rates.hoursPerDay : 0);
+  }
+  if (daysWorked <= 0) {
+    const hoursPerPeriod = Number(employee.hoursPerPeriod || 0);
+    if (hoursPerPeriod > 0 && rates.hoursPerDay > 0) daysWorked = hoursPerPeriod / rates.hoursPerDay;
+  }
+  if (daysWorked <= 0) return amounts;
+
   const ratePerDay = rates.ratePerDay || (rates.ratePerHour > 0 ? rates.ratePerHour * rates.hoursPerDay : 0);
   const merged = mergeTimesheetDayRateEarnings(employee, { ratePerDay, daysWorked, period });
   return {
@@ -260,6 +270,7 @@ export const calculatePayrollForPeriod = async (requestedPeriod: string): Promis
   const toleranceMode = payrollToleranceActive(requestedPeriod);
   const enterpriseSourceActive = isEnterprisePayrollPeriod(requestedPeriod);
   const compareWithSage = shouldComparePayrollWithSage(requestedPeriod);
+  await syncSagePeriodEarningAdjustments(requestedPeriod, { contractEmployeesOnly: true }).catch(() => undefined);
   if (compareWithSage) {
     await syncSagePeriodEarningAdjustments(requestedPeriod).catch(() => undefined);
   }

@@ -84,9 +84,9 @@ const explicitDailyRatePayroll = (text: string) =>
 /** True when the employee is on attendance-driven daily / day-rate payroll. */
 export const isDailyRatePayrollEmployee = (employee: DleEmployeeDirectoryRow, profileId?: string) => {
   if (profileId === 'contract-day-rate') return true;
+  if (contractEmployeeCode(employee) && (Number(employee.ratePerDay || 0) > 0 || Number(employee.ratePerHour || 0) > 0)) return true;
   const text = payrollCategoryText(employee);
   if (explicitDailyRatePayroll(text)) return true;
-  if (contractEmployeeCode(employee) && Number(employee.ratePerDay || 0) > 0 && !Number(employee.periodSalary || 0)) return true;
   if (contractEmployeeCode(employee) && Number(employee.ratePerDay || 0) > 0 && explicitDailyRatePayroll(text)) return true;
   return false;
 };

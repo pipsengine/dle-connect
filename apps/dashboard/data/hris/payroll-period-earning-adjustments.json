@@ -21766,11 +21766,31 @@
     "period": "2026-06",
     "employeeId": "C0129 - Mr KALU",
     "employeeCode": "C0129 - Mr KALU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 207900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C0129 - Mr KALU",
+    "employeeCode": "C0129 - Mr KALU",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C0293 - OLANIYAN",
+    "employeeCode": "C0293 - OLANIYAN",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 198000,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -21836,6 +21856,16 @@
     "period": "2026-06",
     "employeeId": "C0585 - FEMI",
     "employeeCode": "C0585 - FEMI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 237600,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C0585 - FEMI",
+    "employeeCode": "C0585 - FEMI",
     "code": "NNDMEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
@@ -21851,6 +21881,26 @@
     "amount": 1020.94,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C0585 - FEMI",
+    "employeeCode": "C0585 - FEMI",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 7425,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C0695 - AWOYEMI",
+    "employeeCode": "C0695 - AWOYEMI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -21914,6 +21964,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C0695 - AWOYEMI",
+    "employeeCode": "C0695 - AWOYEMI",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 75796.88,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C0974 - ETUERI",
+    "employeeCode": "C0974 - ETUERI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 267300,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C0974 - ETUERI",
     "employeeCode": "C0974 - ETUERI",
     "code": "MEAL",
@@ -21921,6 +21991,16 @@
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1001 - GBADAMOSI",
+    "employeeCode": "C1001 - GBADAMOSI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 280500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -21941,6 +22021,26 @@
     "amount": 3029.22,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1001 - GBADAMOSI",
+    "employeeCode": "C1001 - GBADAMOSI",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 18562.5,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1035 - EJEH",
+    "employeeCode": "C1035 - EJEH",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 172425,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -21986,6 +22086,16 @@
     "period": "2026-06",
     "employeeId": "C1065 - OGHENERIE",
     "employeeCode": "C1065 - OGHENERIE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 231000,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1065 - OGHENERIE",
+    "employeeCode": "C1065 - OGHENERIE",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 10000,
@@ -22024,6 +22134,16 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C1065 - OGHENERIE",
+    "employeeCode": "C1065 - OGHENERIE",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 4331.25,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C1078 - LUKPATA",
     "employeeCode": "C1078 - LUKPATA",
     "code": "MEAL",
@@ -22051,6 +22171,16 @@
     "amount": 54140.63,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1096 - ADEDOYIN",
+    "employeeCode": "C1096 - ADEDOYIN",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -22104,6 +22234,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C1096 - ADEDOYIN",
+    "employeeCode": "C1096 - ADEDOYIN",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 61875,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1144 - OGWUA",
+    "employeeCode": "C1144 - OGWUA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 163350,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C1144 - OGWUA",
     "employeeCode": "C1144 - OGWUA",
     "code": "MEAL",
@@ -22111,6 +22261,16 @@
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1162 - ADEKOYA",
+    "employeeCode": "C1162 - ADEKOYA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 420000,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -22164,6 +22324,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C1162 - ADEKOYA",
+    "employeeCode": "C1162 - ADEKOYA",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 23625,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1229 - OLAWALE",
+    "employeeCode": "C1229 - OLAWALE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 326700,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C1229 - OLAWALE",
     "employeeCode": "C1229 - OLAWALE",
     "code": "MEAL",
@@ -22191,6 +22371,26 @@
     "amount": 74868.75,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1229 - OLAWALE",
+    "employeeCode": "C1229 - OLAWALE",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 20418.75,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1491 - VINCENT",
+    "employeeCode": "C1491 - VINCENT",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 156750,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -22256,6 +22456,16 @@
     "period": "2026-06",
     "employeeId": "C1544 - ADENIYI",
     "employeeCode": "C1544 - ADENIYI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 222750,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1544 - ADENIYI",
+    "employeeCode": "C1544 - ADENIYI",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
@@ -22281,6 +22491,26 @@
     "amount": 74250,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1544 - ADENIYI",
+    "employeeCode": "C1544 - ADENIYI",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 11601.56,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1607 - OJIKA",
+    "employeeCode": "C1607 - OJIKA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 237600,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -22314,6 +22544,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C1607 - OJIKA",
+    "employeeCode": "C1607 - OJIKA",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 29700,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1612 - MBAMARA",
+    "employeeCode": "C1612 - MBAMARA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 252000,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C1612 - MBAMARA",
     "employeeCode": "C1612 - MBAMARA",
     "code": "MEAL",
@@ -22326,11 +22576,31 @@
     "period": "2026-06",
     "employeeId": "C1686 - FRED",
     "employeeCode": "C1686 - FRED",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 184800,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1686 - FRED",
+    "employeeCode": "C1686 - FRED",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 7000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1705 - ROTIMI",
+    "employeeCode": "C1705 - ROTIMI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 255750,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -22384,6 +22654,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C1705 - ROTIMI",
+    "employeeCode": "C1705 - ROTIMI",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 57234.38,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1720 - RAYMOND",
+    "employeeCode": "C1720 - RAYMOND",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 207900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C1720 - RAYMOND",
     "employeeCode": "C1720 - RAYMOND",
     "code": "MEAL",
@@ -22411,6 +22701,16 @@
     "amount": 4445.55,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1720 - RAYMOND",
+    "employeeCode": "C1720 - RAYMOND",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 4331.25,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -22456,11 +22756,31 @@
     "period": "2026-06",
     "employeeId": "C1736 - JEROME",
     "employeeCode": "C1736 - JEROME",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 273600,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1736 - JEROME",
+    "employeeCode": "C1736 - JEROME",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1771 - BADEJO",
+    "employeeCode": "C1771 - BADEJO",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 163350,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -22491,6 +22811,26 @@
     "amount": 10209.38,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1771 - BADEJO",
+    "employeeCode": "C1771 - BADEJO",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 17015.63,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1772 - GANIYU",
+    "employeeCode": "C1772 - GANIYU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 154275,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -22534,6 +22874,16 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C1772 - GANIYU",
+    "employeeCode": "C1772 - GANIYU",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 3403.13,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C1775 - BASHRU",
     "employeeCode": "C1775 - BASHRU",
     "code": "MEAL",
@@ -22566,6 +22916,16 @@
     "period": "2026-06",
     "employeeId": "C1779 - EBUNO",
     "employeeCode": "C1779 - EBUNO",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 378000,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1779 - EBUNO",
+    "employeeCode": "C1779 - EBUNO",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
@@ -22581,6 +22941,26 @@
     "amount": 3898.13,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1779 - EBUNO",
+    "employeeCode": "C1779 - EBUNO",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 23625,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1783 - DARAMOLA",
+    "employeeCode": "C1783 - DARAMOLA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 207900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -22614,6 +22994,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C1783 - DARAMOLA",
+    "employeeCode": "C1783 - DARAMOLA",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 12993.75,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1788 - SAMUEL",
+    "employeeCode": "C1788 - SAMUEL",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 207900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C1788 - SAMUEL",
     "employeeCode": "C1788 - SAMUEL",
     "code": "MEAL",
@@ -22621,6 +23021,16 @@
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1789 - MBOCHI",
+    "employeeCode": "C1789 - MBOCHI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 334950,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -22676,11 +23086,31 @@
     "period": "2026-06",
     "employeeId": "C1793 - ITORO",
     "employeeCode": "C1793 - ITORO",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 224400,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1793 - ITORO",
+    "employeeCode": "C1793 - ITORO",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 8500,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1804 - KALU",
+    "employeeCode": "C1804 - KALU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 107250,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -22716,6 +23146,16 @@
     "period": "2026-06",
     "employeeId": "C1815 - NWABUEZE",
     "employeeCode": "C1815 - NWABUEZE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 52800,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1815 - NWABUEZE",
+    "employeeCode": "C1815 - NWABUEZE",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 2000,
@@ -22731,6 +23171,16 @@
     "amount": 14850,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1820 - OKORO",
+    "employeeCode": "C1820 - OKORO",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 207900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -22776,11 +23226,31 @@
     "period": "2026-06",
     "employeeId": "C1824 - ADAOWO",
     "employeeCode": "C1824 - ADAOWO",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 207900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1824 - ADAOWO",
+    "employeeCode": "C1824 - ADAOWO",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1840 - ISINGUZO",
+    "employeeCode": "C1840 - ISINGUZO",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -22796,6 +23266,16 @@
     "period": "2026-06",
     "employeeId": "C1849 - OKORIE",
     "employeeCode": "C1849 - OKORIE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 118800,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1849 - OKORIE",
+    "employeeCode": "C1849 - OKORIE",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
@@ -22806,11 +23286,31 @@
     "period": "2026-06",
     "employeeId": "C1870 - OHIEMBOR",
     "employeeCode": "C1870 - OHIEMBOR",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 237600,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1870 - OHIEMBOR",
+    "employeeCode": "C1870 - OHIEMBOR",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1882 - MOHAMMED",
+    "employeeCode": "C1882 - MOHAMMED",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 415800,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -22866,11 +23366,31 @@
     "period": "2026-06",
     "employeeId": "C1883 - YAYA",
     "employeeCode": "C1883 - YAYA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1883 - YAYA",
+    "employeeCode": "C1883 - YAYA",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1888 - YEKINI",
+    "employeeCode": "C1888 - YEKINI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 273600,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -22894,6 +23414,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C1888 - YEKINI",
+    "employeeCode": "C1888 - YEKINI",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 11400,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1889 - OGUNYEMI",
+    "employeeCode": "C1889 - OGUNYEMI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 243200,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C1889 - OGUNYEMI",
     "employeeCode": "C1889 - OGUNYEMI",
     "code": "MEAL",
@@ -22904,6 +23444,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C1889 - OGUNYEMI",
+    "employeeCode": "C1889 - OGUNYEMI",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 5700,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1920 - LATEEF",
+    "employeeCode": "C1920 - LATEEF",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C1920 - LATEEF",
     "employeeCode": "C1920 - LATEEF",
     "code": "MEAL",
@@ -22911,6 +23471,16 @@
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1924 - Mr ANIMASHAUN",
+    "employeeCode": "C1924 - Mr ANIMASHAUN",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 118800,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -22936,6 +23506,16 @@
     "period": "2026-06",
     "employeeId": "C1924 - Mr ANIMASHAUN",
     "employeeCode": "C1924 - Mr ANIMASHAUN",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 49500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1924 - Mr ANIMASHAUN",
+    "employeeCode": "C1924 - Mr ANIMASHAUN",
     "code": "SITEALL",
     "name": "SITE ALLOWANCE",
     "amount": 150000,
@@ -22951,6 +23531,16 @@
     "amount": 14066,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1924 - Mr ANIMASHAUN",
+    "employeeCode": "C1924 - Mr ANIMASHAUN",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 13200,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -22976,11 +23566,31 @@
     "period": "2026-06",
     "employeeId": "C1926 - NGOZIKA",
     "employeeCode": "C1926 - NGOZIKA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 184800,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1926 - NGOZIKA",
+    "employeeCode": "C1926 - NGOZIKA",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 8000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1931 - ABIODUN",
+    "employeeCode": "C1931 - ABIODUN",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23014,6 +23624,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C1931 - ABIODUN",
+    "employeeCode": "C1931 - ABIODUN",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 3093.75,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1933 - ADESEYE",
+    "employeeCode": "C1933 - ADESEYE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C1933 - ADESEYE",
     "employeeCode": "C1933 - ADESEYE",
     "code": "MEAL",
@@ -23031,6 +23661,26 @@
     "amount": 1276.17,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1933 - ADESEYE",
+    "employeeCode": "C1933 - ADESEYE",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 9281.25,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1938 - ONYEMERI",
+    "employeeCode": "C1938 - ONYEMERI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 396000,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23071,6 +23721,26 @@
     "amount": 22275,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1938 - ONYEMERI",
+    "employeeCode": "C1938 - ONYEMERI",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 18562.5,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1954 - AKPAN",
+    "employeeCode": "C1954 - AKPAN",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23134,6 +23804,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C1954 - AKPAN",
+    "employeeCode": "C1954 - AKPAN",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 40218.75,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1955 - OKERE",
+    "employeeCode": "C1955 - OKERE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 163350,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C1955 - OKERE",
     "employeeCode": "C1955 - OKERE",
     "code": "MEAL",
@@ -23161,6 +23851,16 @@
     "amount": 22120.31,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1966 - BELLO",
+    "employeeCode": "C1966 - BELLO",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 172425,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23206,6 +23906,16 @@
     "period": "2026-06",
     "employeeId": "C1967 - ADESUGBA",
     "employeeCode": "C1967 - ADESUGBA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 172425,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1967 - ADESUGBA",
+    "employeeCode": "C1967 - ADESUGBA",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9500,
@@ -23231,6 +23941,26 @@
     "amount": 10209.38,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1967 - ADESUGBA",
+    "employeeCode": "C1967 - ADESUGBA",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 1701.56,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1975 - AKINNIFESI",
+    "employeeCode": "C1975 - AKINNIFESI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23271,6 +24001,26 @@
     "amount": 18562.5,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1975 - AKINNIFESI",
+    "employeeCode": "C1975 - AKINNIFESI",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 6187.5,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1979 - WAHABI",
+    "employeeCode": "C1979 - WAHABI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 206250,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23334,6 +24084,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C1979 - WAHABI",
+    "employeeCode": "C1979 - WAHABI",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 34031.25,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1982 - BUSARI",
+    "employeeCode": "C1982 - BUSARI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C1982 - BUSARI",
     "employeeCode": "C1982 - BUSARI",
     "code": "MEAL",
@@ -23341,6 +24111,16 @@
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1983 - EBEYE",
+    "employeeCode": "C1983 - EBEYE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23371,6 +24151,16 @@
     "amount": 2200.01,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C1989 - SADIQ",
+    "employeeCode": "C1989 - SADIQ",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 118800,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23434,6 +24224,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C1989 - SADIQ",
+    "employeeCode": "C1989 - SADIQ",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 9900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2002 - NWOSU",
+    "employeeCode": "C2002 - NWOSU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 273600,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2002 - NWOSU",
     "employeeCode": "C2002 - NWOSU",
     "code": "MEAL",
@@ -23441,6 +24251,26 @@
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2002 - NWOSU",
+    "employeeCode": "C2002 - NWOSU",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 5700,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2011 - AJAYI",
+    "employeeCode": "C2011 - AJAYI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 69300,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23461,6 +24291,16 @@
     "amount": 12993.75,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2015 - AMUNE",
+    "employeeCode": "C2015 - AMUNE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 150150,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23494,6 +24334,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C2015 - AMUNE",
+    "employeeCode": "C2015 - AMUNE",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 4331.25,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2023 - IDIKA",
+    "employeeCode": "C2023 - IDIKA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 156750,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2023 - IDIKA",
     "employeeCode": "C2023 - IDIKA",
     "code": "NNDMEAL",
@@ -23521,6 +24381,16 @@
     "amount": 13921.88,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2023 - IDIKA",
+    "employeeCode": "C2023 - IDIKA",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 4640.63,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23556,6 +24426,16 @@
     "period": "2026-06",
     "employeeId": "C2080 - OYELEYE",
     "employeeCode": "C2080 - OYELEYE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 172425,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2080 - OYELEYE",
+    "employeeCode": "C2080 - OYELEYE",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9500,
@@ -23581,6 +24461,26 @@
     "amount": 2651.61,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2080 - OYELEYE",
+    "employeeCode": "C2080 - OYELEYE",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 3403.13,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2082 - ADEBANJO",
+    "employeeCode": "C2082 - ADEBANJO",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 163350,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23624,6 +24524,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C2082 - ADEBANJO",
+    "employeeCode": "C2082 - ADEBANJO",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 13612.5,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2083 - EREGARE",
+    "employeeCode": "C2083 - EREGARE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 23100,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2083 - EREGARE",
     "employeeCode": "C2083 - EREGARE",
     "code": "MEAL",
@@ -23631,6 +24551,16 @@
     "amount": 1000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2097 - COKER",
+    "employeeCode": "C2097 - COKER",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23676,6 +24606,16 @@
     "period": "2026-06",
     "employeeId": "C2098 - OLAITAN",
     "employeeCode": "C2098 - OLAITAN",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 140250,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2098 - OLAITAN",
+    "employeeCode": "C2098 - OLAITAN",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 8500,
@@ -23701,6 +24641,16 @@
     "amount": 1210,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2116 - OJADA",
+    "employeeCode": "C2116 - OJADA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 231000,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23756,6 +24706,16 @@
     "period": "2026-06",
     "employeeId": "C2121 - TAIWO",
     "employeeCode": "C2121 - TAIWO",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 207900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2121 - TAIWO",
+    "employeeCode": "C2121 - TAIWO",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
@@ -23786,6 +24746,16 @@
     "period": "2026-06",
     "employeeId": "C2129 - OSINEKE",
     "employeeCode": "C2129 - OSINEKE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2129 - OSINEKE",
+    "employeeCode": "C2129 - OSINEKE",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
@@ -23801,6 +24771,26 @@
     "amount": 425.39,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2129 - OSINEKE",
+    "employeeCode": "C2129 - OSINEKE",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 3093.75,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2130 - ATOYEBI",
+    "employeeCode": "C2130 - ATOYEBI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23831,6 +24821,16 @@
     "amount": 1875,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2136 - NGELE",
+    "employeeCode": "C2136 - NGELE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 123750,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23871,6 +24871,16 @@
     "amount": 18562.5,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2138 - AIGBEVBOILE",
+    "employeeCode": "C2138 - AIGBEVBOILE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23934,6 +24944,16 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C2138 - AIGBEVBOILE",
+    "employeeCode": "C2138 - AIGBEVBOILE",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 83531.25,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2154 - BANKOLE",
     "employeeCode": "C2154 - BANKOLE",
     "code": "MEAL",
@@ -23941,6 +24961,16 @@
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2193 - EMEH",
+    "employeeCode": "C2193 - EMEH",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 140250,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23974,6 +25004,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C2193 - EMEH",
+    "employeeCode": "C2193 - EMEH",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 7734.38,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2220 - UGBEKILE",
+    "employeeCode": "C2220 - UGBEKILE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 146250,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2220 - UGBEKILE",
     "employeeCode": "C2220 - UGBEKILE",
     "code": "MEAL",
@@ -23981,6 +25031,16 @@
     "amount": 7500,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2221 - YUNUS",
+    "employeeCode": "C2221 - YUNUS",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 146250,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -23996,6 +25056,16 @@
     "period": "2026-06",
     "employeeId": "C2222 - EZEAGU",
     "employeeCode": "C2222 - EZEAGU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 126750,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2222 - EZEAGU",
+    "employeeCode": "C2222 - EZEAGU",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 6500,
@@ -24006,11 +25076,31 @@
     "period": "2026-06",
     "employeeId": "C2224 - AGBATA",
     "employeeCode": "C2224 - AGBATA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 126750,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2224 - AGBATA",
+    "employeeCode": "C2224 - AGBATA",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 6500,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2225 - DANIEL",
+    "employeeCode": "C2225 - DANIEL",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 175500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -24034,6 +25124,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C2225 - DANIEL",
+    "employeeCode": "C2225 - DANIEL",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 10968.75,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2236 - IWUAGWU",
+    "employeeCode": "C2236 - IWUAGWU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 207900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2236 - IWUAGWU",
     "employeeCode": "C2236 - IWUAGWU",
     "code": "MEAL",
@@ -24041,6 +25151,16 @@
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2291 - UMA",
+    "employeeCode": "C2291 - UMA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 39600,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -24066,6 +25186,16 @@
     "period": "2026-06",
     "employeeId": "C2319 - TORTI",
     "employeeCode": "C2319 - TORTI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 211200,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2319 - TORTI",
+    "employeeCode": "C2319 - TORTI",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 8000,
@@ -24076,11 +25206,31 @@
     "period": "2026-06",
     "employeeId": "C2326 - AIYEDE",
     "employeeCode": "C2326 - AIYEDE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 184800,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2326 - AIYEDE",
+    "employeeCode": "C2326 - AIYEDE",
     "code": "NNDMEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 8000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2328 - ADEKANMBI",
+    "employeeCode": "C2328 - ADEKANMBI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 52800,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -24106,11 +25256,31 @@
     "period": "2026-06",
     "employeeId": "C2337 - OLOWU",
     "employeeCode": "C2337 - OLOWU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 207900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2337 - OLOWU",
+    "employeeCode": "C2337 - OLOWU",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2338 - AKANLE",
+    "employeeCode": "C2338 - AKANLE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 161700,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -24176,6 +25346,16 @@
     "period": "2026-06",
     "employeeId": "C2342 - OGUNBIYI",
     "employeeCode": "C2342 - OGUNBIYI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 145200,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2342 - OGUNBIYI",
+    "employeeCode": "C2342 - OGUNBIYI",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 8000,
@@ -24236,6 +25416,16 @@
     "period": "2026-06",
     "employeeId": "C2380 - ABAH",
     "employeeCode": "C2380 - ABAH",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 118800,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2380 - ABAH",
+    "employeeCode": "C2380 - ABAH",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
@@ -24261,6 +25451,16 @@
     "amount": 14066,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2383 - ABIODUN",
+    "employeeCode": "C2383 - ABIODUN",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 196350,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -24296,6 +25496,16 @@
     "period": "2026-06",
     "employeeId": "C2387 - ADEKUNLE",
     "employeeCode": "C2387 - ADEKUNLE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 158616,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2387 - ADEKUNLE",
+    "employeeCode": "C2387 - ADEKUNLE",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
@@ -24321,6 +25531,16 @@
     "amount": 1933.6,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2395 - AKEEM",
+    "employeeCode": "C2395 - AKEEM",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 161700,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -24354,6 +25574,16 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C2395 - AKEEM",
+    "employeeCode": "C2395 - AKEEM",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 4331.25,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2396 - AKINDELE",
     "employeeCode": "C2396 - AKINDELE",
     "code": "MEAL",
@@ -24376,11 +25606,31 @@
     "period": "2026-06",
     "employeeId": "C2402 - ALIYU",
     "employeeCode": "C2402 - ALIYU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2402 - ALIYU",
+    "employeeCode": "C2402 - ALIYU",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2404 - AMEH",
+    "employeeCode": "C2404 - AMEH",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 156750,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -24434,6 +25684,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C2404 - AMEH",
+    "employeeCode": "C2404 - AMEH",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 4640.63,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2408 - ANTHONY",
+    "employeeCode": "C2408 - ANTHONY",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 135000,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2408 - ANTHONY",
     "employeeCode": "C2408 - ANTHONY",
     "code": "MEAL",
@@ -24454,6 +25724,16 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C2408 - ANTHONY",
+    "employeeCode": "C2408 - ANTHONY",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 21093.75,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2410 - AFENIFORO",
     "employeeCode": "C2410 - AFENIFORO",
     "code": "MEAL",
@@ -24461,6 +25741,16 @@
     "amount": 8000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2412 - BABATUNDE",
+    "employeeCode": "C2412 - BABATUNDE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 196350,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -24496,6 +25786,26 @@
     "period": "2026-06",
     "employeeId": "C2421 - DANIEL",
     "employeeCode": "C2421 - DANIEL",
+    "code": "ARREARS",
+    "name": "ARREARS",
+    "amount": 198500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2421 - DANIEL",
+    "employeeCode": "C2421 - DANIEL",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 378000,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2421 - DANIEL",
+    "employeeCode": "C2421 - DANIEL",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
@@ -24521,6 +25831,26 @@
     "amount": 14066,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2421 - DANIEL",
+    "employeeCode": "C2421 - DANIEL",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 27562.5,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2422 - DAVID",
+    "employeeCode": "C2422 - DAVID",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 181500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -24564,6 +25894,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C2422 - DAVID",
+    "employeeCode": "C2422 - DAVID",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 23821.88,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2427 - EBELE",
+    "employeeCode": "C2427 - EBELE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 118800,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2427 - EBELE",
     "employeeCode": "C2427 - EBELE",
     "code": "MEAL",
@@ -24591,6 +25941,16 @@
     "amount": 14066,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2431 - EMEKA",
+    "employeeCode": "C2431 - EMEKA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -24654,6 +26014,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C2431 - EMEKA",
+    "employeeCode": "C2431 - EMEKA",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 92812.5,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2438 - EZENWA",
+    "employeeCode": "C2438 - EZENWA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 112200,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2438 - EZENWA",
     "employeeCode": "C2438 - EZENWA",
     "code": "MEAL",
@@ -24661,6 +26041,16 @@
     "amount": 8500,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2443 - GANIYU",
+    "employeeCode": "C2443 - GANIYU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 112500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -24681,6 +26071,26 @@
     "amount": 1546.88,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2443 - GANIYU",
+    "employeeCode": "C2443 - GANIYU",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 11250,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2445 -  AKOR",
+    "employeeCode": "C2445 -  AKOR",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 207900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -24711,6 +26121,16 @@
     "amount": 14066,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2449 - ICHUKWU",
+    "employeeCode": "C2449 - ICHUKWU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 136125,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -24786,6 +26206,16 @@
     "period": "2026-06",
     "employeeId": "C2462 - JAMIU",
     "employeeCode": "C2462 - JAMIU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 343900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2462 - JAMIU",
+    "employeeCode": "C2462 - JAMIU",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9500,
@@ -24826,11 +26256,31 @@
     "period": "2026-06",
     "employeeId": "C2469 - KINGSLEY",
     "employeeCode": "C2469 - KINGSLEY",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 273600,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2469 - KINGSLEY",
+    "employeeCode": "C2469 - KINGSLEY",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2470 - LAWAL",
+    "employeeCode": "C2470 - LAWAL",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 156750,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -24866,6 +26316,16 @@
     "period": "2026-06",
     "employeeId": "C2471 - MAGAJI",
     "employeeCode": "C2471 - MAGAJI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2471 - MAGAJI",
+    "employeeCode": "C2471 - MAGAJI",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
@@ -24881,6 +26341,26 @@
     "amount": 638.08,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2471 - MAGAJI",
+    "employeeCode": "C2471 - MAGAJI",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 4640.63,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2477 - MOHAMMED",
+    "employeeCode": "C2477 - MOHAMMED",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 156750,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -24924,6 +26404,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C2477 - MOHAMMED",
+    "employeeCode": "C2477 - MOHAMMED",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 4640.63,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2482 - OBILIKWU",
+    "employeeCode": "C2482 - OBILIKWU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 154275,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2482 - OBILIKWU",
     "employeeCode": "C2482 - OBILIKWU",
     "code": "MEAL",
@@ -24951,6 +26451,16 @@
     "amount": 14066,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2483 - OBILIKWU",
+    "employeeCode": "C2483 - OBILIKWU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 107250,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -24986,6 +26496,16 @@
     "period": "2026-06",
     "employeeId": "C2484 - OBINNA",
     "employeeCode": "C2484 - OBINNA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 207900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2484 - OBINNA",
+    "employeeCode": "C2484 - OBINNA",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
@@ -25011,6 +26531,16 @@
     "amount": 25987.5,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2484 - OBINNA",
+    "employeeCode": "C2484 - OBINNA",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 4331.25,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -25041,6 +26571,16 @@
     "amount": 5041.1,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2492 - OGWUA",
+    "employeeCode": "C2492 - OGWUA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 214500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -25094,6 +26634,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C2492 - OGWUA",
+    "employeeCode": "C2492 - OGWUA",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 18562.5,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2506 - ONOJA",
+    "employeeCode": "C2506 - ONOJA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 127500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2506 - ONOJA",
     "employeeCode": "C2506 - ONOJA",
     "code": "MEAL",
@@ -25111,6 +26671,26 @@
     "amount": 1740.24,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2506 - ONOJA",
+    "employeeCode": "C2506 - ONOJA",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 12656.25,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2507 - ONWUNTA",
+    "employeeCode": "C2507 - ONWUNTA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 304000,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -25151,6 +26731,16 @@
     "amount": 17100,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2507 - ONWUNTA",
+    "employeeCode": "C2507 - ONWUNTA",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 11400,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -25206,11 +26796,31 @@
     "period": "2026-06",
     "employeeId": "C2513 - OWOLABI",
     "employeeCode": "C2513 - OWOLABI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 207900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2513 - OWOLABI",
+    "employeeCode": "C2513 - OWOLABI",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2515 - OYEWOLE",
+    "employeeCode": "C2515 - OYEWOLE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 145200,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -25231,6 +26841,26 @@
     "amount": 935.86,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2515 - OYEWOLE",
+    "employeeCode": "C2515 - OYEWOLE",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 6806.25,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2516 - OZILI",
+    "employeeCode": "C2516 - OZILI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 163350,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -25261,6 +26891,16 @@
     "amount": 770.43,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2516 - OZILI",
+    "employeeCode": "C2516 - OZILI",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 3403.13,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -25476,6 +27116,16 @@
     "period": "2026-06",
     "employeeId": "C2555 - EZE",
     "employeeCode": "C2555 - EZE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2555 - EZE",
+    "employeeCode": "C2555 - EZE",
     "code": "NNDMEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
@@ -25524,6 +27174,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C2555 - EZE",
+    "employeeCode": "C2555 - EZE",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 61875,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2566 - ROTIMI",
+    "employeeCode": "C2566 - ROTIMI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 243200,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2566 - ROTIMI",
     "employeeCode": "C2566 - ROTIMI",
     "code": "MEAL",
@@ -25531,6 +27201,26 @@
     "amount": 8000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2566 - ROTIMI",
+    "employeeCode": "C2566 - ROTIMI",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 17100,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2597 - IRIKEFE",
+    "employeeCode": "C2597 - IRIKEFE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 376200,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -25566,6 +27256,16 @@
     "period": "2026-06",
     "employeeId": "C2604 - ADAH",
     "employeeCode": "C2604 - ADAH",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 207900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2604 - ADAH",
+    "employeeCode": "C2604 - ADAH",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
@@ -25576,11 +27276,31 @@
     "period": "2026-06",
     "employeeId": "C2605 - ONAJI",
     "employeeCode": "C2605 - ONAJI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 154275,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2605 - ONAJI",
+    "employeeCode": "C2605 - ONAJI",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 8500,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2607 - ADEOSUN",
+    "employeeCode": "C2607 - ADEOSUN",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 163350,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -25626,6 +27346,16 @@
     "period": "2026-06",
     "employeeId": "C2614 - ADELEKE",
     "employeeCode": "C2614 - ADELEKE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 80850,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2614 - ADELEKE",
+    "employeeCode": "C2614 - ADELEKE",
     "code": "NNDMEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 3500,
@@ -25646,11 +27376,31 @@
     "period": "2026-06",
     "employeeId": "C2615 - HART",
     "employeeCode": "C2615 - HART",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 207900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2615 - HART",
+    "employeeCode": "C2615 - HART",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2622 - JOHN",
+    "employeeCode": "C2622 - JOHN",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 172425,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -25686,11 +27436,31 @@
     "period": "2026-06",
     "employeeId": "C2623 - NWACHUKWU",
     "employeeCode": "C2623 - NWACHUKWU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 273600,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2623 - NWACHUKWU",
+    "employeeCode": "C2623 - NWACHUKWU",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2626 - OKPE",
+    "employeeCode": "C2626 - OKPE",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -25711,6 +27481,26 @@
     "amount": 638.09,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2626 - OKPE",
+    "employeeCode": "C2626 - OKPE",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 4640.63,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2632 - OGUNBONA",
+    "employeeCode": "C2632 - OGUNBONA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 146250,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -25741,6 +27531,26 @@
     "amount": 21937.5,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2632 - OGUNBONA",
+    "employeeCode": "C2632 - OGUNBONA",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 9140.63,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2633 - KENECHUKWU",
+    "employeeCode": "C2633 - KENECHUKWU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 126750,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -25776,6 +27586,16 @@
     "period": "2026-06",
     "employeeId": "C2663 - DAVID",
     "employeeCode": "C2663 - DAVID",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 237600,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2663 - DAVID",
+    "employeeCode": "C2663 - DAVID",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
@@ -25806,11 +27626,31 @@
     "period": "2026-06",
     "employeeId": "C2664 - UDO",
     "employeeCode": "C2664 - UDO",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 211200,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2664 - UDO",
+    "employeeCode": "C2664 - UDO",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 8000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2665 - OSAUZO",
+    "employeeCode": "C2665 - OSAUZO",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 258400,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -25831,6 +27671,26 @@
     "amount": 783.75,
     "taxable": false,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2665 - OSAUZO",
+    "employeeCode": "C2665 - OSAUZO",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 5700,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2690 - OJO",
+    "employeeCode": "C2690 - OJO",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 207900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -25866,6 +27726,16 @@
     "period": "2026-06",
     "employeeId": "C2697 - SUNDAY",
     "employeeCode": "C2697 - SUNDAY",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 207900,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2697 - SUNDAY",
+    "employeeCode": "C2697 - SUNDAY",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
@@ -25896,11 +27766,31 @@
     "period": "2026-06",
     "employeeId": "C2698 - KALU",
     "employeeCode": "C2698 - KALU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 69300,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2698 - KALU",
+    "employeeCode": "C2698 - KALU",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 3000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2699 - AKINMOLADUN",
+    "employeeCode": "C2699 - AKINMOLADUN",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 69300,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -25921,6 +27811,16 @@
     "amount": 12993.75,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2704 - ADEBISI",
+    "employeeCode": "C2704 - ADEBISI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 80850,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -25946,6 +27846,16 @@
     "period": "2026-06",
     "employeeId": "C2722 - ADENIJI",
     "employeeCode": "C2722 - ADENIJI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 154275,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2722 - ADENIJI",
+    "employeeCode": "C2722 - ADENIJI",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 8500,
@@ -25961,6 +27871,26 @@
     "amount": 42539.06,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2722 - ADENIJI",
+    "employeeCode": "C2722 - ADENIJI",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 3403.13,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2724 - AMANOKHAI",
+    "employeeCode": "C2724 - AMANOKHAI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 132000,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -26014,6 +27944,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C2724 - AMANOKHAI",
+    "employeeCode": "C2724 - AMANOKHAI",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 17325,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2725 - AMODU",
+    "employeeCode": "C2725 - AMODU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 163350,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2725 - AMODU",
     "employeeCode": "C2725 - AMODU",
     "code": "MEAL",
@@ -26044,6 +27994,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C2725 - AMODU",
+    "employeeCode": "C2725 - AMODU",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 1701.56,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2728 - UDOH",
+    "employeeCode": "C2728 - UDOH",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 118800,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2728 - UDOH",
     "employeeCode": "C2728 - UDOH",
     "code": "MEAL",
@@ -26051,6 +28021,16 @@
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2751 - ODUNNIYI",
+    "employeeCode": "C2751 - ODUNNIYI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 39600,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -26071,6 +28051,16 @@
     "amount": 9900,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2760 - Mr AJAYI",
+    "employeeCode": "C2760 - Mr AJAYI",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 82500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -26106,6 +28096,16 @@
     "period": "2026-06",
     "employeeId": "C2764 - BONNY",
     "employeeCode": "C2764 - BONNY",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 46200,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2764 - BONNY",
+    "employeeCode": "C2764 - BONNY",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 3500,
@@ -26116,11 +28116,31 @@
     "period": "2026-06",
     "employeeId": "C2776 - Mr SUNDAY",
     "employeeCode": "C2776 - Mr SUNDAY",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 154275,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2776 - Mr SUNDAY",
+    "employeeCode": "C2776 - Mr SUNDAY",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 8500,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2790 - Mr ADEBANJO",
+    "employeeCode": "C2790 - Mr ADEBANJO",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -26156,6 +28176,16 @@
     "period": "2026-06",
     "employeeId": "C2795 - IDOKO",
     "employeeCode": "C2795 - IDOKO",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2795 - IDOKO",
+    "employeeCode": "C2795 - IDOKO",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 9000,
@@ -26184,6 +28214,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C2795 - IDOKO",
+    "employeeCode": "C2795 - IDOKO",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 4640.63,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2805 - Mrs UZOMA",
+    "employeeCode": "C2805 - Mrs UZOMA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 356400,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2805 - Mrs UZOMA",
     "employeeCode": "C2805 - Mrs UZOMA",
     "code": "MEAL",
@@ -26191,6 +28241,26 @@
     "amount": 9000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2805 - Mrs UZOMA",
+    "employeeCode": "C2805 - Mrs UZOMA",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 22275,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2806 - Mr ALIYU",
+    "employeeCode": "C2806 - Mr ALIYU",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 148500,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",
@@ -26214,6 +28284,26 @@
   },
   {
     "period": "2026-06",
+    "employeeId": "C2806 - Mr ALIYU",
+    "employeeCode": "C2806 - Mr ALIYU",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 4640.63,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2808 - Mr UZOMA",
+    "employeeCode": "C2808 - Mr UZOMA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 14000,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
     "employeeId": "C2808 - Mr UZOMA",
     "employeeCode": "C2808 - Mr UZOMA",
     "code": "MEAL",
@@ -26226,11 +28316,31 @@
     "period": "2026-06",
     "employeeId": "C2809 - Mr DIA",
     "employeeCode": "C2809 - Mr DIA",
+    "code": "JCWEEKDAY",
+    "name": "WEEKDAY EARNING",
+    "amount": 85800,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2809 - Mr DIA",
+    "employeeCode": "C2809 - Mr DIA",
     "code": "MEAL",
     "name": "MEAL ALLOWANCE",
     "amount": 6500,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "C2809 - Mr DIA",
+    "employeeCode": "C2809 - Mr DIA",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVT EARNING",
+    "amount": 4950,
+    "taxable": true,
+    "source": "Sage payslip period earning sync"
   },
   {
     "period": "2026-06",

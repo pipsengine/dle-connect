@@ -97,9 +97,13 @@ const employeeAdjustmentIdentity = (
 };
 
 /** Sync every Sage payslip earning line for a payroll period into period adjustments (authoritative for ESS + payroll calc). */
-export const syncSagePeriodEarningAdjustments = async (period?: string) => {
+export const syncSagePeriodEarningAdjustments = async (
+  period?: string,
+  options?: { contractEmployeesOnly?: boolean },
+) => {
   const normalizedPeriod = normalizePayrollPeriod(period || activePayrollPeriod());
-  if (!normalizedPeriod || isEnterprisePayrollPeriod(normalizedPeriod)) {
+  const enterprise = Boolean(normalizedPeriod && isEnterprisePayrollPeriod(normalizedPeriod));
+  if (!normalizedPeriod || (enterprise && !options?.contractEmployeesOnly)) {
     return { period: normalizedPeriod, synced: 0, changed: false, employees: 0 };
   }
 
@@ -139,6 +143,7 @@ export const syncSagePeriodEarningAdjustments = async (period?: string) => {
     const identity = employeeAdjustmentIdentity(employeeCode, employee || undefined);
     const hasStructural = permanentStyleSageEarnings(snapshot.earningLines);
     const permanentEmployee = employee ? isPermanentPayrollEmployee(employee) : hasStructural;
+    if (enterprise && permanentEmployee) continue;
 
     for (const [key, row] of [...byKey.entries()]) {
       if (normalizePayrollPeriod(row.period) !== normalizedPeriod) continue;
@@ -196,17 +201,22 @@ export const syncSagePeriodEarningAdjustments = async (period?: string) => {
 const periodSyncInFlight = new Map<string, Promise<{ period: string; synced: number; changed: boolean; employees: number }>>();
 
 /** Idempotent: loads Sage payslip earning lines for a period once per server session wave. */
-export const ensureSagePeriodEarningAdjustments = async (period?: string) => {
+export const ensureSagePeriodEarningAdjustments = async (
+  period?: string,
+  options?: { contractEmployeesOnly?: boolean },
+) => {
   const normalizedPeriod = normalizePayrollPeriod(period || activePayrollPeriod());
-  if (!normalizedPeriod || isEnterprisePayrollPeriod(normalizedPeriod)) {
+  const enterprise = Boolean(normalizedPeriod && isEnterprisePayrollPeriod(normalizedPeriod));
+  if (!normalizedPeriod || (enterprise && !options?.contractEmployeesOnly)) {
     return { period: normalizedPeriod, synced: 0, changed: false, employees: 0 };
   }
-  const existing = periodSyncInFlight.get(normalizedPeriod);
+  const cacheKey = `${normalizedPeriod}:${options?.contractEmployeesOnly ? 'contract' : 'all'}`;
+  const existing = periodSyncInFlight.get(cacheKey);
   if (existing) return existing;
-  const task = syncSagePeriodEarningAdjustments(normalizedPeriod).finally(() => {
-    periodSyncInFlight.delete(normalizedPeriod);
+  const task = syncSagePeriodEarningAdjustments(normalizedPeriod, options).finally(() => {
+    periodSyncInFlight.delete(cacheKey);
   });
-  periodSyncInFlight.set(normalizedPeriod, task);
+  periodSyncInFlight.set(cacheKey, task);
   return task;
 };
 

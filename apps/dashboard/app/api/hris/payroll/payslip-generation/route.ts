@@ -200,6 +200,7 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
   const role = getRole(request);
   const perms = permissions(role);
   const enterpriseSourceActive = isEnterprisePayrollPeriod(requestedPeriod);
+  await syncSagePeriodEarningAdjustments(requestedPeriod, { contractEmployeesOnly: true }).catch(() => undefined);
   if (!enterpriseSourceActive) {
     await syncPayslipIdentitiesFromSage({ migratedBy: 'Payslip Generation' }).catch(() => undefined);
   }

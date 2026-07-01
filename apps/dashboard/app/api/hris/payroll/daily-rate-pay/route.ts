@@ -5,6 +5,7 @@ import { isDailyRatePayrollEmployee } from '@/lib/payroll-employee-classificatio
 import { calculateTimesheetPeriod, aggregateEmployeeAttendanceForHeaders, canonicalTimesheetEmployeeKey, isTimesheetCountableForPayroll, readTimesheetData, readTimesheetPayrollUpdates, readTimesheetPeriods } from '@/lib/timesheet-entry-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { mergeTimesheetDayRateEarnings } from '@/lib/payroll-earnings-engine';
+import { syncSagePeriodEarningAdjustments } from '@/lib/payroll-period-earning-adjustments-store';
 import { activePayrollPeriod, payrollPeriodLabel } from '@/lib/payroll-periods';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Payroll Officer' | 'Finance Controller' | 'Executive Management' | 'Auditor' | 'Employee';
@@ -64,6 +65,7 @@ const buildPayload = async (request: Request) => {
   const { searchParams } = new URL(request.url);
   const payrollPeriod = normalizePeriod(searchParams.get('period'));
   const periodId = periodIdFromPayrollPeriod(payrollPeriod);
+  await syncSagePeriodEarningAdjustments(payrollPeriod, { contractEmployeesOnly: true }).catch(() => undefined);
   const role = getRole(request);
   const perms = permissions(role);
   const employeeSource = await readPayrollEmployees();

@@ -532,9 +532,7 @@ export const mergeTimesheetDayRateEarnings = (
   const merged = supplemental.paidEarningLines.length
     ? mergeDailySupplementalEarnings(timesheetBase, supplemental)
     : timesheetBase;
-  return supplemental.paidEarningLines.length
-    ? alignDayRateLinesWithSageBreakdown(merged)
-    : merged;
+  return alignDayRateLinesWithSageBreakdown(merged);
 };
 
 const alignDayRateLinesWithSageBreakdown = (earnings: PayrollEarningsResult): PayrollEarningsResult => {
@@ -705,6 +703,7 @@ export const resolvePayrollEarningProfile = (employee: DleEmployeeDirectoryRow, 
   if (/^(P?IT|IT|I|P?NYSC|NYSC|N)\d+/.test(employeeCode) || /\b(INDUSTRIAL TRAINING|INDUSTRIAL TRAINEE|INTERN|NYSC|NATIONAL YOUTH SERVICE)\b/.test(stipendGroupText)) return 'stipend-non-taxable';
   if (/^L\d+/.test(employeeCode) || /LUMPSUM|LUMP SUM/.test(groupText)) return 'contract-lumpsum';
   const permanentStaffCode = /^P\d+/.test(employeeCode) || (/\bPERMANENT\b/.test(groupText) && !/\b(CONTRACT|DAILY RATE|DAY RATE|LUMPSUM|LUMP SUM)\b/.test(groupText));
+  if (contractEmployeeCode(employee) && (Number(employee.ratePerDay || 0) > 0 || Number(employee.ratePerHour || 0) > 0)) return 'contract-day-rate';
   if (!permanentStaffCode && (isDailyRatePayrollEmployee(employee) || /DAILY RATE|DAY RATE/.test(groupText))) return 'contract-day-rate';
   if (contractEmployeeCode(employee)) return 'fallback';
   const isOtherContract = /CONTRACT|TEMPORARY|CASUAL/.test(groupText);
