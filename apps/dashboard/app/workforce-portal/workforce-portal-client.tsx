@@ -10,6 +10,7 @@ import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-p
 import { EssDashboardView, EssRightPanel } from './ess-dashboard-view';
 import { EssLeaveDashboardView, type EssLeavePayload, type LeaveWorkspaceTab } from './ess-leave-dashboard-view';
 import { EssLeaveApprovalsView, type EssLeaveApprovalsPayload } from './ess-leave-approvals-view';
+import { EssServicesView, type EssServicesPayload } from './ess-services-view';
 import EssWorkflowDashboardView from './ess-workflow-dashboard-view';
 import type { WorkflowIntelligence } from '@/lib/ess-workflow-intelligence';
 import { EssProfileDashboardView, type EssProfilePayload } from './ess-profile-dashboard-view';
@@ -1431,38 +1432,17 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
           )}
 
           {tab === 'services' && (
-            <section className="grid grid-cols-1 gap-4 xl:grid-cols-[420px_1fr]">
-              <Section title="Submit Employee Request">
-                <div className="space-y-3">
-                  <label className="block text-xs font-black uppercase tracking-normal text-slate-500">Service</label>
-                  <select value={requestCategory} onChange={(e) => setRequestCategory(e.target.value)} className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none">
-                    {(payload?.serviceCatalog || []).map((item) => <option key={item.id}>{item.label}</option>)}
-                  </select>
-                  <label className="block text-xs font-black uppercase tracking-normal text-slate-500">Request title</label>
-                  <input value={requestTitle} onChange={(e) => setRequestTitle(e.target.value)} className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none" placeholder="Briefly describe the request" />
-                  <label className="block text-xs font-black uppercase tracking-normal text-slate-500">Priority</label>
-                  <select value={requestPriority} onChange={(e) => setRequestPriority(e.target.value)} className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none">
-                    {['Low', 'Normal', 'High'].map((item) => <option key={item}>{item}</option>)}
-                  </select>
-                  <button type="button" onClick={submitRequest} disabled={saving || !requestTitle.trim()} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-blue-600 text-sm font-black text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"><Send className="h-4 w-4" />{saving ? 'Submitting' : 'Submit Request'}</button>
-                </div>
-              </Section>
-              <Section title="Workflow & Approval Tracking">
-                <div className="space-y-3">
-                  {(payload?.requests || []).map((item) => (
-                    <div key={item.id} className={`rounded-lg border p-4 ${statusSurface(item.status)}`}>
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div><p className="text-sm font-black text-slate-950">{item.title}</p><p className="mt-1 text-xs font-semibold text-slate-500">{item.category} - {dateText(item.submittedAt)}</p></div>
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-black ${statusTone(item.status)}`}>{item.status}</span>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {item.approvers.map((approver) => <span key={approver} className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-black text-slate-700">{approver}</span>)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Section>
-            </section>
+            <EssServicesView
+              payload={payload as unknown as EssServicesPayload | null}
+              requestCategory={requestCategory}
+              requestTitle={requestTitle}
+              requestPriority={requestPriority}
+              onCategoryChange={setRequestCategory}
+              onTitleChange={setRequestTitle}
+              onPriorityChange={setRequestPriority}
+              onSubmit={submitRequest}
+              saving={saving}
+            />
           )}
 
           {tab === 'communication' && (
