@@ -679,10 +679,20 @@ export const pendingLeaveApprovalsForActor = (
       if (!requester) return null;
       const approverKind = resolveLeaveApproverKind({ actor, requester, request, roles, isGlobalAdmin, employees });
       if (!approverKind) return null;
+      const requesterAny = requester as DleEmployeeDirectoryRow & { designation?: string; jobTitle?: string; costCenter?: string; salaryGrade?: string };
+      const elapsedWorkingDays = request.submittedAt ? workingDaysSince(request.submittedAt) : 0;
+      const slaStatus = elapsedWorkingDays > workflowDeadlineDays
+        ? 'Overdue'
+        : elapsedWorkingDays >= Math.ceil(workflowDeadlineDays * 0.75)
+          ? 'At Risk'
+          : 'On Track';
       return {
         id: request.id,
+        requestId: request.id,
+        title: request.title || `${request.leaveType || 'Leave'} Request`,
         employee: requester.fullName,
         employeeId: requester.employeeId,
+        employeeCode: requesterAny.employeeCode || requester.employeeId,
         type: request.leaveType || 'Leave',
         days: request.days || 0,
         startDate: request.startDate || '',
@@ -693,12 +703,26 @@ export const pendingLeaveApprovalsForActor = (
         handover: request.handover || 'Required',
         conflict: 'No conflict',
         approverKind,
+        department: requesterAny.department || 'Unassigned',
+        designation: requesterAny.jobTitle || requesterAny.designation || 'Employee',
+        costCentre: requesterAny.costCenter || requesterAny.department || 'Unassigned',
+        appliedOn: request.submittedAt || '',
+        priority: request.priority || 'Normal',
+        reason: request.reason || '',
+        slaStatus,
+        elapsedWorkingDays,
+        slaWorkingDays: workflowDeadlineDays,
+        attachmentNames: request.attachmentNames || [],
+        comments: (request.comments || []).map((entry) => ({ at: entry.at, actor: entry.actor, comment: entry.comment })),
       };
     })
     .filter(Boolean) as Array<{
       id: string;
+      requestId: string;
+      title: string;
       employee: string;
       employeeId: string;
+      employeeCode: string;
       type: string;
       days: number;
       startDate: string;
@@ -709,6 +733,17 @@ export const pendingLeaveApprovalsForActor = (
       handover: string;
       conflict: string;
       approverKind: LeaveApproverKind;
+      department: string;
+      designation: string;
+      costCentre: string;
+      appliedOn: string;
+      priority: string;
+      reason: string;
+      slaStatus: string;
+      elapsedWorkingDays: number;
+      slaWorkingDays: number;
+      attachmentNames: string[];
+      comments: Array<{ at: string; actor: string; comment: string }>;
     }>;
 };
 

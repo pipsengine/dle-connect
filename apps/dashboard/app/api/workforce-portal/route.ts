@@ -37,6 +37,7 @@ import {
   cancelEssLeaveRequest,
   emailLeaveApproversForRequest,
   workflowDeadlineDays,
+  workingDaysSince,
   writeAllEssRequests,
 } from '@/lib/leave-workflow-service';
 
@@ -918,21 +919,75 @@ export async function GET(request: Request) {
       employeeSource.employees,
       session.roles || [],
       session.isGlobalAdmin,
-    ).map((item) => ({
-      id: item.id,
-      employee: item.employee,
-      type: item.type,
-      days: item.days,
-      stage: item.stage,
-      status: item.status,
-      reliever: item.reliever,
-      handover: item.handover,
-      conflict: item.conflict,
-      startDate: item.startDate,
-      endDate: item.endDate,
-      approverKind: item.approverKind,
-    }));
+    ).map((item) => {
+      const requester = employeeSource.employees.find((emp) => employeeRequestMatches(emp, item.employeeId)) || null;
+      const requesterBalance = requester ? Math.max(0, annualLeaveEntitlementForEmployee(requester)) : 0;
+      return {
+        id: item.id,
+        requestId: item.requestId,
+        title: item.title,
+        employee: item.employee,
+        employeeId: item.employeeId,
+        employeeCode: item.employeeCode,
+        type: item.type,
+        days: item.days,
+        stage: item.stage,
+        status: item.status,
+        reliever: item.reliever,
+        handover: item.handover,
+        conflict: item.conflict,
+        startDate: item.startDate,
+        endDate: item.endDate,
+        approverKind: item.approverKind,
+        department: item.department,
+        designation: item.designation,
+        costCentre: item.costCentre,
+        appliedOn: item.appliedOn,
+        priority: item.priority,
+        reason: item.reason,
+        slaStatus: item.slaStatus,
+        elapsedWorkingDays: item.elapsedWorkingDays,
+        slaWorkingDays: item.slaWorkingDays,
+        leaveBalance: requesterBalance,
+        attachmentNames: item.attachmentNames,
+        comments: item.comments,
+      };
+    });
     const employeeDepartment = compact(employee.department).toLowerCase();
+    const approvalMetrics = (() => {
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const deptEmployeeIds = new Set(
+        employeeSource.employees
+          .filter((item) => compact(item.department).toLowerCase() === employeeDepartment)
+          .flatMap((item) => [item.employeeId, item.employeeCode].filter(Boolean).map((key) => normalizePayrollMatchKey(String(key)))),
+      );
+      const inActorScope = (request: EssRequest) => {
+        const key = normalizePayrollMatchKey(request.employeeId);
+        return deptEmployeeIds.has(key) || employeeRequestMatches(employee, request.employeeId);
+      };
+      const scopedLeave = allRequests.filter((item) => /leave/i.test(item.category) && item.startDate && item.endDate && inActorScope(item));
+      const decidedToday = scopedLeave.filter((item) => compact(item.updatedAt).slice(0, 10) === todayIso);
+      const approvedToday = decidedToday.filter((item) => item.status === 'Approved').length;
+      const rejectedToday = decidedToday.filter((item) => item.status === 'Rejected').length;
+      const escalated = leaveApprovals.filter((item) => item.slaStatus === 'Overdue').length;
+      const activeScoped = scopedLeave.filter((item) => ['Line Manager Review', 'HR Review', 'Submitted'].includes(item.status));
+      const overdueActive = activeScoped.filter((item) => item.submittedAt && workingDaysSince(item.submittedAt) > workflowDeadlineDays).length;
+      const slaCompliance = activeScoped.length ? Math.round((1 - overdueActive / activeScoped.length) * 100) : 100;
+      const approvedForAvg = scopedLeave.filter((item) => item.status === 'Approved' && item.submittedAt && item.updatedAt);
+      const avgDays = approvedForAvg.length
+        ? approvedForAvg.reduce((sum, item) => sum + workingDaysSince(item.submittedAt, item.updatedAt), 0) / approvedForAvg.length
+        : 0;
+      const avgWholeDays = Math.floor(avgDays);
+      const avgHours = Math.round((avgDays - avgWholeDays) * 24);
+      return {
+        pendingApprovals: leaveApprovals.length,
+        approvedToday,
+        rejectedToday,
+        escalated,
+        slaCompliance,
+        avgApprovalLabel: approvedForAvg.length ? `${avgWholeDays}d ${avgHours}h` : '—',
+      };
+    })();
     const relieverOptions = employeeSource.employees
       .filter((item) => (item.employeeId !== employee.employeeId && (item.employeeCode || item.employeeId) !== (employee.employeeCode || employee.employeeId)))
       .filter((item) => compact(item.department).toLowerCase() === employeeDepartment)
@@ -1074,6 +1129,7 @@ export async function GET(request: Request) {
         ],
         approvals: leaveApprovals,
         pendingApprovalCount: leaveApprovals.length,
+        approvalMetrics,
         reports: ['Employee leave balance', 'Department leave utilization', 'Leave liability', 'Carry forward leave', 'Expired/forfeited leave', 'Leave allowance eligibility', 'Payroll-impact leave', 'Sick leave trend', 'Absenteeism', 'Employees currently on leave', 'Upcoming leave', 'Approval SLA report', 'Leave audit trail'].map((title, index) => ({ id: `ess-rpt-${index + 1}`, title, format: 'Excel / PDF / CSV', status: 'Available' })),
         notifications: ['Leave submitted', 'Approval pending', 'Leave approved', 'Leave rejected', 'Leave cancelled', 'Leave recalled', 'Carry forward balance created', 'Carry forward expiry reminder', 'Return-to-work reminder', 'Payroll leave allowance processing', 'Blackout conflict warning', 'Reliever assignment'].map((title, index) => ({ id: `leave-ntf-${index + 1}`, title, channel: 'Email, In-app, ESS', status: 'Enabled' })),
         security: [
