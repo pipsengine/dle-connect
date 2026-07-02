@@ -9,6 +9,7 @@ import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
 import { EssDashboardView, EssRightPanel } from './ess-dashboard-view';
 import { EssLeaveDashboardView, type EssLeavePayload, type LeaveWorkspaceTab } from './ess-leave-dashboard-view';
+import { EssLeaveApprovalsView, type EssLeaveApprovalsPayload } from './ess-leave-approvals-view';
 import EssWorkflowDashboardView from './ess-workflow-dashboard-view';
 import type { WorkflowIntelligence } from '@/lib/ess-workflow-intelligence';
 import { EssProfileDashboardView, type EssProfilePayload } from './ess-profile-dashboard-view';
@@ -851,7 +852,6 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
   const [draftRequestId] = useState(() => `ess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const [attachmentNames, setAttachmentNames] = useState<string[]>([]);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
-  const [approvalComment, setApprovalComment] = useState('');
   const selected = (payload?.leave.balances || []).find((item) => String(item.type) === leaveType) || payload?.leave.balances?.[0];
   const relieverOptions = payload?.leave.relieverOptions || [];
   const selectedReliever = relieverOptions.find((item) => item.employeeId === reliever || item.employeeCode === reliever);
@@ -1009,27 +1009,11 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
       {active === 'Leave Calendar' && <section className="grid grid-cols-1 gap-4 xl:grid-cols-2"><InfoListLike title="Calendar" rows={payload?.leave.calendar || []} keys={['label', 'from', 'to', 'status', 'scope']} /><InfoListLike title="Notifications" rows={payload?.leave.notifications || []} keys={['title', 'channel', 'status']} /></section>}
       {active === 'Leave History' && <DataList rows={payload?.leave.history || []} titleKey="type" subtitleKeys={['from', 'to', 'days', 'approvalStage', 'allowanceStatus']} />}
       {active === 'Approvals' && (
-        <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <InfoListLike title="Approval Workflow" rows={payload?.leave.workflows || []} keys={['stage', 'owner', 'status', 'sla']} />
-          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="text-sm font-black text-slate-950">Manager/HR Queue ({payload?.leave.pendingApprovalCount || 0})</h3>
-            <div className="mt-4 space-y-3">
-              {(payload?.leave.approvals || []).map((item, index) => (
-                <div key={String(item.id || index)} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-sm font-black text-slate-950">{String(item.employee)} — {String(item.type)}</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-600">{String(item.startDate || '')} to {String(item.endDate || '')} · {String(item.days)} day(s) · {String(item.stage)}</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">Reliever: {String(item.reliever)} · {String(item.conflict)}</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button type="button" disabled={saving} onClick={() => onLeaveAction?.({ requestId: String(item.id), action: 'approve', comment: approvalComment })} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-200 disabled:text-slate-500">Approve</button>
-                    <button type="button" disabled={saving} onClick={() => onLeaveAction?.({ requestId: String(item.id), action: 'reject', comment: approvalComment })} className="rounded-lg bg-red-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-200 disabled:text-slate-500">Reject</button>
-                  </div>
-                </div>
-              ))}
-              {!payload?.leave.approvals?.length ? <p className="text-sm font-semibold text-slate-500">No leave requests are awaiting your approval.</p> : null}
-            </div>
-            <textarea value={approvalComment} onChange={(e) => setApprovalComment(e.target.value)} placeholder="Optional approval / rejection comment" className="mt-4 min-h-20 w-full rounded-lg border border-slate-200 p-3 text-sm font-semibold" />
-          </section>
-        </section>
+        <EssLeaveApprovalsView
+          payload={payload as unknown as EssLeaveApprovalsPayload | null}
+          saving={saving}
+          onLeaveAction={onLeaveAction}
+        />
       )}
       {active === 'Policy & Entitlement' && <section className="grid grid-cols-1 gap-4 xl:grid-cols-2"><InfoListLike title="Payroll & Allowance" rows={payload?.leave.allowance || []} keys={['label', 'value', 'status']} /><InfoListLike title="Reports & RBAC" rows={[...(payload?.leave.reports || []), ...(payload?.leave.security || [])]} keys={['title', 'role', 'access', 'format', 'status']} /></section>}
         </>
