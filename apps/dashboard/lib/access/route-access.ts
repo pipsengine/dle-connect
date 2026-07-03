@@ -99,6 +99,9 @@ export const hrisRoutePermissionOptions = (pathname: string): string[] | null =>
   if (path.startsWith('/hris/payroll') || path.startsWith('/hris/payroll-management')) {
     return ['payroll.view', 'page.payroll.management.view'];
   }
+  if (path.startsWith('/hris/performance-management')) {
+    return ['performance.view', 'hris.performance-management', 'hris.view', 'page.hris.management.view'];
+  }
   return null;
 };
 
@@ -113,6 +116,7 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
   if (path === '/hris') return hasAnyPermission(permissions, ['page.hris.management.view', 'hris.view']);
   if (path.startsWith('/hris/employees')) return hasAnyPermission(permissions, ['employees.view', 'hris.view']);
   if (path.startsWith('/hris/leave-management')) return hasAnyPermission(permissions, ['leave.view', 'hris.view']);
+  if (path.startsWith('/hris/performance-management')) return hasAnyPermission(permissions, ['performance.view', 'hris.performance-management', 'hris.view', 'page.hris.management.view']);
   if (path.startsWith('/hris/attendance')) return hasAnyPermission(permissions, ['attendance.view', 'attendance.manage', 'hris.view']);
   if (path.startsWith('/hris/organization')) return hasAnyPermission(permissions, ['positions.view', 'workforce.view', 'hris.view']);
   if (path.startsWith('/hris/administration/backup-disaster-recovery')) return hasAnyPermission(permissions, ['backup.view', 'backup.configure', 'page.admin.backup-disaster-recovery.view', 'security.configure']);

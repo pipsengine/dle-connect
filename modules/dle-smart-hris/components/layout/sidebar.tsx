@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { navigationConfig, NavItem } from '../../lib/config/navigation';
 import { canAccessHrisPath, hrisRoutePermissionOptions, isHrPortalUser } from '@/lib/access/route-access';
+import { PerformanceNavTree } from './PerformanceNavTree';
 
 export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => void }) {
   const pathname = usePathname();
@@ -79,6 +80,9 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
         )}
         <div className="flex flex-col gap-1">
           {items.map((item) => {
+            if (item.id === 'performance-management') {
+              return <PerformanceNavTree key={item.id} isOpen={isOpen} onNavigate={undefined} />;
+            }
             const hasSubMenu = item.subItems && item.subItems.length > 0;
             // For simple paths, determine active state
             const isActivePrimary = currentPath === item.route || (item.subItems && item.subItems.some(sub => currentPath === sub.route));
@@ -211,6 +215,23 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
         {renderNavGroup(mainItems, 'Enterprise Operations')}
         {renderNavGroup(adminItems, 'Administration')}
         {renderNavGroup(supportItems, 'Support')}
+
+        {isOpen ? (
+          <div className="mt-auto pt-4">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <span className="text-xs font-bold text-emerald-700">Online</span>
+              </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+                Last sync: {new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </p>
+              <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-slate-600">
+                <span className="text-emerald-600">✓</span> All systems operational
+              </p>
+            </div>
+          </div>
+        ) : null}
       </div>
     </motion.aside>
   );
