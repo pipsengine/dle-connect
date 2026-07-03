@@ -59,11 +59,24 @@ export type OvertimeAuthorizationOption = {
   department?: string;
 };
 
+export type OvertimeSupervisorEmployee = {
+  code: string;
+  name: string;
+  jobTitle: string;
+  department: string;
+};
+
+export type OvertimeSupervisorOption = OvertimeAuthorizationOption & {
+  employees: OvertimeSupervisorEmployee[];
+};
+
 export type OvertimeAuthorizationSetup = {
   projects: Array<OvertimeAuthorizationOption & { projectManager: string; projectManagerEmail?: string | null }>;
   workCenters: Array<OvertimeAuthorizationOption & { location?: string | null; site?: string | null }>;
-  supervisors: OvertimeAuthorizationOption[];
+  supervisors: OvertimeSupervisorOption[];
   mdApprover: OvertimeAuthorizationOption | null;
+  gmOperations: OvertimeAuthorizationOption | null;
+  hrApprover: OvertimeAuthorizationOption | null;
 };
 
 export type OvertimeAuditEntry = {
@@ -239,6 +252,40 @@ const resolveMdApprover = (employees: DleEmployeeDirectoryRow[]) => {
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score || clean(a.employee.employeeCode).localeCompare(clean(b.employee.employeeCode)))[0]?.employee || null;
 };
+
+const resolveByTitle = (
+  employees: DleEmployeeDirectoryRow[],
+  envCode: string | undefined,
+  scorer: (title: string) => number,
+) => {
+  const active = employees.filter((employee) => !['Resigned', 'Terminated', 'Retired', 'Inactive'].includes(clean(employee.status)));
+  const configuredCode = clean(envCode).toLowerCase();
+  if (configuredCode) {
+    const configured = active.find((employee) => [employee.employeeCode, employee.employeeId].map((value) => clean(value).toLowerCase()).includes(configuredCode));
+    if (configured) return configured;
+  }
+  return active
+    .map((employee) => ({ employee, score: scorer(`${employee.jobTitle} ${employee.designation}`.toLowerCase()) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || clean(a.employee.employeeCode).localeCompare(clean(b.employee.employeeCode)))[0]?.employee || null;
+};
+
+const resolveGmOperations = (employees: DleEmployeeDirectoryRow[]) =>
+  resolveByTitle(employees, process.env.HRIS_GM_OPERATIONS_EMPLOYEE_CODE, (title) => {
+    if (/\bgm\b.*operation|general manager.*operation|\bgmo\b/.test(title)) return 100;
+    if (/head.*operation|operations? manager|director.*operation/.test(title)) return 80;
+    if (/\boperations?\b/.test(title) && /manager|head|lead|director/.test(title)) return 60;
+    return 0;
+  });
+
+const resolveHrApprover = (employees: DleEmployeeDirectoryRow[]) =>
+  resolveByTitle(employees, process.env.HRIS_HR_MANAGER_EMPLOYEE_CODE, (title) => {
+    if (/head.*human resource|group.*hr|chief.*people/.test(title)) return 100;
+    if (/hr manager|human resources? manager/.test(title)) return 90;
+    if (/\bhr\b.*(manager|head|lead|officer|business partner)/.test(title)) return 70;
+    if (/human resource/.test(title)) return 50;
+    return 0;
+  });
 
 const ensureDb = async () => {
   const pool = await getDleEnterpriseDbPool();
@@ -585,6 +632,21 @@ export const readOvertimeManagementPayload = async (roleInput?: string | null) =
   const activeEmployees = employeeSource.employees.filter((employee) => !['Resigned', 'Terminated', 'Retired', 'Inactive'].includes(clean(employee.status)));
   const employeeByCode = new Map(activeEmployees.map((employee) => [clean(employee.employeeCode).toLowerCase(), employee]));
   const uniqueSupervisors = new Map<string, OvertimeAuthorizationOption>();
+  const employeesBySupervisor = new Map<string, Map<string, OvertimeSupervisorEmployee>>();
+  const addAssignedEmployee = (supervisorCode: string, employeeCode: string, fallbackName: string) => {
+    const key = supervisorCode.toLowerCase();
+    const code = clean(employeeCode);
+    if (!key || !code) return;
+    const directory = employeeByCode.get(code.toLowerCase());
+    const list = employeesBySupervisor.get(key) || new Map<string, OvertimeSupervisorEmployee>();
+    list.set(code.toLowerCase(), {
+      code,
+      name: clean(directory?.fullName) || clean(fallbackName) || code,
+      jobTitle: clean(directory?.jobTitle) || clean(directory?.designation),
+      department: clean(directory?.department),
+    });
+    employeesBySupervisor.set(key, list);
+  };
   for (const assignment of supervisorAssignments) {
     const code = clean(assignment.supervisorEmployeeCode);
     if (!code || assignment.matchedStatus === 'Unresolved') continue;
@@ -595,6 +657,7 @@ export const readOvertimeManagementPayload = async (roleInput?: string | null) =
       name: clean(assignment.supervisorName) || code,
       department: clean(assignment.assignmentGroup),
     });
+    if (clean(assignment.employeeCode)) addAssignedEmployee(code, assignment.employeeCode!, clean(assignment.employeeName) || '');
   }
   for (const employee of activeEmployees) {
     const text = `${employee.jobTitle} ${employee.designation} ${employee.fullName}`.toLowerCase();
@@ -603,7 +666,24 @@ export const readOvertimeManagementPayload = async (roleInput?: string | null) =
       if (code && !uniqueSupervisors.has(code.toLowerCase())) uniqueSupervisors.set(code.toLowerCase(), employeeOption(employee));
     }
   }
+  // Direct-report fallback: employees whose reporting manager matches a supervisor (by code or name).
+  const supervisorByName = new Map<string, string>();
+  for (const [key, option] of uniqueSupervisors) supervisorByName.set(option.name.toLowerCase(), key);
+  for (const employee of activeEmployees) {
+    const manager = `${clean(employee.managerName)} ${clean(employee.functionalManager)} ${clean(employee.departmentHead)}`.toLowerCase();
+    if (!manager.trim()) continue;
+    for (const [key, option] of uniqueSupervisors) {
+      const codeLower = option.code.toLowerCase();
+      const nameLower = option.name.toLowerCase();
+      if ((codeLower && manager.includes(codeLower)) || (nameLower && manager.includes(nameLower))) {
+        addAssignedEmployee(key, clean(employee.employeeCode) || clean(employee.employeeId), clean(employee.fullName));
+        break;
+      }
+    }
+  }
   const mdEmployee = resolveMdApprover(activeEmployees);
+  const gmEmployee = resolveGmOperations(activeEmployees);
+  const hrEmployee = resolveHrApprover(activeEmployees);
   const activeProjects = projects
     .filter((project) => ['Active', 'Approved', 'Open'].includes(project.status))
     .map((project) => {
@@ -630,8 +710,15 @@ export const readOvertimeManagementPayload = async (roleInput?: string | null) =
         site: workCenter.site,
       }))
       .sort((a, b) => a.name.localeCompare(b.name)),
-    supervisors: Array.from(uniqueSupervisors.values()).sort((a, b) => a.name.localeCompare(b.name)),
+    supervisors: Array.from(uniqueSupervisors.entries())
+      .map(([key, option]) => ({
+        ...option,
+        employees: Array.from((employeesBySupervisor.get(key) || new Map()).values()).sort((a, b) => a.name.localeCompare(b.name)),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
     mdApprover: mdEmployee ? employeeOption(mdEmployee) : null,
+    gmOperations: gmEmployee ? employeeOption(gmEmployee) : null,
+    hrApprover: hrEmployee ? employeeOption(hrEmployee) : null,
   };
   const employeeDepartments = employeeSource.employees.map((employee) => clean(employee.department)).filter(Boolean);
   const employeeLocations = employeeSource.employees.map((employee) => clean(employee.workLocation) || clean(employee.location) || clean(employee.officeLocation)).filter(Boolean);

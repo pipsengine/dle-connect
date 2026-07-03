@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig, writePayrollTaxConfig, type PayrollTaxConfig, type PayrollTaxVersion } from '@/lib/payroll-tax-engine';
+import { activeTaxVersion, calculatePayrollTax, CONTRACT_FLAT_PAYE_RATE, payrollInputFromEmployee, readPayrollTaxConfig, usesContractFlatPaye, writePayrollTaxConfig, type PayrollTaxConfig, type PayrollTaxVersion } from '@/lib/payroll-tax-engine';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Payroll Officer' | 'Finance Controller' | 'Executive Management' | 'Auditor' | 'Employee';
@@ -46,6 +46,8 @@ const maskMoney = (record: any) => ({
 const buildRecord = (employee: any, version: PayrollTaxVersion) => {
   const input = payrollInputFromEmployee(employee);
   const tax = calculatePayrollTax(input, version);
+  const contractFlatPaye = usesContractFlatPaye(employee);
+  const monthlyGrossPay = roundMoney(Number(input.monthlyGrossPay ?? input.monthlyBasePay + input.monthlyAllowances));
   const issues: string[] = [];
   if (!employee.setupAssignedToPayroll) issues.push('Payroll setup is not assigned');
   if (tax.annualGrossIncome <= 0) issues.push('Annual gross income is missing');
@@ -54,6 +56,7 @@ const buildRecord = (employee: any, version: PayrollTaxVersion) => {
   if (compact(employee.status).toLowerCase().match(/terminated|resigned|retired|inactive/)) issues.push('Employee is not payroll active');
   return {
     employeeId: employee.employeeId,
+    employeeCode: employee.employeeCode || employee.employeeId,
     fullName: employee.fullName,
     department: employee.department,
     businessUnit: employee.businessUnit,
@@ -64,9 +67,12 @@ const buildRecord = (employee: any, version: PayrollTaxVersion) => {
     payrollGroup: employee.payrollGroup || 'Unassigned',
     salaryGrade: employee.salaryGrade || employee.jobGrade || 'Unassigned',
     taxState: employee.state || employee.workLocation || employee.location || 'Default',
+    payeMethod: contractFlatPaye ? 'contract-flat' : 'progressive',
+    payeMethodLabel: contractFlatPaye ? 'Contract flat 5% (monthly gross)' : 'Progressive PAYE bands',
+    contractFlatPayeRate: contractFlatPaye ? CONTRACT_FLAT_PAYE_RATE : null,
     monthlyBasePay: roundMoney(input.monthlyBasePay),
     monthlyAllowances: roundMoney(input.monthlyAllowances),
-    monthlyGrossPay: roundMoney(Number(input.monthlyGrossPay ?? input.monthlyBasePay + input.monthlyAllowances)),
+    monthlyGrossPay,
     monthlyTaxablePay: roundMoney(Number(input.monthlyTaxablePay ?? input.monthlyBasePay + input.monthlyAllowances)),
     ...tax,
     status: issues.some((issue) => issue.includes('missing') || issue.includes('not payroll active')) ? 'Blocked' : issues.length ? 'Review' : 'Ready',
@@ -113,6 +119,7 @@ const buildPayload = async (request: Request) => {
     },
     summary: {
       employees: records.length,
+      contractFlatEmployees: records.filter((record) => record.payeMethod === 'contract-flat').length,
       annualGrossIncome: roundMoney(totals.annualGrossIncome),
       annualPreTaxDeductions: roundMoney(totals.annualPreTaxDeductions),
       annualReliefs: roundMoney(totals.annualReliefs),
@@ -129,9 +136,26 @@ const buildPayload = async (request: Request) => {
 };
 
 const csv = (records: any[]) => {
-  const headers = ['Employee ID', 'Name', 'Department', 'Payroll Group', 'Tax State', 'Annual Gross', 'Pre-tax Deductions', 'Reliefs', 'Chargeable Income', 'Annual PAYE', 'Monthly PAYE', 'Status', 'Issues'];
+  const headers = ['Employee ID', 'Employee Code', 'Name', 'Department', 'Payroll Group', 'Tax State', 'Tax Method', 'Monthly Gross', 'Annual Gross', 'Pre-tax Deductions', 'Reliefs', 'Chargeable Income', 'Annual PAYE', 'Monthly PAYE', 'Status', 'Issues'];
   const lines = records.map((record) =>
-    [record.employeeId, record.fullName, record.department, record.payrollGroup, record.taxState, record.annualGrossIncome, record.annualPreTaxDeductions, record.annualReliefs, record.annualChargeableIncome, record.annualPaye, record.monthlyPaye, record.status, record.issues.join('; ')]
+    [
+      record.employeeId,
+      record.employeeCode,
+      record.fullName,
+      record.department,
+      record.payrollGroup,
+      record.taxState,
+      record.payeMethodLabel,
+      record.monthlyGrossPay,
+      record.annualGrossIncome,
+      record.payeMethod === 'contract-flat' ? '' : record.annualPreTaxDeductions,
+      record.payeMethod === 'contract-flat' ? '' : record.annualReliefs,
+      record.payeMethod === 'contract-flat' ? '' : record.annualChargeableIncome,
+      record.annualPaye,
+      record.monthlyPaye,
+      record.status,
+      record.issues.join('; '),
+    ]
       .map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`)
       .join(',')
   );

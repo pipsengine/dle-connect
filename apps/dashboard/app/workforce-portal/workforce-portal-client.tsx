@@ -11,6 +11,8 @@ import { EssDashboardView, EssRightPanel } from './ess-dashboard-view';
 import { EssLeaveDashboardView, type EssLeavePayload, type LeaveWorkspaceTab } from './ess-leave-dashboard-view';
 import { EssLeaveApprovalsView, type EssLeaveApprovalsPayload } from './ess-leave-approvals-view';
 import { EssServicesView, type EssServicesPayload } from './ess-services-view';
+import { EssReportsView } from './ess-reports-view';
+import { EssTimeView } from './ess-time-view';
 import EssWorkflowDashboardView from './ess-workflow-dashboard-view';
 import type { WorkflowIntelligence } from '@/lib/ess-workflow-intelligence';
 import { EssProfileDashboardView, type EssProfilePayload } from './ess-profile-dashboard-view';
@@ -133,7 +135,15 @@ type Payload = {
     security: SimpleRecord[];
     relieverOptions: Array<{ employeeId: string; employeeCode: string; fullName: string; jobTitle: string; department: string }>;
   };
-  attendance: { records: SimpleRecord[]; shifts: SimpleRecord[]; timesheets: SimpleRecord[] };
+  attendance: {
+    records: SimpleRecord[];
+    shifts: SimpleRecord[];
+    timesheets: SimpleRecord[];
+    todaySession?: Record<string, unknown> | null;
+    clockingState?: 'ready' | 'clocked-in' | 'clocked-out';
+    mobileClockEnabled?: boolean;
+    timeRequests?: Array<{ id: string; title: string; category: string; status: string; submittedAt: string; updatedAt?: string }>;
+  };
   payrollHistory: PayrollHistoryRow[];
   payrollAccess?: {
     currentPeriod: string;
@@ -151,6 +161,7 @@ type Payload = {
   businessRules: SimpleRecord[];
   auditTrail: SimpleRecord[];
   reports: SimpleRecord[];
+  reportDownloads?: Array<{ id: string; title: string; format: string; accent: string; bg: string; status: string }>;
   moduleCatalog: string[];
   serviceCatalog: Array<{ id: string; label: string; area: string; workflow: string[]; slaHours: number }>;
   requests: EssRequest[];
@@ -1313,34 +1324,18 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
         />
       )}
 
-      {tab !== 'dashboard' && tab !== 'profile' && tab !== 'payroll' && (
+      {tab === 'reports' && (
+        <EssReportsView payload={payload} locale={locale} />
+      )}
+
+      {tab === 'time' && (
+        <EssTimeView payload={payload} locale={locale} onRefresh={() => void load()} onNavigate={navigateTab} />
+      )}
+
+      {tab !== 'dashboard' && tab !== 'profile' && tab !== 'payroll' && tab !== 'reports' && tab !== 'time' && (
         <div className="space-y-4">
           {tab === 'leave' && widgets && (
             <EssLeaveWorkspace payload={payload} employee={employee} onLeaveSubmitted={submitLeaveApplication} onLeaveAction={submitLeaveApproval} onWithdrawLeave={withdrawLeaveRequest} saving={saving} initialNow={initialNow} initialSection={leaveSection} />
-          )}
-
-          {tab === 'time' && widgets && (
-            <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <Section title="Attendance Records & Analytics">
-                <div className="grid grid-cols-2 gap-3">
-                  <MetricCard label="Attendance Rate" value={`${widgets.attendance.monthRate}%`} detail={`${widgets.attendance.lateArrivals} late arrivals`} icon={Activity} tone="bg-blue-100 text-blue-700" />
-                  <MetricCard label="Overtime" value={`${widgets.attendance.overtimeHours}h`} detail={`${widgets.attendance.remoteDays} remote work days`} icon={Clock} tone="bg-amber-100 text-amber-700" />
-                </div>
-                <div className="mt-4"><DataList rows={payload?.attendance.records || []} titleKey="date" subtitleKeys={['clockIn', 'clockOut', 'source']} /></div>
-              </Section>
-              <Section title="Clock-In, Shifts, Timesheets & Time Requests">
-                <ActionGrid items={[
-                  ['Clock-in / clock-out', Fingerprint, 'Biometric/mobile'],
-                  ['Overtime request', Clock, 'Routes to manager'],
-                  ['Attendance regularization', ClipboardList, 'Exception approval'],
-                  ['Remote work tracking', Smartphone, 'Location-aware'],
-                ]} />
-                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <DataList rows={payload?.attendance.shifts || []} titleKey="name" subtitleKeys={['start', 'end', 'location']} statusKey="name" />
-                  <DataList rows={payload?.attendance.timesheets || []} titleKey="week" subtitleKeys={['hours', 'overtime']} />
-                </div>
-              </Section>
-            </section>
           )}
 
           {tab === 'documents' && (
@@ -1536,22 +1531,6 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
                   <DataList rows={payload?.exitServices.clearance || []} titleKey="unit" />
                   <DataList rows={[payload?.exitServices.exitInterview || {}, payload?.exitServices.finalSettlement || {}]} titleKey="form" subtitleKeys={['payrollPeriod']} />
                 </div>
-              </Section>
-            </section>
-          )}
-
-          {tab === 'reports' && (
-            <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <Section title="My Reports">
-                <DataList rows={payload?.reports || []} titleKey="title" subtitleKeys={['format']} />
-              </Section>
-              <Section title="Report Downloads">
-                <ActionGrid items={[
-                  ['Leave statement', FileText, 'PDF / Excel'],
-                  ['Payroll history', Banknote, 'PDF / Excel'],
-                  ['Training transcript', GraduationCap, 'PDF'],
-                  ['Claim status', WalletCards, 'Excel'],
-                ]} />
               </Section>
             </section>
           )}

@@ -67,7 +67,7 @@ export const resolveOvertimeBookingOptions = (
 });
 
 export const approvedOvertimeStatuses = (devRelaxed = isTimesheetOvertimeDevRelaxed()): string[] =>
-  devRelaxed ? ['MD Approved', 'Project Manager Approved'] : ['MD Approved'];
+  devRelaxed ? ['HR Approved', 'MD Approved', 'GM Operations Approved', 'Project Manager Approved'] : ['HR Approved', 'MD Approved'];
 
 const normalizeStatus = (status: string) => status.trim().replace(/\s+/g, '_');
 

@@ -1,12 +1,91 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   OvertimeManagementEnterpriseView,
   inputClass,
   readOnlyClass,
 } from './OvertimeManagementEnterpriseView';
 import { OvertimeFormField } from './overtime-management-ui';
+
+type ComboOption = { value: string; label: string; sublabel?: string };
+
+function ComboSelect({
+  options,
+  value,
+  onSelect,
+  placeholder,
+  emptyText = 'No matches found.',
+}: {
+  options: ComboOption[];
+  value: string;
+  onSelect: (value: string) => void;
+  placeholder?: string;
+  emptyText?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const selected = options.find((option) => option.value === value) || null;
+
+  useEffect(() => {
+    const onClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? options.filter((option) => `${option.label} ${option.sublabel || ''} ${option.value}`.toLowerCase().includes(q))
+    : options;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input
+        value={open ? query : selected?.label || ''}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          if (!open) setOpen(true);
+        }}
+        onFocus={() => {
+          setQuery('');
+          setOpen(true);
+        }}
+        placeholder={placeholder}
+        className={inputClass}
+        role="combobox"
+        aria-expanded={open}
+        autoComplete="off"
+      />
+      {open ? (
+        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-[60] max-h-60 overflow-auto rounded-xl border border-[#E5E7EB] bg-white py-1 shadow-[0_12px_32px_rgba(15,23,42,0.16)]">
+          {filtered.length ? (
+            filtered.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  onSelect(option.value);
+                  setQuery('');
+                  setOpen(false);
+                }}
+                className={`flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-[#EFF6FF] ${option.value === value ? 'bg-[#EFF6FF]' : ''}`}
+              >
+                <span className="font-semibold text-[#0F172A]">{option.label}</span>
+                {option.sublabel ? <span className="text-xs text-[#64748B]">{option.sublabel}</span> : null}
+              </button>
+            ))
+          ) : (
+            <p className="px-3 py-3 text-sm font-medium text-[#94A3B8]">{emptyText}</p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 type Role =
   | 'Employee'
@@ -60,7 +139,17 @@ type OvertimeRecord = {
   auditTrail: Array<{ id: string; at: string; actor: string; role: Role; action: string; oldStatus: Status | null; newStatus: Status; comment: string | null }>;
 };
 
-type AuthorizationStatus = 'Submitted' | 'Project Manager Approved' | 'MD Approved' | 'Rejected' | 'Cancelled';
+type AuthorizationStatus = 'Submitted' | 'Project Manager Approved' | 'GM Operations Approved' | 'HR Approved' | 'MD Approved' | 'Rejected' | 'Cancelled';
+
+type AuthorizationEmployeeLine = {
+  id: string;
+  employeeCode: string;
+  employeeName: string;
+  jobTitle: string;
+  department: string;
+  overtimeHours: number;
+  dayType: string;
+};
 
 type OvertimeAuthorizationRequest = {
   id: string;
@@ -78,12 +167,17 @@ type OvertimeAuthorizationRequest = {
   currentOwnerName: string;
   projectManagerName: string;
   projectManagerEmail: string | null;
-  mdApproverName: string;
-  mdApproverEmail: string | null;
+  gmOperationsName: string;
+  gmOperationsEmail: string | null;
+  hrApproverName: string;
+  hrApproverEmail: string | null;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  employees: AuthorizationEmployeeLine[];
 };
+
+type SupervisorEmployee = { code: string; name: string; jobTitle: string; department: string };
 
 type Payload = {
   generatedAt: string;
@@ -109,8 +203,10 @@ type Payload = {
   authorizationSetup: {
     projects: Array<{ id: string; code: string; name: string; projectManager: string; projectManagerEmail?: string | null }>;
     workCenters: Array<{ id: string; code: string; name: string; location?: string | null; site?: string | null }>;
-    supervisors: Array<{ id: string; code: string; name: string; email?: string | null; jobTitle?: string; department?: string }>;
+    supervisors: Array<{ id: string; code: string; name: string; email?: string | null; jobTitle?: string; department?: string; employees: SupervisorEmployee[] }>;
     mdApprover: { id: string; code: string; name: string; email?: string | null; jobTitle?: string; department?: string } | null;
+    gmOperations: { id: string; code: string; name: string; email?: string | null; jobTitle?: string; department?: string } | null;
+    hrApprover: { id: string; code: string; name: string; email?: string | null; jobTitle?: string; department?: string } | null;
   };
   records: OvertimeRecord[];
   authorizationRequests: OvertimeAuthorizationRequest[];
@@ -164,6 +260,9 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [comment, setComment] = useState('');
   const [showRequest, setShowRequest] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [selectedAuthIds, setSelectedAuthIds] = useState<Set<string>>(new Set());
+  const [employeeLines, setEmployeeLines] = useState<Array<AuthorizationEmployeeLine & { selected: boolean }>>([]);
   const [requestForm, setRequestForm] = useState({
     employeeId: '',
     date: new Date(initialNow).toISOString().slice(0, 10),
@@ -186,8 +285,10 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
     costCenter: 'Managing Director',
     projectManagerName: '',
     projectManagerEmail: '',
-    mdApproverName: 'Managing Director',
-    mdApproverEmail: '',
+    gmOperationsName: '',
+    gmOperationsEmail: '',
+    hrApproverName: '',
+    hrApproverEmail: '',
     reason: '',
     details: 'High workload on project delivery week tasks.',
   });
@@ -213,6 +314,23 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
     void load();
   }, [load]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/current-user?context=hris', { cache: 'no-store' });
+        const json = await res.json();
+        const resolved = roles.find((item) => item.toLowerCase() === String(json?.data?.rbacRole || '').toLowerCase());
+        if (!cancelled && resolved) setRole(resolved);
+      } catch {
+        // Keep the default role if the profile lookup fails.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (payload?.records || []).filter((record) => {
@@ -228,7 +346,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
   const selected = payload?.records.find((record) => record.id === selectedId) || filtered[0] || null;
   const canViewMoney = Boolean(payload?.permissions.canViewMoney);
   const authorizationRequests = payload?.authorizationRequests || [];
-  const approvedAuthorizations = authorizationRequests.filter((item) => item.status === 'MD Approved');
+  const approvedAuthorizations = authorizationRequests.filter((item) => ['HR Approved', 'MD Approved'].includes(item.status));
   const setup = payload?.authorizationSetup;
 
   const runAction = async (recordId: string, action: Action) => {
@@ -307,7 +425,17 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
     }
   };
 
+  const bookedLines = employeeLines.filter((line) => line.selected && Number(line.overtimeHours) > 0);
+
   const createAuthorization = async () => {
+    if (!authorizationForm.supervisorCode) {
+      setError('Select a supervisor before submitting the overtime authorization.');
+      return;
+    }
+    if (!bookedLines.length) {
+      setError('Book overtime for at least one employee assigned to the supervisor.');
+      return;
+    }
     setBusy('create-authorization');
     setToast('');
     setError('');
@@ -317,16 +445,26 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
         headers: { 'content-type': 'application/json', 'x-hris-role': role },
         body: JSON.stringify({
           action: 'create-authorization',
-          actor: 'Production Manager',
+          actor: authorizationForm.supervisorName || role,
           ...authorizationForm,
-          requestedHours: Number(authorizationForm.requestedHours || 0),
-          requestedHeadcount: Number(authorizationForm.requestedHeadcount || 1),
+          requestedHours: bookedLines.reduce((sum, line) => sum + Number(line.overtimeHours || 0), 0),
+          requestedHeadcount: bookedLines.length,
+          employees: bookedLines.map((line) => ({
+            employeeCode: line.employeeCode,
+            employeeName: line.employeeName,
+            jobTitle: line.jobTitle,
+            department: line.department,
+            overtimeHours: Number(line.overtimeHours || 0),
+            dayType: authorizationForm.overtimeType,
+          })),
         }),
       });
       const json = (await res.json()) as ApiResponse<Payload>;
       if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || 'Unable to submit overtime authorization.');
       setPayload(json.data);
-      setToast('Overtime authorization submitted to the Project Manager.');
+      setToast(`Overtime authorization for ${bookedLines.length} employee(s) submitted to the Project Manager.`);
+      setAuthOpen(false);
+      setEmployeeLines([]);
       setAuthorizationForm((current) => ({ ...current, projectCode: '', projectName: '', workCenter: '', supervisorCode: '', supervisorName: '', requestedHours: '1', requestedHeadcount: '1', reason: '', details: '' }));
     } catch (event) {
       setError(event instanceof Error ? event.message : 'Unable to submit overtime authorization.');
@@ -335,15 +473,52 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
     }
   };
 
+  const bulkAuthorization = async (decision: 'approve' | 'reject') => {
+    const ids = Array.from(selectedAuthIds);
+    if (!ids.length) return;
+    setBusy(`bulk-${decision}-authorization`);
+    setToast('');
+    setError('');
+    try {
+      const res = await fetch('/api/hris/workforce-management/overtime-management', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-hris-role': role },
+        body: JSON.stringify({ action: `bulk-${decision}-authorization`, ids, actor: role, comment }),
+      });
+      const json = (await res.json()) as ApiResponse<Payload>;
+      if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Unable to ${decision} selected authorizations.`);
+      setPayload(json.data);
+      setToast(`${ids.length} overtime authorization(s) ${decision === 'approve' ? 'approved' : 'rejected'}.`);
+      setSelectedAuthIds(new Set());
+      setComment('');
+    } catch (event) {
+      setError(event instanceof Error ? event.message : `Unable to ${decision} selected authorizations.`);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const toggleAuthRow = (id: string) => {
+    setSelectedAuthIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   useEffect(() => {
-    const md = setup?.mdApprover;
-    if (!md) return;
+    const gm = setup?.gmOperations;
+    const hr = setup?.hrApprover;
+    if (!gm && !hr) return;
     setAuthorizationForm((current) => ({
       ...current,
-      mdApproverName: current.mdApproverName && current.mdApproverName !== 'Managing Director' ? current.mdApproverName : md.name,
-      mdApproverEmail: current.mdApproverEmail || md.email || '',
+      gmOperationsName: current.gmOperationsName || gm?.name || '',
+      gmOperationsEmail: current.gmOperationsEmail || gm?.email || '',
+      hrApproverName: current.hrApproverName || hr?.name || '',
+      hrApproverEmail: current.hrApproverEmail || hr?.email || '',
     }));
-  }, [setup?.mdApprover]);
+  }, [setup?.gmOperations, setup?.hrApprover]);
 
   const onProjectChange = (projectCode: string) => {
     const project = setup?.projects.find((item) => item.code === projectCode);
@@ -361,12 +536,36 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
   };
 
   const onSupervisorChange = (supervisorCode: string) => {
-    const supervisor = setup?.supervisors.find((item) => item.code === supervisorCode);
+    const supervisor = setup?.supervisors.find((item) => item.code === supervisorCode || item.name === supervisorCode);
     setAuthorizationForm((current) => ({
       ...current,
-      supervisorCode,
+      supervisorCode: supervisor?.code || supervisorCode,
       supervisorName: supervisor?.name || '',
     }));
+    setEmployeeLines(
+      (supervisor?.employees || []).map((employee) => ({
+        id: employee.code,
+        employeeCode: employee.code,
+        employeeName: employee.name,
+        jobTitle: employee.jobTitle,
+        department: employee.department,
+        overtimeHours: 2,
+        dayType: authorizationForm.overtimeType,
+        selected: false,
+      })),
+    );
+  };
+
+  const toggleEmployeeLine = (code: string) => {
+    setEmployeeLines((current) => current.map((line) => (line.employeeCode === code ? { ...line, selected: !line.selected } : line)));
+  };
+
+  const setEmployeeHours = (code: string, hours: number) => {
+    setEmployeeLines((current) => current.map((line) => (line.employeeCode === code ? { ...line, overtimeHours: hours, selected: hours > 0 ? true : line.selected } : line)));
+  };
+
+  const toggleAllEmployeeLines = (selected: boolean) => {
+    setEmployeeLines((current) => current.map((line) => ({ ...line, selected })));
   };
 
   const actOnAuthorization = async (id: string, decision: 'approve' | 'reject') => {
@@ -395,14 +594,13 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
     <>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <OvertimeFormField label="Project">
-          <input list="overtime-projects" value={authorizationForm.projectCode} onChange={(event) => onProjectChange(event.target.value)} placeholder="Search/select project" className={inputClass} />
-          <datalist id="overtime-projects">
-            {(setup?.projects || []).map((project) => (
-              <option key={project.id} value={project.code}>
-                {project.name}
-              </option>
-            ))}
-          </datalist>
+          <ComboSelect
+            value={authorizationForm.projectCode}
+            onSelect={onProjectChange}
+            placeholder="Search/select project"
+            emptyText="No active projects found."
+            options={(setup?.projects || []).map((project) => ({ value: project.code, label: project.name, sublabel: project.code }))}
+          />
         </OvertimeFormField>
         <OvertimeFormField label="Project Manager">
           <input value={authorizationForm.projectManagerName} readOnly placeholder="Auto from project" className={readOnlyClass} />
@@ -411,27 +609,30 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
           <input type="date" value={authorizationForm.workDate} onChange={(event) => setAuthorizationForm((current) => ({ ...current, workDate: event.target.value }))} className={inputClass} />
         </OvertimeFormField>
         <OvertimeFormField label="Work Center">
-          <input list="overtime-work-centers" value={authorizationForm.workCenter} onChange={(event) => onWorkCenterChange(event.target.value)} placeholder="Search/select work center" className={inputClass} />
-          <datalist id="overtime-work-centers">
-            {(setup?.workCenters || []).map((workCenter) => (
-              <option key={workCenter.id} value={workCenter.name}>
-                {[workCenter.code, workCenter.site || workCenter.location].filter(Boolean).join(' / ')}
-              </option>
-            ))}
-          </datalist>
+          <ComboSelect
+            value={authorizationForm.workCenter}
+            onSelect={onWorkCenterChange}
+            placeholder="Search/select work center"
+            emptyText="No active work centers found."
+            options={(setup?.workCenters || []).map((workCenter) => ({
+              value: workCenter.name,
+              label: workCenter.name,
+              sublabel: [workCenter.code, workCenter.site || workCenter.location].filter(Boolean).join(' / '),
+            }))}
+          />
         </OvertimeFormField>
         <OvertimeFormField label="Supervisor">
-          <input list="overtime-supervisors" value={authorizationForm.supervisorCode} onChange={(event) => onSupervisorChange(event.target.value)} placeholder="Search/select supervisor" className={inputClass} />
-          <datalist id="overtime-supervisors">
-            {(setup?.supervisors || []).map((supervisor) => (
-              <option key={supervisor.id} value={supervisor.code}>
-                {supervisor.name} {supervisor.jobTitle ? `/ ${supervisor.jobTitle}` : ''}
-              </option>
-            ))}
-          </datalist>
-        </OvertimeFormField>
-        <OvertimeFormField label="Approving Manager">
-          <input value={authorizationForm.supervisorName} readOnly placeholder="Auto from supervisor" className={readOnlyClass} />
+          <ComboSelect
+            value={authorizationForm.supervisorCode}
+            onSelect={onSupervisorChange}
+            placeholder="Search/select supervisor"
+            emptyText="No supervisors found."
+            options={(setup?.supervisors || []).map((supervisor) => ({
+              value: supervisor.code,
+              label: supervisor.name,
+              sublabel: [supervisor.code, supervisor.jobTitle].filter(Boolean).join(' · '),
+            }))}
+          />
         </OvertimeFormField>
         <OvertimeFormField label="Overtime Type">
           <select value={authorizationForm.overtimeType} onChange={(event) => setAuthorizationForm((current) => ({ ...current, overtimeType: event.target.value }))} className={inputClass}>
@@ -445,22 +646,95 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
         <OvertimeFormField label="Reason / Justification">
           <input value={authorizationForm.reason} onChange={(event) => setAuthorizationForm((current) => ({ ...current, reason: event.target.value }))} placeholder="Auto from project" className={inputClass} />
         </OvertimeFormField>
-        <OvertimeFormField label="Payroll">
-          <input value="Auto from employee directory" readOnly className={readOnlyClass} />
+        <OvertimeFormField label="GM Operations (Approver)">
+          <input value={authorizationForm.gmOperationsName} readOnly placeholder="Auto from directory" className={readOnlyClass} />
         </OvertimeFormField>
-        <OvertimeFormField label="Cost Center">
-          <input value={authorizationForm.costCenter} onChange={(event) => setAuthorizationForm((current) => ({ ...current, costCenter: event.target.value }))} className={inputClass} />
-        </OvertimeFormField>
-        <OvertimeFormField label="GL Account">
-          <input value="Auto from employee directory" readOnly className={readOnlyClass} />
-        </OvertimeFormField>
-        <OvertimeFormField label="OT Hours">
-          <input type="number" min="0" step="0.5" value={authorizationForm.requestedHours} onChange={(event) => setAuthorizationForm((current) => ({ ...current, requestedHours: event.target.value }))} className={inputClass} />
-        </OvertimeFormField>
-        <OvertimeFormField label="Headcount">
-          <input type="number" min="1" step="1" value={authorizationForm.requestedHeadcount} onChange={(event) => setAuthorizationForm((current) => ({ ...current, requestedHeadcount: event.target.value }))} className={inputClass} />
+        <OvertimeFormField label="HR Verifier (Approver)">
+          <input value={authorizationForm.hrApproverName} readOnly placeholder="Auto from directory" className={readOnlyClass} />
         </OvertimeFormField>
       </div>
+
+      {/* Approval chain summary */}
+      <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2 text-[11px] font-semibold text-[#475569]">
+        <span className="text-[#94A3B8]">Approval chain:</span>
+        {[
+          `Supervisor (${authorizationForm.supervisorName || 'Select'})`,
+          `Project Manager (${authorizationForm.projectManagerName || 'Auto'})`,
+          `GM Operations (${authorizationForm.gmOperationsName || 'Auto'})`,
+          `HR Verify (${authorizationForm.hrApproverName || 'Auto'})`,
+        ].map((stage, index) => (
+          <span key={stage} className="inline-flex items-center gap-2">
+            {index > 0 ? <span className="text-[#CBD5E1]">→</span> : null}
+            <span className="rounded-full border border-[#E2E8F0] bg-white px-2.5 py-1">{stage}</span>
+          </span>
+        ))}
+      </div>
+
+      {/* Supervisor's assigned employees — book overtime per employee */}
+      <div className="mt-5 overflow-hidden rounded-[16px] border border-[#E5E7EB]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#EDF2F7] bg-[#F8FAFC] px-4 py-3">
+          <div>
+            <h3 className="text-sm font-bold text-[#0F172A]">Book Overtime for Assigned Employees</h3>
+            <p className="text-xs text-[#64748B]">
+              {authorizationForm.supervisorCode
+                ? `${employeeLines.length} employee(s) report to ${authorizationForm.supervisorName || authorizationForm.supervisorCode}. Select and set OT hours per employee.`
+                : 'Select a supervisor above to load their assigned employees.'}
+            </p>
+          </div>
+          {employeeLines.length ? (
+            <div className="flex items-center gap-2 text-xs font-semibold">
+              <button type="button" onClick={() => toggleAllEmployeeLines(true)} className="rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1 text-[#2563EB] hover:bg-[#EFF6FF]">Select all</button>
+              <button type="button" onClick={() => toggleAllEmployeeLines(false)} className="rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1 text-[#64748B] hover:bg-[#F1F5F9]">Clear</button>
+              <span className="rounded-full bg-[#DBEAFE] px-2.5 py-1 text-[#1D4ED8]">{bookedLines.length} booked · {bookedLines.reduce((sum, line) => sum + Number(line.overtimeHours || 0), 0)}h</span>
+            </div>
+          ) : null}
+        </div>
+        <div className="max-h-[280px] overflow-auto">
+          {employeeLines.length ? (
+            <table className="w-full text-left text-sm">
+              <thead className="sticky top-0 bg-white text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">
+                <tr>
+                  <th className="px-4 py-2">Book</th>
+                  <th className="px-4 py-2">Employee</th>
+                  <th className="px-4 py-2">Role / Department</th>
+                  <th className="px-4 py-2 w-40">OT Hours</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#EDF2F7]">
+                {employeeLines.map((line) => (
+                  <tr key={line.employeeCode} className={line.selected ? 'bg-[#EFF6FF]' : ''}>
+                    <td className="px-4 py-2">
+                      <input type="checkbox" checked={line.selected} onChange={() => toggleEmployeeLine(line.employeeCode)} className="rounded border-[#CBD5E1]" />
+                    </td>
+                    <td className="px-4 py-2">
+                      <div className="font-semibold text-[#0F172A]">{line.employeeName}</div>
+                      <div className="text-xs text-[#64748B]">{line.employeeCode}</div>
+                    </td>
+                    <td className="px-4 py-2 text-xs text-[#64748B]">{[line.jobTitle, line.department].filter(Boolean).join(' · ') || '—'}</td>
+                    <td className="px-4 py-2">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        value={line.overtimeHours}
+                        onChange={(event) => setEmployeeHours(line.employeeCode, Number(event.target.value))}
+                        className="h-9 w-28 rounded-lg border border-[#E5E7EB] px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="px-4 py-8 text-center text-sm font-medium text-[#64748B]">
+              {authorizationForm.supervisorCode
+                ? 'No employees are currently assigned to this supervisor. Assign employees in Supervisor Assignments first.'
+                : 'No supervisor selected yet.'}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="mt-4">
         <OvertimeFormField label="Details / Reason for Overtime">
           <textarea
@@ -532,17 +806,24 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
       onExport={exportCsv}
       canExport={Boolean(payload?.permissions.canExport)}
       showRequest={showRequest}
-      onToggleRequest={() => setShowRequest((value) => !value)}
+      onToggleRequest={() => setAuthOpen(true)}
       summary={payload?.summary || { records: 0, pendingApprovals: 0, submitted: 0, supervisorApproved: 0, payrollReady: 0, payrollPosted: 0, blocked: 0, returned: 0, rejected: 0, payableHours: 0, grossPay: 0 }}
       canViewMoney={canViewMoney}
       authorizationRequests={authorizationRequests}
       approvedAuthorizationCount={approvedAuthorizations.length}
       authorizationForm={authorizationFormPanel}
+      authorizationModalOpen={authOpen}
+      onOpenAuthorization={() => setAuthOpen(true)}
+      onCloseAuthorization={() => setAuthOpen(false)}
       onSubmitAuthorization={() => void createAuthorization()}
       authorizationBusy={busy === 'create-authorization'}
       onApproveAuthorization={(id) => void actOnAuthorization(id, 'approve')}
       onRejectAuthorization={(id) => void actOnAuthorization(id, 'reject')}
       authorizationActionBusy={Boolean(busy)}
+      selectedAuthIds={selectedAuthIds}
+      onToggleAuthRow={toggleAuthRow}
+      onBulkAuthorization={(decision) => void bulkAuthorization(decision)}
+      bulkAuthorizationBusy={busy.startsWith('bulk-')}
       query={query}
       onQueryChange={setQuery}
       status={status}

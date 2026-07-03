@@ -20,11 +20,19 @@ import { payslipIdentityMap, syncPayslipIdentitiesFromSage, type PayslipEmployee
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import { buildEssDashboardContext, buildEssEmployeeLookupKeys } from '@/lib/ess-dashboard-store';
+import {
+  getEssMobileTodaySession,
+  listEssMobileAttendanceRecords,
+  mergeEssAttendanceRecords,
+  recordEssMobileClockIn,
+  recordEssMobileClockOut,
+} from '@/lib/ess-mobile-clock-store';
 import { buildEssWorkflowIntelligence, serviceWorkflowFor } from '@/lib/ess-workflow-intelligence';
 import {
   deriveEssAssets,
   deriveEssAuditTrail,
   deriveEssClaims,
+  deriveEssEmployeeReports,
   deriveEssLearning,
   deriveEssPerformance,
   deriveEssTravel,
@@ -33,6 +41,7 @@ import {
   derivePortalAnalytics,
 } from '@/lib/ess-portal-derived-data';
 import { invalidateEssPortalCache, readEssPortalResponseCache, writeEssPortalResponseCache } from '@/lib/ess-portal-cache';
+import { buildEssReportExport } from '@/lib/ess-reports-export';
 import {
   expireStaleLeaveRequests,
   leaveWorkflowFor,
@@ -495,6 +504,35 @@ export async function GET(request: Request) {
     if (session.isGlobalAdmin) return err(403, 'Global administrator is not linked to an employee self-service profile.');
     const locale = compact(request.headers.get('x-ess-locale')) || 'en-NG';
     const cacheKey = `${session.sub}:${session.employeeCode || session.employeeId || session.username}:${locale}`;
+    const url = new URL(request.url);
+    const reportId = compact(url.searchParams.get('report'));
+    const reportFormat = compact(url.searchParams.get('format')) || 'excel';
+
+    if (reportId) {
+      const cached = readEssPortalResponseCache(cacheKey);
+      if (!cached) return err(400, 'Report data is not ready. Refresh the portal and try again.');
+      try {
+        const exported = buildEssReportExport(reportId, /pdf/i.test(reportFormat) ? 'pdf' : 'csv', {
+          employeeName: String(cached.employee?.fullName || session.fullName || 'Employee'),
+          employeeCode: String(cached.employee?.employeeCode || cached.employee?.employeeId || session.employeeCode || ''),
+          department: String(cached.employee?.department || 'Unassigned'),
+          leaveBalances: cached.leave?.balances || [],
+          leaveHistory: cached.leave?.history || [],
+          payrollHistory: cached.payrollHistory || [],
+          learning: cached.learning || { courses: [], materials: [], certifications: [] },
+          claims: cached.claims || [],
+        });
+        return new Response(exported.body, {
+          headers: {
+            'Content-Type': exported.contentType,
+            'Content-Disposition': `attachment; filename="${exported.fileName}"`,
+          },
+        });
+      } catch (error) {
+        return err(400, error instanceof Error ? error.message : 'Unable to export report.');
+      }
+    }
+
     const cached = readEssPortalResponseCache(cacheKey);
     if (cached) return ok(cached);
     const [employeeSource, rawRequests, loanApplications, loansConfig, taxConfig, pensionConfig, identityByKey] = await Promise.all([readPayrollEmployees(), readRequests(), readPayrollLoanApplications(), readPayrollLoansConfig(), readPayrollTaxConfig(), readPayrollPensionConfig(), payslipIdentityMap()]);
@@ -883,6 +921,20 @@ export async function GET(request: Request) {
       documents: essContext.documents,
     });
     const derivedLearning = deriveEssLearning(essContext.documents);
+    const mobileAttendanceRecords = await listEssMobileAttendanceRecords(employeeMatchKeys).catch(() => []);
+    const mergedAttendanceRecords = mergeEssAttendanceRecords(essContext.attendance.records, mobileAttendanceRecords);
+    const todayMobileSession = await getEssMobileTodaySession(compact(employee.employeeCode || employee.employeeId)).catch(() => null);
+    const remoteDays = mobileAttendanceRecords.filter((item) => item.source === 'ESS Mobile').length;
+    const timeRequests = employeeRequests
+      .filter((item) => /attendance|overtime|time|shift|remote|regular/i.test(`${item.category} ${item.title}`))
+      .map((item) => ({
+        id: item.id,
+        title: item.title || item.category,
+        category: item.category,
+        status: item.status,
+        submittedAt: item.submittedAt,
+        updatedAt: item.updatedAt,
+      }));
     const derivedAuditTrail = deriveEssAuditTrail({
       employeeName: employee.fullName,
       employeeId: employee.employeeId,
@@ -1096,7 +1148,7 @@ export async function GET(request: Request) {
       },
       widgets: {
         leave: { entitlement: annualEntitlement, used: leaveUsed, balance: annualBalance, carryForward: leaveContext.carryForward || 0, pending: requests.filter((item) => item.category === 'Leave' && !['Approved', 'Rejected', 'Terminated', 'Closed'].includes(item.status)).length },
-        attendance: { monthRate: attendanceRate, lateArrivals: essContext.attendance.lateArrivals, overtimeHours: essContext.attendance.overtimeHours, remoteDays: essContext.attendance.remoteDays },
+        attendance: { monthRate: attendanceRate, lateArrivals: essContext.attendance.lateArrivals, overtimeHours: essContext.attendance.overtimeHours, remoteDays: remoteDays || essContext.attendance.remoteDays },
         payroll: {
           monthlyPay: latestReleasedPayroll?.netPay || latestReleasedPayroll?.grossPay || 0,
           currency: employee.payCurrency || 'NGN',
@@ -1202,9 +1254,21 @@ export async function GET(request: Request) {
         relieverOptions,
       },
       attendance: {
-        records: essContext.attendance.records,
+        records: mergedAttendanceRecords,
         shifts: employee.shift ? [{ id: 'shift-current', name: `${employee.shift} Shift`, start: '08:00', end: '17:00', location: essContext.employeeSummary.location }] : [],
         timesheets: [],
+        todaySession: todayMobileSession,
+        clockingState: todayMobileSession
+          ? todayMobileSession.clockOutAt
+            ? 'clocked-out'
+            : 'clocked-in'
+          : mergedAttendanceRecords.some((item) => item.date === new Date().toISOString().slice(0, 10) && item.clockIn && item.clockIn !== '—' && item.clockOut === '—')
+            ? 'clocked-in'
+            : mergedAttendanceRecords.some((item) => item.date === new Date().toISOString().slice(0, 10) && item.clockOut && item.clockOut !== '—')
+              ? 'clocked-out'
+              : 'ready',
+        mobileClockEnabled: true,
+        timeRequests,
       },
       payrollHistory,
       payrollAccess: {
@@ -1245,12 +1309,18 @@ export async function GET(request: Request) {
         { id: 'rule-004', name: 'Payroll data masking by RBAC', status: 'Active', configurable: true },
       ],
       auditTrail: derivedAuditTrail,
-      reports: [
-        { id: 'rpt-001', title: 'My Leave Statement', format: 'PDF / Excel', status: 'Ready' },
-        { id: 'rpt-002', title: 'Payroll History Report', format: 'PDF / Excel', status: 'Ready' },
-        { id: 'rpt-003', title: 'Training Transcript', format: 'PDF', status: 'Ready' },
-        { id: 'rpt-004', title: 'Claim Status Report', format: 'Excel', status: 'Ready' },
-      ],
+      ...(() => {
+        const generatedAt = new Date().toISOString();
+        const employeeReports = deriveEssEmployeeReports({
+          leaveBalances: leavePolicyCards,
+          leaveHistory,
+          payrollHistory,
+          learning: derivedLearning,
+          claims: derivedClaims,
+          generatedAt,
+        });
+        return { reports: employeeReports.reports, reportDownloads: employeeReports.downloads };
+      })(),
       directory: employeeSource.employees.slice(0, 24).map((item) => ({
         employeeId: item.employeeId,
         fullName: item.fullName,
@@ -1336,6 +1406,25 @@ export async function POST(request: Request) {
         return ok({ request: result.request, leaveAllowance: result.allowanceMessage });
       } catch (error) {
         return err(error instanceof Error && error.message.includes('not authorized') ? 403 : 409, error instanceof Error ? error.message : 'Unable to process leave approval.');
+      }
+    }
+
+    if (action === 'clock-in' || action === 'clock-out') {
+      const latitude = Number(body.latitude);
+      const longitude = Number(body.longitude);
+      const accuracyMeters = body.accuracyMeters === undefined || body.accuracyMeters === null ? null : Number(body.accuracyMeters);
+      const addressLabel = compact(body.addressLabel) || null;
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return err(400, 'Location permission is required. Allow GPS access so the system can verify your remote site.');
+      }
+      try {
+        const result = action === 'clock-in'
+          ? await recordEssMobileClockIn(employee, { latitude, longitude, accuracyMeters, addressLabel })
+          : await recordEssMobileClockOut(employee, { latitude, longitude, accuracyMeters, addressLabel });
+        invalidateEssPortalCache();
+        return ok(result);
+      } catch (error) {
+        return err(409, error instanceof Error ? error.message : `Unable to ${action.replace('-', ' ')}.`);
       }
     }
 

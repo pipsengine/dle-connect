@@ -37,7 +37,8 @@ const statusStyles: Record<string, { label: string; tone: SetupTone }> = {
   Rejected: { label: 'Rejected', tone: 'red' },
   Blocked: { label: 'Blocked', tone: 'red' },
   'MD Approved': { label: 'Approved', tone: 'green' },
-  'Project Manager Approved': { label: 'Pending HR', tone: 'violet' },
+  'Project Manager Approved': { label: 'Pending GM Operations', tone: 'violet' },
+  'GM Operations Approved': { label: 'Pending HR', tone: 'amber' },
   Cancelled: { label: 'Closed', tone: 'slate' },
 };
 

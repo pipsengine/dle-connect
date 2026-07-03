@@ -29,10 +29,14 @@ export type TaxPayeStatus = 'Ready' | 'Review' | 'Blocked' | 'Pending';
 
 export type TaxPayeRecord = {
   employeeId: string;
+  employeeCode?: string;
   fullName: string;
   department: string;
   payrollGroup: string;
   taxState: string;
+  payeMethod?: 'contract-flat' | 'progressive';
+  payeMethodLabel?: string;
+  contractFlatPayeRate?: number | null;
   monthlyGrossPay?: number | null;
   annualGrossIncome: number | null;
   annualPreTaxDeductions: number | null;
@@ -67,6 +71,7 @@ export type TaxPayePayload = {
   config: { activeVersion: TaxPayeVersion };
   summary: {
     employees: number;
+    contractFlatEmployees?: number;
     annualChargeableIncome: number;
     annualPreTaxDeductions: number;
     annualReliefs: number;
@@ -270,6 +275,11 @@ export default function TaxPayeCommandCenter({
     return money(monthly, canViewMoney);
   };
 
+  const progressiveOnlyValue = (record: TaxPayeRecord, annualValue: number | null | undefined) =>
+    record.payeMethod === 'contract-flat' ? '—' : money(annualValue ? annualValue / 12 : null, canViewMoney);
+
+  const contractFlatCount = payload?.summary.contractFlatEmployees || 0;
+
   const loadedLabel = new Date(lastLoaded).toLocaleString('en-GB', { timeZone: 'UTC', hour12: false }) + ' UTC';
 
   return (
@@ -335,6 +345,12 @@ export default function TaxPayeCommandCenter({
       ) : null}
       {payload?.dataSource?.warning ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">{payload.dataSource.warning}</div>
+      ) : null}
+      {contractFlatCount > 0 ? (
+        <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900">
+          <span className="font-semibold">{number(contractFlatCount)} contract employee{contractFlatCount === 1 ? '' : 's'}</span>
+          {' '}with C-code use a flat <span className="font-semibold">5% monthly gross PAYE</span> (month-on-month, not annualized). Progressive bands, reliefs, and chargeable-income columns do not apply to them.
+        </div>
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -450,7 +466,7 @@ export default function TaxPayeCommandCenter({
               <table className="min-w-[1180px] w-full text-left">
                 <thead className="sticky top-0 z-10 bg-[#F8FAFC]">
                   <tr>
-                    {['Employee', 'Payroll Group', 'State', 'Gross Income', 'Pre-Tax Ded.', 'Reliefs', 'Chargeable Income', 'Annual PAYE', 'Monthly PAYE', 'Status', 'Actions'].map((header) => (
+                    {['Employee', 'Tax Method', 'Payroll Group', 'State', 'Gross Income', 'Pre-Tax Ded.', 'Reliefs', 'Chargeable Income', 'Annual PAYE', 'Monthly PAYE', 'Status', 'Actions'].map((header) => (
                       <th key={header} className="px-4 py-3 text-[13px] font-semibold uppercase tracking-wide text-[#64748B]">
                         {header}
                       </th>
@@ -469,17 +485,28 @@ export default function TaxPayeCommandCenter({
                           <EmployeeAvatar fullName={record.fullName} employeeId={record.employeeId} size="sm" tryPhoto />
                           <div className="min-w-0">
                             <p className="truncate text-sm font-semibold text-[#0F172A]">{record.fullName}</p>
-                            <p className="text-xs font-medium text-[#64748B]">{record.employeeId}</p>
+                            <p className="text-xs font-medium text-[#64748B]">{record.employeeCode || record.employeeId}</p>
                             <p className="truncate text-xs text-[#64748B]">{record.department}</p>
                           </div>
                         </div>
                       </td>
+                      <td className="px-4 py-3">
+                        {record.payeMethod === 'contract-flat' ? (
+                          <span className="inline-flex rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-800">
+                            5% flat
+                          </span>
+                        ) : (
+                          <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                            Progressive
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">{record.payrollGroup}</td>
                       <td className="px-4 py-3 text-sm font-medium text-[#64748B]">{record.taxState}</td>
                       <td className="px-4 py-3 text-sm font-semibold text-[#0F172A]">{grossDisplay(record)}</td>
-                      <td className="px-4 py-3 text-sm text-[#64748B]">{money(record.annualPreTaxDeductions ? record.annualPreTaxDeductions / 12 : null, canViewMoney)}</td>
-                      <td className="px-4 py-3 text-sm text-[#64748B]">{money(record.annualReliefs ? record.annualReliefs / 12 : null, canViewMoney)}</td>
-                      <td className="px-4 py-3 text-sm font-semibold text-[#0F172A]">{money(record.annualChargeableIncome ? record.annualChargeableIncome / 12 : null, canViewMoney)}</td>
+                      <td className="px-4 py-3 text-sm text-[#64748B]">{progressiveOnlyValue(record, record.annualPreTaxDeductions)}</td>
+                      <td className="px-4 py-3 text-sm text-[#64748B]">{progressiveOnlyValue(record, record.annualReliefs)}</td>
+                      <td className="px-4 py-3 text-sm font-semibold text-[#0F172A]">{progressiveOnlyValue(record, record.annualChargeableIncome)}</td>
                       <td className="px-4 py-3 text-sm font-semibold text-[#0F172A]">{money(record.annualPaye, canViewMoney)}</td>
                       <td className="px-4 py-3 text-sm font-semibold text-[#0F172A]">{money(record.monthlyPaye, canViewMoney)}</td>
                       <td className="px-4 py-3">
@@ -659,11 +686,26 @@ export default function TaxPayeCommandCenter({
               </button>
             </div>
             <div className="flex-1 space-y-4 overflow-auto p-5">
+              {selectedEmployee.payeMethod === 'contract-flat' ? (
+                <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-900">
+                  <p className="font-semibold">Contract flat PAYE</p>
+                  <p className="mt-2">
+                    Monthly PAYE = 5% × monthly gross ({grossDisplay(selectedEmployee)} × 5% = {money(selectedEmployee.monthlyPaye, canViewMoney)}).
+                  </p>
+                  <p className="mt-2 text-xs text-violet-800">Not annualized. Progressive tax bands and reliefs do not apply.</p>
+                </div>
+              ) : null}
               <div className="grid grid-cols-2 gap-3">
-                <SummaryTile label="Annual PAYE" value={money(selectedEmployee.annualPaye, canViewMoney)} />
+                <SummaryTile label="Tax Method" value={selectedEmployee.payeMethodLabel || (selectedEmployee.payeMethod === 'contract-flat' ? 'Contract flat 5%' : 'Progressive PAYE')} />
+                <SummaryTile label="Monthly Gross" value={grossDisplay(selectedEmployee)} />
                 <SummaryTile label="Monthly PAYE" value={money(selectedEmployee.monthlyPaye, canViewMoney)} />
-                <SummaryTile label="Chargeable Income" value={money(selectedEmployee.annualChargeableIncome, canViewMoney)} />
-                <SummaryTile label="Reliefs" value={money(selectedEmployee.annualReliefs, canViewMoney)} />
+                <SummaryTile label="Annual PAYE" value={money(selectedEmployee.annualPaye, canViewMoney)} />
+                {selectedEmployee.payeMethod !== 'contract-flat' ? (
+                  <>
+                    <SummaryTile label="Chargeable Income" value={money(selectedEmployee.annualChargeableIncome, canViewMoney)} />
+                    <SummaryTile label="Reliefs" value={money(selectedEmployee.annualReliefs, canViewMoney)} />
+                  </>
+                ) : null}
               </div>
               <div className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4">
                 <div className="flex items-center gap-2 text-sm font-semibold text-[#0F172A]">

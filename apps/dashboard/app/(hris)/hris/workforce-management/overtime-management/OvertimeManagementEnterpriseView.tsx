@@ -13,6 +13,7 @@ import {
   Printer,
   RefreshCcw,
   Search,
+  ShieldAlert,
   ShieldCheck,
   TimerReset,
   X,
@@ -106,11 +107,18 @@ export type OvertimeManagementEnterpriseViewProps = {
   authorizationRequests: EnterpriseAuthorizationRequest[];
   approvedAuthorizationCount: number;
   authorizationForm: ReactNode;
+  authorizationModalOpen: boolean;
+  onOpenAuthorization: () => void;
+  onCloseAuthorization: () => void;
   onSubmitAuthorization: () => void;
   authorizationBusy: boolean;
   onApproveAuthorization: (id: string) => void;
   onRejectAuthorization: (id: string) => void;
   authorizationActionBusy: boolean;
+  selectedAuthIds: Set<string>;
+  onToggleAuthRow: (id: string) => void;
+  onBulkAuthorization: (decision: 'approve' | 'reject') => void;
+  bulkAuthorizationBusy: boolean;
   query: string;
   onQueryChange: (value: string) => void;
   status: string;
@@ -151,7 +159,44 @@ const inputClass =
 const readOnlyClass =
   'h-11 w-full rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] px-3 text-sm font-medium text-[#475569] outline-none';
 
+const AUTHORIZATION_STAGES = ['Submitted', 'Project Manager Approved', 'GM Operations Approved', 'HR Approved'] as const;
+const STAGE_SHORT: Record<string, string> = {
+  Submitted: 'Sup',
+  'Project Manager Approved': 'PM',
+  'GM Operations Approved': 'GM',
+  'HR Approved': 'HR',
+};
+
+function AuthorizationStageTrack({ status }: { status: string }) {
+  const rejected = status === 'Rejected' || status === 'Cancelled';
+  const currentIndex = AUTHORIZATION_STAGES.indexOf(status as (typeof AUTHORIZATION_STAGES)[number]);
+  const legacyDone = status === 'MD Approved';
+  return (
+    <div className="flex items-center gap-1">
+      {AUTHORIZATION_STAGES.map((stage, index) => {
+        const done = legacyDone || (currentIndex >= 0 && index <= currentIndex);
+        const isCurrent = currentIndex >= 0 && index === currentIndex;
+        const color = rejected
+          ? 'bg-[#FEE2E2] text-[#B91C1C] border-[#FECACA]'
+          : done
+          ? 'bg-[#DCFCE7] text-[#166534] border-[#BBF7D0]'
+          : isCurrent
+          ? 'bg-[#DBEAFE] text-[#1D4ED8] border-[#93C5FD]'
+          : 'bg-white text-[#94A3B8] border-[#E5E7EB]';
+        return (
+          <span key={stage} title={stage} className={`inline-flex h-6 min-w-[34px] items-center justify-center rounded-md border px-1.5 text-[10px] font-bold ${color}`}>
+            {STAGE_SHORT[stage]}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterpriseViewProps) {
+  const pendingAuthorizationCount = props.authorizationRequests.filter(
+    (item) => !['HR Approved', 'MD Approved', 'Rejected', 'Cancelled'].includes(item.status),
+  ).length;
   const kpiItems = [
     {
       label: 'Overtime Requests',
@@ -221,17 +266,6 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={props.role}
-              onChange={(e) => props.onRoleChange(e.target.value)}
-              className="h-11 rounded-xl border border-[#E5E7EB] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
-            >
-              {props.roles.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
             <button
               type="button"
               onClick={props.onToggleRequest}
@@ -274,7 +308,7 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
         <div className="mt-6">
           <OvertimePanel
             title="Pre-Overtime Authorization"
-            subtitle="Production Manager submits, Project Manager approves, MD approves, then the supervisor receives notification to book approved overtime."
+            subtitle="Supervisor books & submits, Project Manager approves, GM Operations approves, then HR verifies & approves."
             actions={
               <>
                 <span className="rounded-full border border-[#93C5FD] bg-[#DBEAFE] px-3 py-1 text-xs font-bold text-[#1D4ED8]">
@@ -286,31 +320,63 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
               </>
             }
           >
-            {props.authorizationForm}
-            <div className="mt-4 flex justify-end">
-              <button
-                type="button"
-                onClick={props.onSubmitAuthorization}
-                disabled={props.authorizationBusy}
-                className="inline-flex h-11 items-center rounded-xl bg-[#2563EB] px-6 text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-60"
-              >
-                Submit Authorization
-              </button>
-            </div>
-            <div className="mt-5 overflow-x-auto rounded-[16px] border border-[#EDF2F7]">
-              <table className="min-w-[960px] w-full text-left">
+            {props.role === 'Super Administrator' || props.role === 'Administrator' ? (
+              <div className="mb-4 flex items-center gap-2 rounded-[14px] border border-[#FCD34D] bg-[#FFFBEB] px-4 py-3 text-xs font-semibold text-[#92400E]">
+                <ShieldAlert className="h-4 w-4 shrink-0" />
+                Testing phase: as {props.role}, approving any request completes the full chain (Supervisor → PM → GM Operations → HR) in one step and posts overtime to the employees&apos; timesheets.
+              </div>
+            ) : null}
+            {pendingAuthorizationCount ? (
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3">
+                <p className="text-xs font-semibold text-[#475569]">
+                  {props.selectedAuthIds.size} selected · {pendingAuthorizationCount} awaiting your decision
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => props.onBulkAuthorization('approve')}
+                    disabled={!props.selectedAuthIds.size || props.bulkAuthorizationBusy}
+                    className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#10B981] px-3 text-xs font-semibold text-white hover:bg-[#059669] disabled:opacity-40"
+                  >
+                    <BadgeCheck className="h-4 w-4" />
+                    Bulk Approve
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => props.onBulkAuthorization('reject')}
+                    disabled={!props.selectedAuthIds.size || props.bulkAuthorizationBusy}
+                    className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#FECACA] bg-white px-3 text-xs font-semibold text-[#DC2626] hover:bg-[#FEF2F2] disabled:opacity-40"
+                  >
+                    Bulk Reject
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            <div className="overflow-x-auto rounded-[16px] border border-[#EDF2F7]">
+              <table className="min-w-[1040px] w-full text-left">
                 <thead className="sticky top-0 bg-[#F8FAFC] text-[13px] font-semibold uppercase tracking-wide text-[#64748B]">
                   <tr>
-                    {['Project ID', 'Date', 'Employees', 'Hours', 'Charges', 'Status', 'Action'].map((head) => (
-                      <th key={head} className="px-4 py-3">
+                    {['', 'Project ID', 'Date', 'Employees', 'Hours', 'Approval Stage', 'Status', 'Action'].map((head, index) => (
+                      <th key={head || `col-${index}`} className="px-4 py-3">
                         {head}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EDF2F7] bg-white text-[15px]">
-                  {props.authorizationRequests.map((item) => (
-                    <tr key={item.id} className="hover:bg-[#F8FAFC]">
+                  {props.authorizationRequests.map((item) => {
+                    const actionable = !['HR Approved', 'MD Approved', 'Rejected', 'Cancelled'].includes(item.status);
+                    return (
+                    <tr key={item.id} className={`hover:bg-[#F8FAFC] ${props.selectedAuthIds.has(item.id) ? 'bg-[#EFF6FF]' : ''}`}>
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={props.selectedAuthIds.has(item.id)}
+                          disabled={!actionable}
+                          onChange={() => props.onToggleAuthRow(item.id)}
+                          className="rounded border-[#CBD5E1] disabled:opacity-30"
+                        />
+                      </td>
                       <td className="px-4 py-3">
                         <div className="font-semibold text-[#0F172A]">{item.projectCode}</div>
                         <div className="text-xs text-[#64748B]">{item.projectName}</div>
@@ -323,12 +389,14 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
                         </div>
                       </td>
                       <td className="px-4 py-3 font-bold text-[#0F172A]">{props.number(item.requestedHours)}h</td>
-                      <td className="px-4 py-3 text-sm text-[#64748B]">{item.workCenter}</td>
+                      <td className="px-4 py-3">
+                        <AuthorizationStageTrack status={item.status} />
+                      </td>
                       <td className="px-4 py-3">
                         <OvertimeStatusBadge status={item.status} />
                       </td>
                       <td className="px-4 py-3">
-                        {!['MD Approved', 'Rejected', 'Cancelled'].includes(item.status) ? (
+                        {actionable ? (
                           <div className="flex gap-2">
                             <button
                               type="button"
@@ -352,11 +420,12 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
                         )}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                   {!props.authorizationRequests.length ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-8">
-                        <OvertimeEmptyState title="No authorization requests yet." description="Submit a pre-overtime authorization above." />
+                      <td colSpan={8} className="px-4 py-8">
+                        <OvertimeEmptyState title="No authorization requests yet." description="Click New Overtime Request to book and submit overtime." />
                       </td>
                     </tr>
                   ) : null}
@@ -667,6 +736,47 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
           </aside>
         </div>
       </div>
+
+      {props.authorizationModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0F172A]/50 p-4 sm:p-6" role="dialog" aria-modal="true">
+          <div className="my-4 w-full max-w-[1100px] rounded-[20px] border border-[#E5E7EB] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.25)]">
+            <div className="flex items-start justify-between gap-4 border-b border-[#EDF2F7] px-6 py-4">
+              <div>
+                <h2 className="text-xl font-bold text-[#0F172A]">Pre-Overtime Authorization</h2>
+                <p className="mt-1 text-sm text-[#64748B]">
+                  Book overtime for your assigned employees. Submission routes to Project Manager → GM Operations → HR.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={props.onCloseAuthorization}
+                className="rounded-full p-2 text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A]"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="max-h-[72vh] overflow-y-auto px-6 py-5">{props.authorizationForm}</div>
+            <div className="flex flex-wrap items-center justify-end gap-3 border-t border-[#EDF2F7] px-6 py-4">
+              <button
+                type="button"
+                onClick={props.onCloseAuthorization}
+                className="inline-flex h-11 items-center rounded-xl border border-[#E5E7EB] bg-white px-5 text-sm font-semibold text-[#475569] hover:bg-[#F8FAFC]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={props.onSubmitAuthorization}
+                disabled={props.authorizationBusy}
+                className="inline-flex h-11 items-center rounded-xl bg-[#2563EB] px-6 text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-60"
+              >
+                {props.authorizationBusy ? 'Submitting…' : 'Submit Authorization'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

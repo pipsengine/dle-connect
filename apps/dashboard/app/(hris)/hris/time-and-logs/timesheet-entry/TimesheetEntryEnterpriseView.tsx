@@ -18,7 +18,6 @@ import {
   XCircle,
 } from 'lucide-react';
 import {
-  ApprovedOvertimeBookingBar,
   ContextField,
   ContextSelect,
   EmployeeDetailsPanel,
@@ -360,19 +359,6 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
           onMoveColumn={props.onMoveProjectColumn}
           onRemoveColumn={props.onRemoveProjectColumn}
           onSelectColumnProject={props.onSelectColumnProject}
-        />
-
-        <ApprovedOvertimeBookingBar
-          authorizations={props.approvedOvertimeAuthorizations}
-          lines={props.localLines}
-          selectedEmployeeCount={props.selectedEmployees.length}
-          canEdit={props.canEditTimesheet}
-          canBookOvertime={props.canBookOvertime}
-          retroCorrection={props.overtimeRetroCorrection}
-          openBooking={props.overtimeOpenBooking}
-          devRelaxed={props.overtimeDevRelaxed}
-          submitting={props.submitting}
-          onBook={props.onBookApprovedOvertime}
         />
 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[#E5E7EB] bg-white px-4 py-3">

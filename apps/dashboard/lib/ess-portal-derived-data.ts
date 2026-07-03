@@ -231,6 +231,97 @@ export const derivePortalAnalytics = (input: {
   ];
 };
 
+export type EssEmployeeReport = {
+  id: string;
+  title: string;
+  format: string;
+  status: 'Ready' | 'No Data';
+  recordCount: number;
+  category: 'leave' | 'payroll' | 'learning' | 'claims';
+  lastUpdated: string;
+};
+
+export type EssReportDownloadTile = {
+  id: string;
+  title: string;
+  format: string;
+  accent: string;
+  bg: string;
+  status: 'Ready' | 'No Data';
+};
+
+type LeaveBalanceLike = { label?: string; entitlement?: number; used?: number; balance?: number; carryForward?: number };
+type LeaveHistoryLike = { id?: string; type?: string; from?: string; to?: string; days?: number; status?: string };
+type PayrollHistoryLike = { period?: string; periodLabel?: string; grossPay?: number; deductions?: number; netPay?: number; status?: string };
+type LearningLike = { courses?: unknown[]; materials?: unknown[]; certifications?: unknown[] };
+type ClaimLike = { id?: string; type?: string; status?: string; submittedAt?: string };
+
+export const deriveEssEmployeeReports = (input: {
+  leaveBalances: LeaveBalanceLike[];
+  leaveHistory: LeaveHistoryLike[];
+  payrollHistory: PayrollHistoryLike[];
+  learning: LearningLike;
+  claims: ClaimLike[];
+  generatedAt: string;
+}) => {
+  const leaveRecords = Math.max(input.leaveHistory.length, input.leaveBalances.length);
+  const payrollRecords = input.payrollHistory.length;
+  const trainingRecords =
+    (input.learning.courses?.length || 0) +
+    (input.learning.certifications?.length || 0) +
+    (input.learning.materials?.length || 0);
+  const claimRecords = input.claims.length;
+  const generatedAt = input.generatedAt;
+
+  const reports: EssEmployeeReport[] = [
+    {
+      id: 'rpt-leave-statement',
+      title: 'My Leave Statement',
+      format: 'PDF / Excel',
+      status: leaveRecords > 0 ? 'Ready' : 'No Data',
+      recordCount: leaveRecords,
+      category: 'leave',
+      lastUpdated: generatedAt,
+    },
+    {
+      id: 'rpt-payroll-history',
+      title: 'Payroll History Report',
+      format: 'PDF / Excel',
+      status: payrollRecords > 0 ? 'Ready' : 'No Data',
+      recordCount: payrollRecords,
+      category: 'payroll',
+      lastUpdated: generatedAt,
+    },
+    {
+      id: 'rpt-training-transcript',
+      title: 'Training Transcript',
+      format: 'PDF',
+      status: trainingRecords > 0 ? 'Ready' : 'No Data',
+      recordCount: trainingRecords,
+      category: 'learning',
+      lastUpdated: generatedAt,
+    },
+    {
+      id: 'rpt-claim-status',
+      title: 'Claim Status Report',
+      format: 'Excel',
+      status: claimRecords > 0 ? 'Ready' : 'No Data',
+      recordCount: claimRecords,
+      category: 'claims',
+      lastUpdated: generatedAt,
+    },
+  ];
+
+  const downloads: EssReportDownloadTile[] = [
+    { id: 'rpt-leave-statement', title: 'Leave statement', format: 'PDF / Excel', accent: '#16A34A', bg: '#ECFDF5', status: leaveRecords > 0 ? 'Ready' : 'No Data' },
+    { id: 'rpt-payroll-history', title: 'Payroll history', format: 'PDF / Excel', accent: '#7C3AED', bg: '#F5F3FF', status: payrollRecords > 0 ? 'Ready' : 'No Data' },
+    { id: 'rpt-training-transcript', title: 'Training transcript', format: 'PDF', accent: '#0891B2', bg: '#ECFEFF', status: trainingRecords > 0 ? 'Ready' : 'No Data' },
+    { id: 'rpt-claim-status', title: 'Claim status', format: 'Excel', accent: '#EA580C', bg: '#FFF7ED', status: claimRecords > 0 ? 'Ready' : 'No Data' },
+  ];
+
+  return { reports, downloads };
+};
+
 export const monthlyRequestVolume = (requests: EssRequestLike[]) => {
   const buckets = new Map<string, number>();
   requests.forEach((request) => {

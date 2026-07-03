@@ -35,7 +35,7 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { OVERTIME_HOUR_OPTIONS, DAILY_BREAK_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, timesheetDayRulesForDate, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, timesheetDayRulesForDate, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import { TimesheetEntryEnterpriseView } from './TimesheetEntryEnterpriseView';
@@ -1771,45 +1771,6 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             </div>
           ))}
         </div>
-
-        {approvedOvertimeAuthorizations.length ? (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Approved Overtime Available</p>
-                <h3 className="mt-1 text-base font-black text-slate-950">{approvedOvertimeAuthorizations.length} approved request{approvedOvertimeAuthorizations.length === 1 ? '' : 's'} for this supervisor and date</h3>
-                <p className="mt-1 text-xs font-semibold text-slate-600">Book only the approved overtime hours against the approved project after work is completed.</p>
-              </div>
-              <Link href="/hris/workforce-management/overtime-management" className="rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-black text-white hover:bg-emerald-800">Open OT Queue</Link>
-            </div>
-            <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-              {approvedOvertimeAuthorizations.map((item) => (
-                <div key={item.id} className="rounded-xl border border-emerald-200 bg-white p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-black text-slate-950">{item.projectCode} - {item.projectName}</div>
-                      <div className="mt-1 text-[11px] font-semibold text-slate-600">{round1(item.requestedHours)}h approved / {item.requestedHeadcount} people</div>
-                      <div className="mt-1 text-[11px] font-semibold text-slate-500">{item.reason}</div>
-                    </div>
-                    <div className="flex flex-wrap justify-end gap-1">
-                      {OVERTIME_HOUR_OPTIONS.map((hours) => (
-                        <button
-                          key={hours}
-                          type="button"
-                          onClick={() => void handleBookApprovedOvertime(item.id, hours)}
-                          disabled={submitting || !canBookOvertime}
-                          className="rounded-lg bg-emerald-700 px-2.5 py-1.5 text-[10px] font-black text-white hover:bg-emerald-800 disabled:opacity-50"
-                        >
-                          {hours}h
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
 
         {/* Biometric Bar */}
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-slate-950 px-5 py-3 text-[11px] text-white shadow-lg">

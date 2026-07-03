@@ -3,7 +3,18 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { calculatePayrollEarnings, calculatePermanentUnionDues, resolvePayrollEarningProfile, taxablePayrollInputFromEmployee, type PayrollEarningsOptions, type PayrollEarningsResult } from '@/lib/payroll-earnings-engine';
+import { contractEmployeeCode } from '@/lib/payroll-employee-classification';
 import { hrisPayeFromEmployee, resolveSageAlignedAnnualRentRelief } from '@/lib/payroll-sage-pay-rules';
+
+/**
+ * Contract ("C" code) employees are taxed at a flat 5% of their monthly gross,
+ * calculated month-on-month (not annualized and not run through the progressive
+ * PAYE bands). This applies to enterprise-calculated periods going forward.
+ */
+export const CONTRACT_FLAT_PAYE_RATE = 0.05;
+
+/** True when the employee is a contract ("C" code) employee on the flat monthly PAYE rate. */
+export const usesContractFlatPaye = (employee?: DleEmployeeDirectoryRow) => Boolean(employee && contractEmployeeCode(employee));
 
 export type TaxBand = { id: string; sequence: number; label: string; bandAmount: number | null; rate: number };
 export type ConfigStatus = 'Draft' | 'Active' | 'Retired';
@@ -230,15 +241,21 @@ export const calculatePayrollTax = (input: PayrollTaxInput, version: PayrollTaxV
     });
   const annualPaye = roundMoney(bandResults.reduce((sum, band) => sum + band.tax, 0));
   const postTaxDeductions = roundMoney(statutoryItems.filter((item) => !item.preTax).reduce((sum, item) => sum + item.amount, 0));
+  const flatContractPaye = usesContractFlatPaye(input.employee);
+  const monthlyGrossPay = roundMoney(
+    Number(input.monthlyGrossPay ?? (Number(input.monthlyBasePay || 0) + Number(input.monthlyAllowances || 0))),
+  );
   const enterprisePaye =
-    input.employee && input.earnings
+    !flatContractPaye && input.employee && input.earnings
       ? hrisPayeFromEmployee({
           employee: input.employee,
           earnings: input.earnings,
           nhfApplicable: defaultNhfApplicableForEmployee(input.employee),
         }).paye
       : null;
-  const monthlyPaye = enterprisePaye ?? roundMoney(annualPaye / 12);
+  const monthlyPaye = flatContractPaye
+    ? roundMoney(Math.max(0, monthlyGrossPay) * CONTRACT_FLAT_PAYE_RATE)
+    : enterprisePaye ?? roundMoney(annualPaye / 12);
   return {
     annualGrossIncome,
     annualPreTaxDeductions,

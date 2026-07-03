@@ -5,13 +5,25 @@ import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import type { SessionPayload } from '@/lib/auth/session';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { postApprovedOvertimeToTimesheets } from '@/lib/overtime-timesheet-posting';
 
 export type OvertimeAuthorizationStatus =
   | 'Submitted'
   | 'Project Manager Approved'
-  | 'MD Approved'
+  | 'GM Operations Approved'
+  | 'HR Approved'
   | 'Rejected'
   | 'Cancelled';
+
+export type OvertimeAuthorizationEmployeeLine = {
+  id: string;
+  employeeCode: string;
+  employeeName: string;
+  jobTitle: string;
+  department: string;
+  overtimeHours: number;
+  dayType: string;
+};
 
 export type OvertimeAuthorizationRequest = {
   id: string;
@@ -29,11 +41,23 @@ export type OvertimeAuthorizationRequest = {
   currentOwnerName: string;
   projectManagerName: string;
   projectManagerEmail: string | null;
-  mdApproverName: string;
-  mdApproverEmail: string | null;
+  gmOperationsName: string;
+  gmOperationsEmail: string | null;
+  hrApproverName: string;
+  hrApproverEmail: string | null;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  employees: OvertimeAuthorizationEmployeeLine[];
+};
+
+export type OvertimeAuthorizationEmployeeInput = {
+  employeeCode: string;
+  employeeName?: string | null;
+  jobTitle?: string | null;
+  department?: string | null;
+  overtimeHours: number;
+  dayType?: string | null;
 };
 
 export type OvertimeAuthorizationInput = {
@@ -46,10 +70,14 @@ export type OvertimeAuthorizationInput = {
   requestedHours: number;
   requestedHeadcount?: number | null;
   reason?: string | null;
+  overtimeType?: string | null;
   projectManagerName?: string | null;
   projectManagerEmail?: string | null;
-  mdApproverName?: string | null;
-  mdApproverEmail?: string | null;
+  gmOperationsName?: string | null;
+  gmOperationsEmail?: string | null;
+  hrApproverName?: string | null;
+  hrApproverEmail?: string | null;
+  employees?: OvertimeAuthorizationEmployeeInput[] | null;
   portalBaseUrl?: string | null;
 };
 
@@ -69,16 +97,30 @@ type DbAuthorizationRow = {
   CurrentOwnerName: string;
   ProjectManagerName: string;
   ProjectManagerEmail: string | null;
-  MdApproverName: string;
-  MdApproverEmail: string | null;
+  GmOperationsName: string | null;
+  GmOperationsEmail: string | null;
+  HrApproverName: string | null;
+  HrApproverEmail: string | null;
   CreatedBy: string;
   CreatedAt: Date | string;
   UpdatedAt: Date | string;
 };
 
+type DbAuthorizationEmployeeRow = {
+  Id: string;
+  RequestId: string;
+  EmployeeCode: string;
+  EmployeeName: string;
+  JobTitle: string | null;
+  Department: string | null;
+  OvertimeHours: number;
+  DayType: string | null;
+};
+
 const dbReady = { value: false };
 const clean = (value: unknown) => String(value || '').trim();
 const num = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : 0;
+const round2 = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 const dateOnly = (value: Date | string) => value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
 const iso = (value: Date | string) => new Date(value).toISOString();
 const token = () => crypto.randomBytes(32).toString('hex');
@@ -125,6 +167,26 @@ CREATE TABLE [hris].[OvertimeAuthorizationRequests] (
   [CreatedAt] DATETIME2 NOT NULL CONSTRAINT [DF_OvertimeAuthorizationRequests_CreatedAt] DEFAULT SYSUTCDATETIME(),
   [UpdatedAt] DATETIME2 NOT NULL CONSTRAINT [DF_OvertimeAuthorizationRequests_UpdatedAt] DEFAULT SYSUTCDATETIME()
 );
+IF COL_LENGTH(N'[hris].[OvertimeAuthorizationRequests]', 'GmOperationsName') IS NULL
+  ALTER TABLE [hris].[OvertimeAuthorizationRequests] ADD [GmOperationsName] NVARCHAR(220) NULL;
+IF COL_LENGTH(N'[hris].[OvertimeAuthorizationRequests]', 'GmOperationsEmail') IS NULL
+  ALTER TABLE [hris].[OvertimeAuthorizationRequests] ADD [GmOperationsEmail] NVARCHAR(320) NULL;
+IF COL_LENGTH(N'[hris].[OvertimeAuthorizationRequests]', 'HrApproverName') IS NULL
+  ALTER TABLE [hris].[OvertimeAuthorizationRequests] ADD [HrApproverName] NVARCHAR(220) NULL;
+IF COL_LENGTH(N'[hris].[OvertimeAuthorizationRequests]', 'HrApproverEmail') IS NULL
+  ALTER TABLE [hris].[OvertimeAuthorizationRequests] ADD [HrApproverEmail] NVARCHAR(320) NULL;
+IF OBJECT_ID(N'[hris].[OvertimeAuthorizationEmployees]', N'U') IS NULL
+CREATE TABLE [hris].[OvertimeAuthorizationEmployees] (
+  [Id] NVARCHAR(120) NOT NULL CONSTRAINT [PK_OvertimeAuthorizationEmployees] PRIMARY KEY,
+  [RequestId] NVARCHAR(120) NOT NULL,
+  [EmployeeCode] NVARCHAR(80) NOT NULL,
+  [EmployeeName] NVARCHAR(220) NOT NULL,
+  [JobTitle] NVARCHAR(180) NULL,
+  [Department] NVARCHAR(180) NULL,
+  [OvertimeHours] DECIMAL(9,2) NOT NULL,
+  [DayType] NVARCHAR(40) NULL,
+  [CreatedAt] DATETIME2 NOT NULL CONSTRAINT [DF_OvertimeAuthorizationEmployees_CreatedAt] DEFAULT SYSUTCDATETIME()
+);
 IF OBJECT_ID(N'[hris].[OvertimeAuthorizationAudit]', N'U') IS NULL
 CREATE TABLE [hris].[OvertimeAuthorizationAudit] (
   [Id] NVARCHAR(120) NOT NULL CONSTRAINT [PK_OvertimeAuthorizationAudit] PRIMARY KEY,
@@ -165,7 +227,7 @@ CREATE TABLE [hris].[EmailNotificationOutbox] (
   return pool;
 };
 
-const mapRow = (row: DbAuthorizationRow): OvertimeAuthorizationRequest => ({
+const mapRow = (row: DbAuthorizationRow, employees: OvertimeAuthorizationEmployeeLine[] = []): OvertimeAuthorizationRequest => ({
   id: row.Id,
   projectCode: row.ProjectCode,
   projectName: row.ProjectName,
@@ -181,11 +243,24 @@ const mapRow = (row: DbAuthorizationRow): OvertimeAuthorizationRequest => ({
   currentOwnerName: row.CurrentOwnerName,
   projectManagerName: row.ProjectManagerName,
   projectManagerEmail: row.ProjectManagerEmail,
-  mdApproverName: row.MdApproverName,
-  mdApproverEmail: row.MdApproverEmail,
+  gmOperationsName: clean(row.GmOperationsName) || 'GM Operations',
+  gmOperationsEmail: row.GmOperationsEmail,
+  hrApproverName: clean(row.HrApproverName) || 'HR Manager',
+  hrApproverEmail: row.HrApproverEmail,
   createdBy: row.CreatedBy,
   createdAt: iso(row.CreatedAt),
   updatedAt: iso(row.UpdatedAt),
+  employees,
+});
+
+const mapEmployeeRow = (row: DbAuthorizationEmployeeRow): OvertimeAuthorizationEmployeeLine => ({
+  id: row.Id,
+  employeeCode: row.EmployeeCode,
+  employeeName: row.EmployeeName,
+  jobTitle: clean(row.JobTitle),
+  department: clean(row.Department),
+  overtimeHours: Number(row.OvertimeHours || 0),
+  dayType: clean(row.DayType) || 'Weekday',
 });
 
 const portalBase = (input?: string | null) => clean(input || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3020').replace(/\/$/, '');
@@ -261,11 +336,16 @@ const deliverEmail = async (recipientEmail: string | null, recipientName: string
     .query('INSERT INTO [hris].[EmailNotificationOutbox] ([Id],[RecipientEmail],[RecipientName],[Subject],[HtmlBody],[TextBody],[ProviderStatus],[ProviderResponse]) VALUES (@Id,@RecipientEmail,@RecipientName,@Subject,@HtmlBody,@TextBody,@ProviderStatus,@ProviderResponse);');
 };
 
-const notifyApprovalOwner = async (request: OvertimeAuthorizationRequest, stage: 'project-manager' | 'md', baseUrl?: string | null) => {
-  const isMd = stage === 'md';
-  const recipientName = isMd ? request.mdApproverName : request.projectManagerName;
-  const recipientEmail = isMd ? request.mdApproverEmail : request.projectManagerEmail;
-  const role = isMd ? 'Executive Management' : 'Project Manager';
+type ApprovalStage = 'project-manager' | 'gm-operations' | 'hr';
+
+const stageRecipient = (request: OvertimeAuthorizationRequest, stage: ApprovalStage) => {
+  if (stage === 'gm-operations') return { recipientName: request.gmOperationsName, recipientEmail: request.gmOperationsEmail, role: 'GM Operations' };
+  if (stage === 'hr') return { recipientName: request.hrApproverName, recipientEmail: request.hrApproverEmail, role: 'HR Manager' };
+  return { recipientName: request.projectManagerName, recipientEmail: request.projectManagerEmail, role: 'Project Manager' };
+};
+
+const notifyApprovalOwner = async (request: OvertimeAuthorizationRequest, stage: ApprovalStage, baseUrl?: string | null) => {
+  const { recipientName, recipientEmail, role } = stageRecipient(request, stage);
   const approveToken = await saveToken(request.id, stage, 'approve', recipientName, recipientEmail);
   const rejectToken = await saveToken(request.id, stage, 'reject', recipientName, recipientEmail);
   const openLink = `${portalBase(baseUrl)}/hris/workforce-management/overtime-management?requestId=${encodeURIComponent(request.id)}`;
@@ -324,20 +404,43 @@ const notifySupervisorApproved = async (request: OvertimeAuthorizationRequest, b
 
 export const listOvertimeAuthorizationRequests = async () => {
   const pool = await ensureDb();
-  const result = await pool.request().query<DbAuthorizationRow>('SELECT * FROM [hris].[OvertimeAuthorizationRequests] ORDER BY [WorkDate] DESC, [CreatedAt] DESC');
-  return result.recordset.map(mapRow);
+  const [result, employeesResult] = await Promise.all([
+    pool.request().query<DbAuthorizationRow>('SELECT * FROM [hris].[OvertimeAuthorizationRequests] ORDER BY [WorkDate] DESC, [CreatedAt] DESC'),
+    pool.request().query<DbAuthorizationEmployeeRow>('SELECT * FROM [hris].[OvertimeAuthorizationEmployees] ORDER BY [EmployeeName]'),
+  ]);
+  const employeesByRequest = new Map<string, OvertimeAuthorizationEmployeeLine[]>();
+  for (const row of employeesResult.recordset) {
+    const list = employeesByRequest.get(row.RequestId) || [];
+    list.push(mapEmployeeRow(row));
+    employeesByRequest.set(row.RequestId, list);
+  }
+  return result.recordset.map((row) => mapRow(row, employeesByRequest.get(row.Id) || []));
 };
 
 export const createOvertimeAuthorizationRequest = async (input: OvertimeAuthorizationInput, actor?: string | null) => {
   const projectCode = clean(input.projectCode);
   if (!projectCode) throw new Error('Project code is required for overtime authorization.');
   if (!clean(input.workDate)) throw new Error('Overtime work date is required.');
-  const requestedHours = num(input.requestedHours);
-  if (requestedHours <= 0) throw new Error('Requested overtime hours must be greater than zero.');
+  const employeeLines = (input.employees || [])
+    .map((line) => ({
+      employeeCode: clean(line.employeeCode),
+      employeeName: clean(line.employeeName) || clean(line.employeeCode),
+      jobTitle: clean(line.jobTitle),
+      department: clean(line.department),
+      overtimeHours: num(line.overtimeHours),
+      dayType: clean(line.dayType) || clean(input.overtimeType) || 'Weekday',
+    }))
+    .filter((line) => line.employeeCode && line.overtimeHours > 0);
+  const lineHoursTotal = round2(employeeLines.reduce((sum, line) => sum + line.overtimeHours, 0));
+  const requestedHours = employeeLines.length ? lineHoursTotal : num(input.requestedHours);
+  if (requestedHours <= 0) throw new Error('Requested overtime hours must be greater than zero. Book at least one employee.');
+  const requestedHeadcount = employeeLines.length || Math.max(1, Math.round(num(input.requestedHeadcount) || 1));
   const projectManagerName = clean(input.projectManagerName) || 'Project Manager';
-  const mdApproverName = clean(input.mdApproverName) || 'Managing Director';
+  const gmOperationsName = clean(input.gmOperationsName) || 'GM Operations';
+  const hrApproverName = clean(input.hrApproverName) || 'HR Manager';
   const projectManagerEmail = clean(input.projectManagerEmail) || await emailForName(projectManagerName);
-  const mdApproverEmail = clean(input.mdApproverEmail) || await emailForName(mdApproverName);
+  const gmOperationsEmail = clean(input.gmOperationsEmail) || await emailForName(gmOperationsName);
+  const hrApproverEmail = clean(input.hrApproverEmail) || await emailForName(hrApproverName);
   const id = `ota-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const pool = await ensureDb();
   await pool.request()
@@ -349,51 +452,128 @@ export const createOvertimeAuthorizationRequest = async (input: OvertimeAuthoriz
     .input('SupervisorCode', sql.NVarChar(80), clean(input.supervisorCode) || clean(input.supervisorName) || 'Unassigned')
     .input('SupervisorName', sql.NVarChar(220), clean(input.supervisorName) || clean(input.supervisorCode) || 'Unassigned')
     .input('RequestedHours', sql.Decimal(9, 2), requestedHours)
-    .input('RequestedHeadcount', sql.Int, Math.max(1, Math.round(num(input.requestedHeadcount) || 1)))
+    .input('RequestedHeadcount', sql.Int, requestedHeadcount)
     .input('Reason', sql.NVarChar(700), clean(input.reason) || 'Production overtime requested.')
     .input('CurrentOwnerName', sql.NVarChar(220), projectManagerName)
     .input('ProjectManagerName', sql.NVarChar(220), projectManagerName)
     .input('ProjectManagerEmail', sql.NVarChar(320), projectManagerEmail || null)
-    .input('MdApproverName', sql.NVarChar(220), mdApproverName)
-    .input('MdApproverEmail', sql.NVarChar(320), mdApproverEmail || null)
-    .input('CreatedBy', sql.NVarChar(220), clean(actor) || 'Production Manager')
+    .input('MdApproverName', sql.NVarChar(220), hrApproverName)
+    .input('MdApproverEmail', sql.NVarChar(320), hrApproverEmail || null)
+    .input('GmOperationsName', sql.NVarChar(220), gmOperationsName)
+    .input('GmOperationsEmail', sql.NVarChar(320), gmOperationsEmail || null)
+    .input('HrApproverName', sql.NVarChar(220), hrApproverName)
+    .input('HrApproverEmail', sql.NVarChar(320), hrApproverEmail || null)
+    .input('CreatedBy', sql.NVarChar(220), clean(actor) || 'Supervisor')
     .query(`INSERT INTO [hris].[OvertimeAuthorizationRequests]
-([Id],[ProjectCode],[ProjectName],[WorkDate],[WorkCenter],[SupervisorCode],[SupervisorName],[RequestedHours],[RequestedHeadcount],[Reason],[WorkflowStatus],[CurrentOwnerRole],[CurrentOwnerName],[ProjectManagerName],[ProjectManagerEmail],[MdApproverName],[MdApproverEmail],[CreatedBy])
-VALUES (@Id,@ProjectCode,@ProjectName,@WorkDate,@WorkCenter,@SupervisorCode,@SupervisorName,@RequestedHours,@RequestedHeadcount,@Reason,'Submitted','Project Manager',@CurrentOwnerName,@ProjectManagerName,@ProjectManagerEmail,@MdApproverName,@MdApproverEmail,@CreatedBy);`);
-  await writeAudit(id, clean(actor) || 'Production Manager', 'submit-authorization', null, 'Submitted', input.reason);
+([Id],[ProjectCode],[ProjectName],[WorkDate],[WorkCenter],[SupervisorCode],[SupervisorName],[RequestedHours],[RequestedHeadcount],[Reason],[WorkflowStatus],[CurrentOwnerRole],[CurrentOwnerName],[ProjectManagerName],[ProjectManagerEmail],[MdApproverName],[MdApproverEmail],[GmOperationsName],[GmOperationsEmail],[HrApproverName],[HrApproverEmail],[CreatedBy])
+VALUES (@Id,@ProjectCode,@ProjectName,@WorkDate,@WorkCenter,@SupervisorCode,@SupervisorName,@RequestedHours,@RequestedHeadcount,@Reason,'Submitted','Project Manager',@CurrentOwnerName,@ProjectManagerName,@ProjectManagerEmail,@MdApproverName,@MdApproverEmail,@GmOperationsName,@GmOperationsEmail,@HrApproverName,@HrApproverEmail,@CreatedBy);`);
+  for (const line of employeeLines) {
+    await pool.request()
+      .input('Id', sql.NVarChar(120), `ota-emp-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+      .input('RequestId', sql.NVarChar(120), id)
+      .input('EmployeeCode', sql.NVarChar(80), line.employeeCode)
+      .input('EmployeeName', sql.NVarChar(220), line.employeeName)
+      .input('JobTitle', sql.NVarChar(180), line.jobTitle || null)
+      .input('Department', sql.NVarChar(180), line.department || null)
+      .input('OvertimeHours', sql.Decimal(9, 2), line.overtimeHours)
+      .input('DayType', sql.NVarChar(40), line.dayType)
+      .query('INSERT INTO [hris].[OvertimeAuthorizationEmployees] ([Id],[RequestId],[EmployeeCode],[EmployeeName],[JobTitle],[Department],[OvertimeHours],[DayType]) VALUES (@Id,@RequestId,@EmployeeCode,@EmployeeName,@JobTitle,@Department,@OvertimeHours,@DayType);');
+  }
+  await writeAudit(id, clean(actor) || 'Supervisor', 'submit-authorization', null, 'Submitted', input.reason);
   const request = (await listOvertimeAuthorizationRequests()).find((item) => item.id === id)!;
   await notifyApprovalOwner(request, 'project-manager', input.portalBaseUrl);
   return request;
 };
 
+const OWNER_FOR_STATUS: Record<OvertimeAuthorizationStatus, { role: string; nameKey: keyof OvertimeAuthorizationRequest | null }> = {
+  Submitted: { role: 'Project Manager', nameKey: 'projectManagerName' },
+  'Project Manager Approved': { role: 'GM Operations', nameKey: 'gmOperationsName' },
+  'GM Operations Approved': { role: 'HR Manager', nameKey: 'hrApproverName' },
+  'HR Approved': { role: 'Supervisor', nameKey: 'supervisorName' },
+  Rejected: { role: 'Closed', nameKey: null },
+  Cancelled: { role: 'Closed', nameKey: null },
+};
+
+/** Push fully-approved (HR Approved) overtime hours onto the respective employees' timesheet. */
+const postApprovedOvertimeToTimesheet = async (request: OvertimeAuthorizationRequest) => {
+  try {
+    const result = await postApprovedOvertimeToTimesheets({
+      requestId: request.id,
+      workDate: request.workDate,
+      supervisorCode: request.supervisorCode,
+      supervisorName: request.supervisorName,
+      workCenter: request.workCenter,
+      projectCode: request.projectCode,
+      projectName: request.projectName,
+      employees: request.employees.map((employee) => ({
+        employeeCode: employee.employeeCode,
+        employeeName: employee.employeeName,
+        overtimeHours: employee.overtimeHours,
+      })),
+    });
+    if (result.skipped.length) {
+      console.warn(`Overtime authorization ${request.id}: ${result.posted} line(s) posted to timesheet, ${result.skipped.length} skipped.`, result.skipped);
+    }
+  } catch (error) {
+    // Approval must not fail if timesheet posting is unavailable.
+    console.error(`Overtime authorization ${request.id}: failed to post approved overtime to timesheet.`, error);
+  }
+};
+
 export const actOnOvertimeAuthorizationRequest = async (id: string, decision: 'approve' | 'reject', actor?: string | null, comment?: string | null, baseUrl?: string | null) => {
   const request = (await listOvertimeAuthorizationRequests()).find((item) => item.id === id);
   if (!request) throw new Error('Overtime authorization request was not found.');
-  if (['Rejected', 'Cancelled', 'MD Approved'].includes(request.status)) throw new Error(`Request is already ${request.status}.`);
+  if (['Rejected', 'Cancelled', 'HR Approved'].includes(request.status)) throw new Error(`Request is already ${request.status}.`);
   const oldStatus = request.status;
   const actorText = clean(actor).toLowerCase();
   const isSuperAdministrator = actorText.includes('super administrator') || actorText.includes('global super');
+  const advance = (status: OvertimeAuthorizationStatus): OvertimeAuthorizationStatus => {
+    if (status === 'Submitted') return 'Project Manager Approved';
+    if (status === 'Project Manager Approved') return 'GM Operations Approved';
+    return 'HR Approved';
+  };
   const nextStatus: OvertimeAuthorizationStatus = decision === 'reject'
     ? 'Rejected'
     : isSuperAdministrator
-      ? 'MD Approved'
-      : oldStatus === 'Submitted'
-      ? 'Project Manager Approved'
-      : 'MD Approved';
-  const ownerRole = nextStatus === 'Project Manager Approved' ? 'Managing Director' : nextStatus === 'MD Approved' ? 'Supervisor' : 'Closed';
-  const ownerName = nextStatus === 'Project Manager Approved' ? request.mdApproverName : nextStatus === 'MD Approved' ? request.supervisorName : 'Closed';
+      ? 'HR Approved'
+      : advance(oldStatus);
+  const owner = OWNER_FOR_STATUS[nextStatus];
+  const ownerName = owner.nameKey ? String(request[owner.nameKey] || owner.role) : 'Closed';
   const pool = await ensureDb();
   await pool.request()
     .input('Id', sql.NVarChar(120), id)
     .input('WorkflowStatus', sql.NVarChar(60), nextStatus)
-    .input('CurrentOwnerRole', sql.NVarChar(80), ownerRole)
+    .input('CurrentOwnerRole', sql.NVarChar(80), owner.role)
     .input('CurrentOwnerName', sql.NVarChar(220), ownerName)
     .query('UPDATE [hris].[OvertimeAuthorizationRequests] SET [WorkflowStatus]=@WorkflowStatus,[CurrentOwnerRole]=@CurrentOwnerRole,[CurrentOwnerName]=@CurrentOwnerName,[UpdatedAt]=SYSUTCDATETIME() WHERE [Id]=@Id;');
   await writeAudit(id, clean(actor) || request.currentOwnerName, isSuperAdministrator && decision === 'approve' ? 'super-admin-approve-all' : decision, oldStatus, nextStatus, comment);
   const updated = (await listOvertimeAuthorizationRequests()).find((item) => item.id === id)!;
-  if (nextStatus === 'Project Manager Approved') await notifyApprovalOwner(updated, 'md', baseUrl);
-  if (nextStatus === 'MD Approved') await notifySupervisorApproved(updated, baseUrl);
+  if (nextStatus === 'Project Manager Approved') await notifyApprovalOwner(updated, 'gm-operations', baseUrl);
+  if (nextStatus === 'GM Operations Approved') await notifyApprovalOwner(updated, 'hr', baseUrl);
+  if (nextStatus === 'HR Approved') {
+    await notifySupervisorApproved(updated, baseUrl);
+    await postApprovedOvertimeToTimesheet(updated);
+  }
   return updated;
+};
+
+export const bulkActOnOvertimeAuthorizationRequests = async (
+  ids: string[],
+  decision: 'approve' | 'reject',
+  actor?: string | null,
+  comment?: string | null,
+  baseUrl?: string | null,
+) => {
+  const results: Array<{ id: string; ok: boolean; error?: string }> = [];
+  for (const id of ids) {
+    try {
+      await actOnOvertimeAuthorizationRequest(id, decision, actor, comment, baseUrl);
+      results.push({ id, ok: true });
+    } catch (error) {
+      results.push({ id, ok: false, error: error instanceof Error ? error.message : 'Failed' });
+    }
+  }
+  return results;
 };
 
 export const actOnOvertimeAuthorizationToken = async (tokenValue: string) => {
