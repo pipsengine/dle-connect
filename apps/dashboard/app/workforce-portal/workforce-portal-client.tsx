@@ -16,6 +16,7 @@ import type { WorkflowIntelligence } from '@/lib/ess-workflow-intelligence';
 import { EssProfileDashboardView, type EssProfilePayload } from './ess-profile-dashboard-view';
 import { EssPayrollDashboardView, type EssPayrollPayload } from './ess-payroll-dashboard-view';
 import { ESS_NAV_ITEMS, EssPortalShell, EssMobileNav, type EssTab } from './ess-portal-shell';
+import { EssEmptyState } from './ess-portal-ui';
 import {
   Activity,
   ArrowRight,
@@ -292,25 +293,50 @@ function Section({ title, action, children }: { title: string; action?: React.Re
   );
 }
 
-function DataList({ rows, titleKey = 'title', subtitleKeys = [], statusKey = 'status' }: { rows: SimpleRecord[]; titleKey?: string; subtitleKeys?: string[]; statusKey?: string }) {
+function DataList({
+  rows,
+  titleKey = 'title',
+  subtitleKeys = [],
+  statusKey = 'status',
+  emptyTitle = 'No records found',
+  emptyDescription = 'Records will appear here once they are available in the HRIS.',
+}: {
+  rows: SimpleRecord[];
+  titleKey?: string;
+  subtitleKeys?: string[];
+  statusKey?: string;
+  emptyTitle?: string;
+  emptyDescription?: string;
+}) {
+  if (!rows.length) {
+    return <EssEmptyState title={emptyTitle} description={emptyDescription} />;
+  }
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {rows.map((row, index) => {
         const status = String(row[statusKey] ?? row.type ?? row.category ?? row.label ?? row.title ?? '');
         const surface = row[statusKey] !== undefined ? statusSurface(status) : areaTone(status).item;
         return (
-        <div key={String(row.id || row.title || row.label || index)} className={`rounded-lg border p-3 ${surface}`}>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-black text-slate-950">{String(row[titleKey] || row.label || row.type || row.name || row.id || 'Record')}</p>
-              {subtitleKeys.length ? <p className="mt-1 text-xs font-semibold text-slate-500">{subtitleKeys.map((key) => String(row[key] ?? '')).filter(Boolean).join(' - ')}</p> : null}
+          <div key={String(row.id || row.title || row.label || index)} className={`rounded-[14px] border p-3 transition hover:border-[#CBD5E1] ${surface}`}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-[13px] font-bold text-[#0F172A]">{String(row[titleKey] || row.label || row.type || row.name || row.id || 'Record')}</p>
+                {subtitleKeys.length ? (
+                  <p className="mt-0.5 text-[11px] font-medium text-[#64748B]">
+                    {subtitleKeys.map((key) => String(row[key] ?? '')).filter(Boolean).join(' · ')}
+                  </p>
+                ) : null}
+              </div>
+              {row[statusKey] !== undefined ? (
+                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${statusTone(String(row[statusKey]))}`}>
+                  {String(row[statusKey])}
+                </span>
+              ) : null}
             </div>
-            {row[statusKey] !== undefined ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${statusTone(String(row[statusKey]))}`}>{String(row[statusKey])}</span> : null}
           </div>
-        </div>
-      );
+        );
       })}
-      {!rows.length && <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm font-bold text-slate-500">No records found.</div>}
     </div>
   );
 }
@@ -1038,9 +1064,10 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
   const [payload, setPayload] = useState<Payload | null>(null);
   const [tab, setTab] = useState<Tab>('dashboard');
   const [locale, setLocale] = useState('en-NG');
-  const [requestCategory, setRequestCategory] = useState('Leave Application');
+  const [requestServiceId, setRequestServiceId] = useState('profile-update');
   const [requestTitle, setRequestTitle] = useState('');
   const [requestPriority, setRequestPriority] = useState('Normal');
+  const [serviceSubmitError, setServiceSubmitError] = useState('');
   const [loanProductId, setLoanProductId] = useState('');
   const [loanPrincipal, setLoanPrincipal] = useState('');
   const [loanTenorMonths, setLoanTenorMonths] = useState('');
@@ -1072,6 +1099,10 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
       const json = (await res.json()) as ApiResponse<Payload>;
       if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Workforce portal request failed (${res.status})`);
       setPayload(json.data);
+      if (json.data.serviceCatalog?.length) {
+        const validIds = new Set(json.data.serviceCatalog.map((item) => item.id));
+        if (!validIds.has(requestServiceId)) setRequestServiceId(json.data.serviceCatalog[0]?.id || 'profile-update');
+      }
       if (!loanProductId && json.data.loanManagement.products[0]) {
         setLoanProductId(json.data.loanManagement.products[0].id);
         setLoanTenorMonths(String(Math.min(3, json.data.loanManagement.products[0].maxTenorMonths)));
@@ -1096,14 +1127,20 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
 
   const submitRequest = async () => {
     if (!payload) return;
+    if (requestServiceId === 'leave') {
+      setServiceSubmitError('Leave applications must be submitted from the Leave workspace.');
+      setTab('leave');
+      return;
+    }
     setSaving(true);
     setToast('');
     setError('');
+    setServiceSubmitError('');
     try {
       const res = await fetch('/api/workforce-portal', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ category: requestCategory, title: requestTitle, priority: requestPriority }),
+        body: JSON.stringify({ serviceId: requestServiceId, title: requestTitle, priority: requestPriority }),
       });
       const json = (await res.json()) as ApiResponse<{ request: EssRequest }>;
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to submit request');
@@ -1111,7 +1148,9 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
       setRequestTitle('');
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to submit request');
+      const message = err instanceof Error ? err.message : 'Unable to submit request';
+      setServiceSubmitError(message);
+      setError(message);
     } finally {
       setSaving(false);
     }
@@ -1328,14 +1367,14 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
             <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               <Section title="Goals, KPIs & Performance Reviews">
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <DataList rows={payload?.performance.goals || []} titleKey="title" subtitleKeys={['progress', 'dueDate']} />
-                  <DataList rows={payload?.performance.kpis || []} titleKey="label" subtitleKeys={['value', 'target']} statusKey="label" />
+                  <DataList rows={payload?.performance.goals || []} titleKey="title" subtitleKeys={['progress', 'dueDate']} emptyTitle="No goals on file" emptyDescription="Performance goals from HR documents will appear here." />
+                  <DataList rows={payload?.performance.kpis || []} titleKey="label" subtitleKeys={['value', 'target']} statusKey="label" emptyTitle="No KPIs available" emptyDescription="Live attendance and request metrics will appear here." />
                 </div>
               </Section>
               <Section title="Appraisals, Self-Assessments & Development Plans">
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <DataList rows={payload?.performance.reviews || []} titleKey="cycle" subtitleKeys={['form', 'score']} />
-                  <DataList rows={payload?.performance.developmentPlans || []} titleKey="title" subtitleKeys={['owner']} />
+                  <DataList rows={payload?.performance.reviews || []} titleKey="cycle" subtitleKeys={['form', 'score']} emptyTitle="No appraisals yet" emptyDescription="Appraisal records from HR will appear here when available." />
+                  <DataList rows={payload?.performance.developmentPlans || []} titleKey="title" subtitleKeys={['owner']} emptyTitle="No development plans" emptyDescription="Development plans will appear when assigned by your manager." />
                 </div>
               </Section>
             </section>
@@ -1343,9 +1382,9 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
 
           {tab === 'learning' && (
             <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-              <Section title="Training Enrollment & Course Registration"><DataList rows={payload?.learning.courses || []} titleKey="title" subtitleKeys={['date', 'type']} /></Section>
-              <Section title="Learning Materials, Assessments & Feedback"><DataList rows={payload?.learning.materials || []} titleKey="title" subtitleKeys={['type']} /></Section>
-              <Section title="Certifications"><DataList rows={payload?.learning.certifications || []} titleKey="title" subtitleKeys={['expiresAt']} /></Section>
+              <Section title="Training Enrollment & Course Registration"><DataList rows={payload?.learning.courses || []} titleKey="title" subtitleKeys={['date', 'type']} emptyTitle="No enrolled courses" emptyDescription="Training courses from your HR document library will appear here." /></Section>
+              <Section title="Learning Materials, Assessments & Feedback"><DataList rows={payload?.learning.materials || []} titleKey="title" subtitleKeys={['type']} emptyTitle="No learning materials" emptyDescription="Handbooks, guides, and assessments on file will appear here." /></Section>
+              <Section title="Certifications"><DataList rows={payload?.learning.certifications || []} titleKey="title" subtitleKeys={['expiresAt', 'status']} emptyTitle="No certifications on file" emptyDescription="Certificates uploaded to your employee record will appear here." /></Section>
             </section>
           )}
 
@@ -1360,7 +1399,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
                 ]} />
               </Section>
               <Section title="Claim Approvals, Uploads & Status Tracking">
-                <DataList rows={payload?.claims || []} titleKey="type" subtitleKeys={['amount', 'submittedAt', 'attachmentStatus']} />
+                <DataList rows={payload?.claims || []} titleKey="type" subtitleKeys={['status', 'submittedAt', 'attachmentStatus']} emptyTitle="No claims submitted" emptyDescription="Submit a claim from Services or the actions on the left and it will track here." />
               </Section>
             </section>
           )}
@@ -1410,7 +1449,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
                 ]} />
               </Section>
               <Section title="Requests, Approvals, Advances & Settlements">
-                <DataList rows={payload?.travel || []} titleKey="destination" subtitleKeys={['purpose', 'advance', 'tripReport']} />
+                <DataList rows={payload?.travel || []} titleKey="destination" subtitleKeys={['purpose', 'status', 'tripReport']} emptyTitle="No travel requests" emptyDescription="Submit a travel request from Services and it will appear here with live workflow status." />
               </Section>
             </section>
           )}
@@ -1418,7 +1457,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
           {tab === 'assets' && (
             <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_420px]">
               <Section title="Assigned Assets">
-                <DataList rows={payload?.assets || []} titleKey="name" subtitleKeys={['tag', 'acknowledgement', 'condition']} />
+                <DataList rows={payload?.assets || []} titleKey="name" subtitleKeys={['tag', 'acknowledgement', 'condition']} emptyTitle="No assigned assets" emptyDescription="Company assets assigned to you or recorded in HR documents will appear here." />
               </Section>
               <Section title="Asset Actions">
                 <ActionGrid items={[
@@ -1434,14 +1473,20 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
           {tab === 'services' && (
             <EssServicesView
               payload={payload as unknown as EssServicesPayload | null}
-              requestCategory={requestCategory}
+              requestServiceId={requestServiceId}
               requestTitle={requestTitle}
               requestPriority={requestPriority}
-              onCategoryChange={setRequestCategory}
+              onServiceChange={(value) => {
+                setRequestServiceId(value);
+                setServiceSubmitError('');
+              }}
               onTitleChange={setRequestTitle}
               onPriorityChange={setRequestPriority}
               onSubmit={submitRequest}
+              onOpenLeave={() => setTab('leave')}
               saving={saving}
+              submitError={serviceSubmitError}
+              submitNotice={toast && tab === 'services' ? toast : ''}
             />
           )}
 

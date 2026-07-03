@@ -124,8 +124,87 @@ const currentStageIndexForStatus = (status: string) => {
   return 1;
 };
 
-const slaHoursForCategory = (category: string, catalog: Array<{ label: string; slaHours: number }>) =>
-  catalog.find((item) => item.label.toLowerCase() === category.toLowerCase())?.slaHours || 48;
+const slaHoursForCategory = (
+  category: string,
+  catalog: Array<{ id?: string; label: string; area?: string; slaHours: number }>,
+) => {
+  const normalized = category.toLowerCase();
+  return catalog.find((item) =>
+    item.label.toLowerCase() === normalized
+    || item.id?.toLowerCase() === normalized
+    || item.area?.toLowerCase() === normalized,
+  )?.slaHours || 48;
+};
+
+export const serviceWorkflowFor = (
+  workflow: string[],
+  employeeName: string,
+  managerName: string,
+  status: string,
+  now: string,
+) => {
+  const rejected = isRejected(status);
+  const terminal = isTerminal(status);
+  const currentIndex = (() => {
+    const text = status.toLowerCase();
+    if (terminal && !rejected) return workflow.length;
+    if (/finance/.test(text)) {
+      const index = workflow.findIndex((stage) => /finance/i.test(stage));
+      return index >= 0 ? index : workflow.length - 1;
+    }
+    if (/hr/.test(text)) {
+      const index = workflow.findIndex((stage) => /hr/i.test(stage));
+      return index >= 0 ? index : Math.min(2, workflow.length - 1);
+    }
+    if (/line manager|supervisor/.test(text)) {
+      const index = workflow.findIndex((stage) => /line manager|supervisor/i.test(stage));
+      return index >= 0 ? index : 1;
+    }
+    if (/submitted/.test(text)) return Math.min(1, workflow.length - 1);
+    return Math.min(1, workflow.length - 1);
+  })();
+
+  return workflow.map((stage, index) => {
+    let stepStatus = 'Pending';
+    if (index === 0) stepStatus = 'Completed';
+    else if (rejected && index === currentIndex) stepStatus = 'Rejected';
+    else if (terminal && !rejected) stepStatus = 'Completed';
+    else if (index === currentIndex) stepStatus = 'Current';
+    else if (index < currentIndex) stepStatus = 'Completed';
+
+    return {
+      stage,
+      owner: index === 0 ? employeeName : index === 1 ? managerName : stage,
+      status: stepStatus,
+      actedAt: index === 0 ? now : index < currentIndex ? now : null,
+      comment: index === 0 ? 'Submitted from Employee Self-Service.' : null,
+    };
+  });
+};
+
+const buildStagesFromRequestWorkflow = (request: EssRequestLike, slaHours: number): WorkflowStageNode[] => {
+  const workflow = request.workflow || [];
+  const elapsed = hoursBetween(request.submittedAt);
+  const overdue = elapsed > slaHours;
+
+  return workflow.map((step, index) => {
+    const text = (step.status || '').toLowerCase();
+    let state: WorkflowStageState = 'pending';
+    if (/reject/.test(text)) state = 'rejected';
+    else if (/complete|delivered/.test(text)) state = 'completed';
+    else if (/current/.test(text)) state = overdue ? 'escalated' : 'current';
+    return {
+      id: `wf-${index}`,
+      label: step.stage,
+      owner: step.owner,
+      state,
+      actedAt: step.actedAt || null,
+      comment: step.comment || null,
+      slaHours: Math.max(1, Math.round(slaHours / Math.max(workflow.length, 1))),
+      elapsedHours: state === 'current' || state === 'escalated' ? elapsed : undefined,
+    };
+  });
+};
 
 const buildStages = (
   request: EssRequestLike,
@@ -134,6 +213,8 @@ const buildStages = (
   managerName: string,
   slaHours: number,
 ): WorkflowStageNode[] => {
+  if (request.workflow?.length) return buildStagesFromRequestWorkflow(request, slaHours);
+
   const currentIndex = currentStageIndexForStatus(request.status);
   const rejected = isRejected(request.status);
   const owners = [
@@ -174,14 +255,14 @@ const rowFromRequest = (
   employeeName: string,
   department: string,
   managerName: string,
-  catalog: Array<{ label: string; slaHours: number }>,
+  catalog: Array<{ id?: string; label: string; area?: string; slaHours: number }>,
 ): WorkflowRegisterRow => {
   const slaHours = slaHoursForCategory(request.category, catalog);
   const elapsedHours = hoursBetween(request.submittedAt);
   const stages = buildStages(request, employeeName, department, managerName, slaHours);
   const currentStage = stages.find((item) => item.state === 'current' || item.state === 'escalated' || item.state === 'rejected')
-    || stages.find((item) => item.state === 'completed' && item.id === 'completed')
-    || stages[1]!;
+    || stages.filter((item) => item.state === 'completed').at(-1)
+    || stages[0]!;
   let slaStatus: WorkflowRegisterRow['slaStatus'] = 'On Track';
   if (isTerminal(request.status) && !isRejected(request.status)) slaStatus = 'Completed';
   else if (elapsedHours > slaHours) slaStatus = 'Overdue';
@@ -216,41 +297,18 @@ export const buildEssWorkflowIntelligence = (input: {
   leaveApprovals?: Array<{ id: string; employee: string; type: string; stage: string; status: string; startDate?: string; endDate?: string }>;
   notifications?: Array<{ id: string; title: string; type: string; status: string; createdAt: string }>;
   serviceCatalog?: Array<{ id: string; label: string; area: string; workflow: string[]; slaHours: number }>;
-  claims?: Array<{ id: string; type: string; status: string; submittedAt: string; amount?: number }>;
   auditTrail?: Array<{ at: string; actor: string; action: string; channel?: string; detail?: string }>;
-  analytics?: Array<{ label: string; value: number; unit: string }>;
 }): WorkflowIntelligence => {
   const catalog = input.serviceCatalog || [];
   const employeeName = input.employee.fullName;
   const department = input.employee.department || 'Unassigned';
   const managerName = input.employee.manager || 'Line Manager';
 
-  const claimRows: WorkflowRegisterRow[] = (input.claims || []).map((claim) =>
-    rowFromRequest(
-      {
-        id: claim.id,
-        employeeId: input.employee.employeeId,
-        category: 'Claim & Reimbursement',
-        title: claim.type,
-        status: claim.status,
-        priority: 'Normal',
-        submittedAt: claim.submittedAt,
-        updatedAt: claim.submittedAt,
-        approvers: [managerName, 'Finance'],
-        comments: [],
-      },
-      employeeName,
-      department,
-      managerName,
-      catalog,
-    ),
-  );
-
   const requestRows = input.requests.map((request) =>
     rowFromRequest(request, employeeName, department, managerName, catalog),
   );
 
-  const register = [...requestRows, ...claimRows].sort(
+  const register = [...requestRows].sort(
     (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime(),
   );
 
@@ -265,7 +323,7 @@ export const buildEssWorkflowIntelligence = (input: {
   const onTrack = register.filter((row) => !isTerminal(row.status) && row.slaStatus !== 'Overdue').length;
   const slaCompliancePct = register.length
     ? Math.round(((register.length - overdue.length) / register.length) * 100)
-    : Number(input.analytics?.find((item) => item.label.includes('SLA'))?.value || 91);
+    : 100;
 
   const avgHours = register.length
     ? Math.round(register.reduce((sum, row) => sum + row.elapsedHours, 0) / register.length)
@@ -349,12 +407,12 @@ export const buildEssWorkflowIntelligence = (input: {
       completedThisMonth,
     },
     kpiTrends: {
-      pendingRequests: pendingRequests > 0 ? 4 : 0,
-      awaitingMyAction: awaitingMyAction > 0 ? 8 : -2,
-      approvedToday: approvedToday > 0 ? 12 : 0,
-      slaCompliancePct: slaCompliancePct >= 90 ? 2 : -5,
-      escalations: escalations > 0 ? 6 : -3,
-      completedThisMonth: completedThisMonth > 0 ? 9 : 1,
+      pendingRequests: 0,
+      awaitingMyAction: 0,
+      approvedToday: 0,
+      slaCompliancePct: 0,
+      escalations: 0,
+      completedThisMonth: 0,
     },
     selectedRequest: activeRow,
     register,
@@ -387,20 +445,22 @@ export const buildEssWorkflowIntelligence = (input: {
       workloadBalance: awaitingMyAction > 2 ? 'Delegate supervisor reviews to backup approver' : 'Approver workload is balanced',
       suggestedDelegate: managerName || 'Deputy line manager',
       bottleneck: `${bottleneck} stage has the highest pending volume`,
-      confidenceScore: Math.min(96, 72 + Math.min(register.length, 12) * 2),
+      confidenceScore: slaCompliancePct,
     },
     analytics: {
-      approvalTimeTrend: [18, 22, 16, 28, 24, 20, avgHours || 19],
-      distribution: distribution.length ? distribution : [
-        { label: 'Leave', value: 3, color: '#2563EB' },
-        { label: 'Claims', value: 2, color: '#22C55E' },
-        { label: 'Services', value: 1, color: '#F59E0B' },
-      ],
-      bottlenecks: bottlenecks.length ? bottlenecks : [
-        { label: 'Line Manager', value: 2 },
-        { label: 'HR', value: 1 },
-      ],
-      monthlyVolume: [4, 6, 5, 8, 7, register.length || 6],
+      approvalTimeTrend: avgHours ? [avgHours] : [],
+      distribution,
+      bottlenecks,
+      monthlyVolume: register.length
+        ? (() => {
+            const buckets = new Map<string, number>();
+            register.forEach((row) => {
+              const key = row.submittedAt.slice(0, 7);
+              buckets.set(key, (buckets.get(key) || 0) + 1);
+            });
+            return [...buckets.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-6).map(([, value]) => value);
+          })()
+        : [],
     },
   };
 };

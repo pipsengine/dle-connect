@@ -80,8 +80,8 @@ function PayslipTable({ title, lines, totalLabel, total, wide = false }: { title
           </tr>
         </thead>
         <tbody>
-          {visibleLines.map((line) => (
-            <tr key={`${title}-${line.code || line.label}`}>
+          {visibleLines.map((line, index) => (
+            <tr key={`${title}-${line.code || line.label}-${index}`}>
               <td className="border border-[#d7e4f4] px-2 py-1 font-semibold uppercase text-[#0F172A]">{line.label}</td>
               <td className="border border-[#d7e4f4] px-2 py-1 text-center">{Number(line.units || 0).toFixed(2)}</td>
               <td className="border border-[#d7e4f4] px-2 py-1 text-right font-black">{money2(line.amount).replace('NGN', '').trim()}</td>

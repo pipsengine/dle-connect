@@ -43,6 +43,30 @@ export function EssCard({ children, className = '' }: { children: ReactNode; cla
   );
 }
 
+export function EssEmptyState({
+  icon: Icon,
+  title,
+  description,
+  className = '',
+}: {
+  icon?: LucideIcon;
+  title: string;
+  description: string;
+  className?: string;
+}) {
+  return (
+    <div className={`flex flex-col items-center justify-center gap-2 rounded-[14px] border border-dashed border-[#E2E8F0] bg-[#F8FAFC] px-6 py-10 text-center ${className}`}>
+      {Icon ? (
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#EFF6FF] text-[#2563EB]">
+          <Icon className="h-6 w-6" strokeWidth={2} />
+        </span>
+      ) : null}
+      <p className="text-[14px] font-bold text-[#0F172A]">{title}</p>
+      <p className="max-w-sm text-[12px] leading-relaxed text-[#64748B]">{description}</p>
+    </div>
+  );
+}
+
 export function EssWorkflowStepper({
   stages,
 }: {
@@ -335,7 +359,7 @@ export function EssMiniCalendar() {
     <div>
       <p className="mb-2 text-[13px] font-bold text-[#0F172A]">{monthLabel}</p>
       <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold text-[#94A3B8]">
-        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d) => <span key={d}>{d}</span>)}
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, index) => <span key={`${d}-${index}`}>{d}</span>)}
       </div>
       <div className="mt-1 grid grid-cols-7 gap-1">
         {cells.map((day, index) => (

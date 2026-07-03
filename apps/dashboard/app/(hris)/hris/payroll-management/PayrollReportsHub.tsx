@@ -1,5 +1,6 @@
 'use client';
 
+import PayrollPeriodContextBar from './PayrollPeriodContextBar';
 import { useMemo, useState } from 'react';
 import type { ComponentType } from 'react';
 import {
@@ -325,27 +326,14 @@ export default function PayrollReportsHub({
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <span className="rounded-full bg-blue-50 px-3 py-1.5 text-xs font-semibold text-[#2563EB]">Period: {payload?.periodLabel || 'Loading'}</span>
-          {(payload?.periods?.length || 0) > 0 ? (
-            <label className="inline-flex items-center gap-2 rounded-full border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
-              <span>View</span>
-              <select value={viewPeriod || payload?.period || ''} onChange={(e) => onSelectPeriod(e.target.value)} className="bg-transparent font-semibold focus:outline-none">
-                {(payload?.periods || []).map((item) => (
-                  <option key={item.period} value={item.period}>
-                    {item.periodLabel} ({item.status}{item.isActive ? ' · active' : ''})
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-[#10B981]">Source: {payload?.dataSource?.source || 'DLE Enterprise HRIS'}</span>
-          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">Employees: {fmtNum(payload?.summary.totalEmployees || 0)}</span>
-          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">Last Updated: {fmtDateTime(lastLoaded)}</span>
-          <button type="button" onClick={onRefresh} disabled={loading} className="inline-flex items-center gap-1 rounded-full border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
-            <RefreshCcw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
+        <div className="mt-4">
+          <PayrollPeriodContextBar payload={payload} viewPeriod={viewPeriod} onSelectPeriod={onSelectPeriod} />
+          <div className="mt-2">
+            <button type="button" onClick={onRefresh} disabled={loading} className="inline-flex items-center gap-1 rounded-full border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+              <RefreshCcw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+              Refresh reports
+            </button>
+          </div>
         </div>
 
         <nav className="mt-4 overflow-x-auto">

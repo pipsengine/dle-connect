@@ -20,7 +20,18 @@ import { payslipIdentityMap, syncPayslipIdentitiesFromSage, type PayslipEmployee
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import { buildEssDashboardContext, buildEssEmployeeLookupKeys } from '@/lib/ess-dashboard-store';
-import { buildEssWorkflowIntelligence } from '@/lib/ess-workflow-intelligence';
+import { buildEssWorkflowIntelligence, serviceWorkflowFor } from '@/lib/ess-workflow-intelligence';
+import {
+  deriveEssAssets,
+  deriveEssAuditTrail,
+  deriveEssClaims,
+  deriveEssLearning,
+  deriveEssPerformance,
+  deriveEssTravel,
+  deriveLoanHistory,
+  deriveLoanRepaymentSchedules,
+  derivePortalAnalytics,
+} from '@/lib/ess-portal-derived-data';
 import { invalidateEssPortalCache, readEssPortalResponseCache, writeEssPortalResponseCache } from '@/lib/ess-portal-cache';
 import {
   expireStaleLeaveRequests,
@@ -44,6 +55,7 @@ import {
 type EssRequest = {
   id: string;
   employeeId: string;
+  serviceId?: string;
   category: string;
   title: string;
   status: 'Draft' | 'Submitted' | 'Line Manager Review' | 'HR Review' | 'Finance Review' | 'Approved' | 'Rejected' | 'Terminated' | 'Closed';
@@ -366,6 +378,17 @@ const mapEnterpriseEmployerContributionLines = (record: PayrollCalculationRecord
   { code: 'ITF', label: 'ITF', units: record.grossPay > 0 ? 1 : 0, amount: roundMoney(record.grossPay * 0.01) },
 ].filter((line) => Math.abs(line.amount) > 0.004);
 
+const dedupePayrollLinesByCode = <T extends { code: string; label: string; units: number; amount: number }>(lines: T[]) => {
+  const merged = new Map<string, T>();
+  for (const line of lines) {
+    const key = compact(line.code).toUpperCase() || compact(line.label).toUpperCase();
+    if (!key) continue;
+    const existing = merged.get(key);
+    if (!existing || Math.abs(line.amount) > Math.abs(existing.amount)) merged.set(key, line);
+  }
+  return [...merged.values()];
+};
+
 const readRequests = readAllEssRequests;
 const writeRequests = writeAllEssRequests;
 
@@ -458,12 +481,6 @@ const moduleCatalog = [
   'Workflow Tracking',
   'Exit Services',
 ];
-
-const sampleDate = (days: number) => {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-};
 
 const dateAdd = (days: number) => {
   const d = new Date();
@@ -726,13 +743,15 @@ export async function GET(request: Request) {
           amount: roundMoney(Number(line.amount || 0)),
         }))
         .filter((line) => Math.abs(line.amount) > 0.004);
-      const employerContributionLines = storedContributionLines.length
-        ? storedContributionLines
-        : [
-          { code: 'PENSION_EMPLOYER', label: 'Pension Employer Contribution', units: employerPension > 0 ? 1 : 0, amount: employerPension },
-          { code: 'NSITF', label: 'NSITF - Nigeria Social Insurance Trust Fund', units: nsitf > 0 ? 1 : 0, amount: nsitf },
-          { code: 'ITF', label: 'ITF Levy', units: itf > 0 ? 1 : 0, amount: itf },
-        ].filter((line) => Math.abs(Number(line.amount || 0)) > 0.004);
+      const employerContributionLines = dedupePayrollLinesByCode(
+        storedContributionLines.length
+          ? storedContributionLines
+          : [
+            { code: 'PENSION_EMPLOYER', label: 'Pension Employer Contribution', units: employerPension > 0 ? 1 : 0, amount: employerPension },
+            { code: 'NSITF', label: 'NSITF - Nigeria Social Insurance Trust Fund', units: nsitf > 0 ? 1 : 0, amount: nsitf },
+            { code: 'ITF', label: 'ITF Levy', units: itf > 0 ? 1 : 0, amount: itf },
+          ].filter((line) => Math.abs(Number(line.amount || 0)) > 0.004),
+      );
       const totalEmployerContributions = roundMoney(employerContributionLines.reduce((sum, line) => sum + line.amount, 0));
       const monthNumber = Number(period.slice(5, 7)) || 1;
       return {
@@ -854,6 +873,22 @@ export async function GET(request: Request) {
     const annualBalance = essContext.leave.balance;
     const carryForward = essContext.leave.carryForward;
     leaveContext = { annualEntitlement, leaveUsed, leaveBalance: annualBalance, carryForward };
+    const loanProductLabels = new Map((loansVersion?.products || []).map((product) => [product.id, product.label]));
+    const derivedClaims = deriveEssClaims(employeeRequests);
+    const derivedTravel = deriveEssTravel(employeeRequests);
+    const derivedAssets = deriveEssAssets(employeeRequests, essContext.documents);
+    const derivedPerformance = deriveEssPerformance({
+      attendanceRate,
+      requests: employeeRequests,
+      documents: essContext.documents,
+    });
+    const derivedLearning = deriveEssLearning(essContext.documents);
+    const derivedAuditTrail = deriveEssAuditTrail({
+      employeeName: employee.fullName,
+      employeeId: employee.employeeId,
+      requests: employeeRequests,
+    });
+    const leaveUtilizationPct = annualEntitlement > 0 ? Math.round((leaveUsed / annualEntitlement) * 100) : 0;
     const employeeLeaveApplications = essContext.leave.applications.map((item) => ({
       id: item.id,
       employeeId: item.employeeId,
@@ -1002,6 +1037,30 @@ export async function GET(request: Request) {
         department: item.department || 'Unassigned',
       }));
 
+    const workflowIntelligence = buildEssWorkflowIntelligence({
+      employee: {
+        employeeId: employee.employeeId,
+        fullName: employee.fullName,
+        department: employee.department || 'Unassigned',
+        manager: employee.managerName || 'Line Manager',
+        jobTitle: employee.jobTitle || employee.designation,
+      },
+      requests: employeeRequests,
+      approvalQueue: leaveApprovals.map((item) => ({
+        id: item.id,
+        employee: item.employee,
+        type: item.type,
+        days: item.days,
+        startDate: item.startDate || '',
+        endDate: item.endDate || '',
+        stage: item.stage,
+      })),
+      leaveApprovals,
+      notifications: essContext.notifications,
+      serviceCatalog,
+      auditTrail: derivedAuditTrail,
+    });
+
     const payload = {
       generatedAt: new Date().toISOString(),
       locale,
@@ -1036,12 +1095,14 @@ export async function GET(request: Request) {
         documentCount: Number(employee.documentCount || 0),
       },
       widgets: {
-        leave: { entitlement: annualEntitlement, used: leaveUsed, balance: annualBalance, pending: requests.filter((item) => item.category === 'Leave' && !['Approved', 'Rejected', 'Terminated', 'Closed'].includes(item.status)).length },
+        leave: { entitlement: annualEntitlement, used: leaveUsed, balance: annualBalance, carryForward: leaveContext.carryForward || 0, pending: requests.filter((item) => item.category === 'Leave' && !['Approved', 'Rejected', 'Terminated', 'Closed'].includes(item.status)).length },
         attendance: { monthRate: attendanceRate, lateArrivals: essContext.attendance.lateArrivals, overtimeHours: essContext.attendance.overtimeHours, remoteDays: essContext.attendance.remoteDays },
         payroll: {
           monthlyPay: latestReleasedPayroll?.netPay || latestReleasedPayroll?.grossPay || 0,
           currency: employee.payCurrency || 'NGN',
           payslips: payrollHistory.length,
+          periodLabel: latestReleasedPayroll ? (latestReleasedPayroll.periodLabel || periodTitle(latestReleasedPayroll.period)) : '',
+          released: currentPeriodReleased,
           deductions: latestReleasedPayroll?.deductions || 0,
           pension: latestReleasedPayroll?.pensionEmployee || latestReleasedPayroll?.deductionLines?.find((line) => line.code === 'PENSION_EMPLOYEE')?.amount || 0,
           allowances: latestReleasedPayroll?.allowances || 0,
@@ -1154,68 +1215,17 @@ export async function GET(request: Request) {
           ? `Your ${periodTitle(essDisplayPeriod)} payslip is available below.`
           : 'Your payslip will appear here after payroll is approved and released by HR/Payroll.',
       },
-      performance: {
-        goals: [
-          { id: 'goal-001', title: 'Improve project delivery turnaround', progress: 72, dueDate: sampleDate(45), status: 'On Track' },
-          { id: 'goal-002', title: 'Complete statutory compliance training', progress: 90, dueDate: sampleDate(20), status: 'On Track' },
-        ],
-        kpis: [
-          { label: 'Quality score', value: 94, target: 90 },
-          { label: 'Attendance reliability', value: attendanceRate, target: 95 },
-          { label: 'Task completion', value: 88, target: 85 },
-        ],
-        reviews: [
-          { id: 'rev-001', cycle: '2026 Mid-Year', form: 'Employee appraisal form', status: 'Self-assessment open', score: null },
-          { id: 'rev-002', cycle: '2025 Year-End', form: 'Performance review', status: 'Closed', score: 4.2 },
-        ],
-        developmentPlans: [
-          { id: 'dev-001', title: 'Supervisory readiness plan', owner: 'Line Manager', status: 'In Progress' },
-        ],
-      },
-      learning: {
-        courses: [
-          { id: 'lrn-001', title: 'HSE Refresher', date: sampleDate(12), status: 'Enrolled', type: 'Mandatory' },
-          { id: 'lrn-002', title: 'Project Controls Fundamentals', date: sampleDate(25), status: 'Open for registration', type: 'Course' },
-        ],
-        materials: [
-          { id: 'mat-001', title: 'Employee Handbook Quiz', type: 'Assessment', status: 'Pending' },
-          { id: 'mat-002', title: 'Welding Safety Guide', type: 'Learning Material', status: 'Available' },
-        ],
-        certifications: [
-          { id: 'cert-001', title: 'HSE Level 1', expiresAt: sampleDate(180), status: 'Valid' },
-          { id: 'cert-002', title: 'First Aid Awareness', expiresAt: sampleDate(60), status: 'Renewal Due' },
-        ],
-      },
-      claims: [
-        { id: 'clm-001', type: 'Travel Claim', amount: 185000, status: 'Finance Review', submittedAt: dateAdd(-5), attachmentStatus: 'Uploaded' },
-        { id: 'clm-002', type: 'Medical Reimbursement', amount: 42000, status: 'Approved', submittedAt: dateAdd(-20), attachmentStatus: 'Uploaded' },
-        { id: 'clm-003', type: 'Expense Advance', amount: 100000, status: 'Line Manager Review', submittedAt: dateAdd(-2), attachmentStatus: 'Required' },
-      ],
+      performance: derivedPerformance,
+      learning: derivedLearning,
+      claims: derivedClaims,
       loanManagement: {
         products: loansVersion?.products.filter((product) => product.enabled) || [],
         applications: employeeLoans,
-        repaymentSchedules: employeeLoans.map((loan, index) => ({
-          id: `${loan.id}-schedule`,
-          productId: loan.productId,
-          installment: index + 1,
-          dueDate: sampleDate(30 * (index + 1)),
-          amount: Math.round(Number(loan.outstandingBalance || 0) / Math.max(1, Number(loan.tenorMonths || 1))),
-          balance: Number(loan.outstandingBalance || 0),
-          status: loan.approvalStatus,
-        })),
-        history: [
-          { id: 'loan-his-001', product: 'Salary Advance', principal: 150000, status: 'Closed', closedAt: sampleDate(-90) },
-        ],
+        repaymentSchedules: deriveLoanRepaymentSchedules(employeeLoans),
+        history: deriveLoanHistory(employeeLoans, loanProductLabels),
       },
-      travel: [
-        { id: 'trv-001', destination: 'Port Harcourt', purpose: 'Project site visit', advance: 250000, status: 'Approved', tripReport: 'Pending' },
-        { id: 'trv-002', destination: 'Abuja', purpose: 'Client meeting', advance: 180000, status: 'Submitted', tripReport: 'Not Due' },
-      ],
-      assets: [
-        { id: 'ast-001', tag: 'DLE-LAP-0146', name: 'Laptop', status: 'Assigned', acknowledgement: 'Acknowledged', condition: 'Good' },
-        { id: 'ast-002', tag: 'DLE-PPE-4421', name: 'PPE Kit', status: 'Assigned', acknowledgement: 'Pending', condition: 'Replacement Due' },
-        { id: 'ast-003', tag: 'DLE-MOB-0190', name: 'Mobile Device', status: 'Assigned', acknowledgement: 'Acknowledged', condition: 'Good' },
-      ],
+      travel: derivedTravel,
+      assets: derivedAssets,
       exitServices: {
         resignation: { status: 'Not submitted', noticePeriodDays: 30, eligibleFinalSettlement: true },
         clearance: [
@@ -1234,11 +1244,7 @@ export async function GET(request: Request) {
         { id: 'rule-003', name: 'Document version acknowledgement', status: 'Active', configurable: true },
         { id: 'rule-004', name: 'Payroll data masking by RBAC', status: 'Active', configurable: true },
       ],
-      auditTrail: [
-        { at: dateAdd(-1), actor: employee.employeeId, action: 'Viewed payslip history', channel: 'ESS' },
-        { at: dateAdd(-2), actor: employee.employeeId, action: 'Submitted leave application', channel: 'ESS' },
-        { at: dateAdd(-5), actor: 'System', action: 'Sent handbook acknowledgement notification', channel: 'Email/In-App' },
-      ],
+      auditTrail: derivedAuditTrail,
       reports: [
         { id: 'rpt-001', title: 'My Leave Statement', format: 'PDF / Excel', status: 'Ready' },
         { id: 'rpt-002', title: 'Payroll History Report', format: 'PDF / Excel', status: 'Ready' },
@@ -1256,12 +1262,12 @@ export async function GET(request: Request) {
       serviceCatalog,
       requests,
       integrations: ['Payroll', 'ERP', 'Active Directory', 'Biometric Attendance', 'Document Management', 'Email', 'In-App Notifications', 'Third-Party APIs'],
-      analytics: [
-        { label: 'ESS adoption', value: 87, unit: '%' },
-        { label: 'HR tickets deflected', value: 64, unit: '%' },
-        { label: 'Workflow SLA compliance', value: 91, unit: '%' },
-        { label: 'Mobile access share', value: 43, unit: '%' },
-      ],
+      analytics: derivePortalAnalytics({
+        requests: employeeRequests,
+        attendanceRate,
+        leaveUtilizationPct,
+        slaCompliancePct: workflowIntelligence.kpis.slaCompliancePct,
+      }),
       managerMetrics: (() => {
         const teamSize = countDirectReportsFromEmployees(employeeSource.employees, employee);
         const directReports = employeeSource.employees.filter((item) => employeeReportsToManager(item, employee));
@@ -1275,41 +1281,7 @@ export async function GET(request: Request) {
           trainingToday: 0,
         };
       })(),
-      workflowIntelligence: buildEssWorkflowIntelligence({
-        employee: {
-          employeeId: employee.employeeId,
-          fullName: employee.fullName,
-          department: employee.department || 'Unassigned',
-          manager: employee.managerName || 'Line Manager',
-          jobTitle: employee.jobTitle || employee.designation,
-        },
-        requests: employeeRequests,
-        approvalQueue: leaveApprovals.map((item) => ({
-          id: item.id,
-          employee: item.employee,
-          type: item.type,
-          days: item.days,
-          startDate: item.startDate || '',
-          endDate: item.endDate || '',
-          stage: item.stage,
-        })),
-        leaveApprovals,
-        notifications: essContext.notifications,
-        serviceCatalog,
-        claims: [
-          { id: 'clm-001', type: 'Travel Claim', status: 'Finance Review', submittedAt: dateAdd(-5), amount: 185000 },
-          { id: 'clm-002', type: 'Medical Reimbursement', status: 'Approved', submittedAt: dateAdd(-20), amount: 42000 },
-          { id: 'clm-003', type: 'Expense Advance', status: 'Line Manager Review', submittedAt: dateAdd(-2), amount: 100000 },
-        ],
-        auditTrail: [
-          { at: dateAdd(-1), actor: employee.employeeId, action: 'Viewed payslip history', channel: 'ESS' },
-          { at: dateAdd(-2), actor: employee.employeeId, action: 'Submitted leave application', channel: 'ESS' },
-          { at: dateAdd(-5), actor: 'System', action: 'Sent handbook acknowledgement notification', channel: 'Email/In-App' },
-        ],
-        analytics: [
-          { label: 'Workflow SLA compliance', value: 91, unit: '%' },
-        ],
-      }),
+      workflowIntelligence,
     };
     writeEssPortalResponseCache(cacheKey, payload);
     return ok(payload);
@@ -1370,10 +1342,13 @@ export async function POST(request: Request) {
     const category = compact(body.category);
     const title = compact(body.title);
     const priority = compact(body.priority) as EssRequest['priority'];
-    if (!category) return err(400, 'category is required');
+    const serviceId = compact(body.serviceId);
+    if (!category && !serviceId) return err(400, 'serviceId or category is required');
     if (!title) return err(400, 'title is required');
 
-    const catalogItem = serviceCatalog.find((item) => item.label === category || item.id === category);
+    const catalogItem = serviceCatalog.find((item) => item.id === serviceId)
+      || serviceCatalog.find((item) => item.label === category || item.id === category);
+    if (!catalogItem) return err(400, 'Unknown service type. Please select a valid service from the catalog.');
     const now = new Date().toISOString();
     const leaveType = compact(body.leaveType || body.type);
     const leaveDays = Number(body.days || 0);
@@ -1383,7 +1358,10 @@ export async function POST(request: Request) {
     const handover = compact(body.handover);
     const relieverEmployeeId = compact(body.relieverEmployeeId);
     const relieverNameInput = compact(body.relieverName);
-    const isLeaveRequest = catalogItem?.id === 'leave' || /leave/i.test(category);
+    const isLeaveRequest = catalogItem.id === 'leave' || /leave application/i.test(catalogItem.label);
+    if (isLeaveRequest && !compact(body.leaveType)) {
+      return err(400, 'Leave applications must be submitted from the Leave workspace with dates, reliever, and handover details.');
+    }
     const reliever = relieverEmployeeId
       ? employeeSource.employees.find((item) => item.employeeId === relieverEmployeeId || item.employeeCode === relieverEmployeeId)
       : null;
@@ -1410,21 +1388,29 @@ export async function POST(request: Request) {
     const allowanceAlreadyPaid = isLeaveRequest
       ? await hasLeaveAllowanceInYear(employee, leaveYear)
       : false;
-    const initialStatus: EssRequest['status'] = isLeaveRequest ? 'Line Manager Review' : catalogItem?.workflow.includes('Line Manager') ? 'Line Manager Review' : 'Submitted';
+    const initialStatus: EssRequest['status'] = isLeaveRequest
+      ? 'Line Manager Review'
+      : catalogItem.workflow.some((stage) => /line manager|supervisor/i.test(stage))
+        ? 'Line Manager Review'
+        : 'Submitted';
     const relieverName = reliever ? reliever.fullName : relieverNameInput;
     const lineManager = isLeaveRequest ? resolveLineManagerForEmployee(employee, employeeSource.employees) : null;
     const lineManagerLabel = lineManager?.label || managerOwnerFor(employee);
     const requestId = compact(body.requestId) || `ess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const serviceWorkflow = isLeaveRequest
+      ? leaveWorkflowFor(employee, relieverName, initialStatus, now, lineManagerLabel)
+      : serviceWorkflowFor(catalogItem.workflow, employee.fullName, lineManagerLabel, initialStatus, now);
     const requestItem: EssRequest = {
       id: requestId,
       employeeId: employee.employeeId,
-      category: catalogItem?.area || category,
+      serviceId: catalogItem.id,
+      category: catalogItem.label,
       title,
       status: initialStatus,
       priority: ['Low', 'Normal', 'High'].includes(priority) ? priority : 'Normal',
       submittedAt: now,
       updatedAt: now,
-      approvers: isLeaveRequest ? [lineManagerLabel, 'HR Manager / Head'] : catalogItem?.workflow.slice(1) || ['HR Operations'],
+      approvers: isLeaveRequest ? [lineManagerLabel, 'HR Manager / Head'] : catalogItem.workflow.slice(1),
       leaveType: leaveType || undefined,
       startDate: startDate || undefined,
       endDate: endDate || undefined,
@@ -1438,15 +1424,15 @@ export async function POST(request: Request) {
       lineManagerName: lineManagerLabel,
       handover: handover || undefined,
       attachmentNames: attachmentNames.length ? attachmentNames : undefined,
-      workflow: isLeaveRequest ? leaveWorkflowFor(employee, relieverName, initialStatus, now, lineManagerLabel) : undefined,
+      workflow: serviceWorkflow,
       comments: [{
         at: now,
-        actor: 'Employee Self-Service',
+        actor: employee.fullName || 'Employee Self-Service',
         comment: allowanceAlreadyPaid
           ? `Request submitted from workforce portal. Leave allowance has already been paid/approved for ${leaveYear}.`
-          : leaveType === 'Annual Leave' && leaveDays >= dormantLongPolicy.allowanceMinimumAnnualDays
+          : isLeaveRequest && leaveType === 'Annual Leave' && leaveDays >= dormantLongPolicy.allowanceMinimumAnnualDays
             ? 'Request submitted from workforce portal. Leave allowance will post to payroll after approval.'
-            : 'Request submitted from workforce portal.',
+            : `${catalogItem.label} submitted from workforce portal.`,
       }],
     };
 

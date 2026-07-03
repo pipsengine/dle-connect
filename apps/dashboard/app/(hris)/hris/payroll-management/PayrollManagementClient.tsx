@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import PayrollCommandCenter, { type CommandCenterNavTab } from './PayrollCommandCenter';
+import PayrollPeriodContextBar from './PayrollPeriodContextBar';
 import PayrollManagementHub, { type HubQuickLinkId, type HubWorkspaceId } from './PayrollManagementHub';
 import PaySetupHub, { type PaySetupTabId } from './PaySetupHub';
 import EarningsManagementHub, { type EarningsTabId } from './EarningsManagementHub';
@@ -1721,6 +1722,8 @@ function ProcessPayrollWorkspace({
   excludeBusy,
   registerViewRequest,
   onRegisterViewRequestHandled,
+  viewPeriod,
+  onSelectPeriod,
 }: {
   payload: PayrollPayload | null;
   canViewMoney: boolean;
@@ -1732,6 +1735,8 @@ function ProcessPayrollWorkspace({
   excludeBusy: string;
   registerViewRequest?: 'ready' | 'issues' | null;
   onRegisterViewRequestHandled?: () => void;
+  viewPeriod?: string | null;
+  onSelectPeriod?: (period: string) => void;
 }) {
   const [processView, setProcessView] = useState<'ready' | 'issues' | 'outputs' | 'audit'>('ready');
   const [registerQuery, setRegisterQuery] = useState('');
@@ -2070,6 +2075,15 @@ function ProcessPayrollWorkspace({
           <div className="flex flex-col gap-3 border-b border-slate-100 p-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h3 className="text-sm font-bold text-[#0F172A]">Payroll Register</h3>
+              <div className="mt-1.5">
+                <PayrollPeriodContextBar
+                  payload={payload}
+                  viewPeriod={viewPeriod}
+                  onSelectPeriod={onSelectPeriod}
+                  compact
+                  showSelector={Boolean(onSelectPeriod)}
+                />
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {processView !== 'audit' ? (
@@ -5044,15 +5058,19 @@ export default function PayrollManagementClient({
                 <p className="mt-1 text-sm font-medium text-slate-600">
                   {payload?.periodLabel || 'Loading'} payroll run · {payload?.dataSource?.source || 'DLE_Enterprise HRIS'} · {number(payload?.dataSource?.employeeCount || totalEmployees)} employees
                 </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-800 ring-1 ring-blue-100">Period: {payload?.periodLabel || 'Loading'}</span>
-                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-100">Run: {runStatus}</span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Loaded: {new Date(lastLoaded).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Source: {payload?.dataSource?.source || 'DLE_Enterprise HRIS'}</span>
+                <div className="mt-3">
+                  <PayrollPeriodContextBar
+                    payload={payload}
+                    viewPeriod={viewPeriod}
+                    onSelectPeriod={(period) => {
+                      setViewPeriod(period);
+                      void load(period);
+                    }}
+                  />
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+                <button type="button" onClick={() => void load(viewPeriod || payload?.period || null)} disabled={loading} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
                   <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                   {loading ? 'Refreshing' : 'Refresh'}
                 </button>
@@ -5176,7 +5194,7 @@ export default function PayrollManagementClient({
                 onPeriodAction={(action, period, reason) => void runAction(action, reason, period)}
               />
             ) : activeTab.id === 'payroll-run' ? (
-              <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} registerViewRequest={registerViewRequest} onRegisterViewRequestHandled={() => setRegisterViewRequest(null)} />
+              <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} registerViewRequest={registerViewRequest} onRegisterViewRequestHandled={() => setRegisterViewRequest(null)} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period); }} />
             ) : (
               <FeaturePanel tab={activeTab} section={section} payload={payload} canViewMoney={canViewMoney} />
             )}
@@ -5220,40 +5238,20 @@ export default function PayrollManagementClient({
               <p className="mt-1 max-w-4xl text-sm font-semibold text-slate-600">{section.description}</p>
             </div>
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-extrabold text-blue-800">Period: {payload?.periodLabel || 'Loading'}</span>
-            {(payload?.periods?.length || 0) > 0 ? (
-              <label className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-extrabold text-slate-700">
-                <span>View</span>
-                <select
-                  value={viewPeriod || payload?.period || ''}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    setViewPeriod(next);
-                    void load(next);
-                  }}
-                  className="bg-transparent text-xs font-extrabold text-slate-900 focus:outline-none"
-                >
-                  {(payload?.periods || []).map((item) => (
-                    <option key={item.period} value={item.period}>
-                      {item.periodLabel} ({item.status}{item.isActive ? ' · active' : ''})
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-extrabold text-emerald-800">Source: {payload?.dataSource?.source || 'DLE_Enterprise HRIS'}</span>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-extrabold text-slate-700">Employees: {number(payload?.dataSource?.employeeCount || payload?.summary.totalEmployees)}</span>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-extrabold text-slate-700">Loaded: {new Date(lastLoaded).toLocaleString('en-GB')}</span>
+          <div className="mt-3">
+            <PayrollPeriodContextBar
+              payload={payload}
+              viewPeriod={viewPeriod}
+              onSelectPeriod={(period) => {
+                setViewPeriod(period);
+                void load(period);
+              }}
+            />
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-800">
-            <span className="block leading-tight">{currentUser?.name || 'Signed-in user'}</span>
-            <span className="block text-[10px] font-bold text-slate-500">{currentUser?.employeeCode || 'Current login'} / {accessLabel(payload?.role || role)}</span>
-          </div>
-          <ActionButton label={loading ? 'Refreshing' : 'Refresh'} icon={RefreshCcw} onClick={() => void load()} disabled={loading} tone="blue" />
+          <ActionButton label={loading ? 'Refreshing' : 'Refresh'} icon={RefreshCcw} onClick={() => void load(viewPeriod || payload?.period || null)} disabled={loading} tone="blue" />
           <ActionButton label="Export CSV" icon={Download} onClick={exportCsv} disabled={!payload?.permissions.canExport} tone="slate" />
           <ActionButton label="Export Excel" icon={FileSpreadsheet} onClick={exportExcel} disabled={!payload?.permissions.canExport} tone="green" />
         </div>
@@ -5360,7 +5358,7 @@ export default function PayrollManagementClient({
                   onPeriodAction={(action, period, reason) => void runAction(action, reason, period)}
                 />
               ) : (
-                <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} />
+                <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period); }} />
               )
             ) : (
               <FeaturePanel tab={activeTab} section={section} payload={payload} canViewMoney={canViewMoney} />

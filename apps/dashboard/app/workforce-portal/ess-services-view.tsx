@@ -100,26 +100,47 @@ const elapsedLabel = (hours: number) => {
 
 type EssServicesViewProps = {
   payload: EssServicesPayload | null;
-  requestCategory: string;
+  requestServiceId: string;
   requestTitle: string;
   requestPriority: string;
-  onCategoryChange: (value: string) => void;
+  onServiceChange: (value: string) => void;
   onTitleChange: (value: string) => void;
   onPriorityChange: (value: string) => void;
   onSubmit: () => void;
+  onOpenLeave?: () => void;
   saving?: boolean;
+  submitError?: string;
+  submitNotice?: string;
+};
+
+const servicePlaceholder = (serviceId: string) => {
+  const map: Record<string, string> = {
+    'profile-update': 'e.g. Update residential address and phone number',
+    'attendance-regularization': 'e.g. Regularize missed clock-in on 02 Jul 2026',
+    payslip: 'e.g. Query on June 2026 net pay calculation',
+    claim: 'e.g. Medical reimbursement for clinic visit',
+    loan: 'e.g. Salary advance for emergency expense',
+    travel: 'e.g. Client visit to Abuja – 3 days',
+    asset: 'e.g. Request replacement PPE kit',
+    letter: 'e.g. Employment confirmation letter for visa',
+    exit: 'e.g. Resignation with 30-day notice',
+  };
+  return map[serviceId] || 'Briefly describe the request';
 };
 
 export function EssServicesView({
   payload,
-  requestCategory,
+  requestServiceId,
   requestTitle,
   requestPriority,
-  onCategoryChange,
+  onServiceChange,
   onTitleChange,
   onPriorityChange,
   onSubmit,
+  onOpenLeave,
   saving,
+  submitError,
+  submitNotice,
 }: EssServicesViewProps) {
   const catalog = payload?.serviceCatalog || [];
   const workflow = payload?.workflowIntelligence;
@@ -133,7 +154,8 @@ export function EssServicesView({
   const [statusFilter, setStatusFilter] = useState('All');
   const [selectedId, setSelectedId] = useState('');
 
-  const selectedCatalog = catalog.find((item) => item.label === requestCategory || item.id === requestCategory);
+  const selectedCatalog = catalog.find((item) => item.id === requestServiceId) || catalog[0] || null;
+  const isLeaveService = selectedCatalog?.id === 'leave';
 
   const filters = ['All', 'In Progress', 'Approved', 'Rejected'];
   const filteredRegister = register.filter((row) => {
@@ -231,20 +253,32 @@ export function EssServicesView({
               <div>
                 <label className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Service</label>
                 <select
-                  value={requestCategory}
-                  onChange={(e) => onCategoryChange(e.target.value)}
+                  value={requestServiceId}
+                  onChange={(e) => onServiceChange(e.target.value)}
                   className="h-11 w-full rounded-[12px] border border-[#E2E8F0] bg-white px-3 text-[13px] font-semibold text-[#0F172A] outline-none focus:border-[#93C5FD] focus:ring-2 focus:ring-[#DBEAFE]"
                 >
-                  {catalog.map((item) => <option key={item.id}>{item.label}</option>)}
+                  {catalog.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
                 </select>
               </div>
 
+              {isLeaveService ? (
+                <div className="rounded-[12px] border border-[#BFDBFE] bg-[#EFF6FF] p-3">
+                  <p className="text-[12px] font-bold text-[#1D4ED8]">Leave requires additional details</p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-[#475569]">Dates, reliever, handover notes, and supporting documents are required. Use the dedicated Leave workspace to submit a compliant leave application.</p>
+                  {onOpenLeave ? (
+                    <button type="button" onClick={onOpenLeave} className="mt-2 inline-flex h-9 items-center rounded-[10px] bg-[#2563EB] px-3 text-[11px] font-bold text-white hover:bg-[#1D4ED8]">
+                      Open Leave Workspace
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <>
               <div>
                 <label className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Request Title</label>
                 <input
                   value={requestTitle}
                   onChange={(e) => onTitleChange(e.target.value)}
-                  placeholder="Briefly describe the request"
+                  placeholder={servicePlaceholder(requestServiceId)}
                   className="h-11 w-full rounded-[12px] border border-[#E2E8F0] bg-white px-3 text-[13px] font-semibold text-[#0F172A] outline-none focus:border-[#93C5FD] focus:ring-2 focus:ring-[#DBEAFE]"
                 />
               </div>
@@ -269,6 +303,9 @@ export function EssServicesView({
                 </div>
               </div>
 
+              {submitError ? <p className="rounded-[10px] bg-[#FEF2F2] px-3 py-2 text-[11px] font-semibold text-[#DC2626]">{submitError}</p> : null}
+              {submitNotice ? <p className="rounded-[10px] bg-[#ECFDF5] px-3 py-2 text-[11px] font-semibold text-[#16A34A]">{submitNotice}</p> : null}
+
               <button
                 type="button"
                 onClick={onSubmit}
@@ -277,6 +314,8 @@ export function EssServicesView({
               >
                 <Send className="h-4 w-4" /> {saving ? 'Submitting…' : 'Submit Request'}
               </button>
+                </>
+              )}
             </div>
           </EssCard>
 
@@ -287,7 +326,7 @@ export function EssServicesView({
               <p className="mt-0.5 text-[11px] text-[#64748B]">{selectedCatalog.label} · target SLA {selectedCatalog.slaHours}h</p>
               <div className="mt-2.5 space-y-2">
                 {selectedCatalog.workflow.map((stage, index) => (
-                  <div key={stage} className="flex items-center gap-2">
+                  <div key={`${stage}-${index}`} className="flex items-center gap-2">
                     <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#EFF6FF] text-[10px] font-bold text-[#2563EB]">{index + 1}</span>
                     <span className="text-[12px] font-semibold text-[#0F172A]">{stage}</span>
                     {index < selectedCatalog.workflow.length - 1 ? <span className="ml-auto text-[10px] text-[#CBD5E1]">↓</span> : null}
