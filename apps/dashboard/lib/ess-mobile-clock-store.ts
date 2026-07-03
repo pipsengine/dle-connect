@@ -72,6 +72,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const ensureDb = async () => {
   const pool = await getDleEnterpriseDbPool();
+  if (!pool) throw new Error('DLE Enterprise database connection is not available.');
   if (!dbReady.value) {
     await pool.request().query(`
 IF OBJECT_ID(N'[hris].[EssMobileClockSessions]', N'U') IS NULL

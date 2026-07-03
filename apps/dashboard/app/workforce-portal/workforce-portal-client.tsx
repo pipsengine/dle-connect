@@ -11,8 +11,10 @@ import { EssDashboardView, EssRightPanel } from './ess-dashboard-view';
 import { EssLeaveDashboardView, type EssLeavePayload, type LeaveWorkspaceTab } from './ess-leave-dashboard-view';
 import { EssLeaveApprovalsView, type EssLeaveApprovalsPayload } from './ess-leave-approvals-view';
 import { EssServicesView, type EssServicesPayload } from './ess-services-view';
-import { EssReportsView } from './ess-reports-view';
-import { EssTimeView } from './ess-time-view';
+import { EssReportsView, type EssReportsPayload } from './ess-reports-view';
+import { EssDocumentsView, type EssDocumentsPayload } from './ess-documents-view';
+import { EssCommunicationsView, type EssCommunicationsPayload } from './ess-communications-view';
+import { EssTimeView, type EssTimePayload } from './ess-time-view';
 import EssWorkflowDashboardView from './ess-workflow-dashboard-view';
 import type { WorkflowIntelligence } from '@/lib/ess-workflow-intelligence';
 import { EssProfileDashboardView, type EssProfilePayload } from './ess-profile-dashboard-view';
@@ -115,12 +117,23 @@ type Payload = {
     loans: { applications: number; outstanding: number };
   };
   announcements: Array<{ id: string; title: string; channel: string; publishedAt: string; priority: string }>;
+  communications?: {
+    summary?: {
+      announcementCount: number;
+      engagementCount: number;
+      notificationCount: number;
+      unreadCount: number;
+      lastUpdated: string;
+    };
+    engagements?: Array<{ id: string; title: string; type: string; status: string; dueAt?: string | null; actionHref?: string }>;
+  };
   notifications: Array<{ id: string; title: string; type: string; status: string; createdAt: string; href?: string }>;
   approvalQueue?: Array<{ id: string; employee: string; type: string; days: number; startDate: string; endDate: string; stage: string }>;
   birthdays: Array<{ id: string; fullName: string; department: string; date: string }>;
   anniversaries: Array<{ id: string; fullName: string; years: number; date: string }>;
   events: Array<{ id: string; label: string; date: string; type: string }>;
-  documents: Array<{ id: string; title: string; category: string; version: string; status: string }>;
+  documents: Array<{ id: string; title: string; category: string; version: string; status: string; uploadedAt?: string | null; expiresAt?: string | null; mimeType?: string; sizeBytes?: number; verifiedAt?: string | null; acknowledgement?: string; accessScope?: string }>;
+  documentGovernance?: Array<{ id: string; documentId: string; title: string; category: string; version: string; accessScope: string; acknowledgement: string; status: string; lastUpdated: string }>;
   profileSections: Array<{ id: string; label: string; status: string; approvalRequired: boolean; fields: Array<{ label: string; value: string }> }>;
   leave: {
     balances: SimpleRecord[];
@@ -1325,37 +1338,25 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
       )}
 
       {tab === 'reports' && (
-        <EssReportsView payload={payload} locale={locale} />
+        <EssReportsView payload={payload as unknown as EssReportsPayload | null} locale={locale} />
       )}
 
       {tab === 'time' && (
-        <EssTimeView payload={payload} locale={locale} onRefresh={() => void load()} onNavigate={navigateTab} />
+        <EssTimeView payload={payload as unknown as EssTimePayload | null} locale={locale} onRefresh={() => void load()} onNavigate={(nextTab) => navigateTab(nextTab as EssTab)} />
       )}
 
-      {tab !== 'dashboard' && tab !== 'profile' && tab !== 'payroll' && tab !== 'reports' && tab !== 'time' && (
+      {tab === 'documents' && (
+        <EssDocumentsView payload={payload as unknown as EssDocumentsPayload | null} onNavigate={(nextTab) => navigateTab(nextTab as EssTab)} />
+      )}
+
+      {tab === 'communication' && (
+        <EssCommunicationsView payload={payload as unknown as EssCommunicationsPayload | null} onNavigate={(nextTab, options) => navigateTab(nextTab as EssTab, options)} />
+      )}
+
+      {tab !== 'dashboard' && tab !== 'profile' && tab !== 'payroll' && tab !== 'reports' && tab !== 'time' && tab !== 'documents' && tab !== 'communication' && (
         <div className="space-y-4">
           {tab === 'leave' && widgets && (
             <EssLeaveWorkspace payload={payload} employee={employee} onLeaveSubmitted={submitLeaveApplication} onLeaveAction={submitLeaveApproval} onWithdrawLeave={withdrawLeaveRequest} saving={saving} initialNow={initialNow} initialSection={leaveSection} />
-          )}
-
-          {tab === 'documents' && (
-            <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_420px]">
-              <Section title="Document Management">
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                  {payload?.documents.map((doc) => (
-                    <div key={doc.id} className={`rounded-lg border p-4 ${statusSurface(doc.status)}`}>
-                      <FileArchive className="h-5 w-5 text-indigo-700" />
-                      <p className="mt-3 text-sm font-black text-slate-900">{doc.title}</p>
-                      <p className="mt-1 text-xs font-semibold text-slate-500">{doc.category} - {doc.version}</p>
-                      <span className="mt-3 inline-flex rounded-full bg-white px-2 py-1 text-[11px] font-black text-slate-700 ring-1 ring-slate-200">{doc.status}</span>
-                    </div>
-                  ))}
-                </div>
-              </Section>
-              <Section title="Versioning, Access & Acknowledgement">
-                <DataList rows={payload?.documents || []} titleKey="title" subtitleKeys={['category', 'version']} />
-              </Section>
-            </section>
           )}
 
           {tab === 'performance' && (
@@ -1483,24 +1484,6 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
               submitError={serviceSubmitError}
               submitNotice={toast && tab === 'services' ? toast : ''}
             />
-          )}
-
-          {tab === 'communication' && (
-            <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-              <Section title="Announcements, Circulars & Notices">
-                <DataList rows={payload?.announcements || []} titleKey="title" subtitleKeys={['channel', 'publishedAt']} statusKey="priority" />
-              </Section>
-              <Section title="Surveys, Feedback & Policy Updates">
-                <DataList rows={[
-                  { id: 'survey-001', title: 'Employee engagement pulse survey', type: 'Survey', status: 'Open' },
-                  { id: 'feedback-001', title: 'Workforce portal feedback form', type: 'Feedback', status: 'Open' },
-                  { id: 'policy-001', title: 'Remote work policy update', type: 'Policy', status: 'Acknowledgement Due' },
-                ]} titleKey="title" subtitleKeys={['type']} />
-              </Section>
-              <Section title="System Notifications">
-                <DataList rows={payload?.notifications || []} titleKey="title" subtitleKeys={['type', 'createdAt']} />
-              </Section>
-            </section>
           )}
 
           {tab === 'workflow' && (

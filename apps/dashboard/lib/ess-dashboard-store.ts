@@ -169,23 +169,43 @@ const readEmployeeDocuments = async (employeeDbId: number) => {
   if (!pool || !employeeDbId) return [];
   try {
     const result = await pool.request().input('employeeId', sql.BigInt, employeeDbId).query(`
-      SELECT TOP (24)
+      SELECT TOP (48)
         document_id,
         document_category,
         file_name,
         document_status,
+        mime_type,
+        size_bytes,
+        expires_at,
+        verified_at,
         created_at
       FROM [hris].[EmployeeDocuments]
       WHERE employee_id = @employeeId
       ORDER BY created_at DESC, document_id DESC;
     `);
-    return (result.recordset || []).map((row: any) => ({
-      id: `doc-${row.document_id}`,
-      title: compact(row.file_name) || compact(row.document_category) || 'Employee Document',
-      category: compact(row.document_category) || 'Documents',
-      version: 'v1.0',
-      status: /verified|active|current/i.test(compact(row.document_status)) ? 'Current' : compact(row.document_status) || 'Current',
-    }));
+    return (result.recordset || []).map((row: any) => {
+      const statusRaw = compact(row.document_status) || 'Uploaded';
+      const verified = /verified/i.test(statusRaw);
+      const expired = /expired/i.test(statusRaw);
+      const rejected = /rejected/i.test(statusRaw);
+      const status = verified ? 'Current' : expired ? 'Expired' : rejected ? 'Rejected' : /pending/i.test(statusRaw) ? 'Pending' : 'Uploaded';
+      const verifiedAt = row.verified_at ? new Date(row.verified_at).toISOString() : null;
+      const uploadedAt = row.created_at ? new Date(row.created_at).toISOString() : null;
+      return {
+        id: `doc-${row.document_id}`,
+        title: compact(row.file_name) || compact(row.document_category) || 'Employee Document',
+        category: compact(row.document_category) || 'Documents',
+        version: verifiedAt ? `Verified ${verifiedAt.slice(0, 10)}` : 'v1.0',
+        status,
+        uploadedAt,
+        expiresAt: row.expires_at ? String(row.expires_at).slice(0, 10) : null,
+        mimeType: compact(row.mime_type) || 'application/octet-stream',
+        sizeBytes: Number(row.size_bytes || 0),
+        verifiedAt,
+        acknowledgement: verified ? 'Acknowledged' : rejected ? 'Rejected' : expired ? 'Expired' : 'Pending',
+        accessScope: 'Employee (self-service)',
+      };
+    });
   } catch {
     return [];
   }
@@ -203,7 +223,20 @@ export type EssDashboardContext = {
     policyCards: Array<Record<string, string | number>>;
   };
   attendance: Awaited<ReturnType<typeof readEmployeeAttendanceMonthSummary>>;
-  documents: Array<{ id: string; title: string; category: string; version: string; status: string }>;
+  documents: Array<{
+    id: string;
+    title: string;
+    category: string;
+    version: string;
+    status: string;
+    uploadedAt?: string | null;
+    expiresAt?: string | null;
+    mimeType?: string;
+    sizeBytes?: number;
+    verifiedAt?: string | null;
+    acknowledgement?: string;
+    accessScope?: string;
+  }>;
   notifications: Array<{ id: string; title: string; type: string; status: string; createdAt: string; href?: string }>;
   birthdays: Array<{ id: string; fullName: string; department: string; date: string }>;
   anniversaries: Array<{ id: string; fullName: string; years: number; date: string }>;

@@ -2,10 +2,10 @@ const ESS_RESPONSE_CACHE_MS = Number(process.env.ESS_PORTAL_RESPONSE_CACHE_MS ||
 
 const essResponseCache = new Map<string, { expiresAt: number; payload: unknown }>();
 
-export const readEssPortalResponseCache = (key: string) => {
+export const readEssPortalResponseCache = <T = Record<string, unknown>>(key: string): T | null => {
   const cached = essResponseCache.get(key);
   if (!cached || cached.expiresAt <= Date.now()) return null;
-  return cached.payload;
+  return cached.payload as T;
 };
 
 export const writeEssPortalResponseCache = (key: string, payload: unknown) => {

@@ -9,13 +9,34 @@ type EssRequestLike = {
   comments?: Array<{ at: string; actor: string; comment: string }>;
 };
 
-type EssDocumentLike = {
+export type EssEmployeeDocument = {
   id: string;
   title: string;
   category: string;
   version: string;
   status: string;
+  uploadedAt?: string | null;
+  expiresAt?: string | null;
+  mimeType?: string;
+  sizeBytes?: number;
+  verifiedAt?: string | null;
+  acknowledgement?: string;
+  accessScope?: string;
 };
+
+export type EssDocumentGovernanceRow = {
+  id: string;
+  documentId: string;
+  title: string;
+  category: string;
+  version: string;
+  accessScope: string;
+  acknowledgement: string;
+  status: string;
+  lastUpdated: string;
+};
+
+type EssDocumentLike = EssEmployeeDocument;
 
 type LoanLike = {
   id: string;
@@ -320,6 +341,145 @@ export const deriveEssEmployeeReports = (input: {
   ];
 
   return { reports, downloads };
+};
+
+export const deriveEssDocumentGovernance = (documents: EssEmployeeDocument[]): EssDocumentGovernanceRow[] =>
+  documents.map((doc) => ({
+    id: `gov-${doc.id}`,
+    documentId: doc.id,
+    title: doc.title,
+    category: doc.category,
+    version: doc.version,
+    accessScope: doc.accessScope || 'Employee (self-service)',
+    acknowledgement: doc.acknowledgement || (/current|verified/i.test(doc.status) ? 'Acknowledged' : 'Pending'),
+    status: doc.status,
+    lastUpdated: doc.uploadedAt ? doc.uploadedAt.slice(0, 10) : '—',
+  }));
+
+export type EssAnnouncement = {
+  id: string;
+  title: string;
+  channel: string;
+  publishedAt: string;
+  priority: 'High' | 'Normal' | 'Low';
+};
+
+export type EssEngagementItem = {
+  id: string;
+  title: string;
+  type: 'Survey' | 'Feedback' | 'Policy' | 'Notice';
+  status: string;
+  dueAt?: string | null;
+  actionHref?: string;
+};
+
+export type EssCommunicationNotification = {
+  id: string;
+  title: string;
+  type: string;
+  status: string;
+  createdAt: string;
+  href?: string;
+};
+
+const priorityFromChannel = (channel: string): EssAnnouncement['priority'] => {
+  if (/payroll|urgent|critical|security/i.test(channel)) return 'High';
+  if (/leave|workflow|approval/i.test(channel)) return 'Normal';
+  return 'Low';
+};
+
+export const deriveEssCommunications = (input: {
+  announcements: EssAnnouncement[];
+  notifications: EssCommunicationNotification[];
+  documents: EssEmployeeDocument[];
+  documentGovernance: EssDocumentGovernanceRow[];
+  events: Array<{ id: string; label: string; date: string; type: string }>;
+  requests: EssRequestLike[];
+  generatedAt: string;
+}) => {
+  const eventAnnouncements: EssAnnouncement[] = input.events.map((event) => ({
+    id: `comm-evt-${event.id}`,
+    title: event.label,
+    channel: event.type,
+    publishedAt: event.date,
+    priority: priorityFromChannel(event.type),
+  }));
+
+  const notificationAnnouncements: EssAnnouncement[] = input.notifications
+    .filter((item) => /announcement|circular|notice|payslip|policy/i.test(item.title))
+    .map((item) => ({
+      id: `comm-ntf-${item.id}`,
+      title: item.title,
+      channel: item.type || 'System',
+      publishedAt: item.createdAt,
+      priority: /payslip|urgent|approval required/i.test(item.title) ? 'High' as const : 'Normal' as const,
+    }));
+
+  const announcements = [...input.announcements, ...eventAnnouncements, ...notificationAnnouncements]
+    .filter((item, index, self) => self.findIndex((entry) => entry.title === item.title) === index)
+    .sort((a, b) => String(b.publishedAt).localeCompare(String(a.publishedAt)));
+
+  const policyEngagements: EssEngagementItem[] = input.documents
+    .filter((doc) => matches(`${doc.title} ${doc.category}`, /policy|handbook|code of conduct|remote|hr manual|employee handbook/))
+    .map((doc) => ({
+      id: `eng-policy-${doc.id}`,
+      title: doc.title,
+      type: 'Policy' as const,
+      status: /pending/i.test(doc.acknowledgement || '') || /pending|uploaded/i.test(doc.status) ? 'Acknowledgement Due' : 'Acknowledged',
+      dueAt: doc.expiresAt || null,
+      actionHref: '/workforce-portal?tab=documents',
+    }));
+
+  const governanceEngagements: EssEngagementItem[] = input.documentGovernance
+    .filter((row) => /pending/i.test(row.acknowledgement))
+    .map((row) => ({
+      id: `eng-gov-${row.id}`,
+      title: row.title,
+      type: 'Policy' as const,
+      status: 'Acknowledgement Due',
+      dueAt: null,
+      actionHref: '/workforce-portal?tab=documents',
+    }));
+
+  const requestEngagements: EssEngagementItem[] = input.requests
+    .filter((item) => matches(`${item.category} ${item.title}`, /survey|feedback|pulse|policy|engagement/))
+    .map((item) => ({
+      id: `eng-req-${item.id}`,
+      title: item.title || item.category,
+      type: matches(`${item.category} ${item.title}`, /survey|pulse/) ? 'Survey' as const : matches(`${item.category} ${item.title}`, /policy/) ? 'Policy' as const : 'Feedback' as const,
+      status: /approved|closed|complete/i.test(item.status) ? 'Completed' : /submitted|review|pending/i.test(item.status) ? 'In progress' : 'Open',
+      dueAt: item.updatedAt || item.submittedAt,
+      actionHref: '/workforce-portal?tab=services',
+    }));
+
+  const notificationEngagements: EssEngagementItem[] = input.notifications
+    .filter((item) => /survey|feedback|pulse|policy|engagement/i.test(item.title))
+    .map((item) => ({
+      id: `eng-ntf-${item.id}`,
+      title: item.title,
+      type: matches(item.title, /survey|pulse/) ? 'Survey' as const : matches(item.title, /policy/) ? 'Policy' as const : 'Feedback' as const,
+      status: /unread/i.test(item.status) ? 'Open' : 'Read',
+      dueAt: item.createdAt,
+      actionHref: item.href || '/workforce-portal?tab=communication',
+    }));
+
+  const engagements = [...policyEngagements, ...governanceEngagements, ...requestEngagements, ...notificationEngagements]
+    .filter((item, index, self) => self.findIndex((entry) => entry.title === item.title) === index);
+
+  const unreadCount = input.notifications.filter((item) => /unread/i.test(item.status)).length;
+
+  return {
+    announcements,
+    engagements,
+    notifications: input.notifications,
+    summary: {
+      announcementCount: announcements.length,
+      engagementCount: engagements.length,
+      notificationCount: input.notifications.length,
+      unreadCount,
+      lastUpdated: input.generatedAt,
+    },
+  };
 };
 
 export const monthlyRequestVolume = (requests: EssRequestLike[]) => {

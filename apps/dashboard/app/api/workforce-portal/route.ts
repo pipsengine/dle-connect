@@ -32,6 +32,8 @@ import {
   deriveEssAssets,
   deriveEssAuditTrail,
   deriveEssClaims,
+  deriveEssCommunications,
+  deriveEssDocumentGovernance,
   deriveEssEmployeeReports,
   deriveEssLearning,
   deriveEssPerformance,
@@ -509,18 +511,24 @@ export async function GET(request: Request) {
     const reportFormat = compact(url.searchParams.get('format')) || 'excel';
 
     if (reportId) {
-      const cached = readEssPortalResponseCache(cacheKey);
+      const cached = readEssPortalResponseCache<{
+        employee?: { fullName?: string; employeeCode?: string; employeeId?: string; department?: string };
+        leave?: { balances?: unknown[]; history?: unknown[] };
+        payrollHistory?: unknown[];
+        learning?: { courses?: unknown[]; materials?: unknown[]; certifications?: unknown[] };
+        claims?: unknown[];
+      }>(cacheKey);
       if (!cached) return err(400, 'Report data is not ready. Refresh the portal and try again.');
       try {
         const exported = buildEssReportExport(reportId, /pdf/i.test(reportFormat) ? 'pdf' : 'csv', {
           employeeName: String(cached.employee?.fullName || session.fullName || 'Employee'),
           employeeCode: String(cached.employee?.employeeCode || cached.employee?.employeeId || session.employeeCode || ''),
           department: String(cached.employee?.department || 'Unassigned'),
-          leaveBalances: cached.leave?.balances || [],
-          leaveHistory: cached.leave?.history || [],
-          payrollHistory: cached.payrollHistory || [],
-          learning: cached.learning || { courses: [], materials: [], certifications: [] },
-          claims: cached.claims || [],
+          leaveBalances: (cached.leave?.balances || []) as never,
+          leaveHistory: (cached.leave?.history || []) as never,
+          payrollHistory: (cached.payrollHistory || []) as never,
+          learning: (cached.learning || { courses: [], materials: [], certifications: [] }) as never,
+          claims: (cached.claims || []) as never,
         });
         return new Response(exported.body, {
           headers: {
@@ -880,7 +888,7 @@ export async function GET(request: Request) {
       employee.sourceEmployeeId,
       payslipIdentity?.employeeCode,
       payslipIdentity?.sourceEmployeeCode,
-    ].filter(Boolean);
+    ].filter((value): value is string => Boolean(value));
     [enterpriseRecordsByPeriod, sagePayslipsByPeriod] = await Promise.all([
       readEnterpriseEmployeePayslipRecordsByPeriod(employeeMatchKeys, releasedPayrollPeriods).catch(() => new Map()),
       readAuthoritativeSagePayslipSnapshotsByPeriod(employeeMatchKeys, releasedPayrollPeriods, {
@@ -921,6 +929,20 @@ export async function GET(request: Request) {
       documents: essContext.documents,
     });
     const derivedLearning = deriveEssLearning(essContext.documents);
+    const employeeDocuments = essContext.documents.length
+      ? essContext.documents
+      : Number(employee.documentCount || 0) > 0
+        ? [{
+            id: 'doc-summary',
+            title: `${employee.documentCount} employee document(s) on file`,
+            category: 'HRIS Documents',
+            version: '—',
+            status: 'Current',
+            acknowledgement: 'On record',
+            accessScope: 'Employee (self-service)',
+          }]
+        : [];
+    const documentGovernance = deriveEssDocumentGovernance(employeeDocuments);
     const mobileAttendanceRecords = await listEssMobileAttendanceRecords(employeeMatchKeys).catch(() => []);
     const mergedAttendanceRecords = mergeEssAttendanceRecords(essContext.attendance.records, mobileAttendanceRecords);
     const todayMobileSession = await getEssMobileTodaySession(compact(employee.employeeCode || employee.employeeId)).catch(() => null);
@@ -1113,6 +1135,35 @@ export async function GET(request: Request) {
       auditTrail: derivedAuditTrail,
     });
 
+    const portalAnnouncements = [
+      ...(currentPeriodReleased && essDisplayPeriod
+        ? [{ id: 'ann-001', title: `${periodTitle(essDisplayPeriod)} payslip is now available`, channel: 'Payroll', publishedAt: dateAdd(-1), priority: 'High' as const }]
+        : []),
+    ];
+    const portalNotifications = [
+      ...leaveApprovals.map((item) => ({
+        id: `live-leave-${item.id}`,
+        title: `Leave approval required: ${item.employee}`,
+        type: 'Workflow',
+        status: 'Unread',
+        createdAt: new Date().toISOString(),
+        href: '/workforce-portal?tab=leave&leaveSection=Approvals',
+      })),
+      ...essContext.notifications.filter((item) => !String(item.id).startsWith('live-leave-')),
+      ...(latestReleasedPayroll && !essContext.notifications.some((item) => /payslip/i.test(item.title))
+        ? [{ id: 'ntf-payslip', title: `${latestReleasedPayroll.periodLabel || periodTitle(latestReleasedPayroll.period)} payslip is ready for download`, type: 'Payroll', status: 'Read', createdAt: dateAdd(-1), href: '/workforce-portal?tab=payroll' }]
+        : []),
+    ];
+    const communications = deriveEssCommunications({
+      announcements: portalAnnouncements,
+      notifications: portalNotifications,
+      documents: employeeDocuments,
+      documentGovernance,
+      events: essContext.events,
+      requests: employeeRequests,
+      generatedAt: new Date().toISOString(),
+    });
+
     const payload = {
       generatedAt: new Date().toISOString(),
       locale,
@@ -1163,23 +1214,12 @@ export async function GET(request: Request) {
         loans: { applications: employeeLoans.length, outstanding: employeeLoans.reduce((sum, item) => sum + Number(item.outstandingBalance || 0), 0) },
       },
       dashboardAnalytics: essContext.dashboardAnalytics,
-      announcements: [
-        ...(currentPeriodReleased && essDisplayPeriod ? [{ id: 'ann-001', title: `${periodTitle(essDisplayPeriod)} payslip is now available`, channel: 'Payroll', publishedAt: dateAdd(-1), priority: 'High' }] : []),
-      ],
-      notifications: [
-        ...leaveApprovals.map((item) => ({
-          id: `live-leave-${item.id}`,
-          title: `Leave approval required: ${item.employee}`,
-          type: 'Workflow',
-          status: 'Unread',
-          createdAt: new Date().toISOString(),
-          href: '/workforce-portal?tab=leave&leaveSection=Approvals',
-        })),
-        ...essContext.notifications.filter((item) => !String(item.id).startsWith('live-leave-')),
-        ...(latestReleasedPayroll && !essContext.notifications.some((item) => /payslip/i.test(item.title))
-          ? [{ id: 'ntf-payslip', title: `${latestReleasedPayroll.periodLabel || periodTitle(latestReleasedPayroll.period)} payslip is ready for download`, type: 'Payroll', status: 'Read', createdAt: dateAdd(-1), href: '/workforce-portal?tab=payroll' }]
-          : []),
-      ],
+      announcements: communications.announcements,
+      notifications: communications.notifications,
+      communications: {
+        summary: communications.summary,
+        engagements: communications.engagements,
+      },
       approvalQueue: leaveApprovals.map((item) => ({
         id: String(item.id),
         employee: String(item.employee),
@@ -1192,20 +1232,11 @@ export async function GET(request: Request) {
       birthdays: essContext.birthdays,
       anniversaries: essContext.anniversaries,
       events: essContext.events,
-      documents: essContext.documents.length
-        ? essContext.documents
-        : [
-            ...(Number(employee.documentCount || 0) > 0
-              ? [{ id: 'doc-summary', title: `${employee.documentCount} employee document(s) on file`, category: 'HRIS Documents', version: '—', status: 'Current' }]
-              : []),
-          ],
+      documents: employeeDocuments,
+      documentGovernance,
       profileSections: buildEssProfileSections(
         employee,
-        essContext.documents.length
-          ? essContext.documents
-          : Number(employee.documentCount || 0) > 0
-            ? [{ title: `${employee.documentCount} employee document(s) on file`, category: 'HRIS Documents', version: '—', status: 'Current' }]
-            : [],
+        employeeDocuments,
       ),
       profileAuditTrail: [
         {
