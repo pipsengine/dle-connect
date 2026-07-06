@@ -24,7 +24,16 @@ import {
   normalizePayrollApprovalAction,
   resolvePayrollApprovalActionForRun,
 } from '@/lib/payroll-approval-workflow';
-import { notifyNextPayrollApprovalStage } from '@/lib/payroll-approval-notification-service';
+import {
+  notifyNextPayrollApprovalStage,
+  notifyPayrollFullyApproved,
+  notifyPayrollRejected,
+  notifyPayrollReleased,
+  notifyPayrollRevisionRequested,
+  notifyPayrollStageCompleted,
+  notifyPayrollSubmitted,
+} from '@/lib/payroll-approval-notification-service';
+import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
 import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import { invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
 import {
@@ -175,6 +184,22 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     }
   };
 
+  const notifyStageCompleted = async (stageId: PayrollApprovalStageId) => {
+    try {
+      await notifyPayrollStageCompleted({ run: run!, completedStageId: stageId, actor, baseUrl });
+    } catch (error) {
+      console.warn('[payroll-workflow] stage completed notification failed', error);
+    }
+  };
+
+  const notifyStatus = async (task: () => Promise<unknown>) => {
+    try {
+      await task();
+    } catch (error) {
+      console.warn('[payroll-workflow] status notification failed', error);
+    }
+  };
+
   if (action === 'generate-bank-schedule') {
     if (!['Released', 'Locked', 'Published', 'Posted', 'Approved', 'Closed'].includes(run.status)) {
       throw new Error('Bank schedule generation requires released payroll.');
@@ -234,7 +259,6 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     await savePayrollRun(run);
     await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
     await audit(action, before, run.status);
-    await notifyNext();
     return { run, calculation };
   }
 
@@ -251,6 +275,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     await savePayrollRun(run);
     await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
     await audit(action, before, run.status);
+    await notifyStatus(() => notifyPayrollSubmitted({ run, actor, baseUrl }));
     await notifyNext();
     return { run, calculation };
   }
@@ -268,6 +293,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     await savePayrollRun(run);
     await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
     await audit(action, before, run.status);
+    await notifyStageCompleted('hr-manager');
     await notifyNext();
     return { run, calculation };
   }
@@ -285,6 +311,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     await savePayrollRun(run);
     await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
     await audit(action, before, run.status);
+    await notifyStageCompleted('finance-manager');
     await notifyNext();
     return { run, calculation };
   }
@@ -303,6 +330,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     await savePayrollRun(run);
     await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
     await audit(action, before, run.status);
+    await notifyStageCompleted('cfo');
     await notifyNext();
     return { run, calculation };
   }
@@ -321,6 +349,8 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     await savePayrollRun(run);
     await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
     await audit(action, before, run.status);
+    await notifyStageCompleted('md-ceo');
+    await notifyStatus(() => notifyPayrollFullyApproved({ run, actor, baseUrl }));
     return { run, calculation };
   }
 
@@ -339,6 +369,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
     invalidateHrisEmployeeCaches();
     await audit(action, before, run.status);
+    await notifyStatus(() => notifyPayrollReleased({ run, actor, baseUrl }));
     return { run, calculation };
   }
 
@@ -438,6 +469,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     run.updatedBy = actor;
     await savePayrollRun(run);
     await audit(action, before, run.status);
+    await notifyStatus(() => notifyPayrollRejected({ run, actor, reason: reason || comment, baseUrl }));
     return { run, calculation };
   }
 
@@ -448,6 +480,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     run.updatedBy = actor;
     await savePayrollRun(run);
     await audit(action, before, run.status);
+    await notifyStatus(() => notifyPayrollRevisionRequested({ run, actor, reason: reason || comment, baseUrl }));
     return { run, calculation };
   }
 

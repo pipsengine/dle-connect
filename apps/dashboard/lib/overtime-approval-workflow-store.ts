@@ -3,6 +3,12 @@ import { approvedOvertimeStatuses } from '@/lib/timesheet-overtime-config';
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
+import {
+  sendOvertimeApprovalRequestEmail,
+  sendOvertimeApprovedEmail,
+  sendOvertimeRejectedEmail,
+} from '@/lib/mail-service';
+import { overtimeAuthorizePageUrl } from '@/lib/leave-email-action-token';
 import type { SessionPayload } from '@/lib/auth/session';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { postApprovedOvertimeToTimesheets } from '@/lib/overtime-timesheet-posting';
@@ -349,22 +355,9 @@ const notifyApprovalOwner = async (request: OvertimeAuthorizationRequest, stage:
   const approveToken = await saveToken(request.id, stage, 'approve', recipientName, recipientEmail);
   const rejectToken = await saveToken(request.id, stage, 'reject', recipientName, recipientEmail);
   const openLink = `${portalBase(baseUrl)}/hris/workforce-management/overtime-management?requestId=${encodeURIComponent(request.id)}`;
-  const approveLink = `${portalBase(baseUrl)}/api/hris/workforce-management/overtime-management/email-action?token=${approveToken}`;
-  const rejectLink = `${portalBase(baseUrl)}/api/hris/workforce-management/overtime-management/email-action?token=${rejectToken}`;
+  const approveLink = overtimeAuthorizePageUrl(approveToken, baseUrl);
+  const rejectLink = overtimeAuthorizePageUrl(rejectToken, baseUrl);
   const subject = `Overtime approval required: ${request.projectCode} on ${request.workDate}`;
-  const text = `Overtime approval is waiting for ${recipientName}.
-Project: ${request.projectCode} - ${request.projectName}
-Date: ${request.workDate}
-Supervisor: ${request.supervisorName}
-Hours: ${request.requestedHours}
-Reason: ${request.reason}
-Approve: ${approveLink}
-Reject: ${rejectLink}
-Open in portal: ${openLink}`;
-  const html = `<p>Overtime approval is waiting for <strong>${recipientName}</strong>.</p>
-<p><strong>Project:</strong> ${request.projectCode} - ${request.projectName}<br/><strong>Date:</strong> ${request.workDate}<br/><strong>Supervisor:</strong> ${request.supervisorName}<br/><strong>Hours:</strong> ${request.requestedHours}</p>
-<p>${request.reason}</p>
-<p><a href="${approveLink}">Approve</a> &nbsp; <a href="${rejectLink}">Reject</a> &nbsp; <a href="${openLink}">Open in portal</a></p>`;
   await createEnterpriseNotification(systemSession(request.createdBy), {
     kind: 'Approval',
     module: 'Overtime Management',
@@ -376,7 +369,89 @@ Open in portal: ${openLink}`;
     channels: ['In-App', 'Email'],
     metadata: { requestId: request.id, stage },
   });
-  await deliverEmail(recipientEmail, recipientName, subject, html, text);
+  await sendOvertimeApprovalRequestEmail({
+    recipientName,
+    recipientEmail,
+    role,
+    request: {
+      projectCode: request.projectCode,
+      projectName: request.projectName,
+      workDate: request.workDate,
+      supervisorName: request.supervisorName,
+      requestedHours: request.requestedHours,
+      reason: request.reason,
+    },
+    approveLink,
+    rejectLink,
+    workspaceLink: openLink,
+  });
+};
+
+const notifySupervisorRejected = async (request: OvertimeAuthorizationRequest, actor?: string | null, reason?: string | null, baseUrl?: string | null) => {
+  const workspaceLink = `${portalBase(baseUrl)}/hris/workforce-management/overtime-management?requestId=${encodeURIComponent(request.id)}`;
+  const supervisorEmail = await emailForName(request.supervisorCode || request.supervisorName);
+  await createEnterpriseNotification(systemSession(request.createdBy), {
+    kind: 'Workflow',
+    module: 'Overtime Management',
+    title: `Overtime rejected for ${request.projectCode}`,
+    body: `${request.requestedHours}h overtime authorization was rejected.${reason ? ` Reason: ${reason}` : ''}`,
+    severity: 'warning',
+    href: `/hris/workforce-management/overtime-management?requestId=${encodeURIComponent(request.id)}`,
+    recipientEmployeeCode: request.supervisorCode || undefined,
+    recipientRoles: ['Supervisor'],
+    channels: ['In-App', 'Email'],
+    metadata: { requestId: request.id, projectCode: request.projectCode },
+  });
+  await sendOvertimeRejectedEmail({
+    recipientName: request.supervisorName,
+    recipientEmail: supervisorEmail,
+    projectCode: request.projectCode,
+    projectName: request.projectName,
+    workDate: request.workDate,
+    actorName: clean(actor) || request.currentOwnerName,
+    reason: clean(reason) || undefined,
+    workspaceLink,
+    baseUrl,
+  });
+};
+
+export type OvertimeAuthorizationTokenRow = {
+  token: string;
+  requestId: string;
+  stage: ApprovalStage;
+  decision: 'approve' | 'reject';
+  recipientName: string;
+  recipientEmail: string | null;
+  usedAt: string | null;
+  expiresAt: string;
+};
+
+export const readOvertimeAuthorizationToken = async (tokenValue: string): Promise<OvertimeAuthorizationTokenRow | null> => {
+  const pool = await ensureDb();
+  const result = await pool.request()
+    .input('Token', sql.NVarChar(120), clean(tokenValue))
+    .query<{ Token: string; RequestId: string; Stage: ApprovalStage; Decision: 'approve' | 'reject'; RecipientName: string; RecipientEmail: string | null; UsedAt: Date | null; ExpiresAt: Date }>(
+      'SELECT [Token],[RequestId],[Stage],[Decision],[RecipientName],[RecipientEmail],[UsedAt],[ExpiresAt] FROM [hris].[OvertimeAuthorizationTokens] WHERE [Token]=@Token;',
+    );
+  const row = result.recordset[0];
+  if (!row) return null;
+  return {
+    token: row.Token,
+    requestId: row.RequestId,
+    stage: row.Stage,
+    decision: row.Decision,
+    recipientName: row.RecipientName,
+    recipientEmail: row.RecipientEmail,
+    usedAt: row.UsedAt ? iso(row.UsedAt) : null,
+    expiresAt: iso(row.ExpiresAt),
+  };
+};
+
+export const markOvertimeAuthorizationTokenUsed = async (tokenValue: string) => {
+  const pool = await ensureDb();
+  await pool.request()
+    .input('Token', sql.NVarChar(120), clean(tokenValue))
+    .query('UPDATE [hris].[OvertimeAuthorizationTokens] SET [UsedAt]=SYSUTCDATETIME() WHERE [Token]=@Token;');
 };
 
 const notifySupervisorApproved = async (request: OvertimeAuthorizationRequest, baseUrl?: string | null) => {
@@ -393,13 +468,14 @@ const notifySupervisorApproved = async (request: OvertimeAuthorizationRequest, b
     channels: ['In-App', 'Email'],
     metadata: { requestId: request.id, projectCode: request.projectCode },
   });
-  await deliverEmail(
-    await emailForName(request.supervisorCode || request.supervisorName),
-    request.supervisorName,
-    `Overtime approved: ${request.projectCode} on ${request.workDate}`,
-    `<p>Overtime has been approved for <strong>${request.projectCode}</strong>.</p><p><a href="${portalBase(baseUrl)}${href}">Open Timesheet Entry</a></p>`,
-    `Overtime has been approved for ${request.projectCode}. Open Timesheet Entry: ${portalBase(baseUrl)}${href}`,
-  );
+  await sendOvertimeApprovedEmail({
+    recipientName: request.supervisorName,
+    recipientEmail: await emailForName(request.supervisorCode || request.supervisorName),
+    projectCode: request.projectCode,
+    workDate: request.workDate,
+    requestedHours: request.requestedHours,
+    timesheetLink: `${portalBase(baseUrl)}${href}`,
+  });
 };
 
 export const listOvertimeAuthorizationRequests = async () => {
@@ -554,6 +630,9 @@ export const actOnOvertimeAuthorizationRequest = async (id: string, decision: 'a
     await notifySupervisorApproved(updated, baseUrl);
     await postApprovedOvertimeToTimesheet(updated);
   }
+  if (nextStatus === 'Rejected') {
+    await notifySupervisorRejected(updated, actor, comment, baseUrl);
+  }
   return updated;
 };
 
@@ -576,19 +655,13 @@ export const bulkActOnOvertimeAuthorizationRequests = async (
   return results;
 };
 
-export const actOnOvertimeAuthorizationToken = async (tokenValue: string) => {
-  const pool = await ensureDb();
-  const result = await pool.request()
-    .input('Token', sql.NVarChar(120), clean(tokenValue))
-    .query<{ RequestId: string; Decision: 'approve' | 'reject'; RecipientName: string; UsedAt: Date | null; ExpiresAt: Date }>('SELECT [RequestId],[Decision],[RecipientName],[UsedAt],[ExpiresAt] FROM [hris].[OvertimeAuthorizationTokens] WHERE [Token]=@Token;');
-  const tokenRow = result.recordset[0];
+export const actOnOvertimeAuthorizationToken = async (tokenValue: string, baseUrl?: string | null) => {
+  const tokenRow = await readOvertimeAuthorizationToken(tokenValue);
   if (!tokenRow) throw new Error('Approval link is invalid.');
-  if (tokenRow.UsedAt) throw new Error('Approval link has already been used.');
-  if (new Date(tokenRow.ExpiresAt).getTime() < Date.now()) throw new Error('Approval link has expired.');
-  const updated = await actOnOvertimeAuthorizationRequest(tokenRow.RequestId, tokenRow.Decision, tokenRow.RecipientName, 'Email action link');
-  await pool.request()
-    .input('Token', sql.NVarChar(120), clean(tokenValue))
-    .query('UPDATE [hris].[OvertimeAuthorizationTokens] SET [UsedAt]=SYSUTCDATETIME() WHERE [Token]=@Token;');
+  if (tokenRow.usedAt) throw new Error('Approval link has already been used.');
+  if (new Date(tokenRow.expiresAt).getTime() < Date.now()) throw new Error('Approval link has expired.');
+  const updated = await actOnOvertimeAuthorizationRequest(tokenRow.requestId, tokenRow.decision, tokenRow.recipientName, 'Email action link', baseUrl);
+  await markOvertimeAuthorizationTokenUsed(tokenValue);
   return updated;
 };
 

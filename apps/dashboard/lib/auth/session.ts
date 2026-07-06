@@ -146,7 +146,6 @@ export const isPublicPath = (pathname: string) => (
   pathname.startsWith('/change-password') ||
   pathname.startsWith('/access-denied') ||
   pathname.startsWith('/api/auth') ||
-  pathname.startsWith('/api/hris/workforce-management/overtime-management/email-action') ||
   pathname.startsWith('/_next') ||
   pathname.startsWith('/favicon') ||
   pathname.startsWith('/brand') ||

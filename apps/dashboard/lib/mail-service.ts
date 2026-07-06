@@ -1,19 +1,34 @@
 import nodemailer from 'nodemailer';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
-import {
-  createLeaveEmailActionToken,
-  leaveEmailActionUrl,
-  leavePortalUrl,
-  type LeaveEmailApproverKind,
-} from '@/lib/leave-email-action-token';
+import type { LeaveEmailApproverKind } from '@/lib/leave-email-action-token';
 import type { EssLeaveRequest } from '@/lib/leave-workflow-service';
 import {
   graphMailConfigured,
   sendGraphMail,
   verifyGraphMailConnection,
 } from '@/lib/microsoft-graph-mail';
+import {
+  buildDleTestEmail,
+  buildLeaveApprovalRequestEmail,
+  buildLeaveRelieverEmail,
+  buildLeaveWorkflowEmail,
+  buildOvertimeApprovalRequestEmail,
+  buildOvertimeApprovedEmail,
+  buildOvertimeRejectedEmail,
+  buildPayrollApprovalRequestEmail,
+  buildPayrollFullyApprovedEmail,
+  buildPayrollRejectedEmail,
+  buildPayrollReleasedEmail,
+  buildPayrollRevisionRequestedEmail,
+  buildPayrollStageApprovedEmail,
+  buildPayrollSubmittedEmail,
+  employeeDisplayName,
+  leaveApprovalLinks,
+  type LeaveEmailEvent,
+} from '@/lib/workflow-email-builders';
+import { leavePortalUrl } from '@/lib/leave-email-action-token';
+import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
 
-type LeaveEmailEvent = 'submitted' | 'manager-approved' | 'approved' | 'rejected' | 'approval-request';
 type MailProvider = 'graph' | 'smtp';
 
 const compact = (value: unknown) => String(value || '').trim();
@@ -33,7 +48,6 @@ export const resolveMailProvider = (): MailProvider | null => {
   return null;
 };
 
-/** Microsoft 365 SMTP (smtp.office365.com) — port 587 + STARTTLS. */
 const createSmtpTransport = () => {
   const host = process.env.DLE_SMTP_HOST!;
   const port = Number(process.env.DLE_SMTP_PORT || 587);
@@ -54,9 +68,6 @@ const createSmtpTransport = () => {
 
 export const employeeEmailAddress = (employee?: DleEmployeeDirectoryRow | null) =>
   compact(employee?.officialEmail || employee?.email || employee?.personalEmail);
-
-const button = (href: string, label: string, background: string) =>
-  `<a href="${href}" style="display:inline-block;margin:8px 8px 8px 0;padding:12px 18px;border-radius:8px;background:${background};color:#ffffff;text-decoration:none;font-weight:700">${label}</a>`;
 
 export const sendTransactionalEmail = async (input: { to: string; subject: string; text: string; html?: string }) => {
   const to = compact(input.to);
@@ -104,7 +115,6 @@ export const sendTransactionalEmail = async (input: { to: string; subject: strin
   }
 };
 
-/** Verify configured mail provider (Graph preferred, then SMTP). */
 export const verifyMailConnection = async () => {
   const provider = resolveMailProvider();
   if (provider === 'graph') return verifyGraphMailConnection();
@@ -112,7 +122,6 @@ export const verifyMailConnection = async () => {
   return { ok: false as const, reason: 'Mail provider not configured.' };
 };
 
-/** Verify Microsoft 365 / SMTP connectivity (e.g. after env setup). */
 export const verifySmtpConnection = async () => {
   if (!smtpConfigured()) return { ok: false, reason: 'SMTP not configured.' };
   try {
@@ -123,19 +132,20 @@ export const verifySmtpConnection = async () => {
   }
 };
 
-const leaveDetailLines = (request: EssLeaveRequest) => [
-  `Period: ${request.startDate} to ${request.endDate}`,
-  `Days: ${request.days}`,
-  `Status: ${request.status}`,
-  request.relieverName ? `Reliever: ${request.relieverName}` : '',
-].filter(Boolean);
-
-const leaveDetailHtml = (request: EssLeaveRequest) => `<ul>
-  <li><strong>Period:</strong> ${request.startDate} to ${request.endDate}</li>
-  <li><strong>Days:</strong> ${request.days}</li>
-  <li><strong>Status:</strong> ${request.status}</li>
-  ${request.relieverName ? `<li><strong>Reliever:</strong> ${request.relieverName}</li>` : ''}
-</ul>`;
+export const sendDleTestEmail = async (input: {
+  to: string;
+  recipientName: string;
+  employeeCode: string;
+  appUrl: string;
+}) => {
+  const email = buildDleTestEmail({
+    recipientName: input.recipientName,
+    employeeCode: input.employeeCode,
+    appUrl: input.appUrl,
+    provider: resolveMailProvider() || 'not configured',
+  });
+  return sendTransactionalEmail({ to: input.to, subject: email.subject, text: email.text, html: email.html });
+};
 
 export const sendLeaveWorkflowEmail = async (input: {
   event: LeaveEmailEvent;
@@ -148,42 +158,16 @@ export const sendLeaveWorkflowEmail = async (input: {
 }) => {
   const recipient = input.recipient || input.requester;
   const to = employeeEmailAddress(recipient);
-  const subjectMap: Record<LeaveEmailEvent, string> = {
-    submitted: `Leave request submitted: ${input.request.leaveType}`,
-    'manager-approved': `Leave request awaiting HR approval: ${input.request.leaveType}`,
-    approved: `Leave request approved: ${input.request.leaveType}`,
-    rejected: `Leave request rejected: ${input.request.leaveType}`,
-    'approval-request': `Leave approval required: ${input.request.leaveType}`,
-  };
-  const portalLink = leavePortalUrl(input.baseUrl);
-  const introMap: Record<LeaveEmailEvent, string> = {
-    submitted: 'Your leave request has been submitted and routed for approval.',
-    'manager-approved': 'Your leave request has been approved by your line manager and is awaiting HR final approval.',
-    approved: 'Your leave request has received final approval.',
-    rejected: 'Your leave request has been rejected.',
-    'approval-request': 'A leave request requires your approval.',
-  };
-  const text = [
-    `Dear ${recipient.fullName},`,
-    '',
-    introMap[input.event],
-    `Leave type: ${input.request.leaveType}`,
-    ...leaveDetailLines(input.request),
-    input.actorName ? `Actioned by: ${input.actorName}` : '',
-    input.extra || '',
-    `Open leave workspace: ${portalLink}`,
-    '',
-    'Dorman Long Engineering — Employee Self-Service',
-  ].filter(Boolean).join('\n');
-  const html = `<p>Dear <strong>${recipient.fullName}</strong>,</p>
-<p>${introMap[input.event]}</p>
-<p><strong>Leave type:</strong> ${input.request.leaveType}</p>
-${leaveDetailHtml(input.request)}
-${input.actorName ? `<p><strong>Actioned by:</strong> ${input.actorName}</p>` : ''}
-${input.extra ? `<p>${input.extra}</p>` : ''}
-<p>${button(portalLink, 'Open Leave Workspace', '#2563eb')}</p>
-<p style="color:#64748b;font-size:12px">Dorman Long Engineering — Employee Self-Service</p>`;
-  return sendTransactionalEmail({ to, subject: subjectMap[input.event], text, html });
+  const email = buildLeaveWorkflowEmail({
+    event: input.event,
+    request: input.request,
+    recipientName: employeeDisplayName(recipient),
+    actorName: input.actorName,
+    extra: input.extra,
+    portalLink: leavePortalUrl(input.baseUrl),
+    baseUrl: input.baseUrl,
+  });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
 };
 
 export const sendLeaveRelieverAssignmentEmail = async (input: {
@@ -194,76 +178,168 @@ export const sendLeaveRelieverAssignmentEmail = async (input: {
   baseUrl?: string | null;
 }) => {
   const to = employeeEmailAddress(input.reliever);
-  const portalLink = leavePortalUrl(input.baseUrl);
-  const subject = `Reliever assignment: ${input.requester.fullName} — ${input.request.leaveType}`;
-  const text = [
-    `Dear ${input.reliever.fullName},`,
-    '',
-    `You have been assigned as reliever for ${input.requester.fullName}.`,
-    `Leave type: ${input.request.leaveType}`,
-    ...leaveDetailLines(input.request),
-    input.request.handover ? `Handover notes: ${input.request.handover}` : '',
-    input.actorName ? `Approved by: ${input.actorName}` : '',
-    `Open leave workspace: ${portalLink}`,
-    '',
-    'Please coordinate with the requester before their leave begins.',
-    'Dorman Long Engineering — Employee Self-Service',
-  ].filter(Boolean).join('\n');
-  const html = `<p>Dear <strong>${input.reliever.fullName}</strong>,</p>
-<p>You have been assigned as <strong>reliever</strong> for <strong>${input.requester.fullName}</strong>.</p>
-<p><strong>Leave type:</strong> ${input.request.leaveType}</p>
-${leaveDetailHtml(input.request)}
-${input.request.handover ? `<p><strong>Handover notes:</strong> ${input.request.handover}</p>` : ''}
-${input.actorName ? `<p><strong>Approved by:</strong> ${input.actorName}</p>` : ''}
-<p>${button(portalLink, 'Open Leave Workspace', '#2563eb')}</p>
-<p style="color:#64748b;font-size:12px">Please coordinate with the requester before their leave begins.</p>`;
-  return sendTransactionalEmail({ to, subject, text, html });
+  const email = buildLeaveRelieverEmail({
+    request: input.request,
+    requesterName: employeeDisplayName(input.requester),
+    recipientName: employeeDisplayName(input.reliever),
+    actorName: input.actorName,
+    portalLink: leavePortalUrl(input.baseUrl),
+    baseUrl: input.baseUrl,
+  });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
+
+const payrollRecipientEmail = (recipient: { fullName: string; email: string }) => {
+  const to = compact(recipient.email);
+  if (!to) return { sent: false as const, reason: 'No recipient email.' };
+  return { sent: true as const, to };
 };
 
 export const sendPayrollApprovalRequestEmail = async (input: {
   recipient: { fullName: string; email: string; roles: string[] };
   run: { period: string; periodLabel: string; grossPay: number; netPay: number; employeeCount: number };
   stageTitle: string;
+  stageId: PayrollApprovalStageId;
   approveUrl: string;
   rejectUrl: string;
   workspaceUrl: string;
   baseUrl?: string | null;
 }) => {
-  const to = compact(input.recipient.email);
-  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const resolved = payrollRecipientEmail(input.recipient);
+  if (!resolved.sent) return resolved;
+  const email = buildPayrollApprovalRequestEmail({
+    recipientName: input.recipient.fullName,
+    run: input.run,
+    stageTitle: input.stageTitle,
+    stageId: input.stageId,
+    approveUrl: input.approveUrl,
+    rejectUrl: input.rejectUrl,
+    workspaceUrl: input.workspaceUrl,
+    baseUrl: input.baseUrl,
+  });
+  return sendTransactionalEmail({ to: resolved.to, subject: email.subject, text: email.text, html: email.html });
+};
 
-  const subject = `Payroll approval required — ${input.run.periodLabel} (${input.stageTitle})`;
-  const text = [
-    `Dear ${input.recipient.fullName},`,
-    '',
-    `A payroll run requires your approval as ${input.stageTitle}.`,
-    `Period: ${input.run.periodLabel}`,
-    `Employees: ${input.run.employeeCount}`,
-    `Gross Pay: ₦${input.run.grossPay.toLocaleString('en-NG')}`,
-    `Net Pay: ₦${input.run.netPay.toLocaleString('en-NG')}`,
-    '',
-    'You must sign in to DLE Connect before approving or rejecting.',
-    `Approve: ${input.approveUrl}`,
-    `Reject: ${input.rejectUrl}`,
-    `Open payroll approval workspace: ${input.workspaceUrl}`,
-    '',
-    'Approval links expire after 7 days.',
-    'Dorman Long Engineering — Payroll Management',
-  ].join('\n');
+export const sendPayrollSubmittedEmail = async (input: {
+  recipient: { fullName: string; email: string };
+  run: { periodLabel: string; grossPay: number; netPay: number; employeeCount: number };
+  actorName?: string;
+  workspaceUrl: string;
+  baseUrl?: string | null;
+}) => {
+  const resolved = payrollRecipientEmail(input.recipient);
+  if (!resolved.sent) return resolved;
+  const email = buildPayrollSubmittedEmail({
+    recipientName: input.recipient.fullName,
+    run: input.run,
+    actorName: input.actorName,
+    workspaceUrl: input.workspaceUrl,
+    baseUrl: input.baseUrl,
+  });
+  return sendTransactionalEmail({ to: resolved.to, subject: email.subject, text: email.text, html: email.html });
+};
 
-  const html = `<p>Dear <strong>${input.recipient.fullName}</strong>,</p>
-<p>A payroll run requires your approval as <strong>${input.stageTitle}</strong>.</p>
-<table cellpadding="0" cellspacing="0" style="margin:16px 0">
-  <tr><td style="padding:4px 12px 4px 0"><strong>Period</strong></td><td>${input.run.periodLabel}</td></tr>
-  <tr><td style="padding:4px 12px 4px 0"><strong>Employees</strong></td><td>${input.run.employeeCount}</td></tr>
-  <tr><td style="padding:4px 12px 4px 0"><strong>Gross Pay</strong></td><td>₦${input.run.grossPay.toLocaleString('en-NG')}</td></tr>
-  <tr><td style="padding:4px 12px 4px 0"><strong>Net Pay</strong></td><td>₦${input.run.netPay.toLocaleString('en-NG')}</td></tr>
-</table>
-<p><strong>Authentication required:</strong> sign in to DLE Connect before you can approve or reject this payroll.</p>
-<p>${button(input.approveUrl, 'Sign In & Approve', '#059669')}${button(input.rejectUrl, 'Sign In & Reject', '#dc2626')}${button(input.workspaceUrl, 'Open Approval Workspace', '#2563eb')}</p>
-<p style="color:#64748b;font-size:12px">Links expire after 7 days. Your login session must match the designated approver account.</p>`;
+export const sendPayrollStageApprovedEmail = async (input: {
+  recipient: { fullName: string; email: string };
+  run: { periodLabel: string; grossPay: number; netPay: number; employeeCount: number };
+  completedStage: string;
+  nextStage: string;
+  actorName: string;
+  workspaceUrl: string;
+  baseUrl?: string | null;
+}) => {
+  const resolved = payrollRecipientEmail(input.recipient);
+  if (!resolved.sent) return resolved;
+  const email = buildPayrollStageApprovedEmail({
+    recipientName: input.recipient.fullName,
+    run: input.run,
+    completedStage: input.completedStage,
+    nextStage: input.nextStage,
+    actorName: input.actorName,
+    workspaceUrl: input.workspaceUrl,
+    baseUrl: input.baseUrl,
+  });
+  return sendTransactionalEmail({ to: resolved.to, subject: email.subject, text: email.text, html: email.html });
+};
 
-  return sendTransactionalEmail({ to, subject, text, html });
+export const sendPayrollFullyApprovedEmail = async (input: {
+  recipient: { fullName: string; email: string };
+  run: { periodLabel: string; grossPay: number; netPay: number; employeeCount: number };
+  actorName: string;
+  workspaceUrl: string;
+  baseUrl?: string | null;
+}) => {
+  const resolved = payrollRecipientEmail(input.recipient);
+  if (!resolved.sent) return resolved;
+  const email = buildPayrollFullyApprovedEmail({
+    recipientName: input.recipient.fullName,
+    run: input.run,
+    actorName: input.actorName,
+    workspaceUrl: input.workspaceUrl,
+    baseUrl: input.baseUrl,
+  });
+  return sendTransactionalEmail({ to: resolved.to, subject: email.subject, text: email.text, html: email.html });
+};
+
+export const sendPayrollRejectedEmail = async (input: {
+  recipient: { fullName: string; email: string };
+  run: { periodLabel: string; grossPay: number; netPay: number; employeeCount: number };
+  actorName?: string;
+  reason?: string;
+  workspaceUrl: string;
+  baseUrl?: string | null;
+}) => {
+  const resolved = payrollRecipientEmail(input.recipient);
+  if (!resolved.sent) return resolved;
+  const email = buildPayrollRejectedEmail({
+    recipientName: input.recipient.fullName,
+    run: input.run,
+    actorName: input.actorName,
+    reason: input.reason,
+    workspaceUrl: input.workspaceUrl,
+    baseUrl: input.baseUrl,
+  });
+  return sendTransactionalEmail({ to: resolved.to, subject: email.subject, text: email.text, html: email.html });
+};
+
+export const sendPayrollRevisionRequestedEmail = async (input: {
+  recipient: { fullName: string; email: string };
+  run: { periodLabel: string; grossPay: number; netPay: number; employeeCount: number };
+  actorName?: string;
+  reason?: string;
+  workspaceUrl: string;
+  baseUrl?: string | null;
+}) => {
+  const resolved = payrollRecipientEmail(input.recipient);
+  if (!resolved.sent) return resolved;
+  const email = buildPayrollRevisionRequestedEmail({
+    recipientName: input.recipient.fullName,
+    run: input.run,
+    actorName: input.actorName,
+    reason: input.reason,
+    workspaceUrl: input.workspaceUrl,
+    baseUrl: input.baseUrl,
+  });
+  return sendTransactionalEmail({ to: resolved.to, subject: email.subject, text: email.text, html: email.html });
+};
+
+export const sendPayrollReleasedEmail = async (input: {
+  recipient: { fullName: string; email: string };
+  run: { periodLabel: string; grossPay: number; netPay: number; employeeCount: number };
+  actorName: string;
+  workspaceUrl: string;
+  baseUrl?: string | null;
+}) => {
+  const resolved = payrollRecipientEmail(input.recipient);
+  if (!resolved.sent) return resolved;
+  const email = buildPayrollReleasedEmail({
+    recipientName: input.recipient.fullName,
+    run: input.run,
+    actorName: input.actorName,
+    workspaceUrl: input.workspaceUrl,
+    baseUrl: input.baseUrl,
+  });
+  return sendTransactionalEmail({ to: resolved.to, subject: email.subject, text: email.text, html: email.html });
 };
 
 export const sendLeaveApprovalRequestEmail = async (input: {
@@ -275,54 +351,76 @@ export const sendLeaveApprovalRequestEmail = async (input: {
 }) => {
   const to = employeeEmailAddress(input.recipient);
   if (!to) return { sent: false, reason: 'No recipient email.' };
-
-  const approveToken = createLeaveEmailActionToken({
-    requestId: input.request.id,
-    decision: 'approve',
+  const recipientUsername = compact(input.recipient.employeeCode || input.recipient.employeeId || input.recipient.sourceEmployeeId);
+  const links = leaveApprovalLinks({
+    request: input.request,
     recipientEmail: to,
+    recipientUsername: recipientUsername || to,
     approverKind: input.approverKind,
+    baseUrl: input.baseUrl,
   });
-  const rejectToken = createLeaveEmailActionToken({
-    requestId: input.request.id,
-    decision: 'reject',
-    recipientEmail: to,
+  const email = buildLeaveApprovalRequestEmail({
+    request: input.request,
+    requesterName: employeeDisplayName(input.requester),
+    recipientName: employeeDisplayName(input.recipient),
     approverKind: input.approverKind,
+    ...links,
+    baseUrl: input.baseUrl,
   });
-  const approveLink = leaveEmailActionUrl(approveToken, input.baseUrl);
-  const rejectLink = leaveEmailActionUrl(rejectToken, input.baseUrl);
-  const portalLink = leavePortalUrl(input.baseUrl);
-  const stageLabel = input.approverKind === 'hr' ? 'HR Manager / Head' : 'Line Manager / Supervisor';
-  const subject = `Leave approval required: ${input.requester.fullName} — ${input.request.leaveType}`;
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
 
-  const text = [
-    `Dear ${input.recipient.fullName},`,
-    '',
-    `A leave request is waiting for your approval as ${stageLabel}.`,
-    `Employee: ${input.requester.fullName}`,
-    `Leave type: ${input.request.leaveType}`,
-    `Period: ${input.request.startDate} to ${input.request.endDate}`,
-    `Days: ${input.request.days}`,
-    `Reliever: ${input.request.relieverName || 'Not configured'}`,
-    '',
-    `Approve: ${approveLink}`,
-    `Reject: ${rejectLink}`,
-    `Open in portal: ${portalLink}`,
-    '',
-    'You can approve or reject directly from this email without logging in.',
-    'Dorman Long Engineering — Employee Self-Service',
-  ].join('\n');
+export const sendOvertimeApprovalRequestEmail = async (input: {
+  recipientName: string;
+  recipientEmail: string | null;
+  role: string;
+  request: {
+    projectCode: string;
+    projectName: string;
+    workDate: string;
+    supervisorName: string;
+    requestedHours: number;
+    reason: string;
+  };
+  approveLink: string;
+  rejectLink: string;
+  workspaceLink: string;
+  baseUrl?: string | null;
+}) => {
+  const to = compact(input.recipientEmail);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const email = buildOvertimeApprovalRequestEmail({ ...input, baseUrl: input.baseUrl });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
 
-  const html = `<p>Dear <strong>${input.recipient.fullName}</strong>,</p>
-<p>A leave request is waiting for your approval as <strong>${stageLabel}</strong>.</p>
-<table cellpadding="0" cellspacing="0" style="margin:16px 0">
-  <tr><td style="padding:4px 12px 4px 0"><strong>Employee</strong></td><td>${input.requester.fullName}</td></tr>
-  <tr><td style="padding:4px 12px 4px 0"><strong>Leave type</strong></td><td>${input.request.leaveType}</td></tr>
-  <tr><td style="padding:4px 12px 4px 0"><strong>Period</strong></td><td>${input.request.startDate} to ${input.request.endDate}</td></tr>
-  <tr><td style="padding:4px 12px 4px 0"><strong>Days</strong></td><td>${input.request.days}</td></tr>
-  <tr><td style="padding:4px 12px 4px 0"><strong>Reliever</strong></td><td>${input.request.relieverName || 'Not configured'}</td></tr>
-</table>
-<p>${button(approveLink, 'Approve Leave', '#059669')}${button(rejectLink, 'Reject Leave', '#dc2626')}${button(portalLink, 'Open in Portal', '#2563eb')}</p>
-<p style="color:#64748b;font-size:12px">You can approve or reject directly from this email. Links expire after 7 days.</p>`;
+export const sendOvertimeApprovedEmail = async (input: {
+  recipientName: string;
+  recipientEmail: string | null;
+  projectCode: string;
+  workDate: string;
+  requestedHours: number;
+  timesheetLink: string;
+  baseUrl?: string | null;
+}) => {
+  const to = compact(input.recipientEmail);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const email = buildOvertimeApprovedEmail({ ...input, baseUrl: input.baseUrl });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
 
-  return sendTransactionalEmail({ to, subject, text, html });
+export const sendOvertimeRejectedEmail = async (input: {
+  recipientName: string;
+  recipientEmail: string | null;
+  projectCode: string;
+  projectName: string;
+  workDate: string;
+  actorName?: string;
+  reason?: string;
+  workspaceLink: string;
+  baseUrl?: string | null;
+}) => {
+  const to = compact(input.recipientEmail);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const email = buildOvertimeRejectedEmail({ ...input, baseUrl: input.baseUrl });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
 };

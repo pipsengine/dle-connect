@@ -1,7 +1,15 @@
 import { readUsers } from '@/lib/auth/auth-store';
 import type { SessionPayload } from '@/lib/auth/session';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
-import { sendPayrollApprovalRequestEmail } from '@/lib/mail-service';
+import {
+  sendPayrollApprovalRequestEmail,
+  sendPayrollFullyApprovedEmail,
+  sendPayrollRejectedEmail,
+  sendPayrollReleasedEmail,
+  sendPayrollRevisionRequestedEmail,
+  sendPayrollStageApprovedEmail,
+  sendPayrollSubmittedEmail,
+} from '@/lib/mail-service';
 import {
   createPayrollEmailActionToken,
   payrollApprovalWorkspaceUrl,
@@ -9,8 +17,8 @@ import {
 } from '@/lib/payroll-email-action-token';
 import {
   getCurrentPayrollApprovalStage,
-  type PayrollApprovalStageId,
   PAYROLL_APPROVAL_STAGES,
+  type PayrollApprovalStageId,
 } from '@/lib/payroll-approval-workflow';
 import type { UnifiedPayrollRun } from '@/lib/payroll-run-store';
 import type { PayrollSessionRole } from '@/lib/payroll-session';
@@ -25,6 +33,13 @@ const STAGE_ROLE_PATTERNS: Record<Exclude<PayrollApprovalStageId, 'payroll-offic
   'md-ceo': [/executive director/i, /executive management/i, /\bceo\b/i, /\bmd\b/i, /managing director/i],
 };
 
+const NEXT_STAGE_LABEL: Partial<Record<PayrollApprovalStageId, string>> = {
+  'payroll-officer': 'HR Manager approval',
+  'hr-manager': 'Finance Manager approval',
+  'finance-manager': 'CFO approval',
+  cfo: 'MD / CEO approval',
+};
+
 type ApproverRecipient = {
   id: string;
   username: string;
@@ -32,6 +47,27 @@ type ApproverRecipient = {
   email: string;
   roles: string[];
 };
+
+const runSummary = (run: UnifiedPayrollRun) => ({
+  periodLabel: run.periodLabel,
+  grossPay: run.grossPay,
+  netPay: run.netPay,
+  employeeCount: run.employeeCount,
+});
+
+const systemSessionFor = (recipient: ApproverRecipient): SessionPayload => ({
+  sub: recipient.id,
+  username: recipient.username,
+  fullName: recipient.fullName,
+  employeeCode: recipient.username,
+  roles: recipient.roles,
+  permissions: [],
+  status: 'Active',
+  firstLoginRequired: false,
+  passwordResetRequired: false,
+  iat: Math.floor(Date.now() / 1000),
+  exp: Math.floor(Date.now() / 1000) + 3600,
+});
 
 export const resolvePayrollApproverRecipients = async (stageId: PayrollApprovalStageId): Promise<ApproverRecipient[]> => {
   if (stageId === 'payroll-officer') return [];
@@ -68,19 +104,54 @@ export const resolvePayrollApproverRecipients = async (stageId: PayrollApprovalS
   }].filter((item) => item.email);
 };
 
-const systemSessionFor = (recipient: ApproverRecipient): SessionPayload => ({
-  sub: recipient.id,
-  username: recipient.username,
-  fullName: recipient.fullName,
-  employeeCode: recipient.username,
-  roles: recipient.roles,
-  permissions: [],
-  status: 'Active',
-  firstLoginRequired: false,
-  passwordResetRequired: false,
-  iat: Math.floor(Date.now() / 1000),
-  exp: Math.floor(Date.now() / 1000) + 3600,
-});
+export const resolvePayrollOfficerRecipients = async (run: UnifiedPayrollRun): Promise<ApproverRecipient[]> => {
+  const users = await readUsers();
+  const officers = users
+    .filter((user) => user.roles.some((role) => /payroll officer|payroll supervisor/i.test(role)) && compact(user.email))
+    .map((user) => ({
+      id: user.id,
+      username: user.username,
+      fullName: user.fullName,
+      email: compact(user.email),
+      roles: user.roles,
+    }));
+  if (officers.length) return officers;
+
+  const submitter = users.find((user) =>
+    lower(user.fullName) === lower(run.submittedBy)
+    || lower(user.username) === lower(run.submittedBy)
+    || lower(user.fullName) === lower(run.createdBy),
+  );
+  if (submitter?.email) {
+    return [{
+      id: submitter.id,
+      username: submitter.username,
+      fullName: submitter.fullName,
+      email: compact(submitter.email),
+      roles: submitter.roles,
+    }];
+  }
+
+  const fallback = compact(process.env.PAYROLL_APPROVAL_FALLBACK_EMAIL);
+  return fallback ? [{
+    id: 'payroll-officer-fallback',
+    username: 'Payroll Officer',
+    fullName: 'Payroll Officer',
+    email: fallback,
+    roles: ['Payroll Officer'],
+  }] : [];
+};
+
+export const sessionMatchesPayrollToken = async (session: SessionPayload, payload: { recipientEmail: string; recipientUsername: string }) => {
+  if (session.isGlobalAdmin) return true;
+  const users = await readUsers();
+  const user = users.find((item) => item.id === session.sub || item.username === session.username);
+  const tokenEmail = lower(payload.recipientEmail);
+  const tokenUsername = lower(payload.recipientUsername);
+  return lower(user?.email) === tokenEmail
+    || lower(session.username) === tokenUsername
+    || lower(user?.username) === tokenUsername;
+};
 
 export const notifyPayrollApprovalStage = async (input: {
   run: UnifiedPayrollRun;
@@ -94,6 +165,7 @@ export const notifyPayrollApprovalStage = async (input: {
   const recipients = await resolvePayrollApproverRecipients(input.stageId);
   let notified = 0;
   let emailed = 0;
+  const workspaceUrl = payrollApprovalWorkspaceUrl(input.run.period, input.baseUrl);
 
   for (const recipient of recipients) {
     const approveToken = createPayrollEmailActionToken({
@@ -115,7 +187,6 @@ export const notifyPayrollApprovalStage = async (input: {
 
     const authorizeApproveUrl = payrollAuthorizePageUrl(approveToken, input.baseUrl);
     const authorizeRejectUrl = payrollAuthorizePageUrl(rejectToken, input.baseUrl);
-    const workspaceUrl = payrollApprovalWorkspaceUrl(input.run.period, input.baseUrl);
 
     await createEnterpriseNotification(systemSessionFor(recipient), {
       kind: 'Approval',
@@ -140,6 +211,7 @@ export const notifyPayrollApprovalStage = async (input: {
       recipient,
       run: input.run,
       stageTitle: stage.title,
+      stageId: input.stageId,
       approveUrl: authorizeApproveUrl,
       rejectUrl: authorizeRejectUrl,
       workspaceUrl,
@@ -161,13 +233,138 @@ export const notifyNextPayrollApprovalStage = async (input: {
   return notifyPayrollApprovalStage({ ...input, stageId: stage.id });
 };
 
-export const sessionMatchesPayrollToken = async (session: SessionPayload, payload: { recipientEmail: string; recipientUsername: string }) => {
-  if (session.isGlobalAdmin) return true;
-  const users = await readUsers();
-  const user = users.find((item) => item.id === session.sub || item.username === session.username);
-  const tokenEmail = lower(payload.recipientEmail);
-  const tokenUsername = lower(payload.recipientUsername);
-  return lower(user?.email) === tokenEmail
-    || lower(session.username) === tokenUsername
-    || lower(user?.username) === tokenUsername;
+export const notifyPayrollSubmitted = async (input: {
+  run: UnifiedPayrollRun;
+  actor?: string;
+  baseUrl?: string | null;
+}) => {
+  const recipients = await resolvePayrollOfficerRecipients(input.run);
+  const workspaceUrl = payrollApprovalWorkspaceUrl(input.run.period, input.baseUrl);
+  let emailed = 0;
+  for (const recipient of recipients) {
+    const mail = await sendPayrollSubmittedEmail({
+      recipient,
+      run: input.run,
+      actorName: input.actor,
+      workspaceUrl,
+      baseUrl: input.baseUrl,
+    });
+    if (mail.sent) emailed += 1;
+  }
+  return { emailed };
+};
+
+export const notifyPayrollStageCompleted = async (input: {
+  run: UnifiedPayrollRun;
+  completedStageId: PayrollApprovalStageId;
+  actor: string;
+  baseUrl?: string | null;
+}) => {
+  const stage = PAYROLL_APPROVAL_STAGES.find((item) => item.id === input.completedStageId);
+  if (!stage) return { emailed: 0 };
+  const recipients = await resolvePayrollOfficerRecipients(input.run);
+  const workspaceUrl = payrollApprovalWorkspaceUrl(input.run.period, input.baseUrl);
+  const nextStage = NEXT_STAGE_LABEL[input.completedStageId] || 'next approval stage';
+  let emailed = 0;
+  for (const recipient of recipients) {
+    const mail = await sendPayrollStageApprovedEmail({
+      recipient,
+      run: input.run,
+      completedStage: stage.title,
+      nextStage,
+      actorName: input.actor,
+      workspaceUrl,
+      baseUrl: input.baseUrl,
+    });
+    if (mail.sent) emailed += 1;
+  }
+  return { emailed };
+};
+
+export const notifyPayrollFullyApproved = async (input: {
+  run: UnifiedPayrollRun;
+  actor: string;
+  baseUrl?: string | null;
+}) => {
+  const recipients = await resolvePayrollOfficerRecipients(input.run);
+  const workspaceUrl = payrollApprovalWorkspaceUrl(input.run.period, input.baseUrl);
+  let emailed = 0;
+  for (const recipient of recipients) {
+    const mail = await sendPayrollFullyApprovedEmail({
+      recipient,
+      run: input.run,
+      actorName: input.actor,
+      workspaceUrl,
+      baseUrl: input.baseUrl,
+    });
+    if (mail.sent) emailed += 1;
+  }
+  return { emailed };
+};
+
+export const notifyPayrollRejected = async (input: {
+  run: UnifiedPayrollRun;
+  actor?: string;
+  reason?: string;
+  baseUrl?: string | null;
+}) => {
+  const recipients = await resolvePayrollOfficerRecipients(input.run);
+  const workspaceUrl = payrollApprovalWorkspaceUrl(input.run.period, input.baseUrl);
+  let emailed = 0;
+  for (const recipient of recipients) {
+    const mail = await sendPayrollRejectedEmail({
+      recipient,
+      run: input.run,
+      actorName: input.actor,
+      reason: input.reason,
+      workspaceUrl,
+      baseUrl: input.baseUrl,
+    });
+    if (mail.sent) emailed += 1;
+  }
+  return { emailed };
+};
+
+export const notifyPayrollRevisionRequested = async (input: {
+  run: UnifiedPayrollRun;
+  actor?: string;
+  reason?: string;
+  baseUrl?: string | null;
+}) => {
+  const recipients = await resolvePayrollOfficerRecipients(input.run);
+  const workspaceUrl = payrollApprovalWorkspaceUrl(input.run.period, input.baseUrl);
+  let emailed = 0;
+  for (const recipient of recipients) {
+    const mail = await sendPayrollRevisionRequestedEmail({
+      recipient,
+      run: input.run,
+      actorName: input.actor,
+      reason: input.reason,
+      workspaceUrl,
+      baseUrl: input.baseUrl,
+    });
+    if (mail.sent) emailed += 1;
+  }
+  return { emailed };
+};
+
+export const notifyPayrollReleased = async (input: {
+  run: UnifiedPayrollRun;
+  actor: string;
+  baseUrl?: string | null;
+}) => {
+  const recipients = await resolvePayrollOfficerRecipients(input.run);
+  const workspaceUrl = `${payrollApprovalWorkspaceUrl(input.run.period, input.baseUrl).replace('/payroll-approval', '/payroll-management')}?period=${encodeURIComponent(input.run.period)}`;
+  let emailed = 0;
+  for (const recipient of recipients) {
+    const mail = await sendPayrollReleasedEmail({
+      recipient,
+      run: input.run,
+      actorName: input.actor,
+      workspaceUrl,
+      baseUrl: input.baseUrl,
+    });
+    if (mail.sent) emailed += 1;
+  }
+  return { emailed };
 };

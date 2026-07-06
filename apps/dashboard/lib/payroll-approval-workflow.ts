@@ -93,6 +93,14 @@ export const PAYROLL_APPROVAL_STAGES: PayrollApprovalStageDefinition[] = [
   },
 ];
 
+export const PAYROLL_STAGE_ACCENT_COLORS: Record<PayrollApprovalStageId, string> = {
+  'payroll-officer': '#11A0E6',
+  'hr-manager': '#059669',
+  'finance-manager': '#D97706',
+  'cfo': '#7C3AED',
+  'md-ceo': '#0891B2',
+};
+
 export const normalizePayrollApprovalAction = (action: string): PayrollApprovalAction | string => {
   if (action === 'submit') return 'submit-run';
   if (action === 'reject') return 'reject-run';

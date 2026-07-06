@@ -110,6 +110,7 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
   const permissions = session.permissions || [];
   if (session.isGlobalAdmin || roles.includes('Super Administrator')) return true;
   const path = normalizePath(pathname);
+  if (path.includes('/authorize') || path.includes('/email-action')) return true;
   const explicitOptions = hrisRoutePermissionOptions(path);
   if (explicitOptions && hasAnyPermission(permissions, explicitOptions)) return true;
   if (!isHrPortalUser(session)) return false;
