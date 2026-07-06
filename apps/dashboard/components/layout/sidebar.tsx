@@ -31,6 +31,10 @@ const requiredPermission = (route?: string) => {
   if (route.startsWith('/hris/workforce-management/timesheet-approval') || route.startsWith('/hris/time-and-logs/timesheet-approval')) return 'operations.timesheets.approve';
   if (route.startsWith('/hris/workforce-management/timesheet-reports') || route.startsWith('/hris/time-and-logs/timesheet-reports')) return 'operations.timesheets.view';
   if (route.startsWith('/hris/workforce-management/timesheet-period') || route.startsWith('/hris/time-and-logs/timesheet-period')) return 'timesheet.period.manage';
+  if (route.startsWith('/hris/payroll-management/bank-finance') || route.startsWith('/hris/payroll-management/bank-and-finance')) {
+    return 'page.payroll.management.bank-finance.view';
+  }
+  if (route.startsWith('/hris/payroll-management')) return 'payroll.view';
   if (route.startsWith('/hris/payroll')) return 'payroll.view';
   if (route.startsWith('/hris/employees')) return 'employees.view';
   if (route.startsWith('/hris/leave-management')) return 'leave.view';
@@ -54,7 +58,16 @@ const requiredPermission = (route?: string) => {
 
 const canAccess = (permissions: string[], required: string) => {
   if (permissions.includes('*') || permissions.includes(required)) return true;
-  return permissions.includes(`${required.split('.')[0]}.*`);
+  const module = required.split('.')[0];
+  if (permissions.includes(`${module}.*`)) return true;
+  if (required === 'payroll.view') {
+    return permissions.some((item) =>
+      item === 'page.payroll.management.view'
+      || item === 'page.payroll.management.bank-finance.view'
+      || item.startsWith('page.payroll.management.'),
+    );
+  }
+  return false;
 };
 
 export function Sidebar({

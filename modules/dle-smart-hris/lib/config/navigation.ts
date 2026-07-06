@@ -166,11 +166,12 @@ export const navigationConfig: NavItem[] = [
     slug: 'payroll-management',
     icon: Banknote,
     group: 'main',
-    permissionKey: 'hris.payroll',
+    permissionKey: 'page.payroll.management.view',
     route: '/payroll-management',
     subItems: makeSubItems('/payroll-management', [
       'Dashboard',
       'Workflow',
+      'Payroll Approval',
       'Pay Setup',
       'Earnings',
       'Deductions',
@@ -178,9 +179,12 @@ export const navigationConfig: NavItem[] = [
       'Statutory',
       'Bank & Finance',
       'Reports',
-    ], 'hris.payroll').map((item) =>
-      item.slug === 'process-payroll' ? { ...item, route: '/payroll-management/payroll-processing' } : item,
-    ),
+    ], 'page.payroll.management').map((item) => {
+      if (item.slug === 'process-payroll') return { ...item, route: '/payroll-management/payroll-processing' };
+      if (item.slug === 'payroll-approval') return { ...item, route: '/payroll/payroll-approval', permissionKey: 'page.hris.payroll.approval.view' };
+      if (item.slug === 'bank-finance') return { ...item, route: '/payroll-management/bank-finance', permissionKey: 'page.payroll.management.bank-finance.view' };
+      return item;
+    }),
   },
   {
     id: 'benefits',

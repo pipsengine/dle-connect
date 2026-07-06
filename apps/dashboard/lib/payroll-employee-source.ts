@@ -328,14 +328,19 @@ const enrichEmployeesFromSagePayroll = async (employees: DleEmployeeDirectoryRow
         : moneyFrom(employee.periodSalary, sage.periodSalary, ratePerDay ? ratePerDay * workingDays : null);
       const sageGrade = str(sage.jobGradeCode) || str(sage.jobGrade);
       const salaryGrade = !isGenericPayrollGrade(employee.salaryGrade) ? employee.salaryGrade : sageGrade || employee.salaryGrade;
+      const bankFields = withNormalizedBankCodes({
+        bankName: employee.bankName || bankDetail?.bankName || sage.bankName || '',
+        bankCode: employee.bankCode || bankDetail?.bankCode || sage.bankCode || '',
+        branchCode: employee.branchCode || bankDetail?.branchCode || sage.branchCode || '',
+      });
       return {
         ...employee,
         jobGrade: employee.jobGrade || str(sage.jobGrade) || sageGrade || '',
         salaryGrade,
-        bankName: employee.bankName || bankDetail?.bankName || sage.bankName || '',
-        bankCode: employee.bankCode || bankDetail?.bankCode || sage.bankCode || '',
+        bankName: bankFields.bankName || employee.bankName || bankDetail?.bankName || sage.bankName || '',
+        bankCode: bankFields.bankCode,
         branchName: employee.branchName || bankDetail?.branchName || sage.branchName || '',
-        branchCode: employee.branchCode || bankDetail?.branchCode || sage.branchCode || '',
+        branchCode: bankFields.branchCode,
         accountNo: employee.accountNo || bankDetail?.accountNo || sage.accountNo || '',
         accountName: employee.accountName || bankDetail?.accountName || sage.accountName || '',
         pensionProvider: employee.pensionProvider || pensionProvider,

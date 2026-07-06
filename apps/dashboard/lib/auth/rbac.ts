@@ -97,6 +97,18 @@ export type RoleDefinition = {
 const crud = (module: string) => actions.map((action) => `${module}.${action}`);
 const read = (module: string) => [`${module}.view`, `${module}.export`];
 
+const financeBankFinancePerms = [
+  'page.payroll.management.bank-finance.view',
+  'reports.payroll.bank-schedule.view',
+  'reports.payroll.bank-schedule.export',
+  'button.payroll.post.view',
+  'button.payroll.post.post',
+  'payroll.workflow.finance-review.view',
+  'payroll.workflow.finance-review.approve',
+  'finance.view',
+  'finance.export',
+];
+
 const role = (name: EnterpriseRole, category: string, permissions: string[], description: string): RoleDefinition => ({
   name,
   category,
@@ -131,14 +143,14 @@ export const roleDefinitions: RoleDefinition[] = [
   role('Payroll Supervisor', 'Payroll', ['payroll.view', 'payroll.edit', 'payroll.approve', 'payroll.export'], 'Payroll supervision.'),
   role('Payroll Approver', 'Payroll', ['payroll.view', 'payroll.approve', 'payroll.reject'], 'Payroll approval authority.'),
   role('Payroll Auditor', 'Payroll', ['payroll.view', 'payroll.audit', 'audit.view', 'reports.export'], 'Payroll audit access.'),
-  role('Finance Payroll Reviewer', 'Payroll', ['payroll.view', 'payroll.approve', 'finance.view'], 'Finance-side payroll review.'),
-  role('Finance Administrator', 'Finance', ['finance.*'], 'Finance module administration.'),
-  role('Finance Manager', 'Finance', ['finance.view', 'finance.approve', 'finance.export', 'reports.view'], 'Finance management.'),
-  role('Accountant', 'Finance', ['finance.view', 'finance.create', 'finance.edit'], 'Accounting transactions.'),
+  role('Finance Payroll Reviewer', 'Payroll', [...financeBankFinancePerms, 'payroll.approve', 'payroll.reject'], 'Finance-side bank schedule, journal posting, and payroll review.'),
+  role('Finance Administrator', 'Finance', ['finance.*', ...financeBankFinancePerms], 'Finance module administration.'),
+  role('Finance Manager', 'Finance', [...financeBankFinancePerms, 'finance.approve', 'reports.view'], 'Finance management with bank-and-finance payroll workspace access only.'),
+  role('Accountant', 'Finance', [...financeBankFinancePerms, 'finance.create', 'finance.edit'], 'Accounting transactions and bank-and-finance payroll outputs.'),
   role('Accounts Payable Officer', 'Finance', ['finance.ap.view', 'finance.ap.create', 'finance.ap.edit'], 'Accounts payable operations.'),
   role('Accounts Receivable Officer', 'Finance', ['finance.ar.view', 'finance.ar.create', 'finance.ar.edit'], 'Accounts receivable operations.'),
   role('Budget Officer', 'Finance', ['budget.view', 'budget.create', 'budget.edit', 'budget.export'], 'Budget management.'),
-  role('Treasury Officer', 'Finance', ['treasury.view', 'treasury.create', 'treasury.edit'], 'Treasury operations.'),
+  role('Treasury Officer', 'Finance', [...financeBankFinancePerms, 'treasury.view', 'treasury.create', 'treasury.edit'], 'Treasury operations and bank payment outputs.'),
   role('Procurement Administrator', 'Procurement', ['procurement.*'], 'Procurement administration.'),
   role('Procurement Officer', 'Procurement', ['procurement.view', 'procurement.create', 'procurement.edit'], 'Procurement operations.'),
   role('Procurement Manager', 'Procurement', ['procurement.view', 'procurement.approve', 'procurement.export'], 'Procurement management.'),

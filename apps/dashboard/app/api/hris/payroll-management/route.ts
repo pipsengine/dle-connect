@@ -10,6 +10,7 @@ import { appendPayrollAudit, capturePayrollSnapshot, getPayrollRunForPeriod, lis
 import { normalizePayrollApprovalAction } from '@/lib/payroll-approval-workflow';
 import { managementPermissions, payrollSessionContext, processingPermissions } from '@/lib/payroll-session';
 import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
+import { FINANCE_ONLY_PAYROLL_ACTIONS, isFinancePayrollOnlyUser } from '@/lib/access/payroll-access';
 import { buildExcelHtml, excelMimeType } from '@/lib/excel-export';
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
@@ -315,13 +316,17 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { role, actor, ip, isGlobalAdmin, processingPerms } = await payrollSessionContext(request);
+  const { role, actor, ip, isGlobalAdmin, processingPerms, permissions } = await payrollSessionContext(request);
   const perms = managementPermissions(role);
   const body = await request.json().catch(() => ({}));
   const action = normalizePayrollApprovalAction(compact(body.action));
   const period = compact(body.period) || (await getActivePayrollPeriod());
   const reason = compact(body.reason);
   const comment = compact(body.comment);
+
+  if (isFinancePayrollOnlyUser(permissions || [], { isGlobalAdmin }) && !FINANCE_ONLY_PAYROLL_ACTIONS.has(action)) {
+    return jsonErr(403, 'Finance users are restricted to Bank & Finance payroll actions only.');
+  }
 
   if (action === 'set-nhf-applicability') {
     if (!perms.canManageRun && !perms.canConfigure) return jsonErr(403, 'Permission denied');

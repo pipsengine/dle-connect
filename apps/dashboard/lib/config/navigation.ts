@@ -67,6 +67,9 @@ export const navigationConfig: NavItem[] = [
     permissionKey: 'view_hris',
     subItems: [
       { title: 'HR Management', slug: 'hr-management', route: '/hris', permissionKey: 'view_hris' },
+      { title: 'Payroll Management', slug: 'payroll-management', route: '/hris/payroll-management', permissionKey: 'page.payroll.management.view' },
+      { title: 'Bank & Finance', slug: 'bank-finance', route: '/hris/payroll-management/bank-finance', permissionKey: 'page.payroll.management.bank-finance.view' },
+      { title: 'Payroll Approval', slug: 'payroll-approval', route: '/hris/payroll/payroll-approval', permissionKey: 'page.hris.payroll.approval.view' },
       { title: 'Workforce Portal', slug: 'workforce-portal', route: '/workforce-portal', permissionKey: 'view_workforce_portal' },
     ]
   },

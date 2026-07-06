@@ -220,9 +220,11 @@ export default function PayrollCommandCenter({
     .slice(0, 5);
   const categoryMax = Math.max(...categories.map((c) => c.employees), 1);
 
+  const payrollHasRun = ['Computed', 'Calculated', 'Ready for Approval', 'Validated', 'Submitted', 'Under Review', 'HR Approved', 'Finance Approved', 'CFO Approved', 'Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(status);
+
   const quickActions = [
     { id: 'validate-payroll', label: 'Run Payroll Validation', icon: ClipboardCheck, enabled: payload?.permissions.canManageRun },
-    { id: 'create-run', label: 'Run Payroll', icon: PlayCircle, enabled: payload?.permissions.canManageRun },
+    { id: 'create-run', label: payrollHasRun ? 'Re-run Payroll' : 'Run Payroll', icon: PlayCircle, enabled: payload?.permissions.canManageRun && status !== 'Closed' },
     { id: 'submit-run', label: 'Submit for Approval', icon: Send, enabled: payload?.permissions.canManageRun },
     { id: 'approve-run', label: 'Approve Payroll', icon: BadgeCheck, enabled: payload?.permissions.canApprove },
     { id: 'release-run', label: 'Release Payroll', icon: CheckCircle2, enabled: payload?.permissions.canManageRun },

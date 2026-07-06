@@ -553,24 +553,28 @@ export default function PayrollWorkflowClient() {
     const computed = COMPUTED.includes(runStatus);
     const list: StageAction[] = [];
 
-    if (preSubmission) {
-      list.push({
-        id: 'validate-payroll',
-        label: 'Validate Payroll',
-        icon: ClipboardCheck,
-        variant: 'secondary',
-        allowed: canManage,
-        reason: canManage ? '' : 'You are not permitted to validate payroll.',
-      });
-      list.push({
-        id: 'create-run',
-        label: computed ? 'Re-run Payroll' : 'Run Payroll',
-        icon: computed ? RefreshCw : Play,
-        variant: computed ? 'secondary' : 'primary',
-        allowed: canManage && blocked === 0,
-        reason: blocked > 0 ? `Resolve ${number(blocked)} blocked employee(s) before running payroll.` : canManage ? '' : 'You are not permitted to run payroll.',
-      });
-    }
+    list.push({
+      id: 'validate-payroll',
+      label: 'Validate Payroll',
+      icon: ClipboardCheck,
+      variant: 'secondary',
+      allowed: canManage && preSubmission,
+      reason: canManage ? (preSubmission ? '' : 'Validation repeats only before submission.') : 'You are not permitted to validate payroll.',
+    });
+    list.push({
+      id: 'create-run',
+      label: computed ? 'Re-run Payroll' : 'Run Payroll',
+      icon: computed ? RefreshCw : Play,
+      variant: computed ? 'secondary' : 'primary',
+      allowed: canManage && blocked === 0 && runStatus !== 'Closed',
+      reason: runStatus === 'Closed'
+        ? 'Reopen the payroll period before re-running payroll.'
+        : blocked > 0
+          ? `Resolve ${number(blocked)} blocked employee(s) before running payroll.`
+          : canManage
+            ? ''
+            : 'You are not permitted to run payroll.',
+    });
 
     if ((computed || VALIDATED.includes(runStatus)) && !SUBMITTED.includes(runStatus)) {
       list.push({

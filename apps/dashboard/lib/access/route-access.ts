@@ -1,4 +1,5 @@
 import type { SessionPayload } from '@/lib/auth/session';
+import { canAccessPayrollPath, payrollRoutePermissionOptions } from '@/lib/access/payroll-access';
 
 type SessionLike = Pick<SessionPayload, 'department' | 'unit' | 'roles' | 'permissions' | 'isGlobalAdmin'>;
 
@@ -94,11 +95,10 @@ export const hrisRoutePermissionOptions = (pathname: string): string[] | null =>
     return ['operations.timesheets.view', 'operations.timesheets.export', 'timesheet.view', 'timesheet.export', 'payroll.view'];
   }
   if (path === '/hris/workforce-management/timesheet-period' || path === '/hris/time-and-logs/timesheet-period') {
-    return ['timesheet.period.manage', 'timesheet.manage', 'timesheet.work-center.configure'];
+    return ['timesheet.period.manage', 'timesheet.period.view', 'timesheet.period.configure', 'timesheet.manage', 'timesheet.work-center.configure'];
   }
-  if (path.startsWith('/hris/payroll') || path.startsWith('/hris/payroll-management')) {
-    return ['payroll.view', 'page.payroll.management.view'];
-  }
+  const payrollOptions = payrollRoutePermissionOptions(path);
+  if (payrollOptions) return payrollOptions;
   if (path.startsWith('/hris/performance-management')) {
     return ['performance.view', 'hris.performance-management', 'hris.view', 'page.hris.management.view'];
   }
@@ -112,7 +112,14 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
   const path = normalizePath(pathname);
   if (path.includes('/authorize') || path.includes('/email-action')) return true;
   const explicitOptions = hrisRoutePermissionOptions(path);
-  if (explicitOptions && hasAnyPermission(permissions, explicitOptions)) return true;
+  if (explicitOptions) {
+    if (!hasAnyPermission(permissions, explicitOptions)) return false;
+    if ((path.startsWith('/hris/payroll') || path.startsWith('/hris/payroll-management'))
+      && !canAccessPayrollPath(permissions, path, { isGlobalAdmin: session.isGlobalAdmin })) {
+      return false;
+    }
+    return true;
+  }
   if (!isHrPortalUser(session)) return false;
   if (path === '/hris') return hasAnyPermission(permissions, ['page.hris.management.view', 'hris.view']);
   if (path.startsWith('/hris/employees')) return hasAnyPermission(permissions, ['employees.view', 'hris.view']);

@@ -251,7 +251,9 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     if (action === 'create-run') {
       run.validatedAt = run.validatedAt || nowIso();
       run.validatedBy = run.validatedBy || actor;
-      if (['Revision Requested', 'Rejected'].includes(run.status)) {
+      const needsApprovalReset = Boolean(run.submittedAt)
+        || ['Submitted', 'Under Review', 'HR Approved', 'Finance Approved', 'CFO Approved', 'Approved', 'Revision Requested', 'Rejected'].includes(run.status);
+      if (needsApprovalReset) {
         clearPayrollApprovalSignoffs(run);
       }
     }

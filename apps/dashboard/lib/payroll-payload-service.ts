@@ -18,6 +18,7 @@ import {
 } from '@/lib/payroll-readiness';
 import { reapplyPayrollValidationPolicy } from '@/lib/payroll-tolerance';
 import { managementPermissions, payrollSessionContext, processingPermissions } from '@/lib/payroll-session';
+import { isFinancePayrollOnlyUser } from '@/lib/access/payroll-access';
 import {
   getPayrollApprovalStageState,
   resolvePayrollApprovalNextOwner,
@@ -322,8 +323,9 @@ const mapManagementRun = (item: Awaited<ReturnType<typeof listPayrollRuns>>[numb
 });
 
 export const buildManagementPayload = async (request: Request, requestedPeriod?: string) => {
-  const { role } = await payrollSessionContext(request);
+  const { role, permissions, isGlobalAdmin } = await payrollSessionContext(request);
   const perms = managementPermissions(role);
+  const financeOnlyAccess = isFinancePayrollOnlyUser(permissions || [], { isGlobalAdmin });
   const periodState = await listPayrollPeriods();
   const period = requestedPeriod || periodState.activePeriod || (await getActivePayrollPeriod());
   const [runs, run, auditTrail] = await Promise.all([listPayrollRuns(), getPayrollRunForPeriod(period), listPayrollAudit(50)]);
@@ -354,6 +356,7 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
     dataSource: calculation.dataSource,
     role,
     permissions: perms,
+    access: { financeOnlyAccess },
     period,
     periodLabel: calculation.periodLabel,
     dataMode,

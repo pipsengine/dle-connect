@@ -11,6 +11,8 @@ import DeductionsManagementHub, { type DeductionsTabId } from './DeductionsManag
 import StatutoryComplianceHub, { type StatutoryTabId } from './StatutoryComplianceHub';
 import BankFinanceHub, { type BankFinanceTabId } from './BankFinanceHub';
 import PayrollReportsHub, { type ReportsTabId } from './PayrollReportsHub';
+import PayrollApprovalClient from '../payroll/payroll-approval/PayrollApprovalClient';
+import { FINANCE_ONLY_PAYROLL_SECTION } from '@/lib/access/payroll-access';
 import {
   Bar,
   BarChart,
@@ -48,6 +50,7 @@ import {
   FileSpreadsheet,
   Filter,
   GitBranch,
+  ShieldCheck,
   Landmark,
   Lock,
   Mail,
@@ -59,7 +62,6 @@ import {
   Search,
   Send,
   Settings2,
-  ShieldCheck,
   Sparkles,
   TrendingUp,
   UserCheck,
@@ -170,6 +172,7 @@ type PayrollPayload = {
   dataSource?: { source: string; databaseAvailable: boolean; warning: string | null; employeeCount: number };
   role: Role;
   permissions: { canViewMoney: boolean; canManageRun: boolean; canApprove: boolean; canPost: boolean; canConfigure?: boolean; canReopen?: boolean; canExport: boolean };
+  access?: { financeOnlyAccess?: boolean };
   period: string;
   periodLabel: string;
   dataMode?: 'live' | 'snapshot' | 'run-header' | 'pending';
@@ -257,6 +260,7 @@ type SectionId =
   | 'dashboard'
   | 'process-payroll'
   | 'payroll-computation-workflow'
+  | 'payroll-approval'
   | 'salary-management'
   | 'earnings-management'
   | 'deductions-management'
@@ -385,6 +389,17 @@ const sections: SectionConfig[] = [
     tone: 'slate',
     tabs: [
       { id: 'workflow-status', label: 'Workflow Status', description: 'Live payroll preparation, computation, approval, release, reporting, audit, and compliance status.', legacyHref: '/hris/payroll-management/payroll-computation-workflow', items: ['Data collection', 'Pre-validation', 'Payroll computation', 'Approval workflow', 'Payroll release', 'Payroll outputs', 'Locking controls', 'Dashboard overview'] },
+    ],
+  },
+  {
+    id: 'payroll-approval',
+    label: 'Approval',
+    title: 'Payroll Approval',
+    description: 'Sequential HR, Finance, CFO, and MD/CEO approval with stage checklists, reject, and return-for-revision controls.',
+    icon: ShieldCheck,
+    tone: 'violet',
+    tabs: [
+      { id: 'approval-workspace', label: 'Approval Workspace', description: 'Review payroll totals, employee exceptions, and sign off at your approval stage.', legacyHref: '/hris/payroll/payroll-approval', items: ['HR Manager approval', 'Finance Manager approval', 'CFO approval', 'MD / CEO approval', 'Reject payroll', 'Return for revision', 'Approval audit trail'] },
     ],
   },
   {
@@ -723,6 +738,8 @@ const sectionAliases: Record<string, SectionId> = {
   'workflow-status': 'payroll-computation-workflow',
   'payroll-workflow-status': 'payroll-computation-workflow',
   'payroll-computation-and-approval-workflow': 'payroll-computation-workflow',
+  'payroll-approval': 'payroll-approval',
+  'approval-center': 'payroll-approval',
   'pay-setup': 'salary-management',
   earnings: 'earnings-management',
   'earnings-management': 'earnings-management',
@@ -814,8 +831,10 @@ const canRunAction = (actionItem: PayrollAction, role: Role, payload: PayrollPay
     if (id === 'close-period') return status === 'Closed';
     return false;
   };
-  if (actionCompleted(actionItem.id)) return { allowed: false, reason: 'This step is already completed. Continue to the next active step.' };
+  if (actionItem.id !== 'create-run' && actionCompleted(actionItem.id)) return { allowed: false, reason: 'This step is already completed. Continue to the next active step.' };
+  if (actionItem.id === 'create-run' && status === 'Closed') return { allowed: false, reason: 'Reopen the payroll period before re-running payroll.' };
   if (actionItem.id === 'create-run' && blockedEmployees > 0) return { allowed: false, reason: 'Resolve blocked payroll setup before processing.' };
+  if (actionItem.id === 'create-run') return { allowed: true, reason: '' };
   if (actionItem.id === 'submit-run' && blockedEmployees > 0) return { allowed: false, reason: 'Resolve blocked payroll setup before submitting payroll for approval.' };
   if (['cfo-approve', 'md-ceo-approve', 'approve-run'].includes(actionItem.id) && blockedEmployees > 0) {
     return { allowed: false, reason: 'Resolve blocked payroll setup before approval.' };
@@ -836,7 +855,6 @@ const canRunAction = (actionItem: PayrollAction, role: Role, payload: PayrollPay
     }
   }
   if (actionItem.id === 'validate-payroll' && !payrollRunIsPreSubmission(status)) return { allowed: false, reason: 'Validation can only be repeated before payroll is submitted for approval.' };
-  if (actionItem.id === 'create-run' && !payrollRunIsPreSubmission(status)) return { allowed: false, reason: 'Payroll can only be re-run before submission. Request revision or reopen the period to recalculate.' };
   if (actionItem.id === 'submit-run' && !['Computed', 'Calculated', 'Ready for Approval', 'Validated'].includes(status)) return { allowed: false, reason: 'Process payroll first. Submit activates after computation is complete.' };
   if (actionItem.id === 'approve-entire-workflow' && !['Submitted', 'Under Review'].includes(status)) return { allowed: false, reason: 'Submit payroll first. Entire workflow approval activates after submission.' };
   if (actionItem.id === 'release-run' && status !== 'Approved') return { allowed: false, reason: 'Payroll approval is required before release.' };
@@ -1824,8 +1842,13 @@ function ProcessPayrollWorkspace({
     return steps.map((step) => {
       const actionItem = resolveProcessingAction(step.id);
       const auth = canRunAction(actionItem, role, payload);
-      const repeatable = preSubmission && ['validate-payroll', 'create-run'].includes(step.id) && step.done;
-      const enabled = auth.allowed && (!step.done || repeatable);
+      const isRunStep = step.id === 'create-run';
+      const repeatable = isRunStep
+        ? auth.allowed && status !== 'Closed'
+        : preSubmission && step.id === 'validate-payroll' && step.done;
+      const enabled = isRunStep
+        ? auth.allowed
+        : auth.allowed && (!step.done || repeatable);
       return {
         ...step,
         repeatable,
@@ -1843,7 +1866,9 @@ function ProcessPayrollWorkspace({
     }
     return workflowSteps.find((step) => step.enabled && !step.repeatable) || workflowSteps.find((step) => step.enabled) || null;
   }, [workflowSteps, status, computedStatuses, submittedStatuses]);
-  const rerunStep = workflowSteps.find((step) => step.id === 'create-run' && step.repeatable && step.enabled) || null;
+  const createRunAuth = canRunAction(resolveProcessingAction('create-run'), role, payload);
+  const rerunStep = createRunAuth.allowed && status !== 'Closed' ? workflowSteps.find((step) => step.id === 'create-run') || { id: 'create-run', label: 'Run Payroll' } : null;
+  const rerunLabel = computedStatuses.includes(status) ? 'Re-run Payroll' : 'Run Payroll';
   const completedCount = workflowSteps.filter((step) => step.done).length;
 
   const readinessData = [
@@ -2016,12 +2041,12 @@ function ProcessPayrollWorkspace({
             {rerunStep ? (
               <button
                 type="button"
-                onClick={() => fire(rerunStep.id)}
-                disabled={busyAction === rerunStep.id}
+                onClick={() => fire('create-run')}
+                disabled={busyAction === 'create-run'}
                 className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 hover:bg-slate-50"
               >
-                <RefreshCcw className={`h-4 w-4 ${busyAction === rerunStep.id ? 'animate-spin' : ''}`} />
-                Re-run Payroll
+                <RefreshCcw className={`h-4 w-4 ${busyAction === 'create-run' ? 'animate-spin' : ''}`} />
+                {rerunLabel}
               </button>
             ) : null}
             {nextStep ? (
@@ -4241,6 +4266,11 @@ export default function PayrollManagementClient({
   const activeTabId = activeTabs[section.id] || defaultTabIdForSection(section);
   const activeTab = section.tabs.find((tab) => tab.id === activeTabId) || section.tabs[0] || emptyTab(activeTabId);
   const canViewMoney = Boolean(payload?.permissions.canViewMoney);
+  const financeOnlyAccess = Boolean(payload?.access?.financeOnlyAccess);
+  const visibleSections = useMemo(
+    () => (financeOnlyAccess ? sections.filter((item) => item.id === FINANCE_ONLY_PAYROLL_SECTION) : sections),
+    [financeOnlyAccess],
+  );
   const currentRun = payrollRunFor(payload);
   const lastLoaded = payload?.generatedAt || initialNow;
 
@@ -4306,6 +4336,13 @@ export default function PayrollManagementClient({
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!financeOnlyAccess) return;
+    if (sectionId === FINANCE_ONLY_PAYROLL_SECTION) return;
+    setSectionId(FINANCE_ONLY_PAYROLL_SECTION);
+    window.history.replaceState(null, '', '/hris/payroll-management/bank-finance');
+  }, [financeOnlyAccess, sectionId]);
 
   useEffect(() => {
     if (sectionId !== 'payroll-computation-workflow') return;
@@ -4593,7 +4630,7 @@ export default function PayrollManagementClient({
     const targets: Record<CommandCenterNavTab, { section: SectionId; tab?: string } | null> = {
       overview: null,
       processing: { section: 'payroll-processing', tab: 'payroll-run' },
-      approvals: { section: 'payroll-processing', tab: 'payroll-approval' },
+      approvals: { section: 'payroll-approval', tab: 'approval-workspace' },
       exceptions: { section: 'payroll-processing', tab: 'payroll-validation' },
       outputs: { section: 'finance-integration', tab: 'bank-schedule' },
       analytics: { section: 'reports-analytics', tab: 'standard-reports' },
@@ -4614,7 +4651,7 @@ export default function PayrollManagementClient({
   const navigateHubQuickLink = (link: HubQuickLinkId) => {
     const targets: Record<HubQuickLinkId, { section: SectionId; tab?: string }> = {
       'payroll-calendar': { section: 'payroll-processing', tab: 'payroll-period-management' },
-      'approval-center': { section: 'payroll-processing', tab: 'payroll-approval' },
+      'approval-center': { section: 'payroll-approval', tab: 'approval-workspace' },
       'payslip-publishing': { section: 'payroll-processing', tab: 'payslip-generation' },
       'audit-trail': { section: 'payroll-computation-workflow', tab: 'workflow-status' },
       'period-lock': { section: 'payroll-processing', tab: 'payroll-closing' },
@@ -5109,6 +5146,17 @@ export default function PayrollManagementClient({
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {canRunAction(resolveProcessingAction('create-run'), role, payload).allowed ? (
+                  <button
+                    type="button"
+                    onClick={() => triggerAction(resolveProcessingAction('create-run'))}
+                    disabled={busyAction === 'create-run'}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-violet-300 bg-violet-50 px-4 text-sm font-semibold text-violet-900 hover:bg-violet-100 disabled:opacity-60"
+                  >
+                    <RefreshCcw className={`h-4 w-4 ${busyAction === 'create-run' ? 'animate-spin' : ''}`} />
+                    {['Computed', 'Calculated', 'Ready for Approval', 'Validated', 'Submitted', 'Under Review', 'HR Approved', 'Finance Approved', 'CFO Approved', 'Approved', 'Released', 'Locked', 'Posted', 'Published'].includes(runStatus) ? 'Re-run Payroll' : 'Run Payroll'}
+                  </button>
+                ) : null}
                 <button type="button" onClick={() => void load(viewPeriod || payload?.period || null)} disabled={loading} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
                   <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                   {loading ? 'Refreshing' : 'Refresh'}
@@ -5318,7 +5366,7 @@ export default function PayrollManagementClient({
       <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-[250px_1fr]">
         <aside className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm xl:sticky xl:top-20">
           <nav className="grid grid-cols-2 gap-1 xl:grid-cols-1" aria-label="Payroll module pages">
-            {sections.map((item) => {
+            {visibleSections.map((item) => {
               const Icon = item.icon;
               const active = section.id === item.id;
               return (
@@ -5356,7 +5404,7 @@ export default function PayrollManagementClient({
             </div>
           </section>
 
-          {section.id !== 'payroll-computation-workflow' && section.id !== 'payroll-processing' ? (
+          {!['payroll-computation-workflow', 'payroll-approval'].includes(section.id) ? (
             <PayrollCommandBar
               section={section}
               activeTab={activeTab}
@@ -5367,7 +5415,7 @@ export default function PayrollManagementClient({
             />
           ) : null}
 
-          {section.id !== 'payroll-computation-workflow' && section.id !== 'payroll-processing' ? (
+          {!['payroll-computation-workflow', 'payroll-approval'].includes(section.id) ? (
             <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white p-2">
               <div className="flex min-w-max gap-1">
                 {section.tabs.map((tab) => (
@@ -5380,7 +5428,9 @@ export default function PayrollManagementClient({
           ) : null}
 
           <div className="mt-4">
-            {section.id === 'payroll-computation-workflow' ? (
+            {section.id === 'payroll-approval' ? (
+              <PayrollApprovalClient initialNow={new Date().toISOString()} />
+            ) : section.id === 'payroll-computation-workflow' ? (
               <PayrollComputationWorkflowPage payload={payload} canViewMoney={canViewMoney} role={role} runAction={runAction} busyAction={busyAction} onAudit={() => setAuditOpen(true)} exportCsv={exportCsv} exportExcel={exportExcel} />
             ) : section.id === 'payroll-processing' ? (
               activeTab.id === 'payroll-period-management' ? (

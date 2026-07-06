@@ -7,6 +7,7 @@ import {
   dormantLongPolicy,
   isConfirmedPermanent,
   isFourteenDayPaidLeaveEmployee,
+  auditLeaveAction,
   readLeaveApplicationsForReconciliation,
   readLeaveManagementPayload,
   validateLeaveAction,
@@ -1015,6 +1016,8 @@ export const upsertEssLeaveRequestToDb = async (item: EssLeaveRequest, employees
     .input('ActingOfficer', sql.NVarChar(180), clean(item.relieverName) || clean(item.relieverEmployeeId) || 'Not configured')
     .input('SupportingDocuments', sql.Int, Number(item.attachmentNames?.length || 0))
     .input('ExceptionsJson', sql.NVarChar(sql.MAX), JSON.stringify(exceptions))
+    .input('WorkflowJson', sql.NVarChar(sql.MAX), JSON.stringify(item.workflow || []))
+    .input('CommentsJson', sql.NVarChar(sql.MAX), JSON.stringify(item.comments || []))
     .query(`
 MERGE [hris].[LeaveApplications] AS target
 USING (SELECT @Id AS [Id]) AS source
@@ -1024,13 +1027,13 @@ WHEN MATCHED AND target.[StatusName] NOT IN (N'Cancelled', N'Rejected', N'Termin
   [Location]=@Location,[EmployeeCategory]=@EmployeeCategory,[LeaveType]=@LeaveType,[StartDate]=@StartDate,[EndDate]=@EndDate,
   [Days]=@Days,[StatusName]=@StatusName,[WorkflowStage]=@WorkflowStage,[ApprovalStatus]=@ApprovalStatus,
   [PolicyComplianceStatus]=@PolicyComplianceStatus,[BalanceImpact]=@BalanceImpact,[ActingOfficer]=@ActingOfficer,
-  [SupportingDocuments]=@SupportingDocuments,[ExceptionsJson]=@ExceptionsJson,[UpdatedAt]=SYSUTCDATETIME()
+  [SupportingDocuments]=@SupportingDocuments,[ExceptionsJson]=@ExceptionsJson,[WorkflowJson]=@WorkflowJson,[CommentsJson]=@CommentsJson,[UpdatedAt]=SYSUTCDATETIME()
 WHEN NOT MATCHED THEN INSERT
   ([Id],[SourceSystem],[EmployeeId],[FullName],[Department],[ManagerName],[Location],[EmployeeCategory],[LeaveType],[StartDate],[EndDate],
-   [Days],[StatusName],[WorkflowStage],[ApprovalStatus],[PolicyComplianceStatus],[BalanceImpact],[AvailableBalance],[ActingOfficer],[SupportingDocuments],[ExceptionsJson])
+   [Days],[StatusName],[WorkflowStage],[ApprovalStatus],[PolicyComplianceStatus],[BalanceImpact],[AvailableBalance],[ActingOfficer],[SupportingDocuments],[ExceptionsJson],[WorkflowJson],[CommentsJson])
 VALUES
   (@Id,@SourceSystem,@EmployeeId,@FullName,@Department,@ManagerName,@Location,@EmployeeCategory,@LeaveType,@StartDate,@EndDate,
-   @Days,@StatusName,@WorkflowStage,@ApprovalStatus,@PolicyComplianceStatus,@BalanceImpact,@AvailableBalance,@ActingOfficer,@SupportingDocuments,@ExceptionsJson);`);
+   @Days,@StatusName,@WorkflowStage,@ApprovalStatus,@PolicyComplianceStatus,@BalanceImpact,@AvailableBalance,@ActingOfficer,@SupportingDocuments,@ExceptionsJson,@WorkflowJson,@CommentsJson);`);
 };
 
 export const cancelEssLeaveRequest = async (input: {
@@ -1196,6 +1199,16 @@ export const transitionEssLeaveRequest = async (input: {
 
   const updated = nextRequests.find((item) => item.id === input.requestId)!;
   await upsertEssLeaveRequestToDb(updated, employees);
+  await auditLeaveAction({
+    user: input.actorName,
+    role: (approverKind === 'hr' ? 'HR Manager' : 'Supervisor') as LeaveRole,
+    action: approved ? 'approve' : 'reject',
+    record: input.requestId,
+    oldValue: found.status,
+    newValue: nextStatus,
+    comments: input.comment || undefined,
+    reason: input.comment || undefined,
+  }).catch(() => undefined);
 
   let allowanceMessage: string | undefined;
   if (approved && nextStatus === 'Approved'
@@ -1299,6 +1312,17 @@ export const applyHrisLeaveWorkflowAction = async (input: {
 UPDATE [hris].[LeaveApplications]
 SET [StatusName]=@StatusName,[WorkflowStage]=@WorkflowStage,[ApprovalStatus]=@ApprovalStatus,[UpdatedAt]=SYSUTCDATETIME()
 WHERE [Id]=@Id;`);
+
+  await auditLeaveAction({
+    user: input.actor,
+    role: input.role,
+    action: input.action,
+    record: input.applicationId,
+    oldValue: currentRaw || null,
+    newValue: nextEssStatus || hrisStatus,
+    comments: input.reason || undefined,
+    reason: input.reason || undefined,
+  }).catch(() => undefined);
 
   const { employees } = await readPayrollEmployees();
 

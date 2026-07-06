@@ -707,7 +707,11 @@ CREATE TABLE [hris].[LeaveAuditTrail] (
   [NewValue] NVARCHAR(MAX) NULL,
   [Comments] NVARCHAR(700) NULL,
   [Reason] NVARCHAR(700) NULL
-);`);
+);
+IF COL_LENGTH('[hris].[LeaveApplications]', 'WorkflowJson') IS NULL
+  ALTER TABLE [hris].[LeaveApplications] ADD [WorkflowJson] NVARCHAR(MAX) NULL;
+IF COL_LENGTH('[hris].[LeaveApplications]', 'CommentsJson') IS NULL
+  ALTER TABLE [hris].[LeaveApplications] ADD [CommentsJson] NVARCHAR(MAX) NULL;`);
     dbReady.value = true;
   }
   return pool;
