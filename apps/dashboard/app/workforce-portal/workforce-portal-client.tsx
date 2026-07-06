@@ -1100,7 +1100,6 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
-  const [showSecurityBanner, setShowSecurityBanner] = useState(true);
   const [leaveSection, setLeaveSection] = useState<string | null>(null);
 
   const navigateTab = (next: Tab, options?: { leaveSection?: string }) => {
@@ -1317,8 +1316,6 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
           payload={payload}
           initialNow={initialNow}
           onNavigate={navigateTab}
-          showSecurityBanner={showSecurityBanner}
-          onDismissSecurity={() => setShowSecurityBanner(false)}
         />
       )}
 

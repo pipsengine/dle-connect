@@ -115,12 +115,15 @@ const tabSectionIds: Partial<Record<ProfileTab, string[]>> = {
 const completionTabMap: Partial<Record<string, ProfileTab>> = {
   'Bank Details': 'Bank',
   'Emergency Contact': 'Contacts',
-  'Driving License': 'Documents',
+  'Means Of Identification': 'Documents',
   Certificates: 'Professional',
   'Personal Information': 'Personal',
   'Employment Information': 'Employment',
   'Contact Details': 'Contacts',
 };
+
+const hasIdentificationDocument = (documents: Array<{ title?: string; category?: string }>) =>
+  documents.some((item) => /license|driver|passport|national.?id|nin|identification|id.?card|voter/i.test(`${item.title || ''} ${item.category || ''}`));
 
 const sectionStatusClass = (status: string) => {
   const text = status.toLowerCase();
@@ -282,7 +285,7 @@ export function EssProfileDashboardView({
       { label: 'Bank Details', done: profileSections.some((item) => item.id === 'bank' && item.fields.some((field) => field.label === 'Bank' && !/not configured/i.test(field.value))), action: 'Add now' },
       { label: 'Contact Details', done: Boolean(employee?.phone && employee?.email), action: 'Completed' },
       { label: 'Emergency Contact', done: employee?.emergencyContactsComplete === true, action: 'Add now' },
-      { label: 'Driving License', done: documents.some((item) => /license|driver/i.test(`${item.title} ${item.category}`)), action: 'Add now' },
+      { label: 'Means Of Identification', done: hasIdentificationDocument(documents), action: 'Add now' },
       { label: 'Certificates', done: documents.some((item) => /certificate|certification/i.test(`${item.title} ${item.category}`)), action: 'Add now' },
     ],
     [documents, employee, profileSections],
@@ -305,8 +308,8 @@ export function EssProfileDashboardView({
     if (!documents.some((item) => /passport/i.test(`${item.title} ${item.category}`))) {
       rows.push({ title: 'Passport document not uploaded', severity: 'high' });
     }
-    if (!documents.some((item) => /license|driver/i.test(`${item.title} ${item.category}`))) {
-      rows.push({ title: 'Driver license missing', severity: 'medium' });
+    if (!hasIdentificationDocument(documents)) {
+      rows.push({ title: 'Means of identification missing', severity: 'medium' });
     }
     if (!employee?.emergencyContactsComplete) {
       rows.push({ title: 'Emergency contact incomplete', severity: 'medium' });
@@ -322,8 +325,8 @@ export function EssProfileDashboardView({
     if ((payload?.widgets?.requests.pending || 0) > 0) {
       rows.push({ title: 'HR approval pending', status: 'Pending', tone: 'bg-[#FFFBEB] text-[#B45309]' });
     }
-    if (!documents.some((item) => /license|driver/i.test(`${item.title} ${item.category}`))) {
-      rows.push({ title: 'Upload driver license', status: 'Overdue', tone: 'bg-[#FEF2F2] text-[#B91C1C]' });
+    if (!hasIdentificationDocument(documents)) {
+      rows.push({ title: 'Upload means of identification', status: 'Overdue', tone: 'bg-[#FEF2F2] text-[#B91C1C]' });
     }
     if (!employee?.emergencyContactsComplete) {
       rows.push({ title: 'Confirm emergency contact', status: 'Upcoming', tone: 'bg-[#EFF6FF] text-[#2563EB]' });

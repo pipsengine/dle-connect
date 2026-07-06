@@ -473,13 +473,6 @@ export function EssSecurityBanner({ onManage, onDismiss }: { onManage?: () => vo
             </button>
           </div>
         </div>
-        <div className="hidden items-center gap-3 lg:flex">
-          {['🔒', '🛡️', '👆'].map((emoji, i) => (
-            <div key={i} className="flex h-16 w-16 items-center justify-center rounded-[16px] bg-white/10 text-2xl backdrop-blur">
-              {emoji}
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );

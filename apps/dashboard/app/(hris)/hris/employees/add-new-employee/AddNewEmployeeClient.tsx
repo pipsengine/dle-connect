@@ -35,6 +35,7 @@ import {
   Phone,
   Plus,
   Save,
+  Search,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -82,6 +83,15 @@ type Severity = 'high' | 'medium' | 'low';
 
 type ApiState<T> = { status: 'idle' | 'loading' | 'ready' | 'error'; data?: T; error?: string };
 
+type EmployeeDirectoryOption = {
+  employeeId: string;
+  fullName: string;
+  department?: string;
+  jobTitle?: string;
+  location?: string;
+  manager?: string;
+};
+
 type FormOptions = {
   departments: string[];
   divisions: string[];
@@ -101,6 +111,7 @@ type FormOptions = {
   staffCategories: string[];
   employeeCategories: string[];
   roleProfiles: string[];
+  employees?: EmployeeDirectoryOption[];
 };
 
 type DraftPersonal = {
@@ -317,6 +328,27 @@ const Chip = ({ label, tone }: { label: string; tone: { bg: string; fg: string }
   <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-extrabold ${tone.bg} ${tone.fg}`}>{label}</span>
 );
 
+const employeeDirectoryValue = (employee: EmployeeDirectoryOption) => `${employee.fullName} [${employee.employeeId}]`;
+
+const matchesEmployeeDirectoryQuery = (employee: EmployeeDirectoryOption, query: string) => {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const blob = `${employee.employeeId} ${employee.fullName} ${employee.department || ''} ${employee.jobTitle || ''} ${employee.location || ''} ${employee.manager || ''}`.toLowerCase();
+  return blob.includes(q);
+};
+
+const resolveEmployeeDirectoryValue = (input: string, employees: EmployeeDirectoryOption[]) => {
+  const trimmed = input.trim();
+  if (!trimmed) return '';
+  const match = employees.find(
+    (employee) =>
+      employeeDirectoryValue(employee) === trimmed
+      || employee.fullName.toLowerCase() === trimmed.toLowerCase()
+      || employee.employeeId.toLowerCase() === trimmed.toLowerCase(),
+  );
+  return match ? employeeDirectoryValue(match) : trimmed;
+};
+
 const LockBadge = () => (
   <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-extrabold">
     <Lock className="w-3.5 h-3.5" />
@@ -365,6 +397,64 @@ const Field = ({
     />
   </div>
 );
+
+const EmployeeDirectoryField = ({
+  label,
+  value,
+  onChange,
+  employees,
+  placeholder,
+  required,
+  error,
+}: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  employees: EmployeeDirectoryOption[];
+  placeholder?: string;
+  required?: boolean;
+  error?: string;
+}) => {
+  const listId = useMemo(() => `employee-directory-${label.replace(/\s+/g, '-').toLowerCase()}`, [label]);
+  const filteredEmployees = useMemo(
+    () => employees.filter((employee) => matchesEmployeeDirectoryQuery(employee, value)).slice(0, 80),
+    [employees, value],
+  );
+
+  return (
+    <div className={`rounded-2xl border p-3 ${error ? 'border-red-200 bg-red-50/40' : 'border-slate-200 bg-white'}`}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[11px] font-extrabold text-slate-600">
+          {label} {required ? <span className="text-red-600">*</span> : null}
+        </div>
+        {error ? (
+          <span className="text-[11px] font-extrabold text-red-700 inline-flex items-center gap-1">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            {error}
+          </span>
+        ) : null}
+      </div>
+      <div className="relative mt-1">
+        <Search className="pointer-events-none absolute left-0 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <input
+          value={value}
+          list={listId}
+          onChange={(event) => onChange(event.target.value)}
+          onBlur={() => onChange(resolveEmployeeDirectoryValue(value, employees))}
+          placeholder={placeholder || 'Search employee directory by name or ID'}
+          className="w-full bg-white pl-6 text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none"
+        />
+        <datalist id={listId}>
+          {filteredEmployees.map((employee) => (
+            <option key={employee.employeeId} value={employeeDirectoryValue(employee)}>
+              {employee.jobTitle || 'Employee'} · {employee.department || 'Unassigned'}
+            </option>
+          ))}
+        </datalist>
+      </div>
+    </div>
+  );
+};
 
 const TextArea = ({
   label,
@@ -617,7 +707,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
     const loadOptions = async () => {
       setOptions({ status: 'loading' });
       try {
-        const data = await apiCall<FormOptions>('/api/hris/employees/form-options', { method: 'GET', role });
+        const data = await apiCall<FormOptions>('/api/hris/employees/form-options?includeEmployees=1', { method: 'GET', role });
         setOptions({ status: 'ready', data });
       } catch (e) {
         setOptions({ status: 'error', error: e instanceof Error ? e.message : 'Unable to load form options' });
@@ -1426,9 +1516,29 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
         <SelectField label="Cost Center" value={draft.job.costCenter} onChange={(v) => setDraft((d) => ({ ...d, job: { ...d.job, costCenter: v } }))} options={options.data?.costCenters || []} />
         <SelectField label="Project Site" value={draft.job.projectSite} onChange={(v) => setDraft((d) => ({ ...d, job: { ...d.job, projectSite: v } }))} options={options.data?.projectSites || []} />
         <SelectField label="Office Location" value={draft.job.officeLocation} onChange={(v) => setDraft((d) => ({ ...d, job: { ...d.job, officeLocation: v } }))} options={options.data?.locations || []} />
-        <Field label="Reporting Manager" required value={draft.job.reportingManager} onChange={(v) => setDraft((d) => ({ ...d, job: { ...d.job, reportingManager: v } }))} error={requiredErrors['job.reportingManager']} placeholder="Manager full name or employee ID" />
-        <Field label="Functional Manager" value={draft.job.functionalManager} onChange={(v) => setDraft((d) => ({ ...d, job: { ...d.job, functionalManager: v } }))} />
-        <Field label="Department Head" value={draft.job.departmentHead} onChange={(v) => setDraft((d) => ({ ...d, job: { ...d.job, departmentHead: v } }))} />
+        <EmployeeDirectoryField
+          label="Reporting Manager"
+          required
+          value={draft.job.reportingManager}
+          onChange={(v) => setDraft((d) => ({ ...d, job: { ...d.job, reportingManager: v } }))}
+          employees={options.data?.employees || []}
+          error={requiredErrors['job.reportingManager']}
+          placeholder="Search employee directory"
+        />
+        <EmployeeDirectoryField
+          label="Functional Manager"
+          value={draft.job.functionalManager}
+          onChange={(v) => setDraft((d) => ({ ...d, job: { ...d.job, functionalManager: v } }))}
+          employees={options.data?.employees || []}
+          placeholder="Search employee directory"
+        />
+        <EmployeeDirectoryField
+          label="Department Head"
+          value={draft.job.departmentHead}
+          onChange={(v) => setDraft((d) => ({ ...d, job: { ...d.job, departmentHead: v } }))}
+          employees={options.data?.employees || []}
+          placeholder="Search employee directory"
+        />
         <Field label="HR Business Partner" value={draft.job.hrBusinessPartner} onChange={(v) => setDraft((d) => ({ ...d, job: { ...d.job, hrBusinessPartner: v } }))} />
         <SelectField label="Role Profile" value={draft.job.roleProfile} onChange={(v) => setDraft((d) => ({ ...d, job: { ...d.job, roleProfile: v } }))} options={options.data?.roleProfiles || []} />
       </div>

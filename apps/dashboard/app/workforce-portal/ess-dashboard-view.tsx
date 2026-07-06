@@ -27,7 +27,6 @@ import {
   EssNotificationItem,
   EssProgressBar,
   EssSectionHeader,
-  EssSecurityBanner,
   EssSparkline,
   EssWorkflowStepper,
 } from './ess-portal-ui';
@@ -104,9 +103,6 @@ export type EssDashboardPayload = {
   };
 };
 
-const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 });
-const money = (value: number) => moneyFmt.format(value || 0);
-
 const dateText = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -179,11 +175,9 @@ type EssDashboardViewProps = {
   payload: EssDashboardPayload | null;
   initialNow: string;
   onNavigate: (tab: EssTab, options?: { leaveSection?: string }) => void;
-  showSecurityBanner: boolean;
-  onDismissSecurity: () => void;
 };
 
-export function EssDashboardView({ payload, onNavigate, showSecurityBanner, onDismissSecurity }: EssDashboardViewProps) {
+export function EssDashboardView({ payload, onNavigate }: EssDashboardViewProps) {
   const [requestTab, setRequestTab] = useState('All');
   const employee = payload?.employee;
   const widgets = payload?.widgets;
@@ -200,9 +194,6 @@ export function EssDashboardView({ payload, onNavigate, showSecurityBanner, onDi
     || null;
   const latestClock = payload?.attendance?.records?.[0];
   const insights = payload?.dashboardAnalytics?.hrInsights;
-  const netPay = insights?.payrollSummary.netPay || widgets?.payroll.monthlyPay || 0;
-  const payrollPeriodLabel = widgets?.payroll.periodLabel || '';
-  const payrollReleased = Boolean(widgets?.payroll.released);
   const trainingPct = insights?.trainingProgress.percent || 0;
   const certifications = payload?.learning?.certifications || [];
   const certRenewalDue = certifications.filter((cert) => /due|renew|expir/i.test(cert.status || '')).length;
@@ -252,7 +243,6 @@ export function EssDashboardView({ payload, onNavigate, showSecurityBanner, onDi
                   { label: 'New Request', onClick: () => onNavigate('services'), primary: true },
                   { label: 'My Requests', onClick: () => onNavigate('services'), primary: false },
                   { label: 'My Approvals', onClick: () => onNavigate('leave', { leaveSection: 'Approvals' }), primary: false },
-                  { label: 'View Payslip', onClick: () => onNavigate('payroll'), primary: false },
                 ] as const
               ).map(({ label, onClick, primary }) => (
                 <button
@@ -274,7 +264,7 @@ export function EssDashboardView({ payload, onNavigate, showSecurityBanner, onDi
 
       {/* KPI row — 6 compact cards */}
       {widgets ? (
-        <section className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+        <section className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">
           <button type="button" onClick={() => onNavigate('leave', { leaveSection: 'Approvals' })} className="text-left">
             <EssKpiCard label="My Approvals" value={String(approvalCount)} subtitle={`${approvalCount} Pending`} detail={overdueCount ? `${overdueCount} Overdue` : 'On track'} icon={ListChecks} accent="#8B5CF6" iconBg="#F5F3FF" />
           </button>
@@ -282,9 +272,6 @@ export function EssDashboardView({ payload, onNavigate, showSecurityBanner, onDi
           <EssKpiCard label="My Requests" value={String(widgets.requests.pending)} subtitle={`${widgets.requests.pending} In Progress`} detail={`${widgets.requests.approved} Approved`} icon={FileText} accent="#F59E0B" iconBg="#FFF7ED" />
           <EssKpiCard label="Attendance Today" value={latestClock?.clockIn || 'Not clocked in'} subtitle={latestClock?.clockIn ? 'Clocked In' : 'Awaiting clock-in'} detail={latestClock?.source ? `Source: ${latestClock.source}` : `Attendance ${widgets.attendance.monthRate}%`} icon={Fingerprint} accent="#06B6D4" iconBg="#ECFEFF" sparkline={insights?.attendanceTrend.series} trend={insights?.attendanceTrend.trend} />
           <EssKpiCard label="Leave Balance" value={`${widgets.leave.balance}`} subtitle="Days Available" detail={`${widgets.leave.pending} Booked`} icon={CalendarCheck} accent="#2563EB" iconBg="#DBEAFE" />
-          <button type="button" onClick={() => onNavigate('payroll')} className="text-left">
-            <EssKpiCard label="Monthly Net Pay" value={netPay ? money(netPay) : '—'} subtitle={payrollPeriodLabel || 'No released payroll'} detail={payrollReleased ? 'Payslip Ready' : 'Pending Release'} icon={Banknote} accent="#8B5CF6" iconBg="#F5F3FF" />
-          </button>
         </section>
       ) : null}
 
@@ -394,26 +381,11 @@ export function EssDashboardView({ payload, onNavigate, showSecurityBanner, onDi
         </EssCard>
       </section>
 
-      {/* 5-up summary row */}
-      <section className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-5">
+      {/* Summary row */}
+      <section className="grid grid-cols-1 gap-2 md:grid-cols-3">
         <EssCard className="p-3">
           <EssSectionHeader title="Leave Summary" />
           <EssDonutChart rows={[{ label: 'Available', value: widgets?.leave.balance || 0, color: '#2563EB' }, { label: 'Used', value: widgets?.leave.used || 0, color: '#94A3B8' }, { label: 'Booked', value: widgets?.leave.pending || 0, color: '#F59E0B' }, ...(widgets?.leave.carryForward ? [{ label: 'Carry Fwd', value: widgets.leave.carryForward, color: '#8B5CF6' }] : [])]} centerLabel="Days" centerValue={String(widgets?.leave.balance || 0)} />
-        </EssCard>
-        <EssCard className="p-3">
-          <EssSectionHeader title="Payroll Summary" />
-          <p className="text-[20px] font-bold text-[#0F172A]">{money(netPay)}</p>
-          <p className="text-[11px] text-[#64748B]">Gross {money((widgets?.payroll.monthlyPay || 0) + (widgets?.payroll.allowances || 0))} · Ded. {money(widgets?.payroll.deductions || 0)}</p>
-          <button type="button" onClick={() => onNavigate('payroll')} className="mt-1.5 text-[12px] font-semibold text-[#2563EB] hover:underline">Download Payslip</button>
-        </EssCard>
-        <EssCard className="p-3">
-          <EssSectionHeader title="Compensation & Benefits" />
-          <div className="space-y-1 text-[11px]">
-            <p className="flex justify-between rounded-[8px] bg-[#F8FAFC] px-2 py-1 font-semibold text-[#475569]"><span>Allowances</span><span className="text-[#0F172A]">{money(widgets?.payroll.allowances || 0)}</span></p>
-            <p className="flex justify-between rounded-[8px] bg-[#F8FAFC] px-2 py-1 font-semibold text-[#475569]"><span>Pension (Employee)</span><span className={widgets?.payroll.pension ? 'text-[#16A34A]' : 'text-[#94A3B8]'}>{widgets?.payroll.pension ? money(widgets.payroll.pension) : 'Not enrolled'}</span></p>
-            <p className="flex justify-between rounded-[8px] bg-[#F8FAFC] px-2 py-1 font-semibold text-[#475569]"><span>Deductions</span><span className="text-[#0F172A]">{money(widgets?.payroll.deductions || 0)}</span></p>
-            <p className="flex justify-between rounded-[8px] bg-[#F8FAFC] px-2 py-1 font-semibold text-[#475569]"><span>Loan Balance</span><span className={widgets?.loans.outstanding ? 'text-[#D97706]' : 'text-[#94A3B8]'}>{widgets?.loans.outstanding ? money(widgets.loans.outstanding) : 'None'}</span></p>
-          </div>
         </EssCard>
         <EssCard className="p-3">
           <EssSectionHeader title="Performance" />
@@ -506,7 +478,6 @@ export function EssDashboardView({ payload, onNavigate, showSecurityBanner, onDi
             {pendingTasks > 0 ? <li>• {pendingTasks} workflow task{pendingTasks === 1 ? '' : 's'} awaiting completion.</li> : null}
             {workflow?.aiInsights?.delayPrediction ? <li>• {workflow.aiInsights.delayPrediction}</li> : null}
             {workflow?.aiInsights?.likelyCompletion ? <li>• {workflow.aiInsights.likelyCompletion}</li> : null}
-            {netPay > 0 && payrollReleased ? <li>• Your {payrollPeriodLabel || 'latest'} payslip is available.</li> : null}
             {approvalCount === 0 && pendingTasks === 0 && !workflow?.aiInsights ? <li>• No outstanding items — you&apos;re all caught up.</li> : null}
           </ul>
           {workflow?.aiInsights ? (
@@ -518,7 +489,6 @@ export function EssDashboardView({ payload, onNavigate, showSecurityBanner, onDi
         </div>
       </section>
 
-      {showSecurityBanner ? <EssSecurityBanner onManage={() => onNavigate('security')} onDismiss={onDismissSecurity} /> : null}
     </div>
   );
 }

@@ -110,6 +110,7 @@ type FormOptions = {
   staffCategories: string[];
   employeeCategories: string[];
   roleProfiles: string[];
+  employees?: Array<{ employeeId: string; fullName: string; department?: string; jobTitle?: string; location?: string; manager?: string }>;
 };
 
 const employeeTypePrefix = (employeeType: unknown) => {
@@ -417,7 +418,7 @@ const uniqueSorted = (values: unknown[]) =>
 
 const mergeUnique = (primary: string[], fallback: string[]) => uniqueSorted([...primary, ...fallback]);
 
-const optionsPayload = async (): Promise<FormOptions> => {
+const optionsPayload = async (includeEmployees = false): Promise<FormOptions> => {
   const fallback = fallbackOptionsPayload();
   try {
     const employeeSource = await readPayrollEmployees();
@@ -447,6 +448,16 @@ const optionsPayload = async (): Promise<FormOptions> => {
       projectSites: mergeUnique(fromDb.projectSites, fallback.projectSites),
       staffCategories: mergeUnique(fromDb.staffCategories, fallback.staffCategories),
       employeeCategories: mergeUnique(fromDb.employeeCategories, fallback.employeeCategories),
+      employees: includeEmployees
+        ? employees.map((employee: any) => ({
+            employeeId: String(employee.employeeId || employee.employeeCode || '').trim(),
+            fullName: String(employee.fullName || '').trim(),
+            department: String(employee.department || '').trim(),
+            jobTitle: String(employee.jobTitle || employee.designation || '').trim(),
+            location: String(employee.location || employee.workLocation || '').trim(),
+            manager: String(employee.managerName || employee.manager || '').trim(),
+          })).filter((employee) => employee.employeeId && employee.fullName)
+        : undefined,
     };
   } catch {
     return fallback;
@@ -467,7 +478,10 @@ export async function GET(request: Request, ctx: { params: Promise<{ action: str
   const { action } = await ctx.params;
   const seg0 = action[0] || '';
 
-  if (seg0 === 'form-options') return jsonOk(await optionsPayload());
+  if (seg0 === 'form-options') {
+    const includeEmployees = new URL(request.url).searchParams.get('includeEmployees') === '1';
+    return jsonOk(await optionsPayload(includeEmployees));
+  }
   if (seg0 === 'onboarding' && action[1] === 'checklist-template') return jsonOk(templateChecklist());
   if (seg0 === 'employee-code' && action[1] === 'next') {
     const employeeType = new URL(request.url).searchParams.get('employeeType') || '';
@@ -591,7 +605,10 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
     return jsonOk({ started: true });
   }
 
-  if (seg0 === 'form-options') return jsonOk(await optionsPayload());
+  if (seg0 === 'form-options') {
+    const includeEmployees = new URL(request.url).searchParams.get('includeEmployees') === '1';
+    return jsonOk(await optionsPayload(includeEmployees));
+  }
 
   if (seg0 === 'import-sage') {
     if (!(role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager')) return jsonErr(403, 'Permission denied');
