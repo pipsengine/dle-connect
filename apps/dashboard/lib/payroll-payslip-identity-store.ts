@@ -2,8 +2,8 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { SagePayrollEmployee } from '@/lib/sage-people-payroll-store';
-import { readActiveSagePayrollEmployees, readSagePayrollEmployeeBankDetails, type SagePayrollBankDetail } from '@/lib/sage-people-payroll-store';
-import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
+import { normalizePayrollMatchKey, readActiveSagePayrollEmployees, readSagePayrollEmployeeBankDetails, type SagePayrollBankDetail } from '@/lib/sage-people-payroll-store';
+import { withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 
 export type PayslipEmployeeIdentity = {
   employeeId: string;
@@ -81,7 +81,12 @@ const pensionPinFromSage = (employee: SagePayrollEmployee) => {
   return firstValue(employee.pensionPin, jsonValue(employee.sageEmployeeDetailJson, ['PensionNo', 'PensionNumber', 'PensionPIN', 'PFANumber', 'PfaNumber', 'RSAPIN', 'RsaPin', 'RetirementSavingsAccountNo']));
 };
 
-export const payslipIdentityFromSage = (employee: SagePayrollEmployee, options?: { employeeId?: string; migratedBy?: string; bankDetail?: SagePayrollBankDetail }): PayslipEmployeeIdentity => ({
+export const payslipIdentityFromSage = (employee: SagePayrollEmployee, options?: { employeeId?: string; migratedBy?: string; bankDetail?: SagePayrollBankDetail }): PayslipEmployeeIdentity => {
+  const bankName = firstValue(options?.bankDetail?.bankName, employee.bankName, jsonValue(employee.sageEmployeeDetailJson, ['BankName', 'Bank', 'EmployeeBankName', 'PaymentBankName']));
+  const bankCode = firstValue(options?.bankDetail?.bankCode, employee.bankCode, jsonValue(employee.sageEmployeeDetailJson, ['BankCode', 'EmployeeBankCode', 'PaymentBankCode']));
+  const branchCode = firstValue(options?.bankDetail?.branchCode, employee.branchCode, jsonValue(employee.sageEmployeeDetailJson, ['BranchCode', 'BankBranchCode', 'SortCode', 'SortCodeNo']));
+  const normalizedBank = withNormalizedBankCodes({ bankName, bankCode, branchCode });
+  return {
   employeeId: compact(options?.employeeId || employee.directoryEmployeeCode || employee.employeeCode),
   employeeCode: compact(employee.directoryEmployeeCode || employee.employeeCode),
   sourceEmployeeCode: compact(employee.employeeCode),
@@ -95,10 +100,10 @@ export const payslipIdentityFromSage = (employee: SagePayrollEmployee, options?:
   payCurrency: compact(employee.companyCurrency || 'NGN'),
   paymentRun: compact(employee.paymentRunLong || employee.paymentRunShort),
   paymentType: compact(employee.paymentType),
-  bankName: firstValue(options?.bankDetail?.bankName, employee.bankName, jsonValue(employee.sageEmployeeDetailJson, ['BankName', 'Bank', 'EmployeeBankName', 'PaymentBankName'])),
-  bankCode: firstValue(options?.bankDetail?.bankCode, employee.bankCode, jsonValue(employee.sageEmployeeDetailJson, ['BankCode', 'EmployeeBankCode', 'PaymentBankCode'])),
+  bankName,
+  bankCode: normalizedBank.bankCode || bankCode,
   branchName: firstValue(options?.bankDetail?.branchName, employee.branchName, jsonValue(employee.sageEmployeeDetailJson, ['BranchName', 'BankBranchName', 'EmployeeBranchName'])),
-  branchCode: firstValue(options?.bankDetail?.branchCode, employee.branchCode, jsonValue(employee.sageEmployeeDetailJson, ['BranchCode', 'BankBranchCode', 'SortCode', 'SortCodeNo'])),
+  branchCode: normalizedBank.branchCode || branchCode,
   accountNo: firstValue(options?.bankDetail?.accountNo, employee.accountNo, jsonValue(employee.sageEmployeeDetailJson, ['AccountNo', 'AccountNumber', 'BankAccountNo', 'BankAccountNumber', 'EmployeeAccountNo', 'PaymentAccountNo'])),
   accountName: firstValue(options?.bankDetail?.accountName, employee.accountName, jsonValue(employee.sageEmployeeDetailJson, ['AccountName', 'BankAccountName', 'EmployeeAccountName', 'PaymentAccountName'])),
   accountTypeId: employee.accountTypeId ?? null,
@@ -108,7 +113,8 @@ export const payslipIdentityFromSage = (employee: SagePayrollEmployee, options?:
   migratedAt: new Date().toISOString(),
   migratedBy: compact(options?.migratedBy),
   sourceSystem: 'Sage Payroll',
-});
+  };
+};
 
 export const hasPayslipBankIdentity = (identity: PayslipEmployeeIdentity) => Boolean(compact(identity.accountNo));
 export const hasPayslipStatutoryIdentity = (identity: PayslipEmployeeIdentity) =>
@@ -135,7 +141,11 @@ const mergeIdentity = (current: PayslipEmployeeIdentity | undefined, incoming: P
     bankName: pick(incoming.bankName, current?.bankName),
     bankCode: pick(incoming.bankCode, current?.bankCode),
     branchName: pick(incoming.branchName, current?.branchName),
-    branchCode: pick(incoming.branchCode, current?.branchCode),
+    branchCode: pick(withNormalizedBankCodes({
+      bankName: pick(incoming.bankName, current?.bankName),
+      bankCode: pick(incoming.bankCode, current?.bankCode),
+      branchCode: pick(incoming.branchCode, current?.branchCode),
+    }).branchCode, pick(incoming.branchCode, current?.branchCode)),
     accountNo: pick(incoming.accountNo, current?.accountNo),
     accountName: pick(incoming.accountName, current?.accountName),
     accountTypeId: incoming.accountTypeId ?? current?.accountTypeId ?? null,

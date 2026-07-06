@@ -14,6 +14,8 @@ import {
   createPayrollEmailActionToken,
   payrollApprovalWorkspaceUrl,
   payrollAuthorizePageUrl,
+  payrollBankFinanceWorkspaceUrl,
+  payrollBankScheduleDownloadUrl,
 } from '@/lib/payroll-email-action-token';
 import {
   getCurrentPayrollApprovalStage,
@@ -139,6 +141,51 @@ export const resolvePayrollOfficerRecipients = async (run: UnifiedPayrollRun): P
     fullName: 'Payroll Officer',
     email: fallback,
     roles: ['Payroll Officer'],
+  }] : [];
+};
+
+const FINANCE_HR_ROLE_PATTERNS = [
+  /finance manager/i,
+  /finance controller/i,
+  /\bcfo\b/i,
+  /chief financial/i,
+  /treasury/i,
+  /accountant/i,
+  /hr manager/i,
+  /hr director/i,
+  /payroll officer/i,
+  /payroll supervisor/i,
+];
+
+export const resolvePayrollFinanceHrRecipients = async (): Promise<ApproverRecipient[]> => {
+  const users = await readUsers();
+  const seen = new Set<string>();
+  const recipients = users
+    .filter((user) => user.roles.some((role) => FINANCE_HR_ROLE_PATTERNS.some((pattern) => pattern.test(role))))
+    .map((user) => ({
+      id: user.id,
+      username: user.username,
+      fullName: user.fullName,
+      email: compact(user.email),
+      roles: user.roles,
+    }))
+    .filter((user) => user.email)
+    .filter((user) => {
+      const key = lower(user.email);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+  if (recipients.length) return recipients;
+
+  const fallback = compact(process.env.PAYROLL_FINANCE_HR_NOTIFICATION_EMAIL || process.env.PAYROLL_APPROVAL_FALLBACK_EMAIL);
+  return fallback ? [{
+    id: 'finance-hr-fallback',
+    username: 'Finance HR',
+    fullName: 'Finance / HR Team',
+    email: fallback,
+    roles: ['Finance Manager', 'HR Manager'],
   }] : [];
 };
 
@@ -286,20 +333,56 @@ export const notifyPayrollFullyApproved = async (input: {
   actor: string;
   baseUrl?: string | null;
 }) => {
-  const recipients = await resolvePayrollOfficerRecipients(input.run);
+  const [officers, financeHr] = await Promise.all([
+    resolvePayrollOfficerRecipients(input.run),
+    resolvePayrollFinanceHrRecipients(),
+  ]);
+  const recipients = Array.from(
+    new Map(
+      [...officers, ...financeHr]
+        .filter((recipient) => recipient.email)
+        .map((recipient) => [lower(recipient.email), recipient]),
+    ).values(),
+  );
   const workspaceUrl = payrollApprovalWorkspaceUrl(input.run.period, input.baseUrl);
+  const bankFinanceUrl = payrollBankFinanceWorkspaceUrl(input.run.period, input.baseUrl);
+  const bankScheduleDownloadUrl = payrollBankScheduleDownloadUrl(input.run.period, input.baseUrl);
+  let notified = 0;
   let emailed = 0;
+
   for (const recipient of recipients) {
+    await createEnterpriseNotification(systemSessionFor(recipient), {
+      kind: 'Approval',
+      module: 'Payroll Management',
+      title: `Payroll fully approved — ${input.run.periodLabel}`,
+      body: `Final approval is complete for ${input.run.periodLabel}. Download the bank schedule or open Bank & Finance to process payments.`,
+      severity: 'success',
+      href: bankScheduleDownloadUrl,
+      actor: input.actor || 'Payroll Workflow',
+      channels: ['In-App', 'Email'],
+      recipientRoles: recipient.roles,
+      recipientEmployeeCode: recipient.username,
+      metadata: {
+        runId: input.run.id,
+        period: input.run.period,
+        bankScheduleDownloadUrl,
+      },
+    });
+    notified += 1;
+
     const mail = await sendPayrollFullyApprovedEmail({
       recipient,
       run: input.run,
       actorName: input.actor,
       workspaceUrl,
+      bankFinanceUrl,
+      bankScheduleDownloadUrl,
       baseUrl: input.baseUrl,
     });
     if (mail.sent) emailed += 1;
   }
-  return { emailed };
+
+  return { notified, emailed };
 };
 
 export const notifyPayrollRejected = async (input: {

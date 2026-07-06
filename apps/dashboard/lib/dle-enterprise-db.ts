@@ -7,6 +7,7 @@ import {
   parseSagePayrollLineItems,
 } from '@/lib/sage-payroll-line-parser';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
+import { withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 
 type DraftRecordLike = {
   draftId: string;
@@ -1115,9 +1116,17 @@ const mapDirectoryEmployeeRow = (row: any): DleEmployeeDirectoryRow => {
     paymentRun: str(row.payment_run),
     paymentType: str(row.payment_type),
     bankName: str(row.bank_name),
-    bankCode: str(row.bank_code),
+    bankCode: withNormalizedBankCodes({
+      bankName: str(row.bank_name),
+      bankCode: str(row.bank_code),
+      branchCode: str(row.branch_code),
+    }).bankCode,
     branchName: str(row.branch_name),
-    branchCode: str(row.branch_code),
+    branchCode: withNormalizedBankCodes({
+      bankName: str(row.bank_name),
+      bankCode: str(row.bank_code),
+      branchCode: str(row.branch_code),
+    }).branchCode,
     accountNo: str(row.account_number),
     accountName: str(row.account_name),
     pensionProvider: str(row.pension_provider),

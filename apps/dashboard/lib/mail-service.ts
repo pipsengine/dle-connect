@@ -267,6 +267,8 @@ export const sendPayrollFullyApprovedEmail = async (input: {
   run: { periodLabel: string; grossPay: number; netPay: number; employeeCount: number };
   actorName: string;
   workspaceUrl: string;
+  bankFinanceUrl: string;
+  bankScheduleDownloadUrl: string;
   baseUrl?: string | null;
 }) => {
   const resolved = payrollRecipientEmail(input.recipient);
@@ -276,6 +278,8 @@ export const sendPayrollFullyApprovedEmail = async (input: {
     run: input.run,
     actorName: input.actorName,
     workspaceUrl: input.workspaceUrl,
+    bankFinanceUrl: input.bankFinanceUrl,
+    bankScheduleDownloadUrl: input.bankScheduleDownloadUrl,
     baseUrl: input.baseUrl,
   });
   return sendTransactionalEmail({ to: resolved.to, subject: email.subject, text: email.text, html: email.html });

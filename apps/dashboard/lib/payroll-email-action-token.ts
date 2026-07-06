@@ -67,3 +67,9 @@ export const payrollAuthorizePageUrl = (token: string, baseUrl?: string | null) 
 
 export const payrollApprovalWorkspaceUrl = (period: string, baseUrl?: string | null) =>
   `${portalBaseUrl(baseUrl)}/hris/payroll/payroll-approval?period=${encodeURIComponent(period)}`;
+
+export const payrollBankFinanceWorkspaceUrl = (period: string, baseUrl?: string | null) =>
+  `${portalBaseUrl(baseUrl)}/hris/payroll-management/bank-finance?tab=bank-schedule&period=${encodeURIComponent(period)}`;
+
+export const payrollBankScheduleDownloadUrl = (period: string, baseUrl?: string | null) =>
+  `${portalBaseUrl(baseUrl)}/api/hris/payroll-management?format=xls&report=bank-schedule&period=${encodeURIComponent(period)}`;

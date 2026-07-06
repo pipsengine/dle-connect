@@ -13,6 +13,7 @@ import { activeLoansVersion, calculateLoanRecovery, loanInputsFromApplications, 
 import { syncLeaveAllowanceEventsForPayroll } from '@/lib/payroll-leave-allowance-store';
 import { normalizePayrollMatchKey, readSagePayrollPeriodTotals } from '@/lib/sage-people-payroll-store';
 import { buildTimesheetHoursMapForPayrollPeriod } from '@/lib/timesheet-entry-store';
+import { normalizeBankSortCode, withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 import { payrollPeriodLabel } from '@/lib/payroll-period-store';
 import { computePayrollReadinessStatus, enrichCalculationRecordsWithReadiness, summarizePayrollReadiness, type PayrollReadinessStatus } from '@/lib/payroll-readiness';
 import { partitionPayrollIssues, payrollToleranceActive, reapplyPayrollValidationPolicy } from '@/lib/payroll-tolerance';

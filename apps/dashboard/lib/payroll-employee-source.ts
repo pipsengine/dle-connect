@@ -5,6 +5,7 @@ import { isDailyRatePayrollEmployee, markInactiveNonDailyContractEmployees, payr
 import { applyPayrollEmployeeOptions } from '@/lib/payroll-employee-options-store';
 import { employeeReportsToManager } from '@/lib/reporting-manager-match';
 import { isGenericPayrollGrade } from '@/lib/payroll-earnings-engine';
+import { withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 import { payslipIdentityMap } from '@/lib/payroll-payslip-identity-store';
 import { isSagePayrollRuntimeEnabled } from '@/lib/payroll-enterprise-source';
 import { normalizePayrollMatchKey, readActiveSagePayrollEmployeesWithLatestPayslipLines, readSagePayrollEmployeeBankDetails } from '@/lib/sage-people-payroll-store';

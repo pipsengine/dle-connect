@@ -229,22 +229,28 @@ export const buildPayrollFullyApprovedEmail = (input: {
   run: { periodLabel: string; grossPay: number; netPay: number; employeeCount: number };
   actorName: string;
   workspaceUrl: string;
+  bankFinanceUrl: string;
+  bankScheduleDownloadUrl: string;
   baseUrl?: string | null;
 }) => withBrand({
   recipientName: input.recipientName,
   subject: `Payroll fully approved — ${input.run.periodLabel}`,
   module: 'Payroll Management',
   headline: 'MD / CEO final approval complete',
-  intro: 'All approval stages are complete. The payroll run is approved and ready for release processing.',
+  intro: 'All approval stages are complete. Finance and HR can now access the bank payment schedule for this payroll period.',
   tone: 'success',
   accentColor: PAYROLL_STAGE_ACCENT_COLORS['md-ceo'],
   details: [
     ...payrollRunDetails(input.run),
     { label: 'Final approver', value: input.actorName },
-    { label: 'Status', value: 'Approved — ready for release' },
+    { label: 'Status', value: 'Approved — bank schedule available' },
   ],
-  actions: [{ href: input.workspaceUrl, label: 'Open Payroll Management', tone: 'primary' }],
-  footerNote: 'Release payroll to generate payslips, bank schedule, and statutory outputs.',
+  actions: [
+    { href: input.bankScheduleDownloadUrl, label: 'Download Bank Schedule', tone: 'success' },
+    { href: input.bankFinanceUrl, label: 'Open Bank & Finance', tone: 'primary' },
+    { href: input.workspaceUrl, label: 'Open Payroll Management', tone: 'primary' },
+  ],
+  footerNote: 'Release payroll when ready to finalize payslips, statutory outputs, and journal posting.',
 }, input.baseUrl);
 
 export const buildPayrollRejectedEmail = (input: {
