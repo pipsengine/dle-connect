@@ -7,8 +7,14 @@ import {
   type LeaveEmailApproverKind,
 } from '@/lib/leave-email-action-token';
 import type { EssLeaveRequest } from '@/lib/leave-workflow-service';
+import {
+  graphMailConfigured,
+  sendGraphMail,
+  verifyGraphMailConnection,
+} from '@/lib/microsoft-graph-mail';
 
 type LeaveEmailEvent = 'submitted' | 'manager-approved' | 'approved' | 'rejected' | 'approval-request';
+type MailProvider = 'graph' | 'smtp';
 
 const compact = (value: unknown) => String(value || '').trim();
 
@@ -17,6 +23,34 @@ const smtpConfigured = () => Boolean(
   && process.env.DLE_SMTP_FROM
   && (process.env.DLE_SMTP_USER ? process.env.DLE_SMTP_PASSWORD : true),
 );
+
+export const resolveMailProvider = (): MailProvider | null => {
+  const preference = compact(process.env.DLE_MAIL_PROVIDER).toLowerCase();
+  if (preference === 'graph') return graphMailConfigured() ? 'graph' : null;
+  if (preference === 'smtp') return smtpConfigured() ? 'smtp' : null;
+  if (graphMailConfigured()) return 'graph';
+  if (smtpConfigured()) return 'smtp';
+  return null;
+};
+
+/** Microsoft 365 SMTP (smtp.office365.com) — port 587 + STARTTLS. */
+const createSmtpTransport = () => {
+  const host = process.env.DLE_SMTP_HOST!;
+  const port = Number(process.env.DLE_SMTP_PORT || 587);
+  const user = process.env.DLE_SMTP_USER || '';
+  const pass = process.env.DLE_SMTP_PASSWORD || '';
+  const secure = String(process.env.DLE_SMTP_SECURE || 'false') === 'true';
+  const useStartTls = port === 587 && !secure;
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    requireTLS: useStartTls || String(process.env.DLE_SMTP_REQUIRE_TLS || 'true') === 'true',
+    auth: user ? { user, pass } : undefined,
+    tls: { minVersion: 'TLSv1.2' },
+  });
+};
 
 export const employeeEmailAddress = (employee?: DleEmployeeDirectoryRow | null) =>
   compact(employee?.officialEmail || employee?.email || employee?.personalEmail);
@@ -27,32 +61,66 @@ const button = (href: string, label: string, background: string) =>
 export const sendTransactionalEmail = async (input: { to: string; subject: string; text: string; html?: string }) => {
   const to = compact(input.to);
   if (!to) return { sent: false, reason: 'No recipient email.' };
-  if (!smtpConfigured()) {
-    console.info('[mail-service] SMTP not configured. Email skipped.', { to, subject: input.subject });
-    return { sent: false, reason: 'SMTP not configured.' };
+
+  const provider = resolveMailProvider();
+  if (!provider) {
+    console.info('[mail-service] No mail provider configured. Email skipped.', { to, subject: input.subject });
+    return { sent: false, reason: 'Mail provider not configured.' };
   }
 
-  const host = process.env.DLE_SMTP_HOST!;
-  const port = Number(process.env.DLE_SMTP_PORT || 587);
-  const user = process.env.DLE_SMTP_USER || '';
-  const pass = process.env.DLE_SMTP_PASSWORD || '';
-  const from = process.env.DLE_SMTP_FROM!;
-  const secure = String(process.env.DLE_SMTP_SECURE || 'false') === 'true';
+  const replyTo = compact(process.env.DLE_SMTP_REPLY_TO) || undefined;
 
-  const transport = nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    auth: user ? { user, pass } : undefined,
-  });
-  await transport.sendMail({
-    from,
-    to,
-    subject: input.subject,
-    text: input.text,
-    html: input.html || input.text.replace(/\n/g, '<br/>'),
-  });
-  return { sent: true };
+  if (provider === 'graph') {
+    const result = await sendGraphMail({
+      to,
+      subject: input.subject,
+      text: input.text,
+      html: input.html,
+      replyTo,
+    });
+    if (!result.sent) {
+      console.error('[mail-service] Graph send failed.', { to, subject: input.subject, reason: result.reason });
+    }
+    return result;
+  }
+
+  const from = process.env.DLE_SMTP_FROM!;
+
+  try {
+    const transport = createSmtpTransport();
+    const info = await transport.sendMail({
+      from,
+      to,
+      replyTo,
+      subject: input.subject,
+      text: input.text,
+      html: input.html || input.text.replace(/\n/g, '<br/>'),
+    });
+    return { sent: true, messageId: compact(info.messageId) || undefined, provider: 'smtp' as const };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : 'SMTP send failed.';
+    console.error('[mail-service] SMTP send failed.', { to, subject: input.subject, reason });
+    return { sent: false, reason };
+  }
+};
+
+/** Verify configured mail provider (Graph preferred, then SMTP). */
+export const verifyMailConnection = async () => {
+  const provider = resolveMailProvider();
+  if (provider === 'graph') return verifyGraphMailConnection();
+  if (provider === 'smtp') return verifySmtpConnection();
+  return { ok: false as const, reason: 'Mail provider not configured.' };
+};
+
+/** Verify Microsoft 365 / SMTP connectivity (e.g. after env setup). */
+export const verifySmtpConnection = async () => {
+  if (!smtpConfigured()) return { ok: false, reason: 'SMTP not configured.' };
+  try {
+    await createSmtpTransport().verify();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : 'SMTP verification failed.' };
+  }
 };
 
 const leaveDetailLines = (request: EssLeaveRequest) => [
@@ -149,6 +217,52 @@ ${input.request.handover ? `<p><strong>Handover notes:</strong> ${input.request.
 ${input.actorName ? `<p><strong>Approved by:</strong> ${input.actorName}</p>` : ''}
 <p>${button(portalLink, 'Open Leave Workspace', '#2563eb')}</p>
 <p style="color:#64748b;font-size:12px">Please coordinate with the requester before their leave begins.</p>`;
+  return sendTransactionalEmail({ to, subject, text, html });
+};
+
+export const sendPayrollApprovalRequestEmail = async (input: {
+  recipient: { fullName: string; email: string; roles: string[] };
+  run: { period: string; periodLabel: string; grossPay: number; netPay: number; employeeCount: number };
+  stageTitle: string;
+  approveUrl: string;
+  rejectUrl: string;
+  workspaceUrl: string;
+  baseUrl?: string | null;
+}) => {
+  const to = compact(input.recipient.email);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+
+  const subject = `Payroll approval required — ${input.run.periodLabel} (${input.stageTitle})`;
+  const text = [
+    `Dear ${input.recipient.fullName},`,
+    '',
+    `A payroll run requires your approval as ${input.stageTitle}.`,
+    `Period: ${input.run.periodLabel}`,
+    `Employees: ${input.run.employeeCount}`,
+    `Gross Pay: ₦${input.run.grossPay.toLocaleString('en-NG')}`,
+    `Net Pay: ₦${input.run.netPay.toLocaleString('en-NG')}`,
+    '',
+    'You must sign in to DLE Connect before approving or rejecting.',
+    `Approve: ${input.approveUrl}`,
+    `Reject: ${input.rejectUrl}`,
+    `Open payroll approval workspace: ${input.workspaceUrl}`,
+    '',
+    'Approval links expire after 7 days.',
+    'Dorman Long Engineering — Payroll Management',
+  ].join('\n');
+
+  const html = `<p>Dear <strong>${input.recipient.fullName}</strong>,</p>
+<p>A payroll run requires your approval as <strong>${input.stageTitle}</strong>.</p>
+<table cellpadding="0" cellspacing="0" style="margin:16px 0">
+  <tr><td style="padding:4px 12px 4px 0"><strong>Period</strong></td><td>${input.run.periodLabel}</td></tr>
+  <tr><td style="padding:4px 12px 4px 0"><strong>Employees</strong></td><td>${input.run.employeeCount}</td></tr>
+  <tr><td style="padding:4px 12px 4px 0"><strong>Gross Pay</strong></td><td>₦${input.run.grossPay.toLocaleString('en-NG')}</td></tr>
+  <tr><td style="padding:4px 12px 4px 0"><strong>Net Pay</strong></td><td>₦${input.run.netPay.toLocaleString('en-NG')}</td></tr>
+</table>
+<p><strong>Authentication required:</strong> sign in to DLE Connect before you can approve or reject this payroll.</p>
+<p>${button(input.approveUrl, 'Sign In & Approve', '#059669')}${button(input.rejectUrl, 'Sign In & Reject', '#dc2626')}${button(input.workspaceUrl, 'Open Approval Workspace', '#2563eb')}</p>
+<p style="color:#64748b;font-size:12px">Links expire after 7 days. Your login session must match the designated approver account.</p>`;
+
   return sendTransactionalEmail({ to, subject, text, html });
 };
 

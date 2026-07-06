@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { buildProcessingPayload } from '@/lib/payroll-payload-service';
+import { normalizePayrollApprovalAction } from '@/lib/payroll-approval-workflow';
 import { getActivePayrollPeriod } from '@/lib/payroll-period-store';
 import { payrollSessionContext, processingPermissions } from '@/lib/payroll-session';
 import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
@@ -40,23 +41,29 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { role, actor, ip } = await payrollSessionContext(request);
-    const perms = processingPermissions(role);
+    const { role, actor, ip, isGlobalAdmin, processingPerms } = await payrollSessionContext(request);
+    const perms = processingPerms;
     const body = await request.json().catch(() => ({}));
-    const action = compact(body.action);
+    const action = normalizePayrollApprovalAction(compact(body.action));
     const period = compact(body.period) || (await getActivePayrollPeriod());
     const note = compact(body.note);
     const reason = compact(body.reason);
+    const origin = new URL(request.url).origin;
 
     if (!action) return err(400, 'Action is required.');
     if (['calculate', 'create-run', 'validate-payroll', 'create-period', 'open-period'].includes(action) && !perms.canCalculate) {
       return err(403, 'Permission denied');
     }
-    if (action === 'submit' && !perms.canSubmit) return err(403, 'Submit permission denied');
-    if (action === 'finance-approve' && !perms.canApproveFinance) return err(403, 'Finance approval permission denied');
-    if (action === 'hr-approve' && !perms.canApproveHr) return err(403, 'HR approval permission denied');
+    if ((action === 'submit' || action === 'submit-run') && !perms.canSubmit) return err(403, 'Submit permission denied');
+    if (action === 'hr-manager-approve' && !perms.canApproveHrManager) return err(403, 'HR Manager approval permission denied');
+    if (action === 'finance-manager-approve' && !perms.canApproveFinanceManager) return err(403, 'Finance Manager approval permission denied');
+    if (action === 'cfo-approve' && !perms.canApproveCfo) return err(403, 'CFO approval permission denied');
+    if (action === 'md-ceo-approve' && !perms.canApproveMdCeo) return err(403, 'MD / CEO approval permission denied');
     if (['lock', 'post', 'reopen', 'close-period'].includes(action) && !perms.canLock) return err(403, 'Lock/post permission denied');
     if (action === 'reopen-period' && !perms.canReopen) return err(403, 'Reopen permission denied');
+    if (['reject-run', 'request-revision'].includes(action) && !perms.canReject) {
+      return err(403, 'Reject/revision permission denied');
+    }
 
     const result = await executePayrollWorkflowAction({
       action: action === 'submit' ? 'submit-run' : action,
@@ -67,6 +74,8 @@ export async function POST(request: Request) {
       comment: note || undefined,
       ip,
       paymentDate: body.paymentDate || null,
+      isGlobalAdmin,
+      baseUrl: origin,
     });
 
     return ok({

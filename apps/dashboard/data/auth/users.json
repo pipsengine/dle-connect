@@ -9109,9 +9109,9 @@
     "passwordResetRequired": false,
     "failedAttempts": 0,
     "lockedUntil": null,
-    "lastLoginAt": "2026-06-29T16:29:57.204Z",
+    "lastLoginAt": "2026-07-03T13:01:33.514Z",
     "createdAt": "2026-06-14T12:32:05.857Z",
-    "updatedAt": "2026-07-01T14:00:58.344Z",
+    "updatedAt": "2026-07-03T13:01:33.514Z",
     "disabledAt": null,
     "deleted": false
   },
@@ -23646,9 +23646,9 @@
     "passwordResetRequired": false,
     "failedAttempts": 0,
     "lockedUntil": null,
-    "lastLoginAt": "2026-07-03T07:28:11.304Z",
+    "lastLoginAt": "2026-07-06T06:48:57.541Z",
     "createdAt": "2026-06-14T12:32:30.629Z",
-    "updatedAt": "2026-07-03T07:28:11.304Z",
+    "updatedAt": "2026-07-06T06:48:57.541Z",
     "disabledAt": null,
     "deleted": false
   },

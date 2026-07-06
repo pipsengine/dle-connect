@@ -7,7 +7,8 @@ import { getActivePayrollPeriod, closePayrollPeriodRecord } from '@/lib/payroll-
 import { runPayrollCutoverBackup } from '@/lib/payroll-cutover-backup-service';
 import { buildManagementPayload } from '@/lib/payroll-payload-service';
 import { appendPayrollAudit, capturePayrollSnapshot, getPayrollRunForPeriod, listPayrollAudit, savePayrollRun, type UnifiedPayrollRun } from '@/lib/payroll-run-store';
-import { managementPermissions, payrollSessionContext } from '@/lib/payroll-session';
+import { normalizePayrollApprovalAction } from '@/lib/payroll-approval-workflow';
+import { managementPermissions, payrollSessionContext, processingPermissions } from '@/lib/payroll-session';
 import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
 import { buildExcelHtml, excelMimeType } from '@/lib/excel-export';
 
@@ -209,9 +210,18 @@ const applySuperAdminEndToEndApproval = async (
   run.submittedAt = run.submittedAt || stamp;
   run.submittedBy = run.submittedBy || actor;
   await setStatus('submit-run', 'Submitted');
+  run.hrReviewedAt = run.hrReviewedAt || stamp;
+  run.hrReviewedBy = actor;
+  await setStatus('hr-manager-approve', 'HR Approved', 'HR Manager stage approved by Global Super Administrator.');
+  run.financeReviewedAt = run.financeReviewedAt || stamp;
+  run.financeReviewedBy = actor;
+  await setStatus('finance-manager-approve', 'Finance Approved', 'Finance Manager stage approved by Global Super Administrator.');
+  run.cfoReviewedAt = run.cfoReviewedAt || stamp;
+  run.cfoReviewedBy = actor;
+  await setStatus('cfo-approve', 'CFO Approved', 'CFO stage approved by Global Super Administrator.');
   run.approvedAt = run.approvedAt || stamp;
   run.approvedBy = actor;
-  await setStatus('approve-run', 'Approved', 'All approval stages approved by Global Super Administrator.');
+  await setStatus('md-ceo-approve', 'Approved', 'MD / CEO stage approved by Global Super Administrator.');
   run.releasedAt = run.releasedAt || stamp;
   run.releasedBy = actor;
   run.lockedAt = run.lockedAt || stamp;
@@ -241,8 +251,9 @@ const applySuperAdminEndToEndApproval = async (
 };
 
 const workflowActions = new Set([
-  'create-period', 'open-period', 'validate-payroll', 'create-run', 'submit-run', 'approve-run', 'release-run',
-  'generate-payslips', 'generate-bank-schedule', 'generate-statutory-schedules', 'post-run', 'lock-run',
+  'create-period', 'open-period', 'validate-payroll', 'create-run', 'submit-run',
+  'hr-manager-approve', 'finance-manager-approve', 'cfo-approve', 'md-ceo-approve', 'approve-run',
+  'release-run', 'generate-payslips', 'generate-bank-schedule', 'generate-statutory-schedules', 'post-run', 'lock-run',
   'close-period', 'reopen-period', 'reject-run', 'request-revision',
 ]);
 
@@ -304,10 +315,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { role, actor, ip } = await payrollSessionContext(request);
+  const { role, actor, ip, isGlobalAdmin, processingPerms } = await payrollSessionContext(request);
   const perms = managementPermissions(role);
   const body = await request.json().catch(() => ({}));
-  const action = compact(body.action);
+  const action = normalizePayrollApprovalAction(compact(body.action));
   const period = compact(body.period) || (await getActivePayrollPeriod());
   const reason = compact(body.reason);
   const comment = compact(body.comment);
@@ -455,14 +466,22 @@ export async function POST(request: Request) {
   }
 
   if (workflowActions.has(action)) {
+    if (action === 'hr-manager-approve' && !processingPerms.canApproveHrManager) return jsonErr(403, 'HR Manager approval permission denied');
+    if (action === 'finance-manager-approve' && !processingPerms.canApproveFinanceManager) return jsonErr(403, 'Finance Manager approval permission denied');
+    if (action === 'cfo-approve' && !processingPerms.canApproveCfo) return jsonErr(403, 'CFO approval permission denied');
+    if (action === 'md-ceo-approve' && !processingPerms.canApproveMdCeo) return jsonErr(403, 'MD / CEO approval permission denied');
     if (action === 'approve-run' && !perms.canApprove) return jsonErr(403, 'Permission denied');
+    if (['reject-run', 'request-revision'].includes(action) && !processingPerms.canApproveHrManager && !processingPerms.canApproveFinanceManager && !processingPerms.canApproveCfo) {
+      return jsonErr(403, 'Reject/revision permission denied');
+    }
     if (['validate-payroll', 'create-run', 'submit-run', 'release-run', 'generate-payslips', 'create-period', 'open-period'].includes(action) && !perms.canManageRun) return jsonErr(403, 'Permission denied');
     if (['generate-bank-schedule', 'post-run'].includes(action) && !perms.canPost) return jsonErr(403, 'Permission denied');
     if (['close-period'].includes(action) && !perms.canManageRun && !perms.canApprove) return jsonErr(403, 'Permission denied');
     if (action === 'reopen-period' && !perms.canReopen) return jsonErr(403, 'Only CFO, Executive Director, or Super Admin can reopen closed payroll periods.');
 
     try {
-      const result = await executePayrollWorkflowAction({ action, period, actor, role, reason: reason || undefined, comment: comment || undefined, ip, paymentDate: body.paymentDate || null });
+      const origin = new URL(request.url).origin;
+      const result = await executePayrollWorkflowAction({ action, period, actor, role, reason: reason || undefined, comment: comment || undefined, ip, paymentDate: body.paymentDate || null, isGlobalAdmin, baseUrl: origin });
       return jsonOk({ run: result.run });
     } catch (error) {
       return jsonErr(/permission|cannot|blocked|requires|not found|unsupported/i.test(error instanceof Error ? error.message : '') ? 409 : 500, error instanceof Error ? error.message : 'Unable to complete payroll action.');

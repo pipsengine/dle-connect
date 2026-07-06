@@ -1,5 +1,6 @@
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import { payrollApprovalPermissions } from '@/lib/payroll-approval-workflow';
 
 export type PayrollSessionRole =
   | 'Super Admin'
@@ -56,19 +57,29 @@ export const payrollSessionContext = async (request: Request) => {
       ? await effectivePermissionsForUser(session.sub, session.roles).catch(() => session.permissions)
       : [];
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || null;
-  return { session, role, actor, permissions, ip };
+  const processingPerms = processingPermissions(role, { isGlobalAdmin: session?.isGlobalAdmin });
+  return { session, role, actor, permissions, ip, isGlobalAdmin: Boolean(session?.isGlobalAdmin), processingPerms };
 };
 
-export const processingPermissions = (role: PayrollSessionRole) => ({
-  canViewMoney: ['Super Admin', 'HR Director', 'HR Manager', 'Payroll Officer', 'Payroll Supervisor', 'Finance Controller', 'Finance Manager', 'CFO', 'Executive Director', 'Executive Management', 'Auditor'].includes(role),
-  canCalculate: ['Super Admin', 'HR Director', 'HR Manager', 'Payroll Officer', 'Payroll Supervisor', 'Finance Controller'].includes(role),
-  canSubmit: ['Super Admin', 'Payroll Officer', 'Payroll Supervisor', 'HR Manager'].includes(role),
-  canApproveFinance: ['Super Admin', 'Finance Controller', 'Finance Manager', 'CFO', 'Executive Director', 'Executive Management'].includes(role),
-  canApproveHr: ['Super Admin', 'HR Director'].includes(role),
-  canLock: ['Super Admin', 'Finance Controller', 'Finance Manager', 'CFO', 'HR Director'].includes(role),
-  canExport: role !== 'Employee',
-  canReopen: ['Super Admin', 'CFO', 'Executive Director'].includes(role),
-});
+export const processingPermissions = (role: PayrollSessionRole, options?: { isGlobalAdmin?: boolean }) => {
+  const stagePerms = payrollApprovalPermissions(role, options);
+  return {
+    canViewMoney: ['Super Admin', 'System Administrator', 'HR Director', 'HR Manager', 'Payroll Officer', 'Payroll Supervisor', 'Finance Controller', 'Finance Manager', 'CFO', 'Executive Director', 'Executive Management', 'Auditor'].includes(role) || Boolean(options?.isGlobalAdmin),
+    canCalculate: stagePerms.canSubmit || ['HR Director', 'Finance Controller'].includes(role),
+    canSubmit: stagePerms.canSubmit,
+    canApproveHrManager: stagePerms.canApproveHrManager,
+    canApproveFinanceManager: stagePerms.canApproveFinanceManager,
+    canApproveCfo: stagePerms.canApproveCfo,
+    canApproveMdCeo: stagePerms.canApproveMdCeo,
+    canApproveAnyStage: stagePerms.canApproveAnyStage,
+    canReject: stagePerms.canReject,
+    canApproveFinance: stagePerms.canApproveFinanceManager || stagePerms.canApproveCfo,
+    canApproveHr: stagePerms.canApproveHrManager,
+    canLock: ['Super Admin', 'System Administrator', 'Finance Controller', 'Finance Manager', 'CFO', 'HR Director'].includes(role) || Boolean(options?.isGlobalAdmin),
+    canExport: role !== 'Employee',
+    canReopen: ['Super Admin', 'System Administrator', 'CFO', 'Executive Director'].includes(role) || Boolean(options?.isGlobalAdmin),
+  };
+};
 
 export const managementPermissions = (role: PayrollSessionRole) => {
   const canViewMoney = ['Super Admin', 'System Administrator', 'HR Director', 'HR Manager', 'Payroll Officer', 'Payroll Supervisor', 'Finance Controller', 'Finance Manager', 'CFO', 'Executive Director', 'Executive Management', 'Auditor'].includes(role);

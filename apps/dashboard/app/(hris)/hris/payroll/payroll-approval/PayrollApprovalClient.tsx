@@ -6,23 +6,18 @@ import {
   AlertTriangle,
   BadgeCheck,
   Banknote,
-  CheckCircle2,
   Download,
-  FileCheck2,
   History,
-  Lock,
   RefreshCcw,
-  RotateCcw,
   Search,
-  Send,
   ShieldCheck,
-  UserCheck,
   Wallet,
-  XCircle,
 } from 'lucide-react';
+import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
+import PayrollApprovalStagePanel from './PayrollApprovalStagePanel';
 
-type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Payroll Officer' | 'Finance Controller' | 'Executive Management' | 'Auditor' | 'Employee';
-type RunStatus = 'Draft' | 'Calculated' | 'Submitted' | 'Finance Approved' | 'HR Approved' | 'Locked' | 'Posted' | 'Rejected';
+type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Finance Controller' | 'Finance Manager' | 'CFO' | 'Executive Management' | 'Payroll Officer' | 'Auditor' | 'Employee';
+type RunStatus = 'Draft' | 'Calculated' | 'Submitted' | 'HR Approved' | 'Finance Approved' | 'CFO Approved' | 'Approved' | 'Locked' | 'Posted' | 'Rejected';
 type RecordStatus = 'Ready' | 'Review' | 'Blocked';
 type Tone = 'blue' | 'green' | 'amber' | 'red' | 'violet' | 'cyan' | 'slate';
 
@@ -66,6 +61,11 @@ type Payload = {
     canViewMoney: boolean;
     canCalculate: boolean;
     canSubmit: boolean;
+    canApproveHrManager: boolean;
+    canApproveFinanceManager: boolean;
+    canApproveCfo: boolean;
+    canApproveMdCeo: boolean;
+    canApproveAnyStage: boolean;
     canApproveFinance: boolean;
     canApproveHr: boolean;
     canLock: boolean;
@@ -87,6 +87,21 @@ type Payload = {
   };
   records: PayrollRecord[];
   controls: Array<{ id: string; label: string; status: string; detail: string; tone: Tone }>;
+  approvalWorkflow?: {
+    stageLabel: string;
+    nextOwner: string;
+    stages: Array<{
+      id: PayrollApprovalStageId;
+      code: string;
+      title: string;
+      owner: string;
+      action: string;
+      done: boolean;
+      current: boolean;
+      stamp: string | null;
+      signedBy: string | null;
+    }>;
+  };
 };
 
 type ApiResponse<T> = { status: 'success' | 'error'; data?: T; error?: string };
@@ -144,6 +159,7 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [note, setNote] = useState('');
+  const [activeStageId, setActiveStageId] = useState<PayrollApprovalStageId | null>(null);
 
   const load = async (targetPeriod = period) => {
     setLoading(true);
@@ -181,6 +197,12 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
       .slice(0, 80);
   }, [payload?.records, query]);
 
+  const stages = payload?.approvalWorkflow?.stages || [];
+  useEffect(() => {
+    const current = stages.find((stage) => stage.current);
+    if (current) setActiveStageId(current.id);
+  }, [payload?.approvalWorkflow?.stageLabel, stages]);
+
   const action = async (actionName: string) => {
     setPosting(actionName);
     setToast('');
@@ -206,16 +228,6 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
     window.location.href = `/api/hris/payroll/payroll-processing?period=${encodeURIComponent(period)}&format=csv`;
   };
 
-  const approvals = [
-    { action: 'submit', label: 'Submit to Approval', icon: Send, enabled: payload?.permissions.canSubmit },
-    { action: 'finance-approve', label: 'Finance Approve', icon: FileCheck2, enabled: payload?.permissions.canApproveFinance },
-    { action: 'hr-approve', label: 'HR Approve', icon: UserCheck, enabled: payload?.permissions.canApproveHr },
-    { action: 'lock', label: 'Lock Payroll', icon: Lock, enabled: payload?.permissions.canLock },
-    { action: 'post', label: 'Post Payroll', icon: CheckCircle2, enabled: payload?.permissions.canLock },
-    { action: 'reject', label: 'Reject', icon: XCircle, enabled: payload?.permissions.canApproveFinance || payload?.permissions.canApproveHr },
-    { action: 'reopen', label: 'Reopen', icon: RotateCcw, enabled: payload?.permissions.canLock },
-  ];
-
   return (
     <div className="min-h-screen bg-white">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -227,13 +239,15 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
             <div>
               <h1 className="text-2xl font-black tracking-tight text-slate-950">Payroll Approval</h1>
               <p className="mt-1 max-w-5xl text-sm font-semibold text-slate-600">
-                Review payroll runs, validate exception gates, approve finance and HR stages, lock payroll, post final runs, and preserve a full audit trail.
+                Sequential HR Manager → Finance Manager → CFO → MD / CEO approval with role-specific checklists, authenticated email notifications, and full audit trail.
               </p>
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-extrabold text-blue-800">Period: {payload?.periodLabel || 'Loading'}</span>
             <span className={`rounded-full px-3 py-1 text-xs font-extrabold ${toneStyles[statusTone(runStatus)].chip}`}>Run: {runStatus}</span>
+            <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-extrabold text-violet-800">Stage: {payload?.approvalWorkflow?.stageLabel || 'Preparation'}</span>
+            <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-extrabold text-amber-900">Owner: {payload?.approvalWorkflow?.nextOwner || 'Payroll Officer'}</span>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-extrabold text-slate-700">Loaded: {new Date(lastLoaded).toLocaleString('en-GB')}</span>
             <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-extrabold text-emerald-800">{payload?.dataSource?.employeeCount || 0} employees</span>
           </div>
@@ -241,7 +255,7 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
         <div className="flex flex-wrap items-center gap-2">
           <input type="month" value={period} onChange={(event) => setPeriod(event.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-800 outline-none" />
           <select value={role} onChange={(event) => setRole(event.target.value as Role)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-800 outline-none">
-            {['Finance Controller', 'HR Director', 'Executive Management', 'Payroll Officer', 'HR Manager', 'Auditor', 'Super Admin', 'Employee'].map((item) => <option key={item}>{item}</option>)}
+            {['HR Manager', 'HR Director', 'Finance Manager', 'Finance Controller', 'CFO', 'Executive Management', 'Payroll Officer', 'Super Admin', 'Auditor', 'Employee'].map((item) => <option key={item}>{item}</option>)}
           </select>
           <button type="button" onClick={() => void load(period)} disabled={loading} className="inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-3 text-xs font-extrabold text-white hover:bg-blue-700 disabled:cursor-wait disabled:opacity-60">
             <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
@@ -265,22 +279,35 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
         <MetricCard label="Approval Exceptions" value={number(payload?.summary.exceptionCount)} detail={`${number(payload?.summary.blocked)} blocked and ${number(payload?.summary.review)} review lines`} icon={AlertTriangle} tone={(payload?.summary.blocked || 0) > 0 ? 'red' : (payload?.summary.review || 0) > 0 ? 'amber' : 'green'} />
       </div>
 
-      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1.2fr]">
-          <div>
-            <h2 className="text-sm font-black uppercase tracking-normal text-slate-900">Approval Decision</h2>
-            <p className="mt-1 text-xs font-semibold text-slate-500">Blocked runs cannot advance until payroll processing exceptions are resolved.</p>
-            <textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Approval note, rejection reason, or lock/post comment" className="mt-4 min-h-24 w-full rounded-2xl border border-slate-200 bg-white p-3 text-sm font-semibold outline-none focus:border-dle-blue focus:ring-2 focus:ring-dle-blue/20" />
-          </div>
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-            {approvals.map(({ action: actionName, label, icon: Icon, enabled }) => (
-              <button key={actionName} type="button" onClick={() => void action(actionName)} disabled={!enabled || posting === actionName || loading} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-950 px-3 text-xs font-extrabold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400">
-                <Icon className={`h-4 w-4 ${posting === actionName ? 'animate-spin' : ''}`} />
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
+      <section className="mt-6">
+        <PayrollApprovalStagePanel
+          stages={stages}
+          payload={{
+            blockedEmployees: payload?.summary.blocked,
+            reviewEmployees: payload?.summary.review,
+            exceptionCount: payload?.summary.exceptionCount,
+            payrollEligible: payload?.summary.employees,
+            readyEmployees: payload?.summary.ready,
+            grossPay: payload?.summary.grossPay,
+            netPay: payload?.summary.netPay,
+            employerCost: payload?.summary.employerCost,
+            records: payload?.records,
+          }}
+          activeStageId={activeStageId}
+          onSelectStage={setActiveStageId}
+          onApprove={(actionName) => void action(actionName)}
+          onReject={() => void action('reject-run')}
+          onRequestRevision={() => void action('request-revision')}
+          posting={posting}
+          canApproveHrManager={Boolean(payload?.permissions.canApproveHrManager)}
+          canApproveFinanceManager={Boolean(payload?.permissions.canApproveFinanceManager)}
+          canApproveCfo={Boolean(payload?.permissions.canApproveCfo)}
+          canApproveMdCeo={Boolean(payload?.permissions.canApproveMdCeo)}
+          canApproveAnyStage={Boolean(payload?.permissions.canApproveAnyStage)}
+          canSubmit={Boolean(payload?.permissions.canSubmit)}
+          note={note}
+          onNoteChange={setNote}
+        />
       </section>
 
       <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-[0.9fr_1.1fr]">

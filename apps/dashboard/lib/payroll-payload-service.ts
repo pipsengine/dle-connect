@@ -18,6 +18,11 @@ import {
 } from '@/lib/payroll-readiness';
 import { reapplyPayrollValidationPolicy } from '@/lib/payroll-tolerance';
 import { managementPermissions, payrollSessionContext, processingPermissions } from '@/lib/payroll-session';
+import {
+  getPayrollApprovalStageState,
+  resolvePayrollApprovalNextOwner,
+  resolvePayrollApprovalStageLabel,
+} from '@/lib/payroll-approval-workflow';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 
@@ -166,6 +171,16 @@ const mapRunForProcessing = (run: Awaited<ReturnType<typeof getPayrollRunForPeri
         createdBy: run.createdBy,
         updatedAt: run.updatedAt,
         updatedBy: run.updatedBy,
+        submittedAt: run.submittedAt || null,
+        submittedBy: run.submittedBy || null,
+        hrReviewedAt: run.hrReviewedAt || null,
+        hrReviewedBy: run.hrReviewedBy || null,
+        financeReviewedAt: run.financeReviewedAt || null,
+        financeReviewedBy: run.financeReviewedBy || null,
+        cfoReviewedAt: run.cfoReviewedAt || null,
+        cfoReviewedBy: run.cfoReviewedBy || null,
+        approvedAt: run.approvedAt || null,
+        approvedBy: run.approvedBy || null,
         audit: (run.audit || []).map((entry) => ({
           at: entry.at,
           actor: entry.user,
@@ -197,8 +212,8 @@ const knownPayrollPeriods = async (runs: Awaited<ReturnType<typeof listPayrollRu
 };
 
 export const buildProcessingPayload = async (request: Request, requestedPeriod?: string) => {
-  const { role } = await payrollSessionContext(request);
-  const perms = processingPermissions(role);
+  const { role, processingPerms } = await payrollSessionContext(request);
+  const perms = processingPerms;
   const period = requestedPeriod || (await getActivePayrollPeriod());
   const [calculation, runs, run] = await Promise.all([
     calculatePayrollForPeriod(period),
@@ -252,12 +267,17 @@ export const buildProcessingPayload = async (request: Request, requestedPeriod?:
       ...calculation.controls,
       {
         id: 'approval',
-        label: 'Approval Workflow',
+        label: 'Segregated Approval',
         status: run?.status || 'Draft',
-        detail: 'Submit, finance approve, HR approve, lock, and post payroll with full audit trace.',
-        tone: run?.status === 'Posted' || run?.status === 'Locked' ? 'green' : 'violet',
+        detail: 'HR Manager → Finance Manager → CFO → MD/CEO sequential sign-off with authenticated email notifications.',
+        tone: run?.status === 'Posted' || run?.status === 'Locked' || run?.status === 'Approved' ? 'green' : 'violet',
       },
     ],
+    approvalWorkflow: {
+      stageLabel: resolvePayrollApprovalStageLabel(run),
+      nextOwner: resolvePayrollApprovalNextOwner(run),
+      stages: getPayrollApprovalStageState(run),
+    },
   };
 };
 
@@ -275,6 +295,12 @@ const mapManagementRun = (item: Awaited<ReturnType<typeof listPayrollRuns>>[numb
   validatedBy: item.validatedBy || null,
   submittedAt: item.submittedAt || null,
   submittedBy: item.submittedBy || null,
+  hrReviewedAt: item.hrReviewedAt || null,
+  hrReviewedBy: item.hrReviewedBy || null,
+  financeReviewedAt: item.financeReviewedAt || null,
+  financeReviewedBy: item.financeReviewedBy || null,
+  cfoReviewedAt: item.cfoReviewedAt || null,
+  cfoReviewedBy: item.cfoReviewedBy || null,
   approvedAt: item.approvedAt || null,
   approvedBy: item.approvedBy || null,
   releasedAt: item.releasedAt || null,
@@ -411,21 +437,28 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
           ? 'Payroll Supervisor'
           : !currentRun?.submittedAt
             ? 'Payroll Officer'
-            : !currentRun?.approvedAt
-              ? 'HR / Finance / CFO'
-              : !currentRun?.releasedAt
-                ? 'Payroll Supervisor'
-                : !currentRun?.postedAt
-                  ? 'Finance Manager'
-                  : 'Payroll Officer',
+            : !currentRun?.hrReviewedAt
+              ? 'HR Manager'
+              : !currentRun?.financeReviewedAt
+                ? 'Finance Manager'
+            : !currentRun?.cfoReviewedAt
+              ? 'CFO'
+              : !currentRun?.approvedAt
+                ? 'MD / CEO'
+                : !currentRun?.releasedAt
+                    ? 'Payroll Supervisor'
+                    : !currentRun?.postedAt
+                      ? 'Finance Manager'
+                      : 'Payroll Officer',
       blockedActions: [
         ...(blocked ? ['Approval is blocked until validation exceptions are resolved.'] : []),
-        ...(!currentRun?.approvedAt ? ['Payslip publishing, bank schedule generation, and journal posting require payroll approval.'] : []),
+        ...(!currentRun?.approvedAt ? ['Payslip publishing, bank schedule generation, and journal posting require CFO approval.'] : []),
         ...(currentRun?.approvedAt && !currentRun.bankScheduleGeneratedAt ? ['Bank schedule must be generated before posting and closing.'] : []),
         ...(currentRun?.approvedAt && !currentRun.statutorySchedulesGeneratedAt ? ['Statutory schedules must be generated before posting and closing.'] : []),
         ...(currentRun?.postedAt && !currentRun.payslipsGeneratedAt ? ['Payslips must be published before period close.'] : []),
       ],
-      approvalStage: blocked ? 'Validation' : currentRun?.approvedAt ? 'Approved' : currentRun?.submittedAt ? 'Awaiting Approval' : 'Preparation',
+      approvalStage: blocked ? 'Validation' : resolvePayrollApprovalStageLabel(currentRun as UnifiedPayrollRun | null),
+      stages: getPayrollApprovalStageState(currentRun as UnifiedPayrollRun | null),
     },
     auditTrail,
     artifacts: currentRun?.artifacts || [],

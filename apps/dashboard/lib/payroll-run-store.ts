@@ -17,6 +17,7 @@ export type UnifiedPayrollRunStatus =
   | 'Submitted'
   | 'Under Review'
   | 'Finance Approved'
+  | 'CFO Approved'
   | 'HR Approved'
   | 'Approved'
   | 'Released'
@@ -80,6 +81,12 @@ export type UnifiedPayrollRun = {
   validatedBy?: string | null;
   submittedAt?: string | null;
   submittedBy?: string | null;
+  hrReviewedAt?: string | null;
+  hrReviewedBy?: string | null;
+  financeReviewedAt?: string | null;
+  financeReviewedBy?: string | null;
+  cfoReviewedAt?: string | null;
+  cfoReviewedBy?: string | null;
   approvedAt?: string | null;
   approvedBy?: string | null;
   releasedAt?: string | null;

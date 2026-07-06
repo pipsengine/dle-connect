@@ -79,7 +79,7 @@ const employeeInitials = (name: string) =>
     .join('') || '?';
 
 type Role = 'Super Admin' | 'System Administrator' | 'HR Director' | 'HR Manager' | 'HR Officer' | 'Payroll Officer' | 'Payroll Supervisor' | 'Finance Controller' | 'Finance Manager' | 'CFO' | 'Executive Director' | 'Executive Management' | 'Auditor' | 'Employee';
-type PayrollRunStatus = 'Draft' | 'Open' | 'Validation' | 'Validated' | 'Computed' | 'Ready for Approval' | 'Submitted' | 'Under Review' | 'Approved' | 'Released' | 'Rejected' | 'Revision Requested' | 'Locked' | 'Posted' | 'Closed' | 'Reopened' | 'Cancelled' | 'Published';
+type PayrollRunStatus = 'Draft' | 'Open' | 'Validation' | 'Validated' | 'Computed' | 'Ready for Approval' | 'Submitted' | 'Under Review' | 'HR Approved' | 'Finance Approved' | 'CFO Approved' | 'Approved' | 'Released' | 'Rejected' | 'Revision Requested' | 'Locked' | 'Posted' | 'Closed' | 'Reopened' | 'Cancelled' | 'Published';
 type Tone = 'blue' | 'green' | 'amber' | 'red' | 'violet' | 'cyan' | 'slate';
 
 const preSubmissionRunStatuses: PayrollRunStatus[] = ['Draft', 'Open', 'Validation', 'Validated', 'Computed', 'Ready for Approval', 'Revision Requested', 'Rejected'];
@@ -142,6 +142,12 @@ type PayrollRun = {
   validatedBy?: string | null;
   submittedAt?: string | null;
   submittedBy?: string | null;
+  hrReviewedAt?: string | null;
+  hrReviewedBy?: string | null;
+  financeReviewedAt?: string | null;
+  financeReviewedBy?: string | null;
+  cfoReviewedAt?: string | null;
+  cfoReviewedBy?: string | null;
   approvedAt: string | null;
   approvedBy: string | null;
   releasedAt?: string | null;
@@ -585,6 +591,10 @@ const dashboardActions = [
   action('view-exceptions', 'View Payroll Exceptions', 'secondary'),
   action('create-run', 'Process Payroll', 'primary', payrollMakerRoles, true),
   action('submit-run', 'Submit Payroll for Approval', 'workflow', payrollMakerRoles, true),
+  action('hr-manager-approve', 'HR Manager Approve', 'workflow', ['HR Manager', 'HR Director', 'Super Admin'], true),
+  action('finance-manager-approve', 'Finance Manager Approve', 'workflow', ['Finance Manager', 'Finance Controller', 'Super Admin'], true),
+  action('cfo-approve', 'CFO Approve', 'workflow', ['CFO', 'Executive Director', 'Super Admin'], true),
+  action('md-ceo-approve', 'MD / CEO Approve', 'workflow', ['Executive Director', 'Executive Management', 'Super Admin'], true),
   action('approve-run', 'Approve Payroll', 'workflow', payrollApprovalRoles, true),
   action('approve-entire-workflow', 'Approve Entire Workflow', 'workflow', ['Super Admin'], true),
   action('release-run', 'Release Payroll', 'workflow', [...payrollMakerRoles, ...financeRoles], true),
@@ -652,6 +662,10 @@ const actionsBySection: Partial<Record<SectionId, PayrollAction[]>> = {
     action('create-run', 'Run Payroll', 'primary', payrollMakerRoles, true),
     action('validate-payroll', 'Run Validation', 'workflow', payrollMakerRoles),
     action('submit-run', 'Submit for Approval', 'workflow', payrollMakerRoles, true),
+    action('hr-manager-approve', 'HR Manager Approve', 'workflow', ['HR Manager', 'HR Director', 'Super Admin'], true),
+    action('finance-manager-approve', 'Finance Manager Approve', 'workflow', ['Finance Manager', 'Finance Controller', 'Super Admin'], true),
+    action('cfo-approve', 'CFO Approve', 'workflow', ['CFO', 'Executive Director', 'Super Admin'], true),
+  action('md-ceo-approve', 'MD / CEO Approve', 'workflow', ['Executive Director', 'Executive Management', 'Super Admin'], true),
     action('approve-run', 'Approve Payroll', 'workflow', payrollApprovalRoles, true),
     action('approve-entire-workflow', 'Approve Entire Workflow', 'workflow', ['Super Admin'], true),
     action('release-run', 'Release Payroll', 'workflow', [...payrollMakerRoles, ...financeRoles], true),
@@ -788,7 +802,10 @@ const canRunAction = (actionItem: PayrollAction, role: Role, payload: PayrollPay
     if (id === 'validate-payroll') return submittedStatuses.includes(status);
     if (id === 'create-run') return submittedStatuses.includes(status);
     if (id === 'submit-run') return Boolean(run?.submittedAt) || submittedStatuses.includes(status);
-    if (id === 'approve-run' || id === 'approve-entire-workflow') return Boolean(run?.approvedAt) || completedStatuses.includes(status);
+    if (id === 'hr-manager-approve') return Boolean(run?.hrReviewedAt) || ['HR Approved', 'Finance Approved', ...completedStatuses].includes(status);
+    if (id === 'finance-manager-approve') return Boolean(run?.financeReviewedAt) || ['Finance Approved', ...completedStatuses].includes(status);
+    if (id === 'cfo-approve') return Boolean(run?.cfoReviewedAt) || ['CFO Approved', 'Approved', ...completedStatuses].includes(status);
+    if (id === 'md-ceo-approve' || id === 'approve-run' || id === 'approve-entire-workflow') return Boolean(run?.approvedAt) || completedStatuses.includes(status);
     if (id === 'release-run') return Boolean(run?.releasedAt) || releasedStatuses.includes(status);
     if (id === 'generate-payslips') return Boolean(run?.payslipsGeneratedAt) || ['Published', 'Closed'].includes(status);
     if (id === 'generate-bank-schedule') return Boolean(run?.bankScheduleGeneratedAt);
@@ -800,11 +817,27 @@ const canRunAction = (actionItem: PayrollAction, role: Role, payload: PayrollPay
   if (actionCompleted(actionItem.id)) return { allowed: false, reason: 'This step is already completed. Continue to the next active step.' };
   if (actionItem.id === 'create-run' && blockedEmployees > 0) return { allowed: false, reason: 'Resolve blocked payroll setup before processing.' };
   if (actionItem.id === 'submit-run' && blockedEmployees > 0) return { allowed: false, reason: 'Resolve blocked payroll setup before submitting payroll for approval.' };
-  if (['approve-run'].includes(actionItem.id) && blockedEmployees > 0) return { allowed: false, reason: 'Resolve blocked payroll setup before approval.' };
+  if (['cfo-approve', 'md-ceo-approve', 'approve-run'].includes(actionItem.id) && blockedEmployees > 0) {
+    return { allowed: false, reason: 'Resolve blocked payroll setup before approval.' };
+  }
+  const isSuperAdmin = role === 'Super Admin';
+  if (!isSuperAdmin) {
+    if (actionItem.id === 'hr-manager-approve' && !['Submitted', 'Under Review'].includes(status)) {
+      return { allowed: false, reason: 'HR Manager approval activates after payroll submission.' };
+    }
+    if (actionItem.id === 'finance-manager-approve' && status !== 'HR Approved') {
+      return { allowed: false, reason: 'Finance Manager approval requires HR Manager sign-off first.' };
+    }
+    if (actionItem.id === 'cfo-approve' && status !== 'Finance Approved') {
+      return { allowed: false, reason: 'CFO approval requires Finance Manager sign-off first.' };
+    }
+    if (['md-ceo-approve', 'approve-run'].includes(actionItem.id) && status !== 'CFO Approved') {
+      return { allowed: false, reason: 'MD / CEO approval requires CFO sign-off first.' };
+    }
+  }
   if (actionItem.id === 'validate-payroll' && !payrollRunIsPreSubmission(status)) return { allowed: false, reason: 'Validation can only be repeated before payroll is submitted for approval.' };
   if (actionItem.id === 'create-run' && !payrollRunIsPreSubmission(status)) return { allowed: false, reason: 'Payroll can only be re-run before submission. Request revision or reopen the period to recalculate.' };
   if (actionItem.id === 'submit-run' && !['Computed', 'Calculated', 'Ready for Approval', 'Validated'].includes(status)) return { allowed: false, reason: 'Process payroll first. Submit activates after computation is complete.' };
-  if (actionItem.id === 'approve-run' && !['Submitted', 'Under Review'].includes(status)) return { allowed: false, reason: 'Submit payroll for approval first. Approval activates after submission.' };
   if (actionItem.id === 'approve-entire-workflow' && !['Submitted', 'Under Review'].includes(status)) return { allowed: false, reason: 'Submit payroll first. Entire workflow approval activates after submission.' };
   if (actionItem.id === 'release-run' && status !== 'Approved') return { allowed: false, reason: 'Payroll approval is required before release.' };
   if (['generate-payslips', 'generate-bank-schedule', 'generate-statutory-schedules', 'export-bank-file', 'post-run'].includes(actionItem.id) && !releasedStatuses.includes(status)) return { allowed: false, reason: 'Release payroll first. Output actions activate after release.' };
@@ -1777,7 +1810,10 @@ function ProcessPayrollWorkspace({
       { id: 'validate-payroll', label: 'Validate', detail: 'Check master data and setup exceptions', done: Boolean(currentRun?.validatedAt) || ['Validated', ...computedStatuses].includes(status), phase: 'prepare' as const },
       { id: 'create-run', label: 'Run Payroll', detail: 'Compute gross, deductions and net pay', done: computedStatuses.includes(status), phase: 'prepare' as const },
       { id: 'submit-run', label: 'Submit', detail: 'Send payroll for approval', done: Boolean(currentRun?.submittedAt) || submittedStatuses.includes(status), phase: 'approve' as const },
-      { id: 'approve-run', label: 'Approve', detail: 'HR / Finance / CFO sign-off', done: Boolean(currentRun?.approvedAt) || approvedStatuses.includes(status), phase: 'approve' as const },
+      { id: 'hr-manager-approve', label: 'HR Approve', detail: 'HR Manager sign-off', done: Boolean(currentRun?.hrReviewedAt) || ['HR Approved', 'Finance Approved', ...approvedStatuses].includes(status), phase: 'approve' as const },
+      { id: 'finance-manager-approve', label: 'Finance Approve', detail: 'Finance Manager sign-off', done: Boolean(currentRun?.financeReviewedAt) || ['Finance Approved', ...approvedStatuses].includes(status), phase: 'approve' as const },
+      { id: 'cfo-approve', label: 'CFO Approve', detail: 'CFO sign-off', done: Boolean(currentRun?.cfoReviewedAt) || ['CFO Approved', 'Approved', ...approvedStatuses].includes(status), phase: 'approve' as const },
+      { id: 'md-ceo-approve', label: 'MD / CEO Approve', detail: 'Final executive sign-off', done: Boolean(currentRun?.approvedAt) || approvedStatuses.includes(status), phase: 'approve' as const },
       { id: 'release-run', label: 'Release', detail: 'Unlock payslips, bank and statutory outputs', done: Boolean(currentRun?.releasedAt) || isReleased, phase: 'approve' as const },
       { id: 'generate-payslips', label: 'Payslips', detail: 'Publish employee payslips to ESS', done: Boolean(currentRun?.payslipsGeneratedAt), phase: 'output' as const },
       { id: 'generate-bank-schedule', label: 'Bank Schedule', detail: 'Generate bank payment file', done: Boolean(currentRun?.bankScheduleGeneratedAt), phase: 'output' as const },
@@ -3373,11 +3409,11 @@ function PayrollComputationWorkflowPage({ payload, canViewMoney, role, runAction
     ['No missing projects', !payload?.exceptions?.some((item) => /project/i.test(item.issue))],
   ] as const;
   const approvalCards = [
-    { code: '4.1', title: 'Payroll Officer', tone: 'blue' as Tone, owner: currentRun?.createdBy || 'Payroll Officer', statusText: 'Draft', done: completed(['Computed', 'Ready for Approval', 'Submitted', 'Under Review', 'Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'], currentRun?.createdAt), date: currentRun?.createdAt, actions: ['Generate Payroll', 'Validate Payroll', 'Review Exceptions'] },
-    { code: '4.2', title: 'HR Manager', tone: 'green' as Tone, owner: currentRun?.submittedBy || 'HR Manager', statusText: 'HR Reviewed', done: completed(['Submitted', 'Under Review', 'Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'], currentRun?.submittedAt), date: currentRun?.submittedAt, actions: ['Review New Employees', 'Review Exits', 'Review Promotions', 'Review Salary Changes', 'Review Leave Impact'] },
-    { code: '4.3', title: 'Finance Manager', tone: 'amber' as Tone, owner: 'Finance Manager', statusText: 'Finance Reviewed', done: completed(['Under Review', 'Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed']), date: currentRun?.approvedAt, actions: ['Review Cost Centre Impact', 'Review Budget Availability', 'Review Variance Analysis'] },
+    { code: '4.1', title: 'Payroll Officer', tone: 'blue' as Tone, owner: currentRun?.submittedBy || currentRun?.createdBy || 'Payroll Officer', statusText: 'Submitted', done: completed(['Submitted', 'Under Review', 'HR Approved', 'Finance Approved', 'Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'], currentRun?.submittedAt), date: currentRun?.submittedAt, actions: ['Generate Payroll', 'Validate Payroll', 'Review Exceptions', 'Submit for Approval'] },
+    { code: '4.2', title: 'HR Manager', tone: 'green' as Tone, owner: currentRun?.hrReviewedBy || 'HR Manager', statusText: 'HR Reviewed', done: completed(['HR Approved', 'Finance Approved', 'Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'], currentRun?.hrReviewedAt), date: currentRun?.hrReviewedAt, actions: ['Review New Employees', 'Review Exits', 'Review Promotions', 'Review Salary Changes', 'Review Leave Impact'] },
+    { code: '4.3', title: 'Finance Manager', tone: 'amber' as Tone, owner: currentRun?.financeReviewedBy || 'Finance Manager', statusText: 'Finance Reviewed', done: completed(['Finance Approved', 'Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'], currentRun?.financeReviewedAt), date: currentRun?.financeReviewedAt, actions: ['Review Cost Centre Impact', 'Review Budget Availability', 'Review Variance Analysis'] },
     { code: '4.4', title: 'CFO', tone: 'violet' as Tone, owner: currentRun?.approvedBy || 'CFO', statusText: 'CFO Approved', done: completed(['Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'], currentRun?.approvedAt), date: currentRun?.approvedAt, actions: ['Review Payroll Summary', 'Review Variance Analysis', 'Review Headcount Changes'] },
-    { code: '4.5', title: 'MD / CEO Optional', tone: 'cyan' as Tone, owner: 'MD / CEO', statusText: 'Final Approved', done: completed(['Released', 'Locked', 'Posted', 'Published', 'Closed'], currentRun?.releasedAt), date: currentRun?.releasedAt, actions: ['Final Review', 'Executive Approval'] },
+    { code: '4.5', title: 'Payroll Release', tone: 'cyan' as Tone, owner: currentRun?.releasedBy || 'Payroll / Finance', statusText: 'Released', done: completed(['Released', 'Locked', 'Posted', 'Published', 'Closed'], currentRun?.releasedAt), date: currentRun?.releasedAt, actions: ['Release Payroll', 'Bank Schedule', 'Payslips', 'Journal Posting'] },
   ];
   const releaseSteps = [
     ['Payroll Released', completed(['Released', 'Locked', 'Posted', 'Published', 'Closed'], currentRun?.releasedAt), currentRun?.releasedAt, Landmark],
@@ -3711,7 +3747,10 @@ function WorkflowStageInsightPanel({
       quickAction('submit-run', 'Submit for Approval', 'violet', true),
     ],
     approval: [
-      quickAction('approve-run', 'Approve', 'green', true),
+      quickAction('hr-manager-approve', 'HR Approve', 'green', true),
+      quickAction('finance-manager-approve', 'Finance Approve', 'amber', true),
+      quickAction('cfo-approve', 'CFO Approve', 'violet', true),
+      quickAction('md-ceo-approve', 'MD / CEO Approve', 'cyan', true),
       quickAction('request-revision', 'Return', 'amber', true),
       quickAction('reject-run', 'Reject', 'red', true),
     ],

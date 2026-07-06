@@ -19,6 +19,12 @@ import {
   type UnifiedPayrollRunStatus,
 } from '@/lib/payroll-run-store';
 import type { PayrollSessionRole } from '@/lib/payroll-session';
+import {
+  clearPayrollApprovalSignoffs,
+  normalizePayrollApprovalAction,
+  resolvePayrollApprovalActionForRun,
+} from '@/lib/payroll-approval-workflow';
+import { notifyNextPayrollApprovalStage } from '@/lib/payroll-approval-notification-service';
 import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import { invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
 import {
@@ -35,6 +41,8 @@ type WorkflowInput = {
   comment?: string;
   ip?: string | null;
   paymentDate?: string | null;
+  isGlobalAdmin?: boolean;
+  baseUrl?: string | null;
 };
 
 const nowIso = () => new Date().toISOString();
@@ -83,6 +91,10 @@ const FORCE_REFRESH_ACTIONS = new Set([
   'submit',
   'submit-run',
   'approve-run',
+  'cfo-approve',
+  'md-ceo-approve',
+  'hr-manager-approve',
+  'finance-manager-approve',
   'release-run',
   'generate-payslips',
   'post',
@@ -91,7 +103,8 @@ const FORCE_REFRESH_ACTIONS = new Set([
 ]);
 
 export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
-  const { action, period, actor, role, reason, comment, ip, paymentDate } = input;
+  const { period, actor, role, reason, comment, ip, paymentDate, isGlobalAdmin, baseUrl } = input;
+  let action = normalizePayrollApprovalAction(input.action) as string;
   if (['calculate', 'create-run', 'validate-payroll'].includes(action)) invalidatePayrollEmployeeCache();
   const periodLabel = payrollPeriodLabel(period);
   let run = await getPayrollRunForPeriod(period);
@@ -152,6 +165,15 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
   }
 
   run = run || (await ensurePayrollRun(period, periodLabel, actor));
+  action = resolvePayrollApprovalActionForRun(action, run) as string;
+
+  const notifyNext = async () => {
+    try {
+      await notifyNextPayrollApprovalStage({ run: run!, actor, baseUrl });
+    } catch (error) {
+      console.warn('[payroll-workflow] approval notification failed', error);
+    }
+  };
 
   if (action === 'generate-bank-schedule') {
     if (!['Released', 'Locked', 'Published', 'Posted', 'Approved', 'Closed'].includes(run.status)) {
@@ -205,16 +227,14 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
       run.validatedAt = run.validatedAt || nowIso();
       run.validatedBy = run.validatedBy || actor;
       if (['Revision Requested', 'Rejected'].includes(run.status)) {
-        run.submittedAt = null;
-        run.submittedBy = null;
-        run.approvedAt = null;
-        run.approvedBy = null;
+        clearPayrollApprovalSignoffs(run);
       }
     }
     run.updatedBy = actor;
     await savePayrollRun(run);
     await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
     await audit(action, before, run.status);
+    await notifyNext();
     return { run, calculation };
   }
 
@@ -231,35 +251,68 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     await savePayrollRun(run);
     await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
     await audit(action, before, run.status);
+    await notifyNext();
     return { run, calculation };
   }
 
-  if (action === 'finance-approve') {
+  if (action === 'hr-manager-approve') {
     assertNotBlocked(calculation.summary, ['blocked-check']);
-    const before = run.status;
-    run.status = 'Finance Approved';
-    run.updatedBy = actor;
-    await savePayrollRun(run);
-    await audit(action, before, run.status);
-    return { run, calculation };
-  }
-
-  if (action === 'hr-approve') {
-    assertNotBlocked(calculation.summary, ['blocked-check']);
+    if (!isGlobalAdmin && !['Submitted', 'Under Review'].includes(run.status)) {
+      throw new Error(`HR Manager approval requires a submitted payroll run. Current status: ${run.status}.`);
+    }
     const before = run.status;
     run.status = 'HR Approved';
+    run.hrReviewedAt = nowIso();
+    run.hrReviewedBy = actor;
     run.updatedBy = actor;
     await savePayrollRun(run);
+    await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
     await audit(action, before, run.status);
+    await notifyNext();
     return { run, calculation };
   }
 
-  if (action === 'approve-run') {
+  if (action === 'finance-manager-approve') {
     assertNotBlocked(calculation.summary, ['blocked-check']);
-    if (!['Submitted', 'Under Review', 'Finance Approved', 'HR Approved'].includes(run.status)) {
-      throw new Error(`Cannot approve payroll from ${run.status}. Submit payroll for approval first.`);
+    if (!isGlobalAdmin && run.status !== 'HR Approved') {
+      throw new Error(`Finance Manager approval requires HR Manager sign-off first. Current status: ${run.status}.`);
     }
-    if (run.submittedBy === actor || run.createdBy === actor) throw new Error('Self-approval is not allowed.');
+    const before = run.status;
+    run.status = 'Finance Approved';
+    run.financeReviewedAt = nowIso();
+    run.financeReviewedBy = actor;
+    run.updatedBy = actor;
+    await savePayrollRun(run);
+    await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
+    await audit(action, before, run.status);
+    await notifyNext();
+    return { run, calculation };
+  }
+
+  if (action === 'cfo-approve') {
+    assertNotBlocked(calculation.summary, ['blocked-check']);
+    if (!isGlobalAdmin && run.status !== 'Finance Approved') {
+      throw new Error(`CFO approval requires Finance Manager sign-off first. Current status: ${run.status}.`);
+    }
+    if (!isGlobalAdmin && (run.submittedBy === actor || run.createdBy === actor)) throw new Error('Self-approval is not allowed.');
+    const before = run.status;
+    run.status = 'CFO Approved';
+    run.cfoReviewedAt = nowIso();
+    run.cfoReviewedBy = actor;
+    run.updatedBy = actor;
+    await savePayrollRun(run);
+    await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
+    await audit(action, before, run.status);
+    await notifyNext();
+    return { run, calculation };
+  }
+
+  if (action === 'md-ceo-approve') {
+    assertNotBlocked(calculation.summary, ['blocked-check']);
+    if (!isGlobalAdmin && run.status !== 'CFO Approved') {
+      throw new Error(`MD / CEO approval requires CFO sign-off first. Current status: ${run.status}.`);
+    }
+    if (!isGlobalAdmin && (run.submittedBy === actor || run.createdBy === actor)) throw new Error('Self-approval is not allowed.');
     const before = run.status;
     run.status = 'Approved';
     run.approvedAt = nowIso();
@@ -272,8 +325,8 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
   }
 
   if (action === 'release-run') {
-    if (run.status !== 'Approved' && run.status !== 'Finance Approved' && run.status !== 'HR Approved') {
-      throw new Error('Payroll can only be released after approval.');
+    if (run.status !== 'Approved') {
+      throw new Error('Payroll can only be released after MD / CEO approval.');
     }
     const before = run.status;
     run.status = 'Released';
@@ -381,10 +434,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
   if (action === 'reject-run' || action === 'reject') {
     const before = run.status;
     run.status = 'Rejected';
-    run.submittedAt = null;
-    run.submittedBy = null;
-    run.approvedAt = null;
-    run.approvedBy = null;
+    clearPayrollApprovalSignoffs(run);
     run.updatedBy = actor;
     await savePayrollRun(run);
     await audit(action, before, run.status);
@@ -394,10 +444,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
   if (action === 'request-revision') {
     const before = run.status;
     run.status = 'Revision Requested';
-    run.submittedAt = null;
-    run.submittedBy = null;
-    run.approvedAt = null;
-    run.approvedBy = null;
+    clearPayrollApprovalSignoffs(run);
     run.updatedBy = actor;
     await savePayrollRun(run);
     await audit(action, before, run.status);
