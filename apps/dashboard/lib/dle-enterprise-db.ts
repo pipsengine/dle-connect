@@ -8,6 +8,7 @@ import {
 } from '@/lib/sage-payroll-line-parser';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
+import { resolveNigeriaPersonalLocation } from '@/lib/nigeria-locations';
 
 type DraftRecordLike = {
   draftId: string;
@@ -1055,6 +1056,14 @@ const mapDirectoryEmployeeRow = (row: any): DleEmployeeDirectoryRow => {
   const contractEndDate = isoDate(row.contract_end_date);
   const missingProfileBits = [row.official_email, row.primary_phone, row.date_joined, row.reporting_manager].filter((x) => !str(x)).length;
   const aiRiskScore = Math.min(95, missingProfileBits * 18 + (emergencyContactCount === 0 ? 18 : 0) + (documentCount === 0 ? 12 : 0));
+  const resolvedLocation = resolveNigeriaPersonalLocation({
+    nationality: row.nationality,
+    country: row.country,
+    stateOfOrigin: row.state_of_origin,
+    localGovernmentArea: row.local_government_area,
+    contactState: row.state,
+    city: row.city,
+  });
 
   return {
     id: employeeCode,
@@ -1080,7 +1089,7 @@ const mapDirectoryEmployeeRow = (row: any): DleEmployeeDirectoryRow => {
     residentialAddress: str(row.residential_address),
     permanentAddress: str(row.permanent_address),
     city: str(row.city),
-    state: str(row.state),
+    state: resolvedLocation.contactState || str(row.state),
     country: str(row.country),
     postalCode: str(row.postal_code),
     jobTitle: str(row.job_title) || 'Unassigned Job Title',
@@ -1104,8 +1113,8 @@ const mapDirectoryEmployeeRow = (row: any): DleEmployeeDirectoryRow => {
     employmentType,
     status,
     nationality,
-    stateOfOrigin: str(row.state_of_origin),
-    localGovernmentArea: str(row.local_government_area),
+    stateOfOrigin: resolvedLocation.stateOfOrigin,
+    localGovernmentArea: resolvedLocation.localGovernmentArea,
     religion: str(row.religion),
     languagesSpoken: str(row.languages_spoken),
     nearestBusStop: str(row.nearest_bus_stop),
@@ -1578,6 +1587,7 @@ export const importSagePayrollEmployeesToDb = async (employees: SagePayrollEmplo
         .input('date_of_birth', sql.Date, sourceDate(employee.birthDate))
         .input('marital_status', sql.NVarChar(50), str(employee.maritalStatus) || null)
         .input('nationality', sql.NVarChar(100), nationality || null)
+        .input('state_of_origin', sql.NVarChar(100), isLocalNationality(nationality) ? str(employee.physicalProvince) || null : null)
         .input('official_email', sql.NVarChar(320), str(employee.emailAddress) || null)
         .input('primary_phone', sql.NVarChar(50), str(employee.cellNo) || null)
         .input('alternate_phone', sql.NVarChar(50), str(employee.homeTelNo || employee.workTelNo) || null)
@@ -1704,12 +1714,13 @@ export const importSagePayrollEmployeesToDb = async (employees: SagePayrollEmplo
           date_of_birth = COALESCE(@date_of_birth, target.date_of_birth),
           marital_status = COALESCE(NULLIF(@marital_status, N''), target.marital_status),
           nationality = COALESCE(NULLIF(@nationality, N''), target.nationality),
+          state_of_origin = COALESCE(NULLIF(@state_of_origin, N''), target.state_of_origin),
           modified_at = SYSUTCDATETIME()
         WHEN NOT MATCHED THEN INSERT (
-          employee_id, title, first_name, middle_name, last_name, preferred_name, gender, date_of_birth, marital_status, nationality
+          employee_id, title, first_name, middle_name, last_name, preferred_name, gender, date_of_birth, marital_status, nationality, state_of_origin
         )
         VALUES (
-          @employee_id, @title, @first_name, @middle_name, @last_name, @preferred_name, @gender, @date_of_birth, @marital_status, @nationality
+          @employee_id, @title, @first_name, @middle_name, @last_name, @preferred_name, @gender, @date_of_birth, @marital_status, @nationality, @state_of_origin
         );
 
         MERGE [hris].[EmployeeContactInfo] AS target
@@ -2502,6 +2513,15 @@ export type HrisEmployeeProfileSyncInput = {
   contacts?: Record<string, string | null | undefined>;
   employmentDetails?: Record<string, string | null | undefined>;
   jobDetails?: Record<string, string | null | undefined>;
+  payrollSetup?: Record<string, string | null | undefined>;
+  emergencyContacts?: Array<{
+    fullName: string;
+    relationship?: string;
+    phoneNumber?: string;
+    address?: string;
+    isPrimary?: boolean;
+    isNextOfKin?: boolean;
+  }>;
 };
 
 export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSyncInput): Promise<boolean> => {
@@ -2514,6 +2534,7 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
   const contacts = input.contacts || {};
   const employment = input.employmentDetails || {};
   const job = input.jobDetails || {};
+  const payroll = input.payrollSetup || {};
   const fullName =
     str(input.fullName) ||
     `${str(personal.firstName)} ${str(personal.lastName)}`.trim() ||
@@ -2735,6 +2756,65 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
           @role_profile, @job_description, @key_responsibilities
         );
       `);
+
+    if (nullable(payroll.bankName) || nullable(payroll.accountNumber) || nullable(payroll.accountName) || nullable(payroll.branchName)) {
+      await new sql.Request(tx)
+        .input('employee_id', sql.BigInt, employeeId)
+        .input('bank_name', sql.NVarChar(150), nullable(payroll.bankName))
+        .input('branch_name', sql.NVarChar(150), nullable(payroll.branchName))
+        .input('account_number', sql.NVarChar(50), nullable(payroll.accountNumber))
+        .input('account_name', sql.NVarChar(200), nullable(payroll.accountName))
+        .query(`
+          MERGE [hris].[EmployeePayrollSetup] AS target
+          USING (SELECT @employee_id AS employee_id) AS source
+          ON target.employee_id = source.employee_id
+          WHEN MATCHED THEN UPDATE SET
+            bank_name = COALESCE(@bank_name, target.bank_name),
+            branch_name = COALESCE(@branch_name, target.branch_name),
+            account_number = COALESCE(@account_number, target.account_number),
+            account_name = COALESCE(@account_name, target.account_name),
+            modified_at = SYSUTCDATETIME()
+          WHEN NOT MATCHED THEN INSERT (
+            employee_id, bank_name, branch_name, account_number, account_name
+          ) VALUES (
+            @employee_id, @bank_name, @branch_name, @account_number, @account_name
+          );
+        `);
+    }
+
+    for (const ec of input.emergencyContacts || []) {
+      const fullName = str(ec.fullName);
+      if (!fullName) continue;
+      await new sql.Request(tx)
+        .input('employee_id', sql.BigInt, employeeId)
+        .input('external_contact_id', sql.NVarChar(80), `ess-${fullName.slice(0, 40).replace(/\s+/g, '-').toLowerCase()}`)
+        .input('full_name', sql.NVarChar(250), fullName)
+        .input('relationship', sql.NVarChar(100), nullable(ec.relationship) || 'Other')
+        .input('phone_number', sql.NVarChar(50), nullable(ec.phoneNumber) || 'N/A')
+        .input('address', sql.NVarChar(1000), nullable(ec.address))
+        .input('is_primary', sql.Bit, ec.isPrimary ? 1 : 0)
+        .input('is_next_of_kin', sql.Bit, ec.isNextOfKin ? 1 : 0)
+        .query(`
+          MERGE [hris].[EmployeeEmergencyContacts] AS target
+          USING (
+            SELECT @employee_id AS employee_id, @external_contact_id AS external_contact_id
+          ) AS source
+          ON target.employee_id = source.employee_id
+            AND target.external_contact_id = source.external_contact_id
+          WHEN MATCHED THEN UPDATE SET
+            full_name = @full_name,
+            relationship = @relationship,
+            phone_number = @phone_number,
+            address = @address,
+            is_primary = @is_primary,
+            is_next_of_kin = @is_next_of_kin
+          WHEN NOT MATCHED THEN INSERT (
+            employee_id, external_contact_id, full_name, relationship, phone_number, address, is_primary, is_next_of_kin, is_beneficiary
+          ) VALUES (
+            @employee_id, @external_contact_id, @full_name, @relationship, @phone_number, @address, @is_primary, @is_next_of_kin, 0
+          );
+        `);
+    }
 
     await tx.commit();
     return true;

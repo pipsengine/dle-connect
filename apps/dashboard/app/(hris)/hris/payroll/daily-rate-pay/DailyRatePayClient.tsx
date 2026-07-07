@@ -145,9 +145,13 @@ const readinessScore = (record: DailyRateRecord) => {
   return Math.max(0, score);
 };
 
-export default function DailyRatePayClient({ initialNow }: { initialNow?: string } = {}) {
+export default function DailyRatePayClient({
+  initialNow,
+  embedded = false,
+  initialPeriod,
+}: { initialNow?: string; embedded?: boolean; initialPeriod?: string } = {}) {
   const [role, setRole] = useState<Role>('Payroll Officer');
-  const [period, setPeriod] = useState(defaultPeriod());
+  const [period, setPeriod] = useState(initialPeriod || defaultPeriod());
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -190,6 +194,10 @@ export default function DailyRatePayClient({ initialNow }: { initialNow?: string
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (initialPeriod) setPeriod(initialPeriod);
+  }, [initialPeriod]);
 
   useEffect(() => {
     void load();
@@ -386,8 +394,8 @@ export default function DailyRatePayClient({ initialNow }: { initialNow?: string
   const lastLoaded = payload?.generatedAt || initialNow || '';
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-12">
-      {/* Top bar */}
+    <div className={embedded ? 'pb-6' : 'min-h-screen bg-[#F8FAFC] pb-12'}>
+      {!embedded ? (
       <div className="sticky top-0 z-30 -mx-4 mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#E5E7EB] bg-white/95 px-4 py-3 backdrop-blur-md lg:-mx-6 lg:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-[#64748B]">
           <span>HRIS</span>
@@ -445,6 +453,7 @@ export default function DailyRatePayClient({ initialNow }: { initialNow?: string
           </button>
         </div>
       </div>
+      ) : null}
 
       {/* Page header */}
       <div className="mb-6 flex flex-col gap-4">
@@ -459,6 +468,7 @@ export default function DailyRatePayClient({ initialNow }: { initialNow?: string
             </p>
           </div>
         </div>
+        {!embedded ? (
         <div className="flex flex-wrap gap-2">
           <MetadataPill label="Payroll Period" value={payload?.periodLabel || period} />
           <MetadataPill label="Source" value={payload?.source || 'DLE_Enterprise HRIS'} />
@@ -469,6 +479,7 @@ export default function DailyRatePayClient({ initialNow }: { initialNow?: string
           <MetadataPill label="Employees" value={String(summary?.dailyRateEmployees || 0)} />
           <MetadataPill label="Currency" value="NGN" />
         </div>
+        ) : null}
       </div>
 
       {error ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{error}</div> : null}

@@ -150,7 +150,7 @@ const initials = (name: string) =>
 
 const PAGE_SIZE = 10;
 
-export default function AllowancesClient({ initialNow }: { initialNow?: string } = {}) {
+export default function AllowancesClient({ initialNow, embedded = false, initialPeriod }: { initialNow?: string; embedded?: boolean; initialPeriod?: string } = {}) {
   const [role, setRole] = useState<Role>('Payroll Officer');
   const [payload, setPayload] = useState<PayrollPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -171,7 +171,10 @@ export default function AllowancesClient({ initialNow }: { initialNow?: string }
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/hris/payroll-management', { headers: { 'x-hris-role': role }, cache: 'no-store' });
+      const url = initialPeriod
+        ? `/api/hris/payroll-management?period=${encodeURIComponent(initialPeriod)}`
+        : '/api/hris/payroll-management';
+      const res = await fetch(url, { headers: { 'x-hris-role': role }, cache: 'no-store' });
       const json = (await res.json()) as ApiResponse<PayrollPayload>;
       if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Allowances request failed (${res.status})`);
       setPayload(json.data);
@@ -184,7 +187,7 @@ export default function AllowancesClient({ initialNow }: { initialNow?: string }
 
   useEffect(() => {
     void load();
-  }, [role]);
+  }, [role, initialPeriod]);
 
   const records = payload?.records || [];
 
@@ -463,8 +466,8 @@ export default function AllowancesClient({ initialNow }: { initialNow?: string }
     status === 'Active' ? 'green' : status === 'Under Review' ? 'amber' : 'slate';
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-12">
-      {/* Top bar */}
+    <div className={embedded ? 'pb-6' : 'min-h-screen bg-[#F8FAFC] pb-12'}>
+      {!embedded ? (
       <div className="sticky top-0 z-30 -mx-4 mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#E5E7EB] bg-white/95 px-4 py-3 backdrop-blur-md lg:-mx-6 lg:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-[#64748B]">
           <span>HRIS</span>
@@ -524,6 +527,7 @@ export default function AllowancesClient({ initialNow }: { initialNow?: string }
           </button>
         </div>
       </div>
+      ) : null}
 
       {/* Page header */}
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -539,6 +543,7 @@ export default function AllowancesClient({ initialNow }: { initialNow?: string }
               </p>
             </div>
           </div>
+          {!embedded ? (
           <div className="mt-4 flex flex-wrap gap-2">
             <MetadataPill label="Payroll Period" value={payload?.periodLabel || 'Loading…'} />
             <MetadataPill label="Source" value={payload?.source || 'DLE_Enterprise HRIS'} />
@@ -549,6 +554,7 @@ export default function AllowancesClient({ initialNow }: { initialNow?: string }
             <MetadataPill label="Employees" value={String(filtered.length)} />
             <MetadataPill label="Currency" value="NGN" />
           </div>
+          ) : null}
         </div>
       </div>
 

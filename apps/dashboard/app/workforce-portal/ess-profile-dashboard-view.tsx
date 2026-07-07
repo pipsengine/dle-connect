@@ -25,6 +25,7 @@ import {
   WalletCards,
 } from 'lucide-react';
 import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
+import { getNigeriaLgas } from '@/lib/nigeria-locations';
 import { EssCard, EssKpiCard, EssSectionHeader } from './ess-portal-ui';
 import type { EssTab } from './ess-portal-shell';
 
@@ -40,6 +41,43 @@ export type ProfileTab =
   | 'Security'
   | 'Preferences'
   | 'Audit Trail';
+
+export type EssProfileField = {
+  label: string;
+  value: string;
+  key?: string;
+  editable?: boolean;
+  inputType?: 'text' | 'email' | 'tel' | 'textarea' | 'select';
+  options?: string[];
+};
+
+export type EssProfileSection = {
+  id: string;
+  label: string;
+  status: string;
+  approvalRequired: boolean;
+  fields: EssProfileField[];
+};
+
+export type EssProfilePendingUpdate = {
+  id: string;
+  sectionId: string;
+  title: string;
+  status: string;
+  submittedAt: string;
+  changes: Record<string, string>;
+};
+
+export type EssProfileApprovalItem = {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  sectionId: string;
+  title: string;
+  status: string;
+  submittedAt: string;
+  changes: Record<string, string>;
+};
 
 export type EssProfilePayload = {
   generatedAt?: string;
@@ -73,7 +111,10 @@ export type EssProfilePayload = {
   };
   dashboardAnalytics?: { hrInsights: { trainingProgress: { percent: number } } };
   documents?: Array<{ id: string; title: string; category: string; version: string; status: string }>;
-  profileSections?: Array<{ id: string; label: string; status: string; approvalRequired: boolean; fields: Array<{ label: string; value: string }> }>;
+  profileSections?: EssProfileSection[];
+  profilePendingUpdates?: EssProfilePendingUpdate[];
+  profileApprovalQueue?: EssProfileApprovalItem[];
+  canApproveProfileUpdates?: boolean;
   profileAuditTrail?: Array<{ id: string; at: string; action: string; detail: string; actor: string }>;
   profilePreferences?: Array<{ label: string; value: string }>;
   learning?: { certifications?: Array<{ id: string; title: string; expiresAt?: string; status: string }> };
@@ -81,6 +122,11 @@ export type EssProfilePayload = {
   notifications?: Array<{ id: string; title: string; type: string; status: string }>;
   leave?: { balances?: Array<{ type: string; balance: number }> };
 };
+
+const EMPTY_PROFILE_SECTIONS: EssProfileSection[] = [];
+const EMPTY_PENDING_UPDATES: EssProfilePendingUpdate[] = [];
+const EMPTY_APPROVAL_QUEUE: EssProfileApprovalItem[] = [];
+const EMPTY_DOCUMENTS: Array<{ id: string; title: string; category: string; version: string; status: string }> = [];
 
 const balanceFor = (balances: Array<{ type: string; balance: number }>, type: string) =>
   balances.find((item) => String(item.type).toLowerCase() === type.toLowerCase())
@@ -130,18 +176,81 @@ const sectionStatusClass = (status: string) => {
   return 'bg-[#EFF6FF] text-[#1D4ED8] ring-1 ring-[#BFDBFE]';
 };
 
+const displayValue = (value: string) => (/not configured|not on file|not uploaded/i.test(value) ? '' : value);
+
+const compactText = (value: unknown) => String(value || '').trim();
+
+const fieldDraftValue = (field: EssProfileField) => displayValue(field.value);
+
+function ProfileFieldInput({
+  field,
+  value,
+  onChange,
+  lgaOptions,
+}: {
+  field: EssProfileField;
+  value: string;
+  onChange: (next: string) => void;
+  lgaOptions?: string[];
+}) {
+  const inputClass = 'mt-1 w-full rounded-[10px] border border-[#CBD5E1] bg-white px-3 py-2 text-[14px] text-[#0F172A] focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#BFDBFE]';
+  const options = field.key === 'localGovernmentArea' && lgaOptions?.length ? lgaOptions : field.options;
+
+  if (field.inputType === 'textarea') {
+    return <textarea rows={3} value={value} onChange={(event) => onChange(event.target.value)} className={inputClass} />;
+  }
+  if (field.inputType === 'select' && options?.length) {
+    return (
+      <select value={value} onChange={(event) => onChange(event.target.value)} className={inputClass}>
+        <option value="">Select…</option>
+        {options.map((option) => (
+          <option key={option} value={option}>{option}</option>
+        ))}
+      </select>
+    );
+  }
+  return (
+    <input
+      type={field.inputType === 'email' ? 'email' : field.inputType === 'tel' ? 'tel' : 'text'}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className={inputClass}
+    />
+  );
+}
+
 function ProfileSectionCard({
   section,
   expanded,
   onToggle,
-  onRequestUpdate,
+  editing,
+  draft,
+  lgaOptions,
+  pendingUpdate,
+  saving,
+  onStartEdit,
+  onCancelEdit,
+  onDraftChange,
+  onSubmit,
+  onNavigateDocuments,
 }: {
-  section: { id: string; label: string; status: string; approvalRequired: boolean; fields: Array<{ label: string; value: string }> };
+  section: EssProfileSection;
   expanded: boolean;
   onToggle: () => void;
-  onRequestUpdate: () => void;
+  editing: boolean;
+  draft: Record<string, string>;
+  lgaOptions: string[];
+  pendingUpdate?: EssProfilePendingUpdate;
+  saving: boolean;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
+  onDraftChange: (key: string, value: string) => void;
+  onSubmit: () => void;
+  onNavigateDocuments?: () => void;
 }) {
+  const editableFields = section.fields.filter((field) => field.editable && field.key);
   const missingCount = section.fields.filter((field) => /not configured|not on file|not uploaded/i.test(field.value)).length;
+  const documentBacked = ['qualifications', 'certifications', 'photo'].includes(section.id);
 
   return (
     <div className="overflow-hidden rounded-[14px] border border-[#E5E7EB] bg-[#F8FAFC]">
@@ -150,9 +259,14 @@ function ProfileSectionCard({
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-[15px] font-bold text-[#0F172A]">{section.label}</p>
             <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${sectionStatusClass(section.status)}`}>{section.status}</span>
+            {pendingUpdate ? (
+              <span className="rounded-full bg-[#FFFBEB] px-2 py-0.5 text-[10px] font-semibold text-[#B45309] ring-1 ring-[#FCD34D]">
+                Pending HR approval
+              </span>
+            ) : null}
           </div>
           <p className="mt-1 text-[12px] text-[#64748B]">
-            {section.approvalRequired ? 'Changes require HR approval' : 'Read-only HR record'}
+            {section.approvalRequired ? 'Edit and submit changes for HR approval' : 'Read-only HR record'}
             {missingCount > 0 ? ` · ${missingCount} field(s) incomplete` : ''}
           </p>
         </div>
@@ -160,24 +274,76 @@ function ProfileSectionCard({
       </button>
       {expanded ? (
         <div className="border-t border-[#E5E7EB] px-4 pb-4 pt-3">
+          {documentBacked && !editing ? (
+            <p className="mb-3 text-[13px] text-[#64748B]">
+              {section.id === 'photo'
+                ? 'Upload or replace your profile photo from the Documents tab.'
+                : 'Qualifications and certifications are managed through document uploads.'}
+            </p>
+          ) : null}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {section.fields.map((field) => (
-              <div key={`${section.id}-${field.label}`} className="rounded-[12px] border border-[#E9EEF5] bg-white px-3 py-2.5">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">{field.label}</p>
-                <p className={`mt-1 text-[14px] font-semibold ${/not configured|not on file|not uploaded/i.test(field.value) ? 'text-[#B45309]' : 'text-[#0F172A]'}`}>
-                  {field.value || '—'}
-                </p>
-              </div>
-            ))}
+            {section.fields.map((field) => {
+              const fieldKey = field.key || field.label;
+              const showEditor = editing && field.editable && field.key;
+              return (
+                <div key={`${section.id}-${field.label}`} className="rounded-[12px] border border-[#E9EEF5] bg-white px-3 py-2.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">{field.label}</p>
+                  {showEditor ? (
+                    <ProfileFieldInput
+                      field={field}
+                      value={draft[field.key!] ?? fieldDraftValue(field)}
+                      onChange={(next) => onDraftChange(field.key!, next)}
+                      lgaOptions={lgaOptions}
+                    />
+                  ) : (
+                    <p className={`mt-1 text-[14px] font-semibold ${/not configured|not on file|not uploaded/i.test(field.value) ? 'text-[#B45309]' : 'text-[#0F172A]'}`}>
+                      {field.value || '—'}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
           </div>
           {section.approvalRequired ? (
-            <button
-              type="button"
-              onClick={onRequestUpdate}
-              className="mt-4 inline-flex h-10 items-center rounded-[14px] bg-[#2563EB] px-4 text-[13px] font-semibold text-white hover:bg-[#1D4ED8]"
-            >
-              Request update
-            </button>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {documentBacked ? (
+                <button
+                  type="button"
+                  onClick={onNavigateDocuments}
+                  className="inline-flex h-10 items-center rounded-[14px] bg-[#2563EB] px-4 text-[13px] font-semibold text-white hover:bg-[#1D4ED8]"
+                >
+                  {section.id === 'photo' ? 'Manage photo' : 'Upload documents'}
+                </button>
+              ) : editing ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={onSubmit}
+                    className="inline-flex h-10 items-center rounded-[14px] bg-[#2563EB] px-4 text-[13px] font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-60"
+                  >
+                    {saving ? 'Submitting…' : 'Submit for HR approval'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={onCancelEdit}
+                    className="inline-flex h-10 items-center rounded-[14px] border border-[#CBD5E1] bg-white px-4 text-[13px] font-semibold text-[#0F172A] hover:bg-[#F8FAFC] disabled:opacity-60"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  disabled={Boolean(pendingUpdate) || editableFields.length === 0}
+                  onClick={onStartEdit}
+                  className="inline-flex h-10 items-center rounded-[14px] bg-[#2563EB] px-4 text-[13px] font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-60"
+                >
+                  {pendingUpdate ? 'Awaiting HR review' : 'Edit section'}
+                </button>
+              )}
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -264,30 +430,49 @@ export function EssProfileDashboardView({
   payload,
   initialNow,
   onNavigate,
+  onRefresh,
 }: {
   payload: EssProfilePayload | null;
   initialNow: string;
   onNavigate: (tab: EssTab) => void;
+  onRefresh?: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<ProfileTab>('Overview');
   const [expandedSectionId, setExpandedSectionId] = useState<string | null>(null);
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const [sectionDrafts, setSectionDrafts] = useState<Record<string, Record<string, string>>>({});
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileMessage, setProfileMessage] = useState('');
+  const [profileError, setProfileError] = useState('');
+  const [approvalComment, setApprovalComment] = useState('');
+  const [approvalSavingId, setApprovalSavingId] = useState('');
   const employee = payload?.employee;
   const employeeCode = employee?.employeeCode || employee?.employeeId || '';
-  const documents = payload?.documents || [];
-  const profileSections = payload?.profileSections || [];
+  const documents = payload?.documents ?? EMPTY_DOCUMENTS;
+  const profileSections = payload?.profileSections ?? EMPTY_PROFILE_SECTIONS;
+  const profilePendingUpdates = payload?.profilePendingUpdates ?? EMPTY_PENDING_UPDATES;
+  const profileApprovalQueue = payload?.profileApprovalQueue ?? EMPTY_APPROVAL_QUEUE;
+  const canApproveProfileUpdates = payload?.canApproveProfileUpdates === true;
 
-  const completionItems = useMemo(
-    () => [
-      { label: 'Personal Information', done: Boolean(employee?.fullName && employee?.email), action: 'Completed' },
+  const completionItems = useMemo(() => {
+    const personalSection = profileSections.find((item) => item.id === 'personal');
+    const personalCoreFields = personalSection?.fields.filter((field) =>
+      ['Date of birth', 'Nationality', 'State of origin', 'LGA'].includes(field.label),
+    ) || [];
+    const personalComplete =
+      personalCoreFields.length > 0 &&
+      personalCoreFields.every((field) => !/not configured/i.test(field.value));
+
+    return [
+      { label: 'Personal Information', done: personalComplete, action: personalComplete ? 'Completed' : 'Add now' },
       { label: 'Employment Information', done: Boolean(employee?.jobTitle && employee?.department), action: 'Completed' },
       { label: 'Bank Details', done: profileSections.some((item) => item.id === 'bank' && item.fields.some((field) => field.label === 'Bank' && !/not configured/i.test(field.value))), action: 'Add now' },
       { label: 'Contact Details', done: Boolean(employee?.phone && employee?.email), action: 'Completed' },
       { label: 'Emergency Contact', done: employee?.emergencyContactsComplete === true, action: 'Add now' },
       { label: 'Means Of Identification', done: hasIdentificationDocument(documents), action: 'Add now' },
       { label: 'Certificates', done: documents.some((item) => /certificate|certification/i.test(`${item.title} ${item.category}`)), action: 'Add now' },
-    ],
-    [documents, employee, profileSections],
-  );
+    ];
+  }, [documents, employee, profileSections]);
 
   const completionPct = Math.round((completionItems.filter((item) => item.done).length / completionItems.length) * 100);
 
@@ -346,13 +531,118 @@ export function EssProfileDashboardView({
 
   const filteredSections = useMemo(() => {
     const ids = tabSectionIds[activeTab];
-    if (!ids?.length) return [];
+    if (!ids?.length) return EMPTY_PROFILE_SECTIONS;
     return profileSections.filter((section) => ids.includes(section.id));
   }, [activeTab, profileSections]);
 
+  const profileSectionIdsKey = useMemo(
+    () => profileSections.map((section) => section.id).join('|'),
+    [profileSections],
+  );
+
   useEffect(() => {
-    setExpandedSectionId(filteredSections[0]?.id ?? null);
-  }, [activeTab, filteredSections]);
+    const ids = tabSectionIds[activeTab];
+    const sectionIds = profileSectionIdsKey ? profileSectionIdsKey.split('|') : [];
+    const firstId = ids?.length ? sectionIds.find((id) => ids.includes(id)) ?? null : null;
+    setExpandedSectionId(firstId);
+    setEditingSectionId(null);
+    setSectionDrafts({});
+    setProfileMessage('');
+    setProfileError('');
+  }, [activeTab, profileSectionIdsKey]);
+
+  const pendingForSection = (sectionId: string) => profilePendingUpdates.find((item) => item.sectionId === sectionId);
+
+  const lgaOptionsForDraft = (sectionId: string) => {
+    const draft = sectionDrafts[sectionId] || {};
+    const section = profileSections.find((item) => item.id === sectionId);
+    const stateValue =
+      draft.stateOfOrigin
+      || draft.state
+      || section?.fields.find((field) => field.key === 'stateOfOrigin')?.value
+      || section?.fields.find((field) => field.key === 'state')?.value
+      || '';
+    return getNigeriaLgas(displayValue(stateValue));
+  };
+
+  const startSectionEdit = (section: EssProfileSection) => {
+    const draft = Object.fromEntries(
+      section.fields
+        .filter((field) => field.editable && field.key)
+        .map((field) => [field.key!, fieldDraftValue(field)]),
+    );
+    setEditingSectionId(section.id);
+    setSectionDrafts((current) => ({ ...current, [section.id]: draft }));
+    setProfileMessage('');
+    setProfileError('');
+  };
+
+  const submitSectionUpdate = async (section: EssProfileSection) => {
+    const draft = sectionDrafts[section.id] || {};
+    const previousValues = Object.fromEntries(
+      section.fields
+        .filter((field) => field.key)
+        .map((field) => [field.key!, fieldDraftValue(field)]),
+    );
+    const changes = Object.fromEntries(
+      Object.entries(draft).filter(([key, value]) => compactText(value) !== compactText(previousValues[key] || '')),
+    );
+    if (!Object.keys(changes).length) {
+      setProfileError('Update at least one field before submitting.');
+      return;
+    }
+    setProfileSaving(true);
+    setProfileError('');
+    setProfileMessage('');
+    try {
+      const res = await fetch('/api/workforce-portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'submit-profile-update',
+          sectionId: section.id,
+          sectionLabel: section.label,
+          changes,
+          previousValues,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || data.message || 'Unable to submit profile update.');
+      setProfileMessage(String(data.message || 'Profile update submitted for HR approval.'));
+      setEditingSectionId(null);
+      onRefresh?.();
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : 'Unable to submit profile update.');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const transitionProfileApproval = async (requestId: string, action: 'approve' | 'reject') => {
+    setApprovalSavingId(requestId);
+    setProfileError('');
+    setProfileMessage('');
+    try {
+      const res = await fetch('/api/workforce-portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: action === 'approve' ? 'approve-profile-update' : 'reject-profile-update',
+          requestId,
+          comment: approvalComment || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || data.message || 'Unable to process profile update.');
+      setProfileMessage(String(data.message || 'Profile update processed.'));
+      setApprovalComment('');
+      onRefresh?.();
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : 'Unable to process profile update.');
+    } finally {
+      setApprovalSavingId('');
+    }
+  };
 
   const securityRows = useMemo(
     () => Object.entries(payload?.security || {}).map(([label, value]) => ({
@@ -366,6 +656,63 @@ export function EssProfileDashboardView({
 
   return (
     <div className="space-y-5">
+      {profileError ? <div className="rounded-[14px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{profileError}</div> : null}
+      {profileMessage ? <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{profileMessage}</div> : null}
+
+      {canApproveProfileUpdates && profileApprovalQueue.length > 0 ? (
+        <EssCard className="p-5 sm:p-6">
+          <EssSectionHeader title="Profile updates awaiting HR approval" />
+          <div className="space-y-3">
+            {profileApprovalQueue.map((item) => (
+              <div key={item.id} className="rounded-[12px] border border-[#E9EEF5] bg-[#F8FAFC] p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[14px] font-bold text-[#0F172A]">{item.title}</p>
+                    <p className="mt-1 text-[13px] text-[#64748B]">
+                      {item.employeeName} · {item.sectionId} · {stableDateTime(item.submittedAt)}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-[#FFFBEB] px-2 py-0.5 text-[10px] font-semibold text-[#B45309] ring-1 ring-[#FCD34D]">{item.status}</span>
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {Object.entries(item.changes).map(([key, value]) => (
+                    <div key={key} className="rounded-[10px] border border-[#E9EEF5] bg-white px-3 py-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">{key}</p>
+                      <p className="mt-1 text-[13px] font-semibold text-[#0F172A]">{value}</p>
+                    </div>
+                  ))}
+                </div>
+                <textarea
+                  rows={2}
+                  value={approvalComment}
+                  onChange={(event) => setApprovalComment(event.target.value)}
+                  placeholder="Optional approval comment"
+                  className="mt-3 w-full rounded-[10px] border border-[#CBD5E1] bg-white px-3 py-2 text-[13px] focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#BFDBFE]"
+                />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={approvalSavingId === item.id}
+                    onClick={() => void transitionProfileApproval(item.id, 'approve')}
+                    className="inline-flex h-9 items-center rounded-[12px] bg-[#10B981] px-4 text-[13px] font-semibold text-white hover:bg-[#059669] disabled:opacity-60"
+                  >
+                    {approvalSavingId === item.id ? 'Processing…' : 'Approve & update HRIS'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={approvalSavingId === item.id}
+                    onClick={() => void transitionProfileApproval(item.id, 'reject')}
+                    className="inline-flex h-9 items-center rounded-[12px] border border-[#FECACA] bg-[#FEF2F2] px-4 text-[13px] font-semibold text-[#B91C1C] hover:bg-[#FEE2E2] disabled:opacity-60"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </EssCard>
+      ) : null}
+
       {/* Hero banner */}
       <div
         className="overflow-hidden rounded-[20px] shadow-[0_20px_60px_rgba(15,23,42,0.10)]"
@@ -519,7 +866,24 @@ export function EssProfileDashboardView({
                     section={section}
                     expanded={expandedSectionId === section.id}
                     onToggle={() => setExpandedSectionId((current) => (current === section.id ? null : section.id))}
-                    onRequestUpdate={() => onNavigate('services')}
+                    editing={editingSectionId === section.id}
+                    draft={sectionDrafts[section.id] || {}}
+                    lgaOptions={lgaOptionsForDraft(section.id)}
+                    pendingUpdate={pendingForSection(section.id)}
+                    saving={profileSaving}
+                    onStartEdit={() => startSectionEdit(section)}
+                    onCancelEdit={() => {
+                      setEditingSectionId(null);
+                      setProfileError('');
+                    }}
+                    onDraftChange={(key, value) => {
+                      setSectionDrafts((current) => ({
+                        ...current,
+                        [section.id]: { ...(current[section.id] || {}), [key]: value },
+                      }));
+                    }}
+                    onSubmit={() => void submitSectionUpdate(section)}
+                    onNavigateDocuments={() => onNavigate(section.id === 'photo' ? 'documents' : 'documents')}
                   />
                 ))}
               </div>
@@ -578,9 +942,9 @@ export function EssProfileDashboardView({
           {activeTab !== 'Overview' && filteredSections.length === 0 && !['Security', 'Preferences', 'Audit Trail', 'Professional'].includes(activeTab) && (
             <EssCard className="p-5 sm:p-6">
               <EssSectionHeader title={activeTab} />
-              <p className="text-[14px] text-[#64748B]">No profile records are available for this section yet.</p>
-              <button type="button" onClick={() => onNavigate('services')} className="mt-4 inline-flex h-10 items-center rounded-[14px] bg-[#2563EB] px-4 text-[13px] font-semibold text-white hover:bg-[#1D4ED8]">
-                Request update
+              <p className="text-[14px] text-[#64748B]">Profile data is loading or unavailable. Refresh the page to try again.</p>
+              <button type="button" onClick={() => onRefresh?.()} className="mt-4 inline-flex h-10 items-center rounded-[14px] bg-[#2563EB] px-4 text-[13px] font-semibold text-white hover:bg-[#1D4ED8]">
+                Refresh profile
               </button>
             </EssCard>
           )}
@@ -648,7 +1012,7 @@ export function EssProfileDashboardView({
                 </div>
               ))}
             </div>
-            <button type="button" onClick={() => onNavigate('services')} className="mt-4 flex h-11 w-full items-center justify-center rounded-[14px] bg-[#2563EB] text-[14px] font-semibold text-white hover:bg-[#1D4ED8]">
+            <button type="button" onClick={() => setActiveTab('Personal')} className="mt-4 flex h-11 w-full items-center justify-center rounded-[14px] bg-[#2563EB] text-[14px] font-semibold text-white hover:bg-[#1D4ED8]">
               Update Profile
             </button>
           </EssCard>
@@ -657,10 +1021,10 @@ export function EssProfileDashboardView({
             <EssSectionHeader title="Quick Actions" />
             <div className="grid grid-cols-2 gap-2">
               {[
-                { label: 'Edit Profile', icon: Pencil, action: () => onNavigate('services') },
+                { label: 'Edit Profile', icon: Pencil, action: () => setActiveTab('Personal') },
                 { label: 'Upload Document', icon: Upload, action: () => onNavigate('documents') },
                 { label: 'Download Profile', icon: Download, action: () => undefined },
-                { label: 'Request Update', icon: FileText, action: () => onNavigate('services') },
+                { label: 'Request Update', icon: FileText, action: () => setActiveTab('Personal') },
                 { label: 'Print Profile', icon: Printer, action: () => typeof window !== 'undefined' && window.print() },
                 { label: 'Generate ID Card', icon: QrCode, action: () => undefined },
               ].map((item) => {

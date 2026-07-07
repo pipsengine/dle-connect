@@ -91,33 +91,13 @@ const fmtDateTime = (value?: string | null) => (value ? new Date(value).toLocale
 
 const CATEGORY_COLORS = ['#2563EB', '#8B5CF6', '#F59E0B', '#0F172A', '#10B981', '#06B6D4'];
 
-const periodStatusTone = (status: string) => {
-  const normalized = String(status || '').toLowerCase();
-  if (normalized === 'open' || normalized === 'in progress' || normalized === 'reopened') {
-    return { chip: 'bg-emerald-50 text-emerald-700 border border-emerald-200', label: status || 'Open' };
-  }
-  if (normalized === 'closed') return { chip: 'bg-slate-200 text-slate-700 border border-slate-300', label: 'Closed' };
-  if (normalized === 'draft') return { chip: 'bg-amber-50 text-amber-800 border border-amber-200', label: 'Draft' };
-  return { chip: 'bg-slate-100 text-slate-700 border border-slate-200', label: status || 'Unknown' };
-};
-
-const dataModeLabel = (mode?: string) => {
-  if (mode === 'pending') return 'Payroll not run';
-  if (mode === 'snapshot') return 'Finalized payroll';
-  if (mode === 'run-header') return 'Computed run totals';
-  return 'Computed payroll';
-};
-
 export default function PayrollCommandCenter({
   payload,
   currentRun,
   canViewMoney,
   loading,
-  lastLoaded,
-  viewPeriod,
   busyAction,
   onRefresh,
-  onSelectPeriod,
   onAction,
   onNavigate,
 }: Props) {
@@ -131,10 +111,6 @@ export default function PayrollCommandCenter({
   const blocked = payload?.summary.readinessBlockedEmployees ?? payload?.summary.blockedEmployees ?? 0;
   const eligible = payload?.summary.payrollEligible || 0;
   const workforcePct = eligible ? Math.round((ready / eligible) * 100) : 0;
-  const viewingPeriod = payload?.periods?.find((item) => item.period === (viewPeriod || payload?.period)) || null;
-  const periodStatus = viewingPeriod?.status || payload?.periodRecord?.status || 'Open';
-  const periodTone = periodStatusTone(periodStatus);
-  const isActivePeriod = Boolean(payload?.isViewingActivePeriod ?? viewingPeriod?.isActive);
   const payrollComputed = Boolean(payload?.payrollComputed);
 
   const completedStatuses = ['Computed', 'Ready for Approval', 'Submitted', 'Under Review', 'Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'];
@@ -266,69 +242,6 @@ export default function PayrollCommandCenter({
             {loading ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <span className="rounded-full bg-blue-50 px-3 py-1.5 text-xs font-semibold text-[#2563EB]">
-            Period: {payload?.periodLabel || 'Loading'}
-          </span>
-          <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${periodTone.chip}`}>{periodTone.label}</span>
-          {isActivePeriod ? (
-            <span className="rounded-full border border-[#2563EB] bg-blue-50 px-3 py-1.5 text-xs font-bold text-[#2563EB]">Active Payroll Period</span>
-          ) : payload?.activePeriodLabel ? (
-            <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800">
-              Active: {payload.activePeriodLabel}
-            </span>
-          ) : null}
-          <span className="rounded-full border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">
-            {dataModeLabel(payload?.dataMode)}
-          </span>
-          {(payload?.periods?.length || 0) > 0 ? (
-            <label className="inline-flex items-center gap-2 rounded-full border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
-              <span>View</span>
-              <select
-                value={viewPeriod || payload?.period || ''}
-                onChange={(e) => onSelectPeriod(e.target.value)}
-                disabled={loading}
-                className="max-w-[220px] bg-transparent font-semibold text-slate-900 focus:outline-none disabled:opacity-60"
-              >
-                {(payload?.periods || []).map((item) => (
-                  <option key={item.period} value={item.period}>
-                    {item.periodLabel} — {item.status}
-                    {item.isActive ? ' · Active' : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-[#10B981]">Source: {payload?.dataSource?.source || 'DLE Enterprise HRIS'}</span>
-          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">Employees: {fmtNum(payload?.summary.totalEmployees)}</span>
-          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">Loaded: {new Date(lastLoaded).toLocaleString('en-GB')}</span>
-        </div>
-
-        {(payload?.periods?.length || 0) > 1 ? (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Payroll periods</span>
-            {(payload?.periods || []).map((item) => {
-              const tone = periodStatusTone(item.status);
-              const selected = (viewPeriod || payload?.period) === item.period;
-              return (
-                <button
-                  key={item.period}
-                  type="button"
-                  disabled={loading}
-                  onClick={() => onSelectPeriod(item.period)}
-                  className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-60 ${
-                    selected ? 'bg-[#2563EB] text-white shadow-sm' : `${tone.chip} hover:brightness-95`
-                  }`}
-                >
-                  <span>{item.periodLabel}</span>
-                  {!selected ? <span className="opacity-80">{item.status}</span> : null}
-                  {item.isActive ? <span className={selected ? 'text-blue-100' : 'font-bold text-[#2563EB]'}>Active</span> : null}
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
       </div>
 
       <div className={`mx-auto grid max-w-[1600px] grid-cols-1 gap-6 px-4 py-6 xl:grid-cols-[1fr_320px] ${loading ? 'opacity-60' : ''}`}>

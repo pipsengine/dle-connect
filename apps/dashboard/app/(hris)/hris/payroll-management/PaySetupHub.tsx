@@ -281,7 +281,7 @@ export default function PaySetupHub({
         </div>
 
         <div className="mt-4">
-          <PayrollPeriodContextBar payload={payload} viewPeriod={viewPeriod} onSelectPeriod={onSelectPeriod} />
+          <PayrollPeriodContextBar payload={payload} viewPeriod={viewPeriod} onSelectPeriod={onSelectPeriod} showMetaBadges={false} />
         </div>
 
         <nav className="mt-4 overflow-x-auto">

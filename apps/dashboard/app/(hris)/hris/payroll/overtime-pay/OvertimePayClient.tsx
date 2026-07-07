@@ -139,7 +139,7 @@ const initials = (name: string) =>
 
 const PAGE_SIZE = 10;
 
-export default function OvertimePayClient({ initialNow }: { initialNow?: string } = {}) {
+export default function OvertimePayClient({ initialNow, embedded = false }: { initialNow?: string; embedded?: boolean } = {}) {
   const [role, setRole] = useState<Role>('Payroll Officer');
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -392,8 +392,8 @@ export default function OvertimePayClient({ initialNow }: { initialNow?: string 
   const netImpact = employeeSummary ? Math.round(employeeSummary.grossPay - taxImpact) : 0;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-12">
-      {/* Top bar */}
+    <div className={embedded ? 'pb-6' : 'min-h-screen bg-[#F8FAFC] pb-12'}>
+      {!embedded ? (
       <div className="sticky top-0 z-30 -mx-4 mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#E5E7EB] bg-white/95 px-4 py-3 backdrop-blur-md lg:-mx-6 lg:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-[#64748B]">
           <span>HRIS</span>
@@ -447,6 +447,7 @@ export default function OvertimePayClient({ initialNow }: { initialNow?: string 
           </button>
         </div>
       </div>
+      ) : null}
 
       {/* Page header */}
       <div className="mb-6 flex flex-col gap-4">
@@ -461,6 +462,7 @@ export default function OvertimePayClient({ initialNow }: { initialNow?: string 
             </p>
           </div>
         </div>
+        {!embedded ? (
         <div className="flex flex-wrap gap-2">
           <MetadataPill label="Payroll Period" value={periodLabel} />
           <MetadataPill label="Weekend/Holiday Rules" value={`${payload?.rule.saturdayMultiplier || 2}x worked hours`} />
@@ -472,6 +474,7 @@ export default function OvertimePayClient({ initialNow }: { initialNow?: string 
           <MetadataPill label="Employees Loaded" value={String(uniqueEmployees)} />
           <MetadataPill label="Currency" value="NGN" />
         </div>
+        ) : null}
       </div>
 
       {error ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{error}</div> : null}

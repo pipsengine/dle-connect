@@ -44,6 +44,15 @@ import {
 } from '@/lib/ess-portal-derived-data';
 import { invalidateEssPortalCache, readEssPortalResponseCache, writeEssPortalResponseCache } from '@/lib/ess-portal-cache';
 import { buildEssReportExport } from '@/lib/ess-reports-export';
+import { isNigeriaCountry, resolveNigeriaPersonalLocation } from '@/lib/nigeria-locations';
+import {
+  canApproveEssProfileUpdate,
+  enrichEssProfileSections,
+  isProfileUpdateRequest,
+  pendingProfileUpdatesForEmployee,
+  submitEssProfileUpdate,
+  transitionEssProfileUpdate,
+} from '@/lib/ess-profile-update-service';
 import {
   expireStaleLeaveRequests,
   leaveWorkflowFor,
@@ -125,7 +134,14 @@ const dateOnly = (value: unknown) => {
   return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
-type EssProfileField = { label: string; value: string };
+type EssProfileField = {
+  label: string;
+  value: string;
+  key?: string;
+  editable?: boolean;
+  inputType?: 'text' | 'email' | 'tel' | 'textarea' | 'select';
+  options?: string[];
+};
 type EssProfileSection = {
   id: string;
   label: string;
@@ -141,6 +157,42 @@ const buildEssProfileSections = (
   const emergencyStatus = employee.emergencyContactsComplete
     ? `${employee.emergencyContactCount} contact(s) on file`
     : 'Not configured';
+  const nigerianProfile = isNigeriaCountry(employee.nationality) || isNigeriaCountry(employee.country);
+  const resolvedLocation = resolveNigeriaPersonalLocation({
+    nationality: employee.nationality,
+    country: employee.country,
+    stateOfOrigin: employee.stateOfOrigin,
+    localGovernmentArea: employee.localGovernmentArea,
+    contactState: employee.state,
+    city: employee.city,
+  });
+  const personalFields: EssProfileField[] = [
+    { label: 'Title', value: configured(employee.title) },
+    { label: 'First name', value: configured(employee.firstName) },
+    { label: 'Middle name', value: configured(employee.middleName) },
+    { label: 'Last name', value: configured(employee.lastName) },
+    { label: 'Preferred name', value: configured(employee.preferredName) },
+    { label: 'Date of birth', value: dateOnly(employee.dateOfBirth) },
+    { label: 'Gender', value: configured(employee.gender) },
+    { label: 'Marital status', value: configured(employee.maritalStatus) },
+    { label: 'Nationality', value: configured(employee.nationality) },
+  ];
+  if (nigerianProfile) {
+    personalFields.push(
+      { label: 'Region', value: configured(resolvedLocation.region) },
+      { label: 'State of origin', value: configured(resolvedLocation.stateOfOrigin) },
+      { label: 'LGA', value: configured(resolvedLocation.localGovernmentArea) },
+    );
+  } else {
+    personalFields.push(
+      { label: 'State of origin', value: configured(resolvedLocation.stateOfOrigin) },
+      { label: 'LGA', value: configured(resolvedLocation.localGovernmentArea) },
+    );
+  }
+  personalFields.push(
+    { label: 'Religion', value: configured(employee.religion) },
+    { label: 'Languages spoken', value: configured(employee.languagesSpoken) },
+  );
 
   const qualDocs = documents.filter((doc) =>
     /qualification|degree|education|diploma|bsc|msc|hnd|ond|university|polytechnic|nysc/i.test(`${doc.title} ${doc.category}`.toLowerCase()),
@@ -182,27 +234,13 @@ const buildEssProfileSections = (
         { label: 'Attachment', value: 'Not uploaded' },
       ];
 
-  return [
+  return enrichEssProfileSections([
     {
       id: 'personal',
       label: 'Personal Information',
       status: 'View / update',
       approvalRequired: true,
-      fields: [
-        { label: 'Title', value: configured(employee.title) },
-        { label: 'First name', value: configured(employee.firstName) },
-        { label: 'Middle name', value: configured(employee.middleName) },
-        { label: 'Last name', value: configured(employee.lastName) },
-        { label: 'Preferred name', value: configured(employee.preferredName) },
-        { label: 'Date of birth', value: dateOnly(employee.dateOfBirth) },
-        { label: 'Gender', value: configured(employee.gender) },
-        { label: 'Marital status', value: configured(employee.maritalStatus) },
-        { label: 'Nationality', value: configured(employee.nationality) },
-        { label: 'State of origin', value: configured(employee.stateOfOrigin) },
-        { label: 'LGA', value: configured(employee.localGovernmentArea) },
-        { label: 'Religion', value: configured(employee.religion) },
-        { label: 'Languages spoken', value: configured(employee.languagesSpoken) },
-      ],
+      fields: personalFields,
     },
     {
       id: 'employment',
@@ -248,7 +286,8 @@ const buildEssProfileSections = (
         { label: 'Permanent address', value: configured(employee.permanentAddress) },
         { label: 'Nearest bus stop', value: configured(employee.nearestBusStop) },
         { label: 'City', value: configured(employee.city) },
-        { label: 'State', value: configured(employee.state) },
+        ...(nigerianProfile ? [{ label: 'Region', value: configured(resolvedLocation.region) }] : []),
+        { label: 'State', value: configured(resolvedLocation.contactState || employee.state) },
         { label: 'Country', value: configured(employee.country) },
         { label: 'Postal code', value: configured(employee.postalCode) },
       ],
@@ -259,10 +298,9 @@ const buildEssProfileSections = (
       status: emergencyStatus,
       approvalRequired: true,
       fields: [
-        { label: 'Contacts on file', value: emergencyStatus },
-        { label: 'Primary contact', value: employee.emergencyContactsComplete ? 'Recorded in HRIS' : 'Not configured' },
-        { label: 'Relationship', value: employee.emergencyContactsComplete ? 'See HR record' : 'Not configured' },
-        { label: 'Phone', value: employee.emergencyContactsComplete ? 'See HR record' : 'Not configured' },
+        { label: 'Emergency contact name', value: employee.emergencyContactsComplete ? '' : 'Not configured' },
+        { label: 'Emergency relationship', value: employee.emergencyContactsComplete ? '' : 'Not configured' },
+        { label: 'Emergency phone', value: employee.emergencyContactsComplete ? '' : 'Not configured' },
       ],
     },
     {
@@ -271,10 +309,10 @@ const buildEssProfileSections = (
       status: employee.emergencyContactsComplete ? 'On file' : 'Not configured',
       approvalRequired: true,
       fields: [
-        { label: 'Name', value: employee.emergencyContactsComplete ? 'Recorded in HRIS' : 'Not configured' },
-        { label: 'Relationship', value: employee.emergencyContactsComplete ? 'See HR record' : 'Not configured' },
-        { label: 'Phone', value: employee.emergencyContactsComplete ? 'See HR record' : 'Not configured' },
-        { label: 'Address', value: employee.emergencyContactsComplete ? 'See HR record' : 'Not configured' },
+        { label: 'Next of kin name', value: employee.emergencyContactsComplete ? '' : 'Not configured' },
+        { label: 'Next of kin relationship', value: employee.emergencyContactsComplete ? '' : 'Not configured' },
+        { label: 'Next of kin phone', value: employee.emergencyContactsComplete ? '' : 'Not configured' },
+        { label: 'Next of kin address', value: employee.emergencyContactsComplete ? '' : 'Not configured' },
       ],
     },
     {
@@ -285,7 +323,7 @@ const buildEssProfileSections = (
       fields: [
         { label: 'Bank', value: configured(employee.bankName) },
         { label: 'Branch', value: configured(employee.branchName) },
-        { label: 'Account number', value: maskAccount(employee.accountNo || '') },
+        { label: 'Account number', value: configured(employee.accountNo) },
         { label: 'Account name', value: configured(employee.accountName) },
         { label: 'Pension provider', value: configured(employee.pensionProvider) },
         { label: 'Tax ID', value: configured(employee.taxIdentificationNumber) },
@@ -316,7 +354,7 @@ const buildEssProfileSections = (
       approvalRequired: true,
       fields: certificationFields,
     },
-  ];
+  ]);
 };
 const employeeCodeText = (employee: Awaited<ReturnType<typeof readPayrollEmployees>>['employees'][number]) =>
   compact(employee.employeeCode || employee.employeeId || employee.sourceEmployeeId).toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -417,6 +455,9 @@ const serviceCatalog = [
   { id: 'claim', label: 'Claim & Reimbursement', area: 'Claims', workflow: ['Employee', 'Line Manager', 'Finance'], slaHours: 48 },
   { id: 'loan', label: 'Loan / Salary Advance', area: 'Loan', workflow: ['Employee', 'Line Manager', 'HR', 'Finance'], slaHours: 72 },
   { id: 'travel', label: 'Travel Request', area: 'Travel', workflow: ['Employee', 'Line Manager', 'Admin', 'Finance'], slaHours: 48 },
+  { id: 'travel-advance', label: 'Travel Advance', area: 'Travel', workflow: ['Employee', 'Line Manager', 'Finance'], slaHours: 48 },
+  { id: 'trip-report', label: 'Trip Report', area: 'Travel', workflow: ['Employee', 'Line Manager'], slaHours: 24 },
+  { id: 'travel-settlement', label: 'Travel Settlement', area: 'Travel', workflow: ['Employee', 'Finance'], slaHours: 48 },
   { id: 'asset', label: 'Asset / PPE Request', area: 'Assets', workflow: ['Employee', 'Line Manager', 'Stores / IT'], slaHours: 36 },
   { id: 'letter', label: 'Employment Letter', area: 'Documents', workflow: ['Employee', 'HR Operations'], slaHours: 24 },
   { id: 'exit', label: 'Exit & Separation', area: 'Exit', workflow: ['Employee', 'Line Manager', 'HR', 'Finance', 'IT'], slaHours: 120 },
@@ -1164,6 +1205,27 @@ export async function GET(request: Request) {
       generatedAt: new Date().toISOString(),
     });
 
+    const profilePendingUpdates = await pendingProfileUpdatesForEmployee(employee.employeeId);
+    const canApproveProfileUpdates = canApproveEssProfileUpdate(session.roles || []);
+    const profileApprovalQueue = canApproveProfileUpdates
+      ? allRequests
+          .filter((item) => isProfileUpdateRequest(item) && !/approved|rejected|closed|terminated/i.test(item.status))
+          .map((item) => ({
+            id: item.id,
+            employeeId: item.employeeId,
+            employeeName: employeeSource.employees.find(
+              (row) =>
+                compact(row.employeeId).toUpperCase() === compact(item.employeeId).toUpperCase()
+                || compact(row.employeeCode).toUpperCase() === compact(item.employeeId).toUpperCase(),
+            )?.fullName || item.employeeId,
+            sectionId: String((item as { profileSectionId?: string }).profileSectionId || ''),
+            title: item.title,
+            status: item.status,
+            submittedAt: item.submittedAt,
+            changes: (item as { profileChanges?: Record<string, string> }).profileChanges || {},
+          }))
+      : [];
+
     const payload = {
       generatedAt: new Date().toISOString(),
       locale,
@@ -1238,6 +1300,16 @@ export async function GET(request: Request) {
         employee,
         employeeDocuments,
       ),
+      profilePendingUpdates: profilePendingUpdates.map((item) => ({
+        id: item.id,
+        sectionId: item.profileSectionId,
+        title: item.title,
+        status: item.status,
+        submittedAt: item.submittedAt,
+        changes: item.profileChanges,
+      })),
+      canApproveProfileUpdates,
+      profileApprovalQueue,
       profileAuditTrail: [
         {
           id: 'audit-sync',
@@ -1456,6 +1528,56 @@ export async function POST(request: Request) {
         return ok(result);
       } catch (error) {
         return err(409, error instanceof Error ? error.message : `Unable to ${action.replace('-', ' ')}.`);
+      }
+    }
+
+    if (action === 'submit-profile-update') {
+      const sectionId = compact(body.sectionId);
+      const sectionLabel = compact(body.sectionLabel) || sectionId;
+      const changes = body.changes && typeof body.changes === 'object' && !Array.isArray(body.changes)
+        ? (body.changes as Record<string, string>)
+        : {};
+      const previousValues = body.previousValues && typeof body.previousValues === 'object' && !Array.isArray(body.previousValues)
+        ? (body.previousValues as Record<string, string>)
+        : {};
+      try {
+        const requestItem = await submitEssProfileUpdate({
+          employee,
+          actorName: session.fullName || session.username,
+          sectionId,
+          sectionLabel,
+          changes,
+          previousValues,
+          comment: compact(body.comment) || undefined,
+        });
+        return ok({ request: requestItem, message: 'Profile update submitted for HR approval.' });
+      } catch (error) {
+        return err(409, error instanceof Error ? error.message : 'Unable to submit profile update.');
+      }
+    }
+
+    if (action === 'approve-profile-update' || action === 'reject-profile-update') {
+      const requestId = compact(body.requestId || body.id);
+      if (!requestId) return err(400, 'requestId is required');
+      try {
+        const requestItem = await transitionEssProfileUpdate({
+          requestId,
+          action: action === 'approve-profile-update' ? 'approve' : 'reject',
+          actor: session,
+          employeeDirectory: employeeSource.employees,
+          comment: compact(body.comment) || undefined,
+        });
+        return ok({
+          request: requestItem,
+          message: action === 'approve-profile-update'
+            ? 'Profile update approved and applied to HRIS.'
+            : 'Profile update rejected.',
+        });
+      } catch (error) {
+        return err(
+          error instanceof Error && error.message.includes('not authorized') ? 403 : 409,
+          error instanceof Error ? error.message : 'Unable to process profile update.',
+        );
       }
     }
 

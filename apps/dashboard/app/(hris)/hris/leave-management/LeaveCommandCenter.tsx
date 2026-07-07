@@ -231,51 +231,31 @@ export default function LeaveCommandCenter({
 
       <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Action Center</h2>
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {[
-            {
-              label: 'Pending Approvals',
-              count: summary?.pendingApprovals || 0,
-              section: 'approvals',
-              drilldown: {
-                title: 'Pending Approvals',
-                note: 'All leave applications awaiting supervisor or HR approval.',
-                rows: drilldowns?.pendingApprovals || [],
-              },
-            },
-            {
-              label: 'Carry Forward Processing',
-              count: drilldowns?.carryForwardProcessing.length ?? balances.filter((row) => row.carryForwardBalance > 0).length,
-              section: 'carry-forward-processing',
-              drilldown: {
-                title: 'Carry Forward Processing',
-                note: 'Unique employees with carry-forward leave balance in DLE_Enterprise.',
-                rows: drilldowns?.carryForwardProcessing || [],
-              },
-            },
-          ].map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              onClick={() => onOpenDrilldown(item.drilldown)}
-              className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-left hover:bg-white"
-            >
-              <p className="text-xs font-semibold text-slate-700">{item.label}</p>
-              <p className="mt-2 text-xl font-bold text-slate-900">{number(item.count)}</p>
-              <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#2563EB]">
-                Open Workspace
-                <ChevronRight className="h-3.5 w-3.5" />
-              </span>
-            </button>
-          ))}
-        </div>
+        <button
+          type="button"
+          onClick={() => onOpenDrilldown({
+            title: 'Pending Approvals',
+            note: 'All leave applications awaiting supervisor or HR approval.',
+            rows: drilldowns?.pendingApprovals || [],
+          })}
+          className="mt-4 flex w-full max-w-sm items-center justify-between gap-3 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-left transition hover:border-[#2563EB]/30 hover:bg-white"
+        >
+          <div>
+            <p className="text-xs font-semibold text-slate-700">Pending Approvals</p>
+            <p className="mt-2 text-xl font-bold text-slate-900">{number(summary?.pendingApprovals || 0)}</p>
+          </div>
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#2563EB]">
+            Open Workspace
+            <ChevronRight className="h-3.5 w-3.5" />
+          </span>
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,340px)]">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,360px)]">
         <div className="space-y-4">
           <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
             <h3 className="text-sm font-semibold">Workforce Availability</h3>
-            <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
               <AvailabilityCard label="Available Employees" value={number(availableEmployees)} tone="emerald" />
               <AvailabilityCard label="Employees On Leave" value={number(summary?.employeesOnLeave)} tone="blue" />
               <AvailabilityCard label="Returning This Week" value={number(summary?.returningToday)} tone="violet" />
@@ -283,66 +263,56 @@ export default function LeaveCommandCenter({
             </div>
           </div>
 
-          <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
-            <h3 className="text-sm font-semibold">Leave Policy Summary</h3>
-            <div className="mt-3 space-y-2">
-              {policySummary.map((item) => (
-                <div key={item.name} className="flex items-center justify-between rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2.5">
-                  <span className="text-sm font-semibold text-slate-900">{item.name}</span>
-                  <span className="text-sm font-bold text-[#2563EB]">{item.days} Days</span>
-                </div>
-              ))}
-            </div>
-            <button type="button" onClick={() => onNavigate('leave-policies')} className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-[#2563EB] hover:text-blue-700">
-              View Leave Policies
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold">Leave Planning Calendar</h3>
-              <CalendarDays className="h-5 w-5 text-[#2563EB]" />
-            </div>
-            <div className="mt-4 min-h-[220px] rounded-xl border border-dashed border-[#E5E7EB] bg-[#F8FAFC] p-4">
-              {calendar.length ? (
-                <div className="space-y-2">
-                  {calendar.slice(0, 5).map((item, index) => (
-                    <div key={`${item.label}-${index}`} className="flex items-center justify-between rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm">
-                      <span className="font-semibold text-slate-900">{String(item.label || 'Leave')}</span>
-                      <span className="text-xs text-slate-500">
-                        {String(item.from || '')} – {String(item.to || '')}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex h-full min-h-[180px] flex-col items-center justify-center text-center">
-                  <CalendarDays className="h-10 w-10 text-slate-300" />
-                  <p className="mt-3 text-sm font-medium text-slate-600">No upcoming leaves scheduled</p>
-                  <p className="mt-1 text-xs text-slate-500">Approved and upcoming leave will appear here</p>
-                </div>
-              )}
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button type="button" onClick={() => onNavigate('leave-calendar')} className="rounded-lg border border-[#E5E7EB] px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                View Full Calendar
-              </button>
-              <button type="button" onClick={() => onNavigate('team-leave-planner')} className="rounded-lg bg-[#2563EB] px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">
-                Plan Team Leave
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-semibold">Leave Policy Summary</h3>
+              <div className="mt-3 space-y-2">
+                {policySummary.map((item) => (
+                  <div key={item.name} className="flex items-center justify-between rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2.5">
+                    <span className="text-sm font-semibold text-slate-900">{item.name}</span>
+                    <span className="text-sm font-bold text-[#2563EB]">{item.days} Days</span>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={() => onNavigate('leave-policies')} className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-[#2563EB] hover:text-blue-700">
+                View Leave Policies
+                <ChevronRight className="h-4 w-4" />
               </button>
             </div>
-          </div>
 
-          <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
-            <h3 className="text-sm font-semibold">Leave Analytics Snapshot</h3>
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <AnalyticsCard label="Leave Utilization" value={`${number(summary?.leaveUtilizationPct)}%`} />
-              <AnalyticsCard label="Department Leave Trend" value={departmentUsage.trend} />
-              <AnalyticsCard label="Leave Cost Trend" value={compactMoney(summary?.leaveLiability)} />
-              <AnalyticsCard label="Absence Trend" value={`${number(summary?.employeesOnLeave)} on leave today`} />
+            <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold">Leave Planning Calendar</h3>
+                <CalendarDays className="h-5 w-5 text-[#2563EB]" />
+              </div>
+              <div className="mt-4 min-h-[220px] rounded-xl border border-dashed border-[#E5E7EB] bg-[#F8FAFC] p-4">
+                {calendar.length ? (
+                  <div className="space-y-2">
+                    {calendar.slice(0, 5).map((item, index) => (
+                      <div key={`${item.label}-${index}`} className="flex items-center justify-between rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm">
+                        <span className="font-semibold text-slate-900">{String(item.label || 'Leave')}</span>
+                        <span className="text-xs text-slate-500">
+                          {String(item.from || '')} – {String(item.to || '')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex h-full min-h-[180px] flex-col items-center justify-center text-center">
+                    <CalendarDays className="h-10 w-10 text-slate-300" />
+                    <p className="mt-3 text-sm font-medium text-slate-600">No upcoming leaves scheduled</p>
+                    <p className="mt-1 text-xs text-slate-500">Approved and upcoming leave will appear here</p>
+                  </div>
+                )}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" onClick={() => onNavigate('leave-calendar')} className="rounded-lg border border-[#E5E7EB] px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                  View Full Calendar
+                </button>
+                <button type="button" onClick={() => onNavigate('team-leave-planner')} className="rounded-lg bg-[#2563EB] px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">
+                  Plan Team Leave
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -418,18 +388,6 @@ function AvailabilityCard({ label, value, tone }: { label: string; value: string
     <div className={`rounded-lg border p-3 ${styles}`}>
       <p className="text-[11px] font-semibold uppercase tracking-wide opacity-80">{label}</p>
       <p className="mt-1 text-xl font-bold">{value}</p>
-    </div>
-  );
-}
-
-function AnalyticsCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-3">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-[#64748B]">{label}</p>
-      <p className="mt-1 text-lg font-bold text-slate-900">{value}</p>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
-        <div className="h-full w-2/3 rounded-full bg-[#2563EB]" />
-      </div>
     </div>
   );
 }

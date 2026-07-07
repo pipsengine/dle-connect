@@ -6,6 +6,7 @@ import { contractEmployeeCode, isDailyRatePayrollEmployee, isContractStyleEarnin
 import { isLeaveAllowancePaymentCode } from '@/lib/leave-allowance-policy';
 import { leaveAllowanceEventsForEmployeePeriod } from '@/lib/payroll-leave-allowance-store';
 import { isSagePayslipEarningSyncSource } from '@/lib/payroll-employee-classification';
+import { isSagePayeRefundEarning, shouldUseSagePayeRefundEarnings } from '@/lib/payroll-refund-policy';
 
 export type PayrollEarningProfileId =
   | 'junior-permanent'
@@ -876,7 +877,8 @@ const periodAdjustmentLines = (employee: DleEmployeeDirectoryRow, options?: Payr
       return employeeMatched || gradeMatched || profileMatched;
     })
     .filter((row) => sageStructuralLineMatchesGrade(compact(row.code), structuralFamily))
-    .filter((row) => !isPermanentPayrollEmployee(employee) || !isContractStyleEarningLine({ code: row.code, name: row.name }));
+    .filter((row) => !isPermanentPayrollEmployee(employee) || !isContractStyleEarningLine({ code: row.code, name: row.name }))
+    .filter((row) => shouldUseSagePayeRefundEarnings(period) || !isSagePayeRefundEarning(row.code, row.name));
   const byCode = new Map<string, PayrollEarningLine & { priority: number }>();
   for (const row of matchedRows) {
     const line = {
@@ -941,9 +943,11 @@ export const calculateAnnualLeaveAllowanceAmount = (employee: DleEmployeeDirecto
   return leaveDefinition ? roundMoney(gross * leaveDefinition.percentOfGross * 12) : 0;
 };
 
-const visibleEarningLines = (lines: PayrollEarningLine[], periodAdjustments: PayrollEarningLine[]) => [
+const visibleEarningLines = (lines: PayrollEarningLine[], periodAdjustments: PayrollEarningLine[], period?: string) => [
   ...lines.filter((line) => line.runFrequency !== 'leave-period'),
-  ...periodAdjustments.filter((line) => !line.code.includes('LEAVE_ALLOW')),
+  ...periodAdjustments.filter(
+    (line) => !line.code.includes('LEAVE_ALLOW') && (shouldUseSagePayeRefundEarnings(period) || !isSagePayeRefundEarning(line.code, line.name)),
+  ),
 ];
 
 const fallbackAllowanceRate = (employee: DleEmployeeDirectoryRow) => {
@@ -1189,7 +1193,7 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
     taxablePay,
     nonTaxablePay,
     bhtPay,
-    earningLines: visibleEarningLines(lines, periodAdjustments),
+    earningLines: visibleEarningLines(lines, periodAdjustments, options?.period),
     annualBenefitLines: annualLeaveAllowanceLines(lines),
     paidEarningLines: monthlyLines,
   };

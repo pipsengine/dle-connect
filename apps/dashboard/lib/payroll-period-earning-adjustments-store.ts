@@ -5,6 +5,7 @@ import { isLeaveAllowancePaymentCode } from '@/lib/leave-allowance-policy';
 import { normalizePayrollPeriod } from '@/lib/payroll-leave-allowance-store';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
 import { isEnterprisePayrollPeriod, isSagePayrollRuntimeEnabled } from '@/lib/payroll-enterprise-source';
+import { isSagePayeRefundEarning, shouldUseSagePayeRefundEarnings } from '@/lib/payroll-refund-policy';
 import { invalidateEssPortalCache } from '@/lib/ess-portal-cache';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { isContractStyleEarningLine, isPermanentPayrollEmployee, permanentStyleSageEarnings } from '@/lib/payroll-employee-classification';
@@ -169,6 +170,7 @@ export const syncSagePeriodEarningAdjustments = async (
       const code = compact(line.code);
       const amount = roundMoney(Number(line.amount || 0));
       if (!code || Math.abs(amount) < 0.004) continue;
+      if (!shouldUseSagePayeRefundEarnings(normalizedPeriod) && isSagePayeRefundEarning(code, line.name)) continue;
       if (permanentEmployee && hasStructural && isContractStyleEarningLine({ code, name: line.name })) continue;
       const taxableAmount = line.taxableAmount === null || line.taxableAmount === undefined
         ? amount
@@ -202,9 +204,18 @@ export const syncSagePeriodEarningAdjustments = async (
     }
   }
 
-  const merged = Array.from(byKey.values());
+  if (!shouldUseSagePayeRefundEarnings(normalizedPeriod)) {
+    for (const [key, row] of [...byKey.entries()]) {
+      if (normalizePayrollPeriod(row.period) !== normalizedPeriod) continue;
+      if (!isSagePayeRefundEarning(row.code, row.name)) continue;
+      byKey.delete(key);
+      changed = true;
+    }
+  }
+
+  const cleaned = Array.from(byKey.values());
   if (changed) {
-    await writePayrollPeriodEarningAdjustments(merged);
+    await writePayrollPeriodEarningAdjustments(cleaned);
     invalidateEssPortalCache();
     onAdjustmentsChanged?.(normalizedPeriod);
   }

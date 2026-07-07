@@ -19,6 +19,8 @@ import EssWorkflowDashboardView from './ess-workflow-dashboard-view';
 import type { WorkflowIntelligence } from '@/lib/ess-workflow-intelligence';
 import { EssProfileDashboardView, type EssProfilePayload } from './ess-profile-dashboard-view';
 import { EssPayrollDashboardView, type EssPayrollPayload } from './ess-payroll-dashboard-view';
+import { EssTravelDashboardView, type EssTravelPayload } from './ess-travel-dashboard-view';
+import type { EssTravelRecord } from '@/lib/ess-portal-derived-data';
 import { ESS_NAV_ITEMS, EssPortalShell, EssMobileNav, type EssTab } from './ess-portal-shell';
 import { EssEmptyState } from './ess-portal-ui';
 import {
@@ -134,7 +136,10 @@ type Payload = {
   events: Array<{ id: string; label: string; date: string; type: string }>;
   documents: Array<{ id: string; title: string; category: string; version: string; status: string; uploadedAt?: string | null; expiresAt?: string | null; mimeType?: string; sizeBytes?: number; verifiedAt?: string | null; acknowledgement?: string; accessScope?: string }>;
   documentGovernance?: Array<{ id: string; documentId: string; title: string; category: string; version: string; accessScope: string; acknowledgement: string; status: string; lastUpdated: string }>;
-  profileSections: Array<{ id: string; label: string; status: string; approvalRequired: boolean; fields: Array<{ label: string; value: string }> }>;
+  profileSections: Array<{ id: string; label: string; status: string; approvalRequired: boolean; fields: Array<{ label: string; value: string; key?: string; editable?: boolean; inputType?: string; options?: string[] }> }>;
+  profilePendingUpdates?: Array<{ id: string; sectionId: string; title: string; status: string; submittedAt: string; changes: Record<string, string> }>;
+  profileApprovalQueue?: Array<{ id: string; employeeId: string; employeeName: string; sectionId: string; title: string; status: string; submittedAt: string; changes: Record<string, string> }>;
+  canApproveProfileUpdates?: boolean;
   leave: {
     balances: SimpleRecord[];
     calendar: SimpleRecord[];
@@ -168,7 +173,7 @@ type Payload = {
   learning: { courses: SimpleRecord[]; materials: SimpleRecord[]; certifications: SimpleRecord[] };
   claims: SimpleRecord[];
   loanManagement: { products: LoanProduct[]; applications: SimpleRecord[]; repaymentSchedules: SimpleRecord[]; history: SimpleRecord[] };
-  travel: SimpleRecord[];
+  travel: EssTravelRecord[];
   assets: SimpleRecord[];
   exitServices: { resignation: SimpleRecord; clearance: SimpleRecord[]; exitInterview: SimpleRecord; finalSettlement: SimpleRecord };
   businessRules: SimpleRecord[];
@@ -1093,6 +1098,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
   const [requestTitle, setRequestTitle] = useState('');
   const [requestPriority, setRequestPriority] = useState('Normal');
   const [serviceSubmitError, setServiceSubmitError] = useState('');
+  const [travelSubmitError, setTravelSubmitError] = useState('');
   const [loanProductId, setLoanProductId] = useState('');
   const [loanPrincipal, setLoanPrincipal] = useState('');
   const [loanTenorMonths, setLoanTenorMonths] = useState('');
@@ -1174,6 +1180,45 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to submit request';
       setServiceSubmitError(message);
+      setError(message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitTravelRequest = async (input: {
+    serviceId: string;
+    title: string;
+    reason: string;
+    startDate?: string;
+    endDate?: string;
+    priority: string;
+  }) => {
+    if (!payload) return;
+    setSaving(true);
+    setToast('');
+    setError('');
+    setTravelSubmitError('');
+    try {
+      const res = await fetch('/api/workforce-portal', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          serviceId: input.serviceId,
+          title: input.title,
+          reason: input.reason,
+          startDate: input.startDate,
+          endDate: input.endDate,
+          priority: input.priority,
+        }),
+      });
+      const json = (await res.json()) as ApiResponse<{ request: EssRequest }>;
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to submit travel request');
+      setToast('Travel request submitted and routed for approval.');
+      await load();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to submit travel request';
+      setTravelSubmitError(message);
       setError(message);
     } finally {
       setSaving(false);
@@ -1325,6 +1370,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
           payload={payload as EssProfilePayload | null}
           initialNow={initialNow}
           onNavigate={navigateTab}
+          onRefresh={() => void load()}
         />
       )}
 
@@ -1351,7 +1397,19 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
         <EssCommunicationsView payload={payload as unknown as EssCommunicationsPayload | null} onNavigate={(nextTab, options) => navigateTab(nextTab as EssTab, options)} />
       )}
 
-      {tab !== 'dashboard' && tab !== 'profile' && tab !== 'payroll' && tab !== 'reports' && tab !== 'time' && tab !== 'documents' && tab !== 'communication' && (
+      {tab === 'travel' && (
+        <EssTravelDashboardView
+          payload={payload as EssTravelPayload | null}
+          saving={saving}
+          submitError={travelSubmitError}
+          submitNotice={toast && tab === 'travel' ? toast : ''}
+          onSubmit={submitTravelRequest}
+          onRefresh={() => void load()}
+          onNavigate={navigateTab}
+        />
+      )}
+
+      {tab !== 'dashboard' && tab !== 'profile' && tab !== 'payroll' && tab !== 'reports' && tab !== 'time' && tab !== 'documents' && tab !== 'communication' && tab !== 'travel' && (
         <div className="space-y-4">
           {tab === 'leave' && widgets && (
             <EssLeaveWorkspace payload={payload} employee={employee} onLeaveSubmitted={submitLeaveApplication} onLeaveAction={submitLeaveApproval} onWithdrawLeave={withdrawLeaveRequest} saving={saving} initialNow={initialNow} initialSection={leaveSection} managerMetrics={payload?.managerMetrics} />
@@ -1429,22 +1487,6 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
               </Section>
               <Section title="My Loan Applications"><DataList rows={payload?.loanManagement.applications || []} titleKey="productId" subtitleKeys={['principal', 'tenorMonths', 'requestedAt']} statusKey="approvalStatus" /></Section>
               <Section title="Repayment Schedules & Balances"><DataList rows={payload?.loanManagement.repaymentSchedules || []} titleKey="productId" subtitleKeys={['dueDate', 'amount', 'balance']} /></Section>
-            </section>
-          )}
-
-          {tab === 'travel' && (
-            <section className="grid grid-cols-1 gap-4 xl:grid-cols-[420px_1fr]">
-              <Section title="Travel Management">
-                <ActionGrid items={[
-                  ['Travel request', Plane, 'Route for approval'],
-                  ['Travel advance', Banknote, 'Finance workflow'],
-                  ['Trip report', FileText, 'Post-trip evidence'],
-                  ['Travel settlement', WalletCards, 'Close advance'],
-                ]} />
-              </Section>
-              <Section title="Requests, Approvals, Advances & Settlements">
-                <DataList rows={payload?.travel || []} titleKey="destination" subtitleKeys={['purpose', 'status', 'tripReport']} emptyTitle="No travel requests" emptyDescription="Submit a travel request from Services and it will appear here with live workflow status." />
-              </Section>
             </section>
           )}
 

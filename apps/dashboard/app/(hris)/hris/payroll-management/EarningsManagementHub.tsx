@@ -1,6 +1,10 @@
 'use client';
 
 import PayrollPeriodContextBar from './PayrollPeriodContextBar';
+import AllowancesClient from '../payroll/allowances/AllowancesClient';
+import OvertimePayClient from '../payroll/overtime-pay/OvertimePayClient';
+import DailyRatePayClient from '../payroll/daily-rate-pay/DailyRatePayClient';
+import { BonusInputsPanel, EarningsExceptionsPanel, type EarningsException, type EarningsRecord } from './earnings-tab-content';
 import type { ComponentType, ReactNode } from 'react';
 import {
   AlertTriangle,
@@ -18,25 +22,7 @@ import {
   WalletCards,
 } from 'lucide-react';
 
-type EarningsException = {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  issue: string;
-  severity: 'Low' | 'Medium' | 'High';
-  owner: string;
-};
-
-type EarningsRecord = {
-  employeeId: string;
-  employmentType: string;
-  payrollGroup: string;
-  paymentType?: string;
-  isDailyRate?: boolean;
-  payrollStatus: string;
-  allowances?: number | null;
-  exceptions?: string[];
-};
+export type { EarningsException, EarningsRecord } from './earnings-tab-content';
 
 export type EarningsPayload = {
   period: string;
@@ -54,7 +40,7 @@ export type EarningsPayload = {
   };
   records: EarningsRecord[];
   exceptions: EarningsException[];
-  permissions?: { canExport?: boolean };
+  permissions?: { canExport?: boolean; canViewMoney?: boolean };
 };
 
 export type EarningsTabId =
@@ -216,6 +202,8 @@ export default function EarningsManagementHub({
 
   const workflowStatus = payload?.workflow?.currentStatus || payload?.periodRecord?.status || 'Open';
   const workflowOwner = payload?.workflow?.nextOwner || 'Payroll Officer';
+  const canViewMoney = payload?.permissions?.canViewMoney !== false;
+  const earningsPeriod = viewPeriod || payload?.period || '';
 
   const quickActions: Array<
     | { label: string; tab: EarningsTabId; icon: ComponentType<{ className?: string }> }
@@ -274,7 +262,7 @@ export default function EarningsManagementHub({
         </div>
 
         <div className="mt-4">
-          <PayrollPeriodContextBar payload={payload} viewPeriod={viewPeriod} onSelectPeriod={onSelectPeriod} />
+          <PayrollPeriodContextBar payload={payload} viewPeriod={viewPeriod} onSelectPeriod={onSelectPeriod} showMetaBadges={false} />
         </div>
 
         <nav className="mt-4 overflow-x-auto">
@@ -295,7 +283,7 @@ export default function EarningsManagementHub({
         </nav>
       </div>
 
-      <div className={`mx-auto max-w-[1400px] space-y-6 px-4 py-6 ${loading ? 'opacity-60' : ''}`}>
+      <div className={`${activeTab === 'overview' || activeTab === 'exceptions' || activeTab === 'bonus-inputs' ? 'mx-auto max-w-[1400px]' : ''} space-y-6 px-4 py-6 ${loading ? 'opacity-60' : ''}`}>
         {activeTab === 'overview' ? (
           <>
             <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -518,122 +506,23 @@ export default function EarningsManagementHub({
             </section>
           </>
         ) : activeTab === 'exceptions' ? (
-          <ExceptionsPanel
+          <EarningsExceptionsPanel issues={earningsIssues} onFix={onFixException} />
+        ) : activeTab === 'allowances' ? (
+          <AllowancesClient embedded initialPeriod={earningsPeriod} />
+        ) : activeTab === 'overtime-pay' ? (
+          <OvertimePayClient embedded />
+        ) : activeTab === 'daily-rate-pay' ? (
+          <DailyRatePayClient embedded initialPeriod={earningsPeriod} />
+        ) : activeTab === 'bonus-inputs' ? (
+          <BonusInputsPanel
+            records={records}
             issues={earningsIssues}
-            onBack={() => onSelectTab('overview')}
-            onFix={onFixException}
-            onViewAll={onViewAllExceptions}
+            periodLabel={payload?.periodLabel || 'Current period'}
+            canViewMoney={canViewMoney}
           />
-        ) : (
-          <EarningsTabPanel tab={activeTab} onBack={() => onSelectTab('overview')} />
-        )}
+        ) : null}
       </div>
     </div>
-  );
-}
-
-function EarningsTabPanel({ tab, onBack }: { tab: EarningsTabId; onBack: () => void }) {
-  const tabMeta = tabs.find((item) => item.id === tab);
-  const legacyLinks: Record<string, string> = {
-    allowances: '/hris/payroll/allowances',
-    'overtime-pay': '/hris/payroll/overtime-pay',
-    'daily-rate-pay': '/hris/payroll/daily-rate-pay',
-  };
-  const drillDowns: Record<string, string[]> = {
-    allowances: ['Allowance Catalogue', 'Eligibility Rules', 'Assignment Management'],
-    'overtime-pay': ['Overtime Rules', 'Overtime Approvals', 'Overtime Audit'],
-    'daily-rate-pay': ['Daily Rate Setup', 'Attendance Mapping', 'Daily Rate Review'],
-    'bonus-inputs': ['Bonus Setup', 'Bonus Upload', 'Bonus Review'],
-  };
-  const href = legacyLinks[tab];
-  const links = drillDowns[tab] || [];
-  return (
-    <section className="rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-sm">
-      <button type="button" onClick={onBack} className="text-sm font-semibold text-[#2563EB] hover:underline">
-        ← Back to Overview
-      </button>
-      <h2 className="mt-4 text-2xl font-semibold">{tabMeta?.label || tab}</h2>
-      <p className="mt-2 text-sm text-[#64748B]">Open the full {tabMeta?.label?.toLowerCase()} workspace for detailed management.</p>
-      {links.length ? (
-        <div className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {links.map((label) => (
-            <div key={label} className="rounded-xl border border-[#E5E7EB] bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
-              {label}
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {href ? (
-        <a
-          href={href}
-          className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[#2563EB] px-5 py-3 text-sm font-bold text-white hover:bg-blue-700"
-        >
-          Open full workspace
-          <ChevronRight className="h-4 w-4" />
-        </a>
-      ) : (
-        <p className="mt-4 text-sm text-slate-600">Bonus management tools are available from the payroll processing workspace.</p>
-      )}
-    </section>
-  );
-}
-
-function ExceptionsPanel({
-  issues,
-  onBack,
-  onFix,
-  onViewAll,
-}: {
-  issues: EarningsException[];
-  onBack: () => void;
-  onFix: (id: string) => void;
-  onViewAll: () => void;
-}) {
-  return (
-    <section className="space-y-4">
-      <div className="rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-sm">
-        <button type="button" onClick={onBack} className="text-sm font-semibold text-[#2563EB] hover:underline">
-          ← Back to Overview
-        </button>
-        <h2 className="mt-4 text-2xl font-semibold">Exception Register</h2>
-        <p className="mt-2 text-sm text-[#64748B]">Review and resolve earnings exceptions before payroll processing.</p>
-      </div>
-      <div className="rounded-2xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold">{fmtNum(issues.length)} earnings exceptions</h3>
-          <button type="button" onClick={onViewAll} className="text-sm font-semibold text-[#2563EB] hover:underline">
-            Open resolution workflow
-            <ChevronRight className="ml-1 inline h-4 w-4" />
-          </button>
-        </div>
-        <div className="mt-4 space-y-3">
-          {issues.slice(0, 20).map((item) => (
-            <div
-              key={item.id}
-              className="flex flex-col gap-3 rounded-xl border border-[#E5E7EB] bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="min-w-0">
-                <p className="font-semibold text-[#0F172A]">{item.employeeName}</p>
-                <p className="text-xs text-[#64748B]">{item.employeeId}</p>
-                <p className="mt-1 text-sm text-slate-700">{item.issue}</p>
-                <p className="mt-1 text-xs font-semibold text-[#64748B]">
-                  {item.severity} · {item.owner}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => onFix(item.id)}
-                className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-semibold text-[#2563EB] hover:bg-blue-50"
-              >
-                Fix
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
-          {!issues.length ? <p className="text-sm font-semibold text-emerald-700">No earnings exceptions found.</p> : null}
-        </div>
-      </div>
-    </section>
   );
 }
 

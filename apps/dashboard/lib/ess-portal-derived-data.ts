@@ -5,8 +5,75 @@ type EssRequestLike = {
   status: string;
   submittedAt: string;
   updatedAt?: string;
+  serviceId?: string;
+  priority?: string;
+  reason?: string;
+  startDate?: string;
+  endDate?: string;
   attachmentNames?: string[];
+  workflow?: Array<{ stage: string; owner: string; status: string; actedAt?: string | null; comment?: string | null }>;
   comments?: Array<{ at: string; actor: string; comment: string }>;
+};
+
+export type EssTravelRecord = {
+  id: string;
+  type: 'request' | 'advance' | 'trip-report' | 'settlement';
+  typeLabel: string;
+  destination: string;
+  purpose: string;
+  startDate?: string;
+  endDate?: string;
+  advance: number;
+  status: string;
+  tripReport: string;
+  priority: string;
+  submittedAt: string;
+  updatedAt?: string;
+  workflow: Array<{ stage: string; owner: string; status: string; actedAt?: string | null; comment?: string | null }>;
+};
+
+const parseTravelAmount = (text: string) => {
+  const match = text.match(/(?:amount|advance|spent|balance)[:\s]*(?:ngn|₦)?\s*([\d,]+(?:\.\d+)?)/i)
+    || text.match(/(?:ngn|₦)\s*([\d,]+(?:\.\d+)?)/i);
+  return match ? Number(match[1].replace(/,/g, '')) : 0;
+};
+
+const classifyTravelType = (item: EssRequestLike): EssTravelRecord['type'] => {
+  const serviceId = compact(item.serviceId).toLowerCase();
+  const text = `${item.category} ${item.title}`.toLowerCase();
+  if (serviceId === 'travel-advance' || /travel advance/.test(text)) return 'advance';
+  if (serviceId === 'trip-report' || /trip report/.test(text)) return 'trip-report';
+  if (serviceId === 'travel-settlement' || /travel settlement/.test(text)) return 'settlement';
+  return 'request';
+};
+
+const travelTypeLabel = (type: EssTravelRecord['type']) => ({
+  request: 'Travel Request',
+  advance: 'Travel Advance',
+  'trip-report': 'Trip Report',
+  settlement: 'Travel Settlement',
+}[type]);
+
+const travelDestinationFromTitle = (title: string, type: EssTravelRecord['type']) => {
+  const cleaned = title
+    .replace(/travel\s*(request|advance|settlement)?/i, '')
+    .replace(/trip\s*report\s*[-–:]?/i, '')
+    .replace(/^[-–:\s]+/, '')
+    .trim();
+  if (cleaned) return cleaned;
+  return type === 'request' ? title : title || 'Travel record';
+};
+
+const tripReportStatus = (item: EssRequestLike, type: EssTravelRecord['type'], allTravel: EssRequestLike[]) => {
+  if (type === 'trip-report') return /approved|closed|complete/i.test(item.status) ? 'Submitted' : 'In review';
+  if (type !== 'request') return 'N/A';
+  if (!/approved|closed|complete/i.test(item.status)) return 'Not due';
+  const destination = travelDestinationFromTitle(item.title, type).toLowerCase();
+  const hasReport = allTravel.some((entry) =>
+    classifyTravelType(entry) === 'trip-report'
+    && travelDestinationFromTitle(entry.title, 'trip-report').toLowerCase().includes(destination.slice(0, 12)),
+  );
+  return hasReport ? 'Submitted' : 'Due';
 };
 
 export type EssEmployeeDocument = {
@@ -66,18 +133,31 @@ export const deriveEssClaims = (requests: EssRequestLike[]) =>
       attachmentStatus: item.attachmentNames?.length ? 'Uploaded' : 'Not attached',
     }));
 
-export const deriveEssTravel = (requests: EssRequestLike[]) =>
-  requests
-    .filter((item) => matches(`${item.category} ${item.title}`, /travel/))
-    .map((item) => ({
+export const deriveEssTravel = (requests: EssRequestLike[]): EssTravelRecord[] => {
+  const travelRequests = requests.filter((item) => matches(`${item.category} ${item.title}`, /travel|trip report/));
+  return travelRequests.map((item) => {
+    const type = classifyTravelType(item);
+    const destination = travelDestinationFromTitle(item.title, type);
+    const purpose = compact(item.reason) || item.title;
+    const advance = parseTravelAmount(`${item.reason || ''} ${item.title}`);
+    return {
       id: item.id,
-      destination: item.title.replace(/travel\s*(request|to)?/i, '').trim() || item.title,
-      purpose: item.title,
-      advance: 0,
+      type,
+      typeLabel: travelTypeLabel(type),
+      destination,
+      purpose,
+      startDate: item.startDate,
+      endDate: item.endDate,
+      advance,
       status: item.status,
-      tripReport: /approved|closed|complete/i.test(item.status) ? 'Due' : 'Not Due',
+      tripReport: tripReportStatus(item, type, travelRequests),
+      priority: item.priority || 'Normal',
       submittedAt: item.submittedAt,
-    }));
+      updatedAt: item.updatedAt,
+      workflow: item.workflow || [],
+    };
+  });
+};
 
 export const deriveEssAssets = (requests: EssRequestLike[], documents: EssDocumentLike[]) => {
   const fromRequests = requests

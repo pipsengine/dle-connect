@@ -30,7 +30,6 @@ import {
   Send,
   ShieldCheck,
   UserCheck,
-  Users,
   X,
   XCircle,
 } from 'lucide-react';
@@ -543,32 +542,10 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
       </div>
 
       <div className="space-y-4 px-6 py-5">
-        <div className="flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <p className="text-sm font-semibold text-[#0F172A]">Production workflow ready</p>
-            <p className="mt-1 text-xs text-[#64748B]">
-              {payload?.source || 'DLE Enterprise HRIS'} · {number(payload?.summary.totalEmployees)} employees · Generated {stableDateTime(payload?.generatedAt || initialNow)}
-            </p>
-          </div>
-          <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#10B981]">Data Source: Live</span>
-        </div>
-
         {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{error}</div> : null}
         {toast ? <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800">{toast}</div> : null}
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <HubMetricCard
-            label="Total Employees"
-            value={number(payload?.summary.totalEmployees)}
-            detail={isTransactionsHub ? 'Multi-company workforce scope' : 'Active workforce in scope'}
-            icon={Users}
-            tone="blue"
-            onClick={() => openDrilldown({
-              title: 'Total Employees',
-              note: 'Active employees from DLE_Enterprise HRIS employee directory.',
-              rows: payload?.drilldowns?.totalEmployees || [],
-            })}
-          />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <HubMetricCard
             label="On Leave Today"
             value={number(payload?.summary.employeesOnLeave)}

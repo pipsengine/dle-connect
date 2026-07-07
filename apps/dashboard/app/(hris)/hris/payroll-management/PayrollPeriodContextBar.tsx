@@ -55,6 +55,7 @@ export default function PayrollPeriodContextBar({
   onSelectPeriod,
   compact = false,
   showSelector = true,
+  showMetaBadges = true,
   className = '',
 }: {
   payload: PayrollPeriodContext | null | undefined;
@@ -62,6 +63,7 @@ export default function PayrollPeriodContextBar({
   onSelectPeriod?: (period: string) => void;
   compact?: boolean;
   showSelector?: boolean;
+  showMetaBadges?: boolean;
   className?: string;
 }) {
   const runStatus = runStatusFor(payload);
@@ -91,9 +93,11 @@ export default function PayrollPeriodContextBar({
       ) : null}
 
       <div className={`flex flex-wrap items-center gap-1.5 ${compact ? 'text-[11px]' : 'text-xs'}`}>
-        <span className={`rounded-full bg-blue-50 px-2.5 py-1 font-bold text-blue-800 ring-1 ring-blue-100 ${compact ? 'py-0.5' : 'py-1'}`}>
-          Period: {payload?.periodLabel || 'Loading'}
-        </span>
+        {showMetaBadges ? (
+          <span className={`rounded-full bg-blue-50 px-2.5 py-1 font-bold text-blue-800 ring-1 ring-blue-100 ${compact ? 'py-0.5' : 'py-1'}`}>
+            Period: {payload?.periodLabel || 'Loading'}
+          </span>
+        ) : null}
 
         {showSelector && (payload?.periods?.length || 0) > 0 && onSelectPeriod ? (
           <label className={`inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 font-bold text-slate-700 ${compact ? 'py-0.5' : 'py-1'}`}>
@@ -114,33 +118,37 @@ export default function PayrollPeriodContextBar({
           </label>
         ) : null}
 
-        <span className={`rounded-full px-2.5 py-1 font-bold ring-1 ${statusTone(runStatus)} ${compact ? 'py-0.5' : 'py-1'}`}>
-          Run: {runStatus}
-        </span>
-
-        <span className={`rounded-full px-2.5 py-1 font-bold ring-1 ${dataMode.tone} ${compact ? 'py-0.5' : 'py-1'}`}>
-          Data: {dataMode.label}
-        </span>
-
-        {!compact ? (
+        {showMetaBadges ? (
           <>
-            <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800 ring-1 ring-emerald-100">
-              Source: {payload?.dataSource?.source || 'DLE Enterprise HRIS'}
+            <span className={`rounded-full px-2.5 py-1 font-bold ring-1 ${statusTone(runStatus)} ${compact ? 'py-0.5' : 'py-1'}`}>
+              Run: {runStatus}
             </span>
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-700 ring-1 ring-slate-200">
-              Employees: {numberFmt.format(employees)}
+
+            <span className={`rounded-full px-2.5 py-1 font-bold ring-1 ${dataMode.tone} ${compact ? 'py-0.5' : 'py-1'}`}>
+              Data: {dataMode.label}
             </span>
-            {typeof payload?.summary?.exceptionCount === 'number' ? (
-              <span className={`rounded-full px-2.5 py-1 font-semibold ring-1 ${payload.summary.exceptionCount > 0 ? 'bg-red-50 text-red-800 ring-red-100' : 'bg-emerald-50 text-emerald-800 ring-emerald-100'}`}>
-                Issues: {numberFmt.format(payload.summary.exceptionCount)}
-              </span>
+
+            {!compact ? (
+              <>
+                <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800 ring-1 ring-emerald-100">
+                  Source: {payload?.dataSource?.source || 'DLE Enterprise HRIS'}
+                </span>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-700 ring-1 ring-slate-200">
+                  Employees: {numberFmt.format(employees)}
+                </span>
+                {typeof payload?.summary?.exceptionCount === 'number' ? (
+                  <span className={`rounded-full px-2.5 py-1 font-semibold ring-1 ${payload.summary.exceptionCount > 0 ? 'bg-red-50 text-red-800 ring-red-100' : 'bg-emerald-50 text-emerald-800 ring-emerald-100'}`}>
+                    Issues: {numberFmt.format(payload.summary.exceptionCount)}
+                  </span>
+                ) : null}
+              </>
             ) : null}
+
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600 ring-1 ring-slate-200">
+              Loaded: {fmtDateTime(payload?.generatedAt)}
+            </span>
           </>
         ) : null}
-
-        <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600 ring-1 ring-slate-200">
-          Loaded: {fmtDateTime(payload?.generatedAt)}
-        </span>
       </div>
     </div>
   );
