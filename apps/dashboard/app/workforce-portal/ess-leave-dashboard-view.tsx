@@ -253,9 +253,17 @@ type EssLeaveDashboardViewProps = {
   activeTab: LeaveWorkspaceTab;
   onTabChange: (tab: LeaveWorkspaceTab) => void;
   onApplyLeave: (leaveType?: string) => void;
+  managerMetrics?: {
+    teamSize: number;
+    pendingApprovals: number;
+    onLeave: number;
+    missingTimesheets: number;
+    teamAttendancePct: number;
+    trainingToday: number;
+  };
 };
 
-export function EssLeaveDashboardView({ payload, initialNow, activeTab, onTabChange, onApplyLeave }: EssLeaveDashboardViewProps) {
+export function EssLeaveDashboardView({ payload, initialNow, activeTab, onTabChange, onApplyLeave, managerMetrics }: EssLeaveDashboardViewProps) {
   const employee = payload?.employee;
   const balances = payload?.leave?.balances || [];
   const calendar = payload?.leave?.calendar || [];
@@ -284,7 +292,6 @@ export function EssLeaveDashboardView({ payload, initialNow, activeTab, onTabCha
   const kpiRows = [
     { label: 'Annual Leave Balance', value: `${balanceFor(balances, 'Annual Leave')?.balance ?? payload?.widgets?.leave.balance ?? 0} days`, subtitle: 'Current entitlement' },
     { label: 'Sick Leave Balance', value: `${balanceFor(balances, 'Sick Leave')?.balance ?? 0} days`, subtitle: 'Working days' },
-    { label: 'Casual Leave Balance', value: `${balanceFor(balances, 'Casual Leave')?.balance ?? 0} days`, subtitle: 'Working days' },
     { label: 'Compassionate Balance', value: `${balanceFor(balances, 'Compassionate Leave')?.balance ?? 0} days`, subtitle: 'Working days' },
     { label: 'Exam Leave Balance', value: `${balanceFor(balances, 'Exam Leave')?.balance ?? 0} days`, subtitle: 'Working days' },
     { label: 'Maternity Balance', value: `${balanceFor(balances, 'Maternity Leave')?.balance ?? 0} days`, subtitle: 'Calendar days' },
@@ -332,6 +339,27 @@ export function EssLeaveDashboardView({ payload, initialNow, activeTab, onTabCha
 
   return (
     <div className="space-y-5">
+      {managerMetrics && (managerMetrics.teamSize > 0 || managerMetrics.pendingApprovals > 0) ? (
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <EssCard className="p-4 sm:p-5">
+            <EssSectionHeader title="Manager Leave Dashboard" />
+            <p className="text-[13px] text-[#64748B]">Team leave oversight for managers within ESS.</p>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <button type="button" onClick={() => onTabChange('Leave Calendar')} className="rounded-[14px] border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-left transition hover:border-[#2563EB]/30 hover:bg-[#EFF6FF]">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#64748B]">Employees on Leave</p>
+                <p className="mt-2 text-[28px] font-bold text-[#0F172A]">{managerMetrics.onLeave}</p>
+                <p className="mt-1 text-[12px] text-[#64748B]">{managerMetrics.teamSize} team member{managerMetrics.teamSize === 1 ? '' : 's'}</p>
+              </button>
+              <button type="button" onClick={() => onTabChange('Approvals')} className="rounded-[14px] border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-left transition hover:border-[#2563EB]/30 hover:bg-[#EFF6FF]">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#64748B]">Leave Requests</p>
+                <p className="mt-2 text-[28px] font-bold text-[#0F172A]">{managerMetrics.pendingApprovals}</p>
+                <p className="mt-1 text-[12px] text-[#64748B]">Pending your approval</p>
+              </button>
+            </div>
+          </EssCard>
+        </section>
+      ) : null}
+
       {/* Hero */}
       <div className="overflow-hidden rounded-[20px] border border-[#E5E7EB] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.10)]">
         <div className="grid grid-cols-1 gap-6 p-6 lg:grid-cols-[auto_1fr_320px] lg:items-start">
@@ -414,7 +442,7 @@ export function EssLeaveDashboardView({ payload, initialNow, activeTab, onTabCha
           {/* 12 KPI cards */}
           <section>
             <EssSectionHeader title="Leave Overview" />
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {kpiRows.map((row) => {
                 const { Icon, accent, bg } = kpiIcon(row.label);
                 return (

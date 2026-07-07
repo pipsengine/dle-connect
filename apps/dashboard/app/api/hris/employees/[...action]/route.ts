@@ -4,6 +4,7 @@ import {
   findEmployeeDuplicatesInDb,
   getEmployeeDraftFromDb,
   importSagePayrollEmployeesToDb,
+  listEmployeeDraftsByStatusFromDb,
   previewNextEmployeeCodeFromDb,
   saveEmployeeDraftToDb,
 } from '@/lib/dle-enterprise-db';
@@ -157,7 +158,15 @@ const permissions = (role: Role) => {
   const canCreate =
     role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'HR Officer' || role === 'Admin Officer';
   const canSubmitApproval = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'HR Officer';
-  return { canCreate, canSubmitApproval };
+  const canApproveEmployee = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager';
+  const canCreateWithoutApproval = role === 'Super Admin' || role === 'HR Director';
+  return { canCreate, canSubmitApproval, canApproveEmployee, canCreateWithoutApproval };
+};
+
+const loadDraftRecord = async (draftId: string): Promise<DraftRecord | null> => {
+  const rec = storeDrafts.get(draftId) || ((await getEmployeeDraftFromDb(draftId)) as DraftRecord | null);
+  if (rec) storeDrafts.set(draftId, rec);
+  return rec;
 };
 
 const storeDrafts = (() => {
@@ -475,6 +484,7 @@ const validateDoc = (d: any) => {
 
 export async function GET(request: Request, ctx: { params: Promise<{ action: string[] }> }) {
   const role = getRole(request);
+  const perms = permissions(role);
   const { action } = await ctx.params;
   const seg0 = action[0] || '';
 
@@ -490,11 +500,29 @@ export async function GET(request: Request, ctx: { params: Promise<{ action: str
     const employeeCode = (await previewNextEmployeeCodeFromDb(employeeType)) || nextPreviewFallback(employeeType);
     return jsonOk({ employeeCode, prefix, employeeType });
   }
+  if (seg0 === 'pending-approvals') {
+    if (!perms.canApproveEmployee) return jsonErr(403, 'Permission denied');
+    const memoryDrafts = [...storeDrafts.values()].filter((rec) => rec.status === 'submitted');
+    const dbDrafts = await listEmployeeDraftsByStatusFromDb(['submitted']);
+    const merged = new Map<string, DraftRecord>();
+    for (const rec of [...dbDrafts, ...memoryDrafts] as DraftRecord[]) merged.set(rec.draftId, rec);
+    return jsonOk({
+      drafts: [...merged.values()].map((rec) => ({
+        draftId: rec.draftId,
+        status: rec.status,
+        updatedAt: rec.updatedAt,
+        fullName: `${rec.draft.personal?.firstName || ''} ${rec.draft.personal?.lastName || ''}`.trim(),
+        department: rec.draft.job?.department || '—',
+        jobTitle: rec.draft.job?.jobTitle || '—',
+        reportingManager: rec.draft.job?.reportingManager || '—',
+        employmentType: rec.draft.employment?.employmentType || '—',
+      })),
+    });
+  }
   if (seg0 === 'draft' && action[1]) {
     const draftId = action[1];
-    const rec = storeDrafts.get(draftId) || ((await getEmployeeDraftFromDb(draftId)) as DraftRecord | null);
+    const rec = await loadDraftRecord(draftId);
     if (!rec) return jsonErr(404, 'Draft not found');
-    storeDrafts.set(draftId, rec);
     return jsonOk({ draft: rec.draft, meta: { draftId: rec.draftId, status: rec.status, updatedAt: rec.updatedAt } });
   }
 
@@ -546,7 +574,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
     const docs = Array.isArray(body?.documents) ? body.documents : null;
     if (!draftId) return jsonErr(400, 'draftId is required');
     if (!docs) return jsonErr(400, 'documents is required');
-    const rec = storeDrafts.get(draftId);
+    const rec = await loadDraftRecord(draftId);
     if (!rec) return jsonErr(404, 'Draft not found');
     let uploaded = 0;
     const nextDocs = [...(rec.draft.documents || [])];
@@ -579,7 +607,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
     if (!perms.canSubmitApproval) return jsonErr(403, 'Permission denied');
     const draftId = normalize(body?.draftId);
     if (!draftId) return jsonErr(400, 'draftId is required');
-    const rec = storeDrafts.get(draftId);
+    const rec = await loadDraftRecord(draftId);
     if (!rec) return jsonErr(404, 'Draft not found');
     const v = validateDraft(rec.draft);
     if (!v.valid) return jsonErr(400, 'Validation failed');
@@ -590,13 +618,43 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
     return jsonOk({ draftId: rec.draftId, status: 'submitted' });
   }
 
+  if (seg0 === 'approve') {
+    if (!perms.canApproveEmployee) return jsonErr(403, 'Permission denied');
+    const draftId = normalize(body?.draftId);
+    if (!draftId) return jsonErr(400, 'draftId is required');
+    const rec = await loadDraftRecord(draftId);
+    if (!rec) return jsonErr(404, 'Draft not found');
+    if (rec.status !== 'submitted') return jsonErr(400, 'Only submitted drafts can be approved');
+    rec.status = 'approved';
+    rec.updatedAt = nowIso();
+    audit(rec, role, 'Employee draft approved', { reason: normalize(body?.reason) || undefined });
+    await saveEmployeeDraftToDb(rec);
+    return jsonOk({ draftId: rec.draftId, status: 'approved' });
+  }
+
+  if (seg0 === 'reject') {
+    if (!perms.canApproveEmployee) return jsonErr(403, 'Permission denied');
+    const draftId = normalize(body?.draftId);
+    const reason = normalize(body?.reason);
+    if (!draftId) return jsonErr(400, 'draftId is required');
+    if (!reason) return jsonErr(400, 'reason is required');
+    const rec = await loadDraftRecord(draftId);
+    if (!rec) return jsonErr(404, 'Draft not found');
+    if (rec.status !== 'submitted') return jsonErr(400, 'Only submitted drafts can be rejected');
+    rec.status = 'draft';
+    rec.updatedAt = nowIso();
+    audit(rec, role, 'Employee draft rejected', { reason });
+    await saveEmployeeDraftToDb(rec);
+    return jsonOk({ draftId: rec.draftId, status: 'draft' });
+  }
+
   if (seg0 === 'onboarding' && action[1] === 'start') {
     if (!perms.canCreate) return jsonErr(403, 'Permission denied');
     const employeeId = normalize(body?.employeeId);
     const draftId = normalize(body?.draftId);
     if (!employeeId && !draftId) return jsonErr(400, 'employeeId or draftId is required');
     if (draftId) {
-      const rec = storeDrafts.get(draftId);
+      const rec = await loadDraftRecord(draftId);
       if (rec) {
         audit(rec, role, 'Onboarding started');
         rec.updatedAt = nowIso();
@@ -636,7 +694,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ action: s
   if (!body || typeof body !== 'object') return jsonErr(400, 'Invalid JSON body');
   const draft: EmployeeDraftPayload = body.draft;
   if (!draft || typeof draft !== 'object') return jsonErr(400, 'draft is required');
-  const rec = storeDrafts.get(draftId);
+  const rec = await loadDraftRecord(draftId);
   if (!rec) return jsonErr(404, 'Draft not found');
   const prev = rec.updatedAt;
   rec.draft = draft;
@@ -654,7 +712,7 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ action: 
   const draftId = action[1] || '';
   if (seg0 !== 'draft' || !draftId) return jsonErr(404, 'Not found');
   if (!perms.canCreate) return jsonErr(403, 'Permission denied');
-  const rec = storeDrafts.get(draftId);
+  const rec = await loadDraftRecord(draftId);
   if (!rec) return jsonErr(404, 'Draft not found');
   storeDrafts.delete(draftId);
   await deleteEmployeeDraftFromDb(draftId);

@@ -25,6 +25,8 @@ type Summary = {
   returningToday: number;
   pendingApplications: number;
   pendingApprovals: number;
+  pendingHrApprovals?: number;
+  pendingManagerApprovals?: number;
   leaveUtilizationPct: number;
   leaveLiability: number;
   encashmentRequests: number;
@@ -70,6 +72,8 @@ type PayloadSlice = {
     onLeaveToday: Array<{ employeeId: string; fullName: string; department: string; leaveType?: string; startDate?: string; endDate?: string; days?: number; status?: string; stage?: string; metricLabel?: string; metricValue?: string | number }>;
     upcomingLeave: Array<{ employeeId: string; fullName: string; department: string; leaveType?: string; startDate?: string; endDate?: string; days?: number; status?: string; stage?: string }>;
     pendingApprovals: Array<{ employeeId: string; fullName: string; department: string; leaveType?: string; startDate?: string; endDate?: string; days?: number; status?: string; stage?: string }>;
+    pendingHrApprovals?: Array<{ employeeId: string; fullName: string; department: string; leaveType?: string; startDate?: string; endDate?: string; days?: number; status?: string; stage?: string }>;
+    pendingManagerApprovals?: Array<{ employeeId: string; fullName: string; department: string; leaveType?: string; startDate?: string; endDate?: string; days?: number; status?: string; stage?: string }>;
     carryForwardProcessing: Array<{ employeeId: string; fullName: string; department: string; leaveType?: string; days?: number; metricLabel?: string; metricValue?: string | number }>;
     cancellationRequests: Array<{ employeeId: string; fullName: string; department: string; leaveType?: string; startDate?: string; endDate?: string; days?: number; status?: string }>;
     returningToday: Array<{ employeeId: string; fullName: string; department: string; leaveType?: string; startDate?: string; endDate?: string; days?: number; status?: string }>;
@@ -172,7 +176,7 @@ export default function LeaveCommandCenter({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {[
           {
             label: 'Employees On Leave',
@@ -197,36 +201,14 @@ export default function LeaveCommandCenter({
             },
           },
           {
-            label: 'Leave Requests Awaiting Approval',
-            count: summary?.pendingApprovals || 0,
-            status: statusLabel(summary?.pendingApprovals || 0),
+            label: 'HR Pending Approvals',
+            count: summary?.pendingHrApprovals || 0,
+            status: statusLabel(summary?.pendingHrApprovals || 0),
             section: 'approvals',
             drilldown: {
-              title: 'Leave Requests Awaiting Approval',
-              note: 'Submitted, under review, or draft leave applications.',
-              rows: drilldowns?.pendingApprovals || [],
-            },
-          },
-          {
-            label: 'Leave Recall Requests',
-            count: summary?.recallRequests || 0,
-            status: statusLabel(summary?.recallRequests || 0),
-            section: 'recalls',
-            drilldown: {
-              title: 'Leave Recall Requests',
-              note: 'Recall workflow records from DLE_Enterprise.',
-              rows: [],
-            },
-          },
-          {
-            label: 'Leave Cancellation Requests',
-            count: summary?.cancellationRequests || 0,
-            status: statusLabel(summary?.cancellationRequests || 0),
-            section: 'cancellations',
-            drilldown: {
-              title: 'Leave Cancellation Requests',
-              note: 'Cancelled leave applications in DLE_Enterprise.',
-              rows: drilldowns?.cancellationRequests || [],
+              title: 'HR Pending Approvals',
+              note: 'Leave applications awaiting HR review.',
+              rows: drilldowns?.pendingHrApprovals || [],
             },
           },
         ].map((item) => (
@@ -249,7 +231,7 @@ export default function LeaveCommandCenter({
 
       <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Action Center</h2>
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {[
             {
               label: 'Pending Approvals',
@@ -257,28 +239,8 @@ export default function LeaveCommandCenter({
               section: 'approvals',
               drilldown: {
                 title: 'Pending Approvals',
-                note: 'Leave applications awaiting supervisor or HR approval.',
+                note: 'All leave applications awaiting supervisor or HR approval.',
                 rows: drilldowns?.pendingApprovals || [],
-              },
-            },
-            {
-              label: 'Recall Requests',
-              count: summary?.recallRequests || 0,
-              section: 'recalls',
-              drilldown: {
-                title: 'Recall Requests',
-                note: 'Recall workflow records from DLE_Enterprise.',
-                rows: [],
-              },
-            },
-            {
-              label: 'Cancellation Requests',
-              count: summary?.cancellationRequests || 0,
-              section: 'cancellations',
-              drilldown: {
-                title: 'Cancellation Requests',
-                note: 'Cancelled leave applications.',
-                rows: drilldowns?.cancellationRequests || [],
               },
             },
             {
@@ -289,26 +251,6 @@ export default function LeaveCommandCenter({
                 title: 'Carry Forward Processing',
                 note: 'Unique employees with carry-forward leave balance in DLE_Enterprise.',
                 rows: drilldowns?.carryForwardProcessing || [],
-              },
-            },
-            {
-              label: 'Leave Allowance Exceptions',
-              count: summary?.allowanceExceptionCount || 0,
-              section: 'leave-allowance-exceptions',
-              drilldown: {
-                title: 'Leave Allowance Exceptions',
-                note: 'Reversed or ineligible payroll leave allowance postings requiring review.',
-                rows: drilldowns?.leaveAllowanceExceptions || [],
-              },
-            },
-            {
-              label: 'Leave Encashment Requests',
-              count: summary?.encashmentRequests || 0,
-              section: 'encashments',
-              drilldown: {
-                title: 'Leave Encashment Requests',
-                note: 'Encashment workflow records from DLE_Enterprise.',
-                rows: [],
               },
             },
           ].map((item) => (

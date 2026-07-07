@@ -317,7 +317,9 @@ const rolePermissions = (role: Role) => {
   const canViewPayroll = role === 'Super Admin' || role === 'Payroll Officer' || role === 'HR Director' || role === 'HR Manager';
   const canUploadDocuments = canCreate;
   const canSubmitApproval = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'HR Officer';
-  return { canCreate, canViewPayroll, canUploadDocuments, canSubmitApproval };
+  const canApproveEmployee = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager';
+  const canCreateWithoutApproval = role === 'Super Admin' || role === 'HR Director';
+  return { canCreate, canViewPayroll, canUploadDocuments, canSubmitApproval, canApproveEmployee, canCreateWithoutApproval };
 };
 
 const Card = ({ children, className }: { children: React.ReactNode; className?: string }) => (
@@ -929,6 +931,10 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
       setToast({ title: 'Permission denied', detail: 'You do not have permission to create employee records.', tone: 'err' });
       return;
     }
+    if (draftStatus !== 'approved' && !perms.canCreateWithoutApproval) {
+      setToast({ title: 'Approval required', detail: 'Submit this draft for approval and wait for HR approval before creating the employee.', tone: 'err' });
+      return;
+    }
     setSubmitting(true);
     try {
       const did = draftId
@@ -955,6 +961,44 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
       setToast({ title: 'Create failed', detail: e instanceof Error ? e.message : 'Unable to create employee', tone: 'err' });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const approveDraft = async () => {
+    if (!draftId || !perms.canApproveEmployee) return;
+    setSaving(true);
+    try {
+      const res = await apiCall<{ draftId: string; status: 'approved' }>('/api/hris/employees/approve', {
+        method: 'POST',
+        role,
+        body: JSON.stringify({ draftId }),
+      });
+      setDraftStatus(res.status);
+      setToast({ title: 'Approved', detail: `Draft ${res.draftId} is approved and ready for employee creation.`, tone: 'ok' });
+    } catch (e) {
+      setToast({ title: 'Approval failed', detail: e instanceof Error ? e.message : 'Unable to approve draft', tone: 'err' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const rejectDraft = async () => {
+    if (!draftId || !perms.canApproveEmployee) return;
+    const reason = typeof window !== 'undefined' ? window.prompt('Reason for rejection') : '';
+    if (!reason?.trim()) return;
+    setSaving(true);
+    try {
+      const res = await apiCall<{ draftId: string; status: 'draft' }>('/api/hris/employees/reject', {
+        method: 'POST',
+        role,
+        body: JSON.stringify({ draftId, reason: reason.trim() }),
+      });
+      setDraftStatus(res.status);
+      setToast({ title: 'Rejected', detail: `Draft ${res.draftId} returned to draft status.`, tone: 'ok' });
+    } catch (e) {
+      setToast({ title: 'Rejection failed', detail: e instanceof Error ? e.message : 'Unable to reject draft', tone: 'err' });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1990,10 +2034,22 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
         </button>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {draftStatus === 'submitted' && perms.canApproveEmployee ? (
+            <>
+              <button type="button" onClick={() => void approveDraft()} disabled={saving || submitting} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-extrabold hover:bg-emerald-700 transition-colors">
+                <CheckCircle2 className="w-4 h-4" />
+                Approve Draft
+              </button>
+              <button type="button" onClick={() => void rejectDraft()} disabled={saving || submitting} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 text-xs font-extrabold hover:bg-red-100 transition-colors">
+                <X className="w-4 h-4" />
+                Reject Draft
+              </button>
+            </>
+          ) : null}
           <button
             type="button"
             onClick={() => saveDraft('submit-approval')}
-            disabled={!perms.canSubmitApproval || saving || submitting}
+            disabled={!perms.canSubmitApproval || saving || submitting || draftStatus === 'submitted' || draftStatus === 'approved'}
             className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold transition-colors ${
               perms.canSubmitApproval ? 'bg-dle-blue text-white hover:bg-dle-blue-deep' : 'bg-slate-100 text-slate-400'
             }`}
@@ -2004,17 +2060,17 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
           <button
             type="button"
             onClick={() => createEmployee(false)}
-            disabled={!perms.canCreate || saving || submitting}
-            className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold transition-colors ${perms.canCreate ? 'bg-slate-900 text-white hover:bg-slate-800' : 'bg-slate-100 text-slate-400'}`}
+            disabled={!perms.canCreate || saving || submitting || (draftStatus !== 'approved' && !perms.canCreateWithoutApproval)}
+            className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold transition-colors ${perms.canCreate && (draftStatus === 'approved' || perms.canCreateWithoutApproval) ? 'bg-slate-900 text-white hover:bg-slate-800' : 'bg-slate-100 text-slate-400'}`}
           >
             <CheckCircle2 className="w-4 h-4" />
-            Create Employee Immediately
+            {perms.canCreateWithoutApproval ? 'Create Employee Immediately' : 'Create Employee'}
           </button>
           <button
             type="button"
             onClick={() => createEmployee(true)}
-            disabled={!perms.canCreate || saving || submitting}
-            className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold transition-colors ${perms.canCreate ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-100 text-slate-400'}`}
+            disabled={!perms.canCreate || saving || submitting || (draftStatus !== 'approved' && !perms.canCreateWithoutApproval)}
+            className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold transition-colors ${perms.canCreate && (draftStatus === 'approved' || perms.canCreateWithoutApproval) ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-100 text-slate-400'}`}
           >
             <ClipboardCheck className="w-4 h-4" />
             Create + Start Onboarding

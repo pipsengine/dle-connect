@@ -132,6 +132,8 @@ type Payload = {
     returningToday: number;
     pendingApplications: number;
     pendingApprovals: number;
+    pendingHrApprovals: number;
+    pendingManagerApprovals: number;
     leaveUtilizationPct: number;
     leaveLiability: number;
     encashmentRequests: number;
@@ -170,6 +172,8 @@ type Payload = {
     onLeaveToday: LeaveDrilldownRow[];
     returningToday: LeaveDrilldownRow[];
     pendingApprovals: LeaveDrilldownRow[];
+    pendingHrApprovals: LeaveDrilldownRow[];
+    pendingManagerApprovals: LeaveDrilldownRow[];
     upcomingLeave: LeaveDrilldownRow[];
     leaveUtilization: LeaveDrilldownRow[];
     leaveLiability: LeaveDrilldownRow[];
@@ -552,7 +556,7 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
         {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{error}</div> : null}
         {toast ? <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800">{toast}</div> : null}
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <HubMetricCard
             label="Total Employees"
             value={number(payload?.summary.totalEmployees)}
@@ -578,15 +582,15 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
             })}
           />
           <HubMetricCard
-            label="Pending Approvals"
-            value={number(payload?.summary.pendingApprovals)}
-            detail={isTransactionsHub ? 'Requests awaiting approval' : `${number(payload?.summary.pendingApplications)} applications`}
+            label="HR Pending Approvals"
+            value={number(payload?.summary.pendingHrApprovals)}
+            detail={`${number(payload?.summary.pendingManagerApprovals)} awaiting manager review`}
             icon={ClipboardCheck}
-            tone={(payload?.summary.pendingApprovals || 0) ? 'amber' : 'green'}
+            tone={(payload?.summary.pendingHrApprovals || 0) ? 'amber' : 'green'}
             onClick={() => openDrilldown({
-              title: 'Pending Approvals',
-              note: 'Leave applications with Submitted, Under Review, or Draft status in DLE_Enterprise.',
-              rows: payload?.drilldowns?.pendingApprovals || [],
+              title: 'HR Pending Approvals',
+              note: 'Leave applications awaiting HR review in DLE_Enterprise.',
+              rows: payload?.drilldowns?.pendingHrApprovals || [],
             })}
           />
           <HubMetricCard
@@ -599,18 +603,6 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
               title: 'Leave Utilization Detail',
               note: 'Per-employee annual leave used vs accrued balances from hris.LeaveBalances.',
               rows: payload?.drilldowns?.leaveUtilization || [],
-            })}
-          />
-          <HubMetricCard
-            label="Leave Liability"
-            value={compactMoney(payload?.summary.leaveLiability)}
-            detail={isTransactionsHub ? 'Annual leave liability exposure' : 'Annual leave accrued exposure'}
-            icon={Banknote}
-            tone="red"
-            onClick={() => openDrilldown({
-              title: 'Leave Liability Detail',
-              note: 'Annual leave liability values from hris.LeaveBalances (current balance exposure).',
-              rows: payload?.drilldowns?.leaveLiability || [],
             })}
           />
         </div>

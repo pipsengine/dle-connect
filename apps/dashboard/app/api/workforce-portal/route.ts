@@ -981,7 +981,7 @@ export async function GET(request: Request) {
       approvalStatus: item.approvalStatus,
     }));
     const leavePolicyCards = essContext.leave.policyCards;
-    const confirmedPermanent = String(employee.status || '').toLowerCase().includes('confirmed') || (employee.confirmationDueDate ? new Date(`${employee.confirmationDueDate}T00:00:00.000Z`).getTime() <= Date.now() : false);
+    const confirmedPermanent = String(employee.status || '').toLowerCase().includes('confirmed');
     const fourteenDayPaidLeaveEmployee = isFourteenDayPaidLeaveEmployee(employee);
     const currentYearAllowanceAlreadyPaid = await hasLeaveAllowanceInYear(employee, leaveYear);
     const allowanceEligible = annualBalance >= 10 && !currentYearAllowanceAlreadyPaid;

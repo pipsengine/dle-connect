@@ -319,12 +319,9 @@ export default function LeaveTransactionsCommandCenter({
 
       <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Transaction Action Center</h2>
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {[
             { label: 'Pending Approvals', count: payload?.summary.pendingApprovals || 0, section: 'approvals', icon: Clock3, tone: 'amber' },
-            { label: 'Recall Requests', count: payload?.summary.recallRequests || 0, section: 'recalls', icon: RotateCcw, tone: 'green' },
-            { label: 'Cancellation Requests', count: payload?.summary.cancellationRequests || 0, section: 'cancellations', icon: XCircle, tone: 'red' },
-            { label: 'Encashment Requests', count: payload?.summary.encashmentRequests || 0, section: 'encashments', icon: Banknote, tone: 'violet' },
             { label: 'Carry Forward Processing', count: carryForwardCount, section: 'carry-forward-processing', icon: BadgeCheck, tone: 'blue' },
           ].map((item) => {
             const Icon = item.icon;

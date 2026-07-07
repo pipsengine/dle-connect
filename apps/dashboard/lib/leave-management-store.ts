@@ -168,6 +168,8 @@ export type LeavePayload = {
     returningToday: number;
     pendingApplications: number;
     pendingApprovals: number;
+    pendingHrApprovals: number;
+    pendingManagerApprovals: number;
     leaveUtilizationPct: number;
     leaveLiability: number;
     encashmentRequests: number;
@@ -206,6 +208,8 @@ export type LeavePayload = {
     onLeaveToday: LeaveDrilldownRow[];
     returningToday: LeaveDrilldownRow[];
     pendingApprovals: LeaveDrilldownRow[];
+    pendingHrApprovals: LeaveDrilldownRow[];
+    pendingManagerApprovals: LeaveDrilldownRow[];
     upcomingLeave: LeaveDrilldownRow[];
     leaveUtilization: LeaveDrilldownRow[];
     leaveLiability: LeaveDrilldownRow[];
@@ -338,6 +342,14 @@ const buildLeaveDrilldowns = (
     .filter((item) => pendingStatuses.includes(item.status as typeof pendingStatuses[number]))
     .map(appToDrilldownRow);
 
+  const pendingManagerApprovals = applications
+    .filter((item) => pendingStatuses.includes(item.status as typeof pendingStatuses[number]) && (item.status === 'Submitted' || item.stage === 'Supervisor'))
+    .map(appToDrilldownRow);
+
+  const pendingHrApprovals = applications
+    .filter((item) => pendingStatuses.includes(item.status as typeof pendingStatuses[number]) && (item.status === 'Under Review' || item.stage === 'HR'))
+    .map(appToDrilldownRow);
+
   const upcomingLeave = applications
     .filter((item) => item.startDate > today && ['Approved', 'Submitted', 'Under Review'].includes(item.status))
     .map(appToDrilldownRow);
@@ -406,6 +418,8 @@ const buildLeaveDrilldowns = (
     onLeaveToday,
     returningToday,
     pendingApprovals,
+    pendingManagerApprovals,
+    pendingHrApprovals,
     upcomingLeave,
     leaveUtilization,
     leaveLiability,
@@ -420,13 +434,26 @@ export const dormantLongPolicy = {
   annualJuniorPermanentDays: 25,
   annualContractDays: 14,
   sickDays: 10,
-  casualDays: 5,
+  casualDays: 0,
   compassionateDays: 5,
   examDays: 5,
   maternityCalendarDays: 90,
   carryForwardCap: 7,
   carryForwardExpiry: `${currentYear}-03-31`,
   allowanceMinimumAnnualDays: 10,
+};
+
+export const isLumpsumEmployee = (employee: Pick<DleEmployeeDirectoryRow, 'employeeId' | 'employeeCode' | 'employmentType' | 'employeeCategory' | 'staffCategory' | 'payrollGroup' | 'salaryGrade' | 'jobGrade'>) => {
+  const categoryText = [
+    employee.employmentType,
+    employee.employeeCategory,
+    employee.staffCategory,
+    employee.payrollGroup,
+    employee.salaryGrade,
+    employee.jobGrade,
+  ].map((value) => String(value || '').trim()).filter(Boolean).join(' ').toLowerCase();
+  const code = String(employee.employeeCode || employee.employeeId || '').trim().toUpperCase();
+  return /\b(lumpsum|lump sum)\b/.test(categoryText) || /^L\d+/.test(code);
 };
 
 export const isFourteenDayPaidLeaveEmployee = (employee: Pick<DleEmployeeDirectoryRow, 'employeeId' | 'employeeCode' | 'employmentType' | 'employeeCategory' | 'staffCategory' | 'payrollGroup' | 'salaryGrade' | 'jobGrade'>) => {
@@ -440,37 +467,42 @@ export const isFourteenDayPaidLeaveEmployee = (employee: Pick<DleEmployeeDirecto
   ].map((value) => String(value || '').trim()).filter(Boolean).join(' ').toLowerCase();
   const code = String(employee.employeeCode || employee.employeeId || '').trim().toUpperCase();
   return (
-    /\b(contract|lumpsum|lump sum|daily rate|casual|temporary)\b/.test(categoryText) ||
+    /\b(contract|daily rate|casual|temporary)\b/.test(categoryText) ||
     /\b(nysc|national youth service|industrial training|intern|internship|student trainee|\bit\b)\b/.test(categoryText) ||
-    /^(IT|I|NYSC|N)\d+/.test(code)
+    /^(IT|I|NYSC|N)\d+/.test(code) ||
+    (/\b(lumpsum|lump sum)\b/.test(categoryText) || /^L\d+/.test(code))
   );
+};
+
+export const isMaternityEligibleEmployee = (employee: Pick<DleEmployeeDirectoryRow, 'employeeId' | 'employeeCode' | 'employmentType' | 'employeeCategory' | 'staffCategory' | 'payrollGroup' | 'salaryGrade' | 'jobGrade' | 'status' | 'gender'>) => {
+  const gender = String(employee.gender || '').trim().toLowerCase();
+  if (!gender.startsWith('f')) return false;
+  return isConfirmedPermanent(employee) || isLumpsumEmployee(employee);
 };
 
 const defaultLeaveTypePolicies: LeaveTypeRule[] = [
   { id: 'annual-leave', name: 'Annual Leave', active: true, entitlementDays: dormantLongPolicy.annualPermanentDays, durationBasis: 'Working days', eligibility: 'Confirmed permanent employees receive 30 working days, junior permanent employees receive 25 working days, and contract/daily/lumpsum/NYSC/IT employees receive 14 paid working days annually while active.', waitingPeriodDays: 0, gradeRestrictions: [], categoryRestrictions: ['Permanent', 'Junior Permanent', 'Contract'], genderRestriction: 'None', documentRequirements: [], approvalLevels: ['Supervisor / Line Manager', 'HR Manager / Head'], accrualRule: 'Annual entitlement grant with confirmation and grade/category validation', carryForwardRule: `Every 1 January, unused Annual Leave rolls over to a maximum of ${dormantLongPolicy.carryForwardCap} working days as Carry Forward Leave and expires on 31 March.`, encashmentRule: 'Not encashable unless separately approved by HR and Payroll policy.', allowanceRule: `Leave Allowance is payable only when at least ${dormantLongPolicy.allowanceMinimumAnnualDays} working days Annual Leave is applied from the current year's entitlement.` },
   { id: 'sick-leave', name: 'Sick Leave', active: true, entitlementDays: dormantLongPolicy.sickDays, durationBasis: 'Working days', eligibility: 'Permanent employees receive 10 working days annually with medical evidence where required.', waitingPeriodDays: 0, gradeRestrictions: [], categoryRestrictions: ['Permanent'], genderRestriction: 'None', documentRequirements: ['Medical certificate'], approvalLevels: ['Supervisor', 'HR'], accrualRule: 'Annual grant', carryForwardRule: 'No carry forward', encashmentRule: 'Not encashable', allowanceRule: 'No leave allowance' },
-  { id: 'casual-leave', name: 'Casual Leave', active: true, entitlementDays: dormantLongPolicy.casualDays, durationBasis: 'Working days', eligibility: 'Permanent employees receive 5 working days annually subject to manager approval.', waitingPeriodDays: 0, gradeRestrictions: [], categoryRestrictions: ['Permanent'], genderRestriction: 'None', documentRequirements: [], approvalLevels: ['Supervisor'], accrualRule: 'Annual grant', carryForwardRule: 'No carry forward', encashmentRule: 'Not encashable', allowanceRule: 'No leave allowance' },
+  { id: 'casual-leave', name: 'Casual Leave', active: false, entitlementDays: 0, durationBasis: 'Working days', eligibility: 'Retired leave type.', waitingPeriodDays: 0, gradeRestrictions: [], categoryRestrictions: [], genderRestriction: 'None', documentRequirements: [], approvalLevels: [], accrualRule: 'Retired', carryForwardRule: 'Not applicable', encashmentRule: 'Not encashable', allowanceRule: 'No leave allowance' },
   { id: 'compassionate-leave', name: 'Compassionate Leave', active: true, entitlementDays: dormantLongPolicy.compassionateDays, durationBasis: 'Working days', eligibility: 'Permanent employees receive 5 working days annually for HR-approved compassionate reasons.', waitingPeriodDays: 0, gradeRestrictions: [], categoryRestrictions: ['Permanent'], genderRestriction: 'None', documentRequirements: ['Supporting document'], approvalLevels: ['Supervisor', 'HR'], accrualRule: 'Annual grant', carryForwardRule: 'No carry forward', encashmentRule: 'Not encashable', allowanceRule: 'No leave allowance' },
   { id: 'exam-leave', name: 'Exam Leave', active: true, entitlementDays: dormantLongPolicy.examDays, durationBasis: 'Working days', eligibility: 'Permanent employees receive 5 working days annually for approved examination schedules.', waitingPeriodDays: 0, gradeRestrictions: [], categoryRestrictions: ['Permanent'], genderRestriction: 'None', documentRequirements: ['Exam timetable', 'Institution evidence'], approvalLevels: ['Manager', 'HR'], accrualRule: 'Annual grant', carryForwardRule: 'No carry forward', encashmentRule: 'Not encashable', allowanceRule: 'No leave allowance' },
-  { id: 'maternity-leave', name: 'Maternity Leave', active: true, entitlementDays: dormantLongPolicy.maternityCalendarDays, durationBasis: 'Calendar days', eligibility: 'Eligible confirmed permanent female employees receive 90 calendar days by policy.', waitingPeriodDays: 0, gradeRestrictions: [], categoryRestrictions: ['Permanent'], genderRestriction: 'Female', documentRequirements: ['Medical certificate', 'Expected delivery date'], approvalLevels: ['Manager', 'HR', 'Final Approval'], accrualRule: 'Policy grant', carryForwardRule: 'Not applicable', encashmentRule: 'Not encashable', allowanceRule: 'No leave allowance' },
-  { id: 'unpaid-leave', name: 'Unpaid Leave', active: true, entitlementDays: 0, durationBasis: 'Working days', eligibility: 'HR-approved exception with payroll impact.', waitingPeriodDays: 0, gradeRestrictions: [], categoryRestrictions: ['Permanent', 'Contract'], genderRestriction: 'None', documentRequirements: ['Reason evidence'], approvalLevels: ['Manager', 'HR', 'Payroll'], accrualRule: 'No accrual', carryForwardRule: 'Not applicable', encashmentRule: 'Not encashable', allowanceRule: 'Deductible through payroll where applicable' },
+  { id: 'maternity-leave', name: 'Maternity Leave', active: true, entitlementDays: dormantLongPolicy.maternityCalendarDays, durationBasis: 'Calendar days', eligibility: 'Eligible confirmed permanent and lumpsum female employees receive 90 calendar days by policy.', waitingPeriodDays: 0, gradeRestrictions: [], categoryRestrictions: ['Permanent', 'Lumpsum'], genderRestriction: 'Female', documentRequirements: ['Medical certificate', 'Expected delivery date'], approvalLevels: ['Manager', 'HR', 'Final Approval'], accrualRule: 'Policy grant', carryForwardRule: 'Not applicable', encashmentRule: 'Not encashable', allowanceRule: 'No leave allowance' },
+  { id: 'unpaid-leave', name: 'Unpaid Leave', active: false, entitlementDays: 0, durationBasis: 'Working days', eligibility: 'Retired leave type.', waitingPeriodDays: 0, gradeRestrictions: [], categoryRestrictions: [], genderRestriction: 'None', documentRequirements: [], approvalLevels: [], accrualRule: 'Retired', carryForwardRule: 'Not applicable', encashmentRule: 'Not encashable', allowanceRule: 'No leave allowance' },
 ];
 
 const activeStatus = (status: string) => ['active', 'confirmed', 'probation', 'on leave', 'contract active', 'reactivated'].includes(String(status || '').toLowerCase());
-export const isConfirmedPermanent = (employee: DleEmployeeDirectoryRow) => {
+export const isConfirmedPermanent = (employee: Pick<DleEmployeeDirectoryRow, 'status'>) => {
   const status = String(employee.status || '').toLowerCase();
-  const confirmationDue = employee.confirmationDueDate ? new Date(`${employee.confirmationDueDate}T00:00:00.000Z`).getTime() : null;
-  return status.includes('confirmed') || status.includes('on leave') || status.includes('reactivated') || (status === 'active' && confirmationDue !== null && confirmationDue <= Date.now());
+  return status.includes('confirmed') || status.includes('reactivated');
 };
 
 const entitlementFor = (employee: DleEmployeeDirectoryRow, leaveType = 'Annual Leave') => {
   if (leaveType === 'Annual Leave') return annualLeaveEntitlementForEmployee(employee);
-  if (isFourteenDayPaidLeaveEmployee(employee)) return 0;
+  if (leaveType === 'Maternity Leave') return isMaternityEligibleEmployee(employee) ? dormantLongPolicy.maternityCalendarDays : 0;
+  if (isFourteenDayPaidLeaveEmployee(employee) && leaveType !== 'Maternity Leave') return 0;
   if (leaveType === 'Sick Leave') return dormantLongPolicy.sickDays;
-  if (leaveType === 'Casual Leave') return dormantLongPolicy.casualDays;
   if (leaveType === 'Compassionate Leave') return dormantLongPolicy.compassionateDays;
   if (leaveType === 'Exam Leave') return dormantLongPolicy.examDays;
-  if (leaveType === 'Maternity Leave') return dormantLongPolicy.maternityCalendarDays;
   return 0;
 };
 
@@ -1270,6 +1302,8 @@ export async function readLeaveManagementPayload(
   const allowancePendingPayrollCount = allowanceExceptions.filter((item) => item.severity === 'Pending').length;
   const pendingApplications = applications.filter((item) => ['Submitted', 'Under Review', 'Draft'].includes(item.status)).length;
   const pendingApprovals = applications.filter((item) => ['Submitted', 'Under Review', 'Draft'].includes(item.status)).length;
+  const pendingManagerApprovals = applications.filter((item) => ['Submitted', 'Under Review', 'Draft'].includes(item.status) && (item.status === 'Submitted' || item.stage === 'Supervisor')).length;
+  const pendingHrApprovals = applications.filter((item) => ['Submitted', 'Under Review', 'Draft'].includes(item.status) && (item.status === 'Under Review' || item.stage === 'HR')).length;
   const today = dateAdd(0);
   const activeLeaveStatuses = ['Approved', 'Completed'];
   const onLeaveTodayKeys = new Set(
@@ -1326,6 +1360,8 @@ export async function readLeaveManagementPayload(
       returningToday: drilldowns.returningToday.length,
       pendingApplications,
       pendingApprovals,
+      pendingHrApprovals,
+      pendingManagerApprovals,
       leaveUtilizationPct: totalAnnualAccrued > 0 ? Math.round((totalAnnualUsed / totalAnnualAccrued) * 100) : 0,
       leaveLiability,
       encashmentRequests: 0,
@@ -1353,7 +1389,7 @@ export async function readLeaveManagementPayload(
     applications,
     balances,
     allowanceExceptions,
-    leaveTypes,
+    leaveTypes: leaveTypes.filter((type) => type.active && !/^(casual leave|unpaid leave)$/i.test(type.name)),
     calendar: applications.slice(0, 10).map((item) => ({ id: item.id, label: `${item.fullName} - ${item.leaveType}`, from: item.startDate, to: item.endDate, status: item.status, department: item.department, location: item.location })),
     blockedPeriods: [],
     workflowMatrix: [
@@ -1426,10 +1462,14 @@ export function validateLeaveAction(actionId: LeaveActionId, roleInput: string |
     const availableBalance = Number.isFinite(Number(body.availableBalance))
       ? Number(body.availableBalance)
       : (employeeBalance?.currentBalance || 0);
+    if (leaveType === 'Maternity Leave' && !isMaternityEligibleEmployee({ employeeId: employeeKey, employeeCode: employeeKey, employmentType: employeeCategory, employeeCategory, staffCategory: employeeCategory, payrollGroup: '', salaryGrade: '', jobGrade: '', status: body.employmentStatus || '', gender: body.gender || '' } as DleEmployeeDirectoryRow)) {
+      return { ok: false, status: 409, message: 'Maternity Leave is available only to eligible permanent or lumpsum female employees.' };
+    }
     if (leaveType === 'Annual Leave' && !fourteenDayPaidLeaveRequest && !confirmed) return { ok: false, status: 409, message: 'Annual Leave is available only after confirmation of appointment.' };
     if (leaveType === 'Annual Leave' && fourteenDayPaidLeaveRequest && requestedDays > dormantLongPolicy.annualContractDays) return { ok: false, status: 409, message: `Contract/Lumpsum/NYSC/IT paid Annual Leave cannot exceed ${dormantLongPolicy.annualContractDays} working days annually.` };
     if (leaveType === 'Annual Leave' && requestedDays >= dormantLongPolicy.allowanceMinimumAnnualDays && body.usesCarryForward) return { ok: false, status: 409, message: 'Leave Allowance applies only to current-year Annual Leave entitlement, not Carry Forward Leave.' };
-    if (leaveType !== 'Unpaid Leave' && requestedDays > availableBalance) return { ok: false, status: 409, message: 'Leave application cannot proceed without sufficient balance.' };
+    if (/casual leave|unpaid leave/i.test(leaveType)) return { ok: false, status: 409, message: `${leaveType} is no longer available.` };
+    if (requestedDays > availableBalance) return { ok: false, status: 409, message: 'Leave application cannot proceed without sufficient balance.' };
     if (body.overlaps) return { ok: false, status: 409, message: 'Overlapping leave request detected.' };
     if (body.blockedPeriod) return { ok: false, status: 409, message: 'Leave application falls within a blocked period.' };
   }

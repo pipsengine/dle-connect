@@ -21878,9 +21878,9 @@
     "location": "IDI_ORO",
     "employmentStatus": "Active",
     "reportingManager": "0432 - Ms BADETAN",
-    "passwordHash": "ca146affc09378f7830a8d7e8873e36eda9929f3802505d4f99bcb7e397cf36f",
-    "passwordSalt": "a6c13d4fc385d826c1a67f1cf761e71a",
-    "status": "Pending First Login",
+    "passwordHash": "e69a012d2432ef3b93d974dc45848f01999f52e74efe45733f2fc7b256cd9701",
+    "passwordSalt": "28f1cea2d57f323771c120525da428b3",
+    "status": "Active",
     "roles": [
       "HR Officer"
     ],
@@ -21898,13 +21898,13 @@
       "HUMAN RESOURCES"
     ],
     "moduleAccess": [],
-    "firstLoginRequired": true,
+    "firstLoginRequired": false,
     "passwordResetRequired": false,
     "failedAttempts": 0,
     "lockedUntil": null,
-    "lastLoginAt": null,
+    "lastLoginAt": "2026-07-06T13:42:47.268Z",
     "createdAt": "2026-06-14T12:32:28.846Z",
-    "updatedAt": "2026-07-01T14:00:58.346Z",
+    "updatedAt": "2026-07-06T13:43:45.224Z",
     "disabledAt": null,
     "deleted": false
   },
@@ -22582,9 +22582,9 @@
     "passwordResetRequired": false,
     "failedAttempts": 0,
     "lockedUntil": null,
-    "lastLoginAt": "2026-07-02T07:10:10.615Z",
+    "lastLoginAt": "2026-07-06T07:17:04.423Z",
     "createdAt": "2026-06-14T12:32:39.601Z",
-    "updatedAt": "2026-07-02T07:10:10.615Z",
+    "updatedAt": "2026-07-06T07:17:04.423Z",
     "disabledAt": null,
     "deleted": false
   },
@@ -23646,9 +23646,9 @@
     "passwordResetRequired": false,
     "failedAttempts": 0,
     "lockedUntil": null,
-    "lastLoginAt": "2026-07-06T06:48:57.541Z",
+    "lastLoginAt": "2026-07-07T08:37:00.553Z",
     "createdAt": "2026-06-14T12:32:30.629Z",
-    "updatedAt": "2026-07-06T06:48:57.541Z",
+    "updatedAt": "2026-07-07T08:37:00.553Z",
     "disabledAt": null,
     "deleted": false
   },
@@ -25191,9 +25191,9 @@
     "location": "IDI_ORO",
     "employmentStatus": "Active",
     "reportingManager": "0413 - Mr IJELI",
-    "passwordHash": "b914d18a861f6212b31e79efaa88cf3f0be100a0f6d316917bc54bc2c868746e",
-    "passwordSalt": "fc37de75ef8ff03d3440ba8a80011be1",
-    "status": "Pending First Login",
+    "passwordHash": "ceb8bdbb4a64615b941e6fb80a1493a165f5610f129d3ff8dea5502731738ab9",
+    "passwordSalt": "027da2b309288d5b31cd0f7339a4516a",
+    "status": "Active",
     "roles": [
       "HR Officer"
     ],
@@ -25211,13 +25211,13 @@
       "HUMAN RESOURCES"
     ],
     "moduleAccess": [],
-    "firstLoginRequired": true,
+    "firstLoginRequired": false,
     "passwordResetRequired": false,
     "failedAttempts": 0,
     "lockedUntil": null,
-    "lastLoginAt": null,
+    "lastLoginAt": "2026-07-06T13:42:21.298Z",
     "createdAt": "2026-06-14T12:32:33.661Z",
-    "updatedAt": "2026-07-01T14:00:58.346Z",
+    "updatedAt": "2026-07-06T13:43:51.356Z",
     "disabledAt": null,
     "deleted": false
   },

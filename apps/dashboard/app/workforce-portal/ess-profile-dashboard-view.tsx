@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   BadgeCheck,
-  Banknote,
   BriefcaseBusiness,
   Building2,
   CalendarCheck,
@@ -20,7 +19,6 @@ import {
   Pencil,
   Printer,
   QrCode,
-  ShieldCheck,
   Stethoscope,
   Upload,
   UserRound,
@@ -112,10 +110,10 @@ const tabSectionIds: Partial<Record<ProfileTab, string[]>> = {
   Documents: ['photo'],
 };
 
-const completionTabMap: Partial<Record<string, ProfileTab>> = {
+const completionTabMap: Partial<Record<string, ProfileTab | 'documents'>> = {
   'Bank Details': 'Bank',
   'Emergency Contact': 'Contacts',
-  'Means Of Identification': 'Documents',
+  'Means Of Identification': 'documents',
   Certificates: 'Professional',
   'Personal Information': 'Personal',
   'Employment Information': 'Employment',
@@ -596,9 +594,6 @@ export function EssProfileDashboardView({
                   { label: 'Department / Unit', value: `${employee?.department || '—'} / ${employee?.businessUnit || 'DLE'}`, icon: Building2 },
                   { label: 'Work Location', value: employee?.location || '—', icon: MapPin },
                   { label: 'Employment Type', value: employee?.status || 'Permanent', icon: BriefcaseBusiness },
-                  { label: 'Salary Grade', value: employee?.salaryGrade || '—', icon: BadgeCheck },
-                  { label: 'Payroll Group', value: employee?.payrollGroup || '—', icon: Banknote },
-                  { label: 'MFA Status', value: payload?.security?.mfa || 'Enabled', icon: ShieldCheck },
                   { label: 'Years of Service', value: `${employee?.yearsOfService || 0} years`, icon: Heart },
                 ].map((row) => {
                   const Icon = row.icon;
@@ -640,7 +635,11 @@ export function EssProfileDashboardView({
                   {!item.done ? (
                     <button
                       type="button"
-                      onClick={() => setActiveTab(completionTabMap[item.label] || 'Personal')}
+                      onClick={() => {
+                        const target = completionTabMap[item.label];
+                        if (target === 'documents') onNavigate('documents');
+                        else setActiveTab((target as ProfileTab) || 'Personal');
+                      }}
                       className="text-[12px] font-semibold text-[#2563EB] hover:underline"
                     >
                       {item.action}

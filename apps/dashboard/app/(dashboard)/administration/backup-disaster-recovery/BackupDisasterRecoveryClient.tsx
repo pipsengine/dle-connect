@@ -702,8 +702,8 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
 
         <Panel title="DLE_Enterprise Persistence Audit" action={<StatusBadge value={`Updated by ${state.updatedBy}`} />}>
           <div className="space-y-2">
-            {state.audit.length ? state.audit.slice(0, 6).map((event) => (
-              <div key={`${event.at}-${event.action}`} className="grid grid-cols-1 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-[180px_1fr_auto]">
+            {state.audit.length ? state.audit.slice(0, 6).map((event, index) => (
+              <div key={`${event.at}-${event.action}-${event.actor}-${index}`} className="grid grid-cols-1 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-[180px_1fr_auto]">
                 <p className="text-xs font-black text-slate-500">{formatTime(event.at)}</p>
                 <div>
                   <p className="text-sm font-black text-slate-900">{event.action}</p>

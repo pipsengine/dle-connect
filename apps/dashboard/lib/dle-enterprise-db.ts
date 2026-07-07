@@ -773,6 +773,28 @@ export const getEmployeeDraftFromDb = async (draftId: string): Promise<DraftReco
   };
 };
 
+export const listEmployeeDraftsByStatusFromDb = async (statuses: string[]): Promise<DraftRecordLike[]> => {
+  const p = await pool();
+  if (!p || !statuses.length) return [];
+  const placeholders = statuses.map((_, index) => `@status_${index}`).join(', ');
+  const request = p.request();
+  statuses.forEach((status, index) => request.input(`status_${index}`, sql.VarChar(30), status));
+  const rs = await request.query(`
+    SELECT draft_id, draft_status, draft_payload_json, created_at, COALESCE(modified_at, created_at) AS updated_at
+    FROM [hris].[EmployeeDrafts]
+    WHERE draft_status IN (${placeholders})
+    ORDER BY COALESCE(modified_at, created_at) DESC;
+  `);
+  return (rs.recordset || []).map((row: any) => ({
+    draftId: row.draft_id,
+    status: row.draft_status,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+    draft: JSON.parse(row.draft_payload_json),
+    audit: [],
+  }));
+};
+
 export const saveEmployeeDraftToDb = async (rec: DraftRecordLike) => {
   const p = await pool();
   if (!p) return false;
@@ -2202,7 +2224,13 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
       .input('employee_code', sql.NVarChar(50), employeeCode)
       .input('full_name', sql.NVarChar(250), fullName)
       .input('preferred_name', sql.NVarChar(150), nullable(personal.preferredName))
-      .input('employment_status', sql.VarChar(40), nullable(employment.employmentStatus) || 'Active')
+      .input('employment_status', sql.VarChar(40), (() => {
+        const requested = nullable(employment.employmentStatus);
+        const employmentType = nullable(employment.employmentType) || 'Permanent';
+        if (requested && requested !== 'Active' && requested !== 'Confirmed') return requested;
+        if (employmentType === 'Permanent') return 'Probation';
+        return requested || 'Active';
+      })())
       .input('employment_type', sql.VarChar(40), nullable(employment.employmentType) || 'Permanent')
       .query(`
         INSERT [hris].[Employees](employee_code, full_name, preferred_name, employment_status, employment_type)

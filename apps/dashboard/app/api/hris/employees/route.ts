@@ -91,7 +91,8 @@ const getRole = (request: Request): Role => {
 const permissions = (role: Role) => {
   const canCreate =
     role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'HR Officer' || role === 'Admin Officer';
-  return { canCreate };
+  const canCreateWithoutApproval = role === 'Super Admin' || role === 'HR Director';
+  return { canCreate, canCreateWithoutApproval };
 };
 
 const storeDrafts = (() => {
@@ -210,7 +211,12 @@ const finalizeEmployeeId = async (draft: EmployeeDraftPayload) => {
 const toProfileOverride = (employeeId: string, draft: EmployeeDraftPayload) => {
   const fullName = `${draft.personal?.firstName || ''} ${draft.personal?.lastName || ''}`.trim() || employeeId;
   const employmentType = (draft.employment?.employmentType as EmploymentType) || 'Permanent';
-  const employmentStatus = (draft.employment?.employmentStatus as EmploymentStatus) || 'Active';
+  const employmentStatus = (() => {
+    const requested = draft.employment?.employmentStatus as EmploymentStatus | undefined;
+    if (requested && requested !== 'Active' && requested !== 'Confirmed') return requested;
+    if (employmentType === 'Permanent') return 'Probation';
+    return requested || 'Active';
+  })();
   const dateJoined = draft.employment?.dateJoined ? `${draft.employment.dateJoined}T00:00:00.000Z` : nowIso();
   const personalInfo: Record<string, string | null> = {
     title: draft.personal?.title || null,
@@ -326,6 +332,9 @@ export async function POST(request: Request) {
   if (!draftRec) return jsonErr(404, 'Draft not found');
   storeDrafts.set(draftId, draftRec);
   if (draftRec.status === 'created') return jsonErr(400, 'Draft already created');
+  if (draftRec.status !== 'approved' && !permissions(role).canCreateWithoutApproval) {
+    return jsonErr(409, 'Employee draft must be approved before creation. Submit for approval and wait for HR approval.');
+  }
 
   let employeeId = '';
   try {
