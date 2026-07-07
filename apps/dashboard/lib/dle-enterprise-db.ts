@@ -591,7 +591,7 @@ const sageEmployeeCode = (employee: SagePayrollEmployeeImportRow) => {
 
 const sageEmployeeType = (employeeCode: string) => {
   if (employeeCode.startsWith('N')) return 'NYSC';
-  if (employeeCode.startsWith('I')) return 'IT';
+  if (employeeCode.startsWith('I')) return 'Industrial Trainee';
   if (employeeCode.startsWith('L')) return 'Lumpsum';
   if (employeeCode.startsWith('C')) return 'Contract';
   return 'Permanent';
@@ -1044,7 +1044,7 @@ const mapDirectoryEmployeeRow = (row: any): DleEmployeeDirectoryRow => {
   const rawEmploymentType = str(row.employment_type) || 'Not assigned';
   const typeCode = employeeTypeCodeFromRawCode(rawEmployeeCode) || inferEmployeeTypeCode(rawEmploymentType, row.staff_category, row.employee_category, row.job_title);
   const employeeCode = normalizeEmployeeCodeForType(rawEmployeeCode, typeCode);
-  const employmentType = typeCode === 'N' ? 'NYSC' : typeCode === 'I' ? 'IT' : rawEmploymentType;
+  const employmentType = typeCode === 'N' ? 'NYSC' : typeCode === 'I' ? 'Industrial Trainee' : rawEmploymentType;
   const status = str(row.employment_status) || 'Inactive';
   const workMode = str(row.work_mode);
   const workLocation = str(row.work_location);

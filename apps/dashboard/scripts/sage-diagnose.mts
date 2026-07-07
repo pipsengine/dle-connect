@@ -10,33 +10,26 @@ const sageConfig = () => ({
   user: process.env.SAGE_PAYROLL_DB_USER || 'sa',
   password: process.env.SAGE_PAYROLL_DB_PASSWORD || '',
   options: { encrypt: false, trustServerCertificate: true },
-  connectionTimeout: 20000,
+  connectionTimeout: 60000,
   requestTimeout: 60000,
 });
 
+const connectSageWithRetry = async (attempts = 4) => {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      const pool = new sql.ConnectionPool(sageConfig());
+      await pool.connect();
+      return pool;
+    } catch (error) {
+      console.log(`  Sage connect attempt ${i}/${attempts} failed: ${error instanceof Error ? error.message : error}`);
+      if (i === attempts) return null;
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
+  return null;
+};
+
 const main = async () => {
-  console.log('Sage DB:', process.env.SAGE_PAYROLL_DB_NAME, '@', process.env.SAGE_PAYROLL_DB_HOST);
-  const sagePool = new sql.ConnectionPool(sageConfig());
-  await sagePool.connect();
-
-  const sageRes = await sagePool.request().query(`
-    SELECT
-      e.EmployeeID, e.EmployeeCode, e.TerminationDate,
-      es.Code AS StatusCode, es.ShortDescription AS StatusName,
-      ge.Status AS EntityStatus, c.Status AS CompanyStatus,
-      c.CompanyCode, ge.DisplayName
-    FROM Employee.Employee e
-    JOIN Entity.GenEntity ge ON ge.GenEntityID = e.GenEntityID
-    JOIN Company.Company c ON c.CompanyID = e.CompanyID
-    LEFT JOIN Employee.EmployeeStatus es ON es.EmployeeStatusID = e.EmployeeStatusID
-    WHERE UPPER(REPLACE(LTRIM(RTRIM(e.EmployeeCode)), '_', '')) LIKE 'IT01%'
-    ORDER BY e.EmployeeCode
-  `);
-  console.log('\n=== Sage IT01xx employees ===');
-  console.table(sageRes.recordset);
-
-  await sagePool.close();
-
   const hrisPool = await getDleEnterpriseDbPool();
   if (!hrisPool) {
     console.error('No HRIS pool');
@@ -85,6 +78,29 @@ const main = async () => {
   `);
   console.log('\n=== Triggers on hris.Employees ===');
   console.table(triggers.recordset);
+
+  console.log('\nSage DB:', process.env.SAGE_PAYROLL_DB_NAME, '@', process.env.SAGE_PAYROLL_DB_HOST);
+  const sagePool = await connectSageWithRetry();
+  if (sagePool) {
+    const sageRes = await sagePool.request().query(`
+      SELECT
+        e.EmployeeID, e.EmployeeCode, e.TerminationDate,
+        es.Code AS StatusCode, es.ShortDescription AS StatusName,
+        ge.Status AS EntityStatus, c.Status AS CompanyStatus,
+        c.CompanyCode, ge.DisplayName
+      FROM Employee.Employee e
+      JOIN Entity.GenEntity ge ON ge.GenEntityID = e.GenEntityID
+      JOIN Company.Company c ON c.CompanyID = e.CompanyID
+      LEFT JOIN Employee.EmployeeStatus es ON es.EmployeeStatusID = e.EmployeeStatusID
+      WHERE UPPER(REPLACE(LTRIM(RTRIM(e.EmployeeCode)), '_', '')) LIKE 'IT01%'
+      ORDER BY e.EmployeeCode
+    `);
+    console.log('\n=== Sage IT01xx employees ===');
+    console.table(sageRes.recordset);
+    await sagePool.close();
+  } else {
+    console.log('  Could not reach Sage payroll DB after retries.');
+  }
 
   await hrisPool.close();
 };

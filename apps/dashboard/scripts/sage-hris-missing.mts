@@ -1,9 +1,53 @@
-import { getDleEnterpriseDbPool } from '../lib/dle-enterprise-db.ts';
+import sql from 'mssql';
+import { getDleEnterpriseDbPool, loadWorkspaceEnv } from '../lib/dle-enterprise-db.ts';
 import { readActiveSagePayrollEmployees, normalizePayrollMatchKey } from '../lib/sage-people-payroll-store.ts';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const str = (value: unknown) => String(value ?? '').trim();
+
+loadWorkspaceEnv();
+
+const probeSageRaw = async (code: string) => {
+  const cfg = {
+    server: process.env.SAGE_PAYROLL_DB_HOST || '192.168.5.8',
+    port: Number(process.env.SAGE_PAYROLL_DB_PORT || 1433),
+    database: process.env.SAGE_PAYROLL_DB_NAME || 'DLE_JUNE',
+    user: process.env.SAGE_PAYROLL_DB_USER || 'sa',
+    password: process.env.SAGE_PAYROLL_DB_PASSWORD || '',
+    options: { encrypt: false, trustServerCertificate: true },
+    connectionTimeout: 60000,
+    requestTimeout: 60000,
+  };
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      const pool = new sql.ConnectionPool(cfg);
+      await pool.connect();
+      const res = await pool
+        .request()
+        .input('code', sql.NVarChar(50), code)
+        .query(`
+          SELECT
+            e.EmployeeID, e.EmployeeCode, e.TerminationDate,
+            es.Code AS StatusCode, es.ShortDescription AS StatusName,
+            ge.Status AS EntityStatus, c.Status AS CompanyStatus,
+            c.CompanyCode, ge.DisplayName
+          FROM Employee.Employee e
+          JOIN Entity.GenEntity ge ON ge.GenEntityID = e.GenEntityID
+          JOIN Company.Company c ON c.CompanyID = e.CompanyID
+          LEFT JOIN Employee.EmployeeStatus es ON es.EmployeeStatusID = e.EmployeeStatusID
+          WHERE UPPER(REPLACE(LTRIM(RTRIM(e.EmployeeCode)), '_', '')) = UPPER(REPLACE(LTRIM(RTRIM(@code)), '_', ''))
+          ORDER BY e.EmployeeCode
+        `);
+      await pool.close();
+      return res.recordset;
+    } catch (error) {
+      console.log(`  Sage raw probe attempt ${attempt}/5 failed: ${error instanceof Error ? error.message : error}`);
+      await new Promise((r) => setTimeout(r, 4000));
+    }
+  }
+  return null;
+};
 
 const main = async () => {
   const apply = process.argv.includes('--apply');
@@ -66,6 +110,9 @@ const main = async () => {
       })
     : [];
 
+  const forceRaw = process.argv.find((arg) => arg.startsWith('--force='));
+  const forceRawCodes = (forceRaw ? forceRaw.slice('--force='.length) : '').split(',').map((c) => c.trim()).filter(Boolean);
+
   if (forceCodes.size) {
     console.log('');
     console.log(`Force-include requested for: ${Array.from(forceCodes).join(', ')}`);
@@ -74,7 +121,20 @@ const main = async () => {
         (employee) => employeeCodeKey(employee) === key || normalizePayrollMatchKey(str(employee.employeeId)) === key,
       );
       if (!found) {
-        console.log(`  WARNING: ${key} not found in active Sage payroll employees; cannot migrate.`);
+        console.log(`  WARNING: ${key} not found in ACTIVE Sage payroll employees.`);
+        const rawCode = forceRawCodes.find((c) => normalizePayrollMatchKey(c) === key) || key;
+        console.log(`  Probing raw Sage record for ${rawCode}...`);
+        const rows = await probeSageRaw(rawCode);
+        if (rows === null) {
+          console.log('    Could not reach Sage to probe (intermittent connectivity).');
+        } else if (!rows.length) {
+          console.log(`    ${rawCode} does NOT exist in Sage DB ${process.env.SAGE_PAYROLL_DB_NAME}. It is likely in a newer/live Sage database.`);
+        } else {
+          console.log(`    Found in Sage but excluded from active set. Raw status:`);
+          for (const r of rows) {
+            console.log(`      Code=${r.EmployeeCode} Term=${r.TerminationDate ? new Date(r.TerminationDate).toISOString().slice(0,10) : 'null'} Status=${r.StatusCode}/${r.StatusName} Entity=${r.EntityStatus} Company=${r.CompanyStatus}/${r.CompanyCode}`);
+          }
+        }
       } else {
         const alreadyMissing = missing.includes(found);
         console.log(
