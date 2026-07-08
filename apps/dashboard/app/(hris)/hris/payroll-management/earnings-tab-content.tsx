@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -72,14 +72,100 @@ type BonusInputsPanelProps = {
   records: EarningsRecord[];
   issues: EarningsException[];
   periodLabel: string;
+  period: string;
   canViewMoney: boolean;
 };
 
-export function BonusInputsPanel({ records, issues, periodLabel, canViewMoney }: BonusInputsPanelProps) {
+type ArrearsRequest = {
+  id: string;
+  employeeCode: string;
+  fullName: string;
+  department?: string;
+  period: string;
+  amount: number;
+  reason: string;
+  memo?: string;
+  status: string;
+  createdBy: string;
+  createdAt: string;
+};
+
+const arrearsStatusTone = (status: string) => {
+  if (status === 'Posted') return 'bg-emerald-100 text-emerald-800';
+  if (status === 'Rejected') return 'bg-red-100 text-red-800';
+  if (status.includes('Pending')) return 'bg-amber-100 text-amber-800';
+  return 'bg-slate-100 text-slate-700';
+};
+
+export function BonusInputsPanel({ records, issues, periodLabel, period, canViewMoney }: BonusInputsPanelProps) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [typeFilter, setTypeFilter] = useState('All');
   const [uploadFile, setUploadFile] = useState('');
+  const [arrears, setArrears] = useState<ArrearsRequest[]>([]);
+  const [intakeLoading, setIntakeLoading] = useState(false);
+  const [intakeBusy, setIntakeBusy] = useState('');
+  const [intakeMessage, setIntakeMessage] = useState('');
+  const [employeeCode, setEmployeeCode] = useState('');
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const [memo, setMemo] = useState('');
+
+  const loadArrears = useCallback(async () => {
+    if (!period) return;
+    setIntakeLoading(true);
+    try {
+      const res = await fetch(`/api/hris/payroll/earning-intake?period=${encodeURIComponent(period)}`, { cache: 'no-store' });
+      const json = await res.json();
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to load arrears.');
+      setArrears(json.data?.arrears || []);
+    } catch (error) {
+      setIntakeMessage(error instanceof Error ? error.message : 'Unable to load arrears.');
+    } finally {
+      setIntakeLoading(false);
+    }
+  }, [period]);
+
+  useEffect(() => {
+    void loadArrears();
+  }, [loadArrears]);
+
+  const runArrearsAction = async (action: string, requestId?: string) => {
+    setIntakeBusy(action + (requestId || ''));
+    setIntakeMessage('');
+    try {
+      const res = await fetch('/api/hris/payroll/earning-intake', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          requestId,
+          period,
+          employeeCode: employeeCode.trim().toUpperCase(),
+          amount: Number(amount || 0),
+          reason: reason.trim(),
+          memo: memo.trim() || undefined,
+          submitForApproval: action === 'create-arrears',
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Request failed.');
+      if (action === 'create-arrears') {
+        setEmployeeCode('');
+        setAmount('');
+        setReason('');
+        setMemo('');
+        setIntakeMessage('Arrears request submitted for HR approval.');
+      } else {
+        setIntakeMessage(`Arrears request ${action.replace('-', ' ')} completed.`);
+      }
+      await loadArrears();
+    } catch (error) {
+      setIntakeMessage(error instanceof Error ? error.message : 'Unable to process arrears action.');
+    } finally {
+      setIntakeBusy('');
+    }
+  };
 
   const bonusIssues = issues.filter((item) => bonusIssue(item.issue));
   const candidateRows = useMemo(() => {
@@ -108,6 +194,149 @@ export function BonusInputsPanel({ records, issues, periodLabel, canViewMoney }:
 
   return (
     <div className="space-y-6">
+      <section className="rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-[#0F172A]">HR Arrears Capture</h2>
+            <p className="mt-1 max-w-3xl text-sm text-[#64748B]">
+              HR-only arrears intake with approval workflow. Approved arrears post to payroll period adjustments as <span className="font-semibold">ARREARS</span> for {periodLabel}.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadArrears()}
+            disabled={intakeLoading}
+            className="inline-flex items-center gap-2 rounded-xl border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Refresh
+          </button>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="rounded-xl border border-[#E5E7EB] bg-slate-50 p-4">
+            <h3 className="text-sm font-bold uppercase tracking-wide text-[#64748B]">New Arrears Request</h3>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="text-sm font-semibold text-[#334155]">
+                Employee Code
+                <input
+                  value={employeeCode}
+                  onChange={(e) => setEmployeeCode(e.target.value)}
+                  placeholder="P0146"
+                  className="mt-1 h-10 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#2563EB]"
+                />
+              </label>
+              <label className="text-sm font-semibold text-[#334155]">
+                Amount (NGN)
+                <input
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="50000"
+                  className="mt-1 h-10 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#2563EB]"
+                />
+              </label>
+              <label className="text-sm font-semibold text-[#334155] sm:col-span-2">
+                Reason
+                <input
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Salary correction for missed increment"
+                  className="mt-1 h-10 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#2563EB]"
+                />
+              </label>
+              <label className="text-sm font-semibold text-[#334155] sm:col-span-2">
+                Memo (optional)
+                <textarea
+                  value={memo}
+                  onChange={(e) => setMemo(e.target.value)}
+                  rows={3}
+                  className="mt-1 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-[#2563EB]"
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              disabled={intakeBusy === 'create-arrears' || !employeeCode.trim() || !amount.trim() || !reason.trim()}
+              onClick={() => void runArrearsAction('create-arrears')}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[#2563EB] px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4" />
+              Submit for Approval
+            </button>
+          </div>
+
+          <div className="rounded-xl border border-[#E5E7EB] bg-white p-4">
+            <h3 className="text-sm font-bold uppercase tracking-wide text-[#64748B]">Workflow</h3>
+            <ol className="mt-4 space-y-3 text-sm text-[#475569]">
+              <li><span className="font-semibold text-[#0F172A]">1. HR Capture</span> — Payroll/HR creates arrears with reason.</li>
+              <li><span className="font-semibold text-[#0F172A]">2. HR Approval</span> — HR Manager reviews policy compliance.</li>
+              <li><span className="font-semibold text-[#0F172A]">3. Finance Approval</span> — Finance approves and auto-posts to payroll.</li>
+            </ol>
+            <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+              Employee self-service is not used for arrears. This keeps arrears as an employer-controlled correction.
+            </p>
+          </div>
+        </div>
+
+        {intakeMessage ? (
+          <p className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800">{intakeMessage}</p>
+        ) : null}
+
+        <div className="mt-5 overflow-x-auto rounded-xl border border-[#E5E7EB]">
+          <table className="min-w-full text-left text-sm">
+            <thead className="bg-slate-50 text-xs font-bold uppercase text-[#64748B]">
+              <tr>
+                <th className="px-4 py-3">Employee</th>
+                <th className="px-4 py-3">Amount</th>
+                <th className="px-4 py-3">Reason</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {arrears.map((item) => (
+                <tr key={item.id} className="border-t border-[#E5E7EB]">
+                  <td className="px-4 py-3">
+                    <p className="font-semibold text-[#0F172A]">{item.fullName}</p>
+                    <p className="text-xs text-[#64748B]">{item.employeeCode}</p>
+                  </td>
+                  <td className="px-4 py-3 font-semibold">{fmtMoney(item.amount, canViewMoney)}</td>
+                  <td className="px-4 py-3 text-[#475569]">{item.reason}</td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${arrearsStatusTone(item.status)}`}>{item.status}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-2">
+                      {item.status === 'Pending HR Approval' ? (
+                        <button type="button" disabled={!!intakeBusy} onClick={() => void runArrearsAction('hr-approve', item.id)} className="text-xs font-semibold text-[#2563EB] hover:underline">
+                          HR Approve
+                        </button>
+                      ) : null}
+                      {item.status === 'Pending Finance Approval' ? (
+                        <button type="button" disabled={!!intakeBusy} onClick={() => void runArrearsAction('finance-approve', item.id)} className="text-xs font-semibold text-emerald-700 hover:underline">
+                          Finance Approve &amp; Post
+                        </button>
+                      ) : null}
+                      {!['Posted', 'Rejected'].includes(item.status) ? (
+                        <button type="button" disabled={!!intakeBusy} onClick={() => void runArrearsAction('reject', item.id)} className="text-xs font-semibold text-red-700 hover:underline">
+                          Reject
+                        </button>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {!arrears.length ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm font-semibold text-[#64748B]">
+                    {intakeLoading ? 'Loading arrears requests...' : 'No arrears requests for this period.'}
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section className="rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex items-start gap-4">

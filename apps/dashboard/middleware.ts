@@ -42,7 +42,33 @@ export async function middleware(request: NextRequest) {
     }
 
     const roles = session.roles;
-    const permissions = session.isGlobalAdmin ? ['*'] : session.permissions;
+    let permissions = session.isGlobalAdmin ? ['*'] : session.permissions;
+
+    const needsLivePermissions =
+      !session.isGlobalAdmin &&
+      (!pathname.startsWith('/api') || pathname.startsWith('/api/hris')) &&
+      (pathname.startsWith('/hris') || pathname.startsWith('/administration') || pathname.startsWith('/api/hris'));
+
+    let liveSessionResponse: Response | null = null;
+
+    if (needsLivePermissions) {
+      try {
+        const meUrl = new URL('/api/auth/me', request.url);
+        liveSessionResponse = await fetch(meUrl, {
+          headers: { cookie: request.headers.get('cookie') || '' },
+          cache: 'no-store',
+        });
+        if (liveSessionResponse.ok) {
+          const meJson = await liveSessionResponse.json().catch(() => null);
+          if (Array.isArray(meJson?.data?.permissions) && meJson.data.permissions.length) {
+            permissions = meJson.data.permissions;
+          }
+        }
+      } catch {
+        liveSessionResponse = null;
+        // Fall back to JWT permissions when live resolution is unavailable.
+      }
+    }
 
     if ((!pathname.startsWith('/api') || pathname.startsWith('/api/hris')) && !canAccessRoute({ ...session, permissions }, pathname)) {
       return denied(request, 403);
@@ -59,6 +85,8 @@ export async function middleware(request: NextRequest) {
     }
 
     const response = NextResponse.next({ request: { headers: requestHeaders } });
+    const setCookie = liveSessionResponse?.headers.get('set-cookie');
+    if (setCookie) response.headers.append('set-cookie', setCookie);
     response.headers.set('x-auth-user', session.username || '');
     response.headers.set('x-auth-roles', roles.join(','));
     response.headers.set('x-auth-global-admin', session.isGlobalAdmin ? '1' : '0');

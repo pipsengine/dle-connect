@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
+import { SessionPermissionRefresh } from '@/components/auth/session-permission-refresh';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -10,6 +11,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-dvh overflow-hidden bg-white">
+      <SessionPermissionRefresh />
       <Sidebar isOpen={sidebarOpen} toggle={() => setSidebarOpen(!sidebarOpen)} variant="desktop" />
       {mobileSidebarOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">

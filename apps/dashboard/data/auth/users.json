@@ -18758,17 +18758,15 @@
     "passwordSalt": "af990b45d244773d119f23541cc03eff",
     "status": "Pending First Login",
     "roles": [
-      "IT Administrator"
+      "Employee"
     ],
     "permissions": [
       "enterprise.view",
-      "it.*",
-      "admin.users.view",
-      "admin.roles.view",
-      "audit.view",
-      "integration.view",
-      "security.configure",
-      "workflow.configure"
+      "ess.view",
+      "profile.view",
+      "leave.submit",
+      "timesheet.submit",
+      "payroll.payslip.view"
     ],
     "departmentAccess": [
       "INFORMATION TECHNOLOGY"

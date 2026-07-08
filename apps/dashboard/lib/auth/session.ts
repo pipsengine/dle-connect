@@ -156,9 +156,4 @@ export const roleHome = (roles: string[]) => {
   return '/';
 };
 
-export const hasPermission = (permissions: string[], required: string) => {
-  if (permissions.includes('*')) return true;
-  if (permissions.includes(required)) return true;
-  const [module] = required.split('.');
-  return permissions.includes(`${module}.*`);
-};
+export { hasPermission } from '@/lib/auth/permission-match';

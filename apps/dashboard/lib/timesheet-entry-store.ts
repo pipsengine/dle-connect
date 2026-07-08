@@ -2940,6 +2940,12 @@ export async function advanceTimesheetWorkflow(
   header.workflowHistory = [...(header.workflowHistory || []), event];
   await writeTimesheetHeaderLines(header, lines.filter((line) => line.headerId === header.id));
   const payrollUpdate = header.status === 'HR_Acknowledged' ? await createPayrollUpdateForPeriod(header.periodId, actor) : null;
+  if (header.status === 'HR_Acknowledged') {
+    const period = String(header.periodId || '').replace(/^per-/, '');
+    void import('@/lib/payroll-timesheet-ot-posting')
+      .then((module) => module.postPermanentTimesheetOvertimeToPayroll(period))
+      .catch((error) => console.warn('[Timesheet] Permanent OT posting skipped:', error instanceof Error ? error.message : error));
+  }
   return { header, payrollUpdate };
 }
 

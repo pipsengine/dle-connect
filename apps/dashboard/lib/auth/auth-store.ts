@@ -313,7 +313,11 @@ const surnameOf = (employee: DleEmployeeDirectoryRow) => compact(employee.lastNa
 const userFromEmployee = (employee: DleEmployeeDirectoryRow): UserAccount => {
   const password = surnameOf(employee);
   const hashed = hashPassword(password);
-  const role = defaultRoleForEmployee(employee.jobTitle || employee.designation, employee.department);
+  const role = defaultRoleForEmployee(
+    employee.jobTitle || employee.designation,
+    employee.department,
+    { employeeCode: employee.employeeCode || employee.employeeId, employmentType: employee.employmentType },
+  );
   const username = employee.employeeCode || employee.employeeId;
   const status: UserStatus = activeEmployee(employee) ? 'Pending First Login' : 'Inactive';
   const roles = [role];

@@ -1,4 +1,5 @@
 import type { SessionPayload } from '@/lib/auth/session';
+import { canAccessAdministrationCentre, hasAnyPermission, hasPermission } from '@/lib/auth/permission-match';
 import { canAccessPayrollPath, payrollRoutePermissionOptions } from '@/lib/access/payroll-access';
 
 type SessionLike = Pick<SessionPayload, 'department' | 'unit' | 'roles' | 'permissions' | 'isGlobalAdmin'>;
@@ -11,15 +12,18 @@ const routePathFromRequestPath = (pathname: string) => {
   return path;
 };
 
-const hasPermission = (permissions: string[], required: string) => {
-  if (permissions.includes('*')) return true;
-  if (permissions.includes(required)) return true;
-  const [module] = required.split('.');
-  return permissions.includes(`${module}.*`);
+const administrationRoutePermissions = (pathname: string): string[] => {
+  const path = normalizePath(pathname);
+  if (path.startsWith('/administration/user-management')) return ['admin.users.view'];
+  if (path.startsWith('/administration/access-control')) return ['admin.roles.view'];
+  if (path.startsWith('/administration/audit-trail') || path.startsWith('/administration/compliance-and-governance')) return ['audit.view'];
+  if (path.startsWith('/administration/approval-workflow')) return ['workflow.configure'];
+  if (path.startsWith('/administration/system-settings')) return ['security.configure'];
+  if (path.startsWith('/administration/backup-disaster-recovery')) return ['backup.view', 'backup.configure'];
+  if (path.startsWith('/administration/integrations')) return ['integration.view'];
+  if (path.startsWith('/administration/ai-and-automation')) return ['it.view'];
+  return ['admin.roles.view', 'admin.users.view'];
 };
-
-const hasAnyPermission = (permissions: string[], required: string[]) =>
-  required.some((permission) => hasPermission(permissions, permission));
 
 export const isHrPortalUser = (session: SessionLike) => {
   if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
@@ -135,5 +139,9 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
 export const canAccessRoute = (session: SessionLike, pathname: string) => {
   const path = routePathFromRequestPath(pathname);
   if (path.startsWith('/hris')) return canAccessHrisPath(session, path);
+  if (path.startsWith('/administration')) {
+    if (!canAccessAdministrationCentre(session)) return false;
+    return hasAnyPermission(session.permissions || [], administrationRoutePermissions(path));
+  }
   return true;
 };

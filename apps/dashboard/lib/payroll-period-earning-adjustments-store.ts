@@ -68,6 +68,67 @@ export const isSupplementalSageEarningCode = (code?: string | null) => {
 };
 
 const SAGE_PAYSLIP_EARNING_SYNC_SOURCE = 'Sage payslip period earning sync';
+export const TIMESHEET_OT_POSTING_SOURCE = 'Timesheet OT Posting';
+export const HR_ARREARS_POSTING_SOURCE = 'HR Arrears Approval';
+
+export const isTimesheetOtPostingSource = (value?: string | null) =>
+  compact(value) === TIMESHEET_OT_POSTING_SOURCE;
+
+export const isHrArrearsPostingSource = (value?: string | null) =>
+  compact(value) === HR_ARREARS_POSTING_SOURCE;
+
+export const upsertPayrollPeriodEarningAdjustment = async (row: PayrollPeriodEarningAdjustment) => {
+  const next: PayrollPeriodEarningAdjustment = {
+    ...row,
+    period: normalizePayrollPeriod(row.period),
+    employeeCode: compact(row.employeeCode || row.employeeId),
+    employeeId: compact(row.employeeId || row.employeeCode),
+    code: compact(row.code).toUpperCase(),
+    name: compact(row.name || row.code),
+    amount: roundMoney(Number(row.amount || 0)),
+    taxable: row.taxable !== false,
+  };
+  if (!next.period || !next.code) throw new Error('Period and earning code are required.');
+  const current = await readPayrollPeriodEarningAdjustments();
+  const byKey = new Map(current.map((item) => [adjustmentKey(item), item]));
+  byKey.set(adjustmentKey(next), next);
+  await writePayrollPeriodEarningAdjustments(Array.from(byKey.values()));
+  invalidateEssPortalCache();
+  onAdjustmentsChanged?.(next.period);
+  return next;
+};
+
+export const removePayrollPeriodEarningAdjustments = async (filter: {
+  period: string;
+  source?: string;
+  employeeCode?: string;
+}) => {
+  const period = normalizePayrollPeriod(filter.period);
+  const source = compact(filter.source);
+  const employeeCode = compact(filter.employeeCode).toUpperCase();
+  const current = await readPayrollPeriodEarningAdjustments();
+  const next = current.filter((row) => {
+    if (normalizePayrollPeriod(row.period) !== period) return true;
+    if (source && compact(row.source) !== source) return true;
+    if (employeeCode && compact(row.employeeCode || row.employeeId).toUpperCase() !== employeeCode) return true;
+    return false;
+  });
+  if (next.length === current.length) return { removed: 0, period };
+  await writePayrollPeriodEarningAdjustments(next);
+  invalidateEssPortalCache();
+  onAdjustmentsChanged?.(period);
+  return { removed: current.length - next.length, period };
+};
+
+export const periodEarningAdjustmentsForPeriod = async (period?: string, source?: string) => {
+  const normalizedPeriod = normalizePayrollPeriod(period || activePayrollPeriod());
+  const rows = await readPayrollPeriodEarningAdjustments();
+  return rows.filter((row) => {
+    if (normalizePayrollPeriod(row.period) !== normalizedPeriod) return false;
+    if (source && compact(row.source) !== source) return false;
+    return true;
+  });
+};
 
 export const readPayrollPeriodEarningAdjustments = async (): Promise<PayrollPeriodEarningAdjustment[]> => {
   try {

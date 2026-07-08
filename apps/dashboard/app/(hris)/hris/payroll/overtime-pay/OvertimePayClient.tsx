@@ -139,11 +139,12 @@ const initials = (name: string) =>
 
 const PAGE_SIZE = 10;
 
-export default function OvertimePayClient({ initialNow, embedded = false }: { initialNow?: string; embedded?: boolean } = {}) {
+export default function OvertimePayClient({ initialNow, embedded = false, initialPeriod }: { initialNow?: string; embedded?: boolean; initialPeriod?: string } = {}) {
   const [role, setRole] = useState<Role>('Payroll Officer');
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [posting, setPosting] = useState(false);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [query, setQuery] = useState('');
@@ -178,6 +179,27 @@ export default function OvertimePayClient({ initialNow, embedded = false }: { in
   useEffect(() => {
     void load();
   }, [role]);
+
+  const postToPayroll = async () => {
+    setPosting(true);
+    setToast('');
+    setError('');
+    try {
+      const res = await fetch('/api/hris/payroll/overtime-pay', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-hris-role': role },
+        body: JSON.stringify({ action: 'post-to-payroll', period: initialPeriod || '' }),
+      });
+      const json = (await res.json()) as ApiResponse<{ summary: { posted: number; employees: number; totalAmount: number } }>;
+      if (!res.ok || json.status !== 'success' || !json.data?.summary) throw new Error(json.error || 'Unable to post overtime to payroll.');
+      const summary = json.data.summary;
+      setToast(`Posted ${summary.posted} OT line(s) for ${summary.employees} permanent employee(s) — ${moneyFmt.format(summary.totalAmount)}.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to post overtime to payroll.');
+    } finally {
+      setPosting(false);
+    }
+  };
 
   const records = payload?.records || [];
 
@@ -474,7 +496,22 @@ export default function OvertimePayClient({ initialNow, embedded = false }: { in
           <MetadataPill label="Employees Loaded" value={String(uniqueEmployees)} />
           <MetadataPill label="Currency" value="NGN" />
         </div>
-        ) : null}
+        ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void postToPayroll()}
+            disabled={posting || loading}
+            className="inline-flex items-center gap-2 rounded-xl bg-[#2563EB] px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            {posting ? 'Posting...' : 'Post Permanent OT to Payroll'}
+          </button>
+          <p className="text-xs font-medium text-[#64748B]">
+            Aggregates payroll-ready timesheets for permanent staff into period earning adjustments.
+          </p>
+        </div>
+        )}
       </div>
 
       {error ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{error}</div> : null}

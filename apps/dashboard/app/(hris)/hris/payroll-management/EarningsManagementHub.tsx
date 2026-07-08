@@ -510,7 +510,7 @@ export default function EarningsManagementHub({
         ) : activeTab === 'allowances' ? (
           <AllowancesClient embedded initialPeriod={earningsPeriod} />
         ) : activeTab === 'overtime-pay' ? (
-          <OvertimePayClient embedded />
+          <OvertimePayClient embedded initialPeriod={earningsPeriod} />
         ) : activeTab === 'daily-rate-pay' ? (
           <DailyRatePayClient embedded initialPeriod={earningsPeriod} />
         ) : activeTab === 'bonus-inputs' ? (
@@ -518,6 +518,7 @@ export default function EarningsManagementHub({
             records={records}
             issues={earningsIssues}
             periodLabel={payload?.periodLabel || 'Current period'}
+            period={earningsPeriod}
             canViewMoney={canViewMoney}
           />
         ) : null}

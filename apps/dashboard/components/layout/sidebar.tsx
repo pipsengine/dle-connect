@@ -12,6 +12,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { navigationConfig, NavItem } from '@/lib/config/navigation';
+import { canAccessAdministrationCentre, hasPermission } from '@/lib/auth/permission-match';
 
 const requiredPermission = (route?: string) => {
   if (!route || route === '/') return 'enterprise.view';
@@ -56,19 +57,7 @@ const requiredPermission = (route?: string) => {
   return 'enterprise.view';
 };
 
-const canAccess = (permissions: string[], required: string) => {
-  if (permissions.includes('*') || permissions.includes(required)) return true;
-  const module = required.split('.')[0];
-  if (permissions.includes(`${module}.*`)) return true;
-  if (required === 'payroll.view') {
-    return permissions.some((item) =>
-      item === 'page.payroll.management.view'
-      || item === 'page.payroll.management.bank-finance.view'
-      || item.startsWith('page.payroll.management.'),
-    );
-  }
-  return false;
-};
+const canAccess = (permissions: string[], required: string) => hasPermission(permissions, required);
 
 export function Sidebar({
   isOpen,
@@ -106,7 +95,7 @@ export function Sidebar({
         }
       })
       .catch(() => setPermissions([]));
-  }, []);
+  }, [pathname]);
 
   const visibleNavigation = useMemo(() => {
     const hrText = `${sessionContext.department} ${sessionContext.unit} ${sessionContext.roles.join(' ')}`.toLowerCase();
@@ -118,8 +107,11 @@ export function Sidebar({
       hrText.includes('human resource') ||
       hrText.includes('human capital');
 
+    const canSeeAdministration = canAccessAdministrationCentre(sessionContext);
+
     return navigationConfig
       .map((item) => {
+        if (item.id === 'administration' && !canSeeAdministration) return null;
         const subItems = item.subItems?.filter((sub) => {
           if (sub.route === '/hris') return canUseHrManagement && canAccess(permissions, requiredPermission(sub.route));
           if (sub.route === '/workforce-portal') return true;

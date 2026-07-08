@@ -110,7 +110,7 @@ const resolveDashboardRoot = () => {
 const DATA_DIR = path.join(resolveDashboardRoot(), 'data', 'auth');
 const ACCESS_PATH = path.join(DATA_DIR, 'access-control.json');
 const ACCESS_STATE_KEY = 'global-access-control-centre';
-const ACCESS_STATE_CACHE_MS = Number(process.env.ACCESS_CONTROL_STATE_CACHE_MS || 30000);
+const ACCESS_STATE_CACHE_MS = Number(process.env.ACCESS_CONTROL_STATE_CACHE_MS || 0);
 
 let dbReady: Promise<sql.ConnectionPool> | null = null;
 let cachedAccessState: { state: AccessControlState; expiresAt: number } | null = null;

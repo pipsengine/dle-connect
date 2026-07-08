@@ -282,12 +282,22 @@ export async function POST(request: Request) {
   try {
     const role = getRole(request);
     const perms = permissions(role);
-    if (!perms.canConfigureHolidays) return err(403, 'Permission denied');
     const body = await request.json().catch(() => ({}));
+
+    if (body.action === 'post-to-payroll') {
+      if (!['Super Admin', 'HR Director', 'HR Manager', 'Payroll Officer'].includes(role)) {
+        return err(403, 'Permission denied');
+      }
+      const { postPermanentTimesheetOvertimeToPayroll } = await import('@/lib/payroll-timesheet-ot-posting');
+      const summary = await postPermanentTimesheetOvertimeToPayroll(String(body.period || ''));
+      return ok({ summary });
+    }
+
+    if (!perms.canConfigureHolidays) return err(403, 'Permission denied');
     if (!Array.isArray(body.publicHolidays)) return err(400, 'publicHolidays must be an array of YYYY-MM-DD dates');
     const publicHolidays = await writeHolidayDates(body.publicHolidays);
     return ok({ updated: true, publicHolidays });
   } catch (error) {
-    return err(500, error instanceof Error ? error.message : 'Unable to update public holidays.');
+    return err(500, error instanceof Error ? error.message : 'Unable to update overtime pay settings.');
   }
 }
