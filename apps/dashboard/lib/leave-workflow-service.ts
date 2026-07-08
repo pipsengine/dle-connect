@@ -69,9 +69,36 @@ const resolveDashboardRoot = () => {
   return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
 };
 
-export const ESS_REQUESTS_PATH = path.join(resolveDashboardRoot(), 'data', 'hris', 'ess-requests.json');
-export const LEAVE_ATTACHMENTS_ROOT = path.join(resolveDashboardRoot(), 'data', 'hris', 'leave-attachments');
-export const LEAVE_CALENDAR_CONFIG_PATH = path.join(resolveDashboardRoot(), 'data', 'hris', 'leave-calendar-config.json');
+const DATA_DIR = process.env.DLE_HRIS_DATA_DIR
+  ? path.resolve(process.env.DLE_HRIS_DATA_DIR)
+  : path.join(resolveDashboardRoot(), 'data', 'hris');
+const uniquePaths = (paths: Array<string | null | undefined>) => Array.from(new Set(paths.reduce<string[]>((items, item) => {
+  if (item) items.push(path.normalize(item));
+  return items;
+}, [])));
+const repoMirrorPath = (file: string) => {
+  const normalizedFile = path.normalize(file);
+  const markers = [
+    path.normalize(path.join('deployment', 'iis', 'site', 'apps', 'dashboard', 'data', 'hris')),
+    path.normalize(path.join('deployment', 'iis', 'site-publish', 'apps', 'dashboard', 'data', 'hris')),
+  ];
+  const marker = markers.find((candidate) => normalizedFile.toLowerCase().lastIndexOf(candidate.toLowerCase()) !== -1);
+  if (!marker) return null;
+  const markerIndex = normalizedFile.toLowerCase().lastIndexOf(marker.toLowerCase());
+  const repoRoot = normalizedFile.slice(0, markerIndex);
+  return path.join(repoRoot, 'apps', 'dashboard', 'data', 'hris', path.basename(normalizedFile));
+};
+const essRequestsFile = path.join(DATA_DIR, 'ess-requests.json');
+const ESS_REQUESTS_PATHS = uniquePaths([
+  essRequestsFile,
+  repoMirrorPath(essRequestsFile),
+  path.join(resolveDashboardRoot(), 'data', 'hris', 'ess-requests.json'),
+  path.join(process.cwd(), 'apps', 'dashboard', 'data', 'hris', 'ess-requests.json'),
+]);
+
+export const ESS_REQUESTS_PATH = essRequestsFile;
+export const LEAVE_ATTACHMENTS_ROOT = path.join(DATA_DIR, 'leave-attachments');
+export const LEAVE_CALENDAR_CONFIG_PATH = path.join(DATA_DIR, 'leave-calendar-config.json');
 
 const compact = (value: unknown) => String(value || '').trim();
 const clean = compact;
@@ -97,17 +124,31 @@ export const workingDaysSince = (fromIso: string, toIso = new Date().toISOString
 };
 
 export const readAllEssRequests = async (): Promise<EssLeaveRequest[]> => {
-  try {
-    const parsed = JSON.parse(await readFile(ESS_REQUESTS_PATH, 'utf8'));
-    return Array.isArray(parsed) ? parsed as EssLeaveRequest[] : [];
-  } catch {
-    return [];
+  for (const file of ESS_REQUESTS_PATHS) {
+    try {
+      const parsed = JSON.parse(await readFile(file, 'utf8'));
+      return Array.isArray(parsed) ? parsed as EssLeaveRequest[] : [];
+    } catch {
+      // Try the next candidate path.
+    }
   }
+  return [];
 };
 
 export const writeAllEssRequests = async (requests: EssLeaveRequest[]) => {
-  await mkdir(path.dirname(ESS_REQUESTS_PATH), { recursive: true });
-  await writeFile(ESS_REQUESTS_PATH, JSON.stringify(requests, null, 2), 'utf8');
+  const content = JSON.stringify(requests, null, 2);
+  let lastError: unknown = null;
+  let wrote = false;
+  for (const file of ESS_REQUESTS_PATHS) {
+    try {
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, content, 'utf8');
+      wrote = true;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (!wrote && lastError) throw lastError;
 };
 
 export const readEssLeaveRequests = async () =>
@@ -621,7 +662,7 @@ export const emailLeaveApproversForRequest = async (input: {
   }
 };
 
-const hrRoles = new Set(['hr manager', 'hr head', 'hr officer', 'leave administrator', 'system administrator', 'super administrator']);
+const hrRoles = new Set(['hr manager', 'hr head', 'hr officer', 'hr director', 'leave administrator', 'system administrator', 'super administrator', 'super admin']);
 const managerRoles = new Set(['supervisor', 'department manager', 'line manager', 'manager', 'head of department']);
 
 export type LeaveApproverKind = 'line-manager' | 'hr' | null;
@@ -637,7 +678,15 @@ export const resolveLeaveApproverKind = (input: {
   const { actor, requester, request, roles = [], isGlobalAdmin, employees = [] } = input;
   if (!['Line Manager Review', 'HR Review'].includes(request.status)) return null;
   const roleText = roles.map((role) => role.toLowerCase());
-  const isHr = isGlobalAdmin || roleText.some((role) => hrRoles.has(role) || /hr/.test(role));
+  const isSuperAdmin = Boolean(isGlobalAdmin) || roleText.some((role) => /super\s*admin|system\s*admin|emergency system administration/.test(role));
+  const isHr = isSuperAdmin || roleText.some((role) => hrRoles.has(role) || /\bhr\b/.test(role));
+
+  // Super Administrator / System Administrator can action any pending leave approval stage.
+  if (isSuperAdmin) {
+    if (request.status === 'HR Review') return 'hr';
+    if (request.status === 'Line Manager Review') return 'line-manager';
+  }
+
   if (request.status === 'HR Review' && isHr) return 'hr';
 
   const resolvedManager = employees.length ? resolveLineManagerForEmployee(requester, employees) : null;
@@ -654,7 +703,7 @@ export const resolveLeaveApproverKind = (input: {
     || namesMatch(actor.fullName, requester.functionalManager || '');
   const sameDepartmentHead = compact(actor.departmentHead).toLowerCase() === compact(actor.fullName).toLowerCase()
     && compact(actor.department).toLowerCase() === compact(requester.department).toLowerCase();
-  if (request.status === 'Line Manager Review' && (isAssignedManager || isNamedManager || isManagerRole || sameDepartmentHead || isGlobalAdmin)) {
+  if (request.status === 'Line Manager Review' && (isAssignedManager || isNamedManager || isManagerRole || sameDepartmentHead)) {
     return 'line-manager';
   }
   return null;
@@ -847,7 +896,7 @@ export const findConflictingLeaveApplication = async (input: {
 }) => {
   const keys = employeeLeaveLookupKeys(input.employee);
   await readLeaveApplicationsForReconciliation({ syncEss: true });
-  const payload = await readLeaveManagementPayload('applications', 'Leave Administrator');
+  const payload = await readLeaveManagementPayload('applications', 'Leave Administrator', { readOnly: true });
 
   const hrisConflict = payload.applications.find((item) =>
     recordMatchesEmployeeKeys(item.employeeId, keys)
@@ -936,7 +985,7 @@ export const validateEssLeaveApplication = async (input: {
     return { ok: false as const, status: 409, message: 'Leave application falls within a blocked period.' };
   }
 
-  const payload = await readLeaveManagementPayload('applications', 'Leave Administrator');
+  const payload = await readLeaveManagementPayload('applications', 'Leave Administrator', { readOnly: true });
   const conflict = await findConflictingLeaveApplication({
     employee,
     startDate,

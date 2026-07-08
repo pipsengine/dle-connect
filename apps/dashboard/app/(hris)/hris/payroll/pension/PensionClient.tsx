@@ -218,7 +218,7 @@ export default function PensionClient({ initialNow }: { initialNow: string }) {
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-[1120px] w-full divide-y divide-slate-100">
-              <thead className="bg-slate-50"><tr>{['Employee', 'PFA / Custodian', 'RSA PIN', 'Pensionable', 'Employee', 'Employer', 'Voluntary', 'Total', 'Rate', 'Status'].map((header) => <th key={header} className="px-4 py-3 text-left text-xs font-black uppercase tracking-normal text-slate-500">{header}</th>)}</tr></thead>
+              <thead className="bg-slate-50"><tr>{['Employee', 'PFA / Custodian', 'RSA PIN', 'Pensionable', 'Employee Cont.', 'Employer Cont.', 'Voluntary', 'Total', 'Rate', 'Status'].map((header) => <th key={header} className="px-4 py-3 text-left text-xs font-black uppercase tracking-normal text-slate-500">{header}</th>)}</tr></thead>
               <tbody className="divide-y divide-slate-100 bg-white">
                 {filtered.map((record) => (
                   <tr key={record.employeeId} className="hover:bg-slate-50">

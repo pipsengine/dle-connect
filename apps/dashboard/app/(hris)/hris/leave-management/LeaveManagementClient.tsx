@@ -34,7 +34,7 @@ import {
   XCircle,
 } from 'lucide-react';
 
-type LeaveRole = 'Leave Administrator' | 'HR Officer' | 'HR Manager' | 'Department Manager' | 'Supervisor' | 'Payroll Officer' | 'Employee' | 'Executive' | 'System Administrator';
+type LeaveRole = 'Leave Administrator' | 'HR Officer' | 'HR Manager' | 'Department Manager' | 'Supervisor' | 'Payroll Officer' | 'Employee' | 'Executive' | 'System Administrator' | 'Super Administrator';
 type LeaveTone = 'blue' | 'green' | 'amber' | 'red' | 'violet' | 'cyan' | 'slate';
 type LeaveAction = { id: string; label: string; roles: LeaveRole[]; requiresReason?: boolean; sensitive?: boolean };
 type AppRecord = {
@@ -183,7 +183,21 @@ type Payload = {
 };
 type ApiResponse<T> = { status: 'success' | 'error'; data?: T; error?: string };
 
-const roles: LeaveRole[] = ['Leave Administrator', 'HR Officer', 'HR Manager', 'Department Manager', 'Supervisor', 'Payroll Officer', 'Employee', 'Executive', 'System Administrator'];
+const leaveRoleFromSession = (user: { roles?: string[]; isGlobalAdmin?: boolean; fullName?: string } | null): LeaveRole => {
+  if (!user) return 'Leave Administrator';
+  const text = `${(user.roles || []).join(' ')} ${user.isGlobalAdmin ? 'Super Administrator' : ''}`.toLowerCase();
+  if (user.isGlobalAdmin || /super\s*admin|emergency system administration/.test(text)) return 'Super Administrator';
+  if (/system\s*admin/.test(text)) return 'System Administrator';
+  if (/hr\s*manager|hr\s*head|hr\s*director/.test(text)) return 'HR Manager';
+  if (/hr\s*officer|hr\s*admin/.test(text)) return 'HR Officer';
+  if (/department\s*manager|line\s*manager|head\s*of\s*department/.test(text)) return 'Department Manager';
+  if (/supervisor|team\s*lead/.test(text)) return 'Supervisor';
+  if (/payroll/.test(text)) return 'Payroll Officer';
+  if (/executive|md\b|ceo\b|cfo\b/.test(text)) return 'Executive';
+  if (/leave\s*admin/.test(text)) return 'Leave Administrator';
+  if (/employee/.test(text)) return 'Employee';
+  return 'Leave Administrator';
+};
 const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 });
 const numberFmt = new Intl.NumberFormat('en-GB');
 const money = (value: number | undefined) => moneyFmt.format(value || 0);
@@ -336,6 +350,8 @@ const workspaceForSection = (section: string, payload: Payload | null) => {
 
 export default function LeaveManagementClient({ initialNow, initialSection = 'dashboard' }: { initialNow: string; initialSection?: string }) {
   const [role, setRole] = useState<LeaveRole>('Leave Administrator');
+  const [signedInAs, setSignedInAs] = useState('');
+  const [sessionReady, setSessionReady] = useState(false);
   const [section, setSection] = useState(initialSection);
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -356,6 +372,26 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
   const activeWorkspace = useMemo(() => workspaceForSection(section, payload), [payload, section]);
   const workspaceTabs = useMemo(() => (payload?.operationalSections || []).filter((item) => item.area === activeWorkspace.label && item.id !== 'dashboard'), [activeWorkspace.label, payload?.operationalSections]);
 
+  const loadSession = async () => {
+    try {
+      const res = await fetch('/api/auth/me', { cache: 'no-store' });
+      const json = await res.json().catch(() => null);
+      if (res.ok && json?.data) {
+        const user = {
+          fullName: json.data.fullName as string | undefined,
+          roles: Array.isArray(json.data.roles) ? (json.data.roles as string[]) : [],
+          isGlobalAdmin: Boolean(json.data.isGlobalAdmin),
+        };
+        setRole(leaveRoleFromSession(user));
+        setSignedInAs(user.fullName || user.roles[0] || 'Signed in');
+      }
+    } catch {
+      // keep default leave role
+    } finally {
+      setSessionReady(true);
+    }
+  };
+
   const load = async (nextSection = section, nextRole = role) => {
     setLoading(true);
     setError('');
@@ -373,8 +409,13 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
   };
 
   useEffect(() => {
+    void loadSession();
+  }, []);
+
+  useEffect(() => {
+    if (!sessionReady) return;
     void load(section, role);
-  }, [section, role]);
+  }, [section, role, sessionReady]);
 
   const runApplicationAction = async (applicationId: string, actionId: 'approve' | 'reject') => {
     setBusyAction(`${actionId}:${applicationId}`);
@@ -471,11 +512,9 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <select value={role} onChange={(event) => setRole(event.target.value as LeaveRole)} className="h-10 rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-slate-800 outline-none">
-              {roles.map((item) => (
-                <option key={item}>{item}</option>
-              ))}
-            </select>
+            <span className="inline-flex h-10 items-center rounded-lg border border-[#E5E7EB] bg-slate-50 px-3 text-xs font-semibold text-slate-700">
+              Signed in: {signedInAs || role} · {role}
+            </span>
             {!isTransactionsHub ? (
               <>
                 <button

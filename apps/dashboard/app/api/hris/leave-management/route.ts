@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { formatLeaveAllowanceAmount } from '@/lib/leave-allowance-policy';
 import { auditLeaveAction, dormantLongPolicy, readLeaveManagementPayload, validateLeaveAction, type LeaveActionId, type LeaveRole } from '@/lib/leave-management-store';
 import { applyHrisLeaveWorkflowAction, closeLeaveYearRun, processLeaveAccrualRun, processLeaveCarryForwardRun } from '@/lib/leave-workflow-service';
@@ -9,9 +10,44 @@ import { postLeaveAllowanceOnAnnualLeaveApproval } from '@/lib/payroll-leave-all
 const jsonOk = (data: any) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 
+const cookieValue = (request: Request, name: string) => {
+  const raw = request.headers.get('cookie') || '';
+  for (const pair of raw.split(';')) {
+    const [key, ...rest] = pair.split('=');
+    if (String(key || '').trim() === name) return decodeURIComponent(rest.join('='));
+  }
+  return '';
+};
+
+const leaveRoleFromSession = (
+  session: Awaited<ReturnType<typeof verifySessionToken>>,
+  fallback?: string | null,
+): LeaveRole | string => {
+  const text = `${session?.roles?.join(' ') || ''} ${session?.isGlobalAdmin ? 'Super Administrator' : ''} ${fallback || ''}`.toLowerCase();
+  if (session?.isGlobalAdmin || /super\s*admin|emergency system administration/.test(text)) return 'Super Administrator';
+  if (/system\s*admin/.test(text)) return 'System Administrator';
+  if (/hr\s*manager|hr\s*head|hr\s*director/.test(text)) return 'HR Manager';
+  if (/hr\s*officer|hr\s*admin/.test(text)) return 'HR Officer';
+  if (/department\s*manager|line\s*manager|head\s*of\s*department/.test(text)) return 'Department Manager';
+  if (/supervisor|team\s*lead/.test(text)) return 'Supervisor';
+  if (/payroll/.test(text)) return 'Payroll Officer';
+  if (/executive|md\b|ceo\b|cfo\b/.test(text)) return 'Executive';
+  if (/leave\s*admin/.test(text)) return 'Leave Administrator';
+  if (/employee/.test(text)) return 'Employee';
+  return fallback || 'Leave Administrator';
+};
+
+const resolveLeaveRole = async (request: NextRequest, bodyRole?: string | null) => {
+  const headerRole = request.headers.get('x-hris-role');
+  const queryRole = request.nextUrl.searchParams.get('role');
+  const session = await verifySessionToken(cookieValue(request, AUTH_COOKIE));
+  if (session) return leaveRoleFromSession(session, bodyRole || headerRole || queryRole);
+  return bodyRole || headerRole || queryRole || 'Leave Administrator';
+};
+
 export async function GET(request: NextRequest) {
   try {
-    const role = request.headers.get('x-hris-role') || request.nextUrl.searchParams.get('role');
+    const role = await resolveLeaveRole(request);
     const section = request.nextUrl.searchParams.get('section') || 'dashboard';
     const format = request.nextUrl.searchParams.get('format');
     const payload = await readLeaveManagementPayload(section, role, format === 'allowance-exceptions-csv' ? { forceSync: true } : undefined);
@@ -62,8 +98,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const role = request.headers.get('x-hris-role') || 'Leave Administrator';
     const body = await request.json().catch(() => ({}));
+    const role = await resolveLeaveRole(request, body.role ? String(body.role) : null);
     const action = String(body.action || '') as LeaveActionId;
     const section = String(body.section || 'dashboard');
     const payload = await readLeaveManagementPayload(section, role);

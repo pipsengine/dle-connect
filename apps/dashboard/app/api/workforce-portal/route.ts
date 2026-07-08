@@ -1679,10 +1679,17 @@ export async function POST(request: Request) {
     };
 
     const requests = await readRequests();
+    const previousRequests = requests;
     await writeRequests([requestItem, ...requests]);
     invalidateEssPortalCache();
     if (isLeaveRequest) {
-      await syncEssLeaveRequestById(requestItem.id);
+      try {
+        await syncEssLeaveRequestById(requestItem.id);
+      } catch (syncError) {
+        await writeRequests(previousRequests).catch(() => undefined);
+        invalidateEssPortalCache();
+        return err(500, syncError instanceof Error ? syncError.message : 'Leave application could not be saved. No request was submitted.');
+      }
       const baseUrl = new URL(request.url).origin;
       try {
         await emailLeaveApproversForRequest({ request: requestItem, requester: employee, baseUrl });
@@ -1713,6 +1720,10 @@ export async function POST(request: Request) {
       } catch (notificationError) {
         console.error('Leave in-app notification failed after submit', notificationError);
       }
+      return ok({
+        request: requestItem,
+        message: `Leave application submitted successfully. Reference ${requestItem.id}. Status: ${requestItem.status}.`,
+      });
     }
     return ok({ request: requestItem });
   } catch (error) {

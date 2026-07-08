@@ -52,10 +52,35 @@ const resolveDashboardRoot = () => {
   return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
 };
 
-const DATA_ROOT = path.join(resolveDashboardRoot(), 'data', 'hris');
-const EVENTS_PATH = path.join(DATA_ROOT, 'payroll-leave-allowance-events.json');
+const DATA_DIR = process.env.DLE_HRIS_DATA_DIR
+  ? path.resolve(process.env.DLE_HRIS_DATA_DIR)
+  : path.join(resolveDashboardRoot(), 'data', 'hris');
+const EVENTS_FILE_NAME = 'payroll-leave-allowance-events.json';
+const PRIMARY_EVENTS_PATH = path.join(DATA_DIR, EVENTS_FILE_NAME);
+const uniquePaths = (paths: Array<string | null | undefined>) => Array.from(new Set(paths.reduce<string[]>((items, item) => {
+  if (item) items.push(path.normalize(item));
+  return items;
+}, [])));
+const repoMirrorPath = (file: string) => {
+  const normalizedFile = path.normalize(file);
+  const markers = [
+    path.normalize(path.join('deployment', 'iis', 'site', 'apps', 'dashboard', 'data', 'hris')),
+    path.normalize(path.join('deployment', 'iis', 'site-publish', 'apps', 'dashboard', 'data', 'hris')),
+  ];
+  const marker = markers.find((candidate) => normalizedFile.toLowerCase().lastIndexOf(candidate.toLowerCase()) !== -1);
+  if (!marker) return null;
+  const markerIndex = normalizedFile.toLowerCase().lastIndexOf(marker.toLowerCase());
+  const repoRoot = normalizedFile.slice(0, markerIndex);
+  return path.join(repoRoot, 'apps', 'dashboard', 'data', 'hris', path.basename(normalizedFile));
+};
+const EVENTS_PATHS = uniquePaths([
+  PRIMARY_EVENTS_PATH,
+  repoMirrorPath(PRIMARY_EVENTS_PATH),
+  path.join(resolveDashboardRoot(), 'data', 'hris', EVENTS_FILE_NAME),
+  path.join(process.cwd(), 'apps', 'dashboard', 'data', 'hris', EVENTS_FILE_NAME),
+]);
 
-let syncCache: { mtime: number; events: PayrollLeaveAllowanceEvent[] } | null = null;
+let syncCache: { mtime: number; events: PayrollLeaveAllowanceEvent[]; path?: string } | null = null;
 
 const config = () => {
   loadWorkspaceEnv();
@@ -75,36 +100,65 @@ const config = () => {
   };
 };
 
+const parseEvents = (raw: string): PayrollLeaveAllowanceEvent[] => {
+  const parsed = JSON.parse(raw);
+  return Array.isArray(parsed) ? parsed as PayrollLeaveAllowanceEvent[] : [];
+};
+
 const readEventsRaw = async (): Promise<PayrollLeaveAllowanceEvent[]> => {
-  try {
-    const parsed = JSON.parse(await readFile(EVENTS_PATH, 'utf8'));
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+  for (const file of EVENTS_PATHS) {
+    try {
+      return parseEvents(await readFile(file, 'utf8'));
+    } catch {
+      // Try the next candidate path.
+    }
   }
+  return syncCache?.events || [];
 };
 
 export const readPayrollLeaveAllowanceEvents = readEventsRaw;
 
-export const writePayrollLeaveAllowanceEvents = async (events: PayrollLeaveAllowanceEvent[]) => {
-  await mkdir(DATA_ROOT, { recursive: true });
+const writeEventsFiles = async (events: PayrollLeaveAllowanceEvent[], required = false) => {
   const sorted = [...events].sort((a, b) => `${b.period}-${b.employeeCode}`.localeCompare(`${a.period}-${a.employeeCode}`));
-  await writeFile(EVENTS_PATH, JSON.stringify(sorted, null, 2), 'utf8');
-  syncCache = { mtime: Date.now(), events: sorted };
+  const content = JSON.stringify(sorted, null, 2);
+  let lastError: unknown = null;
+  let wrote = false;
+  for (const file of EVENTS_PATHS) {
+    try {
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, content, 'utf8');
+      wrote = true;
+      syncCache = { mtime: Date.now(), events: sorted, path: file };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (wrote) return;
+  if (required && lastError) throw lastError;
+  if (lastError) {
+    console.warn('[Leave Allowance] Local JSON write skipped:', lastError instanceof Error ? lastError.message : lastError);
+  }
 };
 
+export const writePayrollLeaveAllowanceEvents = async (
+  events: PayrollLeaveAllowanceEvent[],
+  options?: { required?: boolean },
+) => writeEventsFiles(events, options?.required === true);
+
 export const readPayrollLeaveAllowanceEventsSync = () => {
-  try {
-    if (!existsSync(EVENTS_PATH)) return [];
-    const stat = statSync(EVENTS_PATH) as { mtimeMs: number };
-    if (syncCache && syncCache.mtime === stat.mtimeMs) return syncCache.events;
-    const parsed = JSON.parse(readFileSync(EVENTS_PATH, 'utf8'));
-    const events = Array.isArray(parsed) ? parsed as PayrollLeaveAllowanceEvent[] : [];
-    syncCache = { mtime: stat.mtimeMs, events };
-    return events;
-  } catch {
-    return syncCache?.events || [];
+  for (const file of EVENTS_PATHS) {
+    try {
+      if (!existsSync(file)) continue;
+      const stat = statSync(file) as { mtimeMs: number };
+      if (syncCache && syncCache.path === file && syncCache.mtime === stat.mtimeMs) return syncCache.events;
+      const events = parseEvents(readFileSync(file, 'utf8'));
+      syncCache = { mtime: stat.mtimeMs, events, path: file };
+      return events;
+    } catch {
+      // Try the next candidate path.
+    }
   }
+  return syncCache?.events || [];
 };
 
 export const leaveAllowanceEventsForEmployeePeriod = (employee: DleEmployeeDirectoryRow, period?: string) => {
@@ -218,7 +272,10 @@ export const readSageLeaveAllowanceEvents = async (): Promise<PayrollLeaveAllowa
   }
 };
 
-export const reconcilePayrollLeaveAllowanceEvents = async (applications: LeaveApplicationLike[] = []) => {
+export const reconcilePayrollLeaveAllowanceEvents = async (
+  applications: LeaveApplicationLike[] = [],
+  options?: { persist?: boolean },
+) => {
   const events = await readPayrollLeaveAllowanceEvents();
   if (!applications.length) return events;
 
@@ -271,7 +328,7 @@ export const reconcilePayrollLeaveAllowanceEvents = async (applications: LeaveAp
     return event;
   });
 
-  if (changed) await writePayrollLeaveAllowanceEvents(reconciled);
+  if (changed && options?.persist !== false) await writePayrollLeaveAllowanceEvents(reconciled);
   return reconciled;
 };
 
@@ -280,8 +337,12 @@ const loadLeaveApplicationsForReconciliation = async () => {
   return readLeaveApplicationsForReconciliation();
 };
 
-export const syncSageLeaveAllowanceEvents = async (applications?: LeaveApplicationLike[]) => {
+export const syncSageLeaveAllowanceEvents = async (
+  applications?: LeaveApplicationLike[],
+  options?: { persist?: boolean },
+) => {
   const resolvedApplications = applications ?? await loadLeaveApplicationsForReconciliation();
+  const persist = options?.persist !== false;
   try {
     const [current, sageEvents] = await Promise.all([readPayrollLeaveAllowanceEvents(), readSageLeaveAllowanceEvents()]);
     const byId = new Map(current.map((event) => [event.id, event]));
@@ -289,10 +350,10 @@ export const syncSageLeaveAllowanceEvents = async (applications?: LeaveApplicati
       const existing = byId.get(sageEvent.id);
       byId.set(sageEvent.id, existing ? { ...existing, ...sageEvent, createdAt: existing.createdAt, audit: existing.audit?.length ? existing.audit : sageEvent.audit } : sageEvent);
     }
-    await writePayrollLeaveAllowanceEvents(Array.from(byId.values()));
-    return reconcilePayrollLeaveAllowanceEvents(resolvedApplications);
+    if (persist) await writePayrollLeaveAllowanceEvents(Array.from(byId.values()));
+    return reconcilePayrollLeaveAllowanceEvents(resolvedApplications, { persist });
   } catch {
-    return reconcilePayrollLeaveAllowanceEvents(resolvedApplications);
+    return reconcilePayrollLeaveAllowanceEvents(resolvedApplications, { persist });
   }
 };
 
@@ -414,6 +475,6 @@ export const upsertApprovedLeaveAllowanceEvent = async (input: {
     audit: [{ at: now, actor: input.actor, action: 'Approved leave allowance for payroll', note: input.note }],
   };
   const events = await readPayrollLeaveAllowanceEvents();
-  await writePayrollLeaveAllowanceEvents([event, ...events.filter((item) => item.id !== event.id)]);
+  await writePayrollLeaveAllowanceEvents([event, ...events.filter((item) => item.id !== event.id)], { required: true });
   return event;
 };

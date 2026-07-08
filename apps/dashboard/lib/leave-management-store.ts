@@ -7,7 +7,7 @@ import { getDleEnterpriseDbPool, type DleEmployeeDirectoryRow } from '@/lib/dle-
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { syncSageLeaveToHris } from '@/lib/sage-leave-sync';
 
-export type LeaveRole = 'Leave Administrator' | 'HR Officer' | 'HR Manager' | 'Department Manager' | 'Supervisor' | 'Payroll Officer' | 'Employee' | 'Executive' | 'System Administrator';
+export type LeaveRole = 'Leave Administrator' | 'HR Officer' | 'HR Manager' | 'Department Manager' | 'Supervisor' | 'Payroll Officer' | 'Employee' | 'Executive' | 'System Administrator' | 'Super Administrator';
 export type LeaveStatus = 'Draft' | 'Submitted' | 'Under Review' | 'Approved' | 'Rejected' | 'Withdrawn' | 'Cancelled' | 'Terminated' | 'Completed';
 export type WorkflowStage = 'Employee' | 'Supervisor' | 'Manager' | 'HR' | 'Final Approval' | 'Closed';
 export type LeaveTone = 'blue' | 'green' | 'amber' | 'red' | 'violet' | 'cyan' | 'slate';
@@ -228,11 +228,11 @@ const resolveDashboardRoot = () => {
 };
 const ESS_REQUESTS_PATH = path.join(resolveDashboardRoot(), 'data', 'hris', 'ess-requests.json');
 
-const adminRoles: LeaveRole[] = ['Leave Administrator', 'HR Officer', 'HR Manager', 'System Administrator'];
-const managerRoles: LeaveRole[] = ['Department Manager', 'Supervisor', 'HR Manager', 'Executive'];
-const approvalRoles: LeaveRole[] = ['Supervisor', 'Department Manager', 'HR Manager', 'Executive', 'System Administrator'];
-const financeRoles: LeaveRole[] = ['Payroll Officer', 'HR Manager', 'Executive', 'System Administrator'];
-const allRoles: LeaveRole[] = ['Leave Administrator', 'HR Officer', 'HR Manager', 'Department Manager', 'Supervisor', 'Payroll Officer', 'Employee', 'Executive', 'System Administrator'];
+const adminRoles: LeaveRole[] = ['Leave Administrator', 'HR Officer', 'HR Manager', 'System Administrator', 'Super Administrator'];
+const managerRoles: LeaveRole[] = ['Department Manager', 'Supervisor', 'HR Manager', 'Executive', 'Super Administrator'];
+const approvalRoles: LeaveRole[] = ['Supervisor', 'Department Manager', 'HR Manager', 'Executive', 'System Administrator', 'Super Administrator', 'Leave Administrator'];
+const financeRoles: LeaveRole[] = ['Payroll Officer', 'HR Manager', 'Executive', 'System Administrator', 'Super Administrator'];
+const allRoles: LeaveRole[] = ['Leave Administrator', 'HR Officer', 'HR Manager', 'Department Manager', 'Supervisor', 'Payroll Officer', 'Employee', 'Executive', 'System Administrator', 'Super Administrator'];
 
 const action = (id: LeaveActionId, label: string, roles: LeaveRole[] = allRoles, stage?: WorkflowStage[], requiresReason = false, sensitive = false): LeaveAction => ({
   id,
@@ -1188,7 +1188,19 @@ const reportList = ['Executive Leave Policy Dashboard', 'Leave Utilization Repor
 }));
 
 const normalizeRole = (role?: string | null): LeaveRole => {
-  const found = allRoles.find((item) => item.toLowerCase() === String(role || '').toLowerCase());
+  const text = String(role || '').trim().toLowerCase();
+  if (!text) return 'Leave Administrator';
+  if (/super\s*admin|emergency system administration/.test(text)) return 'Super Administrator';
+  if (/system\s*admin/.test(text)) return 'System Administrator';
+  if (/hr\s*manager|hr\s*head|hr\s*director/.test(text)) return 'HR Manager';
+  if (/hr\s*officer|hr\s*admin/.test(text)) return 'HR Officer';
+  if (/department\s*manager|line\s*manager|head\s*of\s*department/.test(text)) return 'Department Manager';
+  if (/supervisor|team\s*lead/.test(text)) return 'Supervisor';
+  if (/payroll/.test(text)) return 'Payroll Officer';
+  if (/executive|md\b|ceo\b|cfo\b/.test(text)) return 'Executive';
+  if (/leave\s*admin/.test(text)) return 'Leave Administrator';
+  if (/employee/.test(text)) return 'Employee';
+  const found = allRoles.find((item) => item.toLowerCase() === text);
   return found || 'Leave Administrator';
 };
 
@@ -1197,7 +1209,7 @@ const permissionsFor = (role: LeaveRole): LeavePayload['permissions'] => ({
   canApprove: approvalRoles.includes(role),
   canAdminister: adminRoles.includes(role),
   canProcessFinancials: financeRoles.includes(role),
-  canConfigure: ['HR Manager', 'System Administrator', 'Leave Administrator'].includes(role),
+  canConfigure: ['HR Manager', 'System Administrator', 'Super Administrator', 'Leave Administrator'].includes(role),
   canExport: role !== 'Employee',
   canViewAudit: role !== 'Employee',
 });
@@ -1261,9 +1273,10 @@ export async function readLeaveApplicationsForReconciliation(options?: { syncEss
 export async function readLeaveManagementPayload(
   section = 'dashboard',
   roleInput?: string | null,
-  options?: { forceSync?: boolean },
+  options?: { forceSync?: boolean; readOnly?: boolean },
 ): Promise<LeavePayload> {
   const forceSync = options?.forceSync === true;
+  const readOnly = options?.readOnly === true;
   const normalizedSection = normalizeSection(section);
   const role = normalizeRole(roleInput);
   const employeeSource = await readPayrollEmployees();
@@ -1280,8 +1293,8 @@ export async function readLeaveManagementPayload(
     readLeaveAudit(pool),
   ]);
   const allowanceEvents = forceSync
-    ? await syncSageLeaveAllowanceEvents(applicationsRaw)
-    : await reconcilePayrollLeaveAllowanceEvents(applicationsRaw);
+    ? await syncSageLeaveAllowanceEvents(applicationsRaw, { persist: !readOnly })
+    : await reconcilePayrollLeaveAllowanceEvents(applicationsRaw, { persist: !readOnly });
   const applications = applicationsRaw.map((application) => {
     const allowance = buildLeaveAllowanceApplicationStatus(application, applicationsRaw, allowanceEvents);
     return {

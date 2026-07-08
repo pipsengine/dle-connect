@@ -889,7 +889,7 @@ const leaveSectionToTab = (value?: string | null): LeaveTab | null => {
   return leaveTabs.find((tab) => tab.toLowerCase() === normalized) || null;
 };
 
-function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction, onWithdrawLeave, saving, initialNow, initialSection, managerMetrics }: { payload: Payload | null; employee?: Payload['employee']; onLeaveSubmitted?: (input: { requestId: string; leaveType: string; startDate: string; endDate: string; days: number; reason: string; relieverEmployeeId: string; relieverName: string; handover: string; attachmentNames: string[] }) => Promise<void>; onLeaveAction?: (input: { requestId: string; action: 'approve' | 'reject'; comment?: string }) => Promise<void>; onWithdrawLeave?: (requestId: string) => Promise<void>; saving?: boolean; initialNow: string; initialSection?: string | null; managerMetrics?: Payload['managerMetrics'] }) {
+function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction, onWithdrawLeave, saving, submitError, initialNow, initialSection, managerMetrics }: { payload: Payload | null; employee?: Payload['employee']; onLeaveSubmitted?: (input: { requestId: string; leaveType: string; startDate: string; endDate: string; days: number; reason: string; relieverEmployeeId: string; relieverName: string; handover: string; attachmentNames: string[] }) => Promise<void>; onLeaveAction?: (input: { requestId: string; action: 'approve' | 'reject'; comment?: string }) => Promise<void>; onWithdrawLeave?: (requestId: string) => Promise<void>; saving?: boolean; submitError?: string; initialNow: string; initialSection?: string | null; managerMetrics?: Payload['managerMetrics'] }) {
   const [active, setActive] = useState<LeaveTab>(() => leaveSectionToTab(initialSection) || 'Leave Dashboard');
 
   useEffect(() => {
@@ -1027,7 +1027,8 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
             <p className="text-xs font-semibold text-slate-600">Allowance: {allowanceEligible && !usesCarryForward ? 'Eligible after approval and payroll notification' : 'Not eligible for this selection'}</p>
             <p className="text-xs font-semibold text-slate-600">Available balance: {balance} days</p>
             <div className="space-y-2">{validations.map((item, index) => <div key={`${item}-${index}`} className={`rounded-lg border px-3 py-2 text-xs font-bold ${item.includes('does not qualify') ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-red-200 bg-red-50 text-red-800'}`}>{item}</div>)}</div>
-            {!validations.length ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">{'Ready to submit. Workflow: Employee Request -> Line Manager / Lead / Supervisor -> HR Manager / Head -> requester and reliever notifications.'}</div> : null}
+            {!validations.length && !submitError ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">{'Ready to submit. Workflow: Employee Request -> Line Manager / Lead / Supervisor -> HR Manager / Head -> requester and reliever notifications.'}</div> : null}
+            {submitError ? <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-800">{submitError}</div> : null}
             <button
               type="button"
               onClick={() => onLeaveSubmitted?.({ requestId: draftRequestId, leaveType, startDate, endDate, days, reason, relieverEmployeeId: reliever, relieverName: selectedReliever?.fullName || '', handover, attachmentNames })}
@@ -1250,9 +1251,16 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
           attachmentNames: input.attachmentNames,
         }),
       });
-      const json = (await res.json()) as ApiResponse<{ request: EssRequest }>;
-      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to submit leave application');
-      setToast('Leave application submitted for approval.');
+      const json = (await res.json()) as ApiResponse<{ request: EssRequest; message?: string }>;
+      if (!res.ok || json.status !== 'success' || !json.data?.request) {
+        throw new Error(json.error || 'Unable to submit leave application');
+      }
+      const submitted = json.data.request;
+      setToast(
+        json.data.message
+        || `Leave application submitted successfully. Reference ${submitted.id}. Status: ${submitted.status}.`,
+      );
+      navigateTab('leave', { leaveSection: 'applications' });
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to submit leave application');
@@ -1412,7 +1420,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
       {tab !== 'dashboard' && tab !== 'profile' && tab !== 'payroll' && tab !== 'reports' && tab !== 'time' && tab !== 'documents' && tab !== 'communication' && tab !== 'travel' && (
         <div className="space-y-4">
           {tab === 'leave' && widgets && (
-            <EssLeaveWorkspace payload={payload} employee={employee} onLeaveSubmitted={submitLeaveApplication} onLeaveAction={submitLeaveApproval} onWithdrawLeave={withdrawLeaveRequest} saving={saving} initialNow={initialNow} initialSection={leaveSection} managerMetrics={payload?.managerMetrics} />
+            <EssLeaveWorkspace payload={payload} employee={employee} onLeaveSubmitted={submitLeaveApplication} onLeaveAction={submitLeaveApproval} onWithdrawLeave={withdrawLeaveRequest} saving={saving} submitError={error} initialNow={initialNow} initialSection={leaveSection} managerMetrics={payload?.managerMetrics} />
           )}
 
           {tab === 'performance' && (

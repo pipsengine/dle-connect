@@ -148,19 +148,21 @@ export function PerformanceNavTree({ isOpen, onNavigate }: PerformanceNavTreePro
       <button
         type="button"
         onClick={() => setTreeOpen((prev) => !prev)}
-        className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 transition-all duration-200 ${
+        className={`group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition-all duration-200 whitespace-nowrap ${
           onPerformance
             ? 'bg-dle-blue/5 font-medium text-dle-blue'
             : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
         }`}
         aria-expanded={treeOpen}
       >
-        <div className="flex items-center gap-3">
+        <span className="flex min-w-0 flex-1 items-center gap-3">
           <Target className={`h-5 w-5 shrink-0 ${onPerformance ? 'text-dle-blue' : 'text-slate-400'}`} />
-          {isOpen ? <span className="text-sm font-medium">Performance Management</span> : null}
-        </div>
+          {isOpen ? <span className="truncate text-sm font-medium">Performance Management</span> : null}
+        </span>
         {isOpen ? (
-          <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${treeOpen ? 'rotate-180 text-dle-blue' : 'text-slate-400'}`} />
+          <span className="flex shrink-0 items-center gap-2">
+            <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${treeOpen ? 'rotate-180 text-dle-blue' : 'text-slate-400'}`} />
+          </span>
         ) : null}
       </button>
 

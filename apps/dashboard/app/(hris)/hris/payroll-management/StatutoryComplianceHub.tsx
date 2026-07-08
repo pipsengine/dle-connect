@@ -2,6 +2,7 @@
 
 import PayrollPeriodContextBar from './PayrollPeriodContextBar';
 import type { ComponentType, ReactNode } from 'react';
+import dynamic from 'next/dynamic';
 import {
   AlertTriangle,
   Building2,
@@ -15,6 +16,19 @@ import {
   ShieldCheck,
   Users,
 } from 'lucide-react';
+
+const TaxPayeClient = dynamic(() => import('../payroll/tax-paye/TaxPayeClient'), {
+  ssr: false,
+  loading: () => <WorkspaceLoading label="PAYE" />,
+});
+const PensionClient = dynamic(() => import('../payroll/pension/PensionClient'), {
+  ssr: false,
+  loading: () => <WorkspaceLoading label="pension" />,
+});
+const StatutoryFundsClient = dynamic(() => import('../payroll/nhf-nsitf-itf/StatutoryFundsClient'), {
+  ssr: false,
+  loading: () => <WorkspaceLoading label="statutory funds" />,
+});
 
 type StatutoryException = {
   id: string;
@@ -296,7 +310,7 @@ export default function StatutoryComplianceHub({
         </div>
 
         <div className="mt-4">
-          <PayrollPeriodContextBar payload={payload} viewPeriod={viewPeriod} onSelectPeriod={onSelectPeriod} />
+          <PayrollPeriodContextBar payload={payload} viewPeriod={viewPeriod} onSelectPeriod={onSelectPeriod} showMetaBadges={false} />
         </div>
 
         <nav className="mt-4 overflow-x-auto">
@@ -498,78 +512,156 @@ export default function StatutoryComplianceHub({
             onViewAll={onViewAllExceptions}
           />
         ) : (
-          <StatutoryTabPanel tab={activeTab} onBack={() => onSelectTab('overview')} onGenerateSchedule={onGenerateSchedule} />
+          <StatutoryTabPanel
+            tab={activeTab}
+            payload={payload}
+            lastLoaded={lastLoaded}
+            onBack={() => onSelectTab('overview')}
+            onGenerateSchedule={onGenerateSchedule}
+            onSelectTab={onSelectTab}
+          />
         )}
       </div>
     </div>
   );
 }
 
+function WorkspaceLoading({ label }: { label: string }) {
+  return (
+    <div className="rounded-2xl border border-[#E5E7EB] bg-white p-8 text-sm font-semibold text-[#64748B] shadow-sm">
+      Loading {label} workspace…
+    </div>
+  );
+}
+
 function StatutoryTabPanel({
   tab,
+  payload,
+  lastLoaded,
   onBack,
   onGenerateSchedule,
+  onSelectTab,
 }: {
   tab: StatutoryTabId;
+  payload: StatutoryPayload | null;
+  lastLoaded: string;
   onBack: () => void;
   onGenerateSchedule: (category: StatutoryCategoryId) => void;
+  onSelectTab: (tab: StatutoryTabId) => void;
 }) {
   const tabMeta = tabs.find((item) => item.id === tab);
-  const legacyLinks: Partial<Record<StatutoryTabId, string>> = {
-    paye: '/hris/payroll/tax-paye',
-    pension: '/hris/payroll/pension',
-    nhf: '/hris/payroll/nhf-nsitf-itf',
-    nsitf: '/hris/payroll/nhf-nsitf-itf',
-    itf: '/hris/payroll/nhf-nsitf-itf',
-  };
-  const drillDowns: Partial<Record<StatutoryTabId, string[]>> = {
-    paye: ['Tax Bands', 'Employee Tax Setup', 'PAYE Validation', 'PAYE Compliance'],
-    pension: ['Pension Rules', 'RSA Setup', 'Contribution Review', 'Pension Compliance'],
-    nhf: ['NHF Setup', 'Employee Registration', 'NHF Validation', 'NHF Remittance'],
-    nsitf: ['NSITF Rules', 'Employer Contribution', 'NSITF Validation', 'NSITF Returns'],
-    itf: ['ITF Rules', 'Employer Levy', 'ITF Validation', 'ITF Returns'],
-    'compliance-reports': ['Monthly Returns', 'Annual Returns', 'Compliance Certificates', 'Submission Tracking'],
-  };
-  const href = legacyLinks[tab];
-  const links = drillDowns[tab] || [];
-  const scheduleCategory = tab === 'paye' || tab === 'pension' || tab === 'nhf' || tab === 'nsitf' || tab === 'itf' ? tab : null;
+  const now = lastLoaded || new Date().toISOString();
 
   return (
-    <section className="rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-sm">
-      <button type="button" onClick={onBack} className="text-sm font-semibold text-[#2563EB] hover:underline">
-        ← Back to Overview
-      </button>
-      <h2 className="mt-4 text-2xl font-semibold">{tabMeta?.label || tab}</h2>
-      <p className="mt-2 text-sm text-[#64748B]">Open the full {tabMeta?.label?.toLowerCase()} workspace for schedules, validation, and compliance controls.</p>
-      {links.length ? (
-        <div className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {links.map((label) => (
-            <div key={label} className="rounded-xl border border-[#E5E7EB] bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
-              {label}
-            </div>
-          ))}
-        </div>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <button type="button" onClick={onBack} className="text-sm font-semibold text-[#2563EB] hover:underline">
+          ← Back to Overview
+        </button>
+        <p className="text-xs font-semibold uppercase tracking-wide text-[#94A3B8]">{tabMeta?.label || tab}</p>
+      </div>
+
+      {tab === 'paye' ? <TaxPayeClient initialNow={now} /> : null}
+      {tab === 'pension' ? <PensionClient initialNow={now} /> : null}
+      {tab === 'nhf' || tab === 'nsitf' || tab === 'itf' ? <StatutoryFundsClient initialNow={now} /> : null}
+      {tab === 'compliance-reports' ? (
+        <ComplianceReportsPanel
+          payload={payload}
+          onGenerateSchedule={onGenerateSchedule}
+          onSelectTab={onSelectTab}
+        />
       ) : null}
-      <div className="mt-6 flex flex-wrap gap-3">
-        {scheduleCategory ? (
-          <button
-            type="button"
-            onClick={() => onGenerateSchedule(scheduleCategory)}
-            className="inline-flex items-center gap-2 rounded-xl bg-[#2563EB] px-5 py-3 text-sm font-bold text-white hover:bg-blue-700"
-          >
-            Generate {categoryMeta[scheduleCategory].label} Schedule
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        ) : null}
-        {href ? (
-          <a
-            href={href}
-            className="inline-flex items-center gap-2 rounded-xl border border-[#E5E7EB] bg-white px-5 py-3 text-sm font-bold text-[#2563EB] hover:bg-blue-50"
-          >
-            Open full workspace
-            <ChevronRight className="h-4 w-4" />
-          </a>
-        ) : null}
+    </div>
+  );
+}
+
+function ComplianceReportsPanel({
+  payload,
+  onGenerateSchedule,
+  onSelectTab,
+}: {
+  payload: StatutoryPayload | null;
+  onGenerateSchedule: (category: StatutoryCategoryId) => void;
+  onSelectTab: (tab: StatutoryTabId) => void;
+}) {
+  const issues = (payload?.exceptions || []).filter((item) => statutoryException(item.issue));
+  const runStatus = payload?.currentRun?.status || payload?.workflow?.currentStatus || payload?.periodRecord?.status || 'Draft';
+  const schedulesGenerated = Boolean(payload?.currentRun?.statutorySchedulesGeneratedAt);
+  const categories = (Object.keys(categoryMeta) as StatutoryCategoryId[]).map((id) => ({
+    id,
+    issues: issues.filter((item) => categoryIssue(item.issue, id)),
+  }));
+
+  return (
+    <section className="space-y-4">
+      <div className="rounded-2xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
+        <h2 className="text-2xl font-semibold">Compliance Reports</h2>
+        <p className="mt-1 text-sm text-[#64748B]">
+          Generate statutory schedules and track remittance readiness for PAYE, Pension, NHF, NSITF, and ITF.
+        </p>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase text-slate-500">Employees in scope</p>
+            <p className="mt-1 text-2xl font-bold text-slate-950">{fmtNum(payload?.summary.totalEmployees || 0)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase text-slate-500">Run status</p>
+            <p className="mt-1 text-2xl font-bold text-slate-950">{runStatus}</p>
+          </div>
+          <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase text-slate-500">Schedules</p>
+            <p className="mt-1 text-2xl font-bold text-slate-950">{schedulesGenerated ? 'Generated' : 'Pending'}</p>
+            {schedulesGenerated && payload?.currentRun?.statutorySchedulesGeneratedAt ? (
+              <p className="mt-1 text-xs font-semibold text-slate-500">
+                {new Date(payload.currentRun.statutorySchedulesGeneratedAt).toLocaleString('en-GB')}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {categories.map((item) => {
+          const meta = categoryMeta[item.id];
+          const Icon = meta.icon;
+          const status = categoryStatus(item.issues);
+          const statusChip =
+            status.tone === 'green'
+              ? 'bg-emerald-100 text-emerald-800'
+              : status.tone === 'red'
+                ? 'bg-red-100 text-red-800'
+                : 'bg-amber-100 text-amber-800';
+          return (
+            <article key={item.id} className="rounded-2xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100" style={{ color: meta.color }}>
+                  <Icon className="h-5 w-5" />
+                </span>
+                <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${statusChip}`}>{status.label}</span>
+              </div>
+              <h3 className="mt-4 text-lg font-semibold">{meta.label}</h3>
+              <p className="mt-1 text-sm text-[#64748B]">{meta.description}</p>
+              <p className="mt-3 text-xs font-semibold text-slate-500">{fmtNum(item.issues.length)} open issues</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => onGenerateSchedule(item.id)}
+                  className="inline-flex items-center gap-1 rounded-lg bg-[#2563EB] px-3 py-2 text-xs font-bold text-white hover:bg-blue-700"
+                >
+                  Generate schedule
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSelectTab(item.id)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-[#2563EB] hover:bg-blue-100"
+                >
+                  Open workspace
+                </button>
+              </div>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
