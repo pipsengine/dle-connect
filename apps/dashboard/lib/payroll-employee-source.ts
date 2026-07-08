@@ -8,6 +8,7 @@ import { isGenericPayrollGrade } from '@/lib/payroll-earnings-engine';
 import { withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 import { payslipIdentityMap } from '@/lib/payroll-payslip-identity-store';
 import { isSagePayrollRuntimeEnabled } from '@/lib/payroll-enterprise-source';
+import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { normalizePayrollMatchKey, readActiveSagePayrollEmployeesWithLatestPayslipLines, readSagePayrollEmployeeBankDetails } from '@/lib/sage-people-payroll-store';
 import {
   buildSagePayrollContributionsFromLines,
@@ -347,7 +348,13 @@ const enrichEmployeesFromSagePayroll = async (employees: DleEmployeeDirectoryRow
         pensionProvider: employee.pensionProvider || pensionProvider,
         pensionPin: employee.pensionPin || pensionPin,
         taxIdentificationNumber: employee.taxIdentificationNumber || sage.taxNo || '',
-        payCurrency: employee.payCurrency || sage.companyCurrency || 'NGN',
+        payCurrency: resolvePayCurrency({
+          payCurrency: employee.payCurrency || sage.companyCurrency,
+          payrollGroup: employee.payrollGroup || sage.companyCode,
+          salaryGrade: salaryGrade,
+          jobGrade: employee.jobGrade || str(sage.jobGrade) || sageGrade || '',
+          businessUnit: employee.businessUnit,
+        }),
         paymentRun: employee.paymentRun || sage.paymentRunLong || sage.paymentRunShort || '',
         paymentType: employee.paymentType || sage.paymentType || '',
         periodSalary,

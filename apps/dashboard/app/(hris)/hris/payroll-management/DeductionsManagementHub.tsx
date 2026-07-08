@@ -2,6 +2,7 @@
 
 import PayrollPeriodContextBar from './PayrollPeriodContextBar';
 import type { ComponentType, ReactNode } from 'react';
+import dynamic from 'next/dynamic';
 import {
   AlertTriangle,
   ChevronRight,
@@ -17,6 +18,26 @@ import {
   Users,
   WalletCards,
 } from 'lucide-react';
+
+const TaxPayeClient = dynamic(() => import('../payroll/tax-paye/TaxPayeClient'), {
+  ssr: false,
+  loading: () => <WorkspaceLoading label="PAYE" />,
+});
+const PensionClient = dynamic(() => import('../payroll/pension/PensionClient'), {
+  ssr: false,
+  loading: () => <WorkspaceLoading label="pension" />,
+});
+const LoansAndSalaryAdvancesClient = dynamic(
+  () => import('../payroll/loans-and-salary-advances/LoansAndSalaryAdvancesClient'),
+  {
+    ssr: false,
+    loading: () => <WorkspaceLoading label="NHF / loans" />,
+  },
+);
+const DeductionsClient = dynamic(() => import('../payroll/deductions/DeductionsClient'), {
+  ssr: false,
+  loading: () => <WorkspaceLoading label="deduction rules" />,
+});
 
 type DeductionException = {
   id: string;
@@ -278,7 +299,7 @@ export default function DeductionsManagementHub({
         </div>
 
         <div className="mt-4">
-          <PayrollPeriodContextBar payload={payload} viewPeriod={viewPeriod} onSelectPeriod={onSelectPeriod} />
+          <PayrollPeriodContextBar payload={payload} viewPeriod={viewPeriod} onSelectPeriod={onSelectPeriod} showMetaBadges={false} />
         </div>
 
         <nav className="mt-4 overflow-x-auto">
@@ -537,56 +558,51 @@ export default function DeductionsManagementHub({
             onViewAudit={onViewAudit}
           />
         ) : (
-          <DeductionsTabPanel tab={activeTab} onBack={() => onSelectTab('overview')} />
+          <DeductionsTabPanel
+            tab={activeTab}
+            lastLoaded={lastLoaded}
+            onBack={() => onSelectTab('overview')}
+          />
         )}
       </div>
     </div>
   );
 }
 
-function DeductionsTabPanel({ tab, onBack }: { tab: DeductionsTabId; onBack: () => void }) {
-  const tabMeta = tabs.find((item) => item.id === tab);
-  const legacyLinks: Record<string, string> = {
-    paye: '/hris/payroll/tax-paye',
-    pension: '/hris/payroll/pension',
-    'nhf-loans': '/hris/payroll/loans-and-salary-advances',
-  };
-  const drillDowns: Record<string, string[]> = {
-    paye: ['Tax Bands', 'Employee Tax Setup', 'PAYE Validation', 'PAYE Compliance'],
-    pension: ['Pension Rules', 'RSA Setup', 'Contribution Review', 'Pension Compliance'],
-    'nhf-loans': ['NHF Setup', 'Loan Setup', 'Cooperative Deductions', 'Union Deductions'],
-    'rules-engine': ['Deduction Eligibility', 'Rule Builder', 'Validation Rules', 'Deduction Mapping'],
-  };
-  const href = legacyLinks[tab];
-  const links = drillDowns[tab] || [];
+function WorkspaceLoading({ label }: { label: string }) {
   return (
-    <section className="rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-sm">
-      <button type="button" onClick={onBack} className="text-sm font-semibold text-[#2563EB] hover:underline">
-        ← Back to Overview
-      </button>
-      <h2 className="mt-4 text-2xl font-semibold">{tabMeta?.label || tab}</h2>
-      <p className="mt-2 text-sm text-[#64748B]">Open the full {tabMeta?.label?.toLowerCase()} workspace for detailed management.</p>
-      {links.length ? (
-        <div className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {links.map((label) => (
-            <div key={label} className="rounded-xl border border-[#E5E7EB] bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
-              {label}
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {href ? (
-        <a
-          href={href}
-          className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[#2563EB] px-5 py-3 text-sm font-bold text-white hover:bg-blue-700"
-        >
-          Open full workspace
-          <ChevronRight className="h-4 w-4" />
-        </a>
-      ) : (
-        <p className="mt-4 text-sm text-slate-600">Deduction rules are configured from the rules engine workspace.</p>
-      )}
-    </section>
+    <div className="rounded-2xl border border-[#E5E7EB] bg-white p-8 text-sm font-semibold text-[#64748B] shadow-sm">
+      Loading {label} workspace…
+    </div>
+  );
+}
+
+function DeductionsTabPanel({
+  tab,
+  lastLoaded,
+  onBack,
+}: {
+  tab: DeductionsTabId;
+  lastLoaded: string;
+  onBack: () => void;
+}) {
+  const tabMeta = tabs.find((item) => item.id === tab);
+  const now = lastLoaded || new Date().toISOString();
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <button type="button" onClick={onBack} className="text-sm font-semibold text-[#2563EB] hover:underline">
+          ← Back to Overview
+        </button>
+        <p className="text-xs font-semibold uppercase tracking-wide text-[#94A3B8]">{tabMeta?.label || tab}</p>
+      </div>
+
+      {tab === 'paye' ? <TaxPayeClient initialNow={now} /> : null}
+      {tab === 'pension' ? <PensionClient initialNow={now} /> : null}
+      {tab === 'nhf-loans' ? <LoansAndSalaryAdvancesClient initialNow={now} /> : null}
+      {tab === 'rules-engine' ? <DeductionsClient initialNow={now} /> : null}
+    </div>
   );
 }
 

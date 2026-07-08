@@ -48,7 +48,8 @@ export const roleFromSession = (session: Awaited<ReturnType<typeof verifySession
 
 export const payrollSessionContext = async (request: Request) => {
   const session = await verifySessionToken(cookieValue(request, AUTH_COOKIE));
-  const fallbackRole = request.headers.get('x-hris-role') || '';
+  // Prefer authenticated session roles. Do not let clients spoof authority via x-hris-role.
+  const fallbackRole = session ? '' : (request.headers.get('x-hris-role') || '');
   const role = roleFromSession(session, fallbackRole);
   const actor = String(session?.fullName || session?.username || role).trim();
   const permissions = session?.isGlobalAdmin

@@ -6,6 +6,8 @@ import {
   AlertTriangle,
   BadgeCheck,
   Banknote,
+  ChevronLeft,
+  ChevronRight,
   Download,
   History,
   RefreshCcw,
@@ -14,6 +16,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
+import { currencyCode, formatPayrollMoney, resolvePayCurrency } from '@/lib/payroll-currency';
 import PayrollApprovalStagePanel from './PayrollApprovalStagePanel';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Finance Controller' | 'Finance Manager' | 'CFO' | 'Executive Management' | 'Payroll Officer' | 'Auditor' | 'Employee';
@@ -44,6 +47,9 @@ type PayrollRecord = {
   fullName: string;
   department: string;
   payrollGroup: string;
+  payCurrency?: string;
+  salaryGrade?: string;
+  businessUnit?: string;
   grossPay: number | null;
   totalDeductions: number | null;
   netPay: number | null;
@@ -106,9 +112,19 @@ type Payload = {
 
 type ApiResponse<T> = { status: 'success' | 'error'; data?: T; error?: string };
 
-const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 });
 const numberFmt = new Intl.NumberFormat('en-GB');
-const money = (value: number | null | undefined, allowed = true) => (!allowed || value === null || value === undefined ? 'Restricted' : moneyFmt.format(value));
+const recordCurrency = (record: Pick<PayrollRecord, 'payCurrency' | 'payrollGroup' | 'salaryGrade' | 'businessUnit'>) =>
+  resolvePayCurrency({
+    payCurrency: record.payCurrency,
+    payrollGroup: record.payrollGroup,
+    salaryGrade: record.salaryGrade,
+    businessUnit: record.businessUnit,
+  });
+const money = (value: number | null | undefined, allowed = true, currency = 'NGN') => {
+  if (!allowed || value === null || value === undefined) return 'Restricted';
+  const code = currencyCode(currency);
+  return formatPayrollMoney(value, code, { maximumFractionDigits: code === 'USD' ? 2 : 0 });
+};
 const number = (value: number | null | undefined) => numberFmt.format(Number(value || 0));
 
 const toneStyles: Record<Tone, { card: string; icon: string; chip: string; bar: string }> = {
@@ -130,43 +146,150 @@ const statusTone = (status: string): Tone =>
         ? 'amber'
         : 'violet';
 
-function MetricCard({ label, value, detail, icon: Icon, tone }: { label: string; value: string; detail: string; icon: any; tone: Tone }) {
+const PAGE_SIZE = 15;
+type DetailView = 'gross' | 'net' | 'employer' | 'exceptions' | null;
+
+/** Search payroll/salary rows by employee id, name, department, group, or status. */
+function searchEmployees<T extends {
+  employeeId?: string | null;
+  fullName?: string | null;
+  department?: string | null;
+  payrollGroup?: string | null;
+  status?: string | null;
+  issues?: string[] | null;
+}>(records: T[], query: string): T[] {
+  const tokens = query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!tokens.length) return records;
+
+  return records.filter((record) => {
+    const haystack = [
+      record.employeeId,
+      record.fullName,
+      record.department,
+      record.payrollGroup,
+      record.status,
+      ...(record.issues || []),
+    ]
+      .map((item) => String(item || '').toLowerCase())
+      .join(' ');
+
+    return tokens.every((token) => haystack.includes(token));
+  });
+}
+
+function MetricCard({
+  label,
+  value,
+  detail,
+  icon: Icon,
+  tone,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  icon: any;
+  tone: Tone;
+  active?: boolean;
+  onClick?: () => void;
+}) {
   const styles = toneStyles[tone];
   return (
-    <div className={`relative overflow-hidden rounded-2xl border p-4 sm:p-5 ${styles.card}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative overflow-hidden rounded-2xl border p-4 text-left sm:p-5 transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-dle-blue/30 ${styles.card} ${active ? 'ring-2 ring-dle-blue shadow-md' : ''}`}
+    >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-xs font-black uppercase tracking-normal text-slate-600">{label}</p>
           <p className="mt-2 truncate text-2xl font-black text-slate-950">{value}</p>
           <p className="mt-1 line-clamp-2 text-xs font-semibold text-slate-600">{detail}</p>
+          <p className="mt-2 text-[10px] font-black uppercase tracking-wide text-slate-500">Click for details</p>
         </div>
         <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${styles.icon}`}>
           <Icon className="h-5 w-5" />
         </span>
       </div>
       <div className={`absolute bottom-0 left-0 h-1 w-full ${styles.bar}`} />
-    </div>
+    </button>
   );
 }
 
+type SessionUser = {
+  fullName?: string;
+  username?: string;
+  roles?: string[];
+  isGlobalAdmin?: boolean;
+};
+
+const primaryRoleFromSession = (user: SessionUser | null): Role => {
+  if (!user) return 'Employee';
+  const text = `${(user.roles || []).join(' ')} ${user.isGlobalAdmin ? 'Super Admin' : ''}`;
+  if (user.isGlobalAdmin || /super administrator|super admin/i.test(text)) return 'Super Admin';
+  if (/system administrator/i.test(text)) return 'Super Admin';
+  if (/finance manager/i.test(text)) return 'Finance Manager';
+  if (/\bcfo\b/i.test(text)) return 'CFO';
+  if (/executive director|executive management|md\b|ceo\b/i.test(text)) return 'Executive Management';
+  if (/finance controller/i.test(text)) return 'Finance Controller';
+  if (/hr director/i.test(text)) return 'HR Director';
+  if (/hr manager/i.test(text)) return 'HR Manager';
+  if (/payroll officer|payroll administrator|payroll supervisor/i.test(text)) return 'Payroll Officer';
+  if (/auditor/i.test(text)) return 'Auditor';
+  return 'Employee';
+};
+
 export default function PayrollApprovalClient({ initialNow }: { initialNow: string }) {
   const [payload, setPayload] = useState<Payload | null>(null);
-  const [role, setRole] = useState<Role>('Finance Controller');
+  const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
+  const [role, setRole] = useState<Role>('Employee');
   const [period, setPeriod] = useState('');
-  const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState('');
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [note, setNote] = useState('');
   const [activeStageId, setActiveStageId] = useState<PayrollApprovalStageId | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [detailView, setDetailView] = useState<DetailView>('gross');
+  const [salaryQuery, setSalaryQuery] = useState('');
+  const [page, setPage] = useState(1);
 
-  const load = async (targetPeriod = period) => {
+  const loadSession = async () => {
+    try {
+      const res = await fetch('/api/auth/me', { cache: 'no-store' });
+      const json = await res.json().catch(() => null);
+      if (res.ok && json?.data) {
+        const user: SessionUser = {
+          fullName: json.data.fullName,
+          username: json.data.username,
+          roles: Array.isArray(json.data.roles) ? json.data.roles : [],
+          isGlobalAdmin: Boolean(json.data.isGlobalAdmin),
+        };
+        setSessionUser(user);
+        setRole(primaryRoleFromSession(user));
+      }
+    } catch {
+      // keep existing role defaults
+    } finally {
+      setSessionReady(true);
+    }
+  };
+
+  const load = async (targetPeriod = period, sessionRole = role) => {
     setLoading(true);
     setError('');
     try {
       const suffix = targetPeriod ? `?period=${encodeURIComponent(targetPeriod)}` : '';
-      const res = await fetch(`/api/hris/payroll/payroll-processing${suffix}`, { headers: { 'x-hris-role': role }, cache: 'no-store' });
+      const res = await fetch(`/api/hris/payroll/payroll-processing${suffix}`, {
+        headers: { 'x-hris-role': sessionRole },
+        cache: 'no-store',
+      });
       const json = (await res.json()) as ApiResponse<Payload>;
       if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Payroll approval request failed (${res.status})`);
       setPayload(json.data);
@@ -179,23 +302,54 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
   };
 
   useEffect(() => {
-    void load(period);
-  }, [role]);
+    void loadSession();
+  }, []);
+
+  useEffect(() => {
+    if (!sessionReady) return;
+    void load(period, role);
+  }, [sessionReady, role]);
 
   const run = payload?.run || null;
   const canViewMoney = Boolean(payload?.permissions.canViewMoney);
   const runStatus = run?.status || 'Draft';
-  const lastLoaded = payload?.generatedAt || initialNow;
-  const exceptionRows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return (payload?.records || [])
-      .filter((record) => record.status !== 'Ready' || record.issues.length > 0)
-      .filter((record) => {
-        if (!q) return true;
-        return [record.employeeId, record.fullName, record.department, record.payrollGroup, record.issues.join(' ')].some((item) => String(item || '').toLowerCase().includes(q));
-      })
-      .slice(0, 80);
-  }, [payload?.records, query]);
+  const signedInAs = sessionUser?.fullName || sessionUser?.username || role;
+
+  const salaryRows = useMemo(() => {
+    let rows = [...(payload?.records || [])];
+    if (detailView === 'exceptions') {
+      rows = rows.filter((record) => record.status !== 'Ready' || record.issues.length > 0);
+    }
+    rows = searchEmployees(rows, salaryQuery);
+    const sortKey = detailView === 'net' ? 'netPay' : detailView === 'employer' ? 'employerCost' : 'grossPay';
+    rows.sort((a, b) => Number(b[sortKey] || 0) - Number(a[sortKey] || 0));
+    return rows;
+  }, [payload?.records, salaryQuery, detailView]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [salaryQuery, detailView, payload?.period]);
+
+  const pageCount = Math.max(1, Math.ceil(salaryRows.length / PAGE_SIZE));
+  const pageRows = useMemo(
+    () => salaryRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [salaryRows, page],
+  );
+  const pageWindowStart = Math.max(1, Math.min(page - 2, pageCount - 4));
+  const visiblePages = Array.from({ length: Math.min(5, pageCount) }, (_, i) => pageWindowStart + i);
+
+  const detailMeta = useMemo(() => {
+    if (detailView === 'net') {
+      return { title: 'Employee Net Pay Details', subtitle: 'Employees ranked by net pay for the selected payroll period.' };
+    }
+    if (detailView === 'employer') {
+      return { title: 'Employer Cost Details', subtitle: 'Per-employee employer cost including statutory employer portions.' };
+    }
+    if (detailView === 'exceptions') {
+      return { title: 'Approval Exception Details', subtitle: 'Blocked and review employees that affect approval readiness.' };
+    }
+    return { title: 'Employee Gross Pay Details', subtitle: 'Employees ranked by gross pay in the current payroll run.' };
+  }, [detailView]);
 
   const stages = payload?.approvalWorkflow?.stages || [];
   useEffect(() => {
@@ -216,7 +370,7 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to update payroll approval');
       setToast(`Payroll run moved to ${json.data?.run.status || 'updated'}.`);
       setNote('');
-      await load(period);
+      await load(period, role);
     } catch (event) {
       setToast(event instanceof Error ? event.message : 'Unable to update payroll approval');
     } finally {
@@ -239,7 +393,7 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
             <div>
               <h1 className="text-2xl font-black tracking-tight text-slate-950">Payroll Approval</h1>
               <p className="mt-1 max-w-5xl text-sm font-semibold text-slate-600">
-                Sequential HR Manager → Finance Manager → CFO → MD / CEO approval with role-specific checklists, authenticated email notifications, and full audit trail.
+                Review and approve the payroll run for your authorized stage. Actions follow your logged-in role.
               </p>
             </div>
           </div>
@@ -247,17 +401,13 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
             <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-extrabold text-blue-800">Period: {payload?.periodLabel || 'Loading'}</span>
             <span className={`rounded-full px-3 py-1 text-xs font-extrabold ${toneStyles[statusTone(runStatus)].chip}`}>Run: {runStatus}</span>
             <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-extrabold text-violet-800">Stage: {payload?.approvalWorkflow?.stageLabel || 'Preparation'}</span>
-            <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-extrabold text-amber-900">Owner: {payload?.approvalWorkflow?.nextOwner || 'Payroll Officer'}</span>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-extrabold text-slate-700">Loaded: {new Date(lastLoaded).toLocaleString('en-GB')}</span>
+            <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-extrabold text-indigo-900">Signed in: {signedInAs} · {role}</span>
             <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-extrabold text-emerald-800">{payload?.dataSource?.employeeCount || 0} employees</span>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <input type="month" value={period} onChange={(event) => setPeriod(event.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-800 outline-none" />
-          <select value={role} onChange={(event) => setRole(event.target.value as Role)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-800 outline-none">
-            {['HR Manager', 'HR Director', 'Finance Manager', 'Finance Controller', 'CFO', 'Executive Management', 'Payroll Officer', 'Super Admin', 'Auditor', 'Employee'].map((item) => <option key={item}>{item}</option>)}
-          </select>
-          <button type="button" onClick={() => void load(period)} disabled={loading} className="inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-3 text-xs font-extrabold text-white hover:bg-blue-700 disabled:cursor-wait disabled:opacity-60">
+          <button type="button" onClick={() => void load(period, role)} disabled={loading} className="inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-3 text-xs font-extrabold text-white hover:bg-blue-700 disabled:cursor-wait disabled:opacity-60">
             <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
@@ -273,10 +423,42 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
       {payload?.dataSource?.warning && <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">{payload.dataSource.warning}</div>}
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Gross Pay for Approval" value={money(payload?.summary.grossPay, canViewMoney)} detail={`${number(payload?.summary.employees)} employees in run scope`} icon={Banknote} tone="blue" />
-        <MetricCard label="Net Pay" value={money(payload?.summary.netPay, canViewMoney)} detail="Bank schedule value after deductions" icon={Wallet} tone="green" />
-        <MetricCard label="Employer Cost" value={money(payload?.summary.employerCost, canViewMoney)} detail="Gross plus employer statutory costs" icon={BadgeCheck} tone="violet" />
-        <MetricCard label="Approval Exceptions" value={number(payload?.summary.exceptionCount)} detail={`${number(payload?.summary.blocked)} blocked and ${number(payload?.summary.review)} review lines`} icon={AlertTriangle} tone={(payload?.summary.blocked || 0) > 0 ? 'red' : (payload?.summary.review || 0) > 0 ? 'amber' : 'green'} />
+        <MetricCard
+          label="Gross Pay for Approval"
+          value={money(payload?.summary.grossPay, canViewMoney)}
+          detail={`${number(payload?.summary.employees)} employees in run scope`}
+          icon={Banknote}
+          tone="blue"
+          active={detailView === 'gross'}
+          onClick={() => setDetailView('gross')}
+        />
+        <MetricCard
+          label="Net Pay"
+          value={money(payload?.summary.netPay, canViewMoney)}
+          detail="Bank schedule value after deductions"
+          icon={Wallet}
+          tone="green"
+          active={detailView === 'net'}
+          onClick={() => setDetailView('net')}
+        />
+        <MetricCard
+          label="Employer Cost"
+          value={money(payload?.summary.employerCost, canViewMoney)}
+          detail="Gross plus employer statutory costs"
+          icon={BadgeCheck}
+          tone="violet"
+          active={detailView === 'employer'}
+          onClick={() => setDetailView('employer')}
+        />
+        <MetricCard
+          label="Approval Exceptions"
+          value={number(payload?.summary.exceptionCount)}
+          detail={`${number(payload?.summary.blocked)} blocked and ${number(payload?.summary.review)} review lines`}
+          icon={AlertTriangle}
+          tone={(payload?.summary.blocked || 0) > 0 ? 'red' : (payload?.summary.review || 0) > 0 ? 'amber' : 'green'}
+          active={detailView === 'exceptions'}
+          onClick={() => setDetailView('exceptions')}
+        />
       </div>
 
       <section className="mt-6">
@@ -310,60 +492,123 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
         />
       </section>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-black uppercase tracking-normal text-slate-900">Approval Gates</h2>
-          <div className="mt-4 space-y-3">
-            {(payload?.controls || []).map((control) => {
-              const styles = toneStyles[control.tone];
-              return (
-                <div key={control.id} className={`rounded-2xl border p-4 ${styles.card}`}>
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-black text-slate-950">{control.label}</p>
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${styles.chip}`}>{control.status}</span>
-                  </div>
-                  <p className="mt-2 text-xs font-semibold text-slate-600">{control.detail}</p>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-sm font-black uppercase tracking-normal text-slate-900">Exception Review Queue</h2>
-                <p className="mt-1 text-xs font-semibold text-slate-500">Top blocked and review lines that affect approval readiness.</p>
-              </div>
-              <div className="relative min-w-0 sm:w-72">
+      <section className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-normal text-slate-900">{detailMeta.title}</h2>
+              <p className="mt-1 text-xs font-semibold text-slate-500">{detailMeta.subtitle}</p>
+            </div>
+            <div className="flex min-w-0 flex-col gap-2 sm:w-80">
+              <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search exceptions" className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold outline-none focus:border-dle-blue focus:ring-2 focus:ring-dle-blue/20" />
+                <input
+                  value={salaryQuery}
+                  onChange={(event) => setSalaryQuery(event.target.value)}
+                  placeholder="Search by name, ID, dept…"
+                  aria-label="Search employees"
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-10 text-sm font-semibold outline-none focus:border-dle-blue focus:ring-2 focus:ring-dle-blue/20"
+                />
+                {salaryQuery ? (
+                  <button
+                    type="button"
+                    onClick={() => setSalaryQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-[11px] font-black uppercase text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                  >
+                    Clear
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>
-          <div className="max-h-[520px] overflow-y-auto divide-y divide-slate-100">
-            {exceptionRows.map((record) => (
-              <div key={record.employeeId} className="p-4 hover:bg-slate-50">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black text-slate-950">{record.fullName}</p>
-                    <p className="text-xs font-semibold text-slate-500">{record.employeeId} - {record.department} - {record.payrollGroup}</p>
-                  </div>
-                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${toneStyles[statusTone(record.status)].chip}`}>{record.status}</span>
-                </div>
-                <p className="mt-2 text-xs font-semibold text-slate-600">{record.issues.slice(0, 4).join('; ')}</p>
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  <div className="rounded-xl bg-slate-50 p-2"><p className="text-[10px] font-black uppercase text-slate-500">Gross</p><p className="text-xs font-black text-slate-900">{money(record.grossPay, canViewMoney)}</p></div>
-                  <div className="rounded-xl bg-slate-50 p-2"><p className="text-[10px] font-black uppercase text-slate-500">Deduct.</p><p className="text-xs font-black text-red-700">{money(record.totalDeductions, canViewMoney)}</p></div>
-                  <div className="rounded-xl bg-slate-50 p-2"><p className="text-[10px] font-black uppercase text-slate-500">Net</p><p className="text-xs font-black text-emerald-700">{money(record.netPay, canViewMoney)}</p></div>
-                </div>
-              </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Employee</th>
+                <th className="px-4 py-3">Department</th>
+                <th className="px-4 py-3">Gross</th>
+                <th className="px-4 py-3">Deductions</th>
+                <th className="px-4 py-3">Net</th>
+                <th className="px-4 py-3">Employer Cost</th>
+                <th className="px-4 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pageRows.map((record) => (
+                <tr key={record.employeeId} className="border-t border-slate-100 hover:bg-slate-50">
+                  <td className="px-4 py-3">
+                    <p className="font-black text-slate-950">{record.fullName}</p>
+                    <p className="text-xs font-semibold text-slate-500">{record.employeeId}</p>
+                    {detailView === 'exceptions' && record.issues.length ? (
+                      <p className="mt-1 text-[11px] font-semibold text-slate-500">{record.issues.slice(0, 2).join('; ')}</p>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-3 text-xs font-semibold text-slate-600">
+                    <p>{record.department || '—'}</p>
+                    <p className="text-slate-400">{record.payrollGroup || '—'} · {recordCurrency(record)}</p>
+                  </td>
+                  <td className="px-4 py-3 font-black text-slate-900">{money(record.grossPay, canViewMoney, recordCurrency(record))}</td>
+                  <td className="px-4 py-3 font-black text-red-700">{money(record.totalDeductions, canViewMoney, recordCurrency(record))}</td>
+                  <td className="px-4 py-3 font-black text-emerald-700">{money(record.netPay, canViewMoney, recordCurrency(record))}</td>
+                  <td className="px-4 py-3 font-black text-violet-700">{money(record.employerCost, canViewMoney, recordCurrency(record))}</td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${toneStyles[statusTone(record.status)].chip}`}>{record.status}</span>
+                  </td>
+                </tr>
+              ))}
+              {!pageRows.length ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10 text-center text-sm font-bold text-slate-500">
+                    {loading ? 'Loading employee salary details…' : 'No employee salary rows match the current filters.'}
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-sm text-slate-500">
+          <span className="text-xs font-semibold">
+            {salaryRows.length
+              ? `${(page - 1) * PAGE_SIZE + 1} to ${Math.min(page * PAGE_SIZE, salaryRows.length)} of ${number(salaryRows.length)} employees`
+              : 'No employees'}
+            {detailView === 'exceptions' ? ' with approval exceptions' : ''}.
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 disabled:opacity-40"
+              aria-label="Previous page"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            {visiblePages.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPage(p)}
+                className={`flex h-9 min-w-[36px] items-center justify-center rounded-lg border px-2 text-sm font-semibold ${
+                  page === p ? 'border-dle-blue bg-dle-blue text-white' : 'border-slate-200 text-slate-600'
+                }`}
+              >
+                {p}
+              </button>
             ))}
-            {exceptionRows.length === 0 && <div className="p-8 text-center text-sm font-bold text-slate-500">No approval exceptions match the current search.</div>}
+            <button
+              type="button"
+              disabled={page >= pageCount}
+              onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 disabled:opacity-40"
+              aria-label="Next page"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
 
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center gap-2">

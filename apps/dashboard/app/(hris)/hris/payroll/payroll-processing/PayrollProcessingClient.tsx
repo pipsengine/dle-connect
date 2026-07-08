@@ -21,6 +21,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
+import { currencyCode, formatPayrollMoney, resolvePayCurrency } from '@/lib/payroll-currency';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Payroll Officer' | 'Finance Controller' | 'Executive Management' | 'Auditor' | 'Employee';
 type Tone = 'blue' | 'green' | 'amber' | 'red' | 'violet' | 'cyan' | 'slate';
@@ -153,9 +154,19 @@ type Payload = {
 
 type ApiResponse<T> = { status: 'success' | 'error'; data?: T; error?: string };
 
-const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 });
 const numberFmt = new Intl.NumberFormat('en-GB');
-const money = (value: number | null | undefined, allowed = true) => (!allowed || value === null || value === undefined ? 'Restricted' : moneyFmt.format(value));
+const recordCurrency = (record: Pick<PayrollRecord, 'payCurrency' | 'payrollGroup' | 'salaryGrade' | 'businessUnit'>) =>
+  resolvePayCurrency({
+    payCurrency: record.payCurrency,
+    payrollGroup: record.payrollGroup,
+    salaryGrade: record.salaryGrade,
+    businessUnit: record.businessUnit,
+  });
+const money = (value: number | null | undefined, allowed = true, currency = 'NGN') => {
+  if (!allowed || value === null || value === undefined) return 'Restricted';
+  const code = currencyCode(currency);
+  return formatPayrollMoney(value, code, { maximumFractionDigits: code === 'USD' ? 2 : 0 });
+};
 const number = (value: number | null | undefined) => numberFmt.format(Number(value || 0));
 
 const toneStyles: Record<Tone, { card: string; icon: string; chip: string; bar: string; text: string }> = {
@@ -467,28 +478,29 @@ function PayrollProcessingClient({ initialNow }: { initialNow: string }) {
               <tbody className="divide-y divide-slate-100 bg-white">
                 {filtered.map((record) => {
                   const styles = toneStyles[statusTone(record.status)];
+                  const currency = recordCurrency(record);
                   return (
                     <tr key={record.recordKey} className="hover:bg-slate-50">
                       <td className="px-4 py-3"><div className="font-black text-slate-950">{record.fullName}</div><div className="text-xs font-semibold text-slate-500">{record.employeeId} - {record.department}</div></td>
-                      <td className="px-4 py-3 text-sm font-bold text-slate-700">{record.payrollGroup}</td>
-                      <td className="px-4 py-3 text-sm font-black text-slate-900">{money(record.grossPay, canViewMoney)}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-slate-700">{record.payrollGroup}<div className="text-[11px] font-semibold text-slate-400">{currency}</div></td>
+                      <td className="px-4 py-3 text-sm font-black text-slate-900">{money(record.grossPay, canViewMoney, currency)}</td>
                       {!payload?.enterpriseSourceActive ? (
                         <>
-                          <td className="px-4 py-3 text-sm font-black text-cyan-800">{record.sageActual ? money(record.sageActual.grossPay, canViewMoney) : 'No Sage'}</td>
-                          <td className={`px-4 py-3 text-sm font-black ${Number(record.discrepancies.grossVariance || 0) === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>{record.discrepancies.grossVariance === null ? 'N/A' : money(record.discrepancies.grossVariance, canViewMoney)}</td>
+                          <td className="px-4 py-3 text-sm font-black text-cyan-800">{record.sageActual ? money(record.sageActual.grossPay, canViewMoney, currency) : 'No Sage'}</td>
+                          <td className={`px-4 py-3 text-sm font-black ${Number(record.discrepancies.grossVariance || 0) === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>{record.discrepancies.grossVariance === null ? 'N/A' : money(record.discrepancies.grossVariance, canViewMoney, currency)}</td>
                         </>
                       ) : null}
-                      <td className="px-4 py-3 text-sm font-bold text-slate-700">{money(record.paye, canViewMoney)}</td>
-                      <td className="px-4 py-3 text-sm font-bold text-slate-700">{money(record.pensionEmployee, canViewMoney)}</td>
-                      <td className="px-4 py-3 text-sm font-black text-red-700">{money(record.totalDeductions, canViewMoney)}</td>
-                      <td className="px-4 py-3 text-sm font-black text-emerald-700">{money(record.netPay, canViewMoney)}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-slate-700">{money(record.paye, canViewMoney, currency)}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-slate-700">{money(record.pensionEmployee, canViewMoney, currency)}</td>
+                      <td className="px-4 py-3 text-sm font-black text-red-700">{money(record.totalDeductions, canViewMoney, currency)}</td>
+                      <td className="px-4 py-3 text-sm font-black text-emerald-700">{money(record.netPay, canViewMoney, currency)}</td>
                       {!payload?.enterpriseSourceActive ? (
                         <>
-                          <td className="px-4 py-3 text-sm font-black text-cyan-800">{record.sageActual ? money(record.sageActual.netPay, canViewMoney) : 'No Sage'}</td>
-                          <td className={`px-4 py-3 text-sm font-black ${Number(record.discrepancies.netVariance || 0) === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>{record.discrepancies.netVariance === null ? 'N/A' : money(record.discrepancies.netVariance, canViewMoney)}</td>
+                          <td className="px-4 py-3 text-sm font-black text-cyan-800">{record.sageActual ? money(record.sageActual.netPay, canViewMoney, currency) : 'No Sage'}</td>
+                          <td className={`px-4 py-3 text-sm font-black ${Number(record.discrepancies.netVariance || 0) === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>{record.discrepancies.netVariance === null ? 'N/A' : money(record.discrepancies.netVariance, canViewMoney, currency)}</td>
                         </>
                       ) : null}
-                      <td className="px-4 py-3 text-sm font-black text-slate-900">{money(record.employerCost, canViewMoney)}</td>
+                      <td className="px-4 py-3 text-sm font-black text-slate-900">{money(record.employerCost, canViewMoney, currency)}</td>
                       <td className="px-4 py-3">
                         <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${styles.chip}`}>{record.status}</span>
                         {record.issues.length > 0 && <p className="mt-1 max-w-[260px] text-xs font-semibold text-slate-500">{record.issues.slice(0, 2).join('; ')}</p>}

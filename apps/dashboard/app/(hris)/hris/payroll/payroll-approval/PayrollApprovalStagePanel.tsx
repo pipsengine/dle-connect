@@ -192,8 +192,20 @@ export default function PayrollApprovalStagePanel({
                   {active.done ? 'This stage is complete. Select the current stage to take action.' : 'This stage is not active yet.'}
                 </p>
               )}
-              {!checklistReady && active.current ? (
-                <p className="text-xs font-bold text-red-700">Resolve required checklist items before approving this stage.</p>
+              {!checklistReady && (active.current || (canApproveAnyStage && !active.done)) ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+                  <p className="text-xs font-bold text-red-700">Resolve required checklist items before approving this stage.</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] font-semibold text-red-700">
+                    {checklist.filter((item) => item.required && !item.passed).map((item) => (
+                      <li key={item.id}>{item.label}: {item.detail}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {checklistReady && active.current && !canActOnStage(active) ? (
+                <p className="text-xs font-bold text-amber-700">
+                  Your signed-in role cannot action this stage. Wait for the stage owner, or sign in with an authorized role.
+                </p>
               ) : null}
             </div>
           </div>

@@ -440,15 +440,7 @@ export default function PayrollWorkflowClient() {
     [payload],
   );
   const deptEmployees = useMemo(() => (payload?.breakdowns.byDepartment || []).map((d) => d.employees), [payload]);
-  const deptExceptions = useMemo(() => (payload?.breakdowns.byDepartment || []).map((d) => d.exceptions), [payload]);
-
-  /* ---- derived: readiness / health ---- */
-  const readiness = summary?.totalEmployees ? Math.round(((summary.readyEmployees || 0) / summary.totalEmployees) * 100) : 0;
   const eligible = summary?.payrollEligible || summary?.totalEmployees || 0;
-  const healthPct = summary
-    ? Math.max(0, Math.round(((summary.readyEmployees || 0) / (eligible || 1)) * 100 - Math.min(30, issues.length)))
-    : 0;
-  const healthLabel = healthPct >= 90 ? 'Excellent' : healthPct >= 75 ? 'Good' : healthPct >= 50 ? 'At Risk' : 'Critical';
 
   /* ---- derived: risk buckets from live severity ---- */
   const risk = useMemo(() => {
@@ -621,14 +613,6 @@ export default function PayrollWorkflowClient() {
   return (
     <main className="min-h-screen bg-[#F5F7FB] p-4 text-[#0F172A] lg:p-6">
       <div className="mx-auto max-w-[1600px] space-y-4">
-        {/* System status chips */}
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusChip tone="green" label="System Status" value="All Systems Online" />
-          <StatusChip tone="green" label="Last Sync" value={fmtDateTime(payload?.generatedAt) === '—' ? 'Syncing…' : fmtDateTime(payload?.generatedAt)} />
-          <StatusChip tone="green" label="Payroll Run" value={payload?.periodLabel ? `${payload.periodLabel} (${runStatus})` : 'Loading…'} />
-          <StatusChip tone="green" label="Source" value={payload?.source || 'DLE Enterprise HRIS'} />
-        </div>
-
         {/* Page header + actions */}
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-start gap-3">
@@ -685,6 +669,7 @@ export default function PayrollWorkflowClient() {
         <PayrollPeriodContextBar
           payload={payload}
           viewPeriod={viewPeriod}
+          showMetaBadges={false}
           onSelectPeriod={(period) => {
             setViewPeriod(period);
             void load(period);
@@ -779,13 +764,11 @@ export default function PayrollWorkflowClient() {
               )}
 
               {/* KPI row */}
-              <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 2xl:grid-cols-6">
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
                 <KpiCard icon={Users} tone="#2563EB" title="Ready Employees" value={summary ? number(summary.readyEmployees) : '—'} source="Live from HRIS" spark={deptEmployees} />
                 <KpiCard icon={Banknote} tone="#22C55E" title="Gross Pay" value={money(summary?.grossPay, canViewMoney)} source="Payroll Engine" spark={deptGross} />
                 <KpiCard icon={ReceiptText} tone="#8B5CF6" title="Deductions" value={money(summary?.deductions, canViewMoney)} source="Payroll Engine" spark={deptDeductions} />
                 <KpiCard icon={Coins} tone="#06B6D4" title="Net Pay" value={money(summary?.netPay, canViewMoney)} source="Payroll Engine" spark={deptNet} />
-                <KpiCard icon={AlertTriangle} tone={issues.length ? '#EF4444' : '#22C55E'} title="Issues" value={number(issues.length)} source="Requires action" spark={deptExceptions} />
-                <KpiCard icon={TrendingUp} tone="#F59E0B" title="Payroll Health" value={`${healthPct}%`} source={healthLabel} progress={healthPct} />
               </div>
             </div>
 
@@ -1113,16 +1096,6 @@ export default function PayrollWorkflowClient() {
 /* ------------------------------------------------------------------ */
 /*  Sub-components                                                     */
 /* ------------------------------------------------------------------ */
-
-function StatusChip({ tone, label, value }: { tone: 'green'; label: string; value: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#ECFDF5] px-3 py-1 text-[11px] font-bold text-[#047857]">
-      <span className="h-1.5 w-1.5 rounded-full bg-[#22C55E]" />
-      <span className="text-[#059669]">{label}:</span>
-      <span className="text-[#047857]">{value}</span>
-    </span>
-  );
-}
 
 function KpiCard({ icon: Icon, tone, title, value, source, spark, progress }: { icon: any; tone: string; title: string; value: string; source: string; spark?: number[]; progress?: number }) {
   return (

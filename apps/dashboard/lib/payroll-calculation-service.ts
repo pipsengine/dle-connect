@@ -14,6 +14,7 @@ import { syncLeaveAllowanceEventsForPayroll } from '@/lib/payroll-leave-allowanc
 import { normalizePayrollMatchKey, readSagePayrollPeriodTotals } from '@/lib/sage-people-payroll-store';
 import { buildTimesheetHoursMapForPayrollPeriod } from '@/lib/timesheet-entry-store';
 import { normalizeBankSortCode, withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
+import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { payrollPeriodLabel } from '@/lib/payroll-period-store';
 import { computePayrollReadinessStatus, enrichCalculationRecordsWithReadiness, summarizePayrollReadiness, type PayrollReadinessStatus } from '@/lib/payroll-readiness';
 import { partitionPayrollIssues, payrollToleranceActive, reapplyPayrollValidationPolicy } from '@/lib/payroll-tolerance';
@@ -685,7 +686,13 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       employmentStatus: employee.status,
       payrollGroup: employee.payrollGroup || 'Unassigned',
       salaryGrade: dailyRateEmployee ? (rates.ratePerDay > 0 ? 'Daily Rate' : 'Zero Daily Rate') : employee.salaryGrade || employee.jobGrade || 'Unassigned',
-      payCurrency: employee.payCurrency || 'NGN',
+      payCurrency: resolvePayCurrency({
+        payCurrency: employee.payCurrency,
+        payrollGroup: employee.payrollGroup,
+        salaryGrade: employee.salaryGrade,
+        jobGrade: employee.jobGrade,
+        businessUnit: employee.businessUnit,
+      }),
       paymentRun: employee.paymentRun || 'Monthly',
       basePay: amounts.basePay,
       allowances: amounts.allowances,

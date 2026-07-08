@@ -2,7 +2,7 @@
 
 import PayrollPeriodContextBar from './PayrollPeriodContextBar';
 import type { ComponentType, ReactNode } from 'react';
-import SageReconciliationClient from '../payroll/sage-reconciliation/SageReconciliationClient';
+import dynamic from 'next/dynamic';
 import {
   AlertTriangle,
   BarChart3,
@@ -17,6 +17,27 @@ import {
   Upload,
   Users,
 } from 'lucide-react';
+
+const SalaryStructureClient = dynamic(() => import('../payroll/salary-structure/SalaryStructureClient'), {
+  ssr: false,
+  loading: () => <WorkspaceLoading label="salary structure" />,
+});
+const JobGradesClient = dynamic(() => import('../organization/job-grades/JobGradesClient'), {
+  ssr: false,
+  loading: () => <WorkspaceLoading label="salary grades" />,
+});
+const EmployeeSalarySetupClient = dynamic(() => import('../payroll/employee-salary-setup/EmployeeSalarySetupClient'), {
+  ssr: false,
+  loading: () => <WorkspaceLoading label="employee pay setup" />,
+});
+const SageMigrationReviewClient = dynamic(() => import('../payroll/sage-migration-review/SageMigrationReviewClient'), {
+  ssr: false,
+  loading: () => <WorkspaceLoading label="Sage migration review" />,
+});
+const SageReconciliationClient = dynamic(() => import('../payroll/sage-reconciliation/SageReconciliationClient'), {
+  ssr: false,
+  loading: () => <WorkspaceLoading label="Sage reconciliation" />,
+});
 
 type SetupException = {
   id: string;
@@ -454,49 +475,203 @@ export default function PaySetupHub({
             </section>
           </>
         ) : (
-          <PaySetupTabPanel tab={activeTab} payload={payload} onBack={() => onSelectTab('overview')} />
+          <PaySetupTabPanel
+            tab={activeTab}
+            payload={payload}
+            lastLoaded={lastLoaded}
+            onBack={() => onSelectTab('overview')}
+            onSelectTab={onSelectTab}
+          />
         )}
       </div>
     </div>
   );
 }
 
-function PaySetupTabPanel({ tab, onBack }: { tab: PaySetupTabId; payload: PaySetupPayload | null; onBack: () => void }) {
-  if (tab === 'sage-reconciliation') {
-    return (
-      <div className="space-y-4">
+function WorkspaceLoading({ label }: { label: string }) {
+  return (
+    <div className="rounded-2xl border border-[#E5E7EB] bg-white p-8 text-sm font-semibold text-[#64748B] shadow-sm">
+      Loading {label} workspace…
+    </div>
+  );
+}
+
+function PaySetupTabPanel({
+  tab,
+  payload,
+  lastLoaded,
+  onBack,
+  onSelectTab,
+}: {
+  tab: PaySetupTabId;
+  payload: PaySetupPayload | null;
+  lastLoaded: string;
+  onBack: () => void;
+  onSelectTab: (tab: PaySetupTabId) => void;
+}) {
+  const tabMeta = tabs.find((item) => item.id === tab);
+  const now = lastLoaded || new Date().toISOString();
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <button type="button" onClick={onBack} className="text-sm font-semibold text-[#2563EB] hover:underline">
           ← Back to Overview
         </button>
-        <SageReconciliationClient initialReferencePeriod="2026-05" initialTargetPeriod="2026-06" />
+        <p className="text-xs font-semibold uppercase tracking-wide text-[#94A3B8]">{tabMeta?.label || tab}</p>
       </div>
-    );
-  }
 
-  const tabMeta = tabs.find((item) => item.id === tab);
-  const legacyLinks: Record<string, string> = {
-    'salary-structure': '/hris/payroll/salary-structure',
-    'salary-grades': '/hris/organization/job-grades',
-    'employee-salary-setup': '/hris/payroll/employee-salary-setup',
-    'sage-migration-review': '/hris/payroll/sage-migration-review',
-    'sage-reconciliation': '/hris/payroll/sage-reconciliation',
-  };
-  const href = legacyLinks[tab];
+      {tab === 'salary-structure' ? <SalaryStructureClient initialNow={now} /> : null}
+      {tab === 'salary-grades' ? <JobGradesClient /> : null}
+      {tab === 'employee-salary-setup' ? <EmployeeSalarySetupClient initialNow={now} /> : null}
+      {tab === 'sage-migration-review' ? <SageMigrationReviewClient initialNow={now} /> : null}
+      {tab === 'sage-reconciliation' ? (
+        <SageReconciliationClient initialReferencePeriod="2026-05" initialTargetPeriod="2026-06" />
+      ) : null}
+      {tab === 'compensation-planning' ? (
+        <CompensationPlanningPanel payload={payload} onSelectTab={onSelectTab} />
+      ) : null}
+    </div>
+  );
+}
+
+function CompensationPlanningPanel({
+  payload,
+  onSelectTab,
+}: {
+  payload: PaySetupPayload | null;
+  onSelectTab: (tab: PaySetupTabId) => void;
+}) {
+  const records = payload?.records || [];
+  const gradeMap = new Map<string, { count: number; ready: number; blocked: number; review: number }>();
+  for (const record of records) {
+    const grade = record.salaryGrade || 'Unassigned';
+    const current = gradeMap.get(grade) || { count: 0, ready: 0, blocked: 0, review: 0 };
+    current.count += 1;
+    const readiness = readinessForRecord(record);
+    if (readiness === 'ready') current.ready += 1;
+    else if (readiness === 'blocked') current.blocked += 1;
+    else current.review += 1;
+    gradeMap.set(grade, current);
+  }
+  const gradeRows = Array.from(gradeMap.entries())
+    .map(([grade, stats]) => ({ grade, ...stats }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 20);
+
+  const structureMap = new Map<string, number>();
+  for (const record of records) {
+    const structure = record.salaryStructure || record.earningProfile || 'Unassigned';
+    structureMap.set(structure, (structureMap.get(structure) || 0) + 1);
+  }
+  const structureRows = Array.from(structureMap.entries())
+    .map(([structure, count]) => ({ structure, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 12);
+
   return (
-    <section className="rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-sm">
-      <button type="button" onClick={onBack} className="text-sm font-semibold text-[#2563EB] hover:underline">
-        ← Back to Overview
-      </button>
-      <h2 className="mt-4 text-2xl font-semibold">{tabMeta?.label || tab}</h2>
-      <p className="mt-2 text-sm text-[#64748B]">Open the full {tabMeta?.label?.toLowerCase()} workspace for detailed configuration.</p>
-      {href ? (
-        <a href={href} className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[#2563EB] px-5 py-3 text-sm font-bold text-white hover:bg-blue-700">
-          Open full workspace
-          <ChevronRight className="h-4 w-4" />
-        </a>
-      ) : (
-        <p className="mt-4 text-sm text-slate-600">Compensation planning tools are available from the HR compensation module.</p>
-      )}
+    <section className="space-y-4">
+      <div className="rounded-2xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
+        <h2 className="text-2xl font-semibold">Compensation Planning</h2>
+        <p className="mt-1 text-sm text-[#64748B]">
+          Grade and structure distribution for salary review exercises, increment planning, and budget impact analysis.
+        </p>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase text-slate-500">Employees in scope</p>
+            <p className="mt-1 text-2xl font-bold text-slate-950">{fmtNum(payload?.summary.totalEmployees || records.length)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase text-slate-500">Active grades</p>
+            <p className="mt-1 text-2xl font-bold text-slate-950">{fmtNum(gradeRows.length)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase text-slate-500">Structures / profiles</p>
+            <p className="mt-1 text-2xl font-bold text-slate-950">{fmtNum(structureRows.length)}</p>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button type="button" onClick={() => onSelectTab('salary-structure')} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-[#2563EB] hover:bg-blue-100">
+            Open Salary Structure
+          </button>
+          <button type="button" onClick={() => onSelectTab('salary-grades')} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-[#2563EB] hover:bg-blue-100">
+            Open Grades
+          </button>
+          <button type="button" onClick={() => onSelectTab('employee-salary-setup')} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-[#2563EB] hover:bg-blue-100">
+            Open Employee Setup
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-4 py-3">
+            <h3 className="text-sm font-black uppercase tracking-wide text-slate-900">Grade Headcount</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Grade</th>
+                  <th className="px-4 py-3">Employees</th>
+                  <th className="px-4 py-3">Ready</th>
+                  <th className="px-4 py-3">Review</th>
+                  <th className="px-4 py-3">Blocked</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gradeRows.map((row) => (
+                  <tr key={row.grade} className="border-t border-slate-100">
+                    <td className="px-4 py-3 font-semibold text-slate-900">{row.grade}</td>
+                    <td className="px-4 py-3 font-bold text-slate-800">{fmtNum(row.count)}</td>
+                    <td className="px-4 py-3 font-semibold text-emerald-700">{fmtNum(row.ready)}</td>
+                    <td className="px-4 py-3 font-semibold text-amber-700">{fmtNum(row.review)}</td>
+                    <td className="px-4 py-3 font-semibold text-red-700">{fmtNum(row.blocked)}</td>
+                  </tr>
+                ))}
+                {!gradeRows.length ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-sm font-semibold text-slate-500">
+                      No grade distribution available for this period.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-4 py-3">
+            <h3 className="text-sm font-black uppercase tracking-wide text-slate-900">Structure / Profile Coverage</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Structure / Profile</th>
+                  <th className="px-4 py-3">Employees</th>
+                </tr>
+              </thead>
+              <tbody>
+                {structureRows.map((row) => (
+                  <tr key={row.structure} className="border-t border-slate-100">
+                    <td className="px-4 py-3 font-semibold text-slate-900">{row.structure}</td>
+                    <td className="px-4 py-3 font-bold text-slate-800">{fmtNum(row.count)}</td>
+                  </tr>
+                ))}
+                {!structureRows.length ? (
+                  <tr>
+                    <td colSpan={2} className="px-4 py-8 text-center text-sm font-semibold text-slate-500">
+                      No structure coverage available for this period.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
