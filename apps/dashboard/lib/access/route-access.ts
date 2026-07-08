@@ -101,6 +101,18 @@ export const hrisRoutePermissionOptions = (pathname: string): string[] | null =>
   if (path === '/hris/workforce-management/timesheet-period' || path === '/hris/time-and-logs/timesheet-period') {
     return ['timesheet.period.manage', 'timesheet.period.view', 'timesheet.period.configure', 'timesheet.manage', 'timesheet.work-center.configure'];
   }
+  if (path === '/hris/organization/work-centers') {
+    return [
+      'page.hris.organization.work-centers.view',
+      'timesheet.work-center.view',
+      'timesheet.work-center.create',
+      'timesheet.work-center.edit',
+      'timesheet.work-center.configure',
+      'positions.view',
+      'workforce.view',
+      'hris.view',
+    ];
+  }
   const payrollOptions = payrollRoutePermissionOptions(path);
   if (payrollOptions) return payrollOptions;
   if (path.startsWith('/hris/performance-management')) {
@@ -130,7 +142,18 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
   if (path.startsWith('/hris/leave-management')) return hasAnyPermission(permissions, ['leave.view', 'hris.view']);
   if (path.startsWith('/hris/performance-management')) return hasAnyPermission(permissions, ['performance.view', 'hris.performance-management', 'hris.view', 'page.hris.management.view']);
   if (path.startsWith('/hris/attendance')) return hasAnyPermission(permissions, ['attendance.view', 'attendance.manage', 'hris.view']);
-  if (path.startsWith('/hris/organization')) return hasAnyPermission(permissions, ['positions.view', 'workforce.view', 'hris.view']);
+  if (path.startsWith('/hris/organization')) {
+    return hasAnyPermission(permissions, [
+      'positions.view',
+      'workforce.view',
+      'hris.view',
+      'page.hris.organization.work-centers.view',
+      'timesheet.work-center.view',
+      'timesheet.work-center.configure',
+      'timesheet.work-center.create',
+      'timesheet.work-center.edit',
+    ]);
+  }
   if (path.startsWith('/hris/administration/backup-disaster-recovery')) return hasAnyPermission(permissions, ['backup.view', 'backup.configure', 'page.admin.backup-disaster-recovery.view', 'security.configure']);
   if (path.startsWith('/hris/administration')) return hasAnyPermission(permissions, ['admin.roles.view', 'admin.users.view', 'audit.view', 'backup.view', 'backup.configure']);
   return hasAnyPermission(permissions, ['page.hris.management.view', 'hris.view']);

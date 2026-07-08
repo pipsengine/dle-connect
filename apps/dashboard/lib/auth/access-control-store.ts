@@ -249,6 +249,7 @@ permissionCatalog.push(
   node('Page Access', 'Organization', 'Job Titles', 'Job Titles Page', 'Page', 'L2 - HR Admin', 'Company', 'page.hris.organization.job-titles'),
   node('Page Access', 'Organization', 'Positions', 'Positions Page', 'Page', 'L2 - HR Admin', 'Company', 'page.hris.organization.positions'),
   node('Page Access', 'Organization', 'Locations & Sites', 'Locations & Sites Page', 'Page', 'L2 - HR Admin', 'Company', 'page.hris.organization.locations-sites'),
+  node('Page Access', 'Organization', 'Work Centers', 'Work Centers Page', 'Page', 'L2 - HR Admin', 'Company', 'page.hris.organization.work-centers'),
   node('Page Access', 'Organization', 'Reporting Hierarchy', 'Reporting Hierarchy Page', 'Page', 'L2 - HR Admin', 'Company', 'page.hris.organization.reporting-hierarchy'),
   node('Page Access', 'Organization', 'Organogram', 'Organogram Page', 'Page', 'L2 - HR Admin', 'Company', 'page.hris.organization.organogram'),
   node('Page Access', 'Organization', 'Vacancy Management', 'Vacancy Management Page', 'Page', 'L2 - HR Admin', 'Company', 'page.hris.organization.vacancy-management'),

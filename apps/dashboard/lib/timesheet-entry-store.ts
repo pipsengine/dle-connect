@@ -2573,21 +2573,22 @@ export async function refreshTimesheetPayrollUpdatesForHeaders(headerIds: string
   return { processed: touchedHeaders.length };
 }
 
-export async function readTimesheetWorkCenters(): Promise<TimesheetWorkCenter[]> {
+export async function readTimesheetWorkCenters(options?: { includeInactive?: boolean }): Promise<TimesheetWorkCenter[]> {
   try {
     const pool = await db();
+    const includeInactive = Boolean(options?.includeInactive);
     const result = await pool.request().query(`
 SELECT [Id],[Code],[Name],[Location],[Site],[Status],[SourceSystem],[CreatedAt],[UpdatedAt]
 FROM [hris].[TimesheetWorkCenters]
-WHERE [Status] = N'Active'
-ORDER BY [Name]`);
+${includeInactive ? '' : `WHERE [Status] = N'Active'`}
+ORDER BY CASE WHEN [Status]=N'Active' THEN 0 ELSE 1 END, [Name]`);
     const workCenters = result.recordset.map((row) => ({
       id: row.Id,
       code: row.Code,
       name: row.Name,
       location: row.Location,
       site: row.Site,
-      status: row.Status,
+      status: row.Status === 'Inactive' ? 'Inactive' as const : 'Active' as const,
       sourceSystem: row.SourceSystem,
       createdAt: toIso(row.CreatedAt),
       updatedAt: toIso(row.UpdatedAt),
@@ -2602,7 +2603,7 @@ ORDER BY [Name]`);
     name,
     location: name,
     site: name,
-    status: 'Active',
+    status: 'Active' as const,
     sourceSystem: 'Local HRIS fallback',
     createdAt: now,
     updatedAt: now,

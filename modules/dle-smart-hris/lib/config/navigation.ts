@@ -114,6 +114,7 @@ export const navigationConfig: NavItem[] = [
       'Departments',
       'Units / Sections',
       'Locations / Sites',
+      'Work Centers',
       'Job Grades',
       'Job Titles',
       'Reporting Hierarchy',
