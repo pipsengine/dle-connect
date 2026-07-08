@@ -629,9 +629,10 @@ const migratedBasicSalaryFromGross = (employee: SagePayrollEmployeeImportRow, em
 
 const sageStatus = (statusName: unknown, statusCode: unknown) => {
   const code = str(statusCode).toUpperCase();
-  const name = str(statusName);
-  if (code === 'A' || name.toLowerCase() === 'active') return 'Active';
-  return name || 'Active';
+  const name = str(statusName).toLowerCase();
+  if (code === 'A' || name === 'active') return 'Active';
+  if (code === 'R' || name.includes('re-instate') || name.includes('reinstate')) return 'Active';
+  return str(statusName) || 'Active';
 };
 
 const sageFullName = (employee: SagePayrollEmployeeImportRow, employeeCode: string) => {

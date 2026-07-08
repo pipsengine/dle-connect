@@ -165,6 +165,9 @@ const payrollPeriodSql = () => {
   return { start, end };
 };
 
+/** Sage statuses treated as payroll-active (A=Active, R=Re-Instate New). */
+const payrollEligibleSageStatusSql = (alias = 'es') => `ISNULL(${alias}.Code, 'A') IN ('A', 'R')`;
+
 const bracket = (value: string) => `[${value.replace(/]/g, ']]')}]`;
 const pickColumn = (columns: string[], patterns: RegExp[]) => columns.find((column) => patterns.some((pattern) => pattern.test(column)));
 
@@ -229,7 +232,7 @@ activeEmployeeCodes AS (
     ON es.EmployeeStatusID = e.EmployeeStatusID
   WHERE
     e.TerminationDate IS NULL
-    AND ISNULL(es.Code, 'A') = 'A'
+    AND ${payrollEligibleSageStatusSql('es')}
     AND ge.Status = 'A'
     AND c.Status = 'A'
 ),
@@ -244,7 +247,7 @@ activeEmployees AS (
     ON es.EmployeeStatusID = e.EmployeeStatusID
   WHERE
     e.TerminationDate IS NULL
-    AND ISNULL(es.Code, 'A') = 'A'
+    AND ${payrollEligibleSageStatusSql('es')}
     AND ge.Status = 'A'
     AND c.Status = 'A'
 ),
@@ -260,7 +263,7 @@ activeContractEmployees AS (
   WHERE
     UPPER(LTRIM(RTRIM(e.EmployeeCode))) LIKE 'C%'
     AND e.TerminationDate IS NULL
-    AND ISNULL(es.Code, 'A') = 'A'
+    AND ${payrollEligibleSageStatusSql('es')}
     AND ge.Status = 'A'
     AND c.Status = 'A'
 ),
@@ -281,7 +284,7 @@ activeStipendEmployees AS (
       OR UPPER(LTRIM(RTRIM(e.EmployeeCode))) LIKE 'NYSC%'
     )
     AND e.TerminationDate IS NULL
-    AND ISNULL(es.Code, 'A') = 'A'
+    AND ${payrollEligibleSageStatusSql('es')}
     AND ge.Status = 'A'
     AND c.Status = 'A'
 ),
@@ -583,7 +586,7 @@ WHERE
   ge.Status = 'A'
   AND c.Status = 'A'
   AND (
-    (e.TerminationDate IS NULL AND ISNULL(es.Code, 'A') = 'A')
+    (e.TerminationDate IS NULL AND ${payrollEligibleSageStatusSql('es')})
     OR UPPER(REPLACE(LTRIM(RTRIM(e.EmployeeCode)), '_', '')) IN (SELECT normalizedEmployeeCode FROM activeEmployeeCodes)
   )
   AND NOT EXISTS (
@@ -600,7 +603,7 @@ WHERE
       AND e2.EmployeeCode NOT LIKE '%[_]%'
       AND UPPER(REPLACE(LTRIM(RTRIM(e2.EmployeeCode)), '_', '')) = UPPER(REPLACE(LTRIM(RTRIM(e.EmployeeCode)), '_', ''))
       AND e2.TerminationDate IS NULL
-      AND ISNULL(es2.Code, 'A') = 'A'
+      AND ${payrollEligibleSageStatusSql('es2')}
       AND ge2.Status = 'A'
       AND c2.Status = 'A'
   )
@@ -667,7 +670,7 @@ WITH activeEmployees AS (
     ON es.EmployeeStatusID = e.EmployeeStatusID
   WHERE
     e.TerminationDate IS NULL
-    AND ISNULL(es.Code, 'A') = 'A'
+    AND ${payrollEligibleSageStatusSql('es')}
     AND ge.Status = 'A'
     AND c.Status = 'A'
 ),

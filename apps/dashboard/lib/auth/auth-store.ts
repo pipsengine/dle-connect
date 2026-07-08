@@ -2,7 +2,7 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import sql from 'mssql';
-import { readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { readDirectoryEmployees } from '@/lib/payroll-employee-source';
 import { getDleEnterpriseDbPool, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { defaultRoleForEmployee, enterpriseRoles, permissionsForRoles, roleDefinitions } from '@/lib/auth/rbac';
 import type { SessionPayload, SessionUser } from '@/lib/auth/session';
@@ -452,7 +452,7 @@ export const readLoginHistory = async () => {
 };
 
 export const syncUsersFromEmployeeDirectory = async () => {
-  const source = await readPayrollEmployees();
+  const source = await readDirectoryEmployees();
   const stored = await readUsersStoreRaw();
   const byCode = new Map(stored.map((user) => [lower(user.employeeCode || user.employeeId), user]));
   const next = source.employees.map((employee) => {

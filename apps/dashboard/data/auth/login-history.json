@@ -1,5 +1,32 @@
 [
   {
+    "id": "login-1783497592006-49c7beba",
+    "at": "2026-07-08T07:59:52.006Z",
+    "userId": "usr-IT0100",
+    "username": "IT0100",
+    "ipAddress": "127.0.0.1",
+    "device": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8655",
+    "status": "Success"
+  },
+  {
+    "id": "login-1783497414455-fd274375",
+    "at": "2026-07-08T07:56:54.455Z",
+    "userId": "usr-IT0100",
+    "username": "IT0100",
+    "ipAddress": "local",
+    "device": "Unknown device",
+    "status": "Success"
+  },
+  {
+    "id": "login-1783496741085-a564cd83",
+    "at": "2026-07-08T07:45:41.086Z",
+    "userId": "usr-P0146",
+    "username": "P0146",
+    "ipAddress": "127.0.0.1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
     "id": "login-1783413426576-dc9d5dba",
     "at": "2026-07-07T08:37:06.576Z",
     "userId": "usr-P0146",
