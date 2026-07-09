@@ -28,6 +28,36 @@ const payrollCategoryTextUpper = (employee: DleEmployeeDirectoryRow) => payrollC
 const employeeCodeText = (employee: Pick<DleEmployeeDirectoryRow, 'employeeId' | 'employeeCode' | 'sourceEmployeeId'>) =>
   compact(employee.employeeCode || employee.employeeId || employee.sourceEmployeeId).toUpperCase();
 
+export const DEFAULT_IT_NYSC_STIPEND_GRADE = 'IT_NYSC_REM - IT_NYSC';
+
+/** IT / NYSC stipend employees identified by code or employment category text. */
+export const isStipendPayrollEmployeeCode = (
+  employee: Pick<DleEmployeeDirectoryRow, 'employeeCode' | 'employeeId' | 'employmentType' | 'staffCategory' | 'employeeCategory' | 'jobTitle'>,
+) => {
+  const code = employeeCodeText(employee);
+  const text = payrollCategoryTextUpper(employee);
+  return /^(P?IT|IT|I|P?NYSC|NYSC|N)\d+/.test(code)
+    || /\b(INDUSTRIAL TRAINING|INDUSTRIAL TRAINEE|INTERN|NYSC|NATIONAL YOUTH SERVICE)\b/.test(text);
+};
+
+const positiveMoney = (value: unknown) => {
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
+};
+
+/** Median monthly stipend from configured IT/NYSC peers, with env/default fallback. */
+export const stipendReferenceMonthlyGross = (employees: DleEmployeeDirectoryRow[]) => {
+  const fromEnv = Number(process.env.HRIS_DEFAULT_IT_NYSC_STIPEND_NGN || 0);
+  if (fromEnv > 0) return Math.round(fromEnv * 100) / 100;
+  const salaries = employees
+    .filter(isStipendPayrollEmployeeCode)
+    .map((employee) => positiveMoney(employee.periodSalary) || positiveMoney(employee.annualSalary) / 12)
+    .filter((value) => value > 0)
+    .sort((a, b) => a - b);
+  if (salaries.length) return salaries[Math.floor(salaries.length / 2)];
+  return 100000;
+};
+
 /** Contract, lump sum, NYSC, and industrial training employees use the non-permanent payslip template. */
 export const isNonPermanentPayrollEmployee = (employee: DleEmployeeDirectoryRow) => {
   const code = employeeCodeText(employee);

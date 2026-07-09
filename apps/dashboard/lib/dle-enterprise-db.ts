@@ -10,6 +10,18 @@ import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 import { resolveNigeriaPersonalLocation } from '@/lib/nigeria-locations';
 
+const DEFAULT_IT_NYSC_STIPEND_GRADE = 'IT_NYSC_REM - IT_NYSC';
+
+const isStipendEmployeeDraft = (employeeCode: string, employment: Record<string, unknown>, job: Record<string, unknown>) => {
+  const code = str(employeeCode).toUpperCase();
+  const text = [employment.employmentType, employment.staffCategory, employment.employeeCategory, job.jobTitle]
+    .map((value) => str(value))
+    .join(' ')
+    .toUpperCase();
+  return /^(P?IT|IT|I|P?NYSC|NYSC|N)\d+/.test(code)
+    || /\b(INDUSTRIAL TRAINING|INDUSTRIAL TRAINEE|INTERN|NYSC|NATIONAL YOUTH SERVICE)\b/.test(text);
+};
+
 type DraftRecordLike = {
   draftId: string;
   status: 'draft' | 'submitted' | 'approved' | 'created' | 'cancelled';
@@ -2219,6 +2231,34 @@ export const upsertEmployeePayrollIdentityFromSageInDb = async (input: PayrollId
   return true;
 };
 
+export const repairStipendPayrollSetupInDb = async (input: {
+  employeeDbId: number;
+  periodSalary?: number | null;
+  salaryGrade?: string | null;
+}) => {
+  const p = await pool();
+  if (!p) return false;
+  const grade = nullable(input.salaryGrade) || DEFAULT_IT_NYSC_STIPEND_GRADE;
+  const periodSalary = numOrNull(input.periodSalary) || Number(process.env.HRIS_DEFAULT_IT_NYSC_STIPEND_NGN || 100000);
+  await upsertEmployeePayrollIdentityFromSageInDb({
+    employeeDbId: input.employeeDbId,
+    payrollGroup: 'DLE',
+    salaryGrade: grade,
+    payCurrency: 'NGN',
+    periodSalary,
+    annualSalary: periodSalary * 12,
+  });
+  await p.request()
+    .input('employee_id', sql.BigInt, input.employeeDbId)
+    .input('job_grade', sql.NVarChar(80), grade)
+    .query(`
+      UPDATE [hris].[EmployeeJobInfo]
+      SET job_grade = COALESCE(NULLIF(job_grade, N''), @job_grade)
+      WHERE employee_id = @employee_id;
+    `);
+  return true;
+};
+
 export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode: string, draft: any, role: string, startOnboarding: boolean) => {
   const p = await pool();
   if (!p) return false;
@@ -2228,6 +2268,11 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
   const job = draft.job || {};
   const payroll = draft.payroll || {};
   const fullName = `${str(personal.firstName)} ${str(personal.lastName)}`.trim() || employeeCode;
+  const isStipendEmployee = isStipendEmployeeDraft(employeeCode, employment, job);
+  const defaultStipendSalary = Number(process.env.HRIS_DEFAULT_IT_NYSC_STIPEND_NGN || 100000);
+  const stipendGrade = str(payroll.salaryGrade) || str(job.jobGrade) || DEFAULT_IT_NYSC_STIPEND_GRADE;
+  const stipendPeriodSalary = numOrNull(payroll.periodSalary) || numOrNull(payroll.basicSalary) || (isStipendEmployee ? defaultStipendSalary : null);
+  const stipendAnnualSalary = numOrNull(payroll.annualSalary) || (stipendPeriodSalary ? stipendPeriodSalary * 12 : null);
 
   const tx = new sql.Transaction(p);
   await tx.begin();
@@ -2356,7 +2401,7 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
       .input('employee_id', sql.BigInt, employeeId)
       .input('job_title', sql.NVarChar(150), nullable(job.jobTitle))
       .input('designation', sql.NVarChar(150), nullable(job.designation))
-      .input('job_grade', sql.NVarChar(80), nullable(job.jobGrade))
+      .input('job_grade', sql.NVarChar(80), nullable(job.jobGrade) || (isStipendEmployee ? stipendGrade : null))
       .input('department', sql.NVarChar(150), nullable(job.department))
       .input('division', sql.NVarChar(150), nullable(job.division))
       .input('business_unit', sql.NVarChar(150), nullable(job.businessUnit))
@@ -2430,10 +2475,13 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
 
     await new sql.Request(tx)
       .input('employee_id', sql.BigInt, employeeId)
-      .input('payroll_group', sql.NVarChar(100), nullable(payroll.payrollGroup))
-      .input('salary_grade', sql.NVarChar(80), nullable(payroll.salaryGrade))
+      .input('payroll_group', sql.NVarChar(100), nullable(payroll.payrollGroup) || (isStipendEmployee ? 'DLE' : null))
+      .input('salary_grade', sql.NVarChar(80), nullable(payroll.salaryGrade) || (isStipendEmployee ? stipendGrade : null))
       .input('basic_salary', sql.Decimal(19, 4), numOrNull(payroll.basicSalary))
-      .input('pay_frequency', sql.NVarChar(50), nullable(payroll.payFrequency))
+      .input('pay_frequency', sql.NVarChar(50), nullable(payroll.payFrequency) || (isStipendEmployee ? 'Monthly' : null))
+      .input('pay_currency', sql.NVarChar(10), nullable(payroll.payCurrency) || (isStipendEmployee ? 'NGN' : null))
+      .input('period_salary', sql.Decimal(19, 4), stipendPeriodSalary)
+      .input('annual_salary', sql.Decimal(19, 4), stipendAnnualSalary)
       .input('bank_name', sql.NVarChar(150), nullable(payroll.bankName))
       .input('account_number', sql.NVarChar(50), nullable(payroll.accountNumber))
       .input('account_name', sql.NVarChar(250), nullable(payroll.accountName))
@@ -2441,13 +2489,15 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
       .input('pension_pin', sql.NVarChar(80), nullable(payroll.pensionPin))
       .input('tax_identification_number', sql.NVarChar(80), nullable(payroll.taxIdentificationNumber))
       .input('benefit_group', sql.NVarChar(120), nullable(payroll.benefitGroup))
-      .input('setup_assigned_to_payroll', sql.Bit, boolVal(payroll.setupAssignedToPayroll))
+      .input('setup_assigned_to_payroll', sql.Bit, boolVal(payroll.setupAssignedToPayroll ?? (isStipendEmployee ? true : false)))
       .query(`
         INSERT [hris].[EmployeePayrollSetup](
-          employee_id, payroll_group, salary_grade, basic_salary, pay_frequency, bank_name, account_number, account_name,
+          employee_id, payroll_group, salary_grade, basic_salary, pay_frequency, pay_currency, period_salary, annual_salary,
+          bank_name, account_number, account_name,
           pension_provider, pension_pin, tax_identification_number, benefit_group, setup_assigned_to_payroll
         ) VALUES (
-          @employee_id, @payroll_group, @salary_grade, @basic_salary, @pay_frequency, @bank_name, @account_number, @account_name,
+          @employee_id, @payroll_group, @salary_grade, @basic_salary, @pay_frequency, @pay_currency, @period_salary, @annual_salary,
+          @bank_name, @account_number, @account_name,
           @pension_provider, @pension_pin, @tax_identification_number, @benefit_group, @setup_assigned_to_payroll
         );
       `);

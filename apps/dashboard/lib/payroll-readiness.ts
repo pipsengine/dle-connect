@@ -17,7 +17,7 @@ export const isFixedSalaryPayrollEmployee = (employee: DleEmployeeDirectoryRow, 
   if (dailyRateEmployee) return false;
   if (isInactiveNonDailyContractEmployee(employee)) return false;
   const code = compact(employee.employeeCode || employee.employeeId).toUpperCase();
-  if (/^P\d/.test(code) || /^L\d/.test(code) || /^N\d/.test(code) || /^I\d/.test(code)) return true;
+  if (/^P\d/.test(code) || /^L\d/.test(code) || /^N\d/.test(code) || /^(IT|I)\d/.test(code)) return true;
   const type = compact(employee.employmentType).toLowerCase();
   return /permanent|lumpsum|nysc|\bit\b|intern|it student/.test(type);
 };

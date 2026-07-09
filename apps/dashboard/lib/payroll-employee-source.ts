@@ -1,7 +1,15 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { importSagePayrollEmployeesToDb, loadWorkspaceEnv, readEmployeeDirectoryFromDb, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
-import { isDailyRatePayrollEmployee, markInactiveNonDailyContractEmployees, payrollActiveEmployees, withContractPayrollClassification } from '@/lib/payroll-employee-classification';
+import {
+  DEFAULT_IT_NYSC_STIPEND_GRADE,
+  isDailyRatePayrollEmployee,
+  isStipendPayrollEmployeeCode,
+  markInactiveNonDailyContractEmployees,
+  payrollActiveEmployees,
+  stipendReferenceMonthlyGross,
+  withContractPayrollClassification,
+} from '@/lib/payroll-employee-classification';
 import { applyPayrollEmployeeOptions } from '@/lib/payroll-employee-options-store';
 import { employeeReportsToManager } from '@/lib/reporting-manager-match';
 import { isGenericPayrollGrade } from '@/lib/payroll-earnings-engine';
@@ -412,12 +420,38 @@ const enrichEmployeesFromPayslipIdentities = async (
   }
 };
 
+const positiveMoney = (value: unknown) => {
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
+};
+
+const enrichStipendPayrollDefaults = (employees: DleEmployeeDirectoryRow[]) => {
+  const referenceSalary = stipendReferenceMonthlyGross(employees);
+  return employees.map((employee) => {
+    if (!isStipendPayrollEmployeeCode(employee)) return employee;
+    const hasSalary = positiveMoney(employee.periodSalary) > 0 || positiveMoney(employee.annualSalary) > 0;
+    const grade = str(employee.salaryGrade) || str(employee.jobGrade);
+    const resolvedGrade = grade && !isGenericPayrollGrade(grade) ? grade : DEFAULT_IT_NYSC_STIPEND_GRADE;
+    if (hasSalary && grade && !isGenericPayrollGrade(grade)) return employee;
+    return {
+      ...employee,
+      jobGrade: str(employee.jobGrade) && !isGenericPayrollGrade(employee.jobGrade) ? employee.jobGrade : resolvedGrade,
+      salaryGrade: str(employee.salaryGrade) && !isGenericPayrollGrade(employee.salaryGrade) ? employee.salaryGrade : resolvedGrade,
+      periodSalary: hasSalary ? employee.periodSalary : referenceSalary,
+      annualSalary: positiveMoney(employee.annualSalary) > 0 ? employee.annualSalary : referenceSalary * 12,
+      payrollGroup: str(employee.payrollGroup) || 'DLE',
+      payCurrency: str(employee.payCurrency) || 'NGN',
+      setupAssignedToPayroll: employee.setupAssignedToPayroll !== false,
+    };
+  });
+};
+
 const enrichPayrollEmployeeMaster = async (employees: DleEmployeeDirectoryRow[]) => {
   const [sageEnriched, identities] = await Promise.all([
     maybeEnrichEmployeesFromSagePayroll(employees),
     payslipIdentityMap().catch(() => new Map()),
   ]);
-  return enrichEmployeesFromPayslipIdentities(sageEnriched, identities);
+  return enrichStipendPayrollDefaults(await enrichEmployeesFromPayslipIdentities(sageEnriched, identities));
 };
 
 const emptyEmployee = (employeeId: string, fullName: string): DleEmployeeDirectoryRow => ({

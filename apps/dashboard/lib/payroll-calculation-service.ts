@@ -633,8 +633,16 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const employerCost = roundMoney(amounts.grossPay + employerPension + employerStatutory);
     const deductionRatio = amounts.grossPay > 0 ? roundMoney((totalDeductions / amounts.grossPay) * 100) : 0;
     const dailyRateEmployee = isDailyRatePayrollEmployee(employee, amounts.profileId);
+    const stipendEmployee = amounts.profileId === 'stipend-non-taxable';
     const rates = dailyRateValues(employee, dailyRateEmployee);
     const timesheet = resolveTimesheetHoursForEmployee(employee, timesheetHours);
+    const pensionIssues = (!dailyRateEmployee && !stipendEmployee
+      ? pension.issues
+      : pension.issues.filter((issue) => !/employment type is not eligible/i.test(issue))
+    ).filter((issue) => issue !== 'RSA PIN is not on file' && issue !== 'PFA provider is not assigned');
+    const statutoryIssues = stipendEmployee
+      ? funds.issues.filter((issue) => !/monthly payroll amount is missing|no statutory fund eligibility/i.test(issue))
+      : funds.issues;
 
     const issues = [
       ...amounts.grossPay <= 0 ? ['Gross pay is missing'] : [],
@@ -643,13 +651,8 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       ...!compact(employee.payCurrency) ? ['Pay currency is missing'] : [],
       ...!activeStatus(employee.status) ? ['Employee is not payroll active'] : [],
       ...dailyRateEmployee && !timesheet && amounts.grossPay <= 0 ? ['Approved timesheet hours are not available for daily-rate payroll'] : [],
-      ...(!dailyRateEmployee
-        ? pension.issues
-        : pension.issues.filter((issue) => !/employment type is not eligible/i.test(issue))
-      )
-        .filter((issue) => issue !== 'RSA PIN is not on file' && issue !== 'PFA provider is not assigned')
-        .map((issue) => `Pension: ${issue}`),
-      ...funds.issues.map((issue) => `Statutory: ${issue}`),
+      ...pensionIssues.map((issue) => `Pension: ${issue}`),
+      ...statutoryIssues.map((issue) => `Statutory: ${issue}`),
       ...loans.flatMap((loan) => loan.issues.filter((issue) => issue !== 'Loan is not approved for payroll recovery').map((issue) => `Loan: ${issue}`)),
       ...deductionRatio > 45 ? ['Deduction ratio exceeds 45% control threshold'] : [],
       ...netPay <= 0 && amounts.grossPay > 0 ? ['Net pay is zero after deductions'] : [],
