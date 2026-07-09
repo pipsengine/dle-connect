@@ -505,9 +505,11 @@ const isPermanentEmployee = (employee: Pick<DleEmployeeDirectoryRow, 'employment
   return /\b(permanent|perm)\b/.test(category);
 };
 
-export const isConfirmedPermanent = (
-  employee: Pick<DleEmployeeDirectoryRow, 'status' | 'confirmationDueDate' | 'probationEndDate' | 'employmentType' | 'employeeCategory' | 'staffCategory' | 'dateJoined' | 'yearsOfService'>,
-) => {
+export type ConfirmedPermanentInput =
+  Pick<DleEmployeeDirectoryRow, 'status' | 'employmentType' | 'employeeCategory' | 'staffCategory'> &
+  Partial<Pick<DleEmployeeDirectoryRow, 'confirmationDueDate' | 'probationEndDate' | 'dateJoined' | 'yearsOfService'>>;
+
+export const isConfirmedPermanent = (employee: ConfirmedPermanentInput) => {
   const status = String(employee.status || '').toLowerCase();
   if (status.includes('confirmed') || status.includes('reactivated')) return true;
   if (status.includes('probation')) return false;
