@@ -335,6 +335,7 @@ const rolePermissions = (role: Role, subjectEmployeeId: string, viewerEmployeeId
   const canViewMedical = role === 'Super Admin' || role === 'HR Director' || role === 'HSE Officer' || role === 'Compliance Officer';
   const canViewDisciplinary = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'Compliance Officer';
   const canEdit = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'HR Officer' || role === 'Admin Officer';
+  const canEditPayroll = canViewPayroll && (canEdit || role === 'Payroll Officer');
   const canChangeStatus = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager';
   const canManagePayrollClassification =
     role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'Payroll Officer';
@@ -349,6 +350,7 @@ const rolePermissions = (role: Role, subjectEmployeeId: string, viewerEmployeeId
     canViewMedical,
     canViewDisciplinary,
     canEdit,
+    canEditPayroll,
     canChangeStatus,
     canManagePayrollClassification,
     canViewAudit,
@@ -373,6 +375,60 @@ const profileRoleFromSession = (session: AuthSession | null): Role => {
   if (value.includes('hr officer') || value.includes('employee records')) return 'HR Officer';
   return 'Employee';
 };
+
+const EMPLOYMENT_FIELD_LABELS: Record<string, string> = {
+  employeeId: 'Employee ID',
+  employmentType: 'Employment Type',
+  employmentStatus: 'Employment Status',
+  dateJoined: 'Date Joined',
+  confirmationDate: 'Confirmation Date',
+  probationStartDate: 'Probation Start',
+  probationEndDate: 'Probation End',
+  contractStartDate: 'Contract Start',
+  contractEndDate: 'Contract End',
+  exitDate: 'Exit Date',
+  exitReason: 'Exit Reason',
+  rehireEligibility: 'Rehire Eligibility',
+  workLocation: 'Work Location',
+  workMode: 'Work Mode',
+  shiftPattern: 'Shift Pattern',
+  staffCategory: 'Staff Category',
+  employeeCategory: 'Employee Category',
+  unionStatus: 'Union Status',
+};
+
+const JOB_FIELD_LABELS: Record<string, string> = {
+  jobTitle: 'Job Title',
+  designation: 'Designation',
+  jobGrade: 'Job Grade',
+  department: 'Department',
+  division: 'Division',
+  unit: 'Unit',
+  businessUnit: 'Business Unit',
+  costCenter: 'Cost Center',
+  location: 'Location',
+  officeSite: 'Office / Site',
+  projectSite: 'Project Site',
+  currentProject: 'Current Project',
+  projectName: 'Project Name',
+  siteLocation: 'Site Location',
+  reportingManager: 'Reporting Manager',
+  functionalManager: 'Functional Manager',
+  departmentHead: 'Department Head',
+  hrBusinessPartner: 'HR Business Partner',
+  assignmentType: 'Assignment Type',
+  assignmentStatus: 'Assignment Status',
+  assignmentEffectiveDate: 'Assignment Effective Date',
+  assignmentStartDate: 'Assignment Start',
+  assignmentEndDate: 'Assignment End',
+  roleProfile: 'Role Profile',
+  jobDescription: 'Job Description',
+  keyResponsibilities: 'Key Responsibilities',
+};
+
+const humanizeFieldKey = (key: string) => key.replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase());
+const employmentLabel = (key: string) => EMPLOYMENT_FIELD_LABELS[key] || humanizeFieldKey(key);
+const jobLabel = (key: string) => JOB_FIELD_LABELS[key] || humanizeFieldKey(key);
 
 const Card = ({ children, className }: { children: React.ReactNode; className?: string }) => (
   <div className={`bg-white border border-slate-200/70 rounded-xl shadow-sm ${className || ''}`}>{children}</div>
@@ -904,7 +960,17 @@ const OverviewTab = ({
   );
 };
 
-export default function EmployeeProfileClient({ employeeId, initialNow }: { employeeId: string; initialNow: string }) {
+export default function EmployeeProfileClient({
+  employeeId,
+  initialNow,
+  initialMode,
+  initialTab,
+}: {
+  employeeId: string;
+  initialNow: string;
+  initialMode?: string;
+  initialTab?: string;
+}) {
   const router = useRouter();
   const [role, setRole] = useState<Role>('Employee');
   const [viewerEmployeeId, setViewerEmployeeId] = useState<string | undefined>(undefined);
@@ -1005,6 +1071,19 @@ export default function EmployeeProfileClient({ employeeId, initialNow }: { empl
   const [jobDraft, setJobDraft] = useState<JobDetails | null>(null);
   const [contactsEdit, setContactsEdit] = useState(false);
   const [contactsDraft, setContactsDraft] = useState<ContactDetails | null>(null);
+  const [payrollEdit, setPayrollEdit] = useState(false);
+  const [payrollDraft, setPayrollDraft] = useState<PayrollSummary | null>(null);
+  const [medicalEdit, setMedicalEdit] = useState(false);
+  const [medicalDraft, setMedicalDraft] = useState<MedicalHSE | null>(null);
+  const [performanceEdit, setPerformanceEdit] = useState(false);
+  const [performanceDraft, setPerformanceDraft] = useState<PerformanceSummary | null>(null);
+  const [trainingEdit, setTrainingEdit] = useState(false);
+  const [trainingDraft, setTrainingDraft] = useState<TrainingRecord[] | null>(null);
+  const [assetsEdit, setAssetsEdit] = useState(false);
+  const [assetsDraft, setAssetsDraft] = useState<AssetItem[] | null>(null);
+  const [disciplinaryEdit, setDisciplinaryEdit] = useState(false);
+  const [disciplinaryDraft, setDisciplinaryDraft] = useState<DisciplinaryRecord[] | null>(null);
+  const [pendingEditTab, setPendingEditTab] = useState<TabKey | null>(null);
 
   const [statusReason, setStatusReason] = useState('');
   const [statusNext, setStatusNext] = useState<EmployeeStatus | ''>('');
@@ -1093,6 +1172,56 @@ export default function EmployeeProfileClient({ employeeId, initialNow }: { empl
     }
   }, [tab, tabs]);
 
+  useEffect(() => {
+    if (initialTab) setTab(initialTab as TabKey);
+    if (initialMode === 'edit') setPendingEditTab((initialTab as TabKey) || 'personal');
+  }, [initialMode, initialTab]);
+
+  useEffect(() => {
+    if (!pendingEditTab || profile.status !== 'ready' || !profile.data) return;
+    if (pendingEditTab === 'personal') {
+      setPersonalDraft(profile.data.personalInfo);
+      setPersonalEdit(true);
+    }
+    if (pendingEditTab === 'employment') {
+      setEmploymentDraft(profile.data.employmentDetails);
+      setEmploymentEdit(true);
+    }
+    if (pendingEditTab === 'job') {
+      setJobDraft(profile.data.jobDetails);
+      setJobEdit(true);
+    }
+    if (pendingEditTab === 'contact') {
+      setContactsDraft(profile.data.contacts);
+      setContactsEdit(true);
+    }
+    if (pendingEditTab === 'payroll') {
+      setPayrollDraft(profile.data.payrollSummary);
+      setPayrollEdit(true);
+    }
+    if (pendingEditTab === 'medical' && profile.data.medicalHse) {
+      setMedicalDraft(profile.data.medicalHse);
+      setMedicalEdit(true);
+    }
+    if (pendingEditTab === 'performance') {
+      setPerformanceDraft(profile.data.performanceSummary);
+      setPerformanceEdit(true);
+    }
+    if (pendingEditTab === 'training') {
+      setTrainingDraft(profile.data.training);
+      setTrainingEdit(true);
+    }
+    if (pendingEditTab === 'assets') {
+      setAssetsDraft(profile.data.assets);
+      setAssetsEdit(true);
+    }
+    if (pendingEditTab === 'disciplinary' && profile.data.disciplinary) {
+      setDisciplinaryDraft(profile.data.disciplinary);
+      setDisciplinaryEdit(true);
+    }
+    setPendingEditTab(null);
+  }, [pendingEditTab, profile]);
+
   const pushAudit = (evt: AuditLog) => {
     setAudit((prev) => {
       if (prev.status !== 'ready' || !prev.data) return prev;
@@ -1101,6 +1230,11 @@ export default function EmployeeProfileClient({ employeeId, initialNow }: { empl
   };
 
   const onAction = (action: string) => {
+    if (action === 'profile.edit') {
+      setTab('personal');
+      setPendingEditTab('personal');
+      return;
+    }
     pushAudit({
       id: `audit-${Math.random().toString(16).slice(2)}`,
       at: new Date().toISOString(),
@@ -1479,11 +1613,11 @@ export default function EmployeeProfileClient({ employeeId, initialNow }: { empl
                       >
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {Object.entries(profileData.employmentDetails).map(([k, val]) => {
-                            if (!employmentEdit) return <Field key={k} label={k} value={v(val)} />;
+                            if (!employmentEdit) return <Field key={k} label={employmentLabel(k)} value={v(val)} />;
                             return (
                               <EditField
                                 key={k}
-                                label={k}
+                                label={employmentLabel(k)}
                                 value={v(employmentDraft?.[k] ?? val)}
                                 onChange={(next) => setEmploymentDraft((prev) => ({ ...(prev || {}), [k]: next }))}
                               />
@@ -1652,11 +1786,11 @@ export default function EmployeeProfileClient({ employeeId, initialNow }: { empl
                     >
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {Object.entries(profileData.jobDetails).map(([k, val]) => {
-                          if (!jobEdit) return <Field key={k} label={k} value={v(val)} />;
+                          if (!jobEdit) return <Field key={k} label={jobLabel(k)} value={v(val)} />;
                           return (
                             <EditField
                               key={k}
-                              label={k}
+                              label={jobLabel(k)}
                               value={v(jobDraft?.[k] ?? val)}
                               onChange={(next) => setJobDraft((prev) => ({ ...(prev || {}), [k]: next }))}
                             />
@@ -2116,20 +2250,78 @@ export default function EmployeeProfileClient({ employeeId, initialNow }: { empl
                       actions={
                         <div className="flex items-center gap-2">
                           {!perms.canViewPayroll && <LockBadge />}
+                          {!payrollEdit && perms.canEditPayroll && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPayrollDraft(profileData.payrollSummary);
+                                setPayrollEdit(true);
+                              }}
+                              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors"
+                            >
+                              <Pencil className="w-4 h-4" />
+                              Edit
+                            </button>
+                          )}
+                          {payrollEdit && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    const next = await apiMutate<PayrollSummary>(employeeId, 'payroll', {
+                                      method: 'PATCH',
+                                      body: JSON.stringify(payrollDraft || {}),
+                                      role,
+                                      viewerEmployeeId,
+                                    });
+                                    updateProfile((p) => ({ ...p, payrollSummary: next }));
+                                    setPayrollEdit(false);
+                                    setToast({ title: 'Saved', detail: 'Payroll details updated.', tone: 'ok' });
+                                  } catch (e) {
+                                    setToast({ title: 'Save failed', detail: e instanceof Error ? e.message : 'Unable to save', tone: 'err' });
+                                  }
+                                }}
+                                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-extrabold hover:bg-slate-800 transition-colors"
+                              >
+                                <CheckCircle2 className="w-4 h-4" />
+                                Save
+                              </button>
+                              <button type="button" onClick={() => { setPayrollEdit(false); setPayrollDraft(null); }} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+                                Cancel
+                              </button>
+                            </>
+                          )}
                           <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">{profileData.payrollSummary.payrollStatus}</span>
                         </div>
                       }
                     >
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        <Field label="Salary Grade" value={v(profileData.payrollSummary.salaryGrade)} />
-                        <Field label="Basic Salary" value={naira(profileData.payrollSummary.basicSalary)} masked={!perms.canViewPayroll} />
-                        <Field label="Allowances" value={naira(profileData.payrollSummary.allowances)} masked={!perms.canViewPayroll} />
-                        <Field label="Deductions" value={naira(profileData.payrollSummary.deductions)} masked={!perms.canViewPayroll} />
-                        <Field label="Bank Name" value={v(profileData.payrollSummary.bankName)} masked={!perms.canViewPayroll} />
-                        <Field label="Account Number" value={v(profileData.payrollSummary.accountNumberMasked)} />
-                        <Field label="Pension Provider" value={v(profileData.payrollSummary.pensionProvider)} masked={!perms.canViewPayroll} />
-                        <Field label="Tax ID" value={v(profileData.payrollSummary.taxId)} masked={!perms.canViewPayroll} />
-                        <Field label="Payroll Group" value={v(profileData.payrollSummary.payrollGroup)} masked={!perms.canViewPayroll} />
+                        {!payrollEdit ? (
+                          <>
+                            <Field label="Salary Grade" value={v(profileData.payrollSummary.salaryGrade)} />
+                            <Field label="Basic Salary" value={naira(profileData.payrollSummary.basicSalary)} masked={!perms.canViewPayroll} />
+                            <Field label="Allowances" value={naira(profileData.payrollSummary.allowances)} masked={!perms.canViewPayroll} />
+                            <Field label="Deductions" value={naira(profileData.payrollSummary.deductions)} masked={!perms.canViewPayroll} />
+                            <Field label="Bank Name" value={v(profileData.payrollSummary.bankName)} masked={!perms.canViewPayroll} />
+                            <Field label="Account Number" value={v(profileData.payrollSummary.accountNumberMasked)} />
+                            <Field label="Pension Provider" value={v(profileData.payrollSummary.pensionProvider)} masked={!perms.canViewPayroll} />
+                            <Field label="Tax ID" value={v(profileData.payrollSummary.taxId)} masked={!perms.canViewPayroll} />
+                            <Field label="Payroll Group" value={v(profileData.payrollSummary.payrollGroup)} masked={!perms.canViewPayroll} />
+                          </>
+                        ) : (
+                          <>
+                            <EditField label="Salary Grade" value={v(payrollDraft?.salaryGrade)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), salaryGrade: next }))} />
+                            <EditField label="Basic Salary (NGN)" value={payrollDraft?.basicSalary != null ? String(payrollDraft.basicSalary) : ''} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), basicSalary: next ? Number(next) : null }))} />
+                            <EditField label="Allowances (NGN)" value={payrollDraft?.allowances != null ? String(payrollDraft.allowances) : ''} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), allowances: next ? Number(next) : null }))} />
+                            <EditField label="Deductions (NGN)" value={payrollDraft?.deductions != null ? String(payrollDraft.deductions) : ''} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), deductions: next ? Number(next) : null }))} />
+                            <EditField label="Bank Name" value={v(payrollDraft?.bankName)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), bankName: next }))} />
+                            <EditField label="Account Number" value={v(payrollDraft?.accountNumberMasked)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), accountNumberMasked: next }))} />
+                            <EditField label="Pension Provider" value={v(payrollDraft?.pensionProvider)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), pensionProvider: next }))} />
+                            <EditField label="Tax ID" value={v(payrollDraft?.taxId)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), taxId: next }))} />
+                            <EditField label="Payroll Group" value={v(payrollDraft?.payrollGroup)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), payrollGroup: next }))} />
+                          </>
+                        )}
                         <Field label="Last Payroll Processed" value={profileData.payrollSummary.lastPayrollProcessed ? formatDateUtc(profileData.payrollSummary.lastPayrollProcessed) : '—'} />
                       </div>
                       {!perms.canViewPayroll && (
@@ -2142,42 +2334,169 @@ export default function EmployeeProfileClient({ employeeId, initialNow }: { empl
 
                   {tab === 'performance' && (
                     <div className="space-y-6">
-                      <Section title="Performance Summary" icon={BadgeCheck}>
+                      <Section
+                        title="Performance Summary"
+                        icon={BadgeCheck}
+                        actions={
+                          perms.canEdit ? (
+                            <div className="flex items-center gap-2">
+                              {!performanceEdit && (
+                                <button type="button" onClick={() => { setPerformanceDraft(profileData.performanceSummary); setPerformanceEdit(true); }} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+                                  <Pencil className="w-4 h-4" />
+                                  Edit
+                                </button>
+                              )}
+                              {performanceEdit && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      try {
+                                        const saved = await apiMutate<{ performanceSummary?: PerformanceSummary }>(employeeId, 'profile-extensions', {
+                                          method: 'PATCH',
+                                          body: JSON.stringify({ performanceSummary: performanceDraft }),
+                                          role,
+                                          viewerEmployeeId,
+                                        });
+                                        const next = saved.performanceSummary || performanceDraft || profileData.performanceSummary;
+                                        updateProfile((p) => ({ ...p, performanceSummary: next }));
+                                        setPerformanceEdit(false);
+                                        setToast({ title: 'Saved', detail: 'Performance details updated.', tone: 'ok' });
+                                      } catch (e) {
+                                        setToast({ title: 'Save failed', detail: e instanceof Error ? e.message : 'Unable to save', tone: 'err' });
+                                      }
+                                    }}
+                                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-extrabold hover:bg-slate-800 transition-colors"
+                                  >
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    Save
+                                  </button>
+                                  <button type="button" onClick={() => { setPerformanceEdit(false); setPerformanceDraft(null); }} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+                                    Cancel
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          ) : undefined
+                        }
+                      >
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                          <Field label="Current Rating" value={profileData.performanceSummary.currentRating === '-' ? 'Not available' : profileData.performanceSummary.currentRating} />
-                          <Field label="Last Review" value={profileData.performanceSummary.lastReviewAt ? formatDateUtc(profileData.performanceSummary.lastReviewAt) : '—'} />
-                          <Field label="Manager Feedback" value={v(profileData.performanceSummary.managerFeedback)} />
+                          {!performanceEdit ? (
+                            <>
+                              <Field label="Current Rating" value={profileData.performanceSummary.currentRating === '-' ? 'Not available' : profileData.performanceSummary.currentRating} />
+                              <Field label="Last Review" value={profileData.performanceSummary.lastReviewAt ? formatDateUtc(profileData.performanceSummary.lastReviewAt) : '—'} />
+                              <Field label="Manager Feedback" value={v(profileData.performanceSummary.managerFeedback)} />
+                            </>
+                          ) : (
+                            <>
+                              <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+                                <div className="text-[11px] font-extrabold text-slate-600">Current Rating</div>
+                                <select value={performanceDraft?.currentRating || '-'} onChange={(e) => setPerformanceDraft((prev) => ({ ...(prev || profileData.performanceSummary), currentRating: e.target.value as PerformanceSummary['currentRating'] }))} className="mt-1 w-full text-sm font-semibold text-slate-900 focus:outline-none">
+                                  {['A', 'B', 'C', 'D', '-'].map((r) => (
+                                    <option key={r} value={r}>{r === '-' ? 'Not available' : r}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <EditField label="Last Review (YYYY-MM-DD)" value={performanceDraft?.lastReviewAt ? performanceDraft.lastReviewAt.slice(0, 10) : ''} onChange={(next) => setPerformanceDraft((prev) => ({ ...(prev || profileData.performanceSummary), lastReviewAt: next ? `${next}T00:00:00.000Z` : null }))} />
+                              <EditField label="Manager Feedback" value={v(performanceDraft?.managerFeedback)} onChange={(next) => setPerformanceDraft((prev) => ({ ...(prev || profileData.performanceSummary), managerFeedback: next }))} />
+                            </>
+                          )}
                         </div>
                       </Section>
                       <Section title="Goals / KPIs" icon={ClipboardList}>
                         <div className="divide-y divide-slate-100 border border-slate-200/60 rounded-2xl overflow-hidden">
-                          {profileData.performanceSummary.goals.map((g) => (
+                          {(performanceEdit ? performanceDraft?.goals : profileData.performanceSummary.goals)?.map((g, idx) => (
                             <div key={g.id} className="px-5 py-4 bg-white flex items-center justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="text-sm font-extrabold text-slate-900">{g.title}</div>
-                                <div className="text-xs text-slate-500 font-semibold mt-1">Status: {g.status}</div>
-                              </div>
-                              <span className="text-xs font-extrabold px-3 py-2 rounded-xl bg-slate-100 text-slate-700">{g.progressPct}%</span>
+                              {!performanceEdit ? (
+                                <>
+                                  <div className="min-w-0">
+                                    <div className="text-sm font-extrabold text-slate-900">{g.title}</div>
+                                    <div className="text-xs text-slate-500 font-semibold mt-1">Status: {g.status}</div>
+                                  </div>
+                                  <span className="text-xs font-extrabold px-3 py-2 rounded-xl bg-slate-100 text-slate-700">{g.progressPct}%</span>
+                                </>
+                              ) : (
+                                <div className="w-full grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
+                                  <EditField label="Goal" value={g.title} onChange={(next) => setPerformanceDraft((prev) => {
+                                    const goals = [...(prev?.goals || profileData.performanceSummary.goals)];
+                                    goals[idx] = { ...goals[idx], title: next };
+                                    return { ...(prev || profileData.performanceSummary), goals };
+                                  })} />
+                                  <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+                                    <div className="text-[11px] font-extrabold text-slate-600">Status</div>
+                                    <select value={g.status} onChange={(e) => setPerformanceDraft((prev) => {
+                                      const goals = [...(prev?.goals || profileData.performanceSummary.goals)];
+                                      goals[idx] = { ...goals[idx], status: e.target.value as typeof g.status };
+                                      return { ...(prev || profileData.performanceSummary), goals };
+                                    })} className="mt-1 w-full text-sm font-semibold text-slate-900 focus:outline-none">
+                                      {['On Track', 'At Risk', 'Completed'].map((s) => <option key={s} value={s}>{s}</option>)}
+                                    </select>
+                                  </div>
+                                  <EditField label="Progress %" value={String(g.progressPct)} onChange={(next) => setPerformanceDraft((prev) => {
+                                    const goals = [...(prev?.goals || profileData.performanceSummary.goals)];
+                                    goals[idx] = { ...goals[idx], progressPct: Math.max(0, Math.min(100, Number(next) || 0)) };
+                                    return { ...(prev || profileData.performanceSummary), goals };
+                                  })} />
+                                  <button type="button" onClick={() => setPerformanceDraft((prev) => ({ ...(prev || profileData.performanceSummary), goals: (prev?.goals || profileData.performanceSummary.goals).filter((_, i) => i !== idx) }))} className="p-2 rounded-xl border border-red-200 hover:bg-red-50 self-end">
+                                    <Trash2 className="w-4 h-4 text-red-700" />
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           ))}
+                          {performanceEdit && (
+                            <div className="px-5 py-3 bg-white">
+                              <button type="button" onClick={() => setPerformanceDraft((prev) => ({ ...(prev || profileData.performanceSummary), goals: [...(prev?.goals || profileData.performanceSummary.goals), { id: `goal-${Date.now()}`, title: 'New goal', progressPct: 0, status: 'On Track' }] }))} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+                                <Plus className="w-4 h-4" />
+                                Add Goal
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </Section>
                       <Section title="AI Signals" icon={Sparkles}>
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                          {profileData.performanceSummary.aiSignals.map((s) => {
+                          {(performanceEdit ? performanceDraft?.aiSignals : profileData.performanceSummary.aiSignals)?.map((s, idx) => {
                             const st = severityStyle(s.severity);
                             const Icon = st.icon;
                             return (
                               <div key={s.id} className={`rounded-2xl border ${st.border} bg-white p-4`}>
-                                <div className="flex items-start gap-3">
-                                  <span className={`w-10 h-10 rounded-2xl flex items-center justify-center ${st.bg} ${st.fg}`}>
-                                    <Icon className="w-5 h-5" />
-                                  </span>
-                                  <div className="min-w-0">
-                                    <div className="text-sm font-extrabold text-slate-900">{s.title}</div>
-                                    <div className="text-xs text-slate-500 font-semibold mt-1">AI confidence: {Math.round(s.confidence * 100)}%</div>
+                                {!performanceEdit ? (
+                                  <div className="flex items-start gap-3">
+                                    <span className={`w-10 h-10 rounded-2xl flex items-center justify-center ${st.bg} ${st.fg}`}>
+                                      <Icon className="w-5 h-5" />
+                                    </span>
+                                    <div className="min-w-0">
+                                      <div className="text-sm font-extrabold text-slate-900">{s.title}</div>
+                                      <div className="text-xs text-slate-500 font-semibold mt-1">AI confidence: {Math.round(s.confidence * 100)}%</div>
+                                    </div>
                                   </div>
-                                </div>
+                                ) : (
+                                  <div className="space-y-2">
+                                    <EditField label="Signal" value={s.title} onChange={(next) => setPerformanceDraft((prev) => {
+                                      const aiSignals = [...(prev?.aiSignals || profileData.performanceSummary.aiSignals)];
+                                      aiSignals[idx] = { ...aiSignals[idx], title: next };
+                                      return { ...(prev || profileData.performanceSummary), aiSignals };
+                                    })} />
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+                                        <div className="text-[11px] font-extrabold text-slate-600">Severity</div>
+                                        <select value={s.severity} onChange={(e) => setPerformanceDraft((prev) => {
+                                          const aiSignals = [...(prev?.aiSignals || profileData.performanceSummary.aiSignals)];
+                                          aiSignals[idx] = { ...aiSignals[idx], severity: e.target.value as Severity };
+                                          return { ...(prev || profileData.performanceSummary), aiSignals };
+                                        })} className="mt-1 w-full text-sm font-semibold text-slate-900 focus:outline-none">
+                                          {(['high', 'medium', 'low'] as Severity[]).map((v) => <option key={v} value={v}>{v}</option>)}
+                                        </select>
+                                      </div>
+                                      <EditField label="Confidence (0-1)" value={String(s.confidence)} onChange={(next) => setPerformanceDraft((prev) => {
+                                        const aiSignals = [...(prev?.aiSignals || profileData.performanceSummary.aiSignals)];
+                                        aiSignals[idx] = { ...aiSignals[idx], confidence: Math.max(0, Math.min(1, Number(next) || 0)) };
+                                        return { ...(prev || profileData.performanceSummary), aiSignals };
+                                      })} />
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -2187,7 +2506,52 @@ export default function EmployeeProfileClient({ employeeId, initialNow }: { empl
                   )}
 
                   {tab === 'training' && (
-                    <Section title="Training & Certifications" icon={BadgeCheck}>
+                    <Section
+                      title="Training & Certifications"
+                      icon={BadgeCheck}
+                      actions={
+                        perms.canEdit ? (
+                          <div className="flex items-center gap-2">
+                            {!trainingEdit && (
+                              <button type="button" onClick={() => { setTrainingDraft(profileData.training); setTrainingEdit(true); }} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+                                <Pencil className="w-4 h-4" />
+                                Edit
+                              </button>
+                            )}
+                            {trainingEdit && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      const saved = await apiMutate<{ training?: TrainingRecord[] }>(employeeId, 'profile-extensions', {
+                                        method: 'PATCH',
+                                        body: JSON.stringify({ training: trainingDraft }),
+                                        role,
+                                        viewerEmployeeId,
+                                      });
+                                      const next = saved.training || trainingDraft || profileData.training;
+                                      updateProfile((p) => ({ ...p, training: next }));
+                                      setTrainingEdit(false);
+                                      setToast({ title: 'Saved', detail: 'Training records updated.', tone: 'ok' });
+                                    } catch (e) {
+                                      setToast({ title: 'Save failed', detail: e instanceof Error ? e.message : 'Unable to save', tone: 'err' });
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-extrabold hover:bg-slate-800 transition-colors"
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  Save
+                                </button>
+                                <button type="button" onClick={() => { setTrainingEdit(false); setTrainingDraft(null); }} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+                                  Cancel
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        ) : undefined
+                      }
+                    >
                       <div className="overflow-auto border border-slate-200/60 rounded-2xl">
                         <table className="w-full text-left bg-white">
                           <thead className="bg-slate-50 border-b border-slate-100">
@@ -2198,66 +2562,233 @@ export default function EmployeeProfileClient({ employeeId, initialNow }: { empl
                               <th className="px-4 py-3 text-[11px] font-extrabold text-slate-600">Expiry</th>
                               <th className="px-4 py-3 text-[11px] font-extrabold text-slate-600">Status</th>
                               <th className="px-4 py-3 text-[11px] font-extrabold text-slate-600">Score</th>
+                              {trainingEdit && <th className="px-4 py-3 text-[11px] font-extrabold text-slate-600" />}
                             </tr>
                           </thead>
                           <tbody>
-                            {profileData.training.slice(0, 24).map((t) => (
+                            {(trainingEdit ? trainingDraft : profileData.training)?.slice(0, 24).map((t, idx) => (
                               <tr key={t.id} className="border-b border-slate-100">
-                                <td className="px-4 py-3 text-sm font-extrabold text-slate-900">{t.trainingName}</td>
-                                <td className="px-4 py-3 text-xs font-semibold text-slate-600">{t.provider}</td>
-                                <td className="px-4 py-3 text-xs font-semibold text-slate-600">{t.completionDate ? formatDateUtc(t.completionDate) : '—'}</td>
-                                <td className="px-4 py-3 text-xs font-semibold text-slate-600">{t.expiryDate ? formatDateUtc(t.expiryDate) : '—'}</td>
-                                <td className="px-4 py-3 text-xs font-extrabold text-slate-700">{t.status}</td>
-                                <td className="px-4 py-3 text-xs font-extrabold text-slate-900">{typeof t.score === 'number' ? `${t.score}` : '—'}</td>
+                                {!trainingEdit ? (
+                                  <>
+                                    <td className="px-4 py-3 text-sm font-extrabold text-slate-900">{t.trainingName}</td>
+                                    <td className="px-4 py-3 text-xs font-semibold text-slate-600">{t.provider}</td>
+                                    <td className="px-4 py-3 text-xs font-semibold text-slate-600">{t.completionDate ? formatDateUtc(t.completionDate) : '—'}</td>
+                                    <td className="px-4 py-3 text-xs font-semibold text-slate-600">{t.expiryDate ? formatDateUtc(t.expiryDate) : '—'}</td>
+                                    <td className="px-4 py-3 text-xs font-extrabold text-slate-700">{t.status}</td>
+                                    <td className="px-4 py-3 text-xs font-extrabold text-slate-900">{typeof t.score === 'number' ? `${t.score}` : '—'}</td>
+                                  </>
+                                ) : (
+                                  <>
+                                    <td className="px-4 py-3"><input value={t.trainingName} onChange={(e) => setTrainingDraft((prev) => { const rows = [...(prev || profileData.training)]; rows[idx] = { ...rows[idx], trainingName: e.target.value }; return rows; })} className="w-full text-sm font-semibold border border-slate-200 rounded-lg px-2 py-1" /></td>
+                                    <td className="px-4 py-3"><input value={t.provider} onChange={(e) => setTrainingDraft((prev) => { const rows = [...(prev || profileData.training)]; rows[idx] = { ...rows[idx], provider: e.target.value }; return rows; })} className="w-full text-xs font-semibold border border-slate-200 rounded-lg px-2 py-1" /></td>
+                                    <td className="px-4 py-3"><input value={t.completionDate ? t.completionDate.slice(0, 10) : ''} onChange={(e) => setTrainingDraft((prev) => { const rows = [...(prev || profileData.training)]; rows[idx] = { ...rows[idx], completionDate: e.target.value ? `${e.target.value}T00:00:00.000Z` : null }; return rows; })} placeholder="YYYY-MM-DD" className="w-full text-xs font-semibold border border-slate-200 rounded-lg px-2 py-1" /></td>
+                                    <td className="px-4 py-3"><input value={t.expiryDate ? t.expiryDate.slice(0, 10) : ''} onChange={(e) => setTrainingDraft((prev) => { const rows = [...(prev || profileData.training)]; rows[idx] = { ...rows[idx], expiryDate: e.target.value ? `${e.target.value}T00:00:00.000Z` : null }; return rows; })} placeholder="YYYY-MM-DD" className="w-full text-xs font-semibold border border-slate-200 rounded-lg px-2 py-1" /></td>
+                                    <td className="px-4 py-3">
+                                      <select value={t.status} onChange={(e) => setTrainingDraft((prev) => { const rows = [...(prev || profileData.training)]; rows[idx] = { ...rows[idx], status: e.target.value as TrainingRecord['status'] }; return rows; })} className="w-full text-xs font-extrabold border border-slate-200 rounded-lg px-2 py-1">
+                                        {(['Completed', 'Pending', 'Expired'] as const).map((s) => <option key={s} value={s}>{s}</option>)}
+                                      </select>
+                                    </td>
+                                    <td className="px-4 py-3"><input value={t.score != null ? String(t.score) : ''} onChange={(e) => setTrainingDraft((prev) => { const rows = [...(prev || profileData.training)]; rows[idx] = { ...rows[idx], score: e.target.value ? Number(e.target.value) : null }; return rows; })} className="w-full text-xs font-semibold border border-slate-200 rounded-lg px-2 py-1" /></td>
+                                    <td className="px-4 py-3">
+                                      <button type="button" onClick={() => setTrainingDraft((prev) => (prev || profileData.training).filter((_, i) => i !== idx))} className="p-1.5 rounded-lg border border-red-200 hover:bg-red-50">
+                                        <Trash2 className="w-4 h-4 text-red-700" />
+                                      </button>
+                                    </td>
+                                  </>
+                                )}
                               </tr>
                             ))}
                           </tbody>
                         </table>
+                        {trainingEdit && (
+                          <div className="px-4 py-3 bg-white border-t border-slate-100">
+                            <button type="button" onClick={() => setTrainingDraft((prev) => [...(prev || profileData.training), { id: `tr-${Date.now()}`, trainingName: 'New training', provider: '', status: 'Pending', completionDate: null, expiryDate: null, score: null }])} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+                              <Plus className="w-4 h-4" />
+                              Add Training
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </Section>
                   )}
 
                   {tab === 'assets' && (
-                    <Section title="Assets Assigned" icon={BriefcaseBusiness}>
+                    <Section
+                      title="Assets Assigned"
+                      icon={BriefcaseBusiness}
+                      actions={
+                        perms.canEdit ? (
+                          <div className="flex items-center gap-2">
+                            {!assetsEdit && (
+                              <button type="button" onClick={() => { setAssetsDraft(profileData.assets); setAssetsEdit(true); }} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+                                <Pencil className="w-4 h-4" />
+                                Edit
+                              </button>
+                            )}
+                            {assetsEdit && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      const saved = await apiMutate<{ assets?: AssetItem[] }>(employeeId, 'profile-extensions', {
+                                        method: 'PATCH',
+                                        body: JSON.stringify({ assets: assetsDraft }),
+                                        role,
+                                        viewerEmployeeId,
+                                      });
+                                      const next = saved.assets || assetsDraft || profileData.assets;
+                                      updateProfile((p) => ({ ...p, assets: next }));
+                                      setAssetsEdit(false);
+                                      setToast({ title: 'Saved', detail: 'Asset records updated.', tone: 'ok' });
+                                    } catch (e) {
+                                      setToast({ title: 'Save failed', detail: e instanceof Error ? e.message : 'Unable to save', tone: 'err' });
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-extrabold hover:bg-slate-800 transition-colors"
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  Save
+                                </button>
+                                <button type="button" onClick={() => { setAssetsEdit(false); setAssetsDraft(null); }} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+                                  Cancel
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        ) : undefined
+                      }
+                    >
                       <div className="divide-y divide-slate-100 border border-slate-200/60 rounded-2xl overflow-hidden">
-                        {profileData.assets.slice(0, 24).map((a) => (
+                        {(assetsEdit ? assetsDraft : profileData.assets)?.slice(0, 24).map((a, idx) => (
                           <div key={a.id} className="px-5 py-4 bg-white flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="text-sm font-extrabold text-slate-900">
-                                {a.assetType} <span className="mx-2">•</span> {a.assetName}
+                            {!assetsEdit ? (
+                              <>
+                                <div className="min-w-0">
+                                  <div className="text-sm font-extrabold text-slate-900">
+                                    {a.assetType} <span className="mx-2">•</span> {a.assetName}
+                                  </div>
+                                  <div className="text-xs text-slate-500 font-semibold mt-1">
+                                    Tag: {a.assetTag} <span className="mx-2">•</span> Serial: {a.serialNumber || '—'}
+                                  </div>
+                                  <div className="text-xs text-slate-600 font-semibold mt-1">
+                                    Assigned: {formatDateUtc(a.assignedDate)} <span className="mx-2">•</span> Condition: {a.condition} <span className="mx-2">•</span> {a.returnStatus}
+                                    {a.returnDate ? (
+                                      <>
+                                        <span className="mx-2">•</span> Returned: {formatDateUtc(a.returnDate)}
+                                      </>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 shrink-0">Asset</span>
+                              </>
+                            ) : (
+                              <div className="w-full grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                                <EditField label="Asset Type" value={a.assetType} onChange={(next) => setAssetsDraft((prev) => { const rows = [...(prev || profileData.assets)]; rows[idx] = { ...rows[idx], assetType: next }; return rows; })} />
+                                <EditField label="Asset Name" value={a.assetName} onChange={(next) => setAssetsDraft((prev) => { const rows = [...(prev || profileData.assets)]; rows[idx] = { ...rows[idx], assetName: next }; return rows; })} />
+                                <EditField label="Asset Tag" value={a.assetTag} onChange={(next) => setAssetsDraft((prev) => { const rows = [...(prev || profileData.assets)]; rows[idx] = { ...rows[idx], assetTag: next }; return rows; })} />
+                                <EditField label="Serial Number" value={v(a.serialNumber)} onChange={(next) => setAssetsDraft((prev) => { const rows = [...(prev || profileData.assets)]; rows[idx] = { ...rows[idx], serialNumber: next || null }; return rows; })} />
+                                <EditField label="Assigned Date" value={a.assignedDate.slice(0, 10)} onChange={(next) => setAssetsDraft((prev) => { const rows = [...(prev || profileData.assets)]; rows[idx] = { ...rows[idx], assignedDate: next ? `${next}T00:00:00.000Z` : rows[idx].assignedDate }; return rows; })} />
+                                <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+                                  <div className="text-[11px] font-extrabold text-slate-600">Condition</div>
+                                  <select value={a.condition} onChange={(e) => setAssetsDraft((prev) => { const rows = [...(prev || profileData.assets)]; rows[idx] = { ...rows[idx], condition: e.target.value as AssetItem['condition'] }; return rows; })} className="mt-1 w-full text-sm font-semibold text-slate-900 focus:outline-none">
+                                    {(['Good', 'Fair', 'Needs Repair'] as const).map((c) => <option key={c} value={c}>{c}</option>)}
+                                  </select>
+                                </div>
+                                <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+                                  <div className="text-[11px] font-extrabold text-slate-600">Return Status</div>
+                                  <select value={a.returnStatus} onChange={(e) => setAssetsDraft((prev) => { const rows = [...(prev || profileData.assets)]; rows[idx] = { ...rows[idx], returnStatus: e.target.value as AssetItem['returnStatus'] }; return rows; })} className="mt-1 w-full text-sm font-semibold text-slate-900 focus:outline-none">
+                                    {(['Assigned', 'Returned'] as const).map((s) => <option key={s} value={s}>{s}</option>)}
+                                  </select>
+                                </div>
+                                <EditField label="Return Date" value={a.returnDate ? a.returnDate.slice(0, 10) : ''} onChange={(next) => setAssetsDraft((prev) => { const rows = [...(prev || profileData.assets)]; rows[idx] = { ...rows[idx], returnDate: next ? `${next}T00:00:00.000Z` : null }; return rows; })} />
+                                <button type="button" onClick={() => setAssetsDraft((prev) => (prev || profileData.assets).filter((_, i) => i !== idx))} className="p-2 rounded-xl border border-red-200 hover:bg-red-50 self-end">
+                                  <Trash2 className="w-4 h-4 text-red-700" />
+                                </button>
                               </div>
-                              <div className="text-xs text-slate-500 font-semibold mt-1">
-                                Tag: {a.assetTag} <span className="mx-2">•</span> Serial: {a.serialNumber || '—'}
-                              </div>
-                              <div className="text-xs text-slate-600 font-semibold mt-1">
-                                Assigned: {formatDateUtc(a.assignedDate)} <span className="mx-2">•</span> Condition: {a.condition} <span className="mx-2">•</span> {a.returnStatus}
-                                {a.returnDate ? (
-                                  <>
-                                    <span className="mx-2">•</span> Returned: {formatDateUtc(a.returnDate)}
-                                  </>
-                                ) : null}
-                              </div>
-                            </div>
-                            <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 shrink-0">Asset</span>
+                            )}
                           </div>
                         ))}
-                        {profileData.assets.length === 0 && <div className="px-5 py-6 text-sm text-slate-600 font-semibold bg-white">No assets assigned.</div>}
+                        {assetsEdit && (
+                          <div className="px-5 py-3 bg-white">
+                            <button type="button" onClick={() => setAssetsDraft((prev) => [...(prev || profileData.assets), { id: `as-${Date.now()}`, assetType: 'Laptop', assetTag: '', assetName: 'New asset', serialNumber: null, assignedDate: new Date().toISOString(), condition: 'Good', returnStatus: 'Assigned', returnDate: null }])} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+                              <Plus className="w-4 h-4" />
+                              Add Asset
+                            </button>
+                          </div>
+                        )}
+                        {!assetsEdit && profileData.assets.length === 0 && <div className="px-5 py-6 text-sm text-slate-600 font-semibold bg-white">No assets assigned.</div>}
                       </div>
                     </Section>
                   )}
 
                   {tab === 'medical' && (
-                    <Section title="Medical / HSE" icon={Stethoscope} actions={!perms.canViewMedical ? <LockBadge /> : undefined}>
+                    <Section
+                      title="Medical / HSE"
+                      icon={Stethoscope}
+                      actions={
+                        <div className="flex items-center gap-2">
+                          {!perms.canViewMedical && <LockBadge />}
+                          {perms.canViewMedical && perms.canEdit && !medicalEdit && (
+                            <button type="button" onClick={() => { setMedicalDraft(profileData.medicalHse); setMedicalEdit(true); }} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+                              <Pencil className="w-4 h-4" />
+                              Edit
+                            </button>
+                          )}
+                          {medicalEdit && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await apiMutate(employeeId, 'profile-extensions', {
+                                      method: 'PATCH',
+                                      body: JSON.stringify({ medicalHse: medicalDraft }),
+                                      role,
+                                      viewerEmployeeId,
+                                    });
+                                    updateProfile((p) => ({ ...p, medicalHse: medicalDraft || p.medicalHse }));
+                                    setMedicalEdit(false);
+                                    setToast({ title: 'Saved', detail: 'Medical / HSE details updated.', tone: 'ok' });
+                                  } catch (e) {
+                                    setToast({ title: 'Save failed', detail: e instanceof Error ? e.message : 'Unable to save', tone: 'err' });
+                                  }
+                                }}
+                                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-extrabold hover:bg-slate-800 transition-colors"
+                              >
+                                <CheckCircle2 className="w-4 h-4" />
+                                Save
+                              </button>
+                              <button type="button" onClick={() => { setMedicalEdit(false); setMedicalDraft(null); }} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+                                Cancel
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      }
+                    >
                       {!perms.canViewMedical || !profileData.medicalHse ? (
                         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 font-semibold">You do not have permission to view medical / HSE information.</div>
                       ) : (
                         <div className="space-y-6">
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                            <Field label="Medical Fitness Status" value={v(profileData.medicalHse.medicalFitnessStatus)} />
-                            <Field label="Blood Group" value={v(profileData.medicalHse.bloodGroup)} />
-                            <Field label="Known Allergies" value={v(profileData.medicalHse.knownAllergies)} />
-                            <Field label="Medical Restrictions" value={v(profileData.medicalHse.medicalRestrictions)} />
-                            <Field label="Fit-to-Work Status" value={v(profileData.medicalHse.fitToWorkStatus)} />
+                            {!medicalEdit ? (
+                              <>
+                                <Field label="Medical Fitness Status" value={v(profileData.medicalHse.medicalFitnessStatus)} />
+                                <Field label="Blood Group" value={v(profileData.medicalHse.bloodGroup)} />
+                                <Field label="Known Allergies" value={v(profileData.medicalHse.knownAllergies)} />
+                                <Field label="Medical Restrictions" value={v(profileData.medicalHse.medicalRestrictions)} />
+                                <Field label="Fit-to-Work Status" value={v(profileData.medicalHse.fitToWorkStatus)} />
+                              </>
+                            ) : (
+                              <>
+                                <EditField label="Medical Fitness Status" value={v(medicalDraft?.medicalFitnessStatus)} onChange={(next) => setMedicalDraft((prev) => ({ ...(prev || profileData.medicalHse!), medicalFitnessStatus: next }))} />
+                                <EditField label="Blood Group" value={v(medicalDraft?.bloodGroup)} onChange={(next) => setMedicalDraft((prev) => ({ ...(prev || profileData.medicalHse!), bloodGroup: next }))} />
+                                <EditField label="Known Allergies" value={v(medicalDraft?.knownAllergies)} onChange={(next) => setMedicalDraft((prev) => ({ ...(prev || profileData.medicalHse!), knownAllergies: next }))} />
+                                <EditField label="Medical Restrictions" value={v(medicalDraft?.medicalRestrictions)} onChange={(next) => setMedicalDraft((prev) => ({ ...(prev || profileData.medicalHse!), medicalRestrictions: next }))} />
+                                <EditField label="Fit-to-Work Status" value={v(medicalDraft?.fitToWorkStatus)} onChange={(next) => setMedicalDraft((prev) => ({ ...(prev || profileData.medicalHse!), fitToWorkStatus: next }))} />
+                              </>
+                            )}
                           </div>
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div>
@@ -2299,27 +2830,101 @@ export default function EmployeeProfileClient({ employeeId, initialNow }: { empl
                   )}
 
                   {tab === 'disciplinary' && (
-                    <Section title="Disciplinary Records" icon={AlertTriangle} actions={!perms.canViewDisciplinary ? <LockBadge /> : undefined}>
+                    <Section
+                      title="Disciplinary Records"
+                      icon={AlertTriangle}
+                      actions={
+                        !perms.canViewDisciplinary ? (
+                          <LockBadge />
+                        ) : perms.canEdit ? (
+                          <div className="flex items-center gap-2">
+                            {!disciplinaryEdit && (
+                              <button type="button" onClick={() => { setDisciplinaryDraft(profileData.disciplinary || []); setDisciplinaryEdit(true); }} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+                                <Pencil className="w-4 h-4" />
+                                Edit
+                              </button>
+                            )}
+                            {disciplinaryEdit && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      const saved = await apiMutate<{ disciplinary?: DisciplinaryRecord[] }>(employeeId, 'profile-extensions', {
+                                        method: 'PATCH',
+                                        body: JSON.stringify({ disciplinary: disciplinaryDraft }),
+                                        role,
+                                        viewerEmployeeId,
+                                      });
+                                      const next = saved.disciplinary || disciplinaryDraft || profileData.disciplinary || [];
+                                      updateProfile((p) => ({ ...p, disciplinary: next }));
+                                      setDisciplinaryEdit(false);
+                                      setToast({ title: 'Saved', detail: 'Disciplinary records updated.', tone: 'ok' });
+                                    } catch (e) {
+                                      setToast({ title: 'Save failed', detail: e instanceof Error ? e.message : 'Unable to save', tone: 'err' });
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-extrabold hover:bg-slate-800 transition-colors"
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  Save
+                                </button>
+                                <button type="button" onClick={() => { setDisciplinaryEdit(false); setDisciplinaryDraft(null); }} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+                                  Cancel
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        ) : undefined
+                      }
+                    >
                       {!perms.canViewDisciplinary || !profileData.disciplinary ? (
                         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 font-semibold">You do not have permission to view disciplinary records.</div>
                       ) : (
                         <div className="divide-y divide-slate-100 border border-slate-200/60 rounded-2xl overflow-hidden">
-                          {profileData.disciplinary.map((d) => (
+                          {(disciplinaryEdit ? disciplinaryDraft : profileData.disciplinary)?.map((d, idx) => (
                             <div key={d.id} className="px-5 py-4 bg-white">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="text-sm font-extrabold text-slate-900">
-                                    {d.caseType} <span className="mx-2">•</span> {d.status}
+                              {!disciplinaryEdit ? (
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="text-sm font-extrabold text-slate-900">
+                                      {d.caseType} <span className="mx-2">•</span> {d.status}
+                                    </div>
+                                    <div className="text-xs text-slate-500 font-semibold mt-1">Reported: {formatDateUtc(d.dateReported)}</div>
+                                    <div className="text-xs text-slate-600 font-semibold mt-1">{d.description}</div>
+                                    {d.actionTaken && <div className="text-xs text-slate-700 font-extrabold mt-2">Action: {d.actionTaken}</div>}
                                   </div>
-                                  <div className="text-xs text-slate-500 font-semibold mt-1">Reported: {formatDateUtc(d.dateReported)}</div>
-                                  <div className="text-xs text-slate-600 font-semibold mt-1">{d.description}</div>
-                                  {d.actionTaken && <div className="text-xs text-slate-700 font-extrabold mt-2">Action: {d.actionTaken}</div>}
+                                  <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 shrink-0">Case</span>
                                 </div>
-                                <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 shrink-0">Case</span>
-                              </div>
+                              ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                                  <EditField label="Case Type" value={d.caseType} onChange={(next) => setDisciplinaryDraft((prev) => { const rows = [...(prev || profileData.disciplinary || [])]; rows[idx] = { ...rows[idx], caseType: next }; return rows; })} />
+                                  <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+                                    <div className="text-[11px] font-extrabold text-slate-600">Status</div>
+                                    <select value={d.status} onChange={(e) => setDisciplinaryDraft((prev) => { const rows = [...(prev || profileData.disciplinary || [])]; rows[idx] = { ...rows[idx], status: e.target.value as DisciplinaryRecord['status'] }; return rows; })} className="mt-1 w-full text-sm font-semibold text-slate-900 focus:outline-none">
+                                      {(['Open', 'Closed', 'Appealed'] as const).map((s) => <option key={s} value={s}>{s}</option>)}
+                                    </select>
+                                  </div>
+                                  <EditField label="Date Reported" value={d.dateReported.slice(0, 10)} onChange={(next) => setDisciplinaryDraft((prev) => { const rows = [...(prev || profileData.disciplinary || [])]; rows[idx] = { ...rows[idx], dateReported: next ? `${next}T00:00:00.000Z` : rows[idx].dateReported }; return rows; })} />
+                                  <EditField label="Description" value={d.description} onChange={(next) => setDisciplinaryDraft((prev) => { const rows = [...(prev || profileData.disciplinary || [])]; rows[idx] = { ...rows[idx], description: next }; return rows; })} />
+                                  <EditField label="Action Taken" value={v(d.actionTaken)} onChange={(next) => setDisciplinaryDraft((prev) => { const rows = [...(prev || profileData.disciplinary || [])]; rows[idx] = { ...rows[idx], actionTaken: next || null }; return rows; })} />
+                                  <EditField label="Approver" value={v(d.approver)} onChange={(next) => setDisciplinaryDraft((prev) => { const rows = [...(prev || profileData.disciplinary || [])]; rows[idx] = { ...rows[idx], approver: next || null }; return rows; })} />
+                                  <button type="button" onClick={() => setDisciplinaryDraft((prev) => (prev || profileData.disciplinary || []).filter((_, i) => i !== idx))} className="p-2 rounded-xl border border-red-200 hover:bg-red-50 self-end">
+                                    <Trash2 className="w-4 h-4 text-red-700" />
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           ))}
-                          {profileData.disciplinary.length === 0 && <div className="px-5 py-6 text-sm text-slate-600 font-semibold bg-white">No disciplinary records.</div>}
+                          {disciplinaryEdit && (
+                            <div className="px-5 py-3 bg-white">
+                              <button type="button" onClick={() => setDisciplinaryDraft((prev) => [...(prev || profileData.disciplinary || []), { id: `dc-${Date.now()}`, caseType: 'New case', dateReported: new Date().toISOString(), description: '', status: 'Open', actionTaken: null, approver: null }])} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors">
+                                <Plus className="w-4 h-4" />
+                                Add Record
+                              </button>
+                            </div>
+                          )}
+                          {!disciplinaryEdit && profileData.disciplinary.length === 0 && <div className="px-5 py-6 text-sm text-slate-600 font-semibold bg-white">No disciplinary records.</div>}
                         </div>
                       )}
                     </Section>

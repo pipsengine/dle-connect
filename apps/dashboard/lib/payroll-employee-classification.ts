@@ -12,21 +12,30 @@ export type ContractPayrollClassification = {
   recommendation: string | null;
 };
 
-export const contractEmployeeCode = (employee: Pick<DleEmployeeDirectoryRow, 'employeeId' | 'employeeCode' | 'sourceEmployeeId'>) => {
+export const contractEmployeeCode = (
+  employee: Pick<DleEmployeeDirectoryRow, 'employeeId' | 'employeeCode'> & Partial<Pick<DleEmployeeDirectoryRow, 'sourceEmployeeId'>>,
+) => {
   const code = compact(employee.employeeCode || employee.employeeId || employee.sourceEmployeeId).toUpperCase();
   return /^C\d+/.test(code);
 };
 
-const payrollCategoryText = (employee: DleEmployeeDirectoryRow) =>
-  [employee.employmentType, employee.payrollGroup, employee.paymentRun, employee.paymentType, employee.staffCategory, employee.employeeCategory]
+const payrollCategoryText = (
+  employee: Pick<DleEmployeeDirectoryRow, 'employmentType' | 'staffCategory' | 'employeeCategory'>
+    & Partial<Pick<DleEmployeeDirectoryRow, 'payrollGroup' | 'paymentRun' | 'paymentType' | 'jobTitle'>>,
+) =>
+  [employee.employmentType, employee.payrollGroup, employee.paymentRun, employee.paymentType, employee.staffCategory, employee.employeeCategory, employee.jobTitle]
     .map(compact)
     .join(' ')
     .toLowerCase();
 
-const payrollCategoryTextUpper = (employee: DleEmployeeDirectoryRow) => payrollCategoryText(employee).toUpperCase();
+const payrollCategoryTextUpper = (
+  employee: Pick<DleEmployeeDirectoryRow, 'employmentType' | 'staffCategory' | 'employeeCategory'>
+    & Partial<Pick<DleEmployeeDirectoryRow, 'payrollGroup' | 'paymentRun' | 'paymentType' | 'jobTitle'>>,
+) => payrollCategoryText(employee).toUpperCase();
 
-const employeeCodeText = (employee: Pick<DleEmployeeDirectoryRow, 'employeeId' | 'employeeCode' | 'sourceEmployeeId'>) =>
-  compact(employee.employeeCode || employee.employeeId || employee.sourceEmployeeId).toUpperCase();
+const employeeCodeText = (
+  employee: Pick<DleEmployeeDirectoryRow, 'employeeId' | 'employeeCode'> & Partial<Pick<DleEmployeeDirectoryRow, 'sourceEmployeeId'>>,
+) => compact(employee.employeeCode || employee.employeeId || employee.sourceEmployeeId).toUpperCase();
 
 export const DEFAULT_IT_NYSC_STIPEND_GRADE = 'IT_NYSC_REM - IT_NYSC';
 

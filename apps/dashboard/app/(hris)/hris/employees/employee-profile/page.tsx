@@ -15,5 +15,5 @@ export default async function EmployeeProfilePage({
     const employees = (await readPayrollEmployees()).employees;
     employeeId = employees[0]?.employeeCode || '';
   }
-  return <EmployeeProfileClient employeeId={employeeId} initialNow={new Date().toISOString()} />;
+  return <EmployeeProfileClient employeeId={employeeId} initialNow={new Date().toISOString()} initialMode={typeof sp.mode === 'string' ? sp.mode : undefined} initialTab={typeof sp.tab === 'string' ? sp.tab : undefined} />;
 }

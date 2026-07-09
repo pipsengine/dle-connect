@@ -1,10 +1,17 @@
 import { NextResponse } from 'next/server';
-import { readEmployeeContractsFromDb, syncHrisEmployeeProfileToDb } from '@/lib/dle-enterprise-db';
+import {
+  insertEmployeeProfileDocumentInDb,
+  readEmployeeContractsFromDb,
+  readEmployeeEmergencyContactsFromDb,
+  readEmployeeProfileDocumentsFromDb,
+  syncHrisEmployeeProfileToDb,
+} from '@/lib/dle-enterprise-db';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { readDirectoryEmployees } from '@/lib/payroll-employee-source';
 import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import { ensureEmployeeLeaveFromSage } from '@/lib/sage-leave-sync';
 import { contractPayrollClassification, type ContractPayrollClassification } from '@/lib/payroll-employee-classification';
+import { readEmployeeProfileExtensions } from '@/lib/employee-profile-extensions-store';
 
 type Role =
   | 'Super Admin'
@@ -605,6 +612,7 @@ const rolePermissions = (role: Role, subjectEmployeeId: string, viewerEmployeeId
   const canViewMedical = role === 'Super Admin' || role === 'HR Director' || role === 'HSE Officer' || role === 'Compliance Officer';
   const canViewDisciplinary = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'Compliance Officer';
   const canEdit = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'HR Officer' || role === 'Admin Officer';
+  const canEditPayroll = canViewPayroll && (canEdit || role === 'Payroll Officer');
   const canChangeStatus = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager';
   const canViewAudit = role !== 'Employee' && role !== 'IT Administrator';
   const canViewSensitivePersonal = role !== 'Employee' && role !== 'IT Administrator' && role !== 'Auditor';
@@ -617,6 +625,7 @@ const rolePermissions = (role: Role, subjectEmployeeId: string, viewerEmployeeId
     canViewMedical,
     canViewDisciplinary,
     canEdit,
+    canEditPayroll,
     canChangeStatus,
     canViewAudit,
     canViewSensitivePersonal,
@@ -2638,7 +2647,7 @@ const buildDbProfileRecord = (row: DleEmployeeDirectoryRow): EmployeeRecord => {
   return rec;
 };
 
-const persistHrisProfileToEnterprise = async (rec: EmployeeRecord) => {
+const persistHrisProfileToEnterprise = async (rec: EmployeeRecord, options?: { replaceEmergencyContacts?: boolean }) => {
   const employeeCode = rec.profile.employeeId;
   if (!employeeCode) return;
   try {
@@ -2656,6 +2665,27 @@ const persistHrisProfileToEnterprise = async (rec: EmployeeRecord) => {
       contacts: rec.profile.contacts,
       employmentDetails: rec.profile.employmentDetails,
       jobDetails: rec.profile.jobDetails,
+      payrollSetup: {
+        payrollGroup: rec.payrollSummary.payrollGroup,
+        salaryGrade: rec.payrollSummary.salaryGrade,
+        periodSalary: rec.payrollSummary.basicSalary,
+        bankName: rec.payrollSummary.bankName,
+        pensionProvider: rec.payrollSummary.pensionProvider,
+        taxIdentificationNumber: rec.payrollSummary.taxId,
+      },
+      emergencyContacts: rec.emergencyContacts.map((contact) => ({
+        id: contact.id,
+        fullName: contact.fullName,
+        relationship: contact.relationship,
+        phoneNumber: contact.phoneNumber,
+        alternativePhone: contact.alternativePhone,
+        email: contact.email,
+        address: contact.address ?? undefined,
+        isPrimary: contact.isPrimary,
+        isNextOfKin: contact.isNextOfKin,
+        isBeneficiary: contact.isBeneficiary,
+      })),
+      replaceEmergencyContacts: options?.replaceEmergencyContacts,
     });
     if (synced) invalidateHrisEmployeeCaches();
   } catch (error) {
@@ -2663,12 +2693,20 @@ const persistHrisProfileToEnterprise = async (rec: EmployeeRecord) => {
   }
 };
 
+const persistEmergencyContactsToEnterprise = async (rec: EmployeeRecord) =>
+  persistHrisProfileToEnterprise(rec, { replaceEmergencyContacts: true });
+
 const ensureRecordFromDb = async (employeeId: string) => {
   const employeeSource = await readDirectoryEmployees();
   const found = employeeSource.employees.find((row) => row.employeeCode.toLowerCase() === employeeId.toLowerCase() || row.employeeId.toLowerCase() === employeeId.toLowerCase());
   if (!found) return ensureRecord(employeeId);
   const record = applyOverrides(found.employeeCode, buildDbProfileRecord(found));
-  const leaveSummary = await ensureEmployeeLeaveFromSage(found);
+  const [leaveSummary, emergencyContacts, documents, extensions] = await Promise.all([
+    ensureEmployeeLeaveFromSage(found),
+    readEmployeeEmergencyContactsFromDb(found.employeeCode),
+    readEmployeeProfileDocumentsFromDb(found.employeeCode),
+    readEmployeeProfileExtensions(found.employeeCode),
+  ]);
   record.leaveSummary = leaveSummary;
   record.overview.leaveBalanceDays = roundLeaveDays(
     leaveSummary.balances['Annual Leave']
@@ -2676,6 +2714,13 @@ const ensureRecordFromDb = async (employeeId: string) => {
     ?? Object.entries(leaveSummary.balances).find(([key]) => key.toLowerCase().includes('annual'))?.[1]
     ?? 0,
   );
+  if (emergencyContacts.length) record.emergencyContacts = emergencyContacts;
+  if (documents.length) record.documents = documents;
+  if (extensions.medicalHse) record.medicalHse = extensions.medicalHse;
+  if (extensions.training?.length) record.training = extensions.training;
+  if (extensions.assets?.length) record.assets = extensions.assets;
+  if (extensions.performanceSummary) record.performanceSummary = extensions.performanceSummary;
+  if (extensions.disciplinary?.length) record.disciplinary = extensions.disciplinary;
   record.payrollClassification = found.payrollClassification || contractPayrollClassification(found);
   store.set(found.employeeCode, record);
   return record;
@@ -5161,6 +5206,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     const err = validateEmergencyContacts(rec.emergencyContacts);
     if (err) return jsonErr(400, err);
     rec.audit.unshift(auditEntry('Updated emergency contact', role));
+    await persistEmergencyContactsToEnterprise(rec);
     return jsonOk(rec.emergencyContacts);
   }
 
@@ -5335,7 +5381,81 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     });
     rec.audit.unshift(auditEntry('Changed status', role, { oldValue: prev, newValue: nextStatus, reason: normalizeStr(body.reason, 240) ?? 'Status change' }));
     rec.history.unshift({ id: `h-${employeeId}-${Math.random().toString(16).slice(2)}`, at: nowIso(), type: 'Status Change', detail: `${prev} → ${nextStatus}`, actor: role });
+    await persistHrisProfileToEnterprise(rec);
     return jsonOk({ employmentStatus: nextStatus });
+  }
+
+  if (root === 'payroll') {
+    if (!perms.canEditPayroll) return jsonErr(403, 'Permission denied');
+    const next = { ...rec.payrollSummary };
+    if (body.salaryGrade !== undefined) next.salaryGrade = normalizeStr(body.salaryGrade, 120) || next.salaryGrade;
+    if (body.payrollGroup !== undefined) next.payrollGroup = normalizeStr(body.payrollGroup, 200);
+    if (body.bankName !== undefined) next.bankName = normalizeStr(body.bankName, 150);
+    if (body.pensionProvider !== undefined) next.pensionProvider = normalizeStr(body.pensionProvider, 150);
+    if (body.taxId !== undefined) next.taxId = normalizeStr(body.taxId, 80);
+    if (body.basicSalary !== undefined) {
+      const amount = Number(body.basicSalary);
+      next.basicSalary = Number.isFinite(amount) ? amount : null;
+    }
+    if (body.allowances !== undefined) {
+      const amount = Number(body.allowances);
+      next.allowances = Number.isFinite(amount) ? amount : null;
+    }
+    if (body.deductions !== undefined) {
+      const amount = Number(body.deductions);
+      next.deductions = Number.isFinite(amount) ? amount : null;
+    }
+    if (body.accountNumber !== undefined) {
+      const account = normalizeStr(body.accountNumber, 50);
+      next.accountNumberMasked = account ? `****${account.slice(-4)}` : next.accountNumberMasked;
+    }
+    rec.payrollSummary = next;
+    rec.audit.unshift(auditEntry('Updated payroll summary', role));
+    await syncHrisEmployeeProfileToDb({
+      employeeCode: rec.profile.employeeId,
+      payrollSetup: {
+        payrollGroup: next.payrollGroup,
+        salaryGrade: next.salaryGrade,
+        periodSalary: next.basicSalary,
+        annualSalary: next.basicSalary ? Number(next.basicSalary) * 12 : null,
+        bankName: next.bankName,
+        accountNumber: normalizeStr(body.accountNumber, 50),
+        pensionProvider: next.pensionProvider,
+        taxIdentificationNumber: next.taxId,
+      },
+    }).then((synced) => {
+      if (synced) invalidateHrisEmployeeCaches();
+    });
+    return jsonOk(sanitizeProfileForRole(rec, perms).payrollSummary);
+  }
+
+  if (root === 'profile-extensions') {
+    if (!perms.canEdit) return jsonErr(403, 'Permission denied');
+    const { writeEmployeeProfileExtensions } = await import('@/lib/employee-profile-extensions-store');
+    const patch: Record<string, unknown> = {};
+    if (body.medicalHse && typeof body.medicalHse === 'object') {
+      rec.medicalHse = { ...rec.medicalHse, ...(body.medicalHse as object) };
+      patch.medicalHse = rec.medicalHse;
+    }
+    if (Array.isArray(body.training)) {
+      rec.training = body.training as EmployeeRecord['training'];
+      patch.training = rec.training;
+    }
+    if (Array.isArray(body.assets)) {
+      rec.assets = body.assets as EmployeeRecord['assets'];
+      patch.assets = rec.assets;
+    }
+    if (body.performanceSummary && typeof body.performanceSummary === 'object') {
+      rec.performanceSummary = { ...rec.performanceSummary, ...(body.performanceSummary as object) };
+      patch.performanceSummary = rec.performanceSummary;
+    }
+    if (Array.isArray(body.disciplinary)) {
+      rec.disciplinary = body.disciplinary as EmployeeRecord['disciplinary'];
+      patch.disciplinary = rec.disciplinary;
+    }
+    const saved = await writeEmployeeProfileExtensions(rec.profile.employeeId, patch);
+    rec.audit.unshift(auditEntry('Updated profile extensions', role));
+    return jsonOk(saved);
   }
 
   if (root === 'ai-insights') {
@@ -6283,6 +6403,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     if (err) return jsonErr(400, err);
     rec.emergencyContacts = next;
     rec.audit.unshift(auditEntry('Added emergency contact', role));
+    await persistEmergencyContactsToEnterprise(rec);
     return jsonOk(rec.emergencyContacts);
   }
 
@@ -6620,6 +6741,22 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       complianceStatus: 'Unknown',
     };
     item.complianceStatus = complianceFor(item, Date.now());
+    const persisted = await insertEmployeeProfileDocumentInDb({
+      employeeCode: rec.profile.employeeId,
+      category: item.category,
+      fileName: item.fileName,
+      mimeType: item.mimeType,
+      sizeBytes: item.sizeBytes,
+      expiresAt: item.expiresAt,
+      documentStatus: item.status === 'Pending Verification' ? 'Uploaded' : item.status,
+      createdBy: role,
+    });
+    if (persisted) {
+      item.id = persisted.id;
+      item.uploadedAt = persisted.uploadedAt;
+      item.status = persisted.status;
+      item.verifiedBy = persisted.verifiedBy;
+    }
     rec.documents = [item, ...rec.documents];
     seedAuditAndVersion(item);
     rec.audit.unshift(auditEntry('Uploaded document', role, { reason: item.category }));
@@ -6655,6 +6792,7 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ id: stri
     if (err) return jsonErr(400, err);
     rec.emergencyContacts = next;
     rec.audit.unshift(auditEntry('Deleted emergency contact', role));
+    await persistEmergencyContactsToEnterprise(rec);
     return jsonOk({ deleted: true });
   }
 

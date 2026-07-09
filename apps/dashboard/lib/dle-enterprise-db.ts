@@ -2564,15 +2564,20 @@ export type HrisEmployeeProfileSyncInput = {
   contacts?: Record<string, string | null | undefined>;
   employmentDetails?: Record<string, string | null | undefined>;
   jobDetails?: Record<string, string | null | undefined>;
-  payrollSetup?: Record<string, string | null | undefined>;
+  payrollSetup?: Record<string, string | number | null | undefined>;
   emergencyContacts?: Array<{
+    id?: string;
     fullName: string;
     relationship?: string;
     phoneNumber?: string;
+    alternativePhone?: string | null;
+    email?: string | null;
     address?: string;
     isPrimary?: boolean;
     isNextOfKin?: boolean;
+    isBeneficiary?: boolean;
   }>;
+  replaceEmergencyContacts?: boolean;
 };
 
 export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSyncInput): Promise<boolean> => {
@@ -2808,43 +2813,94 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
         );
       `);
 
-    if (nullable(payroll.bankName) || nullable(payroll.accountNumber) || nullable(payroll.accountName) || nullable(payroll.branchName)) {
+    const payrollPeriodSalary = numOrNull(payroll.periodSalary);
+    const payrollAnnualSalary = numOrNull(payroll.annualSalary);
+    const payrollBasicSalary = numOrNull(payroll.basicSalary);
+    const hasPayrollUpdate =
+      nullable(payroll.payrollGroup) ||
+      nullable(payroll.salaryGrade) ||
+      nullable(payroll.payCurrency) ||
+      payrollPeriodSalary !== null ||
+      payrollAnnualSalary !== null ||
+      payrollBasicSalary !== null ||
+      nullable(payroll.bankName) ||
+      nullable(payroll.accountNumber) ||
+      nullable(payroll.accountName) ||
+      nullable(payroll.branchName) ||
+      nullable(payroll.pensionProvider) ||
+      nullable(payroll.pensionPin) ||
+      nullable(payroll.taxIdentificationNumber);
+
+    if (hasPayrollUpdate) {
       await new sql.Request(tx)
         .input('employee_id', sql.BigInt, employeeId)
+        .input('payroll_group', sql.NVarChar(100), nullable(payroll.payrollGroup))
+        .input('salary_grade', sql.NVarChar(80), nullable(payroll.salaryGrade))
+        .input('pay_currency', sql.NVarChar(10), nullable(payroll.payCurrency))
+        .input('period_salary', sql.Decimal(19, 4), payrollPeriodSalary)
+        .input('annual_salary', sql.Decimal(19, 4), payrollAnnualSalary)
+        .input('basic_salary', sql.Decimal(19, 4), payrollBasicSalary)
         .input('bank_name', sql.NVarChar(150), nullable(payroll.bankName))
         .input('branch_name', sql.NVarChar(150), nullable(payroll.branchName))
         .input('account_number', sql.NVarChar(50), nullable(payroll.accountNumber))
         .input('account_name', sql.NVarChar(200), nullable(payroll.accountName))
+        .input('pension_provider', sql.NVarChar(150), nullable(payroll.pensionProvider))
+        .input('pension_pin', sql.NVarChar(80), nullable(payroll.pensionPin))
+        .input('tax_identification_number', sql.NVarChar(80), nullable(payroll.taxIdentificationNumber))
         .query(`
           MERGE [hris].[EmployeePayrollSetup] AS target
           USING (SELECT @employee_id AS employee_id) AS source
           ON target.employee_id = source.employee_id
           WHEN MATCHED THEN UPDATE SET
+            payroll_group = COALESCE(@payroll_group, target.payroll_group),
+            salary_grade = COALESCE(@salary_grade, target.salary_grade),
+            pay_currency = COALESCE(@pay_currency, target.pay_currency),
+            period_salary = COALESCE(@period_salary, target.period_salary),
+            annual_salary = COALESCE(@annual_salary, target.annual_salary),
+            basic_salary = COALESCE(@basic_salary, target.basic_salary),
             bank_name = COALESCE(@bank_name, target.bank_name),
             branch_name = COALESCE(@branch_name, target.branch_name),
             account_number = COALESCE(@account_number, target.account_number),
             account_name = COALESCE(@account_name, target.account_name),
+            pension_provider = COALESCE(@pension_provider, target.pension_provider),
+            pension_pin = COALESCE(@pension_pin, target.pension_pin),
+            tax_identification_number = COALESCE(@tax_identification_number, target.tax_identification_number),
+            setup_assigned_to_payroll = 1,
             modified_at = SYSUTCDATETIME()
           WHEN NOT MATCHED THEN INSERT (
-            employee_id, bank_name, branch_name, account_number, account_name
+            employee_id, payroll_group, salary_grade, pay_currency, period_salary, annual_salary, basic_salary,
+            bank_name, branch_name, account_number, account_name, pension_provider, pension_pin, tax_identification_number,
+            setup_assigned_to_payroll
           ) VALUES (
-            @employee_id, @bank_name, @branch_name, @account_number, @account_name
+            @employee_id, @payroll_group, @salary_grade, @pay_currency, @period_salary, @annual_salary, @basic_salary,
+            @bank_name, @branch_name, @account_number, @account_name, @pension_provider, @pension_pin, @tax_identification_number,
+            1
           );
         `);
+    }
+
+    if (input.replaceEmergencyContacts) {
+      await new sql.Request(tx)
+        .input('employee_id', sql.BigInt, employeeId)
+        .query(`DELETE FROM [hris].[EmployeeEmergencyContacts] WHERE employee_id = @employee_id;`);
     }
 
     for (const ec of input.emergencyContacts || []) {
       const fullName = str(ec.fullName);
       if (!fullName) continue;
+      const externalId = str(ec.id) || `ec-${fullName.slice(0, 40).replace(/\s+/g, '-').toLowerCase()}`;
       await new sql.Request(tx)
         .input('employee_id', sql.BigInt, employeeId)
-        .input('external_contact_id', sql.NVarChar(80), `ess-${fullName.slice(0, 40).replace(/\s+/g, '-').toLowerCase()}`)
+        .input('external_contact_id', sql.NVarChar(80), externalId.slice(0, 80))
         .input('full_name', sql.NVarChar(250), fullName)
         .input('relationship', sql.NVarChar(100), nullable(ec.relationship) || 'Other')
         .input('phone_number', sql.NVarChar(50), nullable(ec.phoneNumber) || 'N/A')
+        .input('alternate_phone', sql.NVarChar(50), nullable(ec.alternativePhone))
+        .input('email', sql.NVarChar(320), nullable(ec.email))
         .input('address', sql.NVarChar(1000), nullable(ec.address))
         .input('is_primary', sql.Bit, ec.isPrimary ? 1 : 0)
         .input('is_next_of_kin', sql.Bit, ec.isNextOfKin ? 1 : 0)
+        .input('is_beneficiary', sql.Bit, ec.isBeneficiary ? 1 : 0)
         .query(`
           MERGE [hris].[EmployeeEmergencyContacts] AS target
           USING (
@@ -2856,13 +2912,18 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
             full_name = @full_name,
             relationship = @relationship,
             phone_number = @phone_number,
+            alternate_phone = @alternate_phone,
+            email = @email,
             address = @address,
             is_primary = @is_primary,
-            is_next_of_kin = @is_next_of_kin
+            is_next_of_kin = @is_next_of_kin,
+            is_beneficiary = @is_beneficiary
           WHEN NOT MATCHED THEN INSERT (
-            employee_id, external_contact_id, full_name, relationship, phone_number, address, is_primary, is_next_of_kin, is_beneficiary
+            employee_id, external_contact_id, full_name, relationship, phone_number, alternate_phone, email, address,
+            is_primary, is_next_of_kin, is_beneficiary
           ) VALUES (
-            @employee_id, @external_contact_id, @full_name, @relationship, @phone_number, @address, @is_primary, @is_next_of_kin, 0
+            @employee_id, @external_contact_id, @full_name, @relationship, @phone_number, @alternate_phone, @email, @address,
+            @is_primary, @is_next_of_kin, @is_beneficiary
           );
         `);
     }
@@ -2874,6 +2935,169 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
     console.error('syncHrisEmployeeProfileToDb failed', error);
     return false;
   }
+};
+
+export type HrisEmployeeEmergencyContactRow = {
+  id: string;
+  fullName: string;
+  relationship: string;
+  phoneNumber: string;
+  alternativePhone: string | null;
+  email: string | null;
+  address: string | null;
+  isPrimary: boolean;
+  isNextOfKin: boolean;
+  isBeneficiary: boolean;
+};
+
+export type HrisEmployeeDocumentRow = {
+  id: string;
+  category: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  status: 'Uploaded' | 'Verified' | 'Rejected' | 'Archived';
+  uploadedAt: string;
+  expiresAt: string | null;
+  verifiedBy: string | null;
+};
+
+const resolveEmployeeDbId = async (employeeCode: string) => {
+  const p = await pool();
+  if (!p) return null;
+  const rs = await p.request()
+    .input('employee_code', sql.NVarChar(50), str(employeeCode))
+    .query(`SELECT employee_id FROM [hris].[Employees] WHERE employee_code = @employee_code;`);
+  const employeeId = Number(rs.recordset?.[0]?.employee_id || 0);
+  return employeeId > 0 ? employeeId : null;
+};
+
+export const readEmployeeEmergencyContactsFromDb = async (employeeCode: string): Promise<HrisEmployeeEmergencyContactRow[]> => {
+  const employeeId = await resolveEmployeeDbId(employeeCode);
+  if (!employeeId) return [];
+  const p = await pool();
+  if (!p) return [];
+  const rs = await p.request()
+    .input('employee_id', sql.BigInt, employeeId)
+    .query(`
+      SELECT
+        emergency_contact_id,
+        external_contact_id,
+        full_name,
+        relationship,
+        phone_number,
+        alternate_phone,
+        email,
+        address,
+        is_primary,
+        is_next_of_kin,
+        is_beneficiary
+      FROM [hris].[EmployeeEmergencyContacts]
+      WHERE employee_id = @employee_id
+      ORDER BY is_primary DESC, full_name ASC;
+    `);
+  return (rs.recordset || []).map((row: any) => ({
+    id: str(row.external_contact_id) || `ec-${String(row.emergency_contact_id)}`,
+    fullName: str(row.full_name) || 'Emergency Contact',
+    relationship: str(row.relationship) || 'Other',
+    phoneNumber: str(row.phone_number) || 'N/A',
+    alternativePhone: str(row.alternate_phone) || null,
+    email: str(row.email) || null,
+    address: str(row.address) || null,
+    isPrimary: Boolean(row.is_primary),
+    isNextOfKin: Boolean(row.is_next_of_kin),
+    isBeneficiary: Boolean(row.is_beneficiary),
+  }));
+};
+
+export const readEmployeeProfileDocumentsFromDb = async (employeeCode: string): Promise<HrisEmployeeDocumentRow[]> => {
+  const employeeId = await resolveEmployeeDbId(employeeCode);
+  if (!employeeId) return [];
+  const p = await pool();
+  if (!p) return [];
+  const rs = await p.request()
+    .input('employee_id', sql.BigInt, employeeId)
+    .query(`
+      SELECT
+        document_id,
+        document_category,
+        file_name,
+        mime_type,
+        size_bytes,
+        expires_at,
+        document_status,
+        verified_by,
+        created_at
+      FROM [hris].[EmployeeDocuments]
+      WHERE employee_id = @employee_id
+      ORDER BY created_at DESC, document_id DESC;
+    `);
+  return (rs.recordset || []).map((row: any) => {
+    const statusRaw = str(row.document_status).toLowerCase();
+    const status: HrisEmployeeDocumentRow['status'] =
+      statusRaw === 'verified' ? 'Verified'
+        : statusRaw === 'rejected' ? 'Rejected'
+          : statusRaw === 'archived' ? 'Archived'
+            : 'Uploaded';
+    return {
+      id: `doc-${String(row.document_id)}`,
+      category: str(row.document_category) || 'Document',
+      fileName: str(row.file_name) || 'file',
+      mimeType: str(row.mime_type) || 'application/octet-stream',
+      sizeBytes: Number(row.size_bytes || 0),
+      status,
+      uploadedAt: isoDateTime(row.created_at) || new Date().toISOString(),
+      expiresAt: isoDate(row.expires_at) || null,
+      verifiedBy: str(row.verified_by) || null,
+    };
+  });
+};
+
+export const insertEmployeeProfileDocumentInDb = async (input: {
+  employeeCode: string;
+  category: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  expiresAt?: string | null;
+  documentStatus?: string;
+  createdBy?: string | null;
+}) => {
+  const employeeId = await resolveEmployeeDbId(input.employeeCode);
+  if (!employeeId) return null;
+  const p = await pool();
+  if (!p) return null;
+  const rs = await p.request()
+    .input('employee_id', sql.BigInt, employeeId)
+    .input('document_category', sql.NVarChar(120), str(input.category) || 'Document')
+    .input('file_name', sql.NVarChar(260), str(input.fileName) || 'file')
+    .input('mime_type', sql.NVarChar(120), str(input.mimeType) || 'application/octet-stream')
+    .input('size_bytes', sql.BigInt, Math.max(0, Math.floor(Number(input.sizeBytes || 0))))
+    .input('expires_at', sql.Date, dateOrNull(input.expiresAt))
+    .input('document_status', sql.VarChar(30), str(input.documentStatus) || 'Uploaded')
+    .input('created_by', sql.NVarChar(128), nullable(input.createdBy))
+    .query(`
+      INSERT [hris].[EmployeeDocuments](
+        employee_id, document_category, file_name, mime_type, size_bytes, expires_at, document_status, created_by
+      )
+      OUTPUT INSERTED.document_id
+      VALUES (
+        @employee_id, @document_category, @file_name, @mime_type, @size_bytes, @expires_at, @document_status, @created_by
+      );
+    `);
+  const documentId = Number(rs.recordset?.[0]?.document_id || 0);
+  if (!documentId) return null;
+  return {
+    id: `doc-${documentId}`,
+    category: str(input.category) || 'Document',
+    fileName: str(input.fileName) || 'file',
+    mimeType: str(input.mimeType) || 'application/octet-stream',
+    sizeBytes: Math.max(0, Math.floor(Number(input.sizeBytes || 0))),
+    status: (str(input.documentStatus) || 'Uploaded') as HrisEmployeeDocumentRow['status'],
+    uploadedAt: new Date().toISOString(),
+    expiresAt: input.expiresAt ? isoDate(input.expiresAt) : null,
+    verifiedBy: null,
+  } satisfies HrisEmployeeDocumentRow;
 };
 
 export const readEmployeePhotoFromDb = async (employeeCode: string): Promise<{ data: Buffer; mimeType: string; fileName: string } | null> => {
