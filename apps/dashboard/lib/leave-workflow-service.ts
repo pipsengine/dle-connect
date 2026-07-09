@@ -17,6 +17,11 @@ import {
   type WorkflowStage,
 } from '@/lib/leave-management-store';
 import { postLeaveAllowanceOnAnnualLeaveApproval } from '@/lib/payroll-leave-allowance-store';
+import {
+  approvalStatusForEss,
+  isLeaveEssRequest,
+  workflowStageForEssStatus,
+} from '@/lib/leave-request-shared';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
 import { sendLeaveApprovalRequestEmail, sendLeaveRelieverAssignmentEmail, sendLeaveWorkflowEmail } from '@/lib/mail-service';
@@ -152,7 +157,7 @@ export const writeAllEssRequests = async (requests: EssLeaveRequest[]) => {
 };
 
 export const readEssLeaveRequests = async () =>
-  (await readAllEssRequests()).filter((item) => /leave/i.test(item.category) && item.startDate && item.endDate);
+  (await readAllEssRequests()).filter((item) => isLeaveEssRequest(item));
 
 export const expireStaleLeaveRequests = async (requests: EssLeaveRequest[]) => {
   let changed = false;
@@ -196,23 +201,6 @@ const normalizeLeaveStatus = (status: string): LeaveStatus => {
   if (['terminated', 'expired'].includes(normalized)) return 'Terminated';
   if (['completed'].includes(normalized)) return 'Completed';
   return 'Draft';
-};
-
-const workflowStageForEssStatus = (rawStatus: string, normalized: LeaveStatus): WorkflowStage => {
-  const lower = clean(rawStatus).toLowerCase();
-  if (lower === 'line manager review') return 'Supervisor';
-  if (lower === 'hr review') return 'HR';
-  return normalized === 'Draft' ? 'Employee' : normalized === 'Submitted' ? 'Supervisor' : normalized === 'Under Review' ? 'HR' : normalized === 'Approved' ? 'Final Approval' : 'Closed';
-};
-
-const approvalStatusFor = (status: LeaveStatus, rawStatus: string) => {
-  const lower = clean(rawStatus).toLowerCase();
-  if (lower === 'line manager review') return 'Awaiting Line Manager';
-  if (lower === 'hr review') return 'Awaiting HR';
-  if (['Approved', 'Completed'].includes(status)) return 'Approved';
-  if (status === 'Rejected') return 'Rejected';
-  if (['Cancelled', 'Withdrawn', 'Terminated'].includes(status)) return status;
-  return 'Pending';
 };
 
 const dateOnly = (value: unknown) => {
@@ -1058,7 +1046,7 @@ export const upsertEssLeaveRequestToDb = async (item: EssLeaveRequest, employees
     .input('Days', sql.Decimal(9, 2), round2(days))
     .input('StatusName', sql.NVarChar(40), status)
     .input('WorkflowStage', sql.NVarChar(40), workflowStageForEssStatus(rawStatus, status))
-    .input('ApprovalStatus', sql.NVarChar(60), approvalStatusFor(status, rawStatus))
+    .input('ApprovalStatus', sql.NVarChar(60), approvalStatusForEss(status, rawStatus))
     .input('PolicyComplianceStatus', sql.NVarChar(40), blocked ? 'Blocked' : exceptions.length ? 'Attention Required' : 'Compliant')
     .input('BalanceImpact', sql.Decimal(9, 2), leaveType === 'Unpaid Leave' ? 0 : round2(days))
     .input('AvailableBalance', sql.Decimal(9, 2), 0)
@@ -1356,7 +1344,7 @@ export const applyHrisLeaveWorkflowAction = async (input: {
     .input('Id', sql.NVarChar(120), input.applicationId)
     .input('StatusName', sql.NVarChar(40), hrisStatus)
     .input('WorkflowStage', sql.NVarChar(40), nextEssStatus ? workflowStageForEssStatus(nextEssStatus, hrisStatus) : 'HR')
-    .input('ApprovalStatus', sql.NVarChar(60), nextEssStatus ? approvalStatusFor(hrisStatus, nextEssStatus) : approvalStatusFor(hrisStatus, hrisStatus))
+    .input('ApprovalStatus', sql.NVarChar(60), nextEssStatus ? approvalStatusForEss(hrisStatus, nextEssStatus) : approvalStatusForEss(hrisStatus, hrisStatus))
     .query(`
 UPDATE [hris].[LeaveApplications]
 SET [StatusName]=@StatusName,[WorkflowStage]=@WorkflowStage,[ApprovalStatus]=@ApprovalStatus,[UpdatedAt]=SYSUTCDATETIME()

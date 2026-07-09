@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { resolvePublicAppOrigin } from '@/lib/public-app-url';
 
 export type LeaveEmailDecision = 'approve' | 'reject';
 export type LeaveEmailApproverKind = 'line-manager' | 'hr';
@@ -56,10 +57,7 @@ export const verifyLeaveEmailActionToken = (token: string) => {
   return payload;
 };
 
-export const portalBaseUrl = (input?: string | null) => {
-  const value = String(input || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3020').trim();
-  return value.replace(/\/$/, '') || 'http://localhost:3020';
-};
+export const portalBaseUrl = (input?: string | null) => resolvePublicAppOrigin(input);
 
 /** @deprecated Use leaveAuthorizePageUrl for authenticated approval flow */
 export const leaveEmailActionUrl = (token: string, baseUrl?: string | null) =>

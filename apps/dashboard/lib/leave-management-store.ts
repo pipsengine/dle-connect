@@ -6,6 +6,11 @@ import { reconcilePayrollLeaveAllowanceEvents, syncSageLeaveAllowanceEvents } fr
 import { getDleEnterpriseDbPool, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { syncSageLeaveToHris } from '@/lib/sage-leave-sync';
+import {
+  approvalStatusForEss,
+  isLeaveEssRequest,
+  workflowStageForEssStatus,
+} from '@/lib/leave-request-shared';
 
 export type LeaveRole = 'Leave Administrator' | 'HR Officer' | 'HR Manager' | 'Department Manager' | 'Supervisor' | 'Payroll Officer' | 'Employee' | 'Executive' | 'System Administrator' | 'Super Administrator';
 export type LeaveStatus = 'Draft' | 'Submitted' | 'Under Review' | 'Approved' | 'Rejected' | 'Withdrawn' | 'Cancelled' | 'Terminated' | 'Completed';
@@ -491,9 +496,42 @@ const defaultLeaveTypePolicies: LeaveTypeRule[] = [
 ];
 
 const activeStatus = (status: string) => ['active', 'confirmed', 'probation', 'on leave', 'contract active', 'reactivated'].includes(String(status || '').toLowerCase());
-export const isConfirmedPermanent = (employee: Pick<DleEmployeeDirectoryRow, 'status'>) => {
+
+const isPermanentEmployee = (employee: Pick<DleEmployeeDirectoryRow, 'employmentType' | 'employeeCategory' | 'staffCategory'>) => {
+  const category = [employee.employmentType, employee.employeeCategory, employee.staffCategory]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean)
+    .join(' ');
+  return /\b(permanent|perm)\b/.test(category);
+};
+
+export const isConfirmedPermanent = (
+  employee: Pick<DleEmployeeDirectoryRow, 'status' | 'confirmationDueDate' | 'probationEndDate' | 'employmentType' | 'employeeCategory' | 'staffCategory' | 'dateJoined' | 'yearsOfService'>,
+) => {
   const status = String(employee.status || '').toLowerCase();
-  return status.includes('confirmed') || status.includes('reactivated');
+  if (status.includes('confirmed') || status.includes('reactivated')) return true;
+  if (status.includes('probation')) return false;
+
+  const dueDate = String(employee.confirmationDueDate || employee.probationEndDate || '').slice(0, 10);
+  if (dueDate) {
+    const today = new Date().toISOString().slice(0, 10);
+    if (dueDate <= today) return true;
+  }
+
+  if (isPermanentEmployee(employee) && activeStatus(employee.status)) {
+    const years = Number(employee.yearsOfService || 0);
+    if (years >= 1) return true;
+    const joined = String(employee.dateJoined || '').slice(0, 10);
+    if (joined) {
+      const joinedAt = new Date(`${joined}T00:00:00.000Z`);
+      if (!Number.isNaN(joinedAt.getTime())) {
+        const months = (Date.now() - joinedAt.getTime()) / (30 * 24 * 60 * 60 * 1000);
+        if (months >= 12) return true;
+      }
+    }
+  }
+
+  return false;
 };
 
 const entitlementFor = (employee: DleEmployeeDirectoryRow, leaveType = 'Annual Leave') => {
@@ -818,7 +856,7 @@ const readEssLeaveRequests = async () => {
   try {
     const parsed = JSON.parse(await readFile(ESS_REQUESTS_PATH, 'utf8')) as EssLeaveRequest[];
     return Array.isArray(parsed)
-      ? parsed.filter((request) => request.category === 'Leave' && request.startDate && request.endDate)
+      ? parsed.filter((request) => isLeaveEssRequest(request))
       : [];
   } catch {
     return [];
@@ -945,7 +983,8 @@ const upsertEssLeaveRequests = async (pool: sql.ConnectionPool, employees: DleEm
   const requests = await readEssLeaveRequests();
   for (const item of requests) {
     const employee = employeeById.get(item.employeeId);
-    const initialStatus = normalizeLeaveStatus(item.status);
+    const rawStatus = item.status;
+    const initialStatus = normalizeLeaveStatus(rawStatus);
     const status = ['Submitted', 'Under Review'].includes(initialStatus) && workingDaysBetween(item.updatedAt || item.submittedAt || new Date().toISOString()) > 5 ? 'Terminated' : initialStatus;
     const leaveType = clean(item.leaveType) || 'Annual Leave';
     const startDate = dateOnly(item.startDate);
@@ -972,8 +1011,8 @@ const upsertEssLeaveRequests = async (pool: sql.ConnectionPool, employees: DleEm
       .input('EndDate', sql.Date, endDate)
       .input('Days', sql.Decimal(9, 2), round2(days))
       .input('StatusName', sql.NVarChar(40), status)
-      .input('WorkflowStage', sql.NVarChar(40), workflowStageForStatus(status))
-      .input('ApprovalStatus', sql.NVarChar(60), approvalStatusFor(status))
+      .input('WorkflowStage', sql.NVarChar(40), workflowStageForEssStatus(rawStatus, status))
+      .input('ApprovalStatus', sql.NVarChar(60), approvalStatusForEss(status, rawStatus))
       .input('PolicyComplianceStatus', sql.NVarChar(40), blocked ? 'Blocked' : exceptions.length ? 'Attention Required' : 'Compliant')
       .input('BalanceImpact', sql.Decimal(9, 2), leaveType === 'Unpaid Leave' ? 0 : round2(days))
       .input('AvailableBalance', sql.Decimal(9, 2), 0)

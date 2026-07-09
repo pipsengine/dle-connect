@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { normalizePublicHref } from '@/lib/public-app-url';
 import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
 import {
   Award,
@@ -620,7 +621,7 @@ export function EssCommunicationsView({
                                 return;
                               }
                             }
-                            window.location.href = href;
+                            window.location.href = normalizePublicHref(href);
                           }
                         : undefined
                     }

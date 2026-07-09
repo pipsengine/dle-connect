@@ -10,6 +10,7 @@ import { verifyPayrollEmailActionToken } from '@/lib/payroll-email-action-token'
 import { getPayrollRunForPeriod } from '@/lib/payroll-run-store';
 import { roleFromSession } from '@/lib/payroll-session';
 import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
+import { resolvePublicAppOriginFromRequest } from '@/lib/public-app-url';
 
 const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -108,7 +109,7 @@ export async function POST(request: NextRequest) {
     const workflowAction = payload.decision === 'approve' ? stageAction : 'reject-run';
     if (!workflowAction) return err(400, 'Unsupported approval stage.');
 
-    const origin = new URL(request.url).origin;
+    const origin = resolvePublicAppOriginFromRequest(request);
     const result = await executePayrollWorkflowAction({
       action: workflowAction,
       period: payload.period,

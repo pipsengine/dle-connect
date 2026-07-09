@@ -27,6 +27,8 @@ Write-Host "Cleaning apps/dashboard/.next..."
 & npm run clean
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "Starting dashboard dev server on port $Port..."
-& node node_modules/next/dist/bin/next dev apps/dashboard -p $Port -H 0.0.0.0
+Write-Host "Starting dashboard dev server on port $Port (use http://localhost:$Port in your browser)..."
+$env:APP_URL = "http://localhost:$Port"
+$env:NEXT_PUBLIC_APP_URL = "http://localhost:$Port"
+& node node_modules/next/dist/bin/next dev apps/dashboard -p $Port -H 127.0.0.1
 exit $LASTEXITCODE

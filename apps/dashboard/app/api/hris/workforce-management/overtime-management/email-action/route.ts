@@ -13,6 +13,7 @@ import {
   readOvertimeAuthorizationToken,
 } from '@/lib/overtime-approval-workflow-store';
 import { overtimeAuthorizePageUrl } from '@/lib/leave-email-action-token';
+import { resolvePublicAppOriginFromRequest } from '@/lib/public-app-url';
 
 const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
 
     const accept = request.headers.get('accept') || '';
     if (accept.includes('text/html')) {
-      return NextResponse.redirect(overtimeAuthorizePageUrl(token, new URL(request.url).origin), 307);
+      return NextResponse.redirect(overtimeAuthorizePageUrl(token, resolvePublicAppOriginFromRequest(request)), 307);
     }
 
     const tokenRow = await readOvertimeAuthorizationToken(token);
@@ -81,7 +82,7 @@ export async function GET(request: NextRequest) {
       status: requestItem.status,
       statusOk,
       requiresLogin: !authenticated,
-      authorizeUrl: overtimeAuthorizePageUrl(token, new URL(request.url).origin),
+      authorizeUrl: overtimeAuthorizePageUrl(token, resolvePublicAppOriginFromRequest(request)),
     });
   } catch (error) {
     return err(400, error instanceof Error ? error.message : 'Unable to validate overtime approval link.');
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const origin = new URL(request.url).origin;
+    const origin = resolvePublicAppOriginFromRequest(request);
     const comment = note || `Actioned from authenticated email link (${tokenRow.decision}).`;
     const updated = await actOnOvertimeAuthorizationRequest(
       tokenRow.requestId,

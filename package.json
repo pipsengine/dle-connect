@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" node node_modules/next/dist/bin/next dev apps/dashboard -p 3010",
     "dev:3020": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Restart-DashboardDev.ps1 -Port 3020",
-    "dev:3020:only": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" node node_modules/next/dist/bin/next dev apps/dashboard -p 3020 -H 0.0.0.0",
+    "dev:3020:only": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" node node_modules/next/dist/bin/next dev apps/dashboard -p 3020 -H 127.0.0.1",
     "dev:3020:clean": "npm run clean && npm run dev:3020:only",
     "dev:3020:restart": "npm run dev:3020",
     "dev:all": "npm run dev",
@@ -24,7 +24,9 @@
     "sync:nhf-from-sage-snapshot": "node scripts/sync-nhf-from-sage-snapshot.mjs",
     "reconcile:payroll-deductions": "node scripts/reconcile-payroll-deductions.mjs",
     "reconcile:runtime-payroll": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json apps/dashboard/scripts/reconcile-runtime-payroll.mts",
-    "sync:sage-earning-adjustments": "node scripts/sync-sage-earning-adjustments.mjs"
+    "sync:sage-earning-adjustments": "node scripts/sync-sage-earning-adjustments.mjs",
+    "verify:leave-workflow": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/verify-leave-workflow.mts",
+    "smoke:p0146-leave": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/smoke-test-p0146-leave.mts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

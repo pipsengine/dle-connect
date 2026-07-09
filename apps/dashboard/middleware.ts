@@ -20,6 +20,12 @@ const denied = (request: NextRequest, status = 403) => {
 export async function middleware(request: NextRequest) {
   try {
     const { pathname } = request.nextUrl;
+    const hostname = request.nextUrl.hostname.toLowerCase();
+    if (hostname === '0.0.0.0' || hostname === '::' || hostname === '[::]') {
+      const url = request.nextUrl.clone();
+      url.hostname = 'localhost';
+      return NextResponse.redirect(url, 307);
+    }
     if (pathname.startsWith('/change-password')) {
       const session = await verifySessionToken(request.cookies.get(AUTH_COOKIE)?.value);
       if (session?.isGlobalAdmin || (session && !session.firstLoginRequired && !session.passwordResetRequired)) {

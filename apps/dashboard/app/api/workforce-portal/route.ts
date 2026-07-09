@@ -66,11 +66,12 @@ import {
   transitionEssLeaveRequest,
   validateEssLeaveApplication,
   cancelEssLeaveRequest,
-  emailLeaveApproversForRequest,
   workflowDeadlineDays,
   workingDaysSince,
   writeAllEssRequests,
 } from '@/lib/leave-workflow-service';
+import { isLeaveEssRequest, isPendingLeaveStatus } from '@/lib/leave-request-shared';
+import { resolvePublicAppOriginFromRequest } from '@/lib/public-app-url';
 
 type EssRequest = {
   id: string;
@@ -1260,7 +1261,7 @@ export async function GET(request: Request) {
         documentCount: Number(employee.documentCount || 0),
       },
       widgets: {
-        leave: { entitlement: annualEntitlement, used: leaveUsed, balance: annualBalance, carryForward: leaveContext.carryForward || 0, pending: requests.filter((item) => item.category === 'Leave' && !['Approved', 'Rejected', 'Terminated', 'Closed'].includes(item.status)).length },
+        leave: { entitlement: annualEntitlement, used: leaveUsed, balance: annualBalance, carryForward: leaveContext.carryForward || 0, pending: requests.filter((item) => isLeaveEssRequest(item) && isPendingLeaveStatus(item.status)).length },
         attendance: { monthRate: attendanceRate, lateArrivals: essContext.attendance.lateArrivals, overtimeHours: essContext.attendance.overtimeHours, remoteDays: remoteDays || essContext.attendance.remoteDays },
         payroll: {
           monthlyPay: latestReleasedPayroll?.netPay || latestReleasedPayroll?.grossPay || 0,
@@ -1504,7 +1505,7 @@ export async function POST(request: Request) {
           roles: session.roles || [],
           isGlobalAdmin: session.isGlobalAdmin,
           comment: compact(body.comment) || undefined,
-          baseUrl: new URL(request.url).origin,
+          baseUrl: resolvePublicAppOriginFromRequest(request),
         });
         return ok({ request: result.request, leaveAllowance: result.allowanceMessage });
       } catch (error) {
@@ -1690,12 +1691,7 @@ export async function POST(request: Request) {
         invalidateEssPortalCache();
         return err(500, syncError instanceof Error ? syncError.message : 'Leave application could not be saved. No request was submitted.');
       }
-      const baseUrl = new URL(request.url).origin;
-      try {
-        await emailLeaveApproversForRequest({ request: requestItem, requester: employee, baseUrl });
-      } catch (emailError) {
-        console.error('Leave approval email failed after submit', emailError);
-      }
+      const baseUrl = resolvePublicAppOriginFromRequest(request);
       try {
         await notifyLeaveWorkflow(session, {
           requestId: requestItem.id,

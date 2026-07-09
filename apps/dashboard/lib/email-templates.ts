@@ -1,3 +1,5 @@
+import { resolvePublicAppOrigin } from '@/lib/public-app-url';
+
 export type DleEmailModule =
   | 'Payroll Management'
   | 'Leave Management'
@@ -40,8 +42,8 @@ const compact = (value: unknown) => String(value || '').trim();
 export const resolveEmailLogoUrl = (baseUrl?: string | null) => {
   const configured = compact(process.env.DLE_EMAIL_LOGO_URL);
   if (configured) return configured;
-  const base = compact(baseUrl || process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL);
-  return base ? `${base.replace(/\/$/, '')}/brand/dorman-long-logo.svg` : '';
+  const base = resolvePublicAppOrigin(baseUrl);
+  return base ? `${base}/brand/dorman-long-logo.svg` : '';
 };
 
 const BRAND = {

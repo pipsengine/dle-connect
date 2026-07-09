@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { approvedOvertimeStatuses } from '@/lib/timesheet-overtime-config';
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
-import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
+import { resolvePublicAppOrigin } from '@/lib/public-app-url';
 import {
   sendOvertimeApprovalRequestEmail,
   sendOvertimeApprovedEmail,
@@ -269,7 +269,7 @@ const mapEmployeeRow = (row: DbAuthorizationEmployeeRow): OvertimeAuthorizationE
   dayType: clean(row.DayType) || 'Weekday',
 });
 
-const portalBase = (input?: string | null) => clean(input || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3020').replace(/\/$/, '');
+const portalBase = (input?: string | null) => resolvePublicAppOrigin(input);
 
 const emailForName = async (nameOrEmail: string) => {
   const value = clean(nameOrEmail);

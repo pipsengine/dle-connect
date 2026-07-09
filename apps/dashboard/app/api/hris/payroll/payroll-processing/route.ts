@@ -4,6 +4,7 @@ import { normalizePayrollApprovalAction } from '@/lib/payroll-approval-workflow'
 import { getActivePayrollPeriod } from '@/lib/payroll-period-store';
 import { payrollSessionContext, processingPermissions } from '@/lib/payroll-session';
 import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
+import { resolvePublicAppOriginFromRequest } from '@/lib/public-app-url';
 
 const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
     const period = compact(body.period) || (await getActivePayrollPeriod());
     const note = compact(body.note);
     const reason = compact(body.reason);
-    const origin = new URL(request.url).origin;
+    const origin = resolvePublicAppOriginFromRequest(request);
 
     if (!action) return err(400, 'Action is required.');
     if (['calculate', 'create-run', 'validate-payroll', 'create-period', 'open-period'].includes(action) && !perms.canCalculate) {

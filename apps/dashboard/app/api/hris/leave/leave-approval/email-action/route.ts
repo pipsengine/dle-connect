@@ -5,6 +5,7 @@ import { sessionMatchesLeaveToken } from '@/lib/leave-approval-notification-serv
 import { verifyLeaveEmailActionToken } from '@/lib/leave-email-action-token';
 import { readAllEssRequests, transitionEssLeaveRequest } from '@/lib/leave-workflow-service';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { resolvePublicAppOriginFromRequest } from '@/lib/public-app-url';
 
 const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -125,7 +126,7 @@ export async function POST(request: NextRequest) {
       emailAction: true,
       approverKind: payload.approverKind,
       isGlobalAdmin: auth.isGlobalAdmin,
-      baseUrl: new URL(request.url).origin,
+      baseUrl: resolvePublicAppOriginFromRequest(request),
     });
 
     return ok({
