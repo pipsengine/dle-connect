@@ -5426,7 +5426,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     }).then((synced) => {
       if (synced) invalidateHrisEmployeeCaches();
     });
-    return jsonOk(sanitizeProfileForRole(rec, perms).payrollSummary);
+    return jsonOk(sanitizePayrollForRole(rec.payrollSummary, perms));
   }
 
   if (root === 'profile-extensions') {
