@@ -245,7 +245,22 @@ export const loadWorkflowLeaveRequests = async (options?: {
     merged.set(item.id, existing ? { ...existing, ...item } : item);
   }
 
-  let requests = [...merged.values()];
+  let requests = [...merged.values()].map((item) => {
+    const startDate = normalizeLeaveDate(item.startDate);
+    const endDate = normalizeLeaveDate(item.endDate);
+    if ((!item.startDate || startDate === item.startDate) && (!item.endDate || endDate === item.endDate)) return item;
+    return {
+      ...item,
+      ...(startDate ? { startDate } : {}),
+      ...(endDate ? { endDate } : {}),
+    };
+  });
+  const requestById = new Map(requests.map((item) => [item.id, item]));
+  const jsonAfterDateRepair = jsonRequests.map((item) => requestById.get(item.id) || item);
+  if (JSON.stringify(jsonRequests) !== JSON.stringify(jsonAfterDateRepair)) {
+    await writeAllEssRequests(jsonAfterDateRepair).catch(() => undefined);
+    invalidateEssPortalCache();
+  }
   if (options?.repair) {
     const repaired = await Promise.all(requests.map((request) => repairLeaveRequestApproverRouting(request, employees, {
       notify: options.notifyMissingManagers,
@@ -256,9 +271,9 @@ export const loadWorkflowLeaveRequests = async (options?: {
     requests = repaired;
     if (changed) {
       const repairedById = new Map(repaired.map((item) => [item.id, item]));
-      const nextJson = jsonRequests.map((item) => repairedById.get(item.id) || item);
+      const nextJson = jsonAfterDateRepair.map((item) => repairedById.get(item.id) || item);
       for (const item of repaired) {
-        if (!jsonRequests.some((existing) => existing.id === item.id)) nextJson.unshift(item);
+        if (!jsonAfterDateRepair.some((existing) => existing.id === item.id)) nextJson.unshift(item);
       }
       await writeAllEssRequests(nextJson).catch(() => undefined);
       invalidateEssPortalCache();
@@ -273,7 +288,8 @@ export const expireStaleLeaveRequests = async (requests: EssLeaveRequest[]) => {
   const now = new Date().toISOString();
   const next = requests.map((item) => {
     if (!/leave/i.test(item.category) || !['Line Manager Review', 'HR Review', 'Submitted'].includes(item.status)) return item;
-    if (workingDaysSince(item.updatedAt || item.submittedAt) <= workflowDeadlineDays) return item;
+    const slaAnchor = item.submittedAt || item.updatedAt;
+    if (!slaAnchor || workingDaysSince(slaAnchor) <= workflowDeadlineDays) return item;
     changed = true;
     return {
       ...item,
@@ -312,10 +328,19 @@ const normalizeLeaveStatus = (status: string): LeaveStatus => {
   return 'Draft';
 };
 
-const dateOnly = (value: unknown) => {
+const dateOnly = (value: unknown) => normalizeLeaveDate(value);
+
+export const normalizeLeaveDate = (value: unknown) => {
   const text = compact(value);
   if (!text) return '';
-  return text.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  const direct = new Date(text);
+  if (!Number.isNaN(direct.getTime())) return direct.toISOString().slice(0, 10);
+  const year = new Date().getFullYear();
+  const withYear = new Date(`${text} ${year}`);
+  if (!Number.isNaN(withYear.getTime())) return withYear.toISOString().slice(0, 10);
+  return '';
 };
 
 export const managerOwnerFor = (employee: DleEmployeeDirectoryRow) =>
@@ -1172,9 +1197,11 @@ export const upsertEssLeaveRequestToDb = async (item: EssLeaveRequest, employees
     ? 'Terminated'
     : initialStatus;
   const leaveType = clean(item.leaveType) || 'Annual Leave';
-  const startDate = dateOnly(item.startDate);
-  const endDate = dateOnly(item.endDate);
-  if (!startDate || !endDate) return;
+  const startDate = normalizeLeaveDate(item.startDate);
+  const endDate = normalizeLeaveDate(item.endDate);
+  if (!startDate || !endDate) {
+    throw new Error(`Leave request ${item.id} has invalid dates (${String(item.startDate || '')} to ${String(item.endDate || '')}).`);
+  }
   const days = Number(item.days || 0);
   const exceptions = [
     ...(days <= 0 ? ['Leave request has no calculated duration'] : []),
@@ -1330,7 +1357,7 @@ export const transitionEssLeaveRequest = async (input: {
   emailAction?: boolean;
   approverKind?: LeaveApproverKind;
 }) => {
-  const requests = await expireStaleLeaveRequests(await readAllEssRequests());
+  const requests = await expireStaleLeaveRequests(await loadWorkflowLeaveRequests());
   const found = requests.find((item) => item.id === input.requestId && /leave/i.test(item.category));
   if (!found) throw new Error('Leave request not found.');
   if (['Approved', 'Rejected', 'Terminated', 'Closed'].includes(found.status)) {
@@ -1393,7 +1420,11 @@ export const transitionEssLeaveRequest = async (input: {
   invalidateEssPortalCache();
 
   const updated = nextRequests.find((item) => item.id === input.requestId)!;
-  await upsertEssLeaveRequestToDb(updated, employees);
+  try {
+    await upsertEssLeaveRequestToDb(updated, employees);
+  } catch (error) {
+    console.error('[leave-workflow] failed to sync approved leave request to database', error);
+  }
   await auditLeaveAction({
     user: input.actorName,
     role: (approverKind === 'hr' ? 'HR Manager' : 'Supervisor') as LeaveRole,
@@ -1410,19 +1441,23 @@ export const transitionEssLeaveRequest = async (input: {
     && found.leaveType === 'Annual Leave'
     && Number(found.days || 0) >= dormantLongPolicy.allowanceMinimumAnnualDays
     && found.startDate) {
-    const applications = await readLeaveApplicationsForReconciliation({ syncEss: true });
-    const result = await postLeaveAllowanceOnAnnualLeaveApproval({
-      employee: requester,
-      applications,
-      leaveType: found.leaveType,
-      days: Number(found.days || 0),
-      startDate: found.startDate,
-      period: found.payrollPeriod || activePayrollPeriod(),
-      requestId: found.id,
-      source: 'ESS Leave Approval',
-      actor: input.actorName,
-    });
-    if (result.posted) allowanceMessage = result.message;
+    try {
+      const applications = await readLeaveApplicationsForReconciliation({ syncEss: false });
+      const result = await postLeaveAllowanceOnAnnualLeaveApproval({
+        employee: requester,
+        applications,
+        leaveType: found.leaveType,
+        days: Number(found.days || 0),
+        startDate: normalizeLeaveDate(found.startDate),
+        period: found.payrollPeriod || activePayrollPeriod(),
+        requestId: found.id,
+        source: 'ESS Leave Approval',
+        actor: input.actorName,
+      });
+      if (result.posted) allowanceMessage = result.message;
+    } catch (error) {
+      console.error('[leave-workflow] leave allowance posting failed after approval', error);
+    }
   }
 
   if (!approved) {

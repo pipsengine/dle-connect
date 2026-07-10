@@ -59,6 +59,7 @@ import {
   leaveWorkflowFor,
   loadWorkflowLeaveRequests,
   managerOwnerFor,
+  normalizeLeaveDate,
   notifyLeaveWorkflow as notifyLeaveWorkflowCore,
   notifyLineManagerLeaveSubmitted,
   pendingLeaveApprovalsForActor,
@@ -1612,8 +1613,8 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
     const leaveType = compact(body.leaveType || body.type);
     const leaveDays = Number(body.days || 0);
-    const startDate = compact(body.startDate);
-    const endDate = compact(body.endDate);
+    const startDate = normalizeLeaveDate(body.startDate);
+    const endDate = normalizeLeaveDate(body.endDate);
     const reason = compact(body.reason);
     const handover = compact(body.handover);
     const relieverEmployeeId = compact(body.relieverEmployeeId);
@@ -1729,6 +1730,20 @@ export async function POST(request: Request) {
             actorName: session.fullName || session.username,
             baseUrl,
           });
+        } else {
+          const fallbackCode = explicitDepartmentSupervisorCode(employee.department || '');
+          const fallbackManager = fallbackCode
+            ? employeeSource.employees.find((item) => employeeRequestMatches(item, fallbackCode))
+            : null;
+          if (fallbackManager) {
+            await notifyLineManagerLeaveSubmitted({
+              request: requestItem,
+              requester: employee,
+              manager: fallbackManager,
+              actorName: session.fullName || session.username,
+              baseUrl,
+            });
+          }
         }
       } catch (notificationError) {
         console.error('Leave in-app notification failed after submit', notificationError);

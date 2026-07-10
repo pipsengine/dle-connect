@@ -1319,7 +1319,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
           comment: input.comment,
         }),
       });
-      const json = (await res.json()) as ApiResponse<{ request: EssRequest; leaveAllowance?: string }>;
+      const json = await parseJsonResponse(res, 'Leave approval API') as ApiResponse<{ request: EssRequest; leaveAllowance?: string }>;
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to process leave approval');
       setToast(json.data?.leaveAllowance || `Leave request ${input.action === 'approve' ? 'approved' : 'rejected'}.`);
       await load();
