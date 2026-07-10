@@ -13,7 +13,7 @@ import {
   readOvertimeAuthorizationToken,
 } from '@/lib/overtime-approval-workflow-store';
 import { overtimeAuthorizePageUrl } from '@/lib/leave-email-action-token';
-import { resolvePublicAppOriginFromRequest } from '@/lib/public-app-url';
+import { resolvePublicAppOriginFromRequest, resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
 
 const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const origin = resolvePublicAppOriginFromRequest(request);
+    const origin = resolveWorkflowLinkOriginFromRequest(request);
     const comment = note || `Actioned from authenticated email link (${tokenRow.decision}).`;
     const updated = await actOnOvertimeAuthorizationRequest(
       tokenRow.requestId,

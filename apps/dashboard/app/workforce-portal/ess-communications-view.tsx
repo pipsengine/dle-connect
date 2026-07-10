@@ -621,7 +621,7 @@ export function EssCommunicationsView({
                                 return;
                               }
                             }
-                            window.location.href = normalizePublicHref(href);
+                            window.location.href = normalizePublicHref(href, typeof window !== 'undefined' ? window.location.origin : undefined);
                           }
                         : undefined
                     }

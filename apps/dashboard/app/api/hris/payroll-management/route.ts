@@ -10,7 +10,7 @@ import { appendPayrollAudit, capturePayrollSnapshot, getPayrollRunForPeriod, lis
 import { normalizePayrollApprovalAction } from '@/lib/payroll-approval-workflow';
 import { managementPermissions, payrollSessionContext, processingPermissions } from '@/lib/payroll-session';
 import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
-import { resolvePublicAppOriginFromRequest } from '@/lib/public-app-url';
+import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
 import { FINANCE_ONLY_PAYROLL_ACTIONS, isFinancePayrollOnlyUser } from '@/lib/access/payroll-access';
 import { buildExcelHtml, excelMimeType } from '@/lib/excel-export';
 
@@ -486,7 +486,7 @@ export async function POST(request: Request) {
     if (action === 'reopen-period' && !perms.canReopen) return jsonErr(403, 'Only CFO, Executive Director, or Super Admin can reopen closed payroll periods.');
 
     try {
-      const origin = resolvePublicAppOriginFromRequest(request);
+      const origin = resolveWorkflowLinkOriginFromRequest(request);
       const result = await executePayrollWorkflowAction({ action, period, actor, role, reason: reason || undefined, comment: comment || undefined, ip, paymentDate: body.paymentDate || null, isGlobalAdmin, baseUrl: origin });
       return jsonOk({ run: result.run });
     } catch (error) {

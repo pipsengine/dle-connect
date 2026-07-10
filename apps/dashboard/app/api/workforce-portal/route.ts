@@ -71,7 +71,7 @@ import {
   writeAllEssRequests,
 } from '@/lib/leave-workflow-service';
 import { isLeaveEssRequest, isPendingLeaveStatus } from '@/lib/leave-request-shared';
-import { resolvePublicAppOriginFromRequest } from '@/lib/public-app-url';
+import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
 
 type EssRequest = {
   id: string;
@@ -1505,7 +1505,7 @@ export async function POST(request: Request) {
           roles: session.roles || [],
           isGlobalAdmin: session.isGlobalAdmin,
           comment: compact(body.comment) || undefined,
-          baseUrl: resolvePublicAppOriginFromRequest(request),
+          baseUrl: resolveWorkflowLinkOriginFromRequest(request),
         });
         return ok({ request: result.request, leaveAllowance: result.allowanceMessage });
       } catch (error) {
@@ -1691,7 +1691,7 @@ export async function POST(request: Request) {
         invalidateEssPortalCache();
         return err(500, syncError instanceof Error ? syncError.message : 'Leave application could not be saved. No request was submitted.');
       }
-      const baseUrl = resolvePublicAppOriginFromRequest(request);
+      const baseUrl = resolveWorkflowLinkOriginFromRequest(request);
       try {
         await notifyLeaveWorkflow(session, {
           requestId: requestItem.id,

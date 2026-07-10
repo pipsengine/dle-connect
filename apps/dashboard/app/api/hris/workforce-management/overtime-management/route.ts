@@ -14,6 +14,7 @@ import {
   createOvertimeAuthorizationRequest,
   listOvertimeAuthorizationRequests,
 } from '@/lib/overtime-approval-workflow-store';
+import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
 
 const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -112,7 +113,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const id = String(body.id || '').trim();
     const action = String(body.action || '').trim() as OvertimeAction;
-    const baseUrl = `${request.nextUrl.protocol}//${request.nextUrl.host}`;
+    const baseUrl = resolveWorkflowLinkOriginFromRequest(request);
     if (String(body.action || '').trim() === 'create-authorization') {
       if (!hasAnyPermission(request, ['overtime.authorization.create', 'overtime.authorization.submit', 'workforce.manage', 'operations.timesheets.submit'], livePermissions)) return err(403, 'Permission denied.');
       await createOvertimeAuthorizationRequest({ ...body, portalBaseUrl: baseUrl }, body.actor ? String(body.actor) : 'Production Manager');
