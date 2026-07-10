@@ -589,7 +589,9 @@ export async function GET(request: Request) {
       }
     }
 
-    const cached = readEssPortalResponseCache(cacheKey);
+    const cached = request.headers.get('x-ess-refresh') === '1'
+      ? null
+      : readEssPortalResponseCache(cacheKey);
     if (cached) return ok(cached);
     const [employeeSource, rawRequests, loanApplications, loansConfig, taxConfig, pensionConfig, identityByKey] = await Promise.all([
       readPayrollEmployees(),

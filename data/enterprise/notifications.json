@@ -2,6 +2,102 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1783703696600-7ctkic",
+      "recipientUserId": "NYSC0033",
+      "recipientUsername": "NYSC0033",
+      "recipientEmployeeCode": "NYSC0033",
+      "recipientRoles": [],
+      "kind": "Workflow",
+      "module": "Leave Management",
+      "title": "Leave reliever assignment confirmed",
+      "body": "You have been assigned as reliever for Mr KAYODE OGBETAH: Annual Leave 2026-07-13 to 2026-07-15 (2026-07-13 to 2026-07-15).",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave",
+      "createdAt": "2026-07-10T17:14:56.600Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1783700769478-tmhaac"
+      }
+    },
+    {
+      "id": "ntf-1783703696586-4oph5w",
+      "recipientUserId": "NYSC0032",
+      "recipientUsername": "NYSC0032",
+      "recipientEmployeeCode": "NYSC0032",
+      "recipientRoles": [],
+      "kind": "Workflow",
+      "module": "Leave Management",
+      "title": "Leave request approved",
+      "body": "Annual Leave 2026-07-13 to 2026-07-15 (2026-07-13 to 2026-07-15) has received final HR approval.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=applications",
+      "createdAt": "2026-07-10T17:14:56.586Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1783700769478-tmhaac"
+      }
+    },
+    {
+      "id": "ntf-1783703296885-hunba8",
+      "recipientUserId": "system-leave-workflow",
+      "recipientUsername": "system-leave-workflow",
+      "recipientRoles": [
+        "HR Manager",
+        "HR Head",
+        "HR Officer",
+        "Leave Administrator"
+      ],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting HR approval",
+      "body": "Annual Leave 2026-07-13 to 2026-07-15 has been approved by the line manager and is awaiting HR Manager / Head approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-07-10T17:08:16.886Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1783700769478-tmhaac"
+      }
+    },
+    {
+      "id": "ntf-1783703296852-m393gy",
+      "recipientUserId": "NYSC0032",
+      "recipientUsername": "NYSC0032",
+      "recipientEmployeeCode": "NYSC0032",
+      "recipientRoles": [],
+      "kind": "Workflow",
+      "module": "Leave Management",
+      "title": "Leave request awaiting HR approval",
+      "body": "Annual Leave 2026-07-13 to 2026-07-15 has been approved by the line manager and is awaiting HR Manager / Head approval.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=applications",
+      "createdAt": "2026-07-10T17:08:16.853Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1783700769478-tmhaac"
+      }
+    },
+    {
       "id": "ntf-1783701406588-0hnkxa",
       "recipientUserId": "P0146",
       "recipientUsername": "P0146",

@@ -1764,31 +1764,58 @@ export const transitionEssLeaveRequest = async (input: {
     }
   }
 
-  if (!approved) {
+  const result = { request: updated, allowanceMessage };
+  void runLeaveApprovalFollowUp({
+    approved,
+    nextStatus,
+    updated,
+    requester,
+    actorName: input.actorName,
+    reason: input.comment,
+    baseUrl: input.baseUrl,
+  }).catch((error) => {
+    console.error('[leave-workflow] post-approval follow-up failed', error);
+  });
+
+  return result;
+};
+
+const runLeaveApprovalFollowUp = async (input: {
+  approved: boolean;
+  nextStatus: EssLeaveRequestStatus;
+  updated: EssLeaveRequest;
+  requester: DleEmployeeDirectoryRow;
+  actorName: string;
+  reason?: string;
+  baseUrl?: string | null;
+}) => {
+  if (!input.approved) {
     await notifyLeaveRejected({
-      request: updated,
-      requester,
+      request: input.updated,
+      requester: input.requester,
       actorName: input.actorName,
-      reason: input.comment,
+      reason: input.reason,
       baseUrl: input.baseUrl,
     });
-  } else if (nextStatus === 'HR Review') {
+    return;
+  }
+  if (input.nextStatus === 'HR Review') {
     await notifyLeaveAwaitingHrApproval({
-      request: updated,
-      requester,
+      request: input.updated,
+      requester: input.requester,
       actorName: input.actorName,
       baseUrl: input.baseUrl,
     });
-  } else if (nextStatus === 'Approved') {
+    return;
+  }
+  if (input.nextStatus === 'Approved') {
     await notifyLeaveFinalApproval({
-      request: updated,
-      requester,
+      request: input.updated,
+      requester: input.requester,
       actorName: input.actorName,
       baseUrl: input.baseUrl,
     });
   }
-
-  return { request: updated, allowanceMessage };
 };
 
 const mapHrisActionToEssStatus = (action: LeaveActionId, currentRaw?: string): EssLeaveRequestStatus | null => {

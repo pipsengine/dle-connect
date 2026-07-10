@@ -64,6 +64,9 @@ const createSmtpTransport = () => {
     requireTLS: useStartTls || String(process.env.DLE_SMTP_REQUIRE_TLS || 'true') === 'true',
     auth: user ? { user, pass } : undefined,
     tls: { minVersion: 'TLSv1.2' },
+    connectionTimeout: Number(process.env.DLE_SMTP_CONNECTION_TIMEOUT_MS || 10000),
+    greetingTimeout: Number(process.env.DLE_SMTP_GREETING_TIMEOUT_MS || 10000),
+    socketTimeout: Number(process.env.DLE_SMTP_SOCKET_TIMEOUT_MS || 15000),
   });
 };
 

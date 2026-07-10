@@ -17,6 +17,7 @@ import {
   Gauge,
   Info,
   Inbox,
+  Loader2,
   MessageSquare,
   Paperclip,
   Save,
@@ -208,10 +209,11 @@ const mapApprovals = (rows: SimpleRecord[]): ApprovalItem[] =>
 type EssLeaveApprovalsViewProps = {
   payload: EssLeaveApprovalsPayload | null;
   saving?: boolean;
+  actingRequestId?: string;
   onLeaveAction?: (input: { requestId: string; action: 'approve' | 'reject'; comment?: string }) => Promise<void>;
 };
 
-export function EssLeaveApprovalsView({ payload, saving, onLeaveAction }: EssLeaveApprovalsViewProps) {
+export function EssLeaveApprovalsView({ payload, saving, actingRequestId, onLeaveAction }: EssLeaveApprovalsViewProps) {
   const approvals = useMemo(() => mapApprovals(payload?.leave?.approvals || []), [payload?.leave?.approvals]);
   const metrics = payload?.leave?.approvalMetrics;
   const manager = payload?.managerMetrics;
@@ -251,19 +253,23 @@ export function EssLeaveApprovalsView({ payload, saving, onLeaveAction }: EssLea
   ];
 
   const canAct = Boolean(selected && onLeaveAction);
+  const runLeaveAction = (input: { requestId: string; action: 'approve' | 'reject'; comment?: string }) => {
+    if (!onLeaveAction || saving) return;
+    void onLeaveAction(input);
+  };
   const managerActions: Array<{ label: string; icon: LucideIcon; className: string; onClick?: () => void; disabled?: boolean }> = [
     {
       label: 'Approve',
       icon: ThumbsUp,
       className: 'bg-[#ECFDF5] text-[#16A34A] hover:bg-[#DCFCE7] ring-1 ring-[#BBF7D0]',
-      onClick: () => selected && onLeaveAction?.({ requestId: selected.requestId || selected.id, action: 'approve', comment }),
+      onClick: () => selected && runLeaveAction({ requestId: selected.requestId || selected.id, action: 'approve', comment }),
       disabled: saving || !canAct,
     },
     {
       label: 'Reject',
       icon: XCircle,
       className: 'bg-[#FEF2F2] text-[#DC2626] hover:bg-[#FEE2E2] ring-1 ring-[#FECACA]',
-      onClick: () => selected && onLeaveAction?.({ requestId: selected.requestId || selected.id, action: 'reject', comment }),
+      onClick: () => selected && runLeaveAction({ requestId: selected.requestId || selected.id, action: 'reject', comment }),
       disabled: saving || !canAct,
     },
     { label: 'Return for Correction', icon: ArrowLeftRight, className: 'bg-[#FFF7ED] text-[#D97706] hover:bg-[#FFEDD5] ring-1 ring-[#FED7AA]', disabled: !canAct },
@@ -476,11 +482,11 @@ export function EssLeaveApprovalsView({ payload, saving, onLeaveAction }: EssLea
                   <button type="button" className="text-[#94A3B8] hover:text-[#475569]" aria-label="Mention"><Users className="h-4 w-4" /></button>
                   <button
                     type="button"
-                    onClick={() => selected && comment.trim() && onLeaveAction?.({ requestId: selected.requestId || selected.id, action: 'approve', comment })}
+                    onClick={() => selected && comment.trim() && runLeaveAction({ requestId: selected.requestId || selected.id, action: 'approve', comment })}
                     disabled={saving || !canAct || !comment.trim()}
                     className="inline-flex items-center gap-1 rounded-[10px] bg-[#2563EB] px-2.5 py-1 text-[11px] font-bold text-white hover:bg-[#1D4ED8] disabled:opacity-50"
                   >
-                    <Send className="h-3 w-3" /> Post & Approve
+                    {actingRequestId === (selected?.requestId || selected?.id) ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />} Post & Approve
                   </button>
                 </div>
               </div>
@@ -667,21 +673,23 @@ export function EssLeaveApprovalsView({ payload, saving, onLeaveAction }: EssLea
                     <div className="flex items-center justify-end gap-1">
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); onLeaveAction?.({ requestId: row.requestId || row.id, action: 'approve', comment }); }}
-                        disabled={saving}
+                        onClick={(e) => { e.stopPropagation(); runLeaveAction({ requestId: row.requestId || row.id, action: 'approve', comment }); }}
+                        disabled={saving || !onLeaveAction}
                         className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-[#ECFDF5] text-[#16A34A] hover:bg-[#DCFCE7] disabled:opacity-50"
                         aria-label="Approve"
+                        title={actingRequestId === (row.requestId || row.id) ? 'Processing approval…' : 'Approve'}
                       >
-                        <Check className="h-3.5 w-3.5" />
+                        {actingRequestId === (row.requestId || row.id) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                       </button>
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); onLeaveAction?.({ requestId: row.requestId || row.id, action: 'reject', comment }); }}
-                        disabled={saving}
+                        onClick={(e) => { e.stopPropagation(); runLeaveAction({ requestId: row.requestId || row.id, action: 'reject', comment }); }}
+                        disabled={saving || !onLeaveAction}
                         className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-[#FEF2F2] text-[#DC2626] hover:bg-[#FEE2E2] disabled:opacity-50"
                         aria-label="Reject"
+                        title={actingRequestId === (row.requestId || row.id) ? 'Processing rejection…' : 'Reject'}
                       >
-                        <X className="h-3.5 w-3.5" />
+                        {actingRequestId === (row.requestId || row.id) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
                       </button>
                     </div>
                   </td>
