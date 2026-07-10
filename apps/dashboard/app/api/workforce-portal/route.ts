@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { countDirectReportsFromEmployees, readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { employeeReportsToManager } from '@/lib/reporting-manager-match';
+import { employeeReportsToManager, resolveReportingManagerDisplay } from '@/lib/reporting-manager-match';
+import { explicitDepartmentSupervisorCode } from '@/lib/department-reporting-manager-sync';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { AUTH_COOKIE, verifySessionToken, type SessionPayload } from '@/lib/auth/session';
 import { calculatePayrollEarnings, calculatePermanentUnionDues, isGenericPayrollGrade } from '@/lib/payroll-earnings-engine';
@@ -155,6 +156,7 @@ type EssProfileSection = {
 const buildEssProfileSections = (
   employee: DleEmployeeDirectoryRow,
   documents: Array<{ title: string; category: string; version: string; status: string }>,
+  employees: DleEmployeeDirectoryRow[] = [],
 ): EssProfileSection[] => {
   const emergencyStatus = employee.emergencyContactsComplete
     ? `${employee.emergencyContactCount} contact(s) on file`
@@ -259,7 +261,7 @@ const buildEssProfileSections = (
         { label: 'Staff category', value: configured(employee.staffCategory) },
         { label: 'Work location', value: configured(employee.workLocation || employee.location) },
         { label: 'Cost centre', value: configured(employee.costCenter) },
-        { label: 'Reporting manager', value: configured(employee.managerName) },
+        { label: 'Reporting manager', value: configured(resolveReportingManagerDisplay(employee, employees, explicitDepartmentSupervisorCode(employee.department || ''))) },
         { label: 'Date joined', value: dateOnly(employee.dateJoined || employee.contractStartDate) },
         { label: 'Confirmation date', value: dateOnly(employee.confirmationDueDate) },
         { label: 'Shift pattern', value: configured(employee.shift) },
@@ -1314,6 +1316,7 @@ export async function GET(request: Request) {
       profileSections: buildEssProfileSections(
         employee,
         employeeDocuments,
+        employeeSource.employees,
       ),
       profilePendingUpdates: profilePendingUpdates.map((item) => ({
         id: item.id,

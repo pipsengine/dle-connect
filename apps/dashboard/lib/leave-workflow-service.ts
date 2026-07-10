@@ -1100,7 +1100,8 @@ export const validateEssLeaveApplication = async (input: {
   relieverEmployeeId: string;
   excludeRequestId?: string;
 }) => {
-  const { employee, leaveType, startDate, endDate, days, relieverEmployeeId } = input;
+  try {
+    const { employee, leaveType, startDate, endDate, days, relieverEmployeeId } = input;
   const employeeSource = await readPayrollEmployees();
   const reliever = employeeSource.employees.find((item) => item.employeeId === relieverEmployeeId || item.employeeCode === relieverEmployeeId);
   if (!reliever) return { ok: false as const, status: 400, message: 'A department reliever must be selected.' };
@@ -1148,6 +1149,13 @@ export const validateEssLeaveApplication = async (input: {
   });
   if (!validation.ok) return { ok: false as const, status: validation.status, message: validation.message };
   return { ok: true as const };
+  } catch (error) {
+    return {
+      ok: false as const,
+      status: 500,
+      message: error instanceof Error ? error.message : 'Unable to validate leave application.',
+    };
+  }
 };
 
 export const upsertEssLeaveRequestToDb = async (item: EssLeaveRequest, employees: DleEmployeeDirectoryRow[]) => {

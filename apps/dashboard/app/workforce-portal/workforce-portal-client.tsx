@@ -209,6 +209,18 @@ type Payload = {
 type ApiResponse<T> = { status: 'success' | 'error'; data?: T; error?: string };
 type Tab = EssTab;
 
+const parseJsonResponse = async (res: Response, label: string) => {
+  const text = await res.text();
+  if (!text.trim()) {
+    throw new Error(`${label} returned an empty response (${res.status}). Refresh and try again.`);
+  }
+  try {
+    return JSON.parse(text) as ApiResponse<unknown>;
+  } catch {
+    throw new Error(`${label} returned an unexpected server response (${res.status}). The request may have timed out or the API route is unavailable.`);
+  }
+};
+
 const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 });
 const money2Fmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const numFmt = new Intl.NumberFormat('en-GB');
@@ -1127,7 +1139,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
     setError('');
     try {
       const res = await fetch('/api/workforce-portal', { headers: { 'x-ess-locale': locale }, cache: 'no-store' });
-      const json = (await res.json()) as ApiResponse<Payload>;
+      const json = await parseJsonResponse(res, 'Workforce portal API') as ApiResponse<Payload>;
       if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Workforce portal request failed (${res.status})`);
       setPayload(json.data);
       if (json.data.serviceCatalog?.length) {
@@ -1236,6 +1248,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
+          serviceId: 'leave',
           category: 'Leave Application',
           title: `${input.leaveType} ${input.startDate} to ${input.endDate}`,
           priority: 'Normal',
@@ -1251,7 +1264,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
           attachmentNames: input.attachmentNames,
         }),
       });
-      const json = (await res.json()) as ApiResponse<{ request: EssRequest; message?: string }>;
+      const json = await parseJsonResponse(res, 'Leave submission API') as ApiResponse<{ request: EssRequest; message?: string }>;
       if (!res.ok || json.status !== 'success' || !json.data?.request) {
         throw new Error(json.error || 'Unable to submit leave application');
       }

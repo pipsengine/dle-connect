@@ -1323,10 +1323,12 @@ export async function readLeaveManagementPayload(
   const employeeSource = await readPayrollEmployees();
   const employees = employeeSource.employees;
   const pool = await ensureDb();
-  await maybeSyncSageLeave();
-  await maybeSyncLeaveTypePolicies(pool, forceSync);
-  await maybeUpsertEssLeaveRequests(pool, employees, forceSync);
-  await maybeSyncLeaveBalances(pool, employees, forceSync);
+  if (!readOnly) {
+    await maybeSyncSageLeave();
+    await maybeSyncLeaveTypePolicies(pool, forceSync);
+    await maybeUpsertEssLeaveRequests(pool, employees, forceSync);
+    await maybeSyncLeaveBalances(pool, employees, forceSync);
+  }
   const [applicationsRaw, balances, leaveTypes, auditTrail] = await Promise.all([
     readLeaveApplications(pool),
     readLeaveBalances(pool),

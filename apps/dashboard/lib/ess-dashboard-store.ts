@@ -9,6 +9,8 @@ import type { SessionPayload } from '@/lib/auth/session';
 import { resolveActivePayrollPeriod } from '@/lib/payroll-periods';
 import { ensureEmployeeLeaveFromSage } from '@/lib/sage-leave-sync';
 import type { PayslipEmployeeIdentity } from '@/lib/payroll-payslip-identity-store';
+import { explicitDepartmentSupervisorCode } from '@/lib/department-reporting-manager-sync';
+import { resolveReportingManagerDisplay } from '@/lib/reporting-manager-match';
 
 const compact = (value: unknown) => String(value || '').trim();
 const round = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 10) / 10;
@@ -433,7 +435,11 @@ export async function buildEssDashboardContext(input: {
     },
     employeeSummary: {
       yearsOfService: yearsOfService(employee),
-      manager: compact(employee.managerName) || compact(employee.functionalManager) || compact(employee.departmentHead) || 'Not assigned',
+      manager: resolveReportingManagerDisplay(
+        employee,
+        employees,
+        explicitDepartmentSupervisorCode(employee.department || ''),
+      ),
       location: compact(employee.workLocation) || compact(employee.location) || compact(employee.officeLocation) || compact(employee.projectSite) || compact(payslipIdentity?.location) || '—',
       salaryGrade: compact(employee.salaryGrade) || compact(employee.jobGrade) || compact(payslipIdentity?.salaryGrade) || '—',
       payrollGroup: compact(employee.payrollGroup) || compact(payslipIdentity?.payrollGroup) || '—',

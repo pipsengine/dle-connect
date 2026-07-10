@@ -4,6 +4,8 @@ import { countDirectReportsFromEmployees, payrollDataSourceInfo, readDirectoryEm
 import { pendingLeaveApprovalsForActor, loadWorkflowLeaveRequests } from '@/lib/leave-workflow-service';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { listEnterpriseNotifications } from '@/lib/enterprise-notifications-store';
+import { explicitDepartmentSupervisorCode } from '@/lib/department-reporting-manager-sync';
+import { resolveReportingManagerDisplay } from '@/lib/reporting-manager-match';
 
 type CurrentUserContext = 'enterprise' | 'hris' | 'ess';
 
@@ -204,7 +206,11 @@ export async function GET(request: Request) {
       employmentStatus: employee?.status || session?.status || 'Active',
       dateJoined: employee?.dateJoined || '',
       yearsOfService: employee?.yearsOfService ?? 0,
-      reportingManager: employee?.managerName || employee?.functionalManager || employee?.departmentHead || 'Not assigned',
+      reportingManager: resolveReportingManagerDisplay(
+        employee,
+        employeeSource.employees,
+        employee ? explicitDepartmentSupervisorCode(employee.department || '') : null,
+      ),
       availabilityStatus: availabilityStatus(employee),
       onlineStatus: employee ? (availabilityStatus(employee) === 'Online' ? 'Online' : 'Offline') : 'Online',
       notificationCount,

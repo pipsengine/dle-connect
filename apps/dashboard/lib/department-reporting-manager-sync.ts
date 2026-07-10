@@ -23,6 +23,12 @@ const DEPARTMENTS_PENDING_MANUAL_REVIEW = new Set([
 ]);
 
 /** Explicit department → supervisor overrides where org data is incomplete. */
+export const explicitDepartmentSupervisorCode = (department: string) => {
+  const normalized = clean(department).toLowerCase().replace(/\s+/g, ' ');
+  return DEPARTMENT_SUPERVISOR_CODES[normalized] || null;
+};
+
+/** Explicit department → supervisor overrides where org data is incomplete. */
 const DEPARTMENT_SUPERVISOR_CODES: Record<string, string> = {
   'information technology': 'P0146',
   'it & enterprise systems': 'P0146',
