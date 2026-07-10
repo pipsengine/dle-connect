@@ -908,7 +908,7 @@ const leaveSectionToTab = (value?: string | null): LeaveTab | null => {
   return leaveTabs.find((tab) => tab.toLowerCase() === normalized) || null;
 };
 
-function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction, onWithdrawLeave, onRetryNotification, retryingRequestId, saving, actingRequestId, submitError, initialNow, initialSection, managerMetrics }: { payload: Payload | null; employee?: Payload['employee']; onLeaveSubmitted?: (input: { requestId: string; leaveType: string; startDate: string; endDate: string; days: number; reason: string; relieverEmployeeId: string; relieverName: string; handover: string; attachmentNames: string[] }) => Promise<void>; onLeaveAction?: (input: { requestId: string; action: 'approve' | 'reject'; comment?: string }) => Promise<void>; onWithdrawLeave?: (requestId: string) => Promise<void>; onRetryNotification?: (requestId: string) => Promise<void>; retryingRequestId?: string; saving?: boolean; actingRequestId?: string; submitError?: string; initialNow: string; initialSection?: string | null; managerMetrics?: Payload['managerMetrics'] }) {
+function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction, onWithdrawLeave, onRetryNotification, retryingRequestId, saving, actingRequestId, submitError, initialNow, initialSection, managerMetrics }: { payload: Payload | null; employee?: Payload['employee']; onLeaveSubmitted?: (input: { requestId: string; leaveType: string; startDate: string; endDate: string; days: number; reason: string; relieverEmployeeId: string; relieverName: string; handover: string; attachmentNames: string[] }) => Promise<boolean>; onLeaveAction?: (input: { requestId: string; action: 'approve' | 'reject'; comment?: string }) => Promise<void>; onWithdrawLeave?: (requestId: string) => Promise<void>; onRetryNotification?: (requestId: string) => Promise<void>; retryingRequestId?: string; saving?: boolean; actingRequestId?: string; submitError?: string; initialNow: string; initialSection?: string | null; managerMetrics?: Payload['managerMetrics'] }) {
   const [active, setActive] = useState<LeaveTab>(() => leaveSectionToTab(initialSection) || 'Leave Dashboard');
 
   useEffect(() => {
@@ -981,6 +981,35 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
     setActive('Apply Leave');
   };
 
+  const resetApplyForm = () => {
+    setStartDate('');
+    setEndDate('');
+    setReason('');
+    setReliever('');
+    setHandover('');
+    setAck(false);
+    setAttachmentNames([]);
+  };
+
+  const submitLeaveForm = async () => {
+    if (!onLeaveSubmitted) return;
+    const submitted = await onLeaveSubmitted({
+      requestId: draftRequestId,
+      leaveType,
+      startDate,
+      endDate,
+      days,
+      reason,
+      relieverEmployeeId: reliever,
+      relieverName: selectedReliever?.fullName || '',
+      handover,
+      attachmentNames,
+    });
+    if (!submitted) return;
+    resetApplyForm();
+    setActive('My Applications');
+  };
+
   return (
     <section className="space-y-4">
       {active === 'Leave Dashboard' ? (
@@ -1050,7 +1079,7 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
             {submitError ? <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-800">{submitError}</div> : null}
             <button
               type="button"
-              onClick={() => onLeaveSubmitted?.({ requestId: draftRequestId, leaveType, startDate, endDate, days, reason, relieverEmployeeId: reliever, relieverName: selectedReliever?.fullName || '', handover, attachmentNames })}
+              onClick={() => void submitLeaveForm()}
               disabled={saving || Boolean(validations.filter((item) => !item.includes('does not qualify')).length)}
               className="h-11 w-full rounded-lg bg-blue-600 text-sm font-black text-white disabled:bg-slate-200 disabled:text-slate-500"
             >
@@ -1191,7 +1220,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
     const requestedTab = searchParams.get('tab') as Tab | null;
     const requestedLeaveSection = searchParams.get('leaveSection');
     if (requestedTab && navItems.some((item) => item.id === requestedTab)) setTab(requestedTab);
-    setLeaveSection(requestedLeaveSection);
+    if (requestedLeaveSection) setLeaveSection(requestedLeaveSection);
   }, [searchParams]);
 
   const submitRequest = async () => {
@@ -1264,8 +1293,8 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
     }
   };
 
-  const submitLeaveApplication = async (input: { requestId: string; leaveType: string; startDate: string; endDate: string; days: number; reason: string; relieverEmployeeId: string; relieverName: string; handover: string; attachmentNames: string[] }) => {
-    if (!payload) return;
+  const submitLeaveApplication = async (input: { requestId: string; leaveType: string; startDate: string; endDate: string; days: number; reason: string; relieverEmployeeId: string; relieverName: string; handover: string; attachmentNames: string[] }): Promise<boolean> => {
+    if (!payload) return false;
     setSaving(true);
     setToast('');
     setError('');
@@ -1303,9 +1332,11 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
         || `Leave application submitted successfully. Reference ${submitted.id}. Status: ${submitted.status}.`,
       );
       navigateTab('leave', { leaveSection: 'applications' });
-      await load();
+      await load({ refresh: true });
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to submit leave application');
+      return false;
     } finally {
       setSaving(false);
     }
