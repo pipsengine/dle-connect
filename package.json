@@ -26,6 +26,11 @@
     "reconcile:runtime-payroll": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json apps/dashboard/scripts/reconcile-runtime-payroll.mts",
     "sync:sage-earning-adjustments": "node scripts/sync-sage-earning-adjustments.mjs",
     "verify:leave-workflow": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/verify-leave-workflow.mts",
+    "verify:leave-approver-routing": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/verify-leave-approver-routing.mts",
+    "sync:department-reporting-managers": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/sync-department-reporting-managers.ts",
+    "apply:administration-reporting-lines": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/apply-administration-reporting-lines.mts",
+    "reset:nysc0032-leave": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/reset-nysc0032-leave.mts",
+    "audit:department-reporting-managers": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/sync-department-reporting-managers.ts --summary",
     "smoke:p0146-leave": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/smoke-test-p0146-leave.mts"
   },
   "dependencies": {

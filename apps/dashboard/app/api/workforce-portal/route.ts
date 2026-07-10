@@ -56,6 +56,7 @@ import {
 import {
   expireStaleLeaveRequests,
   leaveWorkflowFor,
+  loadWorkflowLeaveRequests,
   managerOwnerFor,
   notifyLeaveWorkflow as notifyLeaveWorkflowCore,
   notifyLineManagerLeaveSubmitted,
@@ -585,7 +586,20 @@ export async function GET(request: Request) {
 
     const cached = readEssPortalResponseCache(cacheKey);
     if (cached) return ok(cached);
-    const [employeeSource, rawRequests, loanApplications, loansConfig, taxConfig, pensionConfig, identityByKey] = await Promise.all([readPayrollEmployees(), readRequests(), readPayrollLoanApplications(), readPayrollLoansConfig(), readPayrollTaxConfig(), readPayrollPensionConfig(), payslipIdentityMap()]);
+    const [employeeSource, rawRequests, loanApplications, loansConfig, taxConfig, pensionConfig, identityByKey] = await Promise.all([
+      readPayrollEmployees(),
+      loadWorkflowLeaveRequests({
+        repair: true,
+        notifyMissingManagers: true,
+        baseUrl: resolveWorkflowLinkOriginFromRequest(request),
+        actorName: session.fullName || session.username,
+      }),
+      readPayrollLoanApplications(),
+      readPayrollLoansConfig(),
+      readPayrollTaxConfig(),
+      readPayrollPensionConfig(),
+      payslipIdentityMap(),
+    ]);
     if (identityByKey.size === 0) {
       void syncPayslipIdentitiesFromSage({ migratedBy: 'Employee Self-Service background identity sync' }).catch(() => undefined);
     }

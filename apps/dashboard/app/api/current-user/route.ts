@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { countDirectReportsFromEmployees, payrollDataSourceInfo, readDirectoryEmployees } from '@/lib/payroll-employee-source';
-import { pendingLeaveApprovalsForActor, readAllEssRequests } from '@/lib/leave-workflow-service';
+import { pendingLeaveApprovalsForActor, loadWorkflowLeaveRequests } from '@/lib/leave-workflow-service';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { listEnterpriseNotifications } from '@/lib/enterprise-notifications-store';
 
@@ -164,10 +164,14 @@ export async function GET(request: Request) {
   const linked = Boolean(employee);
   const activeTeamSize = employee ? countDirectReportsFromEmployees(employeeSource.employees, employee) : 0;
   const role = employee ? rbacRole(employee, activeTeamSize) : session?.roles?.[0] || 'Employee';
+  const sessionRoles = (session?.roles || []).map((role) => normalize(role));
+  const sessionIsApprover = sessionRoles.some((role) =>
+    /super\s*admin|system\s*admin|manager|supervisor|head|hr|leave administrator/.test(role),
+  );
   let pendingApprovals = 0;
-  if (employee && session && (activeTeamSize > 0 || role !== 'Employee')) {
+  if (employee && session && (activeTeamSize > 0 || role !== 'Employee' || sessionIsApprover)) {
     try {
-      const allRequests = await readAllEssRequests();
+      const allRequests = await loadWorkflowLeaveRequests({ repair: true });
       const leaveApprovals = pendingLeaveApprovalsForActor(
         employee,
         allRequests,

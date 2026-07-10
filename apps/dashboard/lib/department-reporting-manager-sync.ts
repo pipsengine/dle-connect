@@ -1,16 +1,34 @@
-import { readEmployeeDirectoryFromDb, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import { getDleEnterpriseDbPool, readEmployeeDirectoryFromDb, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
-import { assignEmployeesToSupervisor } from '@/lib/supervisor-assignment-store';
+import { assignEmployeesToSupervisor, readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
 
 const clean = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
 
-const PRODUCTION_PATTERN = /\bproduction\b/i;
 const LEADERSHIP_PATTERN = /\b(manager|head|lead|supervisor|director)\b/i;
 
+/** Role-based supervisor overrides within ADMINSTRATION pending manual review for admin/front-office staff. */
+export const ADMINSTRATION_ROLE_SUPERVISOR_CODES = {
+  drivers: { supervisorCode: 'L2770', employeeCodes: [
+    'L0297', 'L1090', 'L1369', 'L1618', 'L1963', 'L2125', 'L2142', 'L2191',
+    'L2214', 'L2216', 'L2254', 'L2331', 'L2336', 'L2374', 'L2775', 'L2777',
+    'L2779', 'P0309',
+  ] },
+  security: { supervisorCode: 'P0272', employeeCodes: ['L0263', 'L0862', 'L1714', 'L1986'] },
+} as const;
+
+/** Departments that need manual supervisor review before any auto-assignment runs. */
+const DEPARTMENTS_PENDING_MANUAL_REVIEW = new Set([
+  'adminstration',
+  'administration',
+]);
+
+/** Explicit department → supervisor overrides where org data is incomplete. */
 const DEPARTMENT_SUPERVISOR_CODES: Record<string, string> = {
   'information technology': 'P0146',
   'it & enterprise systems': 'P0146',
   'it and enterprise systems': 'P0146',
+  'security': 'P0272',
+  'security & community liaison': 'P0272',
 };
 
 export type DepartmentReportingSyncRow = {
@@ -24,6 +42,15 @@ export type DepartmentReportingSyncRow = {
   reason: string;
 };
 
+export type DepartmentSupervisorSummary = {
+  department: string;
+  employeeCount: number;
+  missingManagerCount: number;
+  supervisorCode: string | null;
+  supervisorName: string | null;
+  resolution: string;
+};
+
 export type DepartmentReportingSyncResult = {
   generatedAt: string;
   dryRun: boolean;
@@ -31,9 +58,9 @@ export type DepartmentReportingSyncResult = {
   employeesReviewed: number;
   employeesNeedingAssignment: number;
   employeesUpdated: number;
-  skippedProduction: number;
   skippedOutOfScope: number;
   departmentsWithoutSupervisor: string[];
+  departmentSummaries: DepartmentSupervisorSummary[];
   planned: DepartmentReportingSyncRow[];
   assignmentBatch: string | null;
 };
@@ -42,19 +69,24 @@ const normalizeDepartment = (value: string) => clean(value).toLowerCase().replac
 
 const isInactive = (status: string) => /inactive|terminated|resigned|retired|deceased|suspend/i.test(clean(status));
 
-const isProductionDepartment = (department: string) => PRODUCTION_PATTERN.test(clean(department));
-
 const inScopeEmployee = (employee: DleEmployeeDirectoryRow) => {
   const employmentType = clean(employee.employmentType).toLowerCase();
   const code = clean(employee.employeeCode || employee.employeeId).toUpperCase();
-  if (employmentType.includes('permanent') || employmentType === 'lumpsum' || employmentType.includes('nysc') || employmentType === 'it') {
+  if (
+    employmentType.includes('permanent')
+    || employmentType === 'lumpsum'
+    || employmentType.includes('contract')
+    || employmentType.includes('nysc')
+    || employmentType === 'it'
+  ) {
     return true;
   }
-  return /^(P|L|NYSC|N)\d/i.test(code);
+  return /^(P|L|NYSC|N|C)\d/i.test(code);
 };
 
 const leadershipScore = (employee: DleEmployeeDirectoryRow) => {
   const title = `${clean(employee.jobTitle)} ${clean(employee.designation)}`.toLowerCase();
+  if (/\bsecurity\b/.test(title) && /\bmanager\b/i.test(title)) return 0;
   if (!LEADERSHIP_PATTERN.test(title)) return 0;
   if (/\b(ag\.|acting)\b.*\bmanager\b/i.test(title) || /\bit manager\b/i.test(title)) return 100;
   if (/\bmanager\b/i.test(title)) return 80;
@@ -65,6 +97,21 @@ const leadershipScore = (employee: DleEmployeeDirectoryRow) => {
   return 10;
 };
 
+const isPermanentLikeSupervisor = (employee: DleEmployeeDirectoryRow) => {
+  const code = clean(employee.employeeCode || employee.employeeId).toUpperCase();
+  const type = clean(employee.employmentType).toLowerCase();
+  if (/^C\d/.test(code)) return leadershipScore(employee) >= 50;
+  return type.includes('permanent') || type === 'lumpsum' || /^P\d/.test(code) || leadershipScore(employee) > 0;
+};
+
+/** Department-wide default supervisor must be permanent or lumpsum leadership (P/L), not contract staff. */
+const isDepartmentHeadCandidate = (employee: DleEmployeeDirectoryRow) => {
+  const code = clean(employee.employeeCode || employee.employeeId).toUpperCase();
+  if (/^P\d/.test(code) || /^L\d/.test(code)) return true;
+  const type = clean(employee.employmentType).toLowerCase();
+  return (type.includes('permanent') || type === 'lumpsum') && leadershipScore(employee) > 0;
+};
+
 const employeeCodeFromReference = (reference: string) => {
   const value = clean(reference);
   if (!value) return '';
@@ -72,6 +119,23 @@ const employeeCodeFromReference = (reference: string) => {
   if (prefixed?.[1]) return prefixed[1].toUpperCase().replace(/^0+/, (digits) => (digits ? digits : '0'));
   const embedded = value.match(/\b(P\d+|L\d+|NYSC\d+|C\d+)\b/i);
   return embedded?.[1]?.toUpperCase() || '';
+};
+
+const namesMatch = (left: string, right: string) => {
+  const a = clean(left).toLowerCase();
+  const b = clean(right).toLowerCase();
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
+};
+
+const referenceMatchesEmployee = (employee: DleEmployeeDirectoryRow, reference: string) => {
+  if (!reference) return false;
+  const code = clean(employee.employeeCode || employee.employeeId).toUpperCase();
+  const refCode = employeeCodeFromReference(reference).toUpperCase();
+  if (refCode && code === refCode) return true;
+  if (namesMatch(employee.fullName, reference)) return true;
+  const embeddedName = reference.includes(' - ') ? clean(reference.split(' - ').slice(1).join(' - ')) : '';
+  return Boolean(embeddedName && namesMatch(employee.fullName, embeddedName));
 };
 
 const reportingManagerMatchesSupervisor = (
@@ -96,24 +160,81 @@ const reportingManagerMatchesSupervisor = (
   );
 };
 
+const readOrganizationDepartmentLeaders = async () => {
+  const leaders = new Map<string, string>();
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) return leaders;
+  try {
+    const result = await pool.request().query(`
+SELECT [Name], [Leader]
+FROM [hris].[OrganizationDepartments]
+WHERE [SourceSystem] IN (N'DLE Enterprise', N'DLE Enterprise HRIS')
+  AND LTRIM(RTRIM(ISNULL([Leader], N''))) <> N'';`);
+    for (const row of result.recordset || []) {
+      const department = clean(row.Name);
+      const leader = clean(row.Leader);
+      if (department && leader) leaders.set(normalizeDepartment(department), leader);
+    }
+  } catch {
+    // OrganizationDepartments may not exist in every environment.
+  }
+  return leaders;
+};
+
+const buildSupervisorAssignmentMap = async (allEmployees: DleEmployeeDirectoryRow[]) => {
+  const assignments = await readSupervisorAssignments();
+  const byEmployeeCode = new Map<string, DleEmployeeDirectoryRow>();
+  const employeeByCode = new Map(
+    allEmployees.map((employee) => [clean(employee.employeeCode || employee.employeeId).toUpperCase(), employee]),
+  );
+  for (const assignment of assignments) {
+    const employeeCode = clean(assignment.employeeCode).toUpperCase();
+    const supervisorCode = clean(assignment.supervisorEmployeeCode).toUpperCase();
+    if (!employeeCode || !supervisorCode) continue;
+    const supervisor = employeeByCode.get(supervisorCode)
+      || allEmployees.find((employee) => referenceMatchesEmployee(employee, supervisorCode))
+      || null;
+    if (supervisor) byEmployeeCode.set(employeeCode, supervisor);
+  }
+  return byEmployeeCode;
+};
+
 const resolveDepartmentSupervisor = (
   department: string,
   employeesInDepartment: DleEmployeeDirectoryRow[],
   allEmployees: DleEmployeeDirectoryRow[],
-): DleEmployeeDirectoryRow | null => {
+  orgLeaders: Map<string, string>,
+): { supervisor: DleEmployeeDirectoryRow | null; resolution: string } => {
   const departmentKey = normalizeDepartment(department);
+  const activeInDepartment = employeesInDepartment.filter((employee) => !isInactive(employee.status));
+
   const overrideCode = DEPARTMENT_SUPERVISOR_CODES[departmentKey];
   if (overrideCode) {
     const override = allEmployees.find((employee) => clean(employee.employeeCode).toUpperCase() === overrideCode);
-    if (override && !isInactive(override.status)) return override;
+    if (override && !isInactive(override.status)) {
+      return { supervisor: override, resolution: 'Explicit department supervisor mapping' };
+    }
   }
 
-  const activeInDepartment = employeesInDepartment.filter((employee) => !isInactive(employee.status));
+  const orgLeaderRef = orgLeaders.get(departmentKey);
+  if (orgLeaderRef) {
+    const orgLeader = allEmployees.find((employee) => referenceMatchesEmployee(employee, orgLeaderRef));
+    if (orgLeader && !isInactive(orgLeader.status) && isDepartmentHeadCandidate(orgLeader)) {
+      return { supervisor: orgLeader, resolution: 'Organization department leader' };
+    }
+  }
+
   const leadershipCandidates = activeInDepartment
+    .filter((employee) => isDepartmentHeadCandidate(employee))
     .map((employee) => ({ employee, score: leadershipScore(employee) }))
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score || a.employee.fullName.localeCompare(b.employee.fullName));
-  if (leadershipCandidates.length) return leadershipCandidates[0].employee;
+  if (leadershipCandidates.length) {
+    return {
+      supervisor: leadershipCandidates[0].employee,
+      resolution: `Department ${leadershipCandidates[0].score >= 80 ? 'manager' : leadershipCandidates[0].score >= 60 ? 'lead' : 'supervisor'} from job title`,
+    };
+  }
 
   const managerCounts = new Map<string, { count: number; code: string }>();
   for (const employee of activeInDepartment) {
@@ -128,24 +249,29 @@ const resolveDepartmentSupervisor = (
   const dominant = [...managerCounts.entries()].sort((a, b) => b[1].count - a[1].count)[0];
   if (dominant) {
     const supervisor = allEmployees.find((employee) => {
+      if (!isDepartmentHeadCandidate(employee)) return false;
       const keys = [employee.employeeCode, employee.employeeId, employee.fullName].map((value) => normalizePayrollMatchKey(value));
       return keys.includes(dominant[0]) || reportingManagerMatchesSupervisor(dominant[1].code, employee);
     });
-    if (supervisor && !isInactive(supervisor.status)) return supervisor;
+    if (supervisor && !isInactive(supervisor.status)) {
+      return { supervisor, resolution: 'Dominant reporting manager in department' };
+    }
   }
 
   const departmentHeadName = activeInDepartment.map((employee) => clean(employee.departmentHead)).find(Boolean);
   if (departmentHeadName) {
-    const head = allEmployees.find((employee) => clean(employee.fullName).toLowerCase() === departmentHeadName.toLowerCase());
-    if (head && !isInactive(head.status)) return head;
+    const head = allEmployees.find((employee) => namesMatch(employee.fullName, departmentHeadName));
+    if (head && !isInactive(head.status)) {
+      return { supervisor: head, resolution: 'Department head field' };
+    }
   }
 
-  return null;
+  return { supervisor: null, resolution: 'No supervisor resolved' };
 };
 
 export async function auditDepartmentReportingManagers(): Promise<DepartmentReportingSyncResult> {
   const employees = (await readEmployeeDirectoryFromDb()) || [];
-  return buildDepartmentReportingSyncPlan(employees, true);
+  return await buildDepartmentReportingSyncPlan(employees, true);
 }
 
 export async function syncDepartmentReportingManagers(input: {
@@ -154,7 +280,7 @@ export async function syncDepartmentReportingManagers(input: {
   departments?: string[];
 } = {}): Promise<DepartmentReportingSyncResult> {
   const employees = (await readEmployeeDirectoryFromDb()) || [];
-  const plan = buildDepartmentReportingSyncPlan(employees, Boolean(input.dryRun), input.departments);
+  const plan = await buildDepartmentReportingSyncPlan(employees, Boolean(input.dryRun), input.departments);
   if (input.dryRun || plan.planned.length === 0) return plan;
 
   const grouped = new Map<string, DepartmentReportingSyncRow[]>();
@@ -172,7 +298,7 @@ export async function syncDepartmentReportingManagers(input: {
       employeeCodes: rows.map((row) => row.employeeCode),
       assignmentGroup: 'Department Reporting Line',
       assignmentBatch: assignmentBatch || undefined,
-      reason: 'Department/unit reporting manager alignment (excluding Production).',
+      reason: 'Department/unit reporting manager alignment for leave and approval routing.',
       performedBy: clean(input.performedBy) || 'department-reporting-sync',
       sourceRows: rows.map((row) => ({
         employeeCode: row.employeeCode,
@@ -193,16 +319,17 @@ export async function syncDepartmentReportingManagers(input: {
   };
 }
 
-function buildDepartmentReportingSyncPlan(
+async function buildDepartmentReportingSyncPlan(
   employees: DleEmployeeDirectoryRow[],
   dryRun: boolean,
   departmentFilter?: string[],
-): DepartmentReportingSyncResult {
+): Promise<DepartmentReportingSyncResult> {
   const filter = new Set((departmentFilter || []).map(normalizeDepartment).filter(Boolean));
   const activeEmployees = employees.filter((employee) => !isInactive(employee.status));
+  const orgLeaders = await readOrganizationDepartmentLeaders();
+  const supervisorAssignments = await buildSupervisorAssignmentMap(activeEmployees);
   const departments = new Map<string, DleEmployeeDirectoryRow[]>();
 
-  let skippedProduction = 0;
   let skippedOutOfScope = 0;
 
   for (const employee of activeEmployees) {
@@ -211,15 +338,12 @@ function buildDepartmentReportingSyncPlan(
       skippedOutOfScope += 1;
       continue;
     }
-    if (isProductionDepartment(department)) {
-      skippedProduction += 1;
-      continue;
-    }
     if (!inScopeEmployee(employee)) {
       skippedOutOfScope += 1;
       continue;
     }
     if (filter.size && !filter.has(normalizeDepartment(department))) continue;
+    if (DEPARTMENTS_PENDING_MANUAL_REVIEW.has(normalizeDepartment(department))) continue;
     const bucket = departments.get(department) || [];
     bucket.push(employee);
     departments.set(department, bucket);
@@ -227,39 +351,61 @@ function buildDepartmentReportingSyncPlan(
 
   const planned: DepartmentReportingSyncRow[] = [];
   const departmentsWithoutSupervisor: string[] = [];
+  const departmentSummaries: DepartmentSupervisorSummary[] = [];
 
   for (const [department, departmentEmployees] of departments.entries()) {
-    const supervisor = resolveDepartmentSupervisor(department, departmentEmployees, activeEmployees);
+    const { supervisor, resolution } = resolveDepartmentSupervisor(department, departmentEmployees, activeEmployees, orgLeaders);
+    const missingManagerCount = departmentEmployees.filter((employee) => !clean(employee.managerName)).length;
+
+    departmentSummaries.push({
+      department,
+      employeeCount: departmentEmployees.length,
+      missingManagerCount,
+      supervisorCode: supervisor ? clean(supervisor.employeeCode) : null,
+      supervisorName: supervisor ? clean(supervisor.fullName) : null,
+      resolution,
+    });
+
     if (!supervisor) {
       departmentsWithoutSupervisor.push(department);
       continue;
     }
 
     for (const employee of departmentEmployees) {
-      if (clean(employee.employeeCode).toUpperCase() === clean(supervisor.employeeCode).toUpperCase()) continue;
+      const employeeCode = clean(employee.employeeCode || employee.employeeId).toUpperCase();
+      if (employeeCode === clean(supervisor.employeeCode).toUpperCase()) continue;
 
+      const assignedSupervisor = supervisorAssignments.get(employeeCode);
+      const targetSupervisor = assignedSupervisor || supervisor;
       const hasManager = Boolean(clean(employee.managerName));
       const explicitDepartment = Boolean(DEPARTMENT_SUPERVISOR_CODES[normalizeDepartment(department)]);
-      const needsExplicitSupervisor = explicitDepartment && !reportingManagerMatchesSupervisor(clean(employee.managerName), supervisor);
+      const needsExplicitSupervisor = explicitDepartment && !reportingManagerMatchesSupervisor(clean(employee.managerName), targetSupervisor);
+      const needsAssignmentSupervisor = assignedSupervisor && !reportingManagerMatchesSupervisor(clean(employee.managerName), assignedSupervisor);
       const needsManager = !hasManager;
 
-      if (!needsManager && !needsExplicitSupervisor) continue;
-      if (hasManager && !needsExplicitSupervisor) continue;
+      if (!needsManager && !needsExplicitSupervisor && !needsAssignmentSupervisor) continue;
+      if (needsManager && !assignedSupervisor && !isDepartmentHeadCandidate(targetSupervisor)) continue;
+
+      const reason = needsAssignmentSupervisor
+        ? 'Trade supervisor assignment alignment'
+        : needsExplicitSupervisor
+          ? 'Explicit department supervisor mapping'
+          : 'Missing reporting manager for department/unit';
 
       planned.push({
-        employeeCode: clean(employee.employeeCode),
+        employeeCode: clean(employee.employeeCode || employee.employeeId),
         employeeName: clean(employee.fullName),
         department,
         employmentType: clean(employee.employmentType),
         previousReportingManager: clean(employee.managerName) || null,
-        supervisorCode: clean(supervisor.employeeCode),
-        supervisorName: clean(supervisor.fullName),
-        reason: needsExplicitSupervisor
-          ? 'Explicit department supervisor mapping'
-          : 'Missing reporting manager for department/unit',
+        supervisorCode: clean(targetSupervisor.employeeCode || targetSupervisor.employeeId),
+        supervisorName: clean(targetSupervisor.fullName),
+        reason,
       });
     }
   }
+
+  departmentSummaries.sort((a, b) => a.department.localeCompare(b.department));
 
   return {
     generatedAt: new Date().toISOString(),
@@ -268,9 +414,9 @@ function buildDepartmentReportingSyncPlan(
     employeesReviewed: [...departments.values()].reduce((sum, rows) => sum + rows.length, 0),
     employeesNeedingAssignment: planned.length,
     employeesUpdated: 0,
-    skippedProduction,
     skippedOutOfScope,
     departmentsWithoutSupervisor: departmentsWithoutSupervisor.sort((a, b) => a.localeCompare(b)),
+    departmentSummaries,
     planned: planned.sort((a, b) => a.department.localeCompare(b.department) || a.employeeCode.localeCompare(b.employeeCode)),
     assignmentBatch: null,
   };

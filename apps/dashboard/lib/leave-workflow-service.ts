@@ -157,7 +157,116 @@ export const writeAllEssRequests = async (requests: EssLeaveRequest[]) => {
 };
 
 export const readEssLeaveRequests = async () =>
-  (await readAllEssRequests()).filter((item) => isLeaveEssRequest(item));
+  (await loadWorkflowLeaveRequests()).filter((item) => isLeaveEssRequest(item));
+
+const PENDING_WORKFLOW_STATUSES = new Set<EssLeaveRequestStatus>(['Submitted', 'Line Manager Review', 'HR Review']);
+
+const readPendingLeaveRequestsFromDb = async (employees: DleEmployeeDirectoryRow[]) => {
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) return [] as EssLeaveRequest[];
+  try {
+    const result = await pool.request().query(`
+SELECT [Id],[EmployeeId],[FullName],[LeaveType],[StartDate],[EndDate],[Days],[StatusName],[WorkflowStage],[ManagerName],[ActingOfficer],[CreatedAt],[UpdatedAt]
+FROM [hris].[LeaveApplications]
+WHERE [StatusName] IN (N'Under Review', N'Submitted', N'Line Manager Review', N'HR Review')
+   OR [WorkflowStage] IN (N'Supervisor', N'HR');`);
+    return (result.recordset || [])
+      .map((row: Record<string, unknown>) => essLeaveRequestFromDbRow(row, employees))
+      .filter((item: EssLeaveRequest | null): item is EssLeaveRequest => Boolean(item))
+      .filter((item) => PENDING_WORKFLOW_STATUSES.has(item.status));
+  } catch {
+    return [] as EssLeaveRequest[];
+  }
+};
+
+const managerNotificationAlreadySent = (request: EssLeaveRequest) =>
+  (request.comments || []).some((entry) => /line manager (notified|notification sent)/i.test(entry.comment));
+
+export const repairLeaveRequestApproverRouting = async (
+  request: EssLeaveRequest,
+  employees: DleEmployeeDirectoryRow[],
+  options?: { notify?: boolean; baseUrl?: string | null; actorName?: string },
+): Promise<EssLeaveRequest> => {
+  if (!PENDING_WORKFLOW_STATUSES.has(request.status)) return request;
+  const requester = resolveEmployeeReference(employees, request.employeeId);
+  if (!requester) return request;
+
+  const lineManager = resolveLineManagerForEmployee(requester, employees);
+  const managerCode = lineManager ? compact(lineManager.employee.employeeCode || lineManager.employee.employeeId) : '';
+  const managerLabel = lineManager?.label || compact(request.lineManagerName) || managerOwnerFor(requester);
+  const now = new Date().toISOString();
+  const needsManagerAssignment = Boolean(managerCode) && !compact(request.lineManagerEmployeeId);
+  const updated: EssLeaveRequest = needsManagerAssignment
+    ? {
+        ...request,
+        lineManagerEmployeeId: managerCode,
+        lineManagerName: managerLabel,
+        updatedAt: now,
+      }
+    : request;
+
+  if (needsManagerAssignment && lineManager && options?.notify && !managerNotificationAlreadySent(request)) {
+    await notifyLineManagerLeaveSubmitted({
+      request: updated,
+      requester,
+      manager: lineManager.employee,
+      actorName: options.actorName || 'Leave Workflow',
+      baseUrl: options.baseUrl,
+    }).catch(() => undefined);
+    return {
+      ...updated,
+      comments: [
+        ...(updated.comments || []),
+        {
+          at: now,
+          actor: options.actorName || 'Leave Workflow',
+          comment: `Line manager notification sent to ${managerLabel}.`,
+        },
+      ],
+    };
+  }
+
+  return updated;
+};
+
+export const loadWorkflowLeaveRequests = async (options?: {
+  repair?: boolean;
+  notifyMissingManagers?: boolean;
+  baseUrl?: string | null;
+  actorName?: string;
+}) => {
+  const { employees } = await readPayrollEmployees();
+  const jsonRequests = await readAllEssRequests();
+  const dbPending = await readPendingLeaveRequestsFromDb(employees);
+  const merged = new Map<string, EssLeaveRequest>();
+  for (const item of dbPending) merged.set(item.id, item);
+  for (const item of jsonRequests) {
+    const existing = merged.get(item.id);
+    merged.set(item.id, existing ? { ...existing, ...item } : item);
+  }
+
+  let requests = [...merged.values()];
+  if (options?.repair) {
+    const repaired = await Promise.all(requests.map((request) => repairLeaveRequestApproverRouting(request, employees, {
+      notify: options.notifyMissingManagers,
+      baseUrl: options.baseUrl,
+      actorName: options.actorName,
+    })));
+    const changed = repaired.some((item, index) => JSON.stringify(item) !== JSON.stringify(requests[index]));
+    requests = repaired;
+    if (changed) {
+      const repairedById = new Map(repaired.map((item) => [item.id, item]));
+      const nextJson = jsonRequests.map((item) => repairedById.get(item.id) || item);
+      for (const item of repaired) {
+        if (!jsonRequests.some((existing) => existing.id === item.id)) nextJson.unshift(item);
+      }
+      await writeAllEssRequests(nextJson).catch(() => undefined);
+      invalidateEssPortalCache();
+    }
+  }
+
+  return requests;
+};
 
 export const expireStaleLeaveRequests = async (requests: EssLeaveRequest[]) => {
   let changed = false;
@@ -250,8 +359,19 @@ export const leaveWorkflowFor = (
   },
 ];
 
-const employeeKeys = (employee: DleEmployeeDirectoryRow) =>
-  buildEssEmployeeLookupKeys(employee).map((key) => normalizePayrollMatchKey(key)).filter(Boolean);
+const employeeKeys = (employee: DleEmployeeDirectoryRow) => {
+  const keys = new Set<string>();
+  for (const raw of buildEssEmployeeLookupKeys(employee)) {
+    const normalized = normalizePayrollMatchKey(raw);
+    if (normalized) keys.add(normalized);
+    const embeddedCode = employeeCodeFromReference(raw);
+    if (embeddedCode) {
+      const codeKey = normalizePayrollMatchKey(embeddedCode);
+      if (codeKey) keys.add(codeKey);
+    }
+  }
+  return [...keys];
+};
 
 const namesMatch = (left: string, right: string) => {
   const a = clean(left).toLowerCase();
@@ -280,7 +400,11 @@ const referenceMatchesEmployee = (employee: DleEmployeeDirectoryRow, reference: 
 
 export const employeeRequestMatches = (employee: DleEmployeeDirectoryRow, requestEmployeeId: string) => {
   const lookup = new Set(employeeKeys(employee));
-  return lookup.has(normalizePayrollMatchKey(requestEmployeeId));
+  const candidates = [
+    normalizePayrollMatchKey(requestEmployeeId),
+    normalizePayrollMatchKey(employeeCodeFromReference(requestEmployeeId)),
+  ].filter(Boolean);
+  return candidates.some((key) => lookup.has(key));
 };
 
 export const resolveEmployeeReference = (employees: DleEmployeeDirectoryRow[], reference: string) =>
@@ -486,12 +610,27 @@ const essLeaveRequestFromDbRow = (row: Record<string, unknown>, employees: DleEm
     : null;
   const startDate = dateOnly(row.StartDate);
   const endDate = dateOnly(row.EndDate);
+  const workflowStage = compact(row.WorkflowStage).toLowerCase();
+  const statusName = compact(row.StatusName);
+  const essStatus: EssLeaveRequestStatus = (() => {
+    if (statusName === 'Line Manager Review' || statusName === 'HR Review') return statusName as EssLeaveRequestStatus;
+    if (statusName === 'Under Review') {
+      if (workflowStage === 'supervisor') return 'Line Manager Review';
+      if (workflowStage === 'hr') return 'HR Review';
+      return 'Line Manager Review';
+    }
+    return normalizeEssStatus(statusName);
+  })();
+  const managerName = compact(row.ManagerName);
+  const manager = managerName
+    ? employees.find((employee) => referenceMatchesEmployee(employee, managerName))
+    : null;
   return {
     id,
     employeeId,
     category: 'Leave Application',
     title: `${compact(row.LeaveType) || 'Leave'} — ${compact(row.FullName) || employeeId}`,
-    status: normalizeEssStatus(compact(row.StatusName)),
+    status: essStatus,
     priority: 'Normal',
     submittedAt: compact(row.CreatedAt) || new Date().toISOString(),
     updatedAt: compact(row.UpdatedAt) || new Date().toISOString(),
@@ -503,6 +642,8 @@ const essLeaveRequestFromDbRow = (row: Record<string, unknown>, employees: DleEm
     days: Number(row.Days || 0) || undefined,
     relieverEmployeeId: reliever ? (reliever.employeeCode || reliever.employeeId) : undefined,
     relieverName: reliever?.fullName || actingOfficer || undefined,
+    lineManagerEmployeeId: manager ? (manager.employeeCode || manager.employeeId) : undefined,
+    lineManagerName: manager?.fullName || managerName || undefined,
   };
 };
 
@@ -713,7 +854,9 @@ export const pendingLeaveApprovalsForActor = (
     .filter((request) => /leave/i.test(request.category))
     .filter((request) => ['Line Manager Review', 'HR Review'].includes(request.status))
     .map((request) => {
-      const requester = employeeById.get(request.employeeId) || employees.find((employee) => employeeRequestMatches(employee, request.employeeId)) || null;
+      const requester = resolveEmployeeReference(employees, request.employeeId)
+        || employeeById.get(request.employeeId)
+        || null;
       if (!requester) return null;
       const approverKind = resolveLeaveApproverKind({ actor, requester, request, roles, isGlobalAdmin, employees });
       if (!approverKind) return null;
@@ -1031,13 +1174,20 @@ export const upsertEssLeaveRequestToDb = async (item: EssLeaveRequest, employees
     ...(leaveType === 'Annual Leave' && employee && !isFourteenDayPaidLeaveEmployee(employee) && !isConfirmedPermanent(employee) ? ['Annual Leave locked pending confirmation of appointment'] : []),
   ];
   const blocked = exceptions.some((entry) => entry.includes('not found') || entry.includes('locked'));
+  const requester = employee || resolveEmployeeReference(employees, item.employeeId);
+  const resolvedManager = requester ? resolveLineManagerForEmployee(requester, employees) : null;
+  const managerName = compact(item.lineManagerName)
+    || (resolvedManager ? `${compact(resolvedManager.employee.employeeCode || resolvedManager.employee.employeeId)} - ${resolvedManager.label}` : '')
+    || compact(employee?.managerName)
+    || compact(employee?.departmentHead)
+    || 'Unassigned';
   await pool.request()
     .input('Id', sql.NVarChar(120), item.id)
     .input('SourceSystem', sql.NVarChar(80), 'ESS Leave Request')
     .input('EmployeeId', sql.NVarChar(80), employee?.employeeId || item.employeeId)
     .input('FullName', sql.NVarChar(220), employee?.fullName || item.employeeId)
     .input('Department', sql.NVarChar(180), employee?.department || 'Unassigned')
-    .input('ManagerName', sql.NVarChar(180), employee?.managerName || employee?.departmentHead || 'Unassigned')
+    .input('ManagerName', sql.NVarChar(180), managerName)
     .input('Location', sql.NVarChar(180), employee?.location || employee?.workLocation || 'Unassigned')
     .input('EmployeeCategory', sql.NVarChar(120), employee?.employeeCategory || employee?.employmentType || 'Unassigned')
     .input('LeaveType', sql.NVarChar(120), leaveType)

@@ -22,19 +22,62 @@ loadWorkspaceEnv();
 
 const dryRun = process.argv.includes('--dry-run');
 const auditOnly = process.argv.includes('--audit');
+const summaryOnly = process.argv.includes('--summary');
+const departmentArg = process.argv.find((arg) => arg.startsWith('--department='));
+const departments = departmentArg
+  ? departmentArg.split('=').slice(1).join('=').split(',').map((value) => value.trim()).filter(Boolean)
+  : undefined;
+
+const printSummary = (result: Awaited<ReturnType<typeof auditDepartmentReportingManagers>>) => {
+  console.log(`\nDepartment reporting manager review (${result.generatedAt})`);
+  console.log(`Departments reviewed: ${result.departmentsReviewed}`);
+  console.log(`Employees reviewed: ${result.employeesReviewed}`);
+  console.log(`Assignments needed: ${result.employeesNeedingAssignment}`);
+  console.log(`Skipped out of scope: ${result.skippedOutOfScope}`);
+  if (result.departmentsWithoutSupervisor.length) {
+    console.log(`Departments without supervisor: ${result.departmentsWithoutSupervisor.join(', ')}`);
+  }
+  console.log('\nDepartment supervisors:');
+  for (const row of result.departmentSummaries) {
+    const supervisor = row.supervisorCode ? `${row.supervisorCode} (${row.supervisorName})` : 'UNRESOLVED';
+    console.log(
+      `- ${row.department}: ${row.employeeCount} employees, ${row.missingManagerCount} missing manager → ${supervisor} [${row.resolution}]`,
+    );
+  }
+  if (result.planned.length) {
+    console.log('\nPlanned assignments:');
+    for (const row of result.planned) {
+      console.log(
+        `  ${row.employeeCode} (${row.department}) → ${row.supervisorCode} | ${row.reason}${row.previousReportingManager ? ` | was: ${row.previousReportingManager}` : ''}`,
+      );
+    }
+  }
+};
 
 const main = async () => {
-  if (auditOnly || dryRun) {
+  if (auditOnly || dryRun || summaryOnly) {
     const audit = await auditDepartmentReportingManagers();
-    console.log(JSON.stringify(audit, null, 2));
-    if (auditOnly || dryRun) return;
+    const scoped = departments?.length
+      ? {
+          ...audit,
+          planned: audit.planned.filter((row) => departments.some((dept) => row.department.toLowerCase() === dept.toLowerCase())),
+          departmentSummaries: audit.departmentSummaries.filter((row) => departments.some((dept) => row.department.toLowerCase() === dept.toLowerCase())),
+        }
+      : audit;
+    printSummary(scoped);
+    if (summaryOnly || auditOnly || dryRun) {
+      if (!summaryOnly) console.log('\nFull payload:\n', JSON.stringify(scoped, null, 2));
+      if (auditOnly || dryRun || summaryOnly) return;
+    }
   }
 
   const result = await syncDepartmentReportingManagers({
     dryRun: false,
     performedBy: 'scripts/sync-department-reporting-managers.ts',
+    departments,
   });
-  console.log(JSON.stringify(result, null, 2));
+  printSummary(result);
+  console.log(`\nUpdated ${result.employeesUpdated} employee reporting manager record(s). Batch: ${result.assignmentBatch || 'n/a'}`);
 };
 
 main().catch((error) => {
