@@ -131,16 +131,31 @@ export const workingDaysSince = (fromIso: string, toIso = new Date().toISOString
   return days;
 };
 
+const essRequestTimestamp = (item: EssLeaveRequest) => {
+  const raw = compact(item.updatedAt) || compact(item.submittedAt);
+  const time = new Date(raw).getTime();
+  return Number.isNaN(time) ? 0 : time;
+};
+
+/** Merge every known ESS JSON store so IIS read-only deploy copies cannot hide new submissions. */
 export const readAllEssRequests = async (): Promise<EssLeaveRequest[]> => {
+  const merged = new Map<string, EssLeaveRequest>();
   for (const file of ESS_REQUESTS_PATHS) {
     try {
       const parsed = JSON.parse(await readFile(file, 'utf8'));
-      return Array.isArray(parsed) ? parsed as EssLeaveRequest[] : [];
+      if (!Array.isArray(parsed)) continue;
+      for (const item of parsed as EssLeaveRequest[]) {
+        if (!item?.id) continue;
+        const existing = merged.get(item.id);
+        if (!existing || essRequestTimestamp(item) >= essRequestTimestamp(existing)) {
+          merged.set(item.id, item);
+        }
+      }
     } catch {
       // Try the next candidate path.
     }
   }
-  return [];
+  return [...merged.values()].sort((left, right) => essRequestTimestamp(right) - essRequestTimestamp(left));
 };
 
 export const writeAllEssRequests = async (requests: EssLeaveRequest[]) => {
@@ -154,9 +169,11 @@ export const writeAllEssRequests = async (requests: EssLeaveRequest[]) => {
       wrote = true;
     } catch (error) {
       lastError = error;
+      console.warn('[leave-workflow] unable to write ESS requests store', { file, error });
     }
   }
   if (!wrote && lastError) throw lastError;
+  invalidateEssPortalCache();
 };
 
 export const readEssLeaveRequests = async () =>
@@ -245,6 +262,11 @@ export const repairPendingLeaveManagerNotifications = async (input?: {
   }
 };
 
+export const persistEssLeaveRequest = async (item: EssLeaveRequest) => {
+  const { employees } = await readPayrollEmployees();
+  await upsertEssLeaveRequestToDb(item, employees);
+};
+
 export const runLeaveSubmitFollowUp = async (input: {
   request: EssLeaveRequest;
   requester: DleEmployeeDirectoryRow;
@@ -259,6 +281,13 @@ export const runLeaveSubmitFollowUp = async (input: {
 }) => {
   const { employees } = await readPayrollEmployees();
   const manager = input.resolvedManager || resolveLeaveApproverEmployee(input.request, input.requester, employees);
+
+  try {
+    await persistEssLeaveRequest(input.request);
+  } catch (error) {
+    console.error('[leave-workflow] leave database sync failed after submit', error);
+    throw error;
+  }
 
   if (manager && input.request.status === 'Line Manager Review' && !managerNotificationAlreadySent(input.request)) {
     try {
@@ -276,22 +305,6 @@ export const runLeaveSubmitFollowUp = async (input: {
   }
 
   try {
-    await notifyLeaveWorkflow(input.session, {
-      requestId: input.request.id,
-      recipient: input.requester,
-      title: 'Leave request submitted',
-      body: `${input.title} has been submitted and routed to ${input.lineManagerLabel}. It must be approved within ${workflowDeadlineDays} working days.`,
-      severity: 'success',
-      request: input.request,
-      requester: input.requester,
-      emailEvent: 'submitted',
-      baseUrl: input.baseUrl,
-    });
-  } catch (error) {
-    console.error('[leave-workflow] requester notification failed after leave submit', error);
-  }
-
-  try {
     await applyLeaveBalanceImpact({
       employee: input.requester,
       leaveType: input.leaveType,
@@ -305,9 +318,19 @@ export const runLeaveSubmitFollowUp = async (input: {
   }
 
   try {
-    await syncEssLeaveRequestById(input.request.id);
+    await notifyLeaveWorkflow(input.session, {
+      requestId: input.request.id,
+      recipient: input.requester,
+      title: 'Leave request submitted',
+      body: `${input.title} has been submitted and routed to ${input.lineManagerLabel}. It must be approved within ${workflowDeadlineDays} working days.`,
+      severity: 'success',
+      request: input.request,
+      requester: input.requester,
+      emailEvent: 'submitted',
+      baseUrl: input.baseUrl,
+    });
   } catch (error) {
-    console.error('[leave-workflow] leave database sync failed after submit', error);
+    console.error('[leave-workflow] requester notification failed after leave submit', error);
   }
 };
 
@@ -1585,10 +1608,15 @@ export const upsertEssLeaveRequestToDb = async (item: EssLeaveRequest, employees
   const employee = employeeById.get(item.employeeId) || resolveEmployeeReference(employees, item.employeeId);
   const employeeKey = compact(employee?.employeeCode || employee?.employeeId || item.employeeId);
   const rawStatus = item.status;
-  const initialStatus = normalizeLeaveStatus(rawStatus);
-  const status = ['Submitted', 'Under Review'].includes(initialStatus) && workingDaysSince(item.updatedAt || item.submittedAt || new Date().toISOString()) > workflowDeadlineDays
-    ? 'Terminated'
-    : initialStatus;
+  const normalizedStatus = normalizeLeaveStatus(rawStatus);
+  const status = (() => {
+    if (rawStatus === 'Line Manager Review' || rawStatus === 'HR Review') return rawStatus;
+    if (['Submitted', 'Under Review'].includes(normalizedStatus)
+      && workingDaysSince(item.updatedAt || item.submittedAt || new Date().toISOString()) > workflowDeadlineDays) {
+      return 'Terminated';
+    }
+    return normalizedStatus;
+  })();
   const leaveType = clean(item.leaveType) || 'Annual Leave';
   const startDate = normalizeLeaveDate(item.startDate);
   const endDate = normalizeLeaveDate(item.endDate);
@@ -1623,8 +1651,8 @@ export const upsertEssLeaveRequestToDb = async (item: EssLeaveRequest, employees
     .input('EndDate', sql.Date, endDate)
     .input('Days', sql.Decimal(9, 2), round2(days))
     .input('StatusName', sql.NVarChar(40), status)
-    .input('WorkflowStage', sql.NVarChar(40), workflowStageForEssStatus(rawStatus, status))
-    .input('ApprovalStatus', sql.NVarChar(60), approvalStatusForEss(status, rawStatus))
+    .input('WorkflowStage', sql.NVarChar(40), workflowStageForEssStatus(rawStatus, normalizedStatus))
+    .input('ApprovalStatus', sql.NVarChar(60), approvalStatusForEss(normalizedStatus, rawStatus))
     .input('PolicyComplianceStatus', sql.NVarChar(40), blocked ? 'Blocked' : exceptions.length ? 'Attention Required' : 'Compliant')
     .input('BalanceImpact', sql.Decimal(9, 2), leaveType === 'Unpaid Leave' ? 0 : round2(days))
     .input('AvailableBalance', sql.Decimal(9, 2), 0)
@@ -1742,11 +1770,10 @@ WHERE [Id]=@Id;`);
   return { requestId: input.requestId, status: 'Cancelled' as const };
 };
 
-export const syncEssLeaveRequestById = async (requestId: string) => {
-  const item = (await readAllEssRequests()).find((request) => request.id === requestId);
+export const syncEssLeaveRequestById = async (requestId: string, fallback?: EssLeaveRequest) => {
+  const item = (await readAllEssRequests()).find((request) => request.id === requestId) || fallback;
   if (!item) return;
-  const { employees } = await readPayrollEmployees();
-  await upsertEssLeaveRequestToDb(item, employees);
+  await persistEssLeaveRequest(item);
 };
 
 export const saveLeaveAttachment = async (requestId: string, fileName: string, bytes: Buffer) => {

@@ -1026,7 +1026,29 @@ export async function GET(request: Request) {
       requests: employeeRequests,
     });
     const leaveUtilizationPct = annualEntitlement > 0 ? Math.round((leaveUsed / annualEntitlement) * 100) : 0;
-    const employeeLeaveApplications = essContext.leave.applications.map((item) => ({
+    const employeeLeaveApplications = [
+      ...employeeRequests
+        .filter((item) => /leave/i.test(item.category) && item.startDate && item.endDate)
+        .filter((item) => ['Submitted', 'Line Manager Review', 'HR Review', 'Under Review'].includes(item.status))
+        .filter((item) => !essContext.leave.applications.some((application) => application.id === item.id))
+        .map((item) => ({
+          id: item.id,
+          employeeId: employee.employeeId,
+          fullName: employee.fullName,
+          department: employee.department || 'Unassigned',
+          managerName: item.lineManagerName || employee.managerName || 'Line Manager',
+          leaveType: item.leaveType || 'Leave',
+          startDate: item.startDate || '',
+          endDate: item.endDate || '',
+          days: Number(item.days || 0),
+          status: item.status === 'Line Manager Review' || item.status === 'HR Review' ? 'Under Review' : item.status,
+          stage: item.status === 'HR Review' ? 'HR' as const : 'Supervisor' as const,
+          actingOfficer: item.relieverName || 'Not configured',
+          supportingDocuments: item.attachmentNames?.length || 0,
+          exceptions: [] as string[],
+          approvalStatus: item.status === 'Line Manager Review' ? 'Awaiting Line Manager' : item.status === 'HR Review' ? 'Awaiting HR' : 'Pending',
+        })),
+      ...essContext.leave.applications.map((item) => ({
       id: item.id,
       employeeId: item.employeeId,
       fullName: item.fullName,
@@ -1042,7 +1064,8 @@ export async function GET(request: Request) {
       supportingDocuments: item.supportingDocuments,
       exceptions: item.exceptions,
       approvalStatus: item.approvalStatus,
-    }));
+    })),
+    ];
     const leavePolicyCards = adjustLeavePolicyCardsForEssPending(essContext.leave.policyCards, employeeRequests);
     const confirmedPermanent = String(employee.status || '').toLowerCase().includes('confirmed');
     const fourteenDayPaidLeaveEmployee = isFourteenDayPaidLeaveEmployee(employee);
@@ -1758,20 +1781,23 @@ export async function POST(request: Request) {
     invalidateEssPortalCache();
     if (isLeaveRequest) {
       const baseUrl = resolveWorkflowLinkOriginFromRequest(request);
-      void runLeaveSubmitFollowUp({
-        request: requestItem,
-        requester: employee,
-        actorName: session.fullName || session.username,
-        baseUrl,
-        leaveType,
-        leaveDays,
-        title,
-        lineManagerLabel,
-        resolvedManager: resolvedManager?.employee || null,
-        session,
-      }).catch((error) => {
+      try {
+        await runLeaveSubmitFollowUp({
+          request: requestItem,
+          requester: employee,
+          actorName: session.fullName || session.username,
+          baseUrl,
+          leaveType,
+          leaveDays,
+          title,
+          lineManagerLabel,
+          resolvedManager: resolvedManager?.employee || null,
+          session,
+        });
+      } catch (error) {
         console.error('[workforce-portal] leave submit follow-up failed', error);
-      });
+        return err(500, error instanceof Error ? error.message : 'Leave was saved but workflow sync failed. Contact HR or retry.');
+      }
       return ok({
         request: requestItem,
         message: `Leave application submitted successfully. Reference ${requestItem.id}. Status: ${requestItem.status}. Your line manager has been notified to review the request.`,
