@@ -1,5 +1,167 @@
 [
   {
+    "id": "ess-smoke-p0146-1783668308560",
+    "employeeId": "P0146",
+    "serviceId": "leave",
+    "category": "Leave Application",
+    "title": "Compassionate Leave 2027-01-15 to 2027-01-19",
+    "status": "Approved",
+    "priority": "Normal",
+    "submittedAt": "2026-07-10T07:25:09.148Z",
+    "updatedAt": "2026-07-10T07:26:18.194Z",
+    "approvers": [
+      "Mr CHRIS IJELI",
+      "HR Manager / Head"
+    ],
+    "leaveType": "Compassionate Leave",
+    "startDate": "2027-01-15",
+    "endDate": "2027-01-19",
+    "days": 3,
+    "payrollPeriod": "2027-01",
+    "paidLeave": false,
+    "reason": "Automated leave workflow smoke test for P0146.",
+    "relieverEmployeeId": "P0181",
+    "relieverName": "Mr NNAMDI FRANKLYN AGHANYA",
+    "lineManagerEmployeeId": "P0413",
+    "lineManagerName": "Mr CHRIS IJELI",
+    "handover": "Routine handover notes for smoke test coverage.",
+    "workflow": [
+      {
+        "stage": "Employee Request",
+        "owner": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+        "status": "Completed",
+        "actedAt": "2026-07-10T07:26:18.194Z",
+        "comment": "Submitted from Employee Self-Service."
+      },
+      {
+        "stage": "Line Manager / Lead / Supervisor",
+        "owner": "0413 - Mr IJELI",
+        "status": "Completed",
+        "actedAt": "2026-07-10T07:26:18.194Z",
+        "comment": "Approval validity: 5 working days."
+      },
+      {
+        "stage": "HR Manager / Head",
+        "owner": "HR Manager / Head",
+        "status": "Completed",
+        "actedAt": "2026-07-10T07:26:18.194Z",
+        "comment": "Final HR approval and leave balance confirmation."
+      },
+      {
+        "stage": "Requester Notification",
+        "owner": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+        "status": "Delivered",
+        "actedAt": "2026-07-10T07:26:18.194Z",
+        "comment": "Requester notified after final approval."
+      },
+      {
+        "stage": "Reliever Notification",
+        "owner": "Mr NNAMDI FRANKLYN AGHANYA",
+        "status": "Delivered",
+        "actedAt": "2026-07-10T07:26:18.194Z",
+        "comment": "Reliever notified after final approval."
+      }
+    ],
+    "comments": [
+      {
+        "at": "2026-07-10T07:25:09.148Z",
+        "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+        "comment": "Request submitted from workforce portal. Leave allowance has already been paid/approved for 2026."
+      },
+      {
+        "at": "2026-07-10T07:26:09.989Z",
+        "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+        "comment": "Line manager / supervisor approval completed. Routed to HR Manager / Head."
+      },
+      {
+        "at": "2026-07-10T07:26:18.194Z",
+        "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+        "comment": "HR Manager / Head final approval completed."
+      }
+    ]
+  },
+  {
+    "id": "ess-smoke-p0146-1783667680349",
+    "employeeId": "P0146",
+    "serviceId": "leave",
+    "category": "Leave Application",
+    "title": "Compassionate Leave 2027-04-28 to 2027-04-30",
+    "status": "Approved",
+    "priority": "Normal",
+    "submittedAt": "2026-07-10T07:14:41.228Z",
+    "updatedAt": "2026-07-10T07:15:33.797Z",
+    "approvers": [
+      "Mr CHRIS IJELI",
+      "HR Manager / Head"
+    ],
+    "leaveType": "Compassionate Leave",
+    "startDate": "2027-04-28",
+    "endDate": "2027-04-30",
+    "days": 3,
+    "payrollPeriod": "2027-04",
+    "paidLeave": false,
+    "reason": "Automated leave workflow smoke test for P0146.",
+    "relieverEmployeeId": "P0181",
+    "relieverName": "Mr NNAMDI FRANKLYN AGHANYA",
+    "lineManagerEmployeeId": "P0413",
+    "lineManagerName": "Mr CHRIS IJELI",
+    "handover": "Routine handover notes for smoke test coverage.",
+    "workflow": [
+      {
+        "stage": "Employee Request",
+        "owner": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+        "status": "Completed",
+        "actedAt": "2026-07-10T07:15:33.797Z",
+        "comment": "Submitted from Employee Self-Service."
+      },
+      {
+        "stage": "Line Manager / Lead / Supervisor",
+        "owner": "0413 - Mr IJELI",
+        "status": "Completed",
+        "actedAt": "2026-07-10T07:15:33.797Z",
+        "comment": "Approval validity: 5 working days."
+      },
+      {
+        "stage": "HR Manager / Head",
+        "owner": "HR Manager / Head",
+        "status": "Completed",
+        "actedAt": "2026-07-10T07:15:33.797Z",
+        "comment": "Final HR approval and leave balance confirmation."
+      },
+      {
+        "stage": "Requester Notification",
+        "owner": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+        "status": "Delivered",
+        "actedAt": "2026-07-10T07:15:33.797Z",
+        "comment": "Requester notified after final approval."
+      },
+      {
+        "stage": "Reliever Notification",
+        "owner": "Mr NNAMDI FRANKLYN AGHANYA",
+        "status": "Delivered",
+        "actedAt": "2026-07-10T07:15:33.797Z",
+        "comment": "Reliever notified after final approval."
+      }
+    ],
+    "comments": [
+      {
+        "at": "2026-07-10T07:14:41.228Z",
+        "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+        "comment": "Request submitted from workforce portal. Leave allowance has already been paid/approved for 2026."
+      },
+      {
+        "at": "2026-07-10T07:15:28.192Z",
+        "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+        "comment": "Line manager / supervisor approval completed. Routed to HR Manager / Head."
+      },
+      {
+        "at": "2026-07-10T07:15:33.797Z",
+        "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+        "comment": "HR Manager / Head final approval completed."
+      }
+    ]
+  },
+  {
     "id": "ess-smoke-p0146-1783583188489",
     "employeeId": "P0146",
     "serviceId": "leave",

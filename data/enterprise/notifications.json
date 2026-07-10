@@ -2,6 +2,296 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1783668381025-klimi4",
+      "recipientUserId": "P0181",
+      "recipientUsername": "P0181",
+      "recipientEmployeeCode": "P0181",
+      "recipientRoles": [],
+      "kind": "Workflow",
+      "module": "Leave Management",
+      "title": "Leave reliever assignment confirmed",
+      "body": "You have been assigned as reliever for Mr CHRISTIAN ONUWABHAGBE OGBAISI: Compassionate Leave 2027-01-15 to 2027-01-19 (2027-01-15 to 2027-01-19).",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave",
+      "createdAt": "2026-07-10T07:26:21.025Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-smoke-p0146-1783668308560"
+      }
+    },
+    {
+      "id": "ntf-1783668378399-pn4t93",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [],
+      "kind": "Workflow",
+      "module": "Leave Management",
+      "title": "Leave request approved",
+      "body": "Compassionate Leave 2027-01-15 to 2027-01-19 (2027-01-15 to 2027-01-19) has received final HR approval.",
+      "severity": "success",
+      "status": "Read",
+      "href": "/workforce-portal?tab=leave&leaveSection=applications",
+      "createdAt": "2026-07-10T07:26:18.399Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-smoke-p0146-1783668308560"
+      },
+      "readAt": "2026-07-10T07:28:57.448Z"
+    },
+    {
+      "id": "ntf-1783668375141-gmugpp",
+      "recipientUserId": "system-leave-workflow",
+      "recipientUsername": "system-leave-workflow",
+      "recipientRoles": [
+        "HR Manager",
+        "HR Head",
+        "HR Officer",
+        "Leave Administrator"
+      ],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting HR approval",
+      "body": "Compassionate Leave 2027-01-15 to 2027-01-19 has been approved by the line manager and is awaiting HR Manager / Head approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-07-10T07:26:15.141Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-smoke-p0146-1783668308560"
+      }
+    },
+    {
+      "id": "ntf-1783668370101-ia6bkw",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [],
+      "kind": "Workflow",
+      "module": "Leave Management",
+      "title": "Leave request awaiting HR approval",
+      "body": "Compassionate Leave 2027-01-15 to 2027-01-19 has been approved by the line manager and is awaiting HR Manager / Head approval.",
+      "severity": "info",
+      "status": "Read",
+      "href": "/workforce-portal?tab=leave&leaveSection=applications",
+      "createdAt": "2026-07-10T07:26:10.101Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-smoke-p0146-1783668308560"
+      },
+      "readAt": "2026-07-10T07:28:57.448Z"
+    },
+    {
+      "id": "ntf-1783668359558-fe89hi",
+      "recipientUserId": "P0413",
+      "recipientUsername": "P0413",
+      "recipientEmployeeCode": "P0413",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr CHRISTIAN ONUWABHAGBE OGBAISI submitted Compassionate Leave 2027-01-15 to 2027-01-19 (2027-01-15 to 2027-01-19). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-07-10T07:25:59.558Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-smoke-p0146-1783668308560"
+      }
+    },
+    {
+      "id": "ntf-1783668351003-ymc1o0",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request submitted",
+      "body": "Compassionate Leave 2027-01-15 to 2027-01-19 has been submitted and routed to Mr CHRIS IJELI. It must be approved within 5 working days.",
+      "severity": "success",
+      "status": "Read",
+      "href": "/workforce-portal?tab=leave",
+      "createdAt": "2026-07-10T07:25:51.003Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-smoke-p0146-1783668308560"
+      },
+      "readAt": "2026-07-10T07:28:57.448Z"
+    },
+    {
+      "id": "ntf-1783667737281-svwc8x",
+      "recipientUserId": "P0181",
+      "recipientUsername": "P0181",
+      "recipientEmployeeCode": "P0181",
+      "recipientRoles": [],
+      "kind": "Workflow",
+      "module": "Leave Management",
+      "title": "Leave reliever assignment confirmed",
+      "body": "You have been assigned as reliever for Mr CHRISTIAN ONUWABHAGBE OGBAISI: Compassionate Leave 2027-04-28 to 2027-04-30 (2027-04-28 to 2027-04-30).",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave",
+      "createdAt": "2026-07-10T07:15:37.281Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-smoke-p0146-1783667680349"
+      }
+    },
+    {
+      "id": "ntf-1783667735023-tat17k",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [],
+      "kind": "Workflow",
+      "module": "Leave Management",
+      "title": "Leave request approved",
+      "body": "Compassionate Leave 2027-04-28 to 2027-04-30 (2027-04-28 to 2027-04-30) has received final HR approval.",
+      "severity": "success",
+      "status": "Read",
+      "href": "/workforce-portal?tab=leave&leaveSection=applications",
+      "createdAt": "2026-07-10T07:15:35.023Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-smoke-p0146-1783667680349"
+      },
+      "readAt": "2026-07-10T07:24:34.953Z"
+    },
+    {
+      "id": "ntf-1783667732234-qwzt4c",
+      "recipientUserId": "system-leave-workflow",
+      "recipientUsername": "system-leave-workflow",
+      "recipientRoles": [
+        "HR Manager",
+        "HR Head",
+        "HR Officer",
+        "Leave Administrator"
+      ],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting HR approval",
+      "body": "Compassionate Leave 2027-04-28 to 2027-04-30 has been approved by the line manager and is awaiting HR Manager / Head approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-07-10T07:15:32.234Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-smoke-p0146-1783667680349"
+      }
+    },
+    {
+      "id": "ntf-1783667728237-vrcie2",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [],
+      "kind": "Workflow",
+      "module": "Leave Management",
+      "title": "Leave request awaiting HR approval",
+      "body": "Compassionate Leave 2027-04-28 to 2027-04-30 has been approved by the line manager and is awaiting HR Manager / Head approval.",
+      "severity": "info",
+      "status": "Read",
+      "href": "/workforce-portal?tab=leave&leaveSection=applications",
+      "createdAt": "2026-07-10T07:15:28.237Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-smoke-p0146-1783667680349"
+      },
+      "readAt": "2026-07-10T07:24:42.680Z"
+    },
+    {
+      "id": "ntf-1783667723201-xcd45i",
+      "recipientUserId": "P0413",
+      "recipientUsername": "P0413",
+      "recipientEmployeeCode": "P0413",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr CHRISTIAN ONUWABHAGBE OGBAISI submitted Compassionate Leave 2027-04-28 to 2027-04-30 (2027-04-28 to 2027-04-30). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-07-10T07:15:23.201Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-smoke-p0146-1783667680349"
+      }
+    },
+    {
+      "id": "ntf-1783667719187-iy2tnf",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request submitted",
+      "body": "Compassionate Leave 2027-04-28 to 2027-04-30 has been submitted and routed to Mr CHRIS IJELI. It must be approved within 5 working days.",
+      "severity": "success",
+      "status": "Read",
+      "href": "/workforce-portal?tab=leave",
+      "createdAt": "2026-07-10T07:15:19.187Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-smoke-p0146-1783667680349"
+      },
+      "readAt": "2026-07-10T07:24:45.420Z"
+    },
+    {
       "id": "ntf-1783583219952-t3jr0u",
       "recipientUserId": "P0181",
       "recipientUsername": "P0181",
@@ -35,7 +325,7 @@
       "title": "Leave request approved",
       "body": "Annual Leave 2027-03-30 to 2027-04-05 (2027-03-30 to 2027-04-05) has received final HR approval.",
       "severity": "success",
-      "status": "Unread",
+      "status": "Read",
       "href": "/workforce-portal?tab=leave&leaveSection=applications",
       "createdAt": "2026-07-09T07:46:58.302Z",
       "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
@@ -45,7 +335,8 @@
       ],
       "metadata": {
         "requestId": "ess-smoke-p0146-1783583188489"
-      }
+      },
+      "readAt": "2026-07-10T07:24:54.663Z"
     },
     {
       "id": "ntf-1783583214688-t99teh",
@@ -85,7 +376,7 @@
       "title": "Leave request awaiting HR approval",
       "body": "Annual Leave 2027-03-30 to 2027-04-05 has been approved by the line manager and is awaiting HR Manager / Head approval.",
       "severity": "info",
-      "status": "Unread",
+      "status": "Read",
       "href": "/workforce-portal?tab=leave&leaveSection=applications",
       "createdAt": "2026-07-09T07:46:52.373Z",
       "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
@@ -95,7 +386,8 @@
       ],
       "metadata": {
         "requestId": "ess-smoke-p0146-1783583188489"
-      }
+      },
+      "readAt": "2026-07-10T07:25:00.184Z"
     },
     {
       "id": "ntf-1783583198321-elh6n4",
@@ -131,7 +423,7 @@
       "title": "Leave request submitted",
       "body": "Annual Leave 2027-03-30 to 2027-04-05 has been submitted and routed to Mr CHRIS IJELI. It must be approved within 5 working days.",
       "severity": "success",
-      "status": "Unread",
+      "status": "Read",
       "href": "/workforce-portal?tab=leave",
       "createdAt": "2026-07-09T07:46:31.668Z",
       "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
@@ -141,7 +433,8 @@
       ],
       "metadata": {
         "requestId": "ess-smoke-p0146-1783583188489"
-      }
+      },
+      "readAt": "2026-07-10T07:25:00.184Z"
     },
     {
       "id": "ntf-1783582517502-j777zv",
@@ -177,7 +470,7 @@
       "title": "Leave request approved",
       "body": "Compassionate Leave 2026-11-12 to 2026-11-16 (2026-11-12 to 2026-11-16) has received final HR approval.",
       "severity": "success",
-      "status": "Unread",
+      "status": "Read",
       "href": "/workforce-portal?tab=leave&leaveSection=applications",
       "createdAt": "2026-07-09T07:35:13.952Z",
       "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
@@ -187,7 +480,8 @@
       ],
       "metadata": {
         "requestId": "ess-smoke-p0146-1783582488558"
-      }
+      },
+      "readAt": "2026-07-10T07:25:00.184Z"
     },
     {
       "id": "ntf-1783582505842-ssdtza",
@@ -227,7 +521,7 @@
       "title": "Leave request awaiting HR approval",
       "body": "Compassionate Leave 2026-11-12 to 2026-11-16 has been approved by the line manager and is awaiting HR Manager / Head approval.",
       "severity": "info",
-      "status": "Unread",
+      "status": "Read",
       "href": "/workforce-portal?tab=leave&leaveSection=applications",
       "createdAt": "2026-07-09T07:35:01.422Z",
       "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
@@ -237,7 +531,8 @@
       ],
       "metadata": {
         "requestId": "ess-smoke-p0146-1783582488558"
-      }
+      },
+      "readAt": "2026-07-10T07:24:55.320Z"
     },
     {
       "id": "ntf-1783582495810-ncbual",
@@ -273,7 +568,7 @@
       "title": "Leave request submitted",
       "body": "Compassionate Leave 2026-11-12 to 2026-11-16 has been submitted and routed to Mr CHRIS IJELI. It must be approved within 5 working days.",
       "severity": "success",
-      "status": "Unread",
+      "status": "Read",
       "href": "/workforce-portal?tab=leave",
       "createdAt": "2026-07-09T07:34:50.421Z",
       "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
@@ -283,7 +578,8 @@
       ],
       "metadata": {
         "requestId": "ess-smoke-p0146-1783582488558"
-      }
+      },
+      "readAt": "2026-07-10T07:25:00.184Z"
     },
     {
       "recipientUserId": "global-admin",

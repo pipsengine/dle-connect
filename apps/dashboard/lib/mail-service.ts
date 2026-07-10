@@ -1,3 +1,4 @@
+import { buildEmailBrandLogoAttachment } from '@/lib/email-brand-assets';
 import nodemailer from 'nodemailer';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import type { LeaveEmailApproverKind } from '@/lib/leave-email-action-token';
@@ -80,6 +81,16 @@ export const sendTransactionalEmail = async (input: { to: string; subject: strin
   }
 
   const replyTo = compact(process.env.DLE_SMTP_REPLY_TO) || undefined;
+  const logoAttachment = input.html ? await buildEmailBrandLogoAttachment() : null;
+  const inlineAttachments = logoAttachment
+    ? [{
+        filename: logoAttachment.filename,
+        content: logoAttachment.content,
+        cid: logoAttachment.cid,
+        contentType: logoAttachment.contentType,
+        contentDisposition: 'inline' as const,
+      }]
+    : [];
 
   if (provider === 'graph') {
     const result = await sendGraphMail({
@@ -88,6 +99,14 @@ export const sendTransactionalEmail = async (input: { to: string; subject: strin
       text: input.text,
       html: input.html,
       replyTo,
+      inlineAttachments: logoAttachment
+        ? [{
+            name: logoAttachment.filename,
+            contentType: logoAttachment.contentType,
+            contentBytes: logoAttachment.contentBytes,
+            contentId: logoAttachment.contentId,
+          }]
+        : [],
     });
     if (!result.sent) {
       console.error('[mail-service] Graph send failed.', { to, subject: input.subject, reason: result.reason });
@@ -106,6 +125,7 @@ export const sendTransactionalEmail = async (input: { to: string; subject: strin
       subject: input.subject,
       text: input.text,
       html: input.html || input.text.replace(/\n/g, '<br/>'),
+      attachments: inlineAttachments,
     });
     return { sent: true, messageId: compact(info.messageId) || undefined, provider: 'smtp' as const };
   } catch (error) {

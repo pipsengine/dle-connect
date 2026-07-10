@@ -1,4 +1,9 @@
 import { resolvePublicAppOrigin } from '@/lib/public-app-url';
+import {
+  emailBrandLogoCidUrl,
+  resolveEmailLogoPublicUrl,
+  shouldEmbedEmailBrandLogo,
+} from '@/lib/email-brand-assets';
 
 export type DleEmailModule =
   | 'Payroll Management'
@@ -35,15 +40,36 @@ export type DleEmailTemplateInput = {
   actions?: DleEmailAction[];
   footerNote?: string;
   preheader?: string;
+  statusBadge?: string;
 };
 
 const compact = (value: unknown) => String(value || '').trim();
 
 export const resolveEmailLogoUrl = (baseUrl?: string | null) => {
+  if (shouldEmbedEmailBrandLogo()) return emailBrandLogoCidUrl();
   const configured = compact(process.env.DLE_EMAIL_LOGO_URL);
   if (configured) return configured;
-  const base = resolvePublicAppOrigin(baseUrl);
-  return base ? `${base}/brand/dorman-long-logo.svg` : '';
+  return resolveEmailLogoPublicUrl(baseUrl || resolvePublicAppOrigin(baseUrl));
+};
+
+export const formatEmailDate = (value?: string | null) => {
+  const raw = compact(value);
+  if (!raw) return '—';
+  const date = new Date(`${raw.slice(0, 10)}T12:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return raw;
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+};
+
+const statusBadgeHtml = (status: string, tone: DleEmailTone) => {
+  const palette: Record<DleEmailTone, { bg: string; fg: string; border: string }> = {
+    info: { bg: '#EFF6FF', fg: '#1D4ED8', border: '#BFDBFE' },
+    success: { bg: '#ECFDF5', fg: '#047857', border: '#A7F3D0' },
+    warning: { bg: '#FFFBEB', fg: '#B45309', border: '#FDE68A' },
+    danger: { bg: '#FEF2F2', fg: '#B91C1C', border: '#FECACA' },
+    neutral: { bg: '#F8FAFC', fg: '#334155', border: '#E2E8F0' },
+  };
+  const colors = palette[tone];
+  return `<span style="display:inline-block;padding:6px 12px;border-radius:999px;background:${colors.bg};border:1px solid ${colors.border};color:${colors.fg};font-size:12px;font-weight:800;letter-spacing:0.04em;text-transform:uppercase">${escapeHtml(status)}</span>`;
 };
 
 const BRAND = {
@@ -116,7 +142,9 @@ export const buildDleEmailHtml = (input: DleEmailTemplateInput) => {
   const preheader = escapeHtml(input.preheader || input.intro);
   const logoUrl = compact(input.logoUrl);
   const logoBlock = logoUrl
-    ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(BRAND.company)}" style="display:block;height:36px;max-width:220px;margin-bottom:14px" />`
+    ? `<div style="display:inline-block;background:#ffffff;border-radius:12px;padding:10px 14px;margin-bottom:14px;box-shadow:0 4px 14px rgba(15,23,42,0.12)">
+        <img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(BRAND.company)}" width="180" height="36" style="display:block;height:36px;max-width:180px;width:180px;border:0;outline:none;text-decoration:none" />
+      </div>`
     : '';
   const noteBlock = input.note
     ? `<div style="margin:18px 0 0;padding:14px 16px;border-radius:12px;background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;font-size:13px;line-height:1.5">${escapeHtml(input.note)}</div>`
@@ -152,7 +180,8 @@ export const buildDleEmailHtml = (input: DleEmailTemplateInput) => {
           <tr>
             <td style="padding:28px">
               <p style="margin:0 0 12px;font-size:15px;line-height:1.6">Dear <strong>${escapeHtml(input.recipientName)}</strong>,</p>
-              <p style="margin:0 0 8px;font-size:15px;line-height:1.7;color:${BRAND.text}">${escapeHtml(input.intro)}</p>
+              <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:${BRAND.text}">${escapeHtml(input.intro)}</p>
+              ${input.statusBadge ? `<div style="margin:0 0 18px">${statusBadgeHtml(input.statusBadge, tone)}</div>` : ''}
               ${detailTableHtml(input.details || [])}
               ${noteBlock}
               ${actionsHtml(input.actions || [])}

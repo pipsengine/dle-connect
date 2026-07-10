@@ -1,5 +1,5 @@
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
-import { buildDleEmail, formatEmailDateTime, moneyNgn, resolveEmailLogoUrl } from '@/lib/email-templates';
+import { buildDleEmail, formatEmailDate, formatEmailDateTime, moneyNgn, resolveEmailLogoUrl } from '@/lib/email-templates';
 import {
   createLeaveEmailActionToken,
   leaveAuthorizePageUrl,
@@ -32,12 +32,37 @@ const payrollRunDetails = (run: {
 ];
 
 const leaveDetails = (request: EssLeaveRequest) => [
+  { label: 'Reference', value: String(request.id || '—') },
   { label: 'Leave type', value: String(request.leaveType || '') },
-  { label: 'Period', value: `${request.startDate} to ${request.endDate}` },
-  { label: 'Days', value: String(request.days) },
-  { label: 'Status', value: String(request.status || '') },
+  { label: 'Period', value: `${formatEmailDate(request.startDate)} to ${formatEmailDate(request.endDate)}` },
+  { label: 'Working days', value: String(request.days) },
   ...(request.relieverName ? [{ label: 'Reliever', value: String(request.relieverName) }] : []),
+  ...(request.handover ? [{ label: 'Handover notes', value: String(request.handover) }] : []),
 ];
+
+const leaveActionLabel: Record<LeaveEmailEvent, string> = {
+  submitted: 'Track Application',
+  'manager-approved': 'View Pending Approval',
+  approved: 'View Approved Leave',
+  rejected: 'Review Leave Record',
+  'approval-request': 'Open Leave Workspace',
+};
+
+const leaveFooterNote: Record<LeaveEmailEvent, string> = {
+  submitted: 'You will receive email updates as each approval stage is completed.',
+  'manager-approved': 'HR will complete final approval before leave is confirmed in payroll.',
+  approved: 'Your approved leave is now recorded. Coordinate handover with your reliever before your start date.',
+  rejected: 'You may submit a revised leave application from the workforce portal if appropriate.',
+  'approval-request': 'Approval links expire after 7 days. Sign in with your designated approver account.',
+};
+
+const leaveHeadline: Record<LeaveEmailEvent, string> = {
+  submitted: 'Leave application submitted',
+  'manager-approved': 'Manager approval received',
+  approved: 'Leave approved',
+  rejected: 'Leave application rejected',
+  'approval-request': 'Leave approval required',
+};
 
 export const buildLeaveWorkflowEmail = (input: {
   event: LeaveEmailEvent;
@@ -56,11 +81,11 @@ export const buildLeaveWorkflowEmail = (input: {
     'approval-request': `Leave approval required — ${input.request.leaveType}`,
   };
   const introMap: Record<LeaveEmailEvent, string> = {
-    submitted: 'Your leave request has been submitted and routed for approval.',
+    submitted: 'Your leave request has been submitted and routed for line manager approval.',
     'manager-approved': 'Your line manager has approved this request. It is now awaiting HR final approval.',
-    approved: 'Your leave request has received final approval.',
-    rejected: 'Your leave request has been rejected.',
-    'approval-request': 'A leave request requires your review and approval.',
+    approved: 'Your leave request has been fully approved and recorded in DLE Connect.',
+    rejected: 'Your leave request has been rejected. Review the details below.',
+    'approval-request': 'A leave request is waiting for your review and approval.',
   };
   const toneMap: Record<LeaveEmailEvent, 'info' | 'success' | 'warning' | 'danger'> = {
     submitted: 'info',
@@ -70,20 +95,25 @@ export const buildLeaveWorkflowEmail = (input: {
     'approval-request': 'warning',
   };
 
+  const showActor = Boolean(input.actorName)
+    && input.actorName!.trim().toLowerCase() !== input.recipientName.trim().toLowerCase();
+
   return withBrand({
     recipientName: input.recipientName,
     subject: subjectMap[input.event],
     module: 'Leave Management',
-    headline: subjectMap[input.event],
+    headline: leaveHeadline[input.event],
     intro: introMap[input.event],
     tone: toneMap[input.event],
+    statusBadge: input.request.status || undefined,
+    preheader: introMap[input.event],
     details: [
       ...leaveDetails(input.request),
-      ...(input.actorName ? [{ label: 'Actioned by', value: String(input.actorName) }] : []),
+      ...(showActor && input.actorName ? [{ label: 'Actioned by', value: String(input.actorName) }] : []),
     ],
     note: input.extra,
-    actions: [{ href: input.portalLink, label: 'Open Leave Workspace', tone: 'primary' }],
-    footerNote: 'Track approvals, reliever assignment, and leave balances in the workforce portal.',
+    actions: [{ href: input.portalLink, label: leaveActionLabel[input.event], tone: input.event === 'approved' ? 'success' : 'primary' }],
+    footerNote: leaveFooterNote[input.event],
   }, input.baseUrl);
 };
 
@@ -131,10 +161,11 @@ export const buildLeaveApprovalRequestEmail = (input: {
     tone: 'warning',
     accentColor: accent,
     details: [
+      { label: 'Reference', value: String(input.request.id || '—') },
       { label: 'Employee', value: input.requesterName },
       { label: 'Leave type', value: String(input.request.leaveType || '') },
-      { label: 'Period', value: `${input.request.startDate} to ${input.request.endDate}` },
-      { label: 'Days', value: String(input.request.days) },
+      { label: 'Period', value: `${formatEmailDate(input.request.startDate)} to ${formatEmailDate(input.request.endDate)}` },
+      { label: 'Working days', value: String(input.request.days) },
       { label: 'Reliever', value: input.request.relieverName || 'Not configured' },
       { label: 'Approval stage', value: stageLabel },
     ],
