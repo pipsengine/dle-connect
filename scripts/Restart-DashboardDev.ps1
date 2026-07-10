@@ -28,7 +28,8 @@ Write-Host "Cleaning apps/dashboard/.next..."
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "Starting dashboard dev server on port $Port (use http://localhost:$Port in your browser)..."
-$env:APP_URL = "http://localhost:$Port"
-$env:NEXT_PUBLIC_APP_URL = "http://localhost:$Port"
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoRoot "scripts\Sync-MailEnvironment.ps1") -InternalServer -TargetFiles @((Join-Path $RepoRoot "apps\dashboard\.env")) 2>$null
+$env:APP_URL = "http://192.168.5.5:$Port"
+$env:NEXT_PUBLIC_APP_URL = "http://192.168.5.5:$Port"
 & node node_modules/next/dist/bin/next dev apps/dashboard -p $Port -H 127.0.0.1
 exit $LASTEXITCODE

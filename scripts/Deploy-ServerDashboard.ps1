@@ -17,6 +17,12 @@ if ($DevOnly) {
   exit $LASTEXITCODE
 }
 
+Write-Host "Syncing mail environment for IIS/runtime..."
+npm run sync:mail-env
+if ($LASTEXITCODE -ne 0) {
+  Write-Warning "Mail environment sync failed. Ensure apps/dashboard/.env.local exists on the server with Graph or SMTP credentials."
+}
+
 Write-Host "Publishing IIS dashboard package..."
 if ($SkipInstall) {
   npm run publish:iis -- -SkipInstall

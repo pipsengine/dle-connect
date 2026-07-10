@@ -295,6 +295,19 @@ function Copy-IisEnvironmentFile {
   }
 
   Write-Host "Copied IIS runtime environment from $EnvSource"
+
+  $SyncMailScript = Join-Path $RepoRoot "scripts\Sync-MailEnvironment.ps1"
+  if (Test-Path -LiteralPath $SyncMailScript) {
+    $MailTargets = @($DestinationEnv)
+    if (Test-Path -LiteralPath $DashboardEnvTargetDirectory) {
+      $MailTargets += (Join-Path $DashboardEnvTargetDirectory ".env")
+    }
+    try {
+      & $SyncMailScript -RepoRoot $RepoRoot -InternalServer -TargetFiles $MailTargets
+    } catch {
+      Write-Warning "Mail environment was not merged into the IIS package: $($_.Exception.Message)"
+    }
+  }
 }
 
 function Ensure-InternalDeployEnvDefaults {
