@@ -1,5 +1,6 @@
 import { buildEmailBrandLogoAttachment } from '@/lib/email-brand-assets';
 import nodemailer from 'nodemailer';
+import { readUsers } from '@/lib/auth/auth-store';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import type { LeaveEmailApproverKind } from '@/lib/leave-email-action-token';
 import type { EssLeaveRequest } from '@/lib/leave-workflow-service';
@@ -72,6 +73,22 @@ const createSmtpTransport = () => {
 
 export const employeeEmailAddress = (employee?: DleEmployeeDirectoryRow | null) =>
   compact(employee?.officialEmail || employee?.email || employee?.personalEmail);
+
+export const resolveEmployeeMailbox = async (employee?: DleEmployeeDirectoryRow | null) => {
+  const direct = employeeEmailAddress(employee);
+  if (direct) return direct;
+  if (!employee) return '';
+  const code = compact(employee.employeeCode || employee.employeeId || employee.sourceEmployeeId);
+  if (!code) return '';
+  const users = await readUsers();
+  const normalized = code.toUpperCase();
+  const match = users.find((user) =>
+    [user.employeeCode, user.employeeId, user.username]
+      .map((value) => compact(value).toUpperCase())
+      .includes(normalized),
+  );
+  return compact(match?.email);
+};
 
 export const sendTransactionalEmail = async (input: { to: string; subject: string; text: string; html?: string }) => {
   const to = compact(input.to);
@@ -180,7 +197,7 @@ export const sendLeaveWorkflowEmail = async (input: {
   baseUrl?: string | null;
 }) => {
   const recipient = input.recipient || input.requester;
-  const to = employeeEmailAddress(recipient);
+  const to = await resolveEmployeeMailbox(recipient);
   const email = buildLeaveWorkflowEmail({
     event: input.event,
     request: input.request,
@@ -376,8 +393,14 @@ export const sendLeaveApprovalRequestEmail = async (input: {
   approverKind: LeaveEmailApproverKind;
   baseUrl?: string | null;
 }) => {
-  const to = employeeEmailAddress(input.recipient);
-  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const to = await resolveEmployeeMailbox(input.recipient);
+  if (!to) {
+    console.warn('[mail-service] Leave approval email skipped: no mailbox for recipient.', {
+      recipientCode: compact(input.recipient.employeeCode || input.recipient.employeeId),
+      recipientName: input.recipient.fullName,
+    });
+    return { sent: false, reason: 'No recipient email.' };
+  }
   const recipientUsername = compact(input.recipient.employeeCode || input.recipient.employeeId || input.recipient.sourceEmployeeId);
   const links = leaveApprovalLinks({
     request: input.request,

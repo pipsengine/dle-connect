@@ -61,14 +61,13 @@ import {
   managerOwnerFor,
   normalizeLeaveDate,
   notifyLeaveWorkflow as notifyLeaveWorkflowCore,
-  notifyLineManagerLeaveSubmitted,
+  runLeaveSubmitFollowUp,
+  repairPendingLeaveManagerNotifications,
   pendingLeaveApprovalsForActor,
   readAllEssRequests,
   resolveLineManagerForEmployee,
-  syncEssLeaveRequestById,
   transitionEssLeaveRequest,
   validateEssLeaveApplication,
-  applyLeaveBalanceImpact,
   adjustLeavePolicyCardsForEssPending,
   cancelEssLeaveRequest,
   workflowDeadlineDays,
@@ -608,6 +607,12 @@ export async function GET(request: Request) {
     const allRequests = await expireStaleLeaveRequests(rawRequests);
     const employee = resolveEssEmployee(employeeSource.employees, session);
     if (!employee) return err(403, 'Employee identity is not linked to the logged-in account.');
+    void repairPendingLeaveManagerNotifications({
+      baseUrl: resolveWorkflowLinkOriginFromRequest(request),
+      actorName: session.fullName || session.username,
+    }).catch((error) => {
+      console.error('[workforce-portal] pending leave manager notification repair failed', error);
+    });
     const payslipIdentity = [employee.employeeId, employee.employeeCode, employee.sourceEmployeeId]
       .map(normalizePayrollMatchKey)
       .map((key) => identityByKey.get(key))
@@ -1752,59 +1757,24 @@ export async function POST(request: Request) {
     await writeRequests([requestItem, ...requests]);
     invalidateEssPortalCache();
     if (isLeaveRequest) {
-      let dbSyncWarning: string | undefined;
-      let balanceWarning: string | undefined;
-      try {
-        await applyLeaveBalanceImpact({
-          employee,
-          leaveType,
-          days: leaveDays,
-          mode: 'reserve-pending',
-          required: true,
-        });
-        invalidateEssPortalCache();
-      } catch (balanceError) {
-        balanceWarning = balanceError instanceof Error ? balanceError.message : 'Leave balance could not be reserved.';
-        console.error('Leave balance reservation failed after ESS submit', balanceError);
-      }
-      try {
-        await syncEssLeaveRequestById(requestItem.id);
-      } catch (syncError) {
-        dbSyncWarning = syncError instanceof Error ? syncError.message : 'Leave saved in workflow queue; database sync is pending.';
-        console.error('Leave database sync failed after ESS submit', syncError);
-      }
       const baseUrl = resolveWorkflowLinkOriginFromRequest(request);
-      try {
-        await notifyLeaveWorkflow(session, {
-          requestId: requestItem.id,
-          recipient: employee,
-          title: 'Leave request submitted',
-          body: `${title} has been submitted and routed to ${lineManagerLabel}. It must be approved within ${workflowDeadlineDays} working days.`,
-          severity: 'success',
-          request: requestItem,
-          requester: employee,
-          emailEvent: 'submitted',
-          baseUrl,
-        });
-        if (resolvedManager) {
-          await notifyLineManagerLeaveSubmitted({
-            request: requestItem,
-            requester: employee,
-            manager: resolvedManager.employee,
-            actorName: session.fullName || session.username,
-            baseUrl,
-          });
-        }
-      } catch (notificationError) {
-        console.error('Leave in-app notification failed after submit', notificationError);
-      }
+      void runLeaveSubmitFollowUp({
+        request: requestItem,
+        requester: employee,
+        actorName: session.fullName || session.username,
+        baseUrl,
+        leaveType,
+        leaveDays,
+        title,
+        lineManagerLabel,
+        resolvedManager: resolvedManager?.employee || null,
+        session,
+      }).catch((error) => {
+        console.error('[workforce-portal] leave submit follow-up failed', error);
+      });
       return ok({
         request: requestItem,
-        message: balanceWarning
-          ? `Leave application saved (reference ${requestItem.id}) but balance update needs attention: ${balanceWarning}`
-          : dbSyncWarning
-            ? `Leave application saved (reference ${requestItem.id}) but HRIS sync needs attention: ${dbSyncWarning}`
-            : `Leave application submitted successfully. Reference ${requestItem.id}. Status: ${requestItem.status}.`,
+        message: `Leave application submitted successfully. Reference ${requestItem.id}. Status: ${requestItem.status}. Your line manager has been notified to review the request.`,
       });
     }
     return ok({ request: requestItem });
