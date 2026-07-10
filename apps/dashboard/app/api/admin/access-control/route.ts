@@ -6,7 +6,7 @@ import {
   readAccessControlPayload,
   saveAccessAssignment,
 } from '@/lib/auth/access-control-store';
-import { readUsers } from '@/lib/auth/auth-store';
+import { readUsersForAccessControl } from '@/lib/auth/auth-store';
 import { AUTH_COOKIE, hasPermission, verifySessionToken } from '@/lib/auth/session';
 
 const tokenFrom = (request: Request) => request.headers.get('cookie')?.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${AUTH_COOKIE}=`))?.split('=').slice(1).join('=');
@@ -23,23 +23,27 @@ const authorize = async (request: Request, write = false) => {
 };
 
 export async function GET(request: Request) {
-  const auth = await authorize(request);
-  if (auth.error) return auth.error;
-  const url = new URL(request.url);
-  const compare = url.searchParams.get('compare');
-  if (compare) {
-    const [left, right] = compare.split(':');
-    if (!left || !right) return NextResponse.json({ status: 'error', error: 'Provide compare as leftRole:rightRole.' }, { status: 400 });
-    return NextResponse.json({ status: 'success', data: await compareRolePermissions(left, right) });
+  try {
+    const auth = await authorize(request);
+    if (auth.error) return auth.error;
+    const url = new URL(request.url);
+    const compare = url.searchParams.get('compare');
+    if (compare) {
+      const [left, right] = compare.split(':');
+      if (!left || !right) return NextResponse.json({ status: 'error', error: 'Provide compare as leftRole:rightRole.' }, { status: 400 });
+      return NextResponse.json({ status: 'success', data: await compareRolePermissions(left, right) });
+    }
+    const [payload, users] = await Promise.all([readAccessControlPayload(), readUsersForAccessControl()]);
+    return NextResponse.json({ status: 'success', data: { ...payload, users } });
+  } catch (error) {
+    return NextResponse.json({ status: 'error', error: error instanceof Error ? error.message : 'Unable to load access control data.' }, { status: 500 });
   }
-  const [payload, users] = await Promise.all([readAccessControlPayload(), readUsers()]);
-  return NextResponse.json({ status: 'success', data: { ...payload, users } });
 }
 
 export async function POST(request: Request) {
-  const auth = await authorize(request, true);
-  if (auth.error) return auth.error;
   try {
+    const auth = await authorize(request, true);
+    if (auth.error) return auth.error;
     const body = await request.json().catch(() => ({}));
     if (body.action === 'clone-role') {
       const result = await cloneRolePermissions(String(body.sourceRole || ''), String(body.targetRole || ''), request.headers, auth.session!, String(body.reason || ''));

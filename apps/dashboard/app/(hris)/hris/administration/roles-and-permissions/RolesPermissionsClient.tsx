@@ -16,6 +16,7 @@ import {
   Save,
   Search,
   ShieldCheck,
+  UserCog,
 } from 'lucide-react';
 import { downloadExcelFile } from '@/lib/excel-export';
 
@@ -67,7 +68,17 @@ type PermissionNode = {
   protected?: boolean;
 };
 type RoleDef = { name: string; category: string; permissions: string[]; description: string };
-type UserAccount = { id: string; username: string; fullName: string; roles: string[]; permissions: string[]; department: string; status: string };
+type UserAccount = {
+  id: string;
+  username: string;
+  employeeCode?: string;
+  fullName: string;
+  roles: string[];
+  permissions: string[];
+  department: string;
+  jobTitle?: string;
+  status: string;
+};
 type Assignment = { subjectType: 'role' | 'user'; subjectId: string; permissions: string[]; dataScope: string; approvalLevel: string; status: string; reason: string; updatedAt: string; updatedBy: string };
 type Template = { id: string; name: string; description: string; permissions: string[]; dataScope: string; approvalLevel: string };
 type AuditRecord = { id: string; modifiedBy: string; modifiedAt: string; roleOrUserAffected: string; permissionChanged: string; oldValue: string; newValue: string; reason: string; ipAddress: string; device: string };
@@ -78,6 +89,16 @@ const approvalLevels = ['L1 - User', 'L2 - Manager', 'L2 - HR Admin', 'L2 - Proj
 const riskyActions = new Set(['delete', 'disable', 'assign', 'override', 'approve', 'post', 'release', 'lock', 'unlock', 'reopen', 'unmask', 'sync', 'delegate', 'escalate', 'impersonate']);
 
 const permissionOf = (node: PermissionNode, action: string) => `${node.permissionPrefix}.${action}`;
+
+const parseJsonResponse = async (res: Response, label: string) => {
+  const text = await res.text();
+  if (!text.trim()) throw new Error(`${label} returned an empty response (${res.status}). Check enterprise database connectivity and server logs.`);
+  try {
+    return JSON.parse(text) as Record<string, any>;
+  } catch {
+    throw new Error(`${label} returned invalid JSON (${res.status}).`);
+  }
+};
 
 export default function RolesPermissionsClient() {
   const [loading, setLoading] = useState(true);
@@ -110,13 +131,22 @@ export default function RolesPermissionsClient() {
   const [compareLeft, setCompareLeft] = useState('');
   const [compareRight, setCompareRight] = useState('');
   const [comparison, setComparison] = useState<{ leftOnly: string[]; rightOnly: string[]; shared: string[] } | null>(null);
+  const [selectedUserRoles, setSelectedUserRoles] = useState<string[]>([]);
+  const [roleQuery, setRoleQuery] = useState('');
+  const [savingRoles, setSavingRoles] = useState(false);
+  const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
+  const hydratedSubjectKey = useRef('');
 
   const load = async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/admin/access-control', { cache: 'no-store' });
-      const json = await res.json();
+      const [res, currentUserRes] = await Promise.all([
+        fetch('/api/admin/access-control', { cache: 'no-store' }),
+        fetch('/api/current-user?context=enterprise', { cache: 'no-store' }),
+      ]);
+      const json = await parseJsonResponse(res, 'Access Control API');
+      const currentUserJson = currentUserRes.ok ? await parseJsonResponse(currentUserRes, 'Current user API').catch(() => null) : null;
       if (!res.ok) throw new Error(json.error || 'Unable to load access control data.');
       setCatalog(json.data.catalog || []);
       setActions(json.data.actions || []);
@@ -129,6 +159,11 @@ export default function RolesPermissionsClient() {
       setCloneSource(json.data.roles?.[0]?.name || '');
       setCompareLeft(json.data.roles?.[0]?.name || '');
       setCompareRight(json.data.roles?.[1]?.name || '');
+      setIsGlobalAdmin(
+        currentUserJson?.data?.source === 'application-level-global-admin'
+        || currentUserJson?.data?.employeeCode === 'Admin',
+      );
+      hydratedSubjectKey.current = '';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load access control data.');
     } finally {
@@ -143,7 +178,23 @@ export default function RolesPermissionsClient() {
 
   const subjects: SubjectOption[] = subjectType === 'role'
     ? roles.map((role) => ({ id: role.name, label: role.name, permissions: role.permissions, meta: role.category }))
-    : users.map((user) => ({ id: user.id, label: `${user.fullName} (${user.username})`, permissions: user.permissions, meta: `${user.department || 'No department'} - ${user.status}` }));
+    : users.map((user) => ({
+      id: user.id,
+      label: `${user.fullName} (${user.employeeCode || user.username})`,
+      permissions: user.permissions,
+      meta: `${user.department || 'No department'} - ${user.jobTitle || user.status}`,
+    }));
+
+  const activeUser = users.find((user) => user.id === subjectId);
+  const assignableRoles = useMemo(
+    () => roles.filter((role) => isGlobalAdmin || role.name !== 'Super Administrator'),
+    [roles, isGlobalAdmin],
+  );
+  const filteredAssignableRoles = useMemo(() => {
+    const q = roleQuery.trim().toLowerCase();
+    if (!q) return assignableRoles;
+    return assignableRoles.filter((role) => [role.name, role.category, role.description].some((value) => value.toLowerCase().includes(q)));
+  }, [assignableRoles, roleQuery]);
 
   const subject = subjects.find((item) => item.id === subjectId);
   const filteredSubjects = useMemo(() => {
@@ -151,6 +202,27 @@ export default function RolesPermissionsClient() {
     if (!q) return subjects;
     return subjects.filter((item) => [item.label, item.meta, item.id].some((value) => value.toLowerCase().includes(q)));
   }, [subjectSearch, subjects]);
+
+  useEffect(() => {
+    if (loading) return;
+    const key = `${subjectType}:${subjectId}`;
+    if (!subjectId || hydratedSubjectKey.current === key) return;
+    hydratedSubjectKey.current = key;
+    const assignment = [...drafts, ...published].find((item) => item.subjectType === subjectType && item.subjectId === subjectId);
+    const nextSubject = subjectType === 'role'
+      ? roles.find((role) => role.name === subjectId)
+      : users.find((user) => user.id === subjectId);
+    setSelected(new Set(assignment?.permissions || nextSubject?.permissions || []));
+    setDataScope(assignment?.dataScope || 'Company');
+    setApprovalLevel(assignment?.approvalLevel || 'L1 - User');
+    setReason(assignment?.reason || '');
+    if (subjectType === 'user') {
+      const user = users.find((item) => item.id === subjectId);
+      setSelectedUserRoles(user?.roles || []);
+    } else {
+      setSelectedUserRoles([]);
+    }
+  }, [loading, subjectType, subjectId, roles, users, drafts, published]);
   const activeAssignment = [...drafts, ...published].find((item) => item.subjectType === subjectType && item.subjectId === subjectId);
   const baselinePermissions = subject?.permissions || [];
 
@@ -219,6 +291,36 @@ export default function RolesPermissionsClient() {
     setDataScope(assignment?.dataScope || 'Company');
     setApprovalLevel(assignment?.approvalLevel || 'L1 - User');
     setReason(assignment?.reason || '');
+    if (nextType === 'user') {
+      const user = users.find((item) => item.id === resolvedId);
+      setSelectedUserRoles(user?.roles || []);
+    } else {
+      setSelectedUserRoles([]);
+      setRoleQuery('');
+    }
+    hydratedSubjectKey.current = `${nextType}:${resolvedId}`;
+  };
+
+  const saveUserRoles = async () => {
+    if (subjectType !== 'user' || !subjectId) return;
+    setSavingRoles(true);
+    setError('');
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ userId: subjectId, action: 'assign-roles', roles: selectedUserRoles }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Unable to save user roles.');
+      setNotice('Role membership saved. The user may need to sign out and back in for role labels to refresh everywhere.');
+      hydratedSubjectKey.current = '';
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to save user roles.');
+    } finally {
+      setSavingRoles(false);
+    }
   };
 
   const setModulePermissions = (nodes: PermissionNode[], checked: boolean) => {
@@ -387,6 +489,59 @@ export default function RolesPermissionsClient() {
               <div className="rounded-lg bg-amber-50 p-3"><p className="text-lg font-black text-amber-700">{riskyCount}</p><p className="text-[11px] font-bold text-amber-700">Risky permissions</p></div>
             </div>
           </section>
+
+          {subjectType === 'user' && subjectId ? (
+            <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <h2 className="flex items-center gap-2 text-sm font-black uppercase tracking-wide text-slate-500">
+                <UserCog className="h-4 w-4" />
+                Role Membership
+              </h2>
+              <p className="mt-2 text-xs font-semibold text-slate-500">
+                Assign enterprise roles for {activeUser?.fullName || 'the selected user'}. Role changes apply immediately to permissions on the next page load.
+              </p>
+              <div className="relative mt-3">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={roleQuery}
+                  onChange={(event) => setRoleQuery(event.target.value)}
+                  placeholder="Search roles..."
+                  className="h-10 w-full rounded-lg border border-slate-200 pl-9 pr-3 text-sm font-semibold outline-none focus:border-blue-500"
+                />
+              </div>
+              <div className="mt-3 max-h-52 overflow-auto rounded-lg border border-slate-200 p-3">
+                {filteredAssignableRoles.map((role) => (
+                  <label key={role.name} className="flex items-start gap-2 py-1.5 text-xs font-bold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={selectedUserRoles.includes(role.name)}
+                      onChange={(event) => setSelectedUserRoles((current) => (
+                        event.target.checked
+                          ? [...current, role.name]
+                          : current.filter((item) => item !== role.name)
+                      ))}
+                      className="mt-0.5 h-4 w-4 rounded border-slate-300"
+                    />
+                    <span>
+                      {role.name}
+                      <span className="block text-[11px] font-semibold text-slate-400">{role.category}</span>
+                    </span>
+                  </label>
+                ))}
+                {!filteredAssignableRoles.length ? (
+                  <p className="py-4 text-center text-xs font-bold text-slate-400">No matching roles.</p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => void saveUserRoles()}
+                disabled={savingRoles || loading}
+                className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg bg-slate-950 px-3 text-xs font-black text-white disabled:opacity-50"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                {savingRoles ? 'Saving roles...' : 'Save Roles'}
+              </button>
+            </section>
+          ) : null}
 
           <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-black uppercase tracking-wide text-slate-500">Scope & Approval</h2>

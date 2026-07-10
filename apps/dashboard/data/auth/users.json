@@ -18778,9 +18778,9 @@
     "passwordResetRequired": false,
     "failedAttempts": 0,
     "lockedUntil": null,
-    "lastLoginAt": "2026-07-09T07:20:23.747Z",
+    "lastLoginAt": "2026-07-10T13:44:09.964Z",
     "createdAt": "2026-07-08T07:48:54.558Z",
-    "updatedAt": "2026-07-09T07:20:23.747Z",
+    "updatedAt": "2026-07-10T13:44:09.964Z",
     "disabledAt": null,
     "deleted": false
   },
@@ -23221,15 +23221,30 @@
     "passwordSalt": "260feeb65200d22e4c4623d88170ae68",
     "status": "Active",
     "roles": [
+      "Supervisor",
       "Employee"
     ],
     "permissions": [
+      "attendance.view",
+      "employees.view",
       "enterprise.view",
       "ess.view",
-      "profile.view",
+      "hris.view",
       "leave.submit",
+      "operations.daily-reports.create",
+      "operations.timesheets.approve",
+      "operations.timesheets.controls.supervisor.view",
+      "operations.timesheets.create",
+      "operations.timesheets.delete",
+      "operations.timesheets.edit",
+      "operations.timesheets.submit",
+      "operations.timesheets.view",
+      "operations.view",
+      "payroll.payslip.view",
+      "profile.view",
+      "timesheet.approve",
       "timesheet.submit",
-      "payroll.payslip.view"
+      "timesheet.supervisor.view"
     ],
     "departmentAccess": [
       "INFORMATION TECHNOLOGY"
@@ -23239,9 +23254,9 @@
     "passwordResetRequired": false,
     "failedAttempts": 0,
     "lockedUntil": null,
-    "lastLoginAt": "2026-07-08T09:38:29.565Z",
+    "lastLoginAt": "2026-07-10T07:33:39.508Z",
     "createdAt": "2026-06-14T12:32:39.601Z",
-    "updatedAt": "2026-07-08T09:38:29.565Z",
+    "updatedAt": "2026-07-10T14:55:44.951Z",
     "disabledAt": null,
     "deleted": false
   },
@@ -24303,9 +24318,9 @@
     "passwordResetRequired": false,
     "failedAttempts": 0,
     "lockedUntil": null,
-    "lastLoginAt": "2026-07-10T07:15:52.149Z",
+    "lastLoginAt": "2026-07-10T13:06:53.120Z",
     "createdAt": "2026-06-14T12:32:30.629Z",
-    "updatedAt": "2026-07-10T07:15:52.149Z",
+    "updatedAt": "2026-07-10T13:06:53.120Z",
     "disabledAt": null,
     "deleted": false
   },

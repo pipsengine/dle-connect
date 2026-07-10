@@ -7,7 +7,7 @@ import { getDleEnterpriseDbPool, type DleEmployeeDirectoryRow } from '@/lib/dle-
 import { defaultRoleForEmployee, enterpriseRoles, permissionsForRoles, roleDefinitions } from '@/lib/auth/rbac';
 import type { SessionPayload, SessionUser } from '@/lib/auth/session';
 import { passwordPolicyErrors } from '@/lib/auth/session';
-import { effectivePermissionsForRoles, effectivePermissionsForUser } from '@/lib/auth/access-control-store';
+import { effectivePermissionsForRoles, effectivePermissionsForUser, effectivePermissionsForUsers } from '@/lib/auth/access-control-store';
 
 export type UserStatus = 'Active' | 'Inactive' | 'Disabled' | 'Locked' | 'Pending First Login' | 'Password Reset Required';
 
@@ -471,7 +471,25 @@ export const syncUsersFromEmployeeDirectory = async () => {
 export const readUsers = async () => {
   const stored = await readUsersStoreRaw();
   const activeUsers = stored.filter((user) => !user.deleted);
-  return Promise.all(activeUsers.map(async (user) => ({ ...user, permissions: await effectivePermissionsForUser(user.id, user.roles) })));
+  const permissions = await effectivePermissionsForUsers(activeUsers.map((user) => ({ id: user.id, roles: user.roles })));
+  return activeUsers.map((user, index) => ({ ...user, permissions: permissions[index] }));
+};
+
+export const readUsersForAccessControl = async () => {
+  const stored = await readUsersStoreRaw();
+  const activeUsers = stored.filter((user) => !user.deleted);
+  const permissions = await effectivePermissionsForUsers(activeUsers.map((user) => ({ id: user.id, roles: user.roles })));
+  return activeUsers.map((user, index) => ({
+    id: user.id,
+    username: user.username,
+    employeeCode: user.employeeCode,
+    fullName: user.fullName,
+    department: user.department,
+    jobTitle: user.jobTitle,
+    status: user.status,
+    roles: user.roles,
+    permissions: permissions[index],
+  }));
 };
 
 const globalAdminDefault = (): GlobalAdminState => {

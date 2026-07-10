@@ -597,9 +597,8 @@ export const effectivePermissionsForRoles = async (roles: string[]) => {
   return unique([...base, ...published]);
 };
 
-export const effectivePermissionsForUser = async (userId: string, roles: string[]) => {
+const resolveEffectivePermissions = (state: AccessControlState, userId: string, roles: string[]) => {
   if (roles.includes('Super Administrator') || userId === 'global-admin') return ['*'];
-  const state = await readState();
   const base = permissionsForRoles(roles);
   const roleGrants = state.published
     .filter((item) => item.subjectType === 'role' && roles.includes(item.subjectId) && item.status === 'published')
@@ -608,6 +607,16 @@ export const effectivePermissionsForUser = async (userId: string, roles: string[
     .filter((item) => item.subjectType === 'user' && item.subjectId === userId && item.status === 'published')
     .flatMap((item) => item.permissions);
   return unique([...base, ...roleGrants, ...userGrants]);
+};
+
+export const effectivePermissionsForUser = async (userId: string, roles: string[]) => {
+  const state = await readState();
+  return resolveEffectivePermissions(state, userId, roles);
+};
+
+export const effectivePermissionsForUsers = async (entries: Array<{ id: string; roles: string[] }>) => {
+  const state = await readState();
+  return entries.map((entry) => resolveEffectivePermissions(state, entry.id, entry.roles));
 };
 
 export const saveAccessAssignment = async (

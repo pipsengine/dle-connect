@@ -23,11 +23,15 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const auth = await authorize(request, 'admin.users.edit');
+  const body = await request.json().catch(() => ({}));
+  const action = String(body.action || '');
+  let auth = await authorize(request, action === 'assign-roles' ? 'admin.roles.assign' : 'admin.users.edit');
+  if (auth.error && action === 'assign-roles') {
+    auth = await authorize(request, 'admin.users.edit');
+  }
   if (auth.error) return auth.error;
   try {
-    const body = await request.json().catch(() => ({}));
-    const user = await updateUser(String(body.userId || ''), String(body.action || ''), body, request.headers, auth.session?.username || 'Admin', auth.session);
+    const user = await updateUser(String(body.userId || ''), action, body, request.headers, auth.session?.username || 'Admin', auth.session);
     return NextResponse.json({ status: 'success', data: user });
   } catch (error) {
     return NextResponse.json({ status: 'error', error: error instanceof Error ? error.message : 'Unable to update user.' }, { status: 400 });
