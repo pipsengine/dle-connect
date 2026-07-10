@@ -16,6 +16,7 @@ import { EssDocumentsView, type EssDocumentsPayload } from './ess-documents-view
 import { EssCommunicationsView, type EssCommunicationsPayload } from './ess-communications-view';
 import { EssTimeView, type EssTimePayload } from './ess-time-view';
 import EssWorkflowDashboardView from './ess-workflow-dashboard-view';
+import { EssWorkflowDeliveryPanel, EssWorkflowDiagnosticsBanner, type WorkflowDeliveryTrace } from './ess-workflow-delivery-panel';
 import type { WorkflowIntelligence } from '@/lib/ess-workflow-intelligence';
 import { EssProfileDashboardView, type EssProfilePayload } from './ess-profile-dashboard-view';
 import { EssPayrollDashboardView, type EssPayrollPayload } from './ess-payroll-dashboard-view';
@@ -197,6 +198,12 @@ type Payload = {
     };
   };
   workflowIntelligence?: WorkflowIntelligence;
+  workflowDiagnostics?: {
+    mailProvider?: string | null;
+    mailConfigured?: boolean;
+    recentFailures?: Array<WorkflowDeliveryTrace['steps'][number] & { requestId?: string }>;
+    requestTraces?: Record<string, WorkflowDeliveryTrace>;
+  };
   managerMetrics?: {
     teamSize: number;
     pendingApprovals: number;
@@ -901,7 +908,7 @@ const leaveSectionToTab = (value?: string | null): LeaveTab | null => {
   return leaveTabs.find((tab) => tab.toLowerCase() === normalized) || null;
 };
 
-function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction, onWithdrawLeave, saving, actingRequestId, submitError, initialNow, initialSection, managerMetrics }: { payload: Payload | null; employee?: Payload['employee']; onLeaveSubmitted?: (input: { requestId: string; leaveType: string; startDate: string; endDate: string; days: number; reason: string; relieverEmployeeId: string; relieverName: string; handover: string; attachmentNames: string[] }) => Promise<void>; onLeaveAction?: (input: { requestId: string; action: 'approve' | 'reject'; comment?: string }) => Promise<void>; onWithdrawLeave?: (requestId: string) => Promise<void>; saving?: boolean; actingRequestId?: string; submitError?: string; initialNow: string; initialSection?: string | null; managerMetrics?: Payload['managerMetrics'] }) {
+function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction, onWithdrawLeave, onRetryNotification, retryingRequestId, saving, actingRequestId, submitError, initialNow, initialSection, managerMetrics }: { payload: Payload | null; employee?: Payload['employee']; onLeaveSubmitted?: (input: { requestId: string; leaveType: string; startDate: string; endDate: string; days: number; reason: string; relieverEmployeeId: string; relieverName: string; handover: string; attachmentNames: string[] }) => Promise<void>; onLeaveAction?: (input: { requestId: string; action: 'approve' | 'reject'; comment?: string }) => Promise<void>; onWithdrawLeave?: (requestId: string) => Promise<void>; onRetryNotification?: (requestId: string) => Promise<void>; retryingRequestId?: string; saving?: boolean; actingRequestId?: string; submitError?: string; initialNow: string; initialSection?: string | null; managerMetrics?: Payload['managerMetrics'] }) {
   const [active, setActive] = useState<LeaveTab>(() => leaveSectionToTab(initialSection) || 'Leave Dashboard');
 
   useEffect(() => {
@@ -1055,10 +1062,24 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
 
       {active === 'My Applications' && (
         <section className="space-y-3">
+          <EssWorkflowDiagnosticsBanner
+            mailProvider={payload?.workflowDiagnostics?.mailProvider}
+            mailConfigured={payload?.workflowDiagnostics?.mailConfigured}
+            recentFailures={payload?.workflowDiagnostics?.recentFailures}
+          />
           {(payload?.requests.filter((item) => /leave/i.test(item.category)) || []).map((item) => (
             <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-sm font-black text-slate-950">{item.title}</p>
               <p className="mt-1 text-xs font-semibold text-slate-600">Status: {item.status} · Submitted: {new Date(item.submittedAt).toLocaleString('en-GB')}</p>
+              <div className="mt-3">
+                <EssWorkflowDeliveryPanel
+                  requestId={item.id}
+                  trace={payload?.workflowDiagnostics?.requestTraces?.[item.id]}
+                  compact
+                  retrying={retryingRequestId === item.id}
+                  onRetry={onRetryNotification}
+                />
+              </div>
               {['Line Manager Review', 'HR Review', 'Submitted', 'Draft'].includes(item.status) ? (
                 <button
                   type="button"
@@ -1120,6 +1141,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actingRequestId, setActingRequestId] = useState('');
+  const [retryingRequestId, setRetryingRequestId] = useState('');
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [leaveSection, setLeaveSection] = useState<string | null>(null);
@@ -1268,11 +1290,14 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
           attachmentNames: input.attachmentNames,
         }),
       });
-      const json = await parseJsonResponse(res, 'Leave submission API') as ApiResponse<{ request: EssRequest; message?: string }>;
+      const json = await parseJsonResponse(res, 'Leave submission API') as ApiResponse<{ request: EssRequest; message?: string; deliveryWarnings?: string[] }>;
       if (!res.ok || json.status !== 'success' || !json.data?.request) {
         throw new Error(json.error || 'Unable to submit leave application');
       }
       const submitted = json.data.request;
+      if (json.data.deliveryWarnings?.length) {
+        setError(json.data.deliveryWarnings.join(' '));
+      }
       setToast(
         json.data.message
         || `Leave application submitted successfully. Reference ${submitted.id}. Status: ${submitted.status}.`,
@@ -1305,6 +1330,28 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
       setError(err instanceof Error ? err.message : 'Unable to withdraw leave request');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const retryLeaveNotification = async (requestId: string) => {
+    if (!payload) return;
+    setRetryingRequestId(requestId);
+    setToast('');
+    setError('');
+    try {
+      const res = await fetch('/api/workforce-portal', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'retry-leave-notification', requestId }),
+      });
+      const json = (await res.json()) as ApiResponse<{ message?: string }>;
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to resend approval email.');
+      setToast(json.data?.message || 'Approval email resent.');
+      await load({ refresh: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to resend approval email.');
+    } finally {
+      setRetryingRequestId('');
     }
   };
 
@@ -1458,7 +1505,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
       {tab !== 'dashboard' && tab !== 'profile' && tab !== 'payroll' && tab !== 'reports' && tab !== 'time' && tab !== 'documents' && tab !== 'communication' && tab !== 'travel' && (
         <div className="space-y-4">
           {tab === 'leave' && widgets && (
-            <EssLeaveWorkspace payload={payload} employee={employee} onLeaveSubmitted={submitLeaveApplication} onLeaveAction={submitLeaveApproval} onWithdrawLeave={withdrawLeaveRequest} saving={saving} actingRequestId={actingRequestId} submitError={error} initialNow={initialNow} initialSection={leaveSection} managerMetrics={payload?.managerMetrics} />
+            <EssLeaveWorkspace payload={payload} employee={employee} onLeaveSubmitted={submitLeaveApplication} onLeaveAction={submitLeaveApproval} onWithdrawLeave={withdrawLeaveRequest} onRetryNotification={retryLeaveNotification} retryingRequestId={retryingRequestId} saving={saving} actingRequestId={actingRequestId} submitError={error} initialNow={initialNow} initialSection={leaveSection} managerMetrics={payload?.managerMetrics} />
           )}
 
           {tab === 'performance' && (
@@ -1577,6 +1624,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
               payload={payload}
               onRefresh={() => void load()}
               onNavigate={(nextTab, options) => navigateTab(nextTab, options)}
+              workflowDiagnostics={payload?.workflowDiagnostics}
             />
           )}
 

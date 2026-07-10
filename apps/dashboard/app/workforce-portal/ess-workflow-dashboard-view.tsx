@@ -31,6 +31,7 @@ import {
 } from './ess-portal-ui';
 import type { WorkflowIntelligence, WorkflowStageNode } from '@/lib/ess-workflow-intelligence';
 import type { EssTab } from './ess-portal-shell';
+import { EssWorkflowDiagnosticsBanner } from './ess-workflow-delivery-panel';
 
 export type EssWorkflowPayload = {
   generatedAt?: string;
@@ -96,10 +97,16 @@ export default function EssWorkflowDashboardView({
   payload,
   onRefresh,
   onNavigate,
+  workflowDiagnostics,
 }: {
   payload: EssWorkflowPayload | null;
   onRefresh: () => void;
   onNavigate: (tab: EssTab, options?: { leaveSection?: string }) => void;
+  workflowDiagnostics?: {
+    mailProvider?: string | null;
+    mailConfigured?: boolean;
+    recentFailures?: Array<{ step: string; channel: string; status: string; createdAt: string; error?: string; requestId?: string }>;
+  };
 }) {
   const intelligence = payload?.workflowIntelligence;
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -171,6 +178,11 @@ export default function EssWorkflowDashboardView({
 
   return (
     <div className="space-y-6">
+      <EssWorkflowDiagnosticsBanner
+        mailProvider={workflowDiagnostics?.mailProvider}
+        mailConfigured={workflowDiagnostics?.mailConfigured}
+        recentFailures={workflowDiagnostics?.recentFailures}
+      />
       <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-4">
           <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[14px] bg-[#ECFDF5] text-[#059669]">

@@ -25,13 +25,22 @@ import {
 } from '@/lib/leave-request-shared';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
-import { sendLeaveApprovalRequestEmail, sendLeaveRelieverAssignmentEmail, sendLeaveWorkflowEmail } from '@/lib/mail-service';
+import { sendLeaveApprovalRequestEmail, sendLeaveRelieverAssignmentEmail, sendLeaveWorkflowEmail, resolveEmployeeMailbox, resolveMailProvider, type MailSendResult } from '@/lib/mail-service';
 import { buildEssEmployeeLookupKeys } from '@/lib/ess-dashboard-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { HRIS_LEAVE_SOURCE, isLegacySageLeaveImport, normalizeLeaveTypeName } from '@/lib/hris-leave-read';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import { invalidateEssPortalCache } from '@/lib/ess-portal-cache';
 import { explicitDepartmentSupervisorCode } from '@/lib/department-reporting-manager-sync';
+import {
+  listWorkflowDeliveries,
+  recordWorkflowDelivery,
+  runWorkflowDeliveryStep,
+  summarizeWorkflowDeliveries,
+  wasLeaveManagerEmailDelivered,
+  WorkflowDeliveryError,
+  type WorkflowDeliveryEntry,
+} from '@/lib/workflow-delivery-log';
 
 export type EssLeaveRequestStatus =
   | 'Draft'
@@ -200,10 +209,16 @@ WHERE ([StatusName] IN (N'Under Review', N'Submitted', N'Line Manager Review', N
   }
 };
 
-const managerNotificationAlreadySent = (request: EssLeaveRequest) =>
-  (request.comments || []).some((entry) => /line manager (notified|notification sent)/i.test(entry.comment));
+const managerEmailDeliveredInComments = (request: EssLeaveRequest) =>
+  (request.comments || []).some((entry) => /line manager email delivered/i.test(entry.comment));
 
-const appendManagerNotificationComment = async (requestId: string, managerLabel: string, actorName: string) => {
+const managerEmailFailedInComments = (request: EssLeaveRequest) =>
+  (request.comments || []).some((entry) => /line manager email failed/i.test(entry.comment));
+
+const managerEmailDeliveryComplete = async (request: EssLeaveRequest) =>
+  managerEmailDeliveredInComments(request) || await wasLeaveManagerEmailDelivered(request.id);
+
+const appendRequestDeliveryComment = async (requestId: string, actorName: string, comment: string) => {
   const requests = await readAllEssRequests();
   const now = new Date().toISOString();
   const next = requests.map((item) => item.id === requestId
@@ -212,17 +227,46 @@ const appendManagerNotificationComment = async (requestId: string, managerLabel:
         updatedAt: now,
         comments: [
           ...(item.comments || []),
-          {
-            at: now,
-            actor: actorName,
-            comment: `Line manager notification sent to ${managerLabel}.`,
-          },
+          { at: now, actor: actorName, comment },
         ],
       }
     : item);
   await writeAllEssRequests(next);
   invalidateEssPortalCache();
 };
+
+const assertMailSendResult = (result: MailSendResult, step: string, requestId: string) => {
+  if (!result.sent) {
+    throw new WorkflowDeliveryError({
+      step,
+      channel: 'email',
+      requestId,
+      reason: result.reason || 'Email was not sent.',
+    });
+  }
+  return result;
+};
+
+export type LeaveNotificationDeliveryResult = {
+  inApp: { ok: boolean; error?: string };
+  email: { ok: boolean; skipped?: boolean; reason?: string; messageId?: string; provider?: string };
+};
+
+export const getLeaveRequestDeliveryTrace = async (requestId: string) => {
+  const entries = await listWorkflowDeliveries({ requestId, limit: 40 });
+  return summarizeWorkflowDeliveries(entries);
+};
+
+export const listLeaveWorkflowDeliveryLog = async (input?: {
+  requestId?: string;
+  failedOnly?: boolean;
+  limit?: number;
+}): Promise<WorkflowDeliveryEntry[]> =>
+  listWorkflowDeliveries({
+    requestId: input?.requestId,
+    failedOnly: input?.failedOnly,
+    limit: input?.limit,
+  });
 
 export const resolveLeaveApproverEmployee = (
   request: EssLeaveRequest,
@@ -244,21 +288,22 @@ export const repairPendingLeaveManagerNotifications = async (input?: {
   const requests = await readAllEssRequests();
   for (const request of requests) {
     if (!/leave/i.test(request.category) || !PENDING_WORKFLOW_STATUSES.has(request.status)) continue;
-    if (managerNotificationAlreadySent(request)) continue;
+    if (await managerEmailDeliveryComplete(request)) continue;
     const requester = resolveEmployeeReference(employees, request.employeeId);
     if (!requester) continue;
     const manager = resolveLeaveApproverEmployee(request, requester, employees);
     if (!manager) continue;
-    await notifyLineManagerLeaveSubmitted({
-      request,
-      requester,
-      manager,
-      actorName: input?.actorName || 'Leave Workflow',
-      baseUrl: input?.baseUrl,
-    }).catch((error) => {
+    try {
+      await notifyLineManagerLeaveSubmitted({
+        request,
+        requester,
+        manager,
+        actorName: input?.actorName || 'Leave Workflow',
+        baseUrl: input?.baseUrl,
+      });
+    } catch (error) {
       console.error('[leave-workflow] failed to repair pending manager notification', { requestId: request.id, error });
-    });
-    await appendManagerNotificationComment(request.id, manager.fullName, input?.actorName || 'Leave Workflow').catch(() => undefined);
+    }
   }
 };
 
@@ -278,18 +323,26 @@ export const runLeaveSubmitFollowUp = async (input: {
   lineManagerLabel: string;
   resolvedManager?: DleEmployeeDirectoryRow | null;
   session: SessionPayload;
-}) => {
+}): Promise<{ deliveryWarnings: string[]; deliveryTrace: ReturnType<typeof summarizeWorkflowDeliveries> }> => {
+  const deliveryWarnings: string[] = [];
   const { employees } = await readPayrollEmployees();
   const manager = input.resolvedManager || resolveLeaveApproverEmployee(input.request, input.requester, employees);
 
   try {
-    await persistEssLeaveRequest(input.request);
+    await runWorkflowDeliveryStep({
+      requestId: input.request.id,
+      module: 'leave',
+      step: 'persist-leave-request-db',
+      channel: 'database',
+      actor: input.actorName,
+      task: () => persistEssLeaveRequest(input.request),
+    });
   } catch (error) {
     console.error('[leave-workflow] leave database sync failed after submit', error);
     throw error;
   }
 
-  if (manager && input.request.status === 'Line Manager Review' && !managerNotificationAlreadySent(input.request)) {
+  if (manager && input.request.status === 'Line Manager Review' && !(await managerEmailDeliveryComplete(input.request))) {
     try {
       await notifyLineManagerLeaveSubmitted({
         request: input.request,
@@ -298,22 +351,52 @@ export const runLeaveSubmitFollowUp = async (input: {
         actorName: input.actorName,
         baseUrl: input.baseUrl,
       });
-      await appendManagerNotificationComment(input.request.id, manager.fullName, input.actorName);
     } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Line manager notification failed.';
+      deliveryWarnings.push(reason);
       console.error('[leave-workflow] line manager notification failed after leave submit', error);
+      await appendRequestDeliveryComment(
+        input.request.id,
+        input.actorName,
+        `Line manager email FAILED for ${manager.fullName}: ${reason}`,
+      ).catch(() => undefined);
     }
+  } else if (!manager) {
+    const reason = 'No line manager could be resolved for this employee.';
+    deliveryWarnings.push(reason);
+    await recordWorkflowDelivery({
+      requestId: input.request.id,
+      module: 'leave',
+      step: 'line-manager-approval-email',
+      channel: 'email',
+      status: 'failed',
+      actor: input.actorName,
+      error: reason,
+    }).catch(() => undefined);
   }
 
   try {
-    await applyLeaveBalanceImpact({
-      employee: input.requester,
-      leaveType: input.leaveType,
-      days: input.leaveDays,
-      mode: 'reserve-pending',
-      required: true,
+    await runWorkflowDeliveryStep({
+      requestId: input.request.id,
+      module: 'leave',
+      step: 'reserve-leave-balance',
+      channel: 'balance',
+      actor: input.actorName,
+      critical: false,
+      task: async () => {
+        await applyLeaveBalanceImpact({
+          employee: input.requester,
+          leaveType: input.leaveType,
+          days: input.leaveDays,
+          mode: 'reserve-pending',
+          required: true,
+        });
+        invalidateEssPortalCache();
+      },
     });
-    invalidateEssPortalCache();
   } catch (error) {
+    const reason = error instanceof Error ? error.message : 'Leave balance reservation failed.';
+    deliveryWarnings.push(reason);
     console.error('[leave-workflow] leave balance reservation failed after submit', error);
   }
 
@@ -330,8 +413,13 @@ export const runLeaveSubmitFollowUp = async (input: {
       baseUrl: input.baseUrl,
     });
   } catch (error) {
+    const reason = error instanceof Error ? error.message : 'Requester notification failed.';
+    deliveryWarnings.push(reason);
     console.error('[leave-workflow] requester notification failed after leave submit', error);
   }
+
+  const deliveryTrace = await getLeaveRequestDeliveryTrace(input.request.id);
+  return { deliveryWarnings, deliveryTrace };
 };
 
 export const repairLeaveRequestApproverRouting = async (
@@ -361,25 +449,18 @@ export const repairLeaveRequestApproverRouting = async (
     || (compact(updated.lineManagerEmployeeId) ? resolveEmployeeReference(employees, updated.lineManagerEmployeeId!) : null)
     || resolveLeaveApproverEmployee(updated, requester, employees);
 
-  if (manager && options?.notify && !managerNotificationAlreadySent(updated) && PENDING_WORKFLOW_STATUSES.has(updated.status)) {
-    await notifyLineManagerLeaveSubmitted({
-      request: updated,
-      requester,
-      manager,
-      actorName: options.actorName || 'Leave Workflow',
-      baseUrl: options.baseUrl,
-    }).catch(() => undefined);
-    return {
-      ...updated,
-      comments: [
-        ...(updated.comments || []),
-        {
-          at: now,
-          actor: options.actorName || 'Leave Workflow',
-          comment: `Line manager notification sent to ${manager.fullName}.`,
-        },
-      ],
-    };
+  if (manager && options?.notify && !(await managerEmailDeliveryComplete(updated)) && PENDING_WORKFLOW_STATUSES.has(updated.status)) {
+    try {
+      await notifyLineManagerLeaveSubmitted({
+        request: updated,
+        requester,
+        manager,
+        actorName: options.actorName || 'Leave Workflow',
+        baseUrl: options.baseUrl,
+      });
+    } catch {
+      // Delivery trace records the failure; keep routing repair non-blocking.
+    }
   }
 
   return updated;
@@ -634,22 +715,105 @@ const deliverLeaveEmployeeNotification = async (input: {
   severity?: 'info' | 'success' | 'warning' | 'critical';
   requestId: string;
   kind?: 'Approval' | 'Workflow' | 'Notification';
-  sendEmail?: () => Promise<unknown>;
+  sendEmail?: () => Promise<MailSendResult | unknown>;
   href?: string;
-}) => {
-  await createEnterpriseNotification(input.session, {
-    kind: input.kind || 'Workflow',
-    module: 'Leave Management',
-    title: input.title,
-    body: input.body,
-    severity: input.severity || 'info',
-    recipientEmployeeCode: employeeNotificationCode(input.employee),
-    href: input.href || '/workforce-portal?tab=leave',
-    channels: ['In-App', 'Email'],
-    metadata: { requestId: input.requestId },
-    actor: input.session.fullName,
-  });
-  if (input.sendEmail) await input.sendEmail();
+  emailStep?: string;
+  actorName?: string;
+  criticalEmail?: boolean;
+}): Promise<LeaveNotificationDeliveryResult> => {
+  const result: LeaveNotificationDeliveryResult = {
+    inApp: { ok: false },
+    email: { ok: false, skipped: !input.sendEmail },
+  };
+  const actor = input.actorName || input.session.fullName;
+  const stepBase = input.emailStep || input.title.toLowerCase().replace(/\s+/g, '-');
+
+  try {
+    await runWorkflowDeliveryStep({
+      requestId: input.requestId,
+      module: 'leave',
+      step: `${stepBase}-in-app`,
+      channel: 'in-app',
+      actor,
+      recipientCode: employeeNotificationCode(input.employee),
+      critical: false,
+      task: async () => {
+        await createEnterpriseNotification(input.session, {
+          kind: input.kind || 'Workflow',
+          module: 'Leave Management',
+          title: input.title,
+          body: input.body,
+          severity: input.severity || 'info',
+          recipientEmployeeCode: employeeNotificationCode(input.employee),
+          href: input.href || '/workforce-portal?tab=leave',
+          channels: ['In-App', 'Email'],
+          metadata: { requestId: input.requestId },
+          actor: input.session.fullName,
+        });
+      },
+    });
+    result.inApp.ok = true;
+  } catch (error) {
+    result.inApp.error = error instanceof Error ? error.message : 'In-app notification failed.';
+  }
+
+  if (!input.sendEmail) return result;
+
+  const managerEmail = await resolveEmployeeMailbox(input.employee);
+  const provider = resolveMailProvider() || 'not configured';
+  if (!managerEmail) {
+    const reason = `No email address found for ${input.employee.fullName} (${employeeNotificationCode(input.employee)}).`;
+    result.email.reason = reason;
+    await recordWorkflowDelivery({
+      requestId: input.requestId,
+      module: 'leave',
+      step: input.emailStep || stepBase,
+      channel: 'email',
+      status: 'failed',
+      actor,
+      recipientCode: employeeNotificationCode(input.employee),
+      provider,
+      error: reason,
+    }).catch(() => undefined);
+    if (input.criticalEmail !== false) {
+      throw new WorkflowDeliveryError({
+        step: input.emailStep || stepBase,
+        channel: 'email',
+        requestId: input.requestId,
+        reason,
+      });
+    }
+    return result;
+  }
+
+  try {
+    const emailResult = await runWorkflowDeliveryStep({
+      requestId: input.requestId,
+      module: 'leave',
+      step: input.emailStep || stepBase,
+      channel: 'email',
+      actor,
+      recipientCode: employeeNotificationCode(input.employee),
+      recipientEmail: managerEmail,
+      provider,
+      critical: input.criticalEmail !== false,
+      task: async () => {
+        const sent = await input.sendEmail!();
+        if (sent && typeof sent === 'object' && 'sent' in (sent as MailSendResult)) {
+          return assertMailSendResult(sent as MailSendResult, input.emailStep || stepBase, input.requestId);
+        }
+        return { sent: true } as MailSendResult;
+      },
+    });
+    result.email.ok = true;
+    result.email.messageId = (emailResult as MailSendResult | undefined)?.messageId;
+    result.email.provider = (emailResult as MailSendResult | undefined)?.provider || provider;
+  } catch (error) {
+    result.email.reason = error instanceof Error ? error.message : 'Email delivery failed.';
+    if (input.criticalEmail !== false) throw error;
+  }
+
+  return result;
 };
 
 export const notifyLeaveFinalApproval = async (input: {
@@ -994,27 +1158,71 @@ export const notifyLineManagerLeaveSubmitted = async (input: {
   manager: DleEmployeeDirectoryRow;
   actorName: string;
   baseUrl?: string | null;
-}) => {
+}): Promise<LeaveNotificationDeliveryResult> => {
   const session = leaveSystemSession(input.actorName);
   const requestLabel = input.request.title || `${input.request.leaveType} leave`;
-  await safeLeaveNotification('line manager submission notification', () =>
-    deliverLeaveEmployeeNotification({
-      session,
-      employee: input.manager,
-      title: 'Leave request awaiting your approval',
-      body: `${input.requester.fullName} submitted ${requestLabel} (${input.request.startDate} to ${input.request.endDate}). Review in ESS Approvals within ${workflowDeadlineDays} working days.`,
-      severity: 'warning',
+  const managerEmail = await resolveEmployeeMailbox(input.manager);
+  const result = await deliverLeaveEmployeeNotification({
+    session,
+    employee: input.manager,
+    title: 'Leave request awaiting your approval',
+    body: `${input.requester.fullName} submitted ${requestLabel} (${input.request.startDate} to ${input.request.endDate}). Review in ESS Approvals within ${workflowDeadlineDays} working days.`,
+    severity: 'warning',
+    requestId: input.request.id,
+    kind: 'Approval',
+    href: '/workforce-portal?tab=leave&leaveSection=Approvals',
+    emailStep: 'line-manager-approval-email',
+    actorName: input.actorName,
+    criticalEmail: true,
+    sendEmail: () => sendLeaveApprovalRequestEmail({
+      request: input.request,
+      requester: input.requester,
+      recipient: input.manager,
+      approverKind: 'line-manager',
+      baseUrl: input.baseUrl,
+    }),
+  });
+
+  if (!result.email.ok) {
+    throw new WorkflowDeliveryError({
+      step: 'line-manager-approval-email',
+      channel: 'email',
       requestId: input.request.id,
-      kind: 'Approval',
-      href: '/workforce-portal?tab=leave&leaveSection=Approvals',
-      sendEmail: () => sendLeaveApprovalRequestEmail({
-        request: input.request,
-        requester: input.requester,
-        recipient: input.manager,
-        approverKind: 'line-manager',
-        baseUrl: input.baseUrl,
-      }),
-    }));
+      reason: result.email.reason || `Unable to send approval email to ${managerEmail || input.manager.fullName}.`,
+    });
+  }
+
+  await appendRequestDeliveryComment(
+    input.request.id,
+    input.actorName,
+    `Line manager email delivered to ${input.manager.fullName} (${managerEmail}) via ${result.email.provider || resolveMailProvider() || 'mail'}.`,
+  ).catch(() => undefined);
+
+  return result;
+};
+
+export const retryLeaveManagerNotification = async (input: {
+  requestId: string;
+  actorName: string;
+  baseUrl?: string | null;
+}) => {
+  const { employees } = await readPayrollEmployees();
+  const request = (await loadWorkflowLeaveRequests()).find((item) => item.id === input.requestId);
+  if (!request) throw new Error('Leave request not found.');
+  if (!PENDING_WORKFLOW_STATUSES.has(request.status)) {
+    throw new Error(`Leave request ${input.requestId} is not awaiting manager approval.`);
+  }
+  const requester = resolveEmployeeReference(employees, request.employeeId);
+  if (!requester) throw new Error('Leave requester could not be resolved.');
+  const manager = resolveLeaveApproverEmployee(request, requester, employees);
+  if (!manager) throw new Error('Line manager could not be resolved for this request.');
+  return notifyLineManagerLeaveSubmitted({
+    request,
+    requester,
+    manager,
+    actorName: input.actorName,
+    baseUrl: input.baseUrl,
+  });
 };
 
 const resolveHrRecipients = (employees: DleEmployeeDirectoryRow[]) =>

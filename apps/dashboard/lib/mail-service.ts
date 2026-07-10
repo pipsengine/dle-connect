@@ -33,6 +33,13 @@ import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
 
 type MailProvider = 'graph' | 'smtp';
 
+export type MailSendResult = {
+  sent: boolean;
+  reason?: string;
+  messageId?: string;
+  provider?: MailProvider;
+};
+
 const compact = (value: unknown) => String(value || '').trim();
 
 const smtpConfigured = () => Boolean(
@@ -90,7 +97,7 @@ export const resolveEmployeeMailbox = async (employee?: DleEmployeeDirectoryRow 
   return compact(match?.email);
 };
 
-export const sendTransactionalEmail = async (input: { to: string; subject: string; text: string; html?: string }) => {
+export const sendTransactionalEmail = async (input: { to: string; subject: string; text: string; html?: string }): Promise<MailSendResult> => {
   const to = compact(input.to);
   if (!to) return { sent: false, reason: 'No recipient email.' };
 
@@ -131,7 +138,7 @@ export const sendTransactionalEmail = async (input: { to: string; subject: strin
     if (!result.sent) {
       console.error('[mail-service] Graph send failed.', { to, subject: input.subject, reason: result.reason });
     }
-    return result;
+    return { sent: result.sent, reason: result.reason, provider: 'graph' };
   }
 
   const from = process.env.DLE_SMTP_FROM!;

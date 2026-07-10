@@ -73,8 +73,12 @@ import {
   workflowDeadlineDays,
   workingDaysSince,
   writeAllEssRequests,
+  getLeaveRequestDeliveryTrace,
+  listLeaveWorkflowDeliveryLog,
+  retryLeaveManagerNotification,
 } from '@/lib/leave-workflow-service';
 import { isLeaveEssRequest, isPendingLeaveStatus } from '@/lib/leave-request-shared';
+import { resolveMailProvider, verifyMailConnection, resolveEmployeeMailbox } from '@/lib/mail-service';
 import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
 
 type EssRequest = {
@@ -1545,6 +1549,32 @@ export async function GET(request: Request) {
         };
       })(),
       workflowIntelligence,
+      workflowDiagnostics: await (async () => {
+        const leaveTraceRequestIds = [...new Set([
+          ...employeeRequests.filter((item) => /leave/i.test(item.category)).map((item) => item.id),
+          ...leaveApprovals.map((item) => item.id),
+        ])];
+        const [recentDeliveryFailures, ...traceEntries] = await Promise.all([
+          listLeaveWorkflowDeliveryLog({ failedOnly: true, limit: 20 }),
+          ...leaveTraceRequestIds.map(async (requestId) => [requestId, await getLeaveRequestDeliveryTrace(requestId)] as const),
+        ]);
+        return {
+          mailProvider: resolveMailProvider(),
+          mailConfigured: Boolean(resolveMailProvider()),
+          recentFailures: recentDeliveryFailures.map((item) => ({
+            step: item.step,
+            channel: item.channel,
+            status: item.status,
+            createdAt: item.createdAt,
+            error: item.error,
+            recipientEmail: item.recipientEmail,
+            provider: item.provider,
+            message: item.message,
+            requestId: item.requestId,
+          })),
+          requestTraces: Object.fromEntries(traceEntries),
+        };
+      })(),
     };
     writeEssPortalResponseCache(cacheKey, payload);
     return ok(payload);
@@ -1565,6 +1595,53 @@ export async function POST(request: Request) {
     const employeeSource = await readPayrollEmployees();
     const employee = resolveEssEmployee(employeeSource.employees, session);
     if (!employee) return err(403, 'Employee identity is not linked to the logged-in account.');
+
+    if (action === 'retry-leave-notification') {
+      const requestId = compact(body.requestId || body.id);
+      if (!requestId) return err(400, 'requestId is required');
+      const allRequests = await loadWorkflowLeaveRequests();
+      const target = allRequests.find((item) => item.id === requestId);
+      if (!target) return err(404, 'Leave request not found.');
+      const isRequester = employeeRequestMatches(employee, target.employeeId);
+      const isAssignedManager = target.lineManagerEmployeeId
+        ? employeeRequestMatches(employee, target.lineManagerEmployeeId)
+        : false;
+      const canApprove = pendingLeaveApprovalsForActor(
+        employee,
+        allRequests.filter((item) => /leave/i.test(item.category) && item.startDate && item.endDate),
+        employeeSource.employees,
+        session.roles || [],
+        session.isGlobalAdmin,
+      ).some((item) => item.id === requestId);
+      if (!isRequester && !isAssignedManager && !canApprove) {
+        return err(403, 'You are not authorized to retry notifications for this leave request.');
+      }
+      try {
+        const delivery = await retryLeaveManagerNotification({
+          requestId,
+          actorName: session.fullName || session.username,
+          baseUrl: resolveWorkflowLinkOriginFromRequest(request),
+        });
+        invalidateEssPortalCache();
+        return ok({
+          message: 'Approval email resent to the line manager.',
+          delivery,
+        });
+      } catch (error) {
+        return err(502, error instanceof Error ? error.message : 'Unable to resend approval email.');
+      }
+    }
+
+    if (action === 'verify-mail-config') {
+      const provider = resolveMailProvider();
+      const verification = await verifyMailConnection();
+      const mailbox = await resolveEmployeeMailbox(employee);
+      return ok({
+        provider,
+        verification,
+        employeeMailbox: mailbox,
+      });
+    }
 
     if (action === 'withdraw-leave' || action === 'cancel-leave') {
       const requestId = compact(body.requestId || body.id);
@@ -1782,7 +1859,7 @@ export async function POST(request: Request) {
     if (isLeaveRequest) {
       const baseUrl = resolveWorkflowLinkOriginFromRequest(request);
       try {
-        await runLeaveSubmitFollowUp({
+        const followUp = await runLeaveSubmitFollowUp({
           request: requestItem,
           requester: employee,
           actorName: session.fullName || session.username,
@@ -1794,14 +1871,19 @@ export async function POST(request: Request) {
           resolvedManager: resolvedManager?.employee || null,
           session,
         });
+        const warningText = followUp.deliveryWarnings.length
+          ? ` Notification issues: ${followUp.deliveryWarnings.join(' ')}`
+          : '';
+        return ok({
+          request: requestItem,
+          message: `Leave application submitted successfully. Reference ${requestItem.id}. Status: ${requestItem.status}.${followUp.deliveryWarnings.length ? '' : ' Your line manager has been notified to review the request.'}${warningText}`,
+          deliveryWarnings: followUp.deliveryWarnings,
+          deliveryTrace: followUp.deliveryTrace,
+        });
       } catch (error) {
         console.error('[workforce-portal] leave submit follow-up failed', error);
         return err(500, error instanceof Error ? error.message : 'Leave was saved but workflow sync failed. Contact HR or retry.');
       }
-      return ok({
-        request: requestItem,
-        message: `Leave application submitted successfully. Reference ${requestItem.id}. Status: ${requestItem.status}. Your line manager has been notified to review the request.`,
-      });
     }
     return ok({ request: requestItem });
   } catch (error) {
