@@ -188,7 +188,7 @@ const reportLabelToId: Record<string, string> = {
   'Payroll Summary': 'payroll-summary',
   'Payroll Register': 'payroll-register',
   'Net Pay Analysis': 'payroll-register',
-  'Payroll Variance': 'payroll-summary',
+  'Payroll Variance': 'payroll-review',
   'Employee Payroll Register': 'payroll-register',
   'Department Register': 'payroll-register',
   'Cost Centre Register': 'payroll-register',

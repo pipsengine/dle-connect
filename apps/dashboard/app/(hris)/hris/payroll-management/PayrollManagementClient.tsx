@@ -613,8 +613,8 @@ const dashboardActions = [
   action('approve-run', 'Approve Payroll', 'workflow', payrollApprovalRoles, true),
   action('approve-entire-workflow', 'Approve Entire Workflow', 'workflow', ['Super Admin'], true),
   action('release-run', 'Release Payroll', 'workflow', [...payrollMakerRoles, ...financeRoles], true),
-  action('generate-payslips', 'Generate Payslips', 'secondary', payrollMakerRoles, true),
   action('generate-bank-schedule', 'Generate Bank Schedule', 'secondary', financeRoles, true),
+  action('generate-payslips', 'Generate Payslips', 'secondary', payrollMakerRoles, true),
   action('post-run', 'Generate Payroll Journal', 'workflow', financeRoles, true),
   action('generate-statutory-schedules', 'Generate Statutory Schedules', 'secondary', payrollMakerRoles),
   action('close-period', 'Close Payroll Period', 'workflow', [...payrollApprovalRoles, ...payrollMakerRoles], true),
@@ -686,8 +686,8 @@ const actionsBySection: Partial<Record<SectionId, PayrollAction[]>> = {
     action('release-run', 'Release Payroll', 'workflow', [...payrollMakerRoles, ...financeRoles], true),
     action('reject-run', 'Reject Payroll', 'workflow', payrollApprovalRoles, true, true),
     action('request-revision', 'Request Revision', 'workflow', payrollApprovalRoles, true, true),
-    action('generate-payslips', 'Publish Payslips to ESS', 'workflow', payrollMakerRoles, true),
     action('generate-bank-schedule', 'Generate Bank Schedule', 'workflow', financeRoles, true),
+    action('generate-payslips', 'Publish Payslips to ESS', 'workflow', payrollMakerRoles, true),
     action('generate-statutory-schedules', 'Generate Statutory Schedules', 'workflow', payrollMakerRoles),
     action('post-run', 'Post Journal', 'workflow', financeRoles, true),
     action('close-period', 'Close Period', 'workflow', [...payrollApprovalRoles, ...payrollMakerRoles], true),
@@ -859,6 +859,7 @@ const canRunAction = (actionItem: PayrollAction, role: Role, payload: PayrollPay
   if (actionItem.id === 'approve-entire-workflow' && !['Submitted', 'Under Review'].includes(status)) return { allowed: false, reason: 'Submit payroll first. Entire workflow approval activates after submission.' };
   if (actionItem.id === 'release-run' && status !== 'Approved') return { allowed: false, reason: 'Payroll approval is required before release.' };
   if (['generate-payslips', 'generate-bank-schedule', 'generate-statutory-schedules', 'export-bank-file', 'post-run'].includes(actionItem.id) && !releasedStatuses.includes(status)) return { allowed: false, reason: 'Release payroll first. Output actions activate after release.' };
+  if (actionItem.id === 'generate-payslips' && !run?.bankScheduleGeneratedAt) return { allowed: false, reason: 'Generate the bank schedule before publishing payslips.' };
   if (actionItem.id === 'post-run' && (!run?.bankScheduleGeneratedAt || !run?.statutorySchedulesGeneratedAt)) return { allowed: false, reason: 'Generate bank and statutory schedules before posting.' };
   if (actionItem.id === 'close-period' && status !== 'Posted') return { allowed: false, reason: 'Close is blocked until payslips, bank schedule, journal, and statutory schedules are complete.' };
   if (status === 'Closed' && !['approve-entire-workflow', 'reopen-period', 'view-audit', 'generate-report', 'export-csv', 'export-excel', 'export-pdf'].includes(actionItem.id)) return { allowed: false, reason: 'Closed periods are locked until approved reopening.' };
@@ -1833,8 +1834,8 @@ function ProcessPayrollWorkspace({
       { id: 'cfo-approve', label: 'CFO Approve', detail: 'CFO sign-off', done: Boolean(currentRun?.cfoReviewedAt) || ['CFO Approved', 'Approved', ...approvedStatuses].includes(status), phase: 'approve' as const },
       { id: 'md-ceo-approve', label: 'MD / CEO Approve', detail: 'Final executive sign-off', done: Boolean(currentRun?.approvedAt) || approvedStatuses.includes(status), phase: 'approve' as const },
       { id: 'release-run', label: 'Release', detail: 'Unlock payslips, bank and statutory outputs', done: Boolean(currentRun?.releasedAt) || isReleased, phase: 'approve' as const },
-      { id: 'generate-payslips', label: 'Payslips', detail: 'Publish employee payslips to ESS', done: Boolean(currentRun?.payslipsGeneratedAt), phase: 'output' as const },
       { id: 'generate-bank-schedule', label: 'Bank Schedule', detail: 'Generate bank payment file', done: Boolean(currentRun?.bankScheduleGeneratedAt), phase: 'output' as const },
+      { id: 'generate-payslips', label: 'Payslips', detail: 'Publish employee payslips to ESS', done: Boolean(currentRun?.payslipsGeneratedAt), phase: 'output' as const },
       { id: 'generate-statutory-schedules', label: 'Statutory Schedules', detail: 'PAYE, pension, NHF, NSITF, ITF', done: Boolean(currentRun?.statutorySchedulesGeneratedAt), phase: 'output' as const },
       { id: 'post-run', label: 'Post Journal', detail: 'Post payroll journal to finance', done: Boolean(currentRun?.postedAt) || ['Posted', 'Closed'].includes(status), phase: 'output' as const },
       { id: 'close-period', label: 'Close Period', detail: `Lock ${payload?.periodLabel || 'this period'} and complete payroll`, done: status === 'Closed', phase: 'close' as const },
@@ -2911,6 +2912,7 @@ function ReportsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Tab
   const reportCatalog = [
     { id: 'payroll-summary', title: 'Payroll Summary', detail: 'Period totals, readiness, exceptions, approvals and values.', icon: FileBarChart, tone: 'blue' as Tone },
     { id: 'payroll-register', title: 'Payroll Register', detail: 'Employee-level gross, deductions, net pay and status.', icon: ClipboardCheck, tone: 'green' as Tone },
+    { id: 'payroll-review', title: 'Payroll Review', detail: 'Month-on-month salary comparison with component variances.', icon: TrendingUp, tone: 'amber' as Tone },
     { id: 'salary-analysis', title: 'Salary Analysis', detail: 'Grade, category, department and gross pay analysis.', icon: TrendingUp, tone: 'violet' as Tone },
     { id: 'tax-report', title: 'PAYE Report', detail: 'PAYE schedule, tax exposure and employee tax lines.', icon: Landmark, tone: 'red' as Tone },
     { id: 'pension-report', title: 'Pension Report', detail: 'Employee and employer pension schedule analysis.', icon: ShieldCheck, tone: 'cyan' as Tone },
@@ -2923,6 +2925,7 @@ function ReportsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Tab
   const reportPresets: Record<string, { groupBy: typeof groupBy; columns: Record<string, boolean>; status?: typeof reportStatus }> = {
     'payroll-summary': { groupBy: 'department', columns: { gross: true, deductions: true, net: true, paye: false, pension: false, status: true } },
     'payroll-register': { groupBy: 'department', columns: { gross: true, deductions: true, net: true, paye: true, pension: true, status: true } },
+    'payroll-review': { groupBy: 'department', columns: { gross: true, deductions: true, net: true, paye: true, pension: true, status: true } },
     'salary-analysis': { groupBy: 'payrollGroup', columns: { gross: true, deductions: false, net: true, paye: false, pension: false, status: true } },
     'tax-report': { groupBy: 'department', columns: { gross: true, deductions: false, net: false, paye: true, pension: false, status: true } },
     'pension-report': { groupBy: 'employmentType', columns: { gross: true, deductions: false, net: false, paye: false, pension: true, status: true } },
@@ -2975,6 +2978,7 @@ function ReportsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Tab
   const reportFocus = {
     'payroll-summary': { label: 'Report Focus', value: 'Executive totals', detail: 'Period totals, status posture, and readiness overview.' },
     'payroll-register': { label: 'Report Focus', value: 'Employee register', detail: 'Employee-by-employee payroll values and processing status.' },
+    'payroll-review': { label: 'Report Focus', value: 'Month-on-month review', detail: 'Compare previous month and current month salary components with variance and percentage change.' },
     'salary-analysis': { label: 'Report Focus', value: 'Salary exposure', detail: 'Gross pay distribution by grade, group, and employee category.' },
     'tax-report': { label: 'Report Focus', value: 'PAYE schedule', detail: 'Employee PAYE values for tax review and remittance.' },
     'pension-report': { label: 'Report Focus', value: 'Pension schedule', detail: 'Employee pension deductions and employer estimate.' },
@@ -3443,8 +3447,8 @@ function PayrollComputationWorkflowPage({ payload, canViewMoney, role, runAction
   const releaseSteps = [
     ['Payroll Released', completed(['Released', 'Locked', 'Posted', 'Published', 'Closed'], currentRun?.releasedAt), currentRun?.releasedAt, Landmark],
     ['Bank Schedule Generated', Boolean(currentRun?.bankScheduleGeneratedAt), currentRun?.bankScheduleGeneratedAt, FileText],
-    ['Payments Processed', completed(['Posted', 'Closed'], currentRun?.postedAt), currentRun?.postedAt, Banknote],
     ['Payslips Published', completed(['Published', 'Closed'], currentRun?.payslipsGeneratedAt), currentRun?.payslipsGeneratedAt, Mail],
+    ['Payments Processed', completed(['Posted', 'Closed'], currentRun?.postedAt), currentRun?.postedAt, Banknote],
     ['Notifications Sent', Boolean(currentRun?.payslipsGeneratedAt), currentRun?.payslipsGeneratedAt, Bell],
   ] as const;
   const summaryStages = [
@@ -3643,8 +3647,8 @@ function PayrollComputationWorkflowPage({ payload, canViewMoney, role, runAction
             {quickAction('reject-run', 'Reject', 'red', true)}
             {quickAction('release-run', 'Release', 'cyan', true)}
             {quickAction('generate-bank-schedule', 'Bank Schedule', 'slate', true)}
-            {quickAction('generate-statutory-schedules', 'Statutory Schedules', 'blue')}
             {quickAction('generate-payslips', 'Publish Payslips', 'cyan', true)}
+            {quickAction('generate-statutory-schedules', 'Statutory Schedules', 'blue')}
             {quickAction('post-run', 'Post Payroll', 'slate', true)}
             {quickAction('close-period', 'Close Period', 'violet', true)}
             {quickAction('reopen-period', 'Reopen Period', 'red', true)}
@@ -3966,6 +3970,7 @@ function PayrollAdministrationControlCenter({
     { id: 'approve-run', label: 'Approve Payroll', icon: BadgeCheck, tone: 'green' as Tone, disabled: !payload?.permissions.canApprove },
     { id: 'approve-entire-workflow', label: 'Approve Entire Workflow', icon: ShieldCheck, tone: 'red' as Tone, disabled: role !== 'Super Admin' },
     { id: 'release-run', label: 'Release Payroll', icon: ShieldCheck, tone: 'cyan' as Tone, disabled: !payload?.permissions.canManageRun && !payload?.permissions.canPost },
+    { id: 'generate-bank-schedule', label: 'Generate Bank Schedule', icon: Landmark, tone: 'slate' as Tone, disabled: !payload?.permissions.canPost },
     { id: 'generate-payslips', label: 'Publish Payslips', icon: ReceiptText, tone: 'cyan' as Tone, disabled: !payload?.permissions.canManageRun },
     { id: 'generate-report', label: 'Generate Reports', icon: FileBarChart, tone: 'slate' as Tone, disabled: !payload?.permissions.canExport },
   ];
@@ -3977,6 +3982,7 @@ function PayrollAdministrationControlCenter({
     { label: 'Finance Review', owner: 'Finance Manager', done: ['Under Review', 'Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(runStatus) },
     { label: 'CFO Approval', owner: 'CFO', done: Boolean(currentRun?.approvedAt) || ['Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(runStatus) },
     { label: 'Released', owner: 'Payroll / Finance', done: Boolean(currentRun?.releasedAt) || ['Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(runStatus) },
+    { label: 'Bank Schedule', owner: 'Finance Manager', done: Boolean(currentRun?.bankScheduleGeneratedAt) },
     { label: 'Payslips Published', owner: 'Payroll Officer', done: Boolean(currentRun?.payslipsGeneratedAt) || ['Published', 'Closed'].includes(runStatus) },
   ];
   const periodBase = new Date();
@@ -5011,8 +5017,8 @@ export default function PayrollManagementClient({
           lastLoaded={lastLoaded}
           viewPeriod={viewPeriod}
           onRefresh={() => void load()}
-          onExportCsv={exportCsv}
-          onExportExcel={exportExcel}
+          onExportCsv={() => exportReportCsv('salary-setup')}
+          onExportExcel={() => exportReportExcel('salary-setup')}
           onSelectTab={(tab) => {
             setActiveTabs((prev) => ({ ...prev, 'salary-management': tab }));
             window.history.pushState(null, '', sectionHref('salary-management'));
@@ -5168,6 +5174,10 @@ export default function PayrollManagementClient({
                 <button type="button" onClick={exportExcel} disabled={!payload?.permissions.canExport} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
                   <FileSpreadsheet className="h-4 w-4" />
                   Export Excel
+                </button>
+                <button type="button" onClick={() => exportReportExcel('payroll-review')} disabled={!payload?.permissions.canExport} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 text-sm font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50">
+                  <TrendingUp className="h-4 w-4" />
+                  Payroll Review
                 </button>
               </div>
             </div>
@@ -5539,6 +5549,7 @@ function DashboardWorkspace({
     { label: 'Finance Review', done: ['Under Review', 'Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(runStatus) },
     { label: 'Approved', done: Boolean(currentRun?.approvedAt) || ['Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(runStatus) },
     { label: 'Released', done: Boolean(currentRun?.releasedAt) || ['Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(runStatus) },
+    { label: 'Bank Schedule', done: Boolean(currentRun?.bankScheduleGeneratedAt) },
     { label: 'Payslips', done: Boolean(currentRun?.payslipsGeneratedAt) || ['Published', 'Closed'].includes(runStatus) },
   ];
   const quickActions = [
@@ -5547,6 +5558,7 @@ function DashboardWorkspace({
     { label: 'Review Issues', action: 'view-exceptions', icon: AlertTriangle, tone: issues.length ? 'red' as Tone : 'green' as Tone, disabled: false },
     { label: 'Submit Approval', action: 'submit-run', icon: Send, tone: 'amber' as Tone, disabled: !payload?.permissions.canManageRun },
     { label: 'Approve Entire Workflow', action: 'approve-entire-workflow', icon: ShieldCheck, tone: 'red' as Tone, disabled: role !== 'Super Admin' },
+    { label: 'Generate Bank Schedule', action: 'generate-bank-schedule', icon: Landmark, tone: 'slate' as Tone, disabled: !payload?.permissions.canPost },
     { label: 'Publish Payslips', action: 'generate-payslips', icon: ReceiptText, tone: 'cyan' as Tone, disabled: !payload?.permissions.canManageRun },
   ];
   const activity = [
@@ -5581,7 +5593,7 @@ function DashboardWorkspace({
     { no: 8, title: 'Submit for Approval', detail: 'Send the clean run to HR, Finance, and executive approval.', section: 'payroll-processing' as SectionId, tab: 'payroll-approval', action: 'submit-run', owner: 'Payroll Officer', done: Boolean(currentRun?.submittedAt) || ['Submitted', 'Under Review', 'Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(runStatus) },
     { no: 9, title: 'Approve Payroll', detail: 'Approve only after exceptions, changes, variances, and totals are reviewed.', section: 'payroll-processing' as SectionId, tab: 'payroll-approval', action: 'approve-run', owner: 'HR / Finance / CFO', done: Boolean(currentRun?.approvedAt) || ['Approved', 'Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(runStatus) },
     { no: 10, title: 'Release Payroll', detail: 'Release approved payroll for payslips, bank schedule, statutory schedules, and journal posting.', section: 'payroll-computation-workflow' as SectionId, tab: undefined, action: 'release-run', owner: 'Payroll / Finance', done: Boolean(currentRun?.releasedAt) || ['Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(runStatus) },
-    { no: 11, title: 'Generate Outputs', detail: 'Publish payslips, generate bank schedule, statutory schedules, and post the payroll journal.', section: 'finance-integration' as SectionId, tab: 'bank-schedule', action: undefined, owner: 'Payroll / Finance', done: Boolean(currentRun?.payslipsGeneratedAt && currentRun.bankScheduleGeneratedAt && currentRun.statutorySchedulesGeneratedAt && currentRun.postedAt) },
+    { no: 11, title: 'Generate Outputs', detail: 'Generate bank schedule, publish payslips, statutory schedules, and post the payroll journal.', section: 'finance-integration' as SectionId, tab: 'bank-schedule', action: undefined, owner: 'Payroll / Finance', done: Boolean(currentRun?.payslipsGeneratedAt && currentRun.bankScheduleGeneratedAt && currentRun.statutorySchedulesGeneratedAt && currentRun.postedAt) },
     { no: 12, title: 'Close or Reopen Period', detail: 'Close after all outputs are complete; reopen closed periods only with approval and a reason.', section: 'payroll-processing' as SectionId, tab: 'payroll-closing', action: 'close-period', owner: 'Payroll Supervisor', done: runStatus === 'Closed' },
   ];
   const runbookAction = (step: (typeof endToEndSteps)[number]) => {
@@ -6475,8 +6487,8 @@ const workflowSteps = [
   ['Submitted for Approval', 'Payroll Supervisor', 'submit-run'],
   ['Approved', 'HR / Finance / CFO', 'approve-run'],
   ['Payroll Released', 'Payroll / Finance', 'release-run'],
-  ['Payslips Generated', 'Payroll Officer', 'generate-payslips'],
   ['Bank Schedule Generated', 'Finance Manager', 'generate-bank-schedule'],
+  ['Payslips Generated', 'Payroll Officer', 'generate-payslips'],
   ['Journal Posted', 'Finance Manager', 'post-run'],
   ['Statutory Reports Generated', 'Payroll Officer', 'generate-statutory-schedules'],
   ['Period Closed', 'Payroll Supervisor', 'close-period'],
@@ -6631,7 +6643,9 @@ function PayrollNextStepPanel({
           : status === 'Approved'
             ? action('release-run', 'Release Payroll', 'workflow', [...payrollMakerRoles, ...financeRoles], true)
             : ['Released', 'Locked'].includes(status)
-              ? action('generate-payslips', 'Publish Payslips', 'workflow', payrollMakerRoles, true)
+              ? !payrollRunFor(payload)?.bankScheduleGeneratedAt
+                ? action('generate-bank-schedule', 'Generate Bank Schedule', 'workflow', financeRoles, true)
+                : action('generate-payslips', 'Publish Payslips', 'workflow', payrollMakerRoles, true)
               : action('generate-report', 'Generate Reports', 'secondary');
   const auth = canRunAction(nextAction, role, payload);
   const readiness = payload?.summary.totalEmployees ? Math.round(((payload?.summary.readyEmployees || 0) / payload.summary.totalEmployees) * 100) : 0;

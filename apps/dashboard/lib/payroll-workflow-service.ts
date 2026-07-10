@@ -379,6 +379,9 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     if (!['Released', 'Locked', 'Posted', 'Published', 'Approved'].includes(run.status)) {
       throw new Error('Payslips can only be published after payroll release.');
     }
+    if (!run.bankScheduleGeneratedAt) {
+      throw new Error('Generate the bank schedule before publishing payslips.');
+    }
     const before = run.status;
     run.payslipsGeneratedAt = nowIso();
     run.payslipsGeneratedBy = actor;

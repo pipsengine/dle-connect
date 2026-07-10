@@ -15,6 +15,7 @@ import {
   FileText,
   Loader2,
   Lock,
+  Landmark,
   MoreHorizontal,
   Play,
   Plus,
@@ -496,8 +497,8 @@ export default function PayrollWorkflowClient() {
   /* ---- derived: payroll outputs ---- */
   const outputs = useMemo(
     () => [
-      { label: 'Payslip Generated', at: run?.payslipsGeneratedAt, file: run?.artifacts?.find((a) => /payslip/i.test(a.type))?.fileName, count: run?.employeeCount },
       { label: 'Bank Schedule File', at: run?.bankScheduleGeneratedAt, file: run?.artifacts?.find((a) => /bank/i.test(a.type))?.fileName },
+      { label: 'Payslip Generated', at: run?.payslipsGeneratedAt, file: run?.artifacts?.find((a) => /payslip/i.test(a.type))?.fileName, count: run?.employeeCount },
       { label: 'Pension Schedule', at: run?.statutorySchedulesGeneratedAt, file: run?.artifacts?.find((a) => /pension/i.test(a.type))?.fileName },
       { label: 'Tax File (PAYE)', at: run?.statutorySchedulesGeneratedAt, file: run?.artifacts?.find((a) => /paye|tax/i.test(a.type))?.fileName },
       { label: 'Accounting Journal', at: run?.postedAt, file: run?.artifacts?.find((a) => /journal|gl/i.test(a.type))?.fileName },
@@ -585,7 +586,10 @@ export default function PayrollWorkflowClient() {
     if (runStatus === 'Approved') {
       list.push({ id: 'release-run', label: 'Release Payroll', icon: Banknote, variant: 'primary', allowed: canManage, reason: canManage ? '' : 'You are not permitted to release payroll.' });
     }
-    if (RELEASED.includes(runStatus) && !run?.payslipsGeneratedAt) {
+    if (RELEASED.includes(runStatus) && !run?.bankScheduleGeneratedAt) {
+      list.push({ id: 'generate-bank-schedule', label: 'Generate Bank Schedule', icon: Landmark, variant: 'primary', allowed: canManage, reason: canManage ? '' : 'You are not permitted to generate the bank schedule.' });
+    }
+    if (RELEASED.includes(runStatus) && run?.bankScheduleGeneratedAt && !run?.payslipsGeneratedAt) {
       list.push({ id: 'generate-payslips', label: 'Generate Payslips', icon: ReceiptText, variant: 'primary', allowed: canManage, reason: canManage ? '' : 'You are not permitted to generate payslips.' });
     }
     if (runStatus === 'Posted') {

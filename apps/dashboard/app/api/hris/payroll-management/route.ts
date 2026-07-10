@@ -13,6 +13,9 @@ import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
 import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
 import { FINANCE_ONLY_PAYROLL_ACTIONS, isFinancePayrollOnlyUser } from '@/lib/access/payroll-access';
 import { buildExcelHtml, excelMimeType } from '@/lib/excel-export';
+import { buildSalarySetupExportReport } from '@/lib/payroll-salary-setup-export';
+import { buildPayrollReviewExportReport, previousPayrollPeriod } from '@/lib/payroll-review-export';
+import { readPayrollSnapshotsByPeriods } from '@/lib/payroll-run-store';
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -80,7 +83,18 @@ const reportTitle = (report: string) => ({
   'compliance-report': 'Compliance Report',
   'audit-report': 'Payroll Audit Report',
   'executive-analytics': 'Executive Payroll Analytics',
+  'salary-setup': 'Employee Salary Setup',
+  'payroll-review': 'Payroll Review (Month-on-Month)',
 }[report] || 'Payroll Register');
+
+const loadReviewRecordsForPeriod = async (period: string) => {
+  if (!period) return [];
+  const snapshots = await readPayrollSnapshotsByPeriods([period]);
+  const snapshot = snapshots.get(period);
+  if (snapshot?.records?.length) return snapshot.records;
+  const calculation = await calculatePayrollForPeriod(period);
+  return calculation.records;
+};
 
 const filterExportRecords = (records: any[], status: string | null) =>
   status && status !== 'All' ? records.filter((record) => record.payrollStatus === status) : records;
@@ -166,6 +180,9 @@ const reportExport = (records: any[], report: string) => {
   if (report === 'salary-analysis') {
     return { columns: ['Employee ID', 'Name', 'Department', 'Employment Type', 'Salary Structure', 'Base Pay', 'Allowances', 'Gross Pay', 'Net Pay', 'Payroll Status'], rows: records.map((r) => [r.employeeId, r.fullName, r.department, r.employmentType, r.salaryStructure || r.salaryGrade, r.basePay ?? 0, r.allowances ?? 0, r.grossPay ?? 0, r.netPay ?? 0, r.payrollStatus]) };
   }
+  if (report === 'salary-setup') {
+    return buildSalarySetupExportReport(records);
+  }
   return { columns: payrollExportColumns, rows: payrollExportRows(records) };
 };
 
@@ -228,12 +245,12 @@ const applySuperAdminEndToEndApproval = async (
   run.releasedBy = actor;
   run.lockedAt = run.lockedAt || stamp;
   await setStatus('release-run', 'Released');
-  run.payslipsGeneratedAt = run.payslipsGeneratedAt || stamp;
-  run.payslipsGeneratedBy = actor;
-  await setStatus('generate-payslips', 'Published', 'Payslips published as part of end-to-end workflow approval.');
   run.bankScheduleGeneratedAt = run.bankScheduleGeneratedAt || stamp;
   run.bankScheduleGeneratedBy = actor;
   await auditStep('generate-bank-schedule', run.status, 'Bank schedule generated');
+  run.payslipsGeneratedAt = run.payslipsGeneratedAt || stamp;
+  run.payslipsGeneratedBy = actor;
+  await setStatus('generate-payslips', 'Published', 'Payslips published as part of end-to-end workflow approval.');
   run.statutorySchedulesGeneratedAt = run.statutorySchedulesGeneratedAt || stamp;
   run.statutorySchedulesGeneratedBy = actor;
   await auditStep('generate-statutory-schedules', run.status, 'Statutory schedules generated');
@@ -267,9 +284,21 @@ export async function GET(request: Request) {
     const report = compact(url.searchParams.get('report')) || 'payroll-register';
     const exportRecords = filterExportRecords(payload.records, url.searchParams.get('status'));
     if (url.searchParams.get('audit') === '1') return jsonOk({ auditTrail: payload.auditTrail });
-    const reportData = reportExport(exportRecords, report);
+    let reportData = reportExport(exportRecords, report);
+    const previousPeriod = previousPayrollPeriod(payload.period);
+    if (report === 'payroll-review') {
+      const previousRecords = previousPeriod ? await loadReviewRecordsForPeriod(previousPeriod) : [];
+      reportData = buildPayrollReviewExportReport(
+        exportRecords,
+        previousRecords,
+        payload.periodLabel,
+        previousPeriod || 'Previous Month',
+      );
+    }
     const exportTitle = `${reportTitle(report)} - ${payload.periodLabel}`;
-    const exportSubtitle = `${exportRecords.length} records / ${payload.summary.exceptionCount} total payroll exceptions`;
+    const exportSubtitle = report === 'payroll-review'
+      ? `${exportRecords.length} current / ${previousPeriod ? `compared to ${previousPeriod}` : 'no previous period'}`
+      : `${exportRecords.length} records / ${payload.summary.exceptionCount} total payroll exceptions`;
     if (url.searchParams.get('format') === 'csv') {
       if (!payload.permissions.canExport) return jsonErr(403, 'Permission denied');
       return new Response(csvFromReport(reportData), {

@@ -4,6 +4,12 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
 import {
+  buildSalarySetupExportReport,
+  salarySetupCsvFromRecords,
+  type SalarySetupExportRecord,
+} from '@/lib/payroll-salary-setup-export';
+import { downloadExcelFile } from '@/lib/excel-export';
+import {
   AccordionSection,
   DonutChart,
   FilterSelect,
@@ -458,25 +464,25 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
   };
 
   const exportCsv = () => {
-    const exportColumns = salaryTableColumns.filter((column) => !['select', 'actions', 'status'].includes(column.id));
-    const headers = exportColumns.map((column) => column.label || column.id);
-    const lines = filtered.map((record) =>
-      exportColumns
-        .map((column) => {
-          if (column.kind === 'money' || column.kind === 'rate') return column.getMoney?.(record) ?? '';
-          if (column.kind === 'employee') return record.fullName;
-          return column.getText?.(record) ?? '';
-        })
-        .map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`)
-        .join(','),
-    );
-    const blob = new Blob([[headers.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob([salarySetupCsvFromRecords(filtered as SalarySetupExportRecord[])], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
     link.download = 'employee-salary-setup.csv';
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const exportExcel = () => {
+    const report = buildSalarySetupExportReport(filtered as SalarySetupExportRecord[]);
+    downloadExcelFile({
+      title: 'Employee Salary Setup',
+      subtitle: `${filtered.length} employees · ${payload?.periodLabel || payload?.period || 'Current period'}`,
+      sheetName: 'Salary Setup',
+      columns: report.columns,
+      rows: report.rows,
+      fileName: `employee-salary-setup-${payload?.period || 'export'}.xls`,
+    });
   };
 
   const setNhfApplicability = async (employeeId: string, nhfApplicable: boolean) => {
@@ -545,9 +551,13 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
               <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               {loading ? 'Refreshing' : 'Refresh'}
             </button>
+            <button type="button" onClick={exportExcel} disabled={!payload?.permissions.canExport} className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#E5E7EB] bg-white px-4 text-sm font-semibold text-[#0F172A] transition hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-40">
+              <FileSpreadsheet className="h-4 w-4" />
+              Export Excel
+            </button>
             <button type="button" onClick={exportCsv} disabled={!payload?.permissions.canExport} className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#0F172A] px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400">
               <Download className="h-4 w-4" />
-              Export
+              Export CSV
             </button>
           </div>
         </header>

@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   ChevronRight,
   ClipboardCheck,
+  Landmark,
   PlayCircle,
   ReceiptText,
   RefreshCcw,
@@ -204,6 +205,7 @@ export default function PayrollCommandCenter({
     { id: 'submit-run', label: 'Submit for Approval', icon: Send, enabled: payload?.permissions.canManageRun },
     { id: 'approve-run', label: 'Approve Payroll', icon: BadgeCheck, enabled: payload?.permissions.canApprove },
     { id: 'release-run', label: 'Release Payroll', icon: CheckCircle2, enabled: payload?.permissions.canManageRun },
+    { id: 'generate-bank-schedule', label: 'Generate Bank Schedule', icon: Landmark, enabled: payload?.permissions.canManageRun },
     { id: 'generate-payslips', label: 'Publish Payslips', icon: ReceiptText, enabled: payload?.permissions.canManageRun },
   ];
 
