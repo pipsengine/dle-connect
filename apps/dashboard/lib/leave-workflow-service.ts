@@ -630,6 +630,77 @@ export const notifyLeaveAwaitingHrApproval = async (input: {
     emailLeaveApproversForRequest({ request: input.request, requester: input.requester, baseUrl: input.baseUrl }));
 };
 
+export const notifyLeaveWithdrawn = async (input: {
+  request: EssLeaveRequest;
+  requester: DleEmployeeDirectoryRow;
+  actorName: string;
+  reason?: string;
+  baseUrl?: string | null;
+  previousStatus: EssLeaveRequest['status'];
+}) => {
+  if (!['Line Manager Review', 'HR Review'].includes(input.previousStatus)) return;
+
+  const { employees } = await readPayrollEmployees();
+  const session = leaveSystemSession(input.actorName);
+  const requestLabel = input.request.title || `${input.request.leaveType} leave`;
+  const withdrawnRequest = { ...input.request, status: 'Cancelled' as EssLeaveRequest['status'] };
+  const body = `${input.requester.fullName} withdrew ${requestLabel} (${input.request.startDate} to ${input.request.endDate}).${input.reason ? ` Note: ${input.reason}` : ''} No further approval action is required.`;
+
+  const notifyApprover = async (approver: DleEmployeeDirectoryRow) => {
+    await safeLeaveNotification('leave withdrawal approver notification', () =>
+      deliverLeaveEmployeeNotification({
+        session,
+        employee: approver,
+        title: 'Leave request withdrawn',
+        body,
+        severity: 'info',
+        requestId: input.request.id,
+        kind: 'Approval',
+        href: '/workforce-portal?tab=leave&leaveSection=Approvals',
+        sendEmail: () => sendLeaveWorkflowEmail({
+          event: 'withdrawn',
+          request: withdrawnRequest,
+          requester: input.requester,
+          recipient: approver,
+          actorName: input.actorName,
+          extra: input.reason,
+          baseUrl: input.baseUrl,
+        }),
+      }));
+  };
+
+  if (input.previousStatus === 'Line Manager Review') {
+    const manager = input.request.lineManagerEmployeeId
+      ? resolveEmployeeReference(employees, input.request.lineManagerEmployeeId)
+      : resolveLineManagerRecipient(input.requester, employees);
+    if (manager) await notifyApprover(manager);
+    return;
+  }
+
+  const hrRecipients = resolveHrRecipients(employees);
+  const notified = new Set<string>();
+  for (const recipient of hrRecipients.slice(0, 5)) {
+    const key = compact(recipient.employeeCode || recipient.employeeId);
+    if (!key || notified.has(key)) continue;
+    notified.add(key);
+    await notifyApprover(recipient);
+  }
+
+  await safeLeaveNotification('leave withdrawal hr in-app notification', () =>
+    createEnterpriseNotification(session, {
+      kind: 'Approval',
+      module: 'Leave Management',
+      title: 'Leave request withdrawn',
+      body,
+      severity: 'info',
+      recipientRoles: ['HR Manager', 'HR Head', 'HR Officer', 'Leave Administrator'],
+      href: '/workforce-portal?tab=leave&leaveSection=Approvals',
+      channels: ['In-App'],
+      metadata: { requestId: input.request.id },
+      actor: input.actorName,
+    }));
+};
+
 const essLeaveRequestFromDbRow = (row: Record<string, unknown>, employees: DleEmployeeDirectoryRow[]): EssLeaveRequest | null => {
   const id = compact(row.Id);
   const employeeId = compact(row.EmployeeId);
@@ -1221,7 +1292,7 @@ export const validateEssLeaveApplication = async (input: {
       : [],
     applications: [],
     summary: { pendingApplications: 0, pendingApprovals: 0 },
-  } as LeavePayload;
+  } as unknown as LeavePayload;
 
   const validation = validateLeaveAction('apply', 'Employee', validationPayload, {
     employeeId: employee.employeeId,
@@ -1340,7 +1411,7 @@ SET [PendingBalance] = CASE WHEN ISNULL([PendingBalance],0) - @Days < 0 THEN 0 E
 const ESS_PENDING_LEAVE_STATUSES = new Set(['Submitted', 'Draft', 'Line Manager Review', 'HR Review']);
 
 export const adjustLeavePolicyCardsForEssPending = (
-  policyCards: Array<{ type: string; entitlement?: number; used?: number; pending?: number; balance?: number; [key: string]: unknown }>,
+  policyCards: Array<Record<string, string | number>>,
   requests: EssLeaveRequest[],
 ) => {
   const pendingByType = new Map<string, number>();
@@ -1351,7 +1422,8 @@ export const adjustLeavePolicyCardsForEssPending = (
     pendingByType.set(leaveType, round2((pendingByType.get(leaveType) || 0) + Number(request.days || 0)));
   }
   return policyCards.map((card) => {
-    const leaveType = normalizeLeaveTypeName(card.type);
+    const leaveType = normalizeLeaveTypeName(String(card.type || ''));
+    if (!leaveType) return card;
     const pendingFromEss = pendingByType.get(leaveType) || 0;
     const currentPending = Number(card.pending || 0);
     const currentBalance = Number(card.balance ?? card.entitlement ?? 0);
@@ -1446,9 +1518,11 @@ export const cancelEssLeaveRequest = async (input: {
   actorName: string;
   reason?: string;
   employee?: DleEmployeeDirectoryRow;
+  baseUrl?: string | null;
 }) => {
   const requests = await readAllEssRequests();
   const found = requests.find((item) => item.id === input.requestId && /leave/i.test(item.category));
+  const previousStatus = found?.status;
   if (!found) {
     const pool = await getDleEnterpriseDbPool();
     if (!pool) throw new Error('Leave request not found.');
@@ -1496,6 +1570,20 @@ export const cancelEssLeaveRequest = async (input: {
         });
       } catch (error) {
         console.error('[leave-workflow] failed to release pending leave balance on cancel', error);
+      }
+      if (previousStatus && ['Line Manager Review', 'HR Review'].includes(previousStatus)) {
+        try {
+          await notifyLeaveWithdrawn({
+            request: found,
+            requester,
+            actorName: input.actorName,
+            reason: input.reason,
+            baseUrl: input.baseUrl,
+            previousStatus,
+          });
+        } catch (error) {
+          console.error('[leave-workflow] failed to notify approver after leave withdrawal', error);
+        }
       }
     }
   }

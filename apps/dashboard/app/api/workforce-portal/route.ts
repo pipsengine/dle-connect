@@ -1545,6 +1545,7 @@ export async function POST(request: Request) {
           actorName: session.fullName || session.username,
           reason: compact(body.comment) || 'Withdrawn from Employee Self-Service.',
           employee,
+          baseUrl: resolveWorkflowLinkOriginFromRequest(request),
         });
         return ok({ requestId, status: 'Cancelled', message: 'Leave request withdrawn. You can submit a new application.' });
       } catch (error) {

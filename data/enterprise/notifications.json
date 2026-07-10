@@ -2,6 +2,52 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1783701406588-0hnkxa",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr KAYODE OGBETAH submitted Annual Leave 2026-07-13 to 2026-07-15 (2026-07-13 to 2026-07-15). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-07-10T16:36:46.588Z",
+      "actor": "Mr KAYODE OGBETAH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1783700769478-tmhaac"
+      }
+    },
+    {
+      "id": "ntf-1783701406426-837fzn",
+      "recipientUserId": "NYSC0032",
+      "recipientUsername": "NYSC0032",
+      "recipientEmployeeCode": "NYSC0032",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request submitted",
+      "body": "Annual Leave 2026-07-13 to 2026-07-15 has been submitted and routed to Mr CHRISTIAN ONUWABHAGBE OGBAISI. It must be approved within 5 working days.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave",
+      "createdAt": "2026-07-10T16:36:46.426Z",
+      "actor": "Mr KAYODE OGBETAH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1783700769478-tmhaac"
+      }
+    },
+    {
       "id": "ntf-1783700666137-rmuc88",
       "recipientUserId": "P0146",
       "recipientUsername": "P0146",
@@ -12,7 +58,7 @@
       "title": "Leave request awaiting your approval",
       "body": "Mr KAYODE OGBETAH submitted Annual Leave 2026-07-13 to 2026-07-16 (2026-07-13 to 2026-07-16). Review in ESS Approvals within 5 working days.",
       "severity": "warning",
-      "status": "Unread",
+      "status": "Read",
       "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
       "createdAt": "2026-07-10T16:24:26.137Z",
       "actor": "Mr KAYODE OGBETAH",
@@ -22,7 +68,8 @@
       ],
       "metadata": {
         "requestId": "ess-1783700621267-z7jyv4"
-      }
+      },
+      "readAt": "2026-07-10T16:34:16.676Z"
     },
     {
       "id": "ntf-1783700666042-1tqkak",

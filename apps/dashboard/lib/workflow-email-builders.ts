@@ -12,7 +12,7 @@ import {
 } from '@/lib/payroll-approval-workflow';
 import type { EssLeaveRequest } from '@/lib/leave-workflow-service';
 
-export type LeaveEmailEvent = 'submitted' | 'manager-approved' | 'approved' | 'rejected' | 'approval-request';
+export type LeaveEmailEvent = 'submitted' | 'manager-approved' | 'approved' | 'rejected' | 'withdrawn' | 'approval-request';
 
 type BrandedInput = Parameters<typeof buildDleEmail>[0];
 
@@ -45,6 +45,7 @@ const leaveActionLabel: Record<LeaveEmailEvent, string> = {
   'manager-approved': 'View Pending Approval',
   approved: 'View Approved Leave',
   rejected: 'Review Leave Record',
+  withdrawn: 'Open Leave Workspace',
   'approval-request': 'Open Leave Workspace',
 };
 
@@ -53,6 +54,7 @@ const leaveFooterNote: Record<LeaveEmailEvent, string> = {
   'manager-approved': 'HR will complete final approval before leave is confirmed in payroll.',
   approved: 'Your approved leave is now recorded. Coordinate handover with your reliever before your start date.',
   rejected: 'You may submit a revised leave application from the workforce portal if appropriate.',
+  withdrawn: 'No further approval action is required for this request.',
   'approval-request': 'Approval links expire after 7 days. Sign in with your designated approver account.',
 };
 
@@ -61,6 +63,7 @@ const leaveHeadline: Record<LeaveEmailEvent, string> = {
   'manager-approved': 'Manager approval received',
   approved: 'Leave approved',
   rejected: 'Leave application rejected',
+  withdrawn: 'Leave request withdrawn',
   'approval-request': 'Leave approval required',
 };
 
@@ -78,6 +81,7 @@ export const buildLeaveWorkflowEmail = (input: {
     'manager-approved': `Leave awaiting HR approval — ${input.request.leaveType}`,
     approved: `Leave approved — ${input.request.leaveType}`,
     rejected: `Leave rejected — ${input.request.leaveType}`,
+    withdrawn: `Leave withdrawn — ${input.request.leaveType}`,
     'approval-request': `Leave approval required — ${input.request.leaveType}`,
   };
   const introMap: Record<LeaveEmailEvent, string> = {
@@ -85,6 +89,7 @@ export const buildLeaveWorkflowEmail = (input: {
     'manager-approved': 'Your line manager has approved this request. It is now awaiting HR final approval.',
     approved: 'Your leave request has been fully approved and recorded in DLE Connect.',
     rejected: 'Your leave request has been rejected. Review the details below.',
+    withdrawn: 'This leave request has been withdrawn by the employee and removed from your approval queue.',
     'approval-request': 'A leave request is waiting for your review and approval.',
   };
   const toneMap: Record<LeaveEmailEvent, 'info' | 'success' | 'warning' | 'danger'> = {
@@ -92,6 +97,7 @@ export const buildLeaveWorkflowEmail = (input: {
     'manager-approved': 'warning',
     approved: 'success',
     rejected: 'danger',
+    withdrawn: 'info',
     'approval-request': 'warning',
   };
 
