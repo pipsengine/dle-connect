@@ -7,7 +7,8 @@ import { normalizeEssNotificationHref } from '@/lib/ess-notification-routing';
 import type { LeaveApplicationRecord, LeaveBalanceRecord, LeaveStatus, WorkflowStage } from '@/lib/leave-management-store';
 import type { SessionPayload } from '@/lib/auth/session';
 import { resolveActivePayrollPeriod } from '@/lib/payroll-periods';
-import { ensureEmployeeLeaveFromSage } from '@/lib/sage-leave-sync';
+import type { EmployeeLeaveSummary } from '@/lib/hris-leave-read';
+import { ensureEmployeeLeaveFromHris } from '@/lib/hris-leave-read';
 import type { PayslipEmployeeIdentity } from '@/lib/payroll-payslip-identity-store';
 import { explicitDepartmentSupervisorCode } from '@/lib/department-reporting-manager-sync';
 import { resolveReportingManagerDisplay } from '@/lib/reporting-manager-match';
@@ -102,7 +103,7 @@ ORDER BY a.[StartDate] DESC, a.[UpdatedAt] DESC;`);
   }
 };
 
-const balanceDetailsToRecords = (employee: DleEmployeeDirectoryRow, details: Awaited<ReturnType<typeof ensureEmployeeLeaveFromSage>>['balanceDetails']): LeaveBalanceRecord[] =>
+const balanceDetailsToRecords = (employee: DleEmployeeDirectoryRow, details: EmployeeLeaveSummary['balanceDetails']): LeaveBalanceRecord[] =>
   details.map((detail) => ({
     employeeId: employee.employeeId,
     fullName: employee.fullName,
@@ -275,7 +276,7 @@ export async function buildEssDashboardContext(input: {
   const { employee, employees, session, requests, netPay, payslipIdentity } = input;
   const lookupKeys = buildEssEmployeeLookupKeys(employee, payslipIdentity);
   const [leaveSummary, applications, attendance, documents, notificationFeed] = await Promise.all([
-    ensureEmployeeLeaveFromSage(employee),
+    ensureEmployeeLeaveFromHris(employee),
     readLeaveApplicationsForKeys(lookupKeys),
     readEmployeeAttendanceMonthSummary(lookupKeys),
     readEmployeeDocuments(Number(employee.employeeDbId || 0)),
@@ -387,14 +388,14 @@ export async function buildEssDashboardContext(input: {
         expiryDate: detail.leaveType.toLowerCase().includes('carry') ? `${new Date().getFullYear()}-03-31` : '',
         eligibilityStatus: 'From HRIS',
         allowanceStatus: detail.leaveType.toLowerCase().includes('annual') ? 'From leave policy' : 'No leave allowance',
-        policyNote: leaveSummary.sourceSystem ? `Synced from ${leaveSummary.sourceSystem}.` : 'Synced from DLE_Enterprise leave balances.',
+        policyNote: 'From DLE_Enterprise HRIS leave records.',
       }))
     : [
-        { id: 'annual-leave', type: 'Annual Leave', entitlement, basis: 'Working days', used, pending, balance, expiryDate: '', eligibilityStatus: annualBalance?.status || 'From HRIS', allowanceStatus: 'From leave policy', policyNote: 'Synced from DLE_Enterprise leave balances.' },
+        { id: 'annual-leave', type: 'Annual Leave', entitlement, basis: 'Working days', used, pending, balance, expiryDate: '', eligibilityStatus: annualBalance?.status || 'From HRIS', allowanceStatus: 'From leave policy', policyNote: 'From DLE_Enterprise HRIS leave records.' },
         { id: 'sick-leave', type: 'Sick Leave', entitlement: sickBalance?.accruedBalance ?? 0, basis: 'Working days', used: sickBalance?.usedBalance ?? 0, pending: sickBalance?.pendingBalance ?? 0, balance: sickBalance?.currentBalance ?? 0, expiryDate: '', eligibilityStatus: sickBalance?.status || 'From HRIS', allowanceStatus: 'No leave allowance', policyNote: 'Medical certificate may be required.' },
         { id: 'compassionate-leave', type: 'Compassionate Leave', entitlement: compassionateBalance?.accruedBalance ?? 0, basis: 'Working days', used: compassionateBalance?.usedBalance ?? 0, pending: compassionateBalance?.pendingBalance ?? 0, balance: compassionateBalance?.currentBalance ?? 0, expiryDate: '', eligibilityStatus: compassionateBalance?.status || 'From HRIS', allowanceStatus: 'No leave allowance', policyNote: 'Supporting document required where applicable.' },
         { id: 'exam-leave', type: 'Exam Leave', entitlement: examBalance?.accruedBalance ?? 0, basis: 'Working days', used: examBalance?.usedBalance ?? 0, pending: examBalance?.pendingBalance ?? 0, balance: examBalance?.currentBalance ?? 0, expiryDate: '', eligibilityStatus: examBalance?.status || 'From HRIS', allowanceStatus: 'No leave allowance', policyNote: 'Exam timetable or institution evidence required.' },
-        { id: 'carry-forward-leave', type: 'Carry Forward Leave', entitlement: carryForward, basis: 'Working days', used: carryForwardBalance?.usedBalance ?? 0, pending: carryForwardBalance?.pendingBalance ?? 0, balance: carryForward, expiryDate: `${new Date().getFullYear()}-03-31`, eligibilityStatus: carryForward ? 'Available until 31 March' : 'No carry-forward balance', allowanceStatus: 'Does not trigger leave allowance', policyNote: 'From DLE_Enterprise leave balances.' },
+        { id: 'carry-forward-leave', type: 'Carry Forward Leave', entitlement: carryForward, basis: 'Working days', used: carryForwardBalance?.usedBalance ?? 0, pending: carryForwardBalance?.pendingBalance ?? 0, balance: carryForward, expiryDate: `${new Date().getFullYear()}-03-31`, eligibilityStatus: carryForward ? 'Available until 31 March' : 'No carry-forward balance', allowanceStatus: 'Does not trigger leave allowance', policyNote: 'From DLE_Enterprise HRIS leave records.' },
       ];
 
   const monthDays = workingDaysInMonthBefore(new Date().getDate());

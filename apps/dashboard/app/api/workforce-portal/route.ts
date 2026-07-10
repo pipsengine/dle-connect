@@ -68,6 +68,8 @@ import {
   syncEssLeaveRequestById,
   transitionEssLeaveRequest,
   validateEssLeaveApplication,
+  applyLeaveBalanceImpact,
+  adjustLeavePolicyCardsForEssPending,
   cancelEssLeaveRequest,
   workflowDeadlineDays,
   workingDaysSince,
@@ -591,12 +593,7 @@ export async function GET(request: Request) {
     if (cached) return ok(cached);
     const [employeeSource, rawRequests, loanApplications, loansConfig, taxConfig, pensionConfig, identityByKey] = await Promise.all([
       readPayrollEmployees(),
-      loadWorkflowLeaveRequests({
-        repair: true,
-        notifyMissingManagers: true,
-        baseUrl: resolveWorkflowLinkOriginFromRequest(request),
-        actorName: session.fullName || session.username,
-      }),
+      loadWorkflowLeaveRequests({ repair: false }),
       readPayrollLoanApplications(),
       readPayrollLoansConfig(),
       readPayrollTaxConfig(),
@@ -1039,20 +1036,50 @@ export async function GET(request: Request) {
       exceptions: item.exceptions,
       approvalStatus: item.approvalStatus,
     }));
-    const leavePolicyCards = essContext.leave.policyCards;
+    const leavePolicyCards = adjustLeavePolicyCardsForEssPending(essContext.leave.policyCards, employeeRequests);
     const confirmedPermanent = String(employee.status || '').toLowerCase().includes('confirmed');
     const fourteenDayPaidLeaveEmployee = isFourteenDayPaidLeaveEmployee(employee);
     const currentYearAllowanceAlreadyPaid = await hasLeaveAllowanceInYear(employee, leaveYear);
     const allowanceEligible = annualBalance >= 10 && !currentYearAllowanceAlreadyPaid;
-    const activeLeaveApplication = employeeLeaveApplications.find((item) => ['Submitted', 'Under Review', 'Approved'].includes(item.status));
+    const essActiveLeaveRequest = employeeRequests.find((item) =>
+      /leave/i.test(item.category)
+      && ['Submitted', 'Line Manager Review', 'HR Review'].includes(item.status),
+    );
+    const activeLeaveApplication = employeeLeaveApplications.find((item) =>
+      ['Submitted', 'Under Review', 'Approved', 'Line Manager Review', 'HR Review'].includes(item.status),
+    ) || (essActiveLeaveRequest
+      ? {
+          id: essActiveLeaveRequest.id,
+          managerName: essActiveLeaveRequest.lineManagerName || employee.managerName || 'Line Manager',
+          stage: essActiveLeaveRequest.status === 'HR Review' ? 'HR' : 'Supervisor',
+          status: essActiveLeaveRequest.status,
+          actingOfficer: essActiveLeaveRequest.relieverName || 'Not configured',
+        }
+      : undefined);
+    const activeLeaveManagerName = activeLeaveApplication && 'managerName' in activeLeaveApplication
+      ? String(activeLeaveApplication.managerName || employee.managerName || 'Line Manager')
+      : employee.managerName || 'Line Manager';
+    const activeLeaveStage = activeLeaveApplication && 'stage' in activeLeaveApplication
+      ? String(activeLeaveApplication.stage || '')
+      : essActiveLeaveRequest?.status === 'HR Review'
+        ? 'HR'
+        : essActiveLeaveRequest?.status === 'Line Manager Review'
+          ? 'Supervisor'
+          : '';
+    const activeLeaveStatus = activeLeaveApplication && 'status' in activeLeaveApplication
+      ? String(activeLeaveApplication.status || '')
+      : '';
+    const activeLeaveReliever = activeLeaveApplication && 'actingOfficer' in activeLeaveApplication
+      ? String(activeLeaveApplication.actingOfficer || 'Reliever')
+      : 'Reliever';
     const currentLeaveNow = employeeLeaveApplications.find((item) => ['Approved', 'Completed'].includes(item.status) && item.startDate <= new Date().toISOString().slice(0, 10) && item.endDate >= new Date().toISOString().slice(0, 10));
     const leaveWorkflow = activeLeaveApplication
       ? [
           { stage: 'Employee Request', owner: employee.fullName, status: 'Completed', sla: 'Immediate' },
-          { stage: 'Line Manager / Lead / Supervisor', owner: activeLeaveApplication.managerName || employee.managerName || 'Line Manager', status: activeLeaveApplication.stage === 'Supervisor' ? 'Current' : ['HR', 'Final Approval', 'Closed'].includes(activeLeaveApplication.stage) ? 'Completed' : 'Pending', sla: '5 working days' },
-          { stage: 'HR Manager / Head', owner: 'HR Manager / Head', status: ['HR', 'Final Approval'].includes(activeLeaveApplication.stage) ? 'Current' : activeLeaveApplication.status === 'Approved' ? 'Completed' : 'Pending', sla: '5 working days' },
-          { stage: 'Requester Notification', owner: employee.fullName, status: activeLeaveApplication.status === 'Approved' ? 'Delivered' : 'Pending', sla: 'After final approval' },
-          { stage: 'Reliever Notification', owner: activeLeaveApplication.actingOfficer || 'Reliever', status: activeLeaveApplication.status === 'Approved' ? 'Delivered' : 'Pending', sla: 'After final approval' },
+          { stage: 'Line Manager / Lead / Supervisor', owner: activeLeaveManagerName, status: activeLeaveStage === 'Supervisor' || activeLeaveStatus === 'Line Manager Review' ? 'Current' : ['HR', 'Final Approval', 'Closed'].includes(activeLeaveStage) ? 'Completed' : 'Pending', sla: '5 working days' },
+          { stage: 'HR Manager / Head', owner: 'HR Manager / Head', status: ['HR', 'Final Approval'].includes(activeLeaveStage) || activeLeaveStatus === 'HR Review' ? 'Current' : activeLeaveStatus === 'Approved' ? 'Completed' : 'Pending', sla: '5 working days' },
+          { stage: 'Requester Notification', owner: employee.fullName, status: activeLeaveStatus === 'Approved' ? 'Delivered' : 'Pending', sla: 'After final approval' },
+          { stage: 'Reliever Notification', owner: activeLeaveReliever, status: activeLeaveStatus === 'Approved' ? 'Delivered' : 'Pending', sla: 'After final approval' },
         ]
       : [
           { stage: 'Employee Request', owner: employee.fullName, status: 'Not started', sla: 'Immediate' },
@@ -1061,9 +1088,23 @@ export async function GET(request: Request) {
           { stage: 'Requester Notification', owner: employee.fullName, status: 'Not started', sla: 'After final approval' },
           { stage: 'Reliever Notification', owner: 'Selected reliever', status: 'Not started', sla: 'After final approval' },
         ];
-    const leaveCalendar = employeeLeaveApplications
-      .filter((item) => ['Submitted', 'Under Review', 'Approved', 'Completed'].includes(item.status))
-      .map((item) => ({ id: item.id, label: `${item.leaveType} - ${item.fullName}`, from: item.startDate, to: item.endDate, status: item.status, type: item.leaveType, scope: item.department }));
+    const leaveCalendar = [
+      ...employeeLeaveApplications
+        .filter((item) => ['Submitted', 'Under Review', 'Approved', 'Completed', 'Line Manager Review', 'HR Review'].includes(item.status))
+        .map((item) => ({ id: item.id, label: `${item.leaveType} - ${item.fullName}`, from: item.startDate, to: item.endDate, status: item.status, type: item.leaveType, scope: item.department })),
+      ...employeeRequests
+        .filter((item) => /leave/i.test(item.category) && item.startDate && item.endDate && !employeeLeaveApplications.some((application) => application.id === item.id))
+        .filter((item) => ['Submitted', 'Line Manager Review', 'HR Review', 'Approved'].includes(item.status))
+        .map((item) => ({
+          id: item.id,
+          label: `${item.leaveType || 'Leave'} - ${employee.fullName}`,
+          from: item.startDate || '',
+          to: item.endDate || '',
+          status: item.status,
+          type: item.leaveType || 'Leave',
+          scope: employee.department || 'Unassigned',
+        })),
+    ];
     const leaveHistory = employeeLeaveApplications.map((item) => ({
       id: item.id,
       type: item.leaveType,
@@ -1656,7 +1697,14 @@ export async function POST(request: Request) {
         : 'Submitted';
     const relieverName = reliever ? reliever.fullName : relieverNameInput;
     const lineManager = isLeaveRequest ? resolveLineManagerForEmployee(employee, employeeSource.employees) : null;
-    const lineManagerLabel = lineManager?.label || managerOwnerFor(employee);
+    const fallbackSupervisorCode = isLeaveRequest && !lineManager ? explicitDepartmentSupervisorCode(employee.department || '') : null;
+    const fallbackSupervisor = fallbackSupervisorCode
+      ? employeeSource.employees.find((item) => employeeRequestMatches(item, fallbackSupervisorCode))
+      : null;
+    const resolvedManager = lineManager || (fallbackSupervisor
+      ? { employee: fallbackSupervisor, label: fallbackSupervisor.fullName, source: 'reporting-manager' as const }
+      : null);
+    const lineManagerLabel = resolvedManager?.label || managerOwnerFor(employee);
     const requestId = compact(body.requestId) || `ess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const serviceWorkflow = isLeaveRequest
       ? leaveWorkflowFor(employee, relieverName, initialStatus, now, lineManagerLabel)
@@ -1681,7 +1729,7 @@ export async function POST(request: Request) {
       reason: reason || undefined,
       relieverEmployeeId: reliever ? reliever.employeeId : relieverEmployeeId || undefined,
       relieverName: relieverName || undefined,
-      lineManagerEmployeeId: lineManager ? (lineManager.employee.employeeCode || lineManager.employee.employeeId) : undefined,
+      lineManagerEmployeeId: resolvedManager ? (resolvedManager.employee.employeeCode || resolvedManager.employee.employeeId) : undefined,
       lineManagerName: lineManagerLabel,
       handover: handover || undefined,
       attachmentNames: attachmentNames.length ? attachmentNames : undefined,
@@ -1698,16 +1746,29 @@ export async function POST(request: Request) {
     };
 
     const requests = await readRequests();
-    const previousRequests = requests;
     await writeRequests([requestItem, ...requests]);
     invalidateEssPortalCache();
     if (isLeaveRequest) {
+      let dbSyncWarning: string | undefined;
+      let balanceWarning: string | undefined;
+      try {
+        await applyLeaveBalanceImpact({
+          employee,
+          leaveType,
+          days: leaveDays,
+          mode: 'reserve-pending',
+          required: true,
+        });
+        invalidateEssPortalCache();
+      } catch (balanceError) {
+        balanceWarning = balanceError instanceof Error ? balanceError.message : 'Leave balance could not be reserved.';
+        console.error('Leave balance reservation failed after ESS submit', balanceError);
+      }
       try {
         await syncEssLeaveRequestById(requestItem.id);
       } catch (syncError) {
-        await writeRequests(previousRequests).catch(() => undefined);
-        invalidateEssPortalCache();
-        return err(500, syncError instanceof Error ? syncError.message : 'Leave application could not be saved. No request was submitted.');
+        dbSyncWarning = syncError instanceof Error ? syncError.message : 'Leave saved in workflow queue; database sync is pending.';
+        console.error('Leave database sync failed after ESS submit', syncError);
       }
       const baseUrl = resolveWorkflowLinkOriginFromRequest(request);
       try {
@@ -1722,35 +1783,25 @@ export async function POST(request: Request) {
           emailEvent: 'submitted',
           baseUrl,
         });
-        if (lineManager) {
+        if (resolvedManager) {
           await notifyLineManagerLeaveSubmitted({
             request: requestItem,
             requester: employee,
-            manager: lineManager.employee,
+            manager: resolvedManager.employee,
             actorName: session.fullName || session.username,
             baseUrl,
           });
-        } else {
-          const fallbackCode = explicitDepartmentSupervisorCode(employee.department || '');
-          const fallbackManager = fallbackCode
-            ? employeeSource.employees.find((item) => employeeRequestMatches(item, fallbackCode))
-            : null;
-          if (fallbackManager) {
-            await notifyLineManagerLeaveSubmitted({
-              request: requestItem,
-              requester: employee,
-              manager: fallbackManager,
-              actorName: session.fullName || session.username,
-              baseUrl,
-            });
-          }
         }
       } catch (notificationError) {
         console.error('Leave in-app notification failed after submit', notificationError);
       }
       return ok({
         request: requestItem,
-        message: `Leave application submitted successfully. Reference ${requestItem.id}. Status: ${requestItem.status}.`,
+        message: balanceWarning
+          ? `Leave application saved (reference ${requestItem.id}) but balance update needs attention: ${balanceWarning}`
+          : dbSyncWarning
+            ? `Leave application saved (reference ${requestItem.id}) but HRIS sync needs attention: ${dbSyncWarning}`
+            : `Leave application submitted successfully. Reference ${requestItem.id}. Status: ${requestItem.status}.`,
       });
     }
     return ok({ request: requestItem });

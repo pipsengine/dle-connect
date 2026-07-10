@@ -4,8 +4,8 @@ import sql from 'mssql';
 import { buildLeaveAllowanceApplicationStatus, buildLeaveAllowanceExceptions, type LeaveAllowanceExceptionRow, type LeaveApplicationLike } from '@/lib/leave-allowance-policy';
 import { reconcilePayrollLeaveAllowanceEvents, syncSageLeaveAllowanceEvents } from '@/lib/payroll-leave-allowance-store';
 import { getDleEnterpriseDbPool, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import { HRIS_LEAVE_SOURCE } from '@/lib/hris-leave-read';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { syncSageLeaveToHris } from '@/lib/sage-leave-sync';
 import {
   approvalStatusForEss,
   isLeaveEssRequest,
@@ -1041,12 +1041,6 @@ VALUES
 };
 
 const syncLeaveBalances = async (pool: sql.ConnectionPool, employees: DleEmployeeDirectoryRow[]) => {
-  const sageSyncedRows = await pool.request().query(`
-SELECT DISTINCT [EmployeeId]
-FROM [hris].[LeaveBalances]
-WHERE [SourceSystem] = N'Sage 300 People Payroll';`);
-  const sageSynced = new Set((sageSyncedRows.recordset as Array<{ EmployeeId: string }>).map((row) => row.EmployeeId));
-
   const existingRows = await pool.request().query(`
 SELECT [EmployeeId],[LeaveType],[CarryForwardBalance],[ForfeitedBalance]
 FROM [hris].[LeaveBalances];`);
@@ -1058,7 +1052,7 @@ FROM [hris].[LeaveBalances];`);
   const applicationRows = await pool.request().query(`
 SELECT [EmployeeId],[LeaveType],
   SUM(CASE WHEN [StatusName] IN (N'Approved',N'Completed') THEN [BalanceImpact] ELSE 0 END) AS [UsedDays],
-  SUM(CASE WHEN [StatusName] IN (N'Submitted',N'Under Review') THEN [BalanceImpact] ELSE 0 END) AS [PendingDays]
+  SUM(CASE WHEN [StatusName] IN (N'Submitted',N'Under Review',N'Line Manager Review',N'HR Review') THEN [BalanceImpact] ELSE 0 END) AS [PendingDays]
 FROM [hris].[LeaveApplications]
 WHERE [PolicyComplianceStatus] <> N'Blocked'
 GROUP BY [EmployeeId],[LeaveType];`);
@@ -1068,7 +1062,6 @@ GROUP BY [EmployeeId],[LeaveType];`);
   }
 
   for (const employee of employees.filter((row) => activeStatus(row.status))) {
-    if (sageSynced.has(employee.employeeId)) continue;
     const leaveType = 'Annual Leave';
     const key = `${employee.employeeId}::${leaveType}`;
     const entitlement = entitlementFor(employee, leaveType);
@@ -1098,7 +1091,7 @@ GROUP BY [EmployeeId],[LeaveType];`);
       .input('LiabilityValue', sql.Decimal(19, 2), round2(current * dailyPayFor(employee)))
       .input('StatusName', sql.NVarChar(40), status)
       .input('ExceptionsJson', sql.NVarChar(sql.MAX), JSON.stringify(exceptions))
-      .input('SourceSystem', sql.NVarChar(80), 'Sage Payroll Migration')
+      .input('SourceSystem', sql.NVarChar(80), HRIS_LEAVE_SOURCE)
       .query(`
 MERGE [hris].[LeaveBalances] AS target
 USING (SELECT @EmployeeId AS [EmployeeId], @LeaveType AS [LeaveType]) AS source
@@ -1116,7 +1109,6 @@ VALUES
 
 export async function readEmployeeLeaveSnapshot(employee: DleEmployeeDirectoryRow, employees: DleEmployeeDirectoryRow[]) {
   const pool = await ensureDb();
-  await maybeSyncSageLeave();
   await maybeSyncLeaveTypePolicies(pool, false);
   await maybeUpsertEssLeaveRequests(pool, employees, true);
   await maybeSyncLeaveBalances(pool, employees, true);
@@ -1255,9 +1247,6 @@ const permissionsFor = (role: LeaveRole): LeavePayload['permissions'] => ({
   canViewAudit: role !== 'Employee',
 });
 
-let lastSageLeaveSyncAt = 0;
-const sageLeaveSyncIntervalMs = () => Number(process.env.HRIS_SAGE_LEAVE_SYNC_MS || 900000);
-
 let lastLeaveTypePolicySyncAt = 0;
 const leaveTypePolicySyncIntervalMs = () => Number(process.env.HRIS_LEAVE_TYPE_POLICY_SYNC_MS || 3600000);
 
@@ -1283,12 +1272,6 @@ const maybeSyncLeaveBalances = async (pool: sql.ConnectionPool, employees: DleEm
   if (!force && Date.now() - lastLeaveBalanceSyncAt < leaveBalanceSyncIntervalMs()) return;
   await syncLeaveBalances(pool, employees);
   lastLeaveBalanceSyncAt = Date.now();
-};
-
-const maybeSyncSageLeave = async () => {
-  if (Date.now() - lastSageLeaveSyncAt < sageLeaveSyncIntervalMs()) return;
-  await syncSageLeaveToHris().catch(() => undefined);
-  lastSageLeaveSyncAt = Date.now();
 };
 
 export async function readLeaveApplicationsForReconciliation(options?: { syncEss?: boolean }): Promise<LeaveApplicationLike[]> {
@@ -1324,7 +1307,6 @@ export async function readLeaveManagementPayload(
   const employees = employeeSource.employees;
   const pool = await ensureDb();
   if (!readOnly) {
-    await maybeSyncSageLeave();
     await maybeSyncLeaveTypePolicies(pool, forceSync);
     await maybeUpsertEssLeaveRequests(pool, employees, forceSync);
     await maybeSyncLeaveBalances(pool, employees, forceSync);
@@ -1406,7 +1388,7 @@ export async function readLeaveManagementPayload(
 
   return {
     generatedAt: nowIso(),
-    source: `${employeeSource.source} migrated into DLE HRIS leave tables; normal leave dashboard rendering is independent of live Sage payroll reads. ${employeeSource.warning || ''}`.trim(),
+    source: `DLE_Enterprise HRIS leave tables. ${employeeSource.warning || ''}`.trim(),
     role,
     section: currentSection.id,
     permissions: permissionsFor(role),

@@ -1,91 +1,137 @@
 [
   {
-    "id": "sage-leave-tx-1041",
-    "employeeId": "P0027",
+    "id": "ess-1783700621267-z7jyv4",
+    "employeeId": "NYSC0032",
     "category": "Leave Application",
-    "title": "Annual Leave — NWACHUKWU GODWIN AMAUKWU",
-    "status": "Submitted",
+    "title": "Annual Leave 2026-07-13 to 2026-07-16",
+    "status": "Rejected",
     "priority": "Normal",
-    "submittedAt": "Fri Jul 10 2026 08:15:16 GMT+0100 (West Africa Time)",
-    "updatedAt": "2026-07-10T08:33:20.711Z",
+    "submittedAt": "2026-07-10T16:24:24.131Z",
+    "updatedAt": "2026-07-10T16:25:41.663Z",
     "approvers": [
-      "Line Manager / Lead / Supervisor",
+      "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
       "HR Manager / Head"
     ],
-    "comments": [],
+    "comments": [
+      {
+        "at": "2026-07-10T16:24:24.131Z",
+        "actor": "Mr KAYODE OGBETAH",
+        "comment": "Leave Application submitted from workforce portal."
+      },
+      {
+        "at": "2026-07-10T16:25:41.663Z",
+        "actor": "Mr KAYODE OGBETAH",
+        "comment": "Withdrawn from Employee Self-Service."
+      }
+    ],
     "leaveType": "Annual Leave",
-    "startDate": "Mon Aug 10",
-    "endDate": "Fri Aug 21",
-    "days": 10,
-    "relieverName": "Not configured",
-    "lineManagerEmployeeId": "P0370",
-    "lineManagerName": "Mr JOHN EJEMBI OCHIGBO"
+    "startDate": "2026-07-13",
+    "endDate": "2026-07-16",
+    "days": 4,
+    "relieverEmployeeId": "NYSC0033",
+    "relieverName": "Miss OREOLUWA AREMU",
+    "lineManagerEmployeeId": "P0146",
+    "lineManagerName": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+    "serviceId": "leave",
+    "payrollPeriod": "2026-07",
+    "paidLeave": true,
+    "reason": "Testing",
+    "handover": "Testing",
+    "workflow": [
+      {
+        "stage": "Employee Request",
+        "owner": "Mr KAYODE OGBETAH",
+        "status": "Completed",
+        "actedAt": "2026-07-10T16:24:24.131Z",
+        "comment": "Submitted from Employee Self-Service."
+      },
+      {
+        "stage": "Line Manager / Lead / Supervisor",
+        "owner": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+        "status": "Current",
+        "actedAt": null,
+        "comment": "Approval validity: 5 working days."
+      },
+      {
+        "stage": "HR Manager / Head",
+        "owner": "HR Manager / Head",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Final HR approval and leave balance confirmation."
+      },
+      {
+        "stage": "Requester Notification",
+        "owner": "Mr KAYODE OGBETAH",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Requester notified after final approval."
+      },
+      {
+        "stage": "Reliever Notification",
+        "owner": "Miss OREOLUWA AREMU",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Reliever notified after final approval."
+      }
+    ]
   },
   {
-    "id": "sage-leave-tx-1040",
-    "employeeId": "P0449",
+    "id": "sage-leave-tx-1031",
+    "employeeId": "P0457",
     "category": "Leave Application",
-    "title": "Annual Leave — Mr OLABODE OLUWASEGUN OKE",
-    "status": "Submitted",
+    "title": "Annual Leave — Miss OLUWATAMILAYO ANUOLUWA AUSTEN-PETERS",
+    "status": "Terminated",
     "priority": "Normal",
-    "submittedAt": "Wed Jul 08 2026 16:57:57 GMT+0100 (West Africa Time)",
-    "updatedAt": "2026-07-10T08:33:20.640Z",
+    "submittedAt": "Thu Jun 25 2026 11:17:08 GMT+0100 (West Africa Time)",
+    "updatedAt": "2026-07-10T16:12:43.721Z",
     "approvers": [
       "Line Manager / Lead / Supervisor",
       "HR Manager / Head"
     ],
-    "comments": [],
-    "leaveType": "Annual Leave",
-    "startDate": "Thu Jul 09",
-    "endDate": "Fri Jul 10",
-    "days": 2,
-    "relieverName": "Not configured",
-    "lineManagerEmployeeId": "P0442",
-    "lineManagerName": "Mrs TEMITOPE ABIODUN ODULATE"
-  },
-  {
-    "id": "sage-leave-tx-1036",
-    "employeeId": "P0461",
-    "category": "Leave Application",
-    "title": "Annual Leave — Ms UFUOMA FAVOUR DOGHUDJE",
-    "status": "Submitted",
-    "priority": "Normal",
-    "submittedAt": "Mon Jul 06 2026 14:23:22 GMT+0100 (West Africa Time)",
-    "updatedAt": "2026-07-10T08:33:20.580Z",
-    "approvers": [
-      "Line Manager / Lead / Supervisor",
-      "HR Manager / Head"
+    "comments": [
+      {
+        "at": "2026-07-10T16:12:43.721Z",
+        "actor": "Leave Workflow Engine",
+        "comment": "Leave request automatically terminated because it was not approved within 5 working days."
+      }
     ],
-    "comments": [],
     "leaveType": "Annual Leave",
-    "startDate": "Mon Jul 13",
-    "endDate": "Fri Jul 17",
+    "startDate": "2001-07-04",
+    "endDate": "2001-07-10",
     "days": 5,
     "relieverName": "Not configured",
-    "lineManagerEmployeeId": "P0460",
-    "lineManagerName": "Mr ADEBAYO PAUL AINA"
+    "lineManagerEmployeeId": "P0413",
+    "lineManagerName": "Mr CHRIS IJELI",
+    "workflow": []
   },
   {
-    "id": "sage-leave-tx-1034",
+    "id": "sage-leave-tx-1032",
     "employeeId": "P0442",
     "category": "Leave Application",
     "title": "Annual Leave — Mrs TEMITOPE ABIODUN ODULATE",
-    "status": "Submitted",
+    "status": "Terminated",
     "priority": "Normal",
-    "submittedAt": "Mon Jul 06 2026 14:23:22 GMT+0100 (West Africa Time)",
-    "updatedAt": "2026-07-10T08:33:20.528Z",
+    "submittedAt": "Thu Jun 25 2026 11:17:07 GMT+0100 (West Africa Time)",
+    "updatedAt": "2026-07-10T16:12:43.721Z",
     "approvers": [
       "Line Manager / Lead / Supervisor",
       "HR Manager / Head"
     ],
-    "comments": [],
+    "comments": [
+      {
+        "at": "2026-07-10T16:12:43.721Z",
+        "actor": "Leave Workflow Engine",
+        "comment": "Leave request automatically terminated because it was not approved within 5 working days."
+      }
+    ],
     "leaveType": "Annual Leave",
-    "startDate": "Mon Aug 10",
-    "endDate": "Wed Aug 26",
+    "startDate": "2001-08-09",
+    "endDate": "2001-08-25",
     "days": 13,
     "relieverName": "Not configured",
     "lineManagerEmployeeId": "P0413",
-    "lineManagerName": "Mr CHRIS IJELI"
+    "lineManagerName": "Mr CHRIS IJELI",
+    "workflow": []
   },
   {
     "id": "sage-leave-tx-1033",
@@ -102,102 +148,226 @@
     ],
     "comments": [],
     "leaveType": "Annual Leave",
-    "startDate": "Mon Jul 27",
-    "endDate": "Fri Aug 14",
+    "startDate": "2001-07-26",
+    "endDate": "2001-08-13",
     "days": 15,
     "relieverName": "Not configured",
     "lineManagerEmployeeId": "P0413",
     "lineManagerName": "Mr CHRIS IJELI"
   },
   {
-    "id": "sage-leave-tx-1032",
+    "id": "sage-leave-tx-1034",
     "employeeId": "P0442",
     "category": "Leave Application",
     "title": "Annual Leave — Mrs TEMITOPE ABIODUN ODULATE",
     "status": "Submitted",
     "priority": "Normal",
-    "submittedAt": "Thu Jun 25 2026 11:17:07 GMT+0100 (West Africa Time)",
-    "updatedAt": "2026-07-10T08:33:20.418Z",
+    "submittedAt": "Mon Jul 06 2026 14:23:22 GMT+0100 (West Africa Time)",
+    "updatedAt": "2026-07-10T08:33:20.528Z",
     "approvers": [
       "Line Manager / Lead / Supervisor",
       "HR Manager / Head"
     ],
     "comments": [],
     "leaveType": "Annual Leave",
-    "startDate": "Mon Aug 10",
-    "endDate": "Wed Aug 26",
+    "startDate": "2001-08-09",
+    "endDate": "2001-08-25",
     "days": 13,
     "relieverName": "Not configured",
     "lineManagerEmployeeId": "P0413",
     "lineManagerName": "Mr CHRIS IJELI"
   },
   {
-    "id": "sage-leave-tx-1031",
-    "employeeId": "P0457",
+    "id": "sage-leave-tx-1036",
+    "employeeId": "P0461",
     "category": "Leave Application",
-    "title": "Annual Leave — Miss OLUWATAMILAYO ANUOLUWA AUSTEN-PETERS",
+    "title": "Annual Leave — Ms UFUOMA FAVOUR DOGHUDJE",
     "status": "Submitted",
     "priority": "Normal",
-    "submittedAt": "Thu Jun 25 2026 11:17:08 GMT+0100 (West Africa Time)",
-    "updatedAt": "2026-07-10T08:33:20.355Z",
+    "submittedAt": "Mon Jul 06 2026 14:23:22 GMT+0100 (West Africa Time)",
+    "updatedAt": "2026-07-10T08:33:20.580Z",
     "approvers": [
       "Line Manager / Lead / Supervisor",
       "HR Manager / Head"
     ],
     "comments": [],
     "leaveType": "Annual Leave",
-    "startDate": "Sun Jul 05",
-    "endDate": "Sat Jul 11",
+    "startDate": "2001-07-12",
+    "endDate": "2001-07-16",
     "days": 5,
+    "relieverName": "Not configured",
+    "lineManagerEmployeeId": "P0460",
+    "lineManagerName": "Mr ADEBAYO PAUL AINA"
+  },
+  {
+    "id": "sage-leave-tx-1040",
+    "employeeId": "P0449",
+    "category": "Leave Application",
+    "title": "Annual Leave — Mr OLABODE OLUWASEGUN OKE",
+    "status": "Submitted",
+    "priority": "Normal",
+    "submittedAt": "Wed Jul 08 2026 16:57:57 GMT+0100 (West Africa Time)",
+    "updatedAt": "2026-07-10T08:33:20.640Z",
+    "approvers": [
+      "Line Manager / Lead / Supervisor",
+      "HR Manager / Head"
+    ],
+    "comments": [],
+    "leaveType": "Annual Leave",
+    "startDate": "2001-07-08",
+    "endDate": "2001-07-09",
+    "days": 2,
+    "relieverName": "Not configured",
+    "lineManagerEmployeeId": "P0442",
+    "lineManagerName": "Mrs TEMITOPE ABIODUN ODULATE"
+  },
+  {
+    "id": "sage-leave-tx-1041",
+    "employeeId": "P0027",
+    "category": "Leave Application",
+    "title": "Annual Leave — NWACHUKWU GODWIN AMAUKWU",
+    "status": "Submitted",
+    "priority": "Normal",
+    "submittedAt": "Fri Jul 10 2026 08:15:16 GMT+0100 (West Africa Time)",
+    "updatedAt": "2026-07-10T08:33:20.711Z",
+    "approvers": [
+      "Line Manager / Lead / Supervisor",
+      "HR Manager / Head"
+    ],
+    "comments": [],
+    "leaveType": "Annual Leave",
+    "startDate": "2001-08-09",
+    "endDate": "2001-08-20",
+    "days": 10,
+    "relieverName": "Not configured",
+    "lineManagerEmployeeId": "P0370",
+    "lineManagerName": "Mr JOHN EJEMBI OCHIGBO"
+  },
+  {
+    "id": "sage-leave-tx-1042",
+    "employeeId": "P0080",
+    "category": "Leave Application",
+    "title": "Annual Leave — Mr MBA UDO OKORIE",
+    "status": "Submitted",
+    "priority": "Normal",
+    "submittedAt": "Fri Jul 10 2026 16:24:37 GMT+0100 (West Africa Time)",
+    "updatedAt": "2026-07-10T16:12:19.195Z",
+    "approvers": [
+      "Line Manager / Lead / Supervisor",
+      "HR Manager / Head"
+    ],
+    "comments": [],
+    "leaveType": "Annual Leave",
+    "startDate": "2026-08-24",
+    "endDate": "2026-09-16",
+    "days": 18,
+    "relieverName": "Not configured",
+    "lineManagerEmployeeId": "P0436",
+    "lineManagerName": "Mr SUNDAY OKEWU"
+  },
+  {
+    "id": "sage-leave-tx-1043",
+    "employeeId": "P0425",
+    "category": "Leave Application",
+    "title": "Annual Leave — Miss VANESSA AIMA OGUNS",
+    "status": "Submitted",
+    "priority": "Normal",
+    "submittedAt": "Fri Jul 10 2026 16:24:37 GMT+0100 (West Africa Time)",
+    "updatedAt": "2026-07-10T16:12:19.220Z",
+    "approvers": [
+      "Line Manager / Lead / Supervisor",
+      "HR Manager / Head"
+    ],
+    "comments": [],
+    "leaveType": "Annual Leave",
+    "startDate": "2026-07-13",
+    "endDate": "2026-07-24",
+    "days": 10,
     "relieverName": "Not configured",
     "lineManagerEmployeeId": "P0413",
     "lineManagerName": "Mr CHRIS IJELI"
+  },
+  {
+    "id": "sage-leave-tx-1044",
+    "employeeId": "P0290",
+    "category": "Leave Application",
+    "title": "Annual Leave — Mr ADEKUNLE ADESINA",
+    "status": "Submitted",
+    "priority": "Normal",
+    "submittedAt": "Fri Jul 10 2026 16:24:37 GMT+0100 (West Africa Time)",
+    "updatedAt": "2026-07-10T16:12:19.240Z",
+    "approvers": [
+      "Line Manager / Lead / Supervisor",
+      "HR Manager / Head"
+    ],
+    "comments": [],
+    "leaveType": "Annual Leave",
+    "startDate": "2026-07-20",
+    "endDate": "2026-07-24",
+    "days": 5,
+    "relieverName": "Not configured",
+    "lineManagerEmployeeId": "P0392",
+    "lineManagerName": "Mr JUDE UMUKORO"
   },
   {
     "id": "ess-1782818937211-r4i7xo",
     "employeeId": "NYSC0033",
     "category": "Leave Application",
     "title": "Annual Leave — Miss OREOLUWA AREMU",
-    "status": "HR Review",
+    "status": "Terminated",
     "priority": "Normal",
     "submittedAt": "Tue Jun 30 2026 12:31:47 GMT+0100 (West Africa Time)",
-    "updatedAt": "2026-07-10T08:33:20.283Z",
+    "updatedAt": "2026-07-10T16:12:43.721Z",
     "approvers": [
       "Line Manager / Lead / Supervisor",
       "HR Manager / Head"
     ],
-    "comments": [],
+    "comments": [
+      {
+        "at": "2026-07-10T16:12:43.721Z",
+        "actor": "Leave Workflow Engine",
+        "comment": "Leave request automatically terminated because it was not approved within 5 working days."
+      }
+    ],
     "leaveType": "Annual Leave",
-    "startDate": "Wed Jul 15",
-    "endDate": "Wed Jul 22",
+    "startDate": "2001-07-14",
+    "endDate": "2001-07-21",
     "days": 6,
     "relieverEmployeeId": "NYSC0032",
     "relieverName": "Mr KAYODE OGBETAH",
     "lineManagerEmployeeId": "P0146",
-    "lineManagerName": "Mr CHRISTIAN ONUWABHAGBE OGBAISI"
+    "lineManagerName": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+    "workflow": []
   },
   {
     "id": "ess-1782816759282-z0fzxm",
     "employeeId": "NYSC0033",
     "category": "Leave Application",
     "title": "Annual Leave — Miss OREOLUWA AREMU",
-    "status": "Line Manager Review",
+    "status": "Terminated",
     "priority": "Normal",
     "submittedAt": "Tue Jun 30 2026 11:55:13 GMT+0100 (West Africa Time)",
-    "updatedAt": "2026-07-10T08:33:20.265Z",
+    "updatedAt": "2026-07-10T16:12:43.721Z",
     "approvers": [
       "Line Manager / Lead / Supervisor",
       "HR Manager / Head"
     ],
-    "comments": [],
+    "comments": [
+      {
+        "at": "2026-07-10T16:12:43.721Z",
+        "actor": "Leave Workflow Engine",
+        "comment": "Leave request automatically terminated because it was not approved within 5 working days."
+      }
+    ],
     "leaveType": "Annual Leave",
-    "startDate": "Mon Jul 06",
-    "endDate": "Fri Jul 10",
+    "startDate": "2001-07-05",
+    "endDate": "2001-07-09",
     "days": 5,
     "relieverEmployeeId": "NYSC0032",
     "relieverName": "Mr KAYODE OGBETAH",
     "lineManagerEmployeeId": "P0146",
-    "lineManagerName": "Mr CHRISTIAN ONUWABHAGBE OGBAISI"
+    "lineManagerName": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+    "workflow": []
   },
   {
     "id": "ess-smoke-p0146-1783668308560",

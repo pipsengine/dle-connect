@@ -9,7 +9,7 @@ import {
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { readDirectoryEmployees } from '@/lib/payroll-employee-source';
 import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
-import { ensureEmployeeLeaveFromSage } from '@/lib/sage-leave-sync';
+import { ensureEmployeeLeaveFromHris } from '@/lib/hris-leave-read';
 import { contractPayrollClassification, type ContractPayrollClassification } from '@/lib/payroll-employee-classification';
 import { readEmployeeProfileExtensions } from '@/lib/employee-profile-extensions-store';
 
@@ -2702,7 +2702,7 @@ const ensureRecordFromDb = async (employeeId: string) => {
   if (!found) return ensureRecord(employeeId);
   const record = applyOverrides(found.employeeCode, buildDbProfileRecord(found));
   const [leaveSummary, emergencyContacts, documents, extensions] = await Promise.all([
-    ensureEmployeeLeaveFromSage(found),
+    ensureEmployeeLeaveFromHris(found),
     readEmployeeEmergencyContactsFromDb(found.employeeCode),
     readEmployeeProfileDocumentsFromDb(found.employeeCode),
     readEmployeeProfileExtensions(found.employeeCode),

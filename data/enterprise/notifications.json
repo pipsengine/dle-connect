@@ -2,6 +2,52 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1783700666137-rmuc88",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr KAYODE OGBETAH submitted Annual Leave 2026-07-13 to 2026-07-16 (2026-07-13 to 2026-07-16). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-07-10T16:24:26.137Z",
+      "actor": "Mr KAYODE OGBETAH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1783700621267-z7jyv4"
+      }
+    },
+    {
+      "id": "ntf-1783700666042-1tqkak",
+      "recipientUserId": "NYSC0032",
+      "recipientUsername": "NYSC0032",
+      "recipientEmployeeCode": "NYSC0032",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request submitted",
+      "body": "Annual Leave 2026-07-13 to 2026-07-16 has been submitted and routed to Mr CHRISTIAN ONUWABHAGBE OGBAISI. It must be approved within 5 working days.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave",
+      "createdAt": "2026-07-10T16:24:26.042Z",
+      "actor": "Mr KAYODE OGBETAH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1783700621267-z7jyv4"
+      }
+    },
+    {
       "id": "ntf-1783668381025-klimi4",
       "recipientUserId": "P0181",
       "recipientUsername": "P0181",
@@ -892,6 +938,162 @@
         "persistentSeed": true
       },
       "readAt": "2026-06-25T17:23:45.793Z"
+    },
+    {
+      "recipientUserId": "usr-NYSC0032",
+      "recipientUsername": "NYSC0032",
+      "recipientEmployeeCode": "NYSC0032",
+      "recipientRoles": [
+        "Supervisor",
+        "Employee"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "security-session-usr-NYSC0032",
+      "kind": "Security",
+      "module": "Security & MFA",
+      "title": "Enterprise session secured",
+      "body": "Your current enterprise access is protected by RBAC, session controls, and activity logging.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=security",
+      "createdAt": "2026-07-10T16:16:42.843Z",
+      "actor": "Security Service",
+      "metadata": {
+        "persistentSeed": true
+      }
+    },
+    {
+      "recipientUserId": "usr-NYSC0032",
+      "recipientUsername": "NYSC0032",
+      "recipientEmployeeCode": "NYSC0032",
+      "recipientRoles": [
+        "Supervisor",
+        "Employee"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "profile-review-usr-NYSC0032",
+      "kind": "Notification",
+      "module": "Employee Profile",
+      "title": "Review your employee profile",
+      "body": "Keep contact details, emergency contacts, bank details, and supporting documents up to date.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=profile",
+      "createdAt": "2026-07-10T16:16:42.843Z",
+      "actor": "HRIS",
+      "metadata": {
+        "persistentSeed": true
+      }
+    },
+    {
+      "recipientUserId": "usr-NYSC0032",
+      "recipientUsername": "NYSC0032",
+      "recipientEmployeeCode": "NYSC0032",
+      "recipientRoles": [
+        "Supervisor",
+        "Employee"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "payslip-ready-usr-NYSC0032",
+      "kind": "Notification",
+      "module": "Payroll Management",
+      "title": "Payroll self-service available",
+      "body": "Payslips, deductions, pension contributions, allowances, and loan deductions can be reviewed from payroll self-service.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=payroll",
+      "createdAt": "2026-07-10T16:16:42.843Z",
+      "actor": "Payroll Service",
+      "metadata": {
+        "persistentSeed": true
+      }
+    },
+    {
+      "recipientUserId": "usr-NYSC0032",
+      "recipientUsername": "NYSC0032",
+      "recipientEmployeeCode": "NYSC0032",
+      "recipientRoles": [
+        "Supervisor",
+        "Employee"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "hr-message-usr-NYSC0032",
+      "kind": "Message",
+      "module": "Communication Center",
+      "title": "HR communication center is active",
+      "body": "Company announcements, policy updates, request comments, and service messages will appear here.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=communication",
+      "createdAt": "2026-07-10T16:16:42.843Z",
+      "actor": "Human Capital",
+      "metadata": {
+        "persistentSeed": true
+      }
+    },
+    {
+      "recipientUserId": "usr-NYSC0032",
+      "recipientUsername": "NYSC0032",
+      "recipientEmployeeCode": "NYSC0032",
+      "recipientRoles": [
+        "Supervisor",
+        "Employee"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "approval-queue-usr-NYSC0032",
+      "kind": "Approval",
+      "module": "Workflow & Approvals",
+      "title": "Approval queue requires review",
+      "body": "Review pending HR, payroll, leave, workforce, and employee service requests according to your role permissions.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-07-10T16:16:42.843Z",
+      "actor": "Workflow Engine",
+      "metadata": {
+        "persistentSeed": true
+      }
+    },
+    {
+      "recipientUserId": "usr-NYSC0032",
+      "recipientUsername": "NYSC0032",
+      "recipientEmployeeCode": "NYSC0032",
+      "recipientRoles": [
+        "Supervisor",
+        "Employee"
+      ],
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "id": "timesheet-approval-usr-NYSC0032",
+      "kind": "Workflow",
+      "module": "Workforce Management",
+      "title": "Timesheet and attendance actions available",
+      "body": "Timesheet periods, project approvals, attendance exceptions, and payroll-ready hours are available for review.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=time",
+      "createdAt": "2026-07-10T16:16:42.843Z",
+      "actor": "Workforce Management",
+      "metadata": {
+        "persistentSeed": true
+      }
     }
   ]
 }

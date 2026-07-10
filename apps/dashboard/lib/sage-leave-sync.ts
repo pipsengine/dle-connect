@@ -1,30 +1,26 @@
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import {
+  ensureEmployeeLeaveFromHris,
+  readEmployeeLeaveFromHris,
+  type EmployeeLeaveSummary,
+  type LeaveBalanceDetail,
+  normalizeLeaveTypeName,
+} from '@/lib/hris-leave-read';
 
-export type LeaveBalanceDetail = {
-  leaveType: string;
-  available: number;
-  entitlement: number;
-  used: number;
-  pending: number;
-  carryForward: number;
-};
+export type { EmployeeLeaveSummary, LeaveBalanceDetail };
+export { normalizeLeaveTypeName };
 
-export type EmployeeLeaveSummary = {
-  balances: Record<string, number>;
-  balanceDetails: LeaveBalanceDetail[];
-  history: {
-    id: string;
-    type: string;
-    start: string;
-    end: string;
-    days: number;
-    status: 'Approved' | 'Pending' | 'Rejected';
-  }[];
-  sourceSystem?: string | null;
-  lastUpdatedAt?: string | null;
-};
+/** @deprecated Sage runtime reads removed — use readEmployeeLeaveFromHris from @/lib/hris-leave-read */
+export async function readEmployeeLeaveSummary(employee: string | DleEmployeeDirectoryRow): Promise<EmployeeLeaveSummary> {
+  return readEmployeeLeaveFromHris(employee);
+}
+
+/** @deprecated Sage runtime sync removed — use ensureEmployeeLeaveFromHris from @/lib/hris-leave-read */
+export async function ensureEmployeeLeaveFromSage(employee: DleEmployeeDirectoryRow) {
+  return ensureEmployeeLeaveFromHris(employee);
+}
 
 type DleEmployeeLink = {
   employeeCode: string;
@@ -84,25 +80,6 @@ const sageConfig = () => ({
   connectionTimeout: Number(process.env.SAGE_PAYROLL_DB_CONNECT_TIMEOUT || 15000),
   requestTimeout: Number(process.env.SAGE_PAYROLL_DB_REQUEST_TIMEOUT || 600000),
 });
-
-const normalizeLeaveTypeName = (value: string) => clean(value).replace(/\s+/g, ' ');
-
-const resolveLookupKeys = (employee: string | DleEmployeeDirectoryRow) => {
-  const keys = new Set<string>();
-  if (typeof employee === 'string') {
-    const key = clean(employee);
-    if (key) keys.add(key);
-    return [...keys];
-  }
-  for (const key of [employee.employeeCode, employee.employeeId, employee.id]) {
-    const value = clean(key);
-    if (value) keys.add(value);
-  }
-  const legacyMatch = clean(employee.jobTitle).match(/^([A-Z]{2,5}\d{2,5})\s*-/i);
-  if (legacyMatch?.[1]) keys.add(legacyMatch[1].toUpperCase());
-  if (Number.isFinite(employee.employeeDbId) && employee.employeeDbId > 0) keys.add(String(employee.employeeDbId));
-  return [...keys];
-};
 
 export async function remapLegacyLeaveEmployeeIds(pool?: sql.ConnectionPool) {
   const target = await requireDbPool(pool);
@@ -169,31 +146,11 @@ WHERE TRY_CONVERT(bigint, la.[EmployeeId]) IS NOT NULL
   );`);
 }
 
-const leaveTypeSortRank = (leaveType: string) => {
-  const normalized = leaveType.toLowerCase();
-  if (normalized.includes('annual')) return 0;
-  if (normalized.includes('sick')) return 1;
-  if (normalized.includes('compassion')) return 2;
-  if (normalized.includes('exam')) return 3;
-  if (normalized.includes('carry')) return 4;
-  if (normalized.includes('casual')) return 5;
-  if (normalized.includes('maternity')) return 6;
-  if (normalized.includes('paternity')) return 7;
-  return 8;
-};
-
 const mapSageTransactionStatus = (transactionStatus: number | null, cancelled: unknown) => {
   if (cancelled) return 'Cancelled';
   if (transactionStatus === 1) return 'Approved';
   if (transactionStatus === 0) return 'Submitted';
   return 'Approved';
-};
-
-const mapProfileHistoryStatus = (status: string): EmployeeLeaveSummary['history'][number]['status'] => {
-  const normalized = clean(status).toLowerCase();
-  if (['approved', 'completed'].includes(normalized)) return 'Approved';
-  if (['rejected', 'cancelled', 'terminated', 'withdrawn'].includes(normalized)) return 'Rejected';
-  return 'Pending';
 };
 
 const workflowStageForStatus = (status: string) => {
@@ -436,99 +393,6 @@ VALUES
    @Days,@StatusName,@WorkflowStage,@ApprovalStatus,@PolicyComplianceStatus,@BalanceImpact,@AvailableBalance,@ActingOfficer,@SupportingDocuments,@ExceptionsJson);`);
 };
 
-export async function readEmployeeLeaveSummary(employee: string | DleEmployeeDirectoryRow): Promise<EmployeeLeaveSummary> {
-  const pool = await requireDbPool();
-  await ensureLeaveTables(pool);
-  const keys = resolveLookupKeys(employee);
-  if (!keys.length) {
-    return { balances: {}, balanceDetails: [], history: [], sourceSystem: null, lastUpdatedAt: null };
-  }
-
-  const balanceRequest = pool.request();
-  keys.forEach((key, index) => balanceRequest.input(`employeeKey${index}`, sql.NVarChar(80), key));
-  const balanceKeySql = keys.map((_, index) => `@employeeKey${index}`).join(', ');
-
-  const balancesResult = await balanceRequest.query(`
-SELECT [LeaveType], [CurrentBalance], [AccruedBalance], [UsedBalance], [PendingBalance], [CarryForwardBalance], [SourceSystem], [UpdatedAt]
-FROM [hris].[LeaveBalances]
-WHERE [EmployeeId] IN (${balanceKeySql})
-ORDER BY [LeaveType];`);
-
-  const historyRequest = pool.request();
-  keys.forEach((key, index) => historyRequest.input(`employeeKey${index}`, sql.NVarChar(80), key));
-  const historyResult = await historyRequest.query(`
-SELECT TOP (50) [Id], [LeaveType], [StartDate], [EndDate], [Days], [StatusName], [SourceSystem]
-FROM [hris].[LeaveApplications]
-WHERE [EmployeeId] IN (${balanceKeySql})
-ORDER BY [StartDate] DESC, [UpdatedAt] DESC;`);
-
-  const balanceRows = balancesResult.recordset as Array<{
-    LeaveType: string;
-    CurrentBalance: number;
-    AccruedBalance: number;
-    UsedBalance: number;
-    PendingBalance: number;
-    CarryForwardBalance: number;
-    SourceSystem: string;
-    UpdatedAt: Date;
-  }>;
-
-  const hasSageBalances = balanceRows.some((row) => clean(row.SourceSystem) === SOURCE_SYSTEM);
-  const effectiveBalanceRows = hasSageBalances
-    ? balanceRows.filter((row) => clean(row.SourceSystem) === SOURCE_SYSTEM)
-    : balanceRows;
-
-  const balances: Record<string, number> = {};
-  const balanceDetails: LeaveBalanceDetail[] = [];
-  let sourceSystem: string | null = null;
-  let lastUpdatedAt: string | null = null;
-
-  for (const row of effectiveBalanceRows) {
-    const leaveType = normalizeLeaveTypeName(row.LeaveType);
-    if (!leaveType) continue;
-    const available = round2(Number(row.CurrentBalance || 0));
-    const entitlement = round2(Number(row.AccruedBalance || 0));
-    const used = round2(Number(row.UsedBalance || 0));
-    const pending = round2(Number(row.PendingBalance || 0));
-    const carryForward = round2(Number(row.CarryForwardBalance || 0));
-    if (available <= 0 && entitlement <= 0 && used <= 0 && pending <= 0 && carryForward <= 0) continue;
-
-    balances[leaveType] = available;
-    balanceDetails.push({ leaveType, available, entitlement, used, pending, carryForward });
-    if (row.SourceSystem) sourceSystem = row.SourceSystem;
-    const updatedAt = row.UpdatedAt ? new Date(row.UpdatedAt).toISOString() : null;
-    if (updatedAt && (!lastUpdatedAt || updatedAt > lastUpdatedAt)) lastUpdatedAt = updatedAt;
-  }
-
-  balanceDetails.sort((a, b) => leaveTypeSortRank(a.leaveType) - leaveTypeSortRank(b.leaveType) || a.leaveType.localeCompare(b.leaveType));
-
-  const historyRows = historyResult.recordset as Array<{
-    Id: string;
-    LeaveType: string;
-    StartDate: Date;
-    EndDate: Date;
-    Days: number;
-    StatusName: string;
-    SourceSystem?: string;
-  }>;
-
-  const hasSageHistory = historyRows.some((row) => clean(row.SourceSystem) === SOURCE_SYSTEM);
-  const effectiveHistoryRows = hasSageHistory
-    ? historyRows.filter((row) => clean(row.SourceSystem) === SOURCE_SYSTEM)
-    : historyRows;
-
-  const history = effectiveHistoryRows.map((row) => ({
-    id: row.Id,
-    type: normalizeLeaveTypeName(row.LeaveType),
-    start: dateOnly(row.StartDate),
-    end: dateOnly(row.EndDate),
-    days: round2(Number(row.Days || 0)),
-    status: mapProfileHistoryStatus(row.StatusName),
-  }));
-
-  return { balances, balanceDetails, history, sourceSystem, lastUpdatedAt };
-}
-
 export async function syncSageLeaveToHris(options: { employeeCodes?: string[]; limit?: number } = {}) {
   const dlePool = await requireDbPool();
   await ensureLeaveTables(dlePool);
@@ -575,18 +439,4 @@ export async function syncSageLeaveToHris(options: { employeeCodes?: string[]; l
   } finally {
     await sagePool.close();
   }
-}
-
-export async function ensureEmployeeLeaveFromSage(employee: DleEmployeeDirectoryRow) {
-  await remapLegacyLeaveEmployeeIds().catch(() => undefined);
-  let summary = await readEmployeeLeaveSummary(employee);
-  const hasLeaveData = summary.balanceDetails.some((item) =>
-    item.available > 0 || item.entitlement > 0 || item.used > 0 || item.pending > 0 || item.carryForward > 0,
-  ) || summary.history.length > 0;
-  if (hasLeaveData) return summary;
-  const employeeCode = clean(employee.employeeCode || employee.employeeId);
-  if (!employeeCode) return summary;
-  await syncSageLeaveToHris({ employeeCodes: [employeeCode] }).catch(() => undefined);
-  summary = await readEmployeeLeaveSummary(employee);
-  return summary;
 }

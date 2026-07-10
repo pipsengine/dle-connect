@@ -7,11 +7,12 @@ import {
   dormantLongPolicy,
   isConfirmedPermanent,
   isFourteenDayPaidLeaveEmployee,
+  annualLeaveEntitlementForEmployee,
   auditLeaveAction,
   readLeaveApplicationsForReconciliation,
-  readLeaveManagementPayload,
   validateLeaveAction,
   type LeaveActionId,
+  type LeavePayload,
   type LeaveRole,
   type LeaveStatus,
   type WorkflowStage,
@@ -27,6 +28,7 @@ import { activePayrollPeriod } from '@/lib/payroll-periods';
 import { sendLeaveApprovalRequestEmail, sendLeaveRelieverAssignmentEmail, sendLeaveWorkflowEmail } from '@/lib/mail-service';
 import { buildEssEmployeeLookupKeys } from '@/lib/ess-dashboard-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
+import { HRIS_LEAVE_SOURCE, isLegacySageLeaveImport, normalizeLeaveTypeName } from '@/lib/hris-leave-read';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import { invalidateEssPortalCache } from '@/lib/ess-portal-cache';
 
@@ -168,8 +170,9 @@ const readPendingLeaveRequestsFromDb = async (employees: DleEmployeeDirectoryRow
     const result = await pool.request().query(`
 SELECT [Id],[EmployeeId],[FullName],[LeaveType],[StartDate],[EndDate],[Days],[StatusName],[WorkflowStage],[ManagerName],[ActingOfficer],[CreatedAt],[UpdatedAt]
 FROM [hris].[LeaveApplications]
-WHERE [StatusName] IN (N'Under Review', N'Submitted', N'Line Manager Review', N'HR Review')
-   OR [WorkflowStage] IN (N'Supervisor', N'HR');`);
+WHERE ([StatusName] IN (N'Under Review', N'Submitted', N'Line Manager Review', N'HR Review')
+   OR [WorkflowStage] IN (N'Supervisor', N'HR'))
+  AND [Id] NOT LIKE N'sage-leave-tx-%';`);
     return (result.recordset || [])
       .map((row: Record<string, unknown>) => essLeaveRequestFromDbRow(row, employees))
       .filter((item: EssLeaveRequest | null): item is EssLeaveRequest => Boolean(item))
@@ -245,7 +248,9 @@ export const loadWorkflowLeaveRequests = async (options?: {
     merged.set(item.id, existing ? { ...existing, ...item } : item);
   }
 
-  let requests = [...merged.values()].map((item) => {
+  let requests = [...merged.values()]
+    .filter((item) => !isLegacySageLeaveImport(item.id))
+    .map((item) => {
     const startDate = normalizeLeaveDate(item.startDate);
     const endDate = normalizeLeaveDate(item.endDate);
     if ((!item.startDate || startDate === item.startDate) && (!item.endDate || endDate === item.endDate)) return item;
@@ -1014,13 +1019,6 @@ const employeeLeaveLookupKeys = (employee: DleEmployeeDirectoryRow) =>
       .filter(Boolean),
   );
 
-const recordMatchesEmployeeKeys = (recordEmployeeId: string, keys: Set<string>) => {
-  const candidates = [recordEmployeeId, normalizePayrollMatchKey(recordEmployeeId)]
-    .map((key) => compact(key).toUpperCase())
-    .filter(Boolean);
-  return candidates.some((key) => keys.has(key));
-};
-
 const blockingLeaveStatuses = new Set([
   'Draft',
   'Submitted',
@@ -1044,69 +1042,129 @@ const formatConflictMessage = (input: {
   return `Overlapping leave request detected${reference}: ${input.leaveType} ${input.startDate} to ${input.endDate} is ${input.status}${source}. Check My Applications or ask HR to clear the existing record before applying again.`;
 };
 
+const blockingLeaveStatusSql = [...blockingLeaveStatuses]
+  .map((status) => `N'${status.replace(/'/g, "''")}'`)
+  .join(', ');
+
+const readEmployeeLeaveBalanceForValidation = async (
+  employee: DleEmployeeDirectoryRow,
+  leaveType: string,
+) => {
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) return null;
+  const keys = [...employeeLeaveLookupKeys(employee)];
+  if (!keys.length) return null;
+  const request = pool.request();
+  request.input('LeaveType', sql.NVarChar(120), normalizeLeaveTypeName(leaveType));
+  keys.forEach((key, index) => request.input(`EmployeeKey${index}`, sql.NVarChar(120), key));
+  const keySql = keys.map((_, index) => `@EmployeeKey${index}`).join(', ');
+  const result = await request.query(`
+SELECT TOP 1 [EmployeeId],[LeaveType],[CurrentBalance],[AccruedBalance]
+FROM [hris].[LeaveBalances]
+WHERE [EmployeeId] IN (${keySql})
+  AND [LeaveType]=@LeaveType
+ORDER BY [UpdatedAt] DESC;`);
+  const row = result.recordset[0] as {
+    EmployeeId?: string;
+    LeaveType?: string;
+    CurrentBalance?: number;
+    AccruedBalance?: number;
+  } | undefined;
+  if (!row) return null;
+  return {
+    employeeId: String(row.EmployeeId || keys[0]),
+    leaveType: String(row.LeaveType || leaveType),
+    currentBalance: Number(row.CurrentBalance ?? row.AccruedBalance ?? 0),
+  };
+};
+
+const readHrisLeaveConflictForEmployee = async (input: {
+  employee: DleEmployeeDirectoryRow;
+  startDate: string;
+  endDate: string;
+  excludeRequestId?: string;
+}) => {
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) return null;
+  const keys = [...employeeLeaveLookupKeys(input.employee)];
+  if (!keys.length) return null;
+  const request = pool.request();
+  request.input('StartDate', sql.Date, input.startDate);
+  request.input('EndDate', sql.Date, input.endDate);
+  keys.forEach((key, index) => request.input(`EmployeeKey${index}`, sql.NVarChar(120), key));
+  const keySql = keys.map((_, index) => `@EmployeeKey${index}`).join(', ');
+  const excludeSql = input.excludeRequestId ? 'AND [Id] <> @ExcludeId' : '';
+  if (input.excludeRequestId) request.input('ExcludeId', sql.NVarChar(120), input.excludeRequestId);
+  const result = await request.query(`
+SELECT TOP 1 [Id],[EmployeeId],[LeaveType],[StartDate],[EndDate],[StatusName]
+FROM [hris].[LeaveApplications]
+WHERE [EmployeeId] IN (${keySql})
+  AND [StatusName] IN (${blockingLeaveStatusSql})
+  AND CAST([StartDate] AS date) <= @EndDate
+  AND CAST([EndDate] AS date) >= @StartDate
+  ${excludeSql};`);
+  const row = result.recordset[0] as {
+    Id?: string;
+    LeaveType?: string;
+    StartDate?: string | Date;
+    EndDate?: string | Date;
+    StatusName?: string;
+  } | undefined;
+  if (!row) return null;
+  const startDate = normalizeLeaveDate(row.StartDate);
+  const endDate = normalizeLeaveDate(row.EndDate);
+  if (!startDate || !endDate || !leaveDatesOverlap(input.startDate, input.endDate, startDate, endDate)) return null;
+  return {
+    id: String(row.Id || ''),
+    leaveType: String(row.LeaveType || 'Leave'),
+    startDate,
+    endDate,
+    status: String(row.StatusName || 'Submitted'),
+    source: 'HRIS',
+  };
+};
+
 export const findConflictingLeaveApplication = async (input: {
   employee: DleEmployeeDirectoryRow;
   startDate: string;
   endDate: string;
   excludeRequestId?: string;
 }) => {
-  const keys = employeeLeaveLookupKeys(input.employee);
-  await readLeaveApplicationsForReconciliation({ syncEss: true });
-  const payload = await readLeaveManagementPayload('applications', 'Leave Administrator', { readOnly: true });
-
-  const hrisConflict = payload.applications.find((item) =>
-    recordMatchesEmployeeKeys(item.employeeId, keys)
-    && item.id !== input.excludeRequestId
-    && blockingLeaveStatuses.has(item.status)
-    && leaveDatesOverlap(input.startDate, input.endDate, item.startDate, item.endDate),
-  );
+  const hrisConflict = await readHrisLeaveConflictForEmployee(input);
   if (hrisConflict) {
     return {
-      id: hrisConflict.id,
-      leaveType: hrisConflict.leaveType,
-      startDate: hrisConflict.startDate,
-      endDate: hrisConflict.endDate,
-      status: hrisConflict.status,
-      source: hrisConflict.sourceSystem || 'HRIS',
-      message: formatConflictMessage({
-        id: hrisConflict.id,
-        leaveType: hrisConflict.leaveType,
-        startDate: hrisConflict.startDate,
-        endDate: hrisConflict.endDate,
-        status: hrisConflict.status,
-        source: hrisConflict.sourceSystem || 'HRIS',
-      }),
+      ...hrisConflict,
+      message: formatConflictMessage(hrisConflict),
     };
   }
 
-  const closedRequestIds = new Set(
-    payload.applications
-      .filter((item) => ['Cancelled', 'Rejected', 'Terminated', 'Withdrawn', 'Completed'].includes(item.status))
-      .map((item) => item.id),
-  );
-
-  const essConflict = (await readEssLeaveRequests()).find((item) =>
-    employeeRequestMatches(input.employee, item.employeeId)
+  const essConflict = (await readAllEssRequests()).find((item) =>
+    /leave/i.test(item.category)
+    && employeeRequestMatches(input.employee, item.employeeId)
     && item.id !== input.excludeRequestId
-    && !closedRequestIds.has(item.id)
     && blockingLeaveStatuses.has(item.status)
     && item.startDate
     && item.endDate
-    && leaveDatesOverlap(input.startDate, input.endDate, item.startDate, item.endDate),
+    && leaveDatesOverlap(
+      input.startDate,
+      input.endDate,
+      normalizeLeaveDate(item.startDate),
+      normalizeLeaveDate(item.endDate),
+    ),
   );
   if (essConflict) {
     return {
       id: essConflict.id,
       leaveType: essConflict.leaveType || 'Leave',
-      startDate: essConflict.startDate || input.startDate,
-      endDate: essConflict.endDate || input.endDate,
+      startDate: normalizeLeaveDate(essConflict.startDate) || input.startDate,
+      endDate: normalizeLeaveDate(essConflict.endDate) || input.endDate,
       status: essConflict.status,
       source: 'ESS',
       message: formatConflictMessage({
         id: essConflict.id,
         leaveType: essConflict.leaveType || 'Leave',
-        startDate: essConflict.startDate || input.startDate,
-        endDate: essConflict.endDate || input.endDate,
+        startDate: normalizeLeaveDate(essConflict.startDate) || input.startDate,
+        endDate: normalizeLeaveDate(essConflict.endDate) || input.endDate,
         status: essConflict.status,
         source: 'ESS',
       }),
@@ -1142,7 +1200,6 @@ export const validateEssLeaveApplication = async (input: {
     return { ok: false as const, status: 409, message: 'Leave application falls within a blocked period.' };
   }
 
-  const payload = await readLeaveManagementPayload('applications', 'Leave Administrator', { readOnly: true });
   const conflict = await findConflictingLeaveApplication({
     employee,
     startDate,
@@ -1151,14 +1208,22 @@ export const validateEssLeaveApplication = async (input: {
   });
   if (conflict) return { ok: false as const, status: 409, message: conflict.message };
 
-  const balanceKeys = [...employeeLeaveLookupKeys(employee)];
-  const employeeBalance = payload.balances.find((balance) =>
-    balanceKeys.includes(compact(balance.employeeId).toUpperCase()) && balance.leaveType === leaveType,
-  ) || payload.balances.find((balance) =>
-    balanceKeys.includes(compact(balance.employeeId).toUpperCase()),
-  );
+  const employeeBalance = await readEmployeeLeaveBalanceForValidation(employee, leaveType);
+  const availableBalance = employeeBalance?.currentBalance
+    ?? (leaveType === 'Annual Leave' ? annualLeaveEntitlementForEmployee(employee) : 0);
+  const validationPayload = {
+    balances: employeeBalance
+      ? [{
+          employeeId: employeeBalance.employeeId,
+          leaveType: employeeBalance.leaveType,
+          currentBalance: employeeBalance.currentBalance,
+        }]
+      : [],
+    applications: [],
+    summary: { pendingApplications: 0, pendingApprovals: 0 },
+  } as LeavePayload;
 
-  const validation = validateLeaveAction('apply', 'Employee', payload, {
+  const validation = validateLeaveAction('apply', 'Employee', validationPayload, {
     employeeId: employee.employeeId,
     employeeCode: employee.employeeCode,
     employeeCategory: employee.employeeCategory || employee.employmentType,
@@ -1170,7 +1235,7 @@ export const validateEssLeaveApplication = async (input: {
     usesCarryForward: /carry forward/i.test(leaveType),
     overlaps: false,
     blockedPeriod: false,
-    availableBalance: employeeBalance?.currentBalance,
+    availableBalance,
   });
   if (!validation.ok) return { ok: false as const, status: validation.status, message: validation.message };
   return { ok: true as const };
@@ -1183,6 +1248,123 @@ export const validateEssLeaveApplication = async (input: {
   }
 };
 
+export const applyLeaveBalanceImpact = async (input: {
+  employee: DleEmployeeDirectoryRow;
+  leaveType?: string;
+  days: number;
+  mode: 'reserve-pending' | 'release-pending' | 'confirm-used';
+  required?: boolean;
+}) => {
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) {
+    if (input.required) throw new Error('Leave balance could not be updated because HRIS database is unavailable.');
+    return;
+  }
+  const lookupKeys = [...new Set([
+    ...buildEssEmployeeLookupKeys(input.employee),
+    compact(input.employee.employeeCode),
+    compact(input.employee.employeeId),
+  ].map((key) => compact(key)).filter(Boolean))];
+  const leaveType = normalizeLeaveTypeName(clean(input.leaveType) || 'Annual Leave');
+  const days = round2(Math.max(0, Number(input.days || 0)));
+  if (!lookupKeys.length || !leaveType || days <= 0) return;
+
+  const resolveRequest = pool.request();
+  lookupKeys.forEach((key, index) => resolveRequest.input(`EmployeeKey${index}`, sql.NVarChar(80), key));
+  resolveRequest.input('LeaveType', sql.NVarChar(120), leaveType);
+  const keySql = lookupKeys.map((_, index) => `@EmployeeKey${index}`).join(', ');
+  const existing = await resolveRequest.query(`
+SELECT TOP 1 [EmployeeId]
+FROM [hris].[LeaveBalances]
+WHERE [EmployeeId] IN (${keySql}) AND [LeaveType]=@LeaveType
+ORDER BY [UpdatedAt] DESC;`);
+  const employeeId = compact((existing.recordset[0] as { EmployeeId?: string } | undefined)?.EmployeeId)
+    || compact(input.employee.employeeCode || input.employee.employeeId);
+  if (!employeeId) {
+    if (input.required) throw new Error('Leave balance could not be updated because employee leave record was not found.');
+    return;
+  }
+  const entitlement = leaveType === 'Annual Leave' ? annualLeaveEntitlementForEmployee(input.employee) : days;
+
+  if (input.mode === 'reserve-pending') {
+    await pool.request()
+      .input('EmployeeId', sql.NVarChar(80), employeeId)
+      .input('LeaveType', sql.NVarChar(120), leaveType)
+      .input('FullName', sql.NVarChar(220), input.employee.fullName)
+      .input('Department', sql.NVarChar(180), input.employee.department || 'Unassigned')
+      .input('Days', sql.Decimal(9, 2), days)
+      .input('Entitlement', sql.Decimal(9, 2), round2(entitlement))
+      .input('SourceSystem', sql.NVarChar(80), HRIS_LEAVE_SOURCE)
+      .query(`
+MERGE [hris].[LeaveBalances] AS target
+USING (SELECT @EmployeeId AS [EmployeeId], @LeaveType AS [LeaveType]) AS source
+ON target.[EmployeeId] = source.[EmployeeId] AND target.[LeaveType] = source.[LeaveType]
+WHEN MATCHED THEN UPDATE SET
+  [PendingBalance] = ISNULL(target.[PendingBalance], 0) + @Days,
+  [CurrentBalance] = CASE WHEN ISNULL(target.[CurrentBalance], target.[AccruedBalance]) - @Days < 0 THEN 0 ELSE ISNULL(target.[CurrentBalance], target.[AccruedBalance]) - @Days END,
+  [SourceSystem] = CASE WHEN ISNULL(target.[PendingBalance], 0) + @Days > 0 THEN @SourceSystem ELSE target.[SourceSystem] END,
+  [UpdatedAt] = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT
+  ([EmployeeId],[LeaveType],[FullName],[Department],[CurrentBalance],[AccruedBalance],[UsedBalance],[PendingBalance],[ForfeitedBalance],[CarryForwardBalance],[LiabilityValue],[StatusName],[ExceptionsJson],[SourceSystem])
+VALUES
+  (@EmployeeId,@LeaveType,@FullName,@Department,@Entitlement - @Days,@Entitlement,0,@Days,0,0,0,N'Healthy',N'[]',@SourceSystem);`);
+    return;
+  }
+
+  if (input.mode === 'release-pending') {
+    await pool.request()
+      .input('EmployeeId', sql.NVarChar(80), employeeId)
+      .input('LeaveType', sql.NVarChar(120), leaveType)
+      .input('Days', sql.Decimal(9, 2), days)
+      .query(`
+UPDATE [hris].[LeaveBalances]
+SET [PendingBalance] = CASE WHEN ISNULL([PendingBalance],0) - @Days < 0 THEN 0 ELSE ISNULL([PendingBalance],0) - @Days END,
+    [CurrentBalance] = ISNULL([CurrentBalance],0) + @Days,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [EmployeeId]=@EmployeeId AND [LeaveType]=@LeaveType;`);
+    return;
+  }
+
+  await pool.request()
+    .input('EmployeeId', sql.NVarChar(80), employeeId)
+    .input('LeaveType', sql.NVarChar(120), leaveType)
+    .input('Days', sql.Decimal(9, 2), days)
+    .query(`
+UPDATE [hris].[LeaveBalances]
+SET [PendingBalance] = CASE WHEN ISNULL([PendingBalance],0) - @Days < 0 THEN 0 ELSE ISNULL([PendingBalance],0) - @Days END,
+    [UsedBalance] = ISNULL([UsedBalance],0) + @Days,
+    [UpdatedAt] = SYSUTCDATETIME()
+  WHERE [EmployeeId]=@EmployeeId AND [LeaveType]=@LeaveType;`);
+};
+
+const ESS_PENDING_LEAVE_STATUSES = new Set(['Submitted', 'Draft', 'Line Manager Review', 'HR Review']);
+
+export const adjustLeavePolicyCardsForEssPending = (
+  policyCards: Array<{ type: string; entitlement?: number; used?: number; pending?: number; balance?: number; [key: string]: unknown }>,
+  requests: EssLeaveRequest[],
+) => {
+  const pendingByType = new Map<string, number>();
+  for (const request of requests) {
+    if (!/leave/i.test(request.category)) continue;
+    if (!ESS_PENDING_LEAVE_STATUSES.has(request.status)) continue;
+    const leaveType = normalizeLeaveTypeName(request.leaveType || 'Annual Leave');
+    pendingByType.set(leaveType, round2((pendingByType.get(leaveType) || 0) + Number(request.days || 0)));
+  }
+  return policyCards.map((card) => {
+    const leaveType = normalizeLeaveTypeName(card.type);
+    const pendingFromEss = pendingByType.get(leaveType) || 0;
+    const currentPending = Number(card.pending || 0);
+    const currentBalance = Number(card.balance ?? card.entitlement ?? 0);
+    if (pendingFromEss <= currentPending) return card;
+    const extraPending = round2(pendingFromEss - currentPending);
+    return {
+      ...card,
+      pending: round2(currentPending + extraPending),
+      balance: Math.max(0, round2(currentBalance - extraPending)),
+    };
+  });
+};
+
 export const upsertEssLeaveRequestToDb = async (item: EssLeaveRequest, employees: DleEmployeeDirectoryRow[]) => {
   const pool = await getDleEnterpriseDbPool();
   if (!pool) return;
@@ -1190,7 +1372,8 @@ export const upsertEssLeaveRequestToDb = async (item: EssLeaveRequest, employees
     [employee.employeeId, employee],
     [employee.employeeCode, employee],
   ].filter(([key]) => Boolean(key)) as Array<[string, DleEmployeeDirectoryRow]>));
-  const employee = employeeById.get(item.employeeId);
+  const employee = employeeById.get(item.employeeId) || resolveEmployeeReference(employees, item.employeeId);
+  const employeeKey = compact(employee?.employeeCode || employee?.employeeId || item.employeeId);
   const rawStatus = item.status;
   const initialStatus = normalizeLeaveStatus(rawStatus);
   const status = ['Submitted', 'Under Review'].includes(initialStatus) && workingDaysSince(item.updatedAt || item.submittedAt || new Date().toISOString()) > workflowDeadlineDays
@@ -1219,7 +1402,7 @@ export const upsertEssLeaveRequestToDb = async (item: EssLeaveRequest, employees
   await pool.request()
     .input('Id', sql.NVarChar(120), item.id)
     .input('SourceSystem', sql.NVarChar(80), 'ESS Leave Request')
-    .input('EmployeeId', sql.NVarChar(80), employee?.employeeId || item.employeeId)
+    .input('EmployeeId', sql.NVarChar(80), employeeKey)
     .input('FullName', sql.NVarChar(220), employee?.fullName || item.employeeId)
     .input('Department', sql.NVarChar(180), employee?.department || 'Unassigned')
     .input('ManagerName', sql.NVarChar(180), managerName)
@@ -1300,6 +1483,21 @@ export const cancelEssLeaveRequest = async (input: {
           ],
         }
       : item));
+    invalidateEssPortalCache();
+    const { employees } = await readPayrollEmployees();
+    const requester = input.employee || resolveEmployeeReference(employees, found.employeeId);
+    if (requester) {
+      try {
+        await applyLeaveBalanceImpact({
+          employee: requester,
+          leaveType: found.leaveType,
+          days: Number(found.days || 0),
+          mode: 'release-pending',
+        });
+      } catch (error) {
+        console.error('[leave-workflow] failed to release pending leave balance on cancel', error);
+      }
+    }
   }
 
   const pool = await getDleEnterpriseDbPool();
@@ -1319,8 +1517,7 @@ WHERE [Id]=@Id;`);
 };
 
 export const syncEssLeaveRequestById = async (requestId: string) => {
-  const requests = await readEssLeaveRequests();
-  const item = requests.find((request) => request.id === requestId);
+  const item = (await readAllEssRequests()).find((request) => request.id === requestId);
   if (!item) return;
   const { employees } = await readPayrollEmployees();
   await upsertEssLeaveRequestToDb(item, employees);
@@ -1424,6 +1621,25 @@ export const transitionEssLeaveRequest = async (input: {
     await upsertEssLeaveRequestToDb(updated, employees);
   } catch (error) {
     console.error('[leave-workflow] failed to sync approved leave request to database', error);
+  }
+  try {
+    if (!approved) {
+      await applyLeaveBalanceImpact({
+        employee: requester,
+        leaveType: found.leaveType,
+        days: Number(found.days || 0),
+        mode: 'release-pending',
+      });
+    } else if (nextStatus === 'Approved') {
+      await applyLeaveBalanceImpact({
+        employee: requester,
+        leaveType: found.leaveType,
+        days: Number(found.days || 0),
+        mode: 'confirm-used',
+      });
+    }
+  } catch (error) {
+    console.error('[leave-workflow] failed to update leave balance after approval action', error);
   }
   await auditLeaveAction({
     user: input.actorName,
