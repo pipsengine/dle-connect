@@ -184,7 +184,7 @@ export const buildMaintenanceTypeBreakdown = (records: EnrichedMaintenanceRecord
       if (!value) return null;
       return { name, value, pct: Math.round((value / total) * 1000) / 10 };
     })
-    .filter((item): item is { name: string; value: number; pct: number } => Boolean(item));
+    .filter((item): item is { name: (typeof TYPE_LABELS)[number]; value: number; pct: number } => Boolean(item));
 };
 
 export const buildUpcomingSchedules = (records: EnrichedMaintenanceRecord[], limit = 4) => {

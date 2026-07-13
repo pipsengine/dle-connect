@@ -15,6 +15,7 @@
     "repair:iis": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Repair-DleDashboardIis.ps1",
     "deploy:server": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Deploy-ServerDashboard.ps1 -SkipInstall",
     "deploy:server:dev": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Deploy-ServerDashboard.ps1 -DevOnly",
+    "repair:git-sync": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Repair-GitSync.ps1",
     "sync:mail-env": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Sync-MailEnvironment.ps1 -InternalServer",
     "verify:mail": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" node apps/dashboard/scripts/send-test-email.mjs P0146",
     "start:iis": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File deployment/iis/Start-DleDashboard.ps1",

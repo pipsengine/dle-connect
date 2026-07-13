@@ -369,7 +369,7 @@ export function AssetManagementHubClient() {
                             <Cell key={entry.name} fill={entry.color} />
                           ))}
                         </Pie>
-                        <Tooltip formatter={(value: number, _name, item) => [`${value} assets`, item.payload.name]} />
+                        <Tooltip formatter={(value, _name, item) => [`${Number(value ?? 0)} assets`, String(item?.payload?.name ?? '')]} />
                       </PieChart>
                     </ResponsiveContainer>
                     <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">

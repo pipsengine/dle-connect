@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { EnrichedMaintenanceRecord } from '../lib/maintenance-dashboard-utils';
-import { formatScheduledRelative, maintenanceStatusClass, priorityTone, statusDotTone } from '../lib/maintenance-dashboard-utils';
+import { formatScheduledRelative, priorityTone, statusDotTone } from '../lib/maintenance-dashboard-utils';
+import { maintenanceStatusClass } from '../lib/maintenance-utils';
 
 type Props = {
   open: boolean;
