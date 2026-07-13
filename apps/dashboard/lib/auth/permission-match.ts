@@ -42,6 +42,10 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
   'admin.roles.view': ['page.admin.access-control.view'],
   'admin.users.view': ['page.admin.user-management.view'],
   'payroll.view': ['page.payroll.management.view', 'page.hris.payroll.salary-management.view'],
+  'view_it_assets': ['page.it-support.asset-management.view', 'it.assets.view', 'it.view'],
+  'it.view': ['page.it-support.asset-management.view', 'it.assets.view'],
+  'it.create': ['it.assets.create'],
+  'it.edit': ['it.assets.edit'],
 };
 
 const reverseAliases = () => {

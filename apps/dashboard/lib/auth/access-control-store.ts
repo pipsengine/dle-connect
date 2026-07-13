@@ -208,6 +208,7 @@ export const permissionCatalog: PermissionNode[] = [
   node('Logistics & Fleet', 'Logistics', 'Logistics Operations', 'Logistics Workflow', 'Workflow', 'L2 - Manager', 'Company', 'logistics'),
   node('Logistics & Fleet', 'Drivers', 'Driver Management', 'Driver Controls', 'Module', 'L2 - Supervisor', 'Company', 'driver'),
   node('IT & Support', 'Service Desk', 'ITSM', 'Service Desk Workflow', 'Workflow', 'L2 - IT Admin', 'Company', 'it'),
+  node('IT & Support', 'Asset Management', 'IT Assets', 'Asset Lifecycle Operations', 'Module', 'L2 - IT Admin', 'Company', 'it.assets'),
   node('IT & Support', 'Infrastructure', 'Infrastructure', 'Infrastructure Controls', 'Module', 'L3 - IT Admin', 'Global', 'infrastructure'),
   node('IT & Support', 'Application Support', 'Application Support', 'Application Controls', 'Module', 'L2 - IT Admin', 'Global', 'application-support'),
   node('Document Management', 'Documents', 'Documents', 'Document Workflow', 'Workflow', 'L2 - Document Controller', 'Company', 'documents'),
@@ -351,6 +352,9 @@ permissionCatalog.push(
   node('Overtime Authorization', 'Supervisor Notification', 'Approved Overtime Booking Notice', 'Notify Supervisor After Final Approval', 'Workflow', 'L2 - Supervisor', 'Team', 'overtime.authorization.supervisor-notify'),
   node('Overtime Authorization', 'Email Notifications', 'Overtime Approval Email Delivery', 'Send Approval Emails and Outbox Records', 'API', 'L3 - IT Admin', 'Global', 'overtime.notification.email'),
   node('Overtime Authorization', 'Bell Notifications', 'Overtime In-App Notifications', 'Send Bell Notifications', 'API', 'L2 - Manager', 'Company', 'overtime.notification.in-app'),
+
+  node('Page Access', 'IT & Support', 'Asset Management', 'IT Asset Management Page', 'Page', 'L2 - IT Admin', 'Company', 'page.it-support.asset-management'),
+  node('Button Access', 'IT & Support', 'Asset Management', 'Export Asset Records', 'Button', 'L2 - IT Admin', 'Company', 'button.it-support.asset-management.export'),
 
   node('Timesheet Controls', 'Searchable Selectors', 'Search Supervisor Dropdown', 'Search and Select Supervisor', 'Dropdown', 'L2 - Manager', 'Company', 'timesheet.controls.supervisor-search'),
   node('Timesheet Controls', 'Searchable Selectors', 'Search Location Dropdown', 'Search and Select Location', 'Dropdown', 'L2 - Manager', 'Company', 'timesheet.controls.location-search'),

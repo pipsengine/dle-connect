@@ -76,7 +76,7 @@ export async function middleware(request: NextRequest) {
       }
     }
 
-    if ((!pathname.startsWith('/api') || pathname.startsWith('/api/hris')) && !canAccessRoute({ ...session, permissions }, pathname)) {
+    if ((!pathname.startsWith('/api') || pathname.startsWith('/api/hris') || pathname.startsWith('/api/it-support')) && !canAccessRoute({ ...session, permissions }, pathname)) {
       return denied(request, 403);
     }
 

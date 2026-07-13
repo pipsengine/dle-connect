@@ -54,6 +54,8 @@ const requiredPermission = (route?: string) => {
   if (route.startsWith('/quality-management')) return 'quality.view';
   if (route.startsWith('/document-management')) return 'documents.view';
   if (route.startsWith('/logistics-fleet')) return 'fleet.view';
+  if (route.startsWith('/it-support/asset-management')) return 'view_it_assets';
+  if (route.startsWith('/it-support')) return 'view_it_support';
   return 'enterprise.view';
 };
 

@@ -9,6 +9,7 @@ const routePathFromRequestPath = (pathname: string) => {
   const path = normalizePath(pathname);
   if (path.startsWith('/api/hris/')) return path.replace(/^\/api\/hris/, '/hris');
   if (path === '/api/hris') return '/hris';
+  if (path.startsWith('/api/it-support/asset-management')) return '/it-support/asset-management';
   return path;
 };
 
@@ -159,12 +160,28 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
   return hasAnyPermission(permissions, ['page.hris.management.view', 'hris.view']);
 };
 
+export const itSupportRoutePermissionOptions = (pathname: string): string[] | null => {
+  const path = normalizePath(pathname);
+  if (path.startsWith('/it-support/asset-management')) {
+    return ['view_it_assets', 'view_it_support', 'it.view'];
+  }
+  if (path.startsWith('/it-support')) {
+    return ['view_it_support', 'it.view'];
+  }
+  return null;
+};
+
 export const canAccessRoute = (session: SessionLike, pathname: string) => {
   const path = routePathFromRequestPath(pathname);
   if (path.startsWith('/hris')) return canAccessHrisPath(session, path);
   if (path.startsWith('/administration')) {
     if (!canAccessAdministrationCentre(session)) return false;
     return hasAnyPermission(session.permissions || [], administrationRoutePermissions(path));
+  }
+  const itOptions = itSupportRoutePermissionOptions(path);
+  if (itOptions) {
+    if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
+    return hasAnyPermission(session.permissions || [], itOptions);
   }
   return true;
 };
