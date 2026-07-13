@@ -727,7 +727,7 @@ export const updateUser = async (
     if (touchesSuperAdministrator && !canManageSuperAdministratorRole(actor)) {
       throw new Error('Only the protected default Global Super Administrator account can grant, remove, or modify the Super Administrator role.');
     }
-    assertActorCanAssignRoles(actor?.roles || [], roles, actor?.isGlobalAdmin === true);
+    assertActorCanAssignRoles(actor?.roles || [], roles, actor || undefined);
     updated = { ...target, roles, permissions: await effectivePermissionsForRoles(roles), updatedAt: nowIso() };
   }
   if (action === 'assign-access') {
