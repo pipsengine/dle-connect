@@ -8,6 +8,7 @@ import { defaultRoleForEmployee, enterpriseRoles, permissionsForRoles, roleDefin
 import type { SessionPayload, SessionUser } from '@/lib/auth/session';
 import { passwordPolicyErrors } from '@/lib/auth/session';
 import { effectivePermissionsForRoles, effectivePermissionsForUser, effectivePermissionsForUsers } from '@/lib/auth/access-control-store';
+import { assertActorCanAssignRoles } from '@/lib/auth/role-delegation';
 
 export type UserStatus = 'Active' | 'Inactive' | 'Disabled' | 'Locked' | 'Pending First Login' | 'Password Reset Required';
 
@@ -704,7 +705,7 @@ export const updateUser = async (
   payload: any,
   headers: Headers,
   performedBy = 'Admin',
-  actor?: Pick<SessionPayload, 'sub' | 'username' | 'isGlobalAdmin'> | null,
+  actor?: Pick<SessionPayload, 'sub' | 'username' | 'isGlobalAdmin' | 'roles'> | null,
 ) => {
   const users = await readUsersStoreRaw();
   const target = users.find((item) => item.id === userId);
@@ -726,6 +727,7 @@ export const updateUser = async (
     if (touchesSuperAdministrator && !canManageSuperAdministratorRole(actor)) {
       throw new Error('Only the protected default Global Super Administrator account can grant, remove, or modify the Super Administrator role.');
     }
+    assertActorCanAssignRoles(actor?.roles || [], roles, actor?.isGlobalAdmin === true);
     updated = { ...target, roles, permissions: await effectivePermissionsForRoles(roles), updatedAt: nowIso() };
   }
   if (action === 'assign-access') {

@@ -3,6 +3,11 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
+import {
+  assertActorCanGrantPermissions,
+  canActorModifyRole,
+  clampPermissionsToRoleCeiling,
+} from '@/lib/auth/role-delegation';
 import { enterpriseRoles, permissionsForRoles, roleDefinitions } from '@/lib/auth/rbac';
 import type { SessionPayload } from '@/lib/auth/session';
 
@@ -569,7 +574,6 @@ WHEN NOT MATCHED THEN INSERT ([StateKey],[StateJson]) VALUES (@StateKey,@StateJs
 };
 
 const isProtectedPermission = (permission: string) => permission === '*' || ['admin.roles', 'admin.users', 'audit', 'security'].some((prefix) => permission === `${prefix}.*` || permission.startsWith(`${prefix}.`));
-const isHigherThanActor = (permission: string, actorPermissions: string[]) => !actorPermissions.includes('*') && !actorPermissions.includes(permission) && !actorPermissions.includes(`${permission.split('.')[0]}.*`);
 
 const assignmentKey = (assignment: Pick<PermissionAssignment, 'subjectType' | 'subjectId'>) => `${assignment.subjectType}:${assignment.subjectId}`;
 
@@ -598,7 +602,7 @@ export const effectivePermissionsForRoles = async (roles: string[]) => {
   const published = state.published
     .filter((item) => item.subjectType === 'role' && roles.includes(item.subjectId) && item.status === 'published')
     .flatMap((item) => item.permissions);
-  return unique([...base, ...published]);
+  return clampPermissionsToRoleCeiling(unique([...base, ...published]), roles);
 };
 
 const resolveEffectivePermissions = (state: AccessControlState, userId: string, roles: string[]) => {
@@ -610,7 +614,7 @@ const resolveEffectivePermissions = (state: AccessControlState, userId: string, 
   const userGrants = state.published
     .filter((item) => item.subjectType === 'user' && item.subjectId === userId && item.status === 'published')
     .flatMap((item) => item.permissions);
-  return unique([...base, ...roleGrants, ...userGrants]);
+  return clampPermissionsToRoleCeiling(unique([...base, ...roleGrants, ...userGrants]), roles);
 };
 
 export const effectivePermissionsForUser = async (userId: string, roles: string[]) => {
@@ -634,10 +638,13 @@ export const saveAccessAssignment = async (
   if (subjectType === 'role' && subjectId === 'Super Administrator') throw new Error('The Super Administrator role is protected and cannot be edited, restricted, or demoted.');
   if (subjectType === 'user' && ['global-admin', 'Admin'].includes(subjectId)) throw new Error('The protected default Super Administrator account cannot be edited, disabled, restricted, or demoted.');
 
-  const actorIsSuper = actor.roles.includes('Super Administrator') || actor.permissions.includes('*');
+  const actorIsSuper = actor.roles.includes('Super Administrator') || actor.permissions.includes('*') || actor.isGlobalAdmin;
   const requested = unique(Array.isArray(payload.permissions) ? payload.permissions : []);
+  if (subjectType === 'role' && !canActorModifyRole(actor.roles, subjectId, actorIsSuper)) {
+    throw new Error('You cannot modify permissions for a role higher than your own access level.');
+  }
   if (!actorIsSuper && requested.some(isProtectedPermission)) throw new Error('Admins cannot change security, audit, authentication, system control, or Super Administrator permissions.');
-  if (!actorIsSuper && requested.some((permission) => isHigherThanActor(permission, actor.permissions))) throw new Error('Admins cannot grant permissions higher than their own access.');
+  assertActorCanGrantPermissions(actor.permissions, requested, actorIsSuper);
 
   const riskyActions = ['delete', 'disable', 'assign', 'override', 'approve', 'post', 'release', 'lock', 'unlock', 'reopen', 'unmask', 'sync', 'delegate', 'escalate', 'impersonate'];
   const risky = requested.filter((permission) => riskyActions.some((action) => permission.endsWith(`.${action}`)) || isProtectedPermission(permission));
@@ -706,6 +713,10 @@ INSERT [security].[AccessControlAudit] (
 
 export const cloneRolePermissions = async (sourceRole: string, targetRole: string, headers: Headers, actor: SessionPayload, reason = '') => {
   if (targetRole === 'Super Administrator') throw new Error('The Super Administrator role is protected and cannot receive cloned changes.');
+  const actorIsSuper = actor.roles.includes('Super Administrator') || actor.permissions.includes('*') || actor.isGlobalAdmin;
+  if (!canActorModifyRole(actor.roles, sourceRole, actorIsSuper) || !canActorModifyRole(actor.roles, targetRole, actorIsSuper)) {
+    throw new Error('You cannot clone permissions for roles above your own access level.');
+  }
   const permissions = await effectivePermissionsForRoles([sourceRole]);
   return saveAccessAssignment({ subjectType: 'role', subjectId: targetRole, permissions, publish: false, reason: reason || `Cloned from ${sourceRole}` }, headers, actor);
 };

@@ -4,6 +4,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { BadgeCheck, Ban, KeyRound, Lock, RefreshCcw, Search, ShieldCheck, Unlock, UserCog } from 'lucide-react';
+import { filterAssignableRoles } from '@/lib/auth/role-delegation';
 
 type UserAccount = {
   id: string;
@@ -40,23 +41,27 @@ export default function UserManagementClient({ section = 'user-accounts' }: { se
   const [toast, setToast] = useState('');
   const [loading, setLoading] = useState(true);
   const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
+  const [actorRoles, setActorRoles] = useState<string[]>([]);
 
   const load = async (sync = false) => {
     setLoading(true);
     try {
-      const [usersRes, rolesRes, currentUserRes] = await Promise.all([
+      const [usersRes, rolesRes, currentUserRes, meRes] = await Promise.all([
         fetch(`/api/admin/users${sync ? '?sync=1' : ''}`, { cache: 'no-store' }),
         fetch('/api/admin/roles', { cache: 'no-store' }),
         fetch('/api/current-user?context=enterprise', { cache: 'no-store' }),
+        fetch('/api/auth/me', { cache: 'no-store' }),
       ]);
       const usersJson = await usersRes.json();
       const rolesJson = await rolesRes.json();
       const currentUserJson = await currentUserRes.json().catch(() => null);
+      const meJson = meRes.ok ? await meRes.json().catch(() => null) : null;
       if (!usersRes.ok) throw new Error(usersJson.error || 'Unable to load users');
       setUsers(usersJson.data.users || []);
       setHistory(usersJson.data.loginHistory || []);
       setRoles(rolesRes.ok ? rolesJson.data || [] : []);
       setIsGlobalAdmin(currentUserJson?.data?.source === 'application-level-global-admin' || currentUserJson?.data?.employeeCode === 'Admin');
+      setActorRoles(meJson?.data?.roles || []);
     } catch (error) {
       setToast(error instanceof Error ? error.message : 'Unable to load users');
     } finally {
@@ -72,7 +77,7 @@ export default function UserManagementClient({ section = 'user-accounts' }: { se
   }, [query, users]);
 
   const activeUser = users.find((user) => user.id === selected) || filtered[0];
-  const assignableRoles = useMemo(() => roles.filter((role) => isGlobalAdmin || role.name !== 'Super Administrator'), [roles, isGlobalAdmin]);
+  const assignableRoles = useMemo(() => filterAssignableRoles(roles, actorRoles, isGlobalAdmin), [roles, actorRoles, isGlobalAdmin]);
 
   useEffect(() => {
     if (activeUser) setSelectedRoles(activeUser.roles || []);

@@ -118,7 +118,7 @@ const role = (name: EnterpriseRole, category: string, permissions: string[], des
 
 export const roleDefinitions: RoleDefinition[] = [
   role('Super Administrator', 'Global / System', ['*'], 'Unrestricted emergency system administration.'),
-  role('Admin', 'Global / System', ['enterprise.view', 'admin.roles.view'], 'Limited delegated administrator. Additional rights must be granted by the Super Administrator.'),
+  role('Admin', 'Global / System', ['enterprise.view', 'admin.roles.view'], 'Limited delegated administrator. Cannot exceed its own permission ceiling or assign higher global roles.'),
   role('System Administrator', 'Global / System', ['admin.*', 'security.*', 'audit.*', 'integration.*', 'hris.view'], 'System settings and platform operations.'),
   role('Application Administrator', 'Global / System', ['admin.*', 'hris.*', 'workflow.*'], 'Application configuration and module administration.'),
   role('Security Administrator', 'Global / System', ['security.*', 'admin.users.view', 'admin.users.edit', 'audit.view'], 'Identity, session, lockout, MFA, and access control operations.'),

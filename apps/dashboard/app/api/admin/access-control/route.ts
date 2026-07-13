@@ -34,7 +34,20 @@ export async function GET(request: Request) {
       return NextResponse.json({ status: 'success', data: await compareRolePermissions(left, right) });
     }
     const [payload, users] = await Promise.all([readAccessControlPayload(), readUsersForAccessControl()]);
-    return NextResponse.json({ status: 'success', data: { ...payload, users } });
+    const actorIsSuper = auth.session!.roles.includes('Super Administrator') || auth.session!.permissions.includes('*') || auth.session!.isGlobalAdmin;
+    return NextResponse.json({
+      status: 'success',
+      data: {
+        ...payload,
+        users,
+        actor: {
+          roles: auth.session!.roles,
+          permissions: auth.session!.permissions,
+          isGlobalAdmin: actorIsSuper,
+          canWrite: actorIsSuper || hasPermission(auth.session!.permissions, 'admin.roles.assign') || hasPermission(auth.session!.permissions, 'admin.roles.edit') || hasPermission(auth.session!.permissions, 'admin.*'),
+        },
+      },
+    });
   } catch (error) {
     return NextResponse.json({ status: 'error', error: error instanceof Error ? error.message : 'Unable to load access control data.' }, { status: 500 });
   }

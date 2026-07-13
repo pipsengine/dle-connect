@@ -19,6 +19,11 @@ import {
   UserCog,
 } from 'lucide-react';
 import { downloadExcelFile } from '@/lib/excel-export';
+import {
+  canActorGrantPermission,
+  canActorModifyRole,
+  filterAssignableRoles,
+} from '@/lib/auth/role-delegation';
 
 type AccessAction =
   | 'view'
@@ -135,6 +140,9 @@ export default function RolesPermissionsClient() {
   const [roleQuery, setRoleQuery] = useState('');
   const [savingRoles, setSavingRoles] = useState(false);
   const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
+  const [actorRoles, setActorRoles] = useState<string[]>([]);
+  const [actorPermissions, setActorPermissions] = useState<string[]>([]);
+  const [actorCanWrite, setActorCanWrite] = useState(false);
   const hydratedSubjectKey = useRef('');
 
   const load = async () => {
@@ -163,6 +171,9 @@ export default function RolesPermissionsClient() {
         currentUserJson?.data?.source === 'application-level-global-admin'
         || currentUserJson?.data?.employeeCode === 'Admin',
       );
+      setActorRoles(json.data.actor?.roles || currentUserJson?.data?.roles || []);
+      setActorPermissions(json.data.actor?.permissions || []);
+      setActorCanWrite(Boolean(json.data.actor?.canWrite));
       hydratedSubjectKey.current = '';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load access control data.');
@@ -177,7 +188,9 @@ export default function RolesPermissionsClient() {
   }, []);
 
   const subjects: SubjectOption[] = subjectType === 'role'
-    ? roles.map((role) => ({ id: role.name, label: role.name, permissions: role.permissions, meta: role.category }))
+    ? roles
+      .filter((role) => isGlobalAdmin || canActorModifyRole(actorRoles, role.name, isGlobalAdmin))
+      .map((role) => ({ id: role.name, label: role.name, permissions: role.permissions, meta: role.category }))
     : users.map((user) => ({
       id: user.id,
       label: `${user.fullName} (${user.employeeCode || user.username})`,
@@ -187,9 +200,11 @@ export default function RolesPermissionsClient() {
 
   const activeUser = users.find((user) => user.id === subjectId);
   const assignableRoles = useMemo(
-    () => roles.filter((role) => isGlobalAdmin || role.name !== 'Super Administrator'),
-    [roles, isGlobalAdmin],
+    () => filterAssignableRoles(roles, actorRoles, isGlobalAdmin),
+    [roles, actorRoles, isGlobalAdmin],
   );
+  const canGrantPermission = (permission: string) =>
+    isGlobalAdmin || actorPermissions.includes('*') || canActorGrantPermission(actorPermissions, permission);
   const filteredAssignableRoles = useMemo(() => {
     const q = roleQuery.trim().toLowerCase();
     if (!q) return assignableRoles;
@@ -267,6 +282,7 @@ export default function RolesPermissionsClient() {
   }, [selected]);
 
   const togglePermission = (permission: string) => {
+    if (!canGrantPermission(permission)) return;
     setSelected((current) => {
       const next = new Set(current);
       if (next.has(permission)) next.delete(permission);
@@ -328,6 +344,7 @@ export default function RolesPermissionsClient() {
       const next = new Set(current);
       nodes.forEach((node) => actions.forEach((action) => {
         const permission = permissionOf(node, action);
+        if (!canGrantPermission(permission)) return;
         if (checked) next.add(permission);
         else next.delete(permission);
       }));
@@ -384,10 +401,13 @@ export default function RolesPermissionsClient() {
   };
 
   const applyTemplate = (template: Template) => {
-    setSelected(new Set(template.permissions));
+    const allowed = template.permissions.filter((permission) => canGrantPermission(permission));
+    setSelected(new Set(allowed));
     setDataScope(template.dataScope);
     setApprovalLevel(template.approvalLevel);
-    setNotice(`Applied template: ${template.name}`);
+    setNotice(allowed.length === template.permissions.length
+      ? `Applied template: ${template.name}`
+      : `Applied template: ${template.name} (${template.permissions.length - allowed.length} permissions above your access were skipped)`);
   };
 
   const exportExcel = () => {
@@ -423,13 +443,18 @@ export default function RolesPermissionsClient() {
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={exportExcel} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50"><Download className="h-4 w-4" />Excel</button>
           <button onClick={exportPdf} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50"><FileDown className="h-4 w-4" />PDF</button>
-          <button onClick={() => save(false)} disabled={saving || loading} className="inline-flex h-10 items-center gap-2 rounded-lg border border-blue-200 bg-white px-3 text-sm font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50"><Save className="h-4 w-4" />Save Draft</button>
-          <button onClick={() => save(true)} disabled={saving || loading} className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"><Check className="h-4 w-4" />Publish</button>
+          <button onClick={() => save(false)} disabled={saving || loading || !actorCanWrite} className="inline-flex h-10 items-center gap-2 rounded-lg border border-blue-200 bg-white px-3 text-sm font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50"><Save className="h-4 w-4" />Save Draft</button>
+          <button onClick={() => save(true)} disabled={saving || loading || !actorCanWrite} className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"><Check className="h-4 w-4" />Publish</button>
         </div>
       </div>
 
       {error ? <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
       {notice ? <div className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">{notice}</div> : null}
+      {!actorCanWrite ? (
+        <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+          View-only mode: you can review permissions, but changes require rights within your own access level.
+        </div>
+      ) : null}
 
       <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="space-y-4">
@@ -589,7 +614,10 @@ export default function RolesPermissionsClient() {
               </select>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              <button onClick={() => setSelected(new Set(catalog.flatMap((node) => actions.map((action) => permissionOf(node, action)))))} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-black hover:bg-slate-50"><Filter className="h-4 w-4" />Bulk select all</button>
+              <button
+                onClick={() => setSelected(new Set(catalog.flatMap((node) => actions.map((action) => permissionOf(node, action))).filter((permission) => canGrantPermission(permission))))}
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-black hover:bg-slate-50"
+              ><Filter className="h-4 w-4" />Bulk select allowed</button>
               <button onClick={() => setSelected(new Set())} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-black hover:bg-slate-50">Bulk remove all</button>
               <button onClick={() => setExpanded(Object.fromEntries(modules.filter((module) => module !== 'All').map((module) => [module, true])))} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-black hover:bg-slate-50">Expand tree</button>
               <button onClick={() => setExpanded({})} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-black hover:bg-slate-50">Collapse tree</button>
@@ -646,9 +674,17 @@ export default function RolesPermissionsClient() {
                               <td className="px-3 py-3 text-xs font-bold text-slate-600">{node.approvalLevel}<br />{node.dataScope}</td>
                               {actions.map((action) => {
                                 const permission = permissionOf(node, action);
+                                const grantable = canGrantPermission(permission);
                                 return (
                                   <td key={permission} className="px-2 py-3 text-center">
-                                    <input title={permission} type="checkbox" checked={selected.has(permission)} onChange={() => togglePermission(permission)} className="h-4 w-4 rounded border-slate-300 text-blue-600" />
+                                    <input
+                                      title={grantable ? permission : `${permission} (above your access level)`}
+                                      type="checkbox"
+                                      checked={selected.has(permission)}
+                                      disabled={!grantable || !actorCanWrite}
+                                      onChange={() => togglePermission(permission)}
+                                      className="h-4 w-4 rounded border-slate-300 text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                    />
                                   </td>
                                 );
                               })}
