@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { BadgeCheck, Ban, KeyRound, Lock, RefreshCcw, Search, ShieldCheck, Unlock, UserCog } from 'lucide-react';
-import { filterAssignableRoles } from '@/lib/auth/role-delegation';
+import { filterAssignableRoles, isSuperActor } from '@/lib/auth/role-delegation';
 
 type UserAccount = {
   id: string;
@@ -41,7 +41,10 @@ export default function UserManagementClient({ section = 'user-accounts' }: { se
   const [toast, setToast] = useState('');
   const [loading, setLoading] = useState(true);
   const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
+  const [actorSub, setActorSub] = useState('');
   const [actorRoles, setActorRoles] = useState<string[]>([]);
+
+  const superActor = isSuperActor({ sub: actorSub, roles: actorRoles, isGlobalAdmin });
 
   const load = async (sync = false) => {
     setLoading(true);
@@ -60,7 +63,12 @@ export default function UserManagementClient({ section = 'user-accounts' }: { se
       setUsers(usersJson.data.users || []);
       setHistory(usersJson.data.loginHistory || []);
       setRoles(rolesRes.ok ? rolesJson.data || [] : []);
-      setIsGlobalAdmin(currentUserJson?.data?.source === 'application-level-global-admin' || currentUserJson?.data?.employeeCode === 'Admin');
+      setIsGlobalAdmin(
+        Boolean(meJson?.data?.isGlobalAdmin)
+        || currentUserJson?.data?.source === 'application-level-global-admin'
+        || currentUserJson?.data?.employeeCode === 'Admin',
+      );
+      setActorSub(meJson?.data?.sub || meJson?.data?.userId || '');
       setActorRoles(meJson?.data?.roles || []);
     } catch (error) {
       setToast(error instanceof Error ? error.message : 'Unable to load users');
@@ -77,7 +85,7 @@ export default function UserManagementClient({ section = 'user-accounts' }: { se
   }, [query, users]);
 
   const activeUser = users.find((user) => user.id === selected) || filtered[0];
-  const assignableRoles = useMemo(() => filterAssignableRoles(roles, actorRoles, isGlobalAdmin), [roles, actorRoles, isGlobalAdmin]);
+  const assignableRoles = useMemo(() => filterAssignableRoles(roles, actorRoles, superActor || isGlobalAdmin), [roles, actorRoles, superActor, isGlobalAdmin]);
 
   useEffect(() => {
     if (activeUser) setSelectedRoles(activeUser.roles || []);

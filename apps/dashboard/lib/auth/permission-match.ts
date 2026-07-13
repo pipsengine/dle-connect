@@ -120,3 +120,23 @@ export const hasPermission = (permissions: string[], required: string) => {
 
 export const hasAnyPermission = (permissions: string[], required: string[]) =>
   required.some((permission) => hasPermission(permissions, permission));
+
+const IT_PERMISSION_PREFIXES = ['it', 'it.assets', 'service-desk', 'application-support', 'infrastructure', 'page.it-support'];
+
+/** Add navigation/page keys when publishing module permissions so menus and routes work immediately. */
+export const expandPublishedPermissions = (permissions: string[]) => {
+  const out = new Set(permissions.filter(Boolean));
+  const list = Array.from(out);
+
+  if (list.some((permission) => IT_PERMISSION_PREFIXES.some((prefix) => permission === prefix || permission.startsWith(`${prefix}.`)))) {
+    out.add('view_it_support');
+    out.add('view_it_assets');
+    out.add('page.it-support.asset-management.view');
+  }
+  if (list.some((permission) => permission.startsWith('admin.roles'))) out.add('page.admin.access-control.view');
+  if (list.some((permission) => permission.startsWith('admin.users'))) out.add('page.admin.user-management.view');
+  if (list.some((permission) => permission.startsWith('hris.') || permission.startsWith('employees.'))) out.add('hris.view');
+  if (list.some((permission) => permission.startsWith('payroll.') || permission.startsWith('page.payroll.'))) out.add('payroll.view');
+
+  return Array.from(out);
+};

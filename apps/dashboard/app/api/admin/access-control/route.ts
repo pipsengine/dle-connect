@@ -7,7 +7,9 @@ import {
   saveAccessAssignment,
 } from '@/lib/auth/access-control-store';
 import { readUsersForAccessControl } from '@/lib/auth/auth-store';
-import { AUTH_COOKIE, hasPermission, verifySessionToken } from '@/lib/auth/session';
+import { hasPermission } from '@/lib/auth/permission-match';
+import { isSuperActor } from '@/lib/auth/role-delegation';
+import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 
 const tokenFrom = (request: Request) => request.headers.get('cookie')?.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${AUTH_COOKIE}=`))?.split('=').slice(1).join('=');
 
@@ -15,11 +17,17 @@ const authorize = async (request: Request, write = false) => {
   const token = tokenFrom(request);
   const session = await verifySessionToken(token ? decodeURIComponent(token) : '');
   if (!session) return { error: NextResponse.json({ status: 'error', error: 'Unauthenticated' }, { status: 401 }) };
-  const permissions = await effectivePermissionsForUser(session.sub, session.roles);
-  const canView = hasPermission(permissions, 'admin.roles.view') || hasPermission(permissions, 'admin.*');
-  const canWrite = session.roles.includes('Super Administrator') || hasPermission(permissions, 'admin.roles.assign') || hasPermission(permissions, 'admin.roles.edit') || hasPermission(permissions, 'admin.*');
+
+  const superActor = isSuperActor(session);
+  const permissions = superActor
+    ? ['*']
+    : await effectivePermissionsForUser(session.sub, session.roles);
+
+  const canView = superActor || hasPermission(permissions, 'admin.roles.view') || hasPermission(permissions, 'admin.*');
+  const canWrite = superActor || hasPermission(permissions, 'admin.roles.assign') || hasPermission(permissions, 'admin.roles.edit') || hasPermission(permissions, 'admin.*');
   if (!canView || (write && !canWrite)) return { error: NextResponse.json({ status: 'error', error: 'Forbidden' }, { status: 403 }) };
-  return { session: { ...session, permissions } };
+
+  return { session: { ...session, permissions }, superActor, canWrite };
 };
 
 export async function GET(request: Request) {
@@ -34,17 +42,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ status: 'success', data: await compareRolePermissions(left, right) });
     }
     const [payload, users] = await Promise.all([readAccessControlPayload(), readUsersForAccessControl()]);
-    const actorIsSuper = auth.session!.roles.includes('Super Administrator') || auth.session!.permissions.includes('*') || auth.session!.isGlobalAdmin;
     return NextResponse.json({
       status: 'success',
       data: {
         ...payload,
         users,
         actor: {
+          sub: auth.session!.sub,
           roles: auth.session!.roles,
           permissions: auth.session!.permissions,
-          isGlobalAdmin: actorIsSuper,
-          canWrite: actorIsSuper || hasPermission(auth.session!.permissions, 'admin.roles.assign') || hasPermission(auth.session!.permissions, 'admin.roles.edit') || hasPermission(auth.session!.permissions, 'admin.*'),
+          isGlobalAdmin: auth.superActor,
+          canWrite: auth.canWrite,
         },
       },
     });

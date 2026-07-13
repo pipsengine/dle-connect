@@ -20,9 +20,16 @@ import {
 } from 'lucide-react';
 import { downloadExcelFile } from '@/lib/excel-export';
 import {
+  isProtectedAccessSubject,
+  moduleOperationPermissions,
+  resolveDisplayedPermissions,
+} from '@/lib/auth/access-control-ui-utils';
+import { expandPublishedPermissions } from '@/lib/auth/permission-match';
+import {
   canActorGrantPermission,
   canActorModifyRole,
   filterAssignableRoles,
+  isSuperActor,
 } from '@/lib/auth/role-delegation';
 
 type AccessAction =
@@ -119,7 +126,7 @@ export default function RolesPermissionsClient() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [audit, setAudit] = useState<AuditRecord[]>([]);
   const [subjectType, setSubjectType] = useState<'role' | 'user'>('role');
-  const [subjectId, setSubjectId] = useState('Super Administrator');
+  const [subjectId, setSubjectId] = useState('Admin');
   const [query, setQuery] = useState('');
   const [subjectSearch, setSubjectSearch] = useState('');
   const [subjectPickerOpen, setSubjectPickerOpen] = useState(false);
@@ -143,7 +150,30 @@ export default function RolesPermissionsClient() {
   const [actorRoles, setActorRoles] = useState<string[]>([]);
   const [actorPermissions, setActorPermissions] = useState<string[]>([]);
   const [actorCanWrite, setActorCanWrite] = useState(false);
+  const [actorSub, setActorSub] = useState('');
   const hydratedSubjectKey = useRef('');
+
+  const superActor = isSuperActor({
+    sub: actorSub,
+    roles: actorRoles,
+    permissions: actorPermissions,
+    isGlobalAdmin,
+  });
+  const canWrite = superActor || actorCanWrite;
+  const subjectIsProtected = isProtectedAccessSubject(subjectType, subjectId);
+
+  const displayedPermissionsFor = (type: 'role' | 'user', id: string) => {
+    const role = roles.find((item) => item.name === id);
+    const user = users.find((item) => item.id === id);
+    return resolveDisplayedPermissions({
+      subjectType: type,
+      subjectId: id,
+      roleBaseline: role?.permissions,
+      userPermissions: user?.permissions,
+      drafts,
+      published,
+    });
+  };
 
   const load = async () => {
     setLoading(true);
@@ -168,9 +198,11 @@ export default function RolesPermissionsClient() {
       setCompareLeft(json.data.roles?.[0]?.name || '');
       setCompareRight(json.data.roles?.[1]?.name || '');
       setIsGlobalAdmin(
-        currentUserJson?.data?.source === 'application-level-global-admin'
+        Boolean(json.data.actor?.isGlobalAdmin)
+        || currentUserJson?.data?.source === 'application-level-global-admin'
         || currentUserJson?.data?.employeeCode === 'Admin',
       );
+      setActorSub(json.data.actor?.sub || '');
       setActorRoles(json.data.actor?.roles || currentUserJson?.data?.roles || []);
       setActorPermissions(json.data.actor?.permissions || []);
       setActorCanWrite(Boolean(json.data.actor?.canWrite));
@@ -189,7 +221,7 @@ export default function RolesPermissionsClient() {
 
   const subjects: SubjectOption[] = subjectType === 'role'
     ? roles
-      .filter((role) => isGlobalAdmin || canActorModifyRole(actorRoles, role.name, isGlobalAdmin))
+      .filter((role) => superActor || canActorModifyRole(actorRoles, role.name, isGlobalAdmin))
       .map((role) => ({ id: role.name, label: role.name, permissions: role.permissions, meta: role.category }))
     : users.map((user) => ({
       id: user.id,
@@ -200,11 +232,11 @@ export default function RolesPermissionsClient() {
 
   const activeUser = users.find((user) => user.id === subjectId);
   const assignableRoles = useMemo(
-    () => filterAssignableRoles(roles, actorRoles, isGlobalAdmin),
-    [roles, actorRoles, isGlobalAdmin],
+    () => filterAssignableRoles(roles, actorRoles, superActor || isGlobalAdmin),
+    [roles, actorRoles, superActor, isGlobalAdmin],
   );
   const canGrantPermission = (permission: string) =>
-    isGlobalAdmin || actorPermissions.includes('*') || canActorGrantPermission(actorPermissions, permission);
+    superActor || actorPermissions.includes('*') || canActorGrantPermission(actorPermissions, permission);
   const filteredAssignableRoles = useMemo(() => {
     const q = roleQuery.trim().toLowerCase();
     if (!q) return assignableRoles;
@@ -224,10 +256,7 @@ export default function RolesPermissionsClient() {
     if (!subjectId || hydratedSubjectKey.current === key) return;
     hydratedSubjectKey.current = key;
     const assignment = [...drafts, ...published].find((item) => item.subjectType === subjectType && item.subjectId === subjectId);
-    const nextSubject = subjectType === 'role'
-      ? roles.find((role) => role.name === subjectId)
-      : users.find((user) => user.id === subjectId);
-    setSelected(new Set(assignment?.permissions || nextSubject?.permissions || []));
+    setSelected(new Set(displayedPermissionsFor(subjectType, subjectId)));
     setDataScope(assignment?.dataScope || 'Company');
     setApprovalLevel(assignment?.approvalLevel || 'L1 - User');
     setReason(assignment?.reason || '');
@@ -238,6 +267,7 @@ export default function RolesPermissionsClient() {
       setSelectedUserRoles([]);
     }
   }, [loading, subjectType, subjectId, roles, users, drafts, published]);
+
   const activeAssignment = [...drafts, ...published].find((item) => item.subjectType === subjectType && item.subjectId === subjectId);
   const baselinePermissions = subject?.permissions || [];
 
@@ -303,7 +333,7 @@ export default function RolesPermissionsClient() {
     setSubjectId(resolvedId);
     setSubjectSearch('');
     setSubjectPickerOpen(false);
-    setSelected(new Set(assignment?.permissions || nextSubject?.permissions || []));
+    setSelected(new Set(displayedPermissionsFor(nextType, resolvedId)));
     setDataScope(assignment?.dataScope || 'Company');
     setApprovalLevel(assignment?.approvalLevel || 'L1 - User');
     setReason(assignment?.reason || '');
@@ -352,19 +382,37 @@ export default function RolesPermissionsClient() {
     });
   };
 
+  const enableModuleOperations = (moduleName: string) => {
+    const modulePermissions = moduleOperationPermissions(catalog, actions, moduleName, permissionOf);
+    setSelected((current) => new Set([...current, ...modulePermissions.filter((permission) => canGrantPermission(permission))]));
+    setModuleFilter(moduleName);
+    setNotice(`Enabled standard operations for ${moduleName}. Click Publish to apply.`);
+  };
+
   const save = async (publish: boolean) => {
+    if (subjectIsProtected) {
+      setError('This protected account or role cannot be changed here.');
+      return;
+    }
     setSaving(true);
     setError('');
     setNotice('');
     try {
+      const permissions = expandPublishedPermissions(Array.from(selected));
       const res = await fetch('/api/admin/access-control', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subjectType, subjectId, permissions: Array.from(selected), dataScope, approvalLevel, reason, publish, requireApproval }),
+        body: JSON.stringify({ subjectType, subjectId, permissions, dataScope, approvalLevel, reason, publish, requireApproval }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Unable to save permissions.');
-      setNotice(publish ? 'Permissions published. They take effect on the user\'s next page load or API request.' : 'Draft saved.');
+      setSelected(new Set(permissions));
+      setNotice(
+        publish
+          ? `Published ${permissions.length} permissions for ${subjectType === 'role' ? subjectId : 'selected user'}. Users with this role should sign out and back in once.`
+          : 'Draft saved.',
+      );
+      hydratedSubjectKey.current = '';
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to save permissions.');
@@ -401,8 +449,8 @@ export default function RolesPermissionsClient() {
   };
 
   const applyTemplate = (template: Template) => {
-    const allowed = template.permissions.filter((permission) => canGrantPermission(permission));
-    setSelected(new Set(allowed));
+    const allowed = superActor ? template.permissions : template.permissions.filter((permission) => canGrantPermission(permission));
+    setSelected(new Set(expandPublishedPermissions(allowed)));
     setDataScope(template.dataScope);
     setApprovalLevel(template.approvalLevel);
     setNotice(allowed.length === template.permissions.length
@@ -443,16 +491,26 @@ export default function RolesPermissionsClient() {
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={exportExcel} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50"><Download className="h-4 w-4" />Excel</button>
           <button onClick={exportPdf} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50"><FileDown className="h-4 w-4" />PDF</button>
-          <button onClick={() => save(false)} disabled={saving || loading || !actorCanWrite} className="inline-flex h-10 items-center gap-2 rounded-lg border border-blue-200 bg-white px-3 text-sm font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50"><Save className="h-4 w-4" />Save Draft</button>
-          <button onClick={() => save(true)} disabled={saving || loading || !actorCanWrite} className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"><Check className="h-4 w-4" />Publish</button>
+          <button onClick={() => save(false)} disabled={saving || loading || !canWrite || subjectIsProtected} className="inline-flex h-10 items-center gap-2 rounded-lg border border-blue-200 bg-white px-3 text-sm font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50"><Save className="h-4 w-4" />Save Draft</button>
+          <button onClick={() => save(true)} disabled={saving || loading || !canWrite || subjectIsProtected} className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"><Check className="h-4 w-4" />Publish</button>
         </div>
       </div>
 
       {error ? <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
       {notice ? <div className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">{notice}</div> : null}
-      {!actorCanWrite ? (
+      {superActor ? (
+        <div className="mt-5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-900">
+          Global Super Administrator mode: you can assign any role and permission except the protected Super Administrator role/account.
+        </div>
+      ) : null}
+      {!canWrite ? (
         <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
           View-only mode: you can review permissions, but changes require rights within your own access level.
+        </div>
+      ) : null}
+      {subjectIsProtected ? (
+        <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+          {subjectId} is protected. Select another role or user to edit permissions.
         </div>
       ) : null}
 
@@ -617,8 +675,19 @@ export default function RolesPermissionsClient() {
               <button
                 onClick={() => setSelected(new Set(catalog.flatMap((node) => actions.map((action) => permissionOf(node, action))).filter((permission) => canGrantPermission(permission))))}
                 className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-black hover:bg-slate-50"
-              ><Filter className="h-4 w-4" />Bulk select allowed</button>
+              ><Filter className="h-4 w-4" />{superActor ? 'Select all permissions' : 'Bulk select allowed'}</button>
               <button onClick={() => setSelected(new Set())} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-black hover:bg-slate-50">Bulk remove all</button>
+              {['IT & Support', 'HRIS', 'Payroll', 'Administration'].map((moduleName) => (
+                <button
+                  key={moduleName}
+                  type="button"
+                  onClick={() => enableModuleOperations(moduleName)}
+                  disabled={!canWrite || subjectIsProtected}
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 text-xs font-black text-blue-800 hover:bg-blue-100 disabled:opacity-50"
+                >
+                  Enable {moduleName}
+                </button>
+              ))}
               <button onClick={() => setExpanded(Object.fromEntries(modules.filter((module) => module !== 'All').map((module) => [module, true])))} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-black hover:bg-slate-50">Expand tree</button>
               <button onClick={() => setExpanded({})} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-black hover:bg-slate-50">Collapse tree</button>
             </div>
@@ -681,7 +750,7 @@ export default function RolesPermissionsClient() {
                                       title={grantable ? permission : `${permission} (above your access level)`}
                                       type="checkbox"
                                       checked={selected.has(permission)}
-                                      disabled={!grantable || !actorCanWrite}
+                                      disabled={!grantable || !canWrite || subjectIsProtected}
                                       onChange={() => togglePermission(permission)}
                                       className="h-4 w-4 rounded border-slate-300 text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
                                     />

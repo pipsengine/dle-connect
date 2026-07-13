@@ -1,15 +1,20 @@
 import { NextResponse } from 'next/server';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { readLoginHistory, readUsers, syncUsersFromEmployeeDirectory, updateUser } from '@/lib/auth/auth-store';
-import { AUTH_COOKIE, hasPermission, verifySessionToken } from '@/lib/auth/session';
+import { hasPermission } from '@/lib/auth/permission-match';
+import { isSuperActor } from '@/lib/auth/role-delegation';
+import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 
 const tokenFrom = (request: Request) => request.headers.get('cookie')?.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${AUTH_COOKIE}=`))?.split('=').slice(1).join('=');
 
 const authorize = async (request: Request, permission: string) => {
   const session = await verifySessionToken(tokenFrom(request) ? decodeURIComponent(tokenFrom(request) || '') : '');
   if (!session) return { error: NextResponse.json({ status: 'error', error: 'Unauthenticated' }, { status: 401 }) };
-  const permissions = await effectivePermissionsForUser(session.sub, session.roles);
-  if (!hasPermission(permissions, permission) && !hasPermission(permissions, 'admin.*')) return { error: NextResponse.json({ status: 'error', error: 'Forbidden' }, { status: 403 }) };
+  const superActor = isSuperActor(session);
+  const permissions = superActor ? ['*'] : await effectivePermissionsForUser(session.sub, session.roles);
+  if (!superActor && !hasPermission(permissions, permission) && !hasPermission(permissions, 'admin.*')) {
+    return { error: NextResponse.json({ status: 'error', error: 'Forbidden' }, { status: 403 }) };
+  }
   return { session: { ...session, permissions } };
 };
 

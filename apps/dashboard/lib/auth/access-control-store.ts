@@ -6,7 +6,9 @@ import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import {
   assertActorCanGrantPermissions,
   canActorModifyRole,
+  isSuperActor,
 } from '@/lib/auth/role-delegation';
+import { expandPublishedPermissions } from '@/lib/auth/permission-match';
 import { enterpriseRoles, permissionsForRoles, roleDefinitions } from '@/lib/auth/rbac';
 import type { SessionPayload } from '@/lib/auth/session';
 
@@ -637,8 +639,8 @@ export const saveAccessAssignment = async (
   if (subjectType === 'role' && subjectId === 'Super Administrator') throw new Error('The Super Administrator role is protected and cannot be edited, restricted, or demoted.');
   if (subjectType === 'user' && ['global-admin', 'Admin'].includes(subjectId)) throw new Error('The protected default Super Administrator account cannot be edited, disabled, restricted, or demoted.');
 
-  const actorIsSuper = actor.roles.includes('Super Administrator') || actor.permissions.includes('*') || actor.isGlobalAdmin;
-  const requested = unique(Array.isArray(payload.permissions) ? payload.permissions : []);
+  const actorIsSuper = isSuperActor(actor);
+  const requested = unique(expandPublishedPermissions(Array.isArray(payload.permissions) ? payload.permissions : []));
   if (subjectType === 'role' && !canActorModifyRole(actor.roles, subjectId, actorIsSuper)) {
     throw new Error('You cannot modify permissions for a role higher than your own access level.');
   }
@@ -712,7 +714,7 @@ INSERT [security].[AccessControlAudit] (
 
 export const cloneRolePermissions = async (sourceRole: string, targetRole: string, headers: Headers, actor: SessionPayload, reason = '') => {
   if (targetRole === 'Super Administrator') throw new Error('The Super Administrator role is protected and cannot receive cloned changes.');
-  const actorIsSuper = actor.roles.includes('Super Administrator') || actor.permissions.includes('*') || actor.isGlobalAdmin;
+  const actorIsSuper = isSuperActor(actor);
   if (!canActorModifyRole(actor.roles, sourceRole, actorIsSuper) || !canActorModifyRole(actor.roles, targetRole, actorIsSuper)) {
     throw new Error('You cannot clone permissions for roles above your own access level.');
   }

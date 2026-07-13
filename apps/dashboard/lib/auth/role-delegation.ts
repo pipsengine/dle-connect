@@ -1,5 +1,21 @@
 import { permissionsForRoles } from '@/lib/auth/rbac';
 
+export type SuperActorInput = {
+  sub?: string;
+  roles?: string[];
+  permissions?: string[];
+  isGlobalAdmin?: boolean;
+};
+
+/** Global Super Administrator and equivalent accounts bypass delegation limits. */
+export const isSuperActor = (input?: SuperActorInput | null) => {
+  if (!input) return false;
+  if (input.isGlobalAdmin || input.sub === 'global-admin') return true;
+  if ((input.roles || []).includes('Super Administrator')) return true;
+  if ((input.permissions || []).includes('*')) return true;
+  return false;
+};
+
 /** Higher rank = more authority. Non-listed roles default to module/enterprise rank. */
 export const GLOBAL_SYSTEM_ROLE_RANK: Record<string, number> = {
   'Super Administrator': 1000,
@@ -22,13 +38,16 @@ export const actorMaxRoleRank = (roles: string[], isGlobalAdmin = false) => {
 };
 
 export const canActorAssignRole = (actorRoles: string[], targetRole: string, isGlobalAdmin = false) => {
-  if (targetRole === 'Super Administrator') return isGlobalAdmin;
-  if (isGlobalAdmin || actorRoles.includes('Super Administrator')) return true;
+  if (targetRole === 'Super Administrator') return false;
+  if (isSuperActor({ roles: actorRoles, isGlobalAdmin, sub: isGlobalAdmin ? 'global-admin' : undefined })) return true;
   return roleRank(targetRole) <= actorMaxRoleRank(actorRoles);
 };
 
-export const canActorModifyRole = (actorRoles: string[], targetRole: string, isGlobalAdmin = false) =>
-  canActorAssignRole(actorRoles, targetRole, isGlobalAdmin);
+export const canActorModifyRole = (actorRoles: string[], targetRole: string, isGlobalAdmin = false) => {
+  if (targetRole === 'Super Administrator') return false;
+  if (isSuperActor({ roles: actorRoles, isGlobalAdmin, sub: isGlobalAdmin ? 'global-admin' : undefined })) return true;
+  return roleRank(targetRole) <= actorMaxRoleRank(actorRoles);
+};
 
 export const canActorGrantPermission = (actorPermissions: string[], permission: string) => {
   if (!permission) return true;
@@ -62,20 +81,27 @@ export const filterAssignableRoles = <T extends { name: string }>(
   actorRoles: string[],
   isGlobalAdmin = false,
 ) => {
-  if (isGlobalAdmin) return roles.filter((role) => role.name !== 'Super Administrator');
+  if (isSuperActor({ roles: actorRoles, isGlobalAdmin, sub: isGlobalAdmin ? 'global-admin' : undefined })) {
+    return roles.filter((role) => role.name !== 'Super Administrator');
+  }
   const maxRank = actorMaxRoleRank(actorRoles);
   return roles.filter((role) => role.name !== 'Super Administrator' && roleRank(role.name) <= maxRank);
 };
 
-export const assertActorCanAssignRoles = (actorRoles: string[], requestedRoles: string[], isGlobalAdmin = false) => {
-  const blocked = requestedRoles.filter((role) => !canActorAssignRole(actorRoles, role, isGlobalAdmin));
+export const assertActorCanAssignRoles = (
+  actorRoles: string[],
+  requestedRoles: string[],
+  actor?: SuperActorInput,
+) => {
+  if (isSuperActor({ ...actor, roles: actor?.roles || actorRoles })) return;
+  const blocked = requestedRoles.filter((role) => !canActorAssignRole(actorRoles, role, actor?.isGlobalAdmin));
   if (blocked.length) {
     throw new Error(`You cannot assign roles above your own access level: ${blocked.join(', ')}`);
   }
 };
 
 export const assertActorCanGrantPermissions = (actorPermissions: string[], requested: string[], isGlobalAdmin = false) => {
-  if (isGlobalAdmin || actorPermissions.includes('*')) return;
+  if (isSuperActor({ permissions: actorPermissions, isGlobalAdmin })) return;
   const blocked = requested.filter((permission) => isPermissionAboveActor(permission, actorPermissions));
   if (blocked.length) {
     throw new Error('You cannot grant permissions higher than your own access.');
