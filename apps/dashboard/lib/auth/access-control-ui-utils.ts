@@ -1,4 +1,7 @@
-import type { PermissionNode } from '@/lib/auth/access-control-store';
+type PermissionNodeLike = {
+  module: string;
+  permissionPrefix: string;
+};
 
 export const MODULE_OPERATION_ACTIONS = ['view', 'create', 'edit', 'submit', 'review'] as const;
 
@@ -26,16 +29,15 @@ export const resolveDisplayedPermissions = (input: {
 };
 
 export const moduleOperationPermissions = (
-  catalog: PermissionNode[],
+  catalog: PermissionNodeLike[],
   actions: readonly string[],
   moduleName: string,
-  permissionOf: (node: PermissionNode, action: string) => string,
 ) => {
   const nodes = catalog.filter((node) => node.module === moduleName);
   const picked = new Set<string>();
   nodes.forEach((node) => {
     MODULE_OPERATION_ACTIONS.forEach((action) => {
-      if (actions.includes(action)) picked.add(permissionOf(node, action));
+      if (actions.includes(action)) picked.add(`${node.permissionPrefix}.${action}`);
     });
   });
   return Array.from(picked);

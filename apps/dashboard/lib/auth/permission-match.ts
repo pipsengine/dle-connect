@@ -61,12 +61,12 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
     'it.*',
   ],
   'view_itsm': ['it.view', 'it.create', 'it.submit', 'it.review', 'it.*', 'service-desk.view'],
-  'it.view': ['page.it-support.asset-management.view', 'it.assets.view', 'view_it_assets', 'view_it_support'],
+  'it.view': ['page.it-support.asset-management.view', 'it.assets.view'],
   'it.create': ['it.assets.create'],
   'it.edit': ['it.assets.edit'],
-  'it.assets.view': ['page.it-support.asset-management.view', 'view_it_assets'],
-  'application-support.view': ['view_it_support', 'it.view'],
-  'service-desk.view': ['view_itsm', 'it.view'],
+  'it.assets.view': ['page.it-support.asset-management.view'],
+  'application-support.view': ['it.view'],
+  'service-desk.view': ['it.view'],
 };
 
 const reverseAliases = () => {
@@ -82,8 +82,11 @@ const reverseAliases = () => {
 
 const REVERSE_ALIASES = reverseAliases();
 
-export const hasPermission = (permissions: string[], required: string) => {
+export const hasPermission = (permissions: string[], required: string, visited = new Set<string>()): boolean => {
   if (!required) return true;
+  if (visited.has(required)) return false;
+  visited.add(required);
+
   if (permissions.includes('*')) return true;
   if (permissions.includes(required)) return true;
 
@@ -94,7 +97,7 @@ export const hasPermission = (permissions: string[], required: string) => {
   if (aliases.some((alias) => permissions.includes(alias))) return true;
 
   for (const canonical of REVERSE_ALIASES.get(required) || []) {
-    if (hasPermission(permissions, canonical)) return true;
+    if (hasPermission(permissions, canonical, visited)) return true;
   }
 
   if (required.startsWith('page.')) {

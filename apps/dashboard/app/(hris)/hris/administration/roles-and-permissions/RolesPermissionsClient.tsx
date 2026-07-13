@@ -383,7 +383,7 @@ export default function RolesPermissionsClient() {
   };
 
   const enableModuleOperations = (moduleName: string) => {
-    const modulePermissions = moduleOperationPermissions(catalog, actions, moduleName, permissionOf);
+    const modulePermissions = moduleOperationPermissions(catalog, actions, moduleName);
     setSelected((current) => new Set([...current, ...modulePermissions.filter((permission) => canGrantPermission(permission))]));
     setModuleFilter(moduleName);
     setNotice(`Enabled standard operations for ${moduleName}. Click Publish to apply.`);
