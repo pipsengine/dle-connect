@@ -6,7 +6,6 @@ import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import {
   assertActorCanGrantPermissions,
   canActorModifyRole,
-  clampPermissionsToRoleCeiling,
 } from '@/lib/auth/role-delegation';
 import { enterpriseRoles, permissionsForRoles, roleDefinitions } from '@/lib/auth/rbac';
 import type { SessionPayload } from '@/lib/auth/session';
@@ -602,7 +601,7 @@ export const effectivePermissionsForRoles = async (roles: string[]) => {
   const published = state.published
     .filter((item) => item.subjectType === 'role' && roles.includes(item.subjectId) && item.status === 'published')
     .flatMap((item) => item.permissions);
-  return clampPermissionsToRoleCeiling(unique([...base, ...published]), roles);
+  return unique([...base, ...published]);
 };
 
 const resolveEffectivePermissions = (state: AccessControlState, userId: string, roles: string[]) => {
@@ -614,7 +613,7 @@ const resolveEffectivePermissions = (state: AccessControlState, userId: string, 
   const userGrants = state.published
     .filter((item) => item.subjectType === 'user' && item.subjectId === userId && item.status === 'published')
     .flatMap((item) => item.permissions);
-  return clampPermissionsToRoleCeiling(unique([...base, ...roleGrants, ...userGrants]), roles);
+  return unique([...base, ...roleGrants, ...userGrants]);
 };
 
 export const effectivePermissionsForUser = async (userId: string, roles: string[]) => {

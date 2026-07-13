@@ -163,10 +163,24 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
 export const itSupportRoutePermissionOptions = (pathname: string): string[] | null => {
   const path = normalizePath(pathname);
   if (path.startsWith('/it-support/asset-management')) {
-    return ['view_it_assets', 'view_it_support', 'it.view'];
+    return [
+      'view_it_assets',
+      'view_it_support',
+      'it.view',
+      'it.assets.view',
+      'it.assets.*',
+      'page.it-support.asset-management.view',
+    ];
   }
   if (path.startsWith('/it-support')) {
-    return ['view_it_support', 'it.view'];
+    return [
+      'view_it_support',
+      'it.view',
+      'it.*',
+      'service-desk.view',
+      'application-support.view',
+      'infrastructure.view',
+    ];
   }
   return null;
 };

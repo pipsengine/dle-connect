@@ -42,10 +42,31 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
   'admin.roles.view': ['page.admin.access-control.view'],
   'admin.users.view': ['page.admin.user-management.view'],
   'payroll.view': ['page.payroll.management.view', 'page.hris.payroll.salary-management.view'],
-  'view_it_assets': ['page.it-support.asset-management.view', 'it.assets.view', 'it.view'],
-  'it.view': ['page.it-support.asset-management.view', 'it.assets.view'],
+  'view_it_support': [
+    'it.view',
+    'it.*',
+    'it.assets.view',
+    'it.assets.*',
+    'view_it_assets',
+    'page.it-support.asset-management.view',
+    'service-desk.view',
+    'application-support.view',
+    'infrastructure.view',
+  ],
+  'view_it_assets': [
+    'page.it-support.asset-management.view',
+    'it.assets.view',
+    'it.assets.*',
+    'it.view',
+    'it.*',
+  ],
+  'view_itsm': ['it.view', 'it.create', 'it.submit', 'it.review', 'it.*', 'service-desk.view'],
+  'it.view': ['page.it-support.asset-management.view', 'it.assets.view', 'view_it_assets', 'view_it_support'],
   'it.create': ['it.assets.create'],
   'it.edit': ['it.assets.edit'],
+  'it.assets.view': ['page.it-support.asset-management.view', 'view_it_assets'],
+  'application-support.view': ['view_it_support', 'it.view'],
+  'service-desk.view': ['view_itsm', 'it.view'],
 };
 
 const reverseAliases = () => {
