@@ -255,8 +255,16 @@ export const hashPassword = (password: string, salt = crypto.randomBytes(16).toS
 });
 
 const verifyPassword = (password: string, hash: string, salt: string) => {
-  const next = hashPassword(password, salt).hash;
-  return crypto.timingSafeEqual(Buffer.from(next, 'hex'), Buffer.from(hash, 'hex'));
+  if (!hash || !salt) return false;
+  try {
+    const next = hashPassword(password, salt).hash;
+    const left = Buffer.from(next, 'hex');
+    const right = Buffer.from(hash, 'hex');
+    if (left.length === 0 || left.length !== right.length) return false;
+    return crypto.timingSafeEqual(left, right);
+  } catch {
+    return false;
+  }
 };
 
 const upsertDbUser = async (pool: sql.ConnectionPool, user: UserAccount) => {

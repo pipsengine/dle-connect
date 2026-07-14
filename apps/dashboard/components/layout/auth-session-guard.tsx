@@ -7,7 +7,7 @@ const PUBLIC_PREFIXES = ['/login', '/change-password', '/access-denied'];
 const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
 const IDLE_MS = SESSION_IDLE_TIMEOUT_SECONDS * 1000;
 const ACTIVITY_THROTTLE_MS = 30_000;
-const LAST_ACTIVITY_KEY = 'dle_session_last_activity';
+export const LAST_ACTIVITY_KEY = 'dle_session_last_activity';
 
 const isPublicPath = (pathname: string) =>
   PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -30,7 +30,7 @@ const writeStoredActivity = (at: number) => {
   }
 };
 
-const clearStoredActivity = () => {
+export const clearStoredSessionActivity = () => {
   try {
     window.sessionStorage.removeItem(LAST_ACTIVITY_KEY);
   } catch {
@@ -46,7 +46,7 @@ const redirectToLogin = () => {
 };
 
 const forceLogout = async () => {
-  clearStoredActivity();
+  clearStoredSessionActivity();
   try {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', cache: 'no-store' });
   } catch {
@@ -59,9 +59,15 @@ export function AuthSessionGuard() {
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTouchRef = useRef(Date.now());
   const lastRefreshRef = useRef(0);
+  const sessionReadyRef = useRef(false);
 
   useEffect(() => {
-    if (isPublicPath(window.location.pathname)) return;
+    // Always clear idle markers on public auth pages so a fresh login is not
+    // immediately kicked out by a previous tab's idle timestamp.
+    if (isPublicPath(window.location.pathname)) {
+      clearStoredSessionActivity();
+      return;
+    }
 
     const clearIdleTimer = () => {
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
@@ -81,20 +87,23 @@ export function AuthSessionGuard() {
     };
 
     const verifySession = async (options?: { refresh?: boolean }) => {
-      if (isPublicPath(window.location.pathname)) return;
+      if (isPublicPath(window.location.pathname)) return false;
       try {
         const response = await fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' });
         if (response.status === 401) {
-          clearStoredActivity();
+          clearStoredSessionActivity();
           redirectToLogin();
-          return;
+          return false;
         }
+        sessionReadyRef.current = true;
         if (options?.refresh) {
           lastRefreshRef.current = Date.now();
           markActivity();
         }
+        return true;
       } catch {
         // Network errors should not force logout; middleware protects server routes.
+        return sessionReadyRef.current;
       }
     };
 
@@ -109,35 +118,37 @@ export function AuthSessionGuard() {
       }
     };
 
-    const checkResume = () => {
+    const checkResume = async () => {
       const stored = readStoredActivity();
       const baseline = stored || lastTouchRef.current;
-      if (Date.now() - baseline >= IDLE_MS) {
-        void forceLogout();
-        return false;
-      }
+      if (Date.now() - baseline < IDLE_MS) return true;
+      // Client idle marker is stale — confirm with the server before logging out.
+      // A brand-new login cookie must not be destroyed by an old sessionStorage value.
+      const ok = await verifySession({ refresh: true });
+      if (!ok) return false;
+      markActivity();
       return true;
     };
 
     const onPageShow = () => {
-      if (!checkResume()) return;
-      void verifySession({ refresh: true });
-      armIdleTimer();
+      void (async () => {
+        if (!(await checkResume())) return;
+        armIdleTimer();
+      })();
     };
 
     const onVisibility = () => {
       if (document.visibilityState !== 'visible') return;
-      if (!checkResume()) return;
-      void verifySession({ refresh: true });
-      armIdleTimer();
+      void (async () => {
+        if (!(await checkResume())) return;
+        armIdleTimer();
+      })();
     };
 
-    const stored = readStoredActivity();
-    if (stored && Date.now() - stored >= IDLE_MS) {
-      void forceLogout();
-      return;
-    }
-    markActivity(stored || Date.now());
+    // Fresh mount after login: start a new activity window. Never logout solely
+    // from a leftover sessionStorage timestamp — that blocks re-login after idle.
+    clearStoredSessionActivity();
+    markActivity(Date.now());
     armIdleTimer();
     void verifySession({ refresh: true });
 

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { Eye, EyeOff, LockKeyhole, ShieldCheck } from 'lucide-react';
+import { clearStoredSessionActivity } from '@/components/layout/auth-session-guard';
 
 export default function LoginPage() {
   const [login, setLogin] = useState('');
@@ -25,6 +26,7 @@ export default function LoginPage() {
       });
       const json = await res.json();
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Login failed.');
+      clearStoredSessionActivity();
       const redirectTo = json.data.user?.isGlobalAdmin ? '/' : json.data.redirectTo;
       window.location.assign(redirectTo === '/change-password' ? `/change-password${next ? `?next=${encodeURIComponent(next)}` : ''}` : redirectTo || '/');
     } catch (err) {
