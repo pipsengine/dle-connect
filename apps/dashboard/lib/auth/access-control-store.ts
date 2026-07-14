@@ -3,12 +3,19 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
+import { expandPublishedPermissions } from '@/lib/auth/permission-match';
+import {
+  applyHrisExclusionForRoles,
+  applyHrisExclusionForSubject,
+  PLATFORM_ROLES_WITHOUT_HRIS,
+  PLATFORM_WITHOUT_HRIS_PERMISSIONS,
+  stripHrisPermissions,
+} from '@/lib/auth/platform-access';
 import {
   assertActorCanGrantPermissions,
   canActorModifyRole,
   isSuperActor,
 } from '@/lib/auth/role-delegation';
-import { expandPublishedPermissions } from '@/lib/auth/permission-match';
 import { enterpriseRoles, permissionsForRoles, roleDefinitions } from '@/lib/auth/rbac';
 import type { SessionPayload } from '@/lib/auth/session';
 
@@ -377,6 +384,30 @@ const defaultTemplates = (): PermissionTemplate[] => {
   const all = allCatalogPermissions();
   const pick = (...prefixes: string[]) => all.filter((item) => prefixes.some((prefix) => item.startsWith(`${prefix}.`)));
   return [
+    {
+      id: 'tpl-platform-no-hris',
+      name: 'Platform Admin (Exclude HRIS)',
+      description: 'Full DLE Connect platform access for Admin / System Administrator roles, excluding HR Management / HRIS.',
+      permissions: stripHrisPermissions([
+        ...PLATFORM_WITHOUT_HRIS_PERMISSIONS,
+        ...all.filter((item) => !item.startsWith('hris.')
+          && !item.startsWith('employees.')
+          && !item.startsWith('leave.')
+          && !item.startsWith('payroll.')
+          && !item.startsWith('page.hris.')
+          && !item.startsWith('page.payroll.')
+          && !item.startsWith('overtime.')
+          && !item.startsWith('reporting-line.')
+          && !item.startsWith('performance.')
+          && !item.startsWith('recruitment.')
+          && !item.startsWith('onboarding.')
+          && !item.startsWith('offboarding.')
+          && !item.startsWith('attendance.')
+          && !item.startsWith('benefits.')),
+      ]),
+      dataScope: 'Global',
+      approvalLevel: 'L3 - Super Admin',
+    },
     { id: 'tpl-read-only', name: 'Read Only', description: 'View, export, print, and download only.', permissions: all.filter((item) => /\.(view|export|print|download)$/.test(item)), dataScope: 'Company', approvalLevel: 'L1 - User' },
     { id: 'tpl-module-admin', name: 'Module Administrator', description: 'Operational administration without security override.', permissions: all.filter((item) => !item.startsWith('security.') && !item.startsWith('audit.') && !item.startsWith('admin.roles.')), dataScope: 'Company', approvalLevel: 'L2 - Manager' },
     { id: 'tpl-approver', name: 'Approver', description: 'Workflow review and decision permissions.', permissions: all.filter((item) => /\.(view|approve|reject|export)$/.test(item)), dataScope: 'Team', approvalLevel: 'L2 - Manager' },
@@ -603,7 +634,7 @@ export const effectivePermissionsForRoles = async (roles: string[]) => {
   const published = state.published
     .filter((item) => item.subjectType === 'role' && roles.includes(item.subjectId) && item.status === 'published')
     .flatMap((item) => item.permissions);
-  return unique([...base, ...published]);
+  return applyHrisExclusionForRoles(unique([...base, ...published]), roles);
 };
 
 const resolveEffectivePermissions = (state: AccessControlState, userId: string, roles: string[]) => {
@@ -615,7 +646,7 @@ const resolveEffectivePermissions = (state: AccessControlState, userId: string, 
   const userGrants = state.published
     .filter((item) => item.subjectType === 'user' && item.subjectId === userId && item.status === 'published')
     .flatMap((item) => item.permissions);
-  return unique([...base, ...roleGrants, ...userGrants]);
+  return applyHrisExclusionForRoles(unique([...base, ...roleGrants, ...userGrants]), roles);
 };
 
 export const effectivePermissionsForUser = async (userId: string, roles: string[]) => {
@@ -640,7 +671,10 @@ export const saveAccessAssignment = async (
   if (subjectType === 'user' && ['global-admin', 'Admin'].includes(subjectId)) throw new Error('The protected default Super Administrator account cannot be edited, disabled, restricted, or demoted.');
 
   const actorIsSuper = isSuperActor(actor);
-  const requested = unique(expandPublishedPermissions(Array.isArray(payload.permissions) ? payload.permissions : []));
+  let requested = unique(expandPublishedPermissions(Array.isArray(payload.permissions) ? payload.permissions : []));
+  if (subjectType === 'role' && PLATFORM_ROLES_WITHOUT_HRIS.has(subjectId)) {
+    requested = stripHrisPermissions(requested);
+  }
   if (subjectType === 'role' && !canActorModifyRole(actor.roles, subjectId, actorIsSuper)) {
     throw new Error('You cannot modify permissions for a role higher than your own access level.');
   }
@@ -720,6 +754,35 @@ export const cloneRolePermissions = async (sourceRole: string, targetRole: strin
   }
   const permissions = await effectivePermissionsForRoles([sourceRole]);
   return saveAccessAssignment({ subjectType: 'role', subjectId: targetRole, permissions, publish: false, reason: reason || `Cloned from ${sourceRole}` }, headers, actor);
+};
+
+/** One-click: publish a role's baseline RBAC permissions (and platform-no-HRIS pack when applicable). */
+export const publishRoleBaselinePermissions = async (
+  targetRole: string,
+  headers: Headers,
+  actor: SessionPayload,
+  options?: { includePlatformPack?: boolean; reason?: string },
+) => {
+  if (targetRole === 'Super Administrator') throw new Error('The Super Administrator role is protected and cannot receive published changes.');
+  if (!isSuperActor(actor)) throw new Error('Only the Global Super Administrator can publish role baselines in one step.');
+  const baseline = permissionsForRoles([targetRole]);
+  const platformPack = PLATFORM_ROLES_WITHOUT_HRIS.has(targetRole) || options?.includePlatformPack
+    ? [...PLATFORM_WITHOUT_HRIS_PERMISSIONS]
+    : [];
+  const permissions = applyHrisExclusionForSubject(
+    unique([...baseline, ...platformPack]),
+    'role',
+    targetRole,
+  );
+  return saveAccessAssignment({
+    subjectType: 'role',
+    subjectId: targetRole,
+    permissions,
+    dataScope: 'Global',
+    approvalLevel: 'L3 - Super Admin',
+    publish: true,
+    reason: options?.reason || `Published baseline permissions for ${targetRole}`,
+  }, headers, actor);
 };
 
 export const compareRolePermissions = async (leftRole: string, rightRole: string) => {

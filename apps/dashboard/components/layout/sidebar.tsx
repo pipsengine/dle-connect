@@ -100,14 +100,26 @@ export function Sidebar({
   }, [pathname]);
 
   const visibleNavigation = useMemo(() => {
-    const hrText = `${sessionContext.department} ${sessionContext.unit} ${sessionContext.roles.join(' ')}`.toLowerCase();
     const canUseHrManagement =
-      sessionContext.isGlobalAdmin ||
-      sessionContext.roles.includes('Super Administrator') ||
-      /\bhr\b/.test(hrText) ||
-      hrText.includes('human resources') ||
-      hrText.includes('human resource') ||
-      hrText.includes('human capital');
+      sessionContext.isGlobalAdmin
+      || sessionContext.roles.includes('Super Administrator')
+      || (
+        !sessionContext.roles.every((role) => role === 'Admin' || role === 'System Administrator' || role === 'Employee' || role === 'Read-Only User' || role === 'Auditor')
+        && (
+          hasPermission(permissions, 'hris.view')
+          || hasPermission(permissions, 'view_hris')
+          || hasPermission(permissions, 'page.hris.management.view')
+        )
+      )
+      || (
+        sessionContext.roles.some((role) => /hr |human resource|payroll administrator|payroll officer/i.test(role))
+        && (hasPermission(permissions, 'hris.view') || hasPermission(permissions, 'view_hris'))
+      );
+
+    const platformOnly = sessionContext.roles.length > 0
+      && sessionContext.roles
+        .filter((role) => !['Employee', 'Read-Only User', 'Auditor'].includes(role))
+        .every((role) => role === 'Admin' || role === 'System Administrator');
 
     const canSeeAdministration = canAccessAdministrationCentre(sessionContext);
 
@@ -115,8 +127,14 @@ export function Sidebar({
       .map((item) => {
         if (item.id === 'administration' && !canSeeAdministration) return null;
         const subItems = item.subItems?.filter((sub) => {
-          if (sub.route === '/hris') return canUseHrManagement && canAccess(permissions, requiredPermission(sub.route));
+          if (sub.route === '/hris') {
+            if (platformOnly && !sessionContext.isGlobalAdmin && !sessionContext.roles.includes('Super Administrator')) return false;
+            return canUseHrManagement;
+          }
           if (sub.route === '/workforce-portal') return true;
+          if (sub.route?.startsWith('/hris/') && platformOnly && !sessionContext.isGlobalAdmin && !sessionContext.roles.includes('Super Administrator')) {
+            return false;
+          }
           return canAccess(permissions, requiredPermission(sub.route));
         });
         const canSeeItem = item.id === 'hris'

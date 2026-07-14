@@ -1,5 +1,6 @@
 import type { SessionPayload } from '@/lib/auth/session';
 import { canAccessAdministrationCentre, hasAnyPermission, hasPermission } from '@/lib/auth/permission-match';
+import { PLATFORM_ROLES_WITHOUT_HRIS } from '@/lib/auth/platform-access';
 import { canAccessPayrollPath, payrollRoutePermissionOptions } from '@/lib/access/payroll-access';
 
 type SessionLike = Pick<SessionPayload, 'department' | 'unit' | 'roles' | 'permissions' | 'isGlobalAdmin'>;
@@ -126,6 +127,13 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
   const roles = session.roles || [];
   const permissions = session.permissions || [];
   if (session.isGlobalAdmin || roles.includes('Super Administrator')) return true;
+
+  // Admin / System Administrator alone never access HRIS — even via department heuristics.
+  const elevated = roles.filter((role) => !['Employee', 'Read-Only User', 'Auditor'].includes(role));
+  if (elevated.length && elevated.every((role) => PLATFORM_ROLES_WITHOUT_HRIS.has(role))) {
+    return false;
+  }
+
   const path = normalizePath(pathname);
   if (path.includes('/authorize') || path.includes('/email-action')) return true;
   const explicitOptions = hrisRoutePermissionOptions(path);
@@ -138,7 +146,7 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
     return true;
   }
   if (!isHrPortalUser(session)) return false;
-  if (path === '/hris') return hasAnyPermission(permissions, ['page.hris.management.view', 'hris.view']);
+  if (path === '/hris') return hasAnyPermission(permissions, ['page.hris.management.view', 'hris.view', 'view_hris']);
   if (path.startsWith('/hris/employees')) return hasAnyPermission(permissions, ['employees.view', 'hris.view']);
   if (path.startsWith('/hris/leave-management')) return hasAnyPermission(permissions, ['leave.view', 'hris.view']);
   if (path.startsWith('/hris/performance-management')) return hasAnyPermission(permissions, ['performance.view', 'hris.performance-management', 'hris.view', 'page.hris.management.view']);
@@ -157,7 +165,7 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
   }
   if (path.startsWith('/hris/administration/backup-disaster-recovery')) return hasAnyPermission(permissions, ['backup.view', 'backup.configure', 'page.admin.backup-disaster-recovery.view', 'security.configure']);
   if (path.startsWith('/hris/administration')) return hasAnyPermission(permissions, ['admin.roles.view', 'admin.users.view', 'audit.view', 'backup.view', 'backup.configure']);
-  return hasAnyPermission(permissions, ['page.hris.management.view', 'hris.view']);
+  return hasAnyPermission(permissions, ['page.hris.management.view', 'hris.view', 'view_hris']);
 };
 
 export const itSupportRoutePermissionOptions = (pathname: string): string[] | null => {

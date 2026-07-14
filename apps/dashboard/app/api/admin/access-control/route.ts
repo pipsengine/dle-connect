@@ -3,6 +3,7 @@ import {
   cloneRolePermissions,
   compareRolePermissions,
   effectivePermissionsForUser,
+  publishRoleBaselinePermissions,
   readAccessControlPayload,
   saveAccessAssignment,
 } from '@/lib/auth/access-control-store';
@@ -68,6 +69,13 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     if (body.action === 'clone-role') {
       const result = await cloneRolePermissions(String(body.sourceRole || ''), String(body.targetRole || ''), request.headers, auth.session!, String(body.reason || ''));
+      return NextResponse.json({ status: 'success', data: result });
+    }
+    if (body.action === 'publish-role-baseline') {
+      const result = await publishRoleBaselinePermissions(String(body.targetRole || body.subjectId || ''), request.headers, auth.session!, {
+        includePlatformPack: Boolean(body.includePlatformPack),
+        reason: String(body.reason || ''),
+      });
       return NextResponse.json({ status: 'success', data: result });
     }
     const result = await saveAccessAssignment(body, request.headers, auth.session!);

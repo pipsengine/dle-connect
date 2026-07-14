@@ -25,6 +25,7 @@ import {
   resolveDisplayedPermissions,
 } from '@/lib/auth/access-control-ui-utils';
 import { expandPublishedPermissions } from '@/lib/auth/permission-match';
+import { PLATFORM_ROLES_WITHOUT_HRIS, PLATFORM_WITHOUT_HRIS_PERMISSIONS, stripHrisPermissions } from '@/lib/auth/platform-access';
 import {
   canActorGrantPermission,
   canActorModifyRole,
@@ -389,6 +390,43 @@ export default function RolesPermissionsClient() {
     setNotice(`Enabled standard operations for ${moduleName}. Click Publish to apply.`);
   };
 
+  const applyPlatformNoHrisPack = () => {
+    const next = stripHrisPermissions([
+      ...Array.from(selected),
+      ...PLATFORM_WITHOUT_HRIS_PERMISSIONS,
+    ]);
+    setSelected(new Set(next.filter((permission) => canGrantPermission(permission))));
+    setNotice('Applied Platform Admin pack (all modules except HRIS). Click Publish to apply.');
+  };
+
+  const publishRoleBaseline = async () => {
+    if (subjectType !== 'role' || !subjectId || subjectIsProtected) return;
+    setSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const res = await fetch('/api/admin/access-control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'publish-role-baseline',
+          targetRole: subjectId,
+          includePlatformPack: PLATFORM_ROLES_WITHOUT_HRIS.has(subjectId),
+          reason: reason || `One-click baseline publish for ${subjectId}`,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Unable to publish role baseline.');
+      setNotice(`Published baseline permissions for ${subjectId}${PLATFORM_ROLES_WITHOUT_HRIS.has(subjectId) ? ' (HRIS excluded)' : ''}. Users should sign out and back in once.`);
+      hydratedSubjectKey.current = '';
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to publish role baseline.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const save = async (publish: boolean) => {
     if (subjectIsProtected) {
       setError('This protected account or role cannot be changed here.');
@@ -398,7 +436,11 @@ export default function RolesPermissionsClient() {
     setError('');
     setNotice('');
     try {
-      const permissions = expandPublishedPermissions(Array.from(selected));
+      const permissions = expandPublishedPermissions(
+        subjectType === 'role' && PLATFORM_ROLES_WITHOUT_HRIS.has(subjectId)
+          ? stripHrisPermissions(Array.from(selected))
+          : Array.from(selected),
+      );
       const res = await fetch('/api/admin/access-control', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -493,6 +535,17 @@ export default function RolesPermissionsClient() {
           <button onClick={exportPdf} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50"><FileDown className="h-4 w-4" />PDF</button>
           <button onClick={() => save(false)} disabled={saving || loading || !canWrite || subjectIsProtected} className="inline-flex h-10 items-center gap-2 rounded-lg border border-blue-200 bg-white px-3 text-sm font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50"><Save className="h-4 w-4" />Save Draft</button>
           <button onClick={() => save(true)} disabled={saving || loading || !canWrite || subjectIsProtected} className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"><Check className="h-4 w-4" />Publish</button>
+          {superActor && subjectType === 'role' && !subjectIsProtected ? (
+            <button
+              type="button"
+              onClick={() => void publishRoleBaseline()}
+              disabled={saving || loading}
+              className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-3 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-50"
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Publish role baseline
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -501,6 +554,7 @@ export default function RolesPermissionsClient() {
       {superActor ? (
         <div className="mt-5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-900">
           Global Super Administrator mode: you can assign any role and permission except the protected Super Administrator role/account.
+          Use <span className="font-black">Publish role baseline</span> for one-click setup of Admin / System Administrator (platform access without HRIS).
         </div>
       ) : null}
       {!canWrite ? (
@@ -682,12 +736,22 @@ export default function RolesPermissionsClient() {
                   key={moduleName}
                   type="button"
                   onClick={() => enableModuleOperations(moduleName)}
-                  disabled={!canWrite || subjectIsProtected}
+                  disabled={!canWrite || subjectIsProtected || (Boolean(subjectType === 'role' && PLATFORM_ROLES_WITHOUT_HRIS.has(subjectId) && (moduleName === 'HRIS' || moduleName === 'Payroll')))}
                   className="inline-flex h-9 items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 text-xs font-black text-blue-800 hover:bg-blue-100 disabled:opacity-50"
                 >
                   Enable {moduleName}
                 </button>
               ))}
+              {superActor || (subjectType === 'role' && PLATFORM_ROLES_WITHOUT_HRIS.has(subjectId)) ? (
+                <button
+                  type="button"
+                  onClick={applyPlatformNoHrisPack}
+                  disabled={!canWrite || subjectIsProtected}
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-black text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                >
+                  Grant platform access (exclude HRIS)
+                </button>
+              ) : null}
               <button onClick={() => setExpanded(Object.fromEntries(modules.filter((module) => module !== 'All').map((module) => [module, true])))} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-black hover:bg-slate-50">Expand tree</button>
               <button onClick={() => setExpanded({})} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-black hover:bg-slate-50">Collapse tree</button>
             </div>

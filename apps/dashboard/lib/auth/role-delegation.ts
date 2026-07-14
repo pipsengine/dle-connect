@@ -20,11 +20,11 @@ export const isSuperActor = (input?: SuperActorInput | null) => {
 export const GLOBAL_SYSTEM_ROLE_RANK: Record<string, number> = {
   'Super Administrator': 1000,
   'System Administrator': 900,
+  Admin: 880,
   'Application Administrator': 850,
   'Security Administrator': 800,
   'Audit Administrator': 800,
   'Integration Administrator': 800,
-  Admin: 200,
 };
 
 const DEFAULT_ROLE_RANK = 100;

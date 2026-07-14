@@ -1,3 +1,5 @@
+import { PLATFORM_WITHOUT_HRIS_PERMISSIONS } from '@/lib/auth/platform-access';
+
 export const actions = ['view', 'create', 'edit', 'delete', 'submit', 'approve', 'reject', 'export', 'import', 'configure', 'audit'] as const;
 
 export const enterpriseRoles = [
@@ -116,10 +118,12 @@ const role = (name: EnterpriseRole, category: string, permissions: string[], des
   description,
 });
 
+const platformWithoutHris = [...PLATFORM_WITHOUT_HRIS_PERMISSIONS];
+
 export const roleDefinitions: RoleDefinition[] = [
-  role('Super Administrator', 'Global / System', ['*'], 'Unrestricted emergency system administration.'),
-  role('Admin', 'Global / System', ['enterprise.view', 'admin.roles.view'], 'Limited delegated administrator. Additional module rights are granted via Access Control Centre.'),
-  role('System Administrator', 'Global / System', ['admin.*', 'security.*', 'audit.*', 'integration.*', 'hris.view'], 'System settings and platform operations.'),
+  role('Super Administrator', 'Global / System', ['*'], 'Unrestricted emergency system administration including HRIS.'),
+  role('Admin', 'Global / System', platformWithoutHris, 'Full platform administration across DLE Connect modules except HRIS / HR Management. Only Super Administrators may access HRIS.'),
+  role('System Administrator', 'Global / System', platformWithoutHris, 'System and platform operations across all modules except HRIS / HR Management. Only Super Administrators may access HRIS.'),
   role('Application Administrator', 'Global / System', ['admin.*', 'hris.*', 'workflow.*'], 'Application configuration and module administration.'),
   role('Security Administrator', 'Global / System', ['security.*', 'admin.users.view', 'admin.users.edit', 'audit.view'], 'Identity, session, lockout, MFA, and access control operations.'),
   role('Audit Administrator', 'Global / System', ['audit.*', 'admin.roles.view', 'admin.users.view'], 'Security and compliance audit administration.'),
