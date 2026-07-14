@@ -237,7 +237,8 @@ Original error: $($_.Exception.Message)
 function Copy-DirectoryContents {
   param(
     [Parameter(Mandatory = $true)][string]$SourcePath,
-    [Parameter(Mandatory = $true)][string]$DestinationPath
+    [Parameter(Mandatory = $true)][string]$DestinationPath,
+    [string[]]$ExcludeDirectoryNames = @()
   )
 
   if (-not (Test-Path -LiteralPath $SourcePath)) {
@@ -249,7 +250,99 @@ function Copy-DirectoryContents {
   }
 
   New-Item -ItemType Directory -Path $DestinationPath -Force | Out-Null
-  Copy-Item -Path (Join-Path $SourcePath "*") -Destination $DestinationPath -Recurse -Force
+  Copy-TreeSafe -SourcePath $SourcePath -DestinationPath $DestinationPath -ExcludeDirectoryNames $ExcludeDirectoryNames
+}
+
+function Test-IsReparsePoint {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  try {
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    return [bool]($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)
+  } catch {
+    return $false
+  }
+}
+
+function Copy-TreeSafe {
+  param(
+    [Parameter(Mandatory = $true)][string]$SourcePath,
+    [Parameter(Mandatory = $true)][string]$DestinationPath,
+    [string[]]$ExcludeDirectoryNames = @()
+  )
+
+  $sourceFull = [System.IO.Path]::GetFullPath($SourcePath).TrimEnd('\', '/')
+  $destFull = [System.IO.Path]::GetFullPath($DestinationPath).TrimEnd('\', '/')
+  $excludeSet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  foreach ($name in $ExcludeDirectoryNames) {
+    if (-not [string]::IsNullOrWhiteSpace($name)) { [void]$excludeSet.Add($name.Trim()) }
+  }
+
+  # Prefer robocopy with /XJ so junctions/symlinks cannot recurse into the publish site.
+  $robocopy = Get-Command robocopy.exe -ErrorAction SilentlyContinue
+  if ($robocopy) {
+    $args = @(
+      $sourceFull,
+      $destFull,
+      '/E',
+      '/COPY:DAT',
+      '/R:1',
+      '/W:1',
+      '/NFL',
+      '/NDL',
+      '/NJH',
+      '/NJS',
+      '/NP',
+      '/XJ'
+    )
+    foreach ($name in $excludeSet) {
+      $args += '/XD'
+      $args += $name
+    }
+    & robocopy.exe @args | Out-Null
+    $code = $LASTEXITCODE
+    # Robocopy 0-7 = success / partial copy; 8+ = failure.
+    if ($code -ge 8) {
+      throw "Safe copy failed (robocopy exit $code) from $sourceFull to $destFull"
+    }
+    return
+  }
+
+  # Fallback: manual copy that skips reparse points and excluded directory names.
+  New-Item -ItemType Directory -Path $destFull -Force | Out-Null
+  Get-ChildItem -LiteralPath $sourceFull -Force | ForEach-Object {
+    if ($_.PSIsContainer -and $excludeSet.Contains($_.Name)) { return }
+    if (Test-IsReparsePoint -Path $_.FullName) {
+      Write-Warning "Skipping reparse point during publish copy: $($_.FullName)"
+      return
+    }
+    $target = Join-Path $destFull $_.Name
+    if ($_.PSIsContainer) {
+      Copy-TreeSafe -SourcePath $_.FullName -DestinationPath $target -ExcludeDirectoryNames $ExcludeDirectoryNames
+    } else {
+      Copy-Item -LiteralPath $_.FullName -Destination $target -Force
+    }
+  }
+}
+
+function Clear-StandalonePublishLoops {
+  param([Parameter(Mandatory = $true)][string]$StandaloneRoot)
+
+  # Next standalone tracing can pull in repo folders. A nested deployment\iis\site
+  # (or a junction to the publish target) causes Copy-Item -Recurse path explosions.
+  $suspects = @(
+    (Join-Path $StandaloneRoot "deployment"),
+    (Join-Path $StandaloneRoot "deployment\iis\site")
+  )
+  foreach ($path in $suspects) {
+    if (-not (Test-Path -LiteralPath $path)) { continue }
+    Write-Warning "Removing standalone path that can recurse into the IIS site: $path"
+    try {
+      Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
+    } catch {
+      # If it's a junction, remove the link without descending.
+      cmd /c "rmdir `"$path`"" | Out-Null
+    }
+  }
 }
 
 function Invoke-CheckedCommand {
@@ -406,7 +499,8 @@ try {
 
   New-Item -ItemType Directory -Path $ResolvedOutputPath | Out-Null
 
-  Copy-Item -Path (Join-Path $StandalonePath "*") -Destination $ResolvedOutputPath -Recurse -Force
+  Clear-StandalonePublishLoops -StandaloneRoot $StandalonePath
+  Copy-TreeSafe -SourcePath $StandalonePath -DestinationPath $ResolvedOutputPath -ExcludeDirectoryNames @('deployment')
 
   $ServerSource = Join-Path $BuildPath "server"
   $ServerTarget = Join-Path $ResolvedOutputPath "apps\dashboard\.next\server"
