@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import {
   AUTH_COOKIE,
+  authCookieMaxAgeForUser,
   authCookieOptions,
   clearAuthCookieOptions,
   refreshSessionToken,
@@ -33,6 +34,10 @@ export async function GET(request: Request) {
     : await effectivePermissionsForUser(session.sub, session.roles);
   const data = { ...session, permissions, lastActivityAt: Math.floor(Date.now() / 1000) };
   const response = NextResponse.json({ status: 'success', data });
-  response.cookies.set(AUTH_COOKIE, await refreshSessionToken(session, permissions), authCookieOptions(request));
+  response.cookies.set(
+    AUTH_COOKIE,
+    await refreshSessionToken(session, permissions),
+    authCookieOptions(request, { maxAgeSeconds: authCookieMaxAgeForUser(session) }),
+  );
   return response;
 }

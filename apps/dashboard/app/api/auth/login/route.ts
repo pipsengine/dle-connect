@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { authenticate } from '@/lib/auth/auth-store';
 import {
   AUTH_COOKIE,
+  authCookieMaxAgeForUser,
   authCookieOptions,
   createSessionToken,
   roleHome,
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
     const token = await createSessionToken(user);
     const redirectTo = user.firstLoginRequired || user.passwordResetRequired ? '/change-password' : roleHome(user.roles);
     const response = NextResponse.json({ status: 'success', data: { user, redirectTo } });
-    response.cookies.set(AUTH_COOKIE, token, authCookieOptions(request));
+    response.cookies.set(AUTH_COOKIE, token, authCookieOptions(request, { maxAgeSeconds: authCookieMaxAgeForUser(user) }));
     return response;
   } catch (error) {
     return err(401, error instanceof Error ? error.message : 'Unable to login.');

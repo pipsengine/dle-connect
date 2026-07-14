@@ -5,31 +5,47 @@ import { CheckCircle2, Eye, EyeOff, KeyRound } from 'lucide-react';
 import { passwordPolicyErrors } from '@/lib/auth/session';
 
 export default function ChangePasswordPage() {
+  const [login, setLogin] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [show, setShow] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [needsLogin, setNeedsLogin] = useState(false);
   const next = useMemo(() => new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search).get('next') || '', []);
+  const suggestedLogin = useMemo(() => new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search).get('user') || '', []);
   const policy = passwordPolicyErrors(newPassword);
 
   useEffect(() => {
     let active = true;
+    if (suggestedLogin) setLogin(suggestedLogin);
     fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
-      .then((res) => res.ok ? res.json() : null)
-      .then((json) => {
+      .then(async (res) => {
+        if (!active) return;
+        if (res.status === 401) {
+          setNeedsLogin(true);
+          return;
+        }
+        if (!res.ok) return;
+        const json = await res.json().catch(() => null);
         const user = json?.data;
-        if (!active || !user) return;
+        if (!user) {
+          setNeedsLogin(true);
+          return;
+        }
+        if (user.username && !suggestedLogin) setLogin(String(user.username));
         if (user.isGlobalAdmin || (!user.firstLoginRequired && !user.passwordResetRequired)) {
           window.location.replace(next || '/');
         }
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (active) setNeedsLogin(true);
+      });
     return () => {
       active = false;
     };
-  }, [next]);
+  }, [next, suggestedLogin]);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -40,13 +56,20 @@ export default function ChangePasswordPage() {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
+        body: JSON.stringify({
+          login: login.trim() || undefined,
+          currentPassword,
+          newPassword,
+          confirmPassword,
+        }),
       });
       const json = await res.json();
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to change password.');
       window.location.assign(json.data.redirectTo || next || '/');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to change password.');
+      const message = err instanceof Error ? err.message : 'Unable to change password.';
+      setError(message);
+      if (/unauthenticated|session expired/i.test(message)) setNeedsLogin(true);
     } finally {
       setLoading(false);
     }
@@ -62,7 +85,25 @@ export default function ChangePasswordPage() {
             <p className="mt-1 text-sm font-semibold text-slate-500">First login and password resets must be completed before accessing the application.</p>
           </div>
         </div>
+        {needsLogin ? (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
+            Your session is not active. Enter your username/employee code and current password to finish the reset.
+          </div>
+        ) : null}
         <form onSubmit={submit} className="mt-6 space-y-4">
+          {needsLogin ? (
+            <label className="block">
+              <span className="text-xs font-black uppercase text-slate-600">Username / Employee Code</span>
+              <input
+                value={login}
+                onChange={(event) => setLogin(event.target.value)}
+                required
+                autoComplete="username"
+                className="mt-2 h-12 w-full rounded-xl border border-slate-200 px-4 text-sm font-bold outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                placeholder="e.g. NYSC0032"
+              />
+            </label>
+          ) : null}
           {[
             ['Current Password', currentPassword, setCurrentPassword, 'current-password'],
             ['New Password', newPassword, setNewPassword, 'new-password'],
@@ -88,7 +129,7 @@ export default function ChangePasswordPage() {
             </div>
           </div>
           {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
-          <button disabled={loading || policy.length > 0 || newPassword !== confirmPassword} className="h-12 w-full rounded-xl bg-slate-950 text-sm font-black text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300">
+          <button disabled={loading || policy.length > 0 || newPassword !== confirmPassword || (needsLogin && !login.trim())} className="h-12 w-full rounded-xl bg-slate-950 text-sm font-black text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300">
             {loading ? 'Updating password' : 'Update Password'}
           </button>
         </form>

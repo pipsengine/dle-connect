@@ -3,9 +3,14 @@ export const AUTH_COOKIE = 'dle_session';
 export {
   SESSION_IDLE_TIMEOUT_SECONDS,
   SESSION_MAX_AGE_SECONDS,
+  SESSION_PASSWORD_CHANGE_GRACE_SECONDS,
 } from '@/lib/auth/session-timeout';
 
-import { SESSION_IDLE_TIMEOUT_SECONDS, SESSION_MAX_AGE_SECONDS } from '@/lib/auth/session-timeout';
+import {
+  SESSION_IDLE_TIMEOUT_SECONDS,
+  SESSION_MAX_AGE_SECONDS,
+  SESSION_PASSWORD_CHANGE_GRACE_SECONDS,
+} from '@/lib/auth/session-timeout';
 
 export type SessionUser = {
   userId: string;
@@ -108,6 +113,12 @@ export const sessionUserFromPayload = (session: SessionPayload, permissions?: st
   isGlobalAdmin: session.isGlobalAdmin,
 });
 
+const idleLimitForSession = (session: Pick<SessionPayload, 'firstLoginRequired' | 'passwordResetRequired'> | Pick<SessionUser, 'firstLoginRequired' | 'passwordResetRequired'>) => (
+  session.firstLoginRequired || session.passwordResetRequired
+    ? SESSION_PASSWORD_CHANGE_GRACE_SECONDS
+    : SESSION_IDLE_TIMEOUT_SECONDS
+);
+
 export const createSessionToken = async (
   user: SessionUser,
   options?: { iat?: number; lastActivityAt?: number },
@@ -116,7 +127,7 @@ export const createSessionToken = async (
   const iat = options?.iat && options.iat > 0 ? options.iat : now;
   const lastActivityAt = options?.lastActivityAt && options.lastActivityAt > 0 ? options.lastActivityAt : now;
   const absoluteExp = iat + SESSION_MAX_AGE_SECONDS;
-  const idleExp = lastActivityAt + SESSION_IDLE_TIMEOUT_SECONDS;
+  const idleExp = lastActivityAt + idleLimitForSession(user);
   const payload: SessionPayload = {
     sub: user.userId,
     username: user.username,
@@ -160,11 +171,23 @@ export const normalizeSession = (session: SessionPayload): SessionPayload => ({
   lastActivityAt: Number(session.lastActivityAt || session.iat || 0) || undefined,
 });
 
-export const isSessionIdleExpired = (session: Pick<SessionPayload, 'iat' | 'lastActivityAt' | 'exp'>, at = nowSeconds()) => {
-  if (session.exp && session.exp < at) return true;
+export const isSessionIdleExpired = (
+  session: Pick<SessionPayload, 'iat' | 'lastActivityAt' | 'exp' | 'firstLoginRequired' | 'passwordResetRequired'>,
+  at = nowSeconds(),
+) => {
+  if (session.exp && session.exp < at) {
+    // Re-check with password-change grace so a stale exp written under the short idle
+    // window does not lock users out of forced password change.
+    const lastActivity = Number(session.lastActivityAt || session.iat || 0);
+    const idleLimit = idleLimitForSession(session);
+    if (lastActivity && at - lastActivity <= idleLimit && (!session.iat || at - session.iat <= SESSION_MAX_AGE_SECONDS)) {
+      return false;
+    }
+    return true;
+  }
   const lastActivity = Number(session.lastActivityAt || session.iat || 0);
   if (!lastActivity) return true;
-  if (at - lastActivity > SESSION_IDLE_TIMEOUT_SECONDS) return true;
+  if (at - lastActivity > idleLimitForSession(session)) return true;
   if (session.iat && at - session.iat > SESSION_MAX_AGE_SECONDS) return true;
   return false;
 };
@@ -192,14 +215,17 @@ export const clearAuthCookieOptions = (request?: Request) => ({
   maxAge: 0,
 });
 
-export const authCookieOptions = (request?: Request) => ({
+export const authCookieOptions = (request?: Request, options?: { maxAgeSeconds?: number }) => ({
   httpOnly: true,
   sameSite: 'lax' as const,
   secure: shouldUseSecureAuthCookie(request),
   path: '/',
   // Cookie itself expires with the idle window; activity refreshes it.
-  maxAge: SESSION_IDLE_TIMEOUT_SECONDS,
+  maxAge: options?.maxAgeSeconds ?? SESSION_IDLE_TIMEOUT_SECONDS,
 });
+
+export const authCookieMaxAgeForUser = (user: Pick<SessionUser, 'firstLoginRequired' | 'passwordResetRequired'>) =>
+  idleLimitForSession(user);
 
 export const passwordPolicyErrors = (password: string) => {
   const errors: string[] = [];
