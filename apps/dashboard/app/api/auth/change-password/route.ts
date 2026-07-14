@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { changePassword } from '@/lib/auth/auth-store';
-import { AUTH_COOKIE, createSessionToken, roleHome, verifySessionToken, SESSION_MAX_AGE_SECONDS, shouldUseSecureAuthCookie } from '@/lib/auth/session';
+import { AUTH_COOKIE, authCookieOptions, createSessionToken, roleHome, verifySessionToken } from '@/lib/auth/session';
 
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 
@@ -15,13 +15,7 @@ export async function POST(request: Request) {
     const user = await changePassword(session.sub, body.currentPassword ? String(body.currentPassword) : undefined, String(body.newPassword || ''), request.headers, session.username);
     const nextToken = await createSessionToken(user);
     const response = NextResponse.json({ status: 'success', data: { user, redirectTo: roleHome(user.roles) } });
-    response.cookies.set(AUTH_COOKIE, nextToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: shouldUseSecureAuthCookie(request),
-      path: '/',
-      maxAge: SESSION_MAX_AGE_SECONDS,
-    });
+    response.cookies.set(AUTH_COOKIE, nextToken, authCookieOptions(request));
     return response;
   } catch (error) {
     return err(400, error instanceof Error ? error.message : 'Unable to change password.');

@@ -1,5 +1,11 @@
 export const AUTH_COOKIE = 'dle_session';
-export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
+
+export {
+  SESSION_IDLE_TIMEOUT_SECONDS,
+  SESSION_MAX_AGE_SECONDS,
+} from '@/lib/auth/session-timeout';
+
+import { SESSION_IDLE_TIMEOUT_SECONDS, SESSION_MAX_AGE_SECONDS } from '@/lib/auth/session-timeout';
 
 export type SessionUser = {
   userId: string;
@@ -34,6 +40,8 @@ export type SessionPayload = {
   isGlobalAdmin?: boolean;
   iat: number;
   exp: number;
+  /** Unix seconds — updated on each authenticated activity / refresh. */
+  lastActivityAt?: number;
 };
 
 const enc = new TextEncoder();
@@ -82,8 +90,33 @@ const timingSafeEqual = (a: string, b: string) => {
   return out === 0;
 };
 
-export const createSessionToken = async (user: SessionUser) => {
-  const now = Math.floor(Date.now() / 1000);
+const nowSeconds = () => Math.floor(Date.now() / 1000);
+
+export const sessionUserFromPayload = (session: SessionPayload, permissions?: string[]): SessionUser => ({
+  userId: session.sub,
+  username: session.username,
+  employeeId: session.employeeId,
+  employeeCode: session.employeeCode,
+  fullName: session.fullName,
+  department: session.department,
+  unit: session.unit,
+  roles: session.roles,
+  permissions: permissions || session.permissions,
+  status: session.status,
+  firstLoginRequired: session.firstLoginRequired,
+  passwordResetRequired: session.passwordResetRequired,
+  isGlobalAdmin: session.isGlobalAdmin,
+});
+
+export const createSessionToken = async (
+  user: SessionUser,
+  options?: { iat?: number; lastActivityAt?: number },
+) => {
+  const now = nowSeconds();
+  const iat = options?.iat && options.iat > 0 ? options.iat : now;
+  const lastActivityAt = options?.lastActivityAt && options.lastActivityAt > 0 ? options.lastActivityAt : now;
+  const absoluteExp = iat + SESSION_MAX_AGE_SECONDS;
+  const idleExp = lastActivityAt + SESSION_IDLE_TIMEOUT_SECONDS;
   const payload: SessionPayload = {
     sub: user.userId,
     username: user.username,
@@ -98,11 +131,21 @@ export const createSessionToken = async (user: SessionUser) => {
     firstLoginRequired: user.firstLoginRequired,
     passwordResetRequired: user.passwordResetRequired,
     isGlobalAdmin: user.isGlobalAdmin,
-    iat: now,
-    exp: now + SESSION_MAX_AGE_SECONDS,
+    iat,
+    lastActivityAt,
+    exp: Math.min(absoluteExp, idleExp),
   };
   const body = base64UrlEncode(JSON.stringify(payload));
   return `${body}.${await sign(body)}`;
+};
+
+/** Refresh sliding idle window while preserving original login time (absolute max). */
+export const refreshSessionToken = async (session: SessionPayload, permissions?: string[]) => {
+  const now = nowSeconds();
+  return createSessionToken(sessionUserFromPayload(session, permissions), {
+    iat: session.iat || now,
+    lastActivityAt: now,
+  });
 };
 
 export const normalizeSession = (session: SessionPayload): SessionPayload => ({
@@ -114,7 +157,17 @@ export const normalizeSession = (session: SessionPayload): SessionPayload => ({
   firstLoginRequired: Boolean(session.firstLoginRequired),
   passwordResetRequired: Boolean(session.passwordResetRequired),
   isGlobalAdmin: Boolean(session.isGlobalAdmin),
+  lastActivityAt: Number(session.lastActivityAt || session.iat || 0) || undefined,
 });
+
+export const isSessionIdleExpired = (session: Pick<SessionPayload, 'iat' | 'lastActivityAt' | 'exp'>, at = nowSeconds()) => {
+  if (session.exp && session.exp < at) return true;
+  const lastActivity = Number(session.lastActivityAt || session.iat || 0);
+  if (!lastActivity) return true;
+  if (at - lastActivity > SESSION_IDLE_TIMEOUT_SECONDS) return true;
+  if (session.iat && at - session.iat > SESSION_MAX_AGE_SECONDS) return true;
+  return false;
+};
 
 export const verifySessionToken = async (token?: string | null): Promise<SessionPayload | null> => {
   if (!token || !token.includes('.')) return null;
@@ -124,12 +177,29 @@ export const verifySessionToken = async (token?: string | null): Promise<Session
   if (!timingSafeEqual(signature, expected)) return null;
   try {
     const payload = JSON.parse(base64UrlDecode(body)) as SessionPayload;
-    if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) return null;
+    if (isSessionIdleExpired(payload)) return null;
     return normalizeSession(payload);
   } catch {
     return null;
   }
 };
+
+export const clearAuthCookieOptions = (request?: Request) => ({
+  httpOnly: true,
+  sameSite: 'lax' as const,
+  secure: shouldUseSecureAuthCookie(request),
+  path: '/',
+  maxAge: 0,
+});
+
+export const authCookieOptions = (request?: Request) => ({
+  httpOnly: true,
+  sameSite: 'lax' as const,
+  secure: shouldUseSecureAuthCookie(request),
+  path: '/',
+  // Cookie itself expires with the idle window; activity refreshes it.
+  maxAge: SESSION_IDLE_TIMEOUT_SECONDS,
+});
 
 export const passwordPolicyErrors = (password: string) => {
   const errors: string[] = [];
@@ -152,8 +222,6 @@ export const isPublicPath = (pathname: string) => (
   /\.(png|jpg|jpeg|gif|webp|svg|ico|css|js|map|txt)$/.test(pathname)
 );
 
-export const roleHome = (roles: string[]) => {
-  return '/';
-};
+export const roleHome = (_roles: string[]) => '/';
 
 export { hasPermission } from '@/lib/auth/permission-match';

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AUTH_COOKIE, isPublicPath, verifySessionToken } from '@/lib/auth/session';
+import { AUTH_COOKIE, clearAuthCookieOptions, isPublicPath, verifySessionToken } from '@/lib/auth/session';
 import { canAccessRoute } from '@/lib/access/route-access';
 import { deriveHrisRole } from '@/lib/hris-access';
 
@@ -7,6 +7,7 @@ const denied = (request: NextRequest, status = 403) => {
   if (request.nextUrl.pathname.startsWith('/api')) {
     const response = NextResponse.json({ status: 'error', error: status === 401 ? 'Unauthenticated' : 'Forbidden' }, { status });
     response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    if (status === 401) response.cookies.set(AUTH_COOKIE, '', clearAuthCookieOptions(request));
     return response;
   }
   const url = request.nextUrl.clone();
@@ -14,6 +15,7 @@ const denied = (request: NextRequest, status = 403) => {
   if (status === 401) url.searchParams.set('next', request.nextUrl.pathname + request.nextUrl.search);
   const response = NextResponse.redirect(url);
   response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  if (status === 401) response.cookies.set(AUTH_COOKIE, '', clearAuthCookieOptions(request));
   return response;
 };
 
