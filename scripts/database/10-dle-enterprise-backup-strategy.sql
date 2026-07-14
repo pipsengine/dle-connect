@@ -115,10 +115,10 @@ BEGIN
     SET @status = 'CRITICAL';
     SET @message = N'Daily full backup is missing or older than 26 hours.';
   END
-  ELSE IF @lastLog IS NULL OR @logAgeMinutes > 90
+  ELSE IF @lastLog IS NULL OR @logAgeMinutes > 15
   BEGIN
     SET @status = 'CRITICAL';
-    SET @message = N'Hourly transaction log backup is missing or older than 90 minutes.';
+    SET @message = N'Real-time transaction log backup is missing or older than 15 minutes.';
   END;
 
   INSERT [dba].[BackupHealthLog] (
@@ -208,11 +208,14 @@ EXEC msdb.dbo.sp_add_jobserver @job_id = @jobId;
 IF EXISTS (SELECT 1 FROM msdb.dbo.sysjobs WHERE name = N'DLE_Enterprise - Hourly LOG Backup')
   EXEC msdb.dbo.sp_delete_job @job_name = N'DLE_Enterprise - Hourly LOG Backup', @delete_unused_schedule = 1;
 
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysjobs WHERE name = N'DLE_Enterprise - Real-time LOG Backup')
+  EXEC msdb.dbo.sp_delete_job @job_name = N'DLE_Enterprise - Real-time LOG Backup', @delete_unused_schedule = 1;
+
 SET @jobId = NULL;
 EXEC msdb.dbo.sp_add_job
-  @job_name = N'DLE_Enterprise - Hourly LOG Backup',
+  @job_name = N'DLE_Enterprise - Real-time LOG Backup',
   @enabled = 1,
-  @description = N'Hourly encrypted transaction log backup with checksum and compression for DLE_Enterprise.',
+  @description = N'Real-time encrypted transaction log backup every 5 minutes with checksum and compression for DLE_Enterprise.',
   @category_name = N'Database Maintenance',
   @job_id = @jobId OUTPUT;
 
@@ -249,18 +252,18 @@ WITH INIT,
   @retry_interval = 5;
 
 EXEC msdb.dbo.sp_add_schedule
-  @schedule_name = N'DLE_Enterprise - Hourly Log Backup',
+  @schedule_name = N'DLE_Enterprise - Every 5 Minutes Log Backup',
   @enabled = 1,
   @freq_type = 4,
   @freq_interval = 1,
   @freq_recurrence_factor = 1,
-  @freq_subday_type = 8,
-  @freq_subday_interval = 1,
+  @freq_subday_type = 4,
+  @freq_subday_interval = 5,
   @active_start_time = 000000;
 
 EXEC msdb.dbo.sp_attach_schedule
   @job_id = @jobId,
-  @schedule_name = N'DLE_Enterprise - Hourly Log Backup';
+  @schedule_name = N'DLE_Enterprise - Every 5 Minutes Log Backup';
 
 EXEC msdb.dbo.sp_add_jobserver @job_id = @jobId;
 

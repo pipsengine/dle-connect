@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
   experimental: {
     externalDir: true,
   },
+  // Starts the DLE backup scheduler via apps/dashboard/instrumentation.ts
+  // (Next.js loads instrumentation automatically when this file is present).
   eslint: {
     ignoreDuringBuilds: true,
   },

@@ -11,6 +11,10 @@ export type BackupPolicy = {
   validation: string;
   retention: string;
   status: string;
+  /** ISO timestamp of last successful or attempted automated run. */
+  lastRunAt?: string;
+  lastRunStatus?: 'success' | 'failed' | 'skipped';
+  lastRunDetail?: string;
 };
 
 export type BackupReplicationTarget = {
@@ -64,7 +68,7 @@ export type BackupAuditEvent = {
 };
 
 export type BackupLastOperation = {
-  type: 'full-backup' | 'restore-drill' | 'configuration' | 'payroll-cutover';
+  type: 'full-backup' | 'log-backup' | 'differential-backup' | 'application-backup' | 'restore-drill' | 'configuration' | 'payroll-cutover' | 'scheduled-backup';
   status: 'success' | 'failed' | 'running';
   message: string;
   at: string;

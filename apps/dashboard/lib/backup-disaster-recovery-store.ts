@@ -48,6 +48,11 @@ const cleanPolicy = (policy: BackupPolicy): BackupPolicy => ({
   validation: String(policy.validation || '').trim(),
   retention: String(policy.retention || '').trim(),
   status: String(policy.status || 'Configured').trim() || 'Configured',
+  lastRunAt: policy.lastRunAt ? String(policy.lastRunAt) : undefined,
+  lastRunStatus: policy.lastRunStatus === 'success' || policy.lastRunStatus === 'failed' || policy.lastRunStatus === 'skipped'
+    ? policy.lastRunStatus
+    : undefined,
+  lastRunDetail: policy.lastRunDetail ? String(policy.lastRunDetail) : undefined,
 });
 
 export const validateBackupPolicies = (policies: BackupPolicy[]) => {
@@ -79,7 +84,11 @@ const normalizeState = (value: unknown): BackupDisasterRecoveryState => {
     schemaVersion: 1,
     serviceMetrics: Array.isArray(parsed.serviceMetrics) ? parsed.serviceMetrics.filter((metric) => !SEEDED_METRIC_LABELS.has(metric.label)) : fallback.serviceMetrics,
     backupPolicies: Array.isArray(parsed.backupPolicies)
-      ? parsed.backupPolicies.filter((policy) => !SEEDED_POLICY_TYPES.has(policy.type)).map(cleanPolicy)
+      ? (
+        parsed.backupPolicies.filter((policy) => !SEEDED_POLICY_TYPES.has(policy.type)).length
+          ? parsed.backupPolicies.filter((policy) => !SEEDED_POLICY_TYPES.has(policy.type)).map(cleanPolicy)
+          : fallback.backupPolicies
+      )
       : fallback.backupPolicies,
     replicationTargets: replicationTargets.length ? replicationTargets : fallback.replicationTargets,
     executionQueue: Array.isArray(parsed.executionQueue) ? parsed.executionQueue.filter((job) => !SEEDED_QUEUE_JOBS.has(job.job)) : fallback.executionQueue,

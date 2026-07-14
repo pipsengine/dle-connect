@@ -19,7 +19,7 @@ $env:DLE_ENTERPRISE_SA_PASSWORD = '<secure password>'
 
 - Recovery model: `FULL`
 - Full backups: daily at 23:00
-- Transaction log backups: hourly
+- Transaction log backups: every 5 minutes (near real-time RPO)
 - Verification and restore testing: weekly on Sunday at 03:00
 - Retention:
   - Full backups: 35 days
@@ -42,7 +42,7 @@ Encrypted backups cannot be restored without this certificate/private key.
 ## SQL Server Agent Jobs
 
 - `DLE_Enterprise - Daily FULL Backup`
-- `DLE_Enterprise - Hourly LOG Backup`
+- `DLE_Enterprise - Real-time LOG Backup` (every 5 minutes)
 - `DLE_Enterprise - Weekly VERIFY and Restore Test`
 - `DLE_Enterprise - Backup Retention Cleanup`
 - `DLE_Enterprise - Backup Health Monitor`
@@ -58,8 +58,18 @@ The setup creates:
 The monitor job fails if:
 
 - the latest full backup is missing or older than 26 hours
-- the latest log backup is missing or older than 90 minutes
+- the latest log backup is missing or older than 15 minutes
 
+## Application scheduler (dashboard)
+
+The dashboard also runs `DLE Backup Scheduler` (see `apps/dashboard/lib/backup-scheduler.ts`):
+
+- Starts with the Node process via `instrumentation.ts`
+- Executes **Automated** policies from Backup & Disaster Recovery (full/log/diff DB + application/config file backups)
+- Default near-real-time log policy: every 5 minutes
+- Default application file backup: every 15 minutes to `{Primary Backup}\Application\`
+
+Configure the **Primary Backup** location before automated runs succeed.
 ## Payroll cutover backups (HRIS)
 
 When a payroll period is fully posted and closed through the payroll workflow, HRIS automatically:

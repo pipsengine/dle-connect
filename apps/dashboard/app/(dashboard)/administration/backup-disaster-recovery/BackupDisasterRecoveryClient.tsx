@@ -105,6 +105,7 @@ const backupTypeOptions = [
 ];
 const scheduleOptions = [
   '',
+  'Real-time (every 5 minutes)',
   'Every 15 minutes',
   'Every 30 minutes',
   'Hourly',
@@ -402,6 +403,35 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
     }
   };
 
+  const runSchedulerNow = async () => {
+    setSaving(true);
+    showMessage('Running due automated backup schedules...', 'info');
+    try {
+      const response = await fetch('/api/admin/backup-disaster-recovery', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ operation: 'run-scheduler-tick', force: true }),
+      });
+      const parsed = await parseApiResponse<{
+        tick?: { reason?: string; results?: Array<{ type: string; status: string }> };
+        state?: BackupDisasterRecoveryState;
+      } & BackupDisasterRecoveryState>(response);
+      if (parsed.error || !parsed.data) {
+        showMessage(parsed.error || 'Scheduler could not run.', 'error');
+        return;
+      }
+      if (parsed.data.state) applyState(parsed.data.state);
+      else applyState(parsed.data);
+      const reason = parsed.data.tick?.reason || 'Scheduler tick finished.';
+      const failed = (parsed.data.tick?.results || []).some((item) => item.status === 'failed');
+      showMessage(reason, failed ? 'error' : 'success');
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : 'Scheduler could not run.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const resetBackupLocations = () => {
     setLocationDrafts(savedLocationDrafts);
     showMessage('Backup location drafts reset.', 'info');
@@ -431,6 +461,7 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
             </div>
             <div className="flex flex-wrap gap-2">
               <button disabled={saving} onClick={runFullBackup} className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-700 px-3 text-xs font-black text-white disabled:opacity-60"><HardDrive className="h-4 w-4" /> Run Full Backup</button>
+              <button disabled={saving} onClick={runSchedulerNow} className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-700 px-3 text-xs font-black text-white disabled:opacity-60"><Timer className="h-4 w-4" /> Run Schedules Now</button>
               <button disabled={saving} onClick={scrollToPolicySetup} className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-3 text-xs font-black text-white disabled:opacity-60"><ShieldCheck className="h-4 w-4" /> Configure Policy</button>
               <button disabled={saving} onClick={runRestoreDrill} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-800 disabled:opacity-60"><RotateCcw className="h-4 w-4" /> Restore Drill</button>
               <button disabled={saving} onClick={refreshState} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-800 disabled:opacity-60"><RefreshCw className="h-4 w-4" /> Refresh</button>

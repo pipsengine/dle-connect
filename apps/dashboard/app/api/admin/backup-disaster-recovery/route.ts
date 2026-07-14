@@ -3,10 +3,14 @@ import { appendBackupDisasterRecoveryAudit } from '@/lib/backup-disaster-recover
 import {
   enrichBackupDisasterRecoveryState,
   readEnrichedBackupDisasterRecoveryState,
+  runApplicationBackup,
+  runDleEnterpriseDifferentialBackup,
   runDleEnterpriseFullBackup,
+  runDleEnterpriseLogBackup,
   runDleEnterpriseRestoreDrill,
   saveBackupDisasterRecoveryConfiguration,
 } from '@/lib/backup-disaster-recovery-service';
+import { ensureBackupSchedulerStarted, getBackupSchedulerStatus, runBackupSchedulerTick } from '@/lib/backup-scheduler';
 import { runPayrollCutoverBackup } from '@/lib/payroll-cutover-backup-service';
 import type { BackupDisasterRecoveryState } from '@/lib/backup-disaster-recovery-types';
 
@@ -30,7 +34,9 @@ const canConfigureBackup = (request: Request) => {
 
 export async function GET() {
   try {
-    return ok(await readEnrichedBackupDisasterRecoveryState());
+    ensureBackupSchedulerStarted();
+    const state = await readEnrichedBackupDisasterRecoveryState();
+    return ok({ ...state, scheduler: getBackupSchedulerStatus() });
   } catch (error) {
     return err(500, error instanceof Error ? error.message : 'Unable to read backup and disaster recovery state.');
   }
@@ -44,7 +50,8 @@ export async function PATCH(request: Request) {
     const body = await request.json() as Partial<BackupDisasterRecoveryState>;
     const actor = actorFrom(request);
     const saved = await saveBackupDisasterRecoveryConfiguration(body, actor);
-    return ok(saved);
+    ensureBackupSchedulerStarted();
+    return ok({ ...saved, scheduler: getBackupSchedulerStatus() });
   } catch (error) {
     return err(500, error instanceof Error ? error.message : 'Unable to save backup and disaster recovery state.');
   }
@@ -55,15 +62,36 @@ export async function POST(request: Request) {
     return err(403, 'You do not have permission to run backup and disaster recovery operations.');
   }
   try {
-    const body = await request.json().catch(() => ({})) as { action?: string; detail?: string; operation?: string; payrollPeriod?: string };
+    const body = await request.json().catch(() => ({})) as {
+      action?: string;
+      detail?: string;
+      operation?: string;
+      payrollPeriod?: string;
+      force?: boolean;
+    };
     const actor = actorFrom(request);
     if (body.operation === 'run-full-backup') {
       return ok(await runDleEnterpriseFullBackup(actor));
     }
+    if (body.operation === 'run-log-backup') {
+      return ok(await runDleEnterpriseLogBackup(actor));
+    }
+    if (body.operation === 'run-differential-backup') {
+      return ok(await runDleEnterpriseDifferentialBackup(actor));
+    }
+    if (body.operation === 'run-application-backup') {
+      return ok(await runApplicationBackup(actor, 'application'));
+    }
+    if (body.operation === 'run-scheduler-tick') {
+      ensureBackupSchedulerStarted();
+      const tick = await runBackupSchedulerTick({ force: Boolean(body.force) });
+      const state = await readEnrichedBackupDisasterRecoveryState();
+      return ok({ tick, scheduler: getBackupSchedulerStatus(), state });
+    }
     if (body.operation === 'run-payroll-cutover-backup') {
       const payrollPeriod = String(body.payrollPeriod || '').trim();
       if (!payrollPeriod) return err(400, 'payrollPeriod is required for payroll cutover backup.');
-      const result = await runPayrollCutoverBackup(payrollPeriod, actor);
+      await runPayrollCutoverBackup(payrollPeriod, actor);
       return ok(await readEnrichedBackupDisasterRecoveryState());
     }
     if (body.operation === 'run-restore-drill') {

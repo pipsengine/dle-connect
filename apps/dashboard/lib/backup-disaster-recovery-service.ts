@@ -3,6 +3,8 @@ import path from 'node:path';
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { readBackupDisasterRecoveryState, validateBackupPolicies, writeBackupDisasterRecoveryState } from '@/lib/backup-disaster-recovery-store';
+import { computeNextRun, isAutomatedPolicy } from '@/lib/backup-schedule';
+import { runApplicationFileBackup } from '@/lib/application-backup-service';
 import type {
   BackupDisasterRecoveryState,
   BackupExecutionJob,
@@ -225,63 +227,32 @@ const pathMatchesTarget = (backupPath: string, targetLocation: string) => {
   return backupKey === targetKey || backupKey.startsWith(`${targetKey}/`) || targetKey.startsWith(`${backupKey}/`);
 };
 
-const computeNextRun = (schedule: string, from = new Date()) => {
-  const text = schedule.trim().toLowerCase();
-  const next = new Date(from);
-  if (!text) return '';
-  if (text.includes('every 15 minutes')) {
-    next.setMinutes(Math.ceil(next.getMinutes() / 15) * 15, 0, 0);
-    return next.toISOString();
-  }
-  if (text.includes('every 30 minutes')) {
-    next.setMinutes(Math.ceil(next.getMinutes() / 30) * 30, 0, 0);
-    return next.toISOString();
-  }
-  if (text === 'hourly') {
-    next.setMinutes(0, 0, 0);
-    next.setHours(next.getHours() + 1);
-    return next.toISOString();
-  }
-  if (text.includes('every 6 hours')) {
-    next.setMinutes(0, 0, 0);
-    next.setHours(Math.ceil(next.getHours() / 6) * 6);
-    return next.toISOString();
-  }
-  if (text.includes('every 12 hours')) {
-    next.setMinutes(0, 0, 0);
-    next.setHours(next.getHours() >= 12 ? 24 : 12);
-    return next.toISOString();
-  }
-  const dailyMatch = text.match(/daily\s+(\d{2}):(\d{2})/);
-  if (dailyMatch) {
-    next.setHours(Number(dailyMatch[1]), Number(dailyMatch[2]), 0, 0);
-    if (next <= from) next.setDate(next.getDate() + 1);
-    return next.toISOString();
-  }
-  if (text.includes('weekly sunday')) {
-    next.setHours(23, 0, 0, 0);
-    const day = next.getDay();
-    const daysUntilSunday = (7 - day) % 7 || 7;
-    next.setDate(next.getDate() + daysUntilSunday);
-    return next.toISOString();
-  }
-  return '';
-};
+const computeNextRunIso = (schedule: string, from = new Date()) => computeNextRun(schedule, from);
 
 const queueFromPolicies = (policies: BackupPolicy[]): BackupExecutionJob[] =>
   policies
-    .filter((policy) => policy.status === 'Automated' || policy.status === 'Configured')
+    .filter((policy) => isAutomatedPolicy(policy) || policy.status === 'Configured')
     .map((policy) => ({
       job: policy.type,
       owner: 'DLE Backup Scheduler',
-      nextRun: computeNextRun(policy.schedule) || new Date().toISOString(),
-      retry: `${policy.validation} · ${policy.retention}`,
-      status: policy.status === 'Paused' ? 'Paused' : policy.status === 'Disabled' ? 'Disabled' : 'Scheduled',
+      nextRun: policy.lastRunAt
+        ? (computeNextRunIso(policy.schedule, new Date(policy.lastRunAt)) || new Date().toISOString())
+        : (computeNextRunIso(policy.schedule) || new Date().toISOString()),
+      retry: policy.lastRunDetail || `${policy.validation} · ${policy.retention}`,
+      status: policy.status === 'Paused'
+        ? 'Paused'
+        : policy.status === 'Disabled'
+          ? 'Disabled'
+          : policy.lastRunStatus === 'failed'
+            ? 'Failed'
+            : isAutomatedPolicy(policy)
+              ? 'Scheduled'
+              : 'Configured',
     }));
 
 const failureRecoveryFromPolicies = (policies: BackupPolicy[]): BackupFailureRecoveryRule[] =>
   policies
-    .filter((policy) => policy.status === 'Automated')
+    .filter((policy) => isAutomatedPolicy(policy))
     .map((policy) => ({
       trigger: `${policy.type} failure or validation error`,
       action: `Retry backup, run ${policy.validation}, alert DBA operator`,
@@ -294,7 +265,7 @@ const storageAutomationFromPolicies = (policies: BackupPolicy[]): BackupStorageA
     scope: policy.type,
     rule: `Retain ${policy.retention}`,
     threshold: policy.schedule,
-    status: policy.status === 'Automated' ? 'Active' : policy.status === 'Paused' ? 'Paused' : 'Configured',
+    status: isAutomatedPolicy(policy) ? 'Active' : policy.status === 'Paused' ? 'Paused' : 'Configured',
   }));
 
 type BackupHistoryRow = {
@@ -471,13 +442,25 @@ const buildLiveMetrics = (
 };
 
 const agentJobsToQueue = (jobs: AgentJobRow[]): BackupExecutionJob[] =>
-  jobs.map((job) => ({
-    job: job.jobName,
-    owner: 'SQL Server Agent',
-    nextRun: job.lastRunAt ? new Date(job.lastRunAt).toISOString() : '',
-    retry: job.message || 'Managed by SQL Server Agent',
-    status: job.enabled ? (job.lastRunStatus === 0 ? 'Completed' : job.lastRunStatus === 1 ? 'Failed' : 'Scheduled') : 'Disabled',
-  }));
+  jobs.map((job) => {
+    // SQL Agent run_status: 0=Failed, 1=Succeeded, 2=Retry, 3=Canceled, 4=In progress
+    const status = !job.enabled
+      ? 'Disabled'
+      : job.lastRunStatus === 1
+        ? 'Completed'
+        : job.lastRunStatus === 0
+          ? 'Failed'
+          : job.lastRunStatus === 4
+            ? 'Running'
+            : 'Scheduled';
+    return {
+      job: job.jobName,
+      owner: 'SQL Server Agent',
+      nextRun: job.lastRunAt ? new Date(job.lastRunAt).toISOString() : '',
+      retry: job.message || 'Managed by SQL Server Agent',
+      status,
+    };
+  });
 
 export const enrichBackupDisasterRecoveryState = async (baseState: BackupDisasterRecoveryState) => {
   const pool = await getDleEnterpriseDbPool();
@@ -631,6 +614,216 @@ export const runDleEnterpriseFullBackup = async (actor: string) => {
     return enrichBackupDisasterRecoveryState(next);
   }
   return result.state;
+};
+
+const stampToken = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+
+const executeSqlBackupCommand = async (
+  actor: string,
+  filePath: string,
+  context: BackupRunContext,
+  buildSql: (databaseName: string) => string,
+) => {
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) throw new Error('DLE_Enterprise database is not available.');
+
+  const initialState = await readBackupDisasterRecoveryState();
+  const startedAt = new Date().toISOString();
+  await writeBackupDisasterRecoveryState({
+    ...initialState,
+    lastOperation: {
+      type: context.operationType,
+      status: 'running',
+      message: `Writing backup to ${backupDirectory(filePath)}`,
+      at: startedAt,
+    },
+    serviceMetrics: metricSnapshot('Running', `Writing backup to ${backupDirectory(filePath)}`),
+    executionQueue: compact([jobRecord(context.jobLabel, 'Running', filePath, startedAt), ...initialState.executionQueue], 20),
+  }, actor);
+
+  const startedMs = Date.now();
+  try {
+    await ensureSqlServerBackupDirectory(pool, backupDirectory(filePath));
+    ensureLocalBackupDirectory(filePath);
+    const databaseResult = await pool.request().query('SELECT DB_NAME() AS databaseName');
+    const databaseName = String(databaseResult.recordset[0]?.databaseName || DATABASE_NAME);
+    const request = pool.request();
+    (request as typeof request & { timeout: number }).timeout = Number(process.env.DLE_ENTERPRISE_BACKUP_TIMEOUT_MS || 900000);
+    await request
+      .input('BackupPath', sql.NVarChar(4000), filePath)
+      .query(buildSql(databaseName));
+
+    const completedAt = new Date().toISOString();
+    const elapsedSeconds = Math.max(1, Math.round((Date.now() - startedMs) / 1000));
+    const latest = await readBackupDisasterRecoveryState();
+    const successMessage = `Backup completed in ${elapsedSeconds}s.`;
+    const next = await writeBackupDisasterRecoveryState({
+      ...latest,
+      lastOperation: {
+        type: context.operationType,
+        status: 'success',
+        message: successMessage,
+        at: completedAt,
+      },
+      serviceMetrics: metricSnapshot('Completed', successMessage, completedAt),
+      executionQueue: compact([jobRecord(context.jobLabel, 'Completed', filePath, completedAt), ...latest.executionQueue.filter((job) => job.status !== 'Running')], 20),
+      incidents: latest.incidents.filter((incident) => !/log backup|differential backup/i.test(incident.message)),
+      audit: compact([{ at: completedAt, actor, action: context.successAuditAction, detail: filePath }, ...latest.audit], 100),
+    }, actor);
+    return { filePath, completedAt, elapsedSeconds, state: await enrichBackupDisasterRecoveryState(next) };
+  } catch (error) {
+    const failedAt = new Date().toISOString();
+    const message = error instanceof Error ? error.message : 'Database backup failed.';
+    const latest = await readBackupDisasterRecoveryState();
+    const next = await writeBackupDisasterRecoveryState({
+      ...latest,
+      lastOperation: {
+        type: context.operationType,
+        status: 'failed',
+        message,
+        at: failedAt,
+      },
+      serviceMetrics: metricSnapshot('Failed', message),
+      executionQueue: compact([jobRecord(context.jobLabel, 'Failed', filePath, failedAt), ...latest.executionQueue.filter((job) => job.status !== 'Running')], 20),
+      incidents: compact([incidentRecord(message, failedAt), ...latest.incidents], 50),
+      audit: compact([{ at: failedAt, actor, action: context.failedAuditAction, detail: message }, ...latest.audit], 100),
+    }, actor);
+    throw Object.assign(new Error(message), { backupState: await enrichBackupDisasterRecoveryState(next) });
+  }
+};
+
+export const runDleEnterpriseLogBackup = async (actor: string) => {
+  const state = await readBackupDisasterRecoveryState();
+  const target = targetWithPrimary(state);
+  if (!target?.location.trim()) throw new Error('Configure at least one backup location before running a log backup.');
+  const base = backupDirectory(target.location);
+  const filePath = `${base}\\Log\\DLE_Enterprise_LOG_${stampToken()}.trn`;
+  return executeSqlBackupCommand(actor, filePath, {
+    operationType: 'log-backup',
+    jobLabel: 'DLE_Enterprise Transaction Log Backup',
+    successAuditAction: 'Transaction log backup completed',
+    failedAuditAction: 'Transaction log backup failed',
+  }, () => `
+IF NOT EXISTS (
+  SELECT 1 FROM msdb.dbo.backupset
+  WHERE database_name = DB_NAME()
+    AND type = 'D'
+    AND is_copy_only = 0
+)
+BEGIN
+  RAISERROR('A full backup is required before transaction log backups can run.', 16, 1);
+  RETURN;
+END;
+BACKUP LOG [DLE_Enterprise] TO DISK = @BackupPath WITH INIT, CHECKSUM, COMPRESSION, STATS = 5;
+`);
+};
+
+export const runDleEnterpriseDifferentialBackup = async (actor: string) => {
+  const state = await readBackupDisasterRecoveryState();
+  const target = targetWithPrimary(state);
+  if (!target?.location.trim()) throw new Error('Configure at least one backup location before running a differential backup.');
+  const base = backupDirectory(target.location);
+  const filePath = `${base}\\Diff\\DLE_Enterprise_DIFF_${stampToken()}.bak`;
+  return executeSqlBackupCommand(actor, filePath, {
+    operationType: 'differential-backup',
+    jobLabel: 'DLE_Enterprise Differential Backup',
+    successAuditAction: 'Differential backup completed',
+    failedAuditAction: 'Differential backup failed',
+  }, () => `
+BACKUP DATABASE [DLE_Enterprise] TO DISK = @BackupPath WITH DIFFERENTIAL, INIT, CHECKSUM, COMPRESSION, STATS = 10;
+RESTORE VERIFYONLY FROM DISK = @BackupPath WITH CHECKSUM;
+`);
+};
+
+export const runApplicationBackup = async (
+  actor: string,
+  kind: 'application' | 'document' | 'configuration' | 'snapshot' = 'application',
+  retention = '14 days',
+) => {
+  const state = await readBackupDisasterRecoveryState();
+  const target = targetWithPrimary(state);
+  if (!target?.location.trim()) throw new Error('Configure at least one backup location before running an application backup.');
+
+  const startedAt = new Date().toISOString();
+  const jobLabel = `${kind[0].toUpperCase()}${kind.slice(1)} file backup`;
+  await writeBackupDisasterRecoveryState({
+    ...state,
+    lastOperation: {
+      type: 'application-backup',
+      status: 'running',
+      message: `Running ${kind} backup`,
+      at: startedAt,
+    },
+    serviceMetrics: metricSnapshot('Running', `Running ${kind} backup`),
+    executionQueue: compact([jobRecord(jobLabel, 'Running', target.location, startedAt, 'DLE Backup Scheduler'), ...state.executionQueue], 20),
+  }, actor);
+
+  try {
+    const result = await runApplicationFileBackup({
+      primaryLocation: target.location,
+      kind,
+      retention,
+    });
+    const completedAt = new Date().toISOString();
+    const latest = await readBackupDisasterRecoveryState();
+    const next = await writeBackupDisasterRecoveryState({
+      ...latest,
+      lastOperation: {
+        type: 'application-backup',
+        status: 'success',
+        message: result.message,
+        at: completedAt,
+      },
+      serviceMetrics: metricSnapshot('Completed', result.message, completedAt),
+      executionQueue: compact([jobRecord(jobLabel, 'Completed', result.targetDir, completedAt, 'DLE Backup Scheduler'), ...latest.executionQueue.filter((job) => job.status !== 'Running')], 20),
+      audit: compact([{ at: completedAt, actor, action: `${jobLabel} completed`, detail: result.targetDir }, ...latest.audit], 100),
+    }, actor);
+    return { ...result, completedAt, state: await enrichBackupDisasterRecoveryState(next) };
+  } catch (error) {
+    const failedAt = new Date().toISOString();
+    const message = error instanceof Error ? error.message : `${kind} backup failed.`;
+    const latest = await readBackupDisasterRecoveryState();
+    const next = await writeBackupDisasterRecoveryState({
+      ...latest,
+      lastOperation: { type: 'application-backup', status: 'failed', message, at: failedAt },
+      serviceMetrics: metricSnapshot('Failed', message),
+      executionQueue: compact([jobRecord(jobLabel, 'Failed', target.location, failedAt, 'DLE Backup Scheduler'), ...latest.executionQueue.filter((job) => job.status !== 'Running')], 20),
+      incidents: compact([incidentRecord(message, failedAt), ...latest.incidents], 50),
+      audit: compact([{ at: failedAt, actor, action: `${jobLabel} failed`, detail: message }, ...latest.audit], 100),
+    }, actor);
+    throw Object.assign(new Error(message), { backupState: await enrichBackupDisasterRecoveryState(next) });
+  }
+};
+
+export const markBackupPolicyRun = async (
+  policyType: string,
+  schedule: string,
+  result: { status: 'success' | 'failed' | 'skipped'; detail: string },
+  actor = 'DLE Backup Scheduler',
+) => {
+  const state = await readBackupDisasterRecoveryState();
+  const at = new Date().toISOString();
+  const backupPolicies = state.backupPolicies.map((policy) => {
+    if (policy.type !== policyType || policy.schedule !== schedule) return policy;
+    return {
+      ...policy,
+      lastRunAt: at,
+      lastRunStatus: result.status,
+      lastRunDetail: result.detail,
+    };
+  });
+  const next = await writeBackupDisasterRecoveryState({
+    ...state,
+    backupPolicies,
+    executionQueue: queueFromPolicies(backupPolicies),
+    audit: compact([{
+      at,
+      actor,
+      action: `Scheduled ${policyType} ${result.status}`,
+      detail: result.detail,
+    }, ...state.audit], 100),
+  }, actor);
+  return enrichBackupDisasterRecoveryState(next);
 };
 
 export const runDleEnterpriseFullBackupToPath = executeDleEnterpriseBackupToPath;
