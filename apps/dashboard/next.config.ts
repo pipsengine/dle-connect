@@ -5,6 +5,15 @@ const nextConfig: NextConfig = {
   experimental: {
     externalDir: true,
   },
+  // Keep SQL/native deps out of the webpack graph (instrumentation + server routes).
+  serverExternalPackages: [
+    'mssql',
+    'tedious',
+    'tarn',
+    'js-md4',
+    'native-duplexpair',
+    'mysql2',
+  ],
   // Starts the DLE backup scheduler via apps/dashboard/instrumentation.ts
   // (Next.js loads instrumentation automatically when this file is present).
   eslint: {
