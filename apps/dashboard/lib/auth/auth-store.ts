@@ -729,6 +729,44 @@ export const updateUser = async (
     const hashed = hashPassword(target.surname);
     updated = { ...target, passwordHash: hashed.hash, passwordSalt: hashed.salt, status: 'Password Reset Required', passwordResetRequired: true, failedAttempts: 0, lockedUntil: null, updatedAt: nowIso() };
   }
+  if (action === 'recover-account') {
+    if (lower(target.username) === 'admin' || target.id === 'global-admin') {
+      throw new Error('The protected Global Admin account cannot be recovered from this tool.');
+    }
+    if (target.roles.includes('Super Administrator') && !canManageSuperAdministratorAccount(actor)) {
+      throw new Error('Only Global / Super Administrators can recover a Super Administrator account.');
+    }
+    const resetPassword = Boolean(payload?.resetPassword);
+    const clearPasswordFlags = payload?.clearPasswordFlags !== false;
+    let next: UserAccount = {
+      ...target,
+      status: 'Active',
+      failedAttempts: 0,
+      lockedUntil: null,
+      disabledAt: null,
+      deleted: false,
+      updatedAt: nowIso(),
+    };
+    if (resetPassword) {
+      const hashed = hashPassword(target.surname || target.username);
+      next = {
+        ...next,
+        passwordHash: hashed.hash,
+        passwordSalt: hashed.salt,
+        firstLoginRequired: false,
+        passwordResetRequired: true,
+        status: 'Password Reset Required',
+      };
+    } else if (clearPasswordFlags) {
+      next = {
+        ...next,
+        firstLoginRequired: false,
+        passwordResetRequired: false,
+        status: 'Active',
+      };
+    }
+    updated = next;
+  }
   if (action === 'assign-roles') {
     const roles = Array.isArray(payload.roles) ? payload.roles.filter((item: string) => enterpriseRoles.includes(item as any)) : target.roles;
     const touchesSuperAdministrator = roles.includes('Super Administrator') || target.roles.includes('Super Administrator');

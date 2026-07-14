@@ -11,6 +11,9 @@ const routePathFromRequestPath = (pathname: string) => {
   if (path.startsWith('/api/hris/')) return path.replace(/^\/api\/hris/, '/hris');
   if (path === '/api/hris') return '/hris';
   if (path.startsWith('/api/it-support/asset-management')) return '/it-support/asset-management';
+  if (path.startsWith('/api/it-support/account-recovery')) return '/it-support/account-recovery';
+  if (path.startsWith('/api/it-support/')) return path.replace(/^\/api\/it-support/, '/it-support');
+  if (path === '/api/it-support') return '/it-support';
   return path;
 };
 
@@ -170,6 +173,18 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
 
 export const itSupportRoutePermissionOptions = (pathname: string): string[] | null => {
   const path = normalizePath(pathname);
+  if (path.startsWith('/it-support/account-recovery') || path.startsWith('/api/it-support/account-recovery')) {
+    return [
+      'it.account-recovery.view',
+      'it.account-recovery.edit',
+      'page.it-support.account-recovery.view',
+      'admin.users.edit',
+      'admin.users.view',
+      'security.*',
+      'it.*',
+      'view_it_support',
+    ];
+  }
   if (path.startsWith('/it-support/asset-management')) {
     return [
       'view_it_assets',

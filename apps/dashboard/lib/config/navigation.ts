@@ -207,6 +207,7 @@ export const navigationConfig: NavItem[] = [
     permissionKey: 'view_it_support',
     subItems: [
       { title: 'Service Desk (ITSM)', slug: 'service-desk-itsm', route: '/it-support/service-desk-itsm', permissionKey: 'view_itsm' },
+      { title: 'Account Recovery', slug: 'account-recovery', route: '/it-support/account-recovery', permissionKey: 'it.account-recovery.view' },
       { title: 'Knowledge Base', slug: 'knowledge-base', route: '/it-support/knowledge-base', permissionKey: 'view_knowledge_base' },
       { title: 'Asset Management', slug: 'asset-management', route: '/it-support/asset-management', permissionKey: 'view_it_assets' },
       { title: 'Cybersecurity Center', slug: 'cybersecurity-center', route: '/it-support/cybersecurity-center', permissionKey: 'view_cybersecurity' },

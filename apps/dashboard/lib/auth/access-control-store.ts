@@ -368,6 +368,8 @@ permissionCatalog.push(
 
   node('Page Access', 'IT & Support', 'Asset Management', 'IT Asset Management Page', 'Page', 'L2 - IT Admin', 'Company', 'page.it-support.asset-management'),
   node('Button Access', 'IT & Support', 'Asset Management', 'Export Asset Records', 'Button', 'L2 - IT Admin', 'Company', 'button.it-support.asset-management.export'),
+  node('Page Access', 'IT & Support', 'Account Recovery', 'IT Account Recovery Page', 'Page', 'L2 - IT Support', 'Company', 'page.it-support.account-recovery'),
+  node('IT Support', 'Account Recovery', 'Clear Account Issues', 'Unlock and clear login blockers', 'Button', 'L2 - IT Support', 'Company', 'it.account-recovery'),
 
   node('Timesheet Controls', 'Searchable Selectors', 'Search Supervisor Dropdown', 'Search and Select Supervisor', 'Dropdown', 'L2 - Manager', 'Company', 'timesheet.controls.supervisor-search'),
   node('Timesheet Controls', 'Searchable Selectors', 'Search Location Dropdown', 'Search and Select Location', 'Dropdown', 'L2 - Manager', 'Company', 'timesheet.controls.location-search'),

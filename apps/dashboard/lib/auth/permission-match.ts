@@ -47,8 +47,12 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
     'it.*',
     'it.assets.view',
     'it.assets.*',
+    'it.account-recovery',
+    'it.account-recovery.view',
+    'it.account-recovery.edit',
     'view_it_assets',
     'page.it-support.asset-management.view',
+    'page.it-support.account-recovery.view',
     'service-desk.view',
     'application-support.view',
     'infrastructure.view',
@@ -61,10 +65,13 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
     'it.*',
   ],
   'view_itsm': ['it.view', 'it.create', 'it.submit', 'it.review', 'it.*', 'service-desk.view'],
-  'it.view': ['page.it-support.asset-management.view', 'it.assets.view'],
+  'it.view': ['page.it-support.asset-management.view', 'page.it-support.account-recovery.view', 'it.assets.view', 'it.account-recovery.view'],
   'it.create': ['it.assets.create'],
-  'it.edit': ['it.assets.edit'],
+  'it.edit': ['it.assets.edit', 'it.account-recovery.edit'],
   'it.assets.view': ['page.it-support.asset-management.view'],
+  'it.account-recovery': ['it.account-recovery.view', 'it.account-recovery.edit', 'page.it-support.account-recovery.view'],
+  'it.account-recovery.view': ['page.it-support.account-recovery.view'],
+  'page.it-support.account-recovery.view': ['it.account-recovery.view'],
   'application-support.view': ['it.view'],
   'service-desk.view': ['it.view'],
 };
@@ -135,6 +142,12 @@ export const expandPublishedPermissions = (permissions: string[]) => {
     out.add('view_it_support');
     out.add('view_it_assets');
     out.add('page.it-support.asset-management.view');
+  }
+  if (list.some((permission) => permission.startsWith('it.account-recovery') || permission.startsWith('page.it-support.account-recovery'))) {
+    out.add('view_it_support');
+    out.add('it.account-recovery.view');
+    out.add('it.account-recovery.edit');
+    out.add('page.it-support.account-recovery.view');
   }
   if (list.some((permission) => permission.startsWith('admin.roles'))) out.add('page.admin.access-control.view');
   if (list.some((permission) => permission.startsWith('admin.users'))) out.add('page.admin.user-management.view');
