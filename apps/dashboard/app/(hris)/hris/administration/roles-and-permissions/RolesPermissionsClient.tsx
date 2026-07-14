@@ -553,8 +553,7 @@ export default function RolesPermissionsClient() {
       {notice ? <div className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">{notice}</div> : null}
       {superActor ? (
         <div className="mt-5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-900">
-          Global Super Administrator mode: you can assign any role and permission except the protected Super Administrator role/account.
-          Use <span className="font-black">Publish role baseline</span> for one-click setup of Admin / System Administrator (platform access without HRIS).
+          Global Super Administrator mode: you can assign any role — including Super Administrator — and publish permissions. Admin and System Administrator cannot self-elevate or promote anyone to Super Administrator.
         </div>
       ) : null}
       {!canWrite ? (

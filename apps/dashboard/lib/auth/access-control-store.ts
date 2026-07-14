@@ -678,6 +678,9 @@ export const saveAccessAssignment = async (
   if (subjectType === 'role' && !canActorModifyRole(actor.roles, subjectId, actorIsSuper)) {
     throw new Error('You cannot modify permissions for a role higher than your own access level.');
   }
+  if (!actorIsSuper && requested.includes('*')) {
+    throw new Error('Only Global / Super Administrators can grant unrestricted (*) access.');
+  }
   if (!actorIsSuper && requested.some(isProtectedPermission)) throw new Error('Admins cannot change security, audit, authentication, system control, or Super Administrator permissions.');
   assertActorCanGrantPermissions(actor.permissions, requested, actorIsSuper);
 

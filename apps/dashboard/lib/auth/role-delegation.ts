@@ -7,7 +7,7 @@ export type SuperActorInput = {
   isGlobalAdmin?: boolean;
 };
 
-/** Global Super Administrator and equivalent accounts bypass delegation limits. */
+/** Global Super Administrator account OR Super Administrator role holders. */
 export const isSuperActor = (input?: SuperActorInput | null) => {
   if (!input) return false;
   if (input.isGlobalAdmin || input.sub === 'global-admin') return true;
@@ -15,6 +15,9 @@ export const isSuperActor = (input?: SuperActorInput | null) => {
   if ((input.permissions || []).includes('*')) return true;
   return false;
 };
+
+/** Only Global / Super Administrators may grant, remove, or modify the Super Administrator role. */
+export const canManageSuperAdministratorRole = (input?: SuperActorInput | null) => isSuperActor(input);
 
 /** Higher rank = more authority. Non-listed roles default to module/enterprise rank. */
 export const GLOBAL_SYSTEM_ROLE_RANK: Record<string, number> = {
@@ -38,13 +41,16 @@ export const actorMaxRoleRank = (roles: string[], isGlobalAdmin = false) => {
 };
 
 export const canActorAssignRole = (actorRoles: string[], targetRole: string, isGlobalAdmin = false) => {
-  if (targetRole === 'Super Administrator') return false;
+  // Super Administrator may only be assigned by Global / Super Administrators.
+  if (targetRole === 'Super Administrator') {
+    return isSuperActor({ roles: actorRoles, isGlobalAdmin, sub: isGlobalAdmin ? 'global-admin' : undefined });
+  }
   if (isSuperActor({ roles: actorRoles, isGlobalAdmin, sub: isGlobalAdmin ? 'global-admin' : undefined })) return true;
   return roleRank(targetRole) <= actorMaxRoleRank(actorRoles);
 };
 
 export const canActorModifyRole = (actorRoles: string[], targetRole: string, isGlobalAdmin = false) => {
-  if (targetRole === 'Super Administrator') return false;
+  if (targetRole === 'Super Administrator') return false; // role definition itself is never editable
   if (isSuperActor({ roles: actorRoles, isGlobalAdmin, sub: isGlobalAdmin ? 'global-admin' : undefined })) return true;
   return roleRank(targetRole) <= actorMaxRoleRank(actorRoles);
 };
@@ -81,9 +87,9 @@ export const filterAssignableRoles = <T extends { name: string }>(
   actorRoles: string[],
   isGlobalAdmin = false,
 ) => {
-  if (isSuperActor({ roles: actorRoles, isGlobalAdmin, sub: isGlobalAdmin ? 'global-admin' : undefined })) {
-    return roles.filter((role) => role.name !== 'Super Administrator');
-  }
+  const actorIsSuper = isSuperActor({ roles: actorRoles, isGlobalAdmin, sub: isGlobalAdmin ? 'global-admin' : undefined });
+  // Only Global / Super Administrators may see or select Super Administrator.
+  if (actorIsSuper) return roles;
   const maxRank = actorMaxRoleRank(actorRoles);
   return roles.filter((role) => role.name !== 'Super Administrator' && roleRank(role.name) <= maxRank);
 };
@@ -93,7 +99,12 @@ export const assertActorCanAssignRoles = (
   requestedRoles: string[],
   actor?: SuperActorInput,
 ) => {
-  if (isSuperActor({ ...actor, roles: actor?.roles || actorRoles })) return;
+  const actorInput = { ...actor, roles: actor?.roles || actorRoles };
+  const touchesSuper = requestedRoles.includes('Super Administrator');
+  if (touchesSuper && !canManageSuperAdministratorRole(actorInput)) {
+    throw new Error('Only Global / Super Administrators can grant or modify the Super Administrator role. Admin and System Administrator cannot self-elevate or promote others to Super Administrator.');
+  }
+  if (isSuperActor(actorInput)) return;
   const blocked = requestedRoles.filter((role) => !canActorAssignRole(actorRoles, role, actor?.isGlobalAdmin));
   if (blocked.length) {
     throw new Error(`You cannot assign roles above your own access level: ${blocked.join(', ')}`);
@@ -102,6 +113,9 @@ export const assertActorCanAssignRoles = (
 
 export const assertActorCanGrantPermissions = (actorPermissions: string[], requested: string[], isGlobalAdmin = false) => {
   if (isSuperActor({ permissions: actorPermissions, isGlobalAdmin })) return;
+  if (requested.includes('*')) {
+    throw new Error('Only Global / Super Administrators can grant unrestricted (*) access.');
+  }
   const blocked = requested.filter((permission) => isPermissionAboveActor(permission, actorPermissions));
   if (blocked.length) {
     throw new Error('You cannot grant permissions higher than your own access.');

@@ -8,7 +8,7 @@ import { defaultRoleForEmployee, enterpriseRoles, permissionsForRoles, roleDefin
 import type { SessionPayload, SessionUser } from '@/lib/auth/session';
 import { passwordPolicyErrors } from '@/lib/auth/session';
 import { effectivePermissionsForRoles, effectivePermissionsForUser, effectivePermissionsForUsers } from '@/lib/auth/access-control-store';
-import { assertActorCanAssignRoles } from '@/lib/auth/role-delegation';
+import { assertActorCanAssignRoles, canManageSuperAdministratorRole } from '@/lib/auth/role-delegation';
 
 export type UserStatus = 'Active' | 'Inactive' | 'Disabled' | 'Locked' | 'Pending First Login' | 'Password Reset Required';
 
@@ -695,8 +695,8 @@ export const changePassword = async (userId: string, currentPassword: string | u
   return publicUser(nextUsers.find((item) => item.id === userId) || target);
 };
 
-const canManageSuperAdministratorRole = (actor?: Pick<SessionPayload, 'sub' | 'username' | 'isGlobalAdmin'> | null) => {
-  return actor?.isGlobalAdmin === true || actor?.sub === 'global-admin' || lower(actor?.username) === 'admin';
+const canManageSuperAdministratorAccount = (actor?: Pick<SessionPayload, 'sub' | 'username' | 'isGlobalAdmin' | 'roles'> | null) => {
+  return canManageSuperAdministratorRole(actor);
 };
 
 export const updateUser = async (
@@ -724,8 +724,12 @@ export const updateUser = async (
   if (action === 'assign-roles') {
     const roles = Array.isArray(payload.roles) ? payload.roles.filter((item: string) => enterpriseRoles.includes(item as any)) : target.roles;
     const touchesSuperAdministrator = roles.includes('Super Administrator') || target.roles.includes('Super Administrator');
-    if (touchesSuperAdministrator && !canManageSuperAdministratorRole(actor)) {
-      throw new Error('Only the protected default Global Super Administrator account can grant, remove, or modify the Super Administrator role.');
+    if (touchesSuperAdministrator && !canManageSuperAdministratorAccount(actor)) {
+      throw new Error('Only Global / Super Administrators can grant, remove, or modify the Super Administrator role. Admin and System Administrator cannot self-elevate or promote others to that level.');
+    }
+    // Prevent non-super actors from elevating themselves even if the target check is bypassed.
+    if (actor?.sub && actor.sub === userId && roles.includes('Super Administrator') && !canManageSuperAdministratorAccount(actor)) {
+      throw new Error('You cannot assign the Super Administrator role to yourself.');
     }
     assertActorCanAssignRoles(actor?.roles || [], roles, actor || undefined);
     updated = { ...target, roles, permissions: await effectivePermissionsForRoles(roles), updatedAt: nowIso() };
