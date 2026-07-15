@@ -125,7 +125,6 @@ export const FLEET_WORKSPACE_META: Record<FleetWorkspaceId, {
     primaryAction: 'Add Vehicle',
     tabs: [
       { id: 'register', label: 'Vehicle Register', sections: ['All vehicles', 'Active', 'Available', 'Assigned', 'Grounded', 'Under maintenance', 'Retired and disposed'] },
-      { id: 'profile', label: 'Vehicle Profile', sections: ['Registration', 'Make/model/year', 'Chassis and engine', 'Category', 'Ownership', 'Fuel type', 'Odometer', 'Operational status'] },
       { id: 'ownership', label: 'Ownership & Acquisition', sections: ['Purchase', 'Lease', 'Acquisition cost', 'Supplier', 'Warranty', 'Financing', 'Depreciation', 'Disposal'] },
       { id: 'assignment', label: 'Organizational Assignment', sections: ['Department', 'Project', 'Site', 'Location', 'Cost centre', 'Responsible manager', 'Effective dates'] },
       { id: 'documents', label: 'Vehicle Documents', sections: ['Licence', 'Insurance', 'Roadworthiness', 'Ownership', 'Lease', 'Permits', 'Safety certificates', 'Photographs'] },
@@ -163,18 +162,15 @@ export const FLEET_WORKSPACE_META: Record<FleetWorkspaceId, {
   },
   'trips-dispatch': {
     title: 'Trips & Dispatch',
-    description: 'Requests, approvals, scheduling, dispatch, journey monitoring, gate control, and trip closure.',
+    description: 'Request → Line Manager authorization → Fleet allocation → Dispatch → Close, with audit at each stage.',
     primaryAction: 'Request Trip',
     tabs: [
-      { id: 'requests', label: 'Trip Requests', sections: ['My requests', 'Department', 'Pending', 'Approved', 'Rejected', 'Cancelled'] },
-      { id: 'planning', label: 'Trip Planning', sections: ['Origin/destination', 'Multi-stop', 'Route', 'Purpose', 'Passengers', 'Cargo', 'Schedule'] },
-      { id: 'approvals', label: 'Approvals', sections: ['Supervisor', 'Department Head', 'Fleet Officer', 'Emergency', 'Escalated'] },
-      { id: 'scheduling', label: 'Scheduling', sections: ['Calendar', 'Driver availability', 'Vehicle availability', 'Conflicts', 'Dispatch queue'] },
-      { id: 'dispatch', label: 'Dispatch Centre', sections: ['Ready for dispatch', 'Allocation', 'Pre-trip inspection', 'Gate clearance', 'Departure'] },
-      { id: 'active', label: 'Active Trips', sections: ['In progress', 'Locations', 'Delayed', 'Deviations', 'Alerts'] },
-      { id: 'emergency', label: 'Emergency Trips', sections: ['Emergency request', 'Rapid authorization', 'Retrospective approval'] },
-      { id: 'closure', label: 'Trip Closure', sections: ['Arrival', 'Closing odometer', 'Fuel usage', 'Expenses', 'Post-trip inspection'] },
-      { id: 'history', label: 'Trip History', sections: ['Completed', 'Cancelled', 'Incomplete', 'Audit trail'] },
+      { id: 'requests', label: 'My Requests', sections: ['Draft', 'Pending line approval', 'Returned', 'Allocated', 'Dispatched', 'Completed', 'Rejected', 'Cancelled'] },
+      { id: 'approvals', label: 'Line Approvals', sections: ['Pending need approval', 'Approve', 'Reject', 'Return for correction'] },
+      { id: 'allocation', label: 'Allocation', sections: ['Pending fleet allocation', 'Assign vehicle', 'Assign driver', 'Conflict checks'] },
+      { id: 'dispatch', label: 'Dispatch', sections: ['Ready to dispatch', 'Release trip', 'Pre-trip checks'] },
+      { id: 'active', label: 'Active Trips', sections: ['Dispatched', 'In progress', 'Complete trip'] },
+      { id: 'history', label: 'History', sections: ['Completed', 'Rejected', 'Cancelled', 'Audit trail'] },
     ],
   },
   fuel: {
@@ -251,6 +247,7 @@ export const FLEET_WORKSPACE_META: Record<FleetWorkspaceId, {
   telematics: {
     title: 'Telematics',
     description: 'Live GPS intelligence for tracked vehicles; untracked vehicles remain supported by manual trip and odometer records.',
+    primaryAction: 'Log Telematics Event',
     tabs: [
       { id: 'map', label: 'Live Map', sections: ['Locations', 'Status', 'Speed', 'Ignition', 'Alerts'] },
       { id: 'playback', label: 'Trip Playback', sections: ['Route history', 'Stops', 'Idle', 'Speed profile', 'Deviations'] },
@@ -281,6 +278,7 @@ export const FLEET_WORKSPACE_META: Record<FleetWorkspaceId, {
   'costs-budgets': {
     title: 'Costs & Budgets',
     description: 'Budgets, operating costs, allocation, depreciation, TCO, and replacement planning.',
+    primaryAction: 'Post Cost Entry',
     tabs: [
       { id: 'overview', label: 'Financial Overview', sections: ['Total expenditure', 'Budget vs actual', 'Cost per vehicle', 'Cost per km'] },
       { id: 'operating', label: 'Operating Costs', sections: ['Fuel', 'Maintenance', 'Parts', 'Insurance', 'Tolls', 'Telematics'] },
