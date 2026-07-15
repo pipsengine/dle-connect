@@ -138,6 +138,14 @@ const workspaceModules = [
     permissions: ['documents.view', 'documents.*'],
   },
   {
+    title: 'Logistics & Fleet',
+    href: '/logistics-fleet',
+    icon: Box,
+    status: 'Live',
+    signal: 'Fleet portal for vehicles, drivers, trips, fuel, maintenance, and compliance',
+    permissions: ['fleet.view', 'fleet.*', 'logistics.view', 'logistics.*', 'view_logistics_fleet', 'driver.view'],
+  },
+  {
     title: 'Reports & Analytics',
     href: '/reports-analytics',
     icon: BarChart4,

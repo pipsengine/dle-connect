@@ -74,6 +74,8 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
   'page.it-support.account-recovery.view': ['it.account-recovery.view'],
   'application-support.view': ['it.view'],
   'service-desk.view': ['it.view'],
+  'view_logistics_fleet': ['fleet.view', 'fleet.*', 'logistics.view', 'logistics.*', 'driver.view'],
+  'fleet.view': ['view_logistics_fleet', 'logistics.view', 'driver.view'],
 };
 
 const reverseAliases = () => {

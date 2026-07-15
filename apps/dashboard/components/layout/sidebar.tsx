@@ -41,6 +41,7 @@ const requiredPermission = (route?: string) => {
   if (route.startsWith('/hris/leave-management')) return 'leave.view';
   if (route.startsWith('/hris')) return 'hris.view';
   if (route.startsWith('/workforce-portal')) return '';
+  if (route.startsWith('/logistics-fleet')) return 'fleet.view';
   if (route.startsWith('/operations-center/timesheets')) return 'operations.timesheets.submit';
   if (route.startsWith('/operations-center/workforce-allocation')) return 'operations.allocation.view';
   if (route.startsWith('/operations-center/resource-planning')) return 'operations.resource-planning.view';
@@ -53,7 +54,6 @@ const requiredPermission = (route?: string) => {
   if (route.startsWith('/hse-management')) return 'hse.view';
   if (route.startsWith('/quality-management')) return 'quality.view';
   if (route.startsWith('/document-management')) return 'documents.view';
-  if (route.startsWith('/logistics-fleet')) return 'fleet.view';
   if (route.startsWith('/it-support/asset-management')) return 'view_it_assets';
   if (route.startsWith('/it-support')) return 'view_it_support';
   return 'enterprise.view';

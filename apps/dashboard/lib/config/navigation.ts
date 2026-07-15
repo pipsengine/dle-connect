@@ -16,7 +16,8 @@ import {
   FileKey,
   Webhook,
   Bot,
-  HelpCircle
+  HelpCircle,
+  Truck,
 } from 'lucide-react';
 
 export interface SubMenu {
@@ -156,7 +157,7 @@ export const navigationConfig: NavItem[] = [
     id: 'logistics-fleet',
     label: 'Logistics & Fleet',
     slug: 'logistics-fleet',
-    icon: Clock,
+    icon: Truck,
     group: 'main',
     route: '/logistics-fleet',
     permissionKey: 'view_logistics_fleet'
