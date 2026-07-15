@@ -11,6 +11,9 @@ import {
 } from '@/lib/microsoft-graph-mail';
 import {
   buildDleTestEmail,
+  buildFleetTripAllocationEmail,
+  buildFleetTripStatusEmail,
+  buildFleetTripSupervisorRequestEmail,
   buildLeaveApprovalRequestEmail,
   buildLeaveRelieverEmail,
   buildLeaveWorkflowEmail,
@@ -184,12 +187,18 @@ export const sendDleTestEmail = async (input: {
   recipientName: string;
   employeeCode: string;
   appUrl: string;
+  fleetLink?: string;
+  tripsLink?: string;
+  notificationsLink?: string;
 }) => {
   const email = buildDleTestEmail({
     recipientName: input.recipientName,
     employeeCode: input.employeeCode,
     appUrl: input.appUrl,
     provider: resolveMailProvider() || 'not configured',
+    fleetLink: input.fleetLink,
+    tripsLink: input.tripsLink,
+    notificationsLink: input.notificationsLink,
   });
   return sendTransactionalEmail({ to: input.to, subject: email.subject, text: email.text, html: email.html });
 };
@@ -479,5 +488,84 @@ export const sendOvertimeRejectedEmail = async (input: {
   const to = compact(input.recipientEmail);
   if (!to) return { sent: false, reason: 'No recipient email.' };
   const email = buildOvertimeRejectedEmail({ ...input, baseUrl: input.baseUrl });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
+
+type FleetTripMailTrip = {
+  requestNo: string;
+  requester: string;
+  origin: string;
+  destination: string;
+  purpose: string;
+  startDate?: string;
+  endDate?: string;
+  projectCode?: string;
+  costCenter?: string;
+  vehicleLabel?: string;
+  driverLabel?: string;
+  allocationStatus?: string;
+  vehicleAssetCode?: string;
+  vehiclePlate?: string;
+  vehicleType?: string;
+  vehicleMakeModel?: string;
+  driverName?: string;
+  driverEmployeeCode?: string;
+  driverPhone?: string;
+  driverCategory?: string;
+  allocatedBy?: string;
+  allocatedAt?: string;
+};
+
+export const sendFleetTripSupervisorRequestEmail = async (input: {
+  recipientName: string;
+  recipientEmail: string | null;
+  trip: FleetTripMailTrip;
+  actorName?: string;
+  workspaceLink: string;
+  tripsLink?: string;
+  fleetHomeLink?: string;
+  baseUrl?: string | null;
+}) => {
+  const to = compact(input.recipientEmail);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const email = buildFleetTripSupervisorRequestEmail({ ...input, baseUrl: input.baseUrl });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
+
+export const sendFleetTripAllocationEmail = async (input: {
+  recipientName: string;
+  recipientEmail: string | null;
+  trip: FleetTripMailTrip;
+  actorName?: string;
+  workspaceLink: string;
+  fleetHomeLink?: string;
+  audience: 'requester' | 'driver' | 'dispatcher';
+  baseUrl?: string | null;
+}) => {
+  const to = compact(input.recipientEmail);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const email = buildFleetTripAllocationEmail({ ...input, baseUrl: input.baseUrl });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
+
+export const sendFleetTripStatusEmail = async (input: {
+  recipientName: string;
+  recipientEmail: string | null;
+  subject: string;
+  headline: string;
+  intro: string;
+  tone?: 'info' | 'success' | 'warning' | 'danger' | 'neutral';
+  trip: FleetTripMailTrip;
+  actorName?: string;
+  reason?: string;
+  workspaceLink: string;
+  actionLabel: string;
+  secondaryLink?: string;
+  secondaryLabel?: string;
+  baseUrl?: string | null;
+}) => {
+  const to = compact(input.recipientEmail);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const email = buildFleetTripStatusEmail({ ...input, baseUrl: input.baseUrl });
   return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
 };

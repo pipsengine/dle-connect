@@ -9,20 +9,29 @@ export type EmployeeOption = {
   location?: string;
   jobTitle?: string;
   status?: string;
+  managerName?: string;
+  phone?: string;
+  isDirectoryDriver?: boolean;
 };
 
 type FieldProps = {
   label: string;
   children: ReactNode;
   hint?: string;
+  required?: boolean;
+  error?: string;
 };
 
-export function Field({ label, children, hint }: FieldProps) {
+export function Field({ label, children, hint, required, error }: FieldProps) {
   return (
     <label className="block space-y-1.5">
-      <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">
+        {label}
+        {required ? <span className="ml-1 text-red-600" aria-hidden>*</span> : null}
+      </span>
       {children}
-      {hint ? <span className="block text-[11px] font-semibold text-slate-400">{hint}</span> : null}
+      {error ? <span className="block text-[11px] font-semibold text-red-600">{error}</span> : null}
+      {!error && hint ? <span className="block text-[11px] font-semibold text-slate-400">{hint}</span> : null}
     </label>
   );
 }
@@ -30,16 +39,18 @@ export function Field({ label, children, hint }: FieldProps) {
 const inputClass =
   'h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none ring-blue-500/30 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4';
 
-export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={`${inputClass} ${props.className || ''}`} />;
+const inputErrorClass = 'border-red-400 focus:border-red-500 focus:ring-red-500/20';
+
+export function TextInput({ invalid, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }) {
+  return <input {...props} className={`${inputClass} ${invalid ? inputErrorClass : ''} ${props.className || ''}`} aria-invalid={invalid || undefined} />;
 }
 
-export function TextSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={`${inputClass} ${props.className || ''}`} />;
+export function TextSelect({ invalid, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { invalid?: boolean }) {
+  return <select {...props} className={`${inputClass} ${invalid ? inputErrorClass : ''} ${props.className || ''}`} aria-invalid={invalid || undefined} />;
 }
 
-export function TextTextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...props} className={`min-h-[88px] w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none ring-blue-500/30 focus:border-blue-500 focus:ring-4 ${props.className || ''}`} />;
+export function TextTextArea({ invalid, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }) {
+  return <textarea {...props} className={`min-h-[88px] w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none ring-blue-500/30 focus:border-blue-500 focus:ring-4 ${invalid ? inputErrorClass : ''} ${props.className || ''}`} aria-invalid={invalid || undefined} />;
 }
 
 export function EmployeePicker({
@@ -48,12 +59,16 @@ export function EmployeePicker({
   onChange,
   employees,
   hint,
+  required,
+  error,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   employees: EmployeeOption[];
   hint?: string;
+  required?: boolean;
+  error?: string;
 }) {
   const [query, setQuery] = useState('');
   const filtered = useMemo(() => {
@@ -72,8 +87,14 @@ export function EmployeePicker({
   const selected = employees.find((employee) => employee.employeeCode === value);
 
   return (
-    <Field label={label} hint={hint || (selected ? `${selected.fullName} · ${selected.department || 'No department'}` : 'Search the employee directory')}>
+    <Field
+      label={label}
+      required={required}
+      error={error}
+      hint={hint || (selected ? `${selected.fullName} · ${selected.department || 'No department'}` : 'Search the employee directory')}
+    >
       <TextInput
+        invalid={Boolean(error)}
         value={query || (selected ? `${selected.employeeCode} — ${selected.fullName}` : '')}
         onChange={(event) => {
           setQuery(event.target.value);
@@ -113,6 +134,8 @@ export function FormPanel({
   onSave,
   saving,
   children,
+  formError,
+  saveLabel = 'Save',
 }: {
   title: string;
   description?: string;
@@ -121,6 +144,8 @@ export function FormPanel({
   onSave: () => void;
   saving: boolean;
   children: ReactNode;
+  formError?: string;
+  saveLabel?: string;
 }) {
   if (!open) return null;
   return (
@@ -130,10 +155,14 @@ export function FormPanel({
           <div>
             <h3 className="text-lg font-black text-slate-950">{title}</h3>
             {description ? <p className="mt-1 text-sm font-semibold text-slate-500">{description}</p> : null}
-            <p className="mt-1 text-[11px] font-bold uppercase tracking-wide text-emerald-700">Persists to DLE_Enterprise · fleet schema</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-sm font-bold text-slate-500 hover:bg-slate-100">Close</button>
         </div>
+        {formError ? (
+          <div className="mx-5 mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+            {formError}
+          </div>
+        ) : null}
         <div className="grid gap-4 px-5 py-5 sm:grid-cols-2">{children}</div>
         <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-slate-100 bg-white px-5 py-4">
           <button type="button" onClick={onClose} className="h-10 rounded-xl px-4 text-sm font-bold text-slate-600 hover:bg-slate-100">Cancel</button>
@@ -143,7 +172,7 @@ export function FormPanel({
             onClick={onSave}
             className="h-10 rounded-xl bg-slate-950 px-4 text-sm font-black text-white disabled:opacity-60"
           >
-            {saving ? 'Saving…' : 'Save to DLE_Enterprise'}
+            {saving ? 'Saving…' : saveLabel}
           </button>
         </div>
       </div>

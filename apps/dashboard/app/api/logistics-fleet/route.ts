@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   canAllocateFleetTrip,
   canDispatchFleetTrip,
-  canLineApproveFleetTrip,
   canManageFleet,
   canSubmitFleetTrip,
   canViewFleet,
 } from '@/lib/access/fleet-access';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
-import { TRIP_WORKFLOW_ACTIONS, type TripWorkflowAction } from '@/lib/fleet-management/trip-workflow';
+import { TRIP_WORKFLOW_ACTIONS, isPendingDriverSupervisor, type TripWorkflowAction } from '@/lib/fleet-management/trip-workflow';
+import { safeNotifyFleetTripWorkflow } from '@/lib/fleet-trip-notification-service';
 import {
   createLogisticsFleetRecord,
   performFleetAction,
@@ -19,6 +19,7 @@ import {
   updateLogisticsFleetRecord,
   type LogisticsEntity,
 } from '@/lib/logistics-fleet-store';
+import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
 
 const entities = new Set<LogisticsEntity>([
   'vehicle', 'driver', 'trip', 'maintenance', 'fuel', 'compliance', 'request',
@@ -58,6 +59,31 @@ const tripContextFrom = (base: { session: NonNullable<Awaited<ReturnType<typeof 
   isGlobalAdmin: Boolean(base.session.isGlobalAdmin),
 });
 
+const tripFromPayload = (data: Awaited<ReturnType<typeof readLogisticsFleetData>>, tripId?: string) => {
+  if (tripId) return data.trips.find((item) => item.id === tripId) || null;
+  return data.trips[0] || null;
+};
+
+const fireTripNotifications = async (input: {
+  request: NextRequest;
+  action: TripWorkflowAction | 'create-trip';
+  data: Awaited<ReturnType<typeof readLogisticsFleetData>>;
+  tripId?: string;
+  actor: string;
+  reason?: string;
+}) => {
+  const trip = tripFromPayload(input.data, input.tripId);
+  if (!trip) return;
+  await safeNotifyFleetTripWorkflow({
+    action: input.action,
+    trip,
+    vehicles: input.data.vehicles,
+    actor: input.actor,
+    reason: input.reason,
+    baseUrl: resolveWorkflowLinkOriginFromRequest(input.request),
+  });
+};
+
 export async function GET(request: NextRequest) {
   try {
     const base = await guardView(request);
@@ -89,8 +115,10 @@ export async function POST(request: NextRequest) {
 
     if (body.action === 'update-record') {
       if (!canManageFleet(base.permissions, base.session.isGlobalAdmin)) return err(403, 'Forbidden.');
-      if (body.entity !== 'vehicle' || !body.id) return err(400, 'Vehicle id is required for update.');
-      const data = await updateLogisticsFleetRecord('vehicle', body.id, body.record || {}, actor);
+      if ((body.entity !== 'vehicle' && body.entity !== 'driver') || !body.id) {
+        return err(400, 'Vehicle or driver id is required for update.');
+      }
+      const data = await updateLogisticsFleetRecord(body.entity, body.id, body.record || {}, actor);
       return ok(data);
     }
 
@@ -99,20 +127,27 @@ export async function POST(request: NextRequest) {
       if (action === 'submit-trip' && !canSubmitFleetTrip(base.permissions, base.session.isGlobalAdmin)) {
         return err(403, 'Forbidden.');
       }
-      if ((action === 'approve-line' || action === 'reject-line') && !canLineApproveFleetTrip(base.permissions, base.session.isGlobalAdmin)) {
-        // Manager match is still allowed inside the store via actorEmployeeCode.
-        // Callers without fleet.approve proceed; store enforces manager/approver.
-      }
-      if ((action === 'allocate-trip') && !canAllocateFleetTrip(base.permissions, base.session.isGlobalAdmin)) {
-        return err(403, 'Forbidden. Driver Supervisor or Fleet Approver required to allocate.');
+      if ((action === 'approve-line' || action === 'reject-line' || action === 'return-trip' || action === 'allocate-trip') && !canAllocateFleetTrip(base.permissions, base.session.isGlobalAdmin)) {
+        return err(403, 'Forbidden. Driver Supervisor or Fleet Approver required.');
       }
       if ((action === 'dispatch-trip' || action === 'start-trip' || action === 'complete-trip') && !canDispatchFleetTrip(base.permissions, base.session.isGlobalAdmin)) {
         return err(403, 'Forbidden. Fleet Dispatcher permission required.');
       }
-      if ((action === 'return-trip' || action === 'cancel-trip') && !canManageFleet(base.permissions, base.session.isGlobalAdmin) && !canLineApproveFleetTrip(base.permissions, base.session.isGlobalAdmin) && !canAllocateFleetTrip(base.permissions, base.session.isGlobalAdmin)) {
+      if ((action === 'cancel-trip') && !canManageFleet(base.permissions, base.session.isGlobalAdmin) && !canAllocateFleetTrip(base.permissions, base.session.isGlobalAdmin)) {
         return err(403, 'Forbidden.');
       }
       const data = await performTripWorkflow(action, body as Record<string, unknown>, actor, { ...context, reason: body.reason });
+      const tripId = String(body.tripId || body.id || '');
+      if (['submit-trip', 'allocate-trip', 'reject-line', 'return-trip', 'dispatch-trip', 'complete-trip', 'cancel-trip'].includes(action)) {
+        void fireTripNotifications({
+          request,
+          action,
+          data,
+          tripId,
+          actor,
+          reason: body.reason,
+        });
+      }
       return ok(data);
     }
 
@@ -147,6 +182,18 @@ export async function POST(request: NextRequest) {
       return err(403, 'Forbidden.');
     }
     const data = await createLogisticsFleetRecord(body.entity, body.record || {}, actor);
+    if (body.entity === 'trip') {
+      const trip = data.trips[0];
+      if (trip && isPendingDriverSupervisor(trip.status)) {
+        void fireTripNotifications({
+          request,
+          action: 'create-trip',
+          data,
+          tripId: trip.id,
+          actor,
+        });
+      }
+    }
     return ok(data, 201);
   } catch (error) {
     return err(400, error instanceof Error ? error.message : 'Unable to save fleet record to DLE_Enterprise.');

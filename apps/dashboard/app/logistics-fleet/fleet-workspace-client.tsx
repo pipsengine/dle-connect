@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { AlertTriangle, CheckCircle2, Database, Plus } from 'lucide-react';
+import { AlertTriangle, Database, Plus } from 'lucide-react';
 import { FleetPortalShell } from './fleet-portal-shell';
 import {
   ActionChip,
@@ -37,6 +37,20 @@ type Vehicle = {
   insuranceExpiry: string;
   roadWorthinessExpiry: string;
   custodian?: string;
+  ownershipType?: string;
+  acquisitionCost?: number;
+  supplier?: string;
+  purchaseDate?: string;
+  warrantyExpiry?: string;
+  financingNotes?: string;
+  depreciationMethod?: string;
+  disposalDate?: string;
+  chassisNumber?: string;
+  engineNumber?: string;
+  fuelType?: string;
+  costCenter?: string;
+  projectCode?: string;
+  year?: number;
 };
 type Driver = {
   id: string;
@@ -44,6 +58,9 @@ type Driver = {
   licenseNumber: string;
   licenseClass: string;
   licenseExpiry: string;
+  issuingAuthority?: string;
+  medicalCertificateStatus?: string;
+  defensiveDrivingCertificate?: string;
   availabilityStatus: string;
   assignedVehicleId: string;
   status: string;
@@ -51,6 +68,7 @@ type Driver = {
   safetyScore: number;
   approvalStatus?: string;
   driverCategory?: string;
+  registeredAt?: string;
 };
 type Trip = {
   id: string;
@@ -90,6 +108,9 @@ type Payload = {
   generatedAt: string;
   source?: string;
   employees: EmployeeOption[];
+  driverEmployees?: EmployeeOption[];
+  locations?: string[];
+  departments?: string[];
   vehicles: Vehicle[];
   drivers: Driver[];
   trips: Trip[];
@@ -223,6 +244,7 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeTab = fleetTabFromQuery(workspace, searchParams.get('tab'));
+  const focusTripId = String(searchParams.get('tripId') || '').trim();
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -230,9 +252,13 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
   const [notice, setNotice] = useState('');
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [formErrorSummary, setFormErrorSummary] = useState('');
   const [employee, setEmployee] = useState<{ fullName?: string; jobTitle?: string; employeeCode?: string; department?: string }>({});
   const [moreOpen, setMoreOpen] = useState(false);
   const [assignState, setAssignState] = useState<Record<string, { vehicleId: string; driverEmployeeCode: string }>>({});
+  const [editingVehicleId, setEditingVehicleId] = useState('');
+  const [editingDriverId, setEditingDriverId] = useState('');
 
   const applyPayload = (data: Payload) => {
     setPayload(data);
@@ -275,7 +301,45 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
     setMoreOpen(false);
   };
 
-  const setField = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  const setField = (key: string, value: string) => {
+    setForm((current) => ({ ...current, [key]: value }));
+    setFormErrors((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    setFormErrorSummary('');
+  };
+
+  const validateTripForm = (record: Record<string, string>) => {
+    const errors: Record<string, string> = {};
+    const required: Array<[string, string]> = [
+      ['requesterEmployeeCode', 'Select the requester'],
+      ['requesterDepartment', 'Select a department'],
+      ['requesterLocation', 'Select a location'],
+      ['origin', 'Enter the trip origin'],
+      ['destination', 'Enter the destination'],
+      ['startDate', 'Select a start date'],
+      ['endDate', 'Select an end date'],
+      ['projectCode', 'Enter a project code'],
+      ['costCenter', 'Enter a cost centre'],
+      ['purpose', 'Enter the trip purpose'],
+    ];
+    for (const [key, message] of required) {
+      if (!String(record[key] || '').trim()) errors[key] = message;
+    }
+    const start = String(record.startDate || '').trim();
+    const end = String(record.endDate || '').trim();
+    if (start && end && end < start) {
+      errors.endDate = 'End date must be on or after the start date';
+    }
+    if (String(record.origin || '').trim() && String(record.destination || '').trim()
+      && String(record.origin).trim().toLowerCase() === String(record.destination).trim().toLowerCase()) {
+      errors.destination = 'Destination must be different from origin';
+    }
+    return errors;
+  };
 
   const postJson = async (body: Record<string, unknown>) => {
     setSaving(true);
@@ -291,6 +355,10 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
       applyPayload(json.data);
       setFormOpen(false);
       setForm({});
+      setFormErrors({});
+      setFormErrorSummary('');
+      setEditingVehicleId('');
+      setEditingDriverId('');
       return json.data as Payload;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to save to DLE_Enterprise');
@@ -301,12 +369,17 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
   };
 
   const openCreate = () => {
+    setEditingVehicleId('');
+    setEditingDriverId('');
+    setFormErrors({});
+    setFormErrorSummary('');
     const defaults: Record<string, string> = {};
     if (employee.employeeCode) {
       if (workspace === 'trips-dispatch') {
         defaults.requesterEmployeeCode = employee.employeeCode;
         defaults.requesterDepartment = employee.department || '';
-        defaults.requesterLocation = employee.department || '';
+        const match = (payload?.employees || []).find((item) => item.employeeCode === employee.employeeCode);
+        defaults.requesterLocation = match?.location || '';
       }
       if (workspace === 'fuel' || workspace === 'inspections-compliance') defaults.driverEmployeeCode = employee.employeeCode;
       if (workspace === 'allocations' || workspace === 'administration') defaults.requesterEmployeeCode = employee.employeeCode;
@@ -332,6 +405,25 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
   };
 
   const saveCreate = async () => {
+    if (workspace === 'trips-dispatch' && !editingVehicleId && !editingDriverId) {
+      const errors = validateTripForm(form);
+      if (Object.keys(errors).length) {
+        setFormErrors(errors);
+        setFormErrorSummary(`Complete the required trip fields before saving (${Object.keys(errors).length} remaining).`);
+        setError('');
+        return;
+      }
+    }
+    if (editingVehicleId) {
+      await postJson({ action: 'update-record', entity: 'vehicle', id: editingVehicleId, record: form });
+      setEditingVehicleId('');
+      return;
+    }
+    if (editingDriverId) {
+      await postJson({ action: 'update-record', entity: 'driver', id: editingDriverId, record: form });
+      setEditingDriverId('');
+      return;
+    }
     const entity = entityForWorkspace(workspace);
     if (!entity) return;
     if (workspace === 'vendors-contracts' && activeTab === 'contracts') {
@@ -339,6 +431,50 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
       return;
     }
     await postJson({ entity, record: form });
+  };
+
+  const openOwnershipEdit = (vehicle: Vehicle) => {
+    setEditingDriverId('');
+    setEditingVehicleId(vehicle.id);
+    setForm({
+      location: vehicle.location || '',
+      department: vehicle.department || '',
+      ownershipType: vehicle.ownershipType || 'Purchase',
+      acquisitionCost: String(vehicle.acquisitionCost || ''),
+      supplier: vehicle.supplier || '',
+      purchaseDate: (vehicle.purchaseDate || '').slice(0, 10),
+      warrantyExpiry: (vehicle.warrantyExpiry || '').slice(0, 10),
+      financingNotes: vehicle.financingNotes || '',
+      depreciationMethod: vehicle.depreciationMethod || '',
+      disposalDate: (vehicle.disposalDate || '').slice(0, 10),
+      chassisNumber: vehicle.chassisNumber || '',
+      engineNumber: vehicle.engineNumber || '',
+      fuelType: vehicle.fuelType || '',
+      costCenter: vehicle.costCenter || '',
+      projectCode: vehicle.projectCode || '',
+      status: vehicle.status || 'Available',
+      odometerKm: String(vehicle.odometerKm || ''),
+      nextServiceKm: String(vehicle.nextServiceKm || ''),
+    });
+    setFormOpen(true);
+  };
+
+  const openDriverEdit = (driver: Driver) => {
+    setEditingVehicleId('');
+    setEditingDriverId(driver.id);
+    setForm({
+      employeeCode: driver.employeeCode || '',
+      licenseNumber: driver.licenseNumber || '',
+      licenseClass: driver.licenseClass || '',
+      licenseExpiry: (driver.licenseExpiry || '').slice(0, 10),
+      issuingAuthority: driver.issuingAuthority || '',
+      driverCategory: driver.driverCategory || 'Company Driver',
+      medicalCertificateStatus: driver.medicalCertificateStatus || 'Missing',
+      defensiveDrivingCertificate: driver.defensiveDrivingCertificate || 'Missing',
+      availabilityStatus: driver.availabilityStatus || 'Available',
+      safetyScore: String(driver.safetyScore || 90),
+    });
+    setFormOpen(true);
   };
 
   const workflow = async (entity: string, id: string, action: string) => {
@@ -361,6 +497,46 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
   const vendorLabel = (id: string) => payload?.vendors?.find((item) => item.id === id)?.name || id || '—';
 
   const createForm = () => {
+    if (editingVehicleId) {
+      return (
+        <>
+          <Field label="Location (DLE_Enterprise)">
+            <TextSelect value={form.location || ''} onChange={(e) => setField('location', e.target.value)}>
+              <option value="">Select location</option>
+              {(payload?.locations || []).map((location) => <option key={location} value={location}>{location}</option>)}
+            </TextSelect>
+          </Field>
+          <Field label="Department">
+            <TextSelect value={form.department || ''} onChange={(e) => setField('department', e.target.value)}>
+              <option value="">Select department</option>
+              {(payload?.departments || []).map((department) => <option key={department} value={department}>{department}</option>)}
+            </TextSelect>
+          </Field>
+          <Field label="Ownership type">
+            <TextSelect value={form.ownershipType || 'Purchase'} onChange={(e) => setField('ownershipType', e.target.value)}>
+              {['Purchase', 'Lease', 'Hired', 'Project-owned'].map((item) => <option key={item} value={item}>{item}</option>)}
+            </TextSelect>
+          </Field>
+          <Field label="Acquisition cost (NGN)"><TextInput type="number" value={form.acquisitionCost || ''} onChange={(e) => setField('acquisitionCost', e.target.value)} /></Field>
+          <Field label="Supplier"><TextInput value={form.supplier || ''} onChange={(e) => setField('supplier', e.target.value)} /></Field>
+          <Field label="Purchase date"><TextInput type="date" value={(form.purchaseDate || '').slice(0, 10)} onChange={(e) => setField('purchaseDate', e.target.value)} /></Field>
+          <Field label="Warranty expiry"><TextInput type="date" value={(form.warrantyExpiry || '').slice(0, 10)} onChange={(e) => setField('warrantyExpiry', e.target.value)} /></Field>
+          <Field label="Depreciation method"><TextInput value={form.depreciationMethod || ''} onChange={(e) => setField('depreciationMethod', e.target.value)} /></Field>
+          <Field label="Disposal date"><TextInput type="date" value={(form.disposalDate || '').slice(0, 10)} onChange={(e) => setField('disposalDate', e.target.value)} /></Field>
+          <Field label="Chassis number"><TextInput value={form.chassisNumber || ''} onChange={(e) => setField('chassisNumber', e.target.value)} /></Field>
+          <Field label="Engine number"><TextInput value={form.engineNumber || ''} onChange={(e) => setField('engineNumber', e.target.value)} /></Field>
+          <Field label="Fuel type"><TextInput value={form.fuelType || ''} onChange={(e) => setField('fuelType', e.target.value)} /></Field>
+          <Field label="Cost centre"><TextInput value={form.costCenter || ''} onChange={(e) => setField('costCenter', e.target.value)} /></Field>
+          <Field label="Project code"><TextInput value={form.projectCode || ''} onChange={(e) => setField('projectCode', e.target.value)} /></Field>
+          <Field label="Status">
+            <TextSelect value={form.status || 'Available'} onChange={(e) => setField('status', e.target.value)}>
+              {['Available', 'Assigned', 'In Maintenance', 'Grounded', 'Retired'].map((item) => <option key={item} value={item}>{item}</option>)}
+            </TextSelect>
+          </Field>
+          <div className="sm:col-span-2"><Field label="Financing notes"><TextTextArea value={form.financingNotes || ''} onChange={(e) => setField('financingNotes', e.target.value)} /></Field></div>
+        </>
+      );
+    }
     if (workspace === 'vehicles') {
       return (
         <>
@@ -374,23 +550,56 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
           </Field>
           <Field label="Make / model"><TextInput value={form.makeModel || ''} onChange={(e) => setField('makeModel', e.target.value)} /></Field>
           <Field label="Year"><TextInput type="number" value={form.year || ''} onChange={(e) => setField('year', e.target.value)} /></Field>
-          <Field label="Location"><TextInput value={form.location || ''} onChange={(e) => setField('location', e.target.value)} /></Field>
-          <Field label="Department"><TextInput value={form.department || ''} onChange={(e) => setField('department', e.target.value)} /></Field>
+          <Field label="Location (DLE_Enterprise)">
+            <TextSelect value={form.location || ''} onChange={(e) => setField('location', e.target.value)}>
+              <option value="">Select location</option>
+              {(payload?.locations || []).map((location) => <option key={location} value={location}>{location}</option>)}
+            </TextSelect>
+          </Field>
+          <Field label="Department">
+            <TextSelect value={form.department || ''} onChange={(e) => setField('department', e.target.value)}>
+              <option value="">Select department</option>
+              {(payload?.departments || []).map((department) => <option key={department} value={department}>{department}</option>)}
+            </TextSelect>
+          </Field>
+          <Field label="Fuel type"><TextInput value={form.fuelType || ''} onChange={(e) => setField('fuelType', e.target.value)} /></Field>
           <Field label="Odometer (km)"><TextInput type="number" value={form.odometerKm || ''} onChange={(e) => setField('odometerKm', e.target.value)} /></Field>
           <Field label="Next service (km)"><TextInput type="number" value={form.nextServiceKm || ''} onChange={(e) => setField('nextServiceKm', e.target.value)} /></Field>
           <Field label="Insurance expiry"><TextInput type="date" value={(form.insuranceExpiry || '').slice(0, 10)} onChange={(e) => setField('insuranceExpiry', e.target.value)} /></Field>
           <Field label="Roadworthiness expiry"><TextInput type="date" value={(form.roadWorthinessExpiry || '').slice(0, 10)} onChange={(e) => setField('roadWorthinessExpiry', e.target.value)} /></Field>
+          <Field label="Ownership type">
+            <TextSelect value={form.ownershipType || 'Purchase'} onChange={(e) => setField('ownershipType', e.target.value)}>
+              {['Purchase', 'Lease', 'Hired', 'Project-owned'].map((item) => <option key={item} value={item}>{item}</option>)}
+            </TextSelect>
+          </Field>
+          <Field label="Acquisition cost (NGN)"><TextInput type="number" value={form.acquisitionCost || ''} onChange={(e) => setField('acquisitionCost', e.target.value)} /></Field>
+          <Field label="Supplier"><TextInput value={form.supplier || ''} onChange={(e) => setField('supplier', e.target.value)} /></Field>
+          <Field label="Purchase date"><TextInput type="date" value={(form.purchaseDate || '').slice(0, 10)} onChange={(e) => setField('purchaseDate', e.target.value)} /></Field>
           <div className="sm:col-span-2">
             <EmployeePicker label="Vehicle custodian" value={form.custodianEmployeeCode || ''} onChange={(value) => setField('custodianEmployeeCode', value)} employees={payload?.employees || []} />
           </div>
         </>
       );
     }
-    if (workspace === 'drivers') {
+    if (workspace === 'drivers' || editingDriverId) {
+      const linkedCodes = new Set((payload?.drivers || []).map((driver) => driver.employeeCode.toLowerCase()));
+      const linkCandidates = (payload?.employees || []).filter((item) => {
+        if (editingDriverId) return item.employeeCode === form.employeeCode;
+        return !linkedCodes.has(item.employeeCode.toLowerCase());
+      });
+      const preferred = linkCandidates.filter((item) => item.isDirectoryDriver);
+      const others = linkCandidates.filter((item) => !item.isDirectoryDriver);
+      const pickerEmployees = editingDriverId ? linkCandidates : [...preferred, ...others];
       return (
         <>
           <div className="sm:col-span-2">
-            <EmployeePicker label="Employee" value={form.employeeCode || ''} onChange={(value) => setField('employeeCode', value)} employees={payload?.employees || []} />
+            <EmployeePicker
+              label="Employee"
+              value={form.employeeCode || ''}
+              onChange={(value) => setField('employeeCode', value)}
+              employees={pickerEmployees}
+              hint={editingDriverId ? 'Employee linked from the directory' : 'Directory roles marked Driver/Chauffeur are listed first'}
+            />
           </div>
           <Field label="Licence number"><TextInput value={form.licenseNumber || ''} onChange={(e) => setField('licenseNumber', e.target.value)} /></Field>
           <Field label="Licence class"><TextInput value={form.licenseClass || ''} onChange={(e) => setField('licenseClass', e.target.value)} placeholder="B, C, E…" /></Field>
@@ -411,24 +620,84 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
               {['Valid', 'Missing', 'Expired', 'Rejected'].map((item) => <option key={item} value={item}>{item}</option>)}
             </TextSelect>
           </Field>
+          {editingDriverId ? (
+            <>
+              <Field label="Availability">
+                <TextSelect value={form.availabilityStatus || 'Available'} onChange={(e) => setField('availabilityStatus', e.target.value)}>
+                  {['Available', 'Assigned', 'On Trip', 'Off Duty', 'On Leave', 'Suspended', 'Inactive'].map((item) => <option key={item} value={item}>{item}</option>)}
+                </TextSelect>
+              </Field>
+              <Field label="Safety score"><TextInput type="number" value={form.safetyScore || ''} onChange={(e) => setField('safetyScore', e.target.value)} /></Field>
+            </>
+          ) : null}
         </>
       );
     }
     if (workspace === 'trips-dispatch') {
+      const onRequesterChange = (code: string) => {
+        const match = (payload?.employees || []).find((item) => item.employeeCode === code);
+        setForm((current) => ({
+          ...current,
+          requesterEmployeeCode: code,
+          requesterDepartment: match?.department || current.requesterDepartment || '',
+          requesterLocation: match?.location || current.requesterLocation || '',
+        }));
+        setFormErrors((current) => {
+          const next = { ...current };
+          delete next.requesterEmployeeCode;
+          if (match?.department) delete next.requesterDepartment;
+          if (match?.location) delete next.requesterLocation;
+          return next;
+        });
+        setFormErrorSummary('');
+      };
       return (
         <>
           <div className="sm:col-span-2">
-            <EmployeePicker label="Requester" value={form.requesterEmployeeCode || ''} onChange={(value) => setField('requesterEmployeeCode', value)} employees={payload?.employees || []} />
+            <EmployeePicker
+              label="Requester"
+              required
+              error={formErrors.requesterEmployeeCode}
+              value={form.requesterEmployeeCode || ''}
+              onChange={onRequesterChange}
+              employees={payload?.employees || []}
+            />
           </div>
-          <Field label="Department"><TextInput value={form.requesterDepartment || ''} onChange={(e) => setField('requesterDepartment', e.target.value)} /></Field>
-          <Field label="Location"><TextInput value={form.requesterLocation || ''} onChange={(e) => setField('requesterLocation', e.target.value)} /></Field>
-          <Field label="Origin"><TextInput value={form.origin || ''} onChange={(e) => setField('origin', e.target.value)} /></Field>
-          <Field label="Destination"><TextInput value={form.destination || ''} onChange={(e) => setField('destination', e.target.value)} /></Field>
-          <Field label="Start date"><TextInput type="date" value={(form.startDate || '').slice(0, 10)} onChange={(e) => setField('startDate', e.target.value)} /></Field>
-          <Field label="End date"><TextInput type="date" value={(form.endDate || '').slice(0, 10)} onChange={(e) => setField('endDate', e.target.value)} /></Field>
-          <Field label="Project code"><TextInput value={form.projectCode || ''} onChange={(e) => setField('projectCode', e.target.value)} /></Field>
-          <Field label="Cost centre"><TextInput value={form.costCenter || ''} onChange={(e) => setField('costCenter', e.target.value)} /></Field>
-          <div className="sm:col-span-2"><Field label="Purpose"><TextTextArea value={form.purpose || ''} onChange={(e) => setField('purpose', e.target.value)} /></Field></div>
+          <Field label="Department" required error={formErrors.requesterDepartment}>
+            <TextSelect invalid={Boolean(formErrors.requesterDepartment)} value={form.requesterDepartment || ''} onChange={(e) => setField('requesterDepartment', e.target.value)}>
+              <option value="">Select department</option>
+              {(payload?.departments || []).map((department) => <option key={department} value={department}>{department}</option>)}
+            </TextSelect>
+          </Field>
+          <Field label="Location (DLE_Enterprise)" required error={formErrors.requesterLocation}>
+            <TextSelect invalid={Boolean(formErrors.requesterLocation)} value={form.requesterLocation || ''} onChange={(e) => setField('requesterLocation', e.target.value)}>
+              <option value="">Select location</option>
+              {(payload?.locations || []).map((location) => <option key={location} value={location}>{location}</option>)}
+            </TextSelect>
+          </Field>
+          <Field label="Origin" required error={formErrors.origin}>
+            <TextInput invalid={Boolean(formErrors.origin)} value={form.origin || ''} onChange={(e) => setField('origin', e.target.value)} placeholder="Pickup / departure point" />
+          </Field>
+          <Field label="Destination" required error={formErrors.destination}>
+            <TextInput invalid={Boolean(formErrors.destination)} value={form.destination || ''} onChange={(e) => setField('destination', e.target.value)} placeholder="Trip destination" />
+          </Field>
+          <Field label="Start date" required error={formErrors.startDate}>
+            <TextInput invalid={Boolean(formErrors.startDate)} type="date" value={(form.startDate || '').slice(0, 10)} onChange={(e) => setField('startDate', e.target.value)} />
+          </Field>
+          <Field label="End date" required error={formErrors.endDate}>
+            <TextInput invalid={Boolean(formErrors.endDate)} type="date" value={(form.endDate || '').slice(0, 10)} onChange={(e) => setField('endDate', e.target.value)} />
+          </Field>
+          <Field label="Project code" required error={formErrors.projectCode} hint="Required for cost allocation and trip charging">
+            <TextInput invalid={Boolean(formErrors.projectCode)} value={form.projectCode || ''} onChange={(e) => setField('projectCode', e.target.value)} placeholder="e.g. PJT-2026-001" />
+          </Field>
+          <Field label="Cost centre" required error={formErrors.costCenter} hint="Required for finance posting">
+            <TextInput invalid={Boolean(formErrors.costCenter)} value={form.costCenter || ''} onChange={(e) => setField('costCenter', e.target.value)} placeholder="e.g. LOGISTICS" />
+          </Field>
+          <div className="sm:col-span-2">
+            <Field label="Purpose" required error={formErrors.purpose}>
+              <TextTextArea invalid={Boolean(formErrors.purpose)} value={form.purpose || ''} onChange={(e) => setField('purpose', e.target.value)} placeholder="Why is this trip required?" />
+            </Field>
+          </div>
         </>
       );
     }
@@ -597,6 +866,8 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
   };
 
   const formTitle = () => {
+    if (editingVehicleId) return 'Update Vehicle Ownership & Assignment';
+    if (editingDriverId) return 'Update Driver Licence & Fitness';
     if (workspace === 'vendors-contracts' && activeTab === 'contracts') return 'Add Contract';
     return meta.primaryAction || 'Create record';
   };
@@ -660,11 +931,11 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
                     <ActionChip label="Reject" tone="red" disabled={saving} onClick={() => void workflow('driver', item.id, 'reject')} />
                   </div>,
                 ]),
-                ...payload.trips.filter((item) => ['PendingLineApproval', 'Submitted', 'PendingFleetAllocation'].includes(item.status)).map((item) => [
+                ...payload.trips.filter((item) => ['PendingDriverSupervisor', 'PendingLineApproval', 'Submitted', 'PendingFleetAllocation'].includes(item.status)).map((item) => [
                   item.requestNo,
                   `${item.origin} → ${item.destination}`,
-                  item.status,
-                  <Link key={item.id} href="/logistics-fleet/trips-dispatch?tab=approvals" className="text-xs font-black text-blue-700">Open trip workflow</Link>,
+                  'Awaiting Driver Supervisor',
+                  <Link key={item.id} href="/logistics-fleet/trips-dispatch?tab=supervisor" className="text-xs font-black text-blue-700">Open Driver Supervisor queue</Link>,
                 ]),
                 ...payload.maintenance.filter((item) => item.status === 'Submitted').map((item) => [
                   item.maintenanceType,
@@ -683,6 +954,109 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
     }
 
     if (workspace === 'vehicles') {
+      if (activeTab === 'ownership') {
+        return (
+          <Panel title="Ownership & Acquisition">
+            <DataTable
+              columns={['Asset', 'Ownership', 'Supplier', 'Purchase', 'Cost', 'Warranty', 'Depreciation', 'Actions']}
+              rows={payload.vehicles.map((vehicle) => [
+                `${vehicle.assetCode} · ${vehicle.plateNumber}`,
+                vehicle.ownershipType || '—',
+                vehicle.supplier || '—',
+                dateText(vehicle.purchaseDate || ''),
+                money(vehicle.acquisitionCost || 0),
+                dateText(vehicle.warrantyExpiry || ''),
+                vehicle.depreciationMethod || '—',
+                <ActionChip key={vehicle.id} label="Edit ownership" tone="blue" disabled={saving} onClick={() => openOwnershipEdit(vehicle)} />,
+              ])}
+            />
+          </Panel>
+        );
+      }
+      if (activeTab === 'assignment') {
+        return (
+          <Panel title="Organizational Assignment">
+            <DataTable
+              columns={['Asset', 'Department', 'Location', 'Cost centre', 'Project', 'Custodian', 'Status', 'Actions']}
+              rows={payload.vehicles.map((vehicle) => [
+                `${vehicle.assetCode} · ${vehicle.plateNumber}`,
+                vehicle.department || '—',
+                vehicle.location || '—',
+                vehicle.costCenter || '—',
+                vehicle.projectCode || '—',
+                vehicle.custodian || '—',
+                <span key={vehicle.id} className={`rounded-full px-2 py-0.5 text-[11px] font-black ${tone(vehicle.status)}`}>{vehicle.status}</span>,
+                <ActionChip key={`${vehicle.id}-a`} label="Update assignment" tone="blue" disabled={saving} onClick={() => openOwnershipEdit(vehicle)} />,
+              ])}
+            />
+          </Panel>
+        );
+      }
+      if (activeTab === 'documents') {
+        return (
+          <Panel title="Vehicle Documents">
+            <DataTable
+              columns={['Document', 'Vehicle', 'Reference', 'Expiry', 'Status']}
+              rows={payload.compliance.filter((item) => item.vehicleId).map((item) => [
+                item.documentType,
+                vehicleLabel(item.vehicleId),
+                item.reference,
+                dateText(item.expiryDate),
+                <span key={item.id} className={`rounded-full px-2 py-0.5 text-[11px] font-black ${tone(item.status)}`}>{item.status}</span>,
+              ])}
+            />
+          </Panel>
+        );
+      }
+      if (activeTab === 'history') {
+        return (
+          <div className="space-y-4">
+            <Panel title="Assignment history">
+              <DataTable
+                columns={['When', 'Action', 'Driver', 'Vehicle', 'By']}
+                rows={(payload.assignmentHistory || []).slice(0, 30).map((item) => [
+                  dateText(item.effectiveDate),
+                  item.action,
+                  driverLabel(item.driverId),
+                  vehicleLabel(item.vehicleId),
+                  item.performedBy,
+                ])}
+              />
+            </Panel>
+            <Panel title="Maintenance history">
+              <DataTable
+                columns={['Vehicle', 'Type', 'Vendor', 'Date', 'Cost', 'Status']}
+                rows={payload.maintenance.map((item) => [
+                  vehicleLabel(item.vehicleId),
+                  item.maintenanceType,
+                  item.vendor,
+                  dateText(item.scheduledDate),
+                  money(item.cost),
+                  item.status,
+                ])}
+              />
+            </Panel>
+          </div>
+        );
+      }
+      if (activeTab === 'lifecycle') {
+        return (
+          <Panel title="Vehicle Lifecycle">
+            <DataTable
+              columns={['Asset', 'Status', 'Purchase', 'Disposal', 'Odometer', 'Ownership', 'Actions']}
+              rows={payload.vehicles.map((vehicle) => [
+                `${vehicle.assetCode} · ${vehicle.plateNumber}`,
+                <span key={vehicle.id} className={`rounded-full px-2 py-0.5 text-[11px] font-black ${tone(vehicle.status)}`}>{vehicle.status}</span>,
+                dateText(vehicle.purchaseDate || ''),
+                dateText(vehicle.disposalDate || ''),
+                `${vehicle.odometerKm.toLocaleString()} km`,
+                vehicle.ownershipType || '—',
+                <ActionChip key={`${vehicle.id}-l`} label="Update lifecycle" tone="blue" disabled={saving} onClick={() => openOwnershipEdit(vehicle)} />,
+              ])}
+            />
+          </Panel>
+        );
+      }
       return (
         <Panel title={currentTab?.label || 'Vehicles'}>
           <DataTable
@@ -703,61 +1077,262 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
     }
 
     if (workspace === 'drivers') {
+      const drivers = payload.drivers;
+      const available = drivers.filter((d) => d.status === 'Available' || d.availabilityStatus === 'Available');
+      const assigned = drivers.filter((d) => d.assignedVehicleId || d.status === 'Assigned');
+      const onTrip = drivers.filter((d) => d.status === 'On Trip' || d.availabilityStatus === 'On Trip');
+      const suspended = drivers.filter((d) => d.status === 'Suspended' || d.availabilityStatus === 'Suspended');
+      const nonCompliant = drivers.filter((d) => ['Missing Documents', 'Expired', 'Expiring Soon', 'Blocked'].includes(d.complianceStatus) || d.status === 'Compliance Blocked' || d.status === 'License Expired');
+
+      if (activeTab === 'profile') {
+        return (
+          <Panel title="Driver Profile">
+            <DataTable
+              columns={['Employee', 'Job title', 'Department', 'Location', 'Supervisor', 'Contact', 'Employment', 'Assigned vehicle', 'Category']}
+              rows={drivers.map((driver) => {
+                const person = payload.employees.find((item) => item.employeeCode === driver.employeeCode);
+                return [
+                  driverLabel(driver.id),
+                  person?.jobTitle || '—',
+                  person?.department || '—',
+                  person?.location || '—',
+                  person?.managerName || '—',
+                  person?.phone || '—',
+                  person?.status || '—',
+                  vehicleLabel(driver.assignedVehicleId),
+                  driver.driverCategory || '—',
+                ];
+              })}
+            />
+          </Panel>
+        );
+      }
+
+      if (activeTab === 'licence') {
+        return (
+          <Panel title="Licence & Authorization">
+            <DataTable
+              columns={['Driver', 'Licence', 'Class', 'Expiry', 'Authority', 'Category', 'Compliance', 'Actions']}
+              rows={drivers.map((driver) => [
+                driverLabel(driver.id),
+                driver.licenseNumber || '—',
+                driver.licenseClass || '—',
+                dateText(driver.licenseExpiry),
+                driver.issuingAuthority || '—',
+                driver.driverCategory || '—',
+                <span key={`${driver.id}-c`} className={`rounded-full px-2 py-0.5 text-[11px] font-black ${tone(driver.complianceStatus)}`}>{driver.complianceStatus}</span>,
+                <ActionChip key={`${driver.id}-e`} label="Update licence" tone="blue" disabled={saving} onClick={() => openDriverEdit(driver)} />,
+              ])}
+            />
+          </Panel>
+        );
+      }
+
+      if (activeTab === 'fitness') {
+        return (
+          <Panel title="Fitness & Training">
+            <DataTable
+              columns={['Driver', 'Medical', 'Defensive driving', 'Compliance', 'Status', 'Actions']}
+              rows={drivers.map((driver) => [
+                driverLabel(driver.id),
+                <span key={`${driver.id}-m`} className={`rounded-full px-2 py-0.5 text-[11px] font-black ${tone(driver.medicalCertificateStatus || 'Missing')}`}>{driver.medicalCertificateStatus || 'Missing'}</span>,
+                <span key={`${driver.id}-d`} className={`rounded-full px-2 py-0.5 text-[11px] font-black ${tone(driver.defensiveDrivingCertificate || 'Missing')}`}>{driver.defensiveDrivingCertificate || 'Missing'}</span>,
+                <span key={`${driver.id}-c`} className={`rounded-full px-2 py-0.5 text-[11px] font-black ${tone(driver.complianceStatus)}`}>{driver.complianceStatus}</span>,
+                driver.status,
+                <ActionChip key={`${driver.id}-e`} label="Update fitness" tone="blue" disabled={saving} onClick={() => openDriverEdit(driver)} />,
+              ])}
+            />
+          </Panel>
+        );
+      }
+
+      if (activeTab === 'assignments') {
+        return (
+          <div className="space-y-4">
+            <Panel title="Current assignments">
+              <DataTable
+                columns={['Driver', 'Status', 'Vehicle', 'Department', 'Actions']}
+                rows={drivers.map((driver) => {
+                  const person = payload.employees.find((item) => item.employeeCode === driver.employeeCode);
+                  return [
+                    driverLabel(driver.id),
+                    <span key={`${driver.id}-s`} className={`rounded-full px-2 py-0.5 text-[11px] font-black ${tone(driver.status)}`}>{driver.status}</span>,
+                    vehicleLabel(driver.assignedVehicleId),
+                    person?.department || '—',
+                    <div key={`${driver.id}-a`} className="min-w-[180px] space-y-2">
+                      {driver.assignedVehicleId ? (
+                        <ActionChip label="Unassign" tone="amber" disabled={saving} onClick={() => void postJson({ action: 'unassign-vehicle', driverId: driver.id, reason: 'Driver assignment ended' })} />
+                      ) : (
+                        <TextSelect
+                          disabled={saving || driver.status === 'Suspended' || driver.status === 'Compliance Blocked'}
+                          defaultValue=""
+                          onChange={(e) => {
+                            if (!e.target.value) return;
+                            void postJson({ action: 'assign-vehicle', driverId: driver.id, vehicleId: e.target.value, reason: 'Driver register assignment' });
+                          }}
+                        >
+                          <option value="">Assign vehicle…</option>
+                          {payload.vehicles.filter((item) => ['Available', 'Assigned'].includes(item.status) && !payload.drivers.some((d) => d.assignedVehicleId === item.id)).map((vehicle) => (
+                            <option key={vehicle.id} value={vehicle.id}>{vehicle.assetCode} · {vehicle.plateNumber}</option>
+                          ))}
+                        </TextSelect>
+                      )}
+                    </div>,
+                  ];
+                })}
+              />
+            </Panel>
+            <Panel title="Assignment history">
+              <DataTable
+                columns={['When', 'Driver', 'Vehicle', 'Action', 'Reason', 'By']}
+                rows={(payload.assignmentHistory || []).map((item) => [
+                  dateText(item.effectiveDate),
+                  driverLabel(item.driverId),
+                  vehicleLabel(item.vehicleId),
+                  item.action,
+                  item.reason,
+                  item.performedBy,
+                ])}
+              />
+            </Panel>
+          </div>
+        );
+      }
+
+      if (activeTab === 'performance') {
+        return (
+          <Panel title="Performance & Safety">
+            <DataTable
+              columns={['Driver', 'Safety score', 'Trips', 'Completed', 'Open incidents', 'Fuel txns', 'Status']}
+              rows={drivers.map((driver) => {
+                const tripCount = payload.trips.filter((trip) => [driver.id, driver.employeeCode].includes(trip.driverId)).length;
+                const completed = payload.trips.filter((trip) => [driver.id, driver.employeeCode].includes(trip.driverId) && trip.status === 'Completed').length;
+                const openIncidents = (payload.incidents || []).filter((item) => item.status !== 'Closed' && [driver.id, driver.employeeCode].some((code) => item.description?.includes(code) || item.vehicleId === driver.assignedVehicleId)).length;
+                const fuelTxns = payload.fuel.filter((item) => [driver.id, driver.employeeCode].includes(item.driverId || '')).length;
+                return [
+                  driverLabel(driver.id),
+                  String(driver.safetyScore),
+                  String(tripCount),
+                  String(completed),
+                  String(openIncidents),
+                  String(fuelTxns),
+                  <span key={`${driver.id}-s`} className={`rounded-full px-2 py-0.5 text-[11px] font-black ${tone(driver.status)}`}>{driver.status}</span>,
+                ];
+              })}
+            />
+          </Panel>
+        );
+      }
+
+      if (activeTab === 'restrictions') {
+        return (
+          <Panel title="Restrictions & Discipline">
+            <DataTable
+              columns={['Driver', 'Status', 'Availability', 'Compliance', 'Actions']}
+              rows={drivers.filter((driver) => ['Suspended', 'Compliance Blocked', 'License Expired', 'Inactive'].includes(driver.status) || driver.availabilityStatus === 'Suspended' || nonCompliant.includes(driver)).map((driver) => [
+                driverLabel(driver.id),
+                <span key={`${driver.id}-s`} className={`rounded-full px-2 py-0.5 text-[11px] font-black ${tone(driver.status)}`}>{driver.status}</span>,
+                driver.availabilityStatus,
+                driver.complianceStatus,
+                <div key={`${driver.id}-x`} className="flex flex-wrap gap-1">
+                  {driver.status !== 'Suspended' ? (
+                    <ActionChip label="Suspend" tone="amber" disabled={saving} onClick={() => void postJson({ action: 'suspend-driver', driverId: driver.id, reason: 'Operational suspension' })} />
+                  ) : (
+                    <ActionChip label="Reinstate" tone="emerald" disabled={saving} onClick={() => void postJson({ action: 'reactivate-driver', driverId: driver.id, reason: 'Cleared for duty' })} />
+                  )}
+                  <ActionChip label="Update docs" tone="blue" disabled={saving} onClick={() => openDriverEdit(driver)} />
+                </div>,
+              ])}
+            />
+          </Panel>
+        );
+      }
+
       return (
-        <Panel title={currentTab?.label || 'Drivers'}>
-          <DataTable
-            columns={['Employee', 'Licence', 'Class', 'Expiry', 'Availability', 'Compliance', 'Approval', 'Actions']}
-            rows={payload.drivers.map((driver) => [
-              driverLabel(driver.id),
-              driver.licenseNumber,
-              driver.licenseClass,
-              dateText(driver.licenseExpiry),
-              <span key={`${driver.id}-a`} className={`rounded-full px-2 py-0.5 text-[11px] font-black ${tone(driver.availabilityStatus)}`}>{driver.availabilityStatus}</span>,
-              <span key={`${driver.id}-c`} className={`rounded-full px-2 py-0.5 text-[11px] font-black ${tone(driver.complianceStatus)}`}>{driver.complianceStatus}</span>,
-              driver.approvalStatus || '—',
-              <div key={`${driver.id}-x`} className="flex flex-wrap gap-1">
-                {driver.approvalStatus === 'Submitted' ? (
-                  <>
-                    <ActionChip label="Approve" tone="emerald" disabled={saving} onClick={() => void workflow('driver', driver.id, 'approve')} />
-                    <ActionChip label="Reject" tone="red" disabled={saving} onClick={() => void workflow('driver', driver.id, 'reject')} />
-                  </>
-                ) : null}
-                {driver.status !== 'Suspended' ? (
-                  <ActionChip label="Suspend" tone="amber" disabled={saving} onClick={() => void postJson({ action: 'suspend-driver', driverId: driver.id, reason: 'Operational suspension' })} />
-                ) : (
-                  <ActionChip label="Reactivate" tone="blue" disabled={saving} onClick={() => void postJson({ action: 'reactivate-driver', driverId: driver.id, reason: 'Cleared for duty' })} />
-                )}
-              </div>,
-            ])}
-          />
-        </Panel>
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-900">
+            Driver Register is synced from Employee Directory roles (Driver / Chauffeur). Complete licence &amp; fitness before vehicle assignment.
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+            <Metric label="All drivers" value={String(drivers.length)} detail="From directory + fleet" />
+            <Metric label="Available" value={String(available.length)} />
+            <Metric label="Assigned" value={String(assigned.length)} />
+            <Metric label="On trips" value={String(onTrip.length)} />
+            <Metric label="Suspended" value={String(suspended.length)} />
+            <Metric label="Non-compliant" value={String(nonCompliant.length)} />
+          </div>
+          <Panel title="Driver Register">
+            <DataTable
+              columns={['Employee', 'Title', 'Category', 'Licence', 'Expiry', 'Status', 'Compliance', 'Vehicle', 'Actions']}
+              rows={drivers.map((driver) => {
+                const person = payload.employees.find((item) => item.employeeCode === driver.employeeCode);
+                return [
+                  driverLabel(driver.id),
+                  person?.jobTitle || '—',
+                  driver.driverCategory || '—',
+                  driver.licenseNumber || '—',
+                  dateText(driver.licenseExpiry),
+                  <span key={`${driver.id}-s`} className={`rounded-full px-2 py-0.5 text-[11px] font-black ${tone(driver.status)}`}>{driver.status}</span>,
+                  <span key={`${driver.id}-c`} className={`rounded-full px-2 py-0.5 text-[11px] font-black ${tone(driver.complianceStatus)}`}>{driver.complianceStatus}</span>,
+                  vehicleLabel(driver.assignedVehicleId),
+                  <div key={`${driver.id}-x`} className="flex flex-wrap gap-1">
+                    <ActionChip label="Update docs" tone="blue" disabled={saving} onClick={() => openDriverEdit(driver)} />
+                    {driver.approvalStatus === 'Submitted' ? (
+                      <>
+                        <ActionChip label="Approve" tone="emerald" disabled={saving} onClick={() => void workflow('driver', driver.id, 'approve')} />
+                        <ActionChip label="Reject" tone="red" disabled={saving} onClick={() => void workflow('driver', driver.id, 'reject')} />
+                      </>
+                    ) : null}
+                    {driver.status !== 'Suspended' ? (
+                      <ActionChip label="Suspend" tone="amber" disabled={saving} onClick={() => void postJson({ action: 'suspend-driver', driverId: driver.id, reason: 'Operational suspension' })} />
+                    ) : (
+                      <ActionChip label="Reactivate" tone="blue" disabled={saving} onClick={() => void postJson({ action: 'reactivate-driver', driverId: driver.id, reason: 'Cleared for duty' })} />
+                    )}
+                  </div>,
+                ];
+              })}
+            />
+          </Panel>
+        </div>
       );
     }
 
     if (workspace === 'trips-dispatch') {
       const myCode = (employee.employeeCode || '').toLowerCase();
+      const pendingSupervisor = (status: string) =>
+        ['PendingDriverSupervisor', 'PendingLineApproval', 'PendingFleetAllocation', 'Submitted'].includes(status);
       const filtered = payload.trips.filter((trip) => {
-        if (activeTab === 'approvals') return ['PendingLineApproval', 'Submitted'].includes(trip.status);
-        if (activeTab === 'allocation') return trip.status === 'PendingFleetAllocation';
+        if (activeTab === 'supervisor' || activeTab === 'approvals' || activeTab === 'allocation') return pendingSupervisor(trip.status);
         if (activeTab === 'dispatch') return trip.status === 'ReadyToDispatch' || trip.status === 'Approved';
         if (activeTab === 'active') return ['Dispatched', 'InProgress'].includes(trip.status);
         if (activeTab === 'history') return ['Completed', 'Rejected', 'Cancelled'].includes(trip.status);
         if (myCode) return (trip.requesterEmployeeCode || '').toLowerCase() === myCode || trip.requester.toLowerCase().includes(myCode);
         return true;
+      }).sort((a, b) => {
+        if (!focusTripId) return 0;
+        if (a.id === focusTripId) return -1;
+        if (b.id === focusTripId) return 1;
+        return 0;
       });
 
       return (
         <div className="space-y-4">
           <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-900">
-            Workflow: Request → Line Manager need approval → Fleet allocates vehicle &amp; driver → Dispatch → Complete. All stages persist to DLE_Enterprise.
+            Workflow: Requester → Driver Supervisor (approve &amp; allocate vehicle + driver) → Dispatch → Complete. Portal + email notifications are sent at each stage with deep links.
           </div>
+          {focusTripId ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+              Opened from notification — focused on trip <span className="font-black">{filtered.find((item) => item.id === focusTripId)?.requestNo || focusTripId}</span>.
+            </div>
+          ) : null}
           <Panel title={currentTab?.label || 'Trips'}>
             <DataTable
-              columns={['Request', 'Requester', 'Manager', 'Route', 'Progress', 'Vehicle / Driver', 'Actions']}
+              columns={['Request', 'Requester', 'Driver Supervisor', 'Route', 'Progress', 'Vehicle / Driver', 'Actions']}
               rows={filtered.map((trip) => {
                 const selection = assignState[trip.id] || { vehicleId: trip.vehicleId || '', driverEmployeeCode: trip.driverId || '' };
+                const focused = focusTripId && trip.id === focusTripId;
                 return [
-                  <div key={`${trip.id}-req`}>
+                  <div key={`${trip.id}-req`} className={focused ? 'rounded-xl bg-amber-50 p-2 ring-1 ring-amber-200' : undefined}>
                     <p className="font-black text-slate-900">{trip.requestNo}</p>
                     <p className="text-[11px] font-semibold text-slate-500">{dateText(trip.startDate || '')} → {dateText(trip.endDate || '')}</p>
                     <p className="mt-1 text-xs font-semibold text-slate-600">{trip.purpose}</p>
@@ -767,23 +1342,18 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
                   `${trip.origin} → ${trip.destination}`,
                   <TripStepper key={`${trip.id}-step`} status={trip.status} />,
                   <div key={`${trip.id}-assets`} className="text-xs font-semibold text-slate-600">
-                    <p>{vehicleLabel(trip.vehicleId)}</p>
-                    <p>{driverLabel(trip.driverId)}</p>
+                    <p><span className="text-slate-500">Destination:</span> {trip.destination || '—'}</p>
+                    <p><span className="text-slate-500">Vehicle:</span> {vehicleLabel(trip.vehicleId)}</p>
+                    <p><span className="text-slate-500">Driver:</span> {driverLabel(trip.driverId)}</p>
+                    {trip.allocatedBy ? <p className="mt-1 text-emerald-700">Allocated by {trip.allocatedBy}</p> : null}
                     {trip.returnReason ? <p className="mt-1 text-amber-700">Return: {trip.returnReason}</p> : null}
                     {trip.lineRejectReason ? <p className="mt-1 text-red-700">Reject: {trip.lineRejectReason}</p> : null}
                   </div>,
                   <div key={`${trip.id}-actions`} className="min-w-[220px] space-y-2">
                     {['Draft', 'Returned'].includes(trip.status) ? (
-                      <ActionChip label="Submit for approval" tone="blue" disabled={saving} onClick={() => void postJson({ action: 'submit-trip', tripId: trip.id })} />
+                      <ActionChip label="Submit to Driver Supervisor" tone="blue" disabled={saving} onClick={() => void postJson({ action: 'submit-trip', tripId: trip.id })} />
                     ) : null}
-                    {['PendingLineApproval', 'Submitted'].includes(trip.status) ? (
-                      <div className="flex flex-wrap gap-1">
-                        <ActionChip label="Approve need" tone="emerald" disabled={saving} onClick={() => void postJson({ action: 'approve-line', tripId: trip.id })} />
-                        <ActionChip label="Return" tone="amber" disabled={saving} onClick={() => void postJson({ action: 'return-trip', tripId: trip.id, reason: 'Please update trip details' })} />
-                        <ActionChip label="Reject" tone="red" disabled={saving} onClick={() => void postJson({ action: 'reject-line', tripId: trip.id, reason: 'Not approved by line manager' })} />
-                      </div>
-                    ) : null}
-                    {trip.status === 'PendingFleetAllocation' ? (
+                    {pendingSupervisor(trip.status) ? (
                       <div className="space-y-2">
                         <TextSelect
                           value={selection.vehicleId}
@@ -800,14 +1370,14 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
                         >
                           <option value="">Select driver</option>
                           {payload.drivers.filter((item) => item.approvalStatus === 'Approved' || item.status === 'Available' || item.status === 'Assigned').map((driver) => (
-                            <option key={driver.id} value={driver.employeeCode}>{driver.employeeCode}</option>
+                            <option key={driver.id} value={driver.employeeCode}>{driverLabel(driver.id)}</option>
                           ))}
                         </TextSelect>
                         <div className="flex flex-wrap gap-1">
                           <ActionChip
-                            label="Allocate"
+                            label="Approve & allocate"
                             tone="emerald"
-                            disabled={saving}
+                            disabled={saving || !selection.vehicleId || !selection.driverEmployeeCode}
                             onClick={() => void postJson({
                               action: 'allocate-trip',
                               tripId: trip.id,
@@ -815,7 +1385,8 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
                               driverEmployeeCode: selection.driverEmployeeCode,
                             })}
                           />
-                          <ActionChip label="Return" tone="amber" disabled={saving} onClick={() => void postJson({ action: 'return-trip', tripId: trip.id, reason: 'Unable to allocate assets' })} />
+                          <ActionChip label="Return" tone="amber" disabled={saving} onClick={() => void postJson({ action: 'return-trip', tripId: trip.id, reason: 'Please update trip details' })} />
+                          <ActionChip label="Reject" tone="red" disabled={saving} onClick={() => void postJson({ action: 'reject-line', tripId: trip.id, reason: 'Not approved by Driver Supervisor' })} />
                         </div>
                       </div>
                     ) : null}
@@ -946,7 +1517,7 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
                     >
                       <option value="">Assign driver…</option>
                       {payload.drivers.filter((item) => !item.assignedVehicleId && (item.approvalStatus === 'Approved' || item.status === 'Available')).map((item) => (
-                        <option key={item.id} value={item.id}>{item.employeeCode}</option>
+                        <option key={item.id} value={item.id}>{driverLabel(item.id)}</option>
                       ))}
                     </TextSelect>
                   ),
@@ -1076,16 +1647,15 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
 
     if (workspace === 'reports') {
       return (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {(currentTab?.sections || []).map((section) => (
-            <div key={section} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm font-black text-slate-950">{section}</p>
-              <p className="mt-2 text-xs font-semibold text-slate-500">Live metrics compiled from DLE_Enterprise fleet tables.</p>
-              <div className="mt-4 text-xs font-bold text-slate-600">
-                Vehicles {payload.vehicles.length} · Trips {payload.trips.length} · Fuel {money(payload.summary.fuelSpend)}
-              </div>
-            </div>
-          ))}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <Metric label="Vehicles" value={String(payload.vehicles.length)} detail="From [fleet].[Vehicles]" />
+          <Metric label="Drivers" value={String(payload.drivers.length)} detail="From [fleet].[Drivers]" />
+          <Metric label="Open trips" value={String(payload.summary.openTrips)} detail="Live trip workflow" />
+          <Metric label="Fuel spend" value={money(payload.summary.fuelSpend)} detail="From [fleet].[Fuel]" />
+          <Metric label="Maintenance" value={money(payload.summary.maintenanceCost)} />
+          <Metric label="Incidents open" value={String(payload.summary.incidentOpen || incidents.length)} />
+          <Metric label="Vendors" value={String(payload.summary.vendorCount || vendors.length)} />
+          <Metric label="Posted costs" value={money(payload.summary.costTotal || 0)} />
         </div>
       );
     }
@@ -1119,27 +1689,11 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
 
     return (
       <div className="space-y-4">
-        <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-900">
-          {meta.title} is connected to DLE_Enterprise. Use the primary action to create operational records for this workspace.
-        </div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {(currentTab?.sections || []).map((section) => (
-            <div key={section} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-black text-slate-950">{section}</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">Configured under {currentTab?.label}.</p>
-                </div>
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              </div>
-            </div>
-          ))}
-        </div>
-        {payload.requests.length ? (
-          <Panel title="Related requests & approvals">
+        <Panel title={`${meta.title} · ${currentTab?.label || 'Records'}`}>
+          {payload.requests.length ? (
             <DataTable
               columns={['Type', 'Requester', 'Priority', 'Status', 'Created', 'Actions']}
-              rows={payload.requests.slice(0, 12).map((item) => [
+              rows={payload.requests.slice(0, 20).map((item) => [
                 item.requestType,
                 item.requester,
                 item.priority,
@@ -1155,8 +1709,10 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
                 </div>,
               ])}
             />
-          </Panel>
-        ) : null}
+          ) : (
+            <p className="text-sm font-semibold text-slate-500">No live records for this workspace yet. Use the primary action to create the first DLE_Enterprise record.</p>
+          )}
+        </Panel>
       </div>
     );
   };
@@ -1248,11 +1804,21 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
 
       <FormPanel
         title={formTitle()}
-        description="Validated against HR employee directory where required, then saved to SQL Server."
+        description={workspace === 'trips-dispatch'
+          ? 'Required fields are marked *. Project code and cost centre are mandatory for trip charging.'
+          : 'Validated against HR employee directory and Organization Locations where required, then saved to SQL Server.'}
         open={formOpen}
-        onClose={() => setFormOpen(false)}
+        onClose={() => {
+          setFormOpen(false);
+          setEditingVehicleId('');
+          setEditingDriverId('');
+          setFormErrors({});
+          setFormErrorSummary('');
+        }}
         onSave={() => void saveCreate()}
         saving={saving}
+        formError={formErrorSummary}
+        saveLabel={workspace === 'trips-dispatch' && !editingVehicleId && !editingDriverId ? 'Submit' : 'Save'}
       >
         {createForm()}
       </FormPanel>

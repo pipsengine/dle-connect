@@ -162,12 +162,11 @@ export const FLEET_WORKSPACE_META: Record<FleetWorkspaceId, {
   },
   'trips-dispatch': {
     title: 'Trips & Dispatch',
-    description: 'Request → Line Manager authorization → Fleet allocation → Dispatch → Close, with audit at each stage.',
+    description: 'Request → Driver Supervisor approves and allocates vehicle & driver → Dispatch → Close, with audit at each stage.',
     primaryAction: 'Request Trip',
     tabs: [
-      { id: 'requests', label: 'My Requests', sections: ['Draft', 'Pending line approval', 'Returned', 'Allocated', 'Dispatched', 'Completed', 'Rejected', 'Cancelled'] },
-      { id: 'approvals', label: 'Line Approvals', sections: ['Pending need approval', 'Approve', 'Reject', 'Return for correction'] },
-      { id: 'allocation', label: 'Allocation', sections: ['Pending fleet allocation', 'Assign vehicle', 'Assign driver', 'Conflict checks'] },
+      { id: 'requests', label: 'My Requests', sections: ['Draft', 'Pending supervisor', 'Returned', 'Ready to dispatch', 'Dispatched', 'Completed', 'Rejected', 'Cancelled'] },
+      { id: 'supervisor', label: 'Driver Supervisor', sections: ['Pending requests', 'Approve & allocate vehicle', 'Approve & allocate driver', 'Reject', 'Return for correction'] },
       { id: 'dispatch', label: 'Dispatch', sections: ['Ready to dispatch', 'Release trip', 'Pre-trip checks'] },
       { id: 'active', label: 'Active Trips', sections: ['Dispatched', 'In progress', 'Complete trip'] },
       { id: 'history', label: 'History', sections: ['Completed', 'Rejected', 'Cancelled', 'Audit trail'] },
@@ -344,7 +343,10 @@ export const resolveFleetWorkspace = (slug?: string): FleetWorkspaceId => {
 
 export const fleetTabFromQuery = (workspace: FleetWorkspaceId, tab?: string | null) => {
   const meta = FLEET_WORKSPACE_META[workspace];
-  const requested = String(tab || '').trim().toLowerCase();
+  let requested = String(tab || '').trim().toLowerCase();
+  if (workspace === 'trips-dispatch' && (requested === 'approvals' || requested === 'allocation')) {
+    requested = 'supervisor';
+  }
   if (requested && meta.tabs.some((item) => item.id === requested)) return requested;
   return meta.tabs[0]?.id || 'overview';
 };

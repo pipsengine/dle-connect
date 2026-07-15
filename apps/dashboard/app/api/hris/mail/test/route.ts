@@ -53,12 +53,16 @@ export async function POST(request: NextRequest) {
   const recipient = await resolveRecipient(employeeCode);
   if (!recipient) return err(404, `No email address found for employee ${employeeCode}.`);
 
-  const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3020';
+  const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.DLE_PUBLIC_APP_URL || 'http://localhost:3020';
+  const base = String(appUrl).replace(/\/$/, '');
   const result = await sendDleTestEmail({
     to: recipient.email,
     recipientName: recipient.fullName,
     employeeCode: recipient.employeeCode,
-    appUrl,
+    appUrl: base,
+    fleetLink: `${base}/logistics-fleet`,
+    tripsLink: `${base}/logistics-fleet/trips-dispatch?tab=supervisor`,
+    notificationsLink: `${base}/enterprise?scope=notifications`,
   });
   if (!result.sent) {
     const reason = 'reason' in result ? result.reason : 'Unable to send test email.';

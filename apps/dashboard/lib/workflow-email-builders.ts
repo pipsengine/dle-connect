@@ -442,25 +442,220 @@ export const buildOvertimeRejectedEmail = (input: {
   actions: [{ href: input.workspaceLink, label: 'Open Overtime Workspace', tone: 'primary' }],
 }, input.baseUrl);
 
+type FleetTripEmailTrip = {
+  requestNo: string;
+  requester: string;
+  origin: string;
+  destination: string;
+  purpose: string;
+  startDate?: string;
+  endDate?: string;
+  projectCode?: string;
+  costCenter?: string;
+  vehicleLabel?: string;
+  driverLabel?: string;
+  allocationStatus?: string;
+  vehicleAssetCode?: string;
+  vehiclePlate?: string;
+  vehicleType?: string;
+  vehicleMakeModel?: string;
+  driverName?: string;
+  driverEmployeeCode?: string;
+  driverPhone?: string;
+  driverCategory?: string;
+  allocatedBy?: string;
+  allocatedAt?: string;
+};
+
+const fleetTripDetails = (trip: FleetTripEmailTrip) => [
+  { label: 'Request', value: trip.requestNo },
+  ...(trip.allocationStatus ? [{ label: 'Allocation status', value: trip.allocationStatus }] : []),
+  { label: 'Requester', value: trip.requester },
+  { label: 'Destination', value: trip.destination || '—' },
+  { label: 'Origin', value: trip.origin || '—' },
+  { label: 'Route', value: `${trip.origin} → ${trip.destination}` },
+  { label: 'Purpose', value: trip.purpose || '—' },
+  ...(trip.startDate || trip.endDate
+    ? [{ label: 'Travel dates', value: `${formatEmailDate(trip.startDate || '')} to ${formatEmailDate(trip.endDate || '')}` }]
+    : []),
+  ...(trip.projectCode ? [{ label: 'Project', value: trip.projectCode }] : []),
+  ...(trip.costCenter ? [{ label: 'Cost centre', value: trip.costCenter }] : []),
+  ...(trip.vehicleAssetCode || trip.vehiclePlate || trip.vehicleLabel
+    ? [{
+      label: 'Vehicle',
+      value: [
+        trip.vehicleAssetCode,
+        trip.vehiclePlate,
+        trip.vehicleType,
+        trip.vehicleMakeModel,
+      ].filter(Boolean).join(' · ') || String(trip.vehicleLabel || ''),
+    }]
+    : []),
+  ...(trip.driverName || trip.driverLabel
+    ? [{
+      label: 'Driver',
+      value: [
+        trip.driverName || trip.driverLabel,
+        trip.driverEmployeeCode ? `(${trip.driverEmployeeCode})` : '',
+        trip.driverCategory,
+        trip.driverPhone ? `Tel: ${trip.driverPhone}` : '',
+      ].filter(Boolean).join(' · '),
+    }]
+    : []),
+  ...(trip.allocatedBy ? [{ label: 'Allocated by', value: trip.allocatedBy }] : []),
+  ...(trip.allocatedAt ? [{ label: 'Allocated at', value: formatEmailDateTime(trip.allocatedAt) }] : []),
+];
+
+export const buildFleetTripAllocationEmail = (input: {
+  recipientName: string;
+  trip: FleetTripEmailTrip;
+  actorName?: string;
+  workspaceLink: string;
+  fleetHomeLink?: string;
+  audience: 'requester' | 'driver' | 'dispatcher';
+  baseUrl?: string | null;
+}) => {
+  const isRequester = input.audience === 'requester';
+  const isDriver = input.audience === 'driver';
+  return withBrand({
+    recipientName: input.recipientName,
+    subject: isRequester
+      ? `Trip allocated — ${input.trip.requestNo} to ${input.trip.destination}`
+      : isDriver
+        ? `You are allocated — ${input.trip.requestNo}`
+        : `Trip ready to dispatch — ${input.trip.requestNo}`,
+    module: 'Logistics & Fleet',
+    headline: isRequester
+      ? 'Your trip has been allocated'
+      : isDriver
+        ? 'Trip allocation assigned to you'
+        : 'Trip ready for dispatch',
+    intro: isRequester
+      ? `Your trip request has been approved and allocated. Review the destination, vehicle, and driver details below.`
+      : isDriver
+        ? `You have been allocated to trip ${input.trip.requestNo}. Review the destination and vehicle details below.`
+        : `Trip ${input.trip.requestNo} is allocated and ready for dispatch.`,
+    tone: 'success',
+    accentColor: '#11A0E6',
+    statusBadge: input.trip.allocationStatus || 'Allocated',
+    details: fleetTripDetails({
+      ...input.trip,
+      allocationStatus: input.trip.allocationStatus || 'Approved & Allocated — Ready to Dispatch',
+    }),
+    note: isRequester
+      ? 'Keep this allocation summary for your journey. Contact Logistics & Fleet if details need to change before dispatch.'
+      : 'Sign in to DLE Connect to continue the trip workflow.',
+    actions: [
+      {
+        href: input.workspaceLink,
+        label: isRequester ? 'View my trip allocation' : isDriver ? 'Open allocated trip' : 'Open Dispatch queue',
+        tone: 'primary',
+      },
+      ...(input.fleetHomeLink ? [{ href: input.fleetHomeLink, label: 'Logistics & Fleet Home', tone: 'neutral' as const }] : []),
+    ],
+    footerNote: 'This allocation notification was sent by DLE Connect Logistics & Fleet.',
+  }, input.baseUrl);
+};
+
+export const buildFleetTripSupervisorRequestEmail = (input: {
+  recipientName: string;
+  trip: FleetTripEmailTrip;
+  actorName?: string;
+  workspaceLink: string;
+  tripsLink?: string;
+  fleetHomeLink?: string;
+  baseUrl?: string | null;
+}) => withBrand({
+  recipientName: input.recipientName,
+  subject: `Trip approval & allocation required — ${input.trip.requestNo}`,
+  module: 'Logistics & Fleet',
+  headline: 'Driver Supervisor action required',
+  intro: 'A trip request needs your approval. Sign in to DLE Connect to approve and allocate a vehicle and driver in one step.',
+  tone: 'warning',
+  accentColor: '#11A0E6',
+  statusBadge: 'Action required',
+  details: [
+    ...fleetTripDetails(input.trip),
+    ...(input.actorName ? [{ label: 'Submitted by', value: input.actorName }] : []),
+    { label: 'Next step', value: 'Approve & allocate vehicle and driver' },
+  ],
+  note: 'Sign in with your Driver Supervisor account. Vehicle and driver selection runs compliance checks in the portal before dispatch.',
+  actions: [
+    { href: input.workspaceLink, label: 'Approve & Allocate in Portal', tone: 'success' },
+    ...(input.tripsLink ? [{ href: input.tripsLink, label: 'Open Trips & Dispatch', tone: 'primary' as const }] : []),
+    ...(input.fleetHomeLink ? [{ href: input.fleetHomeLink, label: 'Logistics & Fleet Home', tone: 'neutral' as const }] : []),
+  ],
+  footerNote: 'This message was sent by DLE Connect Logistics & Fleet. Links open the secured enterprise portal.',
+}, input.baseUrl);
+
+export const buildFleetTripStatusEmail = (input: {
+  recipientName: string;
+  subject: string;
+  headline: string;
+  intro: string;
+  tone?: 'info' | 'success' | 'warning' | 'danger' | 'neutral';
+  trip: FleetTripEmailTrip;
+  actorName?: string;
+  reason?: string;
+  workspaceLink: string;
+  actionLabel: string;
+  secondaryLink?: string;
+  secondaryLabel?: string;
+  baseUrl?: string | null;
+}) => withBrand({
+  recipientName: input.recipientName,
+  subject: input.subject,
+  module: 'Logistics & Fleet',
+  headline: input.headline,
+  intro: input.intro,
+  tone: input.tone || 'info',
+  accentColor: input.tone === 'danger' ? '#DC2626' : input.tone === 'success' ? '#059669' : '#11A0E6',
+  statusBadge: input.tone === 'danger' ? 'Rejected' : input.tone === 'warning' ? 'Attention' : input.tone === 'success' ? 'Updated' : 'Update',
+  details: [
+    ...fleetTripDetails(input.trip),
+    ...(input.actorName ? [{ label: 'Updated by', value: input.actorName }] : []),
+    ...(input.reason ? [{ label: 'Reason', value: input.reason }] : []),
+  ],
+  note: 'Sign in to DLE Connect to continue this workflow. Your portal session must match your employee account.',
+  actions: [
+    { href: input.workspaceLink, label: input.actionLabel, tone: 'primary' },
+    ...(input.secondaryLink && input.secondaryLabel
+      ? [{ href: input.secondaryLink, label: input.secondaryLabel, tone: 'neutral' as const }]
+      : []),
+  ],
+  footerNote: 'This message was sent by DLE Connect Logistics & Fleet.',
+}, input.baseUrl);
+
 export const buildDleTestEmail = (input: {
   recipientName: string;
   employeeCode: string;
   appUrl: string;
   provider: string;
+  fleetLink?: string;
+  tripsLink?: string;
+  notificationsLink?: string;
 }) => withBrand({
   recipientName: input.recipientName,
-  subject: `DLE Connect email test — ${input.employeeCode}`,
-  module: 'HRIS',
+  subject: `DLE Connect email delivery test — ${input.employeeCode}`,
+  module: 'Logistics & Fleet',
   headline: 'Email delivery confirmed',
-  intro: 'This is a test message confirming that DLE Connect outbound email is configured correctly.',
+  intro: 'This branded test confirms that DLE Connect can send professionally formatted workflow emails with secure portal links.',
   tone: 'success',
+  accentColor: '#11A0E6',
+  statusBadge: 'Test delivered',
   details: [
     { label: 'Employee code', value: input.employeeCode },
     { label: 'Mail provider', value: input.provider },
     { label: 'Sent at', value: formatEmailDateTime(new Date()) },
   ],
-  actions: [{ href: input.appUrl, label: 'Open DLE Connect', tone: 'primary' }],
-  footerNote: 'If you received this email, workflow notifications for payroll, leave, and overtime are ready.',
+  note: 'Use the buttons below to open DLE Connect. Logistics & Fleet trip approvals will use this same email design.',
+  actions: [
+    { href: input.appUrl, label: 'Open DLE Connect', tone: 'primary' },
+    ...(input.fleetLink ? [{ href: input.fleetLink, label: 'Open Logistics & Fleet', tone: 'success' as const }] : []),
+    ...(input.tripsLink ? [{ href: input.tripsLink, label: 'Open Trip Workflow', tone: 'neutral' as const }] : []),
+    ...(input.notificationsLink ? [{ href: input.notificationsLink, label: 'Open Notifications', tone: 'neutral' as const }] : []),
+  ],
+  footerNote: 'If you received this email, portal and workflow notifications for Logistics & Fleet are ready.',
 }, input.appUrl);
 
 export const leaveApprovalLinks = (input: {

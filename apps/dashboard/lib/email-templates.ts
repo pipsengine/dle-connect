@@ -9,6 +9,7 @@ export type DleEmailModule =
   | 'Payroll Management'
   | 'Leave Management'
   | 'Overtime Management'
+  | 'Logistics & Fleet'
   | 'Employee Self-Service'
   | 'HRIS'
   | 'Security';

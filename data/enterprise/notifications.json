@@ -2,6 +2,365 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1784120491921-456i7z",
+      "recipientUserId": "P0181",
+      "recipientUsername": "P0181",
+      "recipientEmployeeCode": "P0181",
+      "recipientRoles": [
+        "Employee",
+        "System Administrator"
+      ],
+      "kind": "Workflow",
+      "module": "Logistics & Fleet",
+      "title": "Trip completed — TRP-2026-0001",
+      "body": "TRP-2026-0001 (DLE Head Office → E2E Smoke Site 478764) was marked complete.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=history&tripId=trp-1784120480673-bj5jp",
+      "createdAt": "2026-07-15T13:01:31.921Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784120480673-bj5jp",
+        "action": "complete-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
+      "id": "ntf-1784120491904-s1loji",
+      "recipientUserId": "NYSC0032",
+      "recipientUsername": "NYSC0032",
+      "recipientEmployeeCode": "NYSC0032",
+      "recipientRoles": [
+        "Supervisor",
+        "Employee",
+        "Admin"
+      ],
+      "kind": "Workflow",
+      "module": "Logistics & Fleet",
+      "title": "Trip completed — TRP-2026-0001",
+      "body": "TRP-2026-0001 (DLE Head Office → E2E Smoke Site 478764) was marked complete.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=history&tripId=trp-1784120480673-bj5jp",
+      "createdAt": "2026-07-15T13:01:31.904Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784120480673-bj5jp",
+        "action": "complete-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
+      "id": "ntf-1784120491322-b3k7f2",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "kind": "Workflow",
+      "module": "Logistics & Fleet",
+      "title": "Trip completed — TRP-2026-0001",
+      "body": "TRP-2026-0001 (DLE Head Office → E2E Smoke Site 478764) was marked complete.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=history&tripId=trp-1784120480673-bj5jp",
+      "createdAt": "2026-07-15T13:01:31.322Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784120480673-bj5jp",
+        "action": "complete-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
+      "id": "ntf-1784120488773-rod4fz",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "kind": "Workflow",
+      "module": "Logistics & Fleet",
+      "title": "Trip dispatched — TRP-2026-0001",
+      "body": "TRP-2026-0001 (DLE Head Office → E2E Smoke Site 478764) has been dispatched.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=requests&tripId=trp-1784120480673-bj5jp",
+      "createdAt": "2026-07-15T13:01:28.773Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784120480673-bj5jp",
+        "action": "dispatch-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
+      "id": "ntf-1784120488713-auf7c3",
+      "recipientUserId": "L0297",
+      "recipientUsername": "L0297",
+      "recipientEmployeeCode": "L0297",
+      "recipientRoles": [
+        "Employee"
+      ],
+      "kind": "Workflow",
+      "module": "Logistics & Fleet",
+      "title": "Trip dispatched — TRP-2026-0001",
+      "body": "TRP-2026-0001 (DLE Head Office → E2E Smoke Site 478764) has been dispatched.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=active&tripId=trp-1784120480673-bj5jp",
+      "createdAt": "2026-07-15T13:01:28.713Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784120480673-bj5jp",
+        "action": "dispatch-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
+      "id": "ntf-1784120488044-vkn90h",
+      "recipientUserId": "P0181",
+      "recipientUsername": "P0181",
+      "recipientEmployeeCode": "P0181",
+      "recipientRoles": [
+        "Employee",
+        "System Administrator"
+      ],
+      "kind": "Workflow",
+      "module": "Logistics & Fleet",
+      "title": "Trip ready to dispatch — TRP-2026-0001",
+      "body": "TRP-2026-0001 to E2E Smoke Site 478764 is allocated and ready for dispatch. Status: Approved & Allocated | Destination: E2E Smoke Site 478764 | Vehicle: FLT-E2E-478764 · E2E-478764 · SUV · Toyota Land Cruiser | Driver: IDOWU OYEWOLE.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=dispatch&tripId=trp-1784120480673-bj5jp",
+      "createdAt": "2026-07-15T13:01:28.044Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784120480673-bj5jp",
+        "action": "allocate-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
+      "id": "ntf-1784120488029-vkunpq",
+      "recipientUserId": "NYSC0032",
+      "recipientUsername": "NYSC0032",
+      "recipientEmployeeCode": "NYSC0032",
+      "recipientRoles": [
+        "Supervisor",
+        "Employee",
+        "Admin"
+      ],
+      "kind": "Workflow",
+      "module": "Logistics & Fleet",
+      "title": "Trip ready to dispatch — TRP-2026-0001",
+      "body": "TRP-2026-0001 to E2E Smoke Site 478764 is allocated and ready for dispatch. Status: Approved & Allocated | Destination: E2E Smoke Site 478764 | Vehicle: FLT-E2E-478764 · E2E-478764 · SUV · Toyota Land Cruiser | Driver: IDOWU OYEWOLE.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=dispatch&tripId=trp-1784120480673-bj5jp",
+      "createdAt": "2026-07-15T13:01:28.029Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784120480673-bj5jp",
+        "action": "allocate-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
+      "id": "ntf-1784120488022-qaw7vy",
+      "recipientUserId": "L0297",
+      "recipientUsername": "L0297",
+      "recipientEmployeeCode": "L0297",
+      "recipientRoles": [
+        "Employee"
+      ],
+      "kind": "Workflow",
+      "module": "Logistics & Fleet",
+      "title": "Trip allocation assigned — TRP-2026-0001",
+      "body": "You are allocated to drive to E2E Smoke Site 478764. Status: Approved & Allocated | Destination: E2E Smoke Site 478764 | Vehicle: FLT-E2E-478764 · E2E-478764 · SUV · Toyota Land Cruiser | Driver: IDOWU OYEWOLE.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=active&tripId=trp-1784120480673-bj5jp",
+      "createdAt": "2026-07-15T13:01:28.022Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784120480673-bj5jp",
+        "action": "allocate-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
+      "id": "ntf-1784120486149-9lr6sd",
+      "recipientUserId": "P0181",
+      "recipientUsername": "P0181",
+      "recipientEmployeeCode": "P0181",
+      "recipientRoles": [
+        "Employee",
+        "System Administrator"
+      ],
+      "kind": "Approval",
+      "module": "Logistics & Fleet",
+      "title": "Trip approval required — TRP-2026-0001",
+      "body": "Mr CHRISTIAN ONUWABHAGBE OGBAISI (P0146) requested travel to E2E Smoke Site 478764 (DLE Head Office → E2E Smoke Site 478764). Approve and allocate vehicle & driver in Logistics & Fleet.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=supervisor&tripId=trp-1784120480673-bj5jp",
+      "createdAt": "2026-07-15T13:01:26.149Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784120480673-bj5jp",
+        "action": "create-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
+      "id": "ntf-1784120485570-4ucaos",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "kind": "Workflow",
+      "module": "Logistics & Fleet",
+      "title": "Trip allocated — TRP-2026-0001",
+      "body": "Your trip to E2E Smoke Site 478764 has been allocated. Status: Approved & Allocated | Destination: E2E Smoke Site 478764 | Vehicle: FLT-E2E-478764 · E2E-478764 · SUV · Toyota Land Cruiser | Driver: IDOWU OYEWOLE.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=requests&tripId=trp-1784120480673-bj5jp",
+      "createdAt": "2026-07-15T13:01:25.570Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784120480673-bj5jp",
+        "action": "allocate-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
+      "id": "ntf-1784120481705-3axohw",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "kind": "Approval",
+      "module": "Logistics & Fleet",
+      "title": "Trip approval required — TRP-2026-0001",
+      "body": "Mr CHRISTIAN ONUWABHAGBE OGBAISI (P0146) requested travel to E2E Smoke Site 478764 (DLE Head Office → E2E Smoke Site 478764). Approve and allocate vehicle & driver in Logistics & Fleet.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=supervisor&tripId=trp-1784120480673-bj5jp",
+      "createdAt": "2026-07-15T13:01:21.705Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784120480673-bj5jp",
+        "action": "create-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
+      "id": "ntf-1784120481699-y0wxe3",
+      "recipientUserId": "NYSC0032",
+      "recipientUsername": "NYSC0032",
+      "recipientEmployeeCode": "NYSC0032",
+      "recipientRoles": [
+        "Supervisor",
+        "Employee",
+        "Admin"
+      ],
+      "kind": "Approval",
+      "module": "Logistics & Fleet",
+      "title": "Trip approval required — TRP-2026-0001",
+      "body": "Mr CHRISTIAN ONUWABHAGBE OGBAISI (P0146) requested travel to E2E Smoke Site 478764 (DLE Head Office → E2E Smoke Site 478764). Approve and allocate vehicle & driver in Logistics & Fleet.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=supervisor&tripId=trp-1784120480673-bj5jp",
+      "createdAt": "2026-07-15T13:01:21.699Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784120480673-bj5jp",
+        "action": "create-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
+      "id": "ntf-1784118790841-ghqckc",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "kind": "Approval",
+      "module": "Logistics & Fleet",
+      "title": "Trip approval required — TRP-TEST-P0146",
+      "body": "Sample branded workflow notification with portal deep link.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=supervisor&tripId=trip-demo-p0146",
+      "createdAt": "2026-07-15T12:33:10.842Z",
+      "actor": "DLE Connect Fleet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "employeeCode": "P0146",
+        "sample": true
+      }
+    },
+    {
       "id": "ntf-1783703696600-7ctkic",
       "recipientUserId": "NYSC0033",
       "recipientUsername": "NYSC0033",

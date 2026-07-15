@@ -2,6 +2,144 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1784125029539-0a44er",
+      "recipientUserId": "L2770",
+      "recipientUsername": "L2770",
+      "recipientEmployeeCode": "L2770",
+      "recipientRoles": [
+        "HR Officer"
+      ],
+      "kind": "Approval",
+      "module": "Logistics & Fleet",
+      "title": "Trip approval required — TRP-2026-0002",
+      "body": "Mr CHRISTIAN ONUWABHAGBE OGBAISI (P0146) requested travel to Agege (Idi-Oro → Agege). Approve and allocate vehicle & driver in Logistics & Fleet.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=supervisor&tripId=trp-1784124090101-nuqe5",
+      "createdAt": "2026-07-15T14:17:09.539Z",
+      "actor": "Fleet Supervisor Resend",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784124090101-nuqe5",
+        "action": "submit-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
+      "id": "ntf-1784124972845-8jj5tp",
+      "recipientUserId": "P0181",
+      "recipientUsername": "P0181",
+      "recipientEmployeeCode": "P0181",
+      "recipientRoles": [
+        "Employee",
+        "System Administrator"
+      ],
+      "kind": "Approval",
+      "module": "Logistics & Fleet",
+      "title": "Trip approval required — TRP-2026-0002",
+      "body": "Mr CHRISTIAN ONUWABHAGBE OGBAISI (P0146) requested travel to Agege (Idi-Oro → Agege). Approve and allocate vehicle & driver in Logistics & Fleet.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=supervisor&tripId=trp-1784124090101-nuqe5",
+      "createdAt": "2026-07-15T14:16:12.845Z",
+      "actor": "Fleet Supervisor Resend",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784124090101-nuqe5",
+        "action": "submit-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
+      "id": "ntf-1784124972327-t2wese",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "kind": "Approval",
+      "module": "Logistics & Fleet",
+      "title": "Trip approval required — TRP-2026-0002",
+      "body": "Mr CHRISTIAN ONUWABHAGBE OGBAISI (P0146) requested travel to Agege (Idi-Oro → Agege). Approve and allocate vehicle & driver in Logistics & Fleet.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=supervisor&tripId=trp-1784124090101-nuqe5",
+      "createdAt": "2026-07-15T14:16:12.327Z",
+      "actor": "Fleet Supervisor Resend",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784124090101-nuqe5",
+        "action": "submit-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
+      "id": "ntf-1784124972323-k1e4e7",
+      "recipientUserId": "NYSC0032",
+      "recipientUsername": "NYSC0032",
+      "recipientEmployeeCode": "NYSC0032",
+      "recipientRoles": [
+        "Supervisor",
+        "Employee",
+        "Admin"
+      ],
+      "kind": "Approval",
+      "module": "Logistics & Fleet",
+      "title": "Trip approval required — TRP-2026-0002",
+      "body": "Mr CHRISTIAN ONUWABHAGBE OGBAISI (P0146) requested travel to Agege (Idi-Oro → Agege). Approve and allocate vehicle & driver in Logistics & Fleet.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=supervisor&tripId=trp-1784124090101-nuqe5",
+      "createdAt": "2026-07-15T14:16:12.323Z",
+      "actor": "Fleet Supervisor Resend",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784124090101-nuqe5",
+        "action": "submit-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
+      "id": "ntf-1784124969873-rzay3a",
+      "recipientUserId": "L2770",
+      "recipientUsername": "L2770",
+      "recipientEmployeeCode": "L2770",
+      "recipientRoles": [
+        "HR Officer"
+      ],
+      "kind": "Approval",
+      "module": "Logistics & Fleet",
+      "title": "Trip approval required — TRP-2026-0002",
+      "body": "Mr CHRISTIAN ONUWABHAGBE OGBAISI (P0146) requested travel to Agege (Idi-Oro → Agege). Approve and allocate vehicle & driver in Logistics & Fleet.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=supervisor&tripId=trp-1784124090101-nuqe5",
+      "createdAt": "2026-07-15T14:16:09.874Z",
+      "actor": "Fleet Supervisor Resend",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784124090101-nuqe5",
+        "action": "submit-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
       "recipientUserId": "global-admin",
       "recipientUsername": "Admin",
       "recipientRoles": [

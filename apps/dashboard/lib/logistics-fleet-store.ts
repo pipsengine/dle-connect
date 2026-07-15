@@ -4,7 +4,7 @@ import sql from 'mssql';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { ensureFleetSchemaSql } from '@/lib/fleet-sql-schema';
-import { isActiveOperationalTrip, isOpenTripStatus, migrateLegacyTripStatus, type TripStatus } from '@/lib/fleet-management/trip-workflow';
+import { isActiveOperationalTrip, isOpenTripStatus, isPendingDriverSupervisor, migrateLegacyTripStatus, type TripStatus } from '@/lib/fleet-management/trip-workflow';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
 
 export type VehicleStatus = 'Available' | 'Assigned' | 'In Maintenance' | 'Grounded' | 'Retired';
@@ -266,6 +266,7 @@ export type LogisticsEmployeeOption = {
   phone: string;
   status: string;
   managerName: string;
+  isDirectoryDriver?: boolean;
 };
 
 const dbReady = { value: false };
@@ -389,9 +390,9 @@ const mapTrip = (row: Record<string, unknown>): FleetTrip => {
   const vehicleId = str(row.VehicleId || row.vehicleId);
   const driverId = str(row.DriverId || row.driverId);
   let status = migrateLegacyTripStatus(str(row.Status || row.status));
-  // Legacy Approved without allocation should wait for fleet allocation.
+  // Legacy Approved without allocation should wait for driver supervisor allocation.
   if (str(row.Status || row.status) === 'Approved' && (!vehicleId || !driverId)) {
-    status = 'PendingFleetAllocation';
+    status = 'PendingDriverSupervisor';
   }
   return {
     id: str(row.TripId || row.id),
@@ -986,7 +987,23 @@ export const writeLogisticsFleetData = async (data: LogisticsFleetData) => {
 };
 
 const seedIfEmpty = async (pool: sql.ConnectionPool) => {
-  // Demo JSON seed is disabled — fleet register is live DLE_Enterprise only.
+  // Retire original demo seed rows so the register is live operational data only.
+  try {
+    await pool.request().query(`
+UPDATE [fleet].[Vehicles]
+SET [IsActive] = 0, [UpdatedAt] = SYSUTCDATETIME()
+WHERE [IsActive] = 1
+  AND [AssetCode] IN (N'FLT-LAG-001', N'FLT-YRD-014', N'FLT-MAR-006');
+
+UPDATE [fleet].[Drivers]
+SET [IsActive] = 0, [UpdatedAt] = SYSUTCDATETIME()
+WHERE [IsActive] = 1
+  AND [DriverId] IN (N'drv-001', N'drv-002', N'drv-003');
+`);
+  } catch {
+    /* schema may still be applying */
+  }
+
   const seeded = await pool.request()
     .input('BootstrapKey', sql.NVarChar(80), 'initial-seed')
     .query('SELECT 1 AS ok FROM [fleet].[Bootstrap] WHERE [BootstrapKey] = @BootstrapKey');
@@ -1045,10 +1062,11 @@ const readRaw = async () => {
 
 export const readLogisticsFleetData = async () => {
   const pool = await ensureFleetDb();
-  const [data, employeeSource] = await Promise.all([loadFromDb(pool), readPayrollEmployees()]);
   await seedIfEmpty(pool);
-  const refreshed = data.vehicles.length || data.drivers.length ? data : await loadFromDb(pool);
-  const hydratedData = hydrateDriverLifecycle(normalizeData(refreshed), employeeSource.employees);
+  const employeeSource = await readPayrollEmployees();
+  let data = normalizeData(await loadFromDb(pool));
+  await ensureDirectoryDriversSynced(data, employeeSource.employees, 'HRIS Sync');
+  data = hydrateDriverLifecycle(normalizeData(await loadFromDb(pool)), employeeSource.employees);
   const [locations, departments] = await Promise.all([
     listEnterpriseLocations(pool),
     listEnterpriseDepartments(pool, employeeSource.employees),
@@ -1056,15 +1074,17 @@ export const readLogisticsFleetData = async () => {
   const locationOptions = locations.length
     ? locations
     : Array.from(new Set(employeeSource.employees.map((employee) => str(employee.workLocation || employee.location || employee.officeLocation)).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const employees = employeeSource.employees.map(toEmployeeOption);
   return {
-    ...hydratedData,
+    ...data,
     generatedAt: new Date().toISOString(),
     source: 'DLE_Enterprise' as const,
-    employees: employeeSource.employees.map(toEmployeeOption),
+    employees,
+    driverEmployees: employees.filter((employee) => employee.isDirectoryDriver),
     employeeSource: payrollDataSourceInfo(employeeSource),
     locations: locationOptions,
     departments,
-    summary: buildSummary(hydratedData),
+    summary: buildSummary(data),
   };
 };
 
@@ -1078,7 +1098,63 @@ const toEmployeeOption = (employee: DleEmployeeDirectoryRow): LogisticsEmployeeO
   phone: employee.primaryPhone || employee.phone || employee.alternatePhone || '',
   status: employee.status || '',
   managerName: employee.managerName || employee.functionalManager || '',
+  isDirectoryDriver: isDirectoryDriverEmployee(employee),
 });
+
+export const isDirectoryDriverEmployee = (employee: Pick<DleEmployeeDirectoryRow, 'jobTitle' | 'designation' | 'employeeCategory' | 'staffCategory'>) => {
+  const text = [employee.jobTitle, employee.designation, employee.employeeCategory, employee.staffCategory]
+    .map((value) => String(value || '').toLowerCase())
+    .join(' ');
+  return /\bdrivers?\b|\bchauffeurs?\b|driver\s*mate|truck\s*driver|pool\s*driver|ambulance\s*driver|chairman'?s?\s*driver|md'?s?\s*driver/.test(text);
+};
+
+const driverCategoryFromTitle = (title: string): FleetDriver['driverCategory'] => {
+  const text = String(title || '').toLowerCase();
+  if (text.includes('pool')) return 'Pool Driver';
+  if (text.includes('chairman') || text.includes("md's") || text.includes('mds ') || text.includes('executive')) return 'Executive Driver';
+  if (text.includes('mate') || text.includes('relief')) return 'Relief Driver';
+  if (text.includes('truck') || text.includes('ambulance') || text.includes('pjt') || text.includes('project')) return 'Project Driver';
+  return 'Company Driver';
+};
+
+const ensureDirectoryDriversSynced = async (
+  data: LogisticsFleetData,
+  employees: DleEmployeeDirectoryRow[],
+  actor = 'System',
+) => {
+  const directoryDrivers = employees.filter((employee) => assignableEmployee(employee) && isDirectoryDriverEmployee(employee));
+  let changed = false;
+  for (const employee of directoryDrivers) {
+    const employeeCode = employee.employeeCode || employee.employeeId;
+    const existing = data.drivers.find((driver) => driver.employeeCode.toLowerCase() === employeeCode.toLowerCase());
+    if (existing) continue;
+    const category = driverCategoryFromTitle(`${employee.jobTitle || ''} ${employee.designation || ''}`);
+    const driver: FleetDriver = {
+      id: id('drv'),
+      employeeCode,
+      licenseNumber: '',
+      licenseClass: '',
+      licenseExpiry: '',
+      issuingAuthority: '',
+      medicalCertificateStatus: 'Missing',
+      defensiveDrivingCertificate: 'Missing',
+      driverCategory: category,
+      availabilityStatus: 'Available',
+      assignedVehicleId: '',
+      status: 'Available',
+      complianceStatus: 'Missing Documents',
+      safetyScore: 90,
+      registeredAt: new Date().toISOString(),
+      approvalStatus: 'Approved',
+    };
+    driver.complianceStatus = driverComplianceStatus(driver);
+    data.drivers.unshift(driver);
+    audit(data, actor, 'Synced driver from Employee Directory', 'Driver Management', `${employeeDisplay(employee)} · ${employee.jobTitle || employee.designation || category}`);
+    changed = true;
+  }
+  if (changed) await writeLogisticsFleetData(data);
+  return changed;
+};
 
 const assignableEmployee = (employee: DleEmployeeDirectoryRow) => !String(employee.status || '').toLowerCase().match(/inactive|suspended|terminated|resigned|exited|retired|long-term leave|long term leave/);
 
@@ -1086,6 +1162,21 @@ const findEmployee = (employees: DleEmployeeDirectoryRow[], code: string) => {
   const target = String(code || '').trim().toLowerCase();
   if (!target) return null;
   return employees.find((employee) => [employee.employeeCode, employee.employeeId, employee.sourceEmployeeId, employee.officialEmail, employee.email].some((value) => String(value || '').trim().toLowerCase() === target)) || null;
+};
+
+const configuredDriverSupervisorCodes = () =>
+  String(process.env.FLEET_DRIVER_SUPERVISOR_CODES || 'L2770')
+    .split(/[,;\s]+/)
+    .map((value) => value.trim().toUpperCase())
+    .filter(Boolean);
+
+/** Driver Supervisor for trip routing (not the requester's HR line manager). Defaults to L2770. */
+const resolveDriverSupervisor = (employees: DleEmployeeDirectoryRow[]) => {
+  for (const code of configuredDriverSupervisorCodes()) {
+    const employee = findEmployee(employees, code);
+    if (employee) return employee;
+  }
+  return null;
 };
 
 const resolveLineManager = (employees: DleEmployeeDirectoryRow[], requester: DleEmployeeDirectoryRow) => {
@@ -1171,7 +1262,7 @@ const buildSummary = (data: LogisticsFleetData) => {
   const availableVehicles = data.vehicles.filter((vehicle) => vehicle.status === 'Available').length;
   const openTrips = data.trips.filter((trip) => isOpenTripStatus(trip.status)).length;
   const pendingApprovals = [
-    ...data.trips.filter((trip) => ['PendingLineApproval', 'PendingFleetAllocation', 'Submitted'].includes(trip.status)),
+    ...data.trips.filter((trip) => ['PendingDriverSupervisor', 'PendingLineApproval', 'PendingFleetAllocation', 'Submitted'].includes(trip.status)),
     ...data.maintenance.filter((item) => item.status === 'Submitted'),
     ...data.requests.filter((item) => item.status === 'Submitted'),
   ].length + data.drivers.filter((driver) => driver.approvalStatus === 'Submitted').length;
@@ -1209,12 +1300,12 @@ export type TripActionContext = {
   reason?: string;
 };
 
-const actorMayLineApprove = (trip: FleetTrip, context: TripActionContext) => {
+const actorMayDriverSupervisor = (context: TripActionContext) => {
   if (context.isGlobalAdmin) return true;
   const permissions = context.permissions || [];
-  if (permissions.includes('*') || permissions.includes('fleet.*') || permissions.includes('fleet.approve')) return true;
-  const actorCode = String(context.actorEmployeeCode || '').trim().toLowerCase();
-  if (actorCode && trip.lineManagerEmployeeCode && actorCode === trip.lineManagerEmployeeCode.toLowerCase()) return true;
+  if (permissions.includes('*') || permissions.includes('fleet.*') || permissions.includes('fleet.approve') || permissions.includes('driver.approve')) {
+    return true;
+  }
   return false;
 };
 
@@ -1263,34 +1354,56 @@ export const createLogisticsFleetRecord = async (entity: LogisticsEntity, record
     const employee = findEmployee(employees, value(record, 'employeeCode'));
     if (!employee) throw new Error('driver requires a valid employee from the employee directory');
     const employeeCode = employee.employeeCode || employee.employeeId;
-    ensureNoActiveDriver(data, employeeCode);
-    const driver: FleetDriver = {
-      id: id('drv'),
-      employeeCode,
-      licenseNumber: value(record, 'licenseNumber'),
-      licenseClass: value(record, 'licenseClass'),
-      licenseExpiry: value(record, 'licenseExpiry'),
-      issuingAuthority: value(record, 'issuingAuthority'),
-      medicalCertificateStatus: (value(record, 'medicalCertificateStatus') as FleetDriver['medicalCertificateStatus']) || 'Missing',
-      defensiveDrivingCertificate: (value(record, 'defensiveDrivingCertificate') as FleetDriver['defensiveDrivingCertificate']) || 'Missing',
-      driverCategory: (value(record, 'driverCategory') as FleetDriver['driverCategory']) || 'Company Driver',
-      availabilityStatus: 'Available',
-      assignedVehicleId: '',
-      status: 'Draft',
-      complianceStatus: 'Missing Documents',
-      safetyScore: Number(record.safetyScore || 90),
-      registeredAt: new Date().toISOString(),
-      approvalStatus: 'Submitted',
-    };
-    driver.complianceStatus = driverComplianceStatus(driver);
-    data.drivers.unshift(driver);
-    audit(data, actor, 'Submitted driver registration', 'Driver Management', employeeDisplay(employee));
+    const existing = data.drivers.find((driver) => driver.employeeCode.toLowerCase() === employeeCode.toLowerCase());
+    if (existing) {
+      existing.licenseNumber = value(record, 'licenseNumber');
+      existing.licenseClass = value(record, 'licenseClass');
+      existing.licenseExpiry = value(record, 'licenseExpiry');
+      existing.issuingAuthority = value(record, 'issuingAuthority');
+      existing.medicalCertificateStatus = (value(record, 'medicalCertificateStatus') as FleetDriver['medicalCertificateStatus']) || existing.medicalCertificateStatus || 'Missing';
+      existing.defensiveDrivingCertificate = (value(record, 'defensiveDrivingCertificate') as FleetDriver['defensiveDrivingCertificate']) || existing.defensiveDrivingCertificate || 'Missing';
+      existing.driverCategory = (value(record, 'driverCategory') as FleetDriver['driverCategory']) || existing.driverCategory || 'Company Driver';
+      if (record.safetyScore != null && String(record.safetyScore) !== '') existing.safetyScore = Number(record.safetyScore);
+      existing.complianceStatus = driverComplianceStatus(existing);
+      existing.approvalStatus = existing.approvalStatus === 'Rejected' ? 'Submitted' : (existing.approvalStatus || 'Submitted');
+      if (existing.approvalStatus === 'Approved') {
+        existing.status = existing.assignedVehicleId ? 'Assigned' : 'Available';
+      } else {
+        existing.approvalStatus = 'Submitted';
+        existing.status = 'Draft';
+      }
+      audit(data, actor, 'Updated driver registration', 'Driver Management', employeeDisplay(employee));
+    } else {
+      ensureNoActiveDriver(data, employeeCode);
+      const driver: FleetDriver = {
+        id: id('drv'),
+        employeeCode,
+        licenseNumber: value(record, 'licenseNumber'),
+        licenseClass: value(record, 'licenseClass'),
+        licenseExpiry: value(record, 'licenseExpiry'),
+        issuingAuthority: value(record, 'issuingAuthority'),
+        medicalCertificateStatus: (value(record, 'medicalCertificateStatus') as FleetDriver['medicalCertificateStatus']) || 'Missing',
+        defensiveDrivingCertificate: (value(record, 'defensiveDrivingCertificate') as FleetDriver['defensiveDrivingCertificate']) || 'Missing',
+        driverCategory: (value(record, 'driverCategory') as FleetDriver['driverCategory']) || 'Company Driver',
+        availabilityStatus: 'Available',
+        assignedVehicleId: '',
+        status: 'Draft',
+        complianceStatus: 'Missing Documents',
+        safetyScore: Number(record.safetyScore || 90),
+        registeredAt: new Date().toISOString(),
+        approvalStatus: 'Submitted',
+      };
+      driver.complianceStatus = driverComplianceStatus(driver);
+      data.drivers.unshift(driver);
+      audit(data, actor, 'Submitted driver registration', 'Driver Management', employeeDisplay(employee));
+    }
   }
   if (entity === 'trip') {
     requireFields(entity, record, ['requesterEmployeeCode', 'requesterDepartment', 'requesterLocation', 'origin', 'destination', 'purpose', 'startDate', 'endDate', 'projectCode', 'costCenter']);
     const requester = findEmployee(employees, value(record, 'requesterEmployeeCode'));
     if (!requester) throw new Error('trip requires a valid requester from the employee directory');
-    const manager = resolveLineManager(employeeSource.employees, requester);
+    const driverSupervisor = resolveDriverSupervisor(employeeSource.employees)
+      || resolveLineManager(employeeSource.employees, requester);
     const asDraft = value(record, 'asDraft') === 'true' || value(record, 'status') === 'Draft';
     const trip: FleetTrip = {
       id: id('trp'),
@@ -1301,8 +1414,10 @@ export const createLogisticsFleetRecord = async (entity: LogisticsEntity, record
       requesterEmployeeCode: requester.employeeCode || requester.employeeId,
       requesterDepartment: value(record, 'requesterDepartment') || requester.department || requester.businessUnit || '',
       requesterLocation: value(record, 'requesterLocation') || requester.workLocation || requester.location || '',
-      lineManagerEmployeeCode: manager?.employeeCode || manager?.employeeId || '',
-      lineManagerName: manager ? employeeDisplay(manager) : (requester.managerName || ''),
+      lineManagerEmployeeCode: driverSupervisor?.employeeCode || driverSupervisor?.employeeId || '',
+      lineManagerName: driverSupervisor
+        ? employeeDisplay(driverSupervisor)
+        : (requester.managerName || 'Driver Supervisor'),
       origin: value(record, 'origin'),
       destination: value(record, 'destination'),
       purpose: value(record, 'purpose'),
@@ -1310,7 +1425,7 @@ export const createLogisticsFleetRecord = async (entity: LogisticsEntity, record
       endDate: value(record, 'endDate'),
       projectCode: value(record, 'projectCode'),
       costCenter: value(record, 'costCenter'),
-      status: asDraft ? 'Draft' : 'PendingLineApproval',
+      status: asDraft ? 'Draft' : 'PendingDriverSupervisor',
     };
     data.trips.unshift(trip);
     audit(data, actor, asDraft ? 'Saved trip draft' : 'Submitted trip request', 'Trip & Dispatch', `${trip.requestNo}: ${trip.origin} to ${trip.destination}`);
@@ -1473,9 +1588,29 @@ export const createLogisticsFleetRecord = async (entity: LogisticsEntity, record
   return readLogisticsFleetData();
 };
 
-export const updateLogisticsFleetRecord = async (entity: 'vehicle', recordId: string, record: Record<string, unknown>, actor = 'System') => {
+export const updateLogisticsFleetRecord = async (entity: 'vehicle' | 'driver', recordId: string, record: Record<string, unknown>, actor = 'System') => {
   const [rawData, employeeSource] = await Promise.all([readRaw(), readPayrollEmployees()]);
   const data = hydrateDriverLifecycle(normalizeData(rawData), employeeSource.employees);
+  if (entity === 'driver') {
+    const driver = data.drivers.find((item) => item.id === recordId);
+    if (!driver) throw new Error('Driver not found');
+    if (value(record, 'licenseNumber')) driver.licenseNumber = value(record, 'licenseNumber');
+    if (value(record, 'licenseClass')) driver.licenseClass = value(record, 'licenseClass');
+    if (value(record, 'licenseExpiry')) driver.licenseExpiry = value(record, 'licenseExpiry');
+    if (value(record, 'issuingAuthority')) driver.issuingAuthority = value(record, 'issuingAuthority');
+    if (value(record, 'driverCategory')) driver.driverCategory = value(record, 'driverCategory') as FleetDriver['driverCategory'];
+    if (value(record, 'medicalCertificateStatus')) driver.medicalCertificateStatus = value(record, 'medicalCertificateStatus') as FleetDriver['medicalCertificateStatus'];
+    if (value(record, 'defensiveDrivingCertificate')) driver.defensiveDrivingCertificate = value(record, 'defensiveDrivingCertificate') as FleetDriver['defensiveDrivingCertificate'];
+    if (value(record, 'availabilityStatus')) driver.availabilityStatus = value(record, 'availabilityStatus') as FleetDriver['availabilityStatus'];
+    if (record.safetyScore != null && String(record.safetyScore) !== '') driver.safetyScore = Number(record.safetyScore);
+    driver.complianceStatus = driverComplianceStatus(driver);
+    if (driver.approvalStatus === 'Approved' && !['Suspended', 'Inactive'].includes(driver.status)) {
+      driver.status = deriveDriverStatus(driver, findEmployee(employeeSource.employees, driver.employeeCode), data.trips);
+    }
+    audit(data, actor, 'Updated driver profile', 'Driver Management', `${driver.employeeCode}: licence/fitness fields`);
+    await writeLogisticsFleetData(data);
+    return readLogisticsFleetData();
+  }
   if (entity !== 'vehicle') throw new Error('Unsupported update entity');
   const vehicle = data.vehicles.find((item) => item.id === recordId);
   if (!vehicle) throw new Error('Vehicle not found');
@@ -1511,7 +1646,7 @@ export const updateLogisticsFleetRecord = async (entity: 'vehicle', recordId: st
 export const updateFleetWorkflow = async (entity: 'driver' | 'trip' | 'maintenance' | 'request' | 'incident', recordId: string, action: 'approve' | 'reject' | 'close' | 'dispatch' | 'complete' | 'request-correction' | 'escalate', actor = 'System', context: TripActionContext = {}) => {
   if (entity === 'trip') {
     const mapped =
-      action === 'approve' ? 'approve-line'
+      action === 'approve' ? 'allocate-trip'
       : action === 'reject' ? 'reject-line'
       : action === 'request-correction' ? 'return-trip'
       : action === 'dispatch' ? 'dispatch-trip'
@@ -1519,6 +1654,9 @@ export const updateFleetWorkflow = async (entity: 'driver' | 'trip' | 'maintenan
       : action === 'close' ? 'cancel-trip'
       : null;
     if (!mapped) throw new Error('Unsupported trip workflow action. Use trip workflow actions instead.');
+    if (mapped === 'allocate-trip') {
+      throw new Error('Driver Supervisor must select vehicle and driver, then use Approve & allocate.');
+    }
     return performTripWorkflow(mapped, { tripId: recordId, reason: context.reason }, actor, context);
   }
   const rawData = await readRaw();
@@ -1588,39 +1726,36 @@ export const performTripWorkflow = async (
   const tripId = value(payload, 'tripId') || value(payload, 'id');
   const trip = data.trips.find((item) => item.id === tripId);
   if (!trip) throw new Error('Trip request not found');
+  trip.status = migrateLegacyTripStatus(trip.status);
   const now = new Date().toISOString();
   const reason = value(payload, 'reason') || context.reason || '';
 
   if (action === 'submit-trip') {
     if (!['Draft', 'Returned'].includes(trip.status)) throw new Error('Only draft or returned trips can be submitted');
-    trip.status = 'PendingLineApproval';
+    trip.status = 'PendingDriverSupervisor';
     trip.returnReason = undefined;
-    audit(data, actor, 'Submitted trip request', 'Trip & Dispatch', trip.requestNo);
+    audit(data, actor, 'Submitted trip request for Driver Supervisor', 'Trip & Dispatch', trip.requestNo);
   } else if (action === 'approve-line') {
-    if (trip.status !== 'PendingLineApproval' && trip.status !== 'Returned') throw new Error('Trip is not awaiting line manager approval');
-    if (!actorMayLineApprove(trip, context)) throw new Error('Only the line manager or a fleet approver can authorize this trip');
-    trip.status = 'PendingFleetAllocation';
-    trip.lineApprovedBy = actor;
-    trip.lineApprovedAt = now;
-    trip.approvedBy = actor;
-    trip.lineRejectReason = undefined;
-    trip.returnReason = undefined;
-    audit(data, actor, 'Line manager approved trip need', 'Trip & Dispatch', trip.requestNo);
+    throw new Error('Driver Supervisor must approve and allocate vehicle & driver together. Use Allocate & Approve.');
   } else if (action === 'reject-line') {
-    if (trip.status !== 'PendingLineApproval') throw new Error('Trip is not awaiting line manager approval');
-    if (!actorMayLineApprove(trip, context)) throw new Error('Only the line manager or a fleet approver can reject this trip');
+    if (!isPendingDriverSupervisor(trip.status)) throw new Error('Trip is not awaiting Driver Supervisor review');
+    if (!actorMayDriverSupervisor(context)) throw new Error('Only a Driver Supervisor or fleet approver can reject this trip');
     trip.status = 'Rejected';
-    trip.lineRejectReason = reason || 'Rejected by line manager';
+    trip.lineRejectReason = reason || 'Rejected by Driver Supervisor';
     trip.lineApprovedBy = actor;
     trip.lineApprovedAt = now;
-    audit(data, actor, 'Line manager rejected trip', 'Trip & Dispatch', `${trip.requestNo}: ${trip.lineRejectReason}`);
+    audit(data, actor, 'Driver Supervisor rejected trip', 'Trip & Dispatch', `${trip.requestNo}: ${trip.lineRejectReason}`);
   } else if (action === 'return-trip') {
-    if (!['PendingLineApproval', 'PendingFleetAllocation'].includes(trip.status)) throw new Error('Trip cannot be returned at this stage');
+    if (!isPendingDriverSupervisor(trip.status)) throw new Error('Trip cannot be returned at this stage');
+    if (!actorMayDriverSupervisor(context)) throw new Error('Only a Driver Supervisor or fleet approver can return this trip');
     trip.status = 'Returned';
     trip.returnReason = reason || 'Returned for correction';
-    audit(data, actor, 'Returned trip for correction', 'Trip & Dispatch', `${trip.requestNo}: ${trip.returnReason}`);
+    audit(data, actor, 'Driver Supervisor returned trip for correction', 'Trip & Dispatch', `${trip.requestNo}: ${trip.returnReason}`);
   } else if (action === 'allocate-trip') {
-    if (trip.status !== 'PendingFleetAllocation') throw new Error('Trip is not awaiting fleet allocation');
+    if (!isPendingDriverSupervisor(trip.status)) {
+      throw new Error('Trip is not awaiting Driver Supervisor approval and allocation');
+    }
+    if (!actorMayDriverSupervisor(context)) throw new Error('Only a Driver Supervisor or fleet approver can approve and allocate this trip');
     const vehicle = data.vehicles.find((item) => item.id === value(payload, 'vehicleId'));
     if (!vehicle) throw new Error('Select a vehicle for allocation');
     const driverEmployee = findEmployee(employeeSource.employees.filter(assignableEmployee), value(payload, 'driverEmployeeCode'));
@@ -1632,12 +1767,42 @@ export const performTripWorkflow = async (
       throw new Error('Driver already has an active trip');
     }
     assertVehicleAvailable(data, vehicle.id, driverProfile?.id || driverCode);
+
+    // Bind operational assignment for the trip period.
+    if (driverProfile) {
+      const previousVehicleId = driverProfile.assignedVehicleId;
+      if (previousVehicleId && previousVehicleId !== vehicle.id) {
+        const oldVehicle = data.vehicles.find((item) => item.id === previousVehicleId);
+        if (oldVehicle && !data.drivers.some((item) => item.id !== driverProfile.id && item.assignedVehicleId === oldVehicle.id)) {
+          oldVehicle.status = 'Available';
+        }
+      }
+      driverProfile.assignedVehicleId = vehicle.id;
+      driverProfile.availabilityStatus = 'Assigned';
+      driverProfile.status = 'Assigned';
+      data.assignmentHistory.unshift({
+        id: id('asg'),
+        driverId: driverProfile.id,
+        vehicleId: vehicle.id,
+        action: previousVehicleId && previousVehicleId !== vehicle.id ? 'Reassigned' : 'Assigned',
+        effectiveDate: now,
+        reason: `Trip allocation ${trip.requestNo}`,
+        performedBy: actor,
+      });
+    }
+    vehicle.status = 'Assigned';
+
     trip.vehicleId = vehicle.id;
     trip.driverId = driverCode;
     trip.status = 'ReadyToDispatch';
+    trip.lineApprovedBy = actor;
+    trip.lineApprovedAt = now;
+    trip.approvedBy = actor;
     trip.allocatedBy = actor;
     trip.allocatedAt = now;
-    audit(data, actor, 'Allocated vehicle and driver', 'Trip & Dispatch', `${trip.requestNo}: ${vehicle.assetCode} / ${employeeDisplay(driverEmployee)}`);
+    trip.lineRejectReason = undefined;
+    trip.returnReason = undefined;
+    audit(data, actor, 'Driver Supervisor approved and allocated trip', 'Trip & Dispatch', `${trip.requestNo}: ${vehicle.assetCode} / ${employeeDisplay(driverEmployee)} → ${trip.destination}`);
   } else if (action === 'dispatch-trip') {
     if (trip.status !== 'ReadyToDispatch') throw new Error('Trip must be allocated before dispatch');
     if (!trip.vehicleId || !trip.driverId) throw new Error('Allocate vehicle and driver before dispatch');
