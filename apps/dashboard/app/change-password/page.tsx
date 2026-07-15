@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Eye, EyeOff, KeyRound } from 'lucide-react';
 import { passwordPolicyErrors } from '@/lib/auth/session';
+import { safeInternalNextPath } from '@/lib/auth/safe-next';
 
 export default function ChangePasswordPage() {
   const [login, setLogin] = useState('');
@@ -13,7 +14,10 @@ export default function ChangePasswordPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [needsLogin, setNeedsLogin] = useState(false);
-  const next = useMemo(() => new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search).get('next') || '', []);
+  const next = useMemo(
+    () => safeInternalNextPath(new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search).get('next')),
+    [],
+  );
   const suggestedLogin = useMemo(() => new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search).get('user') || '', []);
   const policy = passwordPolicyErrors(newPassword);
 
@@ -65,7 +69,7 @@ export default function ChangePasswordPage() {
       });
       const json = await res.json();
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to change password.');
-      window.location.assign(json.data.redirectTo || next || '/');
+      window.location.assign(next || json.data.redirectTo || '/');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to change password.';
       setError(message);

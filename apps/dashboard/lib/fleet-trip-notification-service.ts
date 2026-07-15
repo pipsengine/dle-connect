@@ -1,3 +1,4 @@
+import { configuredFleetDriverSupervisorCodes } from '@/lib/access/fleet-access';
 import { readUsers, type UserAccount } from '@/lib/auth/auth-store';
 import type { SessionPayload } from '@/lib/auth/session';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
@@ -34,13 +35,6 @@ type FleetRecipient = {
   employeeCode?: string;
 };
 
-const SUPERVISOR_ROLE_PATTERNS = [
-  /driver supervisor/i,
-  /fleet manager/i,
-  /fleet administrator/i,
-  /fleet dispatcher/i,
-];
-
 const DISPATCHER_ROLE_PATTERNS = [
   /fleet manager/i,
   /fleet administrator/i,
@@ -48,12 +42,12 @@ const DISPATCHER_ROLE_PATTERNS = [
   /driver supervisor/i,
 ];
 
-/** Explicit Driver Supervisor employee codes (comma/space separated). Defaults to L2770. */
-export const configuredFleetDriverSupervisorCodes = () =>
-  compact(process.env.FLEET_DRIVER_SUPERVISOR_CODES || 'L2770')
-    .split(/[,;\s]+/)
-    .map((value) => value.trim().toUpperCase())
-    .filter(Boolean);
+const SUPERVISOR_ROLE_PATTERNS = [
+  /driver supervisor/i,
+  /fleet manager/i,
+  /fleet administrator/i,
+  /fleet dispatcher/i,
+];
 
 const hasFleetPermission = (user: UserAccount, keys: string[]) => {
   const permissions = user.permissions || [];
@@ -262,6 +256,15 @@ const notifyRecipient = async (input: {
   if (!input.recipient.email) return { notified: 1, emailed: 0 };
   try {
     const result = await input.sendEmail();
+    if (!result.sent) {
+      console.warn('[fleet-trip-notifications] Email not sent', {
+        to: input.recipient.email,
+        code: input.recipient.employeeCode,
+        reason: result.reason || 'unknown',
+        tripId: input.tripId,
+        action: input.action,
+      });
+    }
     return { notified: 1, emailed: result.sent ? 1 : 0 };
   } catch (error) {
     console.warn('[fleet-trip-notifications] Email send failed.', error);
@@ -325,9 +328,25 @@ export const notifyFleetTripWorkflow = async (input: {
 
   if (input.action === 'submit-trip' || input.action === 'create-trip') {
     const supervisors = await resolveFleetDriverSupervisors();
+    // Always include the trip's designated Driver Supervisor (stored on lineManager* fields).
+    if (compact(trip.lineManagerEmployeeCode)) {
+      const designated = await recipientFromDirectory(
+        employeeSource.employees,
+        users,
+        trip.lineManagerEmployeeCode,
+        trip.lineManagerName,
+      );
+      if (designated) supervisors.push(designated);
+    }
+    const recipients = dedupeRecipients(supervisors);
     const href = fleetTripWorkspacePath('supervisor', trip.id);
     const workspaceLink = fleetTripSupervisorUrl(trip.id, input.baseUrl);
-    for (const recipient of supervisors) {
+    console.info('[fleet-trip-notifications] Supervisor recipients', {
+      requestNo: trip.requestNo,
+      action: input.action,
+      recipients: recipients.map((item) => ({ code: item.employeeCode, email: item.email ? 'set' : '', name: item.fullName })),
+    });
+    for (const recipient of recipients) {
       await accumulate(notifyRecipient({
         recipient,
         kind: 'Approval',
@@ -350,6 +369,7 @@ export const notifyFleetTripWorkflow = async (input: {
         }),
       }));
     }
+    console.info('[fleet-trip-notifications] Supervisor notify complete', { requestNo: trip.requestNo, notified, emailed });
     return { notified, emailed };
   }
 

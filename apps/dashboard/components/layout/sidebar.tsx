@@ -41,7 +41,7 @@ const requiredPermission = (route?: string) => {
   if (route.startsWith('/hris/leave-management')) return 'leave.view';
   if (route.startsWith('/hris')) return 'hris.view';
   if (route.startsWith('/workforce-portal')) return '';
-  if (route.startsWith('/logistics-fleet')) return 'fleet.view';
+  if (route.startsWith('/logistics-fleet')) return '';
   if (route.startsWith('/operations-center/timesheets')) return 'operations.timesheets.submit';
   if (route.startsWith('/operations-center/workforce-allocation')) return 'operations.allocation.view';
   if (route.startsWith('/operations-center/resource-planning')) return 'operations.resource-planning.view';
@@ -59,7 +59,7 @@ const requiredPermission = (route?: string) => {
   return 'enterprise.view';
 };
 
-const canAccess = (permissions: string[], required: string) => hasPermission(permissions, required);
+const canAccess = (permissions: string[], required: string) => !required || hasPermission(permissions, required);
 
 export function Sidebar({
   isOpen,
@@ -139,7 +139,9 @@ export function Sidebar({
         });
         const canSeeItem = item.id === 'hris'
           ? !!subItems?.length
-          : canAccess(permissions, requiredPermission(item.route)) || !!subItems?.length;
+          : item.id === 'logistics-fleet'
+            || canAccess(permissions, requiredPermission(item.route))
+            || !!subItems?.length;
         return canSeeItem ? { ...item, subItems } : null;
       })
       .filter(Boolean) as NavItem[];

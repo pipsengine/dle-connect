@@ -2,6 +2,60 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1784129791560-192gyt",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "kind": "Approval",
+      "module": "Logistics & Fleet",
+      "title": "Trip cancelled — TRP-2026-0003",
+      "body": "A trip request was cancelled. Reason: Cancelled by fleet user",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=requests&tripId=trp-1784129083277-1pd0x",
+      "createdAt": "2026-07-15T15:36:31.560Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784129083277-1pd0x",
+        "action": "cancel-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
+      "id": "ntf-1784129034924-fwldqi",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [
+        "Super Administrator"
+      ],
+      "kind": "Approval",
+      "module": "Logistics & Fleet",
+      "title": "Trip cancelled — TRP-2026-0002",
+      "body": "A trip request was cancelled. Reason: Cancelled by fleet user",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=requests&tripId=trp-1784124090101-nuqe5",
+      "createdAt": "2026-07-15T15:23:54.924Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784124090101-nuqe5",
+        "action": "cancel-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
       "id": "ntf-1784120491921-456i7z",
       "recipientUserId": "P0181",
       "recipientUsername": "P0181",

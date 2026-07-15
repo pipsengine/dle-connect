@@ -22,6 +22,11 @@ import {
   type FleetWorkspaceId,
 } from '@/lib/fleet-management/nav';
 import { TRIP_STATUS_STEPS, tripStepperIndex } from '@/lib/fleet-management/trip-workflow';
+import {
+  canAllocateFleetTrip,
+  canDispatchFleetTrip,
+  canManageFleet,
+} from '@/lib/access/fleet-access';
 
 type Vehicle = {
   id: string;
@@ -259,6 +264,29 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
   const [assignState, setAssignState] = useState<Record<string, { vehicleId: string; driverEmployeeCode: string }>>({});
   const [editingVehicleId, setEditingVehicleId] = useState('');
   const [editingDriverId, setEditingDriverId] = useState('');
+  const [sessionAccess, setSessionAccess] = useState<{
+    permissions: string[];
+    isGlobalAdmin: boolean;
+    employeeCode: string;
+  }>({ permissions: [], isGlobalAdmin: false, employeeCode: '' });
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (!active || !json?.data) return;
+        setSessionAccess({
+          permissions: Array.isArray(json.data.permissions) ? json.data.permissions : [],
+          isGlobalAdmin: Boolean(json.data.isGlobalAdmin),
+          employeeCode: String(json.data.employeeCode || json.data.username || ''),
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const applyPayload = (data: Payload) => {
     setPayload(data);
@@ -481,9 +509,38 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
     await postJson({ entity, id, action });
   };
 
-  const visibleTabs = meta.tabs.slice(0, 7);
-  const overflowTabs = meta.tabs.slice(7);
-  const currentTab = meta.tabs.find((item) => item.id === activeTab) || meta.tabs[0];
+  const canSuperviseTrips = canAllocateFleetTrip(
+    sessionAccess.permissions,
+    sessionAccess.isGlobalAdmin,
+    sessionAccess.employeeCode || employee.employeeCode,
+  );
+  const canDispatchTrips = canDispatchFleetTrip(
+    sessionAccess.permissions,
+    sessionAccess.isGlobalAdmin,
+    sessionAccess.employeeCode || employee.employeeCode,
+  );
+  const canManage = canManageFleet(sessionAccess.permissions, sessionAccess.isGlobalAdmin);
+
+  const permissionedTabs = meta.tabs.filter((tab) => {
+    if (workspace !== 'trips-dispatch') return true;
+    if (tab.id === 'supervisor' || tab.id === 'approvals' || tab.id === 'allocation') return canSuperviseTrips;
+    if (tab.id === 'dispatch') return canDispatchTrips;
+    return true;
+  });
+  const visibleTabs = permissionedTabs.slice(0, 7);
+  const overflowTabs = permissionedTabs.slice(7);
+  const currentTab = permissionedTabs.find((item) => item.id === activeTab) || permissionedTabs[0];
+
+  useEffect(() => {
+    if (workspace !== 'trips-dispatch') return;
+    if (!activeTab) return;
+    const allowed = permissionedTabs.some((tab) => tab.id === activeTab);
+    if (allowed) return;
+    const fallback = permissionedTabs[0]?.id || 'requests';
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', fallback);
+    router.replace(`${pathname}?${params.toString()}`);
+  }, [activeTab, pathname, permissionedTabs, router, searchParams, workspace]);
 
   const vehicleLabel = (id: string) => {
     const vehicle = payload?.vehicles.find((item) => item.id === id);
@@ -1730,7 +1787,7 @@ export function FleetWorkspaceClient({ workspaceSlug }: { workspaceSlug?: string
               <p className="mt-1 max-w-3xl text-sm font-semibold text-slate-600">{meta.description}</p>
               {notice ? <p className="mt-2 text-xs font-bold text-emerald-700">{notice}</p> : null}
             </div>
-            {meta.primaryAction || entityForWorkspace(workspace) ? (
+            {(workspace === 'trips-dispatch' || (canManage && (meta.primaryAction || entityForWorkspace(workspace)))) ? (
               <button
                 type="button"
                 onClick={openCreate}

@@ -160,7 +160,7 @@ export const navigationConfig: NavItem[] = [
     icon: Truck,
     group: 'main',
     route: '/logistics-fleet',
-    permissionKey: 'view_logistics_fleet'
+    permissionKey: '',
   },
   {
     id: 'operations-center',

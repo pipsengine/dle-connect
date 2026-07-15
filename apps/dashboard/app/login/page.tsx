@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Eye, EyeOff, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { clearStoredSessionActivity } from '@/components/layout/auth-session-guard';
+import { safeInternalNextPath } from '@/lib/auth/safe-next';
 
 export default function LoginPage() {
   const [login, setLogin] = useState('');
@@ -11,7 +12,10 @@ export default function LoginPage() {
   const [rememberDevice, setRememberDevice] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const next = useMemo(() => new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search).get('next') || '', []);
+  const next = useMemo(
+    () => safeInternalNextPath(new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search).get('next')),
+    [],
+  );
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -27,8 +31,13 @@ export default function LoginPage() {
       const json = await res.json();
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Login failed.');
       clearStoredSessionActivity();
-      const redirectTo = json.data.user?.isGlobalAdmin ? '/' : json.data.redirectTo;
-      window.location.assign(redirectTo === '/change-password' ? `/change-password${next ? `?next=${encodeURIComponent(next)}` : ''}` : redirectTo || '/');
+      const redirectTo = json.data.user?.isGlobalAdmin && !next ? '/' : json.data.redirectTo;
+      if (redirectTo === '/change-password') {
+        window.location.assign(`/change-password${next ? `?next=${encodeURIComponent(next)}` : ''}`);
+        return;
+      }
+      // Honor email / middleware deep links (e.g. trip supervisor approval).
+      window.location.assign(next || redirectTo || '/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed.');
     } finally {

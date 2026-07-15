@@ -127,19 +127,20 @@ export async function POST(request: NextRequest) {
       if (action === 'submit-trip' && !canSubmitFleetTrip(base.permissions, base.session.isGlobalAdmin)) {
         return err(403, 'Forbidden.');
       }
-      if ((action === 'approve-line' || action === 'reject-line' || action === 'return-trip' || action === 'allocate-trip') && !canAllocateFleetTrip(base.permissions, base.session.isGlobalAdmin)) {
+      if ((action === 'approve-line' || action === 'reject-line' || action === 'return-trip' || action === 'allocate-trip') && !canAllocateFleetTrip(base.permissions, base.session.isGlobalAdmin, base.session.employeeCode)) {
         return err(403, 'Forbidden. Driver Supervisor or Fleet Approver required.');
       }
-      if ((action === 'dispatch-trip' || action === 'start-trip' || action === 'complete-trip') && !canDispatchFleetTrip(base.permissions, base.session.isGlobalAdmin)) {
+      if ((action === 'dispatch-trip' || action === 'start-trip' || action === 'complete-trip') && !canDispatchFleetTrip(base.permissions, base.session.isGlobalAdmin, base.session.employeeCode)) {
         return err(403, 'Forbidden. Fleet Dispatcher permission required.');
       }
-      if ((action === 'cancel-trip') && !canManageFleet(base.permissions, base.session.isGlobalAdmin) && !canAllocateFleetTrip(base.permissions, base.session.isGlobalAdmin)) {
+      if ((action === 'cancel-trip') && !canManageFleet(base.permissions, base.session.isGlobalAdmin) && !canAllocateFleetTrip(base.permissions, base.session.isGlobalAdmin, base.session.employeeCode)) {
         return err(403, 'Forbidden.');
       }
       const data = await performTripWorkflow(action, body as Record<string, unknown>, actor, { ...context, reason: body.reason });
       const tripId = String(body.tripId || body.id || '');
       if (['submit-trip', 'allocate-trip', 'reject-line', 'return-trip', 'dispatch-trip', 'complete-trip', 'cancel-trip'].includes(action)) {
-        void fireTripNotifications({
+        // Must await — fire-and-forget is cancelled when the HTTP response completes in Next.js.
+        await fireTripNotifications({
           request,
           action,
           data,
@@ -154,7 +155,7 @@ export async function POST(request: NextRequest) {
     if (body.action) {
       if (!canManageFleet(base.permissions, base.session.isGlobalAdmin)) return err(403, 'Forbidden.');
       if (operationalActions.has(body.action)) {
-        if (body.action === 'assign-trip-driver' && !canAllocateFleetTrip(base.permissions, base.session.isGlobalAdmin)) {
+        if (body.action === 'assign-trip-driver' && !canAllocateFleetTrip(base.permissions, base.session.isGlobalAdmin, base.session.employeeCode)) {
           return err(403, 'Forbidden. Driver Supervisor or Fleet Approver required to allocate.');
         }
         const data = await performFleetAction(body.action as Parameters<typeof performFleetAction>[0], body as Record<string, unknown>, actor, context);
@@ -185,7 +186,8 @@ export async function POST(request: NextRequest) {
     if (body.entity === 'trip') {
       const trip = data.trips[0];
       if (trip && isPendingDriverSupervisor(trip.status)) {
-        void fireTripNotifications({
+        // Must await — fire-and-forget is cancelled when the HTTP response completes in Next.js.
+        await fireTripNotifications({
           request,
           action: 'create-trip',
           data,

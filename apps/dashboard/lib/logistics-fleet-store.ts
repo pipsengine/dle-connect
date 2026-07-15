@@ -1306,6 +1306,14 @@ const actorMayDriverSupervisor = (context: TripActionContext) => {
   if (permissions.includes('*') || permissions.includes('fleet.*') || permissions.includes('fleet.approve') || permissions.includes('driver.approve')) {
     return true;
   }
+  const code = String(context.actorEmployeeCode || '').trim().toUpperCase();
+  if (code && String(process.env.FLEET_DRIVER_SUPERVISOR_CODES || 'L2770')
+    .split(/[,;\s]+/)
+    .map((value) => value.trim().toUpperCase())
+    .filter(Boolean)
+    .includes(code)) {
+    return true;
+  }
   return false;
 };
 

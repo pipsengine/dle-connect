@@ -30,7 +30,8 @@ const can = (permissions: string[], required: string) => {
   return permissions.includes(`${required.split('.')[0]}.*`);
 };
 
-const canAny = (permissions: string[], required: string[]) => required.some((item) => can(permissions, item));
+const canAny = (permissions: string[], required: string[]) =>
+  required.length === 0 || required.some((item) => can(permissions, item));
 
 const getSessionPermissions = async () => {
   const token = (await cookies()).get(AUTH_COOKIE)?.value;
@@ -143,7 +144,7 @@ const workspaceModules = [
     icon: Box,
     status: 'Live',
     signal: 'Fleet portal for vehicles, drivers, trips, fuel, maintenance, and compliance',
-    permissions: ['fleet.view', 'fleet.*', 'logistics.view', 'logistics.*', 'view_logistics_fleet', 'driver.view'],
+    permissions: [],
   },
   {
     title: 'Reports & Analytics',

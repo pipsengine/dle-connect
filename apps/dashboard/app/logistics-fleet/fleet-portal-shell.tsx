@@ -2,12 +2,16 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Activity, Building2, ChevronDown, Menu, RefreshCcw, Search, X } from 'lucide-react';
 import { NotificationCenter } from '@/components/layout/notification-center';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
+import {
+  canAccessFleetWorkspace,
+  type FleetWorkspaceAccessId,
+} from '@/lib/access/fleet-access';
 import { ALL_FLEET_NAV_ITEMS, FLEET_NAV_SECTIONS, type FleetWorkspaceId } from '@/lib/fleet-management/nav';
 
 type FleetPortalShellProps = {
@@ -23,12 +27,84 @@ type FleetPortalShellProps = {
   children: ReactNode;
 };
 
+type SessionAccess = {
+  permissions: string[];
+  isGlobalAdmin: boolean;
+  employeeCode: string;
+  ready: boolean;
+};
+
 export function FleetPortalShell({ workspace, loading, onRefresh, employee, children }: FleetPortalShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [session, setSession] = useState<SessionAccess>({
+    permissions: [],
+    isGlobalAdmin: false,
+    employeeCode: employee?.employeeCode || '',
+    ready: false,
+  });
 
-  const activeHref = useMemo(() => ALL_FLEET_NAV_ITEMS.find((item) => item.id === workspace)?.href || '/logistics-fleet/dashboard', [workspace]);
+  useEffect(() => {
+    let active = true;
+    fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (!active) return;
+        setSession({
+          permissions: Array.isArray(json?.data?.permissions) ? json.data.permissions : [],
+          isGlobalAdmin: Boolean(json?.data?.isGlobalAdmin),
+          employeeCode: String(json?.data?.employeeCode || json?.data?.username || employee?.employeeCode || ''),
+          ready: true,
+        });
+      })
+      .catch(() => {
+        if (active) setSession((current) => ({ ...current, ready: true }));
+      });
+    return () => {
+      active = false;
+    };
+  }, [employee?.employeeCode, pathname]);
+
+  const visibleSections = useMemo(() => {
+    return FLEET_NAV_SECTIONS
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) =>
+          canAccessFleetWorkspace(
+            item.id as FleetWorkspaceAccessId,
+            session.permissions,
+            session.isGlobalAdmin,
+            session.employeeCode,
+          ),
+        ),
+      }))
+      .filter((section) => section.items.length > 0);
+  }, [session]);
+
+  const allowedWorkspaces = useMemo(
+    () => visibleSections.flatMap((section) => section.items.map((item) => item.id)),
+    [visibleSections],
+  );
+
+  useEffect(() => {
+    if (!session.ready) return;
+    const allowed = canAccessFleetWorkspace(
+      workspace as FleetWorkspaceAccessId,
+      session.permissions,
+      session.isGlobalAdmin,
+      session.employeeCode,
+    );
+    if (allowed) return;
+    const fallback = allowedWorkspaces[0] || 'trips-dispatch';
+    if (fallback !== workspace) router.replace(`/logistics-fleet/${fallback}`);
+  }, [allowedWorkspaces, router, session, workspace]);
+
+  const activeHref = useMemo(
+    () => ALL_FLEET_NAV_ITEMS.find((item) => item.id === workspace)?.href || '/logistics-fleet/dashboard',
+    [workspace],
+  );
 
   const NavBody = (
     <>
@@ -40,7 +116,7 @@ export function FleetPortalShell({ workspace, loading, onRefresh, employee, chil
       </div>
 
       <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
-        {FLEET_NAV_SECTIONS.map((section) => {
+        {visibleSections.map((section) => {
           const isCollapsed = Boolean(collapsed[section.id]);
           return (
             <div key={section.id}>
