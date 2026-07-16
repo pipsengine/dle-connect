@@ -30,6 +30,7 @@ import {
   EssSparkline,
   EssWorkflowStepper,
 } from './ess-portal-ui';
+import { EssCelebrationsCard } from './ess-celebrations';
 import type { EssTab } from './ess-portal-shell';
 
 export type EssDashboardPayload = {
@@ -77,8 +78,10 @@ export type EssDashboardPayload = {
     endDate: string;
     stage: string;
   }>;
-  birthdays?: Array<{ id: string; fullName: string; department: string; date: string }>;
-  anniversaries?: Array<{ id: string; fullName: string; years: number; date: string }>;
+  birthdays?: Array<{ id: string; fullName: string; department: string; date: string; employeeId?: string; employeeCode?: string; hasPhoto?: boolean }>;
+  anniversaries?: Array<{ id: string; fullName: string; years: number; date: string; department?: string; employeeId?: string; employeeCode?: string; hasPhoto?: boolean }>;
+  todaysBirthdays?: Array<{ id: string; fullName: string; department: string; date: string; employeeId?: string; employeeCode?: string; hasPhoto?: boolean }>;
+  todaysAnniversaries?: Array<{ id: string; fullName: string; years: number; date: string; department?: string; employeeId?: string; employeeCode?: string; hasPhoto?: boolean }>;
   events?: Array<{ id: string; label: string; date: string; type: string }>;
   announcements?: Array<{ id: string; title: string; channel: string; publishedAt: string; priority: string }>;
   requests?: Array<{ id: string; title: string; category: string; status: string; submittedAt: string; approvers?: string[] }>;
@@ -493,7 +496,15 @@ export function EssDashboardView({ payload, onNavigate }: EssDashboardViewProps)
   );
 }
 
-export function EssRightPanel({ payload, onNavigate }: { payload: EssDashboardPayload | null; onNavigate: (tab: EssTab, options?: { leaveSection?: string }) => void }) {
+export function EssRightPanel({
+  payload,
+  onNavigate,
+  onOpenCelebrations,
+}: {
+  payload: EssDashboardPayload | null;
+  onNavigate: (tab: EssTab, options?: { leaveSection?: string }) => void;
+  onOpenCelebrations?: () => void;
+}) {
   const employee = payload?.employee;
   const manager = payload?.managerMetrics;
   const isManager = (manager?.teamSize || 0) > 0 || Boolean(employee?.jobTitle?.match(/manager|head|lead/i));
@@ -548,6 +559,13 @@ export function EssRightPanel({ payload, onNavigate }: { payload: EssDashboardPa
           )}
         </div>
       </EssCard>
+
+      <EssCelebrationsCard
+        birthdays={payload?.birthdays}
+        anniversaries={payload?.anniversaries}
+        onNavigate={onNavigate}
+        onOpenToday={onOpenCelebrations}
+      />
 
       <EssCard className="p-3">
         <EssSectionHeader title="Company Announcements" />

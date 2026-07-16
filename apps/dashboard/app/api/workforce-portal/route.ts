@@ -1269,6 +1269,33 @@ export async function GET(request: Request) {
       auditTrail: derivedAuditTrail,
     });
 
+    const profilePendingUpdates = await pendingProfileUpdatesForEmployee(employee.employeeId);
+    const canApproveProfileUpdates = canApproveEssProfileUpdate(session.roles || []);
+    const actorProfileCode = compact(session.employeeCode || session.username || employee.employeeCode || employee.employeeId).toUpperCase();
+    const profileApprovalQueue = canApproveProfileUpdates
+      ? allRequests
+          .filter((item) =>
+            isProfileUpdateRequest(item)
+            && !/approved|rejected|closed|terminated/i.test(item.status)
+            && compact(item.employeeId).toUpperCase() !== actorProfileCode,
+          )
+          .map((item) => ({
+            id: item.id,
+            employeeId: item.employeeId,
+            employeeName: employeeSource.employees.find(
+              (row) =>
+                compact(row.employeeId).toUpperCase() === compact(item.employeeId).toUpperCase()
+                || compact(row.employeeCode).toUpperCase() === compact(item.employeeId).toUpperCase(),
+            )?.fullName || item.employeeId,
+            sectionId: String((item as { profileSectionId?: string }).profileSectionId || ''),
+            title: item.title,
+            status: item.status,
+            submittedAt: item.submittedAt,
+            changes: (item as { profileChanges?: Record<string, string> }).profileChanges || {},
+            previousValues: (item as { profilePreviousValues?: Record<string, string> }).profilePreviousValues || {},
+          }))
+      : [];
+
     const portalAnnouncements = [
       ...(currentPeriodReleased && essDisplayPeriod
         ? [{ id: 'ann-001', title: `${periodTitle(essDisplayPeriod)} payslip is now available`, channel: 'Payroll', publishedAt: dateAdd(-1), priority: 'High' as const }]
@@ -1283,7 +1310,18 @@ export async function GET(request: Request) {
         createdAt: new Date().toISOString(),
         href: '/workforce-portal?tab=leave&leaveSection=Approvals',
       })),
-      ...essContext.notifications.filter((item) => !String(item.id).startsWith('live-leave-')),
+      ...profileApprovalQueue.map((item) => ({
+        id: `live-profile-${item.id}`,
+        title: `Profile update approval required: ${item.employeeName}`,
+        type: 'Workflow',
+        status: 'Unread',
+        createdAt: item.submittedAt || new Date().toISOString(),
+        href: `/workforce-portal?tab=profile&profileApprovalId=${encodeURIComponent(item.id)}`,
+      })),
+      ...essContext.notifications.filter((item) =>
+        !String(item.id).startsWith('live-leave-')
+        && !String(item.id).startsWith('live-profile-'),
+      ),
       ...(latestReleasedPayroll && !essContext.notifications.some((item) => /payslip/i.test(item.title))
         ? [{ id: 'ntf-payslip', title: `${latestReleasedPayroll.periodLabel || periodTitle(latestReleasedPayroll.period)} payslip is ready for download`, type: 'Payroll', status: 'Read', createdAt: dateAdd(-1), href: '/workforce-portal?tab=payroll' }]
         : []),
@@ -1297,27 +1335,6 @@ export async function GET(request: Request) {
       requests: employeeRequests,
       generatedAt: new Date().toISOString(),
     });
-
-    const profilePendingUpdates = await pendingProfileUpdatesForEmployee(employee.employeeId);
-    const canApproveProfileUpdates = canApproveEssProfileUpdate(session.roles || []);
-    const profileApprovalQueue = canApproveProfileUpdates
-      ? allRequests
-          .filter((item) => isProfileUpdateRequest(item) && !/approved|rejected|closed|terminated/i.test(item.status))
-          .map((item) => ({
-            id: item.id,
-            employeeId: item.employeeId,
-            employeeName: employeeSource.employees.find(
-              (row) =>
-                compact(row.employeeId).toUpperCase() === compact(item.employeeId).toUpperCase()
-                || compact(row.employeeCode).toUpperCase() === compact(item.employeeId).toUpperCase(),
-            )?.fullName || item.employeeId,
-            sectionId: String((item as { profileSectionId?: string }).profileSectionId || ''),
-            title: item.title,
-            status: item.status,
-            submittedAt: item.submittedAt,
-            changes: (item as { profileChanges?: Record<string, string> }).profileChanges || {},
-          }))
-      : [];
 
     const payload = {
       generatedAt: new Date().toISOString(),
@@ -1386,6 +1403,8 @@ export async function GET(request: Request) {
       })),
       birthdays: essContext.birthdays,
       anniversaries: essContext.anniversaries,
+      todaysBirthdays: essContext.todaysBirthdays,
+      todaysAnniversaries: essContext.todaysAnniversaries,
       events: essContext.events,
       documents: employeeDocuments,
       documentGovernance,
@@ -1717,8 +1736,9 @@ export async function POST(request: Request) {
           changes,
           previousValues,
           comment: compact(body.comment) || undefined,
+          baseUrl: resolveWorkflowLinkOriginFromRequest(request),
         });
-        return ok({ request: requestItem, message: 'Profile update submitted for HR approval.' });
+        return ok({ request: requestItem, message: 'Profile update submitted for HR Manager approval. HR has been notified by portal and email.' });
       } catch (error) {
         return err(409, error instanceof Error ? error.message : 'Unable to submit profile update.');
       }
@@ -1734,12 +1754,13 @@ export async function POST(request: Request) {
           actor: session,
           employeeDirectory: employeeSource.employees,
           comment: compact(body.comment) || undefined,
+          baseUrl: resolveWorkflowLinkOriginFromRequest(request),
         });
         return ok({
           request: requestItem,
           message: action === 'approve-profile-update'
-            ? 'Profile update approved and applied to HRIS.'
-            : 'Profile update rejected.',
+            ? 'Profile update approved and applied to HRIS. The employee has been notified.'
+            : 'Profile update rejected. The employee has been notified.',
         });
       } catch (error) {
         return err(

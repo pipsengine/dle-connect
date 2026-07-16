@@ -2,6 +2,167 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1784205785820-zpif3w",
+      "recipientUserId": "P0459",
+      "recipientUsername": "P0459",
+      "recipientEmployeeCode": "P0459",
+      "recipientRoles": [
+        "HR Officer"
+      ],
+      "kind": "Approval",
+      "module": "Profile",
+      "title": "Profile update awaiting your approval — Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "body": "Contact Details update: Personal email",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=profile&profileApprovalId=ess-profile-1784205776653-buj4ri",
+      "createdAt": "2026-07-16T12:43:05.820Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-profile-1784205776653-buj4ri",
+        "module": "ess-profile-update"
+      }
+    },
+    {
+      "id": "ntf-1784205785148-l9i25z",
+      "recipientUserId": "P0432",
+      "recipientUsername": "P0432",
+      "recipientEmployeeCode": "P0432",
+      "recipientRoles": [
+        "HR Officer"
+      ],
+      "kind": "Approval",
+      "module": "Profile",
+      "title": "Profile update awaiting your approval — Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "body": "Contact Details update: Personal email",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=profile&profileApprovalId=ess-profile-1784205776653-buj4ri",
+      "createdAt": "2026-07-16T12:43:05.148Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-profile-1784205776653-buj4ri",
+        "module": "ess-profile-update"
+      }
+    },
+    {
+      "id": "ntf-1784205783326-45stlw",
+      "recipientUserId": "P0181",
+      "recipientUsername": "P0181",
+      "recipientEmployeeCode": "P0181",
+      "recipientRoles": [
+        "Employee",
+        "System Administrator"
+      ],
+      "kind": "Approval",
+      "module": "Profile",
+      "title": "Profile update awaiting your approval — Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "body": "Contact Details update: Personal email",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=profile&profileApprovalId=ess-profile-1784205776653-buj4ri",
+      "createdAt": "2026-07-16T12:43:03.326Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-profile-1784205776653-buj4ri",
+        "module": "ess-profile-update"
+      }
+    },
+    {
+      "id": "ntf-1784205782176-qya3jw",
+      "recipientUserId": "L2782",
+      "recipientUsername": "L2782",
+      "recipientEmployeeCode": "L2782",
+      "recipientRoles": [
+        "HR Officer"
+      ],
+      "kind": "Approval",
+      "module": "Profile",
+      "title": "Profile update awaiting your approval — Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "body": "Contact Details update: Personal email",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=profile&profileApprovalId=ess-profile-1784205776653-buj4ri",
+      "createdAt": "2026-07-16T12:43:02.176Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-profile-1784205776653-buj4ri",
+        "module": "ess-profile-update"
+      }
+    },
+    {
+      "id": "ntf-1784205776694-zuj6ad",
+      "recipientUserId": "L2770",
+      "recipientUsername": "L2770",
+      "recipientEmployeeCode": "L2770",
+      "recipientRoles": [
+        "HR Officer"
+      ],
+      "kind": "Approval",
+      "module": "Profile",
+      "title": "Profile update awaiting your approval — Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "body": "Contact Details update: Personal email",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=profile&profileApprovalId=ess-profile-1784205776653-buj4ri",
+      "createdAt": "2026-07-16T12:42:56.694Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-profile-1784205776653-buj4ri",
+        "module": "ess-profile-update"
+      }
+    },
+    {
+      "id": "ntf-1784205776665-sovi6s",
+      "recipientUserId": "profile-workflow",
+      "recipientUsername": "profile-workflow",
+      "recipientEmployeeCode": "profile-workflow",
+      "recipientRoles": [
+        "HR Manager",
+        "HR Director",
+        "HR Officer",
+        "HR Head"
+      ],
+      "kind": "Approval",
+      "module": "Profile",
+      "title": "Profile update awaiting HR approval — Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "body": "Mr CHRISTIAN ONUWABHAGBE OGBAISI submitted Contact Details update (Personal email). Review and approve in ESS.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=profile&profileApprovalId=ess-profile-1784205776653-buj4ri",
+      "createdAt": "2026-07-16T12:42:56.665Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-profile-1784205776653-buj4ri",
+        "module": "ess-profile-update",
+        "serviceId": "profile-update"
+      }
+    },
+    {
       "id": "ntf-1784129791560-192gyt",
       "recipientUserId": "P0146",
       "recipientUsername": "P0146",
@@ -14,7 +175,7 @@
       "title": "Trip cancelled — TRP-2026-0003",
       "body": "A trip request was cancelled. Reason: Cancelled by fleet user",
       "severity": "warning",
-      "status": "Unread",
+      "status": "Read",
       "href": "/logistics-fleet/trips-dispatch?tab=requests&tripId=trp-1784129083277-1pd0x",
       "createdAt": "2026-07-15T15:36:31.560Z",
       "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
@@ -26,7 +187,8 @@
         "tripId": "trp-1784129083277-1pd0x",
         "action": "cancel-trip",
         "module": "logistics-fleet"
-      }
+      },
+      "readAt": "2026-07-16T12:12:53.674Z"
     },
     {
       "id": "ntf-1784129034924-fwldqi",
@@ -41,7 +203,7 @@
       "title": "Trip cancelled — TRP-2026-0002",
       "body": "A trip request was cancelled. Reason: Cancelled by fleet user",
       "severity": "warning",
-      "status": "Unread",
+      "status": "Read",
       "href": "/logistics-fleet/trips-dispatch?tab=requests&tripId=trp-1784124090101-nuqe5",
       "createdAt": "2026-07-15T15:23:54.924Z",
       "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
@@ -53,7 +215,8 @@
         "tripId": "trp-1784124090101-nuqe5",
         "action": "cancel-trip",
         "module": "logistics-fleet"
-      }
+      },
+      "readAt": "2026-07-16T12:12:53.674Z"
     },
     {
       "id": "ntf-1784120491921-456i7z",
@@ -125,7 +288,7 @@
       "title": "Trip completed — TRP-2026-0001",
       "body": "TRP-2026-0001 (DLE Head Office → E2E Smoke Site 478764) was marked complete.",
       "severity": "success",
-      "status": "Unread",
+      "status": "Read",
       "href": "/logistics-fleet/trips-dispatch?tab=history&tripId=trp-1784120480673-bj5jp",
       "createdAt": "2026-07-15T13:01:31.322Z",
       "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
@@ -137,7 +300,8 @@
         "tripId": "trp-1784120480673-bj5jp",
         "action": "complete-trip",
         "module": "logistics-fleet"
-      }
+      },
+      "readAt": "2026-07-16T12:12:53.674Z"
     },
     {
       "id": "ntf-1784120488773-rod4fz",
@@ -152,7 +316,7 @@
       "title": "Trip dispatched — TRP-2026-0001",
       "body": "TRP-2026-0001 (DLE Head Office → E2E Smoke Site 478764) has been dispatched.",
       "severity": "info",
-      "status": "Unread",
+      "status": "Read",
       "href": "/logistics-fleet/trips-dispatch?tab=requests&tripId=trp-1784120480673-bj5jp",
       "createdAt": "2026-07-15T13:01:28.773Z",
       "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
@@ -164,7 +328,8 @@
         "tripId": "trp-1784120480673-bj5jp",
         "action": "dispatch-trip",
         "module": "logistics-fleet"
-      }
+      },
+      "readAt": "2026-07-16T12:12:53.674Z"
     },
     {
       "id": "ntf-1784120488713-auf7c3",
@@ -318,7 +483,7 @@
       "title": "Trip allocated — TRP-2026-0001",
       "body": "Your trip to E2E Smoke Site 478764 has been allocated. Status: Approved & Allocated | Destination: E2E Smoke Site 478764 | Vehicle: FLT-E2E-478764 · E2E-478764 · SUV · Toyota Land Cruiser | Driver: IDOWU OYEWOLE.",
       "severity": "success",
-      "status": "Unread",
+      "status": "Read",
       "href": "/logistics-fleet/trips-dispatch?tab=requests&tripId=trp-1784120480673-bj5jp",
       "createdAt": "2026-07-15T13:01:25.570Z",
       "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
@@ -330,7 +495,8 @@
         "tripId": "trp-1784120480673-bj5jp",
         "action": "allocate-trip",
         "module": "logistics-fleet"
-      }
+      },
+      "readAt": "2026-07-16T12:12:53.674Z"
     },
     {
       "id": "ntf-1784120481705-3axohw",
@@ -345,7 +511,7 @@
       "title": "Trip approval required — TRP-2026-0001",
       "body": "Mr CHRISTIAN ONUWABHAGBE OGBAISI (P0146) requested travel to E2E Smoke Site 478764 (DLE Head Office → E2E Smoke Site 478764). Approve and allocate vehicle & driver in Logistics & Fleet.",
       "severity": "warning",
-      "status": "Unread",
+      "status": "Read",
       "href": "/logistics-fleet/trips-dispatch?tab=supervisor&tripId=trp-1784120480673-bj5jp",
       "createdAt": "2026-07-15T13:01:21.705Z",
       "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
@@ -357,7 +523,8 @@
         "tripId": "trp-1784120480673-bj5jp",
         "action": "create-trip",
         "module": "logistics-fleet"
-      }
+      },
+      "readAt": "2026-07-16T12:12:53.674Z"
     },
     {
       "id": "ntf-1784120481699-y0wxe3",
@@ -401,7 +568,7 @@
       "title": "Trip approval required — TRP-TEST-P0146",
       "body": "Sample branded workflow notification with portal deep link.",
       "severity": "warning",
-      "status": "Unread",
+      "status": "Read",
       "href": "/logistics-fleet/trips-dispatch?tab=supervisor&tripId=trip-demo-p0146",
       "createdAt": "2026-07-15T12:33:10.842Z",
       "actor": "DLE Connect Fleet Workflow",
@@ -412,7 +579,8 @@
       "metadata": {
         "employeeCode": "P0146",
         "sample": true
-      }
+      },
+      "readAt": "2026-07-16T12:12:53.674Z"
     },
     {
       "id": "ntf-1783703696600-7ctkic",
@@ -521,7 +689,7 @@
       "title": "Leave request awaiting your approval",
       "body": "Mr KAYODE OGBETAH submitted Annual Leave 2026-07-13 to 2026-07-15 (2026-07-13 to 2026-07-15). Review in ESS Approvals within 5 working days.",
       "severity": "warning",
-      "status": "Unread",
+      "status": "Read",
       "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
       "createdAt": "2026-07-10T16:36:46.588Z",
       "actor": "Mr KAYODE OGBETAH",
@@ -531,7 +699,8 @@
       ],
       "metadata": {
         "requestId": "ess-1783700769478-tmhaac"
-      }
+      },
+      "readAt": "2026-07-16T12:12:53.674Z"
     },
     {
       "id": "ntf-1783701406426-837fzn",

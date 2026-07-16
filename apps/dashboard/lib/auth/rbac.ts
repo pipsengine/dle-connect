@@ -19,6 +19,7 @@ export const enterpriseRoles = [
   'Read-Only User',
   'HR Administrator',
   'HR Manager',
+  'HR Director',
   'HR Officer',
   'Recruitment Officer',
   'Onboarding Officer',
@@ -32,6 +33,10 @@ export const enterpriseRoles = [
   'Finance Payroll Reviewer',
   'Finance Administrator',
   'Finance Manager',
+  'Finance Controller',
+  'CFO',
+  'Executive Director',
+  'Executive Management',
   'Accountant',
   'Accounts Payable Officer',
   'Accounts Receivable Officer',
@@ -111,6 +116,40 @@ const financeBankFinancePerms = [
   'finance.export',
 ];
 
+/** Shared grants so every payroll approval-stage role can open Pay Setup / salary review. */
+const payrollSalaryReviewPerms = [
+  'page.hris.payroll.salary-management.view',
+  'page.hris.payroll.salary-structure.view',
+  'page.hris.payroll.employee-salary-setup.view',
+  'page.hris.payroll.approval.view',
+  'page.payroll.management.approval.view',
+  'hris.view',
+];
+
+const payrollHrReviewPerms = [
+  ...payrollSalaryReviewPerms,
+  'payroll.workflow.hr-review.view',
+  'payroll.workflow.hr-review.approve',
+];
+
+const payrollFinanceReviewPerms = [
+  ...payrollSalaryReviewPerms,
+  'payroll.workflow.finance-review.view',
+  'payroll.workflow.finance-review.approve',
+];
+
+const payrollCfoReviewPerms = [
+  ...payrollSalaryReviewPerms,
+  'payroll.workflow.cfo-approval.view',
+  'payroll.workflow.cfo-approval.approve',
+];
+
+const payrollMdReviewPerms = [
+  ...payrollSalaryReviewPerms,
+  'payroll.workflow.md-approval.view',
+  'payroll.workflow.md-approval.approve',
+];
+
 const role = (name: EnterpriseRole, category: string, permissions: string[], description: string): RoleDefinition => ({
   name,
   category,
@@ -128,28 +167,33 @@ export const roleDefinitions: RoleDefinition[] = [
   role('Security Administrator', 'Global / System', ['security.*', 'admin.users.view', 'admin.users.edit', 'audit.view', 'it.account-recovery.view', 'it.account-recovery.edit', 'page.it-support.account-recovery.view'], 'Identity, session, lockout, MFA, and access control operations.'),
   role('Audit Administrator', 'Global / System', ['audit.*', 'admin.roles.view', 'admin.users.view'], 'Security and compliance audit administration.'),
   role('Integration Administrator', 'Global / System', ['integration.*', 'admin.roles.view', 'audit.view'], 'ERP, AD, SSO, API, and service integration administration.'),
-  role('Executive User', 'General Enterprise', ['enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', 'hris.view', 'operations.view', 'operations.dashboard.view', 'operations.reports.view'], 'Executive dashboard and reports access.'),
+  role('Executive User', 'General Enterprise', ['enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', 'hris.view', 'operations.view', 'operations.dashboard.view', 'operations.reports.view', ...payrollMdReviewPerms], 'Executive dashboard, reports, and MD/CEO payroll salary review.'),
   role('Department Head', 'General Enterprise', ['hris.view', 'employees.view', 'workflow.approve', 'reports.view', 'operations.view', 'operations.allocation.view', 'operations.dashboard.view'], 'Department-level visibility and approvals.'),
   role('Manager', 'General Enterprise', ['hris.view', 'employees.view', 'workflow.approve', 'leave.approve', 'timesheet.approve', 'operations.view', 'operations.timesheets.approve', 'operations.allocation.view'], 'Team management and approvals.'),
   role('Supervisor', 'General Enterprise', ['hris.view', 'employees.view', 'timesheet.submit', 'timesheet.approve', 'attendance.view', 'operations.view', 'operations.timesheets.submit', 'operations.timesheets.approve', 'operations.daily-reports.create'], 'Supervisor timesheet and attendance review.'),
   role('Employee', 'General Enterprise', ['ess.view', 'profile.view', 'leave.submit', 'timesheet.submit', 'payroll.payslip.view'], 'Employee self-service access.'),
   role('Auditor', 'General Enterprise', ['audit.view', 'reports.view', 'reports.export'], 'Read-oriented compliance review.'),
   role('Read-Only User', 'General Enterprise', ['enterprise.view', 'hris.view', 'reports.view'], 'Read-only enterprise visibility.'),
-  role('HR Administrator', 'HRIS', ['hris.*', 'employees.*', 'leave.*', 'workflow.*'], 'Full HRIS administration.'),
-  role('HR Manager', 'HRIS', ['hris.view', ...crud('employees'), ...crud('leave'), 'workflow.approve', 'reports.view', 'reports.export'], 'HR management and approval authority.'),
+  role('HR Administrator', 'HRIS', ['hris.*', 'employees.*', 'leave.*', 'workflow.*', 'payroll.view', ...payrollHrReviewPerms], 'Full HRIS administration including payroll salary review.'),
+  role('HR Manager', 'HRIS', ['hris.view', ...crud('employees'), ...crud('leave'), 'workflow.approve', 'reports.view', 'reports.export', ...payrollHrReviewPerms], 'HR management, payroll HR approval, and salary review.'),
+  role('HR Director', 'HRIS', ['hris.view', ...crud('employees'), ...crud('leave'), 'workflow.approve', 'reports.view', 'reports.export', ...payrollHrReviewPerms], 'HR director payroll approval and salary review.'),
   role('HR Officer', 'HRIS', ['hris.view', 'employees.view', 'employees.create', 'employees.edit', 'leave.view', 'leave.edit', 'reports.view'], 'HR operations and records maintenance.'),
   role('Recruitment Officer', 'HRIS', ['recruitment.*', 'employees.view', 'onboarding.submit'], 'Recruitment and hiring workflows.'),
   role('Onboarding Officer', 'HRIS', ['onboarding.*', 'employees.view', 'employees.edit'], 'Onboarding and employee setup.'),
   role('Offboarding Officer', 'HRIS', ['offboarding.*', 'employees.view', 'employees.edit'], 'Exit management and offboarding.'),
   role('Employee Records Officer', 'HRIS', ['employees.view', 'employees.create', 'employees.edit', 'documents.view', 'documents.edit'], 'Employee records and document control.'),
   role('Payroll Administrator', 'Payroll', ['payroll.*'], 'Full payroll administration.'),
-  role('Payroll Officer', 'Payroll', ['payroll.view', 'payroll.create', 'payroll.edit', 'payroll.export', 'payroll.payslip.view'], 'Payroll processing operations.'),
-  role('Payroll Supervisor', 'Payroll', ['payroll.view', 'payroll.edit', 'payroll.approve', 'payroll.export'], 'Payroll supervision.'),
-  role('Payroll Approver', 'Payroll', ['payroll.view', 'payroll.approve', 'payroll.reject'], 'Payroll approval authority.'),
-  role('Payroll Auditor', 'Payroll', ['payroll.view', 'payroll.audit', 'audit.view', 'reports.export'], 'Payroll audit access.'),
-  role('Finance Payroll Reviewer', 'Payroll', [...financeBankFinancePerms, 'payroll.approve', 'payroll.reject'], 'Finance-side bank schedule, journal posting, and payroll review.'),
-  role('Finance Administrator', 'Finance', ['finance.*', ...financeBankFinancePerms], 'Finance module administration.'),
-  role('Finance Manager', 'Finance', [...financeBankFinancePerms, 'finance.approve', 'reports.view'], 'Finance management with bank-and-finance payroll workspace access only.'),
+  role('Payroll Officer', 'Payroll', ['payroll.view', 'payroll.create', 'payroll.edit', 'payroll.export', 'payroll.payslip.view', ...payrollSalaryReviewPerms], 'Payroll processing operations and salary setup.'),
+  role('Payroll Supervisor', 'Payroll', ['payroll.view', 'payroll.edit', 'payroll.approve', 'payroll.export', ...payrollSalaryReviewPerms], 'Payroll supervision and salary review.'),
+  role('Payroll Approver', 'Payroll', ['payroll.view', 'payroll.approve', 'payroll.reject', ...payrollSalaryReviewPerms], 'Payroll approval authority with salary review access.'),
+  role('Payroll Auditor', 'Payroll', ['payroll.view', 'payroll.audit', 'audit.view', 'reports.export', ...payrollSalaryReviewPerms], 'Payroll audit and salary review access.'),
+  role('Finance Payroll Reviewer', 'Payroll', [...financeBankFinancePerms, ...payrollFinanceReviewPerms, 'payroll.approve', 'payroll.reject'], 'Finance-side bank schedule, journal posting, payroll approval, and salary review.'),
+  role('Finance Administrator', 'Finance', ['finance.*', ...financeBankFinancePerms, ...payrollFinanceReviewPerms], 'Finance module administration with payroll salary review.'),
+  role('Finance Manager', 'Finance', [...financeBankFinancePerms, ...payrollFinanceReviewPerms, 'finance.approve', 'reports.view'], 'Finance management with payroll approval and salary review access.'),
+  role('Finance Controller', 'Finance', [...financeBankFinancePerms, ...payrollFinanceReviewPerms, 'finance.approve', 'reports.view'], 'Finance controller payroll approval and salary review.'),
+  role('CFO', 'Finance', [...payrollCfoReviewPerms, 'finance.view', 'finance.approve', 'reports.view', 'reports.export'], 'CFO payroll approval and salary review.'),
+  role('Executive Director', 'General Enterprise', [...payrollMdReviewPerms, 'enterprise.view', 'dashboard.view', 'reports.view', 'reports.export'], 'Executive director payroll MD/CEO approval and salary review.'),
+  role('Executive Management', 'General Enterprise', [...payrollMdReviewPerms, 'enterprise.view', 'dashboard.view', 'reports.view', 'reports.export'], 'Executive management payroll MD/CEO approval and salary review.'),
   role('Accountant', 'Finance', [...financeBankFinancePerms, 'finance.create', 'finance.edit'], 'Accounting transactions and bank-and-finance payroll outputs.'),
   role('Accounts Payable Officer', 'Finance', ['finance.ap.view', 'finance.ap.create', 'finance.ap.edit'], 'Accounts payable operations.'),
   role('Accounts Receivable Officer', 'Finance', ['finance.ar.view', 'finance.ar.create', 'finance.ar.edit'], 'Accounts receivable operations.'),

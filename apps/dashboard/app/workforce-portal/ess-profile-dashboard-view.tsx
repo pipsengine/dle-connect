@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   AlertTriangle,
   BadgeCheck,
@@ -23,6 +24,7 @@ import {
   Upload,
   UserRound,
   WalletCards,
+  X,
 } from 'lucide-react';
 import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
 import { getNigeriaLgas } from '@/lib/nigeria-locations';
@@ -77,6 +79,7 @@ export type EssProfileApprovalItem = {
   status: string;
   submittedAt: string;
   changes: Record<string, string>;
+  previousValues?: Record<string, string>;
 };
 
 export type EssProfilePayload = {
@@ -437,6 +440,8 @@ export function EssProfileDashboardView({
   onNavigate: (tab: EssTab) => void;
   onRefresh?: () => void;
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<ProfileTab>('Overview');
   const [expandedSectionId, setExpandedSectionId] = useState<string | null>(null);
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
@@ -446,6 +451,8 @@ export function EssProfileDashboardView({
   const [profileError, setProfileError] = useState('');
   const [approvalComment, setApprovalComment] = useState('');
   const [approvalSavingId, setApprovalSavingId] = useState('');
+  const [approvalModalOpen, setApprovalModalOpen] = useState(false);
+  const [activeApprovalId, setActiveApprovalId] = useState<string | null>(null);
   const employee = payload?.employee;
   const employeeCode = employee?.employeeCode || employee?.employeeId || '';
   const documents = payload?.documents ?? EMPTY_DOCUMENTS;
@@ -453,6 +460,36 @@ export function EssProfileDashboardView({
   const profilePendingUpdates = payload?.profilePendingUpdates ?? EMPTY_PENDING_UPDATES;
   const profileApprovalQueue = payload?.profileApprovalQueue ?? EMPTY_APPROVAL_QUEUE;
   const canApproveProfileUpdates = payload?.canApproveProfileUpdates === true;
+  const activeApprovalItem = profileApprovalQueue.find((item) => item.id === activeApprovalId) || profileApprovalQueue[0] || null;
+
+  useEffect(() => {
+    const requestedId = compactText(searchParams.get('profileApprovalId') || '');
+    if (!requestedId || !canApproveProfileUpdates) return;
+    const match = profileApprovalQueue.find((item) => item.id === requestedId);
+    if (!match) return;
+    setActiveApprovalId(match.id);
+    setApprovalModalOpen(true);
+  }, [canApproveProfileUpdates, profileApprovalQueue, searchParams]);
+
+  const openApprovalModal = (requestId?: string) => {
+    const targetId = requestId || profileApprovalQueue[0]?.id || null;
+    if (!targetId) return;
+    setActiveApprovalId(targetId);
+    setApprovalComment('');
+    setApprovalModalOpen(true);
+  };
+
+  const closeApprovalModal = () => {
+    setApprovalModalOpen(false);
+    setActiveApprovalId(null);
+    setApprovalComment('');
+    const params = new URLSearchParams(searchParams.toString());
+    if (params.has('profileApprovalId')) {
+      params.delete('profileApprovalId');
+      const query = params.toString();
+      router.replace(query ? `/workforce-portal?${query}` : '/workforce-portal?tab=profile');
+    }
+  };
 
   const completionItems = useMemo(() => {
     const personalSection = profileSections.find((item) => item.id === 'personal');
@@ -636,6 +673,7 @@ export function EssProfileDashboardView({
       if (!res.ok) throw new Error(data.error || data.message || 'Unable to process profile update.');
       setProfileMessage(String(data.message || 'Profile update processed.'));
       setApprovalComment('');
+      closeApprovalModal();
       onRefresh?.();
     } catch (error) {
       setProfileError(error instanceof Error ? error.message : 'Unable to process profile update.');
@@ -660,57 +698,118 @@ export function EssProfileDashboardView({
       {profileMessage ? <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{profileMessage}</div> : null}
 
       {canApproveProfileUpdates && profileApprovalQueue.length > 0 ? (
-        <EssCard className="p-5 sm:p-6">
-          <EssSectionHeader title="Profile updates awaiting HR approval" />
-          <div className="space-y-3">
-            {profileApprovalQueue.map((item) => (
-              <div key={item.id} className="rounded-[12px] border border-[#E9EEF5] bg-[#F8FAFC] p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[14px] font-bold text-[#0F172A]">{item.title}</p>
-                    <p className="mt-1 text-[13px] text-[#64748B]">
-                      {item.employeeName} · {item.sectionId} · {stableDateTime(item.submittedAt)}
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-[#FFFBEB] px-2 py-0.5 text-[10px] font-semibold text-[#B45309] ring-1 ring-[#FCD34D]">{item.status}</span>
-                </div>
-                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {Object.entries(item.changes).map(([key, value]) => (
-                    <div key={key} className="rounded-[10px] border border-[#E9EEF5] bg-white px-3 py-2">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">{key}</p>
-                      <p className="mt-1 text-[13px] font-semibold text-[#0F172A]">{value}</p>
-                    </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-3">
+          <div>
+            <p className="text-sm font-bold text-amber-950">
+              {profileApprovalQueue.length} profile update{profileApprovalQueue.length === 1 ? '' : 's'} awaiting HR approval
+            </p>
+            <p className="mt-0.5 text-xs font-semibold text-amber-800">
+              Review employee changes in a modal — open from notifications or use Review queue.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => openApprovalModal()}
+            className="inline-flex h-9 items-center rounded-[12px] bg-[#0F172A] px-4 text-[13px] font-semibold text-white hover:bg-[#1E293B]"
+          >
+            Review queue
+          </button>
+        </div>
+      ) : null}
+
+      {approvalModalOpen && activeApprovalItem ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="profile-approval-title">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+              <div>
+                <p id="profile-approval-title" className="text-lg font-black text-slate-950">Profile update approval</p>
+                <p className="mt-1 text-sm font-semibold text-slate-600">
+                  {activeApprovalItem.employeeName} · {activeApprovalItem.title}
+                </p>
+              </div>
+              <button type="button" onClick={closeApprovalModal} className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100" aria-label="Close">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="max-h-[calc(90vh-11rem)] space-y-4 overflow-y-auto px-5 py-4">
+              {profileApprovalQueue.length > 1 ? (
+                <div className="flex flex-wrap gap-2">
+                  {profileApprovalQueue.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveApprovalId(item.id);
+                        setApprovalComment('');
+                      }}
+                      className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                        item.id === activeApprovalItem.id
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      {item.employeeName.split(' ').slice(-1)[0]} · {item.sectionId}
+                    </button>
                   ))}
                 </div>
-                <textarea
-                  rows={2}
-                  value={approvalComment}
-                  onChange={(event) => setApprovalComment(event.target.value)}
-                  placeholder="Optional approval comment"
-                  className="mt-3 w-full rounded-[10px] border border-[#CBD5E1] bg-white px-3 py-2 text-[13px] focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#BFDBFE]"
-                />
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={approvalSavingId === item.id}
-                    onClick={() => void transitionProfileApproval(item.id, 'approve')}
-                    className="inline-flex h-9 items-center rounded-[12px] bg-[#10B981] px-4 text-[13px] font-semibold text-white hover:bg-[#059669] disabled:opacity-60"
-                  >
-                    {approvalSavingId === item.id ? 'Processing…' : 'Approve & update HRIS'}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={approvalSavingId === item.id}
-                    onClick={() => void transitionProfileApproval(item.id, 'reject')}
-                    className="inline-flex h-9 items-center rounded-[12px] border border-[#FECACA] bg-[#FEF2F2] px-4 text-[13px] font-semibold text-[#B91C1C] hover:bg-[#FEE2E2] disabled:opacity-60"
-                  >
-                    Reject
-                  </button>
-                </div>
+              ) : null}
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="rounded-full bg-[#FFFBEB] px-2.5 py-1 text-[11px] font-black uppercase tracking-wide text-[#B45309] ring-1 ring-[#FCD34D]">
+                  {activeApprovalItem.status}
+                </span>
+                <p className="text-xs font-semibold text-slate-500">{stableDateTime(activeApprovalItem.submittedAt)}</p>
               </div>
-            ))}
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {Object.entries(activeApprovalItem.changes).map(([key, value]) => (
+                  <div key={key} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                    <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">{key}</p>
+                    {activeApprovalItem.previousValues?.[key] ? (
+                      <p className="mt-1 text-xs font-semibold text-slate-500 line-through">{activeApprovalItem.previousValues[key]}</p>
+                    ) : null}
+                    <p className="mt-0.5 text-sm font-bold text-slate-950">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <textarea
+                rows={3}
+                value={approvalComment}
+                onChange={(event) => setApprovalComment(event.target.value)}
+                placeholder="Optional approval comment"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
+              <button
+                type="button"
+                onClick={closeApprovalModal}
+                className="inline-flex h-10 items-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-100"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                disabled={approvalSavingId === activeApprovalItem.id}
+                onClick={() => void transitionProfileApproval(activeApprovalItem.id, 'reject')}
+                className="inline-flex h-10 items-center rounded-xl border border-red-200 bg-red-50 px-4 text-sm font-bold text-red-700 hover:bg-red-100 disabled:opacity-60"
+              >
+                Reject
+              </button>
+              <button
+                type="button"
+                disabled={approvalSavingId === activeApprovalItem.id}
+                onClick={() => void transitionProfileApproval(activeApprovalItem.id, 'approve')}
+                className="inline-flex h-10 items-center rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {approvalSavingId === activeApprovalItem.id ? 'Processing…' : 'Approve & update HRIS'}
+              </button>
+            </div>
           </div>
-        </EssCard>
+        </div>
       ) : null}
 
       {/* Hero banner */}

@@ -469,7 +469,7 @@ const defaultTemplates = (): PermissionTemplate[] => {
     {
       id: 'tpl-finance-payroll-operator',
       name: 'Finance Payroll Operator',
-      description: 'Bank schedule, journal posting, and finance payroll outputs only. No full payroll workspace access.',
+      description: 'Bank schedule, journal posting, finance payroll outputs, salary review, and stage approval.',
       permissions: [
         'page.payroll.management.bank-finance.view',
         'page.payroll.management.bank-finance.export',
@@ -477,6 +477,11 @@ const defaultTemplates = (): PermissionTemplate[] => {
         'reports.payroll.bank-schedule.export',
         'button.payroll.post.view',
         'button.payroll.post.post',
+        'page.hris.payroll.salary-management.view',
+        'page.hris.payroll.salary-structure.view',
+        'page.hris.payroll.employee-salary-setup.view',
+        'page.hris.payroll.approval.view',
+        'page.payroll.management.approval.view',
         'payroll.workflow.finance-review.view',
         'payroll.workflow.finance-review.approve',
         'finance.view',

@@ -41,7 +41,37 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
   ],
   'admin.roles.view': ['page.admin.access-control.view'],
   'admin.users.view': ['page.admin.user-management.view'],
-  'payroll.view': ['page.payroll.management.view', 'page.hris.payroll.salary-management.view'],
+  'payroll.view': [
+    'page.payroll.management.view',
+    'page.hris.payroll.salary-management.view',
+    'page.hris.payroll.salary-structure.view',
+    'page.hris.payroll.employee-salary-setup.view',
+    'page.hris.payroll.approval.view',
+  ],
+  'page.hris.payroll.salary-management.view': [
+    'payroll.view',
+    'page.payroll.management.view',
+    'payroll.workflow.hr-review.view',
+    'payroll.workflow.finance-review.view',
+    'payroll.workflow.cfo-approval.view',
+    'payroll.workflow.md-approval.view',
+  ],
+  'page.hris.payroll.approval.view': [
+    'payroll.view',
+    'page.payroll.management.approval.view',
+    'payroll.workflow.hr-review.view',
+    'payroll.workflow.finance-review.view',
+    'payroll.workflow.cfo-approval.view',
+    'payroll.workflow.md-approval.view',
+  ],
+  'page.hris.payroll.employee-salary-setup.view': [
+    'payroll.view',
+    'page.hris.payroll.salary-management.view',
+  ],
+  'page.hris.payroll.salary-structure.view': [
+    'payroll.view',
+    'page.hris.payroll.salary-management.view',
+  ],
   'view_it_support': [
     'it.view',
     'it.*',

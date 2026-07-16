@@ -1,5 +1,143 @@
 [
   {
+    "id": "ess-profile-1784205776653-buj4ri",
+    "employeeId": "P0146",
+    "serviceId": "profile-update",
+    "category": "Profile Update",
+    "title": "Contact Details update",
+    "status": "HR Review",
+    "priority": "Normal",
+    "submittedAt": "2026-07-16T12:42:56.653Z",
+    "updatedAt": "2026-07-16T13:21:55.981Z",
+    "approvers": [
+      "Mr FAWAZ ADESEGUN ADESHINA",
+      "Miss OREOLUWA MAFO",
+      "Mr NNAMDI FRANKLYN AGHANYA",
+      "Ms OLAMIDE VICTORIA BADETAN",
+      "GBOLAHAN ISAAC FATUROTI"
+    ],
+    "hrApproverEmployeeCodes": [
+      "L2770",
+      "L2782",
+      "P0181",
+      "P0432",
+      "P0459"
+    ],
+    "profileSectionId": "contact",
+    "profileChanges": {
+      "personalEmail": "chrisogbaisi4u@gmail.com"
+    },
+    "profilePreviousValues": {
+      "official_email": "chrisogbaisi@dormanlongeng.com",
+      "personalEmail": "",
+      "primaryPhone": "08035418461",
+      "alternatePhone": "08063387520",
+      "officeExtension": ""
+    },
+    "workflow": [
+      {
+        "stage": "Employee",
+        "owner": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+        "status": "Completed",
+        "actedAt": "2026-07-16T12:42:56.653Z",
+        "comment": "Submitted from Employee Self-Service."
+      },
+      {
+        "stage": "HR Operations",
+        "owner": "HR Manager",
+        "status": "Current",
+        "actedAt": null,
+        "comment": null
+      },
+      {
+        "stage": "HR Manager",
+        "owner": "HR Manager",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": null
+      }
+    ],
+    "comments": [
+      {
+        "at": "2026-07-16T12:42:56.653Z",
+        "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+        "comment": "Submitted Contact Details changes (Personal email) for HR approval."
+      }
+    ],
+    "lineManagerEmployeeId": "P0413",
+    "lineManagerName": "Mr CHRIS IJELI"
+  },
+  {
+    "id": "ess-profile-1784204127133-6nre9j",
+    "employeeId": "P0146",
+    "serviceId": "profile-update",
+    "category": "Profile Update",
+    "title": "Personal Information update",
+    "status": "HR Review",
+    "priority": "Normal",
+    "submittedAt": "2026-07-16T12:15:27.133Z",
+    "updatedAt": "2026-07-16T12:19:21.975Z",
+    "approvers": [
+      "HR Operations",
+      "HR Manager"
+    ],
+    "profileSectionId": "personal",
+    "profileChanges": {
+      "stateOfOrigin": "Edo",
+      "localGovernmentArea": "Esan South-East",
+      "religion": "Christianity",
+      "languagesSpoken": "English"
+    },
+    "profilePreviousValues": {
+      "title": "Mr",
+      "first_name": "CHRISTIAN ONUWABHAGBE",
+      "middle_name": "ONUWABHAGBE",
+      "last_name": "OGBAISI",
+      "preferredName": "",
+      "date_of_birth": "07 Dec 1982",
+      "gender": "M",
+      "maritalStatus": "MRD - Married",
+      "nationality": "Nigeria",
+      "region": "",
+      "stateOfOrigin": "",
+      "localGovernmentArea": "",
+      "religion": "",
+      "languagesSpoken": ""
+    },
+    "workflow": [
+      {
+        "stage": "Employee",
+        "owner": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+        "status": "Completed",
+        "actedAt": "2026-07-16T12:15:27.133Z",
+        "comment": "Submitted from Employee Self-Service."
+      },
+      {
+        "stage": "HR Operations",
+        "owner": "HR Operations",
+        "status": "Current",
+        "actedAt": null,
+        "comment": null
+      },
+      {
+        "stage": "HR Manager",
+        "owner": "HR Manager",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": null
+      }
+    ],
+    "comments": [
+      {
+        "at": "2026-07-16T12:15:27.133Z",
+        "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+        "comment": "Submitted Personal Information changes (State of origin, LGA, Religion, Languages spoken) for HR approval."
+      }
+    ],
+    "lineManagerEmployeeId": "P0413",
+    "lineManagerName": "Mr CHRIS IJELI"
+  },
+  {
     "id": "ess-1782818937211-r4i7xo",
     "employeeId": "NYSC0033",
     "category": "Leave Application",

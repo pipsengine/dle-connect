@@ -8,6 +8,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
 import { EssDashboardView, EssRightPanel } from './ess-dashboard-view';
+import { EssCelebrationFlyerModal, buildTodaysCelebrations } from './ess-celebrations';
 import { EssLeaveDashboardView, type EssLeavePayload, type LeaveWorkspaceTab } from './ess-leave-dashboard-view';
 import { EssLeaveApprovalsView, type EssLeaveApprovalsPayload } from './ess-leave-approvals-view';
 import { EssServicesView, type EssServicesPayload } from './ess-services-view';
@@ -132,14 +133,16 @@ type Payload = {
   };
   notifications: Array<{ id: string; title: string; type: string; status: string; createdAt: string; href?: string }>;
   approvalQueue?: Array<{ id: string; employee: string; type: string; days: number; startDate: string; endDate: string; stage: string }>;
-  birthdays: Array<{ id: string; fullName: string; department: string; date: string }>;
-  anniversaries: Array<{ id: string; fullName: string; years: number; date: string }>;
+  birthdays: Array<{ id: string; fullName: string; department: string; date: string; employeeId?: string; employeeCode?: string; hasPhoto?: boolean }>;
+  anniversaries: Array<{ id: string; fullName: string; years: number; date: string; department?: string; employeeId?: string; employeeCode?: string; hasPhoto?: boolean }>;
+  todaysBirthdays?: Array<{ id: string; fullName: string; department: string; date: string; employeeId?: string; employeeCode?: string; hasPhoto?: boolean }>;
+  todaysAnniversaries?: Array<{ id: string; fullName: string; years: number; date: string; department?: string; employeeId?: string; employeeCode?: string; hasPhoto?: boolean }>;
   events: Array<{ id: string; label: string; date: string; type: string }>;
   documents: Array<{ id: string; title: string; category: string; version: string; status: string; uploadedAt?: string | null; expiresAt?: string | null; mimeType?: string; sizeBytes?: number; verifiedAt?: string | null; acknowledgement?: string; accessScope?: string }>;
   documentGovernance?: Array<{ id: string; documentId: string; title: string; category: string; version: string; accessScope: string; acknowledgement: string; status: string; lastUpdated: string }>;
   profileSections: Array<{ id: string; label: string; status: string; approvalRequired: boolean; fields: Array<{ label: string; value: string; key?: string; editable?: boolean; inputType?: string; options?: string[] }> }>;
   profilePendingUpdates?: Array<{ id: string; sectionId: string; title: string; status: string; submittedAt: string; changes: Record<string, string> }>;
-  profileApprovalQueue?: Array<{ id: string; employeeId: string; employeeName: string; sectionId: string; title: string; status: string; submittedAt: string; changes: Record<string, string> }>;
+  profileApprovalQueue?: Array<{ id: string; employeeId: string; employeeName: string; sectionId: string; title: string; status: string; submittedAt: string; changes: Record<string, string>; previousValues?: Record<string, string> }>;
   canApproveProfileUpdates?: boolean;
   leave: {
     balances: SimpleRecord[];
@@ -1174,6 +1177,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [leaveSection, setLeaveSection] = useState<string | null>(null);
+  const [forceCelebrationOpen, setForceCelebrationOpen] = useState(false);
 
   const navigateTab = (next: Tab, options?: { leaveSection?: string }) => {
     setTab(next);
@@ -1461,6 +1465,13 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
   const widgets = payload?.widgets;
   const employeeCode = employee?.employeeCode || employee?.employeeId;
   const selectedLoanProduct = payload?.loanManagement.products.find((product) => product.id === loanProductId) || null;
+  const todaysCelebrations = useMemo(
+    () => buildTodaysCelebrations(
+      payload?.todaysBirthdays ?? payload?.birthdays,
+      payload?.todaysAnniversaries ?? payload?.anniversaries,
+    ),
+    [payload?.anniversaries, payload?.birthdays, payload?.todaysAnniversaries, payload?.todaysBirthdays],
+  );
 
   return (
     <EssPortalShell
@@ -1474,8 +1485,20 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
       department={employee?.department}
       employee={employee}
       managerMetrics={payload?.managerMetrics}
-      rightPanel={tab === 'dashboard' ? <EssRightPanel payload={payload} onNavigate={navigateTab} /> : undefined}
+      rightPanel={tab === 'dashboard' ? (
+        <EssRightPanel
+          payload={payload}
+          onNavigate={navigateTab}
+          onOpenCelebrations={() => setForceCelebrationOpen(true)}
+        />
+      ) : undefined}
     >
+      <EssCelebrationFlyerModal
+        moments={todaysCelebrations}
+        viewer={employee}
+        forceOpen={forceCelebrationOpen}
+        onForceOpenHandled={() => setForceCelebrationOpen(false)}
+      />
       <EssMobileNav tab={tab} onTabChange={navigateTab} />
 
       {error && <div className="mb-4 rounded-[16px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{error}</div>}

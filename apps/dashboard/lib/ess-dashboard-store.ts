@@ -140,31 +140,120 @@ const workingDaysInMonthBefore = (day: number) => {
   return count;
 };
 
+const todayIsoLocal = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
+
 const upcomingOccurrences = (
   employees: DleEmployeeDirectoryRow[],
   field: 'dateOfBirth' | 'dateJoined',
   daysAhead = 45,
 ) => {
   const now = new Date();
-  const results: Array<{ id: string; fullName: string; department: string; date: string; years?: number }> = [];
+  const today = todayIsoLocal();
+  const [, todayMonth, todayDay] = today.split('-');
+  const results: Array<{
+    id: string;
+    fullName: string;
+    department: string;
+    date: string;
+    years?: number;
+    employeeId: string;
+    employeeCode: string;
+    hasPhoto: boolean;
+  }> = [];
   for (const person of employees) {
     const raw = field === 'dateOfBirth' ? person.dateOfBirth : person.dateJoined || person.contractStartDate;
     const base = isoDate(raw);
     if (!base) continue;
     const [, month, day] = base.split('-');
-    const candidate = new Date(Date.UTC(now.getFullYear(), Number(month) - 1, Number(day)));
-    if (candidate.getTime() < now.getTime()) candidate.setUTCFullYear(now.getFullYear() + 1);
-    const diffDays = Math.ceil((candidate.getTime() - now.getTime()) / (24 * 3600 * 1000));
-    if (diffDays < 0 || diffDays > daysAhead) continue;
+    const isToday = month === todayMonth && day === todayDay;
+    let occurrenceDate = today;
+    let diffDays = 0;
+    if (!isToday) {
+      const candidate = new Date(Date.UTC(now.getFullYear(), Number(month) - 1, Number(day)));
+      const todayStart = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+      if (candidate.getTime() < todayStart.getTime()) candidate.setUTCFullYear(now.getFullYear() + 1);
+      diffDays = Math.round((candidate.getTime() - todayStart.getTime()) / (24 * 3600 * 1000));
+      if (diffDays < 0 || diffDays > daysAhead) continue;
+      occurrenceDate = candidate.toISOString().slice(0, 10);
+    } else if (daysAhead < 0) {
+      continue;
+    }
     results.push({
-      id: `${field}-${person.employeeId}-${candidate.getUTCFullYear()}`,
+      id: `${field}-${person.employeeId}-${occurrenceDate.slice(0, 4)}`,
       fullName: person.fullName,
       department: person.department || 'Unassigned',
-      date: candidate.toISOString().slice(0, 10),
+      date: occurrenceDate,
       years: field === 'dateJoined' ? yearsOfService(person) : undefined,
+      employeeId: String(person.employeeId || ''),
+      employeeCode: String(person.employeeCode || person.employeeId || ''),
+      hasPhoto: person.hasPhoto === true,
     });
   }
-  return results.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 8);
+  return results.sort((a, b) => a.date.localeCompare(b.date) || a.fullName.localeCompare(b.fullName)).slice(0, 16);
+};
+
+type CelebrationPerson = {
+  id: string;
+  fullName: string;
+  department: string;
+  date: string;
+  years?: number;
+  employeeId: string;
+  employeeCode: string;
+  hasPhoto: boolean;
+};
+
+const toBirthdayCard = (item: CelebrationPerson) => ({
+  id: item.id,
+  fullName: item.fullName,
+  department: item.department,
+  date: item.date,
+  employeeId: item.employeeId,
+  employeeCode: item.employeeCode,
+  hasPhoto: item.hasPhoto,
+});
+
+const toAnniversaryCard = (item: CelebrationPerson) => ({
+  id: item.id,
+  fullName: item.fullName,
+  years: Math.max(1, Math.round(item.years || 1)),
+  date: item.date,
+  department: item.department,
+  employeeId: item.employeeId,
+  employeeCode: item.employeeCode,
+  hasPhoto: item.hasPhoto,
+});
+
+const celebrationsForToday = (
+  employees: DleEmployeeDirectoryRow[],
+  field: 'dateOfBirth' | 'dateJoined',
+) => {
+  const today = todayIsoLocal();
+  const [, todayMonth, todayDay] = today.split('-');
+  const results: CelebrationPerson[] = [];
+  for (const person of employees) {
+    const raw = field === 'dateOfBirth' ? person.dateOfBirth : person.dateJoined || person.contractStartDate;
+    const base = isoDate(raw);
+    if (!base) continue;
+    const [, month, day] = base.split('-');
+    if (month !== todayMonth || day !== todayDay) continue;
+    const years = field === 'dateJoined' ? yearsOfService(person) : undefined;
+    if (field === 'dateJoined' && (years || 0) < 1) continue;
+    results.push({
+      id: `${field}-${person.employeeId}-${today}`,
+      fullName: person.fullName,
+      department: person.department || 'Unassigned',
+      date: today,
+      years,
+      employeeId: String(person.employeeId || ''),
+      employeeCode: String(person.employeeCode || person.employeeId || ''),
+      hasPhoto: person.hasPhoto === true,
+    });
+  }
+  return results.sort((a, b) => a.fullName.localeCompare(b.fullName));
 };
 
 const readEmployeeDocuments = async (employeeDbId: number) => {
@@ -241,8 +330,10 @@ export type EssDashboardContext = {
     accessScope?: string;
   }>;
   notifications: Array<{ id: string; title: string; type: string; status: string; createdAt: string; href?: string }>;
-  birthdays: Array<{ id: string; fullName: string; department: string; date: string }>;
-  anniversaries: Array<{ id: string; fullName: string; years: number; date: string }>;
+  birthdays: Array<{ id: string; fullName: string; department: string; date: string; employeeId: string; employeeCode: string; hasPhoto: boolean }>;
+  anniversaries: Array<{ id: string; fullName: string; years: number; date: string; department?: string; employeeId: string; employeeCode: string; hasPhoto: boolean }>;
+  todaysBirthdays: Array<{ id: string; fullName: string; department: string; date: string; employeeId: string; employeeCode: string; hasPhoto: boolean }>;
+  todaysAnniversaries: Array<{ id: string; fullName: string; years: number; date: string; department?: string; employeeId: string; employeeCode: string; hasPhoto: boolean }>;
   events: Array<{ id: string; label: string; date: string; type: string }>;
   dashboardAnalytics: {
     activityByCategory: Array<{ label: string; value: number; color: string }>;
@@ -303,20 +394,25 @@ export async function buildEssDashboardContext(input: {
   const departmentPeers = employees.filter(
     (item) => compact(item.department).toLowerCase() === compact(employee.department).toLowerCase() && !/inactive|terminated|resigned|exit/i.test(compact(item.status)),
   );
-  const birthdays = upcomingOccurrences(departmentPeers.length ? departmentPeers : employees, 'dateOfBirth').map((item) => ({
-    id: item.id,
-    fullName: item.fullName,
-    department: item.department,
-    date: item.date,
-  }));
-  const anniversaries = upcomingOccurrences(departmentPeers.length ? departmentPeers : employees, 'dateJoined')
-    .filter((item) => (item.years || 0) >= 1)
-    .map((item) => ({
-      id: item.id,
-      fullName: item.fullName,
-      years: Math.max(1, Math.round(item.years || 1)),
-      date: item.date,
-    }));
+  const peerPool = departmentPeers.length ? departmentPeers : employees;
+  const companyPool = employees.filter((item) => !/inactive|terminated|resigned|exit/i.test(compact(item.status)));
+  const birthdays = (() => {
+    const fromPeers = upcomingOccurrences(peerPool, 'dateOfBirth', 60);
+    if (fromPeers.length >= 4) return fromPeers.slice(0, 12).map(toBirthdayCard);
+    const seen = new Set(fromPeers.map((item) => item.id));
+    const extras = upcomingOccurrences(companyPool, 'dateOfBirth', 60).filter((item) => !seen.has(item.id));
+    return [...fromPeers, ...extras].slice(0, 12).map(toBirthdayCard);
+  })();
+  const anniversaries = (() => {
+    const fromPeers = upcomingOccurrences(peerPool, 'dateJoined', 60).filter((item) => (item.years || 0) >= 1);
+    if (fromPeers.length >= 4) return fromPeers.slice(0, 12).map(toAnniversaryCard);
+    const seen = new Set(fromPeers.map((item) => item.id));
+    const extras = upcomingOccurrences(companyPool, 'dateJoined', 60)
+      .filter((item) => (item.years || 0) >= 1 && !seen.has(item.id));
+    return [...fromPeers, ...extras].slice(0, 12).map(toAnniversaryCard);
+  })();
+  const todaysBirthdays = celebrationsForToday(companyPool, 'dateOfBirth').map(toBirthdayCard);
+  const todaysAnniversaries = celebrationsForToday(companyPool, 'dateJoined').map(toAnniversaryCard);
 
   const ownAnniversary = isoDate(employee.dateJoined || employee.contractStartDate);
   const events: EssDashboardContext['events'] = [];
@@ -420,6 +516,8 @@ export async function buildEssDashboardContext(input: {
     notifications: derivedNotifications.slice(0, 6),
     birthdays,
     anniversaries,
+    todaysBirthdays,
+    todaysAnniversaries,
     events: events.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6),
     dashboardAnalytics: {
       activityByCategory,

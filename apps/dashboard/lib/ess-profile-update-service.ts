@@ -1,3 +1,4 @@
+import { readUsers } from '@/lib/auth/auth-store';
 import type { SessionPayload } from '@/lib/auth/session';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { syncHrisEmployeeProfileToDb } from '@/lib/dle-enterprise-db';
@@ -9,7 +10,14 @@ import {
   writeAllEssRequests,
   type EssLeaveRequest,
 } from '@/lib/leave-workflow-service';
+import {
+  resolveEmployeeMailbox,
+  sendProfileUpdateApprovalRequestEmail,
+  sendProfileUpdateDecisionEmail,
+} from '@/lib/mail-service';
 import { getNigeriaLgas, getNigeriaStates, getRegionForState } from '@/lib/nigeria-locations';
+import { readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 
 export type EssProfileFieldMeta = {
   key: string;
@@ -25,13 +33,16 @@ export type EssProfileUpdateRequest = EssLeaveRequest & {
   profileSectionId: string;
   profileChanges: Record<string, string>;
   profilePreviousValues: Record<string, string>;
+  hrApproverEmployeeCodes?: string[];
 };
 
 const compact = (value: unknown) => String(value || '').trim();
 const PROFILE_SERVICE_ID = 'profile-update';
+const HR_ROLE_PATTERN = /super admin|hr director|hr manager|hr officer|system administrator/i;
+const HR_TITLE_PATTERN = /hr manager|hr head|hr director|hr officer|human resources manager|head of hr/i;
 
 export const canApproveEssProfileUpdate = (roles: string[] = []) =>
-  roles.some((role) => /super admin|hr director|hr manager|hr officer|system administrator/i.test(role));
+  roles.some((role) => HR_ROLE_PATTERN.test(role));
 
 export const isProfileUpdateRequest = (request: EssLeaveRequest): request is EssProfileUpdateRequest =>
   compact((request as EssProfileUpdateRequest).serviceId) === PROFILE_SERVICE_ID
@@ -45,6 +56,107 @@ export const pendingProfileUpdatesForEmployee = async (employeeId: string) => {
       && compact(item.employeeId).toUpperCase() === compact(employeeId).toUpperCase()
       && !/approved|rejected|closed|terminated/i.test(item.status),
   ) as EssProfileUpdateRequest[];
+};
+
+const employeeCodesMatch = (left?: string | null, right?: string | null) => {
+  const a = compact(left).toUpperCase();
+  const b = compact(right).toUpperCase();
+  return Boolean(a && b && a === b);
+};
+
+const profileSystemSession = (actorName: string): SessionPayload => ({
+  sub: 'profile-workflow',
+  username: 'profile-workflow',
+  fullName: actorName || 'Profile Workflow',
+  employeeCode: 'profile-workflow',
+  roles: ['System'],
+  permissions: [],
+  status: 'Active',
+  firstLoginRequired: false,
+  passwordResetRequired: false,
+  iat: Math.floor(Date.now() / 1000),
+  exp: Math.floor(Date.now() / 1000) + 3600,
+});
+
+const changeSummary = (changes: Record<string, string>) =>
+  Object.keys(changes)
+    .map((key) => Object.entries(labelToKey).find(([, value]) => value === key)?.[0] || key)
+    .join(', ');
+
+const profileApprovalHref = (requestId: string) =>
+  `/workforce-portal?tab=profile&profileApprovalId=${encodeURIComponent(requestId)}`;
+
+const profileEmployeeHref = () => '/workforce-portal?tab=profile';
+
+type ProfileHrRecipient = {
+  employeeCode: string;
+  fullName: string;
+  email: string;
+  roles: string[];
+};
+
+export const resolveProfileHrRecipients = async (
+  requester: DleEmployeeDirectoryRow,
+  employees?: DleEmployeeDirectoryRow[],
+): Promise<ProfileHrRecipient[]> => {
+  const directory = employees || (await readPayrollEmployees()).employees;
+  const users = await readUsers();
+  const requesterCodes = new Set(
+    [requester.employeeCode, requester.employeeId, requester.sourceEmployeeId]
+      .map((value) => compact(value).toUpperCase())
+      .filter(Boolean),
+  );
+
+  const byCode = new Map<string, ProfileHrRecipient>();
+
+  const upsert = async (input: {
+    employeeCode?: string | null;
+    fullName?: string | null;
+    email?: string | null;
+    roles?: string[];
+    directoryEmployee?: DleEmployeeDirectoryRow | null;
+  }) => {
+    const code = compact(input.employeeCode || input.directoryEmployee?.employeeCode || input.directoryEmployee?.employeeId).toUpperCase();
+    if (!code || requesterCodes.has(code)) return;
+    const email = compact(input.email)
+      || compact(await resolveEmployeeMailbox(input.directoryEmployee))
+      || '';
+    const existing = byCode.get(code);
+    byCode.set(code, {
+      employeeCode: code,
+      fullName: compact(input.fullName || input.directoryEmployee?.fullName || existing?.fullName || code),
+      email: email || existing?.email || '',
+      roles: Array.from(new Set([...(existing?.roles || []), ...(input.roles || [])])),
+    });
+  };
+
+  for (const user of users.filter((item) => item.status === 'Active' || !item.status)) {
+    if (!(user.roles || []).some((role) => HR_ROLE_PATTERN.test(role))) continue;
+    const code = compact(user.employeeCode || user.employeeId || user.username);
+    const directoryEmployee = directory.find((employee) =>
+      [employee.employeeCode, employee.employeeId, employee.sourceEmployeeId]
+        .some((value) => employeeCodesMatch(value, code)),
+    ) || null;
+    await upsert({
+      employeeCode: code,
+      fullName: user.fullName,
+      email: user.email,
+      roles: user.roles || ['HR Manager'],
+      directoryEmployee,
+    });
+  }
+
+  for (const employee of directory) {
+    if (!HR_TITLE_PATTERN.test(`${employee.jobTitle || ''} ${employee.designation || ''}`)) continue;
+    await upsert({
+      employeeCode: employee.employeeCode || employee.employeeId,
+      fullName: employee.fullName,
+      directoryEmployee: employee,
+      roles: ['HR Manager'],
+    });
+  }
+
+  return Array.from(byCode.values()).filter((item) => item.email || item.employeeCode);
 };
 
 const labelToKey: Record<string, string> = {
@@ -265,6 +377,111 @@ const mapChangesToHrisSync = (
   };
 };
 
+const notifyProfileSubmittedToHr = async (input: {
+  request: EssProfileUpdateRequest;
+  requester: DleEmployeeDirectoryRow;
+  actorName: string;
+  sectionLabel: string;
+  recipients: ProfileHrRecipient[];
+  baseUrl?: string | null;
+}) => {
+  const session = profileSystemSession(input.actorName);
+  const origin = resolveWorkflowLinkOrigin(input.baseUrl);
+  const href = profileApprovalHref(input.request.id);
+  const workspaceLink = `${origin}${href}`;
+  const summary = changeSummary(input.request.profileChanges);
+
+  await createEnterpriseNotification(session, {
+    kind: 'Approval',
+    module: 'Profile',
+    title: `Profile update awaiting HR approval — ${input.requester.fullName}`,
+    body: `${input.requester.fullName} submitted ${input.request.title} (${summary}). Review and approve in ESS.`,
+    severity: 'warning',
+    href,
+    actor: input.actorName,
+    channels: ['In-App', 'Email'],
+    recipientRoles: ['HR Manager', 'HR Director', 'HR Officer', 'HR Head'],
+    metadata: {
+      requestId: input.request.id,
+      module: 'ess-profile-update',
+      serviceId: PROFILE_SERVICE_ID,
+    },
+  }).catch(() => undefined);
+
+  for (const recipient of input.recipients.slice(0, 8)) {
+    await createEnterpriseNotification(session, {
+      kind: 'Approval',
+      module: 'Profile',
+      title: `Profile update awaiting your approval — ${input.requester.fullName}`,
+      body: `${input.request.title}: ${summary}`,
+      severity: 'warning',
+      href,
+      actor: input.actorName,
+      channels: ['In-App', 'Email'],
+      recipientEmployeeCode: recipient.employeeCode,
+      recipientRoles: recipient.roles,
+      metadata: { requestId: input.request.id, module: 'ess-profile-update' },
+    }).catch(() => undefined);
+
+    if (!recipient.email) continue;
+    await sendProfileUpdateApprovalRequestEmail({
+      recipientName: recipient.fullName,
+      recipientEmail: recipient.email,
+      requesterName: input.requester.fullName,
+      requestTitle: input.request.title,
+      sectionLabel: input.sectionLabel,
+      changeSummary: summary,
+      workspaceLink,
+      baseUrl: input.baseUrl,
+    }).catch(() => undefined);
+  }
+};
+
+const notifyProfileDecisionToRequester = async (input: {
+  request: EssProfileUpdateRequest;
+  requester: DleEmployeeDirectoryRow;
+  actorName: string;
+  decision: 'approved' | 'rejected';
+  comment?: string;
+  baseUrl?: string | null;
+}) => {
+  const session = profileSystemSession(input.actorName);
+  const origin = resolveWorkflowLinkOrigin(input.baseUrl);
+  const href = profileEmployeeHref();
+  const workspaceLink = `${origin}${href}`;
+  const title = input.decision === 'approved' ? 'Profile update approved' : 'Profile update rejected';
+  const body = input.decision === 'approved'
+    ? `${input.request.title} has been approved by ${input.actorName} and applied to HRIS.`
+    : `${input.request.title} was rejected by ${input.actorName}.${input.comment ? ` Comment: ${input.comment}` : ''}`;
+
+  await createEnterpriseNotification(session, {
+    kind: 'Workflow',
+    module: 'Profile',
+    title,
+    body,
+    severity: input.decision === 'approved' ? 'success' : 'warning',
+    href,
+    actor: input.actorName,
+    channels: ['In-App', 'Email'],
+    recipientEmployeeCode: input.requester.employeeCode || input.requester.employeeId,
+    metadata: { requestId: input.request.id, module: 'ess-profile-update', decision: input.decision },
+  }).catch(() => undefined);
+
+  const email = await resolveEmployeeMailbox(input.requester);
+  if (!email) return;
+  await sendProfileUpdateDecisionEmail({
+    recipientName: input.requester.fullName,
+    recipientEmail: email,
+    requestTitle: input.request.title,
+    sectionLabel: input.request.profileSectionId,
+    decision: input.decision,
+    actorName: input.actorName,
+    reason: input.comment,
+    workspaceLink,
+    baseUrl: input.baseUrl,
+  }).catch(() => undefined);
+};
+
 export const submitEssProfileUpdate = async (input: {
   employee: DleEmployeeDirectoryRow;
   actorName: string;
@@ -273,6 +490,7 @@ export const submitEssProfileUpdate = async (input: {
   changes: Record<string, string>;
   previousValues: Record<string, string>;
   comment?: string;
+  baseUrl?: string | null;
 }) => {
   const sectionId = compact(input.sectionId);
   if (!sectionId) throw new Error('Profile section is required.');
@@ -288,18 +506,17 @@ export const submitEssProfileUpdate = async (input: {
     throw new Error('A profile update for this section is already pending HR approval.');
   }
 
+  const hrRecipients = await resolveProfileHrRecipients(input.employee);
   const now = new Date().toISOString();
   const requestId = `ess-profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const workflow = serviceWorkflowFor(
     ['Employee', 'HR Operations', 'HR Manager'],
     input.employee.fullName,
-    'HR Operations',
+    'HR Manager',
     'HR Review',
     now,
   );
-  const changedLabels = Object.keys(changes)
-    .map((key) => Object.entries(labelToKey).find(([, value]) => value === key)?.[0] || key)
-    .join(', ');
+  const changedLabels = changeSummary(changes);
   const requestItem: EssProfileUpdateRequest = {
     id: requestId,
     employeeId: input.employee.employeeId,
@@ -310,7 +527,10 @@ export const submitEssProfileUpdate = async (input: {
     priority: 'Normal',
     submittedAt: now,
     updatedAt: now,
-    approvers: ['HR Operations', 'HR Manager'],
+    approvers: hrRecipients.length
+      ? hrRecipients.slice(0, 5).map((item) => item.fullName)
+      : ['HR Manager'],
+    hrApproverEmployeeCodes: hrRecipients.map((item) => item.employeeCode),
     profileSectionId: sectionId,
     profileChanges: changes,
     profilePreviousValues: input.previousValues,
@@ -327,6 +547,16 @@ export const submitEssProfileUpdate = async (input: {
   const requests = await readAllEssRequests();
   await writeAllEssRequests([requestItem, ...requests]);
   invalidateEssPortalCache();
+
+  await notifyProfileSubmittedToHr({
+    request: requestItem,
+    requester: input.employee,
+    actorName: input.actorName || input.employee.fullName,
+    sectionLabel: input.sectionLabel,
+    recipients: hrRecipients,
+    baseUrl: input.baseUrl,
+  });
+
   return requestItem;
 };
 
@@ -336,6 +566,7 @@ export const transitionEssProfileUpdate = async (input: {
   actor: SessionPayload;
   employeeDirectory: DleEmployeeDirectoryRow[];
   comment?: string;
+  baseUrl?: string | null;
 }) => {
   if (!canApproveEssProfileUpdate(input.actor.roles || [])) {
     throw new Error('You are not authorized to approve profile updates.');
@@ -349,8 +580,19 @@ export const transitionEssProfileUpdate = async (input: {
     throw new Error('Profile update is not awaiting HR approval.');
   }
 
+  const actorCode = compact(input.actor.employeeCode || input.actor.username).toUpperCase();
+  if (actorCode && employeeCodesMatch(current.employeeId, actorCode)) {
+    throw new Error('You cannot approve or reject your own profile update. An HR Manager must review this request.');
+  }
+
   const now = new Date().toISOString();
   const actorName = input.actor.fullName || input.actor.username;
+  const requester = input.employeeDirectory.find(
+    (item) =>
+      employeeCodesMatch(item.employeeId, current.employeeId)
+      || employeeCodesMatch(item.employeeCode, current.employeeId),
+  );
+
   if (input.action === 'reject') {
     const next: EssProfileUpdateRequest = {
       ...current,
@@ -371,17 +613,23 @@ export const transitionEssProfileUpdate = async (input: {
     requests[index] = next;
     await writeAllEssRequests(requests);
     invalidateEssPortalCache();
+
+    if (requester) {
+      await notifyProfileDecisionToRequester({
+        request: next,
+        requester,
+        actorName,
+        decision: 'rejected',
+        comment: input.comment,
+        baseUrl: input.baseUrl,
+      });
+    }
     return next;
   }
 
-  const employee = input.employeeDirectory.find(
-    (item) =>
-      compact(item.employeeId).toUpperCase() === compact(current.employeeId).toUpperCase()
-      || compact(item.employeeCode).toUpperCase() === compact(current.employeeId).toUpperCase(),
-  );
-  if (!employee) throw new Error('Employee record not found for profile update.');
+  if (!requester) throw new Error('Employee record not found for profile update.');
 
-  const syncPayload = mapChangesToHrisSync(employee, current.profileSectionId, current.profileChanges);
+  const syncPayload = mapChangesToHrisSync(requester, current.profileSectionId, current.profileChanges);
   const applied = await syncHrisEmployeeProfileToDb({
     employeeCode: syncPayload.employeeCode,
     fullName: syncPayload.fullName,
@@ -415,20 +663,14 @@ export const transitionEssProfileUpdate = async (input: {
   await writeAllEssRequests(requests);
   invalidateEssPortalCache();
 
-  try {
-    await createEnterpriseNotification(
-      { sub: employee.employeeId, fullName: employee.fullName, roles: ['Employee'] } as SessionPayload,
-      {
-        title: 'Profile update approved',
-        body: `${current.title} has been approved and your HRIS profile was updated.`,
-        module: 'Profile',
-        severity: 'success',
-        href: '/workforce-portal?tab=profile',
-      },
-    );
-  } catch {
-    // notification is best-effort
-  }
+  await notifyProfileDecisionToRequester({
+    request: next,
+    requester,
+    actorName,
+    decision: 'approved',
+    comment: input.comment,
+    baseUrl: input.baseUrl,
+  });
 
   return next;
 };

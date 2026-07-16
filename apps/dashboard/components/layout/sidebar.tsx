@@ -35,6 +35,14 @@ const requiredPermission = (route?: string) => {
   if (route.startsWith('/hris/payroll-management/bank-finance') || route.startsWith('/hris/payroll-management/bank-and-finance')) {
     return 'page.payroll.management.bank-finance.view';
   }
+  if (route.startsWith('/hris/payroll-management/pay-setup') || route.startsWith('/hris/payroll-management/salary-management')) {
+    return 'page.hris.payroll.salary-management.view';
+  }
+  if (route.startsWith('/hris/payroll/employee-salary-setup')) return 'page.hris.payroll.employee-salary-setup.view';
+  if (route.startsWith('/hris/payroll/salary-structure')) return 'page.hris.payroll.salary-structure.view';
+  if (route.startsWith('/hris/payroll/payroll-approval') || route.startsWith('/hris/payroll-management/payroll-approval')) {
+    return 'page.hris.payroll.approval.view';
+  }
   if (route.startsWith('/hris/payroll-management')) return 'payroll.view';
   if (route.startsWith('/hris/payroll')) return 'payroll.view';
   if (route.startsWith('/hris/employees')) return 'employees.view';

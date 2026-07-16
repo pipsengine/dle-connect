@@ -1,52 +1,34 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import Link from 'next/link';
-import { normalizePublicHref } from '@/lib/public-app-url';
-import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
 import {
-  Award,
-  Banknote,
+  AlertTriangle,
   Bell,
-  Bookmark,
-  BriefcaseBusiness,
+  BookOpen,
   Building2,
   Cake,
-  CalendarCheck,
   CalendarDays,
-  ChevronRight,
-  ClipboardList,
-  Clock,
+  CheckCircle2,
+  ChevronDown,
+  Clock3,
+  Download,
   FileText,
-  GraduationCap,
-  HelpCircle,
-  Landmark,
-  Megaphone,
-  MessageSquare,
-  MoreHorizontal,
-  Plane,
-  Search,
+  Gift,
+  HandCoins,
+  Mail,
+  Plus,
   ShieldCheck,
   Sparkles,
-  Star,
-  Target,
-  Users,
-  WalletCards,
+  Trophy,
+  Workflow,
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
 import type { EssAnnouncement, EssEngagementItem } from '@/lib/ess-portal-derived-data';
-import {
-  EssCard,
-  EssEmptyState,
-  EssNotificationItem,
-  EssProgressBar,
-  EssSectionHeader,
-} from './ess-portal-ui';
 import type { EssTab } from './ess-portal-shell';
 
-type LeaveBalanceRow = { type?: string; balance?: number; entitlement?: number; used?: number };
-type ShiftRow = { id?: string; name?: string; start?: string; end?: string; location?: string };
+type LeaveBalanceRow = { type?: string; balance?: number; entitlement?: number; used?: number; leaveType?: string };
 
 export type EssCommunicationsPayload = {
   generatedAt?: string;
@@ -62,39 +44,57 @@ export type EssCommunicationsPayload = {
     };
     engagements?: EssEngagementItem[];
   };
-  birthdays?: Array<{ id: string; fullName: string; department: string; date: string }>;
-  anniversaries?: Array<{ id: string; fullName: string; years: number; date: string }>;
   events?: Array<{ id: string; label: string; date: string; type: string }>;
+  birthdays?: Array<{ id: string; fullName: string; department: string; date: string; employeeId?: string; employeeCode?: string; hasPhoto?: boolean }>;
+  anniversaries?: Array<{ id: string; fullName: string; years: number; date: string; department?: string; employeeId?: string; employeeCode?: string; hasPhoto?: boolean }>;
   approvalQueue?: Array<{ id: string; employee: string; type: string; days: number; startDate: string; endDate: string; stage: string }>;
+  documents?: Array<{ id: string; title: string; category: string; version: string; status: string; sizeBytes?: number; acknowledgement?: string }>;
+  requests?: Array<{ id: string; category: string; title: string; status: string; submittedAt: string; updatedAt?: string }>;
   employee?: {
     fullName?: string;
     jobTitle?: string;
     department?: string;
     location?: string;
-    manager?: string;
     employeeCode?: string;
     employeeId?: string;
     photoUrl?: string;
     hasPhoto?: boolean;
-    email?: string;
     status?: string;
+    yearsOfService?: number;
   };
   widgets?: {
     leave: { entitlement: number; used: number; balance: number; pending: number };
-    payroll: { monthlyPay: number; currency: string; payslips: number; periodLabel?: string; released?: boolean };
     requests: { pending: number; approved: number; total: number };
   };
-  leave?: { balances?: LeaveBalanceRow[]; calendar?: Array<{ label?: string; from?: string; to?: string; status?: string }> };
-  attendance?: { shifts?: ShiftRow[]; clockingState?: string };
-  payrollAccess?: { currentPeriod?: string; currentPeriodReleased?: boolean; message?: string };
-  dashboardAnalytics?: { hrInsights?: { trainingProgress?: { percent: number } } };
+  leave?: { balances?: LeaveBalanceRow[] };
+  attendance?: { shifts?: Array<{ name?: string; start?: string; end?: string; location?: string }> };
 };
+
+const TABS = [
+  'Overview',
+  'News Feed',
+  'Circulars & Policies',
+  'Surveys & Polls',
+  'Events',
+  'Recognition',
+  'Knowledge Base',
+  'My Activity',
+] as const;
+
+type HubTab = (typeof TABS)[number];
+
+const FILTERS = ['All', 'Unread', 'News', 'HR', 'IT', 'Policy', 'Events', 'Executive'] as const;
 
 const greeting = () => {
   const hour = new Date().getHours();
   if (hour < 12) return 'Good morning';
   if (hour < 17) return 'Good afternoon';
   return 'Good evening';
+};
+
+const firstName = (fullName?: string) => {
+  const parts = String(fullName || 'Employee').trim().split(/\s+/).filter(Boolean);
+  return (parts.length > 1 ? parts[parts.length - 1] : parts[0] || 'Employee').toUpperCase();
 };
 
 const formatWhen = (value?: string) => {
@@ -107,120 +107,96 @@ const formatWhen = (value?: string) => {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    timeZone: 'UTC',
     hour12: true,
   });
 };
 
-const formatDay = (value?: string) => {
+const formatShortDate = (value?: string) => {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' });
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
-const formatEventDate = (value?: string) => {
-  if (!value) return { day: '—', month: '—' };
+const daysUntil = (value?: string) => {
+  if (!value) return null;
+  const target = new Date(value);
+  if (Number.isNaN(target.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  target.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+};
+
+const untilLabel = (value?: string) => {
+  const days = daysUntil(value);
+  if (days == null) return 'Upcoming';
+  if (days < 0) return 'Past';
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Tomorrow';
+  return `In ${days} days`;
+};
+
+const formatBytes = (bytes?: number) => {
+  if (!bytes || bytes <= 0) return 'Document';
+  if (bytes < 1024 * 1024) return `PDF · ${(bytes / 1024).toFixed(0)} KB`;
+  return `PDF · ${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const dateParts = (value?: string) => {
+  if (!value) return { month: '—', day: '—' };
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return { day: '—', month: '—' };
+  if (Number.isNaN(date.getTime())) return { month: '—', day: '—' };
   return {
-    day: date.toLocaleDateString('en-GB', { day: '2-digit', timeZone: 'UTC' }),
-    month: date.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' }).toUpperCase(),
+    month: date.toLocaleDateString('en-GB', { month: 'short' }).toUpperCase(),
+    day: date.toLocaleDateString('en-GB', { day: '2-digit' }),
   };
 };
 
-const firstName = (fullName?: string) => {
-  const parts = String(fullName || 'Employee').trim().split(/\s+/);
-  return parts.length > 1 ? parts[parts.length - 1] : parts[0];
-};
-
-const channelIcon = (channel: string): { icon: LucideIcon; bg: string; color: string } => {
+const channelMeta = (channel: string): { label: string; category: string; icon: LucideIcon; tone: string } => {
   const text = channel.toLowerCase();
-  if (/payroll/i.test(text)) return { icon: Banknote, bg: '#F5F3FF', color: '#7C3AED' };
-  if (/hr|leave|people/i.test(text)) return { icon: Users, bg: '#FFF7ED', color: '#EA580C' };
-  if (/it|security/i.test(text)) return { icon: ShieldCheck, bg: '#EFF6FF', color: '#2563EB' };
-  if (/policy|safety/i.test(text)) return { icon: FileText, bg: '#ECFDF5', color: '#047857' };
-  return { icon: Megaphone, bg: '#EFF6FF', color: '#2563EB' };
+  if (/executive|ceo|md/i.test(text)) return { label: 'Executive Message', category: 'Executive', icon: Sparkles, tone: 'bg-[#EEF5FF] text-[#1769F7]' };
+  if (/hr|leave|people|anniversary|birthday/i.test(text)) return { label: 'HR Update', category: 'HR', icon: FileText, tone: 'bg-[#ECFBF5] text-[#13A773]' };
+  if (/it|security/i.test(text)) return { label: 'IT Security Notice', category: 'IT', icon: ShieldCheck, tone: 'bg-[#F5F1FF] text-[#7F4CE0]' };
+  if (/event|town hall|holiday|training|cut-off|payroll/i.test(text)) return { label: 'Event', category: 'Events', icon: CalendarDays, tone: 'bg-[#ECFBF5] text-[#16A473]' };
+  if (/policy|handbook|conduct|circular/i.test(text)) return { label: 'Circular / Policy', category: 'Policy', icon: BookOpen, tone: 'bg-[#ECFBF5] text-[#14A273]' };
+  return { label: 'Company News', category: 'News', icon: Building2, tone: 'bg-[#F0F2F7] text-[#60718C]' };
 };
 
-const priorityTone = (priority: string) => {
-  if (/high/i.test(priority)) return 'bg-[#FEF2F2] text-[#DC2626] border-[#FECACA]';
-  if (/low/i.test(priority)) return 'bg-[#F8FAFC] text-[#64748B] border-[#E2E8F0]';
-  return 'bg-[#FFFBEB] text-[#B45309] border-[#FDE68A]';
-};
+const eventTone = (index: number) => ['bg-[#1E6AF5]', 'bg-[#9461EF]', 'bg-[#19A66A]', 'bg-[#FB8424]'][index % 4];
+const resourceTone = (index: number) =>
+  ['bg-[#FFF0F3] text-[#EC4C6D]', 'bg-[#EEF5FF] text-[#2E6FF0]', 'bg-[#ECFBF7] text-[#13A385]', 'bg-[#FFF1F4] text-[#EB516C]', 'bg-[#F4EEFF] text-[#8A4FE3]'][index % 5];
 
-const notificationIcon = (type: string): { icon: LucideIcon; bg: string; color: string } => {
-  if (/workflow|approval|leave/i.test(type)) return { icon: ClipboardList, bg: '#F5F3FF', color: '#7C3AED' };
-  if (/payroll/i.test(type)) return { icon: Sparkles, bg: '#ECFDF5', color: '#047857' };
-  if (/security/i.test(type)) return { icon: ShieldCheck, bg: '#FEF2F2', color: '#DC2626' };
-  return { icon: Bell, bg: '#EFF6FF', color: '#2563EB' };
-};
-
-function CommMetricCard({
-  label,
-  icon: Icon,
-  accent,
-  iconBg,
-  primary,
-  lines,
-  actionLabel,
-  onAction,
-}: {
-  label: string;
-  icon: LucideIcon;
-  accent: string;
-  iconBg: string;
-  primary: string;
-  lines: string[];
-  actionLabel: string;
-  onAction?: () => void;
-}) {
+function EmptyPanel({ title, detail }: { title: string; detail: string }) {
   return (
-    <EssCard className="group flex min-h-[148px] flex-col justify-between p-4 transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)]">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[12px] font-semibold text-[#64748B]">{label}</p>
-          <p className="mt-1 text-[28px] font-bold leading-none tracking-tight text-[#0F172A]">{primary}</p>
-        </div>
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px]" style={{ backgroundColor: iconBg, color: accent }}>
-          <Icon className="h-5 w-5" strokeWidth={2} />
-        </span>
-      </div>
-      <div className="mt-3 space-y-0.5">
-        {lines.map((line) => (
-          <p key={line} className="text-[11px] font-medium text-[#64748B]">{line}</p>
-        ))}
-      </div>
-      <button
-        type="button"
-        onClick={onAction}
-        className="mt-3 inline-flex items-center gap-1 text-[12px] font-bold text-[#2563EB] transition group-hover:gap-2"
-      >
-        {actionLabel}
-        <ChevronRight className="h-3.5 w-3.5" />
-      </button>
-    </EssCard>
+    <div className="rounded-xl border border-dashed border-[#D7E0EC] bg-[#F8FAFC] px-4 py-10 text-center">
+      <p className="text-sm font-bold text-[#15213A]">{title}</p>
+      <p className="mt-1 text-xs font-semibold text-[#66748E]">{detail}</p>
+    </div>
   );
 }
 
-function TabBar({ tabs, active, onChange }: { tabs: string[]; active: string; onChange: (tab: string) => void }) {
+function PanelCard({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: { label: string; onClick: () => void };
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex flex-wrap gap-1 border-b border-[#E9EEF5] px-1 pb-0">
-      {tabs.map((tab) => (
-        <button
-          key={tab}
-          type="button"
-          onClick={() => onChange(tab)}
-          className={`rounded-t-[10px] px-3 py-2 text-[12px] font-bold transition ${
-            active === tab
-              ? 'border border-b-white border-[#E2E8F0] bg-white text-[#2563EB] -mb-px'
-              : 'text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]'
-          }`}
-        >
-          {tab}
-        </button>
-      ))}
-    </div>
+    <section className="overflow-hidden rounded-xl border border-[#E3E9F2] bg-white shadow-[0_1px_2px_rgba(16,42,86,0.04),0_8px_22px_rgba(16,42,86,0.05)]">
+      <div className="flex items-center justify-between gap-3 border-b border-[#EFF3F8] px-4 py-3">
+        <h3 className="text-sm font-bold text-[#15213A]">{title}</h3>
+        {action ? (
+          <button type="button" onClick={action.onClick} className="text-[10px] font-bold text-[#1769F7]">
+            {action.label}
+          </button>
+        ) : null}
+      </div>
+      <div className="p-4">{children}</div>
+    </section>
   );
 }
 
@@ -229,523 +205,858 @@ export function EssCommunicationsView({
   onNavigate,
 }: {
   payload: EssCommunicationsPayload | null;
-  onNavigate?: (tab: string, options?: { leaveSection?: string }) => void;
+  onNavigate?: (tab: EssTab | string, options?: { leaveSection?: string }) => void;
 }) {
-  const [announcementTab, setAnnouncementTab] = useState('All');
-  const [notificationTab, setNotificationTab] = useState('All');
-  const [notificationQuery, setNotificationQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<HubTab>('Overview');
+  const [filter, setFilter] = useState<(typeof FILTERS)[number]>('All');
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
+  const [feedLimit, setFeedLimit] = useState(6);
+  const [ackDismissed, setAckDismissed] = useState(false);
+  const [showAckToast, setShowAckToast] = useState(false);
 
+  const employee = payload?.employee;
   const announcements = payload?.announcements || [];
-  const engagements = payload?.communications?.engagements || [];
   const notifications = payload?.notifications || [];
-  const summary = payload?.communications?.summary;
+  const engagements = payload?.communications?.engagements || [];
+  const documents = payload?.documents || [];
+  const events = payload?.events || [];
   const birthdays = payload?.birthdays || [];
   const anniversaries = payload?.anniversaries || [];
-  const events = payload?.events || [];
-  const employee = payload?.employee;
+  const requests = payload?.requests || [];
   const widgets = payload?.widgets;
-  const leaveBalances = payload?.leave?.balances || [];
   const shifts = payload?.attendance?.shifts || [];
-  const pendingApprovals = payload?.approvalQueue?.length ?? widgets?.requests.pending ?? 0;
-  const unreadCount = summary?.unreadCount ?? notifications.filter((item) => /unread/i.test(item.status)).length;
-  const highPriorityAnnouncements = announcements.filter((item) => /high/i.test(item.priority)).length;
-  const surveyEngagements = engagements.filter((item) => /survey/i.test(item.type));
-  const policyEngagements = engagements.filter((item) => /policy/i.test(item.type));
-  const upcomingSurvey = surveyEngagements.find((item) => /open|pending|due/i.test(item.status));
+  const leaveBalances = payload?.leave?.balances || [];
 
-  const filteredAnnouncements = useMemo(() => {
-    if (announcementTab === 'All') return announcements;
-    if (announcementTab === 'Unread') return announcements.filter((item) => /high/i.test(item.priority));
-    return announcements.filter((item) => {
-      const channel = item.channel.toLowerCase();
-      if (announcementTab === 'Payroll') return /payroll/i.test(channel);
-      if (announcementTab === 'HR') return /hr|leave|people|anniversary/i.test(channel);
-      if (announcementTab === 'IT') return /it|security|workflow/i.test(channel);
-      if (announcementTab === 'Policy') return /policy/i.test(channel);
-      if (announcementTab === 'Safety') return /safety|payroll/i.test(channel);
-      return true;
+  const feedItems = useMemo(() => {
+    const fromAnnouncements = announcements.map((item) => {
+      const meta = channelMeta(item.channel);
+      return {
+        id: item.id,
+        type: meta.label,
+        title: item.title,
+        from: item.channel || 'Corporate Communications',
+        date: formatWhen(item.publishedAt),
+        rawDate: item.publishedAt,
+        category: meta.category,
+        unread: !readIds.has(item.id) && /high/i.test(item.priority),
+        icon: meta.icon,
+        tone: meta.tone,
+      };
     });
-  }, [announcementTab, announcements]);
+    if (fromAnnouncements.length) return fromAnnouncements;
+    return notifications.map((item) => {
+      const meta = channelMeta(`${item.type} ${item.title}`);
+      return {
+        id: item.id,
+        type: meta.label,
+        title: item.title,
+        from: item.type || 'System',
+        date: formatWhen(item.createdAt),
+        rawDate: item.createdAt,
+        category: meta.category,
+        unread: !readIds.has(item.id) && /unread/i.test(item.status),
+        icon: meta.icon,
+        tone: meta.tone,
+      };
+    });
+  }, [announcements, notifications, readIds]);
 
-  const filteredNotifications = useMemo(() => {
-    let rows = notifications;
-    if (notificationTab === 'Unread') rows = rows.filter((item) => /unread/i.test(item.status));
-    if (notificationTab === 'Important') rows = rows.filter((item) => /workflow|approval|security|payroll/i.test(`${item.type} ${item.title}`));
-    const needle = notificationQuery.trim().toLowerCase();
-    if (!needle) return rows;
-    return rows.filter((item) => [item.title, item.type, item.status].join(' ').toLowerCase().includes(needle));
-  }, [notificationQuery, notificationTab, notifications]);
+  const filteredFeed = useMemo(() => {
+    let rows = feedItems;
+    if (activeTab === 'News Feed') rows = rows.filter((item) => /News|Executive|HR|IT/i.test(item.category));
+    if (activeTab === 'Circulars & Policies') rows = rows.filter((item) => /Policy|HR|Circular/i.test(item.category));
+    if (filter === 'Unread') return rows.filter((item) => item.unread);
+    if (filter !== 'All' && (activeTab === 'Overview' || activeTab === 'News Feed')) {
+      if (filter === 'News') return rows.filter((item) => /News|Executive/i.test(item.category));
+      return rows.filter((item) => item.category === filter);
+    }
+    return rows;
+  }, [activeTab, feedItems, filter]);
 
-  const scheduleItems = useMemo(() => {
-    const items: Array<{ time: string; title: string; location: string; tone: string }> = [];
-    for (const shift of shifts.slice(0, 1)) {
-      items.push({
-        time: `${shift.start || '09:00'} – ${shift.end || '18:00'}`,
-        title: shift.name || 'Scheduled Shift',
-        location: shift.location || employee?.location || 'Office',
-        tone: 'border-[#BFDBFE] bg-[#EFF6FF]',
-      });
-    }
-    for (const event of events.slice(0, 3)) {
-      items.push({
-        time: formatDay(event.date),
-        title: event.label,
-        location: event.type,
-        tone: /payroll/i.test(event.type) ? 'border-[#DDD6FE] bg-[#F5F3FF]' : 'border-[#E9EEF5] bg-[#F8FAFC]',
-      });
-    }
-    for (const approval of (payload?.approvalQueue || []).slice(0, 2)) {
-      items.push({
-        time: approval.startDate ? formatDay(approval.startDate) : 'Pending',
-        title: `${approval.type} — ${approval.employee}`,
-        location: approval.stage,
-        tone: 'border-[#FDE68A] bg-[#FFFBEB]',
-      });
-    }
-    return items;
-  }, [employee?.location, events, payload?.approvalQueue, shifts]);
-
-  const upcomingEvents = useMemo(() => {
-    const merged = [
-      ...events.map((item) => ({ id: item.id, title: item.label, date: item.date, type: item.type, accent: '#2563EB' })),
-      ...birthdays.map((item) => ({ id: item.id, title: `${item.fullName} — Birthday`, date: item.date, type: 'Birthday', accent: '#DB2777' })),
-      ...anniversaries.map((item) => ({ id: item.id, title: `${item.fullName} — ${item.years}yr Anniversary`, date: item.date, type: 'Anniversary', accent: '#B45309' })),
-    ];
-    return merged.sort((a, b) => String(a.date).localeCompare(String(b.date))).slice(0, 6);
-  }, [anniversaries, birthdays, events]);
+  const surveys = engagements.filter((item) => /survey|poll|feedback|pulse/i.test(`${item.type} ${item.title}`));
+  const policies = engagements.filter((item) => /policy/i.test(item.type));
+  const policiesDue = policies.filter((item) => /acknowledgement due|pending|open/i.test(item.status));
+  const unreadCount = feedItems.filter((item) => item.unread).length
+    || notifications.filter((item) => /unread/i.test(item.status)).length;
+  const pendingActions = payload?.approvalQueue?.length ?? widgets?.requests.pending ?? 0;
 
   const leaveRows = useMemo(() => {
-    if (leaveBalances.length) {
-      return leaveBalances
-        .filter((row) => Number(row.balance ?? row.entitlement ?? 0) > 0 || /annual|sick|casual|compassion/i.test(String(row.type)))
-        .slice(0, 4)
-        .map((row) => {
-          const entitlement = Math.max(1, Number(row.entitlement ?? row.balance ?? 0));
-          const balance = Number(row.balance ?? 0);
-          const used = Number(row.used ?? Math.max(0, entitlement - balance));
-          const pct = entitlement > 0 ? Math.round((balance / entitlement) * 100) : 0;
-          return {
-            label: String(row.type || 'Leave'),
-            balance,
-            pct,
-            color: /sick/i.test(String(row.type)) ? '#F59E0B' : /casual/i.test(String(row.type)) ? '#2563EB' : '#10B981',
-            detail: `${used} used · ${balance} available`,
-          };
-        });
-    }
-    return [
-      { label: 'Annual Leave', balance: widgets?.leave.balance ?? 0, pct: widgets?.leave.entitlement ? Math.round(((widgets.leave.balance) / widgets.leave.entitlement) * 100) : 0, color: '#10B981', detail: `${widgets?.leave.used ?? 0} used · ${widgets?.leave.balance ?? 0} available` },
-      { label: 'Pending Requests', balance: widgets?.leave.pending ?? 0, pct: 0, color: '#F59E0B', detail: `${widgets?.leave.pending ?? 0} awaiting approval` },
-    ];
+    const source = leaveBalances.length
+      ? leaveBalances
+      : widgets?.leave
+        ? [{
+            type: 'Annual Leave',
+            leaveType: 'Annual Leave',
+            entitlement: widgets.leave.entitlement,
+            used: widgets.leave.used,
+            balance: widgets.leave.balance,
+          }]
+        : [];
+
+    return source.slice(0, 4).map((row, index) => {
+      const label = String(row.type || row.leaveType || 'Leave');
+      const entitlement = Math.max(0, Number(row.entitlement ?? 0));
+      const balance = Math.max(0, Number(row.balance ?? 0));
+      const used = Math.max(0, Number(row.used ?? Math.max(0, entitlement - balance)));
+      const basis = entitlement || Math.max(balance + used, 1);
+      const pct = Math.min(100, Math.round((balance / basis) * 100));
+      return {
+        label,
+        value: entitlement ? `${entitlement} days` : `${balance} days`,
+        detail: `${used} used · ${balance} available`,
+        pct,
+        bar: index === 1 ? 'from-[#FF9F1A] to-[#F59E0B]' : index === 3 ? 'from-[#9E68F6] to-[#8B5CF6]' : 'from-[#0BBF88] to-[#28C982]',
+      };
+    });
   }, [leaveBalances, widgets?.leave]);
 
-  const navigate = (tab: string, options?: { leaveSection?: string }) => onNavigate?.(tab, options);
+  const upcomingEvents = useMemo(
+    () =>
+      events
+        .map((item) => {
+          const parts = dateParts(item.date);
+          return {
+            id: item.id,
+            title: item.label,
+            type: item.type,
+            date: item.date,
+            month: parts.month,
+            day: parts.day,
+            until: untilLabel(item.date),
+          };
+        })
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+        .slice(0, activeTab === 'Events' ? 12 : 4),
+    [activeTab, events],
+  );
+
+  const birthdayCards = useMemo(
+    () =>
+      birthdays
+        .map((item) => ({ ...item, until: untilLabel(item.date), ...dateParts(item.date) }))
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+        .slice(0, activeTab === 'Recognition' || activeTab === 'Events' ? 10 : 5),
+    [activeTab, birthdays],
+  );
+
+  const anniversaryCards = useMemo(
+    () =>
+      anniversaries
+        .map((item) => ({ ...item, until: untilLabel(item.date), ...dateParts(item.date) }))
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+        .slice(0, activeTab === 'Recognition' || activeTab === 'Events' ? 10 : 5),
+    [activeTab, anniversaries],
+  );
+
+  const celebrationTimeline = useMemo(() => {
+    const rows: Array<{
+      id: string;
+      title: string;
+      subtitle: string;
+      date: string;
+      until: string;
+      month: string;
+      day: string;
+      kind: 'event' | 'birthday' | 'anniversary';
+      employeeId?: string;
+      employeeCode?: string;
+      hasPhoto?: boolean;
+      fullName?: string;
+    }> = [
+      ...upcomingEvents.map((item) => ({
+        id: `evt-${item.id}`,
+        title: item.title,
+        subtitle: item.type,
+        date: item.date,
+        until: item.until,
+        month: item.month,
+        day: item.day,
+        kind: 'event' as const,
+      })),
+      ...birthdayCards.map((item) => ({
+        id: `bday-${item.id}`,
+        title: item.fullName,
+        subtitle: `Birthday · ${item.department || 'Dorman Long'}`,
+        date: item.date,
+        until: item.until,
+        month: item.month,
+        day: item.day,
+        kind: 'birthday' as const,
+        employeeId: item.employeeId,
+        employeeCode: item.employeeCode,
+        hasPhoto: item.hasPhoto,
+        fullName: item.fullName,
+      })),
+      ...anniversaryCards.map((item) => ({
+        id: `ann-${item.id}`,
+        title: item.fullName,
+        subtitle: `${item.years || 1} year work anniversary`,
+        date: item.date,
+        until: item.until,
+        month: item.month,
+        day: item.day,
+        kind: 'anniversary' as const,
+        employeeId: item.employeeId,
+        employeeCode: item.employeeCode,
+        hasPhoto: item.hasPhoto,
+        fullName: item.fullName,
+      })),
+    ];
+    return rows.sort((a, b) => String(a.date).localeCompare(String(b.date))).slice(0, activeTab === 'Events' || activeTab === 'Recognition' ? 16 : 6);
+  }, [activeTab, anniversaryCards, birthdayCards, upcomingEvents]);
+
+  const knowledgeDocs = useMemo(
+    () =>
+      documents
+        .filter((doc) => /policy|handbook|conduct|security|leave|travel|guide|manual/i.test(`${doc.title} ${doc.category}`))
+        .slice(0, activeTab === 'Knowledge Base' ? 12 : 5)
+        .map((doc) => ({
+          id: doc.id,
+          title: doc.title,
+          meta: `${doc.category || 'Policy'} · ${formatBytes(doc.sizeBytes)}`,
+          status: doc.acknowledgement || doc.status,
+        })),
+    [activeTab, documents],
+  );
+
+  const myActivity = useMemo(() => {
+    const fromRequests = requests.slice(0, 8).map((item) => ({
+      id: `req-${item.id}`,
+      title: item.title || item.category,
+      detail: `${item.category} · ${item.status}`,
+      when: formatWhen(item.updatedAt || item.submittedAt),
+      tone: /approved|complete/i.test(item.status) ? 'bg-[#E9FAEF] text-[#15915B]' : /reject/i.test(item.status) ? 'bg-[#FEF2F2] text-[#B91C1C]' : 'bg-[#FFF5E8] text-[#B45309]',
+    }));
+    const fromNotifications = notifications.slice(0, 8).map((item) => ({
+      id: `ntf-${item.id}`,
+      title: item.title,
+      detail: item.type,
+      when: formatWhen(item.createdAt),
+      tone: /unread/i.test(item.status) ? 'bg-[#EAF1FF] text-[#1769F7]' : 'bg-[#F2F5FA] text-[#425575]',
+    }));
+    return [...fromRequests, ...fromNotifications].slice(0, 12);
+  }, [notifications, requests]);
+
+  const markRead = (id: string) => setReadIds((current) => new Set(current).add(id));
+  const acknowledge = () => {
+    setAckDismissed(true);
+    setShowAckToast(true);
+    window.setTimeout(() => setShowAckToast(false), 3200);
+  };
 
   if (!payload) {
     return (
-      <div className="space-y-5">
-        <div className="h-36 animate-pulse rounded-[20px] bg-[#E2E8F0]" />
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
-          {[0, 1, 2, 3, 4, 5].map((item) => (
-            <div key={item} className="h-36 animate-pulse rounded-[20px] bg-[#F1F5F9]" />
-          ))}
-        </div>
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-          {[0, 1, 2].map((item) => (
-            <div key={item} className="h-80 animate-pulse rounded-[20px] bg-[#F1F5F9]" />
-          ))}
+      <div className="space-y-4">
+        <div className="h-16 animate-pulse rounded-xl bg-[#E2E8F0]" />
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+          <div className="h-[420px] animate-pulse rounded-xl bg-[#F1F5F9]" />
+          <div className="h-[420px] animate-pulse rounded-xl bg-[#F1F5F9]" />
         </div>
       </div>
     );
   }
 
-  const payrollLabel = payload.payrollAccess?.currentPeriod || widgets?.payroll.periodLabel || 'Current period';
-  const payrollReleased = payload.payrollAccess?.currentPeriodReleased ?? widgets?.payroll.released;
+  const metrics = [
+    { label: 'Unread Items', value: String(unreadCount), action: 'View all', icon: Mail, iconClass: 'bg-[#EEF5FF] text-[#1769F7]', onClick: () => { setActiveTab('News Feed'); setFilter('Unread'); } },
+    { label: 'Pending Actions', value: String(pendingActions), action: 'View tasks', icon: Workflow, iconClass: 'bg-[#FFF5E8] text-[#F58B18]', onClick: () => onNavigate?.('workflow') },
+    { label: 'Surveys to Complete', value: String(surveys.filter((item) => /open|pending|due|progress/i.test(item.status)).length), action: 'View surveys', icon: FileText, iconClass: 'bg-[#F5F1FF] text-[#8C4CF0]', onClick: () => setActiveTab('Surveys & Polls') },
+    { label: 'Policies to Acknowledge', value: String(policiesDue.length), action: 'View policies', icon: BookOpen, iconClass: 'bg-[#ECFBF5] text-[#14A273]', onClick: () => setActiveTab('Circulars & Policies') },
+    { label: 'Announcements', value: String(payload.communications?.summary?.announcementCount ?? feedItems.length), action: 'View all', icon: Bell, iconClass: 'bg-[#FFF0F3] text-[#EF4770]', onClick: () => { setActiveTab('News Feed'); setFilter('All'); } },
+  ];
 
-  return (
-    <div className="space-y-6">
-      {/* Employee summary banner */}
-      <EssCard className="overflow-hidden">
-        <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-center lg:justify-between lg:p-6">
-          <div className="flex items-center gap-4">
-            <EmployeeAvatar
-              fullName={employee?.fullName || 'Employee'}
-              employeeId={employee?.employeeCode || employee?.employeeId}
-              photoUrl={employee?.photoUrl}
-              hasPhoto={employee?.hasPhoto}
-              size="lg"
-              tryPhoto
-            />
-            <div>
-              <h2 className="text-[22px] font-bold tracking-tight text-[#0F172A]">
-                {greeting()}, {firstName(employee?.fullName)}! <span aria-hidden>👋</span>
-              </h2>
-              <p className="mt-1 text-[13px] text-[#64748B]">
-                You have <span className="font-bold text-[#2563EB]">{unreadCount} unread notifications</span>
-                {' '}and <span className="font-bold text-[#B45309]">{pendingApprovals} pending tasks</span>.
-              </p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4 border-t border-[#E9EEF5] pt-4 sm:grid-cols-4 lg:border-t-0 lg:pt-0">
-            {[
-              { label: 'Last Login', value: formatWhen(payload.generatedAt) },
-              { label: 'Department', value: employee?.department || '—' },
-              { label: 'Location', value: employee?.location || '—' },
-              { label: 'Current Shift', value: shifts[0] ? `${shifts[0].start || '09:00'} – ${shifts[0].end || '18:00'}` : 'Standard hours' },
-            ].map((item) => (
-              <div key={item.label} className="min-w-[120px] border-l border-[#E9EEF5] pl-4 first:border-l-0 first:pl-0">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#94A3B8]">{item.label}</p>
-                <p className="mt-1 text-[13px] font-semibold text-[#0F172A]">{item.value}</p>
-              </div>
-            ))}
-          </div>
+  const quickActions = [
+    { label: 'Apply Leave', icon: CalendarDays, onClick: () => onNavigate?.('leave') },
+    { label: 'Submit Timesheet', icon: Clock3, onClick: () => onNavigate?.('time') },
+    { label: 'Submit Claim', icon: HandCoins, onClick: () => onNavigate?.('claims') },
+    { label: 'Request Letter', icon: FileText, onClick: () => onNavigate?.('services') },
+    { label: 'Download Payslip', icon: Download, onClick: () => onNavigate?.('payroll') },
+    { label: 'Report Incident', icon: AlertTriangle, onClick: () => onNavigate?.('services') },
+  ];
+
+  const showOverviewChrome = activeTab === 'Overview';
+  const showFeed = ['Overview', 'News Feed', 'Circulars & Policies'].includes(activeTab);
+  const showRightRail = ['Overview', 'Events'].includes(activeTab);
+  const celebrationTone = (kind: 'event' | 'birthday' | 'anniversary', index: number) => {
+    if (kind === 'birthday') return 'bg-gradient-to-br from-[#F472B6] to-[#DB2777]';
+    if (kind === 'anniversary') return 'bg-gradient-to-br from-[#818CF8] to-[#4F46E5]';
+    return eventTone(index);
+  };
+
+  const renderFeed = (rows = filteredFeed.slice(0, activeTab === 'Overview' ? feedLimit : 20)) => (
+    <PanelCard
+      title={activeTab === 'Circulars & Policies' ? 'Circulars & Policies' : 'Company News & Announcements'}
+      action={{ label: 'View all →', onClick: () => { setActiveTab('News Feed'); setFilter('All'); } }}
+    >
+      {activeTab === 'Overview' || activeTab === 'News Feed' ? (
+        <div className="-mx-4 mb-3 flex gap-1.5 overflow-x-auto border-b border-[#E3E9F2] px-4 pb-3">
+          {FILTERS.map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setFilter(item)}
+              className={`shrink-0 rounded-full px-3.5 py-1.5 text-[10px] font-semibold transition ${
+                filter === item ? 'bg-[#1769F7] text-white' : 'bg-[#F2F5FA] text-[#425575] hover:bg-[#E8EEF7]'
+              }`}
+            >
+              {item}
+            </button>
+          ))}
         </div>
-      </EssCard>
-
-      {/* KPI strip */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-        <CommMetricCard
-          label="Announcements"
-          icon={Megaphone}
-          accent="#2563EB"
-          iconBg="#EFF6FF"
-          primary={String(summary?.announcementCount ?? announcements.length)}
-          lines={[`${highPriorityAnnouncements} high priority`, `${announcements.length} total`]}
-          actionLabel="View all"
-          onAction={() => setAnnouncementTab('All')}
-        />
-        <CommMetricCard
-          label="Surveys"
-          icon={ClipboardList}
-          accent="#7C3AED"
-          iconBg="#F5F3FF"
-          primary={String(surveyEngagements.length)}
-          lines={[`${surveyEngagements.filter((item) => /open|due/i.test(item.status)).length} active`, `${policyEngagements.length} policy items`]}
-          actionLabel="View all"
-        />
-        <CommMetricCard
-          label="Notifications"
-          icon={Bell}
-          accent="#0891B2"
-          iconBg="#ECFEFF"
-          primary={String(summary?.notificationCount ?? notifications.length)}
-          lines={[`${unreadCount} unread`, `${notifications.length} total`]}
-          actionLabel="View all"
-          onAction={() => setNotificationTab('Unread')}
-        />
-        <CommMetricCard
-          label="Pending Approvals"
-          icon={Clock}
-          accent="#B45309"
-          iconBg="#FFFBEB"
-          primary={String(pendingApprovals)}
-          lines={[`${widgets?.requests.pending ?? 0} service requests`, 'Workflow queue']}
-          actionLabel="View all"
-          onAction={() => navigate('workflow')}
-        />
-        <CommMetricCard
-          label="Upcoming Leave"
-          icon={CalendarCheck}
-          accent="#047857"
-          iconBg="#ECFDF5"
-          primary={`${widgets?.leave.balance ?? 0} days`}
-          lines={[`${widgets?.leave.pending ?? 0} pending`, `Balance available`]}
-          actionLabel="View calendar"
-          onAction={() => navigate('leave')}
-        />
-        <CommMetricCard
-          label="Payroll Status"
-          icon={Banknote}
-          accent="#7C3AED"
-          iconBg="#F5F3FF"
-          primary={payrollLabel}
-          lines={[payrollReleased ? 'Released' : 'In progress', widgets?.payroll.payslips ? `${widgets.payroll.payslips} payslip(s)` : 'Self-service']}
-          actionLabel="View payslip"
-          onAction={() => navigate('payroll')}
-        />
-      </div>
-
-      {/* Main communication panels */}
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
-        {/* Announcements — wider */}
-        <EssCard className="overflow-hidden xl:col-span-5">
-          <div className="border-b border-[#E9EEF5] px-5 py-4">
-            <EssSectionHeader title="Announcements & Circulars" action={<button type="button" className="text-[12px] font-bold text-[#2563EB]">View all</button>} />
-          </div>
-          <TabBar tabs={['All', 'Unread', 'Payroll', 'HR', 'IT', 'Policy', 'Safety']} active={announcementTab} onChange={setAnnouncementTab} />
-          <div className="max-h-[520px] space-y-2 overflow-auto p-4">
-            {filteredAnnouncements.length ? (
-              filteredAnnouncements.map((item) => {
-                const visual = channelIcon(item.channel);
-                const Icon = visual.icon;
-                return (
-                  <article key={item.id} className="flex items-start gap-3 rounded-[14px] border border-[#E9EEF5] bg-white p-3 transition hover:border-[#CBD5E1] hover:shadow-sm">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px]" style={{ backgroundColor: visual.bg, color: visual.color }}>
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-[14px] font-bold leading-snug text-[#0F172A]">{item.title}</p>
-                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${priorityTone(item.priority)}`}>
-                          {item.priority}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-[11px] text-[#64748B]">{item.channel} · {formatWhen(item.publishedAt)}</p>
-                    </div>
-                    <div className="flex shrink-0 flex-col gap-1">
-                      <button type="button" className="rounded-lg p-1 text-[#94A3B8] hover:bg-[#F8FAFC] hover:text-[#2563EB]" aria-label="Bookmark">
-                        <Bookmark className="h-4 w-4" />
-                      </button>
-                      <button type="button" className="rounded-lg p-1 text-[#94A3B8] hover:bg-[#F8FAFC]" aria-label="More actions">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </article>
-                );
-              })
-            ) : (
-              <EssEmptyState icon={Megaphone} title="No announcements" description="Company circulars and notices will appear here when available." />
-            )}
-          </div>
-        </EssCard>
-
-        {/* Surveys & engagement */}
-        <EssCard className="overflow-hidden xl:col-span-4">
-          <div className="border-b border-[#E9EEF5] px-5 py-4">
-            <EssSectionHeader title="Surveys, Feedback & Policy Updates" />
-          </div>
-          <div className="space-y-4 p-4">
-            {upcomingSurvey ? (
-              <div className="rounded-[16px] border border-[#DDD6FE] bg-gradient-to-br from-[#F5F3FF] to-[#EFF6FF] p-4">
-                <p className="text-[11px] font-bold uppercase tracking-wide text-[#7C3AED]">Upcoming Survey</p>
-                <p className="mt-2 text-[15px] font-bold text-[#0F172A]">{upcomingSurvey.title}</p>
-                <p className="mt-1 text-[12px] text-[#64748B]">
-                  {upcomingSurvey.dueAt ? `Updated ${formatDay(upcomingSurvey.dueAt)}` : 'Open for participation'}
-                </p>
-                {upcomingSurvey.actionHref ? (
-                  <Link href={upcomingSurvey.actionHref} className="mt-3 inline-flex h-9 items-center rounded-[10px] bg-[#7C3AED] px-4 text-[12px] font-bold text-white hover:bg-[#6D28D9]">
-                    Preview Survey
-                  </Link>
-                ) : null}
-              </div>
-            ) : (
-              <div className="rounded-[16px] border border-dashed border-[#E2E8F0] bg-[#F8FAFC] px-4 py-6 text-center">
-                <ClipboardList className="mx-auto h-8 w-8 text-[#94A3B8]" />
-                <p className="mt-2 text-[13px] font-bold text-[#0F172A]">No active surveys</p>
-                <p className="mt-1 text-[11px] text-[#64748B]">Engagement surveys will appear when HR publishes them.</p>
-              </div>
-            )}
-            <div>
-              <p className="mb-2 text-[12px] font-bold text-[#0F172A]">Recent Policy Updates</p>
-              <div className="space-y-2">
-                {policyEngagements.length ? (
-                  policyEngagements.slice(0, 4).map((item) => (
-                    <Link
-                      key={item.id}
-                      href={item.actionHref || '/workforce-portal?tab=documents'}
-                      className="flex items-center justify-between rounded-[12px] border border-[#E9EEF5] bg-[#FCFDFF] px-3 py-2.5 transition hover:bg-white"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-[13px] font-semibold text-[#0F172A]">{item.title}</p>
-                        <p className="text-[10px] text-[#94A3B8]">{item.status}</p>
-                      </div>
-                      {/due|pending|open/i.test(item.status) ? (
-                        <span className="shrink-0 rounded-full bg-[#FEF3C7] px-2 py-0.5 text-[10px] font-bold text-[#B45309]">New</span>
-                      ) : null}
-                    </Link>
-                  ))
-                ) : engagements.length ? (
-                  engagements.slice(0, 4).map((item) => (
-                    <div key={item.id} className="flex items-center justify-between rounded-[12px] border border-[#E9EEF5] bg-[#FCFDFF] px-3 py-2.5">
-                      <p className="truncate text-[13px] font-semibold text-[#0F172A]">{item.title}</p>
-                      <span className="text-[10px] font-bold text-[#64748B]">{item.type}</span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="rounded-[12px] border border-dashed border-[#E2E8F0] bg-[#F8FAFC] px-3 py-4 text-center text-[11px] text-[#94A3B8]">No policy updates on file.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        </EssCard>
-
-        {/* Notifications */}
-        <EssCard className="overflow-hidden xl:col-span-3">
-          <div className="border-b border-[#E9EEF5] px-5 py-4">
-            <EssSectionHeader
-              title="System Notifications"
-              action={<button type="button" className="text-[12px] font-bold text-[#2563EB]">Mark all read</button>}
-            />
-          </div>
-          <TabBar tabs={['All', 'Unread', 'Important']} active={notificationTab} onChange={setNotificationTab} />
-          <div className="border-b border-[#E9EEF5] px-4 py-3">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
-              <input
-                value={notificationQuery}
-                onChange={(event) => setNotificationQuery(event.target.value)}
-                placeholder="Filter notifications..."
-                className="h-9 w-full rounded-[10px] border border-[#E2E8F0] bg-white pl-9 pr-9 text-[13px] outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/15"
-                aria-label="Filter notifications"
-              />
-              {notificationQuery ? (
-                <button type="button" onClick={() => setNotificationQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" aria-label="Clear">
-                  <X className="h-4 w-4" />
-                </button>
-              ) : null}
-            </div>
-          </div>
-          <div className="max-h-[440px] space-y-2 overflow-auto p-4">
-            {filteredNotifications.length ? (
-              filteredNotifications.map((item) => {
-                const visual = notificationIcon(item.type);
-                const href = item.href;
-                return (
-                  <EssNotificationItem
-                    key={item.id}
-                    compact
-                    title={item.title}
-                    meta={`${item.type} · ${formatWhen(item.createdAt)}`}
-                    status={item.status}
-                    icon={visual.icon}
-                    iconBg={visual.bg}
-                    iconColor={visual.color}
-                    onClick={
-                      href
-                        ? () => {
-                            if (href.startsWith('/workforce-portal?tab=')) {
-                              const tab = new URL(href, 'http://local').searchParams.get('tab') as EssTab | null;
-                              const leaveSection = new URL(href, 'http://local').searchParams.get('leaveSection') || undefined;
-                              if (tab && onNavigate) {
-                                onNavigate(tab, leaveSection ? { leaveSection } : undefined);
-                                return;
-                              }
-                            }
-                            window.location.href = normalizePublicHref(href, typeof window !== 'undefined' ? window.location.origin : undefined);
-                          }
-                        : undefined
-                    }
-                  />
-                );
-              })
-            ) : (
-              <EssEmptyState icon={Bell} title="No notifications" description="System alerts will appear here." />
-            )}
-          </div>
-        </EssCard>
-      </div>
-
-      {/* Bottom widgets */}
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
-        <EssCard className="p-4">
-          <EssSectionHeader
-            title="Today's Schedule"
-            action={<button type="button" onClick={() => navigate('time')} className="text-[12px] font-bold text-[#2563EB]">View calendar</button>}
-          />
-          <div className="mt-4 space-y-3">
-            {scheduleItems.length ? (
-              scheduleItems.map((item, index) => (
-                <div key={`${item.title}-${index}`} className={`rounded-[12px] border-l-4 p-3 ${item.tone}`}>
-                  <p className="text-[11px] font-bold text-[#64748B]">{item.time}</p>
-                  <p className="mt-1 text-[13px] font-bold text-[#0F172A]">{item.title}</p>
-                  <p className="mt-0.5 text-[11px] text-[#94A3B8]">{item.location}</p>
+      ) : null}
+      {rows.length ? (
+        <div className="-mx-4">
+          {rows.map((item) => {
+            const Icon = item.icon;
+            return (
+              <article
+                key={item.id}
+                className="grid cursor-pointer grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3 border-b border-[#E3E9F2] px-4 py-4 last:border-b-0 hover:bg-[#FBFDFF]"
+                onClick={() => markRead(item.id)}
+              >
+                <div className={`grid h-[38px] w-[38px] place-items-center rounded-full ${item.tone}`}>
+                  <Icon className="h-5 w-5" />
                 </div>
-              ))
-            ) : (
-              <EssEmptyState icon={CalendarDays} title="No schedule items" description="Shifts and calendar events will appear here." />
-            )}
-          </div>
-        </EssCard>
-
-        <EssCard className="p-4">
-          <EssSectionHeader title="My Leave Balance" action={<button type="button" onClick={() => navigate('leave')} className="text-[12px] font-bold text-[#2563EB]">Apply leave</button>} />
-          <div className="mt-4 space-y-4">
-            {leaveRows.map((row) => (
-              <div key={row.label}>
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <p className="text-[13px] font-semibold text-[#0F172A]">{row.label}</p>
-                  <p className="text-[12px] font-bold text-[#0F172A]">{row.balance} days</p>
+                <div className="min-w-0">
+                  <span className="text-[9px] text-[#71809A]">{item.type}</span>
+                  <h4 className="mt-1 truncate text-[13px] font-bold text-[#15213A]">{item.title}</h4>
+                  <p className="mt-0.5 text-[9px] text-[#71809A]">From: {item.from} · {item.date}</p>
                 </div>
-                <EssProgressBar value={row.pct} color={row.color} />
-                <p className="mt-1 text-[10px] text-[#94A3B8]">{row.detail}</p>
-              </div>
-            ))}
-          </div>
-        </EssCard>
-
-        <EssCard className="p-4">
-          <EssSectionHeader title="Upcoming Events" />
-          <div className="mt-4 space-y-2">
-            {upcomingEvents.length ? (
-              upcomingEvents.map((item) => {
-                const dateParts = formatEventDate(item.date);
-                return (
-                  <div key={item.id} className="flex items-center gap-3 rounded-[12px] border border-[#E9EEF5] bg-[#FCFDFF] p-2.5">
-                    <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-[10px] text-white" style={{ backgroundColor: item.accent }}>
-                      <span className="text-[11px] font-bold leading-none">{dateParts.month}</span>
-                      <span className="text-[16px] font-bold leading-none">{dateParts.day}</span>
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate text-[13px] font-bold text-[#0F172A]">{item.title}</p>
-                      <p className="text-[10px] font-medium text-[#94A3B8]">{item.type}</p>
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <EssEmptyState icon={CalendarDays} title="No upcoming events" description="HR calendar events will appear here." />
-            )}
-          </div>
-        </EssCard>
-
-        <EssCard className="p-4">
-          <EssSectionHeader title="Quick Links & Feedback" />
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            {[
-              { label: 'HR Policy', icon: FileText, tab: 'documents' },
-              { label: 'Org Chart', icon: Building2, href: '/hris/organization' },
-              { label: 'Training', icon: GraduationCap, tab: 'learning' },
-              { label: 'Help & Support', icon: HelpCircle, tab: 'services' },
-              { label: 'Leave Portal', icon: CalendarCheck, tab: 'leave' },
-              { label: 'Payroll', icon: Banknote, tab: 'payroll' },
-              { label: 'Assets', icon: BriefcaseBusiness, tab: 'assets' },
-              { label: 'Workflow', icon: Target, tab: 'workflow' },
-            ].map((item) => {
-              const Icon = item.icon;
-              const content = (
-                <span className="flex flex-col items-center gap-2 rounded-[12px] border border-[#E9EEF5] bg-[#F8FAFC] px-2 py-3 text-center transition hover:border-[#BFDBFE] hover:bg-[#EFF6FF]">
-                  <Icon className="h-5 w-5 text-[#2563EB]" />
-                  <span className="text-[11px] font-bold text-[#0F172A]">{item.label}</span>
+                <span className={`rounded-full px-2 py-1 text-[9px] font-semibold ${item.unread ? 'bg-[#EAF1FF] text-[#1769F7]' : 'bg-[#E9FAEF] text-[#15915B]'}`}>
+                  {item.unread ? 'Unread' : 'Read'}
                 </span>
-              );
-              if (item.href) {
-                return (
-                  <Link key={item.label} href={item.href}>
-                    {content}
-                  </Link>
-                );
-              }
-              return (
-                <button key={item.label} type="button" onClick={() => item.tab && navigate(item.tab)} className="text-left">
-                  {content}
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-4 rounded-[14px] border border-[#BFDBFE] bg-gradient-to-br from-[#EFF6FF] to-[#F5F3FF] p-4 text-center">
-            <Star className="mx-auto h-6 w-6 text-[#F59E0B]" />
-            <p className="mt-2 text-[13px] font-bold text-[#0F172A]">We value your feedback!</p>
-            <p className="mt-1 text-[11px] text-[#64748B]">Help us improve the employee experience.</p>
+              </article>
+            );
+          })}
+          {activeTab === 'Overview' && filteredFeed.length > feedLimit ? (
             <button
               type="button"
-              onClick={() => navigate('services')}
-              className="mt-3 inline-flex h-9 items-center rounded-[10px] bg-[#2563EB] px-4 text-[12px] font-bold text-white hover:bg-[#1D4ED8]"
+              onClick={() => setFeedLimit((value) => value + 6)}
+              className="flex w-full items-center justify-center gap-1 py-3 text-[10px] font-semibold text-[#1769F7]"
             >
-              Give Feedback
+              Load more <ChevronDown className="h-4 w-4" />
             </button>
-          </div>
-        </EssCard>
+          ) : null}
+        </div>
+      ) : (
+        <EmptyPanel title="Nothing in this feed yet" detail="Updates personalized to your department and role will appear here." />
+      )}
+    </PanelCard>
+  );
+
+  const renderCelebrationTimeline = (title = 'Celebrations & Moments', limit = 8) => (
+    <PanelCard title={title} action={activeTab !== 'Recognition' ? { label: 'View all →', onClick: () => setActiveTab('Recognition') } : undefined}>
+      {celebrationTimeline.length ? (
+        <div className="space-y-2.5">
+          {celebrationTimeline.slice(0, limit).map((item, index) => (
+            <div key={item.id} className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[#EFF3F8] bg-[#FAFCFF] px-2.5 py-2.5">
+              <div className={`grid h-11 w-[38px] place-items-center rounded-[9px] text-white ${celebrationTone(item.kind, index)}`}>
+                <span className="text-[8px] leading-none">{item.month}</span>
+                <strong className="-mt-1 text-[15px] font-bold leading-none">{item.day}</strong>
+              </div>
+              {item.kind === 'event' ? (
+                <div className="grid h-9 w-9 place-items-center rounded-full bg-[#EEF5FF] text-[#1769F7]">
+                  <CalendarDays className="h-4 w-4" />
+                </div>
+              ) : (
+                <EmployeeAvatar
+                  fullName={item.fullName || item.title}
+                  employeeCode={item.employeeCode}
+                  employeeId={item.employeeId}
+                  hasPhoto={item.hasPhoto}
+                  tryPhoto
+                  size="sm"
+                  className="ring-1 ring-[#E3E9F2]"
+                />
+              )}
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  {item.kind === 'birthday' ? <Cake className="h-3.5 w-3.5 shrink-0 text-[#DB2777]" /> : null}
+                  {item.kind === 'anniversary' ? <Trophy className="h-3.5 w-3.5 shrink-0 text-[#4F46E5]" /> : null}
+                  <strong className="truncate text-[11px] font-bold text-[#15213A]">{item.title}</strong>
+                </div>
+                <span className="mt-0.5 block text-[9px] text-[#75829A]">{item.subtitle}</span>
+              </div>
+              <em className={`rounded-full px-1.5 py-1 text-[8px] not-italic ${item.until === 'Today' ? 'bg-[#FEF3C7] text-[#B45309]' : 'bg-[#EEF3FF] text-[#3864B2]'}`}>
+                {item.until}
+              </em>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyPanel title="No upcoming celebrations" detail="Birthdays, anniversaries, and calendar moments for your peers will appear here." />
+      )}
+    </PanelCard>
+  );
+
+  const renderPeopleList = (
+    title: string,
+    items: Array<{
+      id: string;
+      fullName: string;
+      department?: string;
+      years?: number;
+      until: string;
+      month: string;
+      day: string;
+      date: string;
+      employeeId?: string;
+      employeeCode?: string;
+      hasPhoto?: boolean;
+    }>,
+    tone: 'birthday' | 'anniversary',
+  ) => (
+    <PanelCard title={title} action={{ label: 'View all →', onClick: () => setActiveTab('Recognition') }}>
+      {items.length ? (
+        <div className="space-y-2.5">
+          {items.map((item, index) => (
+            <div key={item.id} className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[#EFF3F8] bg-[#FAFCFF] px-2.5 py-2">
+              <div className={`grid h-11 w-[38px] place-items-center rounded-[9px] text-white ${tone === 'birthday' ? 'bg-gradient-to-br from-[#F472B6] to-[#DB2777]' : eventTone(index)}`}>
+                <span className="text-[8px] leading-none">{item.month}</span>
+                <strong className="-mt-1 text-[15px] font-bold leading-none">{item.day}</strong>
+              </div>
+              <EmployeeAvatar
+                fullName={item.fullName}
+                employeeCode={item.employeeCode}
+                employeeId={item.employeeId}
+                hasPhoto={item.hasPhoto}
+                tryPhoto
+                size="sm"
+                className="ring-1 ring-[#E3E9F2]"
+              />
+              <div className="min-w-0">
+                <strong className="block truncate text-[11px] font-bold text-[#15213A]">{item.fullName}</strong>
+                <span className="text-[9px] text-[#75829A]">
+                  {tone === 'anniversary' && item.years ? `${item.years} year${item.years === 1 ? '' : 's'} · ` : ''}
+                  {item.department || 'Dorman Long'}
+                </span>
+              </div>
+              <em className={`rounded-full px-1.5 py-1 text-[8px] not-italic ${item.until === 'Today' ? 'bg-[#FEF3C7] text-[#B45309]' : 'bg-[#EEF3FF] text-[#3864B2]'}`}>
+                {item.until}
+              </em>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyPanel
+          title={tone === 'birthday' ? 'No upcoming birthdays' : 'No upcoming anniversaries'}
+          detail="Celebrations from your department peers will show here when dates are available."
+        />
+      )}
+    </PanelCard>
+  );
+
+  return (
+    <div className="relative space-y-4 text-[#15213A]">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-[#15213A]">Communications Hub</h1>
+          <p className="mt-1.5 text-[13px] text-[#66748E]">
+            Personalized for {employee?.fullName || 'you'} · Stay informed across Dorman Long.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setActiveTab('News Feed')}
+          className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-[9px] bg-[#1769F7] px-4 text-sm font-bold text-white shadow-[0_8px_18px_rgba(23,105,247,0.22)] hover:bg-[#1258d4]"
+        >
+          <Plus className="h-[18px] w-[18px]" />
+          New Message / Announcement
+        </button>
       </div>
+
+      <div className="flex gap-1 overflow-x-auto border-b border-[#E3E9F2]">
+        {TABS.map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => {
+              setActiveTab(tab);
+              setFilter('All');
+            }}
+            className={`shrink-0 border-b-2 px-3 py-2.5 text-[13px] transition ${
+              activeTab === tab
+                ? 'border-[#1769F7] font-bold text-[#1769F7]'
+                : 'border-transparent text-[#3E5273] hover:text-[#15213A]'
+            }`}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      <div className={`grid grid-cols-1 gap-4 ${showOverviewChrome ? 'xl:grid-cols-[280px_minmax(0,1fr)]' : ''}`}>
+        {showOverviewChrome ? (
+          <aside className="flex flex-col gap-3.5">
+            <section className="overflow-hidden rounded-xl border border-[#E3E9F2] bg-white shadow-[0_1px_2px_rgba(16,42,86,0.04),0_8px_22px_rgba(16,42,86,0.05)]">
+              <div className="flex items-center gap-3 bg-gradient-to-br from-[#EEF7FF] to-[#F3EFFF] p-[18px]">
+                <EmployeeAvatar
+                  fullName={employee?.fullName || 'Employee'}
+                  employeeCode={employee?.employeeCode || employee?.employeeId}
+                  photoUrl={employee?.photoUrl}
+                  hasPhoto={employee?.hasPhoto}
+                  size="md"
+                  tryPhoto
+                  className="h-[52px] w-[52px] ring-2 ring-white"
+                />
+                <div>
+                  <p className="text-[11px] text-[#66748E]">{greeting()},</p>
+                  <h2 className="text-[19px] font-bold leading-tight text-[#15213A]">{firstName(employee?.fullName)}! 👋</h2>
+                  <p className="mt-0.5 text-[11px] text-[#66748E]">Here’s what’s happening today.</p>
+                </div>
+              </div>
+              <dl className="m-0 space-y-0 px-4 py-2.5">
+                {[
+                  ['Employee ID', employee?.employeeCode || employee?.employeeId || '—'],
+                  ['Department', employee?.department || '—'],
+                  ['Location', employee?.location || '—'],
+                  ['Current Shift', shifts[0] ? `${shifts[0].start || '09:00'} – ${shifts[0].end || '18:00'}` : 'Standard hours'],
+                  ['Employment Type', employee?.status || 'Active'],
+                  ['Years of Service', employee?.yearsOfService != null ? `${employee.yearsOfService} Years` : '—'],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex items-center justify-between gap-3 border-b border-[#EFF3F8] py-2 text-[11px] last:border-b-0">
+                    <dt className="text-[#60708B]">{label}</dt>
+                    <dd className="m-0 text-right font-semibold text-[#15213A]">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+
+            <section className="rounded-xl border border-[#E3E9F2] bg-white p-3.5 shadow-[0_1px_2px_rgba(16,42,86,0.04),0_8px_22px_rgba(16,42,86,0.05)]">
+              <h3 className="text-sm font-bold text-[#15213A]">Quick Actions</h3>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {quickActions.map((action) => {
+                  const Icon = action.icon;
+                  return (
+                    <button
+                      key={action.label}
+                      type="button"
+                      onClick={action.onClick}
+                      className="flex min-h-[66px] flex-col items-center justify-center gap-1.5 rounded-[9px] border border-[#E3E9F2] bg-[#FAFCFF] px-1 text-[9px] font-semibold text-[#263B5D] transition hover:-translate-y-px hover:border-[#BFD3F8] hover:bg-[#F3F7FF]"
+                    >
+                      <Icon className="h-[18px] w-[18px]" />
+                      <span className="text-center leading-tight">{action.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <button type="button" onClick={() => onNavigate?.('services')} className="mt-3 block w-full text-center text-[11px] font-bold text-[#1769F7]">
+                View all services →
+              </button>
+            </section>
+
+            <section className="rounded-xl border border-[#E3E9F2] bg-white p-3.5 shadow-[0_1px_2px_rgba(16,42,86,0.04),0_8px_22px_rgba(16,42,86,0.05)]">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-bold text-[#15213A]">My Leave Balance</h3>
+                <button type="button" onClick={() => onNavigate?.('leave')} className="text-[10px] font-bold text-[#1769F7]">View all →</button>
+              </div>
+              {leaveRows.length ? leaveRows.map((row) => (
+                <div key={row.label} className="mt-3">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <strong className="font-semibold text-[#15213A]">{row.label}</strong>
+                    <span className="text-[#66748E]">{row.value}</span>
+                  </div>
+                  <div className="my-1.5 h-1.5 overflow-hidden rounded-full bg-[#E9EEF5]">
+                    <span className={`block h-full rounded-full bg-gradient-to-r ${row.bar}`} style={{ width: `${row.pct}%` }} />
+                  </div>
+                  <small className="text-[9px] text-[#8A96A9]">{row.detail}</small>
+                </div>
+              )) : (
+                <p className="mt-3 text-[11px] font-semibold text-[#66748E]">Your leave balances will appear here once available.</p>
+              )}
+            </section>
+          </aside>
+        ) : null}
+
+        <section className="min-w-0 space-y-3.5">
+          {showOverviewChrome ? (
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-5">
+              {metrics.map((metric) => {
+                const Icon = metric.icon;
+                return (
+                  <article
+                    key={metric.label}
+                    className="grid min-h-[112px] grid-cols-[auto_1fr] gap-x-2.5 rounded-xl border border-[#E3E9F2] bg-white p-3.5 shadow-[0_1px_2px_rgba(16,42,86,0.04),0_8px_22px_rgba(16,42,86,0.05)]"
+                  >
+                    <div className={`row-span-3 grid h-9 w-9 place-items-center rounded-[11px] ${metric.iconClass}`}>
+                      <Icon className="h-[19px] w-[19px]" />
+                    </div>
+                    <span className="text-[10px] text-[#354969]">{metric.label}</span>
+                    <strong className="text-[22px] font-bold leading-none text-[#15213A]">{metric.value}</strong>
+                    <button type="button" onClick={metric.onClick} className="justify-self-start text-[10px] font-bold text-[#1769F7]">
+                      {metric.action} →
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {activeTab === 'Surveys & Polls' ? (
+            <PanelCard title="Surveys & Polls">
+              {surveys.length ? (
+                <div className="space-y-2.5">
+                  {surveys.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-[#E3E9F2] bg-[#FAFCFF] px-3 py-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-[#15213A]">{item.title}</p>
+                        <p className="mt-1 text-[11px] text-[#66748E]">{item.type} · {item.status}{item.dueAt ? ` · Due ${formatShortDate(item.dueAt)}` : ''}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onNavigate?.(item.actionHref?.includes('documents') ? 'documents' : 'services')}
+                        className="shrink-0 rounded-lg bg-[#1769F7] px-3 py-2 text-[11px] font-bold text-white"
+                      >
+                        Open
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyPanel title="No surveys assigned to you" detail="Open surveys and polls for your employee profile will appear here." />
+              )}
+            </PanelCard>
+          ) : null}
+
+          {activeTab === 'Circulars & Policies' ? (
+            <div className="space-y-3.5">
+              {policies.length ? (
+                <PanelCard title="Policies requiring action">
+                  <div className="space-y-2.5">
+                    {policies.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-[#E3E9F2] bg-[#FAFCFF] px-3 py-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold text-[#15213A]">{item.title}</p>
+                          <p className="mt-1 text-[11px] text-[#66748E]">{item.type} · {item.status}{item.dueAt ? ` · Due ${formatShortDate(item.dueAt)}` : ''}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => onNavigate?.('documents')}
+                          className="shrink-0 rounded-lg bg-[#14A273] px-3 py-2 text-[11px] font-bold text-white"
+                        >
+                          Review
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </PanelCard>
+              ) : null}
+              {renderFeed()}
+            </div>
+          ) : null}
+
+          {activeTab === 'Events' ? (
+            <div className="space-y-3.5">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {[
+                  { label: 'Upcoming events', value: String(upcomingEvents.length), icon: CalendarDays, tone: 'from-[#EFF6FF] to-[#DBEAFE] text-[#1D4ED8]' },
+                  { label: 'Birthdays', value: String(birthdayCards.length), icon: Cake, tone: 'from-[#FDF2F8] to-[#FCE7F3] text-[#BE185D]' },
+                  { label: 'Anniversaries', value: String(anniversaryCards.length), icon: Trophy, tone: 'from-[#EEF2FF] to-[#E0E7FF] text-[#4338CA]' },
+                ].map((card) => {
+                  const Icon = card.icon;
+                  return (
+                    <div key={card.label} className={`rounded-xl bg-gradient-to-br p-4 ${card.tone}`}>
+                      <Icon className="h-5 w-5" />
+                      <p className="mt-3 text-[22px] font-black leading-none">{card.value}</p>
+                      <p className="mt-1 text-[11px] font-semibold opacity-80">{card.label}</p>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="grid grid-cols-1 gap-3.5 xl:grid-cols-[minmax(0,1fr)_340px]">
+                {renderCelebrationTimeline('Events, birthdays & anniversaries', 16)}
+                <aside className="flex flex-col gap-3.5">
+                  <PanelCard title="Upcoming Events">
+                    {upcomingEvents.length ? upcomingEvents.map((event, index) => (
+                      <div key={event.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 border-b border-[#E3E9F2] py-2.5 last:border-b-0">
+                        <div className={`grid h-11 w-[38px] place-items-center rounded-[9px] text-white ${eventTone(index)}`}>
+                          <span className="text-[8px] leading-none">{event.month}</span>
+                          <strong className="-mt-1 text-[15px] font-bold leading-none">{event.day}</strong>
+                        </div>
+                        <div className="min-w-0">
+                          <strong className="block truncate text-[10px] font-bold text-[#15213A]">{event.title}</strong>
+                          <span className="text-[9px] text-[#75829A]">{event.type}</span>
+                        </div>
+                        <em className="rounded-full bg-[#EEF3FF] px-1.5 py-1 text-[8px] not-italic text-[#3864B2]">{event.until}</em>
+                      </div>
+                    )) : (
+                      <EmptyPanel title="No upcoming events" detail="Payroll cut-offs, holidays, and personal milestones will appear here." />
+                    )}
+                  </PanelCard>
+                  {renderPeopleList('Upcoming Birthdays', birthdayCards.slice(0, 5), 'birthday')}
+                  {renderPeopleList('Work Anniversaries', anniversaryCards.slice(0, 5), 'anniversary')}
+                </aside>
+              </div>
+            </div>
+          ) : null}
+
+          {activeTab === 'Recognition' ? (
+            <div className="space-y-3.5">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {[
+                  { label: 'Birthdays this month', value: String(birthdayCards.filter((item) => (daysUntil(item.date) ?? 99) <= 31).length), icon: Cake, tone: 'from-[#FDF2F8] to-[#FCE7F3] text-[#BE185D]' },
+                  { label: 'Anniversaries', value: String(anniversaryCards.length), icon: Trophy, tone: 'from-[#EEF2FF] to-[#E0E7FF] text-[#4338CA]' },
+                  { label: 'Today’s celebrations', value: String([...birthdayCards, ...anniversaryCards].filter((item) => item.until === 'Today').length), icon: Gift, tone: 'from-[#ECFDF5] to-[#D1FAE5] text-[#047857]' },
+                ].map((card) => {
+                  const Icon = card.icon;
+                  return (
+                    <div key={card.label} className={`rounded-xl bg-gradient-to-br p-4 ${card.tone}`}>
+                      <Icon className="h-5 w-5" />
+                      <p className="mt-3 text-[22px] font-black leading-none">{card.value}</p>
+                      <p className="mt-1 text-[11px] font-semibold opacity-80">{card.label}</p>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="grid grid-cols-1 gap-3.5 xl:grid-cols-2">
+                {renderPeopleList('Upcoming Birthdays', birthdayCards, 'birthday')}
+                {renderPeopleList('Work Anniversaries', anniversaryCards, 'anniversary')}
+              </div>
+              {renderCelebrationTimeline('All celebrations & moments', 12)}
+            </div>
+          ) : null}
+
+          {activeTab === 'Knowledge Base' ? (
+            <PanelCard title="Knowledge Base & Policies" action={{ label: 'Browse documents →', onClick: () => onNavigate?.('documents') }}>
+              {knowledgeDocs.length ? (
+                <div className="space-y-2">
+                  {knowledgeDocs.map((doc, index) => (
+                    <div key={doc.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-[#EFF3F8] px-3 py-2.5">
+                      <div className={`grid h-9 w-9 place-items-center rounded-lg ${resourceTone(index)}`}>
+                        <FileText className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-[12px] font-bold text-[#15213A]">{doc.title}</p>
+                        <p className="text-[10px] text-[#66748E]">{doc.meta}</p>
+                      </div>
+                      <button type="button" onClick={() => onNavigate?.('documents')} className="rounded-lg border border-[#E3E9F2] px-2.5 py-1.5 text-[10px] font-bold text-[#1769F7]">
+                        Open
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyPanel title="No knowledge documents yet" detail="Policies and handbooks assigned to your profile will appear here." />
+              )}
+            </PanelCard>
+          ) : null}
+
+          {activeTab === 'My Activity' ? (
+            <PanelCard title="My Activity" action={{ label: 'Open workflow →', onClick: () => onNavigate?.('workflow') }}>
+              {myActivity.length ? (
+                <div className="space-y-2">
+                  {myActivity.map((item) => (
+                    <div key={item.id} className="flex items-start justify-between gap-3 rounded-xl border border-[#EFF3F8] px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="truncate text-[12px] font-bold text-[#15213A]">{item.title}</p>
+                        <p className="mt-0.5 text-[10px] text-[#66748E]">{item.detail}</p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${item.tone}`}>{item.detail.split(' · ').slice(-1)[0]}</span>
+                        <p className="mt-1 text-[9px] text-[#94A3B8]">{item.when}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyPanel title="No recent activity" detail="Your requests, acknowledgements, and notification history will show here." />
+              )}
+            </PanelCard>
+          ) : null}
+
+          {showFeed && activeTab !== 'Circulars & Policies' ? (
+            <div className={`grid grid-cols-1 gap-3.5 ${showRightRail ? 'xl:grid-cols-[minmax(0,1fr)_340px]' : ''}`}>
+              {renderFeed()}
+
+              {showRightRail ? (
+                <aside className="flex flex-col gap-3.5">
+                  <PanelCard title="Upcoming Events" action={{ label: 'View calendar →', onClick: () => setActiveTab('Events') }}>
+                    {upcomingEvents.length ? upcomingEvents.map((event, index) => (
+                      <div key={event.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 border-b border-[#E3E9F2] py-2.5 last:border-b-0">
+                        <div className={`grid h-11 w-[38px] place-items-center rounded-[9px] text-white ${eventTone(index)}`}>
+                          <span className="text-[8px] leading-none">{event.month}</span>
+                          <strong className="-mt-1 text-[15px] font-bold leading-none">{event.day}</strong>
+                        </div>
+                        <div className="min-w-0">
+                          <strong className="block truncate text-[10px] font-bold text-[#15213A]">{event.title}</strong>
+                          <span className="text-[9px] text-[#75829A]">{event.type}</span>
+                        </div>
+                        <em className="rounded-full bg-[#EEF3FF] px-1.5 py-1 text-[8px] not-italic text-[#3864B2]">{event.until}</em>
+                      </div>
+                    )) : (
+                      <EmptyPanel title="No upcoming events" detail="Payroll cut-offs, holidays, and personal milestones will appear here." />
+                    )}
+                  </PanelCard>
+
+                  {renderPeopleList('Upcoming Birthdays', birthdayCards.slice(0, 4), 'birthday')}
+                  {renderPeopleList('Work Anniversaries', anniversaryCards.slice(0, 4), 'anniversary')}
+                  {renderCelebrationTimeline('More moments', 4)}
+
+                  <PanelCard title="Popular Resources" action={{ label: 'View all →', onClick: () => setActiveTab('Knowledge Base') }}>
+                    {knowledgeDocs.length ? knowledgeDocs.slice(0, 5).map((resource, index) => (
+                      <div key={resource.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 border-b border-[#E3E9F2] py-2.5 last:border-b-0">
+                        <div className={`grid h-[29px] w-[29px] place-items-center rounded-lg ${resourceTone(index)}`}>
+                          <FileText className="h-[17px] w-[17px]" />
+                        </div>
+                        <div className="min-w-0">
+                          <strong className="block truncate text-[10px] font-bold text-[#15213A]">{resource.title}</strong>
+                          <span className="text-[9px] text-[#75829A]">{resource.meta}</span>
+                        </div>
+                        <button type="button" onClick={() => onNavigate?.('documents')} className="text-[#4B607E]" aria-label={`Open ${resource.title}`}>
+                          <Download className="h-[17px] w-[17px]" />
+                        </button>
+                      </div>
+                    )) : (
+                      <EmptyPanel title="No resources yet" detail="Assigned policies and handbooks will appear here." />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onNavigate?.('documents')}
+                      className="mt-2.5 w-full rounded-lg border border-[#E3E9F2] bg-white px-3 py-2 text-[10px] font-bold text-[#1769F7]"
+                    >
+                      Browse all policies & documents
+                    </button>
+                  </PanelCard>
+                </aside>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+      </div>
+
+      {!ackDismissed && policiesDue.length > 0 ? (
+        <div className="relative grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-3 rounded-[10px] border border-[#F7C56F] bg-[#FFF8EA] px-3.5 py-3">
+          <div className="grid h-[38px] w-[38px] place-items-center rounded-full bg-[#FFF0C6] text-[#F09113]">
+            <Clock3 className="h-[22px] w-[22px]" />
+          </div>
+          <div>
+            <strong className="text-xs font-bold text-[#AD5B07]">Pending Acknowledgement</strong>
+            <p className="mt-1 text-[10px] text-[#7D694B]">
+              You have {policiesDue.length} policy document{policiesDue.length === 1 ? '' : 's'} that require{policiesDue.length === 1 ? 's' : ''} your acknowledgement
+              {policiesDue[0] ? `: ${policiesDue[0].title}` : '.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              acknowledge();
+              onNavigate?.('documents');
+            }}
+            className="rounded-lg bg-[#F29A10] px-3.5 py-2 text-[10px] font-bold text-white hover:bg-[#e08c0c]"
+          >
+            Acknowledge Now
+          </button>
+          <button type="button" onClick={acknowledge} className="text-[#6B7485]" aria-label="Dismiss acknowledgement banner">
+            <X className="h-[18px] w-[18px]" />
+          </button>
+        </div>
+      ) : null}
+
+      {showAckToast ? (
+        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-[10px] bg-[#173D2F] px-4 py-3 text-xs font-semibold text-white shadow-[0_15px_35px_rgba(0,0,0,0.18)]">
+          <CheckCircle2 className="h-[18px] w-[18px]" />
+          Policy acknowledgement completed.
+        </div>
+      ) : null}
     </div>
   );
 }

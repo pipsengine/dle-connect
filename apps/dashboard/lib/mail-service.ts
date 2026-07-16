@@ -20,6 +20,8 @@ import {
   buildOvertimeApprovalRequestEmail,
   buildOvertimeApprovedEmail,
   buildOvertimeRejectedEmail,
+  buildProfileUpdateApprovalRequestEmail,
+  buildProfileUpdateDecisionEmail,
   buildPayrollApprovalRequestEmail,
   buildPayrollFullyApprovedEmail,
   buildPayrollRejectedEmail,
@@ -488,6 +490,39 @@ export const sendOvertimeRejectedEmail = async (input: {
   const to = compact(input.recipientEmail);
   if (!to) return { sent: false, reason: 'No recipient email.' };
   const email = buildOvertimeRejectedEmail({ ...input, baseUrl: input.baseUrl });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
+
+export const sendProfileUpdateApprovalRequestEmail = async (input: {
+  recipientName: string;
+  recipientEmail: string | null;
+  requesterName: string;
+  requestTitle: string;
+  sectionLabel: string;
+  changeSummary: string;
+  workspaceLink: string;
+  baseUrl?: string | null;
+}) => {
+  const to = compact(input.recipientEmail);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const email = buildProfileUpdateApprovalRequestEmail({ ...input, baseUrl: input.baseUrl });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
+
+export const sendProfileUpdateDecisionEmail = async (input: {
+  recipientName: string;
+  recipientEmail: string | null;
+  requestTitle: string;
+  sectionLabel: string;
+  decision: 'approved' | 'rejected';
+  actorName?: string;
+  reason?: string;
+  workspaceLink: string;
+  baseUrl?: string | null;
+}) => {
+  const to = compact(input.recipientEmail);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const email = buildProfileUpdateDecisionEmail({ ...input, baseUrl: input.baseUrl });
   return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
 };
 

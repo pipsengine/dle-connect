@@ -11,7 +11,7 @@ import { normalizePayrollApprovalAction } from '@/lib/payroll-approval-workflow'
 import { managementPermissions, payrollSessionContext, processingPermissions } from '@/lib/payroll-session';
 import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
 import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
-import { FINANCE_ONLY_PAYROLL_ACTIONS, isFinancePayrollOnlyUser } from '@/lib/access/payroll-access';
+import { FINANCE_ONLY_PAYROLL_ACTIONS, hasPayrollSalaryReviewAccess, isFinancePayrollOnlyUser } from '@/lib/access/payroll-access';
 import { buildExcelHtml, excelMimeType } from '@/lib/excel-export';
 import { buildSalarySetupExportReport } from '@/lib/payroll-salary-setup-export';
 import { buildPayrollReviewExportReport, previousPayrollPeriod } from '@/lib/payroll-review-export';
@@ -34,6 +34,7 @@ const emptyPayload = async (request: Request, error: unknown) => {
     dataSource: { source: 'Payroll service fallback', databaseAvailable: false, warning: message, employeeCount: 0 },
     role,
     permissions: managementPermissions(role),
+    access: { financeOnlyAccess: false, salaryReviewAccess: false },
     period,
     periodLabel: period,
     summary: {

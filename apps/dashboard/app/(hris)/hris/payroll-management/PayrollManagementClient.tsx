@@ -172,7 +172,7 @@ type PayrollPayload = {
   dataSource?: { source: string; databaseAvailable: boolean; warning: string | null; employeeCount: number };
   role: Role;
   permissions: { canViewMoney: boolean; canManageRun: boolean; canApprove: boolean; canPost: boolean; canConfigure?: boolean; canReopen?: boolean; canExport: boolean };
-  access?: { financeOnlyAccess?: boolean };
+  access?: { financeOnlyAccess?: boolean; salaryReviewAccess?: boolean };
   period: string;
   periodLabel: string;
   dataMode?: 'live' | 'snapshot' | 'run-header' | 'pending';
@@ -4273,10 +4273,20 @@ export default function PayrollManagementClient({
   const activeTab = section.tabs.find((tab) => tab.id === activeTabId) || section.tabs[0] || emptyTab(activeTabId);
   const canViewMoney = Boolean(payload?.permissions.canViewMoney);
   const financeOnlyAccess = Boolean(payload?.access?.financeOnlyAccess);
-  const visibleSections = useMemo(
-    () => (financeOnlyAccess ? sections.filter((item) => item.id === FINANCE_ONLY_PAYROLL_SECTION) : sections),
-    [financeOnlyAccess],
-  );
+  const salaryReviewAccess = Boolean(payload?.access?.salaryReviewAccess);
+  const visibleSections = useMemo(() => {
+    if (salaryReviewAccess) {
+      return sections.filter((item) => {
+        if (item.id === 'salary-management' || item.id === 'payroll-approval') return true;
+        if (financeOnlyAccess && item.id === FINANCE_ONLY_PAYROLL_SECTION) return true;
+        return false;
+      });
+    }
+    if (financeOnlyAccess) {
+      return sections.filter((item) => item.id === FINANCE_ONLY_PAYROLL_SECTION);
+    }
+    return sections;
+  }, [financeOnlyAccess, salaryReviewAccess]);
   const currentRun = payrollRunFor(payload);
   const lastLoaded = payload?.generatedAt || initialNow;
 
@@ -4344,11 +4354,18 @@ export default function PayrollManagementClient({
   }, []);
 
   useEffect(() => {
-    if (!financeOnlyAccess) return;
+    if (!financeOnlyAccess && !salaryReviewAccess) return;
+    if (salaryReviewAccess) {
+      if (sectionId === 'salary-management' || sectionId === 'payroll-approval') return;
+      if (financeOnlyAccess && sectionId === FINANCE_ONLY_PAYROLL_SECTION) return;
+      setSectionId('salary-management');
+      window.history.replaceState(null, '', '/hris/payroll-management/pay-setup');
+      return;
+    }
     if (sectionId === FINANCE_ONLY_PAYROLL_SECTION) return;
     setSectionId(FINANCE_ONLY_PAYROLL_SECTION);
     window.history.replaceState(null, '', '/hris/payroll-management/bank-finance');
-  }, [financeOnlyAccess, sectionId]);
+  }, [financeOnlyAccess, salaryReviewAccess, sectionId]);
 
   useEffect(() => {
     if (sectionId !== 'payroll-computation-workflow') return;

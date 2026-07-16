@@ -22,6 +22,25 @@ export const FULL_PAYROLL_MANAGEMENT_PERMISSIONS = [
   'page.hris.payroll.*',
 ];
 
+/** Stage / page grants held by payroll workflow approvers who must review salary. */
+export const PAYROLL_WORKFLOW_REVIEW_PERMISSIONS = [
+  'page.hris.payroll.approval.view',
+  'page.payroll.management.approval.view',
+  'page.hris.payroll.salary-management.view',
+  'page.hris.payroll.salary-structure.view',
+  'page.hris.payroll.employee-salary-setup.view',
+  'payroll.workflow.hr-review.view',
+  'payroll.workflow.hr-review.approve',
+  'payroll.workflow.finance-review.view',
+  'payroll.workflow.finance-review.approve',
+  'payroll.workflow.cfo-approval.view',
+  'payroll.workflow.cfo-approval.approve',
+  'payroll.workflow.md-approval.view',
+  'payroll.workflow.md-approval.approve',
+  'payroll.workflow.global-override.view',
+  'payroll.approve',
+];
+
 export const hasPermission = (permissions: string[], required: string) => {
   if (permissions.includes('*')) return true;
   if (permissions.includes(required)) return true;
@@ -45,6 +64,13 @@ export const hasFullPayrollManagementAccess = (permissions: string[]) =>
 export const hasBankFinanceAccess = (permissions: string[]) =>
   hasAnyPermission(permissions, [...BANK_FINANCE_PERMISSIONS, 'finance.view']);
 
+export const hasPayrollWorkflowReviewAccess = (permissions: string[]) =>
+  hasAnyPermission(permissions, PAYROLL_WORKFLOW_REVIEW_PERMISSIONS);
+
+/** Approvers may open salary review + approval workspaces without full payroll admin rights. */
+export const hasPayrollSalaryReviewAccess = (permissions: string[]) =>
+  hasFullPayrollManagementAccess(permissions) || hasPayrollWorkflowReviewAccess(permissions);
+
 export const isFinancePayrollOnlyUser = (
   permissions: string[],
   options?: { isGlobalAdmin?: boolean },
@@ -52,6 +78,30 @@ export const isFinancePayrollOnlyUser = (
   if (options?.isGlobalAdmin) return false;
   if (hasFullPayrollManagementAccess(permissions)) return false;
   return hasBankFinanceAccess(permissions);
+};
+
+/** Salary / Pay Setup surfaces that every workflow approver must be able to open. */
+export const isPayrollSalaryReviewPath = (pathname: string) => {
+  const path = normalizePath(pathname.split('?')[0] || pathname);
+  return (
+    path.includes('/pay-setup')
+    || path.includes('/salary-management')
+    || path.includes('/employee-salary-setup')
+    || path.includes('/salary-structure')
+  );
+};
+
+export const isPayrollApprovalPath = (pathname: string) => {
+  const path = normalizePath(pathname.split('?')[0] || pathname);
+  return path.startsWith('/hris/payroll/payroll-approval')
+    || path.includes('/payroll-approval');
+};
+
+/** Paths workflow approvers may open without full payroll administration rights. */
+export const isPayrollApproverAccessiblePath = (pathname: string) => {
+  const path = normalizePath(pathname.split('?')[0] || pathname);
+  if (path === '/hris/payroll-management' || path === '/hris/payroll-management/dashboard') return true;
+  return isPayrollSalaryReviewPath(path) || isPayrollApprovalPath(path);
 };
 
 export const payrollRoutePermissionOptions = (pathname: string): string[] | null => {
@@ -66,14 +116,9 @@ export const payrollRoutePermissionOptions = (pathname: string): string[] | null
     ];
   }
 
-  if (path.startsWith('/hris/payroll/payroll-approval') || path.includes('/payroll-approval')) {
+  if (isPayrollApproverAccessiblePath(path)) {
     return [
-      'page.hris.payroll.approval.view',
-      'page.payroll.management.approval.view',
-      'payroll.workflow.hr-review.view',
-      'payroll.workflow.finance-review.view',
-      'payroll.workflow.cfo-approval.view',
-      'payroll.workflow.global-override.view',
+      ...PAYROLL_WORKFLOW_REVIEW_PERMISSIONS,
       'payroll.view',
       'page.payroll.management.view',
     ];
@@ -99,6 +144,7 @@ export const canAccessPayrollPath = (
   if (
     (path.startsWith('/hris/payroll') || path.startsWith('/hris/payroll-management'))
     && !isBankFinancePayrollPath(path)
+    && !isPayrollApproverAccessiblePath(path)
     && isFinancePayrollOnlyUser(permissions, options)
   ) {
     return false;
@@ -107,6 +153,11 @@ export const canAccessPayrollPath = (
 };
 
 export const FINANCE_ONLY_PAYROLL_SECTION = 'finance-integration' as const;
+export const APPROVER_REVIEW_PAYROLL_SECTIONS = new Set([
+  'salary-management',
+  'payroll-approval',
+  FINANCE_ONLY_PAYROLL_SECTION,
+]);
 
 export const FINANCE_ONLY_PAYROLL_ACTIONS = new Set([
   'generate-bank-schedule',

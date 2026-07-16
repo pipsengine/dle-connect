@@ -442,6 +442,62 @@ export const buildOvertimeRejectedEmail = (input: {
   actions: [{ href: input.workspaceLink, label: 'Open Overtime Workspace', tone: 'primary' }],
 }, input.baseUrl);
 
+export const buildProfileUpdateApprovalRequestEmail = (input: {
+  recipientName: string;
+  requesterName: string;
+  requestTitle: string;
+  sectionLabel: string;
+  changeSummary: string;
+  workspaceLink: string;
+  baseUrl?: string | null;
+}) => withBrand({
+  recipientName: input.recipientName,
+  subject: `Profile update approval required — ${input.requesterName}`,
+  module: 'Employee Self-Service',
+  headline: 'Profile update awaiting HR approval',
+  intro: `${input.requesterName} submitted a profile change that requires HR Manager review before it is applied to HRIS.`,
+  tone: 'warning',
+  accentColor: '#D97706',
+  details: [
+    { label: 'Employee', value: input.requesterName },
+    { label: 'Update', value: input.requestTitle },
+    { label: 'Section', value: input.sectionLabel },
+    { label: 'Changes', value: input.changeSummary },
+  ],
+  note: 'Sign in with your HR approver account to review and approve or reject this request.',
+  actions: [{ href: input.workspaceLink, label: 'Review Profile Update', tone: 'primary' }],
+  footerNote: 'Only HR Manager / HR Officer accounts can approve profile updates. The requester cannot approve their own request.',
+}, input.baseUrl);
+
+export const buildProfileUpdateDecisionEmail = (input: {
+  recipientName: string;
+  requestTitle: string;
+  sectionLabel: string;
+  decision: 'approved' | 'rejected';
+  actorName?: string;
+  reason?: string;
+  workspaceLink: string;
+  baseUrl?: string | null;
+}) => withBrand({
+  recipientName: input.recipientName,
+  subject: input.decision === 'approved'
+    ? `Profile update approved — ${input.requestTitle}`
+    : `Profile update rejected — ${input.requestTitle}`,
+  module: 'Employee Self-Service',
+  headline: input.decision === 'approved' ? 'Profile update approved' : 'Profile update rejected',
+  intro: input.decision === 'approved'
+    ? 'Your profile update has been approved by HR and applied to HRIS.'
+    : 'Your profile update was rejected by HR. Review the comments and resubmit if needed.',
+  tone: input.decision === 'approved' ? 'success' : 'danger',
+  details: [
+    { label: 'Update', value: input.requestTitle },
+    { label: 'Section', value: input.sectionLabel },
+    ...(input.actorName ? [{ label: input.decision === 'approved' ? 'Approved by' : 'Rejected by', value: input.actorName }] : []),
+    ...(input.reason ? [{ label: 'Comment', value: input.reason }] : []),
+  ],
+  actions: [{ href: input.workspaceLink, label: 'Open My Profile', tone: 'primary' }],
+}, input.baseUrl);
+
 type FleetTripEmailTrip = {
   requestNo: string;
   requester: string;

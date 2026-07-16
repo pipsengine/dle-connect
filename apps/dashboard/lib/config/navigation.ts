@@ -69,6 +69,7 @@ export const navigationConfig: NavItem[] = [
     subItems: [
       { title: 'HR Management', slug: 'hr-management', route: '/hris', permissionKey: 'view_hris' },
       { title: 'Workforce Portal', slug: 'workforce-portal', route: '/workforce-portal', permissionKey: 'view_workforce_portal' },
+      { title: 'Pay Setup', slug: 'pay-setup', route: '/hris/payroll-management/pay-setup', permissionKey: 'page.hris.payroll.salary-management.view' },
       { title: 'Bank & Finance', slug: 'bank-finance', route: '/hris/payroll-management/bank-finance', permissionKey: 'page.payroll.management.bank-finance.view' },
     ]
   },
