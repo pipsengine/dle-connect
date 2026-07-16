@@ -1,7 +1,7 @@
 import type { SessionPayload } from '@/lib/auth/session';
 import { canAccessAdministrationCentre, hasAnyPermission, hasPermission } from '@/lib/auth/permission-match';
 import { PLATFORM_ROLES_WITHOUT_HRIS } from '@/lib/auth/platform-access';
-import { canAccessPayrollPath, payrollRoutePermissionOptions } from '@/lib/access/payroll-access';
+import { canAccessPayrollPath, isBankFinancePayrollPath, isPayrollSalaryReviewPath, payrollRoutePermissionOptions } from '@/lib/access/payroll-access';
 
 type SessionLike = Pick<SessionPayload, 'department' | 'unit' | 'roles' | 'permissions' | 'isGlobalAdmin'>;
 
@@ -32,8 +32,84 @@ const administrationRoutePermissions = (pathname: string): string[] => {
 
 export const isHrPortalUser = (session: SessionLike) => {
   if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
-  const text = `${session.department || ''} ${session.unit || ''} ${(session.roles || []).join(' ')}`.toLowerCase();
+  const roles = session.roles || [];
+  if (roles.some((role) =>
+    /^(HR |Human Resource|HRIS)/i.test(role)
+    || /HR Administrator|HR Manager|HR Director|HR Officer|Recruitment Officer|Onboarding Officer|Offboarding Officer|Employee Records Officer/i.test(role),
+  )) {
+    return true;
+  }
+  const text = `${session.department || ''} ${session.unit || ''}`.toLowerCase();
   return /\bhr\b/.test(text) || text.includes('human resources') || text.includes('human resource') || text.includes('human capital');
+};
+
+const isPayrollSpecialistRole = (roles: string[]) =>
+  roles.some((role) => /Payroll|Finance Payroll Reviewer/i.test(role));
+
+const isFinanceSpecialistRole = (roles: string[]) =>
+  roles.some((role) =>
+    /^(Finance |CFO|Accountant|Accounts )/i.test(role)
+    || /Finance Administrator|Finance Manager|Finance Controller|Finance Payroll Reviewer/i.test(role),
+  );
+
+const isExecutivePayrollApproverRole = (roles: string[]) =>
+  roles.some((role) =>
+    /Executive User|Executive Director|Executive Management|CFO/i.test(role),
+  );
+
+/** HR Management module entry — Super Admin and HR department / HR roles only. */
+export const canAccessHrManagementNav = (session: SessionLike) => isHrPortalUser(session);
+
+/** Pay Setup — Super Admin, HR, payroll specialists, and designated payroll approvers only. */
+export const canAccessPaySetupNav = (session: SessionLike) => {
+  if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
+  const roles = session.roles || [];
+  const permissions = session.permissions || [];
+  if (isHrPortalUser(session)) {
+    return hasAnyPermission(permissions, [
+      'page.hris.payroll.salary-management.view',
+      'page.hris.payroll.employee-salary-setup.view',
+      'page.hris.payroll.salary-structure.view',
+      'payroll.view',
+      'payroll.*',
+      'hris.*',
+    ]);
+  }
+  if (isPayrollSpecialistRole(roles) || isExecutivePayrollApproverRole(roles) || isFinanceSpecialistRole(roles)) {
+    return hasAnyPermission(permissions, [
+      'page.hris.payroll.salary-management.view',
+      'page.hris.payroll.employee-salary-setup.view',
+      'page.hris.payroll.salary-structure.view',
+      'page.hris.payroll.approval.view',
+      'payroll.view',
+      'payroll.*',
+    ]);
+  }
+  return false;
+};
+
+/** Bank & Finance — Super Admin, finance specialists, payroll admins, and HR with bank-finance grant. */
+export const canAccessBankFinanceNav = (session: SessionLike) => {
+  if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
+  const roles = session.roles || [];
+  const permissions = session.permissions || [];
+  if (isFinanceSpecialistRole(roles) || isPayrollSpecialistRole(roles)) {
+    return hasAnyPermission(permissions, [
+      'page.payroll.management.bank-finance.view',
+      'finance.view',
+      'finance.*',
+      'payroll.*',
+      'payroll.view',
+    ]);
+  }
+  if (isHrPortalUser(session)) {
+    return hasAnyPermission(permissions, [
+      'page.payroll.management.bank-finance.view',
+      'payroll.*',
+      'hris.*',
+    ]);
+  }
+  return false;
 };
 
 export const hrisRoutePermissionOptions = (pathname: string): string[] | null => {
@@ -139,6 +215,17 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
 
   const path = normalizePath(pathname);
   if (path.includes('/authorize') || path.includes('/email-action')) return true;
+
+  if (path === '/hris' || path === '/hris/dashboard') {
+    return canAccessHrManagementNav(session);
+  }
+  if (isBankFinancePayrollPath(path)) {
+    return canAccessBankFinanceNav(session);
+  }
+  if (isPayrollSalaryReviewPath(path)) {
+    return canAccessPaySetupNav(session);
+  }
+
   const explicitOptions = hrisRoutePermissionOptions(path);
   if (explicitOptions) {
     if (!hasAnyPermission(permissions, explicitOptions)) return false;
@@ -149,7 +236,6 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
     return true;
   }
   if (!isHrPortalUser(session)) return false;
-  if (path === '/hris') return hasAnyPermission(permissions, ['page.hris.management.view', 'hris.view', 'view_hris']);
   if (path.startsWith('/hris/employees')) return hasAnyPermission(permissions, ['employees.view', 'hris.view']);
   if (path.startsWith('/hris/leave-management')) return hasAnyPermission(permissions, ['leave.view', 'hris.view']);
   if (path.startsWith('/hris/performance-management')) return hasAnyPermission(permissions, ['performance.view', 'hris.performance-management', 'hris.view', 'page.hris.management.view']);

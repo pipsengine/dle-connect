@@ -41,23 +41,16 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
   ],
   'admin.roles.view': ['page.admin.access-control.view'],
   'admin.users.view': ['page.admin.user-management.view'],
+  // Keep payroll.view as a management grant — do NOT treat payslip-only access as payroll.view.
   'payroll.view': [
     'page.payroll.management.view',
-    'page.hris.payroll.salary-management.view',
-    'page.hris.payroll.salary-structure.view',
-    'page.hris.payroll.employee-salary-setup.view',
-    'page.hris.payroll.approval.view',
   ],
   'page.hris.payroll.salary-management.view': [
-    'payroll.view',
     'page.payroll.management.view',
-    'payroll.workflow.hr-review.view',
-    'payroll.workflow.finance-review.view',
-    'payroll.workflow.cfo-approval.view',
-    'payroll.workflow.md-approval.view',
+    'page.hris.payroll.salary-structure.view',
+    'page.hris.payroll.employee-salary-setup.view',
   ],
   'page.hris.payroll.approval.view': [
-    'payroll.view',
     'page.payroll.management.approval.view',
     'payroll.workflow.hr-review.view',
     'payroll.workflow.finance-review.view',
@@ -65,12 +58,14 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
     'payroll.workflow.md-approval.view',
   ],
   'page.hris.payroll.employee-salary-setup.view': [
-    'payroll.view',
     'page.hris.payroll.salary-management.view',
   ],
   'page.hris.payroll.salary-structure.view': [
-    'payroll.view',
     'page.hris.payroll.salary-management.view',
+  ],
+  'page.payroll.management.bank-finance.view': [
+    'reports.payroll.bank-schedule.view',
+    'button.payroll.post.view',
   ],
   'view_it_support': [
     'it.view',
@@ -184,7 +179,14 @@ export const expandPublishedPermissions = (permissions: string[]) => {
   if (list.some((permission) => permission.startsWith('admin.roles'))) out.add('page.admin.access-control.view');
   if (list.some((permission) => permission.startsWith('admin.users'))) out.add('page.admin.user-management.view');
   if (list.some((permission) => permission.startsWith('hris.') || permission.startsWith('employees.'))) out.add('hris.view');
-  if (list.some((permission) => permission.startsWith('payroll.') || permission.startsWith('page.payroll.'))) out.add('payroll.view');
+  // ESS payslip access must not promote to full payroll.view / Pay Setup.
+  if (list.some((permission) =>
+    (permission.startsWith('payroll.') && permission !== 'payroll.payslip.view' && !permission.startsWith('payroll.payslip.'))
+    || (permission.startsWith('page.payroll.') && !permission.includes('payslip'))
+    || permission.startsWith('page.hris.payroll.'),
+  )) {
+    out.add('payroll.view');
+  }
 
   return Array.from(out);
 };

@@ -13,6 +13,11 @@ import {
 } from 'lucide-react';
 import { navigationConfig, NavItem } from '@/lib/config/navigation';
 import { canAccessAdministrationCentre, hasPermission } from '@/lib/auth/permission-match';
+import {
+  canAccessBankFinanceNav,
+  canAccessHrManagementNav,
+  canAccessPaySetupNav,
+} from '@/lib/access/route-access';
 
 const requiredPermission = (route?: string) => {
   if (!route || route === '/') return 'enterprise.view';
@@ -108,22 +113,13 @@ export function Sidebar({
   }, [pathname]);
 
   const visibleNavigation = useMemo(() => {
-    const canUseHrManagement =
-      sessionContext.isGlobalAdmin
-      || sessionContext.roles.includes('Super Administrator')
-      || (
-        !sessionContext.roles.every((role) => role === 'Admin' || role === 'System Administrator' || role === 'Employee' || role === 'Read-Only User' || role === 'Auditor')
-        && (
-          hasPermission(permissions, 'hris.view')
-          || hasPermission(permissions, 'view_hris')
-          || hasPermission(permissions, 'page.hris.management.view')
-        )
-      )
-      || (
-        sessionContext.roles.some((role) => /hr |human resource|payroll administrator|payroll officer/i.test(role))
-        && (hasPermission(permissions, 'hris.view') || hasPermission(permissions, 'view_hris'))
-      );
-
+    const sessionLike = {
+      roles: sessionContext.roles,
+      department: sessionContext.department,
+      unit: sessionContext.unit,
+      permissions,
+      isGlobalAdmin: sessionContext.isGlobalAdmin,
+    };
     const platformOnly = sessionContext.roles.length > 0
       && sessionContext.roles
         .filter((role) => !['Employee', 'Read-Only User', 'Auditor'].includes(role))
@@ -135,11 +131,15 @@ export function Sidebar({
       .map((item) => {
         if (item.id === 'administration' && !canSeeAdministration) return null;
         const subItems = item.subItems?.filter((sub) => {
-          if (sub.route === '/hris') {
-            if (platformOnly && !sessionContext.isGlobalAdmin && !sessionContext.roles.includes('Super Administrator')) return false;
-            return canUseHrManagement;
-          }
+          if (sub.route === '/hris') return canAccessHrManagementNav(sessionLike);
           if (sub.route === '/workforce-portal') return true;
+          if (sub.route === '/hris/payroll-management/pay-setup') return canAccessPaySetupNav(sessionLike);
+          if (
+            sub.route === '/hris/payroll-management/bank-finance'
+            || sub.route === '/hris/payroll-management/bank-and-finance'
+          ) {
+            return canAccessBankFinanceNav(sessionLike);
+          }
           if (sub.route?.startsWith('/hris/') && platformOnly && !sessionContext.isGlobalAdmin && !sessionContext.roles.includes('Super Administrator')) {
             return false;
           }
