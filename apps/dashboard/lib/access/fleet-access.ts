@@ -111,6 +111,68 @@ export type FleetWorkspaceAccessId =
   | 'reports'
   | 'administration';
 
+/** Trip requesters with no fleet operations, supervisor, or dispatch role. */
+export const isFleetSelfServiceUser = (
+  permissions: string[],
+  isGlobalAdmin?: boolean,
+  employeeCode?: string | null,
+) => {
+  if (isGlobalAdmin) return false;
+  return !canAccessFleetOperations(permissions, isGlobalAdmin)
+    && !canAllocateFleetTrip(permissions, isGlobalAdmin, employeeCode)
+    && !canDispatchFleetTrip(permissions, isGlobalAdmin, employeeCode);
+};
+
+/** Whether a workspace sub-tab should be visible for the signed-in user. */
+export const canAccessFleetTab = (
+  workspace: string,
+  tabId: string,
+  permissions: string[],
+  isGlobalAdmin?: boolean,
+  employeeCode?: string | null,
+): boolean => {
+  if (isGlobalAdmin) return true;
+
+  const canOps = canAccessFleetOperations(permissions, isGlobalAdmin);
+  const canAdmin = canAccessFleetAdministration(permissions, isGlobalAdmin);
+  const canSupervise = canAllocateFleetTrip(permissions, isGlobalAdmin, employeeCode);
+  const canDispatch = canDispatchFleetTrip(permissions, isGlobalAdmin, employeeCode);
+  const canManage = canManageFleet(permissions, isGlobalAdmin);
+
+  if (workspace === 'dashboard') {
+    if (tabId === 'overview') return true;
+    if (tabId === 'operations') return canSupervise || canDispatch || canOps;
+    if (tabId === 'maintenance' || tabId === 'fuel') return canOps;
+    if (tabId === 'safety') return canOps || canSupervise;
+    if (tabId === 'financial') return canAdmin;
+    if (tabId === 'approvals') return canSupervise || canAdmin || canManage;
+    return false;
+  }
+
+  if (workspace === 'trips-dispatch') {
+    if (tabId === 'requests' || tabId === 'history') return true;
+    if (tabId === 'supervisor' || tabId === 'approvals' || tabId === 'allocation') return canSupervise;
+    if (tabId === 'dispatch') return canDispatch;
+    if (tabId === 'active') return canDispatch || canSupervise || canOps;
+    return false;
+  }
+
+  if (['telematics', 'vendors-contracts', 'costs-budgets', 'reports', 'administration'].includes(workspace)) {
+    return canAdmin;
+  }
+
+  if (['vehicles', 'drivers', 'fuel', 'maintenance', 'inspections-compliance', 'incidents', 'allocations'].includes(workspace)) {
+    if (!canOps && !canSupervise) return false;
+    if (tabId === 'register' || tabId === 'overview' || tabId === 'profile') return canOps || canSupervise;
+    if (['ownership', 'lifecycle', 'contracts', 'rates', 'sla', 'reconciliation', 'analysis', 'allocation'].includes(tabId)) {
+      return canManage || canAdmin;
+    }
+    return canOps || canSupervise;
+  }
+
+  return canOps;
+};
+
 /** Open workspaces for every authenticated user; others require fleet/driver permissions. */
 export const canAccessFleetWorkspace = (
   workspace: FleetWorkspaceAccessId,

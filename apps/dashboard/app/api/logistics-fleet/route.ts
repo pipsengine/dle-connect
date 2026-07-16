@@ -134,7 +134,15 @@ export async function POST(request: NextRequest) {
         return err(403, 'Forbidden. Fleet Dispatcher permission required.');
       }
       if ((action === 'cancel-trip') && !canManageFleet(base.permissions, base.session.isGlobalAdmin) && !canAllocateFleetTrip(base.permissions, base.session.isGlobalAdmin, base.session.employeeCode)) {
-        return err(403, 'Forbidden.');
+        const existing = await readLogisticsFleetData();
+        const existingTrip = existing.trips.find((item) => item.id === String(body.tripId || body.id || ''));
+        const actorCode = String(base.session.employeeCode || '').trim().toLowerCase();
+        const isOwner = Boolean(
+          existingTrip
+          && actorCode
+          && String(existingTrip.requesterEmployeeCode || '').trim().toLowerCase() === actorCode,
+        );
+        if (!isOwner) return err(403, 'Forbidden.');
       }
       const data = await performTripWorkflow(action, body as Record<string, unknown>, actor, { ...context, reason: body.reason });
       const tripId = String(body.tripId || body.id || '');
@@ -184,7 +192,10 @@ export async function POST(request: NextRequest) {
     }
     const data = await createLogisticsFleetRecord(body.entity, body.record || {}, actor);
     if (body.entity === 'trip') {
-      const trip = data.trips[0];
+      const createdTripId = data.mutationMeta?.createdTripId;
+      const trip = createdTripId
+        ? data.trips.find((item) => item.id === createdTripId) || null
+        : null;
       if (trip && isPendingDriverSupervisor(trip.status)) {
         // Must await — fire-and-forget is cancelled when the HTTP response completes in Next.js.
         await fireTripNotifications({
@@ -194,6 +205,8 @@ export async function POST(request: NextRequest) {
           tripId: trip.id,
           actor,
         });
+      } else if (createdTripId && !trip) {
+        console.warn('[logistics-fleet] Trip created but not found for supervisor notification.', { createdTripId });
       }
     }
     return ok(data, 201);

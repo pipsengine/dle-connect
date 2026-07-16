@@ -2,6 +2,33 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1784194108909-fqk1jg",
+      "recipientUserId": "L2770",
+      "recipientUsername": "L2770",
+      "recipientEmployeeCode": "L2770",
+      "recipientRoles": [
+        "HR Officer"
+      ],
+      "kind": "Approval",
+      "module": "Logistics & Fleet",
+      "title": "Trip approval required — TRP-2026-0005",
+      "body": "Mr KAYODE OGBETAH (NYSC0032) requested travel to agege (idi oro → agege). Approve and allocate vehicle & driver in Logistics & Fleet.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/logistics-fleet/trips-dispatch?tab=supervisor&tripId=trp-1784191491819-yveos",
+      "createdAt": "2026-07-16T09:28:28.909Z",
+      "actor": "Fleet Supervisor Resend",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "tripId": "trp-1784191491819-yveos",
+        "action": "submit-trip",
+        "module": "logistics-fleet"
+      }
+    },
+    {
       "id": "ntf-1784129737164-cjporz",
       "recipientUserId": "L2770",
       "recipientUsername": "L2770",

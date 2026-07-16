@@ -1,5 +1,14 @@
 [
   {
+    "id": "login-1784191377524-4605f295",
+    "at": "2026-07-16T08:42:57.524Z",
+    "userId": "usr-NYSC0032",
+    "username": "NYSC0032",
+    "ipAddress": "127.0.0.1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
     "id": "login-1784190924117-c6ba6f67",
     "at": "2026-07-16T08:35:24.118Z",
     "userId": "usr-NYSC0032",

@@ -1317,10 +1317,17 @@ const actorMayDriverSupervisor = (context: TripActionContext) => {
   return false;
 };
 
-export const createLogisticsFleetRecord = async (entity: LogisticsEntity, record: Record<string, unknown>, actor = 'System') => {
+export type LogisticsFleetMutationResult = Awaited<ReturnType<typeof readLogisticsFleetData>> & {
+  mutationMeta?: {
+    createdTripId?: string;
+  };
+};
+
+export const createLogisticsFleetRecord = async (entity: LogisticsEntity, record: Record<string, unknown>, actor = 'System'): Promise<LogisticsFleetMutationResult> => {
   const [rawData, employeeSource] = await Promise.all([readRaw(), readPayrollEmployees()]);
   const data = hydrateDriverLifecycle(normalizeData(rawData), employeeSource.employees);
   const employees = employeeSource.employees.filter(assignableEmployee);
+  let createdTripId: string | undefined;
   if (entity === 'vehicle') {
     requireFields(entity, record, ['assetCode', 'plateNumber', 'vehicleType', 'makeModel', 'location', 'custodianEmployeeCode', 'insuranceExpiry']);
     const custodian = findEmployee(employees, value(record, 'custodianEmployeeCode'));
@@ -1436,6 +1443,7 @@ export const createLogisticsFleetRecord = async (entity: LogisticsEntity, record
       status: asDraft ? 'Draft' : 'PendingDriverSupervisor',
     };
     data.trips.unshift(trip);
+    createdTripId = trip.id;
     audit(data, actor, asDraft ? 'Saved trip draft' : 'Submitted trip request', 'Trip & Dispatch', `${trip.requestNo}: ${trip.origin} to ${trip.destination}`);
   }
   if (entity === 'maintenance') {
@@ -1593,7 +1601,8 @@ export const createLogisticsFleetRecord = async (entity: LogisticsEntity, record
     audit(data, actor, 'Posted cost entry', 'Costs & Budgets', `${cost.category} · NGN ${cost.amount}`);
   }
   await writeLogisticsFleetData(data);
-  return readLogisticsFleetData();
+  const refreshed = await readLogisticsFleetData();
+  return createdTripId ? { ...refreshed, mutationMeta: { createdTripId } } : refreshed;
 };
 
 export const updateLogisticsFleetRecord = async (entity: 'vehicle' | 'driver', recordId: string, record: Record<string, unknown>, actor = 'System') => {
