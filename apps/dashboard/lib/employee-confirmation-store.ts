@@ -1,9 +1,28 @@
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import type { DleEmployeeDirectoryRow } from './dle-enterprise-db';
 import { readPayrollEmployees } from './payroll-employee-source';
 
 export type ConfirmationRisk = 'Low' | 'Medium' | 'High';
 export type ConfirmationStage = 'Probation Active' | 'Due Soon' | 'Overdue' | 'Confirmed' | 'Review Required';
 export type ConfirmationReadiness = 'Ready' | 'Needs Review' | 'Incomplete';
+
+export type ConfirmationOutcomeDecision = 'Confirm' | 'Extend' | 'Do Not Confirm';
+
+export type ConfirmationOutcomeRecord = {
+  id: string;
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  decision: ConfirmationOutcomeDecision;
+  reason: string;
+  decidedBy: string;
+  decidedAt: string;
+  probationEndDate?: string;
+  source: string;
+  /** Outcomes never auto-terminate employment — status sink only. */
+  autoTerminate: false;
+};
 
 export type EmployeeConfirmationRecord = {
   id: string;
@@ -61,6 +80,25 @@ export type EmployeeConfirmationPayload = {
 };
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const OUTCOMES_CANDIDATES = [
+  path.join(process.cwd(), 'apps', 'dashboard', 'data', 'hris'),
+  path.join(process.cwd(), 'data', 'hris'),
+];
+
+const resolveOutcomesPath = async () => {
+  for (const dir of OUTCOMES_CANDIDATES) {
+    const file = path.join(dir, 'confirmation-outcomes.json');
+    try {
+      await access(file);
+      return { dir, file };
+    } catch {
+      /* continue */
+    }
+  }
+  const dir = OUTCOMES_CANDIDATES[0];
+  await mkdir(dir, { recursive: true });
+  return { dir, file: path.join(dir, 'confirmation-outcomes.json') };
+};
 
 const dateOnly = (value?: string | null) => {
   if (!value) return null;
@@ -222,3 +260,50 @@ export const readEmployeeConfirmationFromDb = async (): Promise<EmployeeConfirma
     insights,
   };
 };
+
+const readOutcomesFile = async (): Promise<ConfirmationOutcomeRecord[]> => {
+  try {
+    const { file } = await resolveOutcomesPath();
+    await access(file);
+    const raw = await readFile(file, 'utf8');
+    const parsed = JSON.parse(raw) as { outcomes?: ConfirmationOutcomeRecord[] };
+    return Array.isArray(parsed.outcomes) ? parsed.outcomes : [];
+  } catch {
+    return [];
+  }
+};
+
+/** Persist PM / HR confirmation decisions without mutating payroll employment status. */
+export const recordConfirmationOutcome = async (input: {
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  decision: ConfirmationOutcomeDecision;
+  reason: string;
+  decidedBy: string;
+  decidedAt?: string;
+  probationEndDate?: string;
+  source?: string;
+}): Promise<ConfirmationOutcomeRecord> => {
+  const { dir, file } = await resolveOutcomesPath();
+  await mkdir(dir, { recursive: true });
+  const outcomes = await readOutcomesFile();
+  const record: ConfirmationOutcomeRecord = {
+    id: `conf-out-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    employeeId: input.employeeId,
+    employeeCode: input.employeeCode,
+    employeeName: input.employeeName,
+    decision: input.decision,
+    reason: input.reason,
+    decidedBy: input.decidedBy,
+    decidedAt: input.decidedAt || new Date().toISOString(),
+    probationEndDate: input.probationEndDate,
+    source: input.source || 'performance-management',
+    autoTerminate: false,
+  };
+  outcomes.unshift(record);
+  await writeFile(file, JSON.stringify({ updatedAt: new Date().toISOString(), outcomes: outcomes.slice(0, 2000) }, null, 2), 'utf8');
+  return record;
+};
+
+export const listConfirmationOutcomes = async () => readOutcomesFile();

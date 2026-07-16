@@ -105,7 +105,7 @@ export const performanceMenuTree: PerformanceMenuItem[] = [
     icon: Activity,
     roles: EMPLOYEE,
     children: [
-      { id: 'monthly-check-ins', label: 'Monthly Check-ins', route: 'continuous-performance/monthly-check-ins', icon: CalendarDays, roles: EMPLOYEE, keywords: ['check-in', 'checkin', 'monthly'] },
+      { id: 'monthly-check-ins', label: 'Continuous Check-ins', route: 'continuous-performance/monthly-check-ins', icon: CalendarDays, roles: EMPLOYEE, keywords: ['check-in', 'checkin', 'monthly', 'continuous'] },
       { id: 'coaching-sessions', label: 'Coaching Sessions', route: 'continuous-performance/coaching-sessions', icon: MessagesSquare, roles: MANAGEMENT, keywords: ['coaching', 'sessions'] },
       { id: 'continuous-feedback', label: 'Continuous Feedback', route: 'continuous-performance/continuous-feedback', icon: MessageCircle, roles: EMPLOYEE, keywords: ['feedback'] },
       { id: 'development-conversations', label: 'Development Conversations', route: 'continuous-performance/development-conversations', icon: MessagesSquare, roles: MANAGEMENT, keywords: ['development', 'conversation'] },

@@ -1297,6 +1297,30 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
     }
   };
 
+  const acknowledgePerformanceItem = async (kind: 'goal' | 'result', id: string) => {
+    setSaving(true);
+    setToast('');
+    setError('');
+    try {
+      const res = await fetch('/api/workforce-portal', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: kind === 'goal' ? 'acknowledge-performance-goal' : 'acknowledge-performance-result',
+          id,
+        }),
+      });
+      const json = await parseJsonResponse(res, 'Performance acknowledgement API') as ApiResponse<{ message?: string }>;
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to acknowledge.');
+      setToast(json.data?.message || 'Performance item acknowledged.');
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to acknowledge performance item.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const submitLeaveApplication = async (input: { requestId: string; leaveType: string; startDate: string; endDate: string; days: number; reason: string; relieverEmployeeId: string; relieverName: string; handover: string; attachmentNames: string[] }): Promise<boolean> => {
     if (!payload) return false;
     setSaving(true);
@@ -1566,14 +1590,40 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
             <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               <Section title="Goals, KPIs & Performance Reviews">
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <DataList rows={payload?.performance.goals || []} titleKey="title" subtitleKeys={['progress', 'dueDate']} emptyTitle="No goals on file" emptyDescription="Performance goals from HR documents will appear here." />
-                  <DataList rows={payload?.performance.kpis || []} titleKey="label" subtitleKeys={['value', 'target']} statusKey="label" emptyTitle="No KPIs available" emptyDescription="Live attendance and request metrics will appear here." />
+                  <div className="space-y-3">
+                    <DataList rows={payload?.performance.goals || []} titleKey="title" subtitleKeys={['progress', 'dueDate', 'status']} emptyTitle="No goals on file" emptyDescription="OKRs assigned in Performance Management will appear here for review and acknowledgement." />
+                    {(payload?.performance.goals || []).filter((goal) => /assigned|resubmitted|discussion/i.test(String(goal.status || ''))).map((goal) => (
+                      <button
+                        key={`ack-goal-${goal.id}`}
+                        type="button"
+                        disabled={saving}
+                        onClick={() => void acknowledgePerformanceItem('goal', String(goal.id))}
+                        className="w-full rounded-lg border border-[#0052CC]/30 bg-[#E8F1FF] px-3 py-2 text-left text-xs font-bold text-[#0052CC] hover:bg-[#D6E6FF] disabled:opacity-60"
+                      >
+                        Acknowledge goal: {String(goal.title || goal.id)}
+                      </button>
+                    ))}
+                  </div>
+                  <DataList rows={payload?.performance.kpis || []} titleKey="label" subtitleKeys={['value', 'target']} statusKey="label" emptyTitle="No KPIs available" emptyDescription="Live goal and check-in metrics from Performance Management will appear here." />
                 </div>
               </Section>
               <Section title="Appraisals, Self-Assessments & Development Plans">
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <DataList rows={payload?.performance.reviews || []} titleKey="cycle" subtitleKeys={['form', 'score']} emptyTitle="No appraisals yet" emptyDescription="Appraisal records from HR will appear here when available." />
-                  <DataList rows={payload?.performance.developmentPlans || []} titleKey="title" subtitleKeys={['owner']} emptyTitle="No development plans" emptyDescription="Development plans will appear when assigned by your manager." />
+                  <div className="space-y-3">
+                    <DataList rows={payload?.performance.reviews || []} titleKey="cycle" subtitleKeys={['form', 'score', 'status']} emptyTitle="No appraisals yet" emptyDescription="Assessments and published results from Performance Management will appear here." />
+                    {(payload?.performance.reviews || []).filter((review) => /published/i.test(String(review.status || ''))).map((review) => (
+                      <button
+                        key={`ack-result-${review.id}`}
+                        type="button"
+                        disabled={saving}
+                        onClick={() => void acknowledgePerformanceItem('result', String(review.id))}
+                        className="w-full rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-xs font-bold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                      >
+                        Acknowledge result: {String(review.form || review.cycle || review.id)}
+                      </button>
+                    ))}
+                  </div>
+                  <DataList rows={payload?.performance.developmentPlans || []} titleKey="title" subtitleKeys={['owner', 'status']} emptyTitle="No development plans" emptyDescription="Development plans will appear when assigned by your manager." />
                 </div>
               </Section>
             </section>

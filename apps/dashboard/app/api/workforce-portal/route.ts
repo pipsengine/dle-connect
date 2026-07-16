@@ -43,6 +43,7 @@ import {
   deriveLoanRepaymentSchedules,
   derivePortalAnalytics,
 } from '@/lib/ess-portal-derived-data';
+import { getEssPerformanceBundle, applyPerformanceAction } from '@/lib/performance-domain-store';
 import { invalidateEssPortalCache, readEssPortalResponseCache, writeEssPortalResponseCache } from '@/lib/ess-portal-cache';
 import { buildEssReportExport } from '@/lib/ess-reports-export';
 import { isNigeriaCountry, resolveNigeriaPersonalLocation } from '@/lib/nigeria-locations';
@@ -990,11 +991,23 @@ export async function GET(request: Request) {
     const derivedClaims = deriveEssClaims(employeeRequests);
     const derivedTravel = deriveEssTravel(employeeRequests);
     const derivedAssets = deriveEssAssets(employeeRequests, essContext.documents);
-    const derivedPerformance = deriveEssPerformance({
+    const derivedPerformanceHeuristic = deriveEssPerformance({
       attendanceRate,
       requests: employeeRequests,
       documents: essContext.documents,
     });
+    const domainPerformance = await getEssPerformanceBundle(
+      String(employee.employeeId || ''),
+      String(employee.employeeCode || ''),
+    ).catch(() => null);
+    const derivedPerformance = domainPerformance && (domainPerformance.goals.length || domainPerformance.reviews.length)
+      ? {
+          goals: domainPerformance.goals,
+          kpis: domainPerformance.kpis.length ? domainPerformance.kpis : derivedPerformanceHeuristic.kpis,
+          reviews: domainPerformance.reviews,
+          developmentPlans: domainPerformance.developmentPlans,
+        }
+      : derivedPerformanceHeuristic;
     const derivedLearning = deriveEssLearning(essContext.documents);
     const employeeDocuments = essContext.documents.length
       ? essContext.documents
@@ -1716,6 +1729,18 @@ export async function POST(request: Request) {
       } catch (error) {
         return err(409, error instanceof Error ? error.message : `Unable to ${action.replace('-', ' ')}.`);
       }
+    }
+
+    if (action === 'acknowledge-performance-goal' || action === 'acknowledge-performance-result') {
+      const result = await applyPerformanceAction({
+        action: action === 'acknowledge-performance-goal' ? 'goal.acknowledge' : 'result.acknowledge',
+        actor: session.fullName || session.username,
+        actorRole: 'Employee',
+        payload: { id: compact(body.id || body.goalId || body.resultId) },
+      });
+      if (!result.ok) return err(400, result.error || 'Unable to acknowledge performance item.');
+      invalidateEssPortalCache();
+      return ok({ message: result.message || 'Acknowledged.' });
     }
 
     if (action === 'submit-profile-update') {

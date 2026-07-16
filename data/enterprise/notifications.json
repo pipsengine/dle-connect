@@ -2,6 +2,46 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1784219579943-8o0m0c",
+      "recipientUserId": "P1001",
+      "recipientUsername": "P1001",
+      "recipientEmployeeCode": "P1001",
+      "recipientRoles": [],
+      "kind": "Notification",
+      "module": "Performance Management",
+      "title": "Probation monitoring · 60-day alert",
+      "body": "Ada Okonkwo probation ends 2026-07-15 (-1 day(s) remaining).",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=dashboard",
+      "createdAt": "2026-07-16T16:32:59.943Z",
+      "actor": "Performance System",
+      "channels": [
+        "In-App",
+        "Email"
+      ]
+    },
+    {
+      "id": "ntf-1784219534675-fa8bb1",
+      "recipientUserId": "P1004",
+      "recipientUsername": "P1004",
+      "recipientEmployeeCode": "P1004",
+      "recipientRoles": [],
+      "kind": "Notification",
+      "module": "Performance Management",
+      "title": "Probation monitoring · 60-day alert",
+      "body": "Tunde Bakare probation ends 2026-08-01 (16 day(s) remaining).",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=dashboard",
+      "createdAt": "2026-07-16T16:32:14.675Z",
+      "actor": "Performance System",
+      "channels": [
+        "In-App",
+        "Email"
+      ]
+    },
+    {
       "id": "ntf-1784205785820-zpif3w",
       "recipientUserId": "P0459",
       "recipientUsername": "P0459",

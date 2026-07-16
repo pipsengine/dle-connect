@@ -7,7 +7,6 @@ import {
   findPerformanceMenuItem,
   resolvePerformanceRoute,
 } from '@/lib/performance-management-menu-config';
-import type { PerformancePayload } from '@/lib/performance-management-types';
 import type { PerformanceWorkspacePayload } from '@/lib/performance-domain-types';
 import PerformanceCommandCenter from './PerformanceCommandCenter';
 import PerformanceDomainWorkspace from './PerformanceDomainWorkspace';

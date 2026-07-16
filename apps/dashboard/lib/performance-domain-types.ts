@@ -453,6 +453,8 @@ export type PerformanceActionResult = {
 };
 
 export type PerformanceWorkspacePayload = PerformancePayload & {
+  route?: string;
+  menu?: unknown;
   domain: {
     cycles: PerformanceCycle[];
     companyObjectives: CompanyObjective[];

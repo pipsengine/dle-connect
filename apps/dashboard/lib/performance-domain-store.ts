@@ -47,8 +47,39 @@ import { recordConfirmationOutcome } from '@/lib/employee-confirmation-store';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import type { SessionPayload } from '@/lib/auth/session';
 
-const STORE_DIR = path.join(process.cwd(), 'data', 'performance');
-const STORE_PATH = path.join(STORE_DIR, 'domain.json');
+const STORE_FILE = 'domain.json';
+
+const resolveWritableDataDir = async (...segments: string[]) => {
+  const candidates = [
+    path.join(process.cwd(), 'apps', 'dashboard', 'data', ...segments),
+    path.join(process.cwd(), 'data', ...segments),
+  ];
+  for (const candidate of candidates) {
+    try {
+      await mkdir(candidate, { recursive: true });
+      return candidate;
+    } catch {
+      /* try next */
+    }
+  }
+  return candidates[0];
+};
+
+const resolveStorePath = async () => {
+  const preferred = path.join(process.cwd(), 'apps', 'dashboard', 'data', 'performance');
+  const fallback = path.join(process.cwd(), 'data', 'performance');
+  for (const dir of [preferred, fallback]) {
+    const file = path.join(dir, STORE_FILE);
+    try {
+      await access(file);
+      return { dir, file };
+    } catch {
+      /* continue */
+    }
+  }
+  const dir = await resolveWritableDataDir('performance');
+  return { dir, file: path.join(dir, STORE_FILE) };
+};
 
 const nowIso = () => new Date().toISOString();
 const id = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -102,32 +133,36 @@ const defaultPreferences = (): PerformanceNavPreferences => ({
 });
 
 const ensureStore = async () => {
-  await mkdir(STORE_DIR, { recursive: true });
+  const { dir, file } = await resolveStorePath();
+  await mkdir(dir, { recursive: true });
   try {
-    await access(STORE_PATH);
+    await access(file);
   } catch {
     const seeded = await seedDomain();
-    await writeFile(STORE_PATH, JSON.stringify(seeded, null, 2), 'utf8');
+    await writeFile(file, JSON.stringify(seeded, null, 2), 'utf8');
   }
 };
 
 const readState = async (): Promise<PerformanceDomainState> => {
   await ensureStore();
+  const { file } = await resolveStorePath();
   try {
-    const raw = await readFile(STORE_PATH, 'utf8');
+    const raw = await readFile(file, 'utf8');
     const parsed = JSON.parse(raw) as PerformanceDomainState;
-    return { ...emptyState(), ...parsed, config: { ...defaultConfig(), ...(parsed.config || {}) } };
+    return { ...emptyState(), ...parsed, config: { ...defaultConfig(), ...(parsed.config || {}) }, scheduledReports: parsed.scheduledReports || [] };
   } catch {
     const seeded = await seedDomain();
-    await writeFile(STORE_PATH, JSON.stringify(seeded, null, 2), 'utf8');
+    const { file: writeFilePath } = await resolveStorePath();
+    await writeFile(writeFilePath, JSON.stringify(seeded, null, 2), 'utf8');
     return seeded;
   }
 };
 
 const writeState = async (state: PerformanceDomainState) => {
-  await mkdir(STORE_DIR, { recursive: true });
+  const { dir, file } = await resolveStorePath();
+  await mkdir(dir, { recursive: true });
   const next = { ...state, updatedAt: nowIso(), version: Number(state.version || 1) };
-  await writeFile(STORE_PATH, JSON.stringify(next, null, 2), 'utf8');
+  await writeFile(file, JSON.stringify(next, null, 2), 'utf8');
   return next;
 };
 
@@ -264,11 +299,25 @@ const buildAnalytics = (state: PerformanceDomainState): PerformanceAnalyticsSnap
   };
 };
 
+const withTimeout = async <T,>(promise: Promise<T>, ms: number, fallback: T): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
 async function seedDomain(): Promise<PerformanceDomainState> {
   const state = emptyState();
   let employees: Array<{ employeeId: string; employeeCode: string; fullName: string; department: string; jobTitle: string; managerName: string; managerEmployeeId?: string; dateJoined?: string; status?: string }> = [];
   try {
-    const source = await readPayrollEmployees();
+    const source = await withTimeout(readPayrollEmployees(), 8000, { employees: [] as any[] } as any);
     employees = (source.employees || []).slice(0, 40).map((row: any) => ({
       employeeId: String(row.employeeId || row.employeeCode || ''),
       employeeCode: String(row.employeeCode || row.employeeId || ''),
@@ -282,6 +331,14 @@ async function seedDomain(): Promise<PerformanceDomainState> {
     }));
   } catch {
     employees = [];
+  }
+  if (!employees.length) {
+    employees = [
+      { employeeId: 'EMP-1001', employeeCode: 'P1001', fullName: 'Ada Okonkwo', department: 'Engineering', jobTitle: 'Engineer', managerName: 'Line Manager', managerEmployeeId: 'EMP-2001', dateJoined: `${new Date().getFullYear()}-01-15`, status: 'Probation' },
+      { employeeId: 'EMP-1002', employeeCode: 'P1002', fullName: 'Chidi Bello', department: 'Operations', jobTitle: 'Supervisor', managerName: 'Ops Manager', managerEmployeeId: 'EMP-2002', dateJoined: `${new Date().getFullYear() - 2}-03-01`, status: 'Confirmed' },
+      { employeeId: 'EMP-1003', employeeCode: 'P1003', fullName: 'Ngozi Adeyemi', department: 'HR', jobTitle: 'HR Officer', managerName: 'HR Manager', managerEmployeeId: 'EMP-2003', dateJoined: `${new Date().getFullYear() - 1}-06-01`, status: 'Confirmed' },
+      { employeeId: 'EMP-1004', employeeCode: 'P1004', fullName: 'Tunde Bakare', department: 'Finance', jobTitle: 'Accountant', managerName: 'Finance Manager', managerEmployeeId: 'EMP-2004', dateJoined: `${new Date().getFullYear()}-02-01`, status: 'Probation' },
+    ];
   }
 
   const year = new Date().getFullYear();
@@ -715,7 +772,7 @@ export const readPerformanceManagementPayload = async (
   if (state.tasks.length !== alertCountBefore) await writeState(state);
   let employeeCount = state.eligibility.length;
   try {
-    const source = await readPayrollEmployees();
+    const source = await withTimeout(readPayrollEmployees(), 5000, { employees: [] as any[] } as any);
     employeeCount = source.employees?.length || employeeCount;
   } catch {
     /* keep */
@@ -746,14 +803,24 @@ export const readPerformanceManagementPayload = async (
 
   return {
     generatedAt: nowIso(),
+    source: 'performance-domain-store',
     route,
     role,
+    roles: defaultPerformanceRoles,
     permissions: rolePermissions(role),
     menu,
     preferences,
     badges,
     summary,
     aiHighlights: [],
+    activeCycle: activeCycle(state)
+      ? {
+          id: activeCycle(state)!.id,
+          name: activeCycle(state)!.name,
+          status: activeCycle(state)!.status,
+          deadline: activeCycle(state)!.goalSettingEnd || activeCycle(state)!.endDate,
+        }
+      : null,
     dashboard: buildDashboard(state, employeeCount),
     cyclesPage: {
       summary: {
@@ -910,7 +977,7 @@ export const applyPerformanceAction = async (body: ActionBody): Promise<Performa
         }
         let employees: any[] = [];
         try {
-          const source = await readPayrollEmployees();
+          const source = await withTimeout(readPayrollEmployees(), 8000, { employees: [] as any[] } as any);
           employees = source.employees || [];
         } catch {
           employees = [];
@@ -949,6 +1016,12 @@ export const applyPerformanceAction = async (body: ActionBody): Promise<Performa
             dueDate: cycle.goalSettingEnd,
             href: '/hris/performance-management/planning/employee-goals',
           });
+        });
+        void notifyPerformance({
+          actor,
+          title: `Cycle published: ${cycle.name}`,
+          body: `${cycle.name} is open for goal setting with ${snapshot.length} eligible employees.`,
+          href: '/hris/performance-management/planning/performance-cycles',
         });
         break;
       }
@@ -1148,6 +1221,13 @@ export const applyPerformanceAction = async (body: ActionBody): Promise<Performa
         goal.updatedAt = nowIso();
         goal.history.push({ version: goal.version, at: nowIso(), actor, change: 'Employee acknowledged goal' });
         pushAudit(state, { actor, actorRole, action: 'Acknowledged goal', entityType: 'EmployeeGoal', entityId: goal.id });
+        void notifyPerformance({
+          actor,
+          recipientEmployeeCode: goal.employeeCode,
+          title: 'Goal acknowledged',
+          body: `${goal.title} has been agreed and locked pending change control.`,
+          href: '/hris/performance-management/planning/employee-goals',
+        });
         break;
       }
       case 'checkin.create': {
@@ -1225,6 +1305,27 @@ export const applyPerformanceAction = async (body: ActionBody): Promise<Performa
         assessment.submittedBy = actor;
         assessment.updatedAt = nowIso();
         pushAudit(state, { actor, actorRole, action: 'Submitted assessment', entityType: 'PerformanceAssessment', entityId: assessment.id });
+        break;
+      }
+      case 'midyear.change-request': {
+        const goal = state.goals.find((item) => item.id === data.goalId);
+        if (!goal) return fail('Goal not found.');
+        goal.status = 'Discussion Requested';
+        goal.discussionComment = compact(data.reason) || 'Mid-year goal change requested';
+        goal.updatedAt = nowIso();
+        goal.history.push({ version: goal.version, at: nowIso(), actor, change: 'Mid-year change request', reason: compact(data.reason) });
+        pushTask(state, {
+          cycleId: goal.cycleId,
+          employeeId: goal.employeeId,
+          employeeName: goal.employeeName,
+          type: 'Mid-Year Change',
+          title: `Review mid-year goal change: ${goal.title}`,
+          assigneeId: goal.managerId || actor,
+          assigneeName: goal.managerName || actor,
+          dueDate: goal.dueDate,
+          href: '/hris/performance-management/planning/mid-year-reviews',
+        });
+        pushAudit(state, { actor, actorRole, action: 'Mid-year goal change requested', entityType: 'EmployeeGoal', entityId: goal.id });
         break;
       }
       case 'rater.nominate': {
@@ -1564,7 +1665,71 @@ export const applyPerformanceAction = async (body: ActionBody): Promise<Performa
           record.status = 'Not Confirmed';
         }
         record.updatedAt = nowIso();
-        pushAudit(state, { actor, actorRole, action: `Probation ${record.status}`, entityType: 'ProbationRecord', entityId: record.id, reason: record.decisionReason });
+        const sink = await recordConfirmationOutcome({
+          employeeId: record.employeeId,
+          employeeCode: record.employeeCode,
+          employeeName: record.employeeName,
+          decision: decision === 'Do Not Confirm' ? 'Do Not Confirm' : decision === 'Extend' ? 'Extend' : 'Confirm',
+          reason: record.decisionReason || '',
+          decidedBy: actor,
+          decidedAt: record.decidedAt,
+          probationEndDate: record.endDate,
+          source: 'performance-management',
+        });
+        record.confirmationSinkRef = sink.id;
+        pushAudit(state, { actor, actorRole, action: `Probation ${record.status}`, entityType: 'ProbationRecord', entityId: record.id, reason: record.decisionReason, after: sink.id });
+        void notifyPerformance({
+          actor,
+          recipientEmployeeCode: record.employeeCode,
+          title: `Probation decision: ${record.status}`,
+          body: `${record.employeeName} — ${decision}. Confirmation store updated (no auto-termination).`,
+          href: '/hris/performance-management/performance-reviews/probation',
+        });
+        break;
+      }
+      case 'report.schedule': {
+        const report: ScheduledPerformanceReport = {
+          id: id('rpt'),
+          name: compact(data.name) || 'Scheduled performance report',
+          reportType: (compact(data.reportType) as ScheduledPerformanceReport['reportType']) || 'completion',
+          cadence: (compact(data.cadence) as ScheduledPerformanceReport['cadence']) || 'Weekly',
+          recipients: Array.isArray(data.recipients) ? data.recipients.map(String) : [actor],
+          nextRunAt: compact(data.nextRunAt) || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          createdBy: actor,
+          createdAt: nowIso(),
+          status: 'Active',
+        };
+        state.scheduledReports = state.scheduledReports || [];
+        state.scheduledReports.unshift(report);
+        pushAudit(state, { actor, actorRole, action: 'Scheduled performance report', entityType: 'ScheduledReport', entityId: report.id });
+        break;
+      }
+      case 'report.run': {
+        state.analytics = buildAnalytics(state);
+        const report = (state.scheduledReports || []).find((item) => item.id === data.id);
+        if (report) {
+          report.lastRunAt = nowIso();
+          const next = new Date();
+          if (report.cadence === 'Daily') next.setDate(next.getDate() + 1);
+          else if (report.cadence === 'Monthly') next.setMonth(next.getMonth() + 1);
+          else next.setDate(next.getDate() + 7);
+          report.nextRunAt = next.toISOString();
+          for (const recipient of report.recipients) {
+            void notifyPerformance({
+              actor,
+              recipientEmployeeCode: recipient,
+              title: `Performance report: ${report.name}`,
+              body: `${report.reportType} generated. Pre/post calibration ${state.analytics.preCalibrationAvg}/${state.analytics.postCalibrationAvg}.`,
+              href: '/hris/performance-management/reports-analytics/export-centre',
+            });
+          }
+        }
+        pushAudit(state, { actor, actorRole, action: 'Ran performance report', entityType: 'ScheduledReport', entityId: compact(data.id) || 'ad-hoc' });
+        break;
+      }
+      case 'analytics.refresh': {
+        state.analytics = buildAnalytics(state);
+        pushAudit(state, { actor, actorRole, action: 'Refreshed performance analytics', entityType: 'Analytics', entityId: 'snapshot' });
         break;
       }
       case 'config.update': {
@@ -1600,5 +1765,62 @@ export const getEssPerformanceBundle = async (employeeId: string, employeeCode?:
   const checkIns = state.checkIns.filter((item) => match(item.employeeId));
   const developmentPlans = state.developmentPlans.filter((item) => match(item.employeeId));
   const tasks = state.tasks.filter((item) => match(item.employeeId) || match(item.assigneeId));
-  return { goals, results, assessments, checkIns, developmentPlans, tasks, appeals: state.appeals.filter((item) => match(item.employeeId)) };
+  const appeals = state.appeals.filter((item) => match(item.employeeId));
+
+  return {
+    goals: goals.map((goal) => ({
+      id: goal.id,
+      title: goal.title,
+      progress: goal.progressPercent,
+      dueDate: goal.dueDate,
+      status: goal.status,
+      weight: goal.weight,
+      acknowledgementRequired: ['Assigned', 'Resubmitted', 'Discussion Requested'].includes(goal.status),
+    })),
+    kpis: [
+      {
+        label: 'Goal acknowledgement',
+        value: goals.length ? Math.round((goals.filter((g) => ['Agreed', 'Active', 'Completed'].includes(g.status)).length / goals.length) * 100) : 0,
+        target: 100,
+      },
+      {
+        label: 'Check-in progress',
+        value: checkIns.length ? Math.round(checkIns.reduce((sum, row) => sum + Number(row.progressPercent || 0), 0) / checkIns.length) : 0,
+        target: 80,
+      },
+      {
+        label: 'Open performance tasks',
+        value: tasks.filter((task) => !['Completed', 'Cancelled'].includes(task.status)).length,
+        target: 0,
+      },
+    ],
+    reviews: [
+      ...assessments.map((item) => ({
+        id: item.id,
+        cycle: item.cycleId,
+        form: `${item.type} assessment`,
+        status: item.status,
+        score: null as number | null,
+      })),
+      ...results
+        .filter((item) => item.status === 'Published' || item.status === 'Amended')
+        .map((item) => ({
+          id: item.id,
+          cycle: item.cycleId,
+          form: 'Published result',
+          status: item.acknowledgedAt ? 'Acknowledged' : item.status,
+          score: displayScore(item.finalScore),
+        })),
+    ],
+    developmentPlans: developmentPlans.map((plan) => ({
+      id: plan.id,
+      title: plan.need,
+      owner: plan.actions[0]?.owner || 'Manager',
+      status: plan.status,
+    })),
+    tasks,
+    appeals,
+    checkIns,
+    raw: { goals, results, assessments },
+  };
 };

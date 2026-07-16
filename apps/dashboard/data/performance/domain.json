@@ -1,0 +1,724 @@
+{
+  "version": 1,
+  "updatedAt": "2026-07-16T16:36:28.319Z",
+  "config": {
+    "ratingBands": [
+      {
+        "min": 90,
+        "max": 100,
+        "label": "Outstanding"
+      },
+      {
+        "min": 80,
+        "max": 89.99,
+        "label": "Exceeds Expectations"
+      },
+      {
+        "min": 70,
+        "max": 79.99,
+        "label": "Meets Expectations"
+      },
+      {
+        "min": 60,
+        "max": 69.99,
+        "label": "Needs Improvement"
+      },
+      {
+        "min": 0,
+        "max": 59.99,
+        "label": "Unsatisfactory"
+      }
+    ],
+    "sectionWeights": {
+      "companyObjectives": 30,
+      "individualOkrs": 40,
+      "behavioural": 30
+    },
+    "achievementCap": 100,
+    "anonymityThreshold": 3,
+    "behaviourIndicators": [
+      {
+        "id": "beh-1",
+        "name": "Outstanding",
+        "description": "Consistently demonstrates exemplary behaviour; positively influences others.",
+        "category": "Company Values",
+        "weight": 20,
+        "anchors": [
+          "Consistently demonstrates exemplary behaviour; positively influences others."
+        ]
+      },
+      {
+        "id": "beh-2",
+        "name": "Exceeds Expectations",
+        "description": "Frequently exceeds the expected standard with clear examples.",
+        "category": "Company Values",
+        "weight": 20,
+        "anchors": [
+          "Frequently exceeds the expected standard with clear examples."
+        ]
+      },
+      {
+        "id": "beh-3",
+        "name": "Meets Expectations",
+        "description": "Consistently demonstrates the expected behaviour for the role.",
+        "category": "Company Values",
+        "weight": 20,
+        "anchors": [
+          "Consistently demonstrates the expected behaviour for the role."
+        ]
+      },
+      {
+        "id": "beh-4",
+        "name": "Needs Improvement",
+        "description": "Inconsistently demonstrates the standard; targeted improvement is required.",
+        "category": "Company Values",
+        "weight": 20,
+        "anchors": [
+          "Inconsistently demonstrates the standard; targeted improvement is required."
+        ]
+      },
+      {
+        "id": "beh-5",
+        "name": "Unsatisfactory",
+        "description": "Frequently fails to demonstrate the required standard.",
+        "category": "Company Values",
+        "weight": 20,
+        "anchors": [
+          "Frequently fails to demonstrate the required standard."
+        ]
+      }
+    ]
+  },
+  "cycles": [
+    {
+      "id": "cyc-mrnqe7mi-hc4zvo",
+      "name": "Performance Cycle 2026",
+      "type": "Annual",
+      "year": 2026,
+      "description": "",
+      "status": "Draft",
+      "startDate": "2026-01-01",
+      "endDate": "2026-12-31",
+      "goalSettingStart": "2026-01-01",
+      "goalSettingEnd": "2026-02-28",
+      "sectionWeights": {
+        "companyObjectives": 30,
+        "individualOkrs": 40,
+        "behavioural": 30
+      },
+      "ratingBands": [
+        {
+          "min": 90,
+          "max": 100,
+          "label": "Outstanding"
+        },
+        {
+          "min": 80,
+          "max": 89.99,
+          "label": "Exceeds Expectations"
+        },
+        {
+          "min": 70,
+          "max": 79.99,
+          "label": "Meets Expectations"
+        },
+        {
+          "min": 60,
+          "max": 69.99,
+          "label": "Needs Improvement"
+        },
+        {
+          "min": 0,
+          "max": 59.99,
+          "label": "Unsatisfactory"
+        }
+      ],
+      "achievementCap": 100,
+      "enable360": true,
+      "enableMatrix": true,
+      "enableCalibration": true,
+      "enableForcedDistribution": false,
+      "populationRule": "All active employees",
+      "eligibilityCount": 0,
+      "version": 1,
+      "createdBy": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "createdAt": "2026-07-16T16:36:28.314Z",
+      "updatedAt": "2026-07-16T16:36:28.314Z"
+    },
+    {
+      "id": "cyc-mrnq9qte-u2d99d",
+      "name": "H2 2026 Performance Cycle",
+      "type": "Annual",
+      "year": 2026,
+      "description": "Enterprise mid-year to year-end performance cycle with goals, reviews, calibration, and publication.",
+      "status": "Goal Setting",
+      "startDate": "2026-07-01",
+      "endDate": "2026-12-31",
+      "goalSettingStart": "2026-07-01",
+      "goalSettingEnd": "2026-08-15",
+      "midYearStart": "2026-09-01",
+      "midYearEnd": "2026-09-30",
+      "yearEndStart": "2026-11-01",
+      "yearEndEnd": "2026-12-10",
+      "calibrationStart": "2026-12-11",
+      "calibrationEnd": "2026-12-18",
+      "publicationDate": "2026-12-20",
+      "appealDeadline": "2026-12-31",
+      "sectionWeights": {
+        "companyObjectives": 30,
+        "individualOkrs": 40,
+        "behavioural": 30
+      },
+      "ratingBands": [
+        {
+          "min": 90,
+          "max": 100,
+          "label": "Outstanding"
+        },
+        {
+          "min": 80,
+          "max": 89.99,
+          "label": "Exceeds Expectations"
+        },
+        {
+          "min": 70,
+          "max": 79.99,
+          "label": "Meets Expectations"
+        },
+        {
+          "min": 60,
+          "max": 69.99,
+          "label": "Needs Improvement"
+        },
+        {
+          "min": 0,
+          "max": 59.99,
+          "label": "Unsatisfactory"
+        }
+      ],
+      "achievementCap": 100,
+      "enable360": true,
+      "enableMatrix": true,
+      "enableCalibration": true,
+      "enableForcedDistribution": false,
+      "populationRule": "All active confirmed employees",
+      "eligibilityCount": 4,
+      "version": 1,
+      "createdBy": "HR Administrator",
+      "createdAt": "2026-07-16T16:32:59.906Z",
+      "updatedAt": "2026-07-16T16:32:59.906Z",
+      "publishedAt": "2026-07-16T16:32:59.906Z"
+    }
+  ],
+  "eligibility": [
+    {
+      "id": "elig-mrnq9qte-vnrr46",
+      "cycleId": "cyc-mrnq9qte-u2d99d",
+      "employeeId": "EMP-1001",
+      "employeeCode": "P1001",
+      "fullName": "Ada Okonkwo",
+      "department": "Engineering",
+      "jobTitle": "Engineer",
+      "managerId": "EMP-2001",
+      "managerName": "Line Manager",
+      "included": true,
+      "reason": "Active employee in published snapshot",
+      "snapshotAt": "2026-07-16T16:32:59.906Z"
+    },
+    {
+      "id": "elig-mrnq9qte-hyxp3q",
+      "cycleId": "cyc-mrnq9qte-u2d99d",
+      "employeeId": "EMP-1002",
+      "employeeCode": "P1002",
+      "fullName": "Chidi Bello",
+      "department": "Operations",
+      "jobTitle": "Supervisor",
+      "managerId": "EMP-2002",
+      "managerName": "Ops Manager",
+      "included": true,
+      "reason": "Active employee in published snapshot",
+      "snapshotAt": "2026-07-16T16:32:59.906Z"
+    },
+    {
+      "id": "elig-mrnq9qte-rmmny5",
+      "cycleId": "cyc-mrnq9qte-u2d99d",
+      "employeeId": "EMP-1003",
+      "employeeCode": "P1003",
+      "fullName": "Ngozi Adeyemi",
+      "department": "HR",
+      "jobTitle": "HR Officer",
+      "managerId": "EMP-2003",
+      "managerName": "HR Manager",
+      "included": true,
+      "reason": "Active employee in published snapshot",
+      "snapshotAt": "2026-07-16T16:32:59.906Z"
+    },
+    {
+      "id": "elig-mrnq9qte-3mk462",
+      "cycleId": "cyc-mrnq9qte-u2d99d",
+      "employeeId": "EMP-1004",
+      "employeeCode": "P1004",
+      "fullName": "Tunde Bakare",
+      "department": "Finance",
+      "jobTitle": "Accountant",
+      "managerId": "EMP-2004",
+      "managerName": "Finance Manager",
+      "included": true,
+      "reason": "Active employee in published snapshot",
+      "snapshotAt": "2026-07-16T16:32:59.906Z"
+    }
+  ],
+  "companyObjectives": [
+    {
+      "id": "co-mrnq9qtf-arsydl",
+      "cycleId": "cyc-mrnq9qte-u2d99d",
+      "code": "CO-REV-01",
+      "title": "Sustainable revenue growth",
+      "description": "Deliver approved revenue plan across operating units.",
+      "strategicPillar": "Growth",
+      "owner": "Executive Management",
+      "kpi": "Revenue vs plan",
+      "baseline": 90,
+      "target": 100,
+      "unit": "%",
+      "weight": 40,
+      "status": "Published",
+      "version": 1,
+      "createdBy": "HR Administrator",
+      "approvedBy": "Executive Management",
+      "publishedAt": "2026-07-16T16:32:59.907Z"
+    },
+    {
+      "id": "co-mrnq9qtf-zg8a8f",
+      "cycleId": "cyc-mrnq9qte-u2d99d",
+      "code": "CO-OPS-02",
+      "title": "Operational excellence and HSE",
+      "description": "Zero major HSE incidents and improved delivery reliability.",
+      "strategicPillar": "Operations",
+      "owner": "COO",
+      "kpi": "HSE + on-time delivery",
+      "baseline": 85,
+      "target": 100,
+      "unit": "%",
+      "weight": 35,
+      "status": "Published",
+      "version": 1,
+      "createdBy": "HR Administrator",
+      "approvedBy": "Executive Management",
+      "publishedAt": "2026-07-16T16:32:59.907Z"
+    },
+    {
+      "id": "co-mrnq9qtf-v3qug6",
+      "cycleId": "cyc-mrnq9qte-u2d99d",
+      "code": "CO-PEO-03",
+      "title": "People capability and engagement",
+      "description": "Build high-performing teams through capability and engagement.",
+      "strategicPillar": "People",
+      "owner": "HR Director",
+      "kpi": "Engagement / capability index",
+      "baseline": 70,
+      "target": 85,
+      "unit": "score",
+      "weight": 25,
+      "status": "Published",
+      "version": 1,
+      "createdBy": "HR Administrator",
+      "approvedBy": "Executive Management",
+      "publishedAt": "2026-07-16T16:32:59.907Z"
+    }
+  ],
+  "goals": [
+    {
+      "id": "goal-mrnq9qtf-pghdyq",
+      "cycleId": "cyc-mrnq9qte-u2d99d",
+      "employeeId": "EMP-1001",
+      "employeeCode": "P1001",
+      "employeeName": "Ada Okonkwo",
+      "department": "Engineering",
+      "managerId": "EMP-2001",
+      "managerName": "Line Manager",
+      "title": "Deliver assigned annual workplan outcomes",
+      "description": "Measurable individual contribution aligned to company objectives.",
+      "type": "Annual",
+      "parentObjectiveId": "co-mrnq9qtf-arsydl",
+      "strategicPillar": "Growth",
+      "keyResults": [
+        {
+          "id": "kr-mrnq9qtf-n91moy",
+          "title": "Primary KPI achievement",
+          "baseline": 0,
+          "target": 100,
+          "unit": "%",
+          "weight": 60
+        },
+        {
+          "id": "kr-mrnq9qtf-390out",
+          "title": "Quality / compliance milestones",
+          "baseline": 0,
+          "target": 100,
+          "unit": "%",
+          "weight": 40
+        }
+      ],
+      "weight": 100,
+      "startDate": "2026-07-01",
+      "dueDate": "2026-12-31",
+      "status": "Agreed",
+      "version": 1,
+      "progressPercent": 35,
+      "acknowledgedAt": "2026-07-16T16:32:59.907Z",
+      "agreedVersion": 1,
+      "createdBy": "Line Manager",
+      "createdAt": "2026-07-16T16:32:59.907Z",
+      "updatedAt": "2026-07-16T16:32:59.907Z",
+      "history": [
+        {
+          "version": 1,
+          "at": "2026-07-16T16:32:59.907Z",
+          "actor": "Line Manager",
+          "change": "Goal created"
+        }
+      ]
+    },
+    {
+      "id": "goal-mrnq9qtf-ml7031",
+      "cycleId": "cyc-mrnq9qte-u2d99d",
+      "employeeId": "EMP-1002",
+      "employeeCode": "P1002",
+      "employeeName": "Chidi Bello",
+      "department": "Operations",
+      "managerId": "EMP-2002",
+      "managerName": "Ops Manager",
+      "title": "Improve process quality and stakeholder service",
+      "description": "Measurable individual contribution aligned to company objectives.",
+      "type": "Annual",
+      "parentObjectiveId": "co-mrnq9qtf-zg8a8f",
+      "strategicPillar": "Operations",
+      "keyResults": [
+        {
+          "id": "kr-mrnq9qtf-agngcz",
+          "title": "Primary KPI achievement",
+          "baseline": 0,
+          "target": 100,
+          "unit": "%",
+          "weight": 60
+        },
+        {
+          "id": "kr-mrnq9qtf-m8d509",
+          "title": "Quality / compliance milestones",
+          "baseline": 0,
+          "target": 100,
+          "unit": "%",
+          "weight": 40
+        }
+      ],
+      "weight": 100,
+      "startDate": "2026-07-01",
+      "dueDate": "2026-12-31",
+      "status": "Agreed",
+      "version": 1,
+      "progressPercent": 40,
+      "acknowledgedAt": "2026-07-16T16:32:59.907Z",
+      "agreedVersion": 1,
+      "createdBy": "Ops Manager",
+      "createdAt": "2026-07-16T16:32:59.907Z",
+      "updatedAt": "2026-07-16T16:32:59.907Z",
+      "history": [
+        {
+          "version": 1,
+          "at": "2026-07-16T16:32:59.907Z",
+          "actor": "Ops Manager",
+          "change": "Goal created"
+        }
+      ]
+    },
+    {
+      "id": "goal-mrnq9qtf-bqafdm",
+      "cycleId": "cyc-mrnq9qte-u2d99d",
+      "employeeId": "EMP-1003",
+      "employeeCode": "P1003",
+      "employeeName": "Ngozi Adeyemi",
+      "department": "HR",
+      "managerId": "EMP-2003",
+      "managerName": "HR Manager",
+      "title": "Deliver assigned annual workplan outcomes",
+      "description": "Measurable individual contribution aligned to company objectives.",
+      "type": "Annual",
+      "parentObjectiveId": "co-mrnq9qtf-v3qug6",
+      "strategicPillar": "People",
+      "keyResults": [
+        {
+          "id": "kr-mrnq9qtf-vc6nbc",
+          "title": "Primary KPI achievement",
+          "baseline": 0,
+          "target": 100,
+          "unit": "%",
+          "weight": 60
+        },
+        {
+          "id": "kr-mrnq9qtf-vhzffv",
+          "title": "Quality / compliance milestones",
+          "baseline": 0,
+          "target": 100,
+          "unit": "%",
+          "weight": 40
+        }
+      ],
+      "weight": 100,
+      "startDate": "2026-07-01",
+      "dueDate": "2026-12-31",
+      "status": "Agreed",
+      "version": 1,
+      "progressPercent": 45,
+      "acknowledgedAt": "2026-07-16T16:32:59.907Z",
+      "agreedVersion": 1,
+      "createdBy": "HR Manager",
+      "createdAt": "2026-07-16T16:32:59.907Z",
+      "updatedAt": "2026-07-16T16:32:59.907Z",
+      "history": [
+        {
+          "version": 1,
+          "at": "2026-07-16T16:32:59.907Z",
+          "actor": "HR Manager",
+          "change": "Goal created"
+        }
+      ]
+    },
+    {
+      "id": "goal-mrnq9qtf-tvc1ev",
+      "cycleId": "cyc-mrnq9qte-u2d99d",
+      "employeeId": "EMP-1004",
+      "employeeCode": "P1004",
+      "employeeName": "Tunde Bakare",
+      "department": "Finance",
+      "managerId": "EMP-2004",
+      "managerName": "Finance Manager",
+      "title": "Improve process quality and stakeholder service",
+      "description": "Measurable individual contribution aligned to company objectives.",
+      "type": "Annual",
+      "parentObjectiveId": "co-mrnq9qtf-arsydl",
+      "strategicPillar": "Growth",
+      "keyResults": [
+        {
+          "id": "kr-mrnq9qtf-gy99bi",
+          "title": "Primary KPI achievement",
+          "baseline": 0,
+          "target": 100,
+          "unit": "%",
+          "weight": 60
+        },
+        {
+          "id": "kr-mrnq9qtf-amqk8m",
+          "title": "Quality / compliance milestones",
+          "baseline": 0,
+          "target": 100,
+          "unit": "%",
+          "weight": 40
+        }
+      ],
+      "weight": 100,
+      "startDate": "2026-07-01",
+      "dueDate": "2026-12-31",
+      "status": "Agreed",
+      "version": 1,
+      "progressPercent": 50,
+      "acknowledgedAt": "2026-07-16T16:32:59.907Z",
+      "agreedVersion": 1,
+      "createdBy": "Finance Manager",
+      "createdAt": "2026-07-16T16:32:59.907Z",
+      "updatedAt": "2026-07-16T16:32:59.907Z",
+      "history": [
+        {
+          "version": 1,
+          "at": "2026-07-16T16:32:59.907Z",
+          "actor": "Finance Manager",
+          "change": "Goal created"
+        }
+      ]
+    }
+  ],
+  "checkIns": [],
+  "assessments": [],
+  "raters": [],
+  "calibration": [],
+  "results": [],
+  "appeals": [],
+  "pips": [],
+  "developmentPlans": [],
+  "recognitions": [],
+  "probation": [
+    {
+      "id": "prob-mrnq9qtg-q6te1r",
+      "employeeId": "EMP-1001",
+      "employeeCode": "P1001",
+      "employeeName": "Ada Okonkwo",
+      "department": "Engineering",
+      "managerId": "EMP-2001",
+      "managerName": "Line Manager",
+      "startDate": "2026-01-15",
+      "endDate": "2026-07-15",
+      "durationMonths": 6,
+      "status": "Review Due",
+      "okrs": [],
+      "createdAt": "2026-07-16T16:32:59.908Z",
+      "updatedAt": "2026-07-16T16:32:59.908Z",
+      "alertsSent": [
+        60,
+        30,
+        14,
+        7
+      ]
+    },
+    {
+      "id": "prob-mrnq9qtg-l2zj40",
+      "employeeId": "EMP-1004",
+      "employeeCode": "P1004",
+      "employeeName": "Tunde Bakare",
+      "department": "Finance",
+      "managerId": "EMP-2004",
+      "managerName": "Finance Manager",
+      "startDate": "2026-02-01",
+      "endDate": "2026-08-01",
+      "durationMonths": 6,
+      "status": "Active",
+      "okrs": [],
+      "createdAt": "2026-07-16T16:32:59.908Z",
+      "updatedAt": "2026-07-16T16:32:59.908Z",
+      "alertsSent": [
+        60,
+        30
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "task-mrnq9qug-aek2gl",
+      "createdAt": "2026-07-16T16:32:59.944Z",
+      "status": "Assigned",
+      "cycleId": "cyc-mrnq9qte-u2d99d",
+      "employeeId": "EMP-1004",
+      "employeeName": "Tunde Bakare",
+      "type": "Probation Review",
+      "title": "Probation review due in 16 day(s) for Tunde Bakare",
+      "assigneeId": "EMP-2004",
+      "assigneeName": "Finance Manager",
+      "dueDate": "2026-08-01",
+      "href": "/hris/performance-management/performance-reviews/probation"
+    },
+    {
+      "id": "task-mrnq9quf-vk156u",
+      "createdAt": "2026-07-16T16:32:59.943Z",
+      "status": "Assigned",
+      "cycleId": "cyc-mrnq9qte-u2d99d",
+      "employeeId": "EMP-1004",
+      "employeeName": "Tunde Bakare",
+      "type": "Probation Review",
+      "title": "Probation review due in 16 day(s) for Tunde Bakare",
+      "assigneeId": "EMP-2004",
+      "assigneeName": "Finance Manager",
+      "dueDate": "2026-08-01",
+      "href": "/hris/performance-management/performance-reviews/probation"
+    },
+    {
+      "id": "task-mrnq9quf-fptykk",
+      "createdAt": "2026-07-16T16:32:59.943Z",
+      "status": "Assigned",
+      "cycleId": "cyc-mrnq9qte-u2d99d",
+      "employeeId": "EMP-1001",
+      "employeeName": "Ada Okonkwo",
+      "type": "Probation Review",
+      "title": "Probation review due in 0 day(s) for Ada Okonkwo",
+      "assigneeId": "EMP-2001",
+      "assigneeName": "Line Manager",
+      "dueDate": "2026-07-15",
+      "href": "/hris/performance-management/performance-reviews/probation"
+    },
+    {
+      "id": "task-mrnq9quf-t9vgoh",
+      "createdAt": "2026-07-16T16:32:59.943Z",
+      "status": "Assigned",
+      "cycleId": "cyc-mrnq9qte-u2d99d",
+      "employeeId": "EMP-1001",
+      "employeeName": "Ada Okonkwo",
+      "type": "Probation Review",
+      "title": "Probation review due in 0 day(s) for Ada Okonkwo",
+      "assigneeId": "EMP-2001",
+      "assigneeName": "Line Manager",
+      "dueDate": "2026-07-15",
+      "href": "/hris/performance-management/performance-reviews/probation"
+    },
+    {
+      "id": "task-mrnq9quf-rlqv7h",
+      "createdAt": "2026-07-16T16:32:59.943Z",
+      "status": "Assigned",
+      "cycleId": "cyc-mrnq9qte-u2d99d",
+      "employeeId": "EMP-1001",
+      "employeeName": "Ada Okonkwo",
+      "type": "Probation Review",
+      "title": "Probation review due in 0 day(s) for Ada Okonkwo",
+      "assigneeId": "EMP-2001",
+      "assigneeName": "Line Manager",
+      "dueDate": "2026-07-15",
+      "href": "/hris/performance-management/performance-reviews/probation"
+    },
+    {
+      "id": "task-mrnq9quf-vz4du0",
+      "createdAt": "2026-07-16T16:32:59.943Z",
+      "status": "Assigned",
+      "cycleId": "cyc-mrnq9qte-u2d99d",
+      "employeeId": "EMP-1001",
+      "employeeName": "Ada Okonkwo",
+      "type": "Probation Review",
+      "title": "Probation review due in 0 day(s) for Ada Okonkwo",
+      "assigneeId": "EMP-2001",
+      "assigneeName": "Line Manager",
+      "dueDate": "2026-07-15",
+      "href": "/hris/performance-management/performance-reviews/probation"
+    }
+  ],
+  "audit": [
+    {
+      "id": "aud-mrnqe7mj-8n1cae",
+      "at": "2026-07-16T16:36:28.315Z",
+      "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "actorRole": "HR Officer",
+      "action": "Created cycle",
+      "entityType": "PerformanceCycle",
+      "entityId": "cyc-mrnqe7mi-hc4zvo",
+      "after": "Performance Cycle 2026"
+    },
+    {
+      "id": "aud-mrnq9quv-fft2tp",
+      "at": "2026-07-16T16:32:59.959Z",
+      "actor": "QA",
+      "actorRole": "HR Officer",
+      "action": "Refreshed performance analytics",
+      "entityType": "Analytics",
+      "entityId": "snapshot"
+    },
+    {
+      "id": "aud-mrnq9qtg-hq0yoo",
+      "at": "2026-07-16T16:32:59.908Z",
+      "actor": "System",
+      "actorRole": "System",
+      "action": "Seeded performance domain",
+      "entityType": "PerformanceDomain",
+      "entityId": "root",
+      "after": "Cycle H2 2026 Performance Cycle with 4 eligible employees"
+    }
+  ],
+  "scheduledReports": [],
+  "analytics": {
+    "generatedAt": "2026-07-16T16:32:59.959Z",
+    "preCalibrationAvg": 0,
+    "postCalibrationAvg": 0,
+    "severityIndex": 0,
+    "leniencyIndex": 0,
+    "pipActive": 0,
+    "pipCompleted": 0,
+    "probationConfirmed": 0,
+    "probationExtended": 0,
+    "probationNotConfirmed": 0,
+    "ratingDistribution": []
+  }
+}

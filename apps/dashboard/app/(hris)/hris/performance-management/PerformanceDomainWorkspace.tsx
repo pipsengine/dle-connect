@@ -547,7 +547,7 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
   );
 
   const reportsView = (
-    <SectionShell title="Reports & Analytics" detail="Scoped operational reports from live performance records.">
+    <SectionShell title="Reports & Analytics" detail="Live KPIs, calibration analytics, and scheduled delivery to authorized recipients.">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {[
           ['Goals agreed', String(domain.goals.filter((goal) => goal.status === 'Agreed').length)],
@@ -556,11 +556,46 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
           ['Open appeals', String(domain.appeals.filter((item) => !['Closed', 'Rejected', 'Upheld', 'Amended'].includes(item.status)).length)],
           ['Active PIPs', String(domain.pips.filter((item) => /active|track|risk/i.test(item.status)).length)],
           ['Probation in progress', String(domain.probation.filter((item) => !['Confirmed', 'Closed', 'Not Confirmed'].includes(item.status)).length)],
+          ['Pre-calibration avg', String(domain.analytics?.preCalibrationAvg ?? '—')],
+          ['Post-calibration avg', String(domain.analytics?.postCalibrationAvg ?? '—')],
+          ['Severity / leniency', `${domain.analytics?.severityIndex ?? 0} / ${domain.analytics?.leniencyIndex ?? 0}`],
         ].map(([labelText, value]) => (
           <div key={labelText} className={card}>
             <p className="text-xs font-bold uppercase text-[#64748B]">{labelText}</p>
             <p className="mt-2 text-3xl font-black text-[#0F172A]">{value}</p>
           </div>
+        ))}
+      </div>
+      <div className={`${card} mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]`}>
+        <div>
+          <label className={label}>Report name</label>
+          <input className={input} value={form.rptName || ''} onChange={(e) => setField('rptName', e.target.value)} placeholder="Weekly completion digest" />
+        </div>
+        <div>
+          <label className={label}>Type</label>
+          <select className={input} value={form.rptType || 'completion'} onChange={(e) => setField('rptType', e.target.value)}>
+            <option value="completion">Completion</option>
+            <option value="okr-progress">OKR progress</option>
+            <option value="rating-distribution">Rating distribution</option>
+            <option value="calibration-delta">Calibration delta</option>
+            <option value="pip-tracker">PIP tracker</option>
+            <option value="probation-outcomes">Probation outcomes</option>
+          </select>
+        </div>
+        <div className="flex items-end gap-2">
+          <button type="button" className={btn} disabled={busy} onClick={() => onAction('report.schedule', { name: form.rptName, reportType: form.rptType || 'completion', cadence: 'Weekly', recipients: [payload.actor.employeeCode || payload.actor.fullName] })}>Schedule</button>
+          <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('analytics.refresh', {})}>Refresh analytics</button>
+        </div>
+      </div>
+      <div className="mt-3 space-y-2">
+        {(domain.scheduledReports || []).map((row) => (
+          <article key={row.id} className={`${card} flex flex-wrap items-center justify-between gap-3`}>
+            <div>
+              <h3 className="font-black text-[#0F172A]">{row.name}</h3>
+              <p className="text-sm font-semibold text-[#64748B]">{row.reportType} · {row.cadence} · next {row.nextRunAt.slice(0, 10)}</p>
+            </div>
+            <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('report.run', { id: row.id })}>Run now</button>
+          </article>
         ))}
       </div>
     </SectionShell>
@@ -642,12 +677,29 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
     if (route.includes('employee-goals') || route.includes('goal-library') || route.includes('kpi-setup')) return goalsView;
     if (route.includes('monthly-check-ins') || route.includes('continuous-feedback') || route.includes('coaching') || route.includes('development-conversations')) return checkInsView;
     if (route.includes('self-appraisal')) return assessmentView('Self');
-    if (route.includes('supervisor-review') || route.includes('final-evaluation') || route.includes('performance-scorecard')) return assessmentView('Manager');
-    if (route.includes('mid-year')) return assessmentView('Mid-Year');
+    if (route.includes('supervisor-review')) return assessmentView('Manager');
+    if (route.includes('mid-year')) {
+      return (
+        <div className="space-y-4">
+          {assessmentView('Mid-Year')}
+          <SectionShell title="Mid-year goal change requests" detail="Request interim goal changes; manager acknowledgement is required before lock.">
+            <div className={`${card} grid gap-3 md:grid-cols-[1fr_auto]`}>
+              <div>
+                <label className={label}>Goal ID</label>
+                <input className={input} value={form.midGoalId || ''} onChange={(e) => setField('midGoalId', e.target.value)} placeholder="goal-…" />
+              </div>
+              <div className="flex items-end">
+                <button type="button" className={btn} disabled={busy} onClick={() => onAction('midyear.change-request', { goalId: form.midGoalId, reason: 'Mid-year adjustment' })}>Request change</button>
+              </div>
+            </div>
+          </SectionShell>
+        </div>
+      );
+    }
     if (route.includes('behaviour') || route.includes('competency')) return assessmentView('Behavioural');
     if (route.includes('360') || route.includes('project-manager-review') || route.includes('matrix')) return threeSixtyView;
     if (route.includes('calibration') || route.includes('talent-review')) return calibrationView;
-    if (route.includes('results') || route.includes('scorecard')) return resultsView;
+    if (route.includes('final-evaluation') || route.includes('results') || route.includes('scorecard')) return resultsView;
     if (route.includes('appeal')) return appealsView;
     if (route.includes('pip')) return pipView;
     if (route.includes('development-plans') || route.includes('training-recommendations') || route.includes('career-development')) return developmentView;

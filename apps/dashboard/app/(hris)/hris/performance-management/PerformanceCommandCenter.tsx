@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Cell, Pie, PieChart, Tooltip } from 'recharts';
 import type { PerformancePayload } from '@/lib/performance-management-types';
+import type { PerformanceWorkspacePayload } from '@/lib/performance-domain-types';
 import { performanceRouteHref } from '@/lib/performance-management-menu-config';
 import {
   fmtDate,
@@ -28,7 +29,7 @@ import {
 } from './performance-management-ui';
 
 type PerformanceCommandCenterProps = {
-  payload: PerformancePayload;
+  payload: PerformancePayload | PerformanceWorkspacePayload;
 };
 
 const stageToneClass = {
