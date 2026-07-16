@@ -8,10 +8,11 @@ import {
   resolvePerformanceRoute,
 } from '@/lib/performance-management-menu-config';
 import type { PerformancePayload } from '@/lib/performance-management-types';
+import type { PerformanceWorkspacePayload } from '@/lib/performance-domain-types';
 import PerformanceCommandCenter from './PerformanceCommandCenter';
-import PerformanceCyclesView from './PerformanceCyclesView';
-import PerformanceSectionView from './PerformanceSectionView';
+import PerformanceDomainWorkspace from './PerformanceDomainWorkspace';
 import { fmtDateTime } from './performance-management-ui';
+import { defaultPerformanceRoles } from '@/lib/performance-management-menu-config';
 
 type ApiResponse<T> = { status: 'success' | 'error'; data?: T; error?: string };
 
@@ -36,14 +37,14 @@ export default function PerformanceManagementClient({
 }: PerformanceManagementClientProps) {
   const [route, setRoute] = useState(() => resolvePerformanceRoute(initialRoute));
   const [role, setRole] = useState<string>('HR Officer');
-  const [payload, setPayload] = useState<PerformancePayload | null>(null);
+  const [payload, setPayload] = useState<PerformanceWorkspacePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const activeItem = useMemo(() => findPerformanceMenuItem(route), [route]);
   const resolvedRoute = resolvePerformanceRoute(route);
   const isDashboard = resolvedRoute === 'dashboard';
-  const isCyclesPage = resolvedRoute === 'planning/performance-cycles';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,7 +54,7 @@ export default function PerformanceManagementClient({
         headers: { 'x-hris-role': role },
         cache: 'no-store',
       });
-      const json = await readApiResponse<PerformancePayload>(res);
+      const json = await readApiResponse<PerformanceWorkspacePayload>(res);
       if (json.status !== 'success' || !json.data) throw new Error(json.error || 'Unable to load performance workspace.');
       setPayload(json.data);
     } catch (err) {
@@ -62,6 +63,26 @@ export default function PerformanceManagementClient({
       setLoading(false);
     }
   }, [route, role]);
+
+  const runAction = useCallback(async (action: string, data: Record<string, unknown> = {}) => {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch('/api/hris/performance-management', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-hris-role': role },
+        body: JSON.stringify({ action, payload: data, route, actorRole: role }),
+      });
+      const json = await readApiResponse<{ message?: string; payload?: PerformanceWorkspacePayload }>(res);
+      if (json.status !== 'success') throw new Error(json.error || 'Action failed.');
+      if (json.data?.payload) setPayload(json.data.payload);
+      else await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Action failed.');
+    } finally {
+      setBusy(false);
+    }
+  }, [load, role, route]);
 
   useEffect(() => {
     setRoute(resolvePerformanceRoute(initialRoute));
@@ -94,7 +115,7 @@ export default function PerformanceManagementClient({
       ) : null}
 
       <div className="mx-auto max-w-[1600px] px-8 py-6">
-        {!isDashboard && !isCyclesPage ? (
+        {!isDashboard ? (
           <header className="mb-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="flex items-start gap-4">
@@ -118,7 +139,7 @@ export default function PerformanceManagementClient({
                   className="h-11 rounded-lg border border-[#E1E4E8] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#0052CC] focus:ring-2 focus:ring-[#E8F1FF]"
                   aria-label="Performance role preview"
                 >
-                  {(payload?.roles || ['Employee', 'Supervisor', 'Project Manager', 'HR Officer', 'HR Manager', 'Executive Management', 'Super Administrator']).map((r) => (
+                  {defaultPerformanceRoles.map((r) => (
                     <option key={r} value={r}>{r}</option>
                   ))}
                 </select>
@@ -137,7 +158,7 @@ export default function PerformanceManagementClient({
               </div>
             </div>
           </header>
-        ) : isDashboard ? (
+        ) : (
           <header className="mb-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="flex items-start gap-4">
@@ -157,7 +178,7 @@ export default function PerformanceManagementClient({
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <select value={role} onChange={(e) => setRole(e.target.value)} className="h-11 rounded-lg border border-[#E1E4E8] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#0052CC]">
-                  {(payload?.roles || []).map((r) => <option key={r} value={r}>{r}</option>)}
+                  {defaultPerformanceRoles.map((r) => <option key={r} value={r}>{r}</option>)}
                 </select>
                 <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex h-11 items-center gap-2 rounded-lg border border-[#E1E4E8] bg-white px-4 text-sm font-semibold text-[#475569] hover:bg-[#F8FAFC] disabled:opacity-60">
                   <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
@@ -166,7 +187,7 @@ export default function PerformanceManagementClient({
               </div>
             </div>
           </header>
-        ) : null}
+        )}
 
         <div className="min-h-[720px]">
           {error ? (
@@ -179,14 +200,8 @@ export default function PerformanceManagementClient({
           ) : payload ? (
             isDashboard ? (
               <PerformanceCommandCenter payload={payload} />
-            ) : isCyclesPage && payload.cyclesPage ? (
-              <PerformanceCyclesView payload={payload} onRefresh={() => void load()} loading={loading} />
-            ) : activeItem ? (
-              <PerformanceSectionView item={activeItem} readOnly={payload.permissions.readOnlyExecutive} />
             ) : (
-              <div className="rounded-xl border border-[#E1E4E8] bg-white p-8 text-center text-sm text-[#64748B]">
-                Page not found. Select a menu item from the sidebar.
-              </div>
+              <PerformanceDomainWorkspace route={resolvedRoute} payload={payload} onAction={runAction} busy={busy || loading} />
             )
           ) : null}
         </div>

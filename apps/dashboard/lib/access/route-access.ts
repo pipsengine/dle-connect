@@ -52,15 +52,38 @@ const isFinanceSpecialistRole = (roles: string[]) =>
     || /Finance Administrator|Finance Manager|Finance Controller|Finance Payroll Reviewer/i.test(role),
   );
 
+/** CFO, MD/CEO, and executive payroll approval-stage roles. */
 const isExecutivePayrollApproverRole = (roles: string[]) =>
   roles.some((role) =>
-    /Executive User|Executive Director|Executive Management|CFO/i.test(role),
+    /^(CFO|MD|CEO)$/i.test(role)
+    || /\b(CFO|MD|CEO)\b/i.test(role)
+    || /Managing Director|Chief Financial Officer|Chief Executive/i.test(role)
+    || /Executive User|Executive Director|Executive Management/i.test(role),
   );
+
+const PAYROLL_APPROVER_REVIEW_PERMISSIONS = [
+  'page.hris.payroll.salary-management.view',
+  'page.hris.payroll.employee-salary-setup.view',
+  'page.hris.payroll.salary-structure.view',
+  'page.hris.payroll.approval.view',
+  'page.payroll.management.approval.view',
+  'page.payroll.management.bank-finance.view',
+  'payroll.workflow.cfo-approval.view',
+  'payroll.workflow.cfo-approval.approve',
+  'payroll.workflow.md-approval.view',
+  'payroll.workflow.md-approval.approve',
+  'payroll.workflow.finance-review.view',
+  'payroll.approve',
+  'payroll.view',
+  'payroll.*',
+  'finance.view',
+  'finance.*',
+];
 
 /** HR Management module entry — Super Admin and HR department / HR roles only. */
 export const canAccessHrManagementNav = (session: SessionLike) => isHrPortalUser(session);
 
-/** Pay Setup — Super Admin, HR, payroll specialists, and designated payroll approvers only. */
+/** Pay Setup — Super Admin, HR, payroll specialists, finance, and CFO/MD payroll approvers. */
 export const canAccessPaySetupNav = (session: SessionLike) => {
   if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
   const roles = session.roles || [];
@@ -76,30 +99,26 @@ export const canAccessPaySetupNav = (session: SessionLike) => {
     ]);
   }
   if (isPayrollSpecialistRole(roles) || isExecutivePayrollApproverRole(roles) || isFinanceSpecialistRole(roles)) {
-    return hasAnyPermission(permissions, [
-      'page.hris.payroll.salary-management.view',
-      'page.hris.payroll.employee-salary-setup.view',
-      'page.hris.payroll.salary-structure.view',
-      'page.hris.payroll.approval.view',
-      'payroll.view',
-      'payroll.*',
-    ]);
+    return hasAnyPermission(permissions, PAYROLL_APPROVER_REVIEW_PERMISSIONS);
   }
   return false;
 };
 
-/** Bank & Finance — Super Admin, finance specialists, payroll admins, and HR with bank-finance grant. */
+/** Bank & Finance — Super Admin, finance/payroll specialists, HR with grant, and CFO/MD approvers. */
 export const canAccessBankFinanceNav = (session: SessionLike) => {
   if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
   const roles = session.roles || [];
   const permissions = session.permissions || [];
-  if (isFinanceSpecialistRole(roles) || isPayrollSpecialistRole(roles)) {
+  if (isFinanceSpecialistRole(roles) || isPayrollSpecialistRole(roles) || isExecutivePayrollApproverRole(roles)) {
     return hasAnyPermission(permissions, [
       'page.payroll.management.bank-finance.view',
+      'reports.payroll.bank-schedule.view',
+      'button.payroll.post.view',
       'finance.view',
       'finance.*',
       'payroll.*',
       'payroll.view',
+      ...PAYROLL_APPROVER_REVIEW_PERMISSIONS,
     ]);
   }
   if (isHrPortalUser(session)) {

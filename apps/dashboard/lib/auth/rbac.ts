@@ -140,12 +140,16 @@ const payrollFinanceReviewPerms = [
 
 const payrollCfoReviewPerms = [
   ...payrollSalaryReviewPerms,
+  'page.payroll.management.bank-finance.view',
+  'reports.payroll.bank-schedule.view',
   'payroll.workflow.cfo-approval.view',
   'payroll.workflow.cfo-approval.approve',
 ];
 
 const payrollMdReviewPerms = [
   ...payrollSalaryReviewPerms,
+  'page.payroll.management.bank-finance.view',
+  'reports.payroll.bank-schedule.view',
   'payroll.workflow.md-approval.view',
   'payroll.workflow.md-approval.approve',
 ];
@@ -266,6 +270,8 @@ export const defaultRoleForEmployee = (
   const text = `${jobTitle} ${department} ${options?.employmentType || ''}`.toLowerCase();
   const code = String(options?.employeeCode || '').trim().toUpperCase();
   if (/^IT\d+/.test(code) || /industrial train|it student|intern|trainee|nysc/i.test(text)) return 'Employee';
+  if (/\bcfo\b|chief financial officer/i.test(text)) return 'CFO';
+  if (/\bmd\b|\bceo\b|managing director|chief executive/i.test(text)) return 'Executive Director';
   if (text.includes('payroll')) return 'Payroll Officer';
   if (text.includes('human') || text.includes('hr')) return 'HR Officer';
   if (text.includes('finance') || text.includes('account')) return 'Accountant';
