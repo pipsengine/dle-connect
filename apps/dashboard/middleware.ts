@@ -54,8 +54,15 @@ export async function middleware(request: NextRequest) {
 
     const needsLivePermissions =
       !session.isGlobalAdmin &&
-      (!pathname.startsWith('/api') || pathname.startsWith('/api/hris')) &&
-      (pathname.startsWith('/hris') || pathname.startsWith('/administration') || pathname.startsWith('/api/hris'));
+      (
+        !permissions.length
+        || !pathname.startsWith('/api')
+        || pathname.startsWith('/api/hris')
+        || pathname.startsWith('/api/it-support')
+        || pathname.startsWith('/administration')
+        || pathname.startsWith('/it-support')
+        || pathname.startsWith('/hris')
+      );
 
     let liveSessionResponse: Response | null = null;
 

@@ -137,7 +137,9 @@ export const createSessionToken = async (
     department: user.department,
     unit: user.unit,
     roles: user.roles,
-    permissions: user.permissions,
+    // Permissions are resolved server-side from roles — never embed in the cookie
+    // (Admin / multi-role users exceed the ~4KB browser cookie limit).
+    permissions: user.isGlobalAdmin ? ['*'] : [],
     status: user.status,
     firstLoginRequired: user.firstLoginRequired,
     passwordResetRequired: user.passwordResetRequired,
@@ -151,9 +153,9 @@ export const createSessionToken = async (
 };
 
 /** Refresh sliding idle window while preserving original login time (absolute max). */
-export const refreshSessionToken = async (session: SessionPayload, permissions?: string[]) => {
+export const refreshSessionToken = async (session: SessionPayload, _permissions?: string[]) => {
   const now = nowSeconds();
-  return createSessionToken(sessionUserFromPayload(session, permissions), {
+  return createSessionToken(sessionUserFromPayload(session), {
     iat: session.iat || now,
     lastActivityAt: now,
   });
