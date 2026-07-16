@@ -43,7 +43,7 @@ import {
   deriveLoanRepaymentSchedules,
   derivePortalAnalytics,
 } from '@/lib/ess-portal-derived-data';
-import { getEssPerformanceBundle, applyPerformanceAction } from '@/lib/performance-domain-store';
+import { getEssPerformanceBundle, applyPerformanceAction, buildPerformanceActorContext } from '@/lib/performance-domain-store';
 import { invalidateEssPortalCache, readEssPortalResponseCache, writeEssPortalResponseCache } from '@/lib/ess-portal-cache';
 import { buildEssReportExport } from '@/lib/ess-reports-export';
 import { isNigeriaCountry, resolveNigeriaPersonalLocation } from '@/lib/nigeria-locations';
@@ -1732,12 +1732,13 @@ export async function POST(request: Request) {
     }
 
     if (action === 'acknowledge-performance-goal' || action === 'acknowledge-performance-result') {
+      const actorContext = buildPerformanceActorContext(session);
       const result = await applyPerformanceAction({
         action: action === 'acknowledge-performance-goal' ? 'goal.acknowledge' : 'result.acknowledge',
         actor: session.fullName || session.username,
-        actorRole: 'Employee',
+        actorRole: actorContext.performanceRole,
         payload: { id: compact(body.id || body.goalId || body.resultId) },
-      });
+      }, actorContext);
       if (!result.ok) return err(400, result.error || 'Unable to acknowledge performance item.');
       invalidateEssPortalCache();
       return ok({ message: result.message || 'Acknowledged.' });

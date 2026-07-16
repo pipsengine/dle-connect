@@ -30,6 +30,7 @@ const normalize = (path: string) =>
 export function PerformanceNavTree({ isOpen, onNavigate }: PerformanceNavTreeProps) {
   const pathname = usePathname();
   const [role, setRole] = useState<PerformanceRole>('HR Officer');
+  const [permissions, setPermissions] = useState<string[]>([]);
   const [badges, setBadges] = useState<PerformanceBadgeMap>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ planning: true, 'performance-reviews': true });
 
@@ -47,6 +48,7 @@ export function PerformanceNavTree({ isOpen, onNavigate }: PerformanceNavTreePro
       .then((json) => {
         if (!json?.data) return;
         setRole(resolvePerformanceRole(json.data.role));
+        setPermissions(Array.isArray(json.data.sessionPermissions) ? json.data.sessionPermissions : []);
         setBadges(json.data.badges || {});
       })
       .catch(() => undefined);
@@ -58,7 +60,7 @@ export function PerformanceNavTree({ isOpen, onNavigate }: PerformanceNavTreePro
     if (parent) setExpanded((prev) => ({ ...prev, [parent]: true }));
   }, [activeRoute]);
 
-  const visibleMenu = useMemo(() => filterMenuByRole(performanceMenuTree, role), [role]);
+  const visibleMenu = useMemo(() => filterMenuByRole(performanceMenuTree, role, permissions), [role, permissions]);
 
   const isActive = (item: PerformanceMenuItem) => activeRoute && normalize(item.route) === activeRoute;
 

@@ -52,21 +52,41 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
 
   const setField = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
+  const isHrScope = payload.actor.scope === 'global';
+  const isTeamScope = payload.actor.scope === 'team';
+  const openTeamTasks = domain.tasks.filter((task) => !['Completed', 'Cancelled'].includes(task.status));
+
+  const teamQueueBanner = isTeamScope && openTeamTasks.length ? (
+    <div className={`${card} border-[#DBEAFE] bg-[#EFF6FF]`}>
+      <h3 className="font-black text-[#0F172A]">Manager action queue</h3>
+      <p className="mt-1 text-sm font-semibold text-[#64748B]">{openTeamTasks.length} open task(s) for your team.</p>
+      <ul className="mt-3 space-y-2">
+        {openTeamTasks.slice(0, 5).map((task) => (
+          <li key={task.id} className="text-sm font-semibold text-[#334155]">{task.title} · due {task.dueDate}</li>
+        ))}
+      </ul>
+    </div>
+  ) : null;
+
   const cyclesView = (
     <SectionShell
       title="Performance Cycle Management"
       detail="Create, approve, publish, and advance controlled performance cycles with eligibility snapshots."
-      actions={
+      actions={isHrScope ? (
         <button type="button" disabled={busy} className={btn} onClick={() => onAction('cycle.create', { name: form.cycleName || `Performance Cycle ${new Date().getFullYear()}`, type: form.cycleType || 'Annual' })}>
           <Plus className="h-4 w-4" /> Create Cycle
         </button>
-      }
+      ) : null}
     >
+      {isHrScope ? (
       <div className={`${card} grid gap-3 md:grid-cols-3`}>
         <div><label className={label}>Cycle name</label><input className={input} value={form.cycleName || ''} onChange={(e) => setField('cycleName', e.target.value)} placeholder="H2 2026 Performance Cycle" /></div>
         <div><label className={label}>Type</label><input className={input} value={form.cycleType || 'Annual'} onChange={(e) => setField('cycleType', e.target.value)} /></div>
         <div className="flex items-end"><button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.create', { name: form.cycleName, type: form.cycleType || 'Annual' })}>Quick create draft</button></div>
       </div>
+      ) : (
+        <p className={`${card} text-sm font-semibold text-[#64748B]`}>Cycle administration is limited to HR performance administrators.</p>
+      )}
       <div className="space-y-3">
         {domain.cycles.map((cycle) => (
           <article key={cycle.id} className={card}>
@@ -77,14 +97,14 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
                 <p className="mt-1 text-xs font-bold text-[#0052CC]">{cycle.status}</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                {cycle.status === 'Draft' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.submit-approval', { cycleId: cycle.id })}>Submit approval</button> : null}
-                {['Draft', 'Pending Approval'].includes(cycle.status) ? <button type="button" className={btn} disabled={busy} onClick={() => onAction('cycle.approve-publish', { cycleId: cycle.id })}>Publish</button> : null}
-                <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.clone', { cycleId: cycle.id })}>Clone</button>
-                {cycle.status === 'Goal Setting' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.advance-status', { cycleId: cycle.id, status: 'Active' })}>Start Active</button> : null}
-                {cycle.status === 'Active' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.advance-status', { cycleId: cycle.id, status: 'Mid-Year Review' })}>Open Mid-Year</button> : null}
-                {cycle.status === 'Mid-Year Review' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.advance-status', { cycleId: cycle.id, status: 'Year-End Review' })}>Open Year-End</button> : null}
-                {cycle.status === 'Year-End Review' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.advance-status', { cycleId: cycle.id, status: 'Calibration' })}>Open Calibration</button> : null}
-                {cycle.status === 'Calibration' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.advance-status', { cycleId: cycle.id, status: 'Results Published' })}>Mark Ready to Publish</button> : null}
+                {isHrScope && cycle.status === 'Draft' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.submit-approval', { cycleId: cycle.id })}>Submit approval</button> : null}
+                {isHrScope && ['Draft', 'Pending Approval'].includes(cycle.status) ? <button type="button" className={btn} disabled={busy} onClick={() => onAction('cycle.approve-publish', { cycleId: cycle.id })}>Publish</button> : null}
+                {isHrScope ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.clone', { cycleId: cycle.id })}>Clone</button> : null}
+                {isHrScope && cycle.status === 'Goal Setting' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.advance-status', { cycleId: cycle.id, status: 'Active' })}>Start Active</button> : null}
+                {isHrScope && cycle.status === 'Active' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.advance-status', { cycleId: cycle.id, status: 'Mid-Year Review' })}>Open Mid-Year</button> : null}
+                {isHrScope && cycle.status === 'Mid-Year Review' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.advance-status', { cycleId: cycle.id, status: 'Year-End Review' })}>Open Year-End</button> : null}
+                {isHrScope && cycle.status === 'Year-End Review' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.advance-status', { cycleId: cycle.id, status: 'Calibration' })}>Open Calibration</button> : null}
+                {isHrScope && cycle.status === 'Calibration' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.advance-status', { cycleId: cycle.id, status: 'Results Published' })}>Mark Ready to Publish</button> : null}
               </div>
             </div>
             <p className="mt-3 text-xs font-semibold text-[#64748B]">Weights: Company {cycle.sectionWeights.companyObjectives}% · OKRs {cycle.sectionWeights.individualOkrs}% · Behaviour {cycle.sectionWeights.behavioural}%</p>
@@ -677,7 +697,14 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
     if (route.includes('employee-goals') || route.includes('goal-library') || route.includes('kpi-setup')) return goalsView;
     if (route.includes('monthly-check-ins') || route.includes('continuous-feedback') || route.includes('coaching') || route.includes('development-conversations')) return checkInsView;
     if (route.includes('self-appraisal')) return assessmentView('Self');
-    if (route.includes('supervisor-review')) return assessmentView('Manager');
+    if (route.includes('supervisor-review')) {
+      return (
+        <div className="space-y-4">
+          {teamQueueBanner}
+          {assessmentView('Manager')}
+        </div>
+      );
+    }
     if (route.includes('mid-year')) {
       return (
         <div className="space-y-4">

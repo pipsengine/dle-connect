@@ -190,9 +190,50 @@ export const readEmployeeConfirmationFromDb = async (): Promise<EmployeeConfirma
   const now = new Date();
   const employeeSource = await readPayrollEmployees();
   const employees = employeeSource.employees;
+  const outcomes = await listConfirmationOutcomes();
+  const outcomeByKey = new Map<string, ConfirmationOutcomeRecord>();
+  for (const outcome of outcomes) {
+    const code = String(outcome.employeeCode || '').trim().toUpperCase();
+    const id = String(outcome.employeeId || '').trim().toUpperCase();
+    if (code) outcomeByKey.set(code, outcome);
+    if (id) outcomeByKey.set(id, outcome);
+  }
+
   const records = employees
     .map((row) => deriveRecord(row, now))
     .filter((row): row is EmployeeConfirmationRecord => Boolean(row))
+    .map((record) => {
+      const outcome = outcomeByKey.get(String(record.employeeCode || '').trim().toUpperCase())
+        || outcomeByKey.get(String(record.employeeId || '').trim().toUpperCase());
+      if (!outcome) return record;
+      if (outcome.decision === 'Confirm') {
+        return {
+          ...record,
+          confirmationStatus: 'Confirmed' as const,
+          stage: 'Confirmed' as const,
+          currentStatus: 'Confirmed',
+          risk: 'Low' as const,
+          riskReason: `Confirmed via ${outcome.source} on ${outcome.decidedAt.slice(0, 10)}.`,
+        };
+      }
+      if (outcome.decision === 'Extend') {
+        return {
+          ...record,
+          confirmationStatus: 'Review Required' as const,
+          stage: 'Probation Active' as const,
+          probationEndDate: outcome.probationEndDate || record.probationEndDate,
+          confirmationDueDate: outcome.probationEndDate || record.confirmationDueDate,
+          riskReason: outcome.reason || `Probation extended via ${outcome.source}.`,
+        };
+      }
+      return {
+        ...record,
+        confirmationStatus: 'Review Required' as const,
+        stage: 'Review Required' as const,
+        risk: 'High' as const,
+        riskReason: outcome.reason || `Not confirmed via ${outcome.source}; requires HR action (no auto-termination).`,
+      };
+    })
     .sort((a, b) => {
       const riskWeight: Record<ConfirmationRisk, number> = { High: 0, Medium: 1, Low: 2 };
       const byRisk = riskWeight[a.risk] - riskWeight[b.risk];

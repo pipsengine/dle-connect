@@ -101,6 +101,9 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
   'service-desk.view': ['it.view'],
   'view_logistics_fleet': ['fleet.view', 'fleet.*', 'logistics.view', 'logistics.*', 'driver.view'],
   'fleet.view': ['view_logistics_fleet', 'logistics.view', 'driver.view'],
+  'performance.view': ['page.hris.performance-management.view', 'hris.performance-management', 'page.hris.management.view'],
+  'hris.performance-management': ['page.hris.performance-management.view', 'performance.view'],
+  'performance.admin': ['performance.cycles', 'performance.objectives', 'performance.calibration'],
 };
 
 const reverseAliases = () => {

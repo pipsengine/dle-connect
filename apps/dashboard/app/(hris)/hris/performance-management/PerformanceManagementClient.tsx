@@ -11,7 +11,6 @@ import type { PerformanceWorkspacePayload } from '@/lib/performance-domain-types
 import PerformanceCommandCenter from './PerformanceCommandCenter';
 import PerformanceDomainWorkspace from './PerformanceDomainWorkspace';
 import { fmtDateTime } from './performance-management-ui';
-import { defaultPerformanceRoles } from '@/lib/performance-management-menu-config';
 
 type ApiResponse<T> = { status: 'success' | 'error'; data?: T; error?: string };
 
@@ -35,7 +34,6 @@ export default function PerformanceManagementClient({
   initialNow,
 }: PerformanceManagementClientProps) {
   const [route, setRoute] = useState(() => resolvePerformanceRoute(initialRoute));
-  const [role, setRole] = useState<string>('HR Officer');
   const [payload, setPayload] = useState<PerformanceWorkspacePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -44,13 +42,14 @@ export default function PerformanceManagementClient({
   const activeItem = useMemo(() => findPerformanceMenuItem(route), [route]);
   const resolvedRoute = resolvePerformanceRoute(route);
   const isDashboard = resolvedRoute === 'dashboard';
+  const actorLabel = payload?.actor.fullName || '—';
+  const scopeLabel = payload?.actor.scope === 'global' ? 'HR population' : payload?.actor.scope === 'team' ? 'My team' : 'My records';
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`/api/hris/performance-management?route=${encodeURIComponent(route)}&role=${encodeURIComponent(role)}`, {
-        headers: { 'x-hris-role': role },
+      const res = await fetch(`/api/hris/performance-management?route=${encodeURIComponent(route)}`, {
         cache: 'no-store',
       });
       const json = await readApiResponse<PerformanceWorkspacePayload>(res);
@@ -61,7 +60,7 @@ export default function PerformanceManagementClient({
     } finally {
       setLoading(false);
     }
-  }, [route, role]);
+  }, [route]);
 
   const runAction = useCallback(async (action: string, data: Record<string, unknown> = {}) => {
     setBusy(true);
@@ -69,8 +68,8 @@ export default function PerformanceManagementClient({
     try {
       const res = await fetch('/api/hris/performance-management', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-hris-role': role },
-        body: JSON.stringify({ action, payload: data, route, actorRole: role }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, payload: data, route }),
       });
       const json = await readApiResponse<{ message?: string; payload?: PerformanceWorkspacePayload }>(res);
       if (json.status !== 'success') throw new Error(json.error || 'Action failed.');
@@ -81,7 +80,7 @@ export default function PerformanceManagementClient({
     } finally {
       setBusy(false);
     }
-  }, [load, role, route]);
+  }, [load, route]);
 
   useEffect(() => {
     setRoute(resolvePerformanceRoute(initialRoute));
@@ -132,16 +131,11 @@ export default function PerformanceManagementClient({
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="h-11 rounded-lg border border-[#E1E4E8] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#0052CC] focus:ring-2 focus:ring-[#E8F1FF]"
-                  aria-label="Performance role preview"
-                >
-                  {defaultPerformanceRoles.map((r) => (
-                    <option key={r} value={r}>{r}</option>
-                  ))}
-                </select>
+                {payload ? (
+                  <span className="inline-flex h-11 items-center rounded-lg border border-[#E1E4E8] bg-white px-3 text-xs font-semibold text-[#475569]">
+                    {payload.actor.role} · {scopeLabel} · {actorLabel}
+                  </span>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => void load()}
@@ -176,9 +170,11 @@ export default function PerformanceManagementClient({
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <select value={role} onChange={(e) => setRole(e.target.value)} className="h-11 rounded-lg border border-[#E1E4E8] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#0052CC]">
-                  {defaultPerformanceRoles.map((r) => <option key={r} value={r}>{r}</option>)}
-                </select>
+                {payload ? (
+                  <span className="inline-flex h-11 items-center rounded-lg border border-[#E1E4E8] bg-white px-3 text-xs font-semibold text-[#475569]">
+                    {payload.actor.role} · {scopeLabel} · {actorLabel}
+                  </span>
+                ) : null}
                 <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex h-11 items-center gap-2 rounded-lg border border-[#E1E4E8] bg-white px-4 text-sm font-semibold text-[#475569] hover:bg-[#F8FAFC] disabled:opacity-60">
                   <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
                 </button>

@@ -478,8 +478,10 @@ export type PerformanceWorkspacePayload = PerformancePayload & {
   };
   actor: {
     role: PerformanceRole;
+    scope: 'global' | 'team' | 'self';
     employeeId: string;
     employeeCode: string;
     fullName: string;
   };
+  sessionPermissions?: string[];
 };

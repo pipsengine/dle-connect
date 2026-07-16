@@ -43,9 +43,18 @@ import type {
   RecognitionRecommendation,
   ScheduledPerformanceReport,
 } from '@/lib/performance-domain-types';
+import {
+  assertPerformanceActionAllowed,
+  loadTeamEmployeeIds,
+  scopePerformanceDomain,
+  type PerformanceActorContext,
+} from '@/lib/performance-access';
 import { recordConfirmationOutcome } from '@/lib/employee-confirmation-store';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import type { SessionPayload } from '@/lib/auth/session';
+
+export { buildPerformanceActorContext } from '@/lib/performance-access';
+export type { PerformanceActorContext, PerformanceScope } from '@/lib/performance-access';
 
 const STORE_FILE = 'domain.json';
 
@@ -124,6 +133,31 @@ const emptyState = (): PerformanceDomainState => ({
 });
 
 const navPrefs = new Map<string, PerformanceNavPreferences>();
+const NAV_PREFS_FILE = 'nav-preferences.json';
+
+const navPrefsPath = async () => path.join(await resolveWritableDataDir('performance'), NAV_PREFS_FILE);
+
+const readNavPrefsFile = async (): Promise<Record<string, PerformanceNavPreferences>> => {
+  try {
+    const raw = await readFile(await navPrefsPath(), 'utf8');
+    const parsed = JSON.parse(raw) as Record<string, PerformanceNavPreferences>;
+    Object.entries(parsed).forEach(([key, value]) => navPrefs.set(key, value));
+    return parsed;
+  } catch {
+    return {};
+  }
+};
+
+const writeNavPrefsFile = async (data: Record<string, PerformanceNavPreferences>) => {
+  const file = await navPrefsPath();
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, JSON.stringify(data, null, 2), 'utf8');
+};
+
+const loadNavPreferences = async (userKey: string) => {
+  if (!navPrefs.has(userKey)) await readNavPrefsFile();
+  return navPrefs.get(userKey) || defaultPreferences();
+};
 
 const defaultPreferences = (): PerformanceNavPreferences => ({
   favorites: [],
@@ -730,18 +764,22 @@ const buildDashboard = (state: PerformanceDomainState, employeeCount: number): P
   };
 };
 
-export const writePerformanceNavPreferences = (userKey: string, preferences: Partial<PerformanceNavPreferences>) => {
-  const current = navPrefs.get(userKey) || defaultPreferences();
+export const writePerformanceNavPreferences = async (userKey: string, preferences: Partial<PerformanceNavPreferences>) => {
+  const store = await readNavPrefsFile();
+  const current = store[userKey] || defaultPreferences();
   const next = { ...current, ...preferences };
+  store[userKey] = next;
   navPrefs.set(userKey, next);
+  await writeNavPrefsFile(store);
   return next;
 };
 
-export const updatePerformanceNavAction = (
+export const updatePerformanceNavAction = async (
   userKey: string,
   action: { type: string; route?: string; groupId?: string; collapsed?: boolean },
 ) => {
-  const current = navPrefs.get(userKey) || defaultPreferences();
+  const store = await readNavPrefsFile();
+  const current = store[userKey] || defaultPreferences();
   if (action.type === 'favorite' && action.route) {
     current.favorites = current.favorites.includes(action.route)
       ? current.favorites.filter((item) => item !== action.route)
@@ -756,27 +794,36 @@ export const updatePerformanceNavAction = (
       : [...current.expandedGroups, action.groupId];
   }
   if (action.type === 'sidebar') current.sidebarCollapsed = Boolean(action.collapsed);
+  store[userKey] = current;
   navPrefs.set(userKey, current);
+  await writeNavPrefsFile(store);
   return current;
 };
 
 export const readPerformanceManagementPayload = async (
   route: string,
-  roleInput?: string | null,
+  actorContext: PerformanceActorContext,
   userKey = 'default',
 ): Promise<PerformanceWorkspacePayload> => {
-  const role = resolvePerformanceRole(roleInput) || defaultPerformanceRoles[0];
-  const state = await readState();
-  const alertCountBefore = state.tasks.length;
-  refreshProbationAlerts(state);
-  if (state.tasks.length !== alertCountBefore) await writeState(state);
-  let employeeCount = state.eligibility.length;
+  const role = actorContext.performanceRole;
+  const fullState = await readState();
+  const alertCountBefore = fullState.tasks.length;
+  refreshProbationAlerts(fullState);
+  if (fullState.tasks.length !== alertCountBefore) await writeState(fullState);
+
+  let payrollEmployees: any[] = [];
   try {
     const source = await withTimeout(readPayrollEmployees(), 5000, { employees: [] as any[] } as any);
-    employeeCount = source.employees?.length || employeeCount;
+    payrollEmployees = source.employees || [];
   } catch {
-    /* keep */
+    payrollEmployees = [];
   }
+
+  const teamIds = await loadTeamEmployeeIds(actorContext, payrollEmployees);
+  const state = scopePerformanceDomain(fullState, actorContext, teamIds);
+  const employeeCount = actorContext.scope === 'global'
+    ? (payrollEmployees.length || state.eligibility.length)
+    : (teamIds.size || 1);
 
   const openTasks = state.tasks.filter((task) => !['Completed', 'Cancelled'].includes(task.status));
   const summary = {
@@ -798,8 +845,8 @@ export const readPerformanceManagementPayload = async (
   if (summary.activePip) badges.pip = summary.activePip;
   if (openTasks.length) badges.notifications = openTasks.length;
 
-  const preferences = navPrefs.get(userKey) || defaultPreferences();
-  const menu = filterMenuByRole(performanceMenuTree, role);
+  const preferences = await loadNavPreferences(userKey);
+  const menu = filterMenuByRole(performanceMenuTree, role, actorContext.permissions);
 
   return {
     generatedAt: nowIso(),
@@ -900,10 +947,12 @@ export const readPerformanceManagementPayload = async (
     },
     actor: {
       role,
-      employeeId: userKey,
-      employeeCode: userKey,
-      fullName: userKey === 'default' ? 'Performance User' : userKey,
+      scope: actorContext.scope,
+      employeeId: actorContext.employeeId || userKey,
+      employeeCode: actorContext.employeeCode || userKey,
+      fullName: actorContext.fullName || 'Performance User',
     },
+    sessionPermissions: actorContext.permissions,
   } as PerformanceWorkspacePayload;
 };
 
@@ -914,13 +963,29 @@ type ActionBody = {
   payload?: Record<string, unknown>;
 };
 
-export const applyPerformanceAction = async (body: ActionBody): Promise<PerformanceActionResult> => {
+export const applyPerformanceAction = async (
+  body: ActionBody,
+  actorContext?: PerformanceActorContext | null,
+): Promise<PerformanceActionResult> => {
   const state = await readState();
-  const actor = compact(body.actor) || 'System';
-  const actorRole = compact(body.actorRole) || 'HR Officer';
+  const actor = compact(body.actor) || actorContext?.fullName || 'System';
+  const actorRole = actorContext?.performanceRole || compact(body.actorRole) || 'HR Officer';
   const data = body.payload || {};
 
   const fail = (error: string): PerformanceActionResult => ({ ok: false, error });
+
+  if (actorContext) {
+    let payrollEmployees: any[] = [];
+    try {
+      const source = await withTimeout(readPayrollEmployees(), 5000, { employees: [] as any[] } as any);
+      payrollEmployees = source.employees || [];
+    } catch {
+      payrollEmployees = [];
+    }
+    const teamIds = await loadTeamEmployeeIds(actorContext, payrollEmployees);
+    const denied = assertPerformanceActionAllowed(body.action, actorContext, data, state, teamIds);
+    if (denied) return fail(denied);
+  }
 
   try {
     switch (body.action) {

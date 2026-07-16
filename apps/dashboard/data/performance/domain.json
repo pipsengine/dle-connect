@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-07-16T16:36:28.319Z",
+  "updatedAt": "2026-07-16T16:50:23.398Z",
   "config": {
     "ratingBands": [
       {
@@ -678,6 +678,15 @@
   ],
   "audit": [
     {
+      "id": "aud-mrnqw3z9-caechp",
+      "at": "2026-07-16T16:50:23.397Z",
+      "actor": "QA",
+      "actorRole": "HR Manager",
+      "action": "Refreshed performance analytics",
+      "entityType": "Analytics",
+      "entityId": "snapshot"
+    },
+    {
       "id": "aud-mrnqe7mj-8n1cae",
       "at": "2026-07-16T16:36:28.315Z",
       "actor": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
@@ -709,7 +718,7 @@
   ],
   "scheduledReports": [],
   "analytics": {
-    "generatedAt": "2026-07-16T16:32:59.959Z",
+    "generatedAt": "2026-07-16T16:50:23.397Z",
     "preCalibrationAvg": 0,
     "postCalibrationAvg": 0,
     "severityIndex": 0,
