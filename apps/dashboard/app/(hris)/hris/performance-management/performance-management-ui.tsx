@@ -70,13 +70,15 @@ export function PmKpiCard({
   trend,
   sparkline,
   tone = 'blue',
+  onClick,
 }: {
   label: string;
   value: string | number;
   sublabel: string;
-  trend: number;
+  trend: number | null;
   sparkline: number[];
   tone?: 'blue' | 'emerald' | 'amber' | 'purple' | 'cyan' | 'red';
+  onClick?: () => void;
 }) {
   const tones = {
     blue: { line: '#2563EB', bg: 'bg-blue-50', text: 'text-blue-700' },
@@ -87,23 +89,36 @@ export function PmKpiCard({
     red: { line: '#EF4444', bg: 'bg-red-50', text: 'text-red-700' },
   };
   const palette = tones[tone];
-  const positive = trend >= 0;
+  const hasTrend = trend != null && Number.isFinite(trend);
+  const positive = hasTrend ? trend >= 0 : false;
 
   return (
-    <PmCard className="p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`View ${label} details`}
+      className="rounded-xl border border-[#E1E4E8] bg-white p-4 text-left shadow-[0_1px_3px_rgba(15,23,42,0.06)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#B3D4FF] hover:shadow-[0_8px_24px_rgba(15,23,42,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0052CC] focus-visible:ring-offset-2"
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#64748B]">{label}</p>
           <p className="mt-1 text-[28px] font-black leading-none text-[#0F172A]">{value}</p>
           <p className="mt-1 text-xs font-medium text-[#64748B]">{sublabel}</p>
-          <div className={`mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${palette.bg} ${palette.text}`}>
-            {positive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-            {positive ? '+' : ''}{trend}% vs last cycle
+          <div className={`mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${hasTrend ? `${palette.bg} ${palette.text}` : 'bg-slate-100 text-slate-600'}`}>
+            {hasTrend ? (
+              <>
+                {positive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                {positive ? '+' : ''}{trend}% vs last cycle
+              </>
+            ) : (
+              <>No comparison</>
+            )}
           </div>
         </div>
         <PmSparkline data={sparkline} color={palette.line} />
       </div>
-    </PmCard>
+      <p className="mt-3 text-[10px] font-bold text-[#0052CC]">View details →</p>
+    </button>
   );
 }
 

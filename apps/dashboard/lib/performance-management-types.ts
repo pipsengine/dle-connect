@@ -64,21 +64,21 @@ export type PerformanceWorkflowStage = {
 
 export type PerformanceDashboardData = {
   employees: number;
-  employeesTrend: number;
+  employeesTrend: number | null;
   reviewsCompleted: number;
   reviewsCompletedPct: number;
-  reviewsCompletedTrend: number;
+  reviewsCompletedTrend: number | null;
   pendingReviews: number;
   pendingReviewsPct: number;
-  pendingReviewsTrend: number;
+  pendingReviewsTrend: number | null;
   goalCompletionPct: number;
-  goalCompletionTrend: number;
+  goalCompletionTrend: number | null;
   highPerformers: number;
   highPerformersPct: number;
-  highPerformersTrend: number;
+  highPerformersTrend: number | null;
   pipEmployees: number;
   pipEmployeesPct: number;
-  pipEmployeesTrend: number;
+  pipEmployeesTrend: number | null;
   cycle: {
     name: string;
     type: string;
@@ -134,6 +134,9 @@ export type PerformanceDashboardData = {
     activeCycleLabel: string;
     attendanceDevicesOnline: number;
     attendanceDevicesTotal: number;
+    attendanceDevicesLabel?: string;
+    dataSource?: string;
+    dataWarning?: string | null;
   };
 };
 

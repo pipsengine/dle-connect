@@ -484,4 +484,15 @@ export type PerformanceWorkspacePayload = PerformancePayload & {
     fullName: string;
   };
   sessionPermissions?: string[];
+  dataSource?: {
+    databaseAvailable: boolean;
+    source: string;
+    warning: string | null;
+    updatedAt: string | null;
+    migrationStatus: string | null;
+    recordCounts: Record<string, number>;
+    employeeDirectorySource?: string;
+    employeeDirectoryAvailable?: boolean;
+    employeeCount?: number;
+  };
 };

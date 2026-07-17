@@ -100,6 +100,7 @@ Invoke-SqlBatchFile -Path (Join-Path $scriptRoot '42-dle-enterprise-organization
 Invoke-SqlBatchFile -Path (Join-Path $scriptRoot '43-dle-enterprise-employees-remove-source-soft-delete-columns.sql') -Tokens $tokens
 Invoke-SqlBatchFile -Path (Join-Path $scriptRoot '45-dle-enterprise-payroll-runs.sql') -Tokens $tokens
 Invoke-SqlBatchFile -Path (Join-Path $scriptRoot '46-dle-enterprise-payroll-periods.sql') -Tokens $tokens
+Invoke-SqlBatchFile -Path (Join-Path $scriptRoot '51-dle-enterprise-performance-management.sql') -Tokens $tokens
 
-Write-Host "DLE_Enterprise database baseline, encrypted backup certificate, SQL Agent jobs, monitoring, RBAC foundation, HRIS employee onboarding, timesheet, department, location, payroll runs, and payroll period entities are configured."
+Write-Host "DLE_Enterprise database baseline, encrypted backup certificate, SQL Agent jobs, monitoring, RBAC foundation, HRIS employee onboarding, timesheet, department, location, payroll runs, payroll period, and performance management entities are configured."
 Write-Host "Backup root: $BackupRoot"

@@ -98,16 +98,31 @@ export default function PerformanceManagementClient({
   }, [load]);
 
   const status = payload?.dashboard.systemStatus;
+  const dataSource = (payload as PerformanceWorkspacePayload | null)?.dataSource;
+  const deviceLabel = status?.attendanceDevicesLabel || 'Device registry';
 
   return (
     <div className="min-h-screen bg-[#F8F9FB] text-[#0F172A]">
       {status ? (
         <div className="border-b border-[#E1E4E8] bg-[#F1F5F9]">
           <div className="mx-auto flex max-w-[1920px] flex-wrap items-center gap-x-8 gap-y-2 px-8 py-2.5 text-xs font-semibold text-[#475569]">
-            <span className="text-emerald-700">System Status: All Systems Online</span>
+            <span className={status.online ? 'text-emerald-700' : 'text-amber-700'}>
+              System Status: {status.online ? 'DLE Enterprise SQL Online' : 'Degraded / Fallback'}
+            </span>
+            <span>Source: {status.dataSource || dataSource?.source || 'Unknown'}</span>
             <span>Last Sync: {fmtDateTime(status.lastSync)}</span>
             <span className="text-emerald-700">Active Cycle: {status.activeCycleLabel}</span>
-            <span className="text-emerald-700">Attendance Devices: {status.attendanceDevicesOnline}/{status.attendanceDevicesTotal} Online</span>
+            <span className="text-slate-700">
+              {deviceLabel}: {status.attendanceDevicesOnline}/{status.attendanceDevicesTotal} Online
+            </span>
+            {dataSource?.recordCounts ? (
+              <span>
+                Records: {dataSource.recordCounts.cycles || 0} cycles · {dataSource.recordCounts.goals || 0} goals · {dataSource.recordCounts.results || 0} results
+              </span>
+            ) : null}
+            {status.dataWarning || dataSource?.warning ? (
+              <span className="text-amber-700">Warning: {status.dataWarning || dataSource?.warning}</span>
+            ) : null}
           </div>
         </div>
       ) : null}

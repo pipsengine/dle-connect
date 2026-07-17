@@ -22,6 +22,10 @@ console.log(
     analyticsBands: payload.domain.analytics?.ratingDistribution?.length ?? 0,
     activeCycle: payload.activeCycle?.name || null,
     scope: payload.actor.scope,
+    source: payload.source,
+    dataSource: payload.dataSource,
+    deviceLabel: payload.dashboard.systemStatus.attendanceDevicesLabel,
+    employeesTrend: payload.dashboard.employeesTrend,
   }),
 );
 
@@ -31,3 +35,4 @@ const result = await applyPerformanceAction({
   actorRole: 'HR Officer',
 }, actorContext);
 console.log(JSON.stringify({ ok: result.ok, message: result.message }));
+process.exit(result.ok ? 0 : 1);

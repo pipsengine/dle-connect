@@ -368,6 +368,9 @@ export const loadWorkspaceEnv = () => {
   if (workspaceEnvLoaded) return;
   workspaceEnvLoaded = true;
   const candidates = [
+    path.join(process.cwd(), 'apps', 'dashboard', '.env.local'),
+    path.join(process.cwd(), 'apps', 'dashboard', '.env'),
+    path.join(process.cwd(), '.env.local'),
     path.join(process.cwd(), '.env'),
     path.join(process.cwd(), '..', '..', '.env'),
   ];

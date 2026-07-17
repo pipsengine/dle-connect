@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -12,6 +13,7 @@ import {
   Target,
   TrendingUp,
   Users,
+  X,
 } from 'lucide-react';
 import { Cell, Pie, PieChart, Tooltip } from 'recharts';
 import type { PerformancePayload } from '@/lib/performance-management-types';
@@ -48,8 +50,12 @@ const insightTone = {
   red: 'bg-red-50 text-red-800',
 };
 
+type KpiDetailKey = 'employees' | 'reviewsCompleted' | 'pendingReviews' | 'goalCompletion' | 'highPerformers' | 'pipEmployees';
+
 export default function PerformanceCommandCenter({ payload }: PerformanceCommandCenterProps) {
+  const [selectedKpi, setSelectedKpi] = useState<KpiDetailKey | null>(null);
   const d = payload.dashboard;
+  const domain = 'domain' in payload ? payload.domain : null;
   const goalDonut = [
     { name: 'Completed', value: d.goalProgress.completed, color: '#10B981' },
     { name: 'In Progress', value: d.goalProgress.inProgress, color: '#2563EB' },
@@ -63,18 +69,236 @@ export default function PerformanceCommandCenter({ payload }: PerformanceCommand
 
   const calendarDays = Array.from({ length: 31 }, (_, index) => index + 1);
   const eventDays = new Map(d.calendarEvents.map((event) => [new Date(`${event.date}T00:00:00`).getDate(), event]));
+  const kpiDetails: Record<KpiDetailKey, {
+    title: string;
+    value: string | number;
+    description: string;
+    route: string;
+    routeLabel: string;
+    facts: Array<{ label: string; value: string | number }>;
+    records: Array<{ primary: string; secondary: string; value: string | number }>;
+  }> = {
+    employees: {
+      title: 'Employees in Performance Cycle',
+      value: d.employees,
+      description: `Employees currently covered by ${d.cycle.name}.`,
+      route: 'planning/performance-cycles',
+      routeLabel: 'Open cycle details',
+      facts: [
+        { label: 'Cycle', value: d.cycle.name },
+        { label: 'Cycle type', value: d.cycle.type },
+        { label: 'Completed reviews', value: d.cycle.completedReviews },
+        { label: 'Pending reviews', value: d.cycle.pendingReviews },
+      ],
+      records: d.departmentPerformance.map((row) => ({
+        primary: row.department,
+        secondary: `${row.completionPct}% review completion`,
+        value: `${row.pending} pending`,
+      })),
+    },
+    reviewsCompleted: {
+      title: 'Completed Reviews',
+      value: d.reviewsCompleted,
+      description: 'Manager reviews submitted, approved, or published for the active cycle.',
+      route: 'performance-reviews/supervisor-review',
+      routeLabel: 'Open manager assessments',
+      facts: [
+        { label: 'Completion rate', value: `${d.reviewsCompletedPct}%` },
+        { label: 'Employees in cycle', value: d.cycle.employeesInCycle },
+        { label: 'Pending reviews', value: d.pendingReviews },
+      ],
+      records: (domain?.assessments || [])
+        .filter((row) => row.type === 'Manager' && ['Submitted', 'Approved', 'Published'].includes(row.status))
+        .map((row) => ({
+          primary: row.employeeName,
+          secondary: `${row.type} assessment`,
+          value: row.status,
+        })),
+    },
+    pendingReviews: {
+      title: 'Pending Reviews',
+      value: d.pendingReviews,
+      description: 'Employees in the active cycle whose manager review is not yet complete.',
+      route: 'performance-reviews/supervisor-review',
+      routeLabel: 'Review pending assessments',
+      facts: [
+        { label: 'Remaining', value: `${d.pendingReviewsPct}%` },
+        { label: 'Completed', value: d.reviewsCompleted },
+        { label: 'Employees in cycle', value: d.cycle.employeesInCycle },
+        { label: 'Review deadline', value: fmtDate(d.cycle.deadline) },
+      ],
+      records: (domain?.assessments || [])
+        .filter((row) => row.type === 'Manager' && !['Submitted', 'Approved', 'Published'].includes(row.status))
+        .map((row) => ({
+          primary: row.employeeName,
+          secondary: `${row.type} assessment`,
+          value: row.status,
+        })),
+    },
+    goalCompletion: {
+      title: 'Goal Completion',
+      value: `${d.goalCompletionPct}%`,
+      description: 'Organisation goal progress for the active performance cycle.',
+      route: 'planning/employee-goals',
+      routeLabel: 'Open OKR & KPI management',
+      facts: [
+        { label: 'Completed', value: d.goalProgress.completed },
+        { label: 'In progress', value: d.goalProgress.inProgress },
+        { label: 'Not started', value: d.goalProgress.notStarted },
+        { label: 'Average completion', value: `${d.goalProgress.avgCompletion}%` },
+      ],
+      records: (domain?.goals || []).map((row) => ({
+        primary: row.title,
+        secondary: `${row.employeeName} · ${row.status}`,
+        value: `${row.progressPercent}%`,
+      })),
+    },
+    highPerformers: {
+      title: 'High Performers',
+      value: d.highPerformers,
+      description: 'Employees whose published or calculated active-cycle result meets the high-performer threshold.',
+      route: 'performance-reviews/performance-scorecard',
+      routeLabel: 'Open published results',
+      facts: [
+        { label: 'Share of employees', value: `${d.highPerformersPct}%` },
+        { label: 'Employees in cycle', value: d.cycle.employeesInCycle },
+        { label: 'Published results', value: domain?.results.filter((row) => row.status === 'Published').length || 0 },
+      ],
+      records: (domain?.results || [])
+        .filter((row) => row.finalScore >= 90)
+        .map((row) => ({
+          primary: row.employeeName,
+          secondary: row.ratingBand,
+          value: `${row.finalScore}%`,
+        })),
+    },
+    pipEmployees: {
+      title: 'PIP Employees',
+      value: d.pipEmployees,
+      description: 'Employees with an active, at-risk, or on-track performance improvement plan.',
+      route: 'improvement/pip',
+      routeLabel: 'Open PIP workspace',
+      facts: [
+        { label: 'Share of employees', value: `${d.pipEmployeesPct}%` },
+        { label: 'Active cycle', value: d.cycle.name },
+        { label: 'Employees in cycle', value: d.cycle.employeesInCycle },
+      ],
+      records: (domain?.pips || [])
+        .filter((row) => /active|track|risk/i.test(row.status))
+        .map((row) => ({
+          primary: row.employeeName,
+          secondary: row.reason,
+          value: row.status,
+        })),
+    },
+  };
+  const selectedDetail = selectedKpi ? kpiDetails[selectedKpi] : null;
 
   return (
     <div className="space-y-6">
       {/* KPI row */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-        <PmKpiCard label="Employees" value={d.employees} sublabel="Active in performance cycle" trend={d.employeesTrend} sparkline={d.sparklines.employees} tone="blue" />
-        <PmKpiCard label="Reviews Completed" value={d.reviewsCompleted} sublabel={`${d.reviewsCompletedPct}% Completion`} trend={d.reviewsCompletedTrend} sparkline={d.sparklines.reviewsCompleted} tone="emerald" />
-        <PmKpiCard label="Pending Reviews" value={d.pendingReviews} sublabel={`${d.pendingReviewsPct}% Remaining`} trend={d.pendingReviewsTrend} sparkline={d.sparklines.pendingReviews} tone="amber" />
-        <PmKpiCard label="Goal Completion" value={`${d.goalCompletionPct}%`} sublabel="Organisation average" trend={d.goalCompletionTrend} sparkline={d.sparklines.goalCompletion} tone="purple" />
-        <PmKpiCard label="High Performers" value={d.highPerformers} sublabel={`${d.highPerformersPct}% of Employees`} trend={d.highPerformersTrend} sparkline={d.sparklines.highPerformers} tone="cyan" />
-        <PmKpiCard label="PIP Employees" value={d.pipEmployees} sublabel={`${d.pipEmployeesPct}% of Employees`} trend={d.pipEmployeesTrend} sparkline={d.sparklines.pipEmployees} tone="red" />
+        <PmKpiCard label="Employees" value={d.employees} sublabel="Active in performance cycle" trend={d.employeesTrend} sparkline={d.sparklines.employees} tone="blue" onClick={() => setSelectedKpi('employees')} />
+        <PmKpiCard label="Reviews Completed" value={d.reviewsCompleted} sublabel={`${d.reviewsCompletedPct}% Completion`} trend={d.reviewsCompletedTrend} sparkline={d.sparklines.reviewsCompleted} tone="emerald" onClick={() => setSelectedKpi('reviewsCompleted')} />
+        <PmKpiCard label="Pending Reviews" value={d.pendingReviews} sublabel={`${d.pendingReviewsPct}% Remaining`} trend={d.pendingReviewsTrend} sparkline={d.sparklines.pendingReviews} tone="amber" onClick={() => setSelectedKpi('pendingReviews')} />
+        <PmKpiCard label="Goal Completion" value={`${d.goalCompletionPct}%`} sublabel="Organisation average" trend={d.goalCompletionTrend} sparkline={d.sparklines.goalCompletion} tone="purple" onClick={() => setSelectedKpi('goalCompletion')} />
+        <PmKpiCard label="High Performers" value={d.highPerformers} sublabel={`${d.highPerformersPct}% of Employees`} trend={d.highPerformersTrend} sparkline={d.sparklines.highPerformers} tone="cyan" onClick={() => setSelectedKpi('highPerformers')} />
+        <PmKpiCard label="PIP Employees" value={d.pipEmployees} sublabel={`${d.pipEmployeesPct}% of Employees`} trend={d.pipEmployeesTrend} sparkline={d.sparklines.pipEmployees} tone="red" onClick={() => setSelectedKpi('pipEmployees')} />
       </div>
+
+      {selectedDetail ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-[2px]"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSelectedKpi(null);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="kpi-detail-title"
+            className="max-h-[85vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-[#E1E4E8] bg-white shadow-2xl"
+          >
+            <div className="flex items-start justify-between border-b border-[#E1E4E8] px-6 py-5">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#0052CC]">Performance KPI details</p>
+                <h2 id="kpi-detail-title" className="mt-1 text-xl font-black text-[#0F172A]">{selectedDetail.title}</h2>
+                <p className="mt-1 text-sm text-[#64748B]">{selectedDetail.description}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedKpi(null)}
+                aria-label="Close details"
+                className="rounded-lg p-2 text-[#64748B] hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0052CC]"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="max-h-[calc(85vh-150px)] overflow-y-auto px-6 py-5">
+              <div className="mb-5 flex items-end justify-between rounded-xl bg-[#F8FAFC] p-4">
+                <div>
+                  <p className="text-xs font-semibold text-[#64748B]">Current value</p>
+                  <p className="text-4xl font-black text-[#0F172A]">{selectedDetail.value}</p>
+                </div>
+                <p className="text-xs font-semibold text-[#64748B]">As of {fmtDate(payload.generatedAt)}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {selectedDetail.facts.map((fact) => (
+                  <div key={fact.label} className="rounded-lg border border-[#E1E4E8] p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-[#64748B]">{fact.label}</p>
+                    <p className="mt-1 text-sm font-black text-[#0F172A]">{fact.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5">
+                <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-[#64748B]">Supporting records</h3>
+                {selectedDetail.records.length ? (
+                  <div className="divide-y divide-[#E1E4E8] rounded-xl border border-[#E1E4E8]">
+                    {selectedDetail.records.slice(0, 20).map((record, index) => (
+                      <div key={`${record.primary}-${index}`} className="flex items-center justify-between gap-4 px-4 py-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold text-[#0F172A]">{record.primary}</p>
+                          <p className="truncate text-xs text-[#64748B]">{record.secondary}</p>
+                        </div>
+                        <span className="shrink-0 text-sm font-bold text-[#0052CC]">{record.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-[#CBD5E1] bg-[#F8FAFC] px-4 py-8 text-center text-sm text-[#64748B]">
+                    No supporting records are available for this KPI yet.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-[#E1E4E8] bg-[#F8FAFC] px-6 py-4">
+              <PmButton variant="secondary" onClick={() => setSelectedKpi(null)}>Close</PmButton>
+              <Link href={performanceRouteHref(selectedDetail.route)}>
+                <PmButton variant="primary">{selectedDetail.routeLabel}</PmButton>
+              </Link>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {'dataSource' in payload && payload.dataSource ? (
+        <PmCard className="p-4">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs font-semibold text-[#475569]">
+            <span>Data source: {payload.dataSource.source}</span>
+            <span>Directory: {payload.dataSource.employeeDirectorySource || '—'}</span>
+            <span>Updated: {payload.dataSource.updatedAt ? fmtDate(payload.dataSource.updatedAt) : '—'}</span>
+            <span>
+              Counts: {payload.dataSource.recordCounts?.cycles || 0} cycles / {payload.dataSource.recordCounts?.goals || 0} goals / {payload.dataSource.recordCounts?.results || 0} results
+            </span>
+            {payload.dataSource.warning ? <span className="text-amber-700">{payload.dataSource.warning}</span> : null}
+          </div>
+        </PmCard>
+      ) : null}
 
       {/* Middle row */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">

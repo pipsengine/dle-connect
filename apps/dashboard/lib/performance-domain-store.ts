@@ -52,9 +52,27 @@ import {
 import { recordConfirmationOutcome } from '@/lib/employee-confirmation-store';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import type { SessionPayload } from '@/lib/auth/session';
+import { readBiometricDevices } from '@/lib/biometric-attendance-store';
+import {
+  claimProbationAlert,
+  enqueuePerformanceOutbox,
+  getPerformanceSqlHealth,
+  importPerformanceDomainJsonToSql,
+  insertAnalyticsSnapshot,
+  listAnalyticsSnapshots,
+  listPendingPerformanceOutbox,
+  markPerformanceOutbox,
+  readPerformanceDomainFromSql,
+  readPerformanceNavPreferencesFromSql,
+  writePerformanceDomainToSql,
+  writePerformanceNavPreferencesToSql,
+  type PerformanceSqlSourceMeta,
+} from '@/lib/performance-sql-repository';
+import { performanceJsonFallbackAllowed, performanceSqlRequired } from '@/lib/performance-sql-schema';
 
 export { buildPerformanceActorContext } from '@/lib/performance-access';
 export type { PerformanceActorContext, PerformanceScope } from '@/lib/performance-access';
+export { importPerformanceDomainJsonToSql };
 
 const STORE_FILE = 'domain.json';
 
@@ -177,14 +195,25 @@ const ensureStore = async () => {
   }
 };
 
-const readState = async (): Promise<PerformanceDomainState> => {
+let sqlSourceMeta: PerformanceSqlSourceMeta | null = null;
+
+const normalizeState = (parsed: PerformanceDomainState): PerformanceDomainState => ({
+  ...emptyState(),
+  ...parsed,
+  config: { ...defaultConfig(), ...(parsed.config || {}) },
+  scheduledReports: parsed.scheduledReports || [],
+});
+
+const readJsonFallbackState = async (): Promise<PerformanceDomainState> => {
   await ensureStore();
   const { file } = await resolveStorePath();
   try {
     const raw = await readFile(file, 'utf8');
-    const parsed = JSON.parse(raw) as PerformanceDomainState;
-    return { ...emptyState(), ...parsed, config: { ...defaultConfig(), ...(parsed.config || {}) }, scheduledReports: parsed.scheduledReports || [] };
-  } catch {
+    return normalizeState(JSON.parse(raw) as PerformanceDomainState);
+  } catch (error) {
+    if (performanceSqlRequired() && !performanceJsonFallbackAllowed()) {
+      throw new Error(error instanceof Error ? `Performance JSON fallback blocked: ${error.message}` : 'Performance JSON fallback blocked.');
+    }
     const seeded = await seedDomain();
     const { file: writeFilePath } = await resolveStorePath();
     await writeFile(writeFilePath, JSON.stringify(seeded, null, 2), 'utf8');
@@ -192,12 +221,100 @@ const readState = async (): Promise<PerformanceDomainState> => {
   }
 };
 
-const writeState = async (state: PerformanceDomainState) => {
-  const { dir, file } = await resolveStorePath();
-  await mkdir(dir, { recursive: true });
+const readState = async (): Promise<PerformanceDomainState> => {
+  try {
+    const loaded = await readPerformanceDomainFromSql();
+    if (loaded?.state) {
+      sqlSourceMeta = loaded.meta;
+      return normalizeState(loaded.state);
+    }
+    if (loaded && !loaded.state) {
+      sqlSourceMeta = loaded.meta;
+      // Controlled import only when JSON fallback is explicitly allowed (dev/cutover tooling).
+      // Production with SQL required must run the dedicated importer script.
+      if (performanceJsonFallbackAllowed()) {
+        try {
+          await importPerformanceDomainJsonToSql('System');
+          const afterImport = await readPerformanceDomainFromSql();
+          if (afterImport?.state) {
+            sqlSourceMeta = afterImport.meta;
+            return normalizeState(afterImport.state);
+          }
+        } catch (importError) {
+          if (performanceSqlRequired()) throw importError;
+        }
+      } else if (performanceSqlRequired()) {
+        throw new Error('Performance SQL store is empty. Run npm run import:performance-domain-sql before serving production traffic.');
+      }
+    }
+  } catch (error) {
+    if (performanceSqlRequired() && !performanceJsonFallbackAllowed()) {
+      throw error instanceof Error ? error : new Error('Unable to read Performance SQL store.');
+    }
+    sqlSourceMeta = {
+      databaseAvailable: false,
+      source: 'Local JSON fallback',
+      warning: error instanceof Error ? error.message : 'SQL unavailable',
+      updatedAt: null,
+      migrationStatus: null,
+      recordCounts: {},
+    };
+  }
+
+  if (performanceSqlRequired() && !performanceJsonFallbackAllowed()) {
+    throw new Error(sqlSourceMeta?.warning || 'Performance SQL store is required and unavailable.');
+  }
+
+  const fallback = await readJsonFallbackState();
+  if (!sqlSourceMeta) {
+    sqlSourceMeta = {
+      databaseAvailable: false,
+      source: 'Local JSON fallback',
+      warning: 'Using local JSON until SQL import/cutover completes.',
+      updatedAt: fallback.updatedAt || null,
+      migrationStatus: null,
+      recordCounts: {
+        cycles: fallback.cycles.length,
+        goals: fallback.goals.length,
+        results: fallback.results.length,
+      },
+    };
+  }
+  return fallback;
+};
+
+const writeState = async (state: PerformanceDomainState, actor = 'System') => {
   const next = { ...state, updatedAt: nowIso(), version: Number(state.version || 1) };
-  await writeFile(file, JSON.stringify(next, null, 2), 'utf8');
-  return next;
+  try {
+    sqlSourceMeta = await writePerformanceDomainToSql(next, actor);
+    // Keep immutable JSON evidence mirror only when explicitly enabled or SQL unavailable.
+    if (performanceJsonFallbackAllowed()) {
+      const { dir, file } = await resolveStorePath();
+      await mkdir(dir, { recursive: true });
+      await writeFile(file, JSON.stringify(next, null, 2), 'utf8');
+    }
+    return next;
+  } catch (error) {
+    if (performanceSqlRequired() && !performanceJsonFallbackAllowed()) {
+      throw error;
+    }
+    const { dir, file } = await resolveStorePath();
+    await mkdir(dir, { recursive: true });
+    await writeFile(file, JSON.stringify(next, null, 2), 'utf8');
+    sqlSourceMeta = {
+      databaseAvailable: false,
+      source: 'Local JSON fallback',
+      warning: error instanceof Error ? error.message : 'SQL write failed; persisted to JSON fallback.',
+      updatedAt: next.updatedAt,
+      migrationStatus: sqlSourceMeta?.migrationStatus || null,
+      recordCounts: {
+        cycles: next.cycles.length,
+        goals: next.goals.length,
+        results: next.results.length,
+      },
+    };
+    return next;
+  }
 };
 
 const pushAudit = (
@@ -214,10 +331,10 @@ const pushAudit = (
   ].slice(0, 2000);
 };
 
-const pushTask = (state: PerformanceDomainState, task: Omit<PerformanceTask, 'id' | 'createdAt' | 'status'> & { status?: PerformanceTask['status'] }) => {
+const pushTask = (state: PerformanceDomainState, task: Omit<PerformanceTask, 'id' | 'createdAt' | 'status'> & { id?: string; status?: PerformanceTask['status'] }) => {
   state.tasks = [
     {
-      id: id('task'),
+      id: task.id || id('task'),
       createdAt: nowIso(),
       status: task.status || 'Assigned',
       ...task,
@@ -271,37 +388,82 @@ const daysUntil = (isoDate: string) => {
   return Math.ceil((end.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
 };
 
-const refreshProbationAlerts = (state: PerformanceDomainState) => {
+/** Plan probation alerts without mutating state during GET. Worker applies them transactionally. */
+const planProbationAlerts = (state: PerformanceDomainState) => {
   const thresholds = [60, 30, 14, 7];
+  const planned: Array<{ probationId: string; thresholdDays: number; remaining: number; record: ProbationRecord }> = [];
   for (const record of state.probation) {
     if (['Confirmed', 'Not Confirmed', 'Closed'].includes(record.status)) continue;
     const remaining = daysUntil(record.endDate);
-    record.alertsSent = record.alertsSent || [];
+    const sent = new Set(record.alertsSent || []);
     for (const threshold of thresholds) {
-      if (remaining <= threshold && !record.alertsSent.includes(threshold)) {
-        record.alertsSent.push(threshold);
-        record.status = remaining <= 14 ? 'Review Due' : record.status;
-        pushTask(state, {
-          cycleId: state.cycles.find((cycle) => !['Closed', 'Archived', 'Draft'].includes(cycle.status))?.id || '',
-          employeeId: record.employeeId,
-          employeeName: record.employeeName,
-          type: 'Probation Review',
-          title: `Probation review due in ${Math.max(remaining, 0)} day(s) for ${record.employeeName}`,
-          assigneeId: record.managerId || record.employeeId,
-          assigneeName: record.managerName || record.employeeName,
-          dueDate: record.endDate,
-          href: '/hris/performance-management/performance-reviews/probation',
-        });
-        void notifyPerformance({
-          actor: 'Performance System',
-          recipientEmployeeCode: record.employeeCode,
-          title: `Probation monitoring · ${threshold}-day alert`,
-          body: `${record.employeeName} probation ends ${record.endDate} (${remaining} day(s) remaining).`,
-          href: '/hris/performance-management/performance-reviews/probation',
-        });
+      if (remaining <= threshold && !sent.has(threshold)) {
+        planned.push({ probationId: record.id, thresholdDays: threshold, remaining, record });
       }
     }
   }
+  return planned;
+};
+
+export const processPerformanceWorkers = async (actor = 'Performance System') => {
+  const state = await readState();
+  let mutated = false;
+  const planned = planProbationAlerts(state);
+
+  for (const item of planned) {
+    const claim = await claimProbationAlert(item.probationId, item.thresholdDays);
+    if (!claim.created) continue;
+    const record = state.probation.find((row) => row.id === item.probationId);
+    if (!record) continue;
+    record.alertsSent = Array.from(new Set([...(record.alertsSent || []), item.thresholdDays]));
+    if (item.remaining <= 14) record.status = 'Review Due';
+    record.updatedAt = nowIso();
+    const taskId = id('task');
+    pushTask(state, {
+      id: taskId,
+      cycleId: state.cycles.find((cycle) => !['Closed', 'Archived', 'Draft'].includes(cycle.status))?.id || '',
+      employeeId: record.employeeId,
+      employeeName: record.employeeName,
+      type: 'Probation Review',
+      title: `Probation review due in ${Math.max(item.remaining, 0)} day(s) for ${record.employeeName}`,
+      assigneeId: record.managerId || record.employeeId,
+      assigneeName: record.managerName || record.employeeName,
+      dueDate: record.endDate,
+      href: '/hris/performance-management/performance-reviews/probation',
+    });
+    await enqueuePerformanceOutbox('probation-alert', {
+      probationId: record.id,
+      thresholdDays: item.thresholdDays,
+      employeeCode: record.employeeCode,
+      employeeName: record.employeeName,
+      endDate: record.endDate,
+      remaining: item.remaining,
+      taskId,
+    });
+    mutated = true;
+  }
+
+  if (mutated) await writeState(state, actor);
+
+  const pending = await listPendingPerformanceOutbox(50);
+  for (const message of pending) {
+    try {
+      if (message.kind === 'probation-alert') {
+        await notifyPerformance({
+          actor,
+          recipientEmployeeCode: compact(message.payload.employeeCode),
+          title: `Probation monitoring · ${message.payload.thresholdDays}-day alert`,
+          body: `${message.payload.employeeName} probation ends ${message.payload.endDate} (${message.payload.remaining} day(s) remaining).`,
+          href: '/hris/performance-management/performance-reviews/probation',
+        });
+      }
+      await markPerformanceOutbox(message.outboxId, 'Processed');
+    } catch (error) {
+      await markPerformanceOutbox(message.outboxId, 'Failed', error instanceof Error ? error.message : 'Outbox processing failed');
+    }
+  }
+
+  return { alertsPlanned: planned.length, outboxProcessed: pending.length, stateMutated: mutated };
 };
 
 const buildAnalytics = (state: PerformanceDomainState): PerformanceAnalyticsSnapshot => {
@@ -592,35 +754,97 @@ const daysBetween = (from: string, to: string) => {
   return Math.ceil((end.getTime() - start.getTime()) / 86_400_000);
 };
 
-const sparkline = (base: number, variance = 0.08, points = 8) =>
-  Array.from({ length: points }, (_, index) => {
-    const wave = Math.sin(index * 0.9) * variance;
-    return Math.max(0, Math.round(base * (1 + wave + index * 0.01)));
-  });
+const pctDelta = (current: number, previous: number | null | undefined): number | null => {
+  if (previous == null || !Number.isFinite(previous)) return null;
+  return Math.round((current - previous) * 10) / 10;
+};
 
-const buildDashboard = (state: PerformanceDomainState, employeeCount: number): PerformanceDashboardData => {
+const sparkFromSnapshots = (
+  snapshots: Array<{ employees: number; reviewsCompleted: number; pendingReviews: number; goalCompletionPct: number; highPerformers: number; pipEmployees: number }>,
+  key: 'employees' | 'reviewsCompleted' | 'pendingReviews' | 'goalCompletionPct' | 'highPerformers' | 'pipEmployees',
+  fallback: number,
+) => {
+  const values = [...snapshots].reverse().map((row) => Number(row[key] || 0));
+  if (!values.length) return [fallback];
+  return values.slice(-12);
+};
+
+const cycleProgressPct = (cycle: PerformanceCycle | null | undefined, state: PerformanceDomainState) => {
+  if (!cycle) return 0;
+  if (['Closed', 'Archived', 'Results Published'].includes(cycle.status)) return 100;
+  if (cycle.status === 'Draft' || cycle.status === 'Pending Approval') return 0;
+  const goals = state.goals.filter((goal) => goal.cycleId === cycle.id);
+  const agreed = goals.filter((goal) => ['Agreed', 'Active', 'Completed'].includes(goal.status)).length;
+  const goalPct = goals.length ? (agreed / goals.length) * 40 : 0;
+  const eligible = Math.max(cycle.eligibilityCount || state.eligibility.filter((row) => row.cycleId === cycle.id && row.included).length || 1, 1);
+  const mgrDone = state.assessments.filter((item) => item.cycleId === cycle.id && item.type === 'Manager' && ['Submitted', 'Approved', 'Published'].includes(item.status)).length;
+  const reviewPct = (mgrDone / eligible) * 40;
+  const published = state.results.filter((item) => item.cycleId === cycle.id && item.status === 'Published').length;
+  const publishPct = (published / eligible) * 20;
+  return Math.min(100, Math.round(goalPct + reviewPct + publishPct));
+};
+
+const buildDashboard = async (
+  state: PerformanceDomainState,
+  employeeCount: number,
+  options?: { devicesOnline?: number; devicesTotal?: number; sourceLabel?: string; sourceWarning?: string | null },
+): Promise<PerformanceDashboardData> => {
   const cycle = activeCycle(state);
-  const eligible = cycle?.eligibilityCount || state.eligibility.filter((row) => row.included).length || employeeCount || 1;
+  const priorCycles = state.cycles
+    .filter((item) => item.id !== cycle?.id && ['Closed', 'Archived', 'Results Published'].includes(item.status))
+    .sort((a, b) => String(b.endDate).localeCompare(String(a.endDate)));
+  const prior = priorCycles[0] || null;
+
+  const metricsFor = (target: PerformanceCycle | null) => {
+    if (!target) return null;
+    const eligible = target.eligibilityCount || state.eligibility.filter((row) => row.cycleId === target.id && row.included).length || 0;
+    const goals = state.goals.filter((goal) => goal.cycleId === target.id);
+    const agreed = goals.filter((goal) => ['Agreed', 'Active', 'Completed'].includes(goal.status)).length;
+    const submittedMgr = state.assessments.filter((item) => item.cycleId === target.id && item.type === 'Manager' && ['Submitted', 'Approved', 'Published'].includes(item.status)).length;
+    const pendingReviews = Math.max(0, eligible - submittedMgr);
+    const goalCompletionPct = goals.length ? Math.round((agreed / goals.length) * 1000) / 10 : 0;
+    const highPerformers = state.results.filter((item) => item.cycleId === target.id && item.finalScore >= 90).length;
+    const pipEmployees = state.pips.filter((item) => item.cycleId === target.id && /active|track|risk/i.test(item.status)).length;
+    return {
+      eligible,
+      reviewsCompleted: submittedMgr,
+      pendingReviews,
+      goalCompletionPct,
+      highPerformers,
+      pipEmployees,
+    };
+  };
+
+  const current = metricsFor(cycle) || {
+    eligible: employeeCount || 0,
+    reviewsCompleted: 0,
+    pendingReviews: 0,
+    goalCompletionPct: 0,
+    highPerformers: 0,
+    pipEmployees: 0,
+  };
+  const previous = metricsFor(prior);
+
+  const eligible = current.eligible || employeeCount || 1;
   const goals = state.goals.filter((goal) => !cycle || goal.cycleId === cycle.id);
   const agreed = goals.filter((goal) => ['Agreed', 'Active', 'Completed'].includes(goal.status)).length;
-  const submittedSelf = state.assessments.filter((item) => item.type === 'Self' && ['Submitted', 'Approved', 'Published'].includes(item.status)).length;
-  const submittedMgr = state.assessments.filter((item) => item.type === 'Manager' && ['Submitted', 'Approved', 'Published'].includes(item.status)).length;
-  const pendingReviews = Math.max(0, eligible - submittedMgr);
-  const reviewsCompleted = submittedMgr;
+  const submittedSelf = state.assessments.filter((item) => item.type === 'Self' && (!cycle || item.cycleId === cycle.id) && ['Submitted', 'Approved', 'Published'].includes(item.status)).length;
+  const reviewsCompleted = current.reviewsCompleted;
+  const pendingReviews = current.pendingReviews;
   const reviewsCompletedPct = Math.round((reviewsCompleted / eligible) * 1000) / 10;
   const pendingReviewsPct = Math.round((pendingReviews / eligible) * 1000) / 10;
-  const goalCompletionPct = goals.length ? Math.round((agreed / goals.length) * 1000) / 10 : 0;
-  const highPerformers = state.results.filter((item) => item.finalScore >= 90).length;
-  const pipEmployees = state.pips.filter((item) => /active|track|risk/i.test(item.status)).length;
+  const goalCompletionPct = current.goalCompletionPct;
+  const highPerformers = current.highPerformers;
+  const pipEmployees = current.pipEmployees;
   const openTasks = state.tasks.filter((task) => !['Completed', 'Cancelled'].includes(task.status));
 
   const stageDefs = [
     { id: 'goals', label: 'Goal Setting', completed: agreed, total: Math.max(goals.length, 1), dueDate: cycle?.goalSettingEnd || '', tone: 'blue' as const },
     { id: 'self', label: 'Self Appraisal', completed: submittedSelf, total: eligible, dueDate: cycle?.yearEndEnd || '', tone: 'blue' as const },
-    { id: 'supervisor', label: 'Supervisor Review', completed: submittedMgr, total: eligible, dueDate: cycle?.yearEndEnd || '', tone: 'orange' as const },
-    { id: '360', label: '360 Review', completed: state.raters.filter((item) => item.status === 'Submitted').length, total: Math.max(state.raters.length, 1), dueDate: cycle?.yearEndEnd || '', tone: 'purple' as const },
-    { id: 'calibration', label: 'Calibration', completed: state.calibration.filter((item) => item.status === 'Approved').length, total: Math.max(state.calibration.length, 1), dueDate: cycle?.calibrationEnd || '', tone: 'cyan' as const },
-    { id: 'final', label: 'Results Published', completed: state.results.filter((item) => item.status === 'Published').length, total: eligible, dueDate: cycle?.publicationDate || '', tone: 'slate' as const },
+    { id: 'supervisor', label: 'Supervisor Review', completed: reviewsCompleted, total: eligible, dueDate: cycle?.yearEndEnd || '', tone: 'orange' as const },
+    { id: '360', label: '360 Review', completed: state.raters.filter((item) => item.status === 'Submitted' && (!cycle || item.cycleId === cycle.id)).length, total: Math.max(state.raters.filter((item) => !cycle || item.cycleId === cycle.id).length, 1), dueDate: cycle?.yearEndEnd || '', tone: 'purple' as const },
+    { id: 'calibration', label: 'Calibration', completed: state.calibration.filter((item) => item.status === 'Approved' && (!cycle || item.cycleId === cycle.id)).length, total: Math.max(state.calibration.filter((item) => !cycle || item.cycleId === cycle.id).length, 1), dueDate: cycle?.calibrationEnd || '', tone: 'cyan' as const },
+    { id: 'final', label: 'Results Published', completed: state.results.filter((item) => item.status === 'Published' && (!cycle || item.cycleId === cycle.id)).length, total: eligible, dueDate: cycle?.publicationDate || '', tone: 'slate' as const },
   ].map((stage) => {
     const percent = Math.min(100, Math.round((stage.completed / Math.max(stage.total, 1)) * 100));
     return {
@@ -631,8 +855,8 @@ const buildDashboard = (state: PerformanceDomainState, employeeCount: number): P
   });
 
   const deptMap = state.eligibility.reduce<Record<string, { total: number; count: number; pending: number }>>((acc, row) => {
-    if (!row.included) return acc;
-    const result = state.results.find((item) => item.employeeId === row.employeeId);
+    if (!row.included || (cycle && row.cycleId !== cycle.id)) return acc;
+    const result = state.results.find((item) => item.employeeId === row.employeeId && (!cycle || item.cycleId === cycle.id));
     acc[row.department] = acc[row.department] || { total: 0, count: 0, pending: 0 };
     acc[row.department].count += 1;
     if (result) acc[row.department].total += result.finalScore;
@@ -640,23 +864,34 @@ const buildDashboard = (state: PerformanceDomainState, employeeCount: number): P
     return acc;
   }, {});
 
+  const snapshots = await listAnalyticsSnapshots(cycle?.id || null, 12);
+  const devicesOnline = options?.devicesOnline ?? 0;
+  const devicesTotal = options?.devicesTotal ?? 0;
+  const competencyCoverage = state.config.behaviourIndicators.length
+    ? Math.min(100, Math.round((state.assessments.filter((item) => item.type === 'Behavioural' && ['Submitted', 'Approved', 'Published'].includes(item.status)).length / Math.max(eligible, 1)) * 100))
+    : 0;
+  const feedbackCoverage = Math.min(100, Math.round((state.checkIns.filter((item) => !cycle || item.cycleId === cycle.id).length / Math.max(eligible, 1)) * 100));
+  const calibrationPct = state.calibration.filter((item) => !cycle || item.cycleId === cycle.id).length
+    ? Math.round((state.calibration.filter((item) => item.status === 'Approved' && (!cycle || item.cycleId === cycle.id)).length / state.calibration.filter((item) => !cycle || item.cycleId === cycle.id).length) * 100)
+    : 0;
+
   return {
     employees: eligible,
-    employeesTrend: 2.1,
+    employeesTrend: previous ? pctDelta(eligible, previous.eligible) : null,
     reviewsCompleted,
     reviewsCompletedPct,
-    reviewsCompletedTrend: 4.2,
+    reviewsCompletedTrend: previous ? pctDelta(reviewsCompletedPct, previous.eligible ? Math.round((previous.reviewsCompleted / Math.max(previous.eligible, 1)) * 1000) / 10 : null) : null,
     pendingReviews,
     pendingReviewsPct,
-    pendingReviewsTrend: -1.5,
+    pendingReviewsTrend: previous ? pctDelta(pendingReviewsPct, previous.eligible ? Math.round((previous.pendingReviews / Math.max(previous.eligible, 1)) * 1000) / 10 : null) : null,
     goalCompletionPct,
-    goalCompletionTrend: 3.4,
+    goalCompletionTrend: previous ? pctDelta(goalCompletionPct, previous.goalCompletionPct) : null,
     highPerformers,
     highPerformersPct: Math.round((highPerformers / Math.max(eligible, 1)) * 1000) / 10,
-    highPerformersTrend: 1.2,
+    highPerformersTrend: previous ? pctDelta(highPerformers, previous.highPerformers) : null,
     pipEmployees,
     pipEmployeesPct: Math.round((pipEmployees / Math.max(eligible, 1)) * 1000) / 10,
-    pipEmployeesTrend: 0,
+    pipEmployeesTrend: previous ? pctDelta(pipEmployees, previous.pipEmployees) : null,
     cycle: {
       name: cycle?.name || 'No active cycle',
       type: cycle?.type || '—',
@@ -690,7 +925,7 @@ const buildDashboard = (state: PerformanceDomainState, employeeCount: number): P
     },
     ratingDistribution: DEFAULT_RATING_BANDS.map((band, index) => ({
       label: band.label,
-      count: state.results.filter((item) => item.ratingBand === band.label).length,
+      count: state.results.filter((item) => item.ratingBand === band.label && (!cycle || item.cycleId === cycle.id)).length,
       tone: ['#10B981', '#2563EB', '#06B6D4', '#F59E0B', '#EF4444'][index] || '#64748B',
     })),
     departmentPerformance: Object.entries(deptMap)
@@ -703,12 +938,12 @@ const buildDashboard = (state: PerformanceDomainState, employeeCount: number): P
       .sort((a, b) => b.completionPct - a.completionPct)
       .slice(0, 8),
     performanceHealth: {
-      score: Math.round((goalCompletionPct + reviewsCompletedPct + (state.calibration.length ? 80 : 60)) / 3),
+      score: Math.round((goalCompletionPct + reviewsCompletedPct + calibrationPct + competencyCoverage + feedbackCoverage) / 5),
       goals: Math.round(goalCompletionPct),
       reviews: Math.round(reviewsCompletedPct),
-      calibration: state.calibration.length ? Math.round((state.calibration.filter((item) => item.status === 'Approved').length / state.calibration.length) * 100) : 0,
-      competencies: state.config.behaviourIndicators.length ? 86 : 0,
-      feedback: state.checkIns.length ? Math.min(100, state.checkIns.length * 5) : 0,
+      calibration: calibrationPct,
+      competencies: competencyCoverage,
+      feedback: feedbackCoverage,
     },
     upcomingDeadlines: [
       { id: 'd1', title: 'Goal setting closes', date: cycle?.goalSettingEnd || '', daysRemaining: daysBetween(nowIso().slice(0, 10), cycle?.goalSettingEnd || ''), tone: 'amber' as const },
@@ -737,7 +972,7 @@ const buildDashboard = (state: PerformanceDomainState, employeeCount: number): P
       pendingReviews,
       completedReviews: reviewsCompleted,
       goalCompletionPct,
-      checkInsDue: Math.max(0, eligible - state.checkIns.length),
+      checkInsDue: Math.max(0, eligible - state.checkIns.filter((item) => !cycle || item.cycleId === cycle.id).length),
     },
     calendarEvents: [
       { date: cycle?.goalSettingEnd || '', type: 'deadline' as const, label: 'Goal setting closes' },
@@ -747,30 +982,37 @@ const buildDashboard = (state: PerformanceDomainState, employeeCount: number): P
       { date: cycle?.publicationDate || '', type: 'deadline' as const, label: 'Publication' },
     ].filter((item) => item.date),
     sparklines: {
-      employees: sparkline(eligible),
-      reviewsCompleted: sparkline(reviewsCompleted || 1),
-      pendingReviews: sparkline(pendingReviews || 1),
-      goalCompletion: sparkline(goalCompletionPct || 1),
-      highPerformers: sparkline(highPerformers || 1),
-      pipEmployees: sparkline(pipEmployees || 1),
+      employees: sparkFromSnapshots(snapshots, 'employees', eligible),
+      reviewsCompleted: sparkFromSnapshots(snapshots, 'reviewsCompleted', reviewsCompleted),
+      pendingReviews: sparkFromSnapshots(snapshots, 'pendingReviews', pendingReviews),
+      goalCompletion: sparkFromSnapshots(snapshots, 'goalCompletionPct', goalCompletionPct),
+      highPerformers: sparkFromSnapshots(snapshots, 'highPerformers', highPerformers),
+      pipEmployees: sparkFromSnapshots(snapshots, 'pipEmployees', pipEmployees),
     },
     systemStatus: {
-      online: true,
-      lastSync: state.updatedAt,
+      online: Boolean(sqlSourceMeta?.databaseAvailable ?? true),
+      lastSync: sqlSourceMeta?.updatedAt || state.updatedAt,
       activeCycleLabel: cycle?.name || 'No active cycle',
-      attendanceDevicesOnline: 18,
-      attendanceDevicesTotal: 18,
+      attendanceDevicesOnline: devicesOnline,
+      attendanceDevicesTotal: devicesTotal,
+      attendanceDevicesLabel: 'Device registry',
+      dataSource: options?.sourceLabel || sqlSourceMeta?.source || 'Local JSON fallback',
+      dataWarning: options?.sourceWarning ?? sqlSourceMeta?.warning ?? null,
     },
   };
 };
 
 export const writePerformanceNavPreferences = async (userKey: string, preferences: Partial<PerformanceNavPreferences>) => {
-  const store = await readNavPrefsFile();
-  const current = store[userKey] || defaultPreferences();
+  const fromSql = await readPerformanceNavPreferencesFromSql(userKey);
+  const current = fromSql || (await loadNavPreferences(userKey));
   const next = { ...current, ...preferences };
-  store[userKey] = next;
   navPrefs.set(userKey, next);
-  await writeNavPrefsFile(store);
+  await writePerformanceNavPreferencesToSql(userKey, next);
+  if (performanceJsonFallbackAllowed()) {
+    const store = await readNavPrefsFile();
+    store[userKey] = next;
+    await writeNavPrefsFile(store);
+  }
   return next;
 };
 
@@ -778,8 +1020,8 @@ export const updatePerformanceNavAction = async (
   userKey: string,
   action: { type: string; route?: string; groupId?: string; collapsed?: boolean },
 ) => {
-  const store = await readNavPrefsFile();
-  const current = store[userKey] || defaultPreferences();
+  const fromSql = await readPerformanceNavPreferencesFromSql(userKey);
+  const current = fromSql || (await loadNavPreferences(userKey));
   if (action.type === 'favorite' && action.route) {
     current.favorites = current.favorites.includes(action.route)
       ? current.favorites.filter((item) => item !== action.route)
@@ -794,10 +1036,54 @@ export const updatePerformanceNavAction = async (
       : [...current.expandedGroups, action.groupId];
   }
   if (action.type === 'sidebar') current.sidebarCollapsed = Boolean(action.collapsed);
-  store[userKey] = current;
   navPrefs.set(userKey, current);
-  await writeNavPrefsFile(store);
+  await writePerformanceNavPreferencesToSql(userKey, current);
+  if (performanceJsonFallbackAllowed()) {
+    const store = await readNavPrefsFile();
+    store[userKey] = current;
+    await writeNavPrefsFile(store);
+  }
   return current;
+};
+
+const projectDomainForScope = (state: PerformanceDomainState, actor: PerformanceActorContext, anonymityThreshold: number) => {
+  const checkIns = state.checkIns.map((row) => {
+    if (actor.scope === 'global') return row;
+    const isOwner = [actor.employeeId, actor.employeeCode].map((v) => String(v || '').toLowerCase()).includes(String(row.employeeId || '').toLowerCase());
+    const isManager = [actor.employeeId, actor.employeeCode].map((v) => String(v || '').toLowerCase()).includes(String(row.managerId || '').toLowerCase());
+    if (isOwner || isManager || actor.scope === 'team') {
+      return isManager ? row : { ...row, privateManagerNotes: undefined };
+    }
+    return { ...row, privateManagerNotes: undefined };
+  });
+
+  const raters = state.raters.map((row) => {
+    const submittedForEmployee = state.raters.filter((item) => item.employeeId === row.employeeId && item.cycleId === row.cycleId && item.status === 'Submitted').length;
+    if (actor.scope !== 'global' && row.anonymous && submittedForEmployee < anonymityThreshold) {
+      return { ...row, raterId: 'anonymous', raterName: 'Anonymous', scores: undefined };
+    }
+    if (actor.scope === 'self' && row.anonymous) {
+      return { ...row, raterId: 'anonymous', raterName: 'Anonymous' };
+    }
+    return row;
+  });
+
+  const calibration = actor.scope === 'global' || actor.scope === 'team'
+    ? state.calibration
+    : [];
+  const pips = actor.scope === 'self'
+    ? state.pips
+    : state.pips;
+  const appeals = state.appeals;
+
+  return {
+    ...state,
+    checkIns,
+    raters,
+    calibration,
+    pips,
+    appeals,
+  };
 };
 
 export const readPerformanceManagementPayload = async (
@@ -807,23 +1093,32 @@ export const readPerformanceManagementPayload = async (
 ): Promise<PerformanceWorkspacePayload> => {
   const role = actorContext.performanceRole;
   const fullState = await readState();
-  const alertCountBefore = fullState.tasks.length;
-  refreshProbationAlerts(fullState);
-  if (fullState.tasks.length !== alertCountBefore) await writeState(fullState);
 
-  let payrollEmployees: any[] = [];
+  let payrollSource: any = { employees: [], source: 'Local HRIS payroll cache', databaseAvailable: false };
   try {
-    const source = await withTimeout(readPayrollEmployees(), 5000, { employees: [] as any[] } as any);
-    payrollEmployees = source.employees || [];
+    payrollSource = await withTimeout(readPayrollEmployees(), 5000, { employees: [], source: 'Local HRIS payroll cache', databaseAvailable: false } as any);
   } catch {
-    payrollEmployees = [];
+    payrollSource = { employees: [], source: 'Local HRIS payroll cache', databaseAvailable: false };
   }
+  const payrollEmployees = payrollSource.employees || [];
 
   const teamIds = await loadTeamEmployeeIds(actorContext, payrollEmployees);
-  const state = scopePerformanceDomain(fullState, actorContext, teamIds);
+  const scoped = scopePerformanceDomain(fullState, actorContext, teamIds);
+  const state = projectDomainForScope(scoped, actorContext, fullState.config.anonymityThreshold || 3);
   const employeeCount = actorContext.scope === 'global'
     ? (payrollEmployees.length || state.eligibility.length)
     : (teamIds.size || 1);
+
+  let devicesOnline = 0;
+  let devicesTotal = 0;
+  try {
+    const devices = await withTimeout(readBiometricDevices(), 5000, [] as Awaited<ReturnType<typeof readBiometricDevices>>);
+    devicesTotal = devices.length;
+    devicesOnline = devices.filter((device) => device.operationalStatus === 'Online').length;
+  } catch {
+    devicesOnline = 0;
+    devicesTotal = 0;
+  }
 
   const openTasks = state.tasks.filter((task) => !['Completed', 'Cancelled'].includes(task.status));
   const summary = {
@@ -845,12 +1140,19 @@ export const readPerformanceManagementPayload = async (
   if (summary.activePip) badges.pip = summary.activePip;
   if (openTasks.length) badges.notifications = openTasks.length;
 
-  const preferences = await loadNavPreferences(userKey);
+  const preferences = (await readPerformanceNavPreferencesFromSql(userKey)) || (await loadNavPreferences(userKey));
   const menu = filterMenuByRole(performanceMenuTree, role, actorContext.permissions);
+  const health = sqlSourceMeta || await getPerformanceSqlHealth();
+  const dashboard = await buildDashboard(state, employeeCount, {
+    devicesOnline,
+    devicesTotal,
+    sourceLabel: health.source,
+    sourceWarning: health.warning,
+  });
 
   return {
     generatedAt: nowIso(),
-    source: 'performance-domain-store',
+    source: health.source,
     route,
     role,
     roles: defaultPerformanceRoles,
@@ -868,7 +1170,7 @@ export const readPerformanceManagementPayload = async (
           deadline: activeCycle(state)!.goalSettingEnd || activeCycle(state)!.endDate,
         }
       : null,
-    dashboard: buildDashboard(state, employeeCount),
+    dashboard,
     cyclesPage: {
       summary: {
         totalCycles: state.cycles.length,
@@ -916,7 +1218,7 @@ export const readPerformanceManagementPayload = async (
         startDate: cycle.startDate,
         endDate: cycle.endDate,
         employees: cycle.eligibilityCount,
-        progress: cycle.status === 'Draft' ? 0 : cycle.status === 'Closed' ? 100 : 45,
+        progress: cycleProgressPct(cycle, state),
         status: (['Draft', 'Closed'].includes(cycle.status) ? cycle.status : cycle.status === 'Results Published' ? 'Completed' : ['Pending Approval'].includes(cycle.status) ? 'Upcoming' : 'Active') as 'Active' | 'Completed' | 'Upcoming' | 'Draft' | 'Closed',
         workflow: cycle.status,
         owner: cycle.createdBy,
@@ -953,6 +1255,17 @@ export const readPerformanceManagementPayload = async (
       fullName: actorContext.fullName || 'Performance User',
     },
     sessionPermissions: actorContext.permissions,
+    dataSource: {
+      databaseAvailable: health.databaseAvailable,
+      source: health.source,
+      warning: health.warning,
+      updatedAt: health.updatedAt,
+      migrationStatus: health.migrationStatus,
+      recordCounts: health.recordCounts,
+      employeeDirectorySource: payrollSource.source,
+      employeeDirectoryAvailable: Boolean(payrollSource.databaseAvailable),
+      employeeCount: payrollEmployees.length,
+    },
   } as PerformanceWorkspacePayload;
 };
 
@@ -1690,7 +2003,9 @@ export const applyPerformanceAction = async (
         if (!row) return fail('Recommendation not found.');
         row.status = (compact(data.status) as any) || row.status;
         row.updatedAt = nowIso();
-        if (row.status === 'Approved') row.downstreamRef = `PAYROLL-INSTR-${row.id}`;
+        if (row.status === 'Approved') {
+          row.downstreamRef = compact(data.downstreamRef) || `RECOGNITION-INSTRUCTION-${row.id}`;
+        }
         pushAudit(state, { actor, actorRole, action: `Recognition ${row.status}`, entityType: 'RecognitionRecommendation', entityId: row.id });
         break;
       }
@@ -1809,7 +2124,24 @@ export const applyPerformanceAction = async (
         return fail(`Unknown action: ${body.action}`);
     }
 
-    const saved = await writeState(state);
+    const saved = await writeState(state, actor);
+    if (body.action === 'analytics.refresh' || body.action.startsWith('result.') || body.action.startsWith('goal.') || body.action.startsWith('assessment.')) {
+      const cycle = activeCycle(saved);
+      const eligible = cycle?.eligibilityCount || saved.eligibility.filter((row) => row.included).length || 0;
+      const goals = saved.goals.filter((goal) => !cycle || goal.cycleId === cycle.id);
+      const agreed = goals.filter((goal) => ['Agreed', 'Active', 'Completed'].includes(goal.status)).length;
+      const reviewsCompleted = saved.assessments.filter((item) => item.type === 'Manager' && (!cycle || item.cycleId === cycle.id) && ['Submitted', 'Approved', 'Published'].includes(item.status)).length;
+      void insertAnalyticsSnapshot({
+        cycleId: cycle?.id || null,
+        employees: eligible,
+        reviewsCompleted,
+        pendingReviews: Math.max(0, eligible - reviewsCompleted),
+        goalCompletionPct: goals.length ? Math.round((agreed / goals.length) * 1000) / 10 : 0,
+        highPerformers: saved.results.filter((item) => (!cycle || item.cycleId === cycle.id) && item.finalScore >= 90).length,
+        pipEmployees: saved.pips.filter((item) => (!cycle || item.cycleId === cycle.id) && /active|track|risk/i.test(item.status)).length,
+        snapshotJson: { action: body.action, at: nowIso() },
+      }).catch(() => undefined);
+    }
     return { ok: true, state: saved, message: 'Action applied.' };
   } catch (error) {
     return fail(error instanceof Error ? error.message : 'Action failed.');
@@ -1827,10 +2159,22 @@ export const getEssPerformanceBundle = async (employeeId: string, employeeCode?:
   const goals = state.goals.filter((goal) => match(goal.employeeId) || match(goal.employeeCode));
   const results = state.results.filter((item) => match(item.employeeId));
   const assessments = state.assessments.filter((item) => match(item.employeeId));
-  const checkIns = state.checkIns.filter((item) => match(item.employeeId));
+  const checkIns = state.checkIns
+    .filter((item) => match(item.employeeId))
+    .map((item) => ({ ...item, privateManagerNotes: undefined }));
   const developmentPlans = state.developmentPlans.filter((item) => match(item.employeeId));
   const tasks = state.tasks.filter((item) => match(item.employeeId) || match(item.assigneeId));
   const appeals = state.appeals.filter((item) => match(item.employeeId));
+  const anonymityThreshold = state.config.anonymityThreshold || 3;
+  const raters = state.raters
+    .filter((item) => match(item.employeeId))
+    .map((row) => {
+      const submitted = state.raters.filter((item) => item.employeeId === row.employeeId && item.cycleId === row.cycleId && item.status === 'Submitted').length;
+      if (row.anonymous && submitted < anonymityThreshold) {
+        return { ...row, raterId: 'anonymous', raterName: 'Anonymous', scores: undefined };
+      }
+      return row.anonymous ? { ...row, raterId: 'anonymous', raterName: 'Anonymous' } : row;
+    });
 
   return {
     goals: goals.map((goal) => ({
@@ -1886,6 +2230,7 @@ export const getEssPerformanceBundle = async (employeeId: string, employeeCode?:
     tasks,
     appeals,
     checkIns,
+    raters,
     raw: { goals, results, assessments },
   };
 };

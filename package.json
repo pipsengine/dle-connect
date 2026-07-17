@@ -35,7 +35,12 @@
     "reset:nysc0032-leave": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/reset-nysc0032-leave.mts",
     "audit:department-reporting-managers": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/sync-department-reporting-managers.ts --summary",
     "smoke:p0146-leave": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/smoke-test-p0146-leave.mts",
-    "verify:performance-calculation": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/verify-performance-calculation.mts"
+    "verify:performance-calculation": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/verify-performance-calculation.mts",
+    "verify:performance-sql-cutover": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/verify-performance-sql-cutover.mts",
+    "import:performance-domain-sql": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/import-performance-domain-sql.mts",
+    "smoke:performance-domain": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/smoke-performance-domain.mts",
+    "smoke:performance-sql": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/smoke-performance-sql.mts",
+    "worker:performance": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/run-performance-workers.mts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
