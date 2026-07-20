@@ -3340,13 +3340,7 @@ export async function syncAttendanceForTimesheet(
             jobTitle: '',
             location: locationName || '',
             site: workCenterName,
-            shift: (() => {
-              const inTime = String(att.checkInTime || '');
-              const outTime = String(att.checkOutTime || '');
-              const overnight = Boolean(inTime && outTime && outTime !== '--:--' && outTime < inTime);
-              const lateStart = /^1[89]:|^2[0-3]:/.test(inTime);
-              return overnight || lateStart ? 'Night' : 'Day';
-            })(),
+            shift: 'Day',
             status: 'Absent',
             checkInTime: null,
             checkOutTime: null,
