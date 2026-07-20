@@ -11,6 +11,7 @@ import { readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
 import {
   DAILY_BREAK_HOURS,
   STANDARD_TIMESHEET_HOURS,
+  attendanceDurationFromClock,
   dedupeTimesheetLinesByEmployee,
   isTimesheetPaidLeaveLine,
   normalizeIdleAllocations,
@@ -3339,7 +3340,13 @@ export async function syncAttendanceForTimesheet(
             jobTitle: '',
             location: locationName || '',
             site: workCenterName,
-            shift: 'Day',
+            shift: (() => {
+              const inTime = String(att.checkInTime || '');
+              const outTime = String(att.checkOutTime || '');
+              const overnight = Boolean(inTime && outTime && outTime !== '--:--' && outTime < inTime);
+              const lateStart = /^1[89]:|^2[0-3]:/.test(inTime);
+              return overnight || lateStart ? 'Night' : 'Day';
+            })(),
             status: 'Absent',
             checkInTime: null,
             checkOutTime: null,
@@ -3392,11 +3399,13 @@ export async function syncAttendanceForTimesheet(
       .map((key) => approvedLeaveByKey.get(key))
       .find(Boolean);
     
-    // Attendance duration in hours
-    const rawDuration = att.checkInTime && att.checkOutTime 
-      ? (new Date(`2026-01-01T${att.checkOutTime}`).getTime() - new Date(`2026-01-01T${att.checkInTime}`).getTime()) / (1000 * 60 * 60)
-      : att.checkInTime ? STANDARD_TIMESHEET_HOURS : 0;
-    const duration = normalizePaidWorkHours(rawDuration);
+    // Attendance duration in hours (overnight-safe for night shift 18:00→02:00+)
+    const fromClock = attendanceDurationFromClock(att.checkInTime, att.checkOutTime);
+    const duration = fromClock !== null && fromClock > 0
+      ? normalizePaidWorkHours(fromClock)
+      : att.checkInTime
+        ? STANDARD_TIMESHEET_HOURS
+        : 0;
     const shouldAutoBookPaidLeave = Boolean(approvedLeave && !att.checkInTime && !existingLine?.totalHours);
     const leaveAllocation = shouldAutoBookPaidLeave ? [{
       projectId: 'LEAVE',

@@ -11,7 +11,7 @@ import {
   remainingOvertimeSlots,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { OVERTIME_HOUR_OPTIONS, DAILY_BREAK_HOURS } from '@/lib/timesheet-entry-shared';
+import { OVERTIME_HOUR_OPTIONS, DAILY_BREAK_HOURS, resolveTimesheetShift, impliedOvertimeHoursFromClock } from '@/lib/timesheet-entry-shared';
 import { PremiumKpiCard } from '../../payroll/employee-salary-setup/salary-setup-ui';
 import type { SetupTone } from '../../payroll/employee-salary-setup/salary-setup-ui';
 import { ReadinessGauge } from '../../payroll/daily-rate-pay/daily-rate-pay-ui';
@@ -345,6 +345,7 @@ export function EmployeeDetailsPanel({
   canEdit,
   onSaveSetup,
   saving,
+  shiftLabel,
 }: {
   tab: 'details' | 'history' | 'alerts';
   onTabChange: (tab: 'details' | 'history' | 'alerts') => void;
@@ -353,6 +354,7 @@ export function EmployeeDetailsPanel({
     employeeNo: string;
     validationStatus: string;
     clockIn: string | null;
+    clockOut?: string | null;
     usedHours: number;
     totalHours: number;
     validationMessage: string | null;
@@ -372,6 +374,7 @@ export function EmployeeDetailsPanel({
   canEdit: boolean;
   onSaveSetup: () => void;
   saving: boolean;
+  shiftLabel?: string;
 }) {
   const tabs = [
     { id: 'details' as const, label: 'Details' },
@@ -386,6 +389,9 @@ export function EmployeeDetailsPanel({
       </aside>
     );
   }
+
+  const shift = resolveTimesheetShift(shiftLabel);
+  const impliedOt = impliedOvertimeHoursFromClock(line.clockIn, line.clockOut, shift.label);
 
   const statusTone =
     line.validationStatus === 'Valid' ? 'success' : line.validationStatus === 'Error' ? 'danger' : 'warning';
@@ -438,6 +444,14 @@ export function EmployeeDetailsPanel({
                   <p className="mt-1 text-sm font-bold text-[#0F172A]">{value}</p>
                 </div>
               ))}
+            </div>
+            <div className="rounded-xl border border-[#DBEAFE] bg-[#EFF6FF] p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-[#2563EB]">Active Shift</p>
+              <p className="mt-1 text-sm font-bold text-[#0F172A]">{shift.label}</p>
+              <p className="mt-1 text-xs text-[#475569]">{shift.description}</p>
+              <p className="mt-2 text-xs font-semibold text-[#1D4ED8]">
+                Implied OT from clock: {impliedOt > 0 ? `${impliedOt}h after ${shift.end}` : `None (standard ends ${shift.end})`}
+              </p>
             </div>
             <div className="rounded-xl border border-[#DBEAFE] bg-[#EFF6FF] p-4">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-[#2563EB]">Calculated Pay</p>
@@ -774,6 +788,7 @@ export function ApprovedOvertimeBookingBar({
   devRelaxed = false,
   submitting = false,
   onBook,
+  suggestedOtHours = 0,
 }: {
   authorizations: Array<{
     id: string;
@@ -797,6 +812,7 @@ export function ApprovedOvertimeBookingBar({
   devRelaxed?: boolean;
   submitting?: boolean;
   onBook: (authorizationId: string, otHours: number) => void;
+  suggestedOtHours?: number;
 }) {
   if (!authorizations.length) {
     if (!canBookOvertime) return null;
@@ -881,18 +897,29 @@ export function ApprovedOvertimeBookingBar({
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-2">
                   <div className="flex flex-wrap justify-end gap-1">
-                    {OVERTIME_HOUR_OPTIONS.map((hours) => (
+                    {OVERTIME_HOUR_OPTIONS.map((hours) => {
+                      const isSuggested = suggestedOtHours > 0 && Math.abs(hours - suggestedOtHours) < 0.51;
+                      return (
                       <button
                         key={hours}
                         type="button"
                         disabled={!bookEnabled || submitting || (!openBooking && !retroCorrection && (poolRemaining < hours || slotsRemaining <= 0))}
                         onClick={() => onBook(item.id, hours)}
-                        className="rounded-lg border border-[#A7F3D0] bg-[#F0FDF4] px-2 py-1 text-[11px] font-bold text-[#047857] hover:bg-[#DCFCE7] disabled:opacity-50"
-                        title={`Book ${hours}h overtime${selectedEmployeeCount > 0 ? ` for ${selectedEmployeeCount} selected` : ' for all present crew'}`}
+                        className={`rounded-lg border px-2 py-1 text-[11px] font-bold disabled:opacity-50 ${
+                          isSuggested
+                            ? 'border-[#2563EB] bg-[#DBEAFE] text-[#1D4ED8] ring-1 ring-[#2563EB]/30'
+                            : 'border-[#A7F3D0] bg-[#F0FDF4] text-[#047857] hover:bg-[#DCFCE7]'
+                        }`}
+                        title={
+                          isSuggested
+                            ? `Suggested ${hours}h OT from shift clock-out past standard end`
+                            : `Book ${hours}h overtime${selectedEmployeeCount > 0 ? ` for ${selectedEmployeeCount} selected` : ' for all present crew'}`
+                        }
                       >
-                        {hours}h
+                        {hours}h{isSuggested ? ' ★' : ''}
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                   {openBooking || retroCorrection ? (
                     <span className="text-[10px] font-semibold text-[#6D28D9]">Saves immediately{retroCorrection ? ' · refreshes payroll' : ''}</span>

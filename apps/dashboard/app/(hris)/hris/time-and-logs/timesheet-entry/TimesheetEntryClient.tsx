@@ -35,7 +35,7 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { DAILY_BREAK_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, timesheetDayRulesForDate, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, timesheetDayRulesForDate, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import { TimesheetEntryEnterpriseView } from './TimesheetEntryEnterpriseView';
@@ -450,7 +450,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const [workCenterDraft, setWorkCenterDraft] = useState('');
   const [editingWorkCenter, setEditingWorkCenter] = useState<Payload['workCenters'][number] | null>(null);
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
-  const [selectedShift, setSelectedShift] = useState('01 (Day)');
+  const [selectedShift, setSelectedShift] = useState(DEFAULT_TIMESHEET_SHIFT_LABEL);
   const [rightPanelTab, setRightPanelTab] = useState<'details' | 'history' | 'alerts'>('details');
   const [dailyPayPanel, setDailyPayPanel] = useState<DailyRatePanelRow | null>(null);
   const loadRequestRef = useRef(0);
@@ -704,7 +704,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       ),
     );
 
-    const dayContext = { date: selectedDate, holidayDates: payload?.holidayDates ?? [] };
+    const dayContext = { date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift };
     const authorizations = (payload?.approvedOvertimeAuthorizations ?? []) as OvertimeAuthorization[];
     const bookingOptions = payload?.overtimeBooking ?? { enabled: false, devRelaxed: false, retroCorrection: false, openBooking: false };
     const validated = validateTimesheetLine(
@@ -826,7 +826,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     let bookedCount = 0;
     const denials: string[] = [];
     const partials: string[] = [];
-    const dayContext = { date: selectedDate, holidayDates: payload?.holidayDates ?? [] };
+    const dayContext = { date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift };
     for (const line of targets) {
       const index = next.findIndex((item) => item.id === line.id);
       if (index < 0) continue;
@@ -1116,7 +1116,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const handleAutoDistribute = () => {
     if (!payload || payload.period.status !== 'Open' || !editableTimesheetStatuses.includes(payload.header?.status ?? 'Draft') || matrixColumns.length === 0) return;
     const dayRules = timesheetDayRulesForDate(selectedDate, payload.holidayDates ?? []);
-    const dayContext = { date: selectedDate, holidayDates: payload.holidayDates ?? [] };
+    const dayContext = { date: selectedDate, holidayDates: payload.holidayDates ?? [], shiftLabel: selectedShift };
     const next = localLines.map((line) => {
       if (!line.clockIn) return line;
       const projectAllocations = matrixColumns.map((col, index) => ({
@@ -1438,7 +1438,16 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             setQuery('');
           }}
           onDateChange={setSelectedDate}
-          onShiftChange={setSelectedShift}
+          onShiftChange={(value) => {
+            const shift = resolveTimesheetShift(value);
+            setSelectedShift(shift.label);
+            setNotice(
+              shift.kind === 'Night'
+                ? 'Night shift selected: book 8h for 18:00–02:00. Hours after 02:00 until clock-out are overtime.'
+                : 'Day shift selected: book 8h for the standard day. Hours after 17:00 until clock-out are overtime.',
+            );
+          }}
+          shiftHint={resolveTimesheetShift(selectedShift).description}
           canManagePeriod={canManageTimesheetSetup}
           canEditTimesheet={canEditTimesheet}
           canBookOvertime={canBookOvertime}

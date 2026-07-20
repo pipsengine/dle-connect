@@ -27,8 +27,9 @@ import {
   TimesheetAnalyticsStrip,
   TimesheetKpiStrip,
   TimesheetRowActionsMenu,
+  ApprovedOvertimeBookingBar,
 } from './timesheet-entry-ui';
-import { DAILY_BREAK_HOURS, canonicalProjectCode, matrixProductiveHoursCap, projectHoursForColumn, upsertMatrixProjectHours } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, canonicalProjectCode, impliedOvertimeHoursFromClock, matrixProductiveHoursCap, projectHoursForColumn, upsertMatrixProjectHours } from '@/lib/timesheet-entry-shared';
 import { overtimeProductiveHours } from '@/lib/timesheet-overtime-booking';
 
 type DisplayColumn = { code: string; label: string; kind: 'project' | 'internal' | 'idle' | 'leave' };
@@ -59,6 +60,7 @@ export type TimesheetEnterpriseViewProps = {
   selectedDate: string;
   selectedShift: string;
   shiftOptions: string[];
+  shiftHint?: string;
   supervisorLabel: string;
   supervisorOptions: Array<{ value: string; label: string; searchText?: string }>;
   locationOptions: string[];
@@ -284,6 +286,30 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
           </div>
         ) : null}
 
+        {props.canBookOvertime ? (
+          <ApprovedOvertimeBookingBar
+            authorizations={props.approvedOvertimeAuthorizations}
+            lines={props.localLines}
+            selectedEmployeeCount={props.selectedEmployees.length}
+            canEdit={props.canEditTimesheet}
+            canBookOvertime={props.canBookOvertime}
+            retroCorrection={props.overtimeRetroCorrection}
+            openBooking={props.overtimeOpenBooking}
+            devRelaxed={props.overtimeDevRelaxed}
+            submitting={props.submitting}
+            onBook={props.onBookApprovedOvertime}
+            suggestedOtHours={(() => {
+              const targets = props.selectedEmployees.length
+                ? props.localLines.filter((line) => props.selectedEmployees.includes(line.employeeId) && line.clockIn)
+                : props.localLines.filter((line) => line.clockIn);
+              if (!targets.length) return 0;
+              const values = targets.map((line) => impliedOvertimeHoursFromClock(line.clockIn, line.clockOut, props.selectedShift));
+              const max = Math.max(...values, 0);
+              return max > 0 ? Math.round(max) : 0;
+            })()}
+          />
+        ) : null}
+
         <div className="rounded-[18px] border border-[#E5E7EB] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
           <div className="flex flex-wrap items-end gap-4">
             <ContextField label="Payroll Period">
@@ -326,11 +352,18 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
               <ContextSelect
                 value={props.selectedShift}
                 onChange={props.onShiftChange}
-                options={(props.shiftOptions.length ? props.shiftOptions : ['01 (Day)']).map((item) => ({
+                options={(props.shiftOptions.length ? props.shiftOptions : ['01 (Day)', '02 (Night)']).map((item) => ({
                   value: item,
-                  label: item,
+                  label: item.includes('Night')
+                    ? `${item} · 18:00–02:00`
+                    : item.includes('Day')
+                      ? `${item} · 08:00–17:00`
+                      : item,
                 }))}
               />
+              {props.shiftHint ? (
+                <p className="mt-1 text-[10px] font-medium leading-snug text-[#64748B]">{props.shiftHint}</p>
+              ) : null}
             </ContextField>
             <div className="flex items-end gap-2">
               <StatusBadge label={props.periodIsOpen ? 'Open' : 'Closed'} tone={props.periodIsOpen ? 'success' : 'neutral'} />
@@ -657,6 +690,7 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
               canEdit={props.canEditTimesheet}
               onSaveSetup={props.onSaveTimesheetSetup}
               saving={props.submitting}
+              shiftLabel={props.selectedShift}
             />
           ) : null}
         </div>

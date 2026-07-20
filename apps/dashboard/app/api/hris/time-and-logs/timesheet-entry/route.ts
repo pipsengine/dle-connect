@@ -65,7 +65,7 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
-import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 
 const dayContextFor = (date: string, holidayDates: string[]): TimesheetDayContext => ({ date, holidayDates });
 
@@ -1144,7 +1144,7 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
         const bLabel = supervisorDirectory.find((item) => item.value === b)?.label || b;
         return aLabel.localeCompare(bLabel);
       }),
-      shifts: [],
+      shifts: TIMESHEET_SHIFT_LABELS,
       businessUnits: [],
       modes: ['Supervisor Entry'],
       statuses: ['Draft', 'Submitted', 'Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed', 'HR_Acknowledged', 'Rejected', 'Returned', 'Locked'],

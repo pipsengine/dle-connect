@@ -6,6 +6,97 @@ export const GROSS_TIMESHEET_HOURS = STANDARD_TIMESHEET_HOURS + DAILY_BREAK_HOUR
 export const DEFAULT_BREAK_IDLE_REASON_ID = 'idl-009';
 export const DEFAULT_BREAK_IDLE_REASON_NAME = 'Break Time';
 
+export type TimesheetShiftKind = 'Day' | 'Night';
+
+export type TimesheetShiftDefinition = {
+  id: string;
+  label: string;
+  kind: TimesheetShiftKind;
+  /** Standard productive window start (HH:MM). */
+  start: string;
+  /** Standard productive window end (HH:MM). Hours after this are overtime. */
+  end: string;
+  standardProductiveHours: number;
+  crossesMidnight: boolean;
+  description: string;
+};
+
+/** Day: typical site day. Night: 18:00–02:00 = 8h standard; OT begins after 02:00. */
+export const TIMESHEET_SHIFTS: TimesheetShiftDefinition[] = [
+  {
+    id: '01',
+    label: '01 (Day)',
+    kind: 'Day',
+    start: '08:00',
+    end: '17:00',
+    standardProductiveHours: STANDARD_TIMESHEET_HOURS,
+    crossesMidnight: false,
+    description: 'Day shift · 08:00–17:00 · OT after 17:00',
+  },
+  {
+    id: '02',
+    label: '02 (Night)',
+    kind: 'Night',
+    start: '18:00',
+    end: '02:00',
+    standardProductiveHours: STANDARD_TIMESHEET_HOURS,
+    crossesMidnight: true,
+    description: 'Night shift · 18:00–02:00 (8h) · OT after 02:00',
+  },
+];
+
+export const DEFAULT_TIMESHEET_SHIFT_LABEL = TIMESHEET_SHIFTS[0].label;
+export const TIMESHEET_SHIFT_LABELS = TIMESHEET_SHIFTS.map((shift) => shift.label);
+
+export const resolveTimesheetShift = (value?: string | null): TimesheetShiftDefinition => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return TIMESHEET_SHIFTS[0];
+  const byLabel = TIMESHEET_SHIFTS.find((shift) => shift.label.toLowerCase() === raw);
+  if (byLabel) return byLabel;
+  const byId = TIMESHEET_SHIFTS.find((shift) => shift.id === raw || raw.startsWith(`${shift.id} `) || raw.startsWith(shift.id.toLowerCase()));
+  if (byId) return byId;
+  if (raw.includes('night') || raw.includes('02')) return TIMESHEET_SHIFTS[1];
+  return TIMESHEET_SHIFTS[0];
+};
+
+const parseClockMinutes = (value: string) => {
+  const [h, m] = value.split(':').map((part) => Number(part));
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+};
+
+/**
+ * Overtime hours implied by clock-out past the shift standard end.
+ * Night: 18:00–02:00 is standard; anything after 02:00 until done is OT.
+ * Day: OT after 17:00.
+ */
+export const impliedOvertimeHoursFromClock = (
+  clockIn?: string | null,
+  clockOut?: string | null,
+  shiftValue?: string | null,
+): number => {
+  const shift = resolveTimesheetShift(shiftValue);
+  const outTime = String(clockOut || '').trim();
+  if (!outTime || outTime === '--:--') return 0;
+  const outMinutes = parseClockMinutes(outTime);
+  const endMinutes = parseClockMinutes(shift.end);
+  if (outMinutes === null || endMinutes === null) return 0;
+
+  const inTime = String(clockIn || '').trim();
+  const inMinutes = inTime ? parseClockMinutes(inTime) : null;
+  const overnight = inMinutes !== null && outMinutes < inMinutes;
+
+  if (shift.crossesMidnight) {
+    // Night standard ends at 02:00. Only early-morning outs after end count as OT.
+    if (!overnight && outMinutes > (inMinutes ?? -1)) return 0;
+    if (outMinutes <= endMinutes) return 0;
+    return Math.round(((outMinutes - endMinutes) / 60) * 10) / 10;
+  }
+
+  const overtimeMinutes = outMinutes - endMinutes;
+  return Math.round((Math.max(0, overtimeMinutes) / 60) * 10) / 10;
+};
+
 export type TimesheetDayKind = 'Weekday' | 'Saturday' | 'Sunday' | 'PublicHoliday';
 
 export type TimesheetDayRules = {
@@ -18,6 +109,8 @@ export type TimesheetDayRules = {
 export type TimesheetDayContext = {
   date: string;
   holidayDates?: string[];
+  /** Selected timesheet shift label, e.g. "02 (Night)". */
+  shiftLabel?: string;
 };
 
 export const timesheetDayRulesForDate = (date: string, holidayDates: string[] = []): TimesheetDayRules => {
