@@ -1473,6 +1473,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             if (checked) setSelectedEmployees([...selectedEmployees, employeeId]);
             else setSelectedEmployees(selectedEmployees.filter((id) => id !== employeeId));
           }}
+          onSelectEmployees={setSelectedEmployees}
           selectedLineId={selectedLineId}
           onSelectLine={setSelectedLineId}
           onUpdateLine={(index, updates) => handleUpdateLine(index, updates as Partial<TimesheetLine>)}

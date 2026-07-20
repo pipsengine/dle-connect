@@ -92,6 +92,7 @@ export type TimesheetEnterpriseViewProps = {
   selectedEmployees: string[];
   onToggleAllEmployees: (checked: boolean) => void;
   onToggleEmployee: (employeeId: string, checked: boolean) => void;
+  onSelectEmployees?: (employeeIds: string[]) => void;
   selectedLineId: string | null;
   onSelectLine: (lineId: string) => void;
   onUpdateLine: (index: number, updates: Record<string, unknown>) => void;
@@ -281,7 +282,7 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
           <div className="rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-3 text-sm text-[#1E40AF]">
             <p className="font-bold">Overtime correction mode</p>
             <p className="mt-1 text-xs font-medium">
-              This timesheet is posted to payroll. Select employees and use the overtime hour buttons (1h, 2h, 3h…) to book corrections — changes save immediately and refresh payroll.
+              This timesheet is posted to payroll. Select employees, choose OT hours on an approved authorization, then Book OT.
             </p>
           </div>
         ) : null}
@@ -291,6 +292,7 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
             authorizations={props.approvedOvertimeAuthorizations}
             lines={props.localLines}
             selectedEmployeeCount={props.selectedEmployees.length}
+            presentEmployeeCount={props.localLines.filter((line) => line.clockIn).length}
             canEdit={props.canEditTimesheet}
             canBookOvertime={props.canBookOvertime}
             retroCorrection={props.overtimeRetroCorrection}
@@ -298,6 +300,11 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
             devRelaxed={props.overtimeDevRelaxed}
             submitting={props.submitting}
             onBook={props.onBookApprovedOvertime}
+            onSelectAllPresentEmployees={() => {
+              const presentIds = props.localLines.filter((line) => line.clockIn).map((line) => line.employeeId);
+              if (props.onSelectEmployees) props.onSelectEmployees(presentIds);
+              else props.onToggleAllEmployees(true);
+            }}
             suggestedOtHours={(() => {
               const targets = props.selectedEmployees.length
                 ? props.localLines.filter((line) => props.selectedEmployees.includes(line.employeeId) && line.clockIn)

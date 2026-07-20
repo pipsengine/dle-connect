@@ -789,6 +789,8 @@ export function ApprovedOvertimeBookingBar({
   submitting = false,
   onBook,
   suggestedOtHours = 0,
+  onSelectAllPresentEmployees,
+  presentEmployeeCount = 0,
 }: {
   authorizations: Array<{
     id: string;
@@ -813,124 +815,156 @@ export function ApprovedOvertimeBookingBar({
   submitting?: boolean;
   onBook: (authorizationId: string, otHours: number) => void;
   suggestedOtHours?: number;
+  onSelectAllPresentEmployees?: () => void;
+  presentEmployeeCount?: number;
 }) {
+  const [hoursByAuth, setHoursByAuth] = useState<Record<string, number>>({});
+  const defaultHours = suggestedOtHours > 0
+    ? (OVERTIME_HOUR_OPTIONS.find((hours) => Math.abs(hours - suggestedOtHours) < 0.51) || OVERTIME_HOUR_OPTIONS[0])
+    : OVERTIME_HOUR_OPTIONS[0];
+
   if (!authorizations.length) {
     if (!canBookOvertime) return null;
     return (
-      <div className="rounded-[16px] border border-[#BFDBFE] bg-[#EFF6FF] p-4 text-sm text-[#1E3A8A]">
-        <p className="font-bold">{openBooking ? 'Overtime booking (test mode)' : 'Overtime correction mode is active'}</p>
-        <p className="mt-1 text-xs">
-          {openBooking
-            ? 'No project columns are available on this timesheet yet. Ensure employees have standard day project hours booked first, then return to book overtime.'
-            : 'No MD-approved overtime was found for this supervisor and date. Enable open booking for test/reconciliation, or approve overtime in the workflow queue.'}
+      <div className="rounded-[16px] border border-[#E5E7EB] bg-white p-4 text-sm shadow-sm">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-[#64748B]">Approved Overtime</p>
+        <p className="mt-1 font-bold text-[#0F172A]">No approved overtime ready to book</p>
+        <p className="mt-1 text-xs text-[#475569]">
+          Submit and approve overtime in Overtime Management first (Supervisor → PM → GM Operations → HR). Approved requests for this supervisor and date will appear here for booking onto the timesheet.
         </p>
-        {!openBooking ? (
-          <Link href="/hris/workforce-management/overtime-management" className="mt-2 inline-flex text-xs font-semibold text-[#1D4ED8] hover:underline">
-            Open Overtime Queue
-          </Link>
-        ) : null}
+        <Link
+          href="/hris/workforce-management/overtime-management"
+          className="mt-3 inline-flex h-9 items-center rounded-xl bg-[#2563EB] px-3 text-xs font-semibold text-white hover:bg-[#1D4ED8]"
+        >
+          Open Overtime Management
+        </Link>
       </div>
     );
   }
 
   const bookEnabled = canBookOvertime || canEdit;
+  const targetLabel = selectedEmployeeCount > 0
+    ? `${selectedEmployeeCount} selected employee${selectedEmployeeCount === 1 ? '' : 's'}`
+    : `all present crew (${presentEmployeeCount || lines.filter((line) => line.clockIn).length})`;
 
   return (
-    <div className="rounded-[16px] border border-[#A7F3D0] bg-[#ECFDF5] p-4 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="overflow-hidden rounded-[16px] border border-[#E5E7EB] bg-white shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#EDF2F7] bg-[#F8FAFC] px-4 py-3">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[#047857]">
-            {openBooking ? 'Book Overtime (Test / Reconciliation)' : 'Approved Overtime Ready to Book'}
-          </p>
-          {openBooking ? (
-            <p className="mt-1 inline-flex rounded-full border border-[#C4B5FD] bg-[#F5F3FF] px-2.5 py-0.5 text-[11px] font-semibold text-[#6D28D9]">
-              Open booking — MD authorization not required until go-live
-            </p>
-          ) : null}
-          {retroCorrection ? (
-            <p className="mt-1 inline-flex rounded-full border border-[#93C5FD] bg-[#EFF6FF] px-2.5 py-0.5 text-[11px] font-semibold text-[#1D4ED8]">
-              Retro correction — book OT on approved/posted timesheets and refresh payroll
-            </p>
-          ) : null}
-          {devRelaxed ? (
-            <p className="mt-1 inline-flex rounded-full border border-[#FCD34D] bg-[#FFFBEB] px-2.5 py-0.5 text-[11px] font-semibold text-[#B45309]">
-              Dev / test mode — relaxed approval rules active
-            </p>
-          ) : null}
+          <p className="text-[11px] font-bold uppercase tracking-wide text-[#047857]">Approved Overtime Ready to Book</p>
           <p className="mt-1 text-sm font-semibold text-[#0F172A]">
-            {openBooking
-              ? `${authorizations.length} project${authorizations.length === 1 ? '' : 's'} available for overtime booking.`
-              : `${authorizations.length} approved authorization${authorizations.length === 1 ? '' : 's'} for this supervisor and date.`}
+            {authorizations.length} approved authorization{authorizations.length === 1 ? '' : 's'} for this supervisor and date
           </p>
           <p className="mt-1 text-xs text-[#475569]">
-            Select employees (or leave unselected for all present crew), pick overtime hours (m² = 2h, m³ = 3h, …), then book on the project.
+            Select employees in the timesheet table (or Select all present), choose OT hours, then Book — same flow as Overtime Management.
           </p>
-        </div>
-        {!openBooking ? (
-        <Link
-          href="/hris/workforce-management/overtime-management"
-          className="h-9 rounded-xl border border-[#A7F3D0] bg-white px-3 text-xs font-semibold text-[#047857] hover:bg-[#F0FDF4]"
-        >
-          Overtime Queue
-        </Link>
-        ) : null}
-      </div>
-      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {authorizations.map((item) => {
-          const poolRemaining = remainingOvertimePool(item as OvertimeAuthorization, lines as never);
-          const slotsRemaining = remainingOvertimeSlots(item as OvertimeAuthorization, lines as never);
-          const perEmployee = perEmployeeOvertimeCap(item);
-          return (
-            <div key={item.id} className="rounded-xl border border-[#A7F3D0] bg-white p-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-[#0F172A]">
-                    {item.projectCode} · {item.projectName}
-                  </p>
-                  <p className="mt-1 text-xs font-medium text-[#475569]">
-                    {item.requestedHours}h approved · {item.requestedHeadcount} people · {perEmployee}h each
-                  </p>
-                  <p className="mt-1 text-xs text-[#64748B]">{item.reason}</p>
-                  <p className="mt-2 text-[11px] font-semibold text-[#047857]">
-                    Remaining pool {poolRemaining}h · slots {slotsRemaining}
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-2">
-                  <div className="flex flex-wrap justify-end gap-1">
-                    {OVERTIME_HOUR_OPTIONS.map((hours) => {
-                      const isSuggested = suggestedOtHours > 0 && Math.abs(hours - suggestedOtHours) < 0.51;
-                      return (
-                      <button
-                        key={hours}
-                        type="button"
-                        disabled={!bookEnabled || submitting || (!openBooking && !retroCorrection && (poolRemaining < hours || slotsRemaining <= 0))}
-                        onClick={() => onBook(item.id, hours)}
-                        className={`rounded-lg border px-2 py-1 text-[11px] font-bold disabled:opacity-50 ${
-                          isSuggested
-                            ? 'border-[#2563EB] bg-[#DBEAFE] text-[#1D4ED8] ring-1 ring-[#2563EB]/30'
-                            : 'border-[#A7F3D0] bg-[#F0FDF4] text-[#047857] hover:bg-[#DCFCE7]'
-                        }`}
-                        title={
-                          isSuggested
-                            ? `Suggested ${hours}h OT from shift clock-out past standard end`
-                            : `Book ${hours}h overtime${selectedEmployeeCount > 0 ? ` for ${selectedEmployeeCount} selected` : ' for all present crew'}`
-                        }
-                      >
-                        {hours}h{isSuggested ? ' ★' : ''}
-                      </button>
-                      );
-                    })}
-                  </div>
-                  {openBooking || retroCorrection ? (
-                    <span className="text-[10px] font-semibold text-[#6D28D9]">Saves immediately{retroCorrection ? ' · refreshes payroll' : ''}</span>
-                  ) : (
-                    <span className="text-[10px] font-semibold text-[#64748B]">Max {perEmployee}h per person</span>
-                  )}
-                </div>
-              </div>
+          {openBooking || retroCorrection || devRelaxed ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {openBooking ? (
+                <span className="rounded-full border border-[#C4B5FD] bg-[#F5F3FF] px-2.5 py-0.5 text-[11px] font-semibold text-[#6D28D9]">
+                  Open booking enabled
+                </span>
+              ) : null}
+              {retroCorrection ? (
+                <span className="rounded-full border border-[#93C5FD] bg-[#EFF6FF] px-2.5 py-0.5 text-[11px] font-semibold text-[#1D4ED8]">
+                  Retro correction
+                </span>
+              ) : null}
+              {devRelaxed ? (
+                <span className="rounded-full border border-[#FCD34D] bg-[#FFFBEB] px-2.5 py-0.5 text-[11px] font-semibold text-[#B45309]">
+                  Dev relaxed rules
+                </span>
+              ) : null}
             </div>
-          );
-        })}
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {onSelectAllPresentEmployees ? (
+            <button
+              type="button"
+              onClick={onSelectAllPresentEmployees}
+              className="h-9 rounded-xl border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#2563EB] hover:bg-[#EFF6FF]"
+            >
+              Select all present
+            </button>
+          ) : null}
+          <span className="rounded-full border border-[#DBEAFE] bg-[#EFF6FF] px-2.5 py-1 text-[11px] font-semibold text-[#1D4ED8]">
+            Booking for {targetLabel}
+          </span>
+          <Link
+            href="/hris/workforce-management/overtime-management"
+            className="h-9 rounded-xl border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#475569] hover:bg-[#F8FAFC]"
+          >
+            Overtime Queue
+          </Link>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-[920px] w-full text-left text-sm">
+          <thead className="bg-white text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">
+            <tr className="border-b border-[#EDF2F7]">
+              <th className="px-4 py-3">Project</th>
+              <th className="px-4 py-3">Approved</th>
+              <th className="px-4 py-3">Remaining</th>
+              <th className="px-4 py-3">Reason</th>
+              <th className="px-4 py-3 w-44">OT Hours</th>
+              <th className="px-4 py-3 w-36">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#EDF2F7]">
+            {authorizations.map((item) => {
+              const poolRemaining = remainingOvertimePool(item as OvertimeAuthorization, lines as never);
+              const slotsRemaining = remainingOvertimeSlots(item as OvertimeAuthorization, lines as never);
+              const perEmployee = perEmployeeOvertimeCap(item);
+              const selectedHours = hoursByAuth[item.id] ?? defaultHours;
+              const canBookRow = bookEnabled
+                && !submitting
+                && (openBooking || retroCorrection || (poolRemaining >= selectedHours && slotsRemaining > 0));
+              return (
+                <tr key={item.id} className="hover:bg-[#F8FAFC]">
+                  <td className="px-4 py-3">
+                    <div className="font-semibold text-[#0F172A]">{item.projectCode}</div>
+                    <div className="text-xs text-[#64748B]">{item.projectName}</div>
+                  </td>
+                  <td className="px-4 py-3 text-[#475569]">
+                    <div className="font-semibold text-[#0F172A]">{item.requestedHours}h · {item.requestedHeadcount} people</div>
+                    <div className="text-xs">Max {perEmployee}h each</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="font-semibold text-[#047857]">{poolRemaining}h</div>
+                    <div className="text-xs text-[#64748B]">{slotsRemaining} slot{slotsRemaining === 1 ? '' : 's'}</div>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-[#64748B]">{item.reason}</td>
+                  <td className="px-4 py-3">
+                    <select
+                      value={selectedHours}
+                      onChange={(event) => setHoursByAuth((current) => ({ ...current, [item.id]: Number(event.target.value) }))}
+                      className="h-9 w-full rounded-xl border border-[#E5E7EB] bg-white px-2 text-xs font-semibold text-[#0F172A] focus:border-[#2563EB] focus:outline-none"
+                      aria-label={`Overtime hours for ${item.projectCode}`}
+                    >
+                      {OVERTIME_HOUR_OPTIONS.map((hours) => (
+                        <option key={hours} value={hours}>
+                          {hours}h{suggestedOtHours > 0 && Math.abs(hours - suggestedOtHours) < 0.51 ? ' (suggested)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      type="button"
+                      disabled={!canBookRow}
+                      onClick={() => onBook(item.id, selectedHours)}
+                      className="inline-flex h-9 items-center rounded-xl bg-[#10B981] px-3 text-xs font-semibold text-white hover:bg-[#059669] disabled:opacity-40"
+                    >
+                      Book OT
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );

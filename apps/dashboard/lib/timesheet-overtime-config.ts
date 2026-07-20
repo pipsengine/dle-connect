@@ -39,7 +39,7 @@ export const isTimesheetOvertimeBookingEnabled = () =>
  */
 export const isTimesheetOvertimeDevRelaxed = () =>
   isTimesheetOvertimeBookingEnabled() &&
-  readBool(process.env.HRIS_TIMESHEET_OVERTIME_DEV_RELAXED, overtimeDefaultsEnabled());
+  readBool(process.env.HRIS_TIMESHEET_OVERTIME_DEV_RELAXED, false);
 
 /**
  * Post approved overtime onto payroll-ready timesheets (e.g. June corrections after first payroll run).
@@ -47,15 +47,15 @@ export const isTimesheetOvertimeDevRelaxed = () =>
  */
 export const isTimesheetOvertimeRetroCorrection = () =>
   isTimesheetOvertimeBookingEnabled() &&
-  readBool(process.env.HRIS_TIMESHEET_OVERTIME_RETRO_CORRECTION, overtimeDefaultsEnabled());
+  readBool(process.env.HRIS_TIMESHEET_OVERTIME_RETRO_CORRECTION, false);
 
 /**
- * Open overtime booking without MD authorization (test/reconciliation until go-live).
- * Disabled in public production unless explicitly turned on.
+ * Open overtime booking without MD authorization (explicit test/reconciliation only).
+ * Off by default — use the standard Overtime Management approval chain.
  */
 export const isTimesheetOvertimeOpenBooking = () =>
   isTimesheetOvertimeBookingEnabled() &&
-  readBool(process.env.HRIS_TIMESHEET_OVERTIME_OPEN_BOOKING, overtimeDefaultsEnabled());
+  readBool(process.env.HRIS_TIMESHEET_OVERTIME_OPEN_BOOKING, false);
 
 export const resolveOvertimeBookingOptions = (
   overrides?: Partial<OvertimeBookingOptions>,
@@ -182,4 +182,4 @@ export const augmentDevOvertimeAuthorizations = (
   options: OvertimeBookingOptions,
 ): OvertimeAuthorization[] =>
   resolveOvertimeAuthorizationsForBooking(authorizations, projects, crewSize, options);
-
+
