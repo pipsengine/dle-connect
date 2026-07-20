@@ -117,6 +117,7 @@ export type OvertimeManagementEnterpriseViewProps = {
   authorizationActionBusy: boolean;
   selectedAuthIds: Set<string>;
   onToggleAuthRow: (id: string) => void;
+  onToggleSelectAllAuthRows: (checked: boolean) => void;
   onBulkAuthorization: (decision: 'approve' | 'reject') => void;
   bulkAuthorizationBusy: boolean;
   query: string;
@@ -194,9 +195,14 @@ function AuthorizationStageTrack({ status }: { status: string }) {
 }
 
 export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterpriseViewProps) {
-  const pendingAuthorizationCount = props.authorizationRequests.filter(
-    (item) => !['HR Approved', 'MD Approved', 'Rejected', 'Cancelled'].includes(item.status),
-  ).length;
+  const pendingAuthorizationIds = props.authorizationRequests
+    .filter((item) => !['HR Approved', 'MD Approved', 'Rejected', 'Cancelled'].includes(item.status))
+    .map((item) => item.id);
+  const pendingAuthorizationCount = pendingAuthorizationIds.length;
+  const allPendingSelected =
+    pendingAuthorizationCount > 0 && pendingAuthorizationIds.every((id) => props.selectedAuthIds.has(id));
+  const somePendingSelected =
+    pendingAuthorizationIds.some((id) => props.selectedAuthIds.has(id)) && !allPendingSelected;
   const kpiItems = [
     {
       label: 'Overtime Requests',
@@ -328,9 +334,24 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
             ) : null}
             {pendingAuthorizationCount ? (
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3">
-                <p className="text-xs font-semibold text-[#475569]">
-                  {props.selectedAuthIds.size} selected · {pendingAuthorizationCount} awaiting your decision
-                </p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="inline-flex items-center gap-2 text-xs font-semibold text-[#475569]">
+                    <input
+                      type="checkbox"
+                      checked={allPendingSelected}
+                      ref={(element) => {
+                        if (element) element.indeterminate = somePendingSelected;
+                      }}
+                      onChange={(event) => props.onToggleSelectAllAuthRows(event.target.checked)}
+                      className="rounded border-[#CBD5E1]"
+                      aria-label="Select all awaiting overtime authorizations"
+                    />
+                    Select all awaiting
+                  </label>
+                  <p className="text-xs font-semibold text-[#475569]">
+                    {props.selectedAuthIds.size} selected · {pendingAuthorizationCount} awaiting your decision
+                  </p>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -339,7 +360,7 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
                     className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#10B981] px-3 text-xs font-semibold text-white hover:bg-[#059669] disabled:opacity-40"
                   >
                     <BadgeCheck className="h-4 w-4" />
-                    Bulk Approve
+                    Bulk Approve{props.selectedAuthIds.size ? ` (${props.selectedAuthIds.size})` : ''}
                   </button>
                   <button
                     type="button"
@@ -347,7 +368,7 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
                     disabled={!props.selectedAuthIds.size || props.bulkAuthorizationBusy}
                     className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#FECACA] bg-white px-3 text-xs font-semibold text-[#DC2626] hover:bg-[#FEF2F2] disabled:opacity-40"
                   >
-                    Bulk Reject
+                    Bulk Reject{props.selectedAuthIds.size ? ` (${props.selectedAuthIds.size})` : ''}
                   </button>
                 </div>
               </div>
@@ -356,8 +377,22 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
               <table className="min-w-[1040px] w-full text-left">
                 <thead className="sticky top-0 bg-[#F8FAFC] text-[13px] font-semibold uppercase tracking-wide text-[#64748B]">
                   <tr>
-                    {['', 'Project ID', 'Date', 'Employees', 'Hours', 'Approval Stage', 'Status', 'Action'].map((head, index) => (
-                      <th key={head || `col-${index}`} className="px-4 py-3">
+                    <th className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={allPendingSelected}
+                        ref={(element) => {
+                          if (element) element.indeterminate = somePendingSelected;
+                        }}
+                        disabled={!pendingAuthorizationCount}
+                        onChange={(event) => props.onToggleSelectAllAuthRows(event.target.checked)}
+                        className="rounded border-[#CBD5E1] disabled:opacity-30"
+                        aria-label="Select all awaiting overtime authorizations"
+                        title="Select all awaiting decision"
+                      />
+                    </th>
+                    {['Project ID', 'Date', 'Employees', 'Hours', 'Approval Stage', 'Status', 'Action'].map((head) => (
+                      <th key={head} className="px-4 py-3">
                         {head}
                       </th>
                     ))}

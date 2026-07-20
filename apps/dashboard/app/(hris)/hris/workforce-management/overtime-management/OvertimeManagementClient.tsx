@@ -507,6 +507,17 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
     });
   };
 
+  const toggleSelectAllAuthRows = (checked: boolean) => {
+    if (!checked) {
+      setSelectedAuthIds(new Set());
+      return;
+    }
+    const actionableIds = authorizationRequests
+      .filter((item) => !['HR Approved', 'MD Approved', 'Rejected', 'Cancelled'].includes(item.status))
+      .map((item) => item.id);
+    setSelectedAuthIds(new Set(actionableIds));
+  };
+
   useEffect(() => {
     const gm = setup?.gmOperations;
     const hr = setup?.hrApprover;
@@ -822,6 +833,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
       authorizationActionBusy={Boolean(busy)}
       selectedAuthIds={selectedAuthIds}
       onToggleAuthRow={toggleAuthRow}
+      onToggleSelectAllAuthRows={toggleSelectAllAuthRows}
       onBulkAuthorization={(decision) => void bulkAuthorization(decision)}
       bulkAuthorizationBusy={busy.startsWith('bulk-')}
       query={query}
