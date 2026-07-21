@@ -69,7 +69,7 @@ const permanentOvertimeCode = (employee: DleEmployeeDirectoryRow, dayType: Overt
   const profileId = resolvePayrollEarningProfile(employee);
   const rule = JUNIOR_OVERTIME_RULES[dayType];
   if (profileId === 'junior-permanent') return { code: rule.code, name: rule.name, taxable: rule.taxable };
-  if (dayType === 'Weekday') return { code: 'WKDAY_OVT', name: 'WEEKDAY OVERTIME', taxable: true };
+  if (dayType === 'Weekday' || dayType === 'Night') return { code: dayType === 'Night' ? 'NIGHT_OVT' : 'WKDAY_OVT', name: dayType === 'Night' ? 'NIGHT OVERTIME' : 'WEEKDAY OVERTIME', taxable: true };
   return { code: rule.code, name: rule.name, taxable: rule.taxable };
 };
 
@@ -149,7 +149,7 @@ export const postPermanentTimesheetOvertimeToPayroll = async (period?: string): 
     );
     const productiveHours = normalizePaidWorkHours(num(line.usedHours));
     const overtimeHours = Math.max(0, round2(productiveHours - hoursPerDay));
-    const payableHours = dayType === 'Weekday' ? overtimeHours : workedHours;
+    const payableHours = dayType === 'Weekday' || dayType === 'Night' ? overtimeHours : workedHours;
     if (payableHours <= 0) continue;
 
     const overtime = calculatePayrollOvertime(employee, dayType, payableHours);

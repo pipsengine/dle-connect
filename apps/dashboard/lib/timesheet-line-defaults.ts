@@ -6,7 +6,8 @@ import {
   STANDARD_TIMESHEET_HOURS,
   type TimesheetDayContext,
   type TimesheetLine,
-  timesheetDayRulesForDate,
+  resolveTimesheetHours,
+  resolveTimesheetShift,
   normalizeIdleAllocations,
   normalizeProjectAllocations,
   sumProjectAllocationHours,
@@ -16,7 +17,7 @@ import {
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
 
-/** Apply break-time defaults (1h break) on clocked-in lines. Does not auto-book project hours from biometric. */
+/** Apply break-time defaults on clocked-in lines. Night shift skips the extra 1h break against biometric. */
 export const applyTimesheetLineDefaults = (
   line: TimesheetLine,
   dayContext: TimesheetDayContext,
@@ -30,28 +31,27 @@ export const applyTimesheetLineDefaults = (
     };
   }
 
-  const rules = timesheetDayRulesForDate(dayContext.date, dayContext.holidayDates);
+  const hours = resolveTimesheetHours(dayContext);
+  const shift = resolveTimesheetShift(dayContext.shiftLabel);
   const projectAllocations = normalizeProjectAllocations(line.projectAllocations).map((item) => ({
     ...item,
     hours: repairStackedOvertimeProductiveHours(
       Number(item.hours || 0),
-      rules.standardProductiveHours,
+      hours.standardProductiveHours,
       item.remarks,
     ),
   }));
 
-  let idleAllocations = normalizeIdleAllocations(
-    (line.idleAllocations || []).length
-      ? line.idleAllocations || []
-      : [{ reasonId: DEFAULT_BREAK_IDLE_REASON_ID, reasonName: DEFAULT_BREAK_IDLE_REASON_NAME, hours: DAILY_BREAK_HOURS, remarks: null }],
-  );
+  let idleAllocations = normalizeIdleAllocations(line.idleAllocations || []);
 
-  const hasBreak = idleAllocations.some((item) => item.hours > 0);
-
-  if (!hasBreak) {
-    idleAllocations = normalizeIdleAllocations([
-      { reasonId: DEFAULT_BREAK_IDLE_REASON_ID, reasonName: DEFAULT_BREAK_IDLE_REASON_NAME, hours: DAILY_BREAK_HOURS, remarks: null },
-    ]);
+  // Day shift requires 1h break idle. Night 18:00–02:00 is already net 8h — do not force break.
+  if (shift.kind !== 'Night') {
+    const hasBreak = idleAllocations.some((item) => item.hours > 0);
+    if (!hasBreak) {
+      idleAllocations = normalizeIdleAllocations([
+        { reasonId: DEFAULT_BREAK_IDLE_REASON_ID, reasonName: DEFAULT_BREAK_IDLE_REASON_NAME, hours: DAILY_BREAK_HOURS, remarks: null },
+      ]);
+    }
   }
 
   const usedHours = sumProjectAllocationHours(projectAllocations);
@@ -62,8 +62,8 @@ export const applyTimesheetLineDefaults = (
     clockDuration !== null && clockDuration > 0
       ? clockDuration
       : line.clockIn && !line.clockOut
-        ? round1(Math.min(line.attendanceDuration || 0, rules.grossHours))
-        : line.attendanceDuration;
+        ? round1(Math.min(Math.max(0, line.attendanceDuration || 0), hours.grossHours))
+        : round1(Math.max(0, line.attendanceDuration || 0));
 
   return {
     ...line,
@@ -73,15 +73,15 @@ export const applyTimesheetLineDefaults = (
     usedHours,
     idleHours,
     totalHours,
-    variance: round1(totalHours - rules.grossHours),
+    variance: round1(totalHours - hours.grossHours),
   };
 };
 
 export const defaultProductiveHoursForDate = (dayContext: TimesheetDayContext) =>
-  timesheetDayRulesForDate(dayContext.date, dayContext.holidayDates).standardProductiveHours;
+  resolveTimesheetHours(dayContext).standardProductiveHours;
 
 export const defaultGrossHoursForDate = (dayContext: TimesheetDayContext) =>
-  timesheetDayRulesForDate(dayContext.date, dayContext.holidayDates).grossHours;
+  resolveTimesheetHours(dayContext).grossHours;
 
 export const weekdayGrossHours = () => GROSS_TIMESHEET_HOURS;
 

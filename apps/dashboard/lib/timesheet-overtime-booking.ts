@@ -42,7 +42,7 @@ const reconciliationMaxProductiveHours = (
   const otCap = openOvertimeCap(booking);
   const openMax = round1(standardProductiveHours + otCap);
   if (!line.clockIn) return openMax;
-  const fromAttendance = maxBookableProductiveHours(line);
+  const fromAttendance = maxBookableProductiveHours(line, DAILY_BREAK_HOURS, null);
   if (!Number.isFinite(fromAttendance)) return openMax;
   return round1(Math.min(openMax, fromAttendance));
 };
@@ -111,7 +111,7 @@ export const maxOvertimeForEmployee = (
   const booking = resolveOvertimeBookingOptions(options);
   const { standardProductiveHours } = resolveTimesheetHours(dayContext);
   const usedFromAllocations = sumProjectAllocationHours(line.projectAllocations);
-  const maxProductive = maxBookableProductiveHours(line);
+  const maxProductive = maxBookableProductiveHours(line, DAILY_BREAK_HOURS, dayContext?.shiftLabel);
   const remainingProductive = Number.isFinite(maxProductive)
     ? round1(Math.max(0, maxProductive - usedFromAllocations))
     : Number.POSITIVE_INFINITY;
@@ -168,7 +168,10 @@ export const maxAllowedTotalHours = (
   workCenter?: string | null,
   options?: Partial<OvertimeBookingOptions>,
   dayContext?: TimesheetDayContext,
-) => round1(maxAllowedProductiveHours(line, authorizations, allLines, workCenter, options, dayContext) + DAILY_BREAK_HOURS);
+) => {
+  const breakHours = resolveTimesheetHours(dayContext).shiftKind === 'Night' ? 0 : DAILY_BREAK_HOURS;
+  return round1(maxAllowedProductiveHours(line, authorizations, allLines, workCenter, options, dayContext) + breakHours);
+};
 
 export type OvertimeValidation = {
   validationStatus: TimesheetLine['validationStatus'];
@@ -220,7 +223,7 @@ export const validateStrictStandardDay = (line: TimesheetLine, dayContext?: Time
     };
   }
   if (line.clockIn && attendanceDuration > 0.001 && totalHours > attendanceDuration + 0.001) {
-    const maxProductive = maxProductiveHoursFromBiometric(attendanceDuration);
+    const maxProductive = maxProductiveHoursFromBiometric(attendanceDuration, dayContext?.shiftLabel);
     return {
       usedHours,
       idleHours,
@@ -229,10 +232,10 @@ export const validateStrictStandardDay = (line: TimesheetLine, dayContext?: Time
       validationStatus: 'Error',
       validationMessage:
         `Work + break (${totalHours}h) exceeds biometric duration (${attendanceDuration}h). ` +
-        `Productive hours are limited to ${maxProductive}h (${attendanceDuration}h − 1h break).`,
+        `Productive hours are limited to ${maxProductive}h.`,
     };
   }
-  const maxProductiveFromAttendance = maxBookableProductiveHours(line);
+  const maxProductiveFromAttendance = maxBookableProductiveHours(line, DAILY_BREAK_HOURS, dayContext?.shiftLabel);
   if (
     line.clockIn &&
     Number.isFinite(maxProductiveFromAttendance) &&
@@ -249,6 +252,7 @@ export const validateStrictStandardDay = (line: TimesheetLine, dayContext?: Time
         requestedProductive: usedHours,
         standardProductiveHours,
         requestedOtHours: overtimeProductiveHours(usedHours, standardProductiveHours),
+        shiftLabel: dayContext?.shiftLabel,
       }),
     };
   }
@@ -299,7 +303,7 @@ export const validateTimesheetLine = (
     ? reconciliationMaxProductiveHours(line, standardProductiveHours, booking)
     : maxAllowedProductiveHours(line, authorizations, allLines, workCenter, booking, dayContext);
   const maxTotal = booking.openBooking
-    ? round1(maxProductive + DAILY_BREAK_HOURS)
+    ? round1(maxProductive + (resolveTimesheetHours(dayContext).shiftKind === 'Night' ? 0 : DAILY_BREAK_HOURS))
     : maxAllowedTotalHours(line, authorizations, allLines, workCenter, booking, dayContext);
   const lineOt = overtimeProductiveHours(usedHours, standardProductiveHours);
   const attendanceDuration = resolveLineAttendanceDuration(line);
@@ -393,7 +397,7 @@ export const validateTimesheetLine = (
   }
 
   if (line.clockIn && attendanceDuration > 0.001 && totalHours > attendanceDuration + 0.001) {
-    const maxProductive = maxProductiveHoursFromBiometric(attendanceDuration);
+    const maxProductive = maxProductiveHoursFromBiometric(attendanceDuration, dayContext?.shiftLabel);
     return {
       usedHours,
       idleHours,
@@ -402,10 +406,10 @@ export const validateTimesheetLine = (
       validationStatus: 'Error',
       validationMessage:
         `Work + break (${totalHours}h) exceeds biometric duration (${attendanceDuration}h). ` +
-        `Productive hours are limited to ${maxProductive}h (${attendanceDuration}h − 1h break).`,
+        `Productive hours are limited to ${maxProductive}h.`,
     };
   }
-  const maxProductiveFromAttendance = maxBookableProductiveHours(line);
+  const maxProductiveFromAttendance = maxBookableProductiveHours(line, DAILY_BREAK_HOURS, dayContext?.shiftLabel);
   if (
     line.clockIn &&
     Number.isFinite(maxProductiveFromAttendance) &&
@@ -422,14 +426,16 @@ export const validateTimesheetLine = (
         requestedProductive: usedHours,
         standardProductiveHours,
         requestedOtHours: overtimeProductiveHours(usedHours, standardProductiveHours),
+        shiftLabel: dayContext?.shiftLabel,
       }),
     };
   }
 
+  const isNight = resolveTimesheetHours(dayContext).shiftKind === 'Night';
   const isStandardComplete = totalHours === grossHours && usedHours === standardProductiveHours;
   const isOvertimeComplete =
     lineOt > 0 &&
-    idleHours >= DAILY_BREAK_HOURS - 0.001 &&
+    (isNight || idleHours >= DAILY_BREAK_HOURS - 0.001) &&
     usedHours <= maxProductive + 0.001 &&
     totalHours <= maxTotal + 0.001;
 
@@ -456,7 +462,9 @@ export const validateTimesheetLine = (
     validationStatus: 'Incomplete',
     validationMessage: lineOt > 0
       ? `Awaiting full overtime booking. Current: ${totalHours}h total / ${usedHours}h productive.`
-      : `Awaiting full ${grossHours}-hour allocation including ${DAILY_BREAK_HOURS}h break. Current: ${totalHours} hrs.`,
+      : isNight
+        ? `Awaiting full ${grossHours}-hour night allocation. Current: ${totalHours} hrs.`
+        : `Awaiting full ${grossHours}-hour allocation including ${DAILY_BREAK_HOURS}h break. Current: ${totalHours} hrs.`,
   };
 };
 
@@ -474,7 +482,7 @@ export const previewOvertimeBooking = (
 ): OvertimeBookingPreview => {
   const { standardProductiveHours } = resolveTimesheetHours(dayContext);
   const attendance = resolveLineAttendanceDuration(line);
-  const maxProductive = maxProductiveHoursFromBiometric(attendance);
+  const maxProductive = maxProductiveHoursFromBiometric(attendance, dayContext?.shiftLabel);
   const requestedProductive = round1(standardProductiveHours + otHours);
 
   if (!line.clockIn || !Number.isFinite(maxProductive)) {
@@ -507,6 +515,7 @@ export const previewOvertimeBooking = (
         requestedProductive,
         standardProductiveHours,
         requestedOtHours: otHours,
+        shiftLabel: dayContext?.shiftLabel,
       }),
     };
   }
@@ -547,13 +556,15 @@ export const applyOvertimeBooking = (
       ? (retroEmptyLine ? primaryCode : authCode)
       : authCode;
 
-  const idleAllocations = normalizeIdleAllocations(
-    line.idleAllocations.length > 0
-      ? line.idleAllocations.map((item, itemIndex) =>
-          itemIndex === 0 ? { ...item, hours: DAILY_BREAK_HOURS } : { ...item, hours: 0 },
-        )
-      : [{ reasonId: 'idl-009', reasonName: 'Break Time', hours: DAILY_BREAK_HOURS, remarks: null }],
-  );
+  const idleAllocations = resolveTimesheetHours(dayContext).shiftKind === 'Night'
+    ? normalizeIdleAllocations(line.idleAllocations || [])
+    : normalizeIdleAllocations(
+        line.idleAllocations.length > 0
+          ? line.idleAllocations.map((item, itemIndex) =>
+              itemIndex === 0 ? { ...item, hours: DAILY_BREAK_HOURS } : { ...item, hours: 0 },
+            )
+          : [{ reasonId: 'idl-009', reasonName: 'Break Time', hours: DAILY_BREAK_HOURS, remarks: null }],
+      );
   const draftIdle = round1(idleAllocations.reduce((sum, item) => sum + Number(item.hours || 0), 0));
 
   let workingLine = line;
@@ -562,7 +573,7 @@ export const applyOvertimeBooking = (
     workingLine = { ...workingLine, attendanceDuration: clockDuration };
   }
 
-  const maxProductive = maxBookableProductiveHours(workingLine, draftIdle);
+  const maxProductive = maxBookableProductiveHours(workingLine, draftIdle, dayContext?.shiftLabel);
   const policyCap = round1(
     Math.min(
       otHours,
@@ -581,7 +592,7 @@ export const applyOvertimeBooking = (
     ? round1(standardProductiveHours + policyCap)
     : round1(currentUsed + policyCap);
   const targetProductive = Number.isFinite(maxProductive)
-    ? capProductiveHoursToAttendance(requestedProductive, workingLine, draftIdle)
+    ? capProductiveHoursToAttendance(requestedProductive, workingLine, draftIdle, dayContext?.shiftLabel)
     : requestedProductive;
   const effectiveOt = round1(Math.max(0, targetProductive - currentUsed));
   const preview = previewOvertimeBooking(workingLine, otHours, dayContext);
@@ -637,6 +648,7 @@ export const applyOvertimeBooking = (
           requestedProductive: round1(standardProductiveHours + otHours),
           standardProductiveHours,
           requestedOtHours: otHours,
+          shiftLabel: dayContext?.shiftLabel,
         })
       : null);
   return {

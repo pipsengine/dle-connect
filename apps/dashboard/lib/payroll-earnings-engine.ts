@@ -71,7 +71,7 @@ export type PayrollFormulaDefinition = {
   calculation: string;
 };
 
-export type OvertimeDayType = 'Weekday' | 'Saturday' | 'Sunday' | 'Public Holiday';
+export type OvertimeDayType = 'Weekday' | 'Saturday' | 'Sunday' | 'Public Holiday' | 'Night';
 
 export type PayrollOvertimeRule = {
   code: string;
@@ -348,6 +348,7 @@ export const JUNIOR_OVERTIME_RULES: Record<OvertimeDayType, PayrollOvertimeRule>
   Saturday: { code: 'PAR_SATOVT', name: 'SATURDAY OVERTIME', taxable: true, multiplier: 2, divisor: 176 },
   Sunday: { code: 'PER_SUNOVT', name: 'SUNDAY OVERTIME', taxable: true, multiplier: 2.5, divisor: 176 },
   'Public Holiday': { code: 'PAR_SATOVT', name: 'PUBLIC HOLIDAY OVERTIME', taxable: true, multiplier: 2, divisor: 176 },
+  Night: { code: 'JR_NIGHT_OVT', name: 'NIGHT OVERTIME', taxable: true, multiplier: 1.5, divisor: 176 },
 };
 
 const JUNIOR_OVERTIME_EARNING_LINES: PayrollEarningLine[] = [

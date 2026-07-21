@@ -99,7 +99,7 @@ type Role =
   | 'Administrator'
   | 'Super Administrator';
 type Status = 'Draft' | 'Submitted' | 'Supervisor Approved' | 'HR Approved' | 'Payroll Ready' | 'Payroll Posted' | 'Returned' | 'Rejected' | 'Blocked';
-type DayType = 'Weekday' | 'Saturday' | 'Sunday' | 'Public Holiday';
+type DayType = 'Weekday' | 'Saturday' | 'Sunday' | 'Public Holiday' | 'Night';
 type Action = 'submit' | 'approve-supervisor' | 'approve-hr' | 'mark-payroll-ready' | 'post-payroll' | 'return' | 'reject' | 'reopen';
 
 type OvertimeRecord = {
@@ -647,7 +647,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
         </OvertimeFormField>
         <OvertimeFormField label="Overtime Type">
           <select value={authorizationForm.overtimeType} onChange={(event) => setAuthorizationForm((current) => ({ ...current, overtimeType: event.target.value }))} className={inputClass}>
-            {['Weekday', 'Saturday', 'Sunday', 'Public Holiday'].map((item) => (
+            {['Weekday', 'Saturday', 'Sunday', 'Public Holiday', 'Night'].map((item) => (
               <option key={item} value={item}>
                 {item}
               </option>
@@ -772,7 +772,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
         </OvertimeFormField>
         <OvertimeFormField label="Day type">
           <select value={requestForm.dayType} onChange={(event) => setRequestForm((current) => ({ ...current, dayType: event.target.value as DayType }))} className={inputClass}>
-            {(payload?.filterOptions.dayTypes || ['Weekday', 'Saturday', 'Sunday', 'Public Holiday']).map((item) => (
+            {(payload?.filterOptions.dayTypes || ['Weekday', 'Saturday', 'Sunday', 'Public Holiday', 'Night']).map((item) => (
               <option key={item} value={item}>
                 {item}
               </option>

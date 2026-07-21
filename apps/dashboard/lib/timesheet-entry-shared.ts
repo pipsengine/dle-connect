@@ -90,7 +90,7 @@ export const impliedOvertimeHoursFromClock = (
     // Night standard ends at 02:00. Only early-morning outs after end count as OT.
     if (!overnight && outMinutes > (inMinutes ?? -1)) return 0;
     if (outMinutes <= endMinutes) return 0;
-    return Math.round(((outMinutes - endMinutes) / 60) * 10) / 10;
+    return Math.round((Math.max(0, outMinutes - endMinutes) / 60) * 10) / 10;
   }
 
   const overtimeMinutes = outMinutes - endMinutes;
@@ -134,11 +134,22 @@ export const timesheetDayRulesForDate = (date: string, holidayDates: string[] = 
 };
 
 export const resolveTimesheetHours = (dayContext?: TimesheetDayContext) => {
+  const shift = resolveTimesheetShift(dayContext?.shiftLabel);
+  // Night 18:00–02:00 is already net 8h productive — do not require an extra 1h break against biometric.
+  if (shift.kind === 'Night') {
+    return {
+      standardProductiveHours: STANDARD_TIMESHEET_HOURS,
+      grossHours: STANDARD_TIMESHEET_HOURS,
+      isReducedDay: false,
+      shiftKind: shift.kind,
+    };
+  }
   if (!dayContext?.date) {
     return {
       standardProductiveHours: STANDARD_TIMESHEET_HOURS,
       grossHours: GROSS_TIMESHEET_HOURS,
       isReducedDay: false,
+      shiftKind: shift.kind,
     };
   }
   const rules = timesheetDayRulesForDate(dayContext.date, dayContext.holidayDates);
@@ -146,6 +157,7 @@ export const resolveTimesheetHours = (dayContext?: TimesheetDayContext) => {
     standardProductiveHours: rules.standardProductiveHours,
     grossHours: rules.grossHours,
     isReducedDay: rules.isReducedDay,
+    shiftKind: shift.kind,
   };
 };
 
@@ -199,8 +211,9 @@ export const attendanceDurationFromClock = (
   const outMinutes = parse(outTime);
   if (inMinutes === null || outMinutes === null) return null;
   let durationMinutes = outMinutes - inMinutes;
+  // Overnight-safe (night shift 18:00→02:00+). Never return a negative duration.
   if (durationMinutes < 0) durationMinutes += 24 * 60;
-  return round1(durationMinutes / 60);
+  return round1(Math.max(0, durationMinutes) / 60);
 };
 
 /** Legacy ADD-mode OT mis-click (8h booked + 10h OT button = 18 instead of 8 + 2 = 10). */
@@ -227,9 +240,15 @@ export const resolveLineAttendanceDuration = (line: {
   return round1(Number(line.attendanceDuration || 0));
 };
 
-/** Productive hours (standard + OT) must be biometric duration minus 1h break. */
-export const maxProductiveHoursFromBiometric = (attendanceDuration: number) => {
+/**
+ * Max productive hours from biometric span.
+ * Day: duration includes 1h break → subtract break.
+ * Night: 18:00–02:00 is already net 8h productive → do not subtract break (avoids 7h cap / negative variance).
+ */
+export const maxProductiveHoursFromBiometric = (attendanceDuration: number, shiftValue?: string | null) => {
   if (attendanceDuration <= 0.001) return Number.POSITIVE_INFINITY;
+  const shift = resolveTimesheetShift(shiftValue);
+  if (shift.kind === 'Night') return round1(Math.max(0, attendanceDuration));
   return round1(Math.max(0, attendanceDuration - DAILY_BREAK_HOURS));
 };
 
@@ -238,34 +257,43 @@ export const formatProductiveHoursDenial = (input: {
   requestedProductive: number;
   standardProductiveHours?: number;
   requestedOtHours?: number;
+  shiftLabel?: string | null;
 }) => {
   const standard = input.standardProductiveHours ?? STANDARD_TIMESHEET_HOURS;
-  const maxProductive = maxProductiveHoursFromBiometric(input.attendanceDuration);
+  const shift = resolveTimesheetShift(input.shiftLabel);
+  const maxProductive = maxProductiveHoursFromBiometric(input.attendanceDuration, input.shiftLabel);
   const otHours = input.requestedOtHours ?? round1(Math.max(0, input.requestedProductive - standard));
-  const requiredBiometric = round1(input.requestedProductive + DAILY_BREAK_HOURS);
+  const requiredBiometric = shift.kind === 'Night'
+    ? round1(input.requestedProductive)
+    : round1(input.requestedProductive + DAILY_BREAK_HOURS);
+  const maxExplain = shift.kind === 'Night'
+    ? `${maxProductive}h (night window is net productive)`
+    : `${input.attendanceDuration}h − 1h break = ${maxProductive}h`;
   return (
     `Cannot book ${standard}h + ${otHours}h OT = ${round1(input.requestedProductive)}h productive. ` +
-    `Biometric duration is ${input.attendanceDuration}h (max productive ${input.attendanceDuration}h − 1h break = ${maxProductive}h). ` +
+    `Biometric duration is ${input.attendanceDuration}h (max productive ${maxExplain}). ` +
     `${round1(input.requestedProductive)}h productive requires at least ${requiredBiometric}h on the biometric log.`
   );
 };
 
-/** Max productive (work + OT) allowed: biometric duration minus 1h break. */
+/** Max productive (work + OT) allowed from biometric — night does not subtract break. */
 export const maxBookableProductiveHours = (
   line: { clockIn?: string | null; clockOut?: string | null; attendanceDuration?: number },
   _idleHours = DAILY_BREAK_HOURS,
+  shiftValue?: string | null,
 ) => {
   if (!line.clockIn) return Number.POSITIVE_INFINITY;
   const attendance = resolveLineAttendanceDuration(line);
-  return maxProductiveHoursFromBiometric(attendance);
+  return maxProductiveHoursFromBiometric(attendance, shiftValue);
 };
 
 export const capProductiveHoursToAttendance = (
   productiveHours: number,
   line: { clockIn?: string | null; clockOut?: string | null; attendanceDuration?: number },
   _idleHours = DAILY_BREAK_HOURS,
+  shiftValue?: string | null,
 ) => {
-  const maxProductive = maxBookableProductiveHours(line);
+  const maxProductive = maxBookableProductiveHours(line, _idleHours, shiftValue);
   if (!Number.isFinite(maxProductive)) return round1(productiveHours);
   return round1(Math.min(productiveHours, maxProductive));
 };
@@ -391,8 +419,9 @@ export const matrixProductiveHoursCap = (
   usedHours: number,
   standardProductiveHours = STANDARD_TIMESHEET_HOURS,
   idleHours = DAILY_BREAK_HOURS,
+  shiftValue?: string | null,
 ) => {
-  const biometricCap = maxBookableProductiveHours(line, idleHours);
+  const biometricCap = maxBookableProductiveHours(line, idleHours, shiftValue);
   if (!Number.isFinite(biometricCap)) return standardProductiveHours;
   const overtimeHours = round1(Math.max(0, usedHours - standardProductiveHours));
   if (overtimeHours > 0.001) return biometricCap;

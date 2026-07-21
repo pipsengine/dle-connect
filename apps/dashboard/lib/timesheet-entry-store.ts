@@ -3393,10 +3393,10 @@ export async function syncAttendanceForTimesheet(
       .map((key) => approvedLeaveByKey.get(key))
       .find(Boolean);
     
-    // Attendance duration in hours (overnight-safe for night shift 18:00→02:00+)
+    // Attendance duration in hours (overnight-safe for night shift 18:00→02:00+). Always >= 0.
     const fromClock = attendanceDurationFromClock(att.checkInTime, att.checkOutTime);
     const duration = fromClock !== null && fromClock > 0
-      ? normalizePaidWorkHours(fromClock)
+      ? Math.round(Math.max(0, fromClock) * 10) / 10
       : att.checkInTime
         ? STANDARD_TIMESHEET_HOURS
         : 0;
@@ -3408,6 +3408,7 @@ export async function syncAttendanceForTimesheet(
       hours: STANDARD_TIMESHEET_HOURS,
       remarks: `Approved paid leave ${approvedLeave!.requestId}`,
     }] : null;
+    const bookedTotal = shouldAutoBookPaidLeave ? STANDARD_TIMESHEET_HOURS : existingLine?.totalHours || 0;
 
     return {
       id: existingLine?.id || `line-${header!.id}-${employeeCode}`,
@@ -3424,8 +3425,9 @@ export async function syncAttendanceForTimesheet(
       idleAllocations: (existingLine?.idleAllocations || []).map(withDefaultIdleReason),
       usedHours: shouldAutoBookPaidLeave ? STANDARD_TIMESHEET_HOURS : existingLine?.usedHours || 0,
       idleHours: existingLine?.idleHours || 0,
-      totalHours: shouldAutoBookPaidLeave ? STANDARD_TIMESHEET_HOURS : existingLine?.totalHours || 0,
-      variance: Math.round(((shouldAutoBookPaidLeave ? STANDARD_TIMESHEET_HOURS : existingLine?.totalHours || 0) - duration) * 10) / 10,
+      totalHours: bookedTotal,
+      // Variance vs standard day (positive = over, not attendance-minus-booked which went negative for night).
+      variance: Math.round((bookedTotal - STANDARD_TIMESHEET_HOURS) * 10) / 10,
       remarks: shouldAutoBookPaidLeave ? `Approved paid leave: ${approvedLeave!.startDate} to ${approvedLeave!.endDate}` : existingLine?.remarks || null,
       validationStatus: shouldAutoBookPaidLeave ? 'Valid' : 'Incomplete',
       validationMessage: shouldAutoBookPaidLeave ? 'Approved paid leave. Biometric attendance is not required for this payable leave day.' : 'Awaiting time allocation.',

@@ -1,5 +1,23 @@
 [
   {
+    "id": "sec-1784645996713-82fe687f",
+    "at": "2026-07-21T14:59:56.713Z",
+    "user": "P0146",
+    "action": "Logout",
+    "ipAddress": "127.0.0.1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "performedBy": "P0146"
+  },
+  {
+    "id": "sec-1784645006124-e3a2b7f4",
+    "at": "2026-07-21T14:43:26.125Z",
+    "user": "P0146",
+    "action": "Login",
+    "ipAddress": "127.0.0.1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "performedBy": "P0146"
+  },
+  {
     "id": "sec-1784644791534-46bfb9c3",
     "at": "2026-07-21T14:39:51.534Z",
     "user": "NYSC0032",

@@ -557,6 +557,7 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                                       line.usedHours,
                                       props.standardTimesheetHours,
                                       idleHours,
+                                      props.selectedShift,
                                     );
                                     const projectAllocations = upsertMatrixProjectHours(
                                       line.projectAllocations,

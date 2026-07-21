@@ -35,7 +35,7 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { DAILY_BREAK_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, timesheetDayRulesForDate, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import { TimesheetEntryEnterpriseView } from './TimesheetEntryEnterpriseView';
@@ -943,7 +943,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
         setSelectedEmployees([]);
         setQuery('');
         setBulkProject('');
-        setBulkHours(timesheetDayRulesForDate(selectedDate, payload?.holidayDates ?? []).standardProductiveHours);
+        setBulkHours(resolveTimesheetHours({ date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift }).standardProductiveHours);
         setNotice('Timesheet submitted for supervisor review. Capture fields are now locked until the sheet is returned or rejected.');
       } else if (saveAsDraft) {
         setNotice('Draft saved. You can continue editing this timesheet before submission.');
@@ -1115,8 +1115,9 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
 
   const handleAutoDistribute = () => {
     if (!payload || payload.period.status !== 'Open' || !editableTimesheetStatuses.includes(payload.header?.status ?? 'Draft') || matrixColumns.length === 0) return;
-    const dayRules = timesheetDayRulesForDate(selectedDate, payload.holidayDates ?? []);
     const dayContext = { date: selectedDate, holidayDates: payload.holidayDates ?? [], shiftLabel: selectedShift };
+    const dayRules = resolveTimesheetHours(dayContext);
+    const isNight = resolveTimesheetShift(selectedShift).kind === 'Night';
     const next = localLines.map((line) => {
       if (!line.clockIn) return line;
       const projectAllocations = matrixColumns.map((col, index) => ({
@@ -1127,8 +1128,10 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
         remarks: null,
       }));
       const usedHours = round1(projectAllocations.reduce((sum, item) => sum + item.hours, 0));
-      const idleAllocations = [{ reasonId: DEFAULT_BREAK_IDLE_REASON_ID, reasonName: DEFAULT_BREAK_IDLE_REASON_NAME, hours: DAILY_BREAK_HOURS, remarks: null }];
-      const idleHours = DAILY_BREAK_HOURS;
+      const idleAllocations = isNight
+        ? []
+        : [{ reasonId: DEFAULT_BREAK_IDLE_REASON_ID, reasonName: DEFAULT_BREAK_IDLE_REASON_NAME, hours: DAILY_BREAK_HOURS, remarks: null }];
+      const idleHours = isNight ? 0 : DAILY_BREAK_HOURS;
       const totalHours = round1(usedHours + idleHours);
       const draft = applyTimesheetLineDefaults(
         {
@@ -1153,7 +1156,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
 
   const handleClearAllProjects = () => {
     if (!payload || payload.period.status !== 'Open' || !editableTimesheetStatuses.includes(payload.header?.status ?? 'Draft')) return;
-    const dayRules = timesheetDayRulesForDate(selectedDate, payload.holidayDates ?? []);
+    const dayRules = resolveTimesheetHours({ date: selectedDate, holidayDates: payload.holidayDates ?? [], shiftLabel: selectedShift });
     const next = localLines.map((line) => {
       const projectAllocations = line.projectAllocations.map((item) => ({ ...item, hours: 0 }));
       const usedHours = 0;
@@ -1165,7 +1168,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
         totalHours,
         variance: round1(totalHours - dayRules.grossHours),
         validationStatus: 'Incomplete',
-        validationMessage: `Awaiting full ${dayRules.grossHours}-hour allocation including ${DAILY_BREAK_HOURS}h break.`,
+        validationMessage: `Awaiting full ${dayRules.grossHours}-hour allocation${dayRules.grossHours > dayRules.standardProductiveHours ? ` including ${DAILY_BREAK_HOURS}h break` : ''}.`,
       } as TimesheetLine;
     });
     setLocalLines(next);
@@ -1174,7 +1177,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
 
   const removeProjectColumn = (colIdx: number) => {
     const colToRemove = matrixColumns[colIdx];
-    const dayRules = timesheetDayRulesForDate(selectedDate, payload?.holidayDates ?? []);
+    const dayRules = resolveTimesheetHours({ date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift });
     const nextCols = matrixColumns.filter((_, idx) => idx !== colIdx);
     setMatrixColumns(nextCols);
 
@@ -1312,7 +1315,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const pctOfCrew = (value: number) => (summary.totalEmployees > 0 ? (value / summary.totalEmployees) * 100 : 0);
   const periodStatus = payload?.period.status ?? 'Open';
   const displayPeriod = payload?.period.startDate && payload.period.endDate ? payload.period : fallbackPeriodForDate(selectedDate);
-  const dayRules = timesheetDayRulesForDate(selectedDate, payload?.holidayDates ?? []);
+  const dayRules = resolveTimesheetHours({ date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift });
   const grossTimesheetHours = dayRules.grossHours;
   const standardTimesheetHours = dayRules.standardProductiveHours;
   const periodLabel = `${formatPeriodDate(displayPeriod.startDate)} to ${formatPeriodDate(displayPeriod.endDate)}`;
@@ -1973,7 +1976,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                         {matrixColumns.map((col) => (
                           <td key={col.code} className="px-4 py-4 border-l border-slate-100"><input type="number" step="0.5" disabled={!canEditTimesheet || isAbsent} value={isAbsent ? 0 : line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
                             const idleHours = line.idleHours || DAILY_BREAK_HOURS;
-                            const maxTotal = matrixProductiveHoursCap(line, line.usedHours, standardTimesheetHours, idleHours);
+                            const maxTotal = matrixProductiveHoursCap(line, line.usedHours, standardTimesheetHours, idleHours, selectedShift);
                             const projectAllocations = upsertMatrixProjectHours(
                               line.projectAllocations,
                               col.code,

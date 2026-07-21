@@ -414,14 +414,14 @@ const buildCandidateRecords = async () => {
     const dayType = dayTypeFor(date);
     const workedHours = Math.max(normalizePaidWorkHours(line.attendanceDuration), normalizePaidWorkHours(line.totalHours), normalizePaidWorkHours(line.usedHours + line.idleHours));
     const overtimeHours = Math.max(0, round2(workedHours - STANDARD_TIMESHEET_HOURS));
-    const payableHours = dayType === 'Weekday' ? overtimeHours : workedHours;
+    const payableHours = dayType === 'Weekday' || dayType === 'Night' ? overtimeHours : workedHours;
     if (payableHours <= 0) return null;
     const overtime = calculatePayrollOvertime(employee, dayType, payableHours);
     const payrollReady = isTimesheetPayrollReadyStatus(header.status);
     const issues = [
       ...(!overtime.hourlyRate ? ['Hourly rate cannot be derived from payroll setup'] : []),
       ...(!payrollReady ? ['Timesheet has not reached HR/payroll-ready status'] : []),
-      ...(payableHours > 4 && dayType === 'Weekday' ? ['Weekday overtime exceeds 4 hours'] : []),
+      ...(payableHours > 4 && (dayType === 'Weekday' || dayType === 'Night') ? [`${dayType} overtime exceeds 4 hours`] : []),
       ...(line.validationStatus === 'Error' ? ['Timesheet line has validation error'] : []),
     ];
     const status = initialStatusFor(payrollReady, issues);
@@ -748,7 +748,7 @@ export const readOvertimeManagementPayload = async (roleInput?: string | null) =
       statuses: ['Draft', 'Submitted', 'Supervisor Approved', 'HR Approved', 'Payroll Ready', 'Payroll Posted', 'Returned', 'Rejected', 'Blocked'] as OvertimeStatus[],
       departments: uniqueSorted([...records.map((item) => item.department), ...employeeDepartments]),
       locations: uniqueSorted([...records.map((item) => item.location), ...employeeLocations]),
-      dayTypes: ['Weekday', 'Saturday', 'Sunday', 'Public Holiday'] as OvertimeDayType[],
+      dayTypes: ['Weekday', 'Saturday', 'Sunday', 'Public Holiday', 'Night'] as OvertimeDayType[],
     },
     authorizationSetup,
     records,
@@ -769,12 +769,12 @@ export const createOvertimeRequest = async (input: OvertimeCreateRequest, roleIn
   const employee = employeeSource.employees.find((item) => employeeKeys(item).includes(normalizePayrollMatchKey(employeeKey)));
   if (!employee) throw new Error('Employee was not found in HRIS employee master.');
   const dayType = input.dayType || dayTypeFor(input.date);
-  const payableHours = round2(Number(input.payableHours || (dayType === 'Weekday' ? workedHours - STANDARD_TIMESHEET_HOURS : workedHours)));
+  const payableHours = round2(Number(input.payableHours || (dayType === 'Weekday' || dayType === 'Night' ? workedHours - STANDARD_TIMESHEET_HOURS : workedHours)));
   if (payableHours <= 0) throw new Error('Payable overtime hours must be greater than zero.');
   const overtime = calculatePayrollOvertime(employee, dayType, payableHours);
   const issues = [
     ...(!overtime.hourlyRate ? ['Hourly rate cannot be derived from payroll setup'] : []),
-    ...(payableHours > 4 && dayType === 'Weekday' ? ['Weekday overtime exceeds 4 hours'] : []),
+    ...(payableHours > 4 && (dayType === 'Weekday' || dayType === 'Night') ? [`${dayType} overtime exceeds 4 hours`] : []),
   ];
   const status: OvertimeStatus = issues.some((issue) => issue.toLowerCase().includes('rate')) ? 'Blocked' : 'Draft';
   const id = `ot-req-${Date.now()}-${Math.random().toString(16).slice(2)}`;
