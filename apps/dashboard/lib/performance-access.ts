@@ -3,7 +3,7 @@ import { hasAnyPermission } from '@/lib/auth/permission-match';
 import { isHrPortalUser } from '@/lib/access/route-access';
 import { resolvePerformanceRole } from '@/lib/performance-management-menu-config';
 import type { PerformanceRole } from '@/lib/performance-management-types';
-import type { PerformanceDomainState, PerformanceTask } from '@/lib/performance-domain-types';
+import type { PerformanceDomainState, PerformanceDelegation, PerformanceTask } from '@/lib/performance-domain-types';
 import { employeeReportsToManager } from '@/lib/reporting-manager-match';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 
@@ -141,20 +141,55 @@ export const listDirectReportsForActor = (
   employees: PerformanceTeamEmployeeRow[],
 ) => employees.filter((row) => employeeIsDirectReportOf(row, actor));
 
+const isDelegationActiveForActor = (
+  row: PerformanceDelegation,
+  actor: Pick<PerformanceActorContext, 'employeeId' | 'employeeCode'>,
+  as: 'delegate' | 'owner',
+) => {
+  const today = new Date().toISOString().slice(0, 10);
+  if (row.status === 'Cancelled' || row.status === 'Expired') return false;
+  if (row.startDate > today || row.endDate < today) return false;
+  const actorKeys = new Set([norm(actor.employeeId), norm(actor.employeeCode)].filter(Boolean));
+  if (as === 'delegate') return actorKeys.has(norm(row.toManagerId));
+  return actorKeys.has(norm(row.fromManagerId));
+};
+
+export const activePerformanceDelegationsForActor = (
+  actor: Pick<PerformanceActorContext, 'employeeId' | 'employeeCode'>,
+  delegations: PerformanceDelegation[] = [],
+) => ({
+  received: delegations.filter((row) => isDelegationActiveForActor(row, actor, 'delegate')),
+  owned: delegations.filter((row) => isDelegationActiveForActor(row, actor, 'owner')),
+});
+
 export const loadTeamEmployeeIds = async (
   actor: PerformanceActorContext,
   employees: PerformanceTeamEmployeeRow[],
+  delegations: PerformanceDelegation[] = [],
 ): Promise<Set<string>> => {
   const team = new Set<string>();
   // Global HR scope sees full population; team ids unused for filtering.
   if (actor.scope === 'global') return team;
 
-  for (const row of listDirectReportsForActor(actor, employees)) {
+  const addRow = (row: PerformanceTeamEmployeeRow) => {
     const employeeId = compact(row.employeeId);
     const employeeCode = compact(row.employeeCode);
     if (employeeId) team.add(norm(employeeId));
     if (employeeCode) team.add(norm(employeeCode));
+  };
+
+  for (const row of listDirectReportsForActor(actor, employees)) addRow(row);
+
+  const { received } = activePerformanceDelegationsForActor(actor, delegations);
+  for (const delegation of received) {
+    const owner = {
+      employeeId: delegation.fromManagerId,
+      employeeCode: delegation.fromManagerId,
+      fullName: delegation.fromManagerName,
+    };
+    for (const row of listDirectReportsForActor(owner, employees)) addRow(row);
   }
+
   return team;
 };
 
@@ -220,6 +255,10 @@ export const scopePerformanceDomain = (
     recognitions: filterByEmployee(state.recognitions, actor, teamIds),
     probation: filterByEmployee(state.probation, actor, teamIds),
     tasks: filterTasks(state.tasks, actor, teamIds),
+    delegations: (state.delegations || []).filter((row) => {
+      const keys = actorKeys(actor);
+      return keys.has(norm(row.fromManagerId)) || keys.has(norm(row.toManagerId));
+    }),
   };
 };
 
@@ -296,6 +335,15 @@ export const assertPerformanceActionAllowed = (
     return null;
   }
 
+  if (action === 'checkin.update') {
+    const checkIn = state.checkIns.find((item) => item.id === compact(data.id));
+    if (!checkIn) return 'Check-in not found.';
+    if (!employeeInPerformanceScope(checkIn.employeeId, undefined, actor, teamIds)) {
+      return 'You are not authorized to update this check-in.';
+    }
+    return null;
+  }
+
   const targetEmployeeId = compact(data.employeeId)
     || findGoal(state, compact(data.id))?.employeeId
     || findResult(state, compact(data.id))?.employeeId
@@ -316,11 +364,41 @@ export const assertPerformanceActionAllowed = (
   if (action === 'assessment.submit' || action === 'assessment.save') {
     const assessment = state.assessments.find((item) => item.id === compact(data.id));
     const type = compact(data.type) || assessment?.type;
-    if (type === 'Self' && assessment && !employeeInPerformanceScope(assessment.employeeId, undefined, { ...actor, scope: 'self' }, new Set())) {
+    if ((type === 'Self' || type === 'Mid-Year') && assessment && !employeeInPerformanceScope(assessment.employeeId, undefined, { ...actor, scope: 'self' }, new Set())) {
       return 'You can only submit your own self-assessment.';
     }
     if (type === 'Manager' && actor.scope === 'self' && teamIds.size === 0) {
       return 'Manager assessments require supervisor or HR access.';
+    }
+  }
+
+  if (action === 'assessment.return') {
+    const assessment = state.assessments.find((item) => item.id === compact(data.id));
+    if (!assessment) return 'Assessment not found.';
+    if (assessment.type === 'Self' || assessment.type === 'Mid-Year') {
+      if (!employeeInPerformanceScope(assessment.employeeId, undefined, actor, teamIds) || actor.scope === 'self') {
+        return 'Only the line manager (or delegate) can return a self-assessment.';
+      }
+    } else if (assessment.type === 'Manager' && actor.scope !== 'global') {
+      return 'Returning manager assessments requires HR performance administration.';
+    }
+  }
+
+  if (action === 'assessment.reopen') {
+    const assessment = state.assessments.find((item) => item.id === compact(data.id));
+    if (!assessment) return 'Assessment not found.';
+    if ((assessment.type === 'Self' || assessment.type === 'Mid-Year')
+      && !employeeInPerformanceScope(assessment.employeeId, undefined, { ...actor, scope: 'self' }, new Set())) {
+      return 'You can only reopen your own returned assessment.';
+    }
+    if (assessment.type === 'Manager' && !employeeInPerformanceScope(assessment.employeeId, undefined, actor, teamIds)) {
+      return 'You are not authorized to reopen this manager assessment.';
+    }
+  }
+
+  if (action === 'delegation.upsert' || action === 'delegation.cancel') {
+    if (actor.scope === 'self' && teamIds.size === 0) {
+      return 'Performance delegation requires line-manager access.';
     }
   }
 

@@ -10,7 +10,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { navigationConfig, NavItem } from '../../lib/config/navigation';
-import { canAccessHrisPath, canAccessHrisPerformanceManagement, hrisRoutePermissionOptions, isHrPortalUser } from '@/lib/access/route-access';
+import { canAccessHrisPath, canAccessHrisPerformanceManagement, canAccessPayrollManagementNav, hrisRoutePermissionOptions, isHrPortalUser } from '@/lib/access/route-access';
 import { PerformanceNavTree } from './PerformanceNavTree';
 
 export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => void }) {
@@ -46,10 +46,13 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
 
   const visibleNavigation = useMemo(() => {
     const canUseHrPortal = isHrPortalUser(sessionContext);
+    const canUsePayroll = canAccessPayrollManagementNav(sessionContext);
     return navigationConfig
       .map((item) => {
+        if (item.id === 'payroll' && !canUsePayroll) return null;
         const subItems = item.subItems?.filter((sub) => {
           const fullPath = toHref(sub.route);
+          if (item.id === 'payroll' && !canUsePayroll) return false;
           const explicitOptions = hrisRoutePermissionOptions(fullPath);
           if (!canUseHrPortal && !explicitOptions) return false;
           return canAccessHrisPath(sessionContext, fullPath);

@@ -1767,7 +1767,7 @@ export async function POST(request: Request) {
         ? (body.payload as Record<string, unknown>)
         : body;
       const payload: Record<string, unknown> = { ...rawPayload };
-      if (!compact(payload.employeeId) && (perfAction === 'checkin.create' || (perfAction === 'assessment.save' && compact(payload.type) === 'Self'))) {
+      if (!compact(payload.employeeId) && (perfAction === 'checkin.create' || (perfAction === 'assessment.save' && ['Self', 'Mid-Year'].includes(compact(payload.type))))) {
         payload.employeeId = employee.employeeId || actorContext.employeeId;
         payload.employeeName = employee.fullName || actorContext.fullName;
         if (!compact(payload.employeeCode)) payload.employeeCode = employee.employeeCode || actorContext.employeeCode;

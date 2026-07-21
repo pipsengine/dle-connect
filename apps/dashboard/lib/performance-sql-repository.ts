@@ -51,6 +51,7 @@ const countState = (state: PerformanceDomainState): Record<string, number> => ({
   probation: state.probation.length,
   tasks: state.tasks.length,
   audit: state.audit.length,
+  delegations: (state.delegations || []).length,
   scheduledReports: (state.scheduledReports || []).length,
 });
 

@@ -234,7 +234,24 @@ export type PerformanceAssessment = {
   submittedAt?: string;
   submittedBy?: string;
   returnedReason?: string;
+  returnedBy?: string;
+  returnedAt?: string;
   version: number;
+  createdAt: string;
+  updatedAt: string;
+  history: Array<{ version: number; at: string; actor: string; change: string; reason?: string }>;
+};
+
+export type PerformanceDelegation = {
+  id: string;
+  fromManagerId: string;
+  fromManagerName: string;
+  toManagerId: string;
+  toManagerName: string;
+  startDate: string;
+  endDate: string;
+  reason: string;
+  status: 'Active' | 'Scheduled' | 'Expired' | 'Cancelled';
   createdAt: string;
   updatedAt: string;
 };
@@ -440,6 +457,7 @@ export type PerformanceDomainState = {
   recognitions: RecognitionRecommendation[];
   probation: ProbationRecord[];
   tasks: PerformanceTask[];
+  delegations: PerformanceDelegation[];
   audit: PerformanceAuditEvent[];
   scheduledReports: ScheduledPerformanceReport[];
   analytics?: PerformanceAnalyticsSnapshot;
@@ -470,6 +488,7 @@ export type PerformanceWorkspacePayload = PerformancePayload & {
     recognitions: RecognitionRecommendation[];
     probation: ProbationRecord[];
     tasks: PerformanceTask[];
+    delegations: PerformanceDelegation[];
     audit: PerformanceAuditEvent[];
     scheduledReports: ScheduledPerformanceReport[];
     analytics: PerformanceAnalyticsSnapshot | null;

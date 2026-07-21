@@ -33,6 +33,7 @@ import type {
   PerformanceAuditEvent,
   PerformanceConfig,
   PerformanceCycle,
+  PerformanceDelegation,
   PerformanceDomainState,
   PerformanceResult,
   PerformanceTask,
@@ -113,6 +114,7 @@ const resolveStorePath = async () => {
 const nowIso = () => new Date().toISOString();
 const id = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const compact = (value: unknown) => String(value || '').trim();
+const normKey = (value: unknown) => compact(value).toLowerCase();
 
 const defaultConfig = (): PerformanceConfig => ({
   ratingBands: DEFAULT_RATING_BANDS.map((band) => ({ ...band })),
@@ -148,6 +150,7 @@ const emptyState = (): PerformanceDomainState => ({
   recognitions: [],
   probation: [],
   tasks: [],
+  delegations: [],
   audit: [],
   scheduledReports: [],
 });
@@ -203,7 +206,13 @@ const normalizeState = (parsed: PerformanceDomainState): PerformanceDomainState 
   ...emptyState(),
   ...parsed,
   config: { ...defaultConfig(), ...(parsed.config || {}) },
+  delegations: Array.isArray(parsed.delegations) ? parsed.delegations : [],
   scheduledReports: parsed.scheduledReports || [],
+  assessments: (parsed.assessments || []).map((row) => ({
+    ...row,
+    history: Array.isArray(row.history) ? row.history : [],
+    version: Number(row.version || 1),
+  })),
 });
 
 const readJsonFallbackState = async (): Promise<PerformanceDomainState> => {
@@ -1108,7 +1117,7 @@ export const readPerformanceManagementPayload = async (
   }
   const payrollEmployees = payrollSource.employees || [];
 
-  const teamIds = await loadTeamEmployeeIds(actorContext, payrollEmployees);
+  const teamIds = await loadTeamEmployeeIds(actorContext, payrollEmployees, fullState.delegations || []);
   const effectiveActor = withEffectivePerformanceScope(actorContext, teamIds);
   const scoped = scopePerformanceDomain(fullState, effectiveActor, teamIds);
   const state = projectDomainForScope(scoped, effectiveActor, fullState.config.anonymityThreshold || 3);
@@ -1248,6 +1257,7 @@ export const readPerformanceManagementPayload = async (
       recognitions: state.recognitions,
       probation: state.probation,
       tasks: state.tasks,
+      delegations: state.delegations || [],
       audit: state.audit.slice(0, 100),
       scheduledReports: state.scheduledReports || [],
       analytics: state.analytics || buildAnalytics(state),
@@ -1302,7 +1312,7 @@ export const applyPerformanceAction = async (
     } catch {
       payrollEmployees = [];
     }
-    const teamIds = await loadTeamEmployeeIds(actorContext, payrollEmployees);
+    const teamIds = await loadTeamEmployeeIds(actorContext, payrollEmployees, state.delegations || []);
     const effectiveActor = withEffectivePerformanceScope(actorContext, teamIds);
     const denied = assertPerformanceActionAllowed(body.action, effectiveActor, data, state, teamIds);
     if (denied) return fail(denied);
@@ -1511,6 +1521,22 @@ export const applyPerformanceAction = async (
         const cycleId = compact(data.cycleId) || activeCycle(state)?.id;
         if (!cycleId) return fail('No cycle selected.');
         const existing = state.goals.find((item) => item.id === data.id);
+        const employeeId = compact(data.employeeId) || existing?.employeeId || '';
+        const nextWeight = Number(data.weight ?? existing?.weight ?? 100);
+        if (!Number.isFinite(nextWeight) || nextWeight <= 0 || nextWeight > 100) {
+          return fail('Goal weight must be between 1 and 100.');
+        }
+        const siblingWeights = state.goals
+          .filter((goal) =>
+            goal.cycleId === cycleId
+            && (goal.employeeId === employeeId || goal.employeeCode === compact(data.employeeCode))
+            && goal.id !== existing?.id
+            && !['Cancelled', 'Archived'].includes(goal.status),
+          )
+          .reduce((sum, goal) => sum + Number(goal.weight || 0), 0);
+        if (siblingWeights + nextWeight > 100.01) {
+          return fail(`Employee goal weights cannot exceed 100% (current ${siblingWeights}%, this goal ${nextWeight}%).`);
+        }
         const keyResults = Array.isArray(data.keyResults)
           ? (data.keyResults as any[]).map((row) => ({
               id: compact(row.id) || id('kr'),
@@ -1533,47 +1559,56 @@ export const applyPerformanceAction = async (
           }
           existing.title = compact(data.title) || existing.title;
           existing.description = compact(data.description) || existing.description;
+          existing.type = compact(data.type) || existing.type;
+          existing.parentObjectiveId = compact(data.parentObjectiveId) || existing.parentObjectiveId;
+          existing.strategicPillar = compact(data.strategicPillar) || existing.strategicPillar;
           existing.keyResults = keyResults.length ? keyResults : existing.keyResults;
-          existing.weight = Number(data.weight ?? existing.weight);
+          existing.weight = nextWeight;
+          existing.startDate = compact(data.startDate) || existing.startDate;
+          existing.dueDate = compact(data.dueDate) || existing.dueDate;
           existing.updatedAt = nowIso();
         } else {
+          if (!compact(data.title)) return fail('Goal title is required.');
           state.goals.unshift({
             id: id('goal'),
             cycleId,
-            employeeId: compact(data.employeeId),
+            employeeId,
             employeeCode: compact(data.employeeCode),
             employeeName: compact(data.employeeName) || 'Employee',
             department: compact(data.department),
-            managerId: compact(data.managerId),
+            managerId: compact(data.managerId) || actorContext?.employeeId || '',
             managerName: compact(data.managerName) || actor,
             title: compact(data.title) || 'Employee objective',
             description: compact(data.description),
             type: compact(data.type) || 'Annual',
             parentObjectiveId: compact(data.parentObjectiveId) || undefined,
+            strategicPillar: compact(data.strategicPillar) || undefined,
             keyResults,
-            weight: Number(data.weight || 100),
+            weight: nextWeight,
             startDate: compact(data.startDate) || nowIso().slice(0, 10),
             dueDate: compact(data.dueDate) || nowIso().slice(0, 10),
-            status: 'Assigned',
+            status: compact(data.statusHint) === 'Draft' ? 'Draft' : 'Assigned',
             version: 1,
             progressPercent: 0,
             createdBy: actor,
             createdAt: nowIso(),
             updatedAt: nowIso(),
-            history: [{ version: 1, at: nowIso(), actor, change: 'Goal created' }],
+            history: [{ version: 1, at: nowIso(), actor, change: compact(data.statusHint) === 'Draft' ? 'Goal draft created' : 'Goal created' }],
           });
           const created = state.goals[0];
-          pushTask(state, {
-            cycleId,
-            employeeId: created.employeeId,
-            employeeName: created.employeeName,
-            type: 'Goal Acknowledgement',
-            title: `Acknowledge goal: ${created.title}`,
-            assigneeId: created.employeeId,
-            assigneeName: created.employeeName,
-            dueDate: created.dueDate,
-            href: '/workforce-portal?tab=performance',
-          });
+          if (created.status === 'Assigned') {
+            pushTask(state, {
+              cycleId,
+              employeeId: created.employeeId,
+              employeeName: created.employeeName,
+              type: 'Goal Acknowledgement',
+              title: `Acknowledge goal: ${created.title}`,
+              assigneeId: created.employeeId,
+              assigneeName: created.employeeName,
+              dueDate: created.dueDate,
+              href: ESS_PERFORMANCE_HREF,
+            });
+          }
         }
         pushAudit(state, { actor, actorRole, action: 'Upserted goal', entityType: 'EmployeeGoal', entityId: compact(data.id) || state.goals[0]?.id || '' });
         break;
@@ -1646,45 +1681,98 @@ export const applyPerformanceAction = async (
         pushAudit(state, { actor, actorRole, action: 'Created check-in', entityType: 'CheckIn', entityId: row.id });
         break;
       }
+      case 'checkin.update': {
+        const row = state.checkIns.find((item) => item.id === data.id);
+        if (!row) return fail('Check-in not found.');
+        if (data.progressPercent != null) row.progressPercent = Number(data.progressPercent);
+        if (data.status != null) row.status = compact(data.status) || row.status;
+        if (data.sharedNotes != null) row.sharedNotes = compact(data.sharedNotes);
+        if (data.employeeReflection != null) row.employeeReflection = compact(data.employeeReflection);
+        if (data.managerFeedback != null) row.managerFeedback = compact(data.managerFeedback);
+        if (data.privateManagerNotes != null) row.privateManagerNotes = compact(data.privateManagerNotes) || undefined;
+        if (Array.isArray(data.commitments)) {
+          row.commitments = (data.commitments as any[]).map((item) => ({
+            id: compact(item.id) || id('cmt'),
+            text: compact(item.text),
+            owner: compact(item.owner) || actor,
+            dueDate: compact(item.dueDate) || nowIso().slice(0, 10),
+            done: Boolean(item.done),
+          }));
+        }
+        pushAudit(state, { actor, actorRole, action: 'Updated check-in', entityType: 'CheckIn', entityId: row.id });
+        break;
+      }
       case 'assessment.save': {
         const existing = state.assessments.find((item) => item.id === data.id);
         let items = Array.isArray(data.items) ? (data.items as any[]) : existing?.items || [];
         const assessmentType = (compact(data.type) as any) || existing?.type || 'Self';
         const employeeId = compact(data.employeeId)
           || existing?.employeeId
-          || (assessmentType === 'Self' && actorContext?.employeeId ? actorContext.employeeId : '');
+          || ((assessmentType === 'Self' || assessmentType === 'Mid-Year') && actorContext?.employeeId ? actorContext.employeeId : '');
         const employeeName = compact(data.employeeName)
           || existing?.employeeName
-          || (assessmentType === 'Self' && actorContext?.fullName ? actorContext.fullName : 'Employee');
+          || ((assessmentType === 'Self' || assessmentType === 'Mid-Year') && actorContext?.fullName ? actorContext.fullName : 'Employee');
         if (!items.length && employeeId) {
-          const goalItems = state.goals
-            .filter((goal) => goal.employeeId === employeeId || goal.employeeCode === employeeId)
-            .slice(0, 4)
-            .map((goal) => ({
+          const employeeGoals = state.goals.filter((goal) => goal.employeeId === employeeId || goal.employeeCode === employeeId);
+          const selfAssessment = state.assessments.find((row) =>
+            row.type === 'Self'
+            && (row.employeeId === employeeId || row.employeeId === compact(data.employeeCode))
+            && ['Draft', 'Returned', 'Submitted', 'Pending Manager'].includes(row.status),
+          );
+          const selfById = new Map((selfAssessment?.items || []).map((item) => [item.itemId, item]));
+          const explicitRating = data.managerRating != null && data.managerRating !== '' ? Number(data.managerRating) : undefined;
+          const goalItems = employeeGoals.map((goal) => {
+            const self = selfById.get(goal.id);
+            return {
               itemId: goal.id,
               itemType: 'okr',
               title: goal.title,
               weight: goal.weight,
-              managerRating: Number(data.managerRating || 3),
-              achievement: Number(data.managerRating || 3) * 20,
-            }));
-          items = goalItems.length
-            ? goalItems
+              selfRating: self?.selfRating,
+              selfNarrative: self?.selfNarrative,
+              ...(explicitRating != null && !Number.isNaN(explicitRating)
+                ? { managerRating: explicitRating, achievement: explicitRating * 20 }
+                : {}),
+            };
+          });
+          const behaviourItems = (state.config.behaviourIndicators || []).map((ind) => {
+            const self = selfById.get(ind.id);
+            return {
+              itemId: ind.id,
+              itemType: 'behaviour',
+              title: ind.name,
+              weight: ind.weight,
+              selfRating: self?.selfRating,
+              selfNarrative: self?.selfNarrative || ind.description,
+              ...(explicitRating != null && !Number.isNaN(explicitRating)
+                ? { managerRating: explicitRating, achievement: explicitRating * 20 }
+                : {}),
+            };
+          });
+          items = goalItems.length || behaviourItems.length
+            ? [...goalItems, ...behaviourItems]
             : [{
                 itemId: id('asm-item'),
                 itemType: 'okr',
                 title: 'Performance objectives',
                 weight: 100,
-                managerRating: Number(data.managerRating || 3),
-                achievement: Number(data.managerRating || 3) * 20,
+                ...(explicitRating != null && !Number.isNaN(explicitRating)
+                  ? { managerRating: explicitRating, achievement: explicitRating * 20 }
+                  : {}),
               }];
         }
         if (existing) {
           existing.items = items as any;
-          existing.overallComments = compact(data.overallComments) || existing.overallComments;
-          existing.strengths = compact(data.strengths) || existing.strengths;
-          existing.improvements = compact(data.improvements) || existing.improvements;
-          existing.status = (compact(data.status) as any) || existing.status;
+          existing.overallComments = data.overallComments !== undefined ? compact(data.overallComments) : existing.overallComments;
+          existing.strengths = data.strengths !== undefined ? compact(data.strengths) : existing.strengths;
+          existing.improvements = data.improvements !== undefined ? compact(data.improvements) : existing.improvements;
+          const nextStatus = (compact(data.status) as any) || existing.status;
+          if (existing.status === 'Returned' && nextStatus === 'Draft') {
+            existing.version += 1;
+            existing.history = existing.history || [];
+            existing.history.push({ version: existing.version, at: nowIso(), actor, change: 'Reopened returned assessment for editing' });
+          }
+          existing.status = nextStatus;
           existing.updatedAt = nowIso();
         } else {
           state.assessments.unshift({
@@ -1701,6 +1789,7 @@ export const applyPerformanceAction = async (
             version: 1,
             createdAt: nowIso(),
             updatedAt: nowIso(),
+            history: [{ version: 1, at: nowIso(), actor, change: 'Created assessment draft' }],
           });
         }
         pushAudit(state, { actor, actorRole, action: 'Saved assessment', entityType: 'PerformanceAssessment', entityId: compact(data.id) || state.assessments[0]?.id || '' });
@@ -1716,17 +1805,169 @@ export const applyPerformanceAction = async (
         if (!assessment) return fail('Assessment not found.');
         if (!assessment.items.length) return fail('Assessment has no items.');
         if (assessment.type === 'Manager') {
+          const employeeGoals = state.goals.filter((goal) =>
+            goal.employeeId === assessment.employeeId || goal.employeeCode === assessment.employeeId,
+          );
+          const okrItems = assessment.items.filter((item) => item.itemType === 'okr');
+          if (employeeGoals.length > 0 && okrItems.length < employeeGoals.length) {
+            return fail(`Manager assessment must include all employee goals (${okrItems.length} of ${employeeGoals.length} covered). Save a complete draft before submitting.`);
+          }
           for (const item of assessment.items) {
-            if (item.selfRating != null && item.managerRating != null && Math.abs(item.selfRating - item.managerRating) >= 2 && !compact(item.varianceJustification)) {
+            const rating = Number(item.managerRating);
+            if (item.managerRating == null || Number.isNaN(rating) || rating < 1 || rating > 5) {
+              return fail(`Each assessment item requires a manager rating from 1 to 5 ("${item.title}").`);
+            }
+            if (item.selfRating != null && Math.abs(item.selfRating - rating) >= 2 && !compact(item.varianceJustification)) {
               return fail(`Justification required for material variance on "${item.title}".`);
             }
+          }
+          const extreme = assessment.items.some((item) => Number(item.managerRating) === 1 || Number(item.managerRating) === 5);
+          if (extreme && !compact(assessment.overallComments)) {
+            return fail('Overall comments are required when any item is rated 1 or 5.');
           }
         }
         assessment.status = 'Submitted';
         assessment.submittedAt = nowIso();
         assessment.submittedBy = actor;
+        assessment.returnedReason = undefined;
+        assessment.version += 1;
+        assessment.history = assessment.history || [];
+        assessment.history.push({ version: assessment.version, at: nowIso(), actor, change: 'Submitted assessment' });
         assessment.updatedAt = nowIso();
         pushAudit(state, { actor, actorRole, action: 'Submitted assessment', entityType: 'PerformanceAssessment', entityId: assessment.id });
+        break;
+      }
+      case 'assessment.return': {
+        const assessment = state.assessments.find((item) => item.id === compact(data.id));
+        if (!assessment) return fail('Assessment not found.');
+        if (!['Submitted', 'Pending Manager', 'Pending HR'].includes(assessment.status)) {
+          return fail('Only submitted assessments can be returned for revision.');
+        }
+        const reason = compact(data.reason);
+        if (!reason) return fail('A return reason is required.');
+        assessment.status = 'Returned';
+        assessment.returnedReason = reason;
+        assessment.returnedBy = actor;
+        assessment.returnedAt = nowIso();
+        assessment.version += 1;
+        assessment.history = assessment.history || [];
+        assessment.history.push({ version: assessment.version, at: nowIso(), actor, change: 'Returned for revision', reason });
+        assessment.updatedAt = nowIso();
+        pushTask(state, {
+          cycleId: assessment.cycleId,
+          employeeId: assessment.employeeId,
+          employeeName: assessment.employeeName,
+          type: 'Assessment Returned',
+          title: `${assessment.type} assessment returned: ${reason}`,
+          assigneeId: assessment.type === 'Self' || assessment.type === 'Mid-Year'
+            ? assessment.employeeId
+            : (state.goals.find((goal) => goal.employeeId === assessment.employeeId)?.managerId || actor),
+          assigneeName: assessment.type === 'Self' || assessment.type === 'Mid-Year'
+            ? assessment.employeeName
+            : (state.goals.find((goal) => goal.employeeId === assessment.employeeId)?.managerName || actor),
+          dueDate: nowIso().slice(0, 10),
+          href: ESS_PERFORMANCE_HREF,
+          status: 'Returned',
+        });
+        pushAudit(state, {
+          actor,
+          actorRole,
+          action: 'Returned assessment',
+          entityType: 'PerformanceAssessment',
+          entityId: assessment.id,
+          reason,
+        });
+        break;
+      }
+      case 'assessment.reopen': {
+        const assessment = state.assessments.find((item) => item.id === compact(data.id));
+        if (!assessment) return fail('Assessment not found.');
+        if (assessment.status !== 'Returned') {
+          return fail('Only returned assessments can be reopened for editing.');
+        }
+        const reason = compact(data.reason) || 'Reopened after return';
+        assessment.status = 'Draft';
+        assessment.version += 1;
+        assessment.history = assessment.history || [];
+        assessment.history.push({ version: assessment.version, at: nowIso(), actor, change: 'Reopened assessment', reason });
+        assessment.updatedAt = nowIso();
+        pushAudit(state, {
+          actor,
+          actorRole,
+          action: 'Reopened assessment',
+          entityType: 'PerformanceAssessment',
+          entityId: assessment.id,
+          reason,
+        });
+        break;
+      }
+      case 'delegation.upsert': {
+        const toManagerId = compact(data.toManagerId);
+        const toManagerName = compact(data.toManagerName) || toManagerId;
+        const startDate = compact(data.startDate) || nowIso().slice(0, 10);
+        const endDate = compact(data.endDate);
+        const reason = compact(data.reason);
+        if (!toManagerId) return fail('Delegate manager is required.');
+        if (!endDate) return fail('Delegation end date is required.');
+        if (!reason) return fail('Delegation reason is required.');
+        if (normKey(toManagerId) === normKey(actorContext?.employeeId) || normKey(toManagerId) === normKey(actorContext?.employeeCode)) {
+          return fail('You cannot delegate performance reviews to yourself.');
+        }
+        const today = nowIso().slice(0, 10);
+        const status: PerformanceDelegation['status'] = startDate > today ? 'Scheduled' : endDate < today ? 'Expired' : 'Active';
+        const existing = state.delegations.find((item) => item.id === compact(data.id));
+        if (existing) {
+          if (normKey(existing.fromManagerId) !== normKey(actorContext?.employeeId) && normKey(existing.fromManagerId) !== normKey(actorContext?.employeeCode) && actorContext?.scope !== 'global') {
+            return fail('You can only update your own performance delegations.');
+          }
+          existing.toManagerId = toManagerId;
+          existing.toManagerName = toManagerName;
+          existing.startDate = startDate;
+          existing.endDate = endDate;
+          existing.reason = reason;
+          existing.status = status;
+          existing.updatedAt = nowIso();
+        } else {
+          state.delegations.unshift({
+            id: id('dlg'),
+            fromManagerId: compact(actorContext?.employeeId) || compact(actorContext?.employeeCode) || actor,
+            fromManagerName: compact(actorContext?.fullName) || actor,
+            toManagerId,
+            toManagerName,
+            startDate,
+            endDate,
+            reason,
+            status,
+            createdAt: nowIso(),
+            updatedAt: nowIso(),
+          });
+        }
+        pushAudit(state, {
+          actor,
+          actorRole,
+          action: 'Upserted performance delegation',
+          entityType: 'PerformanceDelegation',
+          entityId: compact(data.id) || state.delegations[0]?.id || '',
+          reason,
+        });
+        break;
+      }
+      case 'delegation.cancel': {
+        const row = state.delegations.find((item) => item.id === compact(data.id));
+        if (!row) return fail('Delegation not found.');
+        if (normKey(row.fromManagerId) !== normKey(actorContext?.employeeId) && normKey(row.fromManagerId) !== normKey(actorContext?.employeeCode) && actorContext?.scope !== 'global') {
+          return fail('You can only cancel your own performance delegations.');
+        }
+        row.status = 'Cancelled';
+        row.updatedAt = nowIso();
+        pushAudit(state, {
+          actor,
+          actorRole,
+          action: 'Cancelled performance delegation',
+          entityType: 'PerformanceDelegation',
+          entityId: row.id,
+          reason: compact(data.reason) || undefined,
+        });
         break;
       }
       case 'midyear.change-request': {
@@ -1968,13 +2209,36 @@ export const applyPerformanceAction = async (
       }
       case 'pip.upsert': {
         const existing = state.pips.find((item) => item.id === data.id);
+        const objectives = Array.isArray(data.objectives)
+          ? (data.objectives as any[]).map((row) => ({
+              id: compact(row.id) || id('pip-obj'),
+              title: compact(row.title) || 'Improvement objective',
+              target: compact(row.target) || '',
+              weight: Number(row.weight || 0),
+              dueDate: compact(row.dueDate) || nowIso().slice(0, 10),
+            }))
+          : existing?.objectives || [];
+        const milestones = Array.isArray(data.milestones)
+          ? (data.milestones as any[]).map((row) => ({
+              id: compact(row.id) || id('pip-ms'),
+              date: compact(row.date) || nowIso().slice(0, 10),
+              notes: compact(row.notes),
+              outcome: compact(row.outcome) || 'Pending',
+            }))
+          : existing?.milestones || [];
         if (existing) {
           existing.reason = compact(data.reason) || existing.reason;
           existing.gaps = compact(data.gaps) || existing.gaps;
           existing.support = compact(data.support) || existing.support;
+          existing.startDate = compact(data.startDate) || existing.startDate;
+          existing.endDate = compact(data.endDate) || existing.endDate;
+          existing.objectives = objectives.length ? objectives : existing.objectives;
+          existing.milestones = milestones.length ? milestones : existing.milestones;
           existing.status = (compact(data.status) as any) || existing.status;
           existing.updatedAt = nowIso();
         } else {
+          if (!compact(data.employeeId)) return fail('Employee is required for PIP.');
+          if (!compact(data.reason) || !compact(data.gaps)) return fail('PIP requires a performance gap reason and identified gaps.');
           state.pips.unshift({
             id: id('pip'),
             employeeId: compact(data.employeeId),
@@ -1982,12 +2246,12 @@ export const applyPerformanceAction = async (
             cycleId: compact(data.cycleId) || undefined,
             reason: compact(data.reason),
             gaps: compact(data.gaps),
-            objectives: Array.isArray(data.objectives) ? (data.objectives as any) : [],
+            objectives,
             support: compact(data.support),
             startDate: compact(data.startDate) || nowIso().slice(0, 10),
             endDate: compact(data.endDate) || nowIso().slice(0, 10),
-            status: 'Pending HR',
-            milestones: [],
+            status: (compact(data.status) as any) || 'Pending HR',
+            milestones,
             createdBy: actor,
             createdAt: nowIso(),
             updatedAt: nowIso(),
@@ -2007,25 +2271,38 @@ export const applyPerformanceAction = async (
       }
       case 'development.upsert': {
         const existing = state.developmentPlans.find((item) => item.id === data.id);
+        const actions = Array.isArray(data.actions)
+          ? (data.actions as any[]).map((row) => ({
+              id: compact(row.id) || id('dev-act'),
+              action: compact(row.action) || 'Development action',
+              owner: compact(row.owner) || actor,
+              dueDate: compact(row.dueDate) || nowIso().slice(0, 10),
+              status: compact(row.status) || 'Planned',
+              evidence: compact(row.evidence) || undefined,
+            }))
+          : existing?.actions || [];
         if (existing) {
           existing.need = compact(data.need) || existing.need;
-          existing.actions = Array.isArray(data.actions) ? (data.actions as any) : existing.actions;
+          existing.actions = actions.length ? actions : existing.actions;
+          existing.priority = compact(data.priority) || existing.priority;
           existing.status = compact(data.status) || existing.status;
           existing.updatedAt = nowIso();
         } else {
+          if (!compact(data.employeeId) || !compact(data.need)) return fail('Development plan requires employee and competency need.');
           state.developmentPlans.unshift({
             id: id('dev'),
             employeeId: compact(data.employeeId),
             employeeName: compact(data.employeeName) || 'Employee',
             cycleId: compact(data.cycleId) || undefined,
             need: compact(data.need),
-            actions: Array.isArray(data.actions) ? (data.actions as any) : [],
+            actions,
             priority: compact(data.priority) || 'Normal',
-            status: 'Active',
+            status: compact(data.status) || 'Active',
             createdAt: nowIso(),
             updatedAt: nowIso(),
           });
         }
+        pushAudit(state, { actor, actorRole, action: 'Upserted development plan', entityType: 'DevelopmentPlan', entityId: compact(data.id) || state.developmentPlans[0]?.id || '' });
         break;
       }
       case 'recognition.upsert': {

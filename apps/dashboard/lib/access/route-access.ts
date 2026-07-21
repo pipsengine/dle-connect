@@ -119,6 +119,38 @@ export const canAccessPaySetupNav = (session: SessionLike) => {
   return false;
 };
 
+/** Payroll Management module — never grant via ESS payslip, Supervisor, or generic hris.view alone. */
+export const canAccessPayrollManagementNav = (session: SessionLike) => {
+  if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
+  const roles = session.roles || [];
+  const permissions = session.permissions || [];
+  if (isPayrollSpecialistRole(roles) || isExecutivePayrollApproverRole(roles) || isFinanceSpecialistRole(roles)) {
+    return hasAnyPermission(permissions, [
+      ...PAYROLL_APPROVER_REVIEW_PERMISSIONS,
+      'payroll.view',
+      'page.payroll.management.view',
+    ]);
+  }
+  if (isHrPortalUser(session)) {
+    return hasAnyPermission(permissions, [
+      'payroll.view',
+      'page.payroll.management.view',
+      'payroll.*',
+      'page.payroll.management.*',
+      'page.hris.payroll.*',
+      'hris.*',
+    ]);
+  }
+  return hasAnyPermission(permissions, [
+    'payroll.view',
+    'page.payroll.management.view',
+    'payroll.*',
+    'page.payroll.management.*',
+    'page.hris.payroll.approval.view',
+    'page.hris.payroll.salary-management.view',
+  ]);
+};
+
 /** Bank & Finance — Super Admin, finance/payroll specialists, HR with grant, and CFO/MD approvers. */
 export const canAccessBankFinanceNav = (session: SessionLike) => {
   if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
@@ -258,6 +290,9 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
   }
   if (isPayrollSalaryReviewPath(path)) {
     return canAccessPaySetupNav(session);
+  }
+  if (path.startsWith('/hris/payroll') || path.startsWith('/hris/payroll-management')) {
+    if (!canAccessPayrollManagementNav(session)) return false;
   }
   if (path.startsWith('/hris/performance-management')) {
     return canAccessHrisPerformanceManagement(session);
