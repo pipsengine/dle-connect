@@ -578,6 +578,8 @@ export type OvertimeAuthorization = {
   requestedHours: number;
   requestedHeadcount: number;
   workCenter?: string;
+  /** Justification from Overtime Management authorization. */
+  reason?: string;
 };
 
 export type OvertimeBookingOptions = {

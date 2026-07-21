@@ -116,11 +116,8 @@ export type TimesheetEnterpriseViewProps = {
     projectName: string;
     requestedHours: number;
     requestedHeadcount: number;
-    reason: string;
+    reason?: string;
   }>;
-  overtimeDevRelaxed: boolean;
-  overtimeRetroCorrection: boolean;
-  overtimeOpenBooking?: boolean;
   onBookApprovedOvertime: (authorizationId: string, otHours: number) => void;
   summary: {
     totalEmployees: number;
@@ -278,15 +275,6 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
           </div>
         )}
 
-        {props.canBookOvertime && !props.canEditTimesheet ? (
-          <div className="rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-3 text-sm text-[#1E40AF]">
-            <p className="font-bold">Overtime correction mode</p>
-            <p className="mt-1 text-xs font-medium">
-              This timesheet is posted to payroll. Select employees, choose OT hours on an approved authorization, then Book OT.
-            </p>
-          </div>
-        ) : null}
-
         {props.canBookOvertime ? (
           <ApprovedOvertimeBookingBar
             authorizations={props.approvedOvertimeAuthorizations}
@@ -295,9 +283,6 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
             presentEmployeeCount={props.localLines.filter((line) => line.clockIn).length}
             canEdit={props.canEditTimesheet}
             canBookOvertime={props.canBookOvertime}
-            retroCorrection={props.overtimeRetroCorrection}
-            openBooking={props.overtimeOpenBooking}
-            devRelaxed={props.overtimeDevRelaxed}
             submitting={props.submitting}
             onBook={props.onBookApprovedOvertime}
             onSelectAllPresentEmployees={() => {

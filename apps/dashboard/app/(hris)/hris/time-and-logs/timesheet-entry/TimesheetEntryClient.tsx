@@ -1492,9 +1492,6 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           canOpenSubmitReview={canOpenSubmitReview}
           showEmployeeDetailsPanel={isSuperAdministrator}
           approvedOvertimeAuthorizations={approvedOvertimeAuthorizations}
-          overtimeDevRelaxed={overtimeBooking.devRelaxed}
-          overtimeRetroCorrection={overtimeBooking.retroCorrection}
-          overtimeOpenBooking={overtimeBooking.openBooking}
           onBookApprovedOvertime={handleBookApprovedOvertime}
           summary={{
             totalEmployees: summary.totalEmployees,

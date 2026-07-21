@@ -230,12 +230,21 @@ async function loadOvertimeAuthorizationsForBooking(
   const catalog = activeProjects.map((project) => ({ code: project.code, name: project.name }));
   const lineProjects = projectsFromTimesheetLines(headerLines);
   let workflowAuthorizations: OvertimeAuthorization[] = [];
-  if (overtimeBooking.enabled && !overtimeBooking.openBooking && header) {
-    workflowAuthorizations = (await listApprovedOvertimeForSupervisor(
+  if (overtimeBooking.enabled && header) {
+    const approved = await listApprovedOvertimeForSupervisor(
       header.timesheetDate,
       header.supervisorId,
       header.workCenterName,
-    ).catch(() => [])) as OvertimeAuthorization[];
+    ).catch(() => [] as OvertimeAuthorizationRequest[]);
+    workflowAuthorizations = approved.map((item) => ({
+      id: item.id,
+      projectCode: item.projectCode,
+      projectName: item.projectName,
+      requestedHours: Number(item.requestedHours) || 0,
+      requestedHeadcount: Math.max(1, Number(item.requestedHeadcount) || item.employees?.length || 1),
+      workCenter: item.workCenter || undefined,
+      reason: item.reason || 'Approved overtime authorization.',
+    }));
   }
   return resolveOvertimeAuthorizationsForBooking(
     workflowAuthorizations,

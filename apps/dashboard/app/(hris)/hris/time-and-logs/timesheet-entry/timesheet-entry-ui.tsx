@@ -783,9 +783,6 @@ export function ApprovedOvertimeBookingBar({
   selectedEmployeeCount,
   canEdit,
   canBookOvertime,
-  retroCorrection = false,
-  openBooking = false,
-  devRelaxed = false,
   submitting = false,
   onBook,
   suggestedOtHours = 0,
@@ -798,7 +795,7 @@ export function ApprovedOvertimeBookingBar({
     projectName: string;
     requestedHours: number;
     requestedHeadcount: number;
-    reason: string;
+    reason?: string;
   }>;
   lines: Array<{
     id: string;
@@ -809,9 +806,6 @@ export function ApprovedOvertimeBookingBar({
   selectedEmployeeCount: number;
   canEdit: boolean;
   canBookOvertime: boolean;
-  retroCorrection?: boolean;
-  openBooking?: boolean;
-  devRelaxed?: boolean;
   submitting?: boolean;
   onBook: (authorizationId: string, otHours: number) => void;
   suggestedOtHours?: number;
@@ -826,18 +820,21 @@ export function ApprovedOvertimeBookingBar({
   if (!authorizations.length) {
     if (!canBookOvertime) return null;
     return (
-      <div className="rounded-[16px] border border-[#E5E7EB] bg-white p-4 text-sm shadow-sm">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-[#64748B]">Approved Overtime</p>
-        <p className="mt-1 font-bold text-[#0F172A]">No approved overtime ready to book</p>
-        <p className="mt-1 text-xs text-[#475569]">
-          Submit and approve overtime in Overtime Management first (Supervisor → PM → GM Operations → HR). Approved requests for this supervisor and date will appear here for booking onto the timesheet.
-        </p>
-        <Link
-          href="/hris/workforce-management/overtime-management"
-          className="mt-3 inline-flex h-9 items-center rounded-xl bg-[#2563EB] px-3 text-xs font-semibold text-white hover:bg-[#1D4ED8]"
-        >
-          Open Overtime Management
-        </Link>
+      <div className="overflow-hidden rounded-[16px] border border-[#E5E7EB] bg-white shadow-sm">
+        <div className="border-b border-[#EDF2F7] bg-[#F8FAFC] px-4 py-3">
+          <h3 className="text-sm font-bold text-[#0F172A]">Book Overtime for Assigned Employees</h3>
+          <p className="mt-1 text-xs text-[#64748B]">
+            No HR-approved overtime for this supervisor and date yet. Create and approve requests in Overtime Management first — same flow for Day and Night.
+          </p>
+        </div>
+        <div className="px-4 py-6 text-center">
+          <Link
+            href="/hris/workforce-management/overtime-management"
+            className="inline-flex h-9 items-center rounded-xl bg-[#2563EB] px-3 text-xs font-semibold text-white hover:bg-[#1D4ED8]"
+          >
+            Open Overtime Management
+          </Link>
+        </div>
       </div>
     );
   }
@@ -851,32 +848,10 @@ export function ApprovedOvertimeBookingBar({
     <div className="overflow-hidden rounded-[16px] border border-[#E5E7EB] bg-white shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#EDF2F7] bg-[#F8FAFC] px-4 py-3">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[#047857]">Approved Overtime Ready to Book</p>
-          <p className="mt-1 text-sm font-semibold text-[#0F172A]">
-            {authorizations.length} approved authorization{authorizations.length === 1 ? '' : 's'} for this supervisor and date
+          <h3 className="text-sm font-bold text-[#0F172A]">Book Overtime for Assigned Employees</h3>
+          <p className="mt-1 text-xs text-[#64748B]">
+            {authorizations.length} approved authorization{authorizations.length === 1 ? '' : 's'} · select employees (or Select all present), set OT hours, then Book OT.
           </p>
-          <p className="mt-1 text-xs text-[#475569]">
-            Select employees in the timesheet table (or Select all present), choose OT hours, then Book — same flow as Overtime Management.
-          </p>
-          {openBooking || retroCorrection || devRelaxed ? (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {openBooking ? (
-                <span className="rounded-full border border-[#C4B5FD] bg-[#F5F3FF] px-2.5 py-0.5 text-[11px] font-semibold text-[#6D28D9]">
-                  Open booking enabled
-                </span>
-              ) : null}
-              {retroCorrection ? (
-                <span className="rounded-full border border-[#93C5FD] bg-[#EFF6FF] px-2.5 py-0.5 text-[11px] font-semibold text-[#1D4ED8]">
-                  Retro correction
-                </span>
-              ) : null}
-              {devRelaxed ? (
-                <span className="rounded-full border border-[#FCD34D] bg-[#FFFBEB] px-2.5 py-0.5 text-[11px] font-semibold text-[#B45309]">
-                  Dev relaxed rules
-                </span>
-              ) : null}
-            </div>
-          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {onSelectAllPresentEmployees ? (
@@ -888,14 +863,14 @@ export function ApprovedOvertimeBookingBar({
               Select all present
             </button>
           ) : null}
-          <span className="rounded-full border border-[#DBEAFE] bg-[#EFF6FF] px-2.5 py-1 text-[11px] font-semibold text-[#1D4ED8]">
-            Booking for {targetLabel}
+          <span className="rounded-full bg-[#DBEAFE] px-2.5 py-1 text-[11px] font-semibold text-[#1D4ED8]">
+            {targetLabel}
           </span>
           <Link
             href="/hris/workforce-management/overtime-management"
             className="h-9 rounded-xl border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#475569] hover:bg-[#F8FAFC]"
           >
-            Overtime Queue
+            Overtime Management
           </Link>
         </div>
       </div>
@@ -920,7 +895,8 @@ export function ApprovedOvertimeBookingBar({
               const selectedHours = hoursByAuth[item.id] ?? defaultHours;
               const canBookRow = bookEnabled
                 && !submitting
-                && (openBooking || retroCorrection || (poolRemaining >= selectedHours && slotsRemaining > 0));
+                && poolRemaining >= selectedHours
+                && slotsRemaining > 0;
               return (
                 <tr key={item.id} className="hover:bg-[#F8FAFC]">
                   <td className="px-4 py-3">
@@ -935,7 +911,7 @@ export function ApprovedOvertimeBookingBar({
                     <div className="font-semibold text-[#047857]">{poolRemaining}h</div>
                     <div className="text-xs text-[#64748B]">{slotsRemaining} slot{slotsRemaining === 1 ? '' : 's'}</div>
                   </td>
-                  <td className="px-4 py-3 text-xs text-[#64748B]">{item.reason}</td>
+                  <td className="px-4 py-3 text-xs text-[#64748B]">{item.reason || '—'}</td>
                   <td className="px-4 py-3">
                     <select
                       value={selectedHours}
