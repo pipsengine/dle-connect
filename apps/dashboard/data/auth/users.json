@@ -23221,41 +23221,15 @@
     "passwordSalt": "1bc1743992d513037f51cb27821bd594",
     "status": "Active",
     "roles": [
-      "Supervisor",
-      "Employee",
-      "IT Support Officer"
+      "Employee"
     ],
     "permissions": [
-      "attendance.view",
-      "employees.view",
       "enterprise.view",
       "ess.view",
-      "hris.view",
-      "it.account-recovery.edit",
-      "it.account-recovery.view",
-      "it.assets.create",
-      "it.assets.edit",
-      "it.assets.view",
-      "it.create",
-      "it.edit",
-      "it.view",
       "leave.submit",
-      "operations.daily-reports.create",
-      "operations.timesheets.approve",
-      "operations.timesheets.controls.supervisor.view",
-      "operations.timesheets.create",
-      "operations.timesheets.delete",
-      "operations.timesheets.edit",
-      "operations.timesheets.submit",
-      "operations.timesheets.view",
-      "operations.view",
-      "page.it-support.account-recovery.view",
       "payroll.payslip.view",
       "profile.view",
-      "timesheet.approve",
-      "timesheet.submit",
-      "timesheet.supervisor.view",
-      "view_it_assets"
+      "timesheet.submit"
     ],
     "departmentAccess": [
       "INFORMATION TECHNOLOGY"
@@ -23265,9 +23239,9 @@
     "passwordResetRequired": false,
     "failedAttempts": 0,
     "lockedUntil": null,
-    "lastLoginAt": "2026-07-21T13:45:30.226Z",
+    "lastLoginAt": "2026-07-21T14:31:41.245Z",
     "createdAt": "2026-06-14T12:32:39.601Z",
-    "updatedAt": "2026-07-21T13:45:30.226Z",
+    "updatedAt": "2026-07-21T14:39:46.025Z",
     "disabledAt": null,
     "deleted": false
   },
@@ -24433,9 +24407,9 @@
     "passwordResetRequired": false,
     "failedAttempts": 0,
     "lockedUntil": null,
-    "lastLoginAt": "2026-07-17T13:44:50.779Z",
+    "lastLoginAt": "2026-07-21T14:32:36.301Z",
     "createdAt": "2026-06-14T12:32:30.679Z",
-    "updatedAt": "2026-07-17T13:44:50.779Z",
+    "updatedAt": "2026-07-21T14:32:36.301Z",
     "disabledAt": null,
     "deleted": false
   },

@@ -1,5 +1,43 @@
 [
   {
+    "id": "sec-1784644791534-46bfb9c3",
+    "at": "2026-07-21T14:39:51.534Z",
+    "user": "NYSC0032",
+    "action": "User assign-roles",
+    "ipAddress": "127.0.0.1",
+    "device": "role-fix",
+    "oldValue": "{\"status\":\"Active\",\"roles\":[\"Supervisor\",\"Employee\",\"IT Support Officer\"],\"departmentAccess\":[\"INFORMATION TECHNOLOGY\"],\"moduleAccess\":[]}",
+    "newValue": "{\"status\":\"Active\",\"roles\":[\"Employee\"],\"departmentAccess\":[\"INFORMATION TECHNOLOGY\"],\"moduleAccess\":[]}",
+    "performedBy": "System"
+  },
+  {
+    "id": "sec-1784644112355-a0fb6cd0",
+    "at": "2026-07-21T14:28:32.355Z",
+    "user": "P0146",
+    "action": "Logout",
+    "ipAddress": "127.0.0.1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "performedBy": "P0146"
+  },
+  {
+    "id": "sec-1784644112330-3492a210",
+    "at": "2026-07-21T14:28:32.330Z",
+    "user": "P0146",
+    "action": "Logout",
+    "ipAddress": "127.0.0.1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "performedBy": "P0146"
+  },
+  {
+    "id": "sec-1784644112288-22ead809",
+    "at": "2026-07-21T14:28:32.289Z",
+    "user": "P0146",
+    "action": "Logout",
+    "ipAddress": "127.0.0.1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "performedBy": "P0146"
+  },
+  {
     "id": "sec-1784642385235-54b01cb9",
     "at": "2026-07-21T13:59:45.236Z",
     "user": "P0146",

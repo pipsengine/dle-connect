@@ -16,6 +16,8 @@ import { EssPerformanceMidYearPanel } from './ess-performance-midyear';
 import { EssCalibrationVisibility, EssDevelopmentWorkspace } from './ess-performance-talent';
 import { EssPerformanceTeamView } from './ess-performance-team-view';
 import { EssPerformanceActivityFeed } from './ess-performance-controls';
+import { EssSelfAssessmentEditor } from './ess-performance-self-assessment';
+import { EssPerformanceAppealPanel } from './ess-performance-appeal';
 
 type EssPerformanceViewProps = {
   workspace: EssPerformanceWorkspace | null;
@@ -38,8 +40,6 @@ export function EssPerformanceView({ workspace, saving, onRefresh, onAction }: E
   const [tab, setTab] = useState<PerfTab>('overview');
 
   const isManager = Boolean(workspace?.team.isManager && workspace.team.directReports.length);
-  const hasSelfAppraisal = Boolean(workspace?.self.reviews.some((review) => review.type === 'Self'));
-  const canStartSelfAppraisal = Boolean(workspace?.activeCycle && !hasSelfAppraisal);
   const cycleNote = workspace?.activeCycle?.status === 'Goal Setting' && (workspace?.metrics.pendingSelfAppraisal || 0) > 0
     ? 'Cycle is in Goal Setting · a self-appraisal draft is already open for you.'
     : null;
@@ -210,6 +210,7 @@ export function EssPerformanceView({ workspace, saving, onRefresh, onAction }: E
 
       {tab === 'my-reviews' ? (
         <div className="space-y-4" role="tabpanel" id="ess-perf-panel-my-reviews" aria-labelledby="ess-perf-tab-my-reviews">
+          <EssSelfAssessmentEditor workspace={workspace} assessmentType="Self" saving={saving} onAction={onAction} />
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <EssCard className="overflow-hidden">
               <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-5 py-3">
@@ -235,48 +236,10 @@ export function EssPerformanceView({ workspace, saving, onRefresh, onAction }: E
                           Acknowledge result
                         </button>
                       ) : null}
-                      {review.type === 'Self' && review.status === 'Returned' ? (
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={() => void onAction('assessment.reopen', { id: review.id, reason: 'Employee reopened after manager return' })}
-                          className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 disabled:opacity-60"
-                        >
-                          Reopen & edit
-                        </button>
-                      ) : null}
-                      {review.type === 'Self' && ['Draft', 'Returned', 'Not Started'].includes(review.status) ? (
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={() => void onAction('assessment.submit', { id: review.id })}
-                          className="rounded-lg bg-[#2563EB] px-3 py-2 text-xs font-bold text-white hover:bg-[#1D4ED8] disabled:opacity-60"
-                        >
-                          Submit self-appraisal
-                        </button>
-                      ) : null}
                     </div>
                   </div>
                 )) : (
-                  <div className="p-6 space-y-4">
-                    {canStartSelfAppraisal ? (
-                      <div className="rounded-xl border border-[#DBEAFE] bg-[#EFF6FF] p-4">
-                        <p className="text-sm font-semibold text-[#0F172A]">Self-appraisal is open for {workspace.activeCycle?.name}</p>
-                        <p className="mt-1 text-xs text-[#64748B]">Start your draft appraisal to reflect on objectives and submit to your line manager.</p>
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={() => void onAction('assessment.save', {
-                            cycleId: workspace.activeCycle?.id,
-                            type: 'Self',
-                            status: 'Draft',
-                          })}
-                          className="mt-3 inline-flex h-10 items-center rounded-lg bg-[#2563EB] px-4 text-xs font-bold text-white hover:bg-[#1D4ED8] disabled:opacity-60"
-                        >
-                          Start self-appraisal
-                        </button>
-                      </div>
-                    ) : null}
+                  <div className="p-6">
                     <EssEmptyState icon={ClipboardList} title="No appraisals yet" description="Self-appraisals and published results will appear during the active cycle." />
                   </div>
                 )}
@@ -284,6 +247,7 @@ export function EssPerformanceView({ workspace, saving, onRefresh, onAction }: E
             </EssCard>
             <EssCalibrationVisibility title="My calibration status" rows={workspace.self.calibration} />
           </div>
+          <EssPerformanceAppealPanel workspace={workspace} saving={saving} onAction={onAction} />
           <EssDevelopmentWorkspace workspace={workspace} mode="self" saving={saving} onAction={onAction} />
         </div>
       ) : null}

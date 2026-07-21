@@ -119,6 +119,16 @@ export const canAccessPaySetupNav = (session: SessionLike) => {
   return false;
 };
 
+/** Explicit Payroll Management page grants — bare payroll.view is not enough for non-specialists. */
+const PAYROLL_MANAGEMENT_PAGE_PERMISSIONS = [
+  'page.payroll.management.view',
+  'page.payroll.management.*',
+  'page.payroll.management.approval.view',
+  'page.hris.payroll.approval.view',
+  'page.hris.payroll.salary-management.view',
+  'page.hris.payroll.*',
+];
+
 /** Payroll Management module — never grant via ESS payslip, Supervisor, or generic hris.view alone. */
 export const canAccessPayrollManagementNav = (session: SessionLike) => {
   if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
@@ -141,14 +151,9 @@ export const canAccessPayrollManagementNav = (session: SessionLike) => {
       'hris.*',
     ]);
   }
-  return hasAnyPermission(permissions, [
-    'payroll.view',
-    'page.payroll.management.view',
-    'payroll.*',
-    'page.payroll.management.*',
-    'page.hris.payroll.approval.view',
-    'page.hris.payroll.salary-management.view',
-  ]);
+  // Non-HR / non-specialist: require explicit management page grants — not bare payroll.view
+  // (user ACL mistakes have granted payroll.view to ESS accounts).
+  return hasAnyPermission(permissions, PAYROLL_MANAGEMENT_PAGE_PERMISSIONS);
 };
 
 /** Bank & Finance — Super Admin, finance/payroll specialists, HR with grant, and CFO/MD approvers. */

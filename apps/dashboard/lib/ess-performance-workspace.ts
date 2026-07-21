@@ -214,6 +214,20 @@ export type EssCompanyObjectiveOption = {
   strategicPillar: string;
 };
 
+export type EssAppealRow = {
+  id: string;
+  resultId: string;
+  cycleId: string;
+  status: string;
+  reason: string;
+  requestedOutcome: string;
+  disputedItems: string[];
+  evidence?: string;
+  createdAt: string;
+  decidedAt?: string;
+  panelDecision?: string;
+};
+
 export type EssPerformanceWorkspace = {
   scope: 'self' | 'team' | 'global';
   role: PerformanceRole;
@@ -226,6 +240,8 @@ export type EssPerformanceWorkspace = {
     goals: EssPerformanceGoalRow[];
     kpis: Array<{ label: string; value: number; target: number }>;
     reviews: EssPerformanceReviewRow[];
+    assessmentDetails: EssAssessmentDetail[];
+    appeals: EssAppealRow[];
     developmentPlans: EssDevelopmentPlanRow[];
     tasks: EssPerformanceTaskRow[];
     checkIns: EssCheckInRow[];
@@ -456,12 +472,16 @@ const mapGoals = (goals: EmployeeGoal[], includeEmployee = false): EssPerformanc
     ...(includeEmployee ? { employeeId: goal.employeeId, employeeName: goal.employeeName } : {}),
   }));
 
-const previewFromItems = (items: AssessmentItem[]) => {
-  const scored = items.filter((item) => item.managerRating != null || item.achievement != null);
+const previewFromItems = (items: AssessmentItem[], mode: 'manager' | 'self' = 'manager') => {
+  const scored = mode === 'self'
+    ? items.filter((item) => item.selfRating != null)
+    : items.filter((item) => item.managerRating != null || item.achievement != null);
   if (!scored.length) return null;
   return displayScore(sectionScore(scored.map((item) => ({
     weight: item.weight,
-    achievement: item.achievement != null ? item.achievement : Number(item.managerRating || 0) * 20,
+    achievement: mode === 'self'
+      ? Number(item.selfRating || 0) * 20
+      : (item.achievement != null ? item.achievement : Number(item.managerRating || 0) * 20),
   }))));
 };
 
@@ -486,26 +506,29 @@ const mapAssessmentDetail = (
   assessment: PerformanceAssessment,
   cycles: Array<{ id: string; name: string }>,
   goals: EmployeeGoal[],
-): EssAssessmentDetail => ({
-  id: assessment.id,
-  cycleId: assessment.cycleId,
-  cycleName: cycleName(assessment.cycleId, cycles),
-  employeeId: assessment.employeeId,
-  employeeName: assessment.employeeName,
-  type: assessment.type,
-  status: assessment.status,
-  items: enrichItems(assessment.items, goals),
-  overallComments: assessment.overallComments,
-  strengths: assessment.strengths,
-  improvements: assessment.improvements,
-  submittedAt: assessment.submittedAt,
-  returnedReason: assessment.returnedReason,
-  returnedBy: assessment.returnedBy,
-  returnedAt: assessment.returnedAt,
-  version: assessment.version,
-  previewScore: previewFromItems(assessment.items),
-  history: (assessment.history || []).slice().reverse().slice(0, 12),
-});
+): EssAssessmentDetail => {
+  const selfMode = assessment.type === 'Self' || assessment.type === 'Mid-Year';
+  return {
+    id: assessment.id,
+    cycleId: assessment.cycleId,
+    cycleName: cycleName(assessment.cycleId, cycles),
+    employeeId: assessment.employeeId,
+    employeeName: assessment.employeeName,
+    type: assessment.type,
+    status: assessment.status,
+    items: enrichItems(assessment.items, goals),
+    overallComments: assessment.overallComments,
+    strengths: assessment.strengths,
+    improvements: assessment.improvements,
+    submittedAt: assessment.submittedAt,
+    returnedReason: assessment.returnedReason,
+    returnedBy: assessment.returnedBy,
+    returnedAt: assessment.returnedAt,
+    version: assessment.version,
+    previewScore: previewFromItems(assessment.items, selfMode ? 'self' : 'manager'),
+    history: (assessment.history || []).slice().reverse().slice(0, 12),
+  };
+};
 
 const employeeMatches = (employeeId: string, employeeCode: string, candidateId: string, candidateCode?: string) => {
   const keys = new Set([norm(employeeId), norm(employeeCode)].filter(Boolean));
@@ -557,12 +580,12 @@ export const buildEssPerformanceWorkspace = async (
       form: `${item.type} assessment`,
       type: item.type,
       status: item.status,
-      score: previewFromItems(item.items),
+      score: previewFromItems(item.items, item.type === 'Self' || item.type === 'Mid-Year' ? 'self' : 'manager'),
       returnedReason: item.returnedReason,
       version: item.version,
     })),
     ...selfResults
-      .filter((item) => item.status === 'Published' || item.status === 'Amended')
+      .filter((item) => item.status === 'Published' || item.status === 'Amended' || item.status === 'Appealed')
       .map((item) => ({
         id: item.id,
         cycle: item.cycleId,
@@ -573,6 +596,26 @@ export const buildEssPerformanceWorkspace = async (
         score: displayScore(item.finalScore),
       })),
   ];
+
+  const selfAssessmentDetails = selfAssessments
+    .filter((item) => item.type === 'Self' || item.type === 'Mid-Year')
+    .map((item) => mapAssessmentDetail(item, state.cycles, selfGoals));
+
+  const selfAppeals = (scoped.appeals || [])
+    .filter((row) => actorKeys.has(compact(row.employeeId)))
+    .map((row) => ({
+      id: row.id,
+      resultId: row.resultId,
+      cycleId: row.cycleId,
+      status: row.status,
+      reason: row.reason,
+      requestedOutcome: row.requestedOutcome,
+      disputedItems: row.disputedItems || [],
+      evidence: row.evidence,
+      createdAt: row.createdAt,
+      decidedAt: row.decidedAt,
+      panelDecision: row.panelDecision,
+    }));
 
   const { received: receivedDelegations, owned: ownedDelegations } = activePerformanceDelegationsForActor(
     actor,
@@ -856,6 +899,8 @@ export const buildEssPerformanceWorkspace = async (
         },
       ],
       reviews,
+      assessmentDetails: selfAssessmentDetails,
+      appeals: selfAppeals,
       developmentPlans: selfDevelopment.map(mapDevelopment),
       tasks: actionQueue,
       checkIns: selfCheckIns.map(mapCheckIn),

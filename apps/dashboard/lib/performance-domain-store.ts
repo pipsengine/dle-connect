@@ -1826,6 +1826,20 @@ export const applyPerformanceAction = async (
             return fail('Overall comments are required when any item is rated 1 or 5.');
           }
         }
+        if (assessment.type === 'Self' || assessment.type === 'Mid-Year') {
+          for (const item of assessment.items) {
+            const rating = Number(item.selfRating);
+            if (item.selfRating == null || Number.isNaN(rating) || rating < 1 || rating > 5) {
+              return fail(`Each assessment item requires a self-rating from 1 to 5 ("${item.title}").`);
+            }
+            if (!compact(item.selfNarrative)) {
+              return fail(`Add a short narrative for "${item.title}" before submitting.`);
+            }
+          }
+          if (!compact(assessment.overallComments)) {
+            return fail('Overall comments are required before submitting your self-assessment.');
+          }
+        }
         assessment.status = 'Submitted';
         assessment.submittedAt = nowIso();
         assessment.submittedBy = actor;

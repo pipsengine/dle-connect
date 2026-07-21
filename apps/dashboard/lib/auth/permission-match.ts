@@ -119,6 +119,14 @@ const reverseAliases = () => {
 
 const REVERSE_ALIASES = reverseAliases();
 
+/**
+ * Canonical keys whose aliases satisfy the canonical, but holding the canonical
+ * must NOT satisfy the alias (e.g. payroll.view must not open page.payroll.management.view).
+ */
+const ONE_WAY_PERMISSION_ALIASES = new Set([
+  'payroll.view',
+]);
+
 export const hasPermission = (permissions: string[], required: string, visited = new Set<string>()): boolean => {
   if (!required) return true;
   if (visited.has(required)) return false;
@@ -134,6 +142,7 @@ export const hasPermission = (permissions: string[], required: string, visited =
   if (aliases.some((alias) => permissions.includes(alias))) return true;
 
   for (const canonical of REVERSE_ALIASES.get(required) || []) {
+    if (ONE_WAY_PERMISSION_ALIASES.has(canonical)) continue;
     if (hasPermission(permissions, canonical, visited)) return true;
   }
 
