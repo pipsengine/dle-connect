@@ -22,6 +22,8 @@ import type { WorkflowIntelligence } from '@/lib/ess-workflow-intelligence';
 import { EssProfileDashboardView, type EssProfilePayload } from './ess-profile-dashboard-view';
 import { EssPayrollDashboardView, type EssPayrollPayload } from './ess-payroll-dashboard-view';
 import { EssTravelDashboardView, type EssTravelPayload } from './ess-travel-dashboard-view';
+import { EssPerformanceView } from './ess-performance-view';
+import type { EssPerformanceWorkspace } from '@/lib/ess-performance-workspace';
 import type { EssTravelRecord } from '@/lib/ess-portal-derived-data';
 import { ESS_NAV_ITEMS, EssPortalShell, EssMobileNav, type EssTab } from './ess-portal-shell';
 import { EssEmptyState } from './ess-portal-ui';
@@ -174,6 +176,7 @@ type Payload = {
     message: string;
   };
   performance: { goals: SimpleRecord[]; kpis: SimpleRecord[]; reviews: SimpleRecord[]; developmentPlans: SimpleRecord[] };
+  performanceWorkspace?: EssPerformanceWorkspace | null;
   learning: { courses: SimpleRecord[]; materials: SimpleRecord[]; certifications: SimpleRecord[] };
   claims: SimpleRecord[];
   loanManagement: { products: LoanProduct[]; applications: SimpleRecord[]; repaymentSchedules: SimpleRecord[]; history: SimpleRecord[] };
@@ -214,6 +217,7 @@ type Payload = {
     missingTimesheets: number;
     teamAttendancePct: number;
     trainingToday: number;
+    pendingPerformanceReviews?: number;
   };
 };
 type ApiResponse<T> = { status: 'success' | 'error'; data?: T; error?: string };
@@ -1298,6 +1302,10 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
   };
 
   const acknowledgePerformanceItem = async (kind: 'goal' | 'result', id: string) => {
+    await runPerformanceAction(kind === 'goal' ? 'goal.acknowledge' : 'result.acknowledge', { id });
+  };
+
+  const runPerformanceAction = async (performanceAction: string, actionPayload: Record<string, unknown> = {}) => {
     setSaving(true);
     setToast('');
     setError('');
@@ -1305,17 +1313,17 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
       const res = await fetch('/api/workforce-portal', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          action: kind === 'goal' ? 'acknowledge-performance-goal' : 'acknowledge-performance-result',
-          id,
-        }),
+        body: JSON.stringify({ action: 'performance-action', performanceAction, payload: actionPayload }),
       });
-      const json = await parseJsonResponse(res, 'Performance acknowledgement API') as ApiResponse<{ message?: string }>;
-      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to acknowledge.');
-      setToast(json.data?.message || 'Performance item acknowledged.');
+      const json = await parseJsonResponse(res, 'Performance API') as ApiResponse<{ message?: string; workspace?: EssPerformanceWorkspace | null }>;
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Performance action failed.');
+      if (json.data?.workspace) {
+        setPayload((current) => (current ? { ...current, performanceWorkspace: json.data?.workspace || null } : current));
+      }
+      setToast(json.data?.message || 'Saved.');
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to acknowledge performance item.');
+      setError(err instanceof Error ? err.message : 'Performance action failed.');
     } finally {
       setSaving(false);
     }
@@ -1587,46 +1595,12 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
           )}
 
           {tab === 'performance' && (
-            <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <Section title="Goals, KPIs & Performance Reviews">
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div className="space-y-3">
-                    <DataList rows={payload?.performance.goals || []} titleKey="title" subtitleKeys={['progress', 'dueDate', 'status']} emptyTitle="No goals on file" emptyDescription="OKRs assigned in Performance Management will appear here for review and acknowledgement." />
-                    {(payload?.performance.goals || []).filter((goal) => /assigned|resubmitted|discussion/i.test(String(goal.status || ''))).map((goal) => (
-                      <button
-                        key={`ack-goal-${goal.id}`}
-                        type="button"
-                        disabled={saving}
-                        onClick={() => void acknowledgePerformanceItem('goal', String(goal.id))}
-                        className="w-full rounded-lg border border-[#0052CC]/30 bg-[#E8F1FF] px-3 py-2 text-left text-xs font-bold text-[#0052CC] hover:bg-[#D6E6FF] disabled:opacity-60"
-                      >
-                        Acknowledge goal: {String(goal.title || goal.id)}
-                      </button>
-                    ))}
-                  </div>
-                  <DataList rows={payload?.performance.kpis || []} titleKey="label" subtitleKeys={['value', 'target']} statusKey="label" emptyTitle="No KPIs available" emptyDescription="Live goal and check-in metrics from Performance Management will appear here." />
-                </div>
-              </Section>
-              <Section title="Appraisals, Self-Assessments & Development Plans">
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div className="space-y-3">
-                    <DataList rows={payload?.performance.reviews || []} titleKey="cycle" subtitleKeys={['form', 'score', 'status']} emptyTitle="No appraisals yet" emptyDescription="Assessments and published results from Performance Management will appear here." />
-                    {(payload?.performance.reviews || []).filter((review) => /published/i.test(String(review.status || ''))).map((review) => (
-                      <button
-                        key={`ack-result-${review.id}`}
-                        type="button"
-                        disabled={saving}
-                        onClick={() => void acknowledgePerformanceItem('result', String(review.id))}
-                        className="w-full rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-xs font-bold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
-                      >
-                        Acknowledge result: {String(review.form || review.cycle || review.id)}
-                      </button>
-                    ))}
-                  </div>
-                  <DataList rows={payload?.performance.developmentPlans || []} titleKey="title" subtitleKeys={['owner', 'status']} emptyTitle="No development plans" emptyDescription="Development plans will appear when assigned by your manager." />
-                </div>
-              </Section>
-            </section>
+            <EssPerformanceView
+              workspace={payload?.performanceWorkspace ?? null}
+              saving={saving}
+              onRefresh={() => void load()}
+              onAction={runPerformanceAction}
+            />
           )}
 
           {tab === 'learning' && (

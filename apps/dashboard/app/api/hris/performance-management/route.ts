@@ -7,7 +7,7 @@ import {
   updatePerformanceNavAction,
   writePerformanceNavPreferences,
 } from '@/lib/performance-domain-store';
-import { canAccessHrisPath } from '@/lib/access/route-access';
+import { canAccessHrisPerformanceManagement } from '@/lib/access/route-access';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 
 const jsonOk = (data: unknown) => NextResponse.json({ status: 'success', data });
@@ -24,8 +24,8 @@ export async function GET(request: NextRequest) {
   try {
     const session = await readSession(request);
     if (!session) return jsonErr(401, 'Unauthenticated.');
-    if (!canAccessHrisPath(session, '/hris/performance-management')) {
-      return jsonErr(403, 'You do not have permission to access Performance Management.');
+    if (!canAccessHrisPerformanceManagement(session)) {
+      return jsonErr(403, 'Performance Management in HRIS is restricted to HR administrators. Use the Employee Self-Service portal for goals and appraisals.');
     }
 
     const actorContext = buildPerformanceActorContext(session);
@@ -47,8 +47,8 @@ export async function POST(request: NextRequest) {
   try {
     const session = await readSession(request);
     if (!session) return jsonErr(401, 'Unauthenticated.');
-    if (!canAccessHrisPath(session, '/hris/performance-management')) {
-      return jsonErr(403, 'You do not have permission to access Performance Management.');
+    if (!canAccessHrisPerformanceManagement(session)) {
+      return jsonErr(403, 'Performance Management in HRIS is restricted to HR administrators. Use the Employee Self-Service portal for goals and appraisals.');
     }
 
     const actorContext = buildPerformanceActorContext(session);

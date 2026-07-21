@@ -83,6 +83,21 @@ const PAYROLL_APPROVER_REVIEW_PERMISSIONS = [
 /** HR Management module entry — Super Admin and HR department / HR roles only. */
 export const canAccessHrManagementNav = (session: SessionLike) => isHrPortalUser(session);
 
+/** HR Performance Management module — HR administrators only (not line managers / employees). */
+export const canAccessHrisPerformanceManagement = (session: SessionLike) => {
+  if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
+  if (!isHrPortalUser(session)) return false;
+  return hasAnyPermission(session.permissions || [], [
+    'performance.admin',
+    'performance.cycles',
+    'hris.performance-management',
+    'page.hris.performance-management.view',
+    'hris.view',
+    'page.hris.management.view',
+  ]);
+};
+
+
 /** Pay Setup — Super Admin, HR, payroll specialists, finance, and CFO/MD payroll approvers. */
 export const canAccessPaySetupNav = (session: SessionLike) => {
   if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
@@ -244,6 +259,9 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
   if (isPayrollSalaryReviewPath(path)) {
     return canAccessPaySetupNav(session);
   }
+  if (path.startsWith('/hris/performance-management')) {
+    return canAccessHrisPerformanceManagement(session);
+  }
 
   const explicitOptions = hrisRoutePermissionOptions(path);
   if (explicitOptions) {
@@ -257,7 +275,6 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
   if (!isHrPortalUser(session)) return false;
   if (path.startsWith('/hris/employees')) return hasAnyPermission(permissions, ['employees.view', 'hris.view']);
   if (path.startsWith('/hris/leave-management')) return hasAnyPermission(permissions, ['leave.view', 'hris.view']);
-  if (path.startsWith('/hris/performance-management')) return hasAnyPermission(permissions, ['performance.view', 'hris.performance-management', 'hris.view', 'page.hris.management.view']);
   if (path.startsWith('/hris/attendance')) return hasAnyPermission(permissions, ['attendance.view', 'attendance.manage', 'hris.view']);
   if (path.startsWith('/hris/organization')) {
     return hasAnyPermission(permissions, [

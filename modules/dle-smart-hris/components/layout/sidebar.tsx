@@ -10,7 +10,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { navigationConfig, NavItem } from '../../lib/config/navigation';
-import { canAccessHrisPath, hrisRoutePermissionOptions, isHrPortalUser } from '@/lib/access/route-access';
+import { canAccessHrisPath, canAccessHrisPerformanceManagement, hrisRoutePermissionOptions, isHrPortalUser } from '@/lib/access/route-access';
 import { PerformanceNavTree } from './PerformanceNavTree';
 
 export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => void }) {
@@ -81,6 +81,7 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
         <div className="flex flex-col gap-1">
           {items.map((item) => {
             if (item.id === 'performance-management') {
+              if (!canAccessHrisPerformanceManagement(sessionContext)) return null;
               return <PerformanceNavTree key={item.id} isOpen={isOpen} onNavigate={undefined} />;
             }
             const hasSubMenu = item.subItems && item.subItems.length > 0;

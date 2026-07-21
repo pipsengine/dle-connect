@@ -107,6 +107,7 @@ type EssPortalShellProps = {
     missingTimesheets?: number;
     teamAttendancePct?: number;
     trainingToday?: number;
+    pendingPerformanceReviews?: number;
   };
   children: ReactNode;
   rightPanel?: ReactNode;

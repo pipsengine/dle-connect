@@ -52,6 +52,7 @@ import {
 import { recordConfirmationOutcome } from '@/lib/employee-confirmation-store';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import type { SessionPayload } from '@/lib/auth/session';
+import { ESS_PERFORMANCE_HREF } from '@/lib/performance-routes';
 import { readBiometricDevices } from '@/lib/biometric-attendance-store';
 import {
   claimProbationAlert,
@@ -429,7 +430,7 @@ export const processPerformanceWorkers = async (actor = 'Performance System') =>
       assigneeId: record.managerId || record.employeeId,
       assigneeName: record.managerName || record.employeeName,
       dueDate: record.endDate,
-      href: '/hris/performance-management/performance-reviews/probation',
+      href: ESS_PERFORMANCE_HREF,
     });
     await enqueuePerformanceOutbox('probation-alert', {
       probationId: record.id,
@@ -454,7 +455,7 @@ export const processPerformanceWorkers = async (actor = 'Performance System') =>
           recipientEmployeeCode: compact(message.payload.employeeCode),
           title: `Probation monitoring · ${message.payload.thresholdDays}-day alert`,
           body: `${message.payload.employeeName} probation ends ${message.payload.endDate} (${message.payload.remaining} day(s) remaining).`,
-          href: '/hris/performance-management/performance-reviews/probation',
+          href: ESS_PERFORMANCE_HREF,
         });
       }
       await markPerformanceOutbox(message.outboxId, 'Processed');
@@ -738,6 +739,10 @@ const rolePermissions = (role: PerformanceRole) => {
 
 const activeCycle = (state: PerformanceDomainState) =>
   state.cycles.find((cycle) => !['Closed', 'Archived', 'Draft'].includes(cycle.status)) || state.cycles[0] || null;
+
+/** Internal domain read for ESS and integrations. */
+export const readPerformanceDomainState = () => readState();
+export const resolveActivePerformanceCycle = (state: PerformanceDomainState) => activeCycle(state);
 
 const goalCompletionLike = (state: PerformanceDomainState) => {
   const cycle = activeCycle(state);
@@ -1392,7 +1397,7 @@ export const applyPerformanceAction = async (
             assigneeId: row.managerId || row.employeeId,
             assigneeName: row.managerName || row.fullName,
             dueDate: cycle.goalSettingEnd,
-            href: '/hris/performance-management/planning/employee-goals',
+            href: ESS_PERFORMANCE_HREF,
           });
         });
         void notifyPerformance({
@@ -1585,6 +1590,7 @@ export const applyPerformanceAction = async (
           assigneeId: goal.managerId || actor,
           assigneeName: goal.managerName || actor,
           dueDate: goal.dueDate,
+          href: ESS_PERFORMANCE_HREF,
         });
         pushAudit(state, { actor, actorRole, action: 'Requested goal discussion', entityType: 'EmployeeGoal', entityId: goal.id });
         break;
@@ -1604,7 +1610,7 @@ export const applyPerformanceAction = async (
           recipientEmployeeCode: goal.employeeCode,
           title: 'Goal acknowledged',
           body: `${goal.title} has been agreed and locked pending change control.`,
-          href: '/hris/performance-management/planning/employee-goals',
+          href: ESS_PERFORMANCE_HREF,
         });
         break;
       }
@@ -1639,7 +1645,37 @@ export const applyPerformanceAction = async (
       }
       case 'assessment.save': {
         const existing = state.assessments.find((item) => item.id === data.id);
-        const items = Array.isArray(data.items) ? (data.items as any[]) : existing?.items || [];
+        let items = Array.isArray(data.items) ? (data.items as any[]) : existing?.items || [];
+        const assessmentType = (compact(data.type) as any) || existing?.type || 'Self';
+        const employeeId = compact(data.employeeId)
+          || existing?.employeeId
+          || (assessmentType === 'Self' && actorContext?.employeeId ? actorContext.employeeId : '');
+        const employeeName = compact(data.employeeName)
+          || existing?.employeeName
+          || (assessmentType === 'Self' && actorContext?.fullName ? actorContext.fullName : 'Employee');
+        if (!items.length && employeeId) {
+          const goalItems = state.goals
+            .filter((goal) => goal.employeeId === employeeId || goal.employeeCode === employeeId)
+            .slice(0, 4)
+            .map((goal) => ({
+              itemId: goal.id,
+              itemType: 'okr',
+              title: goal.title,
+              weight: goal.weight,
+              managerRating: Number(data.managerRating || 3),
+              achievement: Number(data.managerRating || 3) * 20,
+            }));
+          items = goalItems.length
+            ? goalItems
+            : [{
+                itemId: id('asm-item'),
+                itemType: 'okr',
+                title: 'Performance objectives',
+                weight: 100,
+                managerRating: Number(data.managerRating || 3),
+                achievement: Number(data.managerRating || 3) * 20,
+              }];
+        }
         if (existing) {
           existing.items = items as any;
           existing.overallComments = compact(data.overallComments) || existing.overallComments;
@@ -1651,9 +1687,9 @@ export const applyPerformanceAction = async (
           state.assessments.unshift({
             id: id('asm'),
             cycleId: compact(data.cycleId) || activeCycle(state)?.id || '',
-            employeeId: compact(data.employeeId),
-            employeeName: compact(data.employeeName) || 'Employee',
-            type: (compact(data.type) as any) || 'Self',
+            employeeId,
+            employeeName,
+            type: assessmentType,
             status: (compact(data.status) as any) || 'Draft',
             items: items as any,
             overallComments: compact(data.overallComments),
@@ -1668,7 +1704,12 @@ export const applyPerformanceAction = async (
         break;
       }
       case 'assessment.submit': {
-        const assessment = state.assessments.find((item) => item.id === data.id);
+        const assessment = state.assessments.find((item) => item.id === data.id)
+          || state.assessments.find((item) =>
+            item.employeeId === compact(data.employeeId)
+            && item.type === ((compact(data.type) as any) || item.type)
+            && ['Draft', 'Returned', 'Pending Manager'].includes(item.status),
+          );
         if (!assessment) return fail('Assessment not found.');
         if (!assessment.items.length) return fail('Assessment has no items.');
         if (assessment.type === 'Manager') {
@@ -1701,7 +1742,7 @@ export const applyPerformanceAction = async (
           assigneeId: goal.managerId || actor,
           assigneeName: goal.managerName || actor,
           dueDate: goal.dueDate,
-          href: '/hris/performance-management/planning/mid-year-reviews',
+          href: ESS_PERFORMANCE_HREF,
         });
         pushAudit(state, { actor, actorRole, action: 'Mid-year goal change requested', entityType: 'EmployeeGoal', entityId: goal.id });
         break;
@@ -1736,6 +1777,7 @@ export const applyPerformanceAction = async (
           assigneeId: row.raterId,
           assigneeName: row.raterName,
           dueDate: nowIso().slice(0, 10),
+          href: ESS_PERFORMANCE_HREF,
         });
         break;
       }
@@ -2063,7 +2105,7 @@ export const applyPerformanceAction = async (
           recipientEmployeeCode: record.employeeCode,
           title: `Probation decision: ${record.status}`,
           body: `${record.employeeName} — ${decision}. Confirmation store updated (no auto-termination).`,
-          href: '/hris/performance-management/performance-reviews/probation',
+          href: ESS_PERFORMANCE_HREF,
         });
         break;
       }

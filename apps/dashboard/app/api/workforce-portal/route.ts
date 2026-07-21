@@ -44,6 +44,7 @@ import {
   derivePortalAnalytics,
 } from '@/lib/ess-portal-derived-data';
 import { getEssPerformanceBundle, applyPerformanceAction, buildPerformanceActorContext } from '@/lib/performance-domain-store';
+import { assertEssPerformanceAction, buildEssPerformanceWorkspace } from '@/lib/ess-performance-workspace';
 import { invalidateEssPortalCache, readEssPortalResponseCache, writeEssPortalResponseCache } from '@/lib/ess-portal-cache';
 import { buildEssReportExport } from '@/lib/ess-reports-export';
 import { isNigeriaCountry, resolveNigeriaPersonalLocation } from '@/lib/nigeria-locations';
@@ -1000,7 +1001,15 @@ export async function GET(request: Request) {
       String(employee.employeeId || ''),
       String(employee.employeeCode || ''),
     ).catch(() => null);
-    const derivedPerformance = domainPerformance && (domainPerformance.goals.length || domainPerformance.reviews.length)
+    const performanceWorkspace = session ? await buildEssPerformanceWorkspace(session).catch(() => null) : null;
+    const derivedPerformance = performanceWorkspace
+      ? {
+          goals: performanceWorkspace.self.goals,
+          kpis: performanceWorkspace.self.kpis,
+          reviews: performanceWorkspace.self.reviews,
+          developmentPlans: performanceWorkspace.self.developmentPlans,
+        }
+      : domainPerformance && (domainPerformance.goals.length || domainPerformance.reviews.length)
       ? {
           goals: domainPerformance.goals,
           kpis: domainPerformance.kpis.length ? domainPerformance.kpis : derivedPerformanceHeuristic.kpis,
@@ -1509,6 +1518,7 @@ export async function GET(request: Request) {
           : 'Your payslip will appear here after payroll is approved and released by HR/Payroll.',
       },
       performance: derivedPerformance,
+      performanceWorkspace,
       learning: derivedLearning,
       claims: derivedClaims,
       loanManagement: {
@@ -1573,11 +1583,12 @@ export async function GET(request: Request) {
         const onLeave = directReports.filter((item) => /leave/i.test(compact(item.status))).length;
         return {
           teamSize,
-          pendingApprovals: leaveApprovals.length,
+          pendingApprovals: leaveApprovals.length + (performanceWorkspace?.metrics.pendingManagerReviews || 0),
           onLeave,
           missingTimesheets: Math.max(0, directReports.length - Math.min(directReports.length, essContext.attendance.records.length)),
           teamAttendancePct: essContext.attendance.monthRate || 0,
           trainingToday: 0,
+          pendingPerformanceReviews: performanceWorkspace?.metrics.pendingManagerReviews || 0,
         };
       })(),
       workflowIntelligence,
@@ -1732,9 +1743,12 @@ export async function POST(request: Request) {
     }
 
     if (action === 'acknowledge-performance-goal' || action === 'acknowledge-performance-result') {
+      const perfAction = action === 'acknowledge-performance-goal' ? 'goal.acknowledge' : 'result.acknowledge';
+      const denied = assertEssPerformanceAction(perfAction);
+      if (denied) return err(403, denied);
       const actorContext = buildPerformanceActorContext(session);
       const result = await applyPerformanceAction({
-        action: action === 'acknowledge-performance-goal' ? 'goal.acknowledge' : 'result.acknowledge',
+        action: perfAction,
         actor: session.fullName || session.username,
         actorRole: actorContext.performanceRole,
         payload: { id: compact(body.id || body.goalId || body.resultId) },
@@ -1742,6 +1756,25 @@ export async function POST(request: Request) {
       if (!result.ok) return err(400, result.error || 'Unable to acknowledge performance item.');
       invalidateEssPortalCache();
       return ok({ message: result.message || 'Acknowledged.' });
+    }
+
+    if (action === 'performance-action') {
+      const perfAction = compact(body.performanceAction);
+      const denied = assertEssPerformanceAction(perfAction);
+      if (denied) return err(403, denied);
+      const actorContext = buildPerformanceActorContext(session);
+      const payload = (body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload))
+        ? (body.payload as Record<string, unknown>)
+        : body;
+      const result = await applyPerformanceAction({
+        action: perfAction,
+        actor: session.fullName || session.username,
+        actorRole: actorContext.performanceRole,
+        payload,
+      }, actorContext);
+      if (!result.ok) return err(400, result.error || 'Performance action failed.');
+      invalidateEssPortalCache();
+      return ok({ message: result.message || 'Saved.', workspace: await buildEssPerformanceWorkspace(session).catch(() => null) });
     }
 
     if (action === 'submit-profile-update') {

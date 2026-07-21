@@ -37,6 +37,7 @@ export default function PerformanceManagementClient({
   const [payload, setPayload] = useState<PerformanceWorkspacePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [accessDenied, setAccessDenied] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const activeItem = useMemo(() => findPerformanceMenuItem(route), [route]);
@@ -48,10 +49,15 @@ export default function PerformanceManagementClient({
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
+    setAccessDenied(false);
     try {
       const res = await fetch(`/api/hris/performance-management?route=${encodeURIComponent(route)}`, {
         cache: 'no-store',
       });
+      if (res.status === 403) {
+        setAccessDenied(true);
+        return;
+      }
       const json = await readApiResponse<PerformanceWorkspacePayload>(res);
       if (json.status !== 'success' || !json.data) throw new Error(json.error || 'Unable to load performance workspace.');
       setPayload(json.data);
@@ -200,14 +206,29 @@ export default function PerformanceManagementClient({
         )}
 
         <div className="min-h-[720px]">
-          {error ? (
+          {accessDenied ? (
+            <div className="rounded-2xl border border-[#DBEAFE] bg-white p-8 shadow-sm">
+              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#2563EB]">Access restricted</p>
+              <h2 className="mt-2 text-2xl font-black text-[#0F172A]">Performance administration is HR-only</h2>
+              <p className="mt-3 max-w-2xl text-sm text-[#64748B]">
+                Line managers and employees should manage goals, appraisals, and team reviews from the Employee Self-Service portal.
+              </p>
+              <Link
+                href="/workforce-portal?tab=performance"
+                className="mt-6 inline-flex h-11 items-center rounded-xl bg-[#2563EB] px-5 text-sm font-bold text-white hover:bg-[#1D4ED8]"
+              >
+                Open Performance in ESS
+              </Link>
+            </div>
+          ) : null}
+          {!accessDenied && error ? (
             <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</div>
           ) : null}
-          {loading && !payload ? (
+          {!accessDenied && loading && !payload ? (
             <div className="rounded-xl border border-[#E1E4E8] bg-white p-12 text-center text-sm text-[#64748B]">
               Loading Performance Management workspace…
             </div>
-          ) : payload ? (
+          ) : !accessDenied && payload ? (
             isDashboard ? (
               <PerformanceCommandCenter payload={payload} />
             ) : (
