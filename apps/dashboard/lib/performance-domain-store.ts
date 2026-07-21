@@ -47,6 +47,7 @@ import {
   assertPerformanceActionAllowed,
   loadTeamEmployeeIds,
   scopePerformanceDomain,
+  withEffectivePerformanceScope,
   type PerformanceActorContext,
 } from '@/lib/performance-access';
 import { recordConfirmationOutcome } from '@/lib/employee-confirmation-store';
@@ -1108,9 +1109,10 @@ export const readPerformanceManagementPayload = async (
   const payrollEmployees = payrollSource.employees || [];
 
   const teamIds = await loadTeamEmployeeIds(actorContext, payrollEmployees);
-  const scoped = scopePerformanceDomain(fullState, actorContext, teamIds);
-  const state = projectDomainForScope(scoped, actorContext, fullState.config.anonymityThreshold || 3);
-  const employeeCount = actorContext.scope === 'global'
+  const effectiveActor = withEffectivePerformanceScope(actorContext, teamIds);
+  const scoped = scopePerformanceDomain(fullState, effectiveActor, teamIds);
+  const state = projectDomainForScope(scoped, effectiveActor, fullState.config.anonymityThreshold || 3);
+  const employeeCount = effectiveActor.scope === 'global'
     ? (payrollEmployees.length || state.eligibility.length)
     : (teamIds.size || 1);
 
@@ -1254,12 +1256,12 @@ export const readPerformanceManagementPayload = async (
     },
     actor: {
       role,
-      scope: actorContext.scope,
-      employeeId: actorContext.employeeId || userKey,
-      employeeCode: actorContext.employeeCode || userKey,
-      fullName: actorContext.fullName || 'Performance User',
+      scope: effectiveActor.scope,
+      employeeId: effectiveActor.employeeId || userKey,
+      employeeCode: effectiveActor.employeeCode || userKey,
+      fullName: effectiveActor.fullName || 'Performance User',
     },
-    sessionPermissions: actorContext.permissions,
+    sessionPermissions: effectiveActor.permissions,
     dataSource: {
       databaseAvailable: health.databaseAvailable,
       source: health.source,
@@ -1301,7 +1303,8 @@ export const applyPerformanceAction = async (
       payrollEmployees = [];
     }
     const teamIds = await loadTeamEmployeeIds(actorContext, payrollEmployees);
-    const denied = assertPerformanceActionAllowed(body.action, actorContext, data, state, teamIds);
+    const effectiveActor = withEffectivePerformanceScope(actorContext, teamIds);
+    const denied = assertPerformanceActionAllowed(body.action, effectiveActor, data, state, teamIds);
     if (denied) return fail(denied);
   }
 

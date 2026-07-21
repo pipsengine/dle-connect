@@ -1,7 +1,9 @@
 import {
   buildPerformanceActorContext,
+  listDirectReportsForActor,
   loadTeamEmployeeIds,
   scopePerformanceDomain,
+  withEffectivePerformanceScope,
 } from '@/lib/performance-access';
 import { displayScore } from '@/lib/performance-calculation';
 import type { PerformanceRole } from '@/lib/performance-management-types';
@@ -46,6 +48,8 @@ export type EssPerformanceTaskRow = {
   dueDate: string;
   employeeName: string;
   assigneeName: string;
+  tab?: 'overview' | 'my-goals' | 'my-reviews' | 'team';
+  sourceId?: string;
 };
 
 export type EssPerformanceWorkspace = {
@@ -97,10 +101,12 @@ const mapGoals = (goals: EmployeeGoal[], includeEmployee = false): EssPerformanc
 export const buildEssPerformanceWorkspace = async (
   session: SessionPayload,
 ): Promise<EssPerformanceWorkspace> => {
-  const actor = buildPerformanceActorContext(session);
+  const baseActor = buildPerformanceActorContext(session);
   const state = await readPerformanceDomainState();
   const payroll = await readPayrollEmployees().catch(() => ({ employees: [] as any[] }));
-  const teamIds = await loadTeamEmployeeIds(actor, payroll.employees || []);
+  const employees = payroll.employees || [];
+  const teamIds = await loadTeamEmployeeIds(baseActor, employees);
+  const actor = withEffectivePerformanceScope(baseActor, teamIds);
   const scoped = scopePerformanceDomain(state, actor, teamIds);
   const cycle = resolveActivePerformanceCycle(state);
   const cycleLabel = cycle ? { id: cycle.id, name: cycle.name, status: cycle.status } : null;
@@ -139,27 +145,26 @@ export const buildEssPerformanceWorkspace = async (
       })),
   ];
 
-  const isManager = actor.scope === 'team' || actor.scope === 'global';
-  const directReports = isManager
-    ? (payroll.employees || []).filter((row) => {
-        const managerKey = compact(row.managerEmployeeId || row.managerId).toLowerCase();
-        const keys = new Set([actor.employeeId, actor.employeeCode].map((v) => compact(v).toLowerCase()).filter(Boolean));
-        return managerKey && keys.has(managerKey);
-      }).map((row) => ({
-        employeeId: String(row.employeeId || row.employeeCode || ''),
-        employeeCode: String(row.employeeCode || row.employeeId || ''),
-        fullName: String(row.fullName || 'Employee'),
-        department: String(row.department || 'Unassigned'),
-        jobTitle: String(row.jobTitle || row.designation || 'Employee'),
-      }))
-    : [];
+  // Prefer actual direct reports (same match as ESS leave / MANAGER badge).
+  const reportRows = listDirectReportsForActor(actor, employees);
+  const directReports = reportRows.map((row) => ({
+    employeeId: String(row.employeeId || row.employeeCode || ''),
+    employeeCode: String(row.employeeCode || row.employeeId || ''),
+    fullName: String(row.fullName || 'Employee'),
+    department: String(row.department || 'Unassigned'),
+    jobTitle: String(row.jobTitle || row.designation || 'Employee'),
+  }));
+  const isManager = directReports.length > 0;
+  const reportKeys = new Set(
+    directReports.flatMap((row) => [row.employeeId, row.employeeCode].map((value) => compact(value).toLowerCase()).filter(Boolean)),
+  );
 
   const teamGoals = isManager
-    ? scoped.goals.filter((goal) => teamIds.has(compact(goal.employeeId).toLowerCase()) || teamIds.has(compact(goal.employeeCode).toLowerCase()))
+    ? scoped.goals.filter((goal) => reportKeys.has(compact(goal.employeeId).toLowerCase()) || reportKeys.has(compact(goal.employeeCode).toLowerCase()))
     : [];
   const teamAssessments = isManager
     ? scoped.assessments
-      .filter((item) => item.type === 'Manager' && teamIds.has(compact(item.employeeId).toLowerCase()))
+      .filter((item) => item.type === 'Manager' && reportKeys.has(compact(item.employeeId).toLowerCase()))
       .map((item) => ({
         id: item.id,
         cycle: item.cycleId,
@@ -175,21 +180,96 @@ export const buildEssPerformanceWorkspace = async (
   const teamTasks = isManager
     ? scoped.tasks.filter((task) => {
         const assignee = compact(task.assigneeId).toLowerCase();
-        const actorKeys = new Set([actor.employeeId, actor.employeeCode].map((v) => compact(v).toLowerCase()).filter(Boolean));
-        return actorKeys.has(assignee);
+        const keys = new Set([actor.employeeId, actor.employeeCode].map((v) => compact(v).toLowerCase()).filter(Boolean));
+        return keys.has(assignee);
       })
     : [];
   const teamProbation = isManager
-    ? scoped.probation.filter((row) => teamIds.has(compact(row.employeeId).toLowerCase()) || teamIds.has(compact(row.employeeCode).toLowerCase()))
+    ? scoped.probation.filter((row) => reportKeys.has(compact(row.employeeId).toLowerCase()) || reportKeys.has(compact(row.employeeCode).toLowerCase()))
     : [];
   const teamPips = isManager
-    ? scoped.pips.filter((row) => teamIds.has(compact(row.employeeId).toLowerCase()))
+    ? scoped.pips.filter((row) => reportKeys.has(compact(row.employeeId).toLowerCase()))
     : [];
 
   const goalsAck = selfGoals.filter((g) => ['Agreed', 'Active', 'Completed'].includes(g.status)).length;
-  const pendingSelf = selfAssessments.filter((item) => item.type === 'Self' && ['Not Started', 'Draft', 'Returned'].includes(item.status)).length;
+  const pendingSelfReviews = selfAssessments.filter((item) => item.type === 'Self' && ['Not Started', 'Draft', 'Returned'].includes(item.status));
+  const pendingSelf = pendingSelfReviews.length;
   const pendingMgr = teamAssessments.filter((item) => ['Draft', 'Pending Manager', 'Returned'].includes(item.status)).length;
-  const openTasks = [...selfTasks, ...teamTasks].filter((task) => !['Completed', 'Cancelled'].includes(task.status)).length;
+  const goalsAwaitingAck = selfGoals.filter((g) => ['Assigned', 'Resubmitted', 'Discussion Requested'].includes(g.status));
+  const resultsAwaitingAck = selfResults.filter((item) => (item.status === 'Published' || item.status === 'Amended') && !item.acknowledgedAt);
+
+  const mappedSelfTasks: EssPerformanceTaskRow[] = selfTasks
+    .filter((task) => !['Completed', 'Cancelled'].includes(task.status))
+    .map((task) => ({
+      id: task.id,
+      title: task.title,
+      type: task.type,
+      status: task.status,
+      dueDate: task.dueDate,
+      employeeName: task.employeeName,
+      assigneeName: task.assigneeName,
+      tab: 'overview' as const,
+      sourceId: task.id,
+    }));
+
+  const synthesizedQueue: EssPerformanceTaskRow[] = [
+    ...goalsAwaitingAck.map((goal) => ({
+      id: `queue-goal-${goal.id}`,
+      title: `Acknowledge goal: ${goal.title}`,
+      type: 'Goal Acknowledgement',
+      status: goal.status,
+      dueDate: goal.dueDate,
+      employeeName: goal.employeeName,
+      assigneeName: actor.fullName,
+      tab: 'my-goals' as const,
+      sourceId: goal.id,
+    })),
+    ...pendingSelfReviews.map((item) => ({
+      id: `queue-self-${item.id}`,
+      title: `Complete self-appraisal (${item.status})`,
+      type: 'Self Appraisal',
+      status: item.status,
+      dueDate: cycle?.endDate || '',
+      employeeName: actor.fullName,
+      assigneeName: actor.fullName,
+      tab: 'my-reviews' as const,
+      sourceId: item.id,
+    })),
+    ...resultsAwaitingAck.map((item) => ({
+      id: `queue-result-${item.id}`,
+      title: 'Acknowledge published performance result',
+      type: 'Result Acknowledgement',
+      status: item.status,
+      dueDate: cycle?.appealDeadline || cycle?.endDate || '',
+      employeeName: item.employeeName,
+      assigneeName: actor.fullName,
+      tab: 'my-reviews' as const,
+      sourceId: item.id,
+    })),
+    ...(isManager && pendingMgr
+      ? [{
+          id: 'queue-team-reviews',
+          title: `${pendingMgr} team review${pendingMgr === 1 ? '' : 's'} awaiting your assessment`,
+          type: 'Manager Review',
+          status: 'Pending',
+          dueDate: cycle?.endDate || '',
+          employeeName: 'Direct reports',
+          assigneeName: actor.fullName,
+          tab: 'team' as const,
+          sourceId: '',
+        }]
+      : []),
+  ];
+
+  const seen = new Set<string>();
+  const actionQueue = [...synthesizedQueue, ...mappedSelfTasks].filter((item) => {
+    const key = `${item.type}:${item.sourceId || item.title}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const openTasks = actionQueue.length;
 
   return {
     scope: actor.scope,
@@ -212,7 +292,7 @@ export const buildEssPerformanceWorkspace = async (
         },
         {
           label: 'Open tasks',
-          value: selfTasks.filter((task) => !['Completed', 'Cancelled'].includes(task.status)).length,
+          value: openTasks,
           target: 0,
         },
       ],
@@ -225,15 +305,7 @@ export const buildEssPerformanceWorkspace = async (
           owner: plan.actions[0]?.owner || 'Manager',
           status: plan.status,
         })),
-      tasks: selfTasks.map((task) => ({
-        id: task.id,
-        title: task.title,
-        type: task.type,
-        status: task.status,
-        dueDate: task.dueDate,
-        employeeName: task.employeeName,
-        assigneeName: task.assigneeName,
-      })),
+      tasks: actionQueue,
       checkIns: selfCheckIns.map((item) => ({
         id: item.id,
         date: item.date,
@@ -272,7 +344,7 @@ export const buildEssPerformanceWorkspace = async (
     },
     metrics: {
       goalsTotal: selfGoals.length,
-      goalsAwaitingAck: selfGoals.filter((g) => ['Assigned', 'Resubmitted', 'Discussion Requested'].includes(g.status)).length,
+      goalsAwaitingAck: goalsAwaitingAck.length,
       pendingSelfAppraisal: pendingSelf,
       pendingManagerReviews: pendingMgr,
       openTasks,

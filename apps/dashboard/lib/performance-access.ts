@@ -4,6 +4,8 @@ import { isHrPortalUser } from '@/lib/access/route-access';
 import { resolvePerformanceRole } from '@/lib/performance-management-menu-config';
 import type { PerformanceRole } from '@/lib/performance-management-types';
 import type { PerformanceDomainState, PerformanceTask } from '@/lib/performance-domain-types';
+import { employeeReportsToManager } from '@/lib/reporting-manager-match';
+import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 
 export type PerformanceScope = 'global' | 'team' | 'self';
 
@@ -86,22 +88,86 @@ export const buildPerformanceActorContext = (session: SessionPayload): Performan
   };
 };
 
+export type PerformanceTeamEmployeeRow = {
+  employeeId?: string;
+  employeeCode?: string;
+  fullName?: string;
+  status?: string;
+  managerEmployeeId?: string | number | null;
+  managerId?: string | number | null;
+  managerName?: string;
+  functionalManager?: string;
+  departmentHead?: string;
+  jobTitle?: string;
+  designation?: string;
+  department?: string;
+};
+
+const inactiveEmployee = (status: unknown) => /terminated|resigned|retired|inactive|deceased|suspend/i.test(compact(status));
+
+/** Same reporting match as ESS leave / MANAGER badge, plus ID fallback. */
+export const employeeIsDirectReportOf = (
+  employee: PerformanceTeamEmployeeRow,
+  manager: Pick<PerformanceActorContext, 'employeeId' | 'employeeCode' | 'fullName'>,
+) => {
+  const managerKeys = new Set(
+    [manager.employeeId, manager.employeeCode].map((value) => normalizePayrollMatchKey(value)).filter(Boolean),
+  );
+  const employeeKey = normalizePayrollMatchKey(employee.employeeCode || employee.employeeId);
+  if (employeeKey && managerKeys.has(employeeKey)) return false;
+  if (inactiveEmployee(employee.status)) return false;
+
+  if (employeeReportsToManager(
+    {
+      managerName: employee.managerName,
+      functionalManager: employee.functionalManager,
+      departmentHead: employee.departmentHead,
+    },
+    {
+      fullName: manager.fullName,
+      employeeCode: manager.employeeCode,
+      employeeId: manager.employeeId,
+    },
+  )) {
+    return true;
+  }
+
+  const idManagerKey = normalizePayrollMatchKey(String(employee.managerEmployeeId || employee.managerId || ''));
+  return Boolean(idManagerKey && managerKeys.has(idManagerKey));
+};
+
+export const listDirectReportsForActor = (
+  actor: Pick<PerformanceActorContext, 'employeeId' | 'employeeCode' | 'fullName'>,
+  employees: PerformanceTeamEmployeeRow[],
+) => employees.filter((row) => employeeIsDirectReportOf(row, actor));
+
 export const loadTeamEmployeeIds = async (
   actor: PerformanceActorContext,
-  employees: Array<{ employeeId?: string; employeeCode?: string; managerEmployeeId?: string; managerId?: string }>,
+  employees: PerformanceTeamEmployeeRow[],
 ): Promise<Set<string>> => {
-  const keys = new Set([norm(actor.employeeId), norm(actor.employeeCode)].filter(Boolean));
   const team = new Set<string>();
-  if (actor.scope !== 'team') return team;
-  for (const row of employees) {
-    const managerKey = norm(row.managerEmployeeId || row.managerId);
-    if (!managerKey || !keys.has(managerKey)) continue;
+  // Global HR scope sees full population; team ids unused for filtering.
+  if (actor.scope === 'global') return team;
+
+  for (const row of listDirectReportsForActor(actor, employees)) {
     const employeeId = compact(row.employeeId);
     const employeeCode = compact(row.employeeCode);
     if (employeeId) team.add(norm(employeeId));
     if (employeeCode) team.add(norm(employeeCode));
   }
   return team;
+};
+
+/** Promote self → team when ESS reporting match finds direct reports. */
+export const withEffectivePerformanceScope = (
+  actor: PerformanceActorContext,
+  teamIds: Set<string>,
+): PerformanceActorContext => {
+  if (actor.scope === 'global') return actor;
+  if (teamIds.size > 0 && actor.scope === 'self') {
+    return { ...actor, scope: 'team' };
+  }
+  return actor;
 };
 
 const actorKeys = (actor: PerformanceActorContext) =>
@@ -253,7 +319,7 @@ export const assertPerformanceActionAllowed = (
     if (type === 'Self' && assessment && !employeeInPerformanceScope(assessment.employeeId, undefined, { ...actor, scope: 'self' }, new Set())) {
       return 'You can only submit your own self-assessment.';
     }
-    if (type === 'Manager' && actor.scope === 'self') {
+    if (type === 'Manager' && actor.scope === 'self' && teamIds.size === 0) {
       return 'Manager assessments require supervisor or HR access.';
     }
   }

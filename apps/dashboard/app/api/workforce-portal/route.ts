@@ -1763,9 +1763,15 @@ export async function POST(request: Request) {
       const denied = assertEssPerformanceAction(perfAction);
       if (denied) return err(403, denied);
       const actorContext = buildPerformanceActorContext(session);
-      const payload = (body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload))
+      const rawPayload = (body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload))
         ? (body.payload as Record<string, unknown>)
         : body;
+      const payload: Record<string, unknown> = { ...rawPayload };
+      if (!compact(payload.employeeId) && (perfAction === 'checkin.create' || (perfAction === 'assessment.save' && compact(payload.type) === 'Self'))) {
+        payload.employeeId = employee.employeeId || actorContext.employeeId;
+        payload.employeeName = employee.fullName || actorContext.fullName;
+        if (!compact(payload.employeeCode)) payload.employeeCode = employee.employeeCode || actorContext.employeeCode;
+      }
       const result = await applyPerformanceAction({
         action: perfAction,
         actor: session.fullName || session.username,

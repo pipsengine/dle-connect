@@ -43,6 +43,9 @@ export function EssPerformanceView({ workspace, saving, onRefresh, onAction }: E
   const isManager = Boolean(workspace?.team.isManager && workspace.team.directReports.length);
   const hasSelfAppraisal = Boolean(workspace?.self.reviews.some((review) => review.type === 'Self'));
   const canStartSelfAppraisal = Boolean(workspace?.activeCycle && !hasSelfAppraisal);
+  const cycleNote = workspace?.activeCycle?.status === 'Goal Setting' && (workspace?.metrics.pendingSelfAppraisal || 0) > 0
+    ? 'Cycle is in Goal Setting · a self-appraisal draft is already open for you.'
+    : null;
   const tabs = useMemo(() => {
     const items: Array<{ id: PerfTab; label: string }> = [
       { id: 'overview', label: 'Overview' },
@@ -64,6 +67,9 @@ export function EssPerformanceView({ workspace, saving, onRefresh, onAction }: E
   }
 
   const pendingTeam = workspace.metrics.pendingManagerReviews;
+  const openQueueItem = (task: (typeof workspace.self.tasks)[number]) => {
+    if (task.tab) setTab(task.tab);
+  };
 
   return (
     <div className="space-y-5">
@@ -79,6 +85,9 @@ export function EssPerformanceView({ workspace, saving, onRefresh, onAction }: E
             <p className="mt-2 inline-flex rounded-full border border-[#DBEAFE] bg-[#EFF6FF] px-3 py-1 text-xs font-semibold text-[#1D4ED8]">
               Active cycle: {workspace.activeCycle.name} · {workspace.activeCycle.status}
             </p>
+          ) : null}
+          {cycleNote ? (
+            <p className="mt-2 text-xs font-medium text-[#64748B]">{cycleNote}</p>
           ) : null}
         </div>
         {onRefresh ? (
@@ -124,11 +133,22 @@ export function EssPerformanceView({ workspace, saving, onRefresh, onAction }: E
           <EssCard className="p-5">
             <h3 className="text-sm font-bold text-[#0F172A]">My action queue</h3>
             <div className="mt-4 space-y-2">
-              {workspace.self.tasks.length ? workspace.self.tasks.slice(0, 6).map((task) => (
-                <div key={task.id} className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
+              {workspace.self.tasks.length ? workspace.self.tasks.slice(0, 8).map((task) => (
+                <button
+                  key={task.id}
+                  type="button"
+                  onClick={() => openQueueItem(task)}
+                  className="w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-left transition hover:border-[#BFDBFE] hover:bg-[#EFF6FF]"
+                >
                   <p className="text-sm font-semibold text-[#0F172A]">{task.title}</p>
-                  <p className="text-xs text-[#64748B]">{task.type} · due {task.dueDate} · {task.status}</p>
-                </div>
+                  <p className="text-xs text-[#64748B]">
+                    {task.type}
+                    {task.dueDate ? ` · due ${task.dueDate}` : ''}
+                    {' · '}
+                    {task.status}
+                    {task.tab ? ' · Open' : ''}
+                  </p>
+                </button>
               )) : (
                 <EssEmptyState title="No open tasks" description="You are up to date on performance actions." />
               )}

@@ -1598,7 +1598,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
             <EssPerformanceView
               workspace={payload?.performanceWorkspace ?? null}
               saving={saving}
-              onRefresh={() => void load()}
+              onRefresh={() => void load({ refresh: true })}
               onAction={runPerformanceAction}
             />
           )}
