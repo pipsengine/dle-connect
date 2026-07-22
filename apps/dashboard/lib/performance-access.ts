@@ -48,8 +48,16 @@ export const resolvePerformanceRoleFromSession = (session: Pick<SessionPayload, 
   const roles = session.roles || [];
   const permissions = session.permissions || [];
   if (session.isGlobalAdmin || roles.includes('Super Administrator')) return 'Super Administrator';
-  if (roles.some((role) => /HR Manager|HR Director/i.test(role)) || hasAnyPermission(permissions, ['performance.admin'])) return 'HR Manager';
-  if (roles.some((role) => /HR Officer|HR Administrator|Human Resource/i.test(role)) || isHrPortalUser(session)) return 'HR Officer';
+  if (
+    roles.some((role) => /HR Manager|HR Director|HR Administrator/i.test(role))
+    || hasAnyPermission(permissions, ['performance.admin'])
+  ) {
+    return 'HR Manager';
+  }
+  // Any other HR portal identity (department HR, specialist HR roles) gets full HR Officer module access.
+  if (roles.some((role) => /HR Officer|Human Resource|Recruitment|Onboarding|Offboarding|Employee Records/i.test(role)) || isHrPortalUser(session)) {
+    return 'HR Officer';
+  }
   if (roles.some((role) => /Executive Management|Managing Director|Chief Executive/i.test(role))) return 'Executive Management';
   if (roles.some((role) => /Project Manager/i.test(role))) return 'Project Manager';
   if (roles.some((role) => /Supervisor|Line Manager/i.test(role))) return 'Supervisor';
@@ -302,7 +310,7 @@ export const assertPerformanceActionAllowed = (
     if (action.startsWith('cycle.') && !['HR Manager', 'HR Officer', 'Super Administrator'].includes(actor.performanceRole) && !hasAnyPermission(actor.permissions, ['performance.admin', 'performance.cycles'])) {
       return 'You are not authorized to manage performance cycles.';
     }
-    if (action === 'config.update' && !hasAnyPermission(actor.permissions, ['performance.admin']) && actor.performanceRole !== 'Super Administrator') {
+    if (action === 'config.update' && !hasAnyPermission(actor.permissions, ['performance.admin']) && !['HR Officer', 'HR Manager', 'Super Administrator'].includes(actor.performanceRole)) {
       return 'You are not authorized to change performance configuration.';
     }
     return null;

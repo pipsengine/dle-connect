@@ -39,7 +39,9 @@ import type { PerformanceMenuItem, PerformanceRole } from './performance-managem
 const ALL_HR: PerformanceRole[] = ['HR Officer', 'HR Manager', 'Super Administrator'];
 const MANAGEMENT: PerformanceRole[] = ['Supervisor', 'Project Manager', 'HR Officer', 'HR Manager', 'Super Administrator'];
 const EMPLOYEE: PerformanceRole[] = ['Employee', 'Supervisor', 'Project Manager', 'HR Officer', 'HR Manager', 'Executive Management', 'Super Administrator'];
-const EXEC_READ: PerformanceRole[] = ['Executive Management', 'HR Manager', 'Super Administrator'];
+/** For now all HR department staff can open executive / analytics surfaces. */
+const EXEC_READ: PerformanceRole[] = ['Executive Management', 'HR Officer', 'HR Manager', 'Super Administrator'];
+const ADMIN_HR: PerformanceRole[] = ['HR Officer', 'HR Manager', 'Super Administrator'];
 
 export const PERFORMANCE_MODULE_BASE = '/hris/performance-management';
 
@@ -60,7 +62,7 @@ export const performanceMenuTree: PerformanceMenuItem[] = [
     roles: EMPLOYEE,
     children: [
       { id: 'performance-cycles', label: 'Performance Cycles', route: 'planning/performance-cycles', icon: CalendarClock, roles: MANAGEMENT, badgeKey: 'performance-cycles', keywords: ['appraisal', 'cycle', 'period'] },
-      { id: 'corporate-goals', label: 'Company Objectives', route: 'planning/corporate-goals', icon: Target, roles: ['HR Manager', 'Executive Management', 'Super Administrator'], keywords: ['strategic', 'company', 'objectives'] },
+      { id: 'corporate-goals', label: 'Company Objectives', route: 'planning/corporate-goals', icon: Target, roles: ALL_HR, keywords: ['strategic', 'company', 'objectives'] },
       { id: 'department-goals', label: 'Goal Cascading', route: 'planning/department-goals', icon: Target, roles: MANAGEMENT, keywords: ['team goals', 'dept', 'cascade'] },
       { id: 'employee-goals', label: 'OKR & KPI Management', route: 'planning/employee-goals', icon: Target, roles: EMPLOYEE, keywords: ['goals', 'objectives', 'targets', 'okr', 'kpi'] },
       { id: 'goal-library', label: 'Goal Library', route: 'planning/goal-library', icon: BookOpen, roles: ALL_HR, keywords: ['templates', 'library'] },
@@ -131,9 +133,9 @@ export const performanceMenuTree: PerformanceMenuItem[] = [
     roles: [...MANAGEMENT, ...ALL_HR, 'Executive Management'],
     children: [
       { id: 'promotion-recommendations', label: 'Promotion Recommendations', route: 'talent-management/promotion-recommendations', icon: ArrowUpCircle, roles: MANAGEMENT, badgeKey: 'promotion-recommendations', keywords: ['promotion'] },
-      { id: 'succession-planning', label: 'Succession Planning', route: 'talent-management/succession-planning', icon: GitBranch, roles: ['HR Manager', 'Executive Management', 'Super Administrator'], keywords: ['succession'] },
-      { id: 'high-potential', label: 'High Potential Employees', route: 'talent-management/high-potential', icon: Award, roles: ['HR Manager', 'Super Administrator'], keywords: ['hipo', 'high potential'] },
-      { id: 'talent-review', label: 'Talent Review (9-Box)', route: 'talent-management/talent-review', icon: BarChart3, roles: ['HR Manager', 'Super Administrator'], keywords: ['9-box', 'talent review', 'calibration'] },
+      { id: 'succession-planning', label: 'Succession Planning', route: 'talent-management/succession-planning', icon: GitBranch, roles: ALL_HR, keywords: ['succession'] },
+      { id: 'high-potential', label: 'High Potential Employees', route: 'talent-management/high-potential', icon: Award, roles: ALL_HR, keywords: ['hipo', 'high potential'] },
+      { id: 'talent-review', label: 'Talent Review (9-Box)', route: 'talent-management/talent-review', icon: BarChart3, roles: ALL_HR, keywords: ['9-box', 'talent review', 'calibration'] },
       { id: 'career-development', label: 'Career Development', route: 'talent-management/career-development', icon: GraduationCap, roles: EMPLOYEE, keywords: ['career'] },
     ],
   },
@@ -178,7 +180,7 @@ export const performanceMenuTree: PerformanceMenuItem[] = [
       { id: 'performance-prediction', label: 'Performance Prediction', route: 'ai-intelligence/performance-prediction', icon: LineChart, roles: ALL_HR, keywords: ['prediction', 'forecast'] },
       { id: 'promotion-readiness', label: 'Promotion Readiness', route: 'ai-intelligence/promotion-readiness', icon: ArrowUpCircle, roles: ALL_HR, keywords: ['promotion readiness'] },
       { id: 'competency-gap-analysis', label: 'Competency Gap Analysis', route: 'ai-intelligence/competency-gap-analysis', icon: Brain, roles: ALL_HR, keywords: ['gap analysis'] },
-      { id: 'talent-risk-analysis', label: 'Talent Risk Analysis', route: 'ai-intelligence/talent-risk-analysis', icon: AlertTriangle, roles: ['HR Manager', 'Super Administrator'], keywords: ['risk', 'attrition'] },
+      { id: 'talent-risk-analysis', label: 'Talent Risk Analysis', route: 'ai-intelligence/talent-risk-analysis', icon: AlertTriangle, roles: ALL_HR, keywords: ['risk', 'attrition'] },
       { id: 'ai-recommendations', label: 'AI Recommendations', route: 'ai-intelligence/ai-recommendations', icon: Sparkles, roles: ALL_HR, keywords: ['recommendations'] },
     ],
   },
@@ -187,16 +189,15 @@ export const performanceMenuTree: PerformanceMenuItem[] = [
     label: 'Administration',
     route: 'administration',
     icon: Settings,
-    roles: ['Super Administrator'],
-    permissions: ['performance.admin'],
+    roles: ADMIN_HR,
     children: [
-      { id: 'performance-settings', label: 'Performance Settings', route: 'administration/performance-settings', icon: Settings, roles: ['Super Administrator'], keywords: ['settings'] },
-      { id: 'approval-workflow', label: 'Approval Workflow', route: 'administration/approval-workflow', icon: GitBranch, roles: ['Super Administrator'], keywords: ['workflow', 'approval'] },
-      { id: 'rating-configuration', label: 'Rating Configuration', route: 'administration/rating-configuration', icon: Star, roles: ['Super Administrator'], keywords: ['rating'] },
-      { id: 'notification-rules', label: 'Notification Rules', route: 'administration/notification-rules', icon: MessageCircle, roles: ['Super Administrator'], badgeKey: 'notifications', keywords: ['notifications'] },
-      { id: 'templates', label: 'Templates', route: 'administration/templates', icon: ClipboardList, roles: ['Super Administrator'], keywords: ['templates'] },
-      { id: 'audit-logs', label: 'Audit Logs', route: 'administration/audit-logs', icon: FileBarChart, roles: ['Super Administrator'], keywords: ['audit'] },
-      { id: 'role-permissions', label: 'Role Permissions', route: 'administration/role-permissions', icon: Users, roles: ['Super Administrator'], keywords: ['permissions', 'roles'] },
+      { id: 'performance-settings', label: 'Performance Settings', route: 'administration/performance-settings', icon: Settings, roles: ADMIN_HR, keywords: ['settings'] },
+      { id: 'approval-workflow', label: 'Approval Workflow', route: 'administration/approval-workflow', icon: GitBranch, roles: ADMIN_HR, keywords: ['workflow', 'approval'] },
+      { id: 'rating-configuration', label: 'Rating Configuration', route: 'administration/rating-configuration', icon: Star, roles: ADMIN_HR, keywords: ['rating'] },
+      { id: 'notification-rules', label: 'Notification Rules', route: 'administration/notification-rules', icon: MessageCircle, roles: ADMIN_HR, badgeKey: 'notifications', keywords: ['notifications'] },
+      { id: 'templates', label: 'Templates', route: 'administration/templates', icon: ClipboardList, roles: ADMIN_HR, keywords: ['templates'] },
+      { id: 'audit-logs', label: 'Audit Logs', route: 'administration/audit-logs', icon: FileBarChart, roles: ADMIN_HR, keywords: ['audit'] },
+      { id: 'role-permissions', label: 'Role Permissions', route: 'administration/role-permissions', icon: Users, roles: ADMIN_HR, keywords: ['permissions', 'roles'] },
     ],
   },
 ];

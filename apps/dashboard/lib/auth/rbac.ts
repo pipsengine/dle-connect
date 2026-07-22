@@ -154,6 +154,19 @@ const payrollMdReviewPerms = [
   'payroll.workflow.md-approval.approve',
 ];
 
+const performanceHrPerms = [
+  'hris.view',
+  'hris.performance-management',
+  'page.hris.performance-management.view',
+  'performance.view',
+  'performance.cycles',
+  'performance.objectives',
+  'performance.reviews',
+  'performance.calibration',
+  'performance.appeals',
+  'performance.probation',
+];
+
 const role = (name: EnterpriseRole, category: string, permissions: string[], description: string): RoleDefinition => ({
   name,
   category,
@@ -178,14 +191,14 @@ export const roleDefinitions: RoleDefinition[] = [
   role('Employee', 'General Enterprise', ['ess.view', 'profile.view', 'leave.submit', 'timesheet.submit', 'payroll.payslip.view'], 'Employee self-service access.'),
   role('Auditor', 'General Enterprise', ['audit.view', 'reports.view', 'reports.export'], 'Read-oriented compliance review.'),
   role('Read-Only User', 'General Enterprise', ['enterprise.view', 'hris.view', 'reports.view'], 'Read-only enterprise visibility.'),
-  role('HR Administrator', 'HRIS', ['hris.*', 'employees.*', 'leave.*', 'workflow.*', 'payroll.view', ...payrollHrReviewPerms], 'Full HRIS administration including payroll salary review.'),
-  role('HR Manager', 'HRIS', ['hris.view', ...crud('employees'), ...crud('leave'), 'workflow.approve', 'reports.view', 'reports.export', ...payrollHrReviewPerms], 'HR management, payroll HR approval, and salary review.'),
-  role('HR Director', 'HRIS', ['hris.view', ...crud('employees'), ...crud('leave'), 'workflow.approve', 'reports.view', 'reports.export', ...payrollHrReviewPerms], 'HR director payroll approval and salary review.'),
-  role('HR Officer', 'HRIS', ['hris.view', 'employees.view', 'employees.create', 'employees.edit', 'leave.view', 'leave.edit', 'reports.view'], 'HR operations and records maintenance.'),
-  role('Recruitment Officer', 'HRIS', ['recruitment.*', 'employees.view', 'onboarding.submit'], 'Recruitment and hiring workflows.'),
-  role('Onboarding Officer', 'HRIS', ['onboarding.*', 'employees.view', 'employees.edit'], 'Onboarding and employee setup.'),
-  role('Offboarding Officer', 'HRIS', ['offboarding.*', 'employees.view', 'employees.edit'], 'Exit management and offboarding.'),
-  role('Employee Records Officer', 'HRIS', ['employees.view', 'employees.create', 'employees.edit', 'documents.view', 'documents.edit'], 'Employee records and document control.'),
+  role('HR Administrator', 'HRIS', ['hris.*', 'employees.*', 'leave.*', 'workflow.*', 'payroll.view', 'performance.admin', ...performanceHrPerms, ...payrollHrReviewPerms], 'Full HRIS administration including payroll salary review.'),
+  role('HR Manager', 'HRIS', ['hris.view', ...crud('employees'), ...crud('leave'), 'workflow.approve', 'reports.view', 'reports.export', 'performance.admin', ...performanceHrPerms, ...payrollHrReviewPerms], 'HR management, payroll HR approval, and salary review.'),
+  role('HR Director', 'HRIS', ['hris.view', ...crud('employees'), ...crud('leave'), 'workflow.approve', 'reports.view', 'reports.export', 'performance.admin', ...performanceHrPerms, ...payrollHrReviewPerms], 'HR director payroll approval and salary review.'),
+  role('HR Officer', 'HRIS', ['hris.view', 'employees.view', 'employees.create', 'employees.edit', 'leave.view', 'leave.edit', 'reports.view', ...performanceHrPerms], 'HR operations and records maintenance.'),
+  role('Recruitment Officer', 'HRIS', ['recruitment.*', 'employees.view', 'onboarding.submit', 'hris.view', ...performanceHrPerms], 'Recruitment and hiring workflows.'),
+  role('Onboarding Officer', 'HRIS', ['onboarding.*', 'employees.view', 'employees.edit', 'hris.view', ...performanceHrPerms], 'Onboarding and employee setup.'),
+  role('Offboarding Officer', 'HRIS', ['offboarding.*', 'employees.view', 'employees.edit', 'hris.view', ...performanceHrPerms], 'Exit management and offboarding.'),
+  role('Employee Records Officer', 'HRIS', ['employees.view', 'employees.create', 'employees.edit', 'documents.view', 'documents.edit', 'hris.view', ...performanceHrPerms], 'Employee records and document control.'),
   role('Payroll Administrator', 'Payroll', ['payroll.*'], 'Full payroll administration.'),
   role('Payroll Officer', 'Payroll', ['payroll.view', 'payroll.create', 'payroll.edit', 'payroll.export', 'payroll.payslip.view', ...payrollSalaryReviewPerms], 'Payroll processing operations and salary setup.'),
   role('Payroll Supervisor', 'Payroll', ['payroll.view', 'payroll.edit', 'payroll.approve', 'payroll.export', ...payrollSalaryReviewPerms], 'Payroll supervision and salary review.'),

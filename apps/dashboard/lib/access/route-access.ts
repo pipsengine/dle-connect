@@ -83,18 +83,10 @@ const PAYROLL_APPROVER_REVIEW_PERMISSIONS = [
 /** HR Management module entry — Super Admin and HR department / HR roles only. */
 export const canAccessHrManagementNav = (session: SessionLike) => isHrPortalUser(session);
 
-/** HR Performance Management module — HR administrators only (not line managers / employees). */
+/** HR Performance Management — all HR department / HR portal users (full module access for now). */
 export const canAccessHrisPerformanceManagement = (session: SessionLike) => {
   if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
-  if (!isHrPortalUser(session)) return false;
-  return hasAnyPermission(session.permissions || [], [
-    'performance.admin',
-    'performance.cycles',
-    'hris.performance-management',
-    'page.hris.performance-management.view',
-    'hris.view',
-    'page.hris.management.view',
-  ]);
+  return isHrPortalUser(session);
 };
 
 
