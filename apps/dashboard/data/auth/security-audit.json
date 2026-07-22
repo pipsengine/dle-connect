@@ -1,5 +1,14 @@
 [
   {
+    "id": "sec-1784726814448-e6b0a5bd",
+    "at": "2026-07-22T13:26:54.449Z",
+    "user": "P0146",
+    "action": "Logout",
+    "ipAddress": "127.0.0.1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "performedBy": "P0146"
+  },
+  {
     "id": "sec-1784726094528-a6db87d9",
     "at": "2026-07-22T13:14:54.529Z",
     "user": "P0146",
