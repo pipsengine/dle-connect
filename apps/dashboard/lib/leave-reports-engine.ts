@@ -105,8 +105,106 @@ export type LeaveReportTable = {
   summary?: Array<{ label: string; value: string | number }>;
 };
 
-const isAnnual = (value: unknown) => /annual\s*leave/i.test(String(value || ''));
-const isSickLike = (value: unknown) => /sick|casual|unauthorized|absent/i.test(String(value || ''));
+/** Dorman Long annual leave CF policy (days). Keep in sync with dormantLongPolicy.carryForwardCap. */
+export const LEAVE_CARRY_FORWARD_CAP = 7;
+/** Leave allowance threshold (working days of current-year Annual Leave). */
+export const LEAVE_ALLOWANCE_MINIMUM_DAYS = 10;
+
+const round2 = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
+
+export const isAnnualLeaveType = (value: unknown) => /annual\s*leave/i.test(String(value || ''));
+const isSickLike = (value: unknown) => /sick|unauthorized|absent/i.test(String(value || ''));
+
+const statusKey = (status: string) => String(status || '').trim().toLowerCase();
+
+/** Open approval-queue statuses (aligned with leave-management-store). */
+export const isOpenLeaveApprovalStatus = (status: string) =>
+  ['draft', 'submitted', 'under review', 'line manager review', 'hr review', 'finance review', 'pending'].includes(statusKey(status));
+
+const isApprovedLeaveStatus = (status: string) => ['approved', 'completed'].includes(statusKey(status));
+const isClosedLeaveStatus = (status: string) =>
+  ['cancelled', 'rejected', 'terminated', 'withdrawn'].includes(statusKey(status));
+
+export type NormalizedAnnualBalance = {
+  employeeId: string;
+  fullName: string;
+  department: string;
+  leaveType: string;
+  status: string;
+  entitled: number;
+  used: number;
+  pending: number;
+  balance: number;
+  carryForward: number;
+  forfeited: number;
+  liabilityValue: number;
+  utilizationPct: number;
+  exceptions?: string[];
+};
+
+/**
+ * Normalize annual leave balance fields for reports/analytics.
+ * Balance = Entitled − Used − Pending (available days).
+ * Carry Forward is capped at policy max and never holds the full available balance.
+ */
+export const normalizeAnnualLeaveBalance = (item: NonNullable<LeaveReportSourcePayload['balances']>[number]): NormalizedAnnualBalance => {
+  const entitled = round2(Number(item.accruedBalance || 0));
+  const used = round2(Number(item.usedBalance || 0));
+  const pending = round2(Number(item.pendingBalance || 0));
+  const storedCurrent = round2(Number(item.currentBalance || 0));
+  const rawCf = round2(Number(item.carryForwardBalance || 0));
+  const rawForfeited = round2(Number(item.forfeitedBalance || 0));
+  const storedLiability = round2(Number(item.liabilityValue || 0));
+  const computedAvailable = Math.max(0, round2(entitled - used - pending));
+
+  // Corrupt pattern from earlier CF/year-end bugs: Balance=0 while CF holds Entitled−Used.
+  const balanceCorrupt = storedCurrent <= 0 && computedAvailable > 0;
+  const cfHoldsAvailable = rawCf > LEAVE_CARRY_FORWARD_CAP
+    || (balanceCorrupt && Math.abs(rawCf - computedAvailable) <= 0.51);
+
+  const balance = balanceCorrupt ? computedAvailable : (storedCurrent > 0 ? storedCurrent : computedAvailable);
+  const carryForward = cfHoldsAvailable ? 0 : Math.min(LEAVE_CARRY_FORWARD_CAP, Math.max(0, rawCf));
+
+  let forfeited = Math.max(0, rawForfeited);
+  if (cfHoldsAvailable && (forfeited >= entitled || forfeited > LEAVE_CARRY_FORWARD_CAP)) {
+    forfeited = 0;
+  } else if (forfeited > LEAVE_CARRY_FORWARD_CAP && entitled > 0 && forfeited >= entitled) {
+    forfeited = 0;
+  }
+
+  let liabilityValue = storedLiability;
+  if (storedCurrent > 0 && Math.abs(storedCurrent - balance) > 0.01 && storedLiability > 0) {
+    liabilityValue = round2(storedLiability * (balance / storedCurrent));
+  }
+
+  const utilizationPct = entitled > 0 ? Math.round((used / entitled) * 100) : 0;
+
+  return {
+    employeeId: item.employeeId,
+    fullName: item.fullName,
+    department: item.department,
+    leaveType: item.leaveType,
+    status: item.status,
+    entitled,
+    used,
+    pending,
+    balance,
+    carryForward,
+    forfeited,
+    liabilityValue,
+    utilizationPct,
+    exceptions: item.exceptions,
+  };
+};
+
+export const normalizeAnnualLeaveBalances = (balances: LeaveReportSourcePayload['balances'] = []) =>
+  balances.filter((item) => isAnnualLeaveType(item.leaveType)).map(normalizeAnnualLeaveBalance);
+
+export const computeLeaveUtilizationPct = (rows: NormalizedAnnualBalance[]) => {
+  const entitled = rows.reduce((sum, item) => sum + item.entitled, 0);
+  const used = rows.reduce((sum, item) => sum + item.used, 0);
+  return entitled > 0 ? Math.round((used / entitled) * 100) : 0;
+};
 
 export const resolveLeaveReportId = (value?: string | null): LeaveReportId | null => {
   const raw = String(value || '').trim().toLowerCase();
@@ -117,31 +215,41 @@ export const resolveLeaveReportId = (value?: string | null): LeaveReportId | nul
   return byTitle?.id || null;
 };
 
+const carryForwardExpiryLabel = () => `${new Date().getFullYear()}-03-31`;
+
 export const buildLeaveReportTable = (reportId: LeaveReportId, payload: LeaveReportSourcePayload): LeaveReportTable => {
   const generatedAt = new Date().toISOString();
   const meta = LEAVE_REPORT_CATALOGUE.find((item) => item.id === reportId)!;
   const applications = payload.applications || [];
-  const balances = payload.balances || [];
-  const annualBalances = balances.filter((item) => isAnnual(item.leaveType));
+  const annualBalances = normalizeAnnualLeaveBalances(payload.balances);
   const exceptions = payload.allowanceExceptions || [];
+  const utilizationPct = payload.summary?.leaveUtilizationPct ?? computeLeaveUtilizationPct(annualBalances);
 
   if (reportId === 'utilization') {
-    const rows = annualBalances.map((item) => {
-      const entitled = Number(item.accruedBalance || 0);
-      const used = Number(item.usedBalance || 0);
-      const rate = entitled > 0 ? Math.round((used / entitled) * 100) : 0;
-      return [item.employeeId, item.fullName, item.department, entitled, used, Number(item.currentBalance || 0), `${rate}%`, item.status];
-    });
+    const rows = annualBalances.map((item) => [
+      item.employeeId,
+      item.fullName,
+      item.department,
+      item.entitled,
+      item.used,
+      item.pending,
+      item.balance,
+      item.carryForward,
+      `${item.utilizationPct}%`,
+      item.status,
+    ]);
     return {
       id: reportId,
       title: meta.title,
       description: meta.description,
       generatedAt,
-      headers: ['Employee ID', 'Employee', 'Department', 'Leave Entitled', 'Used', 'Balance', 'Utilization %', 'Status'],
+      headers: ['Employee ID', 'Employee', 'Department', 'Leave Entitled', 'Used', 'Pending', 'Balance', 'Carry Forward', 'Utilization %', 'Status'],
       rows,
       summary: [
         { label: 'Employees', value: rows.length },
-        { label: 'Utilization rate', value: `${payload.summary?.leaveUtilizationPct ?? 0}%` },
+        { label: 'Total entitled', value: round2(annualBalances.reduce((sum, item) => sum + item.entitled, 0)) },
+        { label: 'Total used', value: round2(annualBalances.reduce((sum, item) => sum + item.used, 0)) },
+        { label: 'Utilization rate', value: `${utilizationPct}%` },
       ],
     };
   }
@@ -151,12 +259,12 @@ export const buildLeaveReportTable = (reportId: LeaveReportId, payload: LeaveRep
       item.employeeId,
       item.fullName,
       item.department,
-      Number(item.accruedBalance || 0),
-      Number(item.usedBalance || 0),
-      Number(item.pendingBalance || 0),
-      Number(item.currentBalance || 0),
-      Number(item.carryForwardBalance || 0),
-      Number(item.forfeitedBalance || 0),
+      item.entitled,
+      item.used,
+      item.pending,
+      item.balance,
+      item.carryForward,
+      item.forfeited,
       item.status,
     ]);
     return {
@@ -168,21 +276,24 @@ export const buildLeaveReportTable = (reportId: LeaveReportId, payload: LeaveRep
       rows,
       summary: [
         { label: 'Employees', value: rows.length },
-        { label: 'Total balance days', value: annualBalances.reduce((sum, item) => sum + Number(item.currentBalance || 0), 0) },
+        { label: 'Total entitled', value: round2(annualBalances.reduce((sum, item) => sum + item.entitled, 0)) },
+        { label: 'Total used', value: round2(annualBalances.reduce((sum, item) => sum + item.used, 0)) },
+        { label: 'Total balance days', value: round2(annualBalances.reduce((sum, item) => sum + item.balance, 0)) },
       ],
     };
   }
 
   if (reportId === 'liability') {
     const rows = annualBalances
-      .filter((item) => Number(item.liabilityValue || 0) > 0 || Number(item.currentBalance || 0) > 0)
+      .filter((item) => item.liabilityValue > 0 || item.balance > 0)
       .map((item) => [
         item.employeeId,
         item.fullName,
         item.department,
-        Number(item.currentBalance || 0),
-        Number(item.accruedBalance || 0),
-        Number(item.liabilityValue || 0),
+        item.balance,
+        item.entitled,
+        item.used,
+        item.liabilityValue,
         item.status,
       ]);
     return {
@@ -190,18 +301,23 @@ export const buildLeaveReportTable = (reportId: LeaveReportId, payload: LeaveRep
       title: meta.title,
       description: meta.description,
       generatedAt,
-      headers: ['Employee ID', 'Employee', 'Department', 'Balance Days', 'Entitled', 'Liability (NGN)', 'Status'],
+      headers: ['Employee ID', 'Employee', 'Department', 'Balance Days', 'Entitled', 'Used', 'Liability (NGN)', 'Status'],
       rows,
       summary: [
         { label: 'Employees', value: rows.length },
-        { label: 'Total liability', value: annualBalances.reduce((sum, item) => sum + Number(item.liabilityValue || 0), 0) },
+        { label: 'Balance days', value: round2(annualBalances.reduce((sum, item) => sum + item.balance, 0)) },
+        { label: 'Total liability', value: round2(annualBalances.reduce((sum, item) => sum + item.liabilityValue, 0)) },
       ],
     };
   }
 
   if (reportId === 'allowance-eligibility') {
     const rows = applications
-      .filter((item) => isAnnual(item.leaveType) && (item.allowanceEligible || Number(item.days || 0) >= 10))
+      .filter((item) => {
+        if (!isAnnualLeaveType(item.leaveType)) return false;
+        if (isClosedLeaveStatus(item.status)) return false;
+        return item.allowanceEligible === true || Number(item.days || 0) >= LEAVE_ALLOWANCE_MINIMUM_DAYS;
+      })
       .map((item) => [
         item.id,
         item.employeeId,
@@ -221,7 +337,10 @@ export const buildLeaveReportTable = (reportId: LeaveReportId, payload: LeaveRep
       generatedAt,
       headers: ['Request ID', 'Employee ID', 'Employee', 'Department', 'Start', 'End', 'Days', 'Status', 'Allowance Status', 'Paid'],
       rows,
-      summary: [{ label: 'Eligible / review rows', value: rows.length }],
+      summary: [
+        { label: 'Eligible / review rows', value: rows.length },
+        { label: `Threshold (${LEAVE_ALLOWANCE_MINIMUM_DAYS}+ days)`, value: LEAVE_ALLOWANCE_MINIMUM_DAYS },
+      ],
     };
   }
 
@@ -276,28 +395,30 @@ export const buildLeaveReportTable = (reportId: LeaveReportId, payload: LeaveRep
   }
 
   if (reportId === 'carry-forward') {
-    const rows = annualBalances
-      .filter((item) => Number(item.carryForwardBalance || 0) > 0)
-      .map((item) => [
-        item.employeeId,
-        item.fullName,
-        item.department,
-        Number(item.carryForwardBalance || 0),
-        Number(item.currentBalance || 0),
-        Number(item.usedBalance || 0),
-        '31 March',
-        item.status,
-      ]);
+    const cfRows = annualBalances.filter((item) => item.carryForward > 0);
+    const expiry = carryForwardExpiryLabel();
+    const rows = cfRows.map((item) => [
+      item.employeeId,
+      item.fullName,
+      item.department,
+      item.carryForward,
+      item.balance,
+      item.used,
+      item.forfeited,
+      expiry,
+      item.status,
+    ]);
     return {
       id: reportId,
       title: meta.title,
       description: meta.description,
       generatedAt,
-      headers: ['Employee ID', 'Employee', 'Department', 'Carry Forward Days', 'Available Balance', 'Used', 'Expiry', 'Status'],
+      headers: ['Employee ID', 'Employee', 'Department', 'Carry Forward Days', 'Available Balance', 'Used', 'Forfeited', 'Expiry', 'Status'],
       rows,
       summary: [
         { label: 'Employees with CF', value: rows.length },
-        { label: 'CF days', value: annualBalances.reduce((sum, item) => sum + Number(item.carryForwardBalance || 0), 0) },
+        { label: 'CF days (max 7 each)', value: round2(cfRows.reduce((sum, item) => sum + item.carryForward, 0)) },
+        { label: 'Expiry', value: expiry },
       ],
     };
   }
@@ -318,7 +439,8 @@ export const buildLeaveReportTable = (reportId: LeaveReportId, payload: LeaveRep
       item.approvalStatus || '',
       item.policyComplianceStatus || '',
     ]);
-    const pending = applications.filter((item) => !['Approved', 'Completed', 'Cancelled', 'Rejected', 'Terminated'].includes(item.status)).length;
+    const pending = applications.filter((item) => isOpenLeaveApprovalStatus(item.status)).length;
+    const approved = applications.filter((item) => isApprovedLeaveStatus(item.status)).length;
     return {
       id: reportId,
       title: meta.title,
@@ -327,7 +449,8 @@ export const buildLeaveReportTable = (reportId: LeaveReportId, payload: LeaveRep
       headers: ['Request ID', 'Employee ID', 'Employee', 'Department', 'Manager', 'Leave Type', 'Start', 'End', 'Days', 'Status', 'Stage', 'Approval Status', 'Compliance'],
       rows,
       summary: [
-        { label: 'Pending', value: pending },
+        { label: 'Pending approvals', value: pending },
+        { label: 'Approved / completed', value: approved },
         { label: 'Total requests', value: rows.length },
       ],
     };
@@ -356,39 +479,78 @@ export const buildLeaveReportTable = (reportId: LeaveReportId, payload: LeaveRep
       generatedAt,
       headers: ['Request ID', 'Employee ID', 'Employee', 'Department', 'Leave Type', 'Start', 'End', 'Days', 'Status', 'Stage', 'Reliever', 'Allowance', 'Exceptions'],
       rows,
-      summary: [{ label: 'History rows', value: rows.length }],
+      summary: [
+        { label: 'History rows', value: rows.length },
+        { label: 'Approved days', value: round2(applications.filter((item) => isApprovedLeaveStatus(item.status)).reduce((sum, item) => sum + Number(item.days || 0), 0)) },
+      ],
     };
   }
 
   if (reportId === 'department') {
-    const map = new Map<string, { department: string; requests: number; approved: number; pending: number; days: number; employees: Set<string> }>();
+    const map = new Map<string, {
+      department: string;
+      requests: number;
+      approved: number;
+      pending: number;
+      approvedDays: number;
+      pendingDays: number;
+      employees: Set<string>;
+    }>();
     for (const item of applications) {
+      if (isClosedLeaveStatus(item.status)) continue;
       const key = item.department || 'Unassigned';
-      const row = map.get(key) || { department: key, requests: 0, approved: 0, pending: 0, days: 0, employees: new Set<string>() };
+      const row = map.get(key) || {
+        department: key,
+        requests: 0,
+        approved: 0,
+        pending: 0,
+        approvedDays: 0,
+        pendingDays: 0,
+        employees: new Set<string>(),
+      };
       row.requests += 1;
-      row.days += Number(item.days || 0);
       row.employees.add(item.employeeId);
-      if (['Approved', 'Completed'].includes(item.status)) row.approved += 1;
-      else if (!['Cancelled', 'Rejected', 'Terminated'].includes(item.status)) row.pending += 1;
+      const days = Number(item.days || 0);
+      if (isApprovedLeaveStatus(item.status)) {
+        row.approved += 1;
+        row.approvedDays += days;
+      } else if (isOpenLeaveApprovalStatus(item.status)) {
+        row.pending += 1;
+        row.pendingDays += days;
+      }
       map.set(key, row);
     }
     const rows = Array.from(map.values())
       .sort((a, b) => b.requests - a.requests)
-      .map((row) => [row.department, row.employees.size, row.requests, row.approved, row.pending, row.days]);
+      .map((row) => [
+        row.department,
+        row.employees.size,
+        row.requests,
+        row.approved,
+        row.pending,
+        round2(row.approvedDays),
+        round2(row.pendingDays),
+      ]);
     return {
       id: reportId,
       title: meta.title,
       description: meta.description,
       generatedAt,
-      headers: ['Department', 'Employees', 'Requests', 'Approved', 'Pending', 'Total Days'],
+      headers: ['Department', 'Employees', 'Requests', 'Approved', 'Pending', 'Approved Days', 'Pending Days'],
       rows,
-      summary: [{ label: 'Departments', value: rows.length }],
+      summary: [
+        { label: 'Departments', value: rows.length },
+        { label: 'Approved days', value: round2(Array.from(map.values()).reduce((sum, row) => sum + row.approvedDays, 0)) },
+      ],
     };
   }
 
   if (reportId === 'absenteeism') {
     const rows = applications
-      .filter((item) => isSickLike(item.leaveType) || /absent/i.test(item.status))
+      .filter((item) => {
+        if (!isSickLike(item.leaveType) && !/absent/i.test(item.status)) return false;
+        return isApprovedLeaveStatus(item.status) || isOpenLeaveApprovalStatus(item.status);
+      })
       .map((item) => [
         item.id,
         item.employeeId,
@@ -408,33 +570,51 @@ export const buildLeaveReportTable = (reportId: LeaveReportId, payload: LeaveRep
       generatedAt,
       headers: ['Request ID', 'Employee ID', 'Employee', 'Department', 'Leave Type', 'Start', 'End', 'Days', 'Status', 'Stage'],
       rows,
-      summary: [{ label: 'Absenteeism rows', value: rows.length }],
+      summary: [
+        { label: 'Absenteeism rows', value: rows.length },
+        { label: 'Days', value: round2(rows.reduce((sum, row) => sum + Number(row[7] || 0), 0)) },
+      ],
     };
   }
 
   // trends
-  const typeMap = new Map<string, { type: string; count: number; days: number; approved: number }>();
+  const typeMap = new Map<string, { type: string; count: number; days: number; approved: number; pending: number; approvedDays: number }>();
   for (const item of applications) {
+    if (isClosedLeaveStatus(item.status)) continue;
     const key = item.leaveType || 'Unknown';
-    const row = typeMap.get(key) || { type: key, count: 0, days: 0, approved: 0 };
+    const row = typeMap.get(key) || { type: key, count: 0, days: 0, approved: 0, pending: 0, approvedDays: 0 };
     row.count += 1;
     row.days += Number(item.days || 0);
-    if (['Approved', 'Completed'].includes(item.status)) row.approved += 1;
+    if (isApprovedLeaveStatus(item.status)) {
+      row.approved += 1;
+      row.approvedDays += Number(item.days || 0);
+    } else if (isOpenLeaveApprovalStatus(item.status)) {
+      row.pending += 1;
+    }
     typeMap.set(key, row);
   }
   const rows = Array.from(typeMap.values())
     .sort((a, b) => b.count - a.count)
-    .map((row) => [row.type, row.count, row.days, row.approved, row.count - row.approved]);
+    .map((row) => [
+      row.type,
+      row.count,
+      round2(row.days),
+      row.approved,
+      round2(row.approvedDays),
+      row.pending,
+      row.count > 0 ? `${Math.round((row.approved / row.count) * 100)}%` : '0%',
+    ]);
   return {
-    id: reportId,
+    id: 'trends',
     title: meta.title,
     description: meta.description,
     generatedAt,
-    headers: ['Leave Type', 'Requests', 'Total Days', 'Approved', 'Other Status'],
+    headers: ['Leave Type', 'Requests', 'Total Days', 'Approved', 'Approved Days', 'Pending', 'Approval Rate'],
     rows,
     summary: [
       { label: 'Leave types', value: rows.length },
-      { label: 'Total requests', value: applications.length },
+      { label: 'Active requests', value: Array.from(typeMap.values()).reduce((sum, row) => sum + row.count, 0) },
+      { label: 'Annual utilization', value: `${utilizationPct}%` },
     ],
   };
 };

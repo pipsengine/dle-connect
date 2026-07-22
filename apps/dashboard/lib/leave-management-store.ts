@@ -12,6 +12,7 @@ import {
   workflowStageForEssStatus,
 } from '@/lib/leave-request-shared';
 import { resolveNigeriaPublicHolidays } from '@/lib/nigeria-public-holidays';
+import { computeLeaveUtilizationPct, normalizeAnnualLeaveBalances } from '@/lib/leave-reports-engine';
 
 export type LeaveRole = 'Leave Administrator' | 'HR Officer' | 'HR Manager' | 'Department Manager' | 'Supervisor' | 'Payroll Officer' | 'Employee' | 'Executive' | 'System Administrator' | 'Super Administrator';
 export type LeaveStatus = 'Draft' | 'Submitted' | 'Under Review' | 'Approved' | 'Rejected' | 'Withdrawn' | 'Cancelled' | 'Terminated' | 'Completed';
@@ -381,7 +382,7 @@ const buildLeaveDrilldowns = (
 
   const pendingManagerApprovals = applications.filter(isManagerLeaveApprovalPending).map(appToDrilldownRow);
   const pendingHrApprovals = applications.filter(isHrLeaveApprovalPending).map(appToDrilldownRow);
-  const pendingApprovals = applications.filter(isOpenLeaveApprovalStatus).map(appToDrilldownRow);
+  const pendingApprovals = applications.filter((item) => isOpenLeaveApprovalStatus(item.status)).map(appToDrilldownRow);
 
   const upcomingLeave = applications
     .filter((item) => item.startDate > today && (isOpenLeaveApprovalStatus(item.status) || ['Approved', 'Completed'].includes(item.status)))
@@ -398,34 +399,27 @@ const buildLeaveDrilldowns = (
       metricValue: employee.jobTitle || employee.designation || '—',
     }));
 
-  const annualBalances = balances.filter((item) => isAnnualLeaveType(item.leaveType));
+  const annualBalances = normalizeAnnualLeaveBalances(balances);
   const leaveUtilization = annualBalances
-    .map((item) => {
-      const entitled = Number(item.accruedBalance || 0);
-      const used = Number(item.usedBalance || 0);
-      const balance = Number(item.currentBalance || 0);
-      const carryForward = Number(item.carryForwardBalance || 0);
-      const utilizationPct = entitled > 0 ? Math.round((used / entitled) * 100) : 0;
-      return {
-        employeeId: item.employeeId,
-        fullName: item.fullName,
-        department: item.department,
-        leaveType: item.leaveType,
-        status: item.status,
-        metricLabel: 'Used / Accrued',
-        metricValue: `${used} / ${entitled}`,
-        days: used,
-        entitled,
-        used,
-        balance,
-        carryForward,
-        utilizationPct,
-      };
-    })
+    .map((item) => ({
+      employeeId: item.employeeId,
+      fullName: item.fullName,
+      department: item.department,
+      leaveType: item.leaveType,
+      status: item.status,
+      metricLabel: 'Used / Accrued',
+      metricValue: `${item.used} / ${item.entitled}`,
+      days: item.used,
+      entitled: item.entitled,
+      used: item.used,
+      balance: item.balance,
+      carryForward: item.carryForward,
+      utilizationPct: item.utilizationPct,
+    }))
     .sort((a, b) => b.used - a.used || b.utilizationPct - a.utilizationPct || a.fullName.localeCompare(b.fullName));
 
   const leaveLiability = annualBalances
-    .filter((item) => item.liabilityValue > 0)
+    .filter((item) => item.liabilityValue > 0 || item.balance > 0)
     .map((item) => ({
       employeeId: item.employeeId,
       fullName: item.fullName,
@@ -434,15 +428,15 @@ const buildLeaveDrilldowns = (
       status: item.status,
       metricLabel: 'Liability',
       metricValue: moneyFmt.format(item.liabilityValue),
-      days: item.currentBalance,
+      days: item.balance,
     }))
     .sort((a, b) => Number(String(b.metricValue).replace(/[^\d.-]/g, '') || 0) - Number(String(a.metricValue).replace(/[^\d.-]/g, '') || 0));
 
   const carryForwardByEmployee = new Map<string, LeaveDrilldownRow>();
-  for (const item of balances) {
-    if (item.carryForwardBalance <= 0) continue;
+  for (const item of annualBalances) {
+    if (item.carryForward <= 0) continue;
     const existing = carryForwardByEmployee.get(item.employeeId);
-    if (!existing || item.carryForwardBalance > Number(existing.days || 0)) {
+    if (!existing || item.carryForward > Number(existing.days || 0)) {
       carryForwardByEmployee.set(item.employeeId, {
         employeeId: item.employeeId,
         fullName: item.fullName,
@@ -450,8 +444,8 @@ const buildLeaveDrilldowns = (
         leaveType: item.leaveType,
         status: item.status,
         metricLabel: 'Carry forward days',
-        metricValue: item.carryForwardBalance,
-        days: item.carryForwardBalance,
+        metricValue: item.carryForward,
+        days: item.carryForward,
       });
     }
   }
@@ -1093,11 +1087,15 @@ const syncLeaveBalances = async (pool: sql.ConnectionPool, employees: DleEmploye
   const carryForwardExpired = today > carryForwardExpiry;
 
   const existingRows = await pool.request().query(`
-SELECT [EmployeeId],[LeaveType],[CarryForwardBalance],[ForfeitedBalance]
+SELECT [EmployeeId],[LeaveType],[CurrentBalance],[CarryForwardBalance],[ForfeitedBalance]
 FROM [hris].[LeaveBalances];`);
-  const existing = new Map<string, { carry: number; forfeited: number }>();
-  for (const row of existingRows.recordset as Array<{ EmployeeId: string; LeaveType: string; CarryForwardBalance: number; ForfeitedBalance: number }>) {
-    existing.set(`${row.EmployeeId}::${row.LeaveType}`, { carry: Number(row.CarryForwardBalance || 0), forfeited: Number(row.ForfeitedBalance || 0) });
+  const existing = new Map<string, { current: number; carry: number; forfeited: number }>();
+  for (const row of existingRows.recordset as Array<{ EmployeeId: string; LeaveType: string; CurrentBalance: number; CarryForwardBalance: number; ForfeitedBalance: number }>) {
+    existing.set(`${row.EmployeeId}::${row.LeaveType}`, {
+      current: Number(row.CurrentBalance || 0),
+      carry: Number(row.CarryForwardBalance || 0),
+      forfeited: Number(row.ForfeitedBalance || 0),
+    });
   }
 
   // Used/Pending are current leave-year only. Carry-forward is consumed by leave starting on/before 31 March,
@@ -1157,10 +1155,20 @@ GROUP BY [EmployeeId],[LeaveType];`);
 
   for (const employee of employees.filter((row) => activeStatus(row.status))) {
     const leaveType = 'Annual Leave';
-    const key = `${employee.employeeId}::${leaveType}`;
     const entitlement = entitlementFor(employee, leaveType);
-    const currentExisting = existing.get(key);
-    const openingCarry = Math.min(dormantLongPolicy.carryForwardCap, Math.max(0, Number(currentExisting?.carry || 0)));
+    const matchKeys = [...new Set(
+      [employee.employeeId, employee.employeeCode, employee.sourceEmployeeId]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean),
+    )];
+    const currentExisting = matchKeys
+      .map((id) => existing.get(`${id}::${leaveType}`))
+      .find((row) => row != null);
+    const rawCarry = Math.max(0, Number(currentExisting?.carry || 0));
+    const storedCurrent = Math.max(0, Number(currentExisting?.current || 0));
+    // Heal corrupt rows where available days were parked in Carry Forward (often CF == Entitled-Used and Balance == 0).
+    // Real CF never exceeds the policy cap; anything above the cap is not opening carry-forward.
+    const openingCarry = Math.min(dormantLongPolicy.carryForwardCap, rawCarry);
     const yearUsage = usageForEmployee(employee, leaveType);
     const used = Number(yearUsage.used || 0);
     const pending = Number(yearUsage.pending || 0);
@@ -1169,10 +1177,20 @@ GROUP BY [EmployeeId],[LeaveType];`);
     // Consume carry-forward first from leave that starts on/before 31 March.
     const carryConsumed = Math.min(openingCarry, usedBeforeCfExpiry);
     let carryRemaining = round2(openingCarry - carryConsumed);
-    let forfeited = Math.max(0, Number(currentExisting?.forfeited || 0));
+    // Recompute forfeited from this year's CF policy — do not keep inflated legacy forfeited totals
+    // when CF was previously holding the full available balance.
+    let forfeited = 0;
     if (carryForwardExpired && carryRemaining > 0) {
-      forfeited = round2(forfeited + carryRemaining);
+      forfeited = round2(carryRemaining);
       carryRemaining = 0;
+    } else if (rawCarry > dormantLongPolicy.carryForwardCap && storedCurrent <= 0) {
+      // Excess previously mis-filed as CF (above cap) is not forfeited opening CF; ignore it.
+      forfeited = Math.max(0, Number(currentExisting?.forfeited || 0));
+      if (forfeited > dormantLongPolicy.carryForwardCap && forfeited >= entitlement) {
+        forfeited = 0;
+      }
+    } else {
+      forfeited = Math.max(0, Number(currentExisting?.forfeited || 0));
     }
 
     // Leave Entitled = current-year grant + remaining (unconsumed, unexpired) carry-forward only.
@@ -1420,7 +1438,7 @@ export async function readLeaveManagementPayload(
     await maybeSyncLeaveTypePolicies(pool, forceSync);
     await maybeUpsertEssLeaveRequests(pool, employees, forceSync);
     const forceBalanceSync = forceSync
-      || ['leave-balances', 'leave-accruals', 'carry-forward-processing', 'leave-year-end-processing'].includes(normalizedSection);
+      || ['leave-balances', 'leave-accruals', 'carry-forward-processing', 'leave-year-end-processing', 'leave-reports', 'leave-utilization', 'leave-liability', 'leave-trends'].includes(normalizedSection);
     await maybeSyncLeaveBalances(pool, employees, forceBalanceSync);
   }
   const [applicationsRaw, balances, leaveTypes, auditTrail, nigeriaHolidays] = await Promise.all([
@@ -1467,10 +1485,8 @@ export async function readLeaveManagementPayload(
     .forEach((employee) => onLeaveTodayKeys.add(String(employee.employeeId || employee.employeeCode).toUpperCase()));
   const employeesOnLeave = onLeaveTodayKeys.size;
   const exceptionCount = applications.reduce((sum, item) => sum + item.exceptions.length, 0) + balances.reduce((sum, item) => sum + item.exceptions.length, 0);
-  const annualBalances = balances.filter((item) => isAnnualLeaveType(item.leaveType));
-  const leaveLiability = annualBalances.reduce((sum, item) => sum + item.liabilityValue, 0);
-  const totalAnnualAccrued = annualBalances.reduce((sum, item) => sum + item.accruedBalance, 0);
-  const totalAnnualUsed = annualBalances.reduce((sum, item) => sum + item.usedBalance, 0);
+  const normalizedAnnualBalances = normalizeAnnualLeaveBalances(balances);
+  const leaveLiability = normalizedAnnualBalances.reduce((sum, item) => sum + item.liabilityValue, 0);
   const drilldowns = {
     ...buildLeaveDrilldowns(employees, applications, balances),
     leaveAllowanceExceptions: allowanceExceptions.map((item) => ({
@@ -1513,7 +1529,7 @@ export async function readLeaveManagementPayload(
       pendingApprovals,
       pendingHrApprovals,
       pendingManagerApprovals,
-      leaveUtilizationPct: totalAnnualAccrued > 0 ? Math.round((totalAnnualUsed / totalAnnualAccrued) * 100) : 0,
+      leaveUtilizationPct: computeLeaveUtilizationPct(normalizedAnnualBalances),
       leaveLiability,
       encashmentRequests: 0,
       recallRequests: 0,

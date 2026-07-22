@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   X,
 } from 'lucide-react';
+import { normalizeAnnualLeaveBalances } from '@/lib/leave-reports-engine';
 import LeaveReportsAnalyticsView from './LeaveReportsAnalyticsView';
 
 type AppRecord = {
@@ -161,13 +162,14 @@ export function LeaveOperationalSection({
     () => applications.filter((item) => /cancel|withdrawn|terminated/i.test(item.status)),
     [applications],
   );
+  const normalizedAnnual = useMemo(() => normalizeAnnualLeaveBalances(balances), [balances]);
   const encashmentCandidates = useMemo(
-    () => balances.filter((item) => /annual/i.test(item.leaveType) && item.currentBalance > 0).slice(0, 100),
-    [balances],
+    () => normalizedAnnual.filter((item) => item.balance > 0).slice(0, 100),
+    [normalizedAnnual],
   );
   const carryForwardRows = useMemo(
-    () => balances.filter((item) => Number(item.carryForwardBalance || 0) > 0),
-    [balances],
+    () => normalizedAnnual.filter((item) => item.carryForward > 0),
+    [normalizedAnnual],
   );
 
   const deptCoverage = useMemo(() => {
@@ -217,7 +219,7 @@ export function LeaveOperationalSection({
       <Panel title="Leave Encashment Queue" detail="Annual leave balances eligible for encashment review (policy-controlled).">
         <MetricStrip items={[
           { label: 'Encashment candidates', value: encashmentCandidates.length },
-          { label: 'Total balance days', value: encashmentCandidates.reduce((sum, item) => sum + Number(item.currentBalance || 0), 0) },
+          { label: 'Total balance days', value: encashmentCandidates.reduce((sum, item) => sum + Number(item.balance || 0), 0) },
         ]} />
         <div className="overflow-x-auto rounded-xl border border-slate-200">
           <table className="min-w-full divide-y divide-slate-100">
@@ -229,9 +231,9 @@ export function LeaveOperationalSection({
                 <tr key={`${item.employeeId}-encash`} className="hover:bg-slate-50">
                   <td className="px-4 py-3"><div className="font-black text-slate-950">{item.fullName}</div><div className="text-xs font-semibold text-slate-500">{item.employeeId}</div></td>
                   <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.department}</td>
-                  <td className="px-4 py-3 text-sm font-black text-slate-900">{item.currentBalance}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.usedBalance}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.carryForwardBalance}</td>
+                  <td className="px-4 py-3 text-sm font-black text-slate-900">{item.balance}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.used}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.carryForward}</td>
                   <td className="px-4 py-3 text-sm font-bold text-slate-700">{money(item.liabilityValue)}</td>
                   <td className="px-4 py-3"><Chip value={item.status} /></td>
                 </tr>
@@ -332,14 +334,14 @@ export function LeaveOperationalSection({
   }
 
   if (section === 'leave-accruals') {
-    const annual = balances.filter((item) => /annual/i.test(item.leaveType));
+    const annual = normalizedAnnual;
     return (
       <Panel title="Leave Accruals" detail="Accrued entitlement versus used and available annual leave balances.">
         <MetricStrip items={[
           { label: 'Employees', value: annual.length },
-          { label: 'Total accrued', value: annual.reduce((s, i) => s + Number(i.accruedBalance || 0), 0) },
-          { label: 'Total used', value: annual.reduce((s, i) => s + Number(i.usedBalance || 0), 0) },
-          { label: 'Total available', value: annual.reduce((s, i) => s + Number(i.currentBalance || 0), 0) },
+          { label: 'Total accrued', value: annual.reduce((s, i) => s + Number(i.entitled || 0), 0) },
+          { label: 'Total used', value: annual.reduce((s, i) => s + Number(i.used || 0), 0) },
+          { label: 'Total available', value: annual.reduce((s, i) => s + Number(i.balance || 0), 0) },
         ]} />
         <div className="overflow-x-auto rounded-xl border border-slate-200">
           <table className="min-w-full divide-y divide-slate-100">
@@ -349,10 +351,10 @@ export function LeaveOperationalSection({
                 <tr key={`${item.employeeId}-accrual`} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-black text-slate-950">{item.fullName}<div className="text-xs font-semibold text-slate-500">{item.employeeId}</div></td>
                   <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.department}</td>
-                  <td className="px-4 py-3 text-sm font-black text-slate-900">{item.accruedBalance}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.usedBalance}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.pendingBalance}</td>
-                  <td className="px-4 py-3 text-sm font-black text-emerald-700">{item.currentBalance}</td>
+                  <td className="px-4 py-3 text-sm font-black text-slate-900">{item.entitled}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.used}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.pending}</td>
+                  <td className="px-4 py-3 text-sm font-black text-emerald-700">{item.balance}</td>
                 </tr>
               ))}
             </tbody>
@@ -367,7 +369,7 @@ export function LeaveOperationalSection({
       <Panel title="Carry Forward Processing" detail="Employees with carry-forward balances requiring consumption or forfeiture review before year-end cut-off.">
         <MetricStrip items={[
           { label: 'CF balances', value: carryForwardRows.length },
-          { label: 'CF days', value: carryForwardRows.reduce((s, i) => s + Number(i.carryForwardBalance || 0), 0) },
+          { label: 'CF days', value: carryForwardRows.reduce((s, i) => s + Number(i.carryForward || 0), 0) },
         ]} />
         <div className="overflow-x-auto rounded-xl border border-slate-200">
           <table className="min-w-full divide-y divide-slate-100">
@@ -377,9 +379,9 @@ export function LeaveOperationalSection({
                 <tr key={`${item.employeeId}-cf`} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-black text-slate-950">{item.fullName}</td>
                   <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.department}</td>
-                  <td className="px-4 py-3 text-sm font-black text-amber-700">{item.carryForwardBalance}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.currentBalance}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.usedBalance}</td>
+                  <td className="px-4 py-3 text-sm font-black text-amber-700">{item.carryForward}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.balance}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.used}</td>
                   <td className="px-4 py-3"><Chip value={item.status} /></td>
                 </tr>
               )) : <tr><td colSpan={6} className="px-4 py-8 text-center text-sm font-semibold text-slate-500">No carry-forward balances pending processing.</td></tr>}
@@ -391,24 +393,25 @@ export function LeaveOperationalSection({
   }
 
   if (section === 'balance-adjustments') {
-    const attention = balances.filter((item) => item.exceptions?.length || /attention|blocked|risk/i.test(item.status));
+    const normalized = normalizedAnnual;
+    const attention = normalized.filter((item) => item.exceptions?.length || /attention|blocked|risk/i.test(item.status));
     return (
       <Panel title="Balance Adjustments" detail="Balances requiring manual adjustment, exception clearance, or recalculation attention.">
         <MetricStrip items={[
-          { label: 'Attention rows', value: attention.length || balances.length },
-          { label: 'Forfeited days', value: balances.reduce((s, i) => s + Number(i.forfeitedBalance || 0), 0) },
+          { label: 'Attention rows', value: attention.length || normalized.length },
+          { label: 'Forfeited days', value: normalized.reduce((s, i) => s + Number(i.forfeited || 0), 0) },
         ]} />
         <div className="overflow-x-auto rounded-xl border border-slate-200">
           <table className="min-w-full divide-y divide-slate-100">
             <thead className="bg-slate-50"><tr>{['Employee', 'Type', 'Available', 'Pending', 'Forfeited', 'Exceptions', 'Status'].map((h) => <th key={h} className="px-4 py-3 text-left text-xs font-black uppercase text-slate-500">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100 bg-white">
-              {(attention.length ? attention : balances).slice(0, 80).map((item) => (
+              {(attention.length ? attention : normalized).slice(0, 80).map((item) => (
                 <tr key={`${item.employeeId}-${item.leaveType}-adj`} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-black text-slate-950">{item.fullName}<div className="text-xs font-semibold text-slate-500">{item.employeeId}</div></td>
                   <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.leaveType}</td>
-                  <td className="px-4 py-3 text-sm font-black text-slate-900">{item.currentBalance}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.pendingBalance}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.forfeitedBalance}</td>
+                  <td className="px-4 py-3 text-sm font-black text-slate-900">{item.balance}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.pending}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.forfeited}</td>
                   <td className="px-4 py-3 text-xs font-semibold text-slate-600">{item.exceptions?.length ? item.exceptions.join('; ') : 'None'}</td>
                   <td className="px-4 py-3"><Chip value={item.status} /></td>
                 </tr>
@@ -421,13 +424,13 @@ export function LeaveOperationalSection({
   }
 
   if (section === 'leave-year-end-processing') {
-    const annual = balances.filter((item) => /annual/i.test(item.leaveType));
+    const annual = normalizedAnnual;
     return (
       <Panel title="Leave Year-End Processing" detail="Year-end readiness: carry-forward caps, forfeiture candidates, and remaining annual balances.">
         <MetricStrip items={[
           { label: 'Annual balances', value: annual.length },
           { label: 'CF to process', value: carryForwardRows.length },
-          { label: 'Remaining days', value: annual.reduce((s, i) => s + Number(i.currentBalance || 0), 0) },
+          { label: 'Remaining days', value: annual.reduce((s, i) => s + Number(i.balance || 0), 0) },
           { label: 'Liability', value: money(annual.reduce((s, i) => s + Number(i.liabilityValue || 0), 0)) },
         ]} />
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -473,6 +476,14 @@ export function LeaveBalanceDetailModal({
   row: BalanceRecord;
   onClose: () => void;
 }) {
+  const normalized = normalizeAnnualLeaveBalances([row])[0];
+  const entitled = normalized?.entitled ?? row.accruedBalance;
+  const used = normalized?.used ?? row.usedBalance;
+  const balance = normalized?.balance ?? row.currentBalance;
+  const pending = normalized?.pending ?? row.pendingBalance;
+  const forfeited = normalized?.forfeited ?? row.forfeitedBalance;
+  const carryForward = normalized?.carryForward ?? row.carryForwardBalance;
+  const liability = normalized?.liabilityValue ?? row.liabilityValue;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
       <div className="max-h-[86vh] w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -488,13 +499,13 @@ export function LeaveBalanceDetailModal({
         <div className="max-h-[70vh] overflow-y-auto p-4">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
             {[
-              ['Leave entitled', row.accruedBalance],
-              ['Used', row.usedBalance],
-              ['Balance', row.currentBalance],
-              ['Pending', row.pendingBalance],
-              ['Forfeited', row.forfeitedBalance],
-              ['Carry forward', row.carryForwardBalance],
-              ['Liability', money(row.liabilityValue)],
+              ['Leave entitled', entitled],
+              ['Used', used],
+              ['Balance', balance],
+              ['Pending', pending],
+              ['Forfeited', forfeited],
+              ['Carry forward', carryForward],
+              ['Liability', money(liability)],
               ['Status', row.status],
             ].map(([label, value]) => (
               <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50 p-3">

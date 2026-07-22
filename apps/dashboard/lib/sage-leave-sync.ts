@@ -305,11 +305,18 @@ const upsertBalance = async (
 ) => {
   const leaveType = normalizeLeaveTypeName(row.leaveTypeName);
   if (!leaveType) return;
-  const currentBalance = round2(Number(row.currentBalance || 0));
+  const currentBalanceRaw = round2(Number(row.currentBalance || 0));
   const accruedBalance = round2(Number(row.accruedBalance || 0));
   const usedBalance = round2(Number(row.usedBalance || 0));
   const pendingBalance = round2(Number(row.pendingBalance || 0));
-  const carryForwardBalance = round2(Number(row.carryForwardBalance || 0));
+  const carryForwardRaw = round2(Number(row.carryForwardBalance || 0));
+  // Sage sometimes leaves UnitsAvailable at 0 while BalanceBroughtForward holds remaining days.
+  // Do not park available leave under Carry Forward — CF is capped at policy max only.
+  const carryForwardBalance = Math.min(7, Math.max(0, carryForwardRaw));
+  const inferredAvailable = Math.max(0, accruedBalance - usedBalance - pendingBalance);
+  const currentBalance = currentBalanceRaw > 0
+    ? currentBalanceRaw
+    : Math.max(inferredAvailable, carryForwardRaw > 7 ? carryForwardRaw : 0);
   if (currentBalance <= 0 && accruedBalance <= 0 && usedBalance <= 0 && pendingBalance <= 0 && carryForwardBalance <= 0) return;
 
   await pool.request()

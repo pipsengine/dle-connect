@@ -53,9 +53,12 @@ export async function GET(request: NextRequest) {
     const section = request.nextUrl.searchParams.get('section') || 'dashboard';
     const format = request.nextUrl.searchParams.get('format');
     const reportParam = request.nextUrl.searchParams.get('report');
-    const forceSync = format === 'allowance-exceptions-csv'
-      || (format === 'excel' && reportParam === 'allowance-exceptions');
-    const payload = await readLeaveManagementPayload(section, role, forceSync ? { forceSync: true } : undefined);
+    const forceSync = format === 'allowance-exceptions-csv' || format === 'excel';
+    const payload = await readLeaveManagementPayload(
+      section === 'dashboard' && format === 'excel' ? 'leave-reports' : section,
+      role,
+      forceSync ? { forceSync: true } : undefined,
+    );
     if (format === 'excel') {
       const reportId = resolveLeaveReportId(reportParam) || 'utilization';
       const table = buildLeaveReportTable(reportId, payload);
@@ -170,10 +173,12 @@ export async function POST(request: NextRequest) {
     if (action === 'process-carry-forward') {
       const result = await processLeaveCarryForwardRun(actor);
       workflowMessage = result.message;
+      await readLeaveManagementPayload('leave-balances', role, { forceSync: true });
     }
     if (action === 'close-year') {
       const result = await closeLeaveYearRun(actor);
       workflowMessage = result.message;
+      await readLeaveManagementPayload('leave-balances', role, { forceSync: true });
     }
 
     await auditLeaveAction({

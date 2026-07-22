@@ -38,10 +38,22 @@ const genericHeaders = ['Employee ID', 'Full Name', 'Department', 'Leave Type', 
 
 const toUtilizationExportRows = (rows: LeaveDrilldownRow[]) =>
   rows.map((row) => {
-    const entitled = Number(row.entitled ?? (typeof row.metricValue === 'string' && row.metricValue.includes('/') ? row.metricValue.split('/')[1] : 0) || 0);
-    const used = Number(row.used ?? row.days ?? (typeof row.metricValue === 'string' && row.metricValue.includes('/') ? row.metricValue.split('/')[0] : 0) || 0);
-    const balance = Number(row.balance ?? Math.max(0, entitled - used));
-    const carryForward = Number(row.carryForward ?? 0);
+    const entitled = Number(
+      row.entitled
+        ?? (typeof row.metricValue === 'string' && row.metricValue.includes('/') ? row.metricValue.split('/')[1] : undefined)
+        ?? 0,
+    );
+    const used = Number(
+      row.used
+        ?? row.days
+        ?? (typeof row.metricValue === 'string' && row.metricValue.includes('/') ? row.metricValue.split('/')[0] : undefined)
+        ?? 0,
+    );
+    const rawCf = Number(row.carryForward ?? 0);
+    const carryForward = rawCf > 7 ? 0 : Math.min(7, Math.max(0, rawCf));
+    const storedBalance = Number(row.balance ?? 0);
+    const computedBalance = Math.max(0, entitled - used);
+    const balance = storedBalance <= 0 && computedBalance > 0 ? computedBalance : (storedBalance > 0 ? storedBalance : computedBalance);
     const utilizationPct = Number(row.utilizationPct ?? (entitled > 0 ? Math.round((used / entitled) * 100) : 0));
     return [
       row.employeeId,
@@ -134,9 +146,9 @@ export default function LeaveDrilldownModal({
 
   const exportRows = utilizationMode ? toUtilizationExportRows(filteredRows) : toGenericExportRows(filteredRows);
   const exportHeaders = utilizationMode ? utilizationHeaders : genericHeaders;
-  const totalEntitled = filteredRows.reduce((sum, row) => sum + Number(row.entitled ?? 0), 0);
-  const totalUsed = filteredRows.reduce((sum, row) => sum + Number(row.used ?? row.days ?? 0), 0);
-  const totalBalance = filteredRows.reduce((sum, row) => sum + Number(row.balance ?? 0), 0);
+  const totalEntitled = exportRows.reduce((sum, row) => sum + Number(row[4] || 0), 0);
+  const totalUsed = exportRows.reduce((sum, row) => sum + Number(row[5] || 0), 0);
+  const totalBalance = exportRows.reduce((sum, row) => sum + Number(row[6] || 0), 0);
   const summary = utilizationMode
     ? [
         { label: 'Employees', value: filteredRows.length },
@@ -226,8 +238,11 @@ export default function LeaveDrilldownModal({
                 {filteredRows.map((row, index) => {
                   const entitled = Number(row.entitled ?? 0);
                   const used = Number(row.used ?? row.days ?? 0);
-                  const balance = Number(row.balance ?? Math.max(0, entitled - used));
-                  const carryForward = Number(row.carryForward ?? 0);
+                  const rawCf = Number(row.carryForward ?? 0);
+                  const carryForward = rawCf > 7 ? 0 : Math.min(7, Math.max(0, rawCf));
+                  const storedBalance = Number(row.balance ?? 0);
+                  const computedBalance = Math.max(0, entitled - used);
+                  const balance = storedBalance <= 0 && computedBalance > 0 ? computedBalance : (storedBalance > 0 ? storedBalance : computedBalance);
                   const utilizationPct = Number(row.utilizationPct ?? (entitled > 0 ? Math.round((used / entitled) * 100) : 0));
                   return (
                     <tr key={`${row.employeeId}-${row.leaveType || 'row'}-${index}`} className="hover:bg-slate-50">

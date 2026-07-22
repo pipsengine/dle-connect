@@ -2446,12 +2446,16 @@ export const processLeaveCarryForwardRun = async (actor: string) => {
   const pool = await getDleEnterpriseDbPool();
   if (!pool) throw new Error('DLE_Enterprise database is not available.');
   const cap = dormantLongPolicy.carryForwardCap;
+  // Only cap/forfeit amounts already posted as Carry Forward.
+  // Never copy CurrentBalance into CarryForwardBalance — that parked available
+  // days under CF and left the Balance column at 0 in Leave Balance reports.
   const result = await pool.request()
     .input('Cap', sql.Decimal(9, 2), cap)
     .query(`
 UPDATE [hris].[LeaveBalances]
-SET [CarryForwardBalance] = CASE WHEN [CurrentBalance] > @Cap THEN @Cap ELSE [CurrentBalance] END,
-    [ForfeitedBalance] = CASE WHEN [CurrentBalance] > @Cap THEN [CurrentBalance] - @Cap ELSE 0 END,
+SET [ForfeitedBalance] = ISNULL([ForfeitedBalance], 0)
+      + CASE WHEN [CarryForwardBalance] > @Cap THEN [CarryForwardBalance] - @Cap ELSE 0 END,
+    [CarryForwardBalance] = CASE WHEN [CarryForwardBalance] > @Cap THEN @Cap ELSE [CarryForwardBalance] END,
     [UpdatedAt] = SYSUTCDATETIME()
 WHERE [LeaveType] = N'Annual Leave';`);
   return { actor, rows: result.rowsAffected?.[0] || 0, message: `Carry-forward capped at ${cap} days.` };
@@ -2460,11 +2464,38 @@ WHERE [LeaveType] = N'Annual Leave';`);
 export const closeLeaveYearRun = async (actor: string) => {
   const pool = await getDleEnterpriseDbPool();
   if (!pool) throw new Error('DLE_Enterprise database is not available.');
-  await pool.request().query(`
+  const cap = dormantLongPolicy.carryForwardCap;
+  // Year close: unused available days become next-year opening CF (max 7); excess is forfeited.
+  // Accrued/Current temporarily equal opening CF until syncLeaveBalances grants new-year entitlement.
+  await pool.request()
+    .input('Cap', sql.Decimal(9, 2), cap)
+    .query(`
 UPDATE [hris].[LeaveBalances]
-SET [UsedBalance]=0,[PendingBalance]=0,[AccruedBalance]=0,[CurrentBalance]=[CarryForwardBalance],[UpdatedAt]=SYSUTCDATETIME()
-WHERE [LeaveType]=N'Annual Leave';`);
-  return { actor, message: 'Leave year closed. Balances reset to carry-forward values.' };
+SET
+  [ForfeitedBalance] = CASE
+    WHEN [CurrentBalance] > @Cap THEN [CurrentBalance] - @Cap
+    ELSE ISNULL([ForfeitedBalance], 0)
+  END,
+  [CarryForwardBalance] = CASE
+    WHEN [CurrentBalance] > @Cap THEN @Cap
+    WHEN [CurrentBalance] > 0 THEN [CurrentBalance]
+    ELSE 0
+  END,
+  [UsedBalance] = 0,
+  [PendingBalance] = 0,
+  [AccruedBalance] = CASE
+    WHEN [CurrentBalance] > @Cap THEN @Cap
+    WHEN [CurrentBalance] > 0 THEN [CurrentBalance]
+    ELSE 0
+  END,
+  [CurrentBalance] = CASE
+    WHEN [CurrentBalance] > @Cap THEN @Cap
+    WHEN [CurrentBalance] > 0 THEN [CurrentBalance]
+    ELSE 0
+  END,
+  [UpdatedAt] = SYSUTCDATETIME()
+WHERE [LeaveType] = N'Annual Leave';`);
+  return { actor, message: 'Leave year closed. Carry-forward posted (max 7 days); unused excess forfeited.' };
 };
 
 export const notifyLeaveWorkflow = async (

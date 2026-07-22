@@ -7,6 +7,7 @@ import LeaveCommandCenter from './LeaveCommandCenter';
 import LeaveTransactionsCommandCenter from './LeaveTransactionsCommandCenter';
 import LeaveDrilldownModal, { type LeaveDrilldownPanel, type LeaveDrilldownRow } from './LeaveDrilldownModal';
 import { LeaveBalanceDetailModal, LeaveOperationalSection } from './LeaveOperationalSections';
+import { normalizeAnnualLeaveBalances } from '@/lib/leave-reports-engine';
 import {
   AlertTriangle,
   Archive,
@@ -808,6 +809,7 @@ function CalendarView({ payload }: { payload: Payload | null }) {
 }
 
 function BalanceView({ rows, onOpenDetail }: { rows: BalanceRecord[]; onOpenDetail: (row: BalanceRecord) => void }) {
+  const normalized = normalizeAnnualLeaveBalances(rows);
   return (
     <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
       <TableHeader title="Leave Balance Administration" detail="Annual leave for the current leave year. Carry-forward (max 7) is consumed by leave starting on/before 31 March, then unused CF is forfeited. Leave Entitled = year grant + remaining CF only. Double-click for full detail." />
@@ -821,22 +823,24 @@ function BalanceView({ rows, onOpenDetail }: { rows: BalanceRecord[]; onOpenDeta
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
-            {rows.length ? rows.slice(0, 200).map((item) => (
+            {normalized.length ? normalized.slice(0, 200).map((item) => {
+              const source = rows.find((row) => row.employeeId === item.employeeId && /annual/i.test(row.leaveType)) || rows.find((row) => row.employeeId === item.employeeId);
+              return (
               <tr
                 key={`${item.employeeId}-${item.leaveType}`}
                 className="cursor-pointer hover:bg-blue-50"
                 title="Double-click to view full balance details"
-                onDoubleClick={() => onOpenDetail(item)}
+                onDoubleClick={() => source && onOpenDetail(source)}
               >
                 <td className="px-4 py-3">
                   <div className="font-black text-slate-950">{item.fullName}</div>
                   <div className="text-xs font-semibold text-slate-500">{item.employeeId} · {item.department}</div>
                 </td>
-                <td className="px-4 py-3 text-sm font-black text-slate-900">{item.accruedBalance}</td>
-                <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.usedBalance}</td>
-                <td className="px-4 py-3 text-sm font-black text-emerald-700">{item.currentBalance}</td>
+                <td className="px-4 py-3 text-sm font-black text-slate-900">{item.entitled}</td>
+                <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.used}</td>
+                <td className="px-4 py-3 text-sm font-black text-emerald-700">{item.balance}</td>
               </tr>
-            )) : (
+            ); }) : (
               <tr>
                 <td colSpan={4} className="px-4 py-8 text-center text-sm font-semibold text-slate-500">No annual leave balances found.</td>
               </tr>
