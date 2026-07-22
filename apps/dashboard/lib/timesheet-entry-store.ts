@@ -957,10 +957,20 @@ DELETE e
 FROM [hris].[TimesheetPayrollUpdateEmployees] e
 INNER JOIN rankedPayrollUpdates u ON u.[Id] = e.[PayrollUpdateId]
 WHERE u.rn > 1;
+
+;WITH rankedPayrollUpdates AS (
+  SELECT [Id], [PeriodId], ROW_NUMBER() OVER (PARTITION BY [PeriodId] ORDER BY [AcknowledgedAt] DESC, [Id] DESC) AS rn
+  FROM [hris].[TimesheetPayrollUpdates]
+)
 DELETE h
 FROM [hris].[TimesheetPayrollUpdateHeaders] h
 INNER JOIN rankedPayrollUpdates u ON u.[Id] = h.[PayrollUpdateId]
 WHERE u.rn > 1;
+
+;WITH rankedPayrollUpdates AS (
+  SELECT [Id], [PeriodId], ROW_NUMBER() OVER (PARTITION BY [PeriodId] ORDER BY [AcknowledgedAt] DESC, [Id] DESC) AS rn
+  FROM [hris].[TimesheetPayrollUpdates]
+)
 DELETE u
 FROM [hris].[TimesheetPayrollUpdates] u
 INNER JOIN rankedPayrollUpdates r ON r.[Id] = u.[Id]
