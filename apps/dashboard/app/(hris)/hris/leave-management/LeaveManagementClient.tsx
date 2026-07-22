@@ -6,6 +6,7 @@ import Link from 'next/link';
 import LeaveCommandCenter from './LeaveCommandCenter';
 import LeaveTransactionsCommandCenter from './LeaveTransactionsCommandCenter';
 import LeaveDrilldownModal, { type LeaveDrilldownPanel, type LeaveDrilldownRow } from './LeaveDrilldownModal';
+import { LeaveBalanceDetailModal, LeaveOperationalSection } from './LeaveOperationalSections';
 import {
   AlertTriangle,
   Archive,
@@ -160,6 +161,7 @@ type Payload = {
   leaveTypes: LeaveTypeRule[];
   calendar: Array<Record<string, string | number>>;
   blockedPeriods: Array<Record<string, string>>;
+  holidays?: Array<{ id: string; label: string; date: string; source?: string }>;
   workflowMatrix: Array<Record<string, string>>;
   reports: Array<Record<string, string>>;
   notifications: Array<Record<string, string>>;
@@ -362,6 +364,7 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
   const [auditOpen, setAuditOpen] = useState(false);
   const [drilldown, setDrilldown] = useState<LeaveDrilldownPanel>(null);
   const [drilldownQuery, setDrilldownQuery] = useState('');
+  const [balanceDetail, setBalanceDetail] = useState<BalanceRecord | null>(null);
 
   const openDrilldown = (panel: LeaveDrilldownPanel) => {
     setDrilldownQuery('');
@@ -483,7 +486,9 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
 
   const filteredBalances = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return (payload?.balances || []).filter((item) => !q || [item.employeeId, item.fullName, item.department, item.leaveType, item.status].some((value) => String(value || '').toLowerCase().includes(q)));
+    return (payload?.balances || [])
+      .filter((item) => /annual\s*leave/i.test(String(item.leaveType || '')))
+      .filter((item) => !q || [item.employeeId, item.fullName, item.department, item.leaveType, item.status].some((value) => String(value || '').toLowerCase().includes(q)));
   }, [payload?.balances, query]);
 
   const isDashboard = section === 'dashboard';
@@ -700,15 +705,21 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
         {!isDashboard && section === 'applications' ? <ApplicationView rows={filteredApplications} /> : null}
         {!isDashboard && section === 'approvals' ? <ApprovalView rows={filteredApplications} busyAction={busyAction} onAction={(applicationId, actionId) => void runApplicationAction(applicationId, actionId)} /> : null}
         {!isDashboard && section === 'leave-calendar' ? <CalendarView payload={payload} /> : null}
-        {!isDashboard && section === 'leave-balances' ? <BalanceView rows={filteredBalances} /> : null}
+        {!isDashboard && section === 'leave-balances' ? <BalanceView rows={filteredBalances} onOpenDetail={setBalanceDetail} /> : null}
         {!isDashboard && section === 'leave-types' ? <LeaveTypeView payload={payload} /> : null}
         {!isDashboard && section === 'leave-allowance-exceptions' ? <LeaveAllowanceExceptionsView rows={payload?.allowanceExceptions || []} /> : null}
         {!isDashboard && ['recalls', 'cancellations', 'encashments', 'team-leave-planner', 'holiday-calendar', 'leave-policies', 'leave-accruals', 'carry-forward-processing', 'balance-adjustments', 'leave-year-end-processing', 'leave-reports', 'leave-utilization', 'leave-liability', 'leave-trends', 'approval-reports'].includes(section) ? (
-          <OperationalView payload={payload} section={section} />
+          <LeaveOperationalSection
+            section={section}
+            payload={payload}
+            applications={filteredApplications}
+            balances={payload?.balances || []}
+          />
         ) : null}
       </div>
 
       {auditOpen ? <AuditPanel rows={payload?.auditTrail || []} onClose={() => setAuditOpen(false)} /> : null}
+      {balanceDetail ? <LeaveBalanceDetailModal row={balanceDetail} onClose={() => setBalanceDetail(null)} /> : null}
       <LeaveDrilldownModal
         panel={drilldown}
         query={drilldownQuery}
@@ -770,22 +781,64 @@ function ApprovalView({ rows, busyAction, onAction }: { rows: AppRecord[]; busyA
 }
 
 function CalendarView({ payload }: { payload: Payload | null }) {
+  const holidays = payload?.holidays || [];
   return (
     <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       <InfoList title="Published Leave Calendar" icon={CalendarDays} rows={payload?.calendar || []} primaryKey="label" secondaryKeys={['from', 'to', 'department', 'location', 'status']} />
-      <InfoList title="Blocked & Reserved Periods" icon={Archive} rows={payload?.blockedPeriods || []} primaryKey="name" secondaryKeys={['from', 'to', 'scope', 'status']} />
+      <div className="space-y-4">
+        <InfoList title="Blocked & Reserved Periods" icon={Archive} rows={payload?.blockedPeriods || []} primaryKey="name" secondaryKeys={['from', 'to', 'scope', 'status']} />
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h3 className="text-base font-black text-slate-950">Nigeria Public Holidays</h3>
+          <p className="mt-1 text-xs font-semibold text-slate-500">Synced for leave day exclusion · {holidays.length} holiday(s)</p>
+          <div className="mt-3 max-h-72 space-y-2 overflow-y-auto">
+            {holidays.length ? holidays.slice(0, 40).map((item) => (
+              <div key={item.id || item.date} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="text-sm font-black text-slate-950">{item.label}</p>
+                <p className="text-xs font-semibold text-slate-500">{item.date}{item.source ? ` · ${item.source}` : ''}</p>
+              </div>
+            )) : <p className="text-sm font-semibold text-slate-500">No public holidays loaded.</p>}
+          </div>
+        </section>
+      </div>
     </section>
   );
 }
 
-function BalanceView({ rows }: { rows: BalanceRecord[] }) {
+function BalanceView({ rows, onOpenDetail }: { rows: BalanceRecord[]; onOpenDetail: (row: BalanceRecord) => void }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <TableHeader title="Leave Balance Administration" detail="Current, accrued, used, pending, forfeited, carry-forward, liability, history, imports, exports, and recalculation readiness." />
+      <TableHeader title="Leave Balance Administration" detail="Annual leave only. Double-click an employee row to view pending, forfeited, carry-forward, liability, and exceptions." />
       <div className="overflow-x-auto">
-        <table className="min-w-[1120px] w-full divide-y divide-slate-100">
-          <thead className="bg-slate-50"><tr>{['Employee', 'Type', 'Current', 'Accrued', 'Used', 'Pending', 'Forfeited', 'Carry Forward', 'Liability', 'Status'].map((header) => <th key={header} className="px-4 py-3 text-left text-xs font-black uppercase text-slate-500">{header}</th>)}</tr></thead>
-          <tbody className="divide-y divide-slate-100 bg-white">{rows.slice(0, 80).map((item) => <tr key={`${item.employeeId}-${item.leaveType}`} className="hover:bg-slate-50"><td className="px-4 py-3"><div className="font-black text-slate-950">{item.fullName}</div><div className="text-xs font-semibold text-slate-500">{item.employeeId} - {item.department}</div></td><td className="px-4 py-3 text-sm font-bold text-slate-700">{item.leaveType}</td><td className="px-4 py-3 text-sm font-black text-slate-900">{item.currentBalance}</td><td className="px-4 py-3 text-sm font-bold text-slate-700">{item.accruedBalance}</td><td className="px-4 py-3 text-sm font-bold text-slate-700">{item.usedBalance}</td><td className="px-4 py-3 text-sm font-bold text-slate-700">{item.pendingBalance}</td><td className="px-4 py-3 text-sm font-bold text-slate-700">{item.forfeitedBalance}</td><td className="px-4 py-3 text-sm font-bold text-slate-700">{item.carryForwardBalance}</td><td className="px-4 py-3 text-sm font-black text-slate-900">{money(item.liabilityValue)}</td><td className="px-4 py-3"><Chip value={item.status} /></td></tr>)}</tbody>
+        <table className="min-w-[720px] w-full divide-y divide-slate-100">
+          <thead className="bg-slate-50">
+            <tr>
+              {['Employee', 'Leave Entitled', 'Used', 'Balance'].map((header) => (
+                <th key={header} className="px-4 py-3 text-left text-xs font-black uppercase text-slate-500">{header}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {rows.length ? rows.slice(0, 200).map((item) => (
+              <tr
+                key={`${item.employeeId}-${item.leaveType}`}
+                className="cursor-pointer hover:bg-blue-50"
+                title="Double-click to view full balance details"
+                onDoubleClick={() => onOpenDetail(item)}
+              >
+                <td className="px-4 py-3">
+                  <div className="font-black text-slate-950">{item.fullName}</div>
+                  <div className="text-xs font-semibold text-slate-500">{item.employeeId} · {item.department}</div>
+                </td>
+                <td className="px-4 py-3 text-sm font-black text-slate-900">{item.accruedBalance}</td>
+                <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.usedBalance}</td>
+                <td className="px-4 py-3 text-sm font-black text-emerald-700">{item.currentBalance}</td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan={4} className="px-4 py-8 text-center text-sm font-semibold text-slate-500">No annual leave balances found.</td>
+              </tr>
+            )}
+          </tbody>
         </table>
       </div>
     </section>
@@ -825,6 +878,9 @@ function LeaveTypeView({ payload }: { payload: Payload | null }) {
 function LeaveAllowanceExceptionsView({ rows }: { rows: AllowanceExceptionRecord[] }) {
   const critical = rows.filter((item) => item.severity === 'Critical');
   const pending = rows.filter((item) => item.severity === 'Pending');
+  const exportExcel = () => {
+    window.location.href = '/api/hris/leave-management?format=excel&report=allowance-exceptions';
+  };
   return (
     <section className="space-y-4">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -840,18 +896,27 @@ function LeaveAllowanceExceptionsView({ rows }: { rows: AllowanceExceptionRecord
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <p className="text-xs font-black uppercase tracking-wide text-slate-500">Export</p>
-          <button
-            type="button"
-            onClick={() => { window.location.href = '/api/hris/leave-management?format=allowance-exceptions-csv'; }}
-            className="mt-3 inline-flex h-10 items-center rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800"
-          >
-            Download CSV
-          </button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={exportExcel}
+              className="inline-flex h-10 items-center rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700"
+            >
+              Export Excel
+            </button>
+            <button
+              type="button"
+              onClick={() => { window.location.href = '/api/hris/leave-management?format=allowance-exceptions-csv'; }}
+              className="inline-flex h-10 items-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Download CSV
+            </button>
+          </div>
         </div>
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <TableHeader title="Leave Allowance Exceptions Report" detail="Validated against approved annual leave days and the 10-working-day leave allowance policy." />
+        <TableHeader title="Leave Allowance Exceptions Report" detail="Validated against approved annual leave days and the 10-working-day leave allowance policy. Critical/Review rows are highlighted and export to Excel as a preformatted exception table." />
         <div className="overflow-x-auto">
           <table className="min-w-[1280px] w-full divide-y divide-slate-100">
             <thead className="bg-slate-50">
@@ -862,20 +927,23 @@ function LeaveAllowanceExceptionsView({ rows }: { rows: AllowanceExceptionRecord
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
-              {rows.length ? rows.map((item) => (
-                <tr key={item.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3"><Chip value={item.severity} /></td>
-                  <td className="px-4 py-3"><div className="font-black text-slate-950">{item.fullName}</div><div className="text-xs font-semibold text-slate-500">{item.employeeId}</div></td>
-                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.department}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.payrollPeriod}<div className="text-xs font-semibold text-slate-500">{item.leaveYear}</div></td>
-                  <td className="px-4 py-3 text-sm font-black text-slate-900">{item.requestDays}</td>
-                  <td className="px-4 py-3 text-sm font-black text-slate-900">{item.approvedAnnualLeaveDays}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.allowanceAmount > 0 ? new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(item.allowanceAmount) : '—'}</td>
-                  <td className="px-4 py-3 text-xs font-semibold text-slate-600">{item.allowanceStatus}</td>
-                  <td className="px-4 py-3 text-xs font-semibold text-slate-600">{item.linkedRequestId || '—'}</td>
-                  <td className="px-4 py-3 text-xs font-semibold text-slate-600">{item.recommendation}</td>
-                </tr>
-              )) : (
+              {rows.length ? rows.map((item) => {
+                const isException = item.severity === 'Critical' || item.severity === 'Review';
+                return (
+                  <tr key={item.id} className={isException ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-slate-50'}>
+                    <td className="px-4 py-3"><Chip value={item.severity} /></td>
+                    <td className="px-4 py-3"><div className={`font-black ${isException ? 'text-red-950' : 'text-slate-950'}`}>{item.fullName}</div><div className="text-xs font-semibold text-slate-500">{item.employeeId}</div></td>
+                    <td className={`px-4 py-3 text-sm font-bold ${isException ? 'text-red-900' : 'text-slate-700'}`}>{item.department}</td>
+                    <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.payrollPeriod}<div className="text-xs font-semibold text-slate-500">{item.leaveYear}</div></td>
+                    <td className="px-4 py-3 text-sm font-black text-slate-900">{item.requestDays}</td>
+                    <td className="px-4 py-3 text-sm font-black text-slate-900">{item.approvedAnnualLeaveDays}</td>
+                    <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.allowanceAmount > 0 ? new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(item.allowanceAmount) : '—'}</td>
+                    <td className="px-4 py-3 text-xs font-semibold text-slate-600">{item.allowanceStatus}</td>
+                    <td className="px-4 py-3 text-xs font-semibold text-slate-600">{item.linkedRequestId || '—'}</td>
+                    <td className={`px-4 py-3 text-xs font-semibold ${isException ? 'text-red-800' : 'text-slate-600'}`}>{item.recommendation}</td>
+                  </tr>
+                );
+              }) : (
                 <tr><td colSpan={10} className="px-4 py-8 text-center text-sm font-semibold text-slate-500">No leave allowance exceptions or pending payroll items.</td></tr>
               )}
             </tbody>
@@ -884,12 +952,6 @@ function LeaveAllowanceExceptionsView({ rows }: { rows: AllowanceExceptionRecord
       </div>
     </section>
   );
-}
-
-function OperationalView({ payload, section }: { payload: Payload | null; section: string }) {
-  const config = payload?.operationalSections.find((item) => item.id === section);
-  const rows = (config?.reports?.length ? config.reports.map((item) => ({ control: item, value: 'Report-ready' })) : config?.controls.map((item) => ({ control: item, value: 'Configured' }))) || [];
-  return <InfoList title={config?.label || 'Leave Operations'} icon={CheckCircle2} rows={rows} primaryKey="control" secondaryKeys={['value']} />;
 }
 
 function ApplicationRow({ item }: { item: AppRecord }) {

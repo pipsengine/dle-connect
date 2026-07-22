@@ -11,6 +11,7 @@ import {
   isLeaveEssRequest,
   workflowStageForEssStatus,
 } from '@/lib/leave-request-shared';
+import { resolveNigeriaPublicHolidays } from '@/lib/nigeria-public-holidays';
 
 export type LeaveRole = 'Leave Administrator' | 'HR Officer' | 'HR Manager' | 'Department Manager' | 'Supervisor' | 'Payroll Officer' | 'Employee' | 'Executive' | 'System Administrator' | 'Super Administrator';
 export type LeaveStatus = 'Draft' | 'Submitted' | 'Under Review' | 'Approved' | 'Rejected' | 'Withdrawn' | 'Cancelled' | 'Terminated' | 'Completed';
@@ -202,6 +203,7 @@ export type LeavePayload = {
   leaveTypes: LeaveTypeRule[];
   calendar: Array<Record<string, string | number>>;
   blockedPeriods: Array<Record<string, string>>;
+  holidays: Array<{ id: string; label: string; date: string; source?: string }>;
   workflowMatrix: Array<Record<string, string>>;
   reports: Array<Record<string, string>>;
   notifications: Array<Record<string, string>>;
@@ -1315,11 +1317,12 @@ export async function readLeaveManagementPayload(
     await maybeUpsertEssLeaveRequests(pool, employees, forceSync);
     await maybeSyncLeaveBalances(pool, employees, forceSync);
   }
-  const [applicationsRaw, balances, leaveTypes, auditTrail] = await Promise.all([
+  const [applicationsRaw, balances, leaveTypes, auditTrail, nigeriaHolidays] = await Promise.all([
     readLeaveApplications(pool),
     readLeaveBalances(pool),
     readLeaveTypes(pool),
     readLeaveAudit(pool),
+    resolveNigeriaPublicHolidays().catch(() => ({ holidays: [] as Array<{ id: string; label: string; date: string; source?: string }> })),
   ]);
   const allowanceEvents = forceSync
     ? await syncSageLeaveAllowanceEvents(applicationsRaw, { persist: !readOnly })
@@ -1434,6 +1437,12 @@ export async function readLeaveManagementPayload(
     leaveTypes: leaveTypes.filter((type) => type.active && !/^(casual leave|unpaid leave)$/i.test(type.name)),
     calendar: applications.slice(0, 10).map((item) => ({ id: item.id, label: `${item.fullName} - ${item.leaveType}`, from: item.startDate, to: item.endDate, status: item.status, department: item.department, location: item.location })),
     blockedPeriods: [],
+    holidays: (nigeriaHolidays.holidays || []).map((item) => ({
+      id: item.id,
+      label: item.label,
+      date: item.date,
+      source: item.source,
+    })),
     workflowMatrix: [
       { dimension: 'Department', rule: 'Supervisor -> Manager -> HR' },
       { dimension: 'Grade', rule: 'Senior grades require final approval' },

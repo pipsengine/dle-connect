@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { formatLeaveAllowanceAmount } from '@/lib/leave-allowance-policy';
+import { buildLeaveReportExcelXml, leaveReportExcelFilename, leaveReportExcelResponseHeaders } from '@/lib/leave-excel-export';
 import { auditLeaveAction, dormantLongPolicy, readLeaveManagementPayload, validateLeaveAction, type LeaveActionId, type LeaveRole } from '@/lib/leave-management-store';
+import { buildLeaveReportTable, resolveLeaveReportId } from '@/lib/leave-reports-engine';
 import { applyHrisLeaveWorkflowAction, closeLeaveYearRun, processLeaveAccrualRun, processLeaveCarryForwardRun } from '@/lib/leave-workflow-service';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
@@ -50,7 +52,16 @@ export async function GET(request: NextRequest) {
     const role = await resolveLeaveRole(request);
     const section = request.nextUrl.searchParams.get('section') || 'dashboard';
     const format = request.nextUrl.searchParams.get('format');
-    const payload = await readLeaveManagementPayload(section, role, format === 'allowance-exceptions-csv' ? { forceSync: true } : undefined);
+    const reportParam = request.nextUrl.searchParams.get('report');
+    const forceSync = format === 'allowance-exceptions-csv'
+      || (format === 'excel' && reportParam === 'allowance-exceptions');
+    const payload = await readLeaveManagementPayload(section, role, forceSync ? { forceSync: true } : undefined);
+    if (format === 'excel') {
+      const reportId = resolveLeaveReportId(reportParam) || 'utilization';
+      const table = buildLeaveReportTable(reportId, payload);
+      const xml = buildLeaveReportExcelXml(table);
+      return new NextResponse(xml, { headers: leaveReportExcelResponseHeaders(leaveReportExcelFilename(table)) });
+    }
     if (format === 'allowance-exceptions-csv') {
       const rows = payload.allowanceExceptions.map((item) => [
         item.severity,
