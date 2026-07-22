@@ -178,7 +178,7 @@ export const buildSpreadsheetTableExcelXml = (report: SpreadsheetTableExport) =>
 export const buildLeaveReportExcelXml = (report: LeaveReportTable) => buildSpreadsheetTableExcelXml(report);
 
 export const leaveReportExcelFilename = (
-  report: Pick<LeaveReportTable, 'id' | 'generatedAt'> | (SpreadsheetTableExport & { id?: string }),
+  report: Pick<LeaveReportTable, 'id' | 'title' | 'generatedAt'> | (SpreadsheetTableExport & { id?: string }),
 ) => {
   const slug = String(('id' in report && report.id) || report.title || 'export')
     .replace(/[^a-z0-9-]+/gi, '-')
