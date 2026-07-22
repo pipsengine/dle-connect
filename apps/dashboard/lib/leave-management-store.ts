@@ -1047,6 +1047,7 @@ VALUES
 };
 
 const syncLeaveBalances = async (pool: sql.ConnectionPool, employees: DleEmployeeDirectoryRow[]) => {
+  const leaveYear = new Date().getFullYear();
   const existingRows = await pool.request().query(`
 SELECT [EmployeeId],[LeaveType],[CarryForwardBalance],[ForfeitedBalance]
 FROM [hris].[LeaveBalances];`);
@@ -1055,17 +1056,43 @@ FROM [hris].[LeaveBalances];`);
     existing.set(`${row.EmployeeId}::${row.LeaveType}`, { carry: Number(row.CarryForwardBalance || 0), forfeited: Number(row.ForfeitedBalance || 0) });
   }
 
-  const applicationRows = await pool.request().query(`
+  // Used/Pending must be current leave-year only. Entitlement is annual; lifetime usage
+  // made "Used" appear larger than entitled (e.g. 45 used vs 37 entitled).
+  const applicationRows = await pool.request()
+    .input('LeaveYear', sql.Int, leaveYear)
+    .query(`
 SELECT [EmployeeId],[LeaveType],
   SUM(CASE WHEN [StatusName] IN (N'Approved',N'Completed') THEN [BalanceImpact] ELSE 0 END) AS [UsedDays],
   SUM(CASE WHEN [StatusName] IN (N'Submitted',N'Under Review',N'Line Manager Review',N'HR Review') THEN [BalanceImpact] ELSE 0 END) AS [PendingDays]
 FROM [hris].[LeaveApplications]
 WHERE [PolicyComplianceStatus] <> N'Blocked'
+  AND YEAR([StartDate]) = @LeaveYear
 GROUP BY [EmployeeId],[LeaveType];`);
   const usage = new Map<string, { used: number; pending: number }>();
   for (const row of applicationRows.recordset as Array<{ EmployeeId: string; LeaveType: string; UsedDays: number; PendingDays: number }>) {
-    usage.set(`${row.EmployeeId}::${row.LeaveType}`, { used: Number(row.UsedDays || 0), pending: Number(row.PendingDays || 0) });
+    const key = `${String(row.EmployeeId || '').trim()}::${row.LeaveType}`;
+    const prior = usage.get(key) || { used: 0, pending: 0 };
+    usage.set(key, {
+      used: prior.used + Number(row.UsedDays || 0),
+      pending: prior.pending + Number(row.PendingDays || 0),
+    });
   }
+
+  const usageForEmployee = (employee: DleEmployeeDirectoryRow, leaveType: string) => {
+    const keys = [...new Set(
+      [employee.employeeId, employee.employeeCode, employee.sourceEmployeeId]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean),
+    )];
+    return keys.reduce(
+      (total, id) => {
+        const row = usage.get(`${id}::${leaveType}`);
+        if (!row) return total;
+        return { used: total.used + row.used, pending: total.pending + row.pending };
+      },
+      { used: 0, pending: 0 },
+    );
+  };
 
   for (const employee of employees.filter((row) => activeStatus(row.status))) {
     const leaveType = 'Annual Leave';
@@ -1073,12 +1100,15 @@ GROUP BY [EmployeeId],[LeaveType];`);
     const entitlement = entitlementFor(employee, leaveType);
     const currentExisting = existing.get(key);
     const carry = Math.min(dormantLongPolicy.carryForwardCap, Number(currentExisting?.carry || 0));
-    const used = Number(usage.get(key)?.used || 0);
-    const pending = Number(usage.get(key)?.pending || 0);
+    const yearUsage = usageForEmployee(employee, leaveType);
+    const used = Number(yearUsage.used || 0);
+    const pending = Number(yearUsage.pending || 0);
     const accrued = entitlement + carry;
+    // Available pool for the year is entitlement + carry-forward. Used cannot reduce balance below 0.
     const current = Math.max(0, accrued - used - pending);
     const exceptions = [
       ...(current < 3 && entitlement > 0 ? ['Low leave balance'] : []),
+      ...(used > accrued && accrued > 0 ? [`Used days (${used}) exceed ${leaveYear} entitlement (${accrued})`] : []),
       ...(!isFourteenDayPaidLeaveEmployee(employee) && !isConfirmedPermanent(employee) ? ['Annual Leave locked pending confirmation of appointment'] : []),
       ...(employee.hasManagerAssigned === false ? ['Reporting manager missing'] : []),
     ];
