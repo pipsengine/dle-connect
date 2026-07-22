@@ -308,15 +308,15 @@ export const buildLeaveReportTable = (reportId: LeaveReportId, payload: LeaveRep
       item.employeeId,
       item.fullName,
       item.department,
-      item.managerName,
+      item.managerName || '',
       item.leaveType,
       item.startDate,
       item.endDate,
       Number(item.days || 0),
       item.status,
       item.stage,
-      item.approvalStatus,
-      item.policyComplianceStatus,
+      item.approvalStatus || '',
+      item.policyComplianceStatus || '',
     ]);
     const pending = applications.filter((item) => !['Approved', 'Completed', 'Cancelled', 'Rejected', 'Terminated'].includes(item.status)).length;
     return {
