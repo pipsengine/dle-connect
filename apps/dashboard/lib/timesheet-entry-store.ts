@@ -763,11 +763,8 @@ const db = async () => {
     throw new Error('DLE Enterprise database is not configured. Timesheet entry data must be stored in the database before this page can be used.');
   }
   if (!dbReady.value) {
-    const existing = await pool.request().query(`SELECT OBJECT_ID(N'[hris].[TimesheetHeaders]', N'U') AS tableId`);
-    if (existing.recordset?.[0]?.tableId) {
-      dbReady.value = true;
-      return pool;
-    }
+    // Always run CREATE IF NOT EXISTS + additive COL_LENGTH migrations.
+    // Do not short-circuit when TimesheetHeaders already exists — that skips new columns (e.g. ShiftLabel).
     await pool.request().query(`
 IF SCHEMA_ID(N'hris') IS NULL EXEC(N'CREATE SCHEMA [hris]');
 IF OBJECT_ID(N'[hris].[TimesheetProjects]', N'U') IS NULL

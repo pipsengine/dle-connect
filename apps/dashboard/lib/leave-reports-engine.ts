@@ -1,5 +1,63 @@
-import { formatLeaveAllowanceAmount } from '@/lib/leave-allowance-policy';
-import type { LeavePayload } from '@/lib/leave-management-store';
+const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 });
+const formatLeaveAllowanceAmount = (amount: number) => (amount > 0 ? moneyFmt.format(amount) : '—');
+
+/** Client-safe report input shape (no server/DB imports). */
+export type LeaveReportSourcePayload = {
+  applications?: Array<{
+    id: string;
+    employeeId: string;
+    fullName: string;
+    department: string;
+    managerName?: string;
+    leaveType: string;
+    startDate: string;
+    endDate: string;
+    days: number;
+    status: string;
+    stage: string;
+    approvalStatus?: string;
+    policyComplianceStatus?: string;
+    actingOfficer?: string;
+    exceptions?: string[];
+    allowanceStatus?: string;
+    allowanceEligible?: boolean;
+    allowancePaid?: boolean;
+  }>;
+  balances?: Array<{
+    employeeId: string;
+    fullName: string;
+    department: string;
+    leaveType: string;
+    currentBalance: number;
+    accruedBalance: number;
+    usedBalance: number;
+    pendingBalance: number;
+    forfeitedBalance: number;
+    carryForwardBalance: number;
+    liabilityValue: number;
+    status: string;
+    exceptions?: string[];
+  }>;
+  allowanceExceptions?: Array<{
+    id: string;
+    severity: 'Critical' | 'Review' | 'Pending';
+    employeeId: string;
+    fullName: string;
+    department: string;
+    leaveYear: number;
+    payrollPeriod: string;
+    requestDays: number;
+    approvedAnnualLeaveDays: number;
+    allowanceAmount: number;
+    allowanceStatus: string;
+    eventStatus: string;
+    linkedRequestId?: string;
+    recommendation: string;
+  }>;
+  summary?: {
+    leaveUtilizationPct?: number;
+  };
+};
 
 export type LeaveReportId =
   | 'utilization'
@@ -59,7 +117,7 @@ export const resolveLeaveReportId = (value?: string | null): LeaveReportId | nul
   return byTitle?.id || null;
 };
 
-export const buildLeaveReportTable = (reportId: LeaveReportId, payload: LeavePayload): LeaveReportTable => {
+export const buildLeaveReportTable = (reportId: LeaveReportId, payload: LeaveReportSourcePayload): LeaveReportTable => {
   const generatedAt = new Date().toISOString();
   const meta = LEAVE_REPORT_CATALOGUE.find((item) => item.id === reportId)!;
   const applications = payload.applications || [];
@@ -381,5 +439,5 @@ export const buildLeaveReportTable = (reportId: LeaveReportId, payload: LeavePay
   };
 };
 
-export const buildAllLeaveReportTables = (payload: LeavePayload) =>
+export const buildAllLeaveReportTables = (payload: LeaveReportSourcePayload) =>
   LEAVE_REPORT_CATALOGUE.map((item) => buildLeaveReportTable(item.id, payload));
