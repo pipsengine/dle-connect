@@ -632,7 +632,11 @@ const dateOnly = (value: Date | string | null | undefined) => value ? (value ins
 const parseJsonArray = (value: string | null | undefined) => {
   try {
     const parsed = JSON.parse(value || '[]');
-    return Array.isArray(parsed) ? parsed.map(String) : [];
+    if (Array.isArray(parsed)) return parsed.map(String);
+    if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { messages?: unknown }).messages)) {
+      return (parsed as { messages: unknown[] }).messages.map(String);
+    }
+    return [];
   } catch {
     return [];
   }

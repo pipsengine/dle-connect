@@ -288,8 +288,8 @@ export async function POST(request: Request) {
       if (!['Super Admin', 'HR Director', 'HR Manager', 'Payroll Officer'].includes(role)) {
         return err(403, 'Permission denied');
       }
-      const { postPermanentTimesheetOvertimeToPayroll } = await import('@/lib/payroll-timesheet-ot-posting');
-      const summary = await postPermanentTimesheetOvertimeToPayroll(String(body.period || ''));
+      const { postPermanentTimesheetEarningsFromTimesheets } = await import('@/lib/payroll-timesheet-ot-posting');
+      const summary = await postPermanentTimesheetEarningsFromTimesheets(String(body.period || ''));
       return ok({ summary });
     }
 

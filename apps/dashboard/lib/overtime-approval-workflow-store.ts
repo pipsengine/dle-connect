@@ -594,8 +594,8 @@ const postApprovedOvertimeToTimesheet = async (request: OvertimeAuthorizationReq
     if (result.posted > 0) {
       const period = String(request.workDate || '').slice(0, 7);
       void import('@/lib/payroll-timesheet-ot-posting')
-        .then((module) => module.postPermanentTimesheetOvertimeToPayroll(period))
-        .catch((error) => console.warn(`Overtime authorization ${request.id}: payroll OT posting skipped.`, error instanceof Error ? error.message : error));
+        .then((module) => module.postPermanentTimesheetEarningsFromTimesheets(period))
+        .catch((error) => console.warn(`Overtime authorization ${request.id}: payroll OT/night posting skipped.`, error instanceof Error ? error.message : error));
     }
   } catch (error) {
     // Approval must not fail if timesheet posting is unavailable.

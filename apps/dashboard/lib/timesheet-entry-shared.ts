@@ -21,7 +21,7 @@ export type TimesheetShiftDefinition = {
   description: string;
 };
 
-/** Day: typical site day. Night: 18:00–02:00 = 8h standard; OT begins after 02:00. */
+/** Day: typical site day. Night: 18:00–02:00 = 8h normal work + ₦1,500 inconvenience allowance (no OT). */
 export const TIMESHEET_SHIFTS: TimesheetShiftDefinition[] = [
   {
     id: '01',
@@ -41,9 +41,12 @@ export const TIMESHEET_SHIFTS: TimesheetShiftDefinition[] = [
     end: '02:00',
     standardProductiveHours: STANDARD_TIMESHEET_HOURS,
     crossesMidnight: true,
-    description: 'Night shift · 18:00–02:00 (8h) · OT after 02:00',
+    description: 'Night shift · 18:00–02:00 (8h normal) · ₦1,500 inconvenience allowance · no overtime',
   },
 ];
+
+/** Flat night inconvenience allowance (NGN) auto-posted per night worked. */
+export const NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT = 1500;
 
 export const DEFAULT_TIMESHEET_SHIFT_LABEL = TIMESHEET_SHIFTS[0].label;
 export const TIMESHEET_SHIFT_LABELS = TIMESHEET_SHIFTS.map((shift) => shift.label);
@@ -67,7 +70,7 @@ const parseClockMinutes = (value: string) => {
 
 /**
  * Overtime hours implied by clock-out past the shift standard end.
- * Night: 18:00–02:00 is standard; anything after 02:00 until done is OT.
+ * Night: no overtime — night is normal 8h work plus flat inconvenience allowance only.
  * Day: OT after 17:00.
  */
 export const impliedOvertimeHoursFromClock = (
@@ -76,22 +79,12 @@ export const impliedOvertimeHoursFromClock = (
   shiftValue?: string | null,
 ): number => {
   const shift = resolveTimesheetShift(shiftValue);
+  if (shift.kind === 'Night') return 0;
   const outTime = String(clockOut || '').trim();
   if (!outTime || outTime === '--:--') return 0;
   const outMinutes = parseClockMinutes(outTime);
   const endMinutes = parseClockMinutes(shift.end);
   if (outMinutes === null || endMinutes === null) return 0;
-
-  const inTime = String(clockIn || '').trim();
-  const inMinutes = inTime ? parseClockMinutes(inTime) : null;
-  const overnight = inMinutes !== null && outMinutes < inMinutes;
-
-  if (shift.crossesMidnight) {
-    // Night standard ends at 02:00. Only early-morning outs after end count as OT.
-    if (!overnight && outMinutes > (inMinutes ?? -1)) return 0;
-    if (outMinutes <= endMinutes) return 0;
-    return Math.round((Math.max(0, outMinutes - endMinutes) / 60) * 10) / 10;
-  }
 
   const overtimeMinutes = outMinutes - endMinutes;
   return Math.round((Math.max(0, overtimeMinutes) / 60) * 10) / 10;
@@ -243,12 +236,12 @@ export const resolveLineAttendanceDuration = (line: {
 /**
  * Max productive hours from biometric span.
  * Day: duration includes 1h break → subtract break.
- * Night: 18:00–02:00 is already net 8h productive → do not subtract break (avoids 7h cap / negative variance).
+ * Night: 18:00–02:00 is already net 8h productive → do not subtract break; cap at 8h (no night OT).
  */
 export const maxProductiveHoursFromBiometric = (attendanceDuration: number, shiftValue?: string | null) => {
   if (attendanceDuration <= 0.001) return Number.POSITIVE_INFINITY;
   const shift = resolveTimesheetShift(shiftValue);
-  if (shift.kind === 'Night') return round1(Math.max(0, attendanceDuration));
+  if (shift.kind === 'Night') return round1(Math.min(STANDARD_TIMESHEET_HOURS, Math.max(0, attendanceDuration)));
   return round1(Math.max(0, attendanceDuration - DAILY_BREAK_HOURS));
 };
 

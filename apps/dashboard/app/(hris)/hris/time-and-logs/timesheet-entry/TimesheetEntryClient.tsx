@@ -100,6 +100,7 @@ type TimesheetHeader = {
   approvedAt: string | null;
   approvedBy: string | null;
   lastSyncAt: string | null;
+  shiftLabel?: string | null;
   projectManager?: string | null;
   projectManagerProjectCode?: string | null;
   currentApprovalStage?: TimesheetWorkflowStage | null;
@@ -539,6 +540,11 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     }, hasPayloadRef.current ? 120 : 0);
     return () => window.clearTimeout(timer);
   }, [load, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter]);
+
+  useEffect(() => {
+    const saved = payload?.header?.shiftLabel;
+    if (saved) setSelectedShift(resolveTimesheetShift(saved).label);
+  }, [payload?.header?.id, payload?.header?.shiftLabel]);
 
   const handleSyncAttendance = useCallback(async (source: 'manual' | 'auto' = 'manual') => {
     const headerStatus = payload?.header?.status ?? 'Draft';
@@ -1446,9 +1452,27 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             setSelectedShift(shift.label);
             setNotice(
               shift.kind === 'Night'
-                ? 'Night shift selected: book 8h for 18:00–02:00. Hours after 02:00 until clock-out are overtime.'
+                ? 'Night shift selected: book 8h for 18:00–02:00 as normal work. ₦1,500 inconvenience allowance posts automatically — overtime is not applicable.'
                 : 'Day shift selected: book 8h for the standard day. Hours after 17:00 until clock-out are overtime.',
             );
+            if (payload?.header?.id && canEditTimesheet) {
+              void fetch('/api/hris/time-and-logs/timesheet-entry', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'SET_SHIFT',
+                  headerId: payload.header.id,
+                  shiftLabel: shift.label,
+                  mode: isWorkforceSupervisor ? 'supervisor' : undefined,
+                }),
+              }).then(async (res) => {
+                const json = await readApiJson(res);
+                if (res.ok && json?.status === 'success' && json.data) {
+                  setPayload(json.data);
+                  setLocalLines(json.data.lines);
+                }
+              }).catch(() => undefined);
+            }
           }}
           shiftHint={resolveTimesheetShift(selectedShift).description}
           canManagePeriod={canManageTimesheetSetup}

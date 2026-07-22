@@ -33,6 +33,14 @@ import { createEnterpriseNotification } from '@/lib/enterprise-notifications-sto
 import { invalidateEssPortalCache } from '@/lib/ess-portal-cache';
 import { explicitDepartmentSupervisorCode } from '@/lib/department-reporting-manager-sync';
 import {
+  calculateLeaveDays,
+  decodeLeaveExceptionsPayload,
+  encodeLeaveExceptionsPayload,
+  leaveApplicationsConflict,
+  normalizeLeaveIsoDate,
+} from '@/lib/leave-day-engine';
+import { resolveNigeriaPublicHolidays } from '@/lib/nigeria-public-holidays';
+import {
   listWorkflowDeliveries,
   recordWorkflowDelivery,
   runWorkflowDeliveryStep,
@@ -67,6 +75,10 @@ export type EssLeaveRequest = {
   leaveType?: string;
   startDate?: string;
   endDate?: string;
+  /** Chargeable leave days selected within the period (may be non-contiguous). */
+  selectedDates?: string[];
+  /** Public holidays excluded from the charged leave days after employee confirmation. */
+  excludedHolidays?: Array<{ date: string; label: string }>;
   days?: number;
   payrollPeriod?: string;
   paidLeave?: boolean;
@@ -1043,6 +1055,7 @@ const essLeaveRequestFromDbRow = (row: Record<string, unknown>, employees: DleEm
   const manager = managerName
     ? employees.find((employee) => referenceMatchesEmployee(employee, managerName))
     : null;
+  const exceptionPayload = decodeLeaveExceptionsPayload(row.ExceptionsJson);
   return {
     id,
     employeeId,
@@ -1057,6 +1070,8 @@ const essLeaveRequestFromDbRow = (row: Record<string, unknown>, employees: DleEm
     leaveType: compact(row.LeaveType) || 'Annual Leave',
     startDate: startDate || undefined,
     endDate: endDate || undefined,
+    selectedDates: exceptionPayload.selectedDates.length ? exceptionPayload.selectedDates : undefined,
+    excludedHolidays: exceptionPayload.excludedHolidays.length ? exceptionPayload.excludedHolidays : undefined,
     days: Number(row.Days || 0) || undefined,
     relieverEmployeeId: reliever ? (reliever.employeeCode || reliever.employeeId) : undefined,
     relieverName: reliever?.fullName || actingOfficer || undefined,
@@ -1431,17 +1446,40 @@ export const listLiveLeaveApprovalNotifications = async (input: {
 export type LeaveCalendarConfig = {
   blockedPeriods: Array<{ id: string; label: string; startDate: string; endDate: string; reason: string }>;
   holidays: Array<{ id: string; label: string; date: string }>;
+  holidayFeed?: { source?: string; sourceUrl?: string | null; syncedAt?: string };
 };
 
 export const readLeaveCalendarConfig = async (): Promise<LeaveCalendarConfig> => {
   try {
+    const resolved = await resolveNigeriaPublicHolidays();
     const parsed = JSON.parse(await readFile(LEAVE_CALENDAR_CONFIG_PATH, 'utf8')) as LeaveCalendarConfig;
+    const fileHolidays = Array.isArray(parsed.holidays) ? parsed.holidays : [];
+    const byDate = new Map<string, { id: string; label: string; date: string }>();
+    for (const item of [...resolved.holidays.map((h) => ({ id: h.id, label: h.label, date: h.date })), ...fileHolidays]) {
+      const date = normalizeLeaveIsoDate(item.date);
+      if (!date) continue;
+      byDate.set(date, { id: String(item.id || `holiday-${date}`), label: String(item.label || 'Public Holiday'), date });
+    }
     return {
       blockedPeriods: Array.isArray(parsed.blockedPeriods) ? parsed.blockedPeriods : [],
-      holidays: Array.isArray(parsed.holidays) ? parsed.holidays : [],
+      holidays: Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date)),
+      holidayFeed: {
+        source: resolved.source,
+        sourceUrl: resolved.sourceUrl || null,
+        syncedAt: new Date().toISOString(),
+      },
     };
   } catch {
-    return { blockedPeriods: [], holidays: [] };
+    try {
+      const resolved = await resolveNigeriaPublicHolidays();
+      return {
+        blockedPeriods: [],
+        holidays: resolved.holidays.map((item) => ({ id: item.id, label: item.label, date: item.date })),
+        holidayFeed: { source: resolved.source, sourceUrl: resolved.sourceUrl || null, syncedAt: new Date().toISOString() },
+      };
+    } catch {
+      return { blockedPeriods: [], holidays: [] };
+    }
   }
 };
 
@@ -1568,14 +1606,30 @@ export const findConflictingLeaveApplication = async (input: {
   employee: DleEmployeeDirectoryRow;
   startDate: string;
   endDate: string;
+  selectedDates?: string[];
   excludeRequestId?: string;
 }) => {
   const hrisConflict = await readHrisLeaveConflictForEmployee(input);
   if (hrisConflict) {
-    return {
-      ...hrisConflict,
-      message: formatConflictMessage(hrisConflict),
-    };
+    // When applicant has scattered days, only block if HRIS range truly overlaps those selected days.
+    if (input.selectedDates?.length) {
+      const overlapsSelected = input.selectedDates.some(
+        (date) => date >= hrisConflict.startDate && date <= hrisConflict.endDate,
+      );
+      if (!overlapsSelected) {
+        // continue to ESS check
+      } else {
+        return {
+          ...hrisConflict,
+          message: formatConflictMessage(hrisConflict),
+        };
+      }
+    } else {
+      return {
+        ...hrisConflict,
+        message: formatConflictMessage(hrisConflict),
+      };
+    }
   }
 
   const essConflict = (await readAllEssRequests()).find((item) =>
@@ -1585,11 +1639,17 @@ export const findConflictingLeaveApplication = async (input: {
     && blockingLeaveStatuses.has(item.status)
     && item.startDate
     && item.endDate
-    && leaveDatesOverlap(
-      input.startDate,
-      input.endDate,
-      normalizeLeaveDate(item.startDate),
-      normalizeLeaveDate(item.endDate),
+    && leaveApplicationsConflict(
+      {
+        startDate: input.startDate,
+        endDate: input.endDate,
+        selectedDates: input.selectedDates,
+      },
+      {
+        startDate: normalizeLeaveDate(item.startDate),
+        endDate: normalizeLeaveDate(item.endDate),
+        selectedDates: item.selectedDates,
+      },
     ),
   );
   if (essConflict) {
@@ -1620,11 +1680,13 @@ export const validateEssLeaveApplication = async (input: {
   startDate: string;
   endDate: string;
   days: number;
+  selectedDates?: string[];
+  acknowledgeHolidays?: boolean;
   relieverEmployeeId: string;
   excludeRequestId?: string;
 }) => {
   try {
-    const { employee, leaveType, startDate, endDate, days, relieverEmployeeId } = input;
+    const { employee, leaveType, startDate, endDate, relieverEmployeeId } = input;
   const employeeSource = await readPayrollEmployees();
   const reliever = employeeSource.employees.find((item) => item.employeeId === relieverEmployeeId || item.employeeCode === relieverEmployeeId);
   if (!reliever) return { ok: false as const, status: 400, message: 'A department reliever must be selected.' };
@@ -1640,10 +1702,39 @@ export const validateEssLeaveApplication = async (input: {
     return { ok: false as const, status: 409, message: 'Leave application falls within a blocked period.' };
   }
 
+  const dayCalc = calculateLeaveDays({
+    startDate,
+    endDate,
+    selectedDates: input.selectedDates,
+    holidays: calendar.holidays,
+  });
+  if (dayCalc.holidayDatesInPeriod.length && !input.acknowledgeHolidays) {
+    return {
+      ok: false as const,
+      status: 409,
+      code: 'PUBLIC_HOLIDAY_OVERLAP' as const,
+      message: `The leave period includes public holiday(s): ${dayCalc.holidayDatesInPeriod.map((item) => `${item.label} (${item.date})`).join(', ')}. Confirm to continue; holiday days will not be deducted from your leave balance.`,
+      holidays: dayCalc.holidayDatesInPeriod,
+      calculatedDays: dayCalc.days,
+      selectedDates: dayCalc.selectedDates,
+    };
+  }
+
+  const regularized = calculateLeaveDays({
+    startDate,
+    endDate,
+    selectedDates: dayCalc.selectedDates,
+    holidays: calendar.holidays,
+  });
+  if (regularized.days <= 0) {
+    return { ok: false as const, status: 400, message: 'No chargeable leave days remain after excluding weekends and public holidays. Select at least one working day.' };
+  }
+
   const conflict = await findConflictingLeaveApplication({
     employee,
     startDate,
     endDate,
+    selectedDates: regularized.selectedDates,
     excludeRequestId: input.excludeRequestId,
   });
   if (conflict) return { ok: false as const, status: 409, message: conflict.message };
@@ -1668,7 +1759,7 @@ export const validateEssLeaveApplication = async (input: {
     employeeCode: employee.employeeCode,
     employeeCategory: employee.employeeCategory || employee.employmentType,
     leaveType,
-    days,
+    days: regularized.days,
     startDate,
     endDate,
     confirmed: isConfirmedPermanent(employee),
@@ -1678,7 +1769,12 @@ export const validateEssLeaveApplication = async (input: {
     availableBalance,
   });
   if (!validation.ok) return { ok: false as const, status: validation.status, message: validation.message };
-  return { ok: true as const };
+  return {
+    ok: true as const,
+    days: regularized.days,
+    selectedDates: regularized.selectedDates,
+    excludedHolidays: dayCalc.holidayDatesInPeriod,
+  };
   } catch (error) {
     return {
       ok: false as const,
@@ -1832,12 +1928,12 @@ export const upsertEssLeaveRequestToDb = async (item: EssLeaveRequest, employees
     throw new Error(`Leave request ${item.id} has invalid dates (${String(item.startDate || '')} to ${String(item.endDate || '')}).`);
   }
   const days = Number(item.days || 0);
-  const exceptions = [
+  const exceptionMessages = [
     ...(days <= 0 ? ['Leave request has no calculated duration'] : []),
     ...(!employee ? ['Employee record not found in HRIS employee master'] : []),
     ...(leaveType === 'Annual Leave' && employee && !isFourteenDayPaidLeaveEmployee(employee) && !isConfirmedPermanent(employee) ? ['Annual Leave locked pending confirmation of appointment'] : []),
   ];
-  const blocked = exceptions.some((entry) => entry.includes('not found') || entry.includes('locked'));
+  const blocked = exceptionMessages.some((entry) => entry.includes('not found') || entry.includes('locked'));
   const requester = employee || resolveEmployeeReference(employees, item.employeeId);
   const resolvedManager = requester ? resolveLineManagerForEmployee(requester, employees) : null;
   const managerName = compact(item.lineManagerName)
@@ -1861,12 +1957,16 @@ export const upsertEssLeaveRequestToDb = async (item: EssLeaveRequest, employees
     .input('StatusName', sql.NVarChar(40), status)
     .input('WorkflowStage', sql.NVarChar(40), workflowStageForEssStatus(rawStatus, normalizedStatus))
     .input('ApprovalStatus', sql.NVarChar(60), approvalStatusForEss(normalizedStatus, rawStatus))
-    .input('PolicyComplianceStatus', sql.NVarChar(40), blocked ? 'Blocked' : exceptions.length ? 'Attention Required' : 'Compliant')
+    .input('PolicyComplianceStatus', sql.NVarChar(40), blocked ? 'Blocked' : exceptionMessages.length ? 'Attention Required' : 'Compliant')
     .input('BalanceImpact', sql.Decimal(9, 2), leaveType === 'Unpaid Leave' ? 0 : round2(days))
     .input('AvailableBalance', sql.Decimal(9, 2), 0)
     .input('ActingOfficer', sql.NVarChar(180), clean(item.relieverName) || clean(item.relieverEmployeeId) || 'Not configured')
     .input('SupportingDocuments', sql.Int, Number(item.attachmentNames?.length || 0))
-    .input('ExceptionsJson', sql.NVarChar(sql.MAX), JSON.stringify(exceptions))
+    .input('ExceptionsJson', sql.NVarChar(sql.MAX), encodeLeaveExceptionsPayload({
+      messages: exceptionMessages,
+      selectedDates: item.selectedDates || [],
+      excludedHolidays: item.excludedHolidays || [],
+    }))
     .input('WorkflowJson', sql.NVarChar(sql.MAX), JSON.stringify(item.workflow || []))
     .input('CommentsJson', sql.NVarChar(sql.MAX), JSON.stringify(item.comments || []))
     .query(`

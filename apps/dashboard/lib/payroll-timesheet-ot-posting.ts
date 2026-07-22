@@ -21,7 +21,8 @@ import {
   type TimesheetHeader,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-store';
-import { timesheetDayRulesForDate } from '@/lib/timesheet-entry-shared';
+import { timesheetDayRulesForDate, resolveTimesheetShift } from '@/lib/timesheet-entry-shared';
+import { isNightTimesheetHeader, postPermanentTimesheetNightAllowanceToPayroll } from '@/lib/payroll-timesheet-night-allowance-posting';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -134,6 +135,11 @@ export const postPermanentTimesheetOvertimeToPayroll = async (period?: string): 
       skipped += 1;
       continue;
     }
+    // Night work is normal 8h + flat inconvenience allowance only — never post OT.
+    if (isNightTimesheetHeader(header, line) || resolveTimesheetShift(header.shiftLabel).kind === 'Night') {
+      skipped += 1;
+      continue;
+    }
 
     const employee = lineKeys(line).map((key) => employeeByKey.get(key)).find(Boolean);
     if (!employee || !isPermanentPayrollEmployee(employee)) continue;
@@ -209,4 +215,13 @@ export const postPermanentTimesheetOvertimeToPayroll = async (period?: string): 
     totalAmount: roundMoney(lines.reduce((sum, line) => sum + line.amount, 0)),
     lines: lines.sort((a, b) => `${a.employeeCode}-${a.code}`.localeCompare(`${b.employeeCode}-${b.code}`)),
   };
+};
+
+/** Post day OT (excluding night) and night inconvenience allowance for a payroll period. */
+export const postPermanentTimesheetEarningsFromTimesheets = async (period?: string) => {
+  const [overtime, nightAllowance] = await Promise.all([
+    postPermanentTimesheetOvertimeToPayroll(period),
+    postPermanentTimesheetNightAllowanceToPayroll(period),
+  ]);
+  return { overtime, nightAllowance };
 };

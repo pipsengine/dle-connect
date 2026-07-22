@@ -102,6 +102,8 @@ export type TimesheetHeader = {
   approvedAt: string | null;
   approvedBy: string | null;
   lastSyncAt: string | null;
+  /** Timesheet shift label, e.g. "01 (Day)" / "02 (Night)". */
+  shiftLabel?: string | null;
   workflowHistory?: TimesheetWorkflowEvent[];
   payrollAcknowledgedAt?: string | null;
   payrollAcknowledgedBy?: string | null;
@@ -863,6 +865,8 @@ IF COL_LENGTH(N'hris.TimesheetHeaders', N'CurrentApprovalStage') IS NULL
 ALTER TABLE [hris].[TimesheetHeaders] ADD [CurrentApprovalStage] NVARCHAR(60) NULL;
 IF COL_LENGTH(N'hris.TimesheetHeaders', N'CurrentApprover') IS NULL
 ALTER TABLE [hris].[TimesheetHeaders] ADD [CurrentApprover] NVARCHAR(220) NULL;
+IF COL_LENGTH(N'hris.TimesheetHeaders', N'ShiftLabel') IS NULL
+ALTER TABLE [hris].[TimesheetHeaders] ADD [ShiftLabel] NVARCHAR(40) NULL;
 IF OBJECT_ID(N'[hris].[TimesheetLines]', N'U') IS NULL
 CREATE TABLE [hris].[TimesheetLines] (
   [Id] NVARCHAR(220) NOT NULL CONSTRAINT [PK_TimesheetLines] PRIMARY KEY,
@@ -1426,6 +1430,7 @@ async function readTimesheetDataUncached(options?: { softFail?: boolean }) {
     projectManagerProjectCode: row.ProjectManagerProjectCode,
     currentApprovalStage: row.CurrentApprovalStage,
     currentApprover: row.CurrentApprover,
+    shiftLabel: row.ShiftLabel || null,
     workflowHistory: eventsByHeader.get(row.Id) || [],
   }));
   const lines: TimesheetLine[] = linesResult.recordset.map((row) => ({
@@ -1519,6 +1524,7 @@ const mapTimesheetHeaderRow = (row: any, eventsByHeader: Map<string, TimesheetWo
   projectManagerProjectCode: row.ProjectManagerProjectCode,
   currentApprovalStage: row.CurrentApprovalStage,
   currentApprover: row.CurrentApprover,
+  shiftLabel: row.ShiftLabel || null,
   workflowHistory: eventsByHeader.get(String(row.Id)) || [],
 });
 
@@ -1900,6 +1906,7 @@ export async function readTimesheetApprovalData(options?: { softFail?: boolean }
     projectManagerProjectCode: row.ProjectManagerProjectCode,
     currentApprovalStage: row.CurrentApprovalStage,
     currentApprover: row.CurrentApprover,
+    shiftLabel: row.ShiftLabel || null,
     workflowHistory: eventsByHeader.get(row.Id) || [],
   }));
   const lines: TimesheetLine[] = linesResult.recordset.map((row) => ({
@@ -1953,12 +1960,13 @@ export async function writeTimesheetData(data: { headers: TimesheetHeader[]; lin
         .input('ProjectManagerProjectCode', sql.NVarChar(50), header.projectManagerProjectCode ?? null)
         .input('CurrentApprovalStage', sql.NVarChar(60), header.currentApprovalStage ?? null)
         .input('CurrentApprover', sql.NVarChar(220), header.currentApprover ?? null)
+        .input('ShiftLabel', sql.NVarChar(40), header.shiftLabel ?? null)
         .query(`
 MERGE [hris].[TimesheetHeaders] AS target
 USING (SELECT @Id AS [Id]) AS source ON target.[Id]=source.[Id]
-WHEN MATCHED THEN UPDATE SET [PeriodId]=@PeriodId,[TimesheetDate]=@TimesheetDate,[SupervisorId]=@SupervisorId,[SupervisorName]=@SupervisorName,[WorkCenterId]=@WorkCenterId,[WorkCenterName]=@WorkCenterName,[Status]=@Status,[SubmittedAt]=@SubmittedAt,[SubmittedBy]=@SubmittedBy,[ApprovedAt]=@ApprovedAt,[ApprovedBy]=@ApprovedBy,[LastSyncAt]=@LastSyncAt,[PayrollAcknowledgedAt]=@PayrollAcknowledgedAt,[PayrollAcknowledgedBy]=@PayrollAcknowledgedBy,[ProjectManager]=@ProjectManager,[ProjectManagerProjectCode]=@ProjectManagerProjectCode,[CurrentApprovalStage]=@CurrentApprovalStage,[CurrentApprover]=@CurrentApprover
-WHEN NOT MATCHED THEN INSERT ([Id],[PeriodId],[TimesheetDate],[SupervisorId],[SupervisorName],[WorkCenterId],[WorkCenterName],[Status],[SubmittedAt],[SubmittedBy],[ApprovedAt],[ApprovedBy],[LastSyncAt],[PayrollAcknowledgedAt],[PayrollAcknowledgedBy],[ProjectManager],[ProjectManagerProjectCode],[CurrentApprovalStage],[CurrentApprover])
-VALUES (@Id,@PeriodId,@TimesheetDate,@SupervisorId,@SupervisorName,@WorkCenterId,@WorkCenterName,@Status,@SubmittedAt,@SubmittedBy,@ApprovedAt,@ApprovedBy,@LastSyncAt,@PayrollAcknowledgedAt,@PayrollAcknowledgedBy,@ProjectManager,@ProjectManagerProjectCode,@CurrentApprovalStage,@CurrentApprover);`);
+WHEN MATCHED THEN UPDATE SET [PeriodId]=@PeriodId,[TimesheetDate]=@TimesheetDate,[SupervisorId]=@SupervisorId,[SupervisorName]=@SupervisorName,[WorkCenterId]=@WorkCenterId,[WorkCenterName]=@WorkCenterName,[Status]=@Status,[SubmittedAt]=@SubmittedAt,[SubmittedBy]=@SubmittedBy,[ApprovedAt]=@ApprovedAt,[ApprovedBy]=@ApprovedBy,[LastSyncAt]=@LastSyncAt,[PayrollAcknowledgedAt]=@PayrollAcknowledgedAt,[PayrollAcknowledgedBy]=@PayrollAcknowledgedBy,[ProjectManager]=@ProjectManager,[ProjectManagerProjectCode]=@ProjectManagerProjectCode,[CurrentApprovalStage]=@CurrentApprovalStage,[CurrentApprover]=@CurrentApprover,[ShiftLabel]=@ShiftLabel
+WHEN NOT MATCHED THEN INSERT ([Id],[PeriodId],[TimesheetDate],[SupervisorId],[SupervisorName],[WorkCenterId],[WorkCenterName],[Status],[SubmittedAt],[SubmittedBy],[ApprovedAt],[ApprovedBy],[LastSyncAt],[PayrollAcknowledgedAt],[PayrollAcknowledgedBy],[ProjectManager],[ProjectManagerProjectCode],[CurrentApprovalStage],[CurrentApprover],[ShiftLabel])
+VALUES (@Id,@PeriodId,@TimesheetDate,@SupervisorId,@SupervisorName,@WorkCenterId,@WorkCenterName,@Status,@SubmittedAt,@SubmittedBy,@ApprovedAt,@ApprovedBy,@LastSyncAt,@PayrollAcknowledgedAt,@PayrollAcknowledgedBy,@ProjectManager,@ProjectManagerProjectCode,@CurrentApprovalStage,@CurrentApprover,@ShiftLabel);`);
       await new sql.Request(tx).input('HeaderId', sql.NVarChar(160), header.id).query(`DELETE FROM [hris].[TimesheetWorkflowEvents] WHERE [HeaderId]=@HeaderId`);
       for (const event of header.workflowHistory || []) {
         await new sql.Request(tx)
@@ -2072,12 +2080,13 @@ export async function writeTimesheetHeaderLines(header: TimesheetHeader, lines: 
       .input('ProjectManagerProjectCode', sql.NVarChar(50), header.projectManagerProjectCode ?? null)
       .input('CurrentApprovalStage', sql.NVarChar(60), header.currentApprovalStage ?? null)
       .input('CurrentApprover', sql.NVarChar(220), header.currentApprover ?? null)
+      .input('ShiftLabel', sql.NVarChar(40), header.shiftLabel ?? null)
       .query(`
 MERGE [hris].[TimesheetHeaders] AS target
 USING (SELECT @Id AS [Id]) AS source ON target.[Id]=source.[Id]
-WHEN MATCHED THEN UPDATE SET [PeriodId]=@PeriodId,[TimesheetDate]=@TimesheetDate,[SupervisorId]=@SupervisorId,[SupervisorName]=@SupervisorName,[WorkCenterId]=@WorkCenterId,[WorkCenterName]=@WorkCenterName,[Status]=@Status,[SubmittedAt]=@SubmittedAt,[SubmittedBy]=@SubmittedBy,[ApprovedAt]=@ApprovedAt,[ApprovedBy]=@ApprovedBy,[LastSyncAt]=@LastSyncAt,[PayrollAcknowledgedAt]=@PayrollAcknowledgedAt,[PayrollAcknowledgedBy]=@PayrollAcknowledgedBy,[ProjectManager]=@ProjectManager,[ProjectManagerProjectCode]=@ProjectManagerProjectCode,[CurrentApprovalStage]=@CurrentApprovalStage,[CurrentApprover]=@CurrentApprover
-WHEN NOT MATCHED THEN INSERT ([Id],[PeriodId],[TimesheetDate],[SupervisorId],[SupervisorName],[WorkCenterId],[WorkCenterName],[Status],[SubmittedAt],[SubmittedBy],[ApprovedAt],[ApprovedBy],[LastSyncAt],[PayrollAcknowledgedAt],[PayrollAcknowledgedBy],[ProjectManager],[ProjectManagerProjectCode],[CurrentApprovalStage],[CurrentApprover])
-VALUES (@Id,@PeriodId,@TimesheetDate,@SupervisorId,@SupervisorName,@WorkCenterId,@WorkCenterName,@Status,@SubmittedAt,@SubmittedBy,@ApprovedAt,@ApprovedBy,@LastSyncAt,@PayrollAcknowledgedAt,@PayrollAcknowledgedBy,@ProjectManager,@ProjectManagerProjectCode,@CurrentApprovalStage,@CurrentApprover);`);
+WHEN MATCHED THEN UPDATE SET [PeriodId]=@PeriodId,[TimesheetDate]=@TimesheetDate,[SupervisorId]=@SupervisorId,[SupervisorName]=@SupervisorName,[WorkCenterId]=@WorkCenterId,[WorkCenterName]=@WorkCenterName,[Status]=@Status,[SubmittedAt]=@SubmittedAt,[SubmittedBy]=@SubmittedBy,[ApprovedAt]=@ApprovedAt,[ApprovedBy]=@ApprovedBy,[LastSyncAt]=@LastSyncAt,[PayrollAcknowledgedAt]=@PayrollAcknowledgedAt,[PayrollAcknowledgedBy]=@PayrollAcknowledgedBy,[ProjectManager]=@ProjectManager,[ProjectManagerProjectCode]=@ProjectManagerProjectCode,[CurrentApprovalStage]=@CurrentApprovalStage,[CurrentApprover]=@CurrentApprover,[ShiftLabel]=@ShiftLabel
+WHEN NOT MATCHED THEN INSERT ([Id],[PeriodId],[TimesheetDate],[SupervisorId],[SupervisorName],[WorkCenterId],[WorkCenterName],[Status],[SubmittedAt],[SubmittedBy],[ApprovedAt],[ApprovedBy],[LastSyncAt],[PayrollAcknowledgedAt],[PayrollAcknowledgedBy],[ProjectManager],[ProjectManagerProjectCode],[CurrentApprovalStage],[CurrentApprover],[ShiftLabel])
+VALUES (@Id,@PeriodId,@TimesheetDate,@SupervisorId,@SupervisorName,@WorkCenterId,@WorkCenterName,@Status,@SubmittedAt,@SubmittedBy,@ApprovedAt,@ApprovedBy,@LastSyncAt,@PayrollAcknowledgedAt,@PayrollAcknowledgedBy,@ProjectManager,@ProjectManagerProjectCode,@CurrentApprovalStage,@CurrentApprover,@ShiftLabel);`);
 
     await new sql.Request(tx).input('HeaderId', sql.NVarChar(160), header.id).query(`DELETE FROM [hris].[TimesheetWorkflowEvents] WHERE [HeaderId]=@HeaderId`);
     for (const event of header.workflowHistory || []) {
@@ -2945,8 +2954,8 @@ export async function advanceTimesheetWorkflow(
   if (header.status === 'HR_Acknowledged') {
     const period = String(header.periodId || '').replace(/^per-/, '');
     void import('@/lib/payroll-timesheet-ot-posting')
-      .then((module) => module.postPermanentTimesheetOvertimeToPayroll(period))
-      .catch((error) => console.warn('[Timesheet] Permanent OT posting skipped:', error instanceof Error ? error.message : error));
+      .then((module) => module.postPermanentTimesheetEarningsFromTimesheets(period))
+      .catch((error) => console.warn('[Timesheet] Permanent OT/night allowance posting skipped:', error instanceof Error ? error.message : error));
   }
   return { header, payrollUpdate };
 }

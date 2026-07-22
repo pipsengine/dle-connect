@@ -67,7 +67,11 @@ import {
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 
-const dayContextFor = (date: string, holidayDates: string[]): TimesheetDayContext => ({ date, holidayDates });
+const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string | null): TimesheetDayContext => ({
+  date,
+  holidayDates,
+  shiftLabel: shiftLabel || undefined,
+});
 
 type ProjectManagerOption = {
   employeeId: string;
@@ -182,12 +186,14 @@ type UpdatePayload = {
     | 'DELETE_WORK_CENTER'
     | 'COPY_PREVIOUS_DAY'
     | 'BULK_APPLY'
-    | 'BOOK_OVERTIME';
+    | 'BOOK_OVERTIME'
+    | 'SET_SHIFT';
   date?: string;
   supervisorId?: string;
   locationName?: string;
   workCenterName?: string;
   headerId?: string;
+  shiftLabel?: string;
   lines?: TimesheetLine[];
   reviewerNote?: string;
   authorizationId?: string;
@@ -275,7 +281,7 @@ async function handleBulkApply(request: Request, payload: UpdatePayload) {
     overtimeBooking,
   );
   const holidayDates = await readPublicHolidayDates();
-  const dayContext = dayContextFor(header.timesheetDate, holidayDates);
+  const dayContext = dayContextFor(header.timesheetDate, holidayDates, header.shiftLabel);
 
   const updatedLines = currentLines.map(line => {
     if (!employeeIds.includes(line.employeeId)) return line;
@@ -879,7 +885,7 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
 
   const requestedHeader = requestedHeaderId ? headers.find((item) => item.id === requestedHeaderId) : null;
   const targetDate = requestedHeader?.timesheetDate || date || todayDateInputValue();
-  const dayContext = dayContextFor(targetDate, holidayDates);
+  const dayContext = dayContextFor(targetDate, holidayDates, requestedHeader?.shiftLabel);
   if (supervisorMode && !session) throw new Error('Authenticated supervisor session is required.');
   let requestedSupervisor = clean(requestedHeader?.supervisorId || supervisorId);
   let targetWorkCenter = clean(requestedHeader?.workCenterName || workCenterName);
@@ -1288,6 +1294,18 @@ export async function PATCH(request: Request) {
       return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName, mode));
     }
 
+    if (action === 'SET_SHIFT') {
+      if (!payload.headerId) return err(400, 'Header ID is required.');
+      if (!payload.shiftLabel) return err(400, 'Shift label is required.');
+      const { headers, lines } = await readTimesheetData();
+      const header = headers.find((item) => item.id === payload.headerId);
+      if (!header) return err(404, 'Timesheet header not found.');
+      requireEditableTimesheet(header);
+      header.shiftLabel = String(payload.shiftLabel);
+      await writeTimesheetHeaderLines(header, lines.filter((line) => line.headerId === header.id));
+      return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName, mode));
+    }
+
     if (action === 'COPY_PREVIOUS_DAY') {
       let scopedDate = date;
       let scopedSupervisorId = supervisorId;
@@ -1363,7 +1381,10 @@ export async function PATCH(request: Request) {
       if (!targets.length) return err(400, 'Select present employees to book approved overtime.');
 
       const holidayDates = await readPublicHolidayDates();
-      const dayContext = dayContextFor(header.timesheetDate, holidayDates);
+      const dayContext = dayContextFor(header.timesheetDate, holidayDates, header.shiftLabel || payload.shiftLabel);
+      if (String(dayContext.shiftLabel || '').toLowerCase().includes('night')) {
+        return err(400, 'Night shift is paid as normal 8-hour work plus ₦1,500 inconvenience allowance. Overtime cannot be booked for night work.');
+      }
       const saveProjects = await readProjects();
       const primaryProjectCode = resolvePrimaryProjectCode(
         saveProjects.filter((project) => ['Active', 'Approved', 'Open'].includes(project.status)).map((project) => project.code),
@@ -1487,7 +1508,8 @@ export async function PATCH(request: Request) {
           )
         : [];
       const holidayDates = await readPublicHolidayDates();
-      const dayContext = dayContextFor(header.timesheetDate, holidayDates);
+      const dayContext = dayContextFor(header.timesheetDate, holidayDates, header.shiftLabel || payload.shiftLabel);
+      if (payload.shiftLabel) header.shiftLabel = String(payload.shiftLabel);
       const reconciledLines = updatedLines.map(reconcileTimesheetLineHours);
       for (const line of reconciledLines) {
         const projectHours = (line.projectAllocations || []).reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);

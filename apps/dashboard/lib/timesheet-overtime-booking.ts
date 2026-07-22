@@ -108,6 +108,10 @@ export const maxOvertimeForEmployee = (
   dayContext?: TimesheetDayContext,
 ) => {
   if (!line.clockIn) return 0;
+  // Night shift is normal 8h + inconvenience allowance only — never book OT.
+  if (resolveTimesheetHours(dayContext).shiftKind === 'Night') {
+    return 0;
+  }
   const booking = resolveOvertimeBookingOptions(options);
   const { standardProductiveHours } = resolveTimesheetHours(dayContext);
   const usedFromAllocations = sumProjectAllocationHours(line.projectAllocations);

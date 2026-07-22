@@ -28,7 +28,14 @@ import type { EssTravelRecord } from '@/lib/ess-portal-derived-data';
 import { ESS_NAV_ITEMS, EssPortalShell, EssMobileNav, type EssTab } from './ess-portal-shell';
 import { EssEmptyState } from './ess-portal-ui';
 import {
-  Activity,
+  calculateLeaveDays,
+  defaultChargeableDatesInPeriod,
+  enumerateInclusiveDates,
+  holidaysOverlappingPeriod,
+  isChargeableLeaveDate,
+  isWeekendLeaveDate,
+} from '@/lib/leave-day-engine';
+import { Activity,
   ArrowRight,
   Building2,
   BadgeCheck,
@@ -158,6 +165,8 @@ type Payload = {
     notifications: SimpleRecord[];
     security: SimpleRecord[];
     relieverOptions: Array<{ employeeId: string; employeeCode: string; fullName: string; jobTitle: string; department: string }>;
+    holidays?: Array<{ id: string; label: string; date: string }>;
+    holidayFeed?: { source?: string; sourceUrl?: string | null; syncedAt?: string } | null;
   };
   attendance: {
     records: SimpleRecord[];
@@ -892,20 +901,6 @@ function ActionGrid({ items }: { items: Array<[string, any, string?]> }) {
 const leaveTabs = ['Leave Dashboard', 'Apply Leave', 'My Applications', 'Leave Calendar', 'Leave History', 'Approvals', 'Policy & Entitlement'] as const;
 type LeaveTab = typeof leaveTabs[number];
 
-const dayMs = 24 * 60 * 60 * 1000;
-const calcLeaveDays = (from: string, to: string, basis: string) => {
-  if (!from || !to) return 0;
-  const start = new Date(`${from}T00:00:00`);
-  const end = new Date(`${to}T00:00:00`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0;
-  if (basis === 'Calendar days') return Math.floor((end.getTime() - start.getTime()) / dayMs) + 1;
-  let days = 0;
-  for (let d = new Date(start); d <= end; d = new Date(d.getTime() + dayMs)) {
-    if (![0, 6].includes(d.getDay())) days += 1;
-  }
-  return days;
-};
-
 const leaveSectionToTab = (value?: string | null): LeaveTab | null => {
   const normalized = String(value || '').trim().toLowerCase();
   if (!normalized) return null;
@@ -915,7 +910,7 @@ const leaveSectionToTab = (value?: string | null): LeaveTab | null => {
   return leaveTabs.find((tab) => tab.toLowerCase() === normalized) || null;
 };
 
-function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction, onWithdrawLeave, onRetryNotification, retryingRequestId, saving, actingRequestId, submitError, initialNow, initialSection, managerMetrics }: { payload: Payload | null; employee?: Payload['employee']; onLeaveSubmitted?: (input: { requestId: string; leaveType: string; startDate: string; endDate: string; days: number; reason: string; relieverEmployeeId: string; relieverName: string; handover: string; attachmentNames: string[] }) => Promise<boolean>; onLeaveAction?: (input: { requestId: string; action: 'approve' | 'reject'; comment?: string }) => Promise<void>; onWithdrawLeave?: (requestId: string) => Promise<void>; onRetryNotification?: (requestId: string) => Promise<void>; retryingRequestId?: string; saving?: boolean; actingRequestId?: string; submitError?: string; initialNow: string; initialSection?: string | null; managerMetrics?: Payload['managerMetrics'] }) {
+function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction, onWithdrawLeave, onRetryNotification, retryingRequestId, saving, actingRequestId, submitError, initialNow, initialSection, managerMetrics }: { payload: Payload | null; employee?: Payload['employee']; onLeaveSubmitted?: (input: { requestId: string; leaveType: string; startDate: string; endDate: string; days: number; selectedDates: string[]; acknowledgeHolidays: boolean; reason: string; relieverEmployeeId: string; relieverName: string; handover: string; attachmentNames: string[] }) => Promise<boolean>; onLeaveAction?: (input: { requestId: string; action: 'approve' | 'reject'; comment?: string }) => Promise<void>; onWithdrawLeave?: (requestId: string) => Promise<void>; onRetryNotification?: (requestId: string) => Promise<void>; retryingRequestId?: string; saving?: boolean; actingRequestId?: string; submitError?: string; initialNow: string; initialSection?: string | null; managerMetrics?: Payload['managerMetrics'] }) {
   const [active, setActive] = useState<LeaveTab>(() => leaveSectionToTab(initialSection) || 'Leave Dashboard');
 
   useEffect(() => {
@@ -925,6 +920,9 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
   const [leaveType, setLeaveType] = useState('Annual Leave');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [selectedDates, setSelectedDates] = useState<string[]>([]);
+  const [acknowledgeHolidays, setAcknowledgeHolidays] = useState(false);
+  const [holidayPrompt, setHolidayPrompt] = useState<Array<{ date: string; label: string }> | null>(null);
   const [reason, setReason] = useState('');
   const [reliever, setReliever] = useState('');
   const [handover, setHandover] = useState('');
@@ -937,8 +935,26 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
   const selected = (payload?.leave.balances || []).find((item) => String(item.type) === leaveType) || payload?.leave.balances?.[0];
   const relieverOptions = payload?.leave.relieverOptions || [];
   const selectedReliever = relieverOptions.find((item) => item.employeeId === reliever || item.employeeCode === reliever);
-  const basis = String(selected?.basis || 'Working days');
-  const days = calcLeaveDays(startDate, endDate, basis);
+  const holidays = payload?.leave.holidays || [];
+  const leaveCalc = useMemo(
+    () => calculateLeaveDays({ startDate, endDate, selectedDates, holidays }),
+    [startDate, endDate, selectedDates, holidays],
+  );
+  const days = leaveCalc.days;
+  const periodDates = useMemo(() => enumerateInclusiveDates(startDate, endDate), [startDate, endDate]);
+  const holidaySet = useMemo(() => new Set(holidays.map((item) => item.date)), [holidays]);
+
+  useEffect(() => {
+    if (!startDate || !endDate) {
+      setSelectedDates([]);
+      setAcknowledgeHolidays(false);
+      return;
+    }
+    setSelectedDates(defaultChargeableDatesInPeriod(startDate, endDate, holidays));
+    setAcknowledgeHolidays(false);
+    setHolidayPrompt(null);
+  }, [startDate, endDate, holidays]);
+
   const balance = Number(selected?.balance || 0);
   const allowanceEligible = leaveType === 'Annual Leave' && days >= 10;
   const usesCarryForward = leaveType === 'Carry Forward Leave';
@@ -962,11 +978,19 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
     ...(leaveType === 'Annual Leave' && String(selected?.eligibilityStatus || '').toLowerCase().includes('locked') ? ['Annual Leave is available only after confirmation of appointment.'] : []),
     ...(usesCarryForward && endDate > `${new Date().getFullYear()}-03-31` ? ['Carry Forward Leave must be consumed on or before 31 March.'] : []),
     ...(leaveType === 'Annual Leave' && days > 0 && days < 10 ? ['This request does not qualify for Leave Allowance.'] : []),
+    ...(!selectedDates.length ? ['Select at least one leave day within the period.'] : []),
     ...(!reason.trim() ? ['Reason is required.'] : []),
     ...(!reliever ? ['A department reliever is required.'] : []),
     ...(!handover.trim() ? ['Handover notes are required.'] : []),
     ...(!ack ? ['Policy acknowledgement is required before submission.'] : []),
   ];
+
+  const toggleSelectedDate = (date: string) => {
+    if (!isChargeableLeaveDate(date, holidaySet)) return;
+    setSelectedDates((current) => (
+      current.includes(date) ? current.filter((item) => item !== date) : [...current, date].sort()
+    ));
+  };
 
   const uploadAttachment = async (file: File) => {
     setUploadingAttachment(true);
@@ -991,6 +1015,9 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
   const resetApplyForm = () => {
     setStartDate('');
     setEndDate('');
+    setSelectedDates([]);
+    setAcknowledgeHolidays(false);
+    setHolidayPrompt(null);
     setReason('');
     setReliever('');
     setHandover('');
@@ -998,14 +1025,21 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
     setAttachmentNames([]);
   };
 
-  const submitLeaveForm = async () => {
+  const submitLeaveForm = async (forceAcknowledgeHolidays = false) => {
     if (!onLeaveSubmitted) return;
+    const overlappingHolidays = holidaysOverlappingPeriod(startDate, endDate, holidays);
+    if (overlappingHolidays.length && !acknowledgeHolidays && !forceAcknowledgeHolidays) {
+      setHolidayPrompt(overlappingHolidays);
+      return;
+    }
     const submitted = await onLeaveSubmitted({
       requestId: draftRequestId,
       leaveType,
       startDate,
       endDate,
       days,
+      selectedDates: leaveCalc.selectedDates,
+      acknowledgeHolidays: acknowledgeHolidays || forceAcknowledgeHolidays || overlappingHolidays.length === 0,
       reason,
       relieverEmployeeId: reliever,
       relieverName: selectedReliever?.fullName || '',
@@ -1049,9 +1083,53 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
             <h2 className="text-base font-black text-slate-950">Guided Leave Application</h2>
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
               <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} className="h-11 rounded-lg border border-slate-200 px-3 text-sm font-bold">{(payload?.leave.balances || []).map((item) => <option key={String(item.id)}>{String(item.type)}</option>)}</select>
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-11 rounded-lg border border-slate-200 px-3 text-sm font-bold" />
-              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-11 rounded-lg border border-slate-200 px-3 text-sm font-bold" />
-              <input value={`${days} ${basis.toLowerCase()}`} readOnly className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-black text-slate-800" />
+              <input value={`${days} chargeable working day(s)`} readOnly className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-black text-slate-800" />
+              <label className="text-xs font-bold text-slate-600">Leave period start
+                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-bold" />
+              </label>
+              <label className="text-xs font-bold text-slate-600">Leave period end
+                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-bold" />
+              </label>
+              {periodDates.length ? (
+                <div className="md:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-black text-slate-800">Select leave days in this period (can be non-contiguous)</p>
+                    <div className="flex gap-2">
+                      <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold" onClick={() => setSelectedDates(defaultChargeableDatesInPeriod(startDate, endDate, holidays))}>Select all working days</button>
+                      <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold" onClick={() => setSelectedDates([])}>Clear</button>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-[11px] font-semibold text-slate-500">Weekends and public holidays are excluded from leave balance. Click days to slip/select within the period.</p>
+                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                    {periodDates.map((date) => {
+                      const weekend = isWeekendLeaveDate(date);
+                      const holiday = holidays.find((item) => item.date === date);
+                      const chargeable = isChargeableLeaveDate(date, holidaySet);
+                      const checked = selectedDates.includes(date);
+                      return (
+                        <button
+                          key={date}
+                          type="button"
+                          disabled={!chargeable}
+                          onClick={() => toggleSelectedDate(date)}
+                          className={`rounded-lg border px-2 py-2 text-left text-[11px] font-bold ${
+                            !chargeable
+                              ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+                              : checked
+                                ? 'border-blue-500 bg-blue-50 text-blue-900'
+                                : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300'
+                          }`}
+                        >
+                          <span className="block">{date}</span>
+                          <span className="block font-semibold opacity-80">
+                            {holiday ? `Holiday: ${holiday.label}` : weekend ? 'Weekend' : checked ? 'Selected' : 'Working day'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
               <select value={reliever} onChange={(e) => setReliever(e.target.value)} className="h-11 rounded-lg border border-slate-200 px-3 text-sm font-bold">
                 <option value="">Select department reliever...</option>
                 {relieverOptions.map((item) => <option key={item.employeeId} value={item.employeeId}>{item.fullName} - {item.jobTitle}</option>)}
@@ -1076,6 +1154,36 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
               </label>
               <label className="flex items-start gap-2 text-sm font-bold text-slate-700 md:col-span-2"><input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} className="mt-1" /> I acknowledge Dorman Long leave policy, balance, allowance, reliever, and audit requirements.</label>
             </div>
+            {holidayPrompt ? (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+                <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+                  <h3 className="text-base font-black text-slate-950">Public holiday in leave period</h3>
+                  <p className="mt-2 text-sm font-semibold text-slate-600">
+                    The days you are applying for include Nigeria public holiday(s). Do you want to continue? If yes, holiday days will not be deducted from your leave balance.
+                  </p>
+                  <ul className="mt-3 space-y-1 text-sm font-bold text-slate-800">
+                    {holidayPrompt.map((item) => (
+                      <li key={item.date}>• {item.label} ({item.date})</li>
+                    ))}
+                  </ul>
+                  <div className="mt-4 flex gap-2">
+                    <button type="button" className="h-10 flex-1 rounded-lg border border-slate-200 text-sm font-black text-slate-700" onClick={() => setHolidayPrompt(null)}>Cancel</button>
+                    <button
+                      type="button"
+                      className="h-10 flex-1 rounded-lg bg-blue-600 text-sm font-black text-white"
+                      onClick={() => {
+                        setAcknowledgeHolidays(true);
+                        setHolidayPrompt(null);
+                        setSelectedDates((current) => current.filter((date) => !holidaySet.has(date)));
+                        void submitLeaveForm(true);
+                      }}
+                    >
+                      Continue without holiday days
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
           <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <h3 className="text-sm font-black text-slate-950">Policy Validation</h3>
@@ -1329,7 +1437,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
     }
   };
 
-  const submitLeaveApplication = async (input: { requestId: string; leaveType: string; startDate: string; endDate: string; days: number; reason: string; relieverEmployeeId: string; relieverName: string; handover: string; attachmentNames: string[] }): Promise<boolean> => {
+  const submitLeaveApplication = async (input: { requestId: string; leaveType: string; startDate: string; endDate: string; days: number; selectedDates: string[]; acknowledgeHolidays: boolean; reason: string; relieverEmployeeId: string; relieverName: string; handover: string; attachmentNames: string[] }): Promise<boolean> => {
     if (!payload) return false;
     setSaving(true);
     setToast('');
@@ -1348,6 +1456,8 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
           startDate: input.startDate,
           endDate: input.endDate,
           days: input.days,
+          selectedDates: input.selectedDates,
+          acknowledgeHolidays: input.acknowledgeHolidays,
           reason: input.reason,
           relieverEmployeeId: input.relieverEmployeeId,
           relieverName: input.relieverName,
@@ -1355,7 +1465,10 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
           attachmentNames: input.attachmentNames,
         }),
       });
-      const json = await parseJsonResponse(res, 'Leave submission API') as ApiResponse<{ request: EssRequest; message?: string; deliveryWarnings?: string[] }>;
+      const json = await parseJsonResponse(res, 'Leave submission API') as ApiResponse<{ request: EssRequest; message?: string; deliveryWarnings?: string[] }> & {
+        code?: string;
+        holidays?: Array<{ date: string; label: string }>;
+      };
       if (!res.ok || json.status !== 'success' || !json.data?.request) {
         throw new Error(json.error || 'Unable to submit leave application');
       }

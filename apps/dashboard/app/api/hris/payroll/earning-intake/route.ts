@@ -11,7 +11,8 @@ import {
   TIMESHEET_OT_POSTING_SOURCE,
   HR_ARREARS_POSTING_SOURCE,
 } from '@/lib/payroll-period-earning-adjustments-store';
-import { postPermanentTimesheetOvertimeToPayroll } from '@/lib/payroll-timesheet-ot-posting';
+import { postPermanentTimesheetEarningsFromTimesheets } from '@/lib/payroll-timesheet-ot-posting';
+import { TIMESHEET_NIGHT_ALLOWANCE_POSTING_SOURCE } from '@/lib/payroll-timesheet-night-allowance-posting';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Payroll Officer' | 'Finance Controller' | 'Executive Management' | 'Auditor' | 'Employee';
@@ -44,9 +45,10 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const period = normalizePayrollPeriod(searchParams.get('period') || activePayrollPeriod());
-    const [arrears, timesheetOtAdjustments, arrearsAdjustments] = await Promise.all([
+    const [arrears, timesheetOtAdjustments, nightAllowanceAdjustments, arrearsAdjustments] = await Promise.all([
       arrearsRequestsForPeriod(period),
       periodEarningAdjustmentsForPeriod(period, TIMESHEET_OT_POSTING_SOURCE),
+      periodEarningAdjustmentsForPeriod(period, TIMESHEET_NIGHT_ALLOWANCE_POSTING_SOURCE),
       periodEarningAdjustmentsForPeriod(period, HR_ARREARS_POSTING_SOURCE),
     ]);
 
@@ -59,6 +61,11 @@ export async function GET(request: Request) {
         postedLines: timesheetOtAdjustments.length,
         totalAmount: timesheetOtAdjustments.reduce((sum, row) => sum + Number(row.amount || 0), 0),
         adjustments: timesheetOtAdjustments,
+      },
+      nightAllowance: {
+        postedLines: nightAllowanceAdjustments.length,
+        totalAmount: nightAllowanceAdjustments.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+        adjustments: nightAllowanceAdjustments,
       },
       postedArrears: {
         postedLines: arrearsAdjustments.length,
@@ -108,7 +115,7 @@ export async function POST(request: Request) {
 
     if (action === 'post-timesheet-ot') {
       if (!perms.canPostOvertime) return err(403, 'Permission denied');
-      const summary = await postPermanentTimesheetOvertimeToPayroll(String(body.period || activePayrollPeriod()));
+      const summary = await postPermanentTimesheetEarningsFromTimesheets(String(body.period || activePayrollPeriod()));
       return ok({ summary });
     }
 

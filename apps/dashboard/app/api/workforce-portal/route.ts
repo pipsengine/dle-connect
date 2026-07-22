@@ -78,6 +78,7 @@ import {
   getLeaveRequestDeliveryTrace,
   listLeaveWorkflowDeliveryLog,
   retryLeaveManagerNotification,
+  readLeaveCalendarConfig,
 } from '@/lib/leave-workflow-service';
 import { isLeaveEssRequest, isPendingLeaveStatus } from '@/lib/leave-request-shared';
 import { resolveMailProvider, verifyMailConnection, resolveEmployeeMailbox } from '@/lib/mail-service';
@@ -98,6 +99,8 @@ type EssRequest = {
   leaveType?: string;
   startDate?: string;
   endDate?: string;
+  selectedDates?: string[];
+  excludedHolidays?: Array<{ date: string; label: string }>;
   days?: number;
   payrollPeriod?: string;
   paidLeave?: boolean;
@@ -1144,7 +1147,17 @@ export async function GET(request: Request) {
           { stage: 'Requester Notification', owner: employee.fullName, status: 'Not started', sla: 'After final approval' },
           { stage: 'Reliever Notification', owner: 'Selected reliever', status: 'Not started', sla: 'After final approval' },
         ];
+    const leaveCalendarConfig = await readLeaveCalendarConfig();
     const leaveCalendar = [
+      ...leaveCalendarConfig.holidays.map((item) => ({
+        id: item.id,
+        label: item.label,
+        from: item.date,
+        to: item.date,
+        status: 'Public Holiday',
+        type: 'Public Holiday',
+        scope: 'Nigeria',
+      })),
       ...employeeLeaveApplications
         .filter((item) => ['Submitted', 'Under Review', 'Approved', 'Completed', 'Line Manager Review', 'HR Review'].includes(item.status))
         .map((item) => ({ id: item.id, label: `${item.leaveType} - ${item.fullName}`, from: item.startDate, to: item.endDate, status: item.status, type: item.leaveType, scope: item.department })),
@@ -1490,6 +1503,8 @@ export async function GET(request: Request) {
           { role: 'Payroll Officer', access: 'Payroll-impact leave only' },
         ],
         relieverOptions,
+        holidays: leaveCalendarConfig.holidays,
+        holidayFeed: leaveCalendarConfig.holidayFeed || null,
       },
       attendance: {
         records: mergedAttendanceRecords,
@@ -1847,7 +1862,11 @@ export async function POST(request: Request) {
     if (!catalogItem) return err(400, 'Unknown service type. Please select a valid service from the catalog.');
     const now = new Date().toISOString();
     const leaveType = compact(body.leaveType || body.type);
-    const leaveDays = Number(body.days || 0);
+    let leaveDays = Number(body.days || 0);
+    let resolvedSelectedDates: string[] = Array.isArray(body.selectedDates)
+      ? body.selectedDates.map((item: unknown) => compact(item)).filter(Boolean)
+      : [];
+    let excludedHolidays: Array<{ date: string; label: string }> = [];
     const startDate = normalizeLeaveDate(body.startDate);
     const endDate = normalizeLeaveDate(body.endDate);
     const reason = compact(body.reason);
@@ -1866,19 +1885,35 @@ export async function POST(request: Request) {
       : compact(body.attachmentNames).split(',').map((item) => item.trim()).filter(Boolean);
     if (isLeaveRequest) {
       if (!leaveType) return err(400, 'leaveType is required');
-      if (!startDate || !endDate || !leaveDays) return err(400, 'startDate, endDate, and days are required');
+      if (!startDate || !endDate) return err(400, 'startDate and endDate are required');
       if (!reason) return err(400, 'reason is required');
       if (!handover) return err(400, 'handover notes are required');
       if (!reliever) return err(400, 'A department reliever must be selected.');
+      const selectedDates = resolvedSelectedDates;
+      const acknowledgeHolidays = Boolean(body.acknowledgeHolidays);
       const policyCheck = await validateEssLeaveApplication({
         employee,
         leaveType,
         startDate,
         endDate,
-        days: leaveDays,
+        days: leaveDays || selectedDates.length || 1,
+        selectedDates,
+        acknowledgeHolidays,
         relieverEmployeeId: reliever.employeeId,
       });
-      if (!policyCheck.ok) return err(policyCheck.status, policyCheck.message);
+      if (!policyCheck.ok) {
+        return NextResponse.json({
+          status: 'error',
+          error: policyCheck.message,
+          code: 'code' in policyCheck ? policyCheck.code : undefined,
+          holidays: 'holidays' in policyCheck ? policyCheck.holidays : undefined,
+          calculatedDays: 'calculatedDays' in policyCheck ? policyCheck.calculatedDays : undefined,
+          selectedDates: 'selectedDates' in policyCheck ? policyCheck.selectedDates : undefined,
+        }, { status: policyCheck.status });
+      }
+      leaveDays = policyCheck.days;
+      resolvedSelectedDates = policyCheck.selectedDates;
+      excludedHolidays = policyCheck.excludedHolidays;
     }
     const leaveYear = Number(body.leaveYear || new Date().getFullYear());
     const allowanceAlreadyPaid = isLeaveRequest
@@ -1917,6 +1952,8 @@ export async function POST(request: Request) {
       leaveType: leaveType || undefined,
       startDate: startDate || undefined,
       endDate: endDate || undefined,
+      selectedDates: isLeaveRequest && resolvedSelectedDates.length ? resolvedSelectedDates : undefined,
+      excludedHolidays: isLeaveRequest && excludedHolidays.length ? excludedHolidays : undefined,
       days: leaveDays || undefined,
       payrollPeriod: startDate ? startDate.slice(0, 7) : undefined,
       paidLeave: isLeaveRequest && leaveType === 'Annual Leave',
