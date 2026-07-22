@@ -242,11 +242,19 @@ const cacheWindow = (source: PayrollEmployeeSource) => {
 
 const withTimeout = async <T,>(promise: Promise<T>, ms: number, message: string): Promise<T> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  const source = Promise.resolve(promise).catch((error) => {
+    if (timedOut) return undefined as unknown as T;
+    throw error;
+  });
   try {
     return await Promise.race([
-      promise,
+      source,
       new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(message)), ms);
+        timer = setTimeout(() => {
+          timedOut = true;
+          reject(new Error(message));
+        }, ms);
       }),
     ]);
   } finally {

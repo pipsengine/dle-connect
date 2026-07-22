@@ -3145,17 +3145,26 @@ export async function advanceProjectTimesheetApproval(
 
 const normalizeAttendanceScope = (value: string | null | undefined) =>
   String(value || '').trim().toLowerCase();
-const TIMESHEET_SAGE_ENRICH_TIMEOUT_MS = Number(process.env.TIMESHEET_SAGE_ENRICH_TIMEOUT_MS || 700);
-const TIMESHEET_SUPERVISOR_SCOPE_TIMEOUT_MS = Number(process.env.TIMESHEET_SUPERVISOR_SCOPE_TIMEOUT_MS || 700);
-const TIMESHEET_LIVE_ATTENDANCE_TIMEOUT_MS = Number(process.env.TIMESHEET_LIVE_ATTENDANCE_TIMEOUT_MS || 6000);
+const TIMESHEET_SAGE_ENRICH_TIMEOUT_MS = Number(process.env.TIMESHEET_SAGE_ENRICH_TIMEOUT_MS || 8000);
+const TIMESHEET_SUPERVISOR_SCOPE_TIMEOUT_MS = Number(process.env.TIMESHEET_SUPERVISOR_SCOPE_TIMEOUT_MS || 8000);
+const TIMESHEET_LIVE_ATTENDANCE_TIMEOUT_MS = Number(process.env.TIMESHEET_LIVE_ATTENDANCE_TIMEOUT_MS || 15000);
 
 const withSyncTimeout = async <T,>(promise: Promise<T>, ms: number, message: string): Promise<T> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  // Swallow late rejections from the underlying work after timeout so they do not become unhandledRejection.
+  const source = Promise.resolve(promise).catch((error) => {
+    if (timedOut) return undefined as unknown as T;
+    throw error;
+  });
   try {
     return await Promise.race([
-      promise,
+      source,
       new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(message)), ms);
+        timer = setTimeout(() => {
+          timedOut = true;
+          reject(new Error(message));
+        }, ms);
       }),
     ]);
   } finally {
@@ -3226,11 +3235,8 @@ const attendanceMatchKeys = (...values: Array<string | number | null | undefined
 const supervisorEmployeeScope = async (supervisorId: string) => {
   const selected = cleanSupervisorLabel(supervisorId);
   if (!selected) return { keys: new Set<string>(), employees: [] as Array<{ employeeCode: string; fullName: string }> };
-  const source = await withSyncTimeout(
-    readPayrollEmployees(),
-    TIMESHEET_SUPERVISOR_SCOPE_TIMEOUT_MS,
-    'Supervisor employee scope timed out.',
-  );
+  // Timeout is applied by the caller (syncAttendanceForTimesheet) — do not nest another race here.
+  const source = await readPayrollEmployees();
   const keys = new Set<string>();
   const employees: Array<{ employeeCode: string; fullName: string }> = [];
   const selectedCode = selected.split(' - ')[0]?.trim();
@@ -3288,14 +3294,23 @@ export async function syncAttendanceForTimesheet(
     'Sage payroll enrichment timed out.',
   );
 
-  const liveAttendance = await liveAttendancePromise;
-  const clockingRecords = liveAttendance.records;
   const activeEmployeeByKey = new Map<string, SagePayrollEmployee>();
   let allowedSupervisorKeys = new Set<string>();
   let assignedSupervisorEmployees: Array<{ employeeCode: string; fullName: string }> = [];
   let supervisorScopeResolved = false;
 
-  const [scopeResult, activePayrollResult, approvedLeaveResult] = await Promise.allSettled([scopePromise, activePayrollPromise, approvedLeavePromise]);
+  const [liveResult, scopeResult, activePayrollResult, approvedLeaveResult] = await Promise.allSettled([
+    liveAttendancePromise,
+    scopePromise,
+    activePayrollPromise,
+    approvedLeavePromise,
+  ]);
+
+  const clockingRecords = liveResult.status === 'fulfilled' ? liveResult.value.records : [];
+  if (liveResult.status === 'rejected') {
+    console.warn('Timesheet attendance sync proceeding without live biometric attendance:', liveResult.reason);
+  }
+
   if (scopeResult.status === 'fulfilled') {
     supervisorScopeResolved = true;
     allowedSupervisorKeys = scopeResult.value.keys;
