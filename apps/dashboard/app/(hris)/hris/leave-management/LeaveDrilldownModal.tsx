@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { Download, FileSpreadsheet, Search, X } from 'lucide-react';
+import { buildSpreadsheetTableExcelXml, leaveReportExcelFilename } from '@/lib/leave-excel-export';
 
 export type LeaveDrilldownRow = {
   employeeId: string;
@@ -15,6 +16,11 @@ export type LeaveDrilldownRow = {
   stage?: string;
   metricLabel?: string;
   metricValue?: string | number;
+  entitled?: number;
+  used?: number;
+  balance?: number;
+  carryForward?: number;
+  utilizationPct?: number;
 };
 
 export type LeaveDrilldownPanel = {
@@ -23,9 +29,36 @@ export type LeaveDrilldownPanel = {
   rows: LeaveDrilldownRow[];
 } | null;
 
-const exportRows = (rows: LeaveDrilldownRow[], format: 'csv' | 'xls') => {
-  const headers = ['Employee ID', 'Full Name', 'Department', 'Leave Type', 'Start Date', 'End Date', 'Days', 'Status', 'Stage', 'Metric'];
-  const body = rows.map((row) => [
+const isUtilizationPanel = (panel: LeaveDrilldownPanel) =>
+  Boolean(panel && (/utilization/i.test(panel.title) || panel.rows.some((row) => row.entitled != null || row.metricLabel === 'Used / Accrued')));
+
+const utilizationHeaders = ['Employee ID', 'Employee', 'Department', 'Leave Type', 'Leave Entitled', 'Used', 'Balance', 'Carry Forward', 'Utilization %', 'Status'];
+
+const genericHeaders = ['Employee ID', 'Full Name', 'Department', 'Leave Type', 'Start Date', 'End Date', 'Days', 'Status', 'Stage', 'Detail'];
+
+const toUtilizationExportRows = (rows: LeaveDrilldownRow[]) =>
+  rows.map((row) => {
+    const entitled = Number(row.entitled ?? (typeof row.metricValue === 'string' && row.metricValue.includes('/') ? row.metricValue.split('/')[1] : 0) || 0);
+    const used = Number(row.used ?? row.days ?? (typeof row.metricValue === 'string' && row.metricValue.includes('/') ? row.metricValue.split('/')[0] : 0) || 0);
+    const balance = Number(row.balance ?? Math.max(0, entitled - used));
+    const carryForward = Number(row.carryForward ?? 0);
+    const utilizationPct = Number(row.utilizationPct ?? (entitled > 0 ? Math.round((used / entitled) * 100) : 0));
+    return [
+      row.employeeId,
+      row.fullName,
+      row.department,
+      row.leaveType || 'Annual Leave',
+      entitled,
+      used,
+      balance,
+      carryForward,
+      utilizationPct,
+      row.status || '',
+    ] as Array<string | number>;
+  });
+
+const toGenericExportRows = (rows: LeaveDrilldownRow[]) =>
+  rows.map((row) => [
     row.employeeId,
     row.fullName,
     row.department,
@@ -36,13 +69,43 @@ const exportRows = (rows: LeaveDrilldownRow[], format: 'csv' | 'xls') => {
     row.status || '',
     row.stage || '',
     row.metricLabel ? `${row.metricLabel}: ${row.metricValue ?? ''}` : String(row.metricValue ?? ''),
-  ]);
-  const csv = [headers, ...body].map((line) => line.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type: format === 'xls' ? 'application/vnd.ms-excel;charset=utf-8;' : 'text/csv;charset=utf-8;' });
+  ] as Array<string | number>);
+
+const downloadCsv = (headers: string[], rows: Array<Array<string | number>>, filename: string) => {
+  const csv = [headers, ...rows]
+    .map((line) => line.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `leave-drilldown.${format === 'xls' ? 'xls' : 'csv'}`;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+};
+
+const downloadExcelTable = (
+  panel: NonNullable<LeaveDrilldownPanel>,
+  headers: string[],
+  rows: Array<Array<string | number>>,
+  summary: Array<{ label: string; value: string | number }>,
+) => {
+  const generatedAt = new Date().toISOString();
+  const report = {
+    id: /utilization/i.test(panel.title) ? 'utilization' : 'drilldown',
+    title: panel.title,
+    description: panel.note,
+    generatedAt,
+    headers,
+    rows,
+    summary,
+  };
+  const xml = buildSpreadsheetTableExcelXml(report);
+  const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = leaveReportExcelFilename(report);
   anchor.click();
   URL.revokeObjectURL(url);
 };
@@ -60,6 +123,7 @@ export default function LeaveDrilldownModal({
 }) {
   if (!panel) return null;
 
+  const utilizationMode = isUtilizationPanel(panel);
   const q = query.trim().toLowerCase();
   const filteredRows = !q
     ? panel.rows
@@ -67,6 +131,23 @@ export default function LeaveDrilldownModal({
         [row.employeeId, row.fullName, row.department, row.leaveType, row.status, row.stage, row.metricLabel, row.metricValue]
           .some((value) => String(value || '').toLowerCase().includes(q)),
       );
+
+  const exportRows = utilizationMode ? toUtilizationExportRows(filteredRows) : toGenericExportRows(filteredRows);
+  const exportHeaders = utilizationMode ? utilizationHeaders : genericHeaders;
+  const totalEntitled = filteredRows.reduce((sum, row) => sum + Number(row.entitled ?? 0), 0);
+  const totalUsed = filteredRows.reduce((sum, row) => sum + Number(row.used ?? row.days ?? 0), 0);
+  const totalBalance = filteredRows.reduce((sum, row) => sum + Number(row.balance ?? 0), 0);
+  const summary = utilizationMode
+    ? [
+        { label: 'Employees', value: filteredRows.length },
+        { label: 'Total entitled', value: totalEntitled },
+        { label: 'Total used', value: totalUsed },
+        { label: 'Total balance', value: totalBalance },
+        { label: 'Utilization %', value: totalEntitled > 0 ? Math.round((totalUsed / totalEntitled) * 100) : 0 },
+      ]
+    : [
+        { label: 'Records', value: filteredRows.length },
+      ];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
@@ -93,11 +174,19 @@ export default function LeaveDrilldownModal({
             />
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={() => exportRows(filteredRows, 'csv')} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-extrabold text-slate-700 hover:bg-slate-50">
+            <button
+              type="button"
+              onClick={() => downloadCsv(exportHeaders, exportRows, 'leave-drilldown.csv')}
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
+            >
               <FileSpreadsheet className="h-4 w-4" />
               CSV
             </button>
-            <button type="button" onClick={() => exportRows(filteredRows, 'xls')} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-extrabold text-slate-700 hover:bg-slate-50">
+            <button
+              type="button"
+              onClick={() => downloadExcelTable(panel, exportHeaders, exportRows, summary)}
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-extrabold text-white hover:bg-emerald-700"
+            >
               <Download className="h-4 w-4" />
               Excel
             </button>
@@ -107,41 +196,76 @@ export default function LeaveDrilldownModal({
         <div className="max-h-[55vh] overflow-auto">
           {filteredRows.length ? (
             <table className="w-full text-left text-sm">
-              <thead className="sticky top-0 bg-slate-50 text-xs font-extrabold text-slate-500">
+              <thead className="sticky top-0 bg-slate-50 text-xs font-extrabold uppercase text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">Employee</th>
-                  <th className="px-4 py-3">Department</th>
-                  <th className="px-4 py-3">Leave Type</th>
-                  <th className="px-4 py-3">Dates</th>
-                  <th className="px-4 py-3">Days</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Detail</th>
+                  {utilizationMode ? (
+                    <>
+                      <th className="px-4 py-3">Employee</th>
+                      <th className="px-4 py-3">Department</th>
+                      <th className="px-4 py-3">Leave Entitled</th>
+                      <th className="px-4 py-3">Used</th>
+                      <th className="px-4 py-3">Balance</th>
+                      <th className="px-4 py-3">Carry Forward</th>
+                      <th className="px-4 py-3">Utilization</th>
+                      <th className="px-4 py-3">Status</th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="px-4 py-3">Employee</th>
+                      <th className="px-4 py-3">Department</th>
+                      <th className="px-4 py-3">Leave Type</th>
+                      <th className="px-4 py-3">Dates</th>
+                      <th className="px-4 py-3">Days</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Detail</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredRows.map((row, index) => (
-                  <tr key={`${row.employeeId}-${row.leaveType || 'row'}-${index}`} className="hover:bg-slate-50">
-                    <td className="px-4 py-3">
-                      <Link href={`/hris/employees/employee-profile/${encodeURIComponent(row.employeeId)}`} className="font-extrabold text-slate-900 hover:text-[#2563EB]">
-                        {row.fullName}
-                      </Link>
-                      <div className="text-xs font-semibold text-slate-500">{row.employeeId}</div>
-                    </td>
-                    <td className="px-4 py-3 font-semibold text-slate-700">{row.department}</td>
-                    <td className="px-4 py-3 font-semibold text-slate-700">{row.leaveType || '—'}</td>
-                    <td className="px-4 py-3 text-xs font-semibold text-slate-600">
-                      {row.startDate && row.endDate ? `${row.startDate} → ${row.endDate}` : row.startDate || row.endDate || '—'}
-                    </td>
-                    <td className="px-4 py-3 font-bold text-slate-900">{row.days ?? '—'}</td>
-                    <td className="px-4 py-3">
-                      <div className="font-semibold text-slate-700">{row.status || '—'}</div>
-                      {row.stage ? <div className="text-xs text-slate-500">{row.stage}</div> : null}
-                    </td>
-                    <td className="px-4 py-3 text-xs font-semibold text-slate-600">
-                      {row.metricLabel ? `${row.metricLabel}: ${row.metricValue ?? '—'}` : row.metricValue ?? '—'}
-                    </td>
-                  </tr>
-                ))}
+                {filteredRows.map((row, index) => {
+                  const entitled = Number(row.entitled ?? 0);
+                  const used = Number(row.used ?? row.days ?? 0);
+                  const balance = Number(row.balance ?? Math.max(0, entitled - used));
+                  const carryForward = Number(row.carryForward ?? 0);
+                  const utilizationPct = Number(row.utilizationPct ?? (entitled > 0 ? Math.round((used / entitled) * 100) : 0));
+                  return (
+                    <tr key={`${row.employeeId}-${row.leaveType || 'row'}-${index}`} className="hover:bg-slate-50">
+                      <td className="px-4 py-3">
+                        <Link href={`/hris/employees/employee-profile/${encodeURIComponent(row.employeeId)}`} className="font-extrabold text-slate-900 hover:text-[#2563EB]">
+                          {row.fullName}
+                        </Link>
+                        <div className="text-xs font-semibold text-slate-500">{row.employeeId}</div>
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-700">{row.department}</td>
+                      {utilizationMode ? (
+                        <>
+                          <td className="px-4 py-3 font-black text-slate-900">{entitled}</td>
+                          <td className="px-4 py-3 font-bold text-slate-700">{used}</td>
+                          <td className="px-4 py-3 font-black text-emerald-700">{balance}</td>
+                          <td className="px-4 py-3 font-semibold text-slate-700">{carryForward}</td>
+                          <td className="px-4 py-3 font-black text-blue-700">{utilizationPct}%</td>
+                          <td className="px-4 py-3 font-semibold text-slate-700">{row.status || '—'}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-4 py-3 font-semibold text-slate-700">{row.leaveType || '—'}</td>
+                          <td className="px-4 py-3 text-xs font-semibold text-slate-600">
+                            {row.startDate && row.endDate ? `${row.startDate} → ${row.endDate}` : row.startDate || row.endDate || '—'}
+                          </td>
+                          <td className="px-4 py-3 font-bold text-slate-900">{row.days ?? '—'}</td>
+                          <td className="px-4 py-3">
+                            <div className="font-semibold text-slate-700">{row.status || '—'}</div>
+                            {row.stage ? <div className="text-xs text-slate-500">{row.stage}</div> : null}
+                          </td>
+                          <td className="px-4 py-3 text-xs font-semibold text-slate-600">
+                            {row.metricLabel ? `${row.metricLabel}: ${row.metricValue ?? '—'}` : row.metricValue ?? '—'}
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           ) : (

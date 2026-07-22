@@ -152,6 +152,11 @@ export type LeaveDrilldownRow = {
   stage?: string;
   metricLabel?: string;
   metricValue?: string | number;
+  entitled?: number;
+  used?: number;
+  balance?: number;
+  carryForward?: number;
+  utilizationPct?: number;
 };
 
 export type LeavePayload = {
@@ -394,16 +399,30 @@ const buildLeaveDrilldowns = (
     }));
 
   const annualBalances = balances.filter((item) => isAnnualLeaveType(item.leaveType));
-  const leaveUtilization = annualBalances.map((item) => ({
-    employeeId: item.employeeId,
-    fullName: item.fullName,
-    department: item.department,
-    leaveType: item.leaveType,
-    status: item.status,
-    metricLabel: 'Used / Accrued',
-    metricValue: `${item.usedBalance} / ${item.accruedBalance}`,
-    days: item.usedBalance,
-  }));
+  const leaveUtilization = annualBalances
+    .map((item) => {
+      const entitled = Number(item.accruedBalance || 0);
+      const used = Number(item.usedBalance || 0);
+      const balance = Number(item.currentBalance || 0);
+      const carryForward = Number(item.carryForwardBalance || 0);
+      const utilizationPct = entitled > 0 ? Math.round((used / entitled) * 100) : 0;
+      return {
+        employeeId: item.employeeId,
+        fullName: item.fullName,
+        department: item.department,
+        leaveType: item.leaveType,
+        status: item.status,
+        metricLabel: 'Used / Accrued',
+        metricValue: `${used} / ${entitled}`,
+        days: used,
+        entitled,
+        used,
+        balance,
+        carryForward,
+        utilizationPct,
+      };
+    })
+    .sort((a, b) => b.used - a.used || b.utilizationPct - a.utilizationPct || a.fullName.localeCompare(b.fullName));
 
   const leaveLiability = annualBalances
     .filter((item) => item.liabilityValue > 0)

@@ -625,7 +625,7 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
             tone="violet"
             onClick={() => openDrilldown({
               title: 'Leave Utilization Detail',
-              note: 'Per-employee annual leave used vs accrued balances from hris.LeaveBalances.',
+              note: 'Current-year annual leave: entitled (grant + remaining CF), used, balance, and utilization % from hris.LeaveBalances.',
               rows: payload?.drilldowns?.leaveUtilization || [],
             })}
           />

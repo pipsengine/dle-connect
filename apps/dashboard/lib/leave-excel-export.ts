@@ -1,5 +1,16 @@
 import type { LeaveReportTable } from '@/lib/leave-reports-engine';
 
+export type SpreadsheetTableExport = {
+  id?: string;
+  title: string;
+  description?: string;
+  generatedAt?: string;
+  headers: string[];
+  rows: Array<Array<string | number>>;
+  exceptionRowIndexes?: number[];
+  summary?: Array<{ label: string; value: string | number }>;
+};
+
 const xmlEscape = (value: unknown) =>
   String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -17,15 +28,15 @@ const isNumeric = (value: unknown) => {
 /**
  * Build a SpreadsheetML (.xls) workbook Excel can open with:
  * - styled header row
- * - Excel Table (ListObject) formatting
- * - AutoFilter
- * - exception/critical row highlighting for allowance exceptions
+ * - AutoFilter table range
+ * - freeze panes
+ * - optional exception/critical row highlighting
  */
-export const buildLeaveReportExcelXml = (report: LeaveReportTable) => {
+export const buildSpreadsheetTableExcelXml = (report: SpreadsheetTableExport) => {
+  const generatedAt = report.generatedAt || new Date().toISOString();
   const exceptionSet = new Set(report.exceptionRowIndexes || []);
   const colCount = Math.max(1, report.headers.length);
   const dataRowCount = Math.max(report.rows.length, 1);
-  // Title (1), meta (2), blank (3), then Excel table header at row 4.
   const headerRow = 4;
   const lastTableRow = headerRow + dataRowCount;
   const tableRef = `R${headerRow}C1:R${lastTableRow}C${colCount}`;
@@ -58,7 +69,7 @@ export const buildLeaveReportExcelXml = (report: LeaveReportTable) => {
   )).join('\n');
 
   const columnDefs = report.headers.map(() => '<Column ss:AutoFitWidth="1" ss:Width="120"/>').join('\n');
-  const sheetName = xmlEscape(report.title.replace(/[\\/*?:\[\]]/g, ' ').slice(0, 31) || 'Leave Report');
+  const sheetName = xmlEscape((report.title || 'Export').replace(/[\\/*?:\[\]]/g, ' ').slice(0, 31) || 'Export');
 
   return `<?xml version="1.0"?>
 <?mso-application progid="Excel.Sheet"?>
@@ -71,7 +82,7 @@ export const buildLeaveReportExcelXml = (report: LeaveReportTable) => {
   <Title>${xmlEscape(report.title)}</Title>
   <Subject>DLE Connect Leave Management</Subject>
   <Author>DLE Connect HRIS</Author>
-  <Created>${xmlEscape(report.generatedAt)}</Created>
+  <Created>${xmlEscape(generatedAt)}</Created>
  </DocumentProperties>
  <Styles>
   <Style ss:ID="Default" ss:Name="Normal">
@@ -135,7 +146,7 @@ export const buildLeaveReportExcelXml = (report: LeaveReportTable) => {
     <Cell ss:StyleID="Title" ss:MergeAcross="${Math.max(colCount - 1, 0)}"><Data ss:Type="String">${xmlEscape(report.title)}</Data></Cell>
    </Row>
    <Row>
-    <Cell ss:StyleID="Meta" ss:MergeAcross="${Math.max(colCount - 1, 0)}"><Data ss:Type="String">${xmlEscape(report.description)} · Generated ${xmlEscape(report.generatedAt)}</Data></Cell>
+    <Cell ss:StyleID="Meta" ss:MergeAcross="${Math.max(colCount - 1, 0)}"><Data ss:Type="String">${xmlEscape(report.description || '')} · Generated ${xmlEscape(generatedAt)}</Data></Cell>
    </Row>
    <Row></Row>
    <Row ss:Height="20">${headerCells}</Row>
@@ -164,9 +175,16 @@ export const buildLeaveReportExcelXml = (report: LeaveReportTable) => {
 </Workbook>`;
 };
 
-export const leaveReportExcelFilename = (report: LeaveReportTable) => {
-  const slug = report.id.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
-  const stamp = report.generatedAt.slice(0, 10);
+export const buildLeaveReportExcelXml = (report: LeaveReportTable) => buildSpreadsheetTableExcelXml(report);
+
+export const leaveReportExcelFilename = (
+  report: Pick<LeaveReportTable, 'id' | 'generatedAt'> | (SpreadsheetTableExport & { id?: string }),
+) => {
+  const slug = String(('id' in report && report.id) || report.title || 'export')
+    .replace(/[^a-z0-9-]+/gi, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase() || 'export';
+  const stamp = String(report.generatedAt || new Date().toISOString()).slice(0, 10);
   return `leave-${slug}-${stamp}.xls`;
 };
 
