@@ -201,14 +201,17 @@ export default function LeaveCommandCenter({
             },
           },
           {
-            label: 'HR Pending Approvals',
-            count: summary?.pendingHrApprovals || 0,
-            status: statusLabel(summary?.pendingHrApprovals || 0),
+            label: 'Pending Approvals',
+            count: (summary?.pendingHrApprovals || 0) + (summary?.pendingManagerApprovals || 0),
+            status: statusLabel((summary?.pendingHrApprovals || 0) + (summary?.pendingManagerApprovals || 0)),
             section: 'approvals',
             drilldown: {
-              title: 'HR Pending Approvals',
-              note: 'Leave applications awaiting HR review.',
-              rows: drilldowns?.pendingHrApprovals || [],
+              title: 'Pending Leave Approvals',
+              note: 'Open leave applications awaiting manager or HR review.',
+              rows: [
+                ...(drilldowns?.pendingHrApprovals || []),
+                ...(drilldowns?.pendingManagerApprovals || []),
+              ],
             },
           },
         ].map((item) => (

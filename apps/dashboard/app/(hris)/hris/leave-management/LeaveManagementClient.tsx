@@ -603,15 +603,18 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
             })}
           />
           <HubMetricCard
-            label="HR Pending Approvals"
-            value={number(payload?.summary.pendingHrApprovals)}
-            detail={`${number(payload?.summary.pendingManagerApprovals)} awaiting manager review`}
+            label="Pending Approvals"
+            value={number((payload?.summary.pendingHrApprovals || 0) + (payload?.summary.pendingManagerApprovals || 0))}
+            detail={`${number(payload?.summary.pendingHrApprovals)} with HR · ${number(payload?.summary.pendingManagerApprovals)} awaiting manager review`}
             icon={ClipboardCheck}
-            tone={(payload?.summary.pendingHrApprovals || 0) ? 'amber' : 'green'}
+            tone={((payload?.summary.pendingHrApprovals || 0) + (payload?.summary.pendingManagerApprovals || 0)) ? 'amber' : 'green'}
             onClick={() => openDrilldown({
-              title: 'HR Pending Approvals',
-              note: 'Leave applications awaiting HR review in DLE_Enterprise.',
-              rows: payload?.drilldowns?.pendingHrApprovals || [],
+              title: 'Pending Leave Approvals',
+              note: 'Open leave applications awaiting manager or HR review (includes Line Manager Review and HR Review statuses).',
+              rows: [
+                ...(payload?.drilldowns?.pendingHrApprovals || []),
+                ...(payload?.drilldowns?.pendingManagerApprovals || []),
+              ],
             })}
           />
           <HubMetricCard

@@ -301,6 +301,36 @@ const dateInRange = (date: string, startDate: string, endDate: string) =>
 
 const isAnnualLeaveType = (leaveType: string) => /annual/i.test(String(leaveType || ''));
 
+const leaveStatusKey = (status: string) => String(status || '').trim().toLowerCase();
+const leaveStageKey = (stage: string) => String(stage || '').trim().toLowerCase();
+
+/** Open approval-queue statuses used by ESS/HRIS (includes raw ESS status names). */
+export const isOpenLeaveApprovalStatus = (status: string) =>
+  ['draft', 'submitted', 'under review', 'line manager review', 'hr review', 'finance review', 'pending'].includes(leaveStatusKey(status));
+
+export const isHrLeaveApprovalPending = (item: Pick<LeaveApplicationRecord, 'status' | 'stage'>) => {
+  if (!isOpenLeaveApprovalStatus(item.status)) return false;
+  const status = leaveStatusKey(item.status);
+  const stage = leaveStageKey(item.stage);
+  if (status === 'line manager review' || status === 'submitted' || status === 'draft') return false;
+  if (stage === 'supervisor' || stage === 'manager') return false;
+  return status === 'hr review' || status === 'finance review' || stage === 'hr' || status === 'under review';
+};
+
+export const isManagerLeaveApprovalPending = (item: Pick<LeaveApplicationRecord, 'status' | 'stage'>) => {
+  if (!isOpenLeaveApprovalStatus(item.status)) return false;
+  if (isHrLeaveApprovalPending(item)) return false;
+  const status = leaveStatusKey(item.status);
+  const stage = leaveStageKey(item.stage);
+  return (
+    status === 'submitted'
+    || status === 'line manager review'
+    || status === 'draft'
+    || stage === 'supervisor'
+    || stage === 'manager'
+  );
+};
+
 const appToDrilldownRow = (item: LeaveApplicationRecord): LeaveDrilldownRow => ({
   employeeId: item.employeeId,
   fullName: item.fullName,
@@ -320,7 +350,6 @@ const buildLeaveDrilldowns = (
 ) => {
   const today = dateAdd(0);
   const activeLeaveStatuses = ['Approved', 'Completed'] as const;
-  const pendingStatuses = ['Submitted', 'Under Review', 'Draft'] as const;
 
   const onLeaveTodayApps = applications.filter(
     (item) => activeLeaveStatuses.includes(item.status as typeof activeLeaveStatuses[number]) && dateInRange(today, item.startDate, item.endDate),
@@ -345,20 +374,12 @@ const buildLeaveDrilldowns = (
     .filter((item) => activeLeaveStatuses.includes(item.status as typeof activeLeaveStatuses[number]) && item.endDate === today)
     .map(appToDrilldownRow);
 
-  const pendingApprovals = applications
-    .filter((item) => pendingStatuses.includes(item.status as typeof pendingStatuses[number]))
-    .map(appToDrilldownRow);
-
-  const pendingManagerApprovals = applications
-    .filter((item) => pendingStatuses.includes(item.status as typeof pendingStatuses[number]) && (item.status === 'Submitted' || item.stage === 'Supervisor'))
-    .map(appToDrilldownRow);
-
-  const pendingHrApprovals = applications
-    .filter((item) => pendingStatuses.includes(item.status as typeof pendingStatuses[number]) && (item.status === 'Under Review' || item.stage === 'HR'))
-    .map(appToDrilldownRow);
+  const pendingManagerApprovals = applications.filter(isManagerLeaveApprovalPending).map(appToDrilldownRow);
+  const pendingHrApprovals = applications.filter(isHrLeaveApprovalPending).map(appToDrilldownRow);
+  const pendingApprovals = applications.filter(isOpenLeaveApprovalStatus).map(appToDrilldownRow);
 
   const upcomingLeave = applications
-    .filter((item) => item.startDate > today && ['Approved', 'Submitted', 'Under Review'].includes(item.status))
+    .filter((item) => item.startDate > today && (isOpenLeaveApprovalStatus(item.status) || ['Approved', 'Completed'].includes(item.status)))
     .map(appToDrilldownRow);
 
   const totalEmployees = employees
@@ -1411,10 +1432,10 @@ export async function readLeaveManagementPayload(
   const allowanceExceptions = buildLeaveAllowanceExceptions(applications, allowanceEvents);
   const allowanceExceptionCount = allowanceExceptions.filter((item) => item.severity === 'Critical').length;
   const allowancePendingPayrollCount = allowanceExceptions.filter((item) => item.severity === 'Pending').length;
-  const pendingApplications = applications.filter((item) => ['Submitted', 'Under Review', 'Draft'].includes(item.status)).length;
-  const pendingApprovals = applications.filter((item) => ['Submitted', 'Under Review', 'Draft'].includes(item.status)).length;
-  const pendingManagerApprovals = applications.filter((item) => ['Submitted', 'Under Review', 'Draft'].includes(item.status) && (item.status === 'Submitted' || item.stage === 'Supervisor')).length;
-  const pendingHrApprovals = applications.filter((item) => ['Submitted', 'Under Review', 'Draft'].includes(item.status) && (item.status === 'Under Review' || item.stage === 'HR')).length;
+  const pendingApplications = applications.filter((item) => isOpenLeaveApprovalStatus(item.status)).length;
+  const pendingApprovals = pendingApplications;
+  const pendingManagerApprovals = applications.filter(isManagerLeaveApprovalPending).length;
+  const pendingHrApprovals = applications.filter(isHrLeaveApprovalPending).length;
   const today = dateAdd(0);
   const activeLeaveStatuses = ['Approved', 'Completed'];
   const onLeaveTodayKeys = new Set(
