@@ -47,8 +47,38 @@ FROM [hris].[TimesheetLines] l
 INNER JOIN rankedLines r ON r.[Id] = l.[Id]
 WHERE r.rn > 1;
 
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_TimesheetPayrollUpdates_PeriodId' AND object_id = OBJECT_ID(N'[hris].[TimesheetPayrollUpdates]'))
-  CREATE UNIQUE INDEX [UX_TimesheetPayrollUpdates_PeriodId] ON [hris].[TimesheetPayrollUpdates]([PeriodId]);
+IF NOT EXISTS (
+  SELECT 1
+  FROM sys.indexes i
+  INNER JOIN sys.tables t ON t.object_id = i.object_id
+  INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+  WHERE i.name = N'UX_TimesheetPayrollUpdates_PeriodId'
+    AND t.name = N'TimesheetPayrollUpdates'
+    AND s.name = N'hris'
+)
+BEGIN
+  BEGIN TRY
+    CREATE UNIQUE INDEX [UX_TimesheetPayrollUpdates_PeriodId] ON [hris].[TimesheetPayrollUpdates]([PeriodId]);
+  END TRY
+  BEGIN CATCH
+    IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+  END CATCH
+END
 
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_TimesheetLines_HeaderEmployee' AND object_id = OBJECT_ID(N'[hris].[TimesheetLines]'))
-  CREATE UNIQUE INDEX [UX_TimesheetLines_HeaderEmployee] ON [hris].[TimesheetLines]([HeaderId], [EmployeeId]);
+IF NOT EXISTS (
+  SELECT 1
+  FROM sys.indexes i
+  INNER JOIN sys.tables t ON t.object_id = i.object_id
+  INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+  WHERE i.name = N'UX_TimesheetLines_HeaderEmployee'
+    AND t.name = N'TimesheetLines'
+    AND s.name = N'hris'
+)
+BEGIN
+  BEGIN TRY
+    CREATE UNIQUE INDEX [UX_TimesheetLines_HeaderEmployee] ON [hris].[TimesheetLines]([HeaderId], [EmployeeId]);
+  END TRY
+  BEGIN CATCH
+    IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+  END CATCH
+END

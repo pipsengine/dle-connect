@@ -700,7 +700,7 @@ export const calculateTimesheetPeriodForMonth = (year: number, month: number): T
 
 export const getTimesheetDate = () => TIMESHEET_DATE;
 
-const dbReady = { value: false };
+const dbEnsureState: { promise: Promise<void> | null } = { promise: null };
 
 const officialTimesheetWorkCenters = [
   'Material Preparation',
@@ -762,7 +762,8 @@ const db = async () => {
   if (!pool) {
     throw new Error('DLE Enterprise database is not configured. Timesheet entry data must be stored in the database before this page can be used.');
   }
-  if (!dbReady.value) {
+  if (!dbEnsureState.promise) {
+    dbEnsureState.promise = (async () => {
     // Always run CREATE IF NOT EXISTS + additive COL_LENGTH migrations.
     // Do not short-circuit when TimesheetHeaders already exists — that skips new columns (e.g. ShiftLabel).
     await pool.request().query(`
@@ -994,11 +995,41 @@ FROM [hris].[TimesheetLines] l
 INNER JOIN rankedLines r ON r.[Id] = l.[Id]
 WHERE r.rn > 1;
 
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_TimesheetPayrollUpdates_PeriodId' AND object_id = OBJECT_ID(N'[hris].[TimesheetPayrollUpdates]'))
-  CREATE UNIQUE INDEX [UX_TimesheetPayrollUpdates_PeriodId] ON [hris].[TimesheetPayrollUpdates]([PeriodId]);
+IF NOT EXISTS (
+  SELECT 1
+  FROM sys.indexes i
+  INNER JOIN sys.tables t ON t.object_id = i.object_id
+  INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+  WHERE i.name = N'UX_TimesheetPayrollUpdates_PeriodId'
+    AND t.name = N'TimesheetPayrollUpdates'
+    AND s.name = N'hris'
+)
+BEGIN
+  BEGIN TRY
+    CREATE UNIQUE INDEX [UX_TimesheetPayrollUpdates_PeriodId] ON [hris].[TimesheetPayrollUpdates]([PeriodId]);
+  END TRY
+  BEGIN CATCH
+    IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+  END CATCH
+END
 
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_TimesheetLines_HeaderEmployee' AND object_id = OBJECT_ID(N'[hris].[TimesheetLines]'))
-  CREATE UNIQUE INDEX [UX_TimesheetLines_HeaderEmployee] ON [hris].[TimesheetLines]([HeaderId], [EmployeeId]);
+IF NOT EXISTS (
+  SELECT 1
+  FROM sys.indexes i
+  INNER JOIN sys.tables t ON t.object_id = i.object_id
+  INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+  WHERE i.name = N'UX_TimesheetLines_HeaderEmployee'
+    AND t.name = N'TimesheetLines'
+    AND s.name = N'hris'
+)
+BEGIN
+  BEGIN TRY
+    CREATE UNIQUE INDEX [UX_TimesheetLines_HeaderEmployee] ON [hris].[TimesheetLines]([HeaderId], [EmployeeId]);
+  END TRY
+  BEGIN CATCH
+    IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+  END CATCH
+END
 `);
     for (const name of officialTimesheetWorkCenters) {
       const code = workCenterCode(name);
@@ -1013,8 +1044,12 @@ WHEN MATCHED THEN UPDATE SET [Code]=@Code,[Name]=@Name,[Location]=@Name,[Site]=@
 WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[Location],[Site],[Status],[SourceSystem]) VALUES (@Id,@Code,@Name,@Name,@Name,N'Active',N'HRIS');`);
     }
     await pool.request().query(`UPDATE [hris].[TimesheetWorkCenters] SET [Status]=N'Inactive',[UpdatedAt]=SYSUTCDATETIME() WHERE [SourceSystem]=N'Sage Payroll'`);
-    dbReady.value = true;
+    })().catch((error) => {
+      dbEnsureState.promise = null;
+      throw error;
+    });
   }
+  await dbEnsureState.promise;
   return pool;
 };
 
