@@ -29,6 +29,8 @@ type EssPerformanceTeamViewProps = {
   workspace: EssPerformanceWorkspace;
   saving?: boolean;
   onAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
+  initialEmployeeId?: string;
+  focusSection?: 'reviews' | 'goals' | 'checkins' | 'development' | 'probation' | 'pip';
 };
 
 type DraftItem = EssAssessmentItemDto;
@@ -50,8 +52,14 @@ const scorePreview = (items: DraftItem[]) => {
   }))));
 };
 
-export function EssPerformanceTeamView({ workspace, saving, onAction }: EssPerformanceTeamViewProps) {
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+export function EssPerformanceTeamView({
+  workspace,
+  saving,
+  onAction,
+  initialEmployeeId,
+  focusSection = 'reviews',
+}: EssPerformanceTeamViewProps) {
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(initialEmployeeId || '');
   const [assessmentId, setAssessmentId] = useState<string | null>(null);
   const [items, setItems] = useState<DraftItem[]>([]);
   const [overallComments, setOverallComments] = useState('');
@@ -81,6 +89,10 @@ export function EssPerformanceTeamView({ workspace, saving, onAction }: EssPerfo
   const draftFingerprint = JSON.stringify({ items, overallComments, strengths, improvements, assessmentId });
   const dirty = Boolean(selectedEmployeeId && items.length && !locked && baseline && draftFingerprint !== baseline);
   const { confirmDiscard } = useEssUnsavedGuard(dirty);
+
+  useEffect(() => {
+    if (initialEmployeeId) setSelectedEmployeeId(initialEmployeeId);
+  }, [initialEmployeeId]);
 
   useEffect(() => {
     if (!selectedEmployeeId) {
@@ -240,6 +252,12 @@ export function EssPerformanceTeamView({ workspace, saving, onAction }: EssPerfo
   const behaviourItems = items.filter((item) => item.itemType === 'behaviour');
   const reportMeta = workspace.team.directReports.find((row) => row.employeeId === selectedEmployeeId);
 
+  useEffect(() => {
+    if (!focusSection || focusSection === 'reviews') return;
+    const node = document.getElementById(`ess-team-section-${focusSection}`);
+    node?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [focusSection, selectedEmployeeId]);
+
   return (
     <div className="space-y-4">
       {workspace.team.actingAsDelegate ? (
@@ -248,6 +266,7 @@ export function EssPerformanceTeamView({ workspace, saving, onAction }: EssPerfo
         </p>
       ) : null}
 
+      <div id="ess-team-section-reviews">
       <EssCard className="overflow-hidden">
         <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-5 py-3">
           <h3 className="text-sm font-bold text-[#0F172A]">Team review queue</h3>
@@ -323,6 +342,7 @@ export function EssPerformanceTeamView({ workspace, saving, onAction }: EssPerfo
           </div>
         )}
       </EssCard>
+      </div>
 
       {selectedRow ? (
         <EssCard className="p-5">
@@ -398,7 +418,7 @@ export function EssPerformanceTeamView({ workspace, saving, onAction }: EssPerfo
               ) : null}
 
               {checkIns.length || selectedRow ? (
-                <section>
+                <section id="ess-team-section-checkins">
                   <h4 className="text-sm font-bold text-[#0F172A]">Check-ins & coaching</h4>
                   <div className="mt-2">
                     <EssManagerCoachingPanel checkIns={checkIns} saving={saving} onAction={onAction} />
@@ -525,6 +545,7 @@ export function EssPerformanceTeamView({ workspace, saving, onAction }: EssPerfo
       </div>
 
       <div className="space-y-4">
+        <div id="ess-team-section-goals">
         <EssPerformanceGoalForm
           workspace={workspace}
           selectedEmployeeId={selectedEmployeeId}
@@ -536,12 +557,17 @@ export function EssPerformanceTeamView({ workspace, saving, onAction }: EssPerfo
           saving={saving}
           onAction={onAction}
         />
-        <EssCalibrationVisibility title="Team calibration status" rows={workspace.team.calibration} />
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <EssProbationWorkspace rows={workspace.team.probation} saving={saving} onAction={onAction} />
-          <EssPipWorkspace workspace={workspace} saving={saving} onAction={onAction} />
         </div>
-        <EssDevelopmentWorkspace workspace={workspace} mode="team" saving={saving} onAction={onAction} />
+        <EssCalibrationVisibility title="Team calibration status" rows={workspace.team.calibration} />
+        <div id="ess-team-section-probation" className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <EssProbationWorkspace rows={workspace.team.probation} saving={saving} onAction={onAction} />
+          <div id="ess-team-section-pip">
+            <EssPipWorkspace workspace={workspace} saving={saving} onAction={onAction} />
+          </div>
+        </div>
+        <div id="ess-team-section-development">
+          <EssDevelopmentWorkspace workspace={workspace} mode="team" saving={saving} onAction={onAction} />
+        </div>
       </div>
     </div>
   );
