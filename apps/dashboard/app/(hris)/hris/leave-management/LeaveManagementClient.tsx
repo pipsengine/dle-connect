@@ -807,7 +807,7 @@ function CalendarView({ payload }: { payload: Payload | null }) {
 function BalanceView({ rows, onOpenDetail }: { rows: BalanceRecord[]; onOpenDetail: (row: BalanceRecord) => void }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <TableHeader title="Leave Balance Administration" detail="Annual leave only for the current leave year. Used counts approved days starting in this year. Double-click a row for pending, forfeited, carry-forward, liability, and exceptions." />
+      <TableHeader title="Leave Balance Administration" detail="Annual leave for the current leave year. Carry-forward (max 7) is consumed by leave starting on/before 31 March, then unused CF is forfeited. Leave Entitled = year grant + remaining CF only. Double-click for full detail." />
       <div className="overflow-x-auto">
         <table className="min-w-[720px] w-full divide-y divide-slate-100">
           <thead className="bg-slate-50">

@@ -1048,6 +1048,10 @@ VALUES
 
 const syncLeaveBalances = async (pool: sql.ConnectionPool, employees: DleEmployeeDirectoryRow[]) => {
   const leaveYear = new Date().getFullYear();
+  const today = new Date().toISOString().slice(0, 10);
+  const carryForwardExpiry = `${leaveYear}-03-31`;
+  const carryForwardExpired = today > carryForwardExpiry;
+
   const existingRows = await pool.request().query(`
 SELECT [EmployeeId],[LeaveType],[CarryForwardBalance],[ForfeitedBalance]
 FROM [hris].[LeaveBalances];`);
@@ -1056,25 +1060,37 @@ FROM [hris].[LeaveBalances];`);
     existing.set(`${row.EmployeeId}::${row.LeaveType}`, { carry: Number(row.CarryForwardBalance || 0), forfeited: Number(row.ForfeitedBalance || 0) });
   }
 
-  // Used/Pending must be current leave-year only. Entitlement is annual; lifetime usage
-  // made "Used" appear larger than entitled (e.g. 45 used vs 37 entitled).
+  // Used/Pending are current leave-year only. Carry-forward is consumed by leave starting on/before 31 March,
+  // then any unused CF is forfeited after that date — it must not keep inflating Entitled/Balance.
   const applicationRows = await pool.request()
     .input('LeaveYear', sql.Int, leaveYear)
+    .input('CarryForwardExpiry', sql.Date, carryForwardExpiry)
     .query(`
 SELECT [EmployeeId],[LeaveType],
   SUM(CASE WHEN [StatusName] IN (N'Approved',N'Completed') THEN [BalanceImpact] ELSE 0 END) AS [UsedDays],
-  SUM(CASE WHEN [StatusName] IN (N'Submitted',N'Under Review',N'Line Manager Review',N'HR Review') THEN [BalanceImpact] ELSE 0 END) AS [PendingDays]
+  SUM(CASE WHEN [StatusName] IN (N'Approved',N'Completed') AND CAST([StartDate] AS date) <= @CarryForwardExpiry THEN [BalanceImpact] ELSE 0 END) AS [UsedBeforeCfExpiry],
+  SUM(CASE WHEN [StatusName] IN (N'Submitted',N'Under Review',N'Line Manager Review',N'HR Review') THEN [BalanceImpact] ELSE 0 END) AS [PendingDays],
+  SUM(CASE WHEN [StatusName] IN (N'Submitted',N'Under Review',N'Line Manager Review',N'HR Review') AND CAST([StartDate] AS date) <= @CarryForwardExpiry THEN [BalanceImpact] ELSE 0 END) AS [PendingBeforeCfExpiry]
 FROM [hris].[LeaveApplications]
 WHERE [PolicyComplianceStatus] <> N'Blocked'
   AND YEAR([StartDate]) = @LeaveYear
 GROUP BY [EmployeeId],[LeaveType];`);
-  const usage = new Map<string, { used: number; pending: number }>();
-  for (const row of applicationRows.recordset as Array<{ EmployeeId: string; LeaveType: string; UsedDays: number; PendingDays: number }>) {
+  const usage = new Map<string, { used: number; usedBeforeCfExpiry: number; pending: number; pendingBeforeCfExpiry: number }>();
+  for (const row of applicationRows.recordset as Array<{
+    EmployeeId: string;
+    LeaveType: string;
+    UsedDays: number;
+    UsedBeforeCfExpiry: number;
+    PendingDays: number;
+    PendingBeforeCfExpiry: number;
+  }>) {
     const key = `${String(row.EmployeeId || '').trim()}::${row.LeaveType}`;
-    const prior = usage.get(key) || { used: 0, pending: 0 };
+    const prior = usage.get(key) || { used: 0, usedBeforeCfExpiry: 0, pending: 0, pendingBeforeCfExpiry: 0 };
     usage.set(key, {
       used: prior.used + Number(row.UsedDays || 0),
+      usedBeforeCfExpiry: prior.usedBeforeCfExpiry + Number(row.UsedBeforeCfExpiry || 0),
       pending: prior.pending + Number(row.PendingDays || 0),
+      pendingBeforeCfExpiry: prior.pendingBeforeCfExpiry + Number(row.PendingBeforeCfExpiry || 0),
     });
   }
 
@@ -1088,9 +1104,14 @@ GROUP BY [EmployeeId],[LeaveType];`);
       (total, id) => {
         const row = usage.get(`${id}::${leaveType}`);
         if (!row) return total;
-        return { used: total.used + row.used, pending: total.pending + row.pending };
+        return {
+          used: total.used + row.used,
+          usedBeforeCfExpiry: total.usedBeforeCfExpiry + row.usedBeforeCfExpiry,
+          pending: total.pending + row.pending,
+          pendingBeforeCfExpiry: total.pendingBeforeCfExpiry + row.pendingBeforeCfExpiry,
+        };
       },
-      { used: 0, pending: 0 },
+      { used: 0, usedBeforeCfExpiry: 0, pending: 0, pendingBeforeCfExpiry: 0 },
     );
   };
 
@@ -1099,16 +1120,29 @@ GROUP BY [EmployeeId],[LeaveType];`);
     const key = `${employee.employeeId}::${leaveType}`;
     const entitlement = entitlementFor(employee, leaveType);
     const currentExisting = existing.get(key);
-    const carry = Math.min(dormantLongPolicy.carryForwardCap, Number(currentExisting?.carry || 0));
+    const openingCarry = Math.min(dormantLongPolicy.carryForwardCap, Math.max(0, Number(currentExisting?.carry || 0)));
     const yearUsage = usageForEmployee(employee, leaveType);
     const used = Number(yearUsage.used || 0);
     const pending = Number(yearUsage.pending || 0);
-    const accrued = entitlement + carry;
-    // Available pool for the year is entitlement + carry-forward. Used cannot reduce balance below 0.
-    const current = Math.max(0, accrued - used - pending);
+    const usedBeforeCfExpiry = Number(yearUsage.usedBeforeCfExpiry || 0);
+
+    // Consume carry-forward first from leave that starts on/before 31 March.
+    const carryConsumed = Math.min(openingCarry, usedBeforeCfExpiry);
+    let carryRemaining = round2(openingCarry - carryConsumed);
+    let forfeited = Math.max(0, Number(currentExisting?.forfeited || 0));
+    if (carryForwardExpired && carryRemaining > 0) {
+      forfeited = round2(forfeited + carryRemaining);
+      carryRemaining = 0;
+    }
+
+    // Leave Entitled = current-year grant + remaining (unconsumed, unexpired) carry-forward only.
+    const accrued = round2(entitlement + carryRemaining);
+    const current = Math.max(0, round2(accrued - used - pending));
     const exceptions = [
       ...(current < 3 && entitlement > 0 ? ['Low leave balance'] : []),
-      ...(used > accrued && accrued > 0 ? [`Used days (${used}) exceed ${leaveYear} entitlement (${accrued})`] : []),
+      ...(used > accrued && accrued > 0 ? [`Used days (${used}) exceed ${leaveYear} available entitlement (${accrued})`] : []),
+      ...(carryConsumed > 0 ? [`Carry-forward consumed: ${carryConsumed} day(s)`] : []),
+      ...(carryForwardExpired && openingCarry > carryConsumed ? [`Unused carry-forward forfeited after ${carryForwardExpiry}`] : []),
       ...(!isFourteenDayPaidLeaveEmployee(employee) && !isConfirmedPermanent(employee) ? ['Annual Leave locked pending confirmation of appointment'] : []),
       ...(employee.hasManagerAssigned === false ? ['Reporting manager missing'] : []),
     ];
@@ -1122,8 +1156,8 @@ GROUP BY [EmployeeId],[LeaveType];`);
       .input('AccruedBalance', sql.Decimal(9, 2), round2(accrued))
       .input('UsedBalance', sql.Decimal(9, 2), round2(used))
       .input('PendingBalance', sql.Decimal(9, 2), round2(pending))
-      .input('ForfeitedBalance', sql.Decimal(9, 2), round2(currentExisting?.forfeited || 0))
-      .input('CarryForwardBalance', sql.Decimal(9, 2), round2(carry))
+      .input('ForfeitedBalance', sql.Decimal(9, 2), round2(forfeited))
+      .input('CarryForwardBalance', sql.Decimal(9, 2), round2(carryRemaining))
       .input('LiabilityValue', sql.Decimal(19, 2), round2(current * dailyPayFor(employee)))
       .input('StatusName', sql.NVarChar(40), status)
       .input('ExceptionsJson', sql.NVarChar(sql.MAX), JSON.stringify(exceptions))
@@ -1345,7 +1379,9 @@ export async function readLeaveManagementPayload(
   if (!readOnly) {
     await maybeSyncLeaveTypePolicies(pool, forceSync);
     await maybeUpsertEssLeaveRequests(pool, employees, forceSync);
-    await maybeSyncLeaveBalances(pool, employees, forceSync);
+    const forceBalanceSync = forceSync
+      || ['leave-balances', 'leave-accruals', 'carry-forward-processing', 'leave-year-end-processing'].includes(normalizedSection);
+    await maybeSyncLeaveBalances(pool, employees, forceBalanceSync);
   }
   const [applicationsRaw, balances, leaveTypes, auditTrail, nigeriaHolidays] = await Promise.all([
     readLeaveApplications(pool),
