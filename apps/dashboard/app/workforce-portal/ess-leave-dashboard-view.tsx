@@ -9,7 +9,6 @@ import {
   CalendarDays,
   ChevronRight,
   ClipboardList,
-  Clock,
   FileText,
   GraduationCap,
   Heart,
@@ -22,7 +21,6 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import {
   EssCard,
-  EssKpiCard,
   EssNotificationItem,
   EssProgressBar,
   EssSectionHeader,
@@ -131,22 +129,6 @@ const policyIcon = (type: string): { Icon: LucideIcon; accent: string; bg: strin
   if (t.includes('maternity')) return { Icon: Baby, accent: '#F97316', bg: '#FFF7ED' };
   if (t.includes('carry')) return { Icon: CalendarDays, accent: '#2563EB', bg: '#EFF6FF' };
   return { Icon: CalendarCheck, accent: '#10B981', bg: '#ECFDF5' };
-};
-
-const kpiIcon = (label: string): { Icon: LucideIcon; accent: string; bg: string } => {
-  const t = label.toLowerCase();
-  if (t.includes('annual')) return { Icon: Palmtree, accent: '#10B981', bg: '#ECFDF5' };
-  if (t.includes('sick')) return { Icon: Stethoscope, accent: '#2563EB', bg: '#DBEAFE' };
-  if (t.includes('casual')) return { Icon: Sun, accent: '#F59E0B', bg: '#FFFBEB' };
-  if (t.includes('compassion')) return { Icon: Heart, accent: '#7C3AED', bg: '#F5F3FF' };
-  if (t.includes('exam')) return { Icon: GraduationCap, accent: '#06B6D4', bg: '#ECFEFF' };
-  if (t.includes('maternity')) return { Icon: Baby, accent: '#F97316', bg: '#FFF7ED' };
-  if (t.includes('carry')) return { Icon: CalendarDays, accent: '#2563EB', bg: '#EFF6FF' };
-  if (t.includes('pending')) return { Icon: Clock, accent: '#F59E0B', bg: '#FFFBEB' };
-  if (t.includes('approved')) return { Icon: CalendarCheck, accent: '#10B981', bg: '#ECFDF5' };
-  if (t.includes('allowance')) return { Icon: FileText, accent: '#7C3AED', bg: '#F5F3FF' };
-  if (t.includes('scheduled')) return { Icon: CalendarDays, accent: '#2563EB', bg: '#DBEAFE' };
-  return { Icon: ClipboardList, accent: '#64748B', bg: '#F1F5F9' };
 };
 
 function LeaveHeroIllustration() {
@@ -267,14 +249,8 @@ export function EssLeaveDashboardView({ payload, initialNow, activeTab, onTabCha
   const employee = payload?.employee;
   const balances = payload?.leave?.balances || [];
   const calendar = payload?.leave?.calendar || [];
-  const history = payload?.leave?.history || [];
   const allowance = payload?.leave?.allowance || [];
   const teamPeers = payload?.leave?.relieverOptions || [];
-
-  const approvedThisYear = useMemo(
-    () => history.filter((item) => /approved|completed/i.test(String(item.status || '')) && Number(item.year || String(item.from || '').slice(0, 4)) === currentYear()).length,
-    [history],
-  );
 
   const nextLeave = calendar.find((item) => item.from && item.from >= todayIso() && /approved/i.test(String(item.status || '')));
   const allowanceRow = allowance.find((item) => /allowance/i.test(String(item.label || '')));
@@ -288,20 +264,6 @@ export function EssLeaveDashboardView({ payload, initialNow, activeTab, onTabCha
   const teamTotal = Math.max(teamPeers.length, 1);
   const teamAvailable = Math.max(teamTotal - onLeaveToday, 0);
   const coveragePct = teamTotal ? Math.round((teamAvailable / teamTotal) * 1000) / 10 : 100;
-
-  const kpiRows = [
-    { label: 'Annual Leave Balance', value: `${balanceFor(balances, 'Annual Leave')?.balance ?? payload?.widgets?.leave.balance ?? 0} days`, subtitle: 'Current entitlement' },
-    { label: 'Sick Leave Balance', value: `${balanceFor(balances, 'Sick Leave')?.balance ?? 0} days`, subtitle: 'Working days' },
-    { label: 'Compassionate Balance', value: `${balanceFor(balances, 'Compassionate Leave')?.balance ?? 0} days`, subtitle: 'Working days' },
-    { label: 'Exam Leave Balance', value: `${balanceFor(balances, 'Exam Leave')?.balance ?? 0} days`, subtitle: 'Working days' },
-    { label: 'Maternity Balance', value: `${balanceFor(balances, 'Maternity Leave')?.balance ?? 0} days`, subtitle: 'Calendar days' },
-    { label: 'Carry Forward', value: `${balanceFor(balances, 'Carry Forward Leave')?.balance ?? 0} days`, subtitle: `Expires 31 Mar ${currentYear() + 1}` },
-    { label: 'Pending Applications', value: String(payload?.widgets?.requests.pending ?? 0), subtitle: 'Workflow queue' },
-    { label: 'Approved This Year', value: String(approvedThisYear), subtitle: 'Approved requests' },
-    { label: 'Leave Allowance', value: allowanceRow?.value?.includes('Eligible') ? 'Eligible' : 'Conditional', subtitle: '10+ annual days' },
-    { label: 'Next Scheduled Leave', value: nextLeave?.from ? String(nextLeave.from) : '—', subtitle: nextLeave ? String(nextLeave.label || 'Approved schedule') : 'No upcoming leave' },
-    { label: 'Return-to-Work Pending', value: '0', subtitle: 'No pending action' },
-  ];
 
   const alerts = [
     {
@@ -439,19 +401,6 @@ export function EssLeaveDashboardView({ payload, initialNow, activeTab, onTabCha
       {/* Main grid + right sidebar */}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-5">
-          {/* 12 KPI cards */}
-          <section>
-            <EssSectionHeader title="Leave Overview" />
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {kpiRows.map((row) => {
-                const { Icon, accent, bg } = kpiIcon(row.label);
-                return (
-                  <EssKpiCard key={row.label} label={row.label} value={row.value} subtitle={row.subtitle} icon={Icon} accent={accent} iconBg={bg} />
-                );
-              })}
-            </div>
-          </section>
-
           {/* Policy cards */}
           <section>
             <EssSectionHeader title="Leave Policy & Entitlements" />

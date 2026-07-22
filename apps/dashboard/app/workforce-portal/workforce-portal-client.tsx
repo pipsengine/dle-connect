@@ -4,7 +4,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
 import { EssDashboardView, EssRightPanel } from './ess-dashboard-view';
@@ -31,7 +31,6 @@ import {
   buildLeaveCalendarMonthsForPeriod,
   calculateLeaveDays,
   defaultChargeableDatesInPeriod,
-  enumerateInclusiveDates,
   holidaysOverlappingPeriod,
   isChargeableLeaveDate,
   isWeekendLeaveDate,
@@ -943,15 +942,18 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
     [startDate, endDate, selectedDates, holidays],
   );
   const days = leaveCalc.days;
-  const periodDates = useMemo(() => enumerateInclusiveDates(startDate, endDate), [startDate, endDate]);
-  const periodDateSet = useMemo(() => new Set(periodDates), [periodDates]);
   const calendarMonths = useMemo(() => buildLeaveCalendarMonthsForPeriod(startDate, endDate), [startDate, endDate]);
   const holidaySet = useMemo(() => new Set(holidays.map((item) => item.date)), [holidays]);
+  const skipPeriodReseedRef = useRef(false);
 
   useEffect(() => {
     if (!startDate || !endDate) {
       setSelectedDates([]);
       setAcknowledgeHolidays(false);
+      return;
+    }
+    if (skipPeriodReseedRef.current) {
+      skipPeriodReseedRef.current = false;
       return;
     }
     setSelectedDates(defaultChargeableDatesInPeriod(startDate, endDate, holidays));
@@ -989,9 +991,19 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
 
   const toggleSelectedDate = (date: string) => {
     if (!isChargeableLeaveDate(date, holidaySet)) return;
-    setSelectedDates((current) => (
-      current.includes(date) ? current.filter((item) => item !== date) : [...current, date].sort()
-    ));
+    const next = selectedDates.includes(date)
+      ? selectedDates.filter((item) => item !== date)
+      : [...selectedDates, date].sort();
+    if (next.length) {
+      const nextStart = next[0];
+      const nextEnd = next[next.length - 1];
+      if (nextStart !== startDate || nextEnd !== endDate) {
+        skipPeriodReseedRef.current = true;
+        setStartDate(nextStart);
+        setEndDate(nextEnd);
+      }
+    }
+    setSelectedDates(next);
   };
 
   const uploadAttachment = async (file: File) => {
@@ -1101,7 +1113,7 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
                       <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold" onClick={() => setSelectedDates([])}>Clear</button>
                     </div>
                   </div>
-                  <p className="mt-1 text-[11px] font-semibold text-slate-500">Weekends and public holidays are excluded from leave balance. Click working days within the period to select or deselect.</p>
+                  <p className="mt-1 text-[11px] font-semibold text-slate-500">Weekends and public holidays are excluded from leave balance. Click any working day in the month to select or deselect — the leave period updates to match your selection.</p>
                   <div className="mt-3 space-y-4">
                     {calendarMonths.map((month) => (
                       <div key={`${month.year}-${month.month}`} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -1116,10 +1128,9 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
                             if (!date) {
                               return <div key={`${month.label}-pad-${index}`} className="min-h-[64px] bg-white" />;
                             }
-                            const inPeriod = periodDateSet.has(date);
                             const weekend = isWeekendLeaveDate(date);
                             const holiday = holidays.find((item) => item.date === date);
-                            const chargeable = inPeriod && isChargeableLeaveDate(date, holidaySet);
+                            const chargeable = isChargeableLeaveDate(date, holidaySet);
                             const checked = selectedDates.includes(date);
                             const dayNumber = Number(date.slice(8, 10));
                             return (
@@ -1128,28 +1139,24 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
                                 type="button"
                                 disabled={!chargeable}
                                 onClick={() => toggleSelectedDate(date)}
-                                title={holiday ? `Holiday: ${holiday.label}` : weekend ? 'Weekend' : inPeriod ? (checked ? 'Selected' : 'Working day') : 'Outside leave period'}
+                                title={holiday ? `Holiday: ${holiday.label}` : weekend ? 'Weekend' : checked ? 'Selected' : 'Working day'}
                                 className={`flex min-h-[64px] flex-col items-start justify-between px-1.5 py-1.5 text-left transition ${
-                                  !inPeriod
-                                    ? 'cursor-default bg-slate-50 text-slate-300'
-                                    : !chargeable
-                                      ? 'cursor-not-allowed bg-slate-100 text-slate-400'
-                                      : checked
-                                        ? 'bg-blue-50 text-blue-900 ring-1 ring-inset ring-blue-500'
-                                        : 'bg-white text-slate-700 hover:bg-blue-50/60'
+                                  !chargeable
+                                    ? 'cursor-not-allowed bg-slate-100 text-slate-400'
+                                    : checked
+                                      ? 'bg-blue-50 text-blue-900 ring-1 ring-inset ring-blue-500'
+                                      : 'bg-white text-slate-700 hover:bg-blue-50/60'
                                 }`}
                               >
                                 <span className={`text-sm font-black ${checked ? 'text-blue-700' : ''}`}>{dayNumber}</span>
                                 <span className="w-full truncate text-[9px] font-semibold leading-tight opacity-80">
-                                  {!inPeriod
-                                    ? ''
-                                    : holiday
-                                      ? holiday.label
-                                      : weekend
-                                        ? 'Weekend'
-                                        : checked
-                                          ? 'Selected'
-                                          : 'Working'}
+                                  {holiday
+                                    ? holiday.label
+                                    : weekend
+                                      ? 'Weekend'
+                                      : checked
+                                        ? 'Selected'
+                                        : 'Working'}
                                 </span>
                               </button>
                             );
