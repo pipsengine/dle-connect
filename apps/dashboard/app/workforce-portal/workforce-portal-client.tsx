@@ -28,12 +28,14 @@ import type { EssTravelRecord } from '@/lib/ess-portal-derived-data';
 import { ESS_NAV_ITEMS, EssPortalShell, EssMobileNav, type EssTab } from './ess-portal-shell';
 import { EssEmptyState } from './ess-portal-ui';
 import {
+  buildLeaveCalendarMonthsForPeriod,
   calculateLeaveDays,
   defaultChargeableDatesInPeriod,
   enumerateInclusiveDates,
   holidaysOverlappingPeriod,
   isChargeableLeaveDate,
   isWeekendLeaveDate,
+  LEAVE_CALENDAR_WEEKDAYS,
 } from '@/lib/leave-day-engine';
 import { Activity,
   ArrowRight,
@@ -942,6 +944,8 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
   );
   const days = leaveCalc.days;
   const periodDates = useMemo(() => enumerateInclusiveDates(startDate, endDate), [startDate, endDate]);
+  const periodDateSet = useMemo(() => new Set(periodDates), [periodDates]);
+  const calendarMonths = useMemo(() => buildLeaveCalendarMonthsForPeriod(startDate, endDate), [startDate, endDate]);
   const holidaySet = useMemo(() => new Set(holidays.map((item) => item.date)), [holidays]);
 
   useEffect(() => {
@@ -979,9 +983,7 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
     ...(usesCarryForward && endDate > `${new Date().getFullYear()}-03-31` ? ['Carry Forward Leave must be consumed on or before 31 March.'] : []),
     ...(leaveType === 'Annual Leave' && days > 0 && days < 10 ? ['This request does not qualify for Leave Allowance.'] : []),
     ...(!selectedDates.length ? ['Select at least one leave day within the period.'] : []),
-    ...(!reason.trim() ? ['Reason is required.'] : []),
     ...(!reliever ? ['A department reliever is required.'] : []),
-    ...(!handover.trim() ? ['Handover notes are required.'] : []),
     ...(!ack ? ['Policy acknowledgement is required before submission.'] : []),
   ];
 
@@ -1083,50 +1085,83 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
             <h2 className="text-base font-black text-slate-950">Guided Leave Application</h2>
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
               <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} className="h-11 rounded-lg border border-slate-200 px-3 text-sm font-bold">{(payload?.leave.balances || []).map((item) => <option key={String(item.id)}>{String(item.type)}</option>)}</select>
-              <input value={`${days} chargeable working day(s)`} readOnly className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-black text-slate-800" />
+              <input value={`${days} working day(s)`} readOnly className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-black text-slate-800" />
               <label className="text-xs font-bold text-slate-600">Leave period start
                 <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-bold" />
               </label>
               <label className="text-xs font-bold text-slate-600">Leave period end
                 <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-bold" />
               </label>
-              {periodDates.length ? (
+              {calendarMonths.length ? (
                 <div className="md:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs font-black text-slate-800">Select leave days in this period (can be non-contiguous)</p>
+                    <p className="text-xs font-black text-slate-800">Select leave days on the calendar (can be non-contiguous)</p>
                     <div className="flex gap-2">
                       <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold" onClick={() => setSelectedDates(defaultChargeableDatesInPeriod(startDate, endDate, holidays))}>Select all working days</button>
                       <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold" onClick={() => setSelectedDates([])}>Clear</button>
                     </div>
                   </div>
-                  <p className="mt-1 text-[11px] font-semibold text-slate-500">Weekends and public holidays are excluded from leave balance. Click days to slip/select within the period.</p>
-                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                    {periodDates.map((date) => {
-                      const weekend = isWeekendLeaveDate(date);
-                      const holiday = holidays.find((item) => item.date === date);
-                      const chargeable = isChargeableLeaveDate(date, holidaySet);
-                      const checked = selectedDates.includes(date);
-                      return (
-                        <button
-                          key={date}
-                          type="button"
-                          disabled={!chargeable}
-                          onClick={() => toggleSelectedDate(date)}
-                          className={`rounded-lg border px-2 py-2 text-left text-[11px] font-bold ${
-                            !chargeable
-                              ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
-                              : checked
-                                ? 'border-blue-500 bg-blue-50 text-blue-900'
-                                : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300'
-                          }`}
-                        >
-                          <span className="block">{date}</span>
-                          <span className="block font-semibold opacity-80">
-                            {holiday ? `Holiday: ${holiday.label}` : weekend ? 'Weekend' : checked ? 'Selected' : 'Working day'}
-                          </span>
-                        </button>
-                      );
-                    })}
+                  <p className="mt-1 text-[11px] font-semibold text-slate-500">Weekends and public holidays are excluded from leave balance. Click working days within the period to select or deselect.</p>
+                  <div className="mt-3 space-y-4">
+                    {calendarMonths.map((month) => (
+                      <div key={`${month.year}-${month.month}`} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <div className="border-b border-slate-100 bg-slate-50 px-3 py-2 text-sm font-black text-slate-900">{month.label}</div>
+                        <div className="grid grid-cols-7 gap-px bg-slate-100 p-px">
+                          {LEAVE_CALENDAR_WEEKDAYS.map((label) => (
+                            <div key={`${month.label}-${label}`} className="bg-slate-50 px-1 py-2 text-center text-[10px] font-black uppercase tracking-wide text-slate-500">
+                              {label}
+                            </div>
+                          ))}
+                          {month.cells.map((date, index) => {
+                            if (!date) {
+                              return <div key={`${month.label}-pad-${index}`} className="min-h-[64px] bg-white" />;
+                            }
+                            const inPeriod = periodDateSet.has(date);
+                            const weekend = isWeekendLeaveDate(date);
+                            const holiday = holidays.find((item) => item.date === date);
+                            const chargeable = inPeriod && isChargeableLeaveDate(date, holidaySet);
+                            const checked = selectedDates.includes(date);
+                            const dayNumber = Number(date.slice(8, 10));
+                            return (
+                              <button
+                                key={date}
+                                type="button"
+                                disabled={!chargeable}
+                                onClick={() => toggleSelectedDate(date)}
+                                title={holiday ? `Holiday: ${holiday.label}` : weekend ? 'Weekend' : inPeriod ? (checked ? 'Selected' : 'Working day') : 'Outside leave period'}
+                                className={`flex min-h-[64px] flex-col items-start justify-between px-1.5 py-1.5 text-left transition ${
+                                  !inPeriod
+                                    ? 'cursor-default bg-slate-50 text-slate-300'
+                                    : !chargeable
+                                      ? 'cursor-not-allowed bg-slate-100 text-slate-400'
+                                      : checked
+                                        ? 'bg-blue-50 text-blue-900 ring-1 ring-inset ring-blue-500'
+                                        : 'bg-white text-slate-700 hover:bg-blue-50/60'
+                                }`}
+                              >
+                                <span className={`text-sm font-black ${checked ? 'text-blue-700' : ''}`}>{dayNumber}</span>
+                                <span className="w-full truncate text-[9px] font-semibold leading-tight opacity-80">
+                                  {!inPeriod
+                                    ? ''
+                                    : holiday
+                                      ? holiday.label
+                                      : weekend
+                                        ? 'Weekend'
+                                        : checked
+                                          ? 'Selected'
+                                          : 'Working'}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-3 text-[10px] font-bold text-slate-500">
+                    <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-blue-50 ring-1 ring-blue-500" /> Selected</span>
+                    <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm border border-slate-200 bg-white" /> Working day</span>
+                    <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-slate-100" /> Weekend / holiday</span>
                   </div>
                 </div>
               ) : null}
@@ -1136,8 +1171,14 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
               </select>
               <input value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Contact number while on leave" className="h-11 rounded-lg border border-slate-200 px-3 text-sm font-bold" />
               <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Leave address / location" className="h-11 rounded-lg border border-slate-200 px-3 text-sm font-bold md:col-span-2" />
-              <textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason" className="min-h-24 rounded-lg border border-slate-200 p-3 text-sm font-bold md:col-span-2" />
-              <textarea value={handover} onChange={(e) => setHandover(e.target.value)} placeholder="Handover notes" className="min-h-24 rounded-lg border border-slate-200 p-3 text-sm font-bold md:col-span-2" />
+              <label className="md:col-span-2 text-xs font-bold text-slate-600">
+                Reason <span className="font-semibold text-slate-400">(optional)</span>
+                <textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (optional)" className="mt-1 min-h-24 w-full rounded-lg border border-slate-200 p-3 text-sm font-bold" />
+              </label>
+              <label className="md:col-span-2 text-xs font-bold text-slate-600">
+                Handover notes <span className="font-semibold text-slate-400">(optional)</span>
+                <textarea value={handover} onChange={(e) => setHandover(e.target.value)} placeholder="Handover notes (optional)" className="mt-1 min-h-24 w-full rounded-lg border border-slate-200 p-3 text-sm font-bold" />
+              </label>
               <label className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm font-bold text-slate-600 md:col-span-2">
                 <span>Supporting documents (optional)</span>
                 <input

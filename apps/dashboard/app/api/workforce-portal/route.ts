@@ -1875,7 +1875,7 @@ export async function POST(request: Request) {
     const relieverNameInput = compact(body.relieverName);
     const isLeaveRequest = catalogItem.id === 'leave' || /leave application/i.test(catalogItem.label);
     if (isLeaveRequest && !compact(body.leaveType)) {
-      return err(400, 'Leave applications must be submitted from the Leave workspace with dates, reliever, and handover details.');
+      return err(400, 'Leave applications must be submitted from the Leave workspace with dates and a department reliever.');
     }
     const reliever = relieverEmployeeId
       ? employeeSource.employees.find((item) => item.employeeId === relieverEmployeeId || item.employeeCode === relieverEmployeeId)
@@ -1886,8 +1886,6 @@ export async function POST(request: Request) {
     if (isLeaveRequest) {
       if (!leaveType) return err(400, 'leaveType is required');
       if (!startDate || !endDate) return err(400, 'startDate and endDate are required');
-      if (!reason) return err(400, 'reason is required');
-      if (!handover) return err(400, 'handover notes are required');
       if (!reliever) return err(400, 'A department reliever must be selected.');
       const selectedDates = resolvedSelectedDates;
       const acknowledgeHolidays = Boolean(body.acknowledgeHolidays);

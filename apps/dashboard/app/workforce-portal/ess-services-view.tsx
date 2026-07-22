@@ -264,7 +264,7 @@ export function EssServicesView({
               {isLeaveService ? (
                 <div className="rounded-[12px] border border-[#BFDBFE] bg-[#EFF6FF] p-3">
                   <p className="text-[12px] font-bold text-[#1D4ED8]">Leave requires additional details</p>
-                  <p className="mt-1 text-[11px] leading-relaxed text-[#475569]">Dates, reliever, handover notes, and supporting documents are required. Use the dedicated Leave workspace to submit a compliant leave application.</p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-[#475569]">Dates, reliever, and supporting documents can be captured in the Leave workspace. Reason and handover notes are optional.</p>
                   {onOpenLeave ? (
                     <button type="button" onClick={onOpenLeave} className="mt-2 inline-flex h-9 items-center rounded-[10px] bg-[#2563EB] px-3 text-[11px] font-bold text-white hover:bg-[#1D4ED8]">
                       Open Leave Workspace

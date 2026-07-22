@@ -190,7 +190,7 @@ const mapApprovals = (rows: SimpleRecord[]): ApprovalItem[] =>
     stage: String(row.stage ?? 'Line Manager Review'),
     status: String(row.status ?? 'In Progress'),
     reliever: String(row.reliever ?? 'Not configured'),
-    handover: String(row.handover ?? 'Required'),
+    handover: String(row.handover ?? '—'),
     conflict: String(row.conflict ?? 'No conflict'),
     department: String(row.department ?? 'Unassigned'),
     designation: String(row.designation ?? 'Employee'),

@@ -238,3 +238,57 @@ export const decodeLeaveExceptionsPayload = (raw: unknown): {
   }
   return { messages: [], selectedDates: [], excludedHolidays: [] };
 };
+
+/** Monday-first weekday labels for leave day calendars. */
+export const LEAVE_CALENDAR_WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+
+export type LeaveCalendarMonth = {
+  year: number;
+  month: number; // 1-12
+  label: string;
+  /** ISO dates or null padding cells for a Mon-first 7-column grid. */
+  cells: Array<string | null>;
+};
+
+const monthLabel = (year: number, month: number) =>
+  new Date(Date.UTC(year, month - 1, 1)).toLocaleString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+/** Build Mon-first calendar cells for a calendar month. */
+export const buildLeaveCalendarMonthCells = (year: number, month: number): Array<string | null> => {
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const firstDow = new Date(Date.UTC(year, month - 1, 1)).getUTCDay(); // 0=Sun..6=Sat
+  const mondayIndex = firstDow === 0 ? 6 : firstDow - 1;
+  const cells: Array<string | null> = [];
+  for (let i = 0; i < mondayIndex; i += 1) cells.push(null);
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    cells.push(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+};
+
+/** Calendar months covering an inclusive leave period (one grid per month). */
+export const buildLeaveCalendarMonthsForPeriod = (startDate: string, endDate: string): LeaveCalendarMonth[] => {
+  const start = normalizeLeaveIsoDate(startDate);
+  const end = normalizeLeaveIsoDate(endDate);
+  if (!start || !end || end < start) return [];
+  const months: LeaveCalendarMonth[] = [];
+  let year = Number(start.slice(0, 4));
+  let month = Number(start.slice(5, 7));
+  const endYear = Number(end.slice(0, 4));
+  const endMonth = Number(end.slice(5, 7));
+  while (year < endYear || (year === endYear && month <= endMonth)) {
+    months.push({
+      year,
+      month,
+      label: monthLabel(year, month),
+      cells: buildLeaveCalendarMonthCells(year, month),
+    });
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+  }
+  return months;
+};

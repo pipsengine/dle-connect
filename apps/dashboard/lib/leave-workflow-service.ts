@@ -1366,7 +1366,7 @@ export const pendingLeaveApprovalsForActor = (
         stage: approverKind === 'line-manager' ? 'Line Manager Review' : 'HR Review',
         status: request.status,
         reliever: request.relieverName || 'Not configured',
-        handover: request.handover || 'Required',
+        handover: request.handover || '—',
         conflict: 'No conflict',
         approverKind,
         department: requesterAny.department || 'Unassigned',
