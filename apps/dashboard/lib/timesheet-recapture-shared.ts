@@ -6,7 +6,7 @@ export const TIMESHEET_RECAPTURE_GUIDE = {
   steps: [
     {
       title: '1. Find missing days',
-      detail: 'Open Timesheet Reports → Missing Days / Recapture. Review employees and dates without a payable work day in the selected range.',
+      detail: 'Open Timesheet Recapture. Review employees and dates without a payable work day in the selected range.',
     },
     {
       title: '2. Open or reopen the day',

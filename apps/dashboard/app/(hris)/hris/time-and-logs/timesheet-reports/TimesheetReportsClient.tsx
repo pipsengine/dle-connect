@@ -8,7 +8,6 @@ import {
   AlertTriangle,
   BarChart3,
   Bell,
-  BookOpen,
   BriefcaseBusiness,
   CalendarDays,
   CalendarClock,
@@ -28,6 +27,7 @@ import {
   Mail,
   Printer,
   RefreshCcw,
+  RotateCcw,
   Search,
   ShieldCheck,
   TrendingUp,
@@ -40,8 +40,6 @@ import {
   payrollAttendanceSheetToExcelRows,
   type PayrollAttendanceSheetRow,
 } from '@/lib/timesheet-payroll-attendance-sheet-shared';
-import type { MissingTimesheetDay } from '@/lib/timesheet-recapture-shared';
-import { TIMESHEET_RECAPTURE_GUIDE } from '@/lib/timesheet-recapture-shared';
 
 type ReportType =
   | 'summary'
@@ -203,10 +201,6 @@ type ReportsPayload = {
   exportMode?: 'preview' | 'full';
   payrollAttendanceSheet?: PayrollAttendanceSheetRow[];
   payrollAttendanceSheetCount?: number;
-  missingDays?: MissingTimesheetDay[];
-  missingDayCount?: number;
-  recaptureGates?: Record<string, { allowed: boolean; periodCode: string; message: string }>;
-  recaptureGuide?: typeof TIMESHEET_RECAPTURE_GUIDE;
   drilldowns: Record<string, GroupedRow[]>;
   breakdowns: Record<string, GroupedRow[]>;
   widgets: Array<{ id: string; title: string; value: string; detail: string }>;
@@ -677,10 +671,6 @@ export default function TimesheetReportsClient() {
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
-  const [showRecaptureGuide, setShowRecaptureGuide] = useState(true);
-  const [showMissingDays, setShowMissingDays] = useState(true);
-  const [recaptureBusyId, setRecaptureBusyId] = useState<string | null>(null);
-  const [recaptureReason, setRecaptureReason] = useState('Omitted / incomplete day — reopen for recapture.');
   const [selectedExportColumns, setSelectedExportColumns] = useState<ExportColumnKey[]>(DEFAULT_EXPORT_COLUMN_KEYS);
   const [exportColumnsReady, setExportColumnsReady] = useState(false);
   const [columnSearch, setColumnSearch] = useState('');
@@ -759,54 +749,6 @@ export default function TimesheetReportsClient() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  const openTimesheetEntry = (gap: MissingTimesheetDay) => {
-    const params = new URLSearchParams();
-    if (gap.headerId) params.set('headerId', gap.headerId);
-    params.set('date', gap.date);
-    if (gap.supervisorId) params.set('supervisorId', gap.supervisorId);
-    if (gap.workCenterName) params.set('workCenterName', gap.workCenterName);
-    window.location.href = `/hris/time-and-logs/timesheet-entry?${params.toString()}`;
-  };
-
-  const reopenForRecapture = async (gap: MissingTimesheetDay) => {
-    if (!gap.headerId) {
-      setError('No timesheet header found for this day. Open Timesheet Entry and sync attendance for that date/crew first.');
-      return;
-    }
-    if (!gap.recaptureAllowed) {
-      setError(gap.blockReason || 'Recapture is blocked for this day.');
-      return;
-    }
-    const reason = recaptureReason.trim() || 'Omitted / incomplete day — reopen for recapture.';
-    setRecaptureBusyId(gap.id);
-    setError(null);
-    setExportNotice(null);
-    try {
-      const res = await fetch('/api/hris/time-and-logs/timesheet-entry', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'RECAPTURE_REOPEN',
-          headerId: gap.headerId,
-          recaptureReason: reason,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to reopen timesheet for recapture');
-      const message = json.data?.recapture?.message || 'Timesheet returned for recapture.';
-      const entryUrl = json.data?.recapture?.entryUrl as string | undefined;
-      setExportNotice(message);
-      await load();
-      if (entryUrl && window.confirm(`${message}\n\nOpen Timesheet Entry now?`)) {
-        window.location.href = entryUrl;
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to reopen timesheet for recapture');
-    } finally {
-      setRecaptureBusyId(null);
-    }
-  };
 
   const exportRows = async (format: 'csv' | 'excel' | 'payroll-sheet' | 'pdf' | 'print') => {
     if (format === 'print' || format === 'pdf') {
@@ -1040,6 +982,14 @@ export default function TimesheetReportsClient() {
             <div className="flex flex-wrap gap-2 py-3">
               <button
                 type="button"
+                onClick={() => { window.location.href = '/hris/workforce-management/timesheet-recapture'; }}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 text-xs font-black text-amber-800 hover:bg-amber-100"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Timesheet Recapture
+              </button>
+              <button
+                type="button"
                 onClick={() => setShowColumnPicker((value) => !value)}
                 className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-black hover:bg-slate-50 ${showColumnPicker ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-700'}`}
               >
@@ -1269,150 +1219,6 @@ export default function TimesheetReportsClient() {
             </div>
           ) : null}
         </div>
-
-        <section className="rounded-lg border border-amber-200 bg-white shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-100 px-4 py-3">
-            <div className="flex items-start gap-3">
-              <div className="rounded-md bg-amber-50 p-2 text-amber-700"><BookOpen className="h-4 w-4" /></div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Standard Recapture</p>
-                <h2 className="text-sm font-black text-slate-950">{payload?.recaptureGuide?.title || TIMESHEET_RECAPTURE_GUIDE.title}</h2>
-                <p className="mt-1 text-xs font-semibold text-slate-600">{payload?.recaptureGuide?.summary || TIMESHEET_RECAPTURE_GUIDE.summary}</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => setShowRecaptureGuide((value) => !value)} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-50">
-                {showRecaptureGuide ? 'Hide guide' : 'Show guide'}
-              </button>
-              <button type="button" onClick={() => setShowMissingDays((value) => !value)} className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-800 hover:bg-amber-100">
-                Missing days ({payload?.missingDayCount ?? payload?.missingDays?.length ?? 0})
-              </button>
-            </div>
-          </div>
-
-          {showRecaptureGuide ? (
-            <div className="grid gap-4 border-b border-amber-50 px-4 py-4 lg:grid-cols-[1.4fr_1fr]">
-              <ol className="space-y-3">
-                {(payload?.recaptureGuide?.steps || TIMESHEET_RECAPTURE_GUIDE.steps).map((step) => (
-                  <li key={step.title} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                    <p className="text-xs font-black text-slate-900">{step.title}</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-600">{step.detail}</p>
-                  </li>
-                ))}
-              </ol>
-              <div className="rounded-md border border-slate-200 bg-white px-3 py-2">
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Rules</p>
-                <ul className="mt-2 space-y-2">
-                  {(payload?.recaptureGuide?.rules || TIMESHEET_RECAPTURE_GUIDE.rules).map((rule) => (
-                    <li key={rule} className="flex gap-2 text-xs font-semibold text-slate-600">
-                      <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
-                      <span>{rule}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          ) : null}
-
-          {showMissingDays ? (
-            <div className="px-4 py-4">
-              <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Missing / Incomplete Days</p>
-                  <p className="text-xs font-semibold text-slate-600">
-                    Employees already active in this range with Mon–Sat dates that have no payable day. Reopen returns the sheet for correction; then capture and re-submit.
-                  </p>
-                </div>
-                <label className="block min-w-[280px]">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Recapture reason</span>
-                  <input
-                    value={recaptureReason}
-                    onChange={(event) => setRecaptureReason(event.target.value)}
-                    className="mt-1 h-9 w-full rounded-md border border-slate-200 px-3 text-xs font-bold text-slate-700 outline-none focus:border-blue-600"
-                    placeholder="Why is this day being recaptured?"
-                  />
-                </label>
-              </div>
-              <div className="overflow-x-auto rounded-md border border-slate-200">
-                <table className="min-w-[1100px] w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2">Employee</th>
-                      <th className="px-3 py-2">Date</th>
-                      <th className="px-3 py-2">Issue</th>
-                      <th className="px-3 py-2">Sheet Status</th>
-                      <th className="px-3 py-2">Crew</th>
-                      <th className="px-3 py-2 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {(payload?.missingDays || []).slice(0, 100).map((gap) => (
-                      <tr key={gap.id} className="hover:bg-slate-50">
-                        <td className="px-3 py-2">
-                          <div className="font-black text-slate-900">{gap.employeeName}</div>
-                          <div className="text-[11px] font-bold text-slate-500">{gap.employeeNo}</div>
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="font-bold">{gap.date}</div>
-                          <div className="text-[11px] font-semibold text-slate-500">{gap.weekday}</div>
-                        </td>
-                        <td className="px-3 py-2">
-                          <span className={`rounded-md px-2 py-1 text-[10px] font-black ${
-                            gap.reason === 'needs-reopen' ? 'bg-amber-50 text-amber-800'
-                              : gap.reason === 'editable-incomplete' ? 'bg-blue-50 text-blue-800'
-                                : 'bg-slate-100 text-slate-700'
-                          }`}>
-                            {gap.reason === 'needs-reopen' ? 'Needs reopen' : gap.reason === 'editable-incomplete' ? 'Editable incomplete' : 'No entry'}
-                          </span>
-                          {!gap.recaptureAllowed && gap.blockReason ? (
-                            <div className="mt-1 max-w-[280px] text-[11px] font-semibold text-red-600">{gap.blockReason}</div>
-                          ) : null}
-                        </td>
-                        <td className="px-3 py-2 font-bold text-slate-700">{gap.headerStatus ? formatStatus(gap.headerStatus) : '—'}</td>
-                        <td className="px-3 py-2">
-                          <div className="font-bold text-slate-800">{gap.supervisorName || '—'}</div>
-                          <div className="text-[11px] font-semibold text-slate-500">{gap.workCenterName || 'No work centre'}</div>
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <div className="inline-flex flex-wrap justify-end gap-2">
-                            {gap.suggestedAction === 'reopen' ? (
-                              <button
-                                type="button"
-                                disabled={!gap.recaptureAllowed || recaptureBusyId === gap.id || !gap.headerId}
-                                onClick={() => void reopenForRecapture(gap)}
-                                className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-black text-amber-800 hover:bg-amber-100 disabled:opacity-50"
-                              >
-                                {recaptureBusyId === gap.id ? 'Reopening…' : 'Recapture reopen'}
-                              </button>
-                            ) : null}
-                            <button
-                              type="button"
-                              disabled={gap.suggestedAction === 'blocked' && !gap.headerId}
-                              onClick={() => openTimesheetEntry(gap)}
-                              className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                            >
-                              {gap.suggestedAction === 'continue-edit' ? 'Continue edit' : gap.suggestedAction === 'open-draft' ? 'Open entry' : 'Open entry'}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {!loading && !(payload?.missingDays || []).length ? (
-                      <tr>
-                        <td colSpan={6} className="px-3 py-8 text-center text-sm font-bold text-slate-400">
-                          No missing Mon–Sat days detected for employees active in this range.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
-              {(payload?.missingDayCount || 0) > 100 ? (
-                <p className="mt-2 text-xs font-semibold text-slate-500">Showing first 100 of {payload?.missingDayCount} gaps. Narrow the date range to focus.</p>
-              ) : null}
-            </div>
-          ) : null}
-        </section>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
           <DashboardKpi label="Total Labour Hours" value={formatHours(summary?.totalHoursWorked || 0)} detail={`${pctText(summary?.resourceUtilizationPct || 0)} utilization`} icon={Clock} tone="blue" onClick={() => setKpiDetail({ title: 'Total Labour Hours Detail', kind: 'total' })} />

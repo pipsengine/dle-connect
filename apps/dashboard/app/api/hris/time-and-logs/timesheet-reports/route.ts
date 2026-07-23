@@ -17,7 +17,6 @@ import {
   type TimesheetStatus,
 } from '@/lib/timesheet-entry-store';
 import { buildPayrollAttendanceSheet } from '@/lib/timesheet-payroll-attendance-sheet';
-import { findMissingTimesheetDays, TIMESHEET_RECAPTURE_GUIDE } from '@/lib/timesheet-recapture';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -482,9 +481,6 @@ export async function GET(request: Request) {
       holidayDates,
       canViewCosts,
     });
-    const missingDays = from && to
-      ? await findMissingTimesheetDays({ from, to, maxGaps: exportMode ? 2000 : 200 })
-      : { gaps: [], gateByPeriod: {} };
 
     const payload = {
       generatedAt: new Date().toISOString(),
@@ -509,10 +505,6 @@ export async function GET(request: Request) {
       exportMode: exportMode ? 'full' : 'preview',
       payrollAttendanceSheet,
       payrollAttendanceSheetCount: payrollAttendanceSheet.length,
-      missingDays: missingDays.gaps,
-      missingDayCount: missingDays.gaps.length,
-      recaptureGates: missingDays.gateByPeriod,
-      recaptureGuide: TIMESHEET_RECAPTURE_GUIDE,
       drilldowns: {
         organization: buildBreakdown(filteredRows, 'businessUnit', (row) => row.businessUnit),
         departments: buildBreakdown(filteredRows, 'department', (row) => row.department),

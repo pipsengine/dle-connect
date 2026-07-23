@@ -240,6 +240,17 @@ export const hrisRoutePermissionOptions = (pathname: string): string[] | null =>
   if (path === '/hris/workforce-management/timesheet-reports' || path === '/hris/time-and-logs/timesheet-reports') {
     return ['operations.timesheets.view', 'operations.timesheets.export', 'timesheet.view', 'timesheet.export'];
   }
+  if (path === '/hris/workforce-management/timesheet-recapture' || path === '/hris/time-and-logs/timesheet-recapture') {
+    return [
+      'page.hris.time-and-logs.timesheet-recapture.view',
+      'page.hris.time-and-logs.timesheet-reports.view',
+      'operations.timesheets.view',
+      'operations.timesheets.edit',
+      'timesheet.view',
+      'timesheet.edit',
+      'timesheet.approve',
+    ];
+  }
   if (path === '/hris/workforce-management/reports-and-analytics' || path.startsWith('/hris/workforce-management/reports-and-analytics/')) {
     return ['operations.timesheets.view', 'operations.timesheets.export', 'timesheet.view', 'timesheet.export', 'payroll.view'];
   }
