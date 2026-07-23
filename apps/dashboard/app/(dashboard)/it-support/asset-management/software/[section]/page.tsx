@@ -1,4 +1,4 @@
-import { RecordsSectionClient } from '../../sections/RecordsSectionClient';
+import { SoftwareSectionClient } from '../../sections/SoftwareSectionClient';
 
 const sectionMap: Record<string, { title: string; section: 'licenses' | 'software' | 'software-catalog' | 'installed-software' | 'license-compliance' | 'software-requests' }> = {
   licenses: { title: 'Software Licenses', section: 'licenses' },
@@ -15,6 +15,6 @@ export async function generateMetadata({ params }: { params: Promise<{ section: 
 
 export default async function SoftwareSectionPage({ params }: { params: Promise<{ section: string }> }) {
   const { section } = await params;
-  const config = sectionMap[section] || { title: 'Software', section: 'software' as const };
-  return <RecordsSectionClient title={config.title} section={config.section} />;
+  const config = sectionMap[section] || { title: 'Software Licenses', section: 'software' as const };
+  return <SoftwareSectionClient title={config.title} section={config.section} />;
 }

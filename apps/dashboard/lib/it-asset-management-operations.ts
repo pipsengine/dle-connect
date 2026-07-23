@@ -749,6 +749,7 @@ export const buildItAssetSectionPayload = async (section: string, options?: {
   pmStatus?: string;
   condition?: string;
   assignedTo?: string;
+  vendor?: string;
 }) => {
   const payload = await buildItAssetDashboardPayload();
   const page = clampPage(options?.page);
@@ -852,16 +853,66 @@ export const buildItAssetSectionPayload = async (section: string, options?: {
     return { ...payload, maintenance: paginate(maintenance, page, pageSize).items, pagination: paginate(maintenance, page, pageSize) };
   }
   if (section === 'software-catalog') {
-    const catalog = paginate(await listItSoftwareCatalog(), page, pageSize);
-    return { ...payload, softwareCatalog: catalog.items, pagination: catalog };
+    let catalog = await listItSoftwareCatalog();
+    const filterOptions = {
+      vendors: Array.from(new Set(catalog.map((row) => row.vendorName).filter(Boolean) as string[])).sort(),
+      statuses: Array.from(new Set(catalog.map((row) => row.status).filter(Boolean))).sort(),
+      categories: Array.from(new Set(catalog.map((row) => row.category).filter(Boolean) as string[])).sort(),
+    };
+    if (options?.vendor) {
+      const value = options.vendor.trim().toLowerCase();
+      catalog = catalog.filter((row) => String(row.vendorName || '').trim().toLowerCase() === value);
+    }
+    if (options?.status) {
+      const value = options.status.trim().toLowerCase();
+      catalog = catalog.filter((row) => row.status.toLowerCase() === value);
+    }
+    catalog = filterRows(catalog as unknown as Record<string, unknown>[], ['productName', 'vendorName', 'category', 'edition', 'status']) as typeof catalog;
+    const paged = paginate(catalog, page, pageSize);
+    return {
+      ...payload,
+      softwareCatalog: paged.items,
+      pagination: paged,
+      filterOptions,
+    };
+  }
+  if (section === 'licenses' || section === 'license-compliance') {
+    let licenses = [...(payload.licenses || [])];
+    const filterOptions = {
+      vendors: Array.from(new Set(licenses.map((row) => row.vendorName).filter(Boolean) as string[])).sort(),
+      statuses: Array.from(new Set(licenses.map((row) => row.complianceStatus).filter(Boolean))).sort(),
+    };
+    if (section === 'license-compliance') {
+      licenses = licenses.filter((row) => !['In Compliance'].includes(row.complianceStatus));
+    }
+    if (options?.vendor) {
+      const value = options.vendor.trim().toLowerCase();
+      licenses = licenses.filter((row) => String(row.vendorName || '').trim().toLowerCase() === value);
+    }
+    if (options?.status) {
+      const value = options.status.trim().toLowerCase();
+      licenses = licenses.filter((row) => row.complianceStatus.toLowerCase() === value);
+    }
+    licenses = filterRows(licenses as unknown as Record<string, unknown>[], ['productName', 'vendorName', 'licenseType', 'complianceStatus']) as typeof licenses;
+    const paged = paginate(licenses, page, pageSize);
+    return {
+      ...payload,
+      licenses: paged.items,
+      pagination: paged,
+      filterOptions,
+    };
   }
   if (section === 'installed-software') {
-    const installed = paginate(await listItInstalledSoftware(), page, pageSize);
-    return { ...payload, installedSoftware: installed.items, pagination: installed };
+    let installed = await listItInstalledSoftware();
+    installed = filterRows(installed as unknown as Record<string, unknown>[], ['productName', 'version', 'installedOn', 'status', 'assetTag']) as typeof installed;
+    const paged = paginate(installed, page, pageSize);
+    return { ...payload, installedSoftware: paged.items, pagination: paged };
   }
   if (section === 'software-requests') {
-    const requests = paginate(await listItSoftwareRequests(), page, pageSize);
-    return { ...payload, softwareRequests: requests.items, pagination: requests };
+    let requests = await listItSoftwareRequests();
+    requests = filterRows(requests as unknown as Record<string, unknown>[], ['title', 'requesterName', 'department', 'priority', 'status']) as typeof requests;
+    const paged = paginate(requests, page, pageSize);
+    return { ...payload, softwareRequests: paged.items, pagination: paged };
   }
   if (section === 'audit') {
     const audit = await listItAuditLog(page, pageSize);
@@ -937,6 +988,33 @@ export const exportItAssetCsv = async (section: string) => {
   }
   if (section === 'assignments') {
     return toCsv(['Asset', 'Employee', 'Department', 'Status', 'Assigned On'], payload.assignments.map((row) => [row.assetName, row.employeeName, row.department, row.status, row.assignedOn]));
+  }
+  if (section === 'licenses' || section === 'license-compliance' || section === 'software') {
+    return toCsv(
+      ['Product', 'Vendor', 'License Type', 'Seats Used', 'Seats Total', 'Compliance', 'Expiry', 'Annual Cost'],
+      payload.licenses.map((row) => [row.productName, row.vendorName, row.licenseType, row.seatsUsed, row.seatsTotal, row.complianceStatus, row.expiryDate, row.annualCost]),
+    );
+  }
+  if (section === 'software-catalog') {
+    const catalog = await listItSoftwareCatalog();
+    return toCsv(
+      ['Product', 'Vendor', 'Category', 'Edition', 'Status', 'Annual Cost'],
+      catalog.map((row) => [row.productName, row.vendorName, row.category, row.edition, row.status, row.annualCost]),
+    );
+  }
+  if (section === 'installed-software') {
+    const installed = await listItInstalledSoftware();
+    return toCsv(
+      ['Product', 'Version', 'Asset Tag', 'Installed On', 'Status'],
+      installed.map((row) => [row.productName, row.version, row.assetTag, row.installedOn, row.status]),
+    );
+  }
+  if (section === 'software-requests') {
+    const requests = await listItSoftwareRequests();
+    return toCsv(
+      ['Title', 'Requester', 'Department', 'Priority', 'Status', 'Requested On'],
+      requests.map((row) => [row.title, row.requesterName, row.department, row.priority, row.status, row.requestedOn]),
+    );
   }
   return toCsv(['Section', 'Records'], [[section, payload.summary.totalAssets]]);
 };

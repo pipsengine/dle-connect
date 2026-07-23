@@ -38,6 +38,7 @@ import {
   updateItMaintenance,
 } from '@/lib/it-asset-management-operations';
 import { importBundledItAssetRegister, importItAssetRegisterCsv } from '@/lib/it-asset-register-store';
+import { importBundledItSoftwareRegister, importItSoftwareRegisterCsv } from '@/lib/it-software-register-store';
 
 const ok = (data: unknown) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -87,6 +88,7 @@ export async function GET(request: NextRequest) {
     const pmStatus = request.nextUrl.searchParams.get('pmStatus') || undefined;
     const condition = request.nextUrl.searchParams.get('condition') || undefined;
     const assignedTo = request.nextUrl.searchParams.get('assignedTo') || undefined;
+    const vendor = request.nextUrl.searchParams.get('vendor') || undefined;
 
     if (format === 'csv') {
       if (!canExportItAssets(base.permissions, base.session.isGlobalAdmin)) return err(403, 'Forbidden.');
@@ -127,6 +129,7 @@ export async function GET(request: NextRequest) {
       pmStatus,
       condition,
       assignedTo,
+      vendor,
     }));
   } catch (error) {
     return err(500, error instanceof Error ? error.message : 'Unable to load Asset Management data.');
@@ -138,7 +141,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const action = String(body.action || '').trim();
     const manageActions = new Set([
-      'initialize', 'import-register', 'import-bundled-register', 'create-asset', 'update-asset', 'delete-asset', 'create-inventory', 'update-inventory', 'delete-inventory',
+      'initialize', 'import-register', 'import-bundled-register', 'import-software-register', 'import-bundled-software-register',
+      'create-asset', 'update-asset', 'delete-asset', 'create-inventory', 'update-inventory', 'delete-inventory',
       'create-maintenance', 'schedule-maintenance-batch', 'perform-maintenance-batch', 'update-maintenance', 'assign-asset', 'reassign-asset', 'return-asset', 'create-vendor', 'create-warranty',
       'create-procurement', 'create-license', 'create-software-catalog', 'create-installed-software', 'create-software-request',
     ]);
@@ -158,6 +162,14 @@ export async function POST(request: NextRequest) {
       if (!csvText) return err(400, 'csvText is required.');
       const result = await importItAssetRegisterCsv(csvText, actor);
       return ok({ result, payload: await buildItAssetDashboardPayload() });
+    }
+    if (action === 'import-bundled-software-register') {
+      return ok(await importBundledItSoftwareRegister(actor));
+    }
+    if (action === 'import-software-register') {
+      const csvText = String(body.csvText || '').trim();
+      if (!csvText) return err(400, 'csvText is required.');
+      return ok(await importItSoftwareRegisterCsv(csvText, actor));
     }
     if (action === 'create-asset') return ok({ asset: await createItAsset(body.asset || {}, actor), payload: await buildItAssetDashboardPayload() });
     if (action === 'update-asset') {

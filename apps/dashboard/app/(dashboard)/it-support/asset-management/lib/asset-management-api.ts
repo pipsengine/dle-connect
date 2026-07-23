@@ -52,6 +52,25 @@ export const importAssetRegisterFile = async (file: File) => {
   return parse<{ result: { imported: number; updated: number; skipped: number; maintenanceCreated: number; errors: string[] }; payload: ItAssetDashboardPayload }>(response);
 };
 
+export const importBundledSoftwareRegister = async () => {
+  const response = await fetch('/api/it-support/asset-management', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'import-bundled-software-register' }),
+  });
+  return parse<{ result: { licensesImported: number; licensesUpdated: number; catalogImported: number; catalogUpdated: number; skipped: number; errors: string[] }; payload: ItAssetDashboardPayload }>(response);
+};
+
+export const importSoftwareRegisterFile = async (file: File) => {
+  const csvText = await file.text();
+  const response = await fetch('/api/it-support/asset-management', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'import-software-register', csvText }),
+  });
+  return parse<{ result: { licensesImported: number; licensesUpdated: number; catalogImported: number; catalogUpdated: number; skipped: number; errors: string[] }; payload: ItAssetDashboardPayload }>(response);
+};
+
 export const postAssetManagementAction = async <T>(body: Record<string, unknown>) => {
   const response = await fetch('/api/it-support/asset-management', {
     method: 'POST',

@@ -1,7 +1,7 @@
-import { RecordsSectionClient } from '../sections/RecordsSectionClient';
+import { SoftwareSectionClient } from '../sections/SoftwareSectionClient';
 
 export const metadata = { title: 'Software | Asset Management' };
 
 export default function SoftwarePage() {
-  return <RecordsSectionClient title="Software" section="software" />;
+  return <SoftwareSectionClient title="Software Licenses" section="software" />;
 }
