@@ -81,6 +81,12 @@ export async function GET(request: NextRequest) {
     const department = request.nextUrl.searchParams.get('department') || undefined;
     const location = request.nextUrl.searchParams.get('location') || undefined;
     const status = request.nextUrl.searchParams.get('status') || undefined;
+    const manufacturer = request.nextUrl.searchParams.get('manufacturer') || undefined;
+    const model = request.nextUrl.searchParams.get('model') || undefined;
+    const registerStatus = request.nextUrl.searchParams.get('registerStatus') || undefined;
+    const pmStatus = request.nextUrl.searchParams.get('pmStatus') || undefined;
+    const condition = request.nextUrl.searchParams.get('condition') || undefined;
+    const assignedTo = request.nextUrl.searchParams.get('assignedTo') || undefined;
 
     if (format === 'csv') {
       if (!canExportItAssets(base.permissions, base.session.isGlobalAdmin)) return err(403, 'Forbidden.');
@@ -106,7 +112,22 @@ export async function GET(request: NextRequest) {
       return ok(await buildItAssetDashboardPayload());
     }
 
-    return ok(await buildItAssetSectionPayload(section, { page, pageSize, category, subCategory, search, department, location, status }));
+    return ok(await buildItAssetSectionPayload(section, {
+      page,
+      pageSize,
+      category,
+      subCategory,
+      search,
+      department,
+      location,
+      status,
+      manufacturer,
+      model,
+      registerStatus,
+      pmStatus,
+      condition,
+      assignedTo,
+    }));
   } catch (error) {
     return err(500, error instanceof Error ? error.message : 'Unable to load Asset Management data.');
   }

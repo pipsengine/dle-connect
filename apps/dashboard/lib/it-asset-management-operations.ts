@@ -743,23 +743,87 @@ export const buildItAssetSectionPayload = async (section: string, options?: {
   department?: string;
   location?: string;
   status?: string;
+  manufacturer?: string;
+  model?: string;
+  registerStatus?: string;
+  pmStatus?: string;
+  condition?: string;
+  assignedTo?: string;
 }) => {
   const payload = await buildItAssetDashboardPayload();
   const page = clampPage(options?.page);
   const pageSize = clampPageSize(options?.pageSize);
   const search = (options?.search || '').trim().toLowerCase();
+  const eq = (left: string | null | undefined, right: string | undefined) => {
+    if (!right) return true;
+    return String(left || '').trim().toLowerCase() === right.trim().toLowerCase();
+  };
 
   const filterRows = <T extends Record<string, unknown>>(rows: T[], fields: (keyof T)[]) => {
     if (!search) return rows;
     return rows.filter((row) => fields.some((field) => String(row[field] ?? '').toLowerCase().includes(search)));
   };
 
+  const uniqueSorted = (values: Array<string | null | undefined>) =>
+    Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+
   if (section === 'assets' || section === 'hardware') {
     let assets = payload.assets.filter((asset) => asset.assetType === 'Hardware');
     if (options?.category) assets = assets.filter((asset) => asset.category === options.category);
     if (options?.subCategory) assets = assets.filter((asset) => asset.subCategory === options.subCategory);
-    assets = filterRows(assets as unknown as Record<string, unknown>[], ['name', 'assetTag', 'assignedEmployeeName']) as ItAssetRecord[];
-    return { ...payload, assets: paginate(assets, page, pageSize).items, pagination: paginate(assets, page, pageSize) };
+
+    const filterOptions = {
+      manufacturers: uniqueSorted(assets.map((asset) => asset.manufacturer)),
+      models: uniqueSorted(assets.map((asset) => asset.model || asset.name)),
+      types: uniqueSorted(assets.map((asset) => asset.subCategory || asset.category)),
+      departments: uniqueSorted(assets.map((asset) => asset.department)),
+      locations: uniqueSorted(assets.map((asset) => asset.location)),
+      assignedTo: uniqueSorted([
+        ...assets.map((asset) => asset.assignedEmployeeName),
+        assets.some((asset) => !asset.assignedEmployeeName) ? 'Unassigned' : null,
+      ]),
+      registerStatuses: uniqueSorted(assets.map((asset) => asset.registerStatus || asset.status)),
+      pmStatuses: uniqueSorted(assets.map((asset) => asset.pmStatus || 'NONE')),
+      conditions: uniqueSorted(assets.map((asset) => asset.assetCondition)),
+    };
+
+    if (options?.manufacturer) assets = assets.filter((asset) => eq(asset.manufacturer, options.manufacturer));
+    if (options?.model) {
+      const model = options.model.trim().toLowerCase();
+      assets = assets.filter((asset) => String(asset.model || asset.name || '').trim().toLowerCase() === model);
+    }
+    if (options?.department) assets = assets.filter((asset) => eq(asset.department, options.department));
+    if (options?.location) assets = assets.filter((asset) => eq(asset.location, options.location));
+    if (options?.registerStatus) {
+      assets = assets.filter((asset) => eq(asset.registerStatus || asset.status, options.registerStatus));
+    }
+    if (options?.pmStatus) {
+      const pm = options.pmStatus.trim().toLowerCase();
+      assets = assets.filter((asset) => String(asset.pmStatus || 'NONE').trim().toLowerCase() === pm);
+    }
+    if (options?.condition) assets = assets.filter((asset) => eq(asset.assetCondition, options.condition));
+    if (options?.assignedTo) {
+      const assigned = options.assignedTo.trim().toLowerCase();
+      if (assigned === 'unassigned') {
+        assets = assets.filter((asset) => !String(asset.assignedEmployeeName || '').trim());
+      } else {
+        assets = assets.filter((asset) => String(asset.assignedEmployeeName || '').trim().toLowerCase() === assigned);
+      }
+    }
+    if (options?.status) assets = assets.filter((asset) => eq(asset.status, options.status));
+
+    assets = filterRows(
+      assets as unknown as Record<string, unknown>[],
+      ['name', 'assetTag', 'model', 'manufacturer', 'category', 'subCategory', 'department', 'location', 'assignedEmployeeName', 'assignedEmail', 'registerStatus', 'status', 'pmStatus', 'assetCondition'],
+    ) as ItAssetRecord[];
+
+    const paged = paginate(assets, page, pageSize);
+    return {
+      ...payload,
+      assets: paged.items,
+      pagination: paged,
+      filterOptions,
+    };
   }
   if (section === 'inventory') {
     const inventory = filterRows(payload.inventory as unknown as Record<string, unknown>[], ['name', 'sku']) as ItInventoryRecord[];

@@ -1,7 +1,7 @@
-import { InventorySectionClient } from '../sections/InventorySectionClient';
+import { redirect } from 'next/navigation';
 
 export const metadata = { title: 'Inventory | Asset Management' };
 
 export default function InventoryPage() {
-  return <InventorySectionClient />;
+  redirect('/it-support/asset-management/hardware');
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
   Boxes,
@@ -10,6 +11,7 @@ import {
   Laptop2,
   Plus,
   RefreshCcw,
+  Search,
   ShieldAlert,
   Target,
   Upload,
@@ -20,8 +22,16 @@ import {
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import type { ItAssetDashboardPayload } from '@/lib/it-asset-management-store';
 import { fetchAssetManagementPayload, importAssetRegisterFile, importBundledAssetRegister, initializeAssetManagement } from './lib/asset-management-api';
+import {
+  AssetGroupDetailModal,
+  assetRowsFromAssets,
+  assetRowsFromMaintenance,
+  type DetailRow,
+} from './components/AssetGroupDetailModal';
 import { buildDashboardCategoryBreakdown, buildPageNumbers, formatAssetTypeLabel } from './lib/dashboard-utils';
 import { AssetManagementShell } from './AssetManagementShell';
+
+type StatCardKey = 'total' | 'active' | 'value' | 'maintenance' | 'warranty' | 'assigned';
 
 const currency = (value: number) =>
   new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(value || 0);
@@ -52,6 +62,7 @@ function StatCard({
   icon: Icon,
   color,
   loading,
+  onClick,
 }: {
   label: string;
   value: string;
@@ -59,30 +70,40 @@ function StatCard({
   icon: React.ComponentType<{ className?: string }>;
   color: string;
   loading: boolean;
+  onClick: () => void;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={loading}
+      className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-dle-blue/40 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-dle-blue disabled:opacity-70"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
           <p className="mt-2 text-3xl font-bold text-slate-950">{loading ? '—' : value}</p>
           <p className="mt-1 text-xs text-slate-500">{hint}</p>
+          <p className="mt-2 text-[11px] font-semibold text-dle-blue">View details →</p>
         </div>
         <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${ICON_STYLES[color]}`}>
           <Icon className="h-5 w-5" />
         </span>
       </div>
-    </div>
+    </button>
   );
 }
 
 export function AssetManagementHubClient() {
+  const router = useRouter();
   const [payload, setPayload] = useState<ItAssetDashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [initializing, setInitializing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState('');
   const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [activeCard, setActiveCard] = useState<StatCardKey | null>(null);
   const [recentPage, setRecentPage] = useState(1);
   const [recentPageSize, setRecentPageSize] = useState(10);
 
@@ -150,30 +171,135 @@ export function AssetManagementHubClient() {
   const summary = payload?.summary;
   const empty = !loading && payload && payload.databaseAvailable && (summary?.totalAssets || 0) === 0;
   const allAssets = payload?.assets || [];
+  const allMaintenance = payload?.maintenance || [];
   const totalAssets = summary?.totalAssets || 0;
+
+  const activeAssets = useMemo(
+    () => allAssets.filter((asset) => ['Active', 'In Service'].includes(asset.status)),
+    [allAssets],
+  );
+  const warrantyAlertAssets = useMemo(
+    () => allAssets.filter((asset) => asset.warrantyStatus && asset.warrantyStatus !== 'Good' && asset.warrantyStatus !== 'Active'),
+    [allAssets],
+  );
+  const assignedAssets = useMemo(
+    () => allAssets.filter((asset) => Boolean(asset.assignedEmployeeName)),
+    [allAssets],
+  );
+  const maintenanceDue = useMemo(
+    () => allMaintenance.filter((item) => ['Upcoming', 'In Progress', 'Overdue'].includes(item.status)),
+    [allMaintenance],
+  );
 
   const statCards = useMemo(() => {
     if (!summary) return [];
     return [
-      { label: 'Total Assets', value: number(summary.totalAssets), hint: 'All registered assets', icon: Boxes, color: 'blue' },
-      { label: 'Active Assets', value: number(summary.activeAssets), hint: 'Assets currently in use', icon: Laptop2, color: 'green' },
-      { label: 'Asset Value', value: currency(summary.totalAssetValue), hint: 'Total book value', icon: Wallet, color: 'purple' },
-      { label: 'Maintenance Due', value: number(summary.maintenanceDue), hint: 'Assets due for maintenance', icon: Wrench, color: 'orange' },
-      { label: 'Warranty Alerts', value: number(summary.warrantyAlerts), hint: 'Assets with expiring warranty', icon: ShieldAlert, color: 'rose' },
-      { label: 'Assigned Assets', value: number(summary.assignedAssets), hint: 'Assets assigned to users', icon: UserCheck, color: 'teal' },
+      { key: 'total' as const, label: 'Total Assets', value: number(summary.totalAssets), hint: 'All registered assets', icon: Boxes, color: 'blue' },
+      { key: 'active' as const, label: 'Active Assets', value: number(summary.activeAssets), hint: 'Assets currently in use', icon: Laptop2, color: 'green' },
+      { key: 'value' as const, label: 'Asset Value', value: currency(summary.totalAssetValue), hint: 'Total book value', icon: Wallet, color: 'purple' },
+      { key: 'maintenance' as const, label: 'Maintenance Due', value: number(summary.maintenanceDue), hint: 'Assets due for maintenance', icon: Wrench, color: 'orange' },
+      { key: 'warranty' as const, label: 'Warranty Alerts', value: number(summary.warrantyAlerts), hint: 'Assets with expiring warranty', icon: ShieldAlert, color: 'rose' },
+      { key: 'assigned' as const, label: 'Assigned Assets', value: number(summary.assignedAssets), hint: 'Assets assigned to users', icon: UserCheck, color: 'teal' },
     ];
   }, [summary]);
 
+  const detailModal = useMemo(() => {
+    if (!activeCard) return null;
+    switch (activeCard) {
+      case 'total':
+        return {
+          title: 'Total Assets',
+          description: 'All registered assets in the asset register.',
+          rows: assetRowsFromAssets(allAssets),
+          href: '/it-support/asset-management/hardware',
+        };
+      case 'active':
+        return {
+          title: 'Active Assets',
+          description: 'Assets with Active or In Service status.',
+          rows: assetRowsFromAssets(activeAssets),
+          href: '/it-support/asset-management/hardware',
+        };
+      case 'value':
+        return {
+          title: 'Asset Value',
+          description: 'Assets contributing to total book value.',
+          rows: assetRowsFromAssets(allAssets, (asset) => currency(asset.purchaseCost || 0)),
+          extraColumnLabel: 'Book Value',
+          href: '/it-support/asset-management/hardware',
+        };
+      case 'maintenance':
+        return {
+          title: 'Maintenance Due',
+          description: 'Upcoming, in-progress, and overdue maintenance records.',
+          rows: assetRowsFromMaintenance(maintenanceDue, allAssets),
+          extraColumnLabel: 'Work Order',
+          href: '/it-support/asset-management/maintenance',
+        };
+      case 'warranty':
+        return {
+          title: 'Warranty Alerts',
+          description: 'Assets with warranty status that is not Good or Active.',
+          rows: assetRowsFromAssets(warrantyAlertAssets, (asset) => asset.warrantyStatus || undefined),
+          extraColumnLabel: 'Warranty',
+          href: '/it-support/asset-management/warranties',
+        };
+      case 'assigned':
+        return {
+          title: 'Assigned Assets',
+          description: 'Assets currently assigned to users.',
+          rows: assetRowsFromAssets(assignedAssets),
+          href: '/it-support/asset-management/asset-assignment',
+        };
+      default:
+        return null;
+    }
+  }, [activeCard, allAssets, activeAssets, maintenanceDue, warrantyAlertAssets, assignedAssets]);
+
   const categoryBreakdown = useMemo(() => buildDashboardCategoryBreakdown(allAssets), [allAssets]);
 
-  const recentTotalPages = Math.max(1, Math.ceil(allAssets.length / recentPageSize));
+  const filteredAssets = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return allAssets;
+    return allAssets.filter((asset) =>
+      [
+        asset.assetTag,
+        asset.name,
+        asset.model,
+        asset.manufacturer,
+        asset.category,
+        asset.subCategory,
+        asset.department,
+        asset.location,
+        asset.assignedEmployeeName,
+        asset.assignedEmail,
+        asset.registerStatus,
+        asset.status,
+        asset.pmStatus,
+        asset.assetCondition,
+        asset.warrantyStatus,
+      ].some((value) => String(value || '').toLowerCase().includes(q)),
+    );
+  }, [allAssets, search]);
+
+  const recentTotalPages = Math.max(1, Math.ceil(filteredAssets.length / recentPageSize));
   const recentStart = (recentPage - 1) * recentPageSize;
-  const recentAssets = allAssets.slice(recentStart, recentStart + recentPageSize);
+  const recentAssets = filteredAssets.slice(recentStart, recentStart + recentPageSize);
   const pageNumbers = buildPageNumbers(recentPage, recentTotalPages);
+
+  useEffect(() => {
+    setRecentPage(1);
+  }, [search]);
 
   useEffect(() => {
     if (recentPage > recentTotalPages) setRecentPage(recentTotalPages);
   }, [recentPage, recentTotalPages]);
+
+  const openDetailRow = (_row: DetailRow) => {
+    const href = detailModal?.href || '/it-support/asset-management/hardware';
+    setActiveCard(null);
+    router.push(href);
+  };
 
   return (
     <AssetManagementShell title="Asset Management">
@@ -236,27 +362,55 @@ export function AssetManagementHubClient() {
               <span className="mx-2 text-slate-300">·</span>
               Updated {payload?.generatedAt ? new Date(payload.generatedAt).toLocaleString() : '—'}
             </div>
-            <button
-              type="button"
-              onClick={() => void load()}
-              disabled={loading}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-            >
-              <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search assets..."
+                  className="w-56 rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-xs text-slate-800 outline-none focus:border-dle-blue sm:w-72"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => void load()}
+                disabled={loading}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
           </div>
 
           <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {statCards.map((card) => (
-              <StatCard key={card.label} {...card} loading={loading} />
+            {statCards.map(({ key, ...card }) => (
+              <StatCard key={key} {...card} loading={loading} onClick={() => setActiveCard(key)} />
             ))}
           </section>
+
+          <AssetGroupDetailModal
+            open={Boolean(detailModal)}
+            onClose={() => setActiveCard(null)}
+            title={detailModal?.title || ''}
+            description={detailModal?.description || ''}
+            rows={detailModal?.rows || []}
+            extraColumnLabel={detailModal?.extraColumnLabel}
+            onRowActivate={openDetailRow}
+          />
 
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
               <div className="mb-4 flex items-center justify-between gap-3">
-                <h2 className="text-base font-semibold text-slate-900">Recent Assets</h2>
+                <h2 className="text-base font-semibold text-slate-900">
+                  Recent Assets
+                  {search.trim() ? (
+                    <span className="ml-2 text-sm font-normal text-slate-500">
+                      ({number(filteredAssets.length)} matches)
+                    </span>
+                  ) : null}
+                </h2>
                 <Link href="/it-support/asset-management/hardware" className="inline-flex items-center gap-1 text-sm font-medium text-dle-blue hover:text-dle-blue-deep">
                   View all assets <ArrowRight className="h-4 w-4" />
                 </Link>
@@ -293,11 +447,14 @@ export function AssetManagementHubClient() {
                     ))}
                   </tbody>
                 </table>
+                {!loading && !recentAssets.length ? (
+                  <div className="px-5 py-10 text-center text-sm text-slate-500">No assets match your search.</div>
+                ) : null}
               </div>
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 text-xs text-slate-500">
                 <span>
-                  Showing {allAssets.length ? recentStart + 1 : 0} to {Math.min(recentStart + recentPageSize, allAssets.length)} of {number(allAssets.length)} assets
+                  Showing {filteredAssets.length ? recentStart + 1 : 0} to {Math.min(recentStart + recentPageSize, filteredAssets.length)} of {number(filteredAssets.length)} assets
                 </span>
                 <div className="flex flex-wrap items-center gap-2">
                   <select

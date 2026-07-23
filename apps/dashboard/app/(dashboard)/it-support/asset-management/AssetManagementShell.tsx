@@ -8,7 +8,6 @@ import {
   Cpu,
   FileText,
   LayoutDashboard,
-  Package,
   ShieldCheck,
   ShoppingCart,
   UserCheck,
@@ -18,7 +17,6 @@ import { PageTemplate } from '@/components/layout/page-template';
 
 const sections = [
   { id: 'dashboard', label: 'Dashboard', href: '/it-support/asset-management', icon: LayoutDashboard },
-  { id: 'inventory', label: 'Inventory', href: '/it-support/asset-management/inventory', icon: Package },
   { id: 'hardware', label: 'Hardware', href: '/it-support/asset-management/hardware', icon: Cpu },
   { id: 'software', label: 'Software', href: '/it-support/asset-management/software', icon: FileText },
   { id: 'assignment', label: 'Asset Assignment', href: '/it-support/asset-management/asset-assignment', icon: UserCheck },
@@ -65,7 +63,7 @@ export function AssetManagementShell({ title, description, children }: Props) {
   return (
     <PageTemplate
       title={title}
-      description={description || 'Enterprise module for managing IT assets, inventory, assignments, and lifecycle operations.'}
+      description={description || 'Enterprise module for managing IT assets, assignments, and lifecycle operations.'}
       breadcrumbs={[
         { label: 'IT & Support', href: '/it-support' },
         { label: 'Asset Management', href: '/it-support/asset-management' },

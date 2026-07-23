@@ -1,9 +1,10 @@
 'use client';
 
-import { X } from 'lucide-react';
-import type { ItAssetRecord, ItAssignmentRecord } from '@/lib/it-asset-management-store';
+import { useEffect, useMemo, useState } from 'react';
+import { Search, X } from 'lucide-react';
+import type { ItAssetRecord, ItAssignmentRecord, ItMaintenanceRecord } from '@/lib/it-asset-management-store';
 
-type DetailRow = {
+export type DetailRow = {
   key: string;
   assetId: string;
   tag: string;
@@ -12,6 +13,7 @@ type DetailRow = {
   location: string;
   assignee: string;
   status: string;
+  extra?: string;
 };
 
 type Props = {
@@ -20,10 +22,26 @@ type Props = {
   title: string;
   description: string;
   rows: DetailRow[];
+  extraColumnLabel?: string;
   onRowActivate?: (row: DetailRow) => void;
 };
 
-export function AssetGroupDetailModal({ open, onClose, title, description, rows, onRowActivate }: Props) {
+export function AssetGroupDetailModal({ open, onClose, title, description, rows, extraColumnLabel, onRowActivate }: Props) {
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    if (!open) setSearch('');
+  }, [open]);
+
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((row) =>
+      [row.tag, row.name, row.department, row.location, row.assignee, row.status, row.extra]
+        .some((value) => String(value || '').toLowerCase().includes(q)),
+    );
+  }, [rows, search]);
+
   if (!open) return null;
 
   const activateRow = (row: DetailRow) => {
@@ -40,12 +58,27 @@ export function AssetGroupDetailModal({ open, onClose, title, description, rows,
             <h2 className="text-lg font-bold text-slate-950">{title}</h2>
             <p className="mt-1 text-sm text-slate-500">
               {description}
-              {onRowActivate ? ' Click or double-click a row to edit the asset.' : ''}
+              {onRowActivate ? ' Click a row to open the related record.' : ''}
             </p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
             <X className="h-5 w-5" />
           </button>
+        </div>
+
+        <div className="border-b border-slate-100 px-6 py-3">
+          <div className="relative max-w-md">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search tag, model, department, location, assignee..."
+              className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-800 outline-none focus:border-dle-blue"
+            />
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Showing {filteredRows.length} of {rows.length} records
+          </p>
         </div>
 
         <div className="overflow-y-auto px-6 py-4">
@@ -58,16 +91,17 @@ export function AssetGroupDetailModal({ open, onClose, title, description, rows,
                 <th className="px-3 py-2">Location</th>
                 <th className="px-3 py-2">Assigned To</th>
                 <th className="px-3 py-2">Status</th>
+                {extraColumnLabel ? <th className="px-3 py-2">{extraColumnLabel}</th> : null}
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {filteredRows.map((row) => (
                 <tr
                   key={row.key}
                   className={`border-b border-slate-50 ${onRowActivate ? 'cursor-pointer hover:bg-slate-50' : ''}`}
                   onClick={() => activateRow(row)}
                   onDoubleClick={() => activateRow(row)}
-                  title={onRowActivate ? 'Click or double-click to edit asset' : undefined}
+                  title={onRowActivate ? 'Click to open related record' : undefined}
                 >
                   <td className="px-3 py-2 font-mono text-xs">{row.tag}</td>
                   <td className="px-3 py-2 font-medium">{row.name}</td>
@@ -75,18 +109,19 @@ export function AssetGroupDetailModal({ open, onClose, title, description, rows,
                   <td className="px-3 py-2">{row.location || '—'}</td>
                   <td className="px-3 py-2">{row.assignee || 'Unassigned'}</td>
                   <td className="px-3 py-2">{row.status}</td>
+                  {extraColumnLabel ? <td className="px-3 py-2">{row.extra || '—'}</td> : null}
                 </tr>
               ))}
             </tbody>
           </table>
-          {!rows.length ? <div className="py-10 text-center text-sm text-slate-500">No records found for this group.</div> : null}
+          {!filteredRows.length ? <div className="py-10 text-center text-sm text-slate-500">No records found for this group.</div> : null}
         </div>
       </div>
     </div>
   );
 }
 
-export const assetRowsFromAssets = (assets: ItAssetRecord[]): DetailRow[] =>
+export const assetRowsFromAssets = (assets: ItAssetRecord[], extra?: (asset: ItAssetRecord) => string | undefined): DetailRow[] =>
   assets.map((asset) => ({
     key: asset.assetId,
     assetId: asset.assetId,
@@ -96,7 +131,26 @@ export const assetRowsFromAssets = (assets: ItAssetRecord[]): DetailRow[] =>
     location: asset.location || '',
     assignee: asset.assignedEmployeeName || '',
     status: asset.registerStatus || asset.status,
+    extra: extra?.(asset),
   }));
+
+export const assetRowsFromMaintenance = (records: ItMaintenanceRecord[], assets: ItAssetRecord[]): DetailRow[] => {
+  const byId = new Map(assets.map((asset) => [asset.assetId, asset]));
+  return records.map((row) => {
+    const asset = row.assetId ? byId.get(row.assetId) : undefined;
+    return {
+      key: row.maintenanceId,
+      assetId: row.assetId || '',
+      tag: asset?.assetTag || '—',
+      name: row.assetName || asset?.model || asset?.name || row.title,
+      department: row.department || asset?.department || '',
+      location: row.location || asset?.location || '',
+      assignee: row.assignedTo || asset?.assignedEmployeeName || '',
+      status: row.status,
+      extra: row.title,
+    };
+  });
+};
 
 export const mergeAssignmentRecords = (assets: ItAssetRecord[], formal: ItAssignmentRecord[]) => {
   const activeFormal = formal.filter((row) => row.status === 'Assigned');
