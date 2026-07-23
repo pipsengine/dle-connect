@@ -172,7 +172,7 @@ export async function readOperationsCenterPayload(input?: {
   const totalHours = round(lines.reduce((sum, line) => sum + lineHours(line), 0));
   const overtimeHours = round(lines.reduce((sum, line) => sum + Math.max(0, lineHours(line) - 8), 0));
   const billableHours = round(lines.reduce((sum, line) => sum + line.projectAllocations.reduce((total, allocation) => total + Number(allocation.hours || 0), 0), 0));
-  const pendingApprovalStatuses = new Set(['Submitted', 'Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed']);
+  const pendingApprovalStatuses = new Set(['Submitted', 'Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed', 'GM_Operations_Reviewed']);
   const pendingApprovals = headers.filter((header) => pendingApprovalStatuses.has(header.status)).length;
   const payrollReady = headers.filter((header) => header.status === 'HR_Acknowledged' || header.payrollAcknowledgedAt).length;
   const exceptionLines = lines.filter((line) => ['Error', 'Incomplete', 'Warning'].includes(compact(line.validationStatus)) || Math.abs(Number(line.variance || 0)) > 1).length;

@@ -28,6 +28,7 @@ export type TimesheetStatus =
   | 'Supervisor_Reviewed'
   | 'Project_Manager_Reviewed'
   | 'Cost_Control_Reviewed'
+  | 'GM_Operations_Reviewed'
   | 'HR_Acknowledged'
   | 'HR_Reviewed'
   | 'Project_Control_Reviewed'
@@ -45,10 +46,12 @@ export type WorkflowStage = {
 export const workflowStages: WorkflowStage[] = [
   { id: 'Draft', label: 'Draft', order: 1 },
   { id: 'Submitted', label: 'Supervisor Review', order: 2 },
-  { id: 'Supervisor_Reviewed', label: 'Cost Control Review', order: 3 },
-  { id: 'Cost_Control_Reviewed', label: 'Project Manager Review', order: 4 },
-  { id: 'Project_Manager_Reviewed', label: 'HR Review', order: 5 },
-  { id: 'Locked', label: 'Payroll Lock', order: 6 },
+  { id: 'Supervisor_Reviewed', label: 'Project Manager Review', order: 3 },
+  { id: 'Project_Manager_Reviewed', label: 'Cost Control Review', order: 4 },
+  { id: 'Cost_Control_Reviewed', label: 'GM Operations Review', order: 5 },
+  { id: 'GM_Operations_Reviewed', label: 'HR Review', order: 6 },
+  { id: 'HR_Acknowledged', label: 'Payroll Ready', order: 7 },
+  { id: 'Locked', label: 'Payroll Lock', order: 8 },
 ];
 export type TimesheetApprovalDecision = 'Pending' | 'Approved' | 'Rejected' | 'Returned' | 'Locked';
 export type TimesheetEntryMode =
@@ -113,7 +116,7 @@ export type TimesheetHeader = {
   currentApprover?: string | null;
 };
 
-export type TimesheetWorkflowStage = 'Supervisor' | 'Project Manager' | 'Cost Control' | 'HR' | 'Payroll';
+export type TimesheetWorkflowStage = 'Supervisor' | 'Project Manager' | 'Cost Control' | 'GM Operations' | 'HR' | 'Payroll';
 export type TimesheetWorkflowDecision = 'Submitted' | 'Approved' | 'Acknowledged' | 'Rejected' | 'Returned' | 'Overtime Booked' | 'Overtime Correction Posted';
 export type TimesheetWorkflowEvent = {
   stage: TimesheetWorkflowStage;
@@ -1517,7 +1520,7 @@ export async function readTimesheetData(options?: { softFail?: boolean }) {
 
 export type TimesheetApprovalListMode = 'all' | 'pending' | 'history';
 
-const ACTIVE_APPROVAL_STATUSES_SQL = `N'Submitted', N'Supervisor_Reviewed', N'Cost_Control_Reviewed', N'Project_Manager_Reviewed', N'HR_Acknowledged', N'Approved', N'HR_Reviewed', N'Project_Control_Reviewed'`;
+const ACTIVE_APPROVAL_STATUSES_SQL = `N'Submitted', N'Supervisor_Reviewed', N'Project_Manager_Reviewed', N'Cost_Control_Reviewed', N'GM_Operations_Reviewed', N'HR_Acknowledged', N'Approved', N'HR_Reviewed', N'Project_Control_Reviewed'`;
 
 const listModeWhereClause = (mode: TimesheetApprovalListMode) => {
   if (mode === 'pending') {
@@ -1774,7 +1777,7 @@ export async function readTimesheetApprovalWorkspaceStats(options?: { softFail?:
   const statusCounts: Record<string, number> = {};
   let pendingCount = 0;
   let historyCount = 0;
-  const activeStatuses = new Set(['Submitted', 'Supervisor_Reviewed', 'Cost_Control_Reviewed', 'Project_Manager_Reviewed', 'HR_Acknowledged', 'Approved', 'HR_Reviewed', 'Project_Control_Reviewed']);
+  const activeStatuses = new Set(['Submitted', 'Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed', 'GM_Operations_Reviewed', 'HR_Acknowledged', 'Approved', 'HR_Reviewed', 'Project_Control_Reviewed']);
   for (const row of statusResult.recordset) {
     const status = normalizeTimesheetStatus(row.Status);
     const count = Number(row.Count || 0);
@@ -2881,22 +2884,25 @@ export const normalizeTimesheetStatus = (status: TimesheetStatus | string): Time
   if (!raw) return 'Draft';
   const underscored = raw.replace(/[\s-]+/g, '_');
   const aliases: Record<string, TimesheetStatus> = {
-  draft: 'Draft',
-  submitted: 'Submitted',
-  supervisor_reviewed: 'Supervisor_Reviewed',
-  cost_control_reviewed: 'Cost_Control_Reviewed',
-  project_manager_reviewed: 'Project_Manager_Reviewed',
-  hr_reviewed: 'Project_Manager_Reviewed',
-  project_control_reviewed: 'Cost_Control_Reviewed',
-  hr_acknowledged: 'HR_Acknowledged',
-  approved: 'HR_Acknowledged',
-  locked: 'Locked',
-  rejected: 'Rejected',
-  returned: 'Returned',
+    draft: 'Draft',
+    submitted: 'Submitted',
+    supervisor_reviewed: 'Supervisor_Reviewed',
+    project_manager_reviewed: 'Project_Manager_Reviewed',
+    cost_control_reviewed: 'Cost_Control_Reviewed',
+    gm_operations_reviewed: 'GM_Operations_Reviewed',
+    gm_reviewed: 'GM_Operations_Reviewed',
+    operations_reviewed: 'GM_Operations_Reviewed',
+    hr_reviewed: 'GM_Operations_Reviewed',
+    project_control_reviewed: 'Cost_Control_Reviewed',
+    hr_acknowledged: 'HR_Acknowledged',
+    approved: 'HR_Acknowledged',
+    locked: 'Locked',
+    rejected: 'Rejected',
+    returned: 'Returned',
   };
   const alias = aliases[underscored.toLowerCase()];
   if (alias) return alias;
-  if (status === 'HR_Reviewed') return 'Project_Manager_Reviewed';
+  if (status === 'HR_Reviewed') return 'GM_Operations_Reviewed';
   if (status === 'Project_Control_Reviewed') return 'Cost_Control_Reviewed';
   if (status === 'Approved') return 'HR_Acknowledged';
   return underscored as TimesheetStatus;
@@ -2944,6 +2950,15 @@ const createPayrollUpdateForPeriod = async (periodId: string, actor: string): Pr
   return update;
 };
 
+const workflowStageForHeaderStatus = (status: TimesheetStatus): TimesheetWorkflowStage => {
+  if (status === 'Submitted') return 'Supervisor';
+  if (status === 'Supervisor_Reviewed') return 'Project Manager';
+  if (status === 'Project_Manager_Reviewed') return 'Cost Control';
+  if (status === 'Cost_Control_Reviewed') return 'GM Operations';
+  if (status === 'GM_Operations_Reviewed') return 'HR';
+  return 'HR';
+};
+
 export async function advanceTimesheetWorkflow(
   headerId: string,
   action: 'APPROVE' | 'REJECT' | 'RETURN',
@@ -2957,27 +2972,34 @@ export async function advanceTimesheetWorkflow(
   const status = normalizeTimesheetStatus(header.status);
   const now = new Date().toISOString();
   let event: TimesheetWorkflowEvent;
+  const inProgress = ['Submitted', 'Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed', 'GM_Operations_Reviewed'];
 
   if (action === 'REJECT') {
-    if (!['Submitted', 'Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed'].includes(status)) {
-      throw new Error('Only in-progress timesheets can be rejected.');
+    if (!inProgress.includes(status)) throw new Error('Only in-progress timesheets can be rejected.');
+    // Header-level reject is reserved for Supervisor / GM / HR consolidation stages.
+    if (!['Submitted', 'Cost_Control_Reviewed', 'GM_Operations_Reviewed'].includes(status)) {
+      throw new Error('Project-stage reject must target a project segment, not the whole timesheet.');
     }
-    const stage: TimesheetWorkflowStage = status === 'Submitted' ? 'Supervisor' : status === 'Supervisor_Reviewed' ? 'Cost Control' : status === 'Cost_Control_Reviewed' ? 'Project Manager' : 'HR';
     header.status = 'Rejected';
-    event = workflowEvent(stage, 'Rejected', actor, comment);
+    event = workflowEvent(workflowStageForHeaderStatus(status), 'Rejected', actor, comment);
   } else if (action === 'RETURN') {
-    if (!['Submitted', 'Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed'].includes(status)) {
-      throw new Error('Only in-progress timesheets can be returned.');
+    if (!inProgress.includes(status)) throw new Error('Only in-progress timesheets can be returned.');
+    if (!['Submitted', 'Cost_Control_Reviewed', 'GM_Operations_Reviewed'].includes(status)) {
+      throw new Error('Project-stage return must target a project segment, not the whole timesheet.');
     }
-    const stage: TimesheetWorkflowStage = status === 'Submitted' ? 'Supervisor' : status === 'Supervisor_Reviewed' ? 'Cost Control' : status === 'Cost_Control_Reviewed' ? 'Project Manager' : 'HR';
     header.status = 'Returned';
-    event = workflowEvent(stage, 'Returned', actor, comment);
+    event = workflowEvent(workflowStageForHeaderStatus(status), 'Returned', actor, comment);
   } else if (status === 'Submitted') {
     header.status = 'Supervisor_Reviewed';
-    header.currentApprovalStage = 'Cost Control';
-    header.currentApprover = 'Cost Control';
-    event = workflowEvent('Supervisor', 'Approved', actor, comment || 'Supervisor reviewed and released timesheet for cost-control validation.');
-  } else if (status === 'Project_Manager_Reviewed') {
+    header.currentApprovalStage = 'Project Manager';
+    header.currentApprover = 'Project Manager';
+    event = workflowEvent('Supervisor', 'Approved', actor, comment || 'Supervisor reviewed and released timesheet for project manager validation.');
+  } else if (status === 'Cost_Control_Reviewed') {
+    header.status = 'GM_Operations_Reviewed';
+    header.currentApprovalStage = 'HR';
+    header.currentApprover = 'HR';
+    event = workflowEvent('GM Operations', 'Approved', actor, comment || 'GM Operations approved consolidated timesheet (16th–15th, all projects).');
+  } else if (status === 'GM_Operations_Reviewed') {
     header.status = 'HR_Acknowledged';
     header.approvedAt = now;
     header.approvedBy = actor;
@@ -2987,7 +3009,7 @@ export async function advanceTimesheetWorkflow(
     header.currentApprover = null;
     event = workflowEvent('HR', 'Acknowledged', actor, comment || 'HR approved consolidated timesheet for payroll processing.');
   } else {
-    throw new Error('This timesheet is not waiting for approval.');
+    throw new Error('This timesheet is not waiting for header-level approval. Use project approval for PM/Cost Control stages.');
   }
 
   header.workflowHistory = [...(header.workflowHistory || []), event];
@@ -2999,16 +3021,42 @@ export async function advanceTimesheetWorkflow(
       .then((module) => module.postPermanentTimesheetEarningsFromTimesheets(period))
       .catch((error) => console.warn('[Timesheet] Permanent OT/night allowance posting skipped:', error instanceof Error ? error.message : error));
   }
+
+  void import('@/lib/timesheet-workflow-notifications')
+    .then(({ notifyTimesheetStageChange }) => {
+      if (action === 'REJECT' || action === 'RETURN') {
+        return notifyTimesheetStageChange({ header, action, actor, comment });
+      }
+      const nextStage = status === 'Submitted'
+        ? 'Project Manager'
+        : status === 'Cost_Control_Reviewed'
+          ? 'HR'
+          : status === 'GM_Operations_Reviewed'
+            ? 'Payroll'
+            : null;
+      return notifyTimesheetStageChange({ header, action: 'APPROVE', nextStage, actor, comment });
+    })
+    .catch((error) => console.warn('[Timesheet] Stage notification skipped:', error instanceof Error ? error.message : error));
+
   return { header, payrollUpdate };
 }
 
 const projectApprovalMarker = (stage: 'Project Manager' | 'Cost Control', projectCode: string) => `[${stage === 'Project Manager' ? 'PROJECT' : 'COST'}:${projectCode}]`;
 const markerRegex = /\[(PROJECT|COST):([^\]]+)\]/;
 
-const eventMatchesProject = (event: TimesheetWorkflowEvent, stage: 'Project Manager' | 'Cost Control', projectCode: string, decisions: TimesheetWorkflowDecision[]) => {
-  if (event.stage !== stage || !decisions.includes(event.decision)) return false;
-  const match = String(event.comment || '').match(markerRegex);
-  return Boolean(match && match[2].toLowerCase() === projectCode.toLowerCase());
+const latestProjectDecision = (
+  history: TimesheetWorkflowEvent[],
+  stage: 'Project Manager' | 'Cost Control',
+  projectCode: string,
+): TimesheetWorkflowDecision | null => {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const event = history[index];
+    if (event.stage !== stage) continue;
+    if (!['Approved', 'Rejected', 'Returned'].includes(event.decision)) continue;
+    const match = String(event.comment || '').match(markerRegex);
+    if (match && match[2].toLowerCase() === projectCode.toLowerCase()) return event.decision;
+  }
+  return null;
 };
 
 export type ProjectTimesheetApproval = {
@@ -3057,16 +3105,24 @@ export function buildProjectTimesheetApprovals(header: TimesheetHeader, lines: T
   const history = header.workflowHistory || [];
   const normalizedHeaderStatus = normalizeTimesheetStatus(header.status);
   for (const item of byProject.values()) {
-    const pmRejected = history.some((event) => eventMatchesProject(event, 'Project Manager', item.projectCode, ['Rejected']));
-    const pmReturned = history.some((event) => eventMatchesProject(event, 'Project Manager', item.projectCode, ['Returned']));
-    const pmApproved = history.some((event) => eventMatchesProject(event, 'Project Manager', item.projectCode, ['Approved']));
-    const ccRejected = history.some((event) => eventMatchesProject(event, 'Cost Control', item.projectCode, ['Rejected']));
-    const ccReturned = history.some((event) => eventMatchesProject(event, 'Cost Control', item.projectCode, ['Returned']));
-    const ccApproved = history.some((event) => eventMatchesProject(event, 'Cost Control', item.projectCode, ['Approved']));
-    const headerCostComplete = ['Cost_Control_Reviewed', 'Project_Manager_Reviewed', 'HR_Acknowledged', 'Locked'].includes(normalizedHeaderStatus);
-    const headerPmComplete = ['Project_Manager_Reviewed', 'HR_Acknowledged', 'Locked'].includes(normalizedHeaderStatus);
-    item.projectManagerStatus = pmRejected ? 'Rejected' : pmReturned ? 'Returned' : pmApproved || headerPmComplete ? 'Approved' : 'Pending';
-    item.costControlStatus = ccRejected ? 'Rejected' : ccReturned ? 'Returned' : ccApproved || headerCostComplete ? 'Approved' : 'Pending';
+    const pmDecision = latestProjectDecision(history, 'Project Manager', item.projectCode);
+    const ccDecision = latestProjectDecision(history, 'Cost Control', item.projectCode);
+    const headerPmComplete = ['Project_Manager_Reviewed', 'Cost_Control_Reviewed', 'GM_Operations_Reviewed', 'HR_Acknowledged', 'Locked'].includes(normalizedHeaderStatus);
+    const headerCostComplete = ['Cost_Control_Reviewed', 'GM_Operations_Reviewed', 'HR_Acknowledged', 'Locked'].includes(normalizedHeaderStatus);
+    item.projectManagerStatus = pmDecision === 'Rejected'
+      ? 'Rejected'
+      : pmDecision === 'Returned'
+        ? 'Returned'
+        : pmDecision === 'Approved' || headerPmComplete
+          ? 'Approved'
+          : 'Pending';
+    item.costControlStatus = ccDecision === 'Rejected'
+      ? 'Rejected'
+      : ccDecision === 'Returned'
+        ? 'Returned'
+        : ccDecision === 'Approved' || headerCostComplete
+          ? 'Approved'
+          : 'Pending';
   }
 
   const actorText = String(actor || '').trim().toLowerCase();
@@ -3074,7 +3130,7 @@ export function buildProjectTimesheetApprovals(header: TimesheetHeader, lines: T
   if (!actorText) return rows;
   return rows.filter((row) => {
     const manager = row.projectManager.toLowerCase();
-    return manager === 'unassigned' || manager.includes(actorText) || actorText.includes(manager) || ['cost control', 'hr', 'payroll', 'system', 'administrator'].some((term) => actorText.includes(term));
+    return manager === 'unassigned' || manager.includes(actorText) || actorText.includes(manager) || ['cost control', 'hr', 'payroll', 'gm', 'operations', 'system', 'administrator'].some((term) => actorText.includes(term));
   });
 }
 
@@ -3089,14 +3145,15 @@ export async function advanceProjectTimesheetApproval(
   const header = headers.find((item) => item.id === headerId);
   if (!header) throw new Error('Timesheet header not found.');
   const status = normalizeTimesheetStatus(header.status);
-  if (!['Supervisor_Reviewed', 'Cost_Control_Reviewed', 'Project_Manager_Reviewed'].includes(status)) {
+  if (!['Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed'].includes(status)) {
     throw new Error('Supervisor review must be completed before project approvals.');
   }
-  if (options.stage === 'Cost Control' && !['Supervisor_Reviewed', 'Cost_Control_Reviewed'].includes(status)) {
-    throw new Error('Cost Control approval is only available after supervisor review.');
+  // New order: PM first (after Supervisor), then Cost Control.
+  if (options.stage === 'Project Manager' && !['Supervisor_Reviewed', 'Project_Manager_Reviewed'].includes(status)) {
+    throw new Error('Project Manager approval is only available after supervisor review.');
   }
-  if (options.stage === 'Project Manager' && !['Cost_Control_Reviewed', 'Project_Manager_Reviewed'].includes(status)) {
-    throw new Error('Project Manager approval is only available after Cost Control review.');
+  if (options.stage === 'Cost Control' && !['Project_Manager_Reviewed', 'Cost_Control_Reviewed'].includes(status)) {
+    throw new Error('Cost Control approval is only available after Project Manager review.');
   }
   const headerLines = lines.filter((line) => line.headerId === header.id);
   const projectApprovals = buildProjectTimesheetApprovals(header, headerLines, projects);
@@ -3111,36 +3168,62 @@ export async function advanceProjectTimesheetApproval(
   const event: TimesheetWorkflowEvent = { stage: options.stage, decision, by: actor, actedAt: new Date().toISOString(), comment };
   header.workflowHistory = [...(header.workflowHistory || []), event];
 
-  if (action === 'REJECT') {
-    header.status = 'Rejected';
-    header.currentApprovalStage = options.stage;
-    header.currentApprover = actor;
-  } else if (action === 'RETURN') {
-    header.status = 'Returned';
-    header.currentApprovalStage = options.stage;
-    header.currentApprover = actor;
-  } else {
+  // Per-project reject/return: do not kill the whole sheet — other projects keep progressing.
+  let notifiedNextStage: TimesheetWorkflowStage | null = null;
+  if (action === 'APPROVE') {
     const refreshed = buildProjectTimesheetApprovals(header, headerLines, projects);
-    const allCostApproved = refreshed.length > 0 && refreshed.every((item) => item.costControlStatus === 'Approved');
     const allPmApproved = refreshed.length > 0 && refreshed.every((item) => item.projectManagerStatus === 'Approved');
-    if (allCostApproved && !allPmApproved) {
-      header.status = 'Cost_Control_Reviewed';
-      header.currentApprovalStage = 'Project Manager';
-      header.currentApprover = 'Project Manager';
-    }
-    if (allPmApproved && allCostApproved) {
+    const allCostApproved = refreshed.length > 0 && refreshed.every((item) => item.costControlStatus === 'Approved');
+    if (allPmApproved && status === 'Supervisor_Reviewed') {
       header.status = 'Project_Manager_Reviewed';
-      header.currentApprovalStage = 'HR';
-      header.currentApprover = 'HR';
+      header.currentApprovalStage = 'Cost Control';
+      header.currentApprover = 'Cost Control';
+      notifiedNextStage = 'Cost Control';
+    }
+    if (allCostApproved && allPmApproved && ['Supervisor_Reviewed', 'Project_Manager_Reviewed'].includes(normalizeTimesheetStatus(header.status))) {
+      header.status = 'Cost_Control_Reviewed';
+      header.currentApprovalStage = 'GM Operations';
+      header.currentApprover = 'GM Operations';
+      notifiedNextStage = 'GM Operations';
       header.workflowHistory = [
         ...(header.workflowHistory || []),
-        { stage: 'HR', decision: 'Submitted', by: 'System', actedAt: new Date().toISOString(), comment: 'Project-specific approvals consolidated into employee/period timesheet summary for HR and payroll.' },
+        {
+          stage: 'GM Operations',
+          decision: 'Submitted',
+          by: 'System',
+          actedAt: new Date().toISOString(),
+          comment: 'All project approvals complete. Consolidated 16th–15th timesheet (all projects) is ready for GM Operations review.',
+        },
       ];
     }
   }
 
   await writeTimesheetHeaderLines(header, headerLines);
-  return { header, projectApprovals: buildProjectTimesheetApprovals(header, headerLines, projects) };
+  const refreshedApprovals = buildProjectTimesheetApprovals(header, headerLines, projects);
+
+  void import('@/lib/timesheet-workflow-notifications')
+    .then(({ notifyTimesheetStageChange }) => {
+      if (action === 'REJECT' || action === 'RETURN') {
+        return notifyTimesheetStageChange({
+          header,
+          action,
+          actor,
+          comment: options.comment,
+          projectCode: options.projectCode,
+        });
+      }
+      return notifyTimesheetStageChange({
+        header,
+        action: 'APPROVE',
+        nextStage: notifiedNextStage,
+        actor,
+        comment: options.comment,
+        projectCode: options.projectCode,
+      });
+    })
+    .catch((error) => console.warn('[Timesheet] Project stage notification skipped:', error instanceof Error ? error.message : error));
+
+  return { header, projectApprovals: refreshedApprovals };
 }
 
 const normalizeAttendanceScope = (value: string | null | undefined) =>

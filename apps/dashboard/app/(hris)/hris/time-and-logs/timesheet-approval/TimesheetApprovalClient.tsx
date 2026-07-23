@@ -53,8 +53,9 @@ type TimesheetStatus =
   | 'Draft'
   | 'Submitted'
   | 'Supervisor_Reviewed'
-  | 'Cost_Control_Reviewed'
   | 'Project_Manager_Reviewed'
+  | 'Cost_Control_Reviewed'
+  | 'GM_Operations_Reviewed'
   | 'HR_Acknowledged'
   | 'Locked'
   | 'Rejected'
@@ -213,8 +214,9 @@ type ProjectStage = 'Cost Control' | 'Project Manager';
 const ACTIVE_APPROVAL_STATUSES = new Set<TimesheetStatus>([
   'Submitted',
   'Supervisor_Reviewed',
-  'Cost_Control_Reviewed',
   'Project_Manager_Reviewed',
+  'Cost_Control_Reviewed',
+  'GM_Operations_Reviewed',
   'HR_Acknowledged',
 ]);
 
@@ -223,19 +225,19 @@ function buildApprovalPlan(timesheet: TimesheetSummary):
   | { kind: 'project'; headerId: string; projectSegments: Array<{ headerId: string; projectCode: string; stage: ProjectStage }> }
   | null {
   if (timesheet.payrollPosted || timesheet.currentStage === 'Payroll Posted') return null;
-  if (timesheet.currentStage === 'Supervisor' || timesheet.currentStage === 'HR') {
+  if (timesheet.currentStage === 'Supervisor' || timesheet.currentStage === 'GM Operations' || timesheet.currentStage === 'HR') {
     return { kind: 'header', headerId: timesheet.id };
-  }
-  if (timesheet.currentStage === 'Cost Control') {
-    const projectSegments = timesheet.projectApprovals
-      .filter((project) => project.costControlStatus === 'Pending')
-      .map((project) => ({ headerId: timesheet.id, projectCode: project.projectCode, stage: 'Cost Control' as ProjectStage }));
-    return projectSegments.length ? { kind: 'project', headerId: timesheet.id, projectSegments } : null;
   }
   if (timesheet.currentStage === 'Project Manager') {
     const projectSegments = timesheet.projectApprovals
-      .filter((project) => project.costControlStatus === 'Approved' && project.projectManagerStatus === 'Pending')
+      .filter((project) => project.projectManagerStatus === 'Pending')
       .map((project) => ({ headerId: timesheet.id, projectCode: project.projectCode, stage: 'Project Manager' as ProjectStage }));
+    return projectSegments.length ? { kind: 'project', headerId: timesheet.id, projectSegments } : null;
+  }
+  if (timesheet.currentStage === 'Cost Control') {
+    const projectSegments = timesheet.projectApprovals
+      .filter((project) => project.projectManagerStatus === 'Approved' && project.costControlStatus === 'Pending')
+      .map((project) => ({ headerId: timesheet.id, projectCode: project.projectCode, stage: 'Cost Control' as ProjectStage }));
     return projectSegments.length ? { kind: 'project', headerId: timesheet.id, projectSegments } : null;
   }
   return null;
@@ -323,17 +325,19 @@ const APPROVAL_WORKSPACE_BUILD = 'pending-queue-v3';
 
 const WORKFLOW_STAGE_STATUSES: Partial<Record<string, TimesheetStatus>> = {
   Supervisor: 'Submitted',
-  'Cost Control': 'Supervisor_Reviewed',
-  'Project Manager': 'Cost_Control_Reviewed',
-  HR: 'Project_Manager_Reviewed',
+  'Project Manager': 'Supervisor_Reviewed',
+  'Cost Control': 'Project_Manager_Reviewed',
+  'GM Operations': 'Cost_Control_Reviewed',
+  HR: 'GM_Operations_Reviewed',
   'Payroll Processing': 'HR_Acknowledged',
 };
 
 const STATUS_TO_WORKFLOW_STAGE: Partial<Record<string, string>> = {
   Submitted: 'Supervisor',
-  Supervisor_Reviewed: 'Cost Control',
-  Cost_Control_Reviewed: 'Project Manager',
-  Project_Manager_Reviewed: 'HR',
+  Supervisor_Reviewed: 'Project Manager',
+  Project_Manager_Reviewed: 'Cost Control',
+  Cost_Control_Reviewed: 'GM Operations',
+  GM_Operations_Reviewed: 'HR',
   HR_Acknowledged: 'Payroll Processing',
   Locked: 'Payroll Posted',
 };
@@ -414,7 +418,7 @@ function flattenRows(timesheets: TimesheetSummary[]): GridRow[] {
 
 function stageWaitingForScope(scope: string, stage: string | null) {
   if (!stage) return false;
-  if (scope === 'enterprise') return ['Supervisor', 'Cost Control', 'Project Manager', 'HR', 'Payroll Processing'].includes(stage);
+  if (scope === 'enterprise') return ['Supervisor', 'Project Manager', 'Cost Control', 'GM Operations', 'HR', 'Payroll Processing'].includes(stage);
   if (scope === 'supervisor') return stage === 'Supervisor';
   if (scope === 'cost-control') return stage === 'Cost Control';
   if (scope === 'project-manager') return stage === 'Project Manager';
@@ -536,10 +540,12 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
     if (pendingCount > 0) {
       if ((payload.stats?.pendingSupervisorApproval || 0) > 0) {
         applyWorkflowStageFilter('Supervisor');
-      } else if ((payload.stats?.pendingCostControlReview || 0) > 0) {
-        applyWorkflowStageFilter('Cost Control');
       } else if ((payload.stats?.pendingProjectManagerApproval || 0) > 0) {
         applyWorkflowStageFilter('Project Manager');
+      } else if ((payload.stats?.pendingCostControlReview || 0) > 0) {
+        applyWorkflowStageFilter('Cost Control');
+      } else if ((payload.stats?.pendingGmOperationsApproval || 0) > 0) {
+        applyWorkflowStageFilter('GM Operations');
       } else if ((payload.stats?.pendingHrApproval || 0) > 0) {
         applyWorkflowStageFilter('HR');
       } else {
@@ -651,25 +657,33 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
   const canApprove = Boolean(payload?.permissions.canApprove);
   const scope = payload?.permissions.visibilityScope || 'restricted';
 
-  const selectedSupervisorOrHrIds = selectedTimesheets.filter((item) => item.currentStage === 'Supervisor' || item.currentStage === 'HR').map((item) => item.id);
+  const selectedHeaderApproveIds = selectedTimesheets
+    .filter((item) => item.currentStage === 'Supervisor' || item.currentStage === 'GM Operations' || item.currentStage === 'HR')
+    .map((item) => item.id);
   const selectedPayrollProcessIds = selectedTimesheets.filter((item) => item.currentStage === 'Payroll Processing' && item.payrollReady && !item.payrollProcessed && !item.payrollPosted).map((item) => item.id);
   const selectedPayrollPostIds = selectedTimesheets.filter((item) => item.currentStage === 'Payroll Processing' && item.payrollProcessed && !item.payrollPosted).map((item) => item.id);
-  const selectedHeaderDecisionIds = selectedTimesheets.filter((item) => item.currentStage === 'Supervisor' || item.currentStage === 'HR' || item.currentStage === 'Payroll Processing').map((item) => item.id);
+  const selectedHeaderDecisionIds = selectedTimesheets
+    .filter((item) => item.currentStage === 'Supervisor' || item.currentStage === 'GM Operations' || item.currentStage === 'HR' || item.currentStage === 'Payroll Processing')
+    .map((item) => item.id);
   const selectedCostSegments = selectedTimesheets.flatMap((item) =>
     item.currentStage === 'Cost Control'
-      ? item.projectApprovals.filter((project) => project.costControlStatus === 'Pending').map((project) => ({ headerId: item.id, projectCode: project.projectCode, stage: 'Cost Control' as ProjectStage }))
+      ? item.projectApprovals
+        .filter((project) => project.projectManagerStatus === 'Approved' && project.costControlStatus === 'Pending')
+        .map((project) => ({ headerId: item.id, projectCode: project.projectCode, stage: 'Cost Control' as ProjectStage }))
       : [],
   );
   const selectedPmSegments = selectedTimesheets.flatMap((item) =>
     item.currentStage === 'Project Manager'
-      ? item.projectApprovals.filter((project) => project.costControlStatus === 'Approved' && project.projectManagerStatus === 'Pending').map((project) => ({ headerId: item.id, projectCode: project.projectCode, stage: 'Project Manager' as ProjectStage }))
+      ? item.projectApprovals
+        .filter((project) => project.projectManagerStatus === 'Pending')
+        .map((project) => ({ headerId: item.id, projectCode: project.projectCode, stage: 'Project Manager' as ProjectStage }))
       : [],
   );
-  const smartApprovalCount = selectedSupervisorOrHrIds.length + selectedCostSegments.length + selectedPmSegments.length;
+  const smartApprovalCount = selectedHeaderApproveIds.length + selectedCostSegments.length + selectedPmSegments.length;
 
   const bulkSmartApproval = () => {
     if (!smartApprovalCount) return;
-    void act({ action: 'APPROVE', headerIds: selectedSupervisorOrHrIds, projectSegments: [...selectedCostSegments, ...selectedPmSegments], comment: 'Bulk stage-aware approval completed.' });
+    void act({ action: 'APPROVE', headerIds: selectedHeaderApproveIds, projectSegments: [...selectedPmSegments, ...selectedCostSegments], comment: 'Bulk stage-aware approval completed.' });
   };
   const bulkSmartDecision = (action: 'RETURN' | 'REJECT', comment: string) => {
     if (!selectedRows.length) return;
@@ -714,19 +728,24 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
   const showPendingApprovalQueue = () => {
     applyWorkflowStageFilter((payload?.stats?.pendingSupervisorApproval || 0) > 0
       ? 'Supervisor'
-      : (payload?.stats?.pendingCostControlReview || 0) > 0
-        ? 'Cost Control'
-        : (payload?.stats?.pendingProjectManagerApproval || 0) > 0
-          ? 'Project Manager'
-          : 'All');
+      : (payload?.stats?.pendingProjectManagerApproval || 0) > 0
+        ? 'Project Manager'
+        : (payload?.stats?.pendingCostControlReview || 0) > 0
+          ? 'Cost Control'
+          : (payload?.stats?.pendingGmOperationsApproval || 0) > 0
+            ? 'GM Operations'
+            : (payload?.stats?.pendingHrApproval || 0) > 0
+              ? 'HR'
+              : 'All');
     setQuery('');
   };
 
   const pipelineStages = [
     { id: 'employee', label: 'Employee', count: filteredTimesheets.filter((item) => item.status === 'Submitted').length, active: false, completed: true },
     { id: 'supervisor', label: 'Supervisor', count: payload?.stats.pendingSupervisorApproval || 0, active: stageFilter === 'Supervisor', completed: false, filterStage: 'Supervisor' as const },
-    { id: 'cost', label: 'Cost Control', count: payload?.stats.pendingCostControlReview || 0, active: stageFilter === 'Cost Control', completed: false, filterStage: 'Cost Control' as const },
     { id: 'pm', label: 'Project Manager', count: payload?.stats.pendingProjectManagerApproval || 0, active: stageFilter === 'Project Manager', completed: false, filterStage: 'Project Manager' as const },
+    { id: 'cost', label: 'Cost Control', count: payload?.stats.pendingCostControlReview || 0, active: stageFilter === 'Cost Control', completed: false, filterStage: 'Cost Control' as const },
+    { id: 'gm', label: 'GM Operations', count: payload?.stats.pendingGmOperationsApproval || 0, active: stageFilter === 'GM Operations', completed: false, filterStage: 'GM Operations' as const },
     { id: 'hr', label: 'HR', count: payload?.stats.pendingHrApproval || 0, active: stageFilter === 'HR', completed: false, filterStage: 'HR' as const },
     { id: 'payroll', label: 'Payroll', count: payload?.stats.pendingPayrollProcessing || 0, active: stageFilter === 'Payroll Processing', completed: false, filterStage: 'Payroll Processing' as const },
     { id: 'posted', label: 'Posted', count: payload?.stats.payrollPosted || 0, active: false, completed: true },
@@ -912,7 +931,7 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p>
                 <span className="font-semibold">Posted</span> means payroll is complete and cannot be approved again.
-                Use the pending queue below for timesheets waiting at Supervisor, Cost Control, Project Manager, or HR.
+                Use the pending queue below for timesheets waiting at Supervisor, Project Manager, Cost Control, GM Operations, or HR.
               </p>
               {(payload?.stats?.pendingSupervisorApproval || 0) > 0 ? (
                 <button type="button" onClick={showPendingApprovalQueue} className="inline-flex h-9 shrink-0 items-center rounded-xl bg-[#2563EB] px-3 text-xs font-semibold text-white hover:bg-blue-700">
@@ -1267,6 +1286,24 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
 
                       {detailTab === 'overview' ? (
                         <>
+                          {(focusedRow.timesheet.currentStage === 'GM Operations' || focusedRow.timesheet.currentStage === 'HR') ? (
+                            <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-xs text-violet-950">
+                              <p className="font-semibold">
+                                Consolidated {focusedRow.timesheet.currentStage === 'GM Operations' ? 'GM Operations' : 'HR'} review
+                              </p>
+                              <p className="mt-1 text-violet-900">
+                                Period {focusedRow.timesheet.periodName} (16th–15th). Approve or return the full pack for all {focusedRow.timesheet.projectApprovals.length} project{focusedRow.timesheet.projectApprovals.length === 1 ? '' : 's'} — not day-by-day.
+                              </p>
+                              <ul className="mt-2 space-y-1">
+                                {focusedRow.timesheet.projectApprovals.map((project) => (
+                                  <li key={project.projectCode} className="flex items-center justify-between gap-2">
+                                    <span className="font-medium">{project.projectCode} · {project.projectName}</span>
+                                    <span>{formatHours(project.totalHours)}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
                           <DonutChart
                             centerLabel="Hours"
                             centerValue={formatHours(focusedRow.employee.totalHours)}
@@ -1342,13 +1379,45 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
                           >
                             {focusedApprovalPlan?.kind === 'project'
                               ? `Approve ${focusedApprovalPlan.projectSegments.length} Project${focusedApprovalPlan.projectSegments.length === 1 ? '' : 's'}`
-                              : 'Approve'}
+                              : focusedRow.timesheet.currentStage === 'GM Operations' || focusedRow.timesheet.currentStage === 'HR'
+                                ? 'Approve Consolidated Period'
+                                : 'Approve'}
                           </button>
                           <div className="grid grid-cols-2 gap-2">
-                            <button type="button" onClick={() => void act({ action: 'RETURN', headerId: focusedRow.headerId, comment: 'Returned for correction.' })} className="h-11 rounded-xl border border-amber-200 bg-amber-50 text-sm font-semibold text-amber-700">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (focusedApprovalPlan?.kind === 'project') {
+                                  void act({
+                                    action: 'RETURN',
+                                    headerIds: [focusedApprovalPlan.headerId],
+                                    projectSegments: focusedApprovalPlan.projectSegments,
+                                    comment: 'Returned for correction.',
+                                  });
+                                  return;
+                                }
+                                void act({ action: 'RETURN', headerId: focusedRow.headerId, comment: 'Returned for correction.' });
+                              }}
+                              className="h-11 rounded-xl border border-amber-200 bg-amber-50 text-sm font-semibold text-amber-700"
+                            >
                               Return
                             </button>
-                            <button type="button" onClick={() => void act({ action: 'REJECT', headerId: focusedRow.headerId, comment: 'Rejected during review.' })} className="h-11 rounded-xl border border-red-200 bg-red-50 text-sm font-semibold text-red-700">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (focusedApprovalPlan?.kind === 'project') {
+                                  void act({
+                                    action: 'REJECT',
+                                    headerIds: [focusedApprovalPlan.headerId],
+                                    projectSegments: focusedApprovalPlan.projectSegments,
+                                    comment: 'Rejected from workspace detail panel.',
+                                  });
+                                  return;
+                                }
+                                void act({ action: 'REJECT', headerId: focusedRow.headerId, comment: 'Rejected from workspace detail panel.' });
+                              }}
+                              className="h-11 rounded-xl border border-red-200 bg-red-50 text-sm font-semibold text-red-700"
+                            >
                               Reject
                             </button>
                           </div>

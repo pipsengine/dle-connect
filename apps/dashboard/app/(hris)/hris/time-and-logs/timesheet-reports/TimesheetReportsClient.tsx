@@ -645,9 +645,10 @@ export default function TimesheetReportsClient() {
     .slice(0, 10);
   const pendingApprovalRows = [
     { stage: 'Supervisor Approval', count: approvalBreakdown.find((row) => row.label === 'Submitted')?.timesheets || 0, hours: approvalBreakdown.find((row) => row.label === 'Submitted')?.productiveHours || 0, cost: approvalBreakdown.find((row) => row.label === 'Submitted')?.labourCost || 0 },
-    { stage: 'Cost Control Review', count: approvalBreakdown.find((row) => row.label === 'Project_Manager_Reviewed')?.timesheets || 0, hours: approvalBreakdown.find((row) => row.label === 'Project_Manager_Reviewed')?.productiveHours || 0, cost: approvalBreakdown.find((row) => row.label === 'Project_Manager_Reviewed')?.labourCost || 0 },
     { stage: 'Project Manager Approval', count: approvalBreakdown.find((row) => row.label === 'Supervisor_Reviewed')?.timesheets || 0, hours: approvalBreakdown.find((row) => row.label === 'Supervisor_Reviewed')?.productiveHours || 0, cost: approvalBreakdown.find((row) => row.label === 'Supervisor_Reviewed')?.labourCost || 0 },
-    { stage: 'HR Approval', count: approvalBreakdown.find((row) => row.label === 'Cost_Control_Reviewed')?.timesheets || 0, hours: approvalBreakdown.find((row) => row.label === 'Cost_Control_Reviewed')?.productiveHours || 0, cost: approvalBreakdown.find((row) => row.label === 'Cost_Control_Reviewed')?.labourCost || 0 },
+    { stage: 'Cost Control Review', count: approvalBreakdown.find((row) => row.label === 'Project_Manager_Reviewed')?.timesheets || 0, hours: approvalBreakdown.find((row) => row.label === 'Project_Manager_Reviewed')?.productiveHours || 0, cost: approvalBreakdown.find((row) => row.label === 'Project_Manager_Reviewed')?.labourCost || 0 },
+    { stage: 'GM Operations Approval', count: approvalBreakdown.find((row) => row.label === 'Cost_Control_Reviewed')?.timesheets || 0, hours: approvalBreakdown.find((row) => row.label === 'Cost_Control_Reviewed')?.productiveHours || 0, cost: approvalBreakdown.find((row) => row.label === 'Cost_Control_Reviewed')?.labourCost || 0 },
+    { stage: 'HR Approval', count: approvalBreakdown.find((row) => row.label === 'GM_Operations_Reviewed')?.timesheets || 0, hours: approvalBreakdown.find((row) => row.label === 'GM_Operations_Reviewed')?.productiveHours || 0, cost: approvalBreakdown.find((row) => row.label === 'GM_Operations_Reviewed')?.labourCost || 0 },
   ];
   const recentRows = (payload?.detailRows || []).slice(0, 10);
   const kpiDetailRows = (payload?.detailRows || []).filter((row) => {
@@ -932,14 +933,15 @@ export default function TimesheetReportsClient() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1180px] text-left text-sm">
               <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                <tr><th className="px-4 py-3">Employee</th><th className="px-4 py-3">Date</th><th className="px-4 py-3">Project</th><th className="px-4 py-3">Activity</th><th className="px-4 py-3 text-right">Hours</th><th className="px-4 py-3 text-right">OT</th><th className="px-4 py-3 text-right">Total</th><th className="px-4 py-3 text-center">Supervisor</th><th className="px-4 py-3 text-center">Cost Control</th><th className="px-4 py-3 text-center">Project Manager</th><th className="px-4 py-3 text-center">HR</th><th className="px-4 py-3 text-center">Payroll</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-center">Actions</th></tr>
+                <tr><th className="px-4 py-3">Employee</th><th className="px-4 py-3">Date</th><th className="px-4 py-3">Project</th><th className="px-4 py-3">Activity</th><th className="px-4 py-3 text-right">Hours</th><th className="px-4 py-3 text-right">OT</th><th className="px-4 py-3 text-right">Total</th><th className="px-4 py-3 text-center">Supervisor</th><th className="px-4 py-3 text-center">Project Manager</th><th className="px-4 py-3 text-center">Cost Control</th><th className="px-4 py-3 text-center">GM Ops</th><th className="px-4 py-3 text-center">HR</th><th className="px-4 py-3 text-center">Payroll</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-center">Actions</th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {recentRows.map((row) => {
-                  const supervisorState = ['Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed', 'HR_Acknowledged', 'Locked'].includes(row.normalizedStatus) ? 'approved' : row.normalizedStatus === 'Submitted' ? 'pending' : row.normalizedStatus === 'Rejected' ? 'rejected' : 'none';
-                  const costState = ['Cost_Control_Reviewed', 'HR_Acknowledged', 'Locked'].includes(row.normalizedStatus) ? 'approved' : row.normalizedStatus === 'Project_Manager_Reviewed' ? 'pending' : row.normalizedStatus === 'Rejected' ? 'rejected' : 'none';
-                  const pmState = ['Project_Manager_Reviewed', 'Cost_Control_Reviewed', 'HR_Acknowledged', 'Locked'].includes(row.normalizedStatus) ? 'approved' : row.normalizedStatus === 'Supervisor_Reviewed' ? 'pending' : row.normalizedStatus === 'Rejected' ? 'rejected' : 'none';
-                  const hrState = ['HR_Acknowledged', 'Locked'].includes(row.normalizedStatus) ? 'approved' : row.normalizedStatus === 'Cost_Control_Reviewed' ? 'pending' : row.normalizedStatus === 'Rejected' ? 'rejected' : 'none';
+                  const supervisorState = ['Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed', 'GM_Operations_Reviewed', 'HR_Acknowledged', 'Locked'].includes(row.normalizedStatus) ? 'approved' : row.normalizedStatus === 'Submitted' ? 'pending' : row.normalizedStatus === 'Rejected' ? 'rejected' : 'none';
+                  const pmState = ['Project_Manager_Reviewed', 'Cost_Control_Reviewed', 'GM_Operations_Reviewed', 'HR_Acknowledged', 'Locked'].includes(row.normalizedStatus) ? 'approved' : row.normalizedStatus === 'Supervisor_Reviewed' ? 'pending' : row.normalizedStatus === 'Rejected' ? 'rejected' : 'none';
+                  const costState = ['Cost_Control_Reviewed', 'GM_Operations_Reviewed', 'HR_Acknowledged', 'Locked'].includes(row.normalizedStatus) ? 'approved' : row.normalizedStatus === 'Project_Manager_Reviewed' ? 'pending' : row.normalizedStatus === 'Rejected' ? 'rejected' : 'none';
+                  const gmState = ['GM_Operations_Reviewed', 'HR_Acknowledged', 'Locked'].includes(row.normalizedStatus) ? 'approved' : row.normalizedStatus === 'Cost_Control_Reviewed' ? 'pending' : row.normalizedStatus === 'Rejected' ? 'rejected' : 'none';
+                  const hrState = ['HR_Acknowledged', 'Locked'].includes(row.normalizedStatus) ? 'approved' : row.normalizedStatus === 'GM_Operations_Reviewed' ? 'pending' : row.normalizedStatus === 'Rejected' ? 'rejected' : 'none';
                   const payrollState = row.payrollReady ? 'approved' : ['HR_Acknowledged', 'Locked'].includes(row.normalizedStatus) ? 'pending' : row.normalizedStatus === 'Rejected' ? 'rejected' : 'none';
                   return (
                     <tr key={row.allocationId} className="hover:bg-slate-50">
@@ -951,8 +953,9 @@ export default function TimesheetReportsClient() {
                       <td className="px-4 py-3 text-right font-bold">{formatHours(row.overtimeHours)}</td>
                       <td className="px-4 py-3 text-right font-black">{formatHours(row.totalHours)}</td>
                       <td className="px-4 py-3 text-center"><StatusMark state={supervisorState} /></td>
-                      <td className="px-4 py-3 text-center"><StatusMark state={costState} /></td>
                       <td className="px-4 py-3 text-center"><StatusMark state={pmState} /></td>
+                      <td className="px-4 py-3 text-center"><StatusMark state={costState} /></td>
+                      <td className="px-4 py-3 text-center"><StatusMark state={gmState} /></td>
                       <td className="px-4 py-3 text-center"><StatusMark state={hrState} /></td>
                       <td className="px-4 py-3 text-center"><StatusMark state={payrollState} /></td>
                       <td className="px-4 py-3"><span className={`rounded-md px-2 py-1 text-[10px] font-black ${statusClass(row.normalizedStatus)}`}>{formatStatus(row.normalizedStatus)}</span></td>
@@ -960,7 +963,7 @@ export default function TimesheetReportsClient() {
                     </tr>
                   );
                 })}
-                {!recentRows.length ? <tr><td colSpan={14} className="px-4 py-8 text-center text-sm font-bold text-slate-400">No recent entries available.</td></tr> : null}
+                {!recentRows.length ? <tr><td colSpan={15} className="px-4 py-8 text-center text-sm font-bold text-slate-400">No recent entries available.</td></tr> : null}
               </tbody>
             </table>
           </div>

@@ -171,6 +171,36 @@ export type PayrollRunExclusionEmployee = DleEmployeeDirectoryRow & { excludedFr
 
 export const isEmployeeExcludedFromPayrollRun = (employee: PayrollRunExclusionEmployee) => Boolean(employee.excludedFromPayrollRun);
 
+/** Payroll approval / cost packs — same approval chain, separate runs and totals. */
+export type PayrollRunPack = 'salaried' | 'daily-rate';
+
+export const PAYROLL_RUN_PACKS: PayrollRunPack[] = ['salaried', 'daily-rate'];
+
+export const payrollRunPackLabel = (pack: PayrollRunPack) =>
+  pack === 'daily-rate' ? 'Contract Daily Rate' : 'Salaried / Stipend (Permanent, Lumpsum, NYSC/IT)';
+
+export const payrollRunPackShortLabel = (pack: PayrollRunPack) =>
+  pack === 'daily-rate' ? 'Daily Rate' : 'Salaried / Stipend';
+
+/** Daily-rate contracts → daily-rate pack; everyone else eligible for payroll → salaried pack. */
+export const resolvePayrollRunPackForEmployee = (
+  employee: DleEmployeeDirectoryRow,
+  profileId?: string,
+): PayrollRunPack => (isDailyRatePayrollEmployee(employee, profileId) ? 'daily-rate' : 'salaried');
+
+export const employeeBelongsToPayrollPack = (
+  employee: DleEmployeeDirectoryRow,
+  pack: PayrollRunPack,
+  profileId?: string,
+) => resolvePayrollRunPackForEmployee(employee, profileId) === pack;
+
+export const normalizePayrollRunPack = (value: unknown): PayrollRunPack | null => {
+  const raw = compact(value).toLowerCase();
+  if (raw === 'daily-rate' || raw === 'dailyrate' || raw === 'daily_rate' || raw === 'contract-daily-rate') return 'daily-rate';
+  if (raw === 'salaried' || raw === 'stipend' || raw === 'permanent' || raw === 'lumpsum') return 'salaried';
+  return null;
+};
+
 /** Daily-rate contract with no configured rate (blocked until rate or timesheet is set). */
 export const isUnconfiguredDailyRateContractEmployee = (employee: DleEmployeeDirectoryRow, profileId?: string) => {
   if (!contractEmployeeCode(employee)) return false;

@@ -161,14 +161,14 @@ const exceptionFor = (header: TimesheetHeader, line: TimesheetLine, productiveHo
   if (overtimeHours > 2) return { type: 'Excessive Overtime', severity: 'Medium' as const };
   if (productiveHours <= 0 && status !== 'Rejected') return { type: 'Unsubmitted Hours', severity: 'Medium' as const };
   if (status === 'Rejected' || status === 'Returned') return { type: status, severity: 'High' as const };
-  if (['Submitted', 'Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed'].includes(status)) return { type: 'Pending Approval', severity: 'Low' as const };
+  if (['Submitted', 'Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed', 'GM_Operations_Reviewed'].includes(status)) return { type: 'Pending Approval', severity: 'Low' as const };
   return { type: 'None', severity: 'Low' as const };
 };
 
 const summarizeRows = (rows: ReportRow[]): Summary => {
   const headerIds = new Set(rows.map((row) => row.headerId));
   const rejectedHeaders = new Set(rows.filter((row) => row.normalizedStatus === 'Rejected' || row.normalizedStatus === 'Returned').map((row) => row.headerId));
-  const pendingHeaders = new Set(rows.filter((row) => ['Submitted', 'Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed'].includes(row.normalizedStatus)).map((row) => row.headerId));
+  const pendingHeaders = new Set(rows.filter((row) => ['Submitted', 'Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed', 'GM_Operations_Reviewed'].includes(row.normalizedStatus)).map((row) => row.headerId));
   const approvedRows = rows.filter((row) => row.payrollReady || row.normalizedStatus === 'HR_Acknowledged');
   const cycleRows = rows.filter((row) => row.submittedAt && row.payrollAcknowledgedAt);
   const totalHoursWorked = round(rows.reduce((sum, row) => sum + row.totalHours, 0));

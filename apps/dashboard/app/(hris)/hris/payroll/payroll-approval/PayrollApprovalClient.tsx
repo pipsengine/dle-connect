@@ -20,14 +20,17 @@ import { currencyCode, formatPayrollMoney, resolvePayCurrency } from '@/lib/payr
 import PayrollApprovalStagePanel from './PayrollApprovalStagePanel';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Finance Controller' | 'Finance Manager' | 'CFO' | 'Executive Management' | 'Payroll Officer' | 'Auditor' | 'Employee';
-type RunStatus = 'Draft' | 'Calculated' | 'Submitted' | 'HR Approved' | 'Finance Approved' | 'CFO Approved' | 'Approved' | 'Locked' | 'Posted' | 'Rejected';
+type RunStatus = 'Draft' | 'Open' | 'Calculated' | 'Computed' | 'Validated' | 'Ready for Approval' | 'Submitted' | 'Under Review' | 'HR Approved' | 'Finance Approved' | 'CFO Approved' | 'Approved' | 'Released' | 'Revision Requested' | 'Locked' | 'Posted' | 'Published' | 'Closed' | 'Reopened' | 'Rejected';
 type RecordStatus = 'Ready' | 'Review' | 'Blocked';
 type Tone = 'blue' | 'green' | 'amber' | 'red' | 'violet' | 'cyan' | 'slate';
+type PayrollPack = 'salaried' | 'daily-rate';
 
 type PayrollRun = {
   id: string;
   period: string;
   periodLabel: string;
+  pack?: PayrollPack;
+  packLabel?: string;
   status: RunStatus;
   employeeCount: number;
   grossPay: number;
@@ -63,6 +66,8 @@ type Payload = {
   dataSource?: { source: string; databaseAvailable: boolean; warning: string | null; employeeCount: number };
   period: string;
   periodLabel: string;
+  pack?: PayrollPack;
+  packLabel?: string;
   permissions: {
     canViewMoney: boolean;
     canCalculate: boolean;
@@ -79,6 +84,14 @@ type Payload = {
   };
   run: PayrollRun | null;
   runs: PayrollRun[];
+  packs?: Array<{
+    pack: PayrollPack;
+    packLabel: string;
+    run: PayrollRun | null;
+    summary: Payload['summary'];
+    records: PayrollRecord[];
+    approvalWorkflow?: Payload['approvalWorkflow'];
+  }>;
   summary: {
     employees: number;
     grossPay: number | null;
@@ -96,6 +109,7 @@ type Payload = {
   approvalWorkflow?: {
     stageLabel: string;
     nextOwner: string;
+    currentOwnerHint?: string;
     stages: Array<{
       id: PayrollApprovalStageId;
       code: string;
@@ -249,6 +263,7 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [role, setRole] = useState<Role>('Employee');
   const [period, setPeriod] = useState('');
+  const [pack, setPack] = useState<PayrollPack>('salaried');
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState('');
   const [error, setError] = useState('');
@@ -281,11 +296,14 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
     }
   };
 
-  const load = async (targetPeriod = period, sessionRole = role) => {
+  const load = async (targetPeriod = period, sessionRole = role, targetPack = pack) => {
     setLoading(true);
     setError('');
     try {
-      const suffix = targetPeriod ? `?period=${encodeURIComponent(targetPeriod)}` : '';
+      const params = new URLSearchParams();
+      if (targetPeriod) params.set('period', targetPeriod);
+      if (targetPack) params.set('pack', targetPack);
+      const suffix = params.toString() ? `?${params.toString()}` : '';
       const res = await fetch(`/api/hris/payroll/payroll-processing${suffix}`, {
         headers: { 'x-hris-role': sessionRole },
         cache: 'no-store',
@@ -294,8 +312,9 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
       if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Payroll approval request failed (${res.status})`);
       setPayload(json.data);
       setPeriod(json.data.period);
+      if (json.data.pack) setPack(json.data.pack);
     } catch (event) {
-      setError(event instanceof Error ? event.message : 'Unable to load payroll approval queue');
+      setError(event instanceof Error ? event.message : 'Unable to load payroll approval workspace');
     } finally {
       setLoading(false);
     }
@@ -307,13 +326,14 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
 
   useEffect(() => {
     if (!sessionReady) return;
-    void load(period, role);
+    void load(period, role, pack);
   }, [sessionReady, role]);
 
   const run = payload?.run || null;
   const canViewMoney = Boolean(payload?.permissions.canViewMoney);
   const runStatus = run?.status || 'Draft';
   const signedInAs = sessionUser?.fullName || sessionUser?.username || role;
+  const packSummaries = payload?.packs || [];
 
   const salaryRows = useMemo(() => {
     let rows = [...(payload?.records || [])];
@@ -364,13 +384,19 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
       const res = await fetch('/api/hris/payroll/payroll-processing', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-hris-role': role },
-        body: JSON.stringify({ action: actionName, period, note: note || `${actionName} from payroll approval console` }),
+        body: JSON.stringify({
+          action: actionName,
+          period,
+          pack,
+          runId: run?.id || undefined,
+          note: note || `${actionName} from payroll approval console (${pack})`,
+        }),
       });
       const json = (await res.json()) as ApiResponse<{ run: PayrollRun }>;
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to update payroll approval');
-      setToast(`Payroll run moved to ${json.data?.run.status || 'updated'}.`);
+      setToast(`${json.data?.run.packLabel || pack} pack moved to ${json.data?.run.status || 'updated'}.`);
       setNote('');
-      await load(period, role);
+      await load(period, role, pack);
     } catch (event) {
       setToast(event instanceof Error ? event.message : 'Unable to update payroll approval');
     } finally {
@@ -379,7 +405,12 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
   };
 
   const exportCsv = () => {
-    window.location.href = `/api/hris/payroll/payroll-processing?period=${encodeURIComponent(period)}&format=csv`;
+    window.location.href = `/api/hris/payroll/payroll-processing?period=${encodeURIComponent(period)}&pack=${encodeURIComponent(pack)}&format=csv`;
+  };
+
+  const selectPack = (nextPack: PayrollPack) => {
+    setPack(nextPack);
+    void load(period, role, nextPack);
   };
 
   return (
@@ -399,15 +430,17 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-extrabold text-blue-800">Period: {payload?.periodLabel || 'Loading'}</span>
+            <span className="rounded-full bg-cyan-100 px-3 py-1 text-xs font-extrabold text-cyan-900">Pack: {payload?.packLabel || pack}</span>
             <span className={`rounded-full px-3 py-1 text-xs font-extrabold ${toneStyles[statusTone(runStatus)].chip}`}>Run: {runStatus}</span>
             <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-extrabold text-violet-800">Stage: {payload?.approvalWorkflow?.stageLabel || 'Preparation'}</span>
+            <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-extrabold text-indigo-900">Owner: {payload?.approvalWorkflow?.nextOwner || '—'}</span>
             <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-extrabold text-indigo-900">Signed in: {signedInAs} · {role}</span>
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-extrabold text-emerald-800">{payload?.dataSource?.employeeCount || 0} employees</span>
+            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-extrabold text-emerald-800">{payload?.summary.employees || 0} employees in pack</span>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <input type="month" value={period} onChange={(event) => setPeriod(event.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-800 outline-none" />
-          <button type="button" onClick={() => void load(period, role)} disabled={loading} className="inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-3 text-xs font-extrabold text-white hover:bg-blue-700 disabled:cursor-wait disabled:opacity-60">
+          <button type="button" onClick={() => void load(period, role, pack)} disabled={loading} className="inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-3 text-xs font-extrabold text-white hover:bg-blue-700 disabled:cursor-wait disabled:opacity-60">
             <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
@@ -421,6 +454,34 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
       {error && <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div>}
       {toast && <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">{toast}</div>}
       {payload?.dataSource?.warning && <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">{payload.dataSource.warning}</div>}
+
+      <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+        <p className="font-semibold text-slate-900">Dual-pack approval</p>
+        <p className="mt-1 text-xs leading-relaxed">
+          Salaried/Stipend (Permanent, Lumpsum, NYSC/IT) and Contract Daily Rate are separate runs with the same Officer → HR → Finance → CFO → MD chain.
+          Costs are split per pack. Timesheet HR acknowledgement feeds OT / daily-rate calculation; this screen is the executive pack sign-off.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {(packSummaries.length ? packSummaries : [
+            { pack: 'salaried' as PayrollPack, packLabel: 'Salaried / Stipend', run: null, summary: payload?.summary, records: [], approvalWorkflow: undefined },
+            { pack: 'daily-rate' as PayrollPack, packLabel: 'Daily Rate', run: null, summary: payload?.summary, records: [], approvalWorkflow: undefined },
+          ]).map((item) => (
+            <button
+              key={item.pack}
+              type="button"
+              onClick={() => selectPack(item.pack)}
+              className={`rounded-xl border px-4 py-2 text-left text-xs font-extrabold transition ${
+                pack === item.pack ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300'
+              }`}
+            >
+              <div>{item.packLabel}</div>
+              <div className={`mt-1 ${pack === item.pack ? 'text-blue-100' : 'text-slate-500'}`}>
+                {item.run?.status || 'Draft'} · {money(item.run?.netPay ?? item.summary?.netPay, canViewMoney)} · {number(item.run?.employeeCount ?? item.summary?.employees)} staff
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard

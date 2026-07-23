@@ -72,6 +72,7 @@ const accGrantsHrisPermission = (acc: string[], permission: HrisPermission) => {
         || hasAccPermission(acc, 'timesheet.supervisor.approve')
         || hasAccPermission(acc, 'timesheet.cost-control.approve')
         || hasAccPermission(acc, 'timesheet.project-manager.approve')
+        || hasAccPermission(acc, 'timesheet.gm-operations.approve')
         || hasAccPermission(acc, 'timesheet.hr.approve')
         || hasAccPermission(acc, 'timesheet.payroll.approve')
         || hasAccPermission(acc, 'operations.timesheets.approve')
@@ -138,12 +139,13 @@ export const resolveAccessContext = (request: Request, accPermissionsOverride?: 
 
 export const hasPermission = (context: HrisAccessContext, permission: HrisPermission) => context.permissions.includes(permission);
 
-export const hasAccTimesheetStageApprove = (acc: string[], stage: 'Supervisor' | 'Cost Control' | 'Project Manager' | 'HR' | 'Payroll') => {
+export const hasAccTimesheetStageApprove = (acc: string[], stage: 'Supervisor' | 'Cost Control' | 'Project Manager' | 'GM Operations' | 'HR' | 'Payroll') => {
   if (hasAccPermission(acc, '*')) return true;
   const stageMap: Record<typeof stage, string[]> = {
     Supervisor: ['timesheet.supervisor.approve', 'timesheet.approve', 'operations.timesheets.approve'],
     'Cost Control': ['timesheet.cost-control.approve', 'timesheet.approve', 'operations.timesheets.approve'],
     'Project Manager': ['timesheet.project-manager.approve', 'timesheet.approve', 'operations.timesheets.approve'],
+    'GM Operations': ['timesheet.gm-operations.approve', 'timesheet.approve', 'operations.timesheets.approve'],
     HR: ['timesheet.hr.approve', 'timesheet.approve', 'operations.timesheets.approve'],
     Payroll: ['timesheet.payroll.approve', 'timesheet.payroll-posting.post', 'timesheet.approve', 'operations.timesheets.approve'],
   };

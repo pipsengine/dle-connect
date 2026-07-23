@@ -38,9 +38,16 @@ const includesAny = (value: string, terms: string[]) => terms.some((term) => val
 const isSuperAdministrator = (role: string) => /\bsuper\b.*\badmin/i.test(role) || ['organizationadmin', 'hrbusinesspartner'].includes(lower(role));
 
 type ApprovalAction = 'APPROVE' | 'REJECT' | 'RETURN' | 'PROCESS_PAYROLL' | 'POST_PAYROLL';
-type ProjectApprovalStage = 'Supervisor' | 'Project Manager' | 'Cost Control' | 'HR' | 'Payroll';
+type ProjectApprovalStage = 'Supervisor' | 'Project Manager' | 'Cost Control' | 'GM Operations' | 'HR' | 'Payroll';
 type BulkMode = 'HEADER' | 'PROJECT';
-const activeApprovalStatuses = new Set<TimesheetStatus>(['Submitted', 'Supervisor_Reviewed', 'Cost_Control_Reviewed', 'Project_Manager_Reviewed', 'HR_Acknowledged']);
+const activeApprovalStatuses = new Set<TimesheetStatus>([
+  'Submitted',
+  'Supervisor_Reviewed',
+  'Project_Manager_Reviewed',
+  'Cost_Control_Reviewed',
+  'GM_Operations_Reviewed',
+  'HR_Acknowledged',
+]);
 
 export const maxDuration = 120;
 
@@ -59,9 +66,10 @@ const statusLabel = (status: TimesheetStatus) => normalizeTimesheetStatus(status
 const currentStageForStatus = (status: TimesheetStatus): TimesheetWorkflowStage | 'Payroll Processing' | 'Payroll Posted' | null => {
   const normalized = normalizeTimesheetStatus(status);
   if (normalized === 'Submitted') return 'Supervisor';
-  if (normalized === 'Supervisor_Reviewed') return 'Cost Control';
-  if (normalized === 'Cost_Control_Reviewed') return 'Project Manager';
-  if (normalized === 'Project_Manager_Reviewed') return 'HR';
+  if (normalized === 'Supervisor_Reviewed') return 'Project Manager';
+  if (normalized === 'Project_Manager_Reviewed') return 'Cost Control';
+  if (normalized === 'Cost_Control_Reviewed') return 'GM Operations';
+  if (normalized === 'GM_Operations_Reviewed') return 'HR';
   if (normalized === 'HR_Acknowledged') return 'Payroll Processing';
   if (normalized === 'Locked') return 'Payroll Posted';
   return null;
@@ -70,8 +78,9 @@ const currentStageForStatus = (status: TimesheetStatus): TimesheetWorkflowStage 
 const nextActionLabel = (status: TimesheetStatus) => {
   const stage = currentStageForStatus(status);
   if (stage === 'Supervisor') return 'Supervisor Review';
-  if (stage === 'Cost Control') return 'Cost Approve';
   if (stage === 'Project Manager') return 'Project Approve';
+  if (stage === 'Cost Control') return 'Cost Approve';
+  if (stage === 'GM Operations') return 'GM Operations Approve';
   if (stage === 'HR') return 'HR Approve';
   if (stage === 'Payroll Processing') return 'Process Payroll';
   return null;
@@ -80,7 +89,7 @@ const nextActionLabel = (status: TimesheetStatus) => {
 const roleScope = (role: string, actor: string, request?: Request) => {
   if (request?.headers.get('x-auth-global-admin') === '1') return 'enterprise';
   const text = lower(`${role} ${actor}`);
-  if (isSuperAdministrator(role) || includesAny(text, ['admin', 'hr', 'human resources', 'payroll'])) return 'enterprise';
+  if (isSuperAdministrator(role) || includesAny(text, ['admin', 'hr', 'human resources', 'payroll', 'gm operations', 'general manager', 'operations'])) return 'enterprise';
   if (includesAny(text, ['cost control', 'cost controller', 'finance'])) return 'cost-control';
   if (includesAny(text, ['project manager', 'pm '])) return 'project-manager';
   if (includesAny(text, ['supervisor', 'foreman', 'site lead'])) return 'supervisor';
@@ -103,6 +112,7 @@ const stageAccess = (stage: ProjectApprovalStage | null, actor: string, role: st
   if (stage === 'Supervisor') return includesAny(text, ['supervisor', 'foreman', 'site lead']);
   if (stage === 'Cost Control') return includesAny(text, ['cost control', 'cost controller', 'finance', 'cost']);
   if (stage === 'Project Manager') return includesAny(text, ['project manager', 'pm ']);
+  if (stage === 'GM Operations') return includesAny(text, ['gm operations', 'general manager', 'gm ', 'operations']);
   if (stage === 'HR') return includesAny(text, ['hr', 'human resources']);
   if (stage === 'Payroll') return includesAny(text, ['payroll']);
   return false;
@@ -130,6 +140,10 @@ const requireHeaderStageAccess = (header: TimesheetHeader, action: ApprovalActio
   if (stage === 'Supervisor') {
     const isAssignedSupervisor = supervisorText && (supervisorText.includes(lower(actor)) || lower(actor).includes(supervisorText));
     if (!isAssignedSupervisor && !stageAccess('Supervisor', actor, role, request, acc)) throw new Error('Only the assigned supervisor can complete supervisor review.');
+    return;
+  }
+  if (stage === 'GM Operations') {
+    if (!stageAccess('GM Operations', actor, role, request, acc)) throw new Error('Only GM Operations can approve the consolidated timesheet pack.');
     return;
   }
   if (stage === 'HR') {
@@ -165,9 +179,10 @@ const workflowSteps = (header: TimesheetHeader) => {
   const history = header.workflowHistory || [];
   return ([
     { id: 'Submitted', stage: 'Supervisor', owner: header.supervisorName, slaHours: 12 },
-    { id: 'Supervisor_Reviewed', stage: 'Cost Control', owner: 'Cost Control', slaHours: 12 },
-    { id: 'Cost_Control_Reviewed', stage: 'Project Manager', owner: header.projectManager || 'Project Managers', slaHours: 24 },
-    { id: 'Project_Manager_Reviewed', stage: 'HR', owner: 'HR', slaHours: 12 },
+    { id: 'Supervisor_Reviewed', stage: 'Project Manager', owner: header.projectManager || 'Project Managers', slaHours: 24 },
+    { id: 'Project_Manager_Reviewed', stage: 'Cost Control', owner: 'Cost Control', slaHours: 12 },
+    { id: 'Cost_Control_Reviewed', stage: 'GM Operations', owner: 'GM Operations', slaHours: 24 },
+    { id: 'GM_Operations_Reviewed', stage: 'HR', owner: 'HR', slaHours: 12 },
     { id: 'HR_Acknowledged', stage: 'Payroll Processing', owner: 'Payroll', slaHours: 24 },
     { id: 'Locked', stage: 'Payroll Posted', owner: 'Payroll', slaHours: 24 },
   ] as const).map((step) => {
@@ -217,12 +232,14 @@ const statusForWorkflowStage = (stage: string | null) => {
   switch (stage) {
     case 'Supervisor':
       return 'Submitted';
-    case 'Cost Control':
-      return 'Supervisor_Reviewed';
     case 'Project Manager':
+      return 'Supervisor_Reviewed';
+    case 'Cost Control':
+      return 'Project_Manager_Reviewed';
+    case 'GM Operations':
       return 'Cost_Control_Reviewed';
     case 'HR':
-      return 'Project_Manager_Reviewed';
+      return 'GM_Operations_Reviewed';
     case 'Payroll Processing':
       return 'HR_Acknowledged';
     default:
@@ -234,19 +251,25 @@ const buildStatsFromWorkspace = (workspaceStats: Awaited<ReturnType<typeof readT
   const statusCounts = workspaceStats.statusCounts;
   const count = (status: TimesheetStatus) => Number(statusCounts[status] || 0);
   const pendingSupervisorApproval = count('Submitted');
-  const pendingCostControlReview = count('Supervisor_Reviewed');
-  const pendingProjectManagerApproval = count('Cost_Control_Reviewed');
-  const pendingHrApproval = count('Project_Manager_Reviewed');
+  const pendingProjectManagerApproval = count('Supervisor_Reviewed');
+  const pendingCostControlReview = count('Project_Manager_Reviewed');
+  const pendingGmOperationsApproval = count('Cost_Control_Reviewed');
+  const pendingHrApproval = count('GM_Operations_Reviewed');
   const pendingPayrollProcessing = count('HR_Acknowledged');
   const payrollPosted = count('Locked');
   const returned = count('Returned');
   const rejected = count('Rejected');
-  const pendingApprovals = pendingSupervisorApproval + pendingCostControlReview + pendingProjectManagerApproval + pendingHrApproval;
+  const pendingApprovals = pendingSupervisorApproval
+    + pendingProjectManagerApproval
+    + pendingCostControlReview
+    + pendingGmOperationsApproval
+    + pendingHrApproval;
   return {
     pendingSubmission: 0,
     pendingSupervisorApproval,
     pendingCostControlReview,
     pendingProjectManagerApproval,
+    pendingGmOperationsApproval,
     pendingHrApproval,
     pendingPayrollProcessing,
     payrollReady: pendingPayrollProcessing,
@@ -328,7 +351,7 @@ const buildTimesheetSummary = (
       costCenter: project.projectCode,
       overtimeHours: round(projectLines.reduce((sum, line) => sum + Math.max(0, normalizePaidWorkHours(line.usedHours) - 8), 0)),
       labourCost: round(labourCost, 0),
-      approvalStatus: project.costControlStatus !== 'Approved' ? `Cost ${project.costControlStatus}` : `PM ${project.projectManagerStatus}`,
+      approvalStatus: project.projectManagerStatus !== 'Approved' ? `PM ${project.projectManagerStatus}` : `Cost ${project.costControlStatus}`,
     };
   });
   const totalHours = round(headerLines.reduce((sum, line) => sum + normalizePaidWorkHours(line.totalHours), 0));
@@ -514,7 +537,7 @@ const buildPayload = async (request: Request) => {
       projectManagers: Array.from(new Set(pageTimesheets.flatMap((item) => item!.projectApprovals.map((project) => project.projectManager)))).sort(),
       costCenters: Array.from(new Set(pageTimesheets.flatMap((item) => item!.projectApprovals.map((project) => project.costCenter)))).sort(),
       statuses: Array.from(new Set(Object.keys(workspaceStats.statusCounts))).sort(),
-      workflowStages: ['Supervisor', 'Cost Control', 'Project Manager', 'HR', 'Payroll Processing', 'Payroll Posted'],
+      workflowStages: ['Supervisor', 'Project Manager', 'Cost Control', 'GM Operations', 'HR', 'Payroll Processing', 'Payroll Posted'],
     },
     audit: {
       generatedBy: access.actor,
@@ -605,6 +628,18 @@ const processPayrollBatch = async (headerIds: string[], actor: string, post: boo
     await writeTimesheetHeaderLines(header, lines.filter((line) => line.headerId === header.id));
   }
 
+  if (post && touchedHeaders.length) {
+    void import('@/lib/timesheet-workflow-notifications')
+      .then(({ notifyTimesheetStageChange }) => Promise.all(
+        touchedHeaders.map((header) => notifyTimesheetStageChange({
+          header,
+          action: 'LOCK',
+          actor,
+        })),
+      ))
+      .catch((error) => console.warn('[Timesheet] Lock notification skipped:', error instanceof Error ? error.message : error));
+  }
+
   return { processed: touchedHeaders.length };
 };
 
@@ -645,11 +680,11 @@ export async function PATCH(request: Request) {
       const header = headerList.find((item) => item.id === segment.headerId);
       if (!header) throw new Error(`Timesheet ${segment.headerId} was not found.`);
       const status = normalizeTimesheetStatus(header.status);
-      if (segment.stage === 'Cost Control' && status !== 'Supervisor_Reviewed') {
-        throw new Error(`Cost Control can only approve ${segment.projectCode} while the timesheet is at Cost Control review.`);
+      if (segment.stage === 'Project Manager' && !['Supervisor_Reviewed', 'Project_Manager_Reviewed'].includes(status)) {
+        throw new Error(`Project Manager can only approve ${segment.projectCode} after supervisor review.`);
       }
-      if (segment.stage === 'Project Manager' && status !== 'Cost_Control_Reviewed') {
-        throw new Error(`Project Manager can only approve ${segment.projectCode} after Cost Control review is complete.`);
+      if (segment.stage === 'Cost Control' && !['Project_Manager_Reviewed', 'Cost_Control_Reviewed'].includes(status)) {
+        throw new Error(`Cost Control can only approve ${segment.projectCode} after Project Manager review is complete.`);
       }
     };
     const payrollHeaderIds: string[] = [];
@@ -677,7 +712,7 @@ export async function PATCH(request: Request) {
       }
     }
 
-    if (payload.projectCode && payload.stage && payload.stage !== 'HR' && payload.stage !== 'Payroll') {
+    if (payload.projectCode && payload.stage && payload.stage !== 'HR' && payload.stage !== 'Payroll' && payload.stage !== 'GM Operations' && payload.stage !== 'Supervisor') {
       if (!payload.headerId) return err(400, 'Timesheet header ID is required.');
       requireProjectSegmentSequence({ headerId: payload.headerId, projectCode: payload.projectCode, stage: payload.stage });
       requireProjectStageAccess(payload.stage, access.actor, access.role, request, livePermissions);
@@ -689,7 +724,7 @@ export async function PATCH(request: Request) {
       });
     }
 
-    const handledSingleProjectAction = Boolean(payload.projectCode && payload.stage && payload.stage !== 'HR' && payload.stage !== 'Payroll');
+    const handledSingleProjectAction = Boolean(payload.projectCode && payload.stage && payload.stage !== 'HR' && payload.stage !== 'Payroll' && payload.stage !== 'GM Operations' && payload.stage !== 'Supervisor');
     const hasHeaderAction = Boolean(payload.headerIds?.length || payload.headerId);
     if ((!payload.projectSegments?.length && !handledSingleProjectAction) || hasHeaderAction) {
       if (payload.projectSegments?.length || handledSingleProjectAction) {

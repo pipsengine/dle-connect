@@ -4,7 +4,15 @@ import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { invalidateEssPortalCache } from '@/lib/ess-portal-cache';
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
+import {
+  PAYROLL_RUN_PACKS,
+  normalizePayrollRunPack,
+  payrollRunPackShortLabel,
+  type PayrollRunPack,
+} from '@/lib/payroll-employee-classification';
 import { ensurePayrollSqlSchema, payrollJsonMirrorEnabled, payrollSqlRequired, toIso } from '@/lib/payroll-sql-schema';
+
+export type { PayrollRunPack };
 
 export type UnifiedPayrollRunStatus =
   | 'Draft'
@@ -66,6 +74,8 @@ export type UnifiedPayrollRun = {
   id: string;
   period: string;
   periodLabel: string;
+  /** Dual-pack approval: salaried/stipend vs contract daily-rate. Legacy runs default to salaried. */
+  pack: PayrollRunPack;
   status: UnifiedPayrollRunStatus;
   employeeCount: number;
   grossPay: number;
@@ -128,22 +138,40 @@ const newId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toStr
 
 const emptyState = (): PayrollRunStoreState => ({ runs: [], audit: [], snapshots: {} });
 
-const defaultRun = (run: Partial<UnifiedPayrollRun> & Pick<UnifiedPayrollRun, 'id' | 'period' | 'periodLabel'>): UnifiedPayrollRun => ({
-  status: 'Draft',
-  employeeCount: 0,
-  grossPay: 0,
-  deductions: 0,
-  netPay: 0,
-  employerCost: 0,
-  exceptionCount: 0,
-  createdAt: nowIso(),
-  createdBy: 'System',
-  updatedAt: nowIso(),
-  updatedBy: 'System',
-  artifacts: [],
-  audit: [],
-  ...run,
-});
+export const payrollRunIdForPack = (period: string, pack: PayrollRunPack) => `payroll-${period}-${pack}`;
+
+export const inferPayrollRunPackFromId = (runId: string): PayrollRunPack => {
+  const id = String(runId || '').toLowerCase();
+  if (id.endsWith('-daily-rate') || id.includes('-daily-rate')) return 'daily-rate';
+  return 'salaried';
+};
+
+export const resolvePayrollRunPack = (run: Pick<UnifiedPayrollRun, 'id' | 'pack'> | null | undefined): PayrollRunPack =>
+  normalizePayrollRunPack(run?.pack) || inferPayrollRunPackFromId(run?.id || '') || 'salaried';
+
+export const payrollRunPeriodLabelForPack = (periodLabel: string, pack: PayrollRunPack) =>
+  `${periodLabel} · ${payrollRunPackShortLabel(pack)}`;
+
+const defaultRun = (run: Partial<UnifiedPayrollRun> & Pick<UnifiedPayrollRun, 'id' | 'period' | 'periodLabel'>): UnifiedPayrollRun => {
+  const pack = normalizePayrollRunPack(run.pack) || inferPayrollRunPackFromId(run.id);
+  return {
+    status: 'Draft',
+    employeeCount: 0,
+    grossPay: 0,
+    deductions: 0,
+    netPay: 0,
+    employerCost: 0,
+    exceptionCount: 0,
+    createdAt: nowIso(),
+    createdBy: 'System',
+    updatedAt: nowIso(),
+    updatedBy: 'System',
+    artifacts: [],
+    audit: [],
+    ...run,
+    pack,
+  };
+};
 
 const parseRunJson = (raw: string): UnifiedPayrollRun | null => {
   try {
@@ -161,10 +189,14 @@ const parseRunJson = (raw: string): UnifiedPayrollRun | null => {
 
 const migrateLegacyRun = (legacy: any): UnifiedPayrollRun => {
   const stamp = legacy.updatedAt || legacy.createdAt || nowIso();
+  const rawId = String(legacy.id || `payroll-${legacy.period}`);
+  const pack = normalizePayrollRunPack(legacy.pack) || inferPayrollRunPackFromId(rawId);
+  const id = rawId === `payroll-${legacy.period}` ? payrollRunIdForPack(legacy.period, 'salaried') : rawId;
   return defaultRun({
-    id: legacy.id || `payroll-${legacy.period}`,
+    id,
     period: legacy.period,
     periodLabel: legacy.periodLabel || legacy.period,
+    pack,
     status: (legacy.status || 'Draft') as UnifiedPayrollRunStatus,
     employeeCount: Number(legacy.employeeCount || 0),
     grossPay: Number(legacy.grossPay || 0),
@@ -183,7 +215,7 @@ const migrateLegacyRun = (legacy: any): UnifiedPayrollRun => {
           user: item.actor || item.performedBy || 'Legacy Import',
           role: item.actor || 'Legacy Import',
           action: item.action || 'legacy-import',
-          record: legacy.id,
+          record: id,
           oldValue: item.from || null,
           newValue: item.to || null,
           reason: item.note || null,
@@ -432,18 +464,59 @@ export const getPayrollRun = async (runId: string) => {
   return state.runs.find((run) => run.id === runId) || null;
 };
 
-export const getPayrollRunForPeriod = async (period: string) => {
+export const listPayrollRunsForPeriod = async (period: string) => {
+  const runs = await listPayrollRuns();
+  return runs
+    .filter((run) => run.period === period)
+    .sort((a, b) => resolvePayrollRunPack(a).localeCompare(resolvePayrollRunPack(b)));
+};
+
+export const getPayrollRunForPeriod = async (period: string, pack: PayrollRunPack = 'salaried') => {
+  const targetId = payrollRunIdForPack(period, pack);
+  const byId = await getPayrollRun(targetId);
+  if (byId) return byId;
+
   const pool = await getDleEnterpriseDbPool();
   if (pool) {
     await ensurePayrollSqlSchema(pool);
     const result = await pool.request()
       .input('period_code', sql.Char(7), period)
-      .query(`SELECT TOP (1) run_json FROM [hris].[PayrollRuns] WHERE period_code = @period_code ORDER BY modified_at DESC`);
-    const run = parseRunJson(String(result.recordset[0]?.run_json || ''));
-    if (run) return run;
+      .query(`SELECT run_id, run_json FROM [hris].[PayrollRuns] WHERE period_code = @period_code ORDER BY modified_at DESC`);
+    const parsed = (result.recordset || [])
+      .map((row: { run_json?: string }) => parseRunJson(String(row.run_json || '')))
+      .filter((run: UnifiedPayrollRun | null): run is UnifiedPayrollRun => Boolean(run));
+    const match = parsed.find((run) => resolvePayrollRunPack(run) === pack);
+    if (match) return match;
+    // Legacy single run for the period → treat as salaried pack.
+    if (pack === 'salaried') {
+      const legacy = parsed.find((run) => run.id === `payroll-${period}` || !String(run.id).includes('-daily-rate'));
+      if (legacy) {
+        return defaultRun({
+          ...legacy,
+          id: targetId,
+          pack: 'salaried',
+          periodLabel: payrollRunPeriodLabelForPack(legacy.periodLabel || period, 'salaried'),
+        });
+      }
+    }
   }
+
   const state = await readState();
-  return state.runs.find((run) => run.period === period) || null;
+  const local = state.runs.filter((run) => run.period === period);
+  const match = local.find((run) => resolvePayrollRunPack(run) === pack || run.id === targetId);
+  if (match) return defaultRun({ ...match, pack: resolvePayrollRunPack(match) });
+  if (pack === 'salaried') {
+    const legacy = local.find((run) => run.id === `payroll-${period}`);
+    if (legacy) {
+      return defaultRun({
+        ...legacy,
+        id: targetId,
+        pack: 'salaried',
+        periodLabel: payrollRunPeriodLabelForPack(legacy.periodLabel || period, 'salaried'),
+      });
+    }
+  }
+  return null;
 };
 
 export const getLatestPayrollRun = async () => {
@@ -451,15 +524,33 @@ export const getLatestPayrollRun = async () => {
   return runs[0] || null;
 };
 
-export const ensurePayrollRun = async (period: string, periodLabel: string, actor: string) => {
-  const existing = await getPayrollRunForPeriod(period);
-  if (existing) return existing;
+export const ensurePayrollRun = async (
+  period: string,
+  periodLabel: string,
+  actor: string,
+  pack: PayrollRunPack = 'salaried',
+) => {
+  const existing = await getPayrollRunForPeriod(period, pack);
+  if (existing) {
+    if (!existing.pack || existing.id === `payroll-${period}`) {
+      const normalized = defaultRun({
+        ...existing,
+        id: payrollRunIdForPack(period, pack),
+        pack,
+        periodLabel: payrollRunPeriodLabelForPack(periodLabel || existing.periodLabel, pack),
+      });
+      await savePayrollRun(normalized);
+      return normalized;
+    }
+    return existing;
+  }
 
   const stamp = nowIso();
   const run = defaultRun({
-    id: `payroll-${period}`,
+    id: payrollRunIdForPack(period, pack),
     period,
-    periodLabel,
+    periodLabel: payrollRunPeriodLabelForPack(periodLabel, pack),
+    pack,
     status: 'Draft',
     createdAt: stamp,
     createdBy: actor,
@@ -475,12 +566,27 @@ export const ensurePayrollRun = async (period: string, periodLabel: string, acto
   return run;
 };
 
+export const ensurePayrollRunsForPeriod = async (period: string, periodLabel: string, actor: string) => {
+  const runs: UnifiedPayrollRun[] = [];
+  for (const pack of PAYROLL_RUN_PACKS) {
+    runs.push(await ensurePayrollRun(period, periodLabel, actor, pack));
+  }
+  return runs;
+};
+
 export const savePayrollRun = async (run: UnifiedPayrollRun) => {
-  const next = { ...run, updatedAt: nowIso() };
+  const pack = resolvePayrollRunPack(run);
+  const next = {
+    ...run,
+    pack,
+    id: run.id.startsWith(`payroll-${run.period}`) ? run.id : payrollRunIdForPack(run.period, pack),
+    periodLabel: run.periodLabel.includes('·') ? run.periodLabel : payrollRunPeriodLabelForPack(run.periodLabel, pack),
+    updatedAt: nowIso(),
+  };
   await persistRunToSql(next);
   if (payrollJsonMirrorEnabled()) {
     const state = await readStateFromJson();
-    const index = state.runs.findIndex((item) => item.id === next.id || item.period === next.period);
+    const index = state.runs.findIndex((item) => item.id === next.id);
     if (index >= 0) state.runs[index] = next;
     else state.runs.unshift(next);
     await writeStateToJson(state);

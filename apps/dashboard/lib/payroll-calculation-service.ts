@@ -270,6 +270,119 @@ export const groupPayrollCalculationRecords = (records: PayrollCalculationRecord
     .map((item) => ({ ...item, grossPay: roundMoney(item.grossPay), netPay: roundMoney(item.netPay) }))
     .sort((a, b) => b.grossPay - a.grossPay);
 
+/** Split a full-period calculation into a salaried or daily-rate pack (cost totals follow the filtered set). */
+export const filterPayrollCalculationByPack = (
+  calculation: PayrollCalculationResult,
+  pack: import('@/lib/payroll-employee-classification').PayrollRunPack,
+): PayrollCalculationResult => {
+  const records = calculation.records.filter((record) => (pack === 'daily-rate' ? record.isDailyRate : !record.isDailyRate));
+  const ready = records.filter((record) => record.status === 'Ready');
+  const review = records.filter((record) => record.status === 'Review');
+  const blocked = records.filter((record) => record.status === 'Blocked');
+  const readiness = summarizePayrollReadiness(records);
+  const exceptionCount = records.reduce((sum, record) => sum + Number(record.exceptionCount || 0), 0);
+  const deferredExceptionCount = records.reduce((sum, record) => sum + Number(record.deferredWarnings?.length || 0), 0);
+  const totals = records.reduce(
+    (sum, record) => ({
+      basePay: sum.basePay + Number(record.basePay || 0),
+      allowances: sum.allowances + Number(record.allowances || 0),
+      grossPay: sum.grossPay + Number(record.grossPay || 0),
+      deductions: sum.deductions + Number(record.totalDeductions || 0),
+      netPay: sum.netPay + Number(record.netPay || 0),
+      employerCost: sum.employerCost + Number(record.employerCost || 0),
+      sageGrossPay: sum.sageGrossPay + Number(record.sageActual?.grossPay || 0),
+      sageNetPay: sum.sageNetPay + Number(record.sageActual?.netPay || 0),
+      paye: sum.paye + Number(record.paye || 0),
+      pensionEmployee: sum.pensionEmployee + Number(record.pensionEmployee || 0),
+      pensionEmployer: sum.pensionEmployer + Number(record.pensionEmployer || 0),
+      statutoryEmployee: sum.statutoryEmployee + Number(record.statutoryEmployee || 0),
+      statutoryEmployer: sum.statutoryEmployer + Number(record.statutoryEmployer || 0),
+      loanRecovery: sum.loanRecovery + Number(record.loanRecovery || 0),
+    }),
+    {
+      basePay: 0,
+      allowances: 0,
+      grossPay: 0,
+      deductions: 0,
+      netPay: 0,
+      employerCost: 0,
+      sageGrossPay: 0,
+      sageNetPay: 0,
+      paye: 0,
+      pensionEmployee: 0,
+      pensionEmployer: 0,
+      statutoryEmployee: 0,
+      statutoryEmployer: 0,
+      loanRecovery: 0,
+    },
+  );
+  const component = (componentId: string, label: string, amount: number, tone: PayrollTone, payer: 'Employee' | 'Employer' | 'Both') =>
+    ({ id: componentId, label, amount: roundMoney(amount), tone, payer });
+  const packLabel = pack === 'daily-rate' ? 'Contract Daily Rate' : 'Salaried / Stipend';
+  return {
+    ...calculation,
+    periodLabel: `${calculation.periodLabel} · ${packLabel}`,
+    summary: {
+      ...calculation.summary,
+      employees: records.length,
+      payrollEligible: records.length,
+      ready: ready.length,
+      review: review.length,
+      blocked: blocked.length,
+      readyEmployees: ready.length,
+      reviewEmployees: review.length,
+      blockedEmployees: blocked.length,
+      readinessReadyEmployees: readiness.readinessReadyEmployees,
+      readinessAwaitingTimesheetEmployees: readiness.readinessAwaitingTimesheetEmployees,
+      readinessReviewEmployees: readiness.readinessReviewEmployees,
+      readinessBlockedEmployees: readiness.readinessBlockedEmployees,
+      basePay: roundMoney(totals.basePay),
+      allowances: roundMoney(totals.allowances),
+      grossPay: roundMoney(totals.grossPay),
+      totalDeductions: roundMoney(totals.deductions),
+      deductions: roundMoney(totals.deductions),
+      netPay: roundMoney(totals.netPay),
+      employerCost: roundMoney(totals.employerCost),
+      sageGrossPay: roundMoney(totals.sageGrossPay),
+      sageNetPay: roundMoney(totals.sageNetPay),
+      grossVariance: roundMoney(totals.sageGrossPay - totals.grossPay),
+      netVariance: roundMoney(totals.sageNetPay - totals.netPay),
+      exceptionCount,
+      deferredExceptionCount,
+      averageDeductionRatio: totals.grossPay > 0 ? roundMoney(totals.deductions / totals.grossPay) : 0,
+      payrollCoveragePct: records.length
+        ? Math.round((records.filter((record) => record.setupAssignedToPayroll).length / records.length) * 1000) / 10
+        : 0,
+    },
+    records,
+    breakdowns: {
+      byPayrollGroup: groupPayrollCalculationRecords(records, 'payrollGroup'),
+      byDepartment: groupPayrollCalculationRecords(records, 'department').slice(0, 12),
+      byEmploymentType: groupPayrollCalculationRecords(records, 'employmentType'),
+      byComponent: [
+        component('paye', 'PAYE', totals.paye, 'violet', 'Employee'),
+        component('pension-employee', 'Employee Pension', totals.pensionEmployee, 'blue', 'Employee'),
+        component('statutory-employee', 'NHF/Statutory Employee', totals.statutoryEmployee, 'cyan', 'Employee'),
+        component('loan', 'Loan Recovery', totals.loanRecovery, 'amber', 'Employee'),
+        component('pension-employer', 'Employer Pension', totals.pensionEmployer, 'green', 'Employer'),
+        component('statutory-employer', 'NSITF/ITF Employer', totals.statutoryEmployer, 'slate', 'Employer'),
+      ],
+    },
+    controls: [
+      ...calculation.controls.filter((item) => item.id !== 'pack-split'),
+      {
+        id: 'pack-split',
+        label: 'Payroll Pack',
+        status: packLabel,
+        detail: pack === 'daily-rate'
+          ? 'Contract daily-rate staff only. Cost driven by approved timesheet days × rate. Same approval chain as salaried pack.'
+          : 'Permanent, lumpsum, NYSC/IT and other non–daily-rate staff. Timesheet PROCESS/POST feeds OT separately; this pack uses salary/stipend profiles.',
+        tone: pack === 'daily-rate' ? 'amber' : 'blue',
+      },
+    ],
+  };
+};
+
 const PAYROLL_CALC_CACHE_TTL_MS = Number(process.env.HRIS_PAYROLL_CALC_CACHE_MS || 300000);
 const PAYROLL_CONFIG_CACHE_MS = Number(process.env.HRIS_PAYROLL_CONFIG_CACHE_MS || 300000);
 const payrollCalculationCache = new Map<string, {
@@ -501,28 +614,29 @@ export const buildPayrollCalculationFromSnapshot = async (period: string, snapsh
 
 export const calculatePayrollForPeriod = async (
   requestedPeriod: string,
-  options?: { forceRefresh?: boolean },
+  options?: { forceRefresh?: boolean; pack?: import('@/lib/payroll-employee-classification').PayrollRunPack },
 ): Promise<PayrollCalculationResult> => {
   const cacheKey = `${requestedPeriod}:${adjustmentsFileMtime()}`;
   const cached = payrollCalculationCache.get(requestedPeriod);
+  let full: PayrollCalculationResult;
   if (!options?.forceRefresh && cached?.result && cached.key === cacheKey && cached.expiresAt > Date.now()) {
-    return cached.result;
-  }
-  if (!options?.forceRefresh && cached?.inFlight && cached.key === cacheKey) {
-    return cached.inFlight;
-  }
-
-  const inFlight = computePayrollForPeriod(requestedPeriod).then((result) => {
-    payrollCalculationCache.set(requestedPeriod, {
-      key: cacheKey,
-      expiresAt: Date.now() + PAYROLL_CALC_CACHE_TTL_MS,
-      result,
+    full = cached.result;
+  } else if (!options?.forceRefresh && cached?.inFlight && cached.key === cacheKey) {
+    full = await cached.inFlight;
+  } else {
+    const inFlight = computePayrollForPeriod(requestedPeriod).then((result) => {
+      payrollCalculationCache.set(requestedPeriod, {
+        key: cacheKey,
+        expiresAt: Date.now() + PAYROLL_CALC_CACHE_TTL_MS,
+        result,
+      });
+      return result;
     });
-    return result;
-  });
-
-  payrollCalculationCache.set(requestedPeriod, { key: cacheKey, expiresAt: 0, inFlight });
-  return inFlight;
+    payrollCalculationCache.set(requestedPeriod, { key: cacheKey, expiresAt: 0, inFlight });
+    full = await inFlight;
+  }
+  if (options?.pack) return filterPayrollCalculationByPack(full, options.pack);
+  return full;
 };
 
 export const invalidatePayrollCalculationCache = (period?: string) => {

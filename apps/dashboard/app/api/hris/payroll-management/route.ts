@@ -507,7 +507,7 @@ export async function POST(request: Request) {
     if (action === 'cfo-approve' && !processingPerms.canApproveCfo) return jsonErr(403, 'CFO approval permission denied');
     if (action === 'md-ceo-approve' && !processingPerms.canApproveMdCeo) return jsonErr(403, 'MD / CEO approval permission denied');
     if (action === 'approve-run' && !perms.canApprove) return jsonErr(403, 'Permission denied');
-    if (['reject-run', 'request-revision'].includes(action) && !processingPerms.canApproveHrManager && !processingPerms.canApproveFinanceManager && !processingPerms.canApproveCfo) {
+    if (['reject-run', 'request-revision'].includes(action) && !processingPerms.canReject) {
       return jsonErr(403, 'Reject/revision permission denied');
     }
     if (['validate-payroll', 'create-run', 'submit-run', 'release-run', 'generate-payslips', 'create-period', 'open-period'].includes(action) && !perms.canManageRun) return jsonErr(403, 'Permission denied');
@@ -517,8 +517,21 @@ export async function POST(request: Request) {
 
     try {
       const origin = resolveWorkflowLinkOriginFromRequest(request);
-      const result = await executePayrollWorkflowAction({ action, period, actor, role, reason: reason || undefined, comment: comment || undefined, ip, paymentDate: body.paymentDate || null, isGlobalAdmin, baseUrl: origin });
-      return jsonOk({ run: result.run });
+      const result = await executePayrollWorkflowAction({
+        action,
+        period,
+        pack: compact(body.pack) || null,
+        runId: compact(body.runId) || null,
+        actor,
+        role,
+        reason: reason || undefined,
+        comment: comment || undefined,
+        ip,
+        paymentDate: body.paymentDate || null,
+        isGlobalAdmin,
+        baseUrl: origin,
+      });
+      return jsonOk({ run: result.run, runs: (result as { runs?: typeof result.run[] }).runs });
     } catch (error) {
       return jsonErr(/permission|cannot|blocked|requires|not found|unsupported/i.test(error instanceof Error ? error.message : '') ? 409 : 500, error instanceof Error ? error.message : 'Unable to complete payroll action.');
     }

@@ -24,13 +24,14 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const period = url.searchParams.get('period') || (await getActivePayrollPeriod());
-    const payload = await buildProcessingPayload(request, period);
+    const pack = url.searchParams.get('pack');
+    const payload = await buildProcessingPayload(request, period, pack);
     if (url.searchParams.get('format') === 'csv') {
       if (!payload.permissions.canExport) return err(403, 'Permission denied');
       return new Response(csv(payload.records), {
         headers: {
           'content-type': 'text/csv; charset=utf-8',
-          'content-disposition': `attachment; filename="payroll-processing-${period}.csv"`,
+          'content-disposition': `attachment; filename="payroll-processing-${period}-${payload.pack || 'salaried'}.csv"`,
         },
       });
     }
@@ -47,6 +48,8 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const action = normalizePayrollApprovalAction(compact(body.action));
     const period = compact(body.period) || (await getActivePayrollPeriod());
+    const pack = compact(body.pack) || null;
+    const runId = compact(body.runId) || null;
     const note = compact(body.note);
     const reason = compact(body.reason);
     const origin = resolveWorkflowLinkOriginFromRequest(request);
@@ -69,6 +72,8 @@ export async function POST(request: Request) {
     const result = await executePayrollWorkflowAction({
       action: action === 'submit' ? 'submit-run' : action,
       period,
+      pack,
+      runId,
       actor,
       role,
       reason: reason || undefined,
@@ -84,6 +89,7 @@ export async function POST(request: Request) {
         id: result.run.id,
         period: result.run.period,
         periodLabel: result.run.periodLabel,
+        pack: result.run.pack,
         status: result.run.status,
         employeeCount: result.run.employeeCount,
         grossPay: result.run.grossPay,
@@ -96,6 +102,7 @@ export async function POST(request: Request) {
         updatedAt: result.run.updatedAt,
         updatedBy: result.run.updatedBy,
       },
+      runs: (result as { runs?: typeof result.run[] }).runs || undefined,
     });
   } catch (error) {
     return err(error instanceof Error && /permission|cannot|blocked|requires/i.test(error.message) ? 409 : 500, error instanceof Error ? error.message : 'Unable to update payroll run.');

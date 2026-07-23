@@ -1113,7 +1113,7 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
     productivityPct: lines.reduce((sum, l) => sum + normalizePaidWorkHours(l.totalHours), 0) > 0 
       ? round1((lines.reduce((sum, l) => sum + normalizePaidWorkHours(l.usedHours), 0) / lines.reduce((sum, l) => sum + normalizePaidWorkHours(l.totalHours), 0)) * 100)
       : 0,
-    pendingApprovals: headers.filter((h) => ['Submitted', 'Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed'].includes(h.status)).length,
+    pendingApprovals: headers.filter((h) => ['Submitted', 'Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed', 'GM_Operations_Reviewed'].includes(h.status)).length,
   };
 
   return {
@@ -1162,7 +1162,7 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
       shifts: TIMESHEET_SHIFT_LABELS,
       businessUnits: [],
       modes: ['Supervisor Entry'],
-      statuses: ['Draft', 'Submitted', 'Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed', 'HR_Acknowledged', 'Rejected', 'Returned', 'Locked'],
+      statuses: ['Draft', 'Submitted', 'Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed', 'GM_Operations_Reviewed', 'HR_Acknowledged', 'Rejected', 'Returned', 'Locked'],
       supervisorDirectory,
     },
     matrixColumns: activeProjects.slice(0, 4).map(p => ({ code: p.code, label: p.code, kind: 'project' })),
@@ -1208,7 +1208,7 @@ const requireApprovalActionAccess = (header: TimesheetHeader, actor: string, rol
   if (isSuperAdministrator(role)) return;
   const status = normalizeTimesheetStatus(header.status);
   const combined = lowerText(`${actor} ${role}`);
-  if (!['Submitted', 'Cost_Control_Reviewed'].includes(status)) {
+  if (!['Submitted', 'Cost_Control_Reviewed', 'GM_Operations_Reviewed'].includes(status)) {
     throw new Error('This workflow stage requires project-level approval. Only the Super Administrator can approve all levels at once.');
   }
   if (status === 'Submitted') {
@@ -1219,7 +1219,10 @@ const requireApprovalActionAccess = (header: TimesheetHeader, actor: string, rol
       throw new Error('Only the assigned supervisor can complete supervisor review.');
     }
   }
-  if (status === 'Cost_Control_Reviewed' && !includesAny(combined, ['hr', 'human resources', 'payroll'])) {
+  if (status === 'Cost_Control_Reviewed' && !includesAny(combined, ['gm operations', 'general manager', 'gm ', 'operations', 'admin'])) {
+    throw new Error('Only GM Operations can approve the consolidated timesheet pack.');
+  }
+  if (status === 'GM_Operations_Reviewed' && !includesAny(combined, ['hr', 'human resources', 'payroll'])) {
     throw new Error('Only HR or Payroll can acknowledge a fully approved timesheet for payroll.');
   }
 };
@@ -1576,6 +1579,16 @@ export async function PATCH(request: Request) {
       }
 
       await writeTimesheetHeaderLines(header, persistCheck.lines);
+      if (action === 'SUBMIT') {
+        void import('@/lib/timesheet-workflow-notifications')
+          .then(({ notifyTimesheetStageChange }) => notifyTimesheetStageChange({
+            header,
+            action: 'SUBMIT',
+            actor,
+            comment: payload.reviewerNote,
+          }))
+          .catch((error) => console.warn('[Timesheet] Submit notification skipped:', error instanceof Error ? error.message : error));
+      }
       return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName, mode));
     }
 

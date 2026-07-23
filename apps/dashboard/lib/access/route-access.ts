@@ -230,6 +230,7 @@ export const hrisRoutePermissionOptions = (pathname: string): string[] | null =>
       'timesheet.supervisor.approve',
       'timesheet.cost-control.approve',
       'timesheet.project-manager.approve',
+      'timesheet.gm-operations.approve',
       'timesheet.hr.approve',
       'timesheet.payroll.approve',
       'operations.timesheets.approve',

@@ -6,13 +6,22 @@ import {
 } from '@/lib/payroll-calculation-service';
 import { getActivePayrollPeriod, listPayrollPeriods, payrollPeriodLabel } from '@/lib/payroll-period-store';
 import {
+  ensurePayrollRunsForPeriod,
   getPayrollRunForPeriod,
   listPayrollAudit,
   listPayrollRuns,
+  listPayrollRunsForPeriod,
   readPayrollSnapshot,
+  resolvePayrollRunPack,
+  type PayrollRunPack,
   type PayrollRunSnapshot,
   type UnifiedPayrollRun,
 } from '@/lib/payroll-run-store';
+import {
+  PAYROLL_RUN_PACKS,
+  normalizePayrollRunPack,
+  payrollRunPackShortLabel,
+} from '@/lib/payroll-employee-classification';
 import {
   summarizePayrollReadiness,
 } from '@/lib/payroll-readiness';
@@ -116,6 +125,7 @@ const refreshCalculationFromRecords = (
 
 const resolvePeriodCalculation = async (period: string, run: UnifiedPayrollRun | null, periodRecord: { status: string } | null) => {
   const payrollComputed = isPayrollComputed(run, periodRecord);
+  const pack = run ? resolvePayrollRunPack(run) : undefined;
 
   if (payrollComputed && run) {
     const snapshot = await readPayrollSnapshot(run.id);
@@ -125,7 +135,7 @@ const resolvePeriodCalculation = async (period: string, run: UnifiedPayrollRun |
     }
   }
 
-  const live = await calculatePayrollForPeriod(period);
+  const live = await calculatePayrollForPeriod(period, pack ? { pack } : undefined);
   const normalizedLive = refreshCalculationFromRecords(live, reapplyPayrollValidationPolicy(live.records, live.toleranceMode));
 
   if (!payrollComputed) {
@@ -144,6 +154,7 @@ const resolvePeriodCalculation = async (period: string, run: UnifiedPayrollRun |
           deductions: roundMoney(run.deductions),
           totalDeductions: roundMoney(run.deductions),
           netPay: roundMoney(run.netPay),
+          employerCost: roundMoney(run.employerCost),
           payrollEligible: run.employeeCount || live.summary.payrollEligible,
         },
       },
@@ -161,6 +172,8 @@ const mapRunForProcessing = (run: Awaited<ReturnType<typeof getPayrollRunForPeri
         id: run.id,
         period: run.period,
         periodLabel: run.periodLabel,
+        pack: resolvePayrollRunPack(run),
+        packLabel: payrollRunPackShortLabel(resolvePayrollRunPack(run)),
         status: run.status,
         employeeCount: run.employeeCount,
         grossPay: run.grossPay,
@@ -200,29 +213,36 @@ const knownPayrollPeriods = async (runs: Awaited<ReturnType<typeof listPayrollRu
     .filter(Boolean)
     .sort((a, b) => b.localeCompare(a))
     .map((period) => {
-      const run = runs.find((item) => item.period === period);
+      const periodRuns = runs.filter((item) => item.period === period);
+      const run = periodRuns.find((item) => resolvePayrollRunPack(item) === 'salaried') || periodRuns[0];
       const periodRecord = periodState.periods.find((item) => item.period === period);
       return {
         period,
         periodLabel: payrollPeriodLabel(period),
         status: run?.status || periodRecord?.status || 'Draft',
-        employeeCount: run?.employeeCount || 0,
-        netPay: run?.netPay || 0,
+        employeeCount: periodRuns.reduce((sum, item) => sum + Number(item.employeeCount || 0), 0),
+        netPay: periodRuns.reduce((sum, item) => sum + Number(item.netPay || 0), 0),
+        packs: periodRuns.map((item) => ({
+          pack: resolvePayrollRunPack(item),
+          status: item.status,
+          netPay: item.netPay,
+          employeeCount: item.employeeCount,
+        })),
       };
     });
 };
 
-export const buildProcessingPayload = async (request: Request, requestedPeriod?: string) => {
-  const { role, processingPerms } = await payrollSessionContext(request);
-  const perms = processingPerms;
-  const period = requestedPeriod || (await getActivePayrollPeriod());
-  const [calculation, runs, run] = await Promise.all([
-    calculatePayrollForPeriod(period),
-    listPayrollRuns(),
-    getPayrollRunForPeriod(period),
-  ]);
+const buildPackPayload = async (
+  period: string,
+  pack: PayrollRunPack,
+  run: UnifiedPayrollRun | null,
+  periodRecord: { status: string } | null,
+  canViewMoney: boolean,
+) => {
+  const scopedRun = run ? { ...run, pack: resolvePayrollRunPack(run) } : null;
+  const { calculation, dataMode, payrollComputed } = await resolvePeriodCalculation(period, scopedRun, periodRecord);
 
-  const summary = perms.canViewMoney
+  const summary = canViewMoney
     ? calculation.summary
     : {
         ...calculation.summary,
@@ -240,51 +260,107 @@ export const buildProcessingPayload = async (request: Request, requestedPeriod?:
         averageDeductionRatio: null,
       };
 
-  const records = perms.canViewMoney ? calculation.records : maskPayrollCalculationRecords(calculation.records);
-  const byGroup = calculation.breakdowns.byPayrollGroup.map((item) =>
-    perms.canViewMoney ? item : { ...item, grossPay: null, netPay: null },
+  return {
+    pack,
+    packLabel: payrollRunPackShortLabel(pack),
+    run: mapRunForProcessing(scopedRun),
+    dataMode,
+    payrollComputed,
+    summary,
+    records: canViewMoney ? calculation.records : maskPayrollCalculationRecords(calculation.records),
+    breakdowns: {
+      byPayrollGroup: calculation.breakdowns.byPayrollGroup.map((item) =>
+        canViewMoney ? item : { ...item, grossPay: null, netPay: null },
+      ),
+      byComponent: canViewMoney ? calculation.breakdowns.byComponent : [],
+    },
+    controls: calculation.controls,
+    approvalWorkflow: {
+      stageLabel: resolvePayrollApprovalStageLabel(scopedRun),
+      nextOwner: resolvePayrollApprovalNextOwner(scopedRun),
+      stages: getPayrollApprovalStageState(scopedRun),
+      currentOwnerHint: resolvePayrollApprovalNextOwner(scopedRun),
+    },
+  };
+};
+
+export const buildProcessingPayload = async (
+  request: Request,
+  requestedPeriod?: string,
+  requestedPack?: string | null,
+) => {
+  const { role, processingPerms } = await payrollSessionContext(request);
+  const perms = processingPerms;
+  const period = requestedPeriod || (await getActivePayrollPeriod());
+  const pack = normalizePayrollRunPack(requestedPack) || 'salaried';
+  const periodState = await listPayrollPeriods();
+  const periodRecord = periodState.periods.find((item) => item.period === period) || null;
+
+  const [fullCalculation, runs, periodPackRuns] = await Promise.all([
+    calculatePayrollForPeriod(period),
+    listPayrollRuns(),
+    listPayrollRunsForPeriod(period),
+  ]);
+
+  let packRuns = periodPackRuns;
+  if (!packRuns.length) {
+    packRuns = await ensurePayrollRunsForPeriod(period, payrollPeriodLabel(period), 'System');
+  }
+
+  const packPayloads = await Promise.all(
+    PAYROLL_RUN_PACKS.map(async (itemPack) => {
+      const packRun = packRuns.find((item) => resolvePayrollRunPack(item) === itemPack) || null;
+      return buildPackPayload(period, itemPack, packRun, periodRecord, perms.canViewMoney);
+    }),
   );
+  const activePack = packPayloads.find((item) => item.pack === pack) || packPayloads[0];
 
   return {
-    generatedAt: calculation.generatedAt,
-    source: calculation.source,
-    dataSource: calculation.dataSource,
-    enterpriseSourceActive: calculation.enterpriseSourceActive,
+    generatedAt: fullCalculation.generatedAt,
+    source: fullCalculation.source,
+    dataSource: fullCalculation.dataSource,
+    enterpriseSourceActive: fullCalculation.enterpriseSourceActive,
     period,
-    periodLabel: calculation.periodLabel,
+    periodLabel: payrollPeriodLabel(period),
+    pack: activePack.pack,
+    packLabel: activePack.packLabel,
     role,
     permissions: perms,
-    run: mapRunForProcessing(run),
-    runs: runs.slice(0, 12).map((item) => mapRunForProcessing(item)).filter(Boolean),
+    run: activePack.run,
+    runs: runs.slice(0, 24).map((item) => mapRunForProcessing(item)).filter(Boolean),
+    packRuns: packPayloads.map((item) => item.run).filter(Boolean),
+    packs: packPayloads,
     availablePeriods: await knownPayrollPeriods(runs, period),
-    configurations: calculation.configurations,
-    summary,
-    records,
-    breakdowns: {
-      byPayrollGroup: byGroup,
-      byComponent: perms.canViewMoney ? calculation.breakdowns.byComponent : [],
-    },
+    configurations: fullCalculation.configurations,
+    summary: activePack.summary,
+    records: activePack.records,
+    breakdowns: activePack.breakdowns,
     controls: [
-      ...calculation.controls,
+      ...activePack.controls,
       {
         id: 'approval',
         label: 'Segregated Approval',
-        status: run?.status || 'Draft',
-        detail: 'HR Manager → Finance Manager → CFO → MD/CEO sequential sign-off with authenticated email notifications.',
-        tone: run?.status === 'Posted' || run?.status === 'Locked' || run?.status === 'Approved' ? 'green' : 'violet',
+        status: activePack.run?.status || 'Draft',
+        detail: `HR Manager → Finance Manager → CFO → MD/CEO for ${activePack.packLabel}. Timesheet HR ack feeds OT/daily-rate; this run approval is the executive pack sign-off.`,
+        tone: activePack.run?.status === 'Posted' || activePack.run?.status === 'Locked' || activePack.run?.status === 'Approved' ? 'green' : 'violet',
+      },
+      {
+        id: 'dual-pack',
+        label: 'Dual payroll packs',
+        status: 'Split cost',
+        detail: 'Salaried/Stipend and Contract Daily Rate are separate runs with the same approval chain and independent cost totals.',
+        tone: 'cyan',
       },
     ],
-    approvalWorkflow: {
-      stageLabel: resolvePayrollApprovalStageLabel(run),
-      nextOwner: resolvePayrollApprovalNextOwner(run),
-      stages: getPayrollApprovalStageState(run),
-    },
+    approvalWorkflow: activePack.approvalWorkflow,
   };
 };
 
 const mapManagementRun = (item: Awaited<ReturnType<typeof listPayrollRuns>>[number]) => ({
   id: item.id,
   period: item.period,
+  pack: resolvePayrollRunPack(item),
+  packLabel: payrollRunPackShortLabel(resolvePayrollRunPack(item)),
   status: item.status,
   employeeCount: item.employeeCount,
   grossPay: item.grossPay,
@@ -330,11 +406,17 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
   const salaryReviewAccess = !fullPayrollAccess && hasPayrollSalaryReviewAccess(permissions || []);
   const periodState = await listPayrollPeriods();
   const period = requestedPeriod || periodState.activePeriod || (await getActivePayrollPeriod());
-  const [runs, run, auditTrail] = await Promise.all([listPayrollRuns(), getPayrollRunForPeriod(period), listPayrollAudit(50)]);
+  const [runs, periodPackRuns, auditTrail] = await Promise.all([
+    listPayrollRuns(),
+    listPayrollRunsForPeriod(period),
+    listPayrollAudit(50),
+  ]);
   const periodRecord = periodState.periods.find((item) => item.period === period) || null;
-  const { calculation, dataMode, payrollComputed } = await resolvePeriodCalculation(period, run, periodRecord);
-  const currentRun = run && run.period === period ? mapManagementRun(run) : null;
+  const salariedRun = periodPackRuns.find((item) => resolvePayrollRunPack(item) === 'salaried') || (await getPayrollRunForPeriod(period, 'salaried'));
+  const { calculation, dataMode, payrollComputed } = await resolvePeriodCalculation(period, salariedRun, periodRecord);
+  const currentRun = salariedRun && salariedRun.period === period ? mapManagementRun(salariedRun) : null;
   const mappedRuns = runs.map(mapManagementRun);
+  const packRuns = periodPackRuns.map(mapManagementRun);
   const records = perms.canViewMoney ? calculation.records : maskPayrollCalculationRecords(calculation.records);
   const exceptions = calculation.records
     .filter((record) => record.exceptionCount > 0)
@@ -379,13 +461,21 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
         }
       : null,
     periods: periodState.periods.map((item) => {
-      const periodRun = runs.find((row) => row.period === item.period);
+      const itemPackRuns = runs.filter((row) => row.period === item.period);
+      const periodRun = itemPackRuns.find((row) => resolvePayrollRunPack(row) === 'salaried') || itemPackRuns[0];
       return {
         period: item.period,
         periodLabel: item.periodLabel,
         status: item.status,
         runStatus: periodRun?.status || null,
         runId: periodRun?.id || null,
+        packs: itemPackRuns.map((row) => ({
+          pack: resolvePayrollRunPack(row),
+          status: row.status,
+          netPay: row.netPay,
+          employeeCount: row.employeeCount,
+          runId: row.id,
+        })),
         isActive: item.period === periodState.activePeriod,
         paymentDate: item.paymentDate,
         openedAt: item.openedAt,
@@ -416,6 +506,7 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
     toleranceMode: calculation.toleranceMode,
     enterpriseSourceActive: calculation.enterpriseSourceActive,
     currentRun,
+    packRuns,
     runs: mappedRuns.sort((a, b) => {
       if (a.period === period) return -1;
       if (b.period === period) return 1;
