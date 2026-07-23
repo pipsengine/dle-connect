@@ -39,7 +39,7 @@ import {
   PAYROLL_ATTENDANCE_SHEET_COLUMNS,
   payrollAttendanceSheetToExcelRows,
   type PayrollAttendanceSheetRow,
-} from '@/lib/timesheet-payroll-attendance-sheet';
+} from '@/lib/timesheet-payroll-attendance-sheet-shared';
 import type { MissingTimesheetDay } from '@/lib/timesheet-recapture-shared';
 import { TIMESHEET_RECAPTURE_GUIDE } from '@/lib/timesheet-recapture-shared';
 
