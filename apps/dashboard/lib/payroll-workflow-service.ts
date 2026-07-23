@@ -71,7 +71,7 @@ type WorkflowInput = {
 const nowIso = () => new Date().toISOString();
 
 const syncRunTotals = (run: UnifiedPayrollRun, summary: Awaited<ReturnType<typeof calculatePayrollForPeriod>>['summary']) => {
-  run.employeeCount = summary.payrollEligible;
+  run.employeeCount = summary.payrollEligible || summary.employees || 0;
   run.grossPay = summary.grossPay;
   run.deductions = summary.deductions;
   run.netPay = summary.netPay;

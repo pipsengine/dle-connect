@@ -123,9 +123,14 @@ const refreshCalculationFromRecords = (
   };
 };
 
-const resolvePeriodCalculation = async (period: string, run: UnifiedPayrollRun | null, periodRecord: { status: string } | null) => {
+const resolvePeriodCalculation = async (
+  period: string,
+  run: UnifiedPayrollRun | null,
+  periodRecord: { status: string } | null,
+  packOverride?: PayrollRunPack | null,
+) => {
   const payrollComputed = isPayrollComputed(run, periodRecord);
-  const pack = run ? resolvePayrollRunPack(run) : undefined;
+  const pack = packOverride || (run ? resolvePayrollRunPack(run) : undefined);
 
   if (payrollComputed && run) {
     const snapshot = await readPayrollSnapshot(run.id);
@@ -156,6 +161,7 @@ const resolvePeriodCalculation = async (period: string, run: UnifiedPayrollRun |
           netPay: roundMoney(run.netPay),
           employerCost: roundMoney(run.employerCost),
           payrollEligible: run.employeeCount || live.summary.payrollEligible,
+          employees: run.employeeCount || live.summary.employees,
         },
       },
       dataMode: 'run-header' as const,
@@ -239,8 +245,8 @@ const buildPackPayload = async (
   periodRecord: { status: string } | null,
   canViewMoney: boolean,
 ) => {
-  const scopedRun = run ? { ...run, pack: resolvePayrollRunPack(run) } : null;
-  const { calculation, dataMode, payrollComputed } = await resolvePeriodCalculation(period, scopedRun, periodRecord);
+  const scopedRun = run ? { ...run, pack: resolvePayrollRunPack(run) || pack } : null;
+  const { calculation, dataMode, payrollComputed } = await resolvePeriodCalculation(period, scopedRun, periodRecord, pack);
 
   const summary = canViewMoney
     ? calculation.summary
@@ -303,7 +309,11 @@ export const buildProcessingPayload = async (
   ]);
 
   let packRuns = periodPackRuns;
-  if (!packRuns.length) {
+  // Always ensure both salaried + daily-rate runs exist (legacy periods often only have one).
+  const missingPack = PAYROLL_RUN_PACKS.some(
+    (itemPack) => !packRuns.some((item) => resolvePayrollRunPack(item) === itemPack),
+  );
+  if (!packRuns.length || missingPack) {
     packRuns = await ensurePayrollRunsForPeriod(period, payrollPeriodLabel(period), 'System');
   }
 

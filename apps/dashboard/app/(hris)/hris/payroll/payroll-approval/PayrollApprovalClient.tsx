@@ -461,6 +461,11 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
           Salaried/Stipend (Permanent, Lumpsum, NYSC/IT) and Contract Daily Rate are separate runs with the same Officer → HR → Finance → CFO → MD chain.
           Costs are split per pack. Timesheet HR acknowledgement feeds OT / daily-rate calculation; this screen is the executive pack sign-off.
         </p>
+        {packSummaries.some((item) => item.run?.status === 'Draft' || !item.run) && packSummaries.some((item) => item.run && !['Draft', 'Open'].includes(item.run.status)) ? (
+          <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-950">
+            One pack is still Draft. Open Payroll Processing and run Calculate / Create Run for this period (processes both packs). Then refresh this approval screen.
+          </p>
+        ) : null}
         <div className="mt-3 flex flex-wrap gap-2">
           {(packSummaries.length ? packSummaries : [
             { pack: 'salaried' as PayrollPack, packLabel: 'Salaried / Stipend', run: null, summary: payload?.summary, records: [], approvalWorkflow: undefined },
@@ -476,7 +481,7 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
             >
               <div>{item.packLabel}</div>
               <div className={`mt-1 ${pack === item.pack ? 'text-blue-100' : 'text-slate-500'}`}>
-                {item.run?.status || 'Draft'} · {money(item.run?.netPay ?? item.summary?.netPay, canViewMoney)} · {number(item.run?.employeeCount ?? item.summary?.employees)} staff
+                {item.run?.status || 'Draft'} · {money(item.run?.netPay ?? item.summary?.netPay, canViewMoney)} · {number(item.run ? item.run.employeeCount : item.summary?.employees)} staff
               </div>
             </button>
           ))}
