@@ -121,6 +121,7 @@ type EmployeeRow = {
 type TimesheetSummary = {
   id: string;
   timesheetDate: string;
+  supervisorId?: string;
   supervisorName: string;
   workCenterName: string;
   status: TimesheetStatus;
@@ -946,12 +947,33 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
           <div className="rounded-[18px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
             <p className="font-semibold">{draftBookedTimesheets.length} timesheet{draftBookedTimesheets.length === 1 ? '' : 's'} have booked hours but are still in Draft.</p>
             <p className="mt-1 text-amber-900">
-              Approval starts after submission. Open Timesheet Entry, complete booking, then use <span className="font-semibold">Review &amp; Submit</span>.
-              {' '}
-              {draftBookedTimesheets.slice(0, 3).map((item) => `${item.timesheetDate} · ${item.workCenterName}`).join(' · ')}
-              {draftBookedTimesheets.length > 3 ? ` · +${draftBookedTimesheets.length - 3} more` : ''}
+              These are <span className="font-semibold">not</span> in the approval queue yet. Open each draft in Timesheet Entry, then use <span className="font-semibold">Review &amp; Submit</span> to start approval.
             </p>
-            <Link href="/hris/time-and-logs/timesheet-entry" className="mt-2 inline-flex h-9 items-center rounded-xl bg-amber-600 px-3 text-xs font-semibold text-white hover:bg-amber-700">
+            <ul className="mt-3 space-y-1.5">
+              {draftBookedTimesheets.slice(0, 8).map((item) => {
+                const params = new URLSearchParams({
+                  headerId: item.id,
+                  date: item.timesheetDate,
+                  workCenterName: item.workCenterName,
+                });
+                if (item.supervisorId) params.set('supervisorId', item.supervisorId);
+                return (
+                  <li key={item.id}>
+                    <Link
+                      href={`/hris/workforce-management/timesheet-entry?${params.toString()}`}
+                      className="inline-flex items-center gap-2 text-xs font-semibold text-amber-900 underline decoration-amber-400 underline-offset-2 hover:text-amber-950"
+                    >
+                      {item.timesheetDate} · {item.workCenterName}
+                      <span className="font-medium text-amber-700">({item.supervisorName || 'Supervisor'})</span>
+                    </Link>
+                  </li>
+                );
+              })}
+              {draftBookedTimesheets.length > 8 ? (
+                <li className="text-xs font-semibold text-amber-800">+{draftBookedTimesheets.length - 8} more drafts — open Timesheet Entry and pick the date / work centre.</li>
+              ) : null}
+            </ul>
+            <Link href="/hris/workforce-management/timesheet-entry" className="mt-3 inline-flex h-9 items-center rounded-xl bg-amber-600 px-3 text-xs font-semibold text-white hover:bg-amber-700">
               Open Timesheet Entry
             </Link>
           </div>

@@ -364,6 +364,7 @@ const buildTimesheetSummary = (
   return {
     id: header.id,
     timesheetDate: header.timesheetDate,
+    supervisorId: header.supervisorId,
     supervisorName: header.supervisorName,
     workCenterName: header.workCenterName,
     status,

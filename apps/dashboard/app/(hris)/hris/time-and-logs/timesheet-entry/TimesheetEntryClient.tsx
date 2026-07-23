@@ -411,6 +411,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const searchParams = useSearchParams();
   const dateParam = searchParams.get('date');
   const supervisorParam = searchParams.get('supervisorId');
+  const workCenterParam = searchParams.get('workCenterName');
+  const headerIdParam = searchParams.get('headerId');
 
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -423,7 +425,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const [selectedDate, setSelectedDate] = useState(dateParam || todayDateInputValue());
   const [selectedSupervisor, setSelectedSupervisor] = useState(supervisorParam || '');
   const [selectedLocation, setSelectedLocation] = useState('');
-  const [selectedWorkCenter, setSelectedWorkCenter] = useState('');
+  const [selectedWorkCenter, setSelectedWorkCenter] = useState(workCenterParam || '');
+  const [requestedHeaderId, setRequestedHeaderId] = useState(headerIdParam || '');
 
   const [localLines, setLocalLines] = useState<TimesheetLine[]>([]);
   const [query, setQuery] = useState('');
@@ -457,7 +460,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const loadRequestRef = useRef(0);
   const autoSyncKeyRef = useRef<string | null>(null);
   const hasPayloadRef = useRef(false);
-  const load = useCallback(async (date?: string, supervisor?: string, location?: string, workCenter?: string) => {
+  const load = useCallback(async (date?: string, supervisor?: string, location?: string, workCenter?: string, headerId?: string) => {
     const requestId = loadRequestRef.current + 1;
     loadRequestRef.current = requestId;
     const initialLoad = !hasPayloadRef.current;
@@ -472,6 +475,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       if (supervisor) url.searchParams.set('supervisorId', supervisor);
       if (location) url.searchParams.set('locationName', location);
       if (workCenter) url.searchParams.set('workCenterName', workCenter);
+      if (headerId) url.searchParams.set('headerId', headerId);
       
       const res = await fetch(url.toString(), { cache: 'no-store' });
       const json = await readApiJson(res);
@@ -488,7 +492,9 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       if (data.matrixColumns && matrixColumns.length === 0) {
         setMatrixColumns(data.matrixColumns);
       }
-      if (!selectedSupervisor) setSelectedSupervisor(data.filterOptions.supervisors[0] || data.permissions.actor);
+      if (data.header?.timesheetDate) setSelectedDate(data.header.timesheetDate);
+      if (data.header?.supervisorId) setSelectedSupervisor(data.header.supervisorId);
+      else if (!selectedSupervisor) setSelectedSupervisor(data.filterOptions.supervisors[0] || data.permissions.actor);
       setSelectedLocation((current) => {
         if (current && dbLocationNames.includes(current)) return current;
         return dbLocationNames[0] || '';
@@ -496,10 +502,11 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       setSelectedWorkCenter((current) => {
         const locationName = location || selectedLocation || dbLocationNames[0] || '';
         const dbWorkCenterNames = workCenterNamesForLocation(dbWorkCenters, locationName);
+        if (data.header?.workCenterName) return data.header.workCenterName;
         if (current && dbWorkCenterNames.includes(current)) return current;
-        if (data.header?.workCenterName && dbWorkCenterNames.includes(data.header.workCenterName)) return data.header.workCenterName;
         return dbWorkCenterNames[0] || '';
       });
+      if (headerId) setRequestedHeaderId('');
     } catch (e) {
       if (loadRequestRef.current !== requestId) return;
       setError(e instanceof Error ? e.message : 'Unable to load timesheet entry');
@@ -535,11 +542,20 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   }, [loadProjectSites, showProjectModal]);
 
   useEffect(() => {
+    if (headerIdParam) {
+      setRequestedHeaderId(headerIdParam);
+      if (dateParam) setSelectedDate(dateParam);
+      if (supervisorParam) setSelectedSupervisor(supervisorParam);
+      if (workCenterParam) setSelectedWorkCenter(workCenterParam);
+    }
+  }, [headerIdParam, dateParam, supervisorParam, workCenterParam]);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => {
-      void load(selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter);
+      void load(selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, requestedHeaderId || undefined);
     }, hasPayloadRef.current ? 120 : 0);
     return () => window.clearTimeout(timer);
-  }, [load, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter]);
+  }, [load, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, requestedHeaderId]);
 
   useEffect(() => {
     const saved = payload?.header?.shiftLabel;
