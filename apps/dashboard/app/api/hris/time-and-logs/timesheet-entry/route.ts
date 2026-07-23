@@ -66,6 +66,7 @@ import {
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 
 const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string | null): TimesheetDayContext => ({
   date,
@@ -187,7 +188,8 @@ type UpdatePayload = {
     | 'COPY_PREVIOUS_DAY'
     | 'BULK_APPLY'
     | 'BOOK_OVERTIME'
-    | 'SET_SHIFT';
+    | 'SET_SHIFT'
+    | 'RECAPTURE_REOPEN';
   date?: string;
   supervisorId?: string;
   locationName?: string;
@@ -196,6 +198,7 @@ type UpdatePayload = {
   shiftLabel?: string;
   lines?: TimesheetLine[];
   reviewerNote?: string;
+  recaptureReason?: string;
   authorizationId?: string;
   otHours?: number;
   employeeIds?: string[];
@@ -1191,16 +1194,17 @@ const requireOpenPeriod = async (date: string) => {
   if (period.status !== 'Open') {
     throw new Error(`Timesheet period ${period.name} is ${period.status}. Reopen the period before changing timesheets.`);
   }
+  await assertTimesheetRecaptureAllowed(period.id);
   return period;
 };
 
 const requireEditableTimesheet = (header: TimesheetHeader) => {
   const status = normalizeTimesheetStatus(header.status);
   if (isTimesheetPayrollReadyStatus(header.status)) {
-    throw new Error('This timesheet has been acknowledged by HR and is payroll-ready. It cannot be edited.');
+    throw new Error('This timesheet has been acknowledged by HR and is payroll-ready. Use Recapture Reopen (HR/Payroll) before payroll submit if days must be corrected.');
   }
   if (!isTimesheetEditableStatus(header.status)) {
-    throw new Error(`This timesheet is currently ${status.replace(/_/g, ' ')} and cannot be edited unless it is still in supervisor review or has been returned/rejected.`);
+    throw new Error(`This timesheet is currently ${status.replace(/_/g, ' ')} and cannot be edited. Use Recapture Reopen to return it for correction, then edit in Timesheet Entry.`);
   }
 };
 
@@ -1609,6 +1613,33 @@ export async function PATCH(request: Request) {
       }
 
       return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName, mode));
+    }
+
+    if (action === 'RECAPTURE_REOPEN') {
+      if (!headerId) return err(400, 'Header ID is required.');
+      const uiPermissions = getUiPermissions(access);
+      const canRecapture = uiPermissions.canApproveTimesheet
+        || uiPermissions.canManageTimesheetPeriods
+        || hasPermission(access, 'timesheet.approve')
+        || hasPermission(access, 'timesheet.period.manage')
+        || includesAny(lowerText(`${actor} ${uiPermissions.role}`), ['supervisor', 'site lead', 'foreman', 'hr', 'payroll', 'admin']);
+      if (!canRecapture) return err(403, 'You do not have permission to reopen timesheets for recapture.');
+      const reason = payload.recaptureReason || payload.reviewerNote || '';
+      const result = await reopenTimesheetForRecapture({
+        headerId,
+        actor,
+        reason,
+        allowPayrollReadyUnlock: Boolean(uiPermissions.canApproveTimesheet || includesAny(lowerText(`${actor} ${uiPermissions.role}`), ['hr', 'payroll', 'human resources'])),
+      });
+      const header = result.header;
+      return ok({
+        ...(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName, mode)),
+        recapture: {
+          alreadyEditable: result.alreadyEditable,
+          message: result.message,
+          entryUrl: `/hris/time-and-logs/timesheet-entry?headerId=${encodeURIComponent(header.id)}&date=${encodeURIComponent(header.timesheetDate)}&supervisorId=${encodeURIComponent(header.supervisorId || '')}&workCenterName=${encodeURIComponent(header.workCenterName || '')}`,
+        },
+      });
     }
 
     return err(400, 'Invalid action.');

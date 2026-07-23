@@ -8,12 +8,14 @@ import {
   AlertTriangle,
   BarChart3,
   Bell,
+  BookOpen,
   BriefcaseBusiness,
   CalendarDays,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
   Clock,
+  Columns3,
   Download,
   Eye,
   FileSpreadsheet,
@@ -33,6 +35,13 @@ import {
 } from 'lucide-react';
 import { PageTemplate } from '@/components/layout/page-template';
 import { downloadExcelFile } from '@/lib/excel-export';
+import {
+  PAYROLL_ATTENDANCE_SHEET_COLUMNS,
+  payrollAttendanceSheetToExcelRows,
+  type PayrollAttendanceSheetRow,
+} from '@/lib/timesheet-payroll-attendance-sheet';
+import type { MissingTimesheetDay } from '@/lib/timesheet-recapture-shared';
+import { TIMESHEET_RECAPTURE_GUIDE } from '@/lib/timesheet-recapture-shared';
 
 type ReportType =
   | 'summary'
@@ -85,14 +94,23 @@ type DetailRow = {
   allocationId: string;
   periodId: string;
   periodName: string;
+  periodStatus?: string;
   timesheetDate: string;
+  supervisorId?: string;
   supervisorName: string;
+  workCenterId?: string;
   workCenterName: string;
+  shiftLabel?: string;
+  status?: string;
   normalizedStatus: string;
   approvalStatus: string;
+  currentApprover?: string;
   payrollReady: boolean;
+  employeeId?: string;
   employeeNo: string;
   employeeName: string;
+  biometricId?: string;
+  attendanceId?: string;
   employeeCategory: string;
   employmentType: string;
   department: string;
@@ -102,7 +120,13 @@ type DetailRow = {
   location: string;
   jobCode: string;
   jobTitle: string;
+  clockIn?: string | null;
+  clockOut?: string | null;
   attendanceHours: number;
+  dayWorked?: number;
+  daysWorked?: number;
+  usedHours?: number;
+  idleHours?: number;
   productiveHours: number;
   nonProductiveHours: number;
   overtimeHours: number;
@@ -110,6 +134,8 @@ type DetailRow = {
   variance: number;
   validationStatus: string;
   validationMessage: string | null;
+  lineRemarks?: string;
+  idleReasons?: string;
   projectCode: string;
   projectName: string;
   projectManager: string;
@@ -117,6 +143,7 @@ type DetailRow = {
   activityCode: string;
   activityName: string;
   allocationHours: number;
+  allocationRemarks?: string;
   labourRateNgn: number;
   labourCostNgn: number;
   projectManagerStatus: string;
@@ -128,7 +155,11 @@ type DetailRow = {
   approvalComments: string;
   submittedAt: string | null;
   submittedBy: string | null;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
   payrollAcknowledgedAt: string | null;
+  payrollAcknowledgedBy?: string | null;
+  lastSyncAt?: string | null;
   auditTrail: string;
 };
 
@@ -167,6 +198,15 @@ type ReportsPayload = {
   summary: Summary;
   reportRows: Array<GroupedRow | DetailRow>;
   detailRows: DetailRow[];
+  detailRowCount?: number;
+  detailRowsTruncated?: boolean;
+  exportMode?: 'preview' | 'full';
+  payrollAttendanceSheet?: PayrollAttendanceSheetRow[];
+  payrollAttendanceSheetCount?: number;
+  missingDays?: MissingTimesheetDay[];
+  missingDayCount?: number;
+  recaptureGates?: Record<string, { allowed: boolean; periodCode: string; message: string }>;
+  recaptureGuide?: typeof TIMESHEET_RECAPTURE_GUIDE;
   drilldowns: Record<string, GroupedRow[]>;
   breakdowns: Record<string, GroupedRow[]>;
   widgets: Array<{ id: string; title: string; value: string; detail: string }>;
@@ -204,6 +244,174 @@ const workspaceTabs: Array<{ id: string; label: string; reportType: ReportType }
   { id: 'compliance', label: 'Compliance', reportType: 'exceptions' },
   { id: 'audit', label: 'Audit', reportType: 'audit-trail' },
 ];
+
+type ExportColumnKey = keyof DetailRow | '_payrollReady';
+type ExportColumnDef = { key: ExportColumnKey; label: string };
+type ExportColumnGroup = { id: string; label: string; columns: ExportColumnDef[] };
+
+const EXPORT_COLUMN_GROUPS: ExportColumnGroup[] = [
+  {
+    id: 'identity',
+    label: 'Identity & Period',
+    columns: [
+      { key: 'timesheetDate', label: 'Date' },
+      { key: 'periodName', label: 'Period' },
+      { key: 'periodId', label: 'Period ID' },
+      { key: 'periodStatus', label: 'Period Status' },
+      { key: 'shiftLabel', label: 'Shift' },
+      { key: 'headerId', label: 'Header ID' },
+      { key: 'lineId', label: 'Line ID' },
+      { key: 'allocationId', label: 'Allocation ID' },
+    ],
+  },
+  {
+    id: 'employee',
+    label: 'Employee',
+    columns: [
+      { key: 'employeeNo', label: 'Employee No' },
+      { key: 'employeeName', label: 'Employee Name' },
+      { key: 'employeeId', label: 'Employee ID' },
+      { key: 'biometricId', label: 'Biometric ID' },
+      { key: 'attendanceId', label: 'Attendance ID' },
+      { key: 'employeeCategory', label: 'Category' },
+      { key: 'employmentType', label: 'Employment Type' },
+      { key: 'jobCode', label: 'Job Code' },
+      { key: 'jobTitle', label: 'Job Title' },
+    ],
+  },
+  {
+    id: 'organization',
+    label: 'Organization',
+    columns: [
+      { key: 'department', label: 'Department' },
+      { key: 'section', label: 'Section' },
+      { key: 'businessUnit', label: 'Business Unit' },
+      { key: 'location', label: 'Location' },
+      { key: 'supervisorName', label: 'Supervisor' },
+      { key: 'supervisorId', label: 'Supervisor ID' },
+      { key: 'workCenterName', label: 'Work Centre' },
+      { key: 'workCenterId', label: 'Work Centre ID' },
+    ],
+  },
+  {
+    id: 'attendance',
+    label: 'Attendance & Hours',
+    columns: [
+      { key: 'clockIn', label: 'Clock In' },
+      { key: 'clockOut', label: 'Clock Out' },
+      { key: 'dayWorked', label: 'Day Worked' },
+      { key: 'daysWorked', label: 'Days Worked' },
+      { key: 'attendanceHours', label: 'Attendance Hours' },
+      { key: 'usedHours', label: 'Used Hours' },
+      { key: 'idleHours', label: 'Idle Hours' },
+      { key: 'idleReasons', label: 'Idle Reasons' },
+      { key: 'productiveHours', label: 'Productive Hours' },
+      { key: 'nonProductiveHours', label: 'Non Productive Hours' },
+      { key: 'overtimeHours', label: 'Overtime Hours' },
+      { key: 'totalHours', label: 'Total Hours' },
+      { key: 'variance', label: 'Variance' },
+      { key: 'lineRemarks', label: 'Line Remarks' },
+    ],
+  },
+  {
+    id: 'project',
+    label: 'Project Allocation',
+    columns: [
+      { key: 'projectCode', label: 'Project Code' },
+      { key: 'projectName', label: 'Project Name' },
+      { key: 'projectSite', label: 'Project Site' },
+      { key: 'projectManager', label: 'Project Manager' },
+      { key: 'costCentre', label: 'Cost Centre' },
+      { key: 'activityCode', label: 'Activity Code' },
+      { key: 'activityName', label: 'Activity Name' },
+      { key: 'allocationHours', label: 'Allocation Hours' },
+      { key: 'allocationRemarks', label: 'Allocation Remarks' },
+    ],
+  },
+  {
+    id: 'workflow',
+    label: 'Status & Workflow',
+    columns: [
+      { key: 'normalizedStatus', label: 'Timesheet Status' },
+      { key: 'status', label: 'Raw Status' },
+      { key: 'approvalStatus', label: 'Approval Stage' },
+      { key: 'currentApprover', label: 'Current Approver' },
+      { key: 'projectManagerStatus', label: 'PM Approval' },
+      { key: 'costControlStatus', label: 'Cost Control' },
+      { key: 'overtimeStatus', label: 'Overtime Status' },
+      { key: '_payrollReady', label: 'Payroll Ready' },
+      { key: 'validationStatus', label: 'Validation Status' },
+      { key: 'validationMessage', label: 'Validation Message' },
+      { key: 'exceptionType', label: 'Exception' },
+      { key: 'exceptionSeverity', label: 'Exception Severity' },
+      { key: 'approvalComments', label: 'Approval Comments' },
+      { key: 'workflowHistory', label: 'Workflow History' },
+    ],
+  },
+  {
+    id: 'audit',
+    label: 'Audit & Cost',
+    columns: [
+      { key: 'submittedAt', label: 'Submitted At' },
+      { key: 'submittedBy', label: 'Submitted By' },
+      { key: 'approvedAt', label: 'Approved At' },
+      { key: 'approvedBy', label: 'Approved By' },
+      { key: 'payrollAcknowledgedAt', label: 'Payroll Acknowledged At' },
+      { key: 'payrollAcknowledgedBy', label: 'Payroll Acknowledged By' },
+      { key: 'lastSyncAt', label: 'Last Sync At' },
+      { key: 'labourRateNgn', label: 'Labour Rate' },
+      { key: 'labourCostNgn', label: 'Labour Cost' },
+      { key: 'auditTrail', label: 'Audit Trail' },
+    ],
+  },
+];
+
+const ALL_EXPORT_COLUMNS: ExportColumnDef[] = EXPORT_COLUMN_GROUPS.flatMap((group) => group.columns);
+const EXPORT_COLUMN_STORAGE_KEY = 'timesheet-reports-export-columns';
+
+const DEFAULT_EXPORT_COLUMN_KEYS: ExportColumnKey[] = [
+  'timesheetDate',
+  'periodName',
+  'employeeNo',
+  'employeeName',
+  'department',
+  'supervisorName',
+  'workCenterName',
+  'clockIn',
+  'clockOut',
+  'dayWorked',
+  'daysWorked',
+  'projectCode',
+  'projectName',
+  'activityName',
+  'allocationHours',
+  'productiveHours',
+  'idleHours',
+  'overtimeHours',
+  'normalizedStatus',
+  'approvalStatus',
+  '_payrollReady',
+  'exceptionType',
+];
+
+const loadStoredExportColumns = (): ExportColumnKey[] => {
+  if (typeof window === 'undefined') return DEFAULT_EXPORT_COLUMN_KEYS;
+  try {
+    const raw = window.localStorage.getItem(EXPORT_COLUMN_STORAGE_KEY);
+    if (!raw) return DEFAULT_EXPORT_COLUMN_KEYS;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return DEFAULT_EXPORT_COLUMN_KEYS;
+    const allowed = new Set(ALL_EXPORT_COLUMNS.map((column) => column.key));
+    const selected = parsed.filter((key): key is ExportColumnKey => typeof key === 'string' && allowed.has(key as ExportColumnKey));
+    if (!selected.length) return DEFAULT_EXPORT_COLUMN_KEYS;
+    // Days Worked is required for payroll-aligned reporting — keep it available even on older saved selections.
+    if (!selected.includes('daysWorked')) selected.push('daysWorked');
+    if (!selected.includes('dayWorked')) selected.push('dayWorked');
+    return selected;
+  } catch {
+    return DEFAULT_EXPORT_COLUMN_KEYS;
+  }
+};
 
 const today = new Date().toISOString().slice(0, 10);
 const monthStart = `${today.slice(0, 8)}01`;
@@ -465,6 +673,55 @@ export default function TimesheetReportsClient() {
   const [drilldown, setDrilldown] = useState<{ groupBy: string; key: string } | null>(null);
   const [kpiDetail, setKpiDetail] = useState<{ title: string; kind: 'total' | 'project' | 'employees' | 'overtime' | 'labour-cost' | 'payroll-ready' | 'pending' | 'exceptions' } | null>(null);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showColumnPicker, setShowColumnPicker] = useState(false);
+  const [showRecaptureGuide, setShowRecaptureGuide] = useState(true);
+  const [showMissingDays, setShowMissingDays] = useState(true);
+  const [recaptureBusyId, setRecaptureBusyId] = useState<string | null>(null);
+  const [recaptureReason, setRecaptureReason] = useState('Omitted / incomplete day — reopen for recapture.');
+  const [selectedExportColumns, setSelectedExportColumns] = useState<ExportColumnKey[]>(DEFAULT_EXPORT_COLUMN_KEYS);
+  const [exportColumnsReady, setExportColumnsReady] = useState(false);
+  const [columnSearch, setColumnSearch] = useState('');
+
+  useEffect(() => {
+    setSelectedExportColumns(loadStoredExportColumns());
+    setExportColumnsReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!exportColumnsReady || typeof window === 'undefined') return;
+    window.localStorage.setItem(EXPORT_COLUMN_STORAGE_KEY, JSON.stringify(selectedExportColumns));
+  }, [exportColumnsReady, selectedExportColumns]);
+
+  const selectedExportColumnSet = useMemo(() => new Set(selectedExportColumns), [selectedExportColumns]);
+  const activeExportColumns = useMemo(
+    () => ALL_EXPORT_COLUMNS.filter((column) => selectedExportColumnSet.has(column.key)),
+    [selectedExportColumnSet],
+  );
+  const filteredExportGroups = useMemo(() => {
+    const needle = columnSearch.trim().toLowerCase();
+    if (!needle) return EXPORT_COLUMN_GROUPS;
+    return EXPORT_COLUMN_GROUPS
+      .map((group) => ({
+        ...group,
+        columns: group.columns.filter((column) => column.label.toLowerCase().includes(needle) || column.key.toLowerCase().includes(needle)),
+      }))
+      .filter((group) => group.columns.length > 0);
+  }, [columnSearch]);
+
+  const toggleExportColumn = (key: ExportColumnKey) => {
+    setSelectedExportColumns((prev) => (prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key]));
+  };
+
+  const toggleExportGroup = (group: ExportColumnGroup, enabled: boolean) => {
+    const keys = group.columns.map((column) => column.key);
+    setSelectedExportColumns((prev) => {
+      if (enabled) return Array.from(new Set([...prev, ...keys]));
+      return prev.filter((key) => !keys.includes(key));
+    });
+  };
 
   const requestUrl = useMemo(() => {
     const params = new URLSearchParams({ reportType, from, to });
@@ -503,65 +760,149 @@ export default function TimesheetReportsClient() {
     void load();
   }, [load]);
 
-  const exportRows = (format: 'csv' | 'excel' | 'pdf' | 'print') => {
-    if (format === 'print') {
-      window.print();
+  const openTimesheetEntry = (gap: MissingTimesheetDay) => {
+    const params = new URLSearchParams();
+    if (gap.headerId) params.set('headerId', gap.headerId);
+    params.set('date', gap.date);
+    if (gap.supervisorId) params.set('supervisorId', gap.supervisorId);
+    if (gap.workCenterName) params.set('workCenterName', gap.workCenterName);
+    window.location.href = `/hris/time-and-logs/timesheet-entry?${params.toString()}`;
+  };
+
+  const reopenForRecapture = async (gap: MissingTimesheetDay) => {
+    if (!gap.headerId) {
+      setError('No timesheet header found for this day. Open Timesheet Entry and sync attendance for that date/crew first.');
       return;
     }
-    if (format === 'pdf') {
-      window.print();
+    if (!gap.recaptureAllowed) {
+      setError(gap.blockReason || 'Recapture is blocked for this day.');
       return;
     }
-    const rows = payload?.detailRows || [];
-    const columns: Array<[string, keyof DetailRow]> = [
-      ['Date', 'timesheetDate'],
-      ['Employee No', 'employeeNo'],
-      ['Employee Name', 'employeeName'],
-      ['Category', 'employeeCategory'],
-      ['Employment Type', 'employmentType'],
-      ['Department', 'department'],
-      ['Section', 'section'],
-      ['Business Unit', 'businessUnit'],
-      ['Location', 'location'],
-      ['Supervisor', 'supervisorName'],
-      ['Project', 'projectCode'],
-      ['Project Manager', 'projectManager'],
-      ['Cost Centre', 'costCentre'],
-      ['Activity Code', 'activityCode'],
-      ['Approval Status', 'approvalStatus'],
-      ['Timesheet Status', 'normalizedStatus'],
-      ['Overtime Status', 'overtimeStatus'],
-      ['Productive Hours', 'productiveHours'],
-      ['Non Productive Hours', 'nonProductiveHours'],
-      ['Overtime Hours', 'overtimeHours'],
-      ['Labour Cost', 'labourCostNgn'],
-      ['Exception', 'exceptionType'],
-      ['Audit Trail', 'auditTrail'],
-    ];
-    if (format === 'excel') {
-      downloadExcelFile({
-        title: `Timesheet ${activeReport.label}`,
-        subtitle: `${from} to ${to} / ${rows.length} detail lines`,
-        sheetName: 'Timesheet Report',
-        fileName: `timesheet-${reportType}-${new Date().toISOString().slice(0, 10)}.xls`,
-        columns: columns.map(([label]) => label),
-        rows: rows.map((row) => columns.map(([, key]) => key === 'labourCostNgn' && !payload?.permissions.canViewCosts ? 'Restricted' : row[key] as string | number | null | undefined)),
+    const reason = recaptureReason.trim() || 'Omitted / incomplete day — reopen for recapture.';
+    setRecaptureBusyId(gap.id);
+    setError(null);
+    setExportNotice(null);
+    try {
+      const res = await fetch('/api/hris/time-and-logs/timesheet-entry', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'RECAPTURE_REOPEN',
+          headerId: gap.headerId,
+          recaptureReason: reason,
+        }),
       });
+      const json = await res.json();
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to reopen timesheet for recapture');
+      const message = json.data?.recapture?.message || 'Timesheet returned for recapture.';
+      const entryUrl = json.data?.recapture?.entryUrl as string | undefined;
+      setExportNotice(message);
+      await load();
+      if (entryUrl && window.confirm(`${message}\n\nOpen Timesheet Entry now?`)) {
+        window.location.href = entryUrl;
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to reopen timesheet for recapture');
+    } finally {
+      setRecaptureBusyId(null);
+    }
+  };
+
+  const exportRows = async (format: 'csv' | 'excel' | 'payroll-sheet' | 'pdf' | 'print') => {
+    if (format === 'print' || format === 'pdf') {
+      window.print();
       return;
     }
-    const csv = [
-      columns.map(([label]) => csvValue(label)).join(','),
-      ...rows.map((row) => columns.map(([, key]) => csvValue(key === 'labourCostNgn' && !payload?.permissions.canViewCosts ? 'Restricted' : row[key])).join(',')),
-    ].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `timesheet-${reportType}-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+
+    if (format !== 'payroll-sheet' && !activeExportColumns.length) {
+      setExportNotice(null);
+      setError('Select at least one column before exporting.');
+      setShowColumnPicker(true);
+      setShowExportMenu(false);
+      return;
+    }
+
+    setExporting(true);
+    setExportNotice(null);
+    setError(null);
+    setShowExportMenu(false);
+    try {
+      const exportUrl = new URL(requestUrl, window.location.origin);
+      exportUrl.searchParams.set('exportMode', 'full');
+      exportUrl.searchParams.set('format', format === 'payroll-sheet' ? 'excel' : format);
+      const res = await fetch(exportUrl.toString(), { cache: 'no-store' });
+      const json = await res.json();
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to export timesheet capture data');
+
+      const exportPayload = json.data as ReportsPayload;
+      const canViewCosts = exportPayload.permissions?.canViewCosts ?? payload?.permissions.canViewCosts ?? false;
+
+      if (format === 'payroll-sheet') {
+        const sheetRows = exportPayload.payrollAttendanceSheet || [];
+        if (!sheetRows.length) {
+          setExportNotice('No employee attendance rows matched the selected filters/period.');
+          return;
+        }
+        downloadExcelFile({
+          title: 'Payroll Attendance Sheet',
+          subtitle: `${from} to ${to} · ${sheetRows.length.toLocaleString()} employees · week days, leave, weekend/PH hours, OT, night & site`,
+          sheetName: 'Attendance Sheet',
+          fileName: `payroll-attendance-sheet-${from}-to-${to}.xls`,
+          columns: [...PAYROLL_ATTENDANCE_SHEET_COLUMNS],
+          rows: payrollAttendanceSheetToExcelRows(sheetRows, canViewCosts),
+        });
+        setExportNotice(`Exported payroll attendance sheet for ${sheetRows.length.toLocaleString()} employees.`);
+        return;
+      }
+
+      const rows = exportPayload.detailRows || [];
+      const columns = activeExportColumns;
+
+      const cellValue = (row: DetailRow, key: ExportColumnKey) => {
+        if (key === '_payrollReady') return row.payrollReady ? 'Yes' : 'No';
+        if ((key === 'labourCostNgn' || key === 'labourRateNgn') && !canViewCosts) return 'Restricted';
+        return row[key as keyof DetailRow] as string | number | null | undefined;
+      };
+
+      if (!rows.length) {
+        setExportNotice('No timesheet capture rows matched the selected filters/period.');
+        return;
+      }
+
+      if (format === 'excel') {
+        downloadExcelFile({
+          title: `Timesheet Capture Export`,
+          subtitle: `${from} to ${to} · ${rows.length.toLocaleString()} capture lines · ${columns.length} columns`,
+          sheetName: 'Timesheet Capture',
+          fileName: `timesheet-capture-${from}-to-${to}.xls`,
+          columns: columns.map((column) => column.label),
+          rows: rows.map((row) => columns.map((column) => cellValue(row, column.key))),
+        });
+        setExportNotice(`Exported ${rows.length.toLocaleString()} lines · ${columns.length} columns to Excel.`);
+        setShowColumnPicker(false);
+        return;
+      }
+
+      const csv = [
+        columns.map((column) => csvValue(column.label)).join(','),
+        ...rows.map((row) => columns.map((column) => csvValue(cellValue(row, column.key))).join(',')),
+      ].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `timesheet-capture-${from}-to-${to}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setExportNotice(`Exported ${rows.length.toLocaleString()} lines · ${columns.length} columns to CSV.`);
+      setShowColumnPicker(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to export timesheet capture data');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const filterOptions = payload?.filterOptions;
@@ -668,10 +1009,20 @@ export default function TimesheetReportsClient() {
       description="Project labour intelligence and timesheet analytics."
       breadcrumbs={[{ label: 'HRIS', href: '/hris' }, { label: 'Workforce Management', href: '/hris/workforce-management' }, { label: 'Timesheet Reports' }]}
       primaryAction={{ label: loading ? 'Refreshing' : 'Refresh', onClick: load, icon: RefreshCcw }}
-      secondaryAction={{ label: 'Export CSV', onClick: () => exportRows('csv'), icon: Download }}
+      secondaryAction={{ label: exporting ? 'Exporting…' : 'Export', onClick: () => { void exportRows('payroll-sheet'); }, icon: Download }}
     >
       <div className="space-y-5">
         {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}
+        {exportNotice ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">{exportNotice}</div> : null}
+        {payload?.detailRowsTruncated ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            Screen preview shows up to 1,000 detail lines for performance.
+            {' '}
+            <span className="font-semibold">Export</span> includes the payroll attendance sheet (Emp. Code / Days Worked layout) and optional capture detail for the selected period
+            {typeof payload.detailRowCount === 'number' ? ` (${payload.detailRowCount.toLocaleString()} lines)` : ''}
+            .
+          </div>
+        ) : null}
 
         <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4">
@@ -687,11 +1038,148 @@ export default function TimesheetReportsClient() {
               })}
             </div>
             <div className="flex flex-wrap gap-2 py-3">
-              <button onClick={() => exportRows('excel')} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 hover:bg-slate-50"><Download className="h-4 w-4" />Export <ChevronDown className="h-3.5 w-3.5" /></button>
-              <button onClick={() => exportRows('pdf')} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 hover:bg-slate-50"><CalendarDays className="h-4 w-4" />Schedule Report</button>
-              <button onClick={() => void load()} className="inline-flex h-9 items-center gap-2 rounded-md bg-blue-600 px-3 text-xs font-black text-white hover:bg-blue-700"><RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Refresh</button>
+              <button
+                type="button"
+                onClick={() => setShowColumnPicker((value) => !value)}
+                className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-black hover:bg-slate-50 ${showColumnPicker ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-700'}`}
+              >
+                <Columns3 className="h-4 w-4" />
+                Columns ({activeExportColumns.length})
+              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  disabled={exporting}
+                  onClick={() => setShowExportMenu((value) => !value)}
+                  className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  <Download className={`h-4 w-4 ${exporting ? 'animate-pulse' : ''}`} />
+                  {exporting ? 'Exporting…' : 'Export'}
+                  <ChevronDown className={`h-3.5 w-3.5 text-slate-500 transition ${showExportMenu ? 'rotate-180' : ''}`} />
+                </button>
+                {showExportMenu ? (
+                  <>
+                    <button type="button" aria-label="Close export menu" className="fixed inset-0 z-20 cursor-default" onClick={() => setShowExportMenu(false)} />
+                    <div className="absolute right-0 z-30 mt-1 w-72 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
+                      <button
+                        type="button"
+                        disabled={exporting}
+                        onClick={() => void exportRows('payroll-sheet')}
+                        className="flex w-full items-start gap-2 px-3 py-2.5 text-left hover:bg-slate-50 disabled:opacity-60"
+                      >
+                        <FileSpreadsheet className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />
+                        <span>
+                          <span className="block text-xs font-black text-slate-900">Payroll Attendance Sheet</span>
+                          <span className="mt-0.5 block text-[11px] font-semibold text-slate-500">Emp. Code · Days Worked · Weekend/PH · OT · Night · Site</span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={exporting}
+                        onClick={() => void exportRows('excel')}
+                        className="flex w-full items-start gap-2 border-t border-slate-100 px-3 py-2.5 text-left hover:bg-slate-50 disabled:opacity-60"
+                      >
+                        <Download className="mt-0.5 h-4 w-4 shrink-0 text-slate-600" />
+                        <span>
+                          <span className="block text-xs font-black text-slate-900">Capture Detail (Excel)</span>
+                          <span className="mt-0.5 block text-[11px] font-semibold text-slate-500">Selected columns · line/allocation grain</span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={exporting}
+                        onClick={() => void exportRows('csv')}
+                        className="flex w-full items-start gap-2 border-t border-slate-100 px-3 py-2.5 text-left hover:bg-slate-50 disabled:opacity-60"
+                      >
+                        <FileText className="mt-0.5 h-4 w-4 shrink-0 text-slate-600" />
+                        <span>
+                          <span className="block text-xs font-black text-slate-900">Capture Detail (CSV)</span>
+                          <span className="mt-0.5 block text-[11px] font-semibold text-slate-500">Selected columns · line/allocation grain</span>
+                        </span>
+                      </button>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+              <button type="button" onClick={() => void exportRows('pdf')} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 hover:bg-slate-50"><CalendarDays className="h-4 w-4" />Schedule Report</button>
+              <button type="button" onClick={() => void load()} className="inline-flex h-9 items-center gap-2 rounded-md bg-blue-600 px-3 text-xs font-black text-white hover:bg-blue-700"><RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Refresh</button>
             </div>
           </div>
+          {showColumnPicker ? (
+            <div className="border-t border-slate-200 bg-slate-50/70 px-4 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Export Columns</p>
+                  <p className="text-sm font-bold text-slate-800">
+                    {activeExportColumns.length} of {ALL_EXPORT_COLUMNS.length} selected · Excel/CSV uses only these columns
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => setSelectedExportColumns(DEFAULT_EXPORT_COLUMN_KEYS)} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-50">Essential</button>
+                  <button type="button" onClick={() => setSelectedExportColumns(ALL_EXPORT_COLUMNS.map((column) => column.key))} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-50">Select all</button>
+                  <button type="button" onClick={() => setSelectedExportColumns([])} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-50">Clear</button>
+                  <button type="button" disabled={exporting || !activeExportColumns.length} onClick={() => void exportRows('excel')} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-black text-white hover:bg-blue-700 disabled:opacity-60">
+                    {exporting ? 'Exporting…' : 'Export Excel'}
+                  </button>
+                  <button type="button" onClick={() => setShowColumnPicker(false)} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-50">Done</button>
+                </div>
+              </div>
+              <label className="relative mt-3 block max-w-md">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="search"
+                  value={columnSearch}
+                  onChange={(event) => setColumnSearch(event.target.value)}
+                  placeholder="Search columns…"
+                  className="h-9 w-full rounded-md border border-slate-200 bg-white pl-9 pr-3 text-xs font-bold text-slate-700 outline-none focus:border-blue-600"
+                />
+              </label>
+              <div className="mt-4 grid max-h-[420px] gap-3 overflow-y-auto xl:grid-cols-2 2xl:grid-cols-3">
+                {filteredExportGroups.map((group) => {
+                  const selectedInGroup = group.columns.filter((column) => selectedExportColumnSet.has(column.key)).length;
+                  const allSelected = selectedInGroup === group.columns.length;
+                  return (
+                    <div key={group.id} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+                      <div className="mb-2 flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                        <div>
+                          <p className="text-xs font-black text-slate-900">{group.label}</p>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{selectedInGroup}/{group.columns.length}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleExportGroup(group, !allSelected)}
+                          className="rounded border border-slate-200 px-2 py-1 text-[10px] font-black text-slate-600 hover:bg-slate-50"
+                        >
+                          {allSelected ? 'Deselect' : 'Select'}
+                        </button>
+                      </div>
+                      <div className="grid gap-1.5 sm:grid-cols-2">
+                        {group.columns.map((column) => {
+                          const checked = selectedExportColumnSet.has(column.key);
+                          return (
+                            <label key={column.key} className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 hover:bg-slate-50">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleExportColumn(column.key)}
+                                className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-600"
+                              />
+                              <span className="text-xs font-bold text-slate-700">{column.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+                {!filteredExportGroups.length ? (
+                  <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm font-bold text-slate-400 xl:col-span-2 2xl:col-span-3">
+                    No columns match “{columnSearch}”.
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -781,6 +1269,150 @@ export default function TimesheetReportsClient() {
             </div>
           ) : null}
         </div>
+
+        <section className="rounded-lg border border-amber-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-100 px-4 py-3">
+            <div className="flex items-start gap-3">
+              <div className="rounded-md bg-amber-50 p-2 text-amber-700"><BookOpen className="h-4 w-4" /></div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Standard Recapture</p>
+                <h2 className="text-sm font-black text-slate-950">{payload?.recaptureGuide?.title || TIMESHEET_RECAPTURE_GUIDE.title}</h2>
+                <p className="mt-1 text-xs font-semibold text-slate-600">{payload?.recaptureGuide?.summary || TIMESHEET_RECAPTURE_GUIDE.summary}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setShowRecaptureGuide((value) => !value)} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-50">
+                {showRecaptureGuide ? 'Hide guide' : 'Show guide'}
+              </button>
+              <button type="button" onClick={() => setShowMissingDays((value) => !value)} className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-800 hover:bg-amber-100">
+                Missing days ({payload?.missingDayCount ?? payload?.missingDays?.length ?? 0})
+              </button>
+            </div>
+          </div>
+
+          {showRecaptureGuide ? (
+            <div className="grid gap-4 border-b border-amber-50 px-4 py-4 lg:grid-cols-[1.4fr_1fr]">
+              <ol className="space-y-3">
+                {(payload?.recaptureGuide?.steps || TIMESHEET_RECAPTURE_GUIDE.steps).map((step) => (
+                  <li key={step.title} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p className="text-xs font-black text-slate-900">{step.title}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-600">{step.detail}</p>
+                  </li>
+                ))}
+              </ol>
+              <div className="rounded-md border border-slate-200 bg-white px-3 py-2">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Rules</p>
+                <ul className="mt-2 space-y-2">
+                  {(payload?.recaptureGuide?.rules || TIMESHEET_RECAPTURE_GUIDE.rules).map((rule) => (
+                    <li key={rule} className="flex gap-2 text-xs font-semibold text-slate-600">
+                      <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                      <span>{rule}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : null}
+
+          {showMissingDays ? (
+            <div className="px-4 py-4">
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Missing / Incomplete Days</p>
+                  <p className="text-xs font-semibold text-slate-600">
+                    Employees already active in this range with Mon–Sat dates that have no payable day. Reopen returns the sheet for correction; then capture and re-submit.
+                  </p>
+                </div>
+                <label className="block min-w-[280px]">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Recapture reason</span>
+                  <input
+                    value={recaptureReason}
+                    onChange={(event) => setRecaptureReason(event.target.value)}
+                    className="mt-1 h-9 w-full rounded-md border border-slate-200 px-3 text-xs font-bold text-slate-700 outline-none focus:border-blue-600"
+                    placeholder="Why is this day being recaptured?"
+                  />
+                </label>
+              </div>
+              <div className="overflow-x-auto rounded-md border border-slate-200">
+                <table className="min-w-[1100px] w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2">Employee</th>
+                      <th className="px-3 py-2">Date</th>
+                      <th className="px-3 py-2">Issue</th>
+                      <th className="px-3 py-2">Sheet Status</th>
+                      <th className="px-3 py-2">Crew</th>
+                      <th className="px-3 py-2 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(payload?.missingDays || []).slice(0, 100).map((gap) => (
+                      <tr key={gap.id} className="hover:bg-slate-50">
+                        <td className="px-3 py-2">
+                          <div className="font-black text-slate-900">{gap.employeeName}</div>
+                          <div className="text-[11px] font-bold text-slate-500">{gap.employeeNo}</div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="font-bold">{gap.date}</div>
+                          <div className="text-[11px] font-semibold text-slate-500">{gap.weekday}</div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className={`rounded-md px-2 py-1 text-[10px] font-black ${
+                            gap.reason === 'needs-reopen' ? 'bg-amber-50 text-amber-800'
+                              : gap.reason === 'editable-incomplete' ? 'bg-blue-50 text-blue-800'
+                                : 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {gap.reason === 'needs-reopen' ? 'Needs reopen' : gap.reason === 'editable-incomplete' ? 'Editable incomplete' : 'No entry'}
+                          </span>
+                          {!gap.recaptureAllowed && gap.blockReason ? (
+                            <div className="mt-1 max-w-[280px] text-[11px] font-semibold text-red-600">{gap.blockReason}</div>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-2 font-bold text-slate-700">{gap.headerStatus ? formatStatus(gap.headerStatus) : '—'}</td>
+                        <td className="px-3 py-2">
+                          <div className="font-bold text-slate-800">{gap.supervisorName || '—'}</div>
+                          <div className="text-[11px] font-semibold text-slate-500">{gap.workCenterName || 'No work centre'}</div>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <div className="inline-flex flex-wrap justify-end gap-2">
+                            {gap.suggestedAction === 'reopen' ? (
+                              <button
+                                type="button"
+                                disabled={!gap.recaptureAllowed || recaptureBusyId === gap.id || !gap.headerId}
+                                onClick={() => void reopenForRecapture(gap)}
+                                className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-black text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                              >
+                                {recaptureBusyId === gap.id ? 'Reopening…' : 'Recapture reopen'}
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              disabled={gap.suggestedAction === 'blocked' && !gap.headerId}
+                              onClick={() => openTimesheetEntry(gap)}
+                              className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              {gap.suggestedAction === 'continue-edit' ? 'Continue edit' : gap.suggestedAction === 'open-draft' ? 'Open entry' : 'Open entry'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {!loading && !(payload?.missingDays || []).length ? (
+                      <tr>
+                        <td colSpan={6} className="px-3 py-8 text-center text-sm font-bold text-slate-400">
+                          No missing Mon–Sat days detected for employees active in this range.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+              {(payload?.missingDayCount || 0) > 100 ? (
+                <p className="mt-2 text-xs font-semibold text-slate-500">Showing first 100 of {payload?.missingDayCount} gaps. Narrow the date range to focus.</p>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
           <DashboardKpi label="Total Labour Hours" value={formatHours(summary?.totalHoursWorked || 0)} detail={`${pctText(summary?.resourceUtilizationPct || 0)} utilization`} icon={Clock} tone="blue" onClick={() => setKpiDetail({ title: 'Total Labour Hours Detail', kind: 'total' })} />
@@ -1236,7 +1868,7 @@ export default function TimesheetReportsClient() {
           <div className="overflow-x-auto">
             <table className="min-w-[1500px] divide-y divide-slate-100 text-left text-sm">
               <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                <tr>{['Employee', 'Date / Period', 'Org', 'Project / Activity', 'Approval', 'Payroll', 'Hours', 'Cost', 'Exception', 'Audit'].map((header) => <th key={header} className="px-4 py-3">{header}</th>)}</tr>
+                <tr>{['Employee', 'Date / Period', 'Org', 'Project / Activity', 'Approval', 'Payroll', 'Days Worked', 'Hours', 'Cost', 'Exception', 'Audit'].map((header) => <th key={header} className="px-4 py-3">{header}</th>)}</tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {(payload?.detailRows || []).map((row) => (
@@ -1247,13 +1879,14 @@ export default function TimesheetReportsClient() {
                     <td className="px-4 py-3"><div className="font-black text-blue-800">{row.projectCode}</div><div className="text-xs font-semibold text-slate-500">{row.activityCode} / {row.projectManager}</div></td>
                     <td className="px-4 py-3"><span className={`rounded-full border px-2.5 py-1 text-[10px] font-black ${statusClass(row.normalizedStatus)}`}>{formatStatus(row.normalizedStatus)}</span><div className="mt-1 text-xs font-semibold text-slate-500">{row.projectManagerStatus} / {row.costControlStatus}</div></td>
                     <td className="px-4 py-3"><div className={row.payrollReady ? 'font-black text-emerald-700' : 'font-black text-slate-500'}>{row.payrollReady ? 'Ready' : 'Not Ready'}</div><div className="text-xs font-semibold text-slate-500">{row.overtimeStatus}</div></td>
+                    <td className="px-4 py-3 text-right"><div className="font-black">{formatNumber(row.daysWorked || 0)}</div><div className="text-xs font-semibold text-slate-500">{row.dayWorked ? 'Worked today' : 'Not worked'}</div></td>
                     <td className="px-4 py-3 text-right"><div className="font-black">{formatHours(row.productiveHours)}</div><div className="text-xs font-semibold text-slate-500">Idle {formatHours(row.nonProductiveHours)} / OT {formatHours(row.overtimeHours)}</div></td>
                     <td className="px-4 py-3 text-right"><div className="font-black">{money(row.labourCostNgn)}</div><div className="text-xs font-semibold text-slate-500">@ {money(row.labourRateNgn)}</div></td>
                     <td className="px-4 py-3"><div className={row.exceptionType === 'None' ? 'font-black text-emerald-600' : 'font-black text-red-700'}>{row.exceptionType}</div><div className="text-xs font-semibold text-slate-500">{row.validationMessage || row.exceptionSeverity}</div></td>
                     <td className="px-4 py-3"><div className="max-w-[260px] truncate text-xs font-semibold text-slate-500" title={row.workflowHistory || row.auditTrail}>{row.workflowHistory || row.auditTrail}</div></td>
                   </tr>
                 ))}
-                {!loading && !payload?.detailRows.length && <tr><td colSpan={10} className="px-4 py-10 text-center text-sm font-bold text-slate-400">No timesheet lines available for this report.</td></tr>}
+                {!loading && !payload?.detailRows.length && <tr><td colSpan={11} className="px-4 py-10 text-center text-sm font-bold text-slate-400">No timesheet lines available for this report.</td></tr>}
               </tbody>
             </table>
           </div>

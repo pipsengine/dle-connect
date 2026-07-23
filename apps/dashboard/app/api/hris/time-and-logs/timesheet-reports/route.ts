@@ -3,6 +3,8 @@ import { getUiPermissions, resolveAccessContext } from '@/lib/hris-access';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import {
   buildProjectTimesheetApprovals,
+  canonicalTimesheetEmployeeKey,
+  isPayrollPayableWorkDay,
   isTimesheetPayrollReadyStatus,
   normalizePaidWorkHours,
   normalizeTimesheetStatus,
@@ -14,6 +16,11 @@ import {
   type TimesheetLine,
   type TimesheetStatus,
 } from '@/lib/timesheet-entry-store';
+import { buildPayrollAttendanceSheet } from '@/lib/timesheet-payroll-attendance-sheet';
+import { findMissingTimesheetDays, TIMESHEET_RECAPTURE_GUIDE } from '@/lib/timesheet-recapture';
+import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 
 type ReportType =
   | 'summary'
@@ -41,8 +48,11 @@ type ReportRow = {
   periodName: string;
   periodStatus: string;
   timesheetDate: string;
+  supervisorId: string;
   supervisorName: string;
+  workCenterId: string;
   workCenterName: string;
+  shiftLabel: string;
   status: TimesheetStatus;
   normalizedStatus: TimesheetStatus;
   approvalStatus: string;
@@ -54,6 +64,8 @@ type ReportRow = {
   employeeId: string;
   employeeNo: string;
   employeeName: string;
+  biometricId: string;
+  attendanceId: string;
   employeeCategory: string;
   employmentType: string;
   department: string;
@@ -66,6 +78,10 @@ type ReportRow = {
   clockIn: string | null;
   clockOut: string | null;
   attendanceHours: number;
+  dayWorked: number;
+  daysWorked: number;
+  usedHours: number;
+  idleHours: number;
   productiveHours: number;
   nonProductiveHours: number;
   overtimeHours: number;
@@ -73,6 +89,8 @@ type ReportRow = {
   variance: number;
   validationStatus: string;
   validationMessage: string | null;
+  lineRemarks: string;
+  idleReasons: string;
   projectCode: string;
   projectName: string;
   projectManager: string;
@@ -80,6 +98,7 @@ type ReportRow = {
   activityCode: string;
   activityName: string;
   allocationHours: number;
+  allocationRemarks: string;
   labourRateNgn: number;
   labourCostNgn: number;
   projectManagerStatus: string;
@@ -91,6 +110,8 @@ type ReportRow = {
   approvalComments: string;
   submittedAt: string | null;
   submittedBy: string | null;
+  approvedAt: string | null;
+  approvedBy: string | null;
   lastSyncAt: string | null;
   auditTrail: string;
 };
@@ -131,6 +152,23 @@ const lower = (value: unknown) => clean(value).toLowerCase();
 const includes = (value: unknown, needle: string) => lower(value).includes(needle.toLowerCase());
 const hoursBetween = (from: string | null | undefined, to: string | null | undefined) =>
   from && to ? Math.max(0, (new Date(to).getTime() - new Date(from).getTime()) / 3600000) : 0;
+
+const resolveDashboardRoot = () => {
+  const cwd = process.cwd();
+  const dashboardSuffix = path.join('apps', 'dashboard');
+  return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
+};
+
+const readHolidayDates = async (): Promise<string[]> => {
+  try {
+    const raw = await readFile(path.join(resolveDashboardRoot(), 'data', 'hris', 'payroll-public-holidays.json'), 'utf8');
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed?.dates)) return parsed.dates.map(String).filter(Boolean);
+  } catch {
+    return [];
+  }
+  return [];
+};
 
 const managementRoles = ['OrganizationAdmin', 'Super Administrator', 'HRBusinessPartner', 'Auditor'];
 const roleScope = (role: string, actor: string) => {
@@ -243,14 +281,24 @@ export async function GET(request: Request) {
     const payrollReady = searchParams.get('payrollReady');
     const query = searchParams.get('query')?.trim() || '';
 
-    const [{ headers, lines }, payrollUpdates, projects, payrollEmployees] = await Promise.all([
+    const [{ headers, lines }, payrollUpdates, projects, payrollEmployees, holidayDates] = await Promise.all([
       readTimesheetData(),
       readTimesheetPayrollUpdates(),
       readProjects(),
       readPayrollEmployees(),
+      readHolidayDates(),
     ]);
 
     const employeeByCode = new Map(payrollEmployees.employees.map((employee) => [lower(employee.employeeCode || employee.employeeId), employee]));
+    const employeesByKey = new Map<string, (typeof payrollEmployees.employees)[number]>();
+    for (const employee of payrollEmployees.employees) {
+      for (const key of [employee.employeeCode, employee.employeeId, employee.fullName, employee.sourceEmployeeId]
+        .map((value) => normalizePayrollMatchKey(value))
+        .filter(Boolean)) {
+        employeesByKey.set(key, employee);
+      }
+      employeesByKey.set(lower(employee.employeeCode || employee.employeeId), employee);
+    }
     const projectByCode = new Map(projects.map((project) => [lower(project.code), project]));
     const periodById = new Map<string, Awaited<ReturnType<typeof readTimesheetPeriod>>>();
     const linesByHeaderId = new Map<string, typeof lines>();
@@ -283,6 +331,10 @@ export async function GET(request: Request) {
         const hourlyRate = Number((employee as any)?.ratePerHour || 0);
         const dailyRate = Number((employee as any)?.dailyRate || 0);
         const labourRate = hourlyRate > 0 ? hourlyRate : dailyRate > 0 ? round(dailyRate / 8, 2) : 2500;
+        const idleReasons = (line.idleAllocations || [])
+          .filter((item) => Number(item.hours || 0) > 0)
+          .map((item) => `${clean(item.reasonName || item.reasonId || 'Idle')}: ${round(Number(item.hours || 0))}h`)
+          .join(' | ');
 
         for (const allocation of safeAllocations) {
           const project = projectByCode.get(lower(allocation.projectCode));
@@ -291,6 +343,7 @@ export async function GET(request: Request) {
           const labourCost = round(allocationHours * labourRate, 0);
           const exception = exceptionFor(header, line, lineProductive, lineOvertime, allocation.projectCode);
           const currentStage = clean(header.currentApprovalStage) || (payrollIsReady ? 'Payroll Ready' : normalizedStatus);
+          const dayWorked = isPayrollPayableWorkDay(line, header.timesheetDate) ? 1 : 0;
           rows.push({
             headerId: header.id,
             lineId: line.id,
@@ -299,8 +352,11 @@ export async function GET(request: Request) {
             periodName: period.name,
             periodStatus: period.status,
             timesheetDate: header.timesheetDate,
+            supervisorId: clean(header.supervisorId),
             supervisorName: header.supervisorName,
+            workCenterId: clean(header.workCenterId),
             workCenterName: header.workCenterName,
+            shiftLabel: clean(header.shiftLabel) || 'Unassigned',
             status: header.status,
             normalizedStatus,
             approvalStatus: currentStage,
@@ -312,6 +368,8 @@ export async function GET(request: Request) {
             employeeId: line.employeeId,
             employeeNo: line.employeeNo,
             employeeName: line.employeeName,
+            biometricId: clean(line.biometricId),
+            attendanceId: clean(line.attendanceId),
             employeeCategory: clean((employee as any)?.employeeCategory || (employee as any)?.salaryGrade || 'Unassigned'),
             employmentType: clean((employee as any)?.employmentType || 'Unassigned'),
             department: clean((employee as any)?.department || 'Unassigned'),
@@ -324,6 +382,10 @@ export async function GET(request: Request) {
             clockIn: line.clockIn,
             clockOut: line.clockOut,
             attendanceHours: normalizePaidWorkHours(line.attendanceDuration),
+            dayWorked,
+            daysWorked: 0,
+            usedHours: lineProductive,
+            idleHours: round(line.idleHours),
             productiveHours: allocationHours,
             nonProductiveHours: round(line.idleHours / safeAllocations.length),
             overtimeHours: round(lineOvertime * (allocationHours / Math.max(lineProductive, 1))),
@@ -331,6 +393,8 @@ export async function GET(request: Request) {
             variance: round(line.variance),
             validationStatus: line.validationStatus,
             validationMessage: line.validationMessage,
+            lineRemarks: clean(line.remarks),
+            idleReasons: idleReasons || 'None',
             projectCode: allocation.projectCode || 'No Project',
             projectName: allocation.projectName || project?.name || allocation.projectCode || 'No Project',
             projectManager: clean(project?.projectManager || header.projectManager || 'Unassigned'),
@@ -338,6 +402,7 @@ export async function GET(request: Request) {
             activityCode: clean((allocation as any).activityId || allocation.projectCode || 'General'),
             activityName: clean((allocation as any).taskName || 'General Timesheet Activity'),
             allocationHours,
+            allocationRemarks: clean(allocation.remarks),
             labourRateNgn: labourRate,
             labourCostNgn: labourCost,
             projectManagerStatus: projectApproval?.projectManagerStatus || (normalizedStatus === 'Supervisor_Reviewed' ? 'Pending' : 'Not Required'),
@@ -349,6 +414,8 @@ export async function GET(request: Request) {
             approvalComments,
             submittedAt: header.submittedAt,
             submittedBy: header.submittedBy,
+            approvedAt: header.approvedAt,
+            approvedBy: header.approvedBy,
             lastSyncAt: header.lastSyncAt,
             auditTrail: `Generated report row for ${header.id}/${line.id} at ${new Date().toISOString()}`,
           });
@@ -385,6 +452,18 @@ export async function GET(request: Request) {
       return true;
     }).sort((a, b) => b.timesheetDate.localeCompare(a.timesheetDate) || a.employeeName.localeCompare(b.employeeName));
 
+    const periodDaysByEmployee = new Map<string, Set<string>>();
+    for (const row of filteredRows) {
+      if (row.dayWorked !== 1) continue;
+      const employeeKey = canonicalTimesheetEmployeeKey(row);
+      const dates = periodDaysByEmployee.get(employeeKey) || new Set<string>();
+      dates.add(row.timesheetDate);
+      periodDaysByEmployee.set(employeeKey, dates);
+    }
+    for (const row of filteredRows) {
+      row.daysWorked = periodDaysByEmployee.get(canonicalTimesheetEmployeeKey(row))?.size || 0;
+    }
+
     const masterEmployeeValues = (selector: (employee: any) => unknown) =>
       Array.from(new Set(payrollEmployees.employees.map((employee) => clean(selector(employee))).filter(Boolean))).sort();
     const masterCostCentres = Array.from(new Set([
@@ -392,6 +471,20 @@ export async function GET(request: Request) {
       ...projects.map((project) => clean((project as any).costCenter || (project as any).costCentre || project.code)).filter(Boolean),
       ...scopedRows.map((row) => row.costCentre).filter(Boolean),
     ])).sort();
+
+    const exportMode = searchParams.get('exportMode') === 'full' || searchParams.get('format') === 'csv' || searchParams.get('format') === 'excel';
+    const detailLimit = exportMode ? Number.POSITIVE_INFINITY : 1000;
+    const reportLimit = exportMode ? Number.POSITIVE_INFINITY : 500;
+    const canViewCosts = scope === 'enterprise' || scope === 'cost-control' || scope === 'project-manager';
+    const payrollAttendanceSheet = buildPayrollAttendanceSheet({
+      rows: filteredRows,
+      employeesByKey,
+      holidayDates,
+      canViewCosts,
+    });
+    const missingDays = from && to
+      ? await findMissingTimesheetDays({ from, to, maxGaps: exportMode ? 2000 : 200 })
+      : { gaps: [], gateByPeriod: {} };
 
     const payload = {
       generatedAt: new Date().toISOString(),
@@ -402,15 +495,24 @@ export async function GET(request: Request) {
         visibilityScope: scope,
         canExport: true,
         canSchedule: uiPermissions.canViewAudit || uiPermissions.canApproveTimesheet,
-        canViewCosts: scope === 'enterprise' || scope === 'cost-control' || scope === 'project-manager',
+        canViewCosts,
         canViewPayroll: scope === 'enterprise',
       },
       summary: {
         ...summarizeRows(filteredRows),
         missingTimesheets: filteredRows.filter((row) => row.exceptionType === 'Missing Attendance').length,
       },
-      reportRows: reportRowsForType(filteredRows, reportType).slice(0, 500),
-      detailRows: filteredRows.slice(0, 1000),
+      reportRows: reportRowsForType(filteredRows, reportType).slice(0, Number.isFinite(reportLimit) ? reportLimit : undefined),
+      detailRows: Number.isFinite(detailLimit) ? filteredRows.slice(0, detailLimit) : filteredRows,
+      detailRowCount: filteredRows.length,
+      detailRowsTruncated: !exportMode && filteredRows.length > 1000,
+      exportMode: exportMode ? 'full' : 'preview',
+      payrollAttendanceSheet,
+      payrollAttendanceSheetCount: payrollAttendanceSheet.length,
+      missingDays: missingDays.gaps,
+      missingDayCount: missingDays.gaps.length,
+      recaptureGates: missingDays.gateByPeriod,
+      recaptureGuide: TIMESHEET_RECAPTURE_GUIDE,
       drilldowns: {
         organization: buildBreakdown(filteredRows, 'businessUnit', (row) => row.businessUnit),
         departments: buildBreakdown(filteredRows, 'department', (row) => row.department),
@@ -447,7 +549,7 @@ export async function GET(request: Request) {
         exportedBy: uiPermissions.actor,
         generatedAt: new Date().toISOString(),
         sourceModule: 'Timesheet Reporting and Analytics',
-        actionHistory: 'Report viewed/generated',
+        actionHistory: exportMode ? `Full capture export (${filteredRows.length} rows)` : 'Report viewed/generated',
         changeTracking: 'Read-only reporting payload; source timesheet changes remain in workflow history.',
       },
       filterOptions: {
