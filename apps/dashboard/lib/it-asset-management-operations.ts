@@ -2,6 +2,7 @@ import sql from 'mssql';
 import { readEmployeeDirectoryFromDb } from '@/lib/dle-enterprise-db';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { ensureItAssetSchemaSql } from '@/lib/it-asset-sql-schema';
+import { buildSoftwareLicenseMetrics } from '@/lib/it-software-alert-config';
 import {
   appendItAssetAudit,
   buildItAssetDashboardPayload,
@@ -878,6 +879,7 @@ export const buildItAssetSectionPayload = async (section: string, options?: {
   }
   if (section === 'licenses' || section === 'license-compliance') {
     let licenses = [...(payload.licenses || [])];
+    const metrics = buildSoftwareLicenseMetrics(licenses);
     const filterOptions = {
       vendors: Array.from(new Set(licenses.map((row) => row.vendorName).filter(Boolean) as string[])).sort(),
       statuses: Array.from(new Set(licenses.map((row) => row.complianceStatus).filter(Boolean))).sort(),
@@ -900,6 +902,7 @@ export const buildItAssetSectionPayload = async (section: string, options?: {
       licenses: paged.items,
       pagination: paged,
       filterOptions,
+      softwareMetrics: metrics,
     };
   }
   if (section === 'installed-software') {

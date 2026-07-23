@@ -39,6 +39,12 @@ import {
 } from '@/lib/it-asset-management-operations';
 import { importBundledItAssetRegister, importItAssetRegisterCsv } from '@/lib/it-asset-register-store';
 import { importBundledItSoftwareRegister, importItSoftwareRegisterCsv } from '@/lib/it-software-register-store';
+import {
+  buildSoftwareLicenseMetrics,
+  getSoftwareAlertConfig,
+  runSoftwareExpiryAlerts,
+  saveSoftwareAlertConfig,
+} from '@/lib/it-software-alert-config';
 
 const ok = (data: unknown) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -113,6 +119,12 @@ export async function GET(request: NextRequest) {
     if (section === 'dashboard') {
       return ok(await buildItAssetDashboardPayload());
     }
+    if (section === 'software-alert-config') {
+      return ok({
+        config: await getSoftwareAlertConfig(),
+        metrics: buildSoftwareLicenseMetrics((await buildItAssetDashboardPayload()).licenses),
+      });
+    }
 
     return ok(await buildItAssetSectionPayload(section, {
       page,
@@ -142,6 +154,7 @@ export async function POST(request: NextRequest) {
     const action = String(body.action || '').trim();
     const manageActions = new Set([
       'initialize', 'import-register', 'import-bundled-register', 'import-software-register', 'import-bundled-software-register',
+      'save-software-alert-config', 'run-software-expiry-alerts',
       'create-asset', 'update-asset', 'delete-asset', 'create-inventory', 'update-inventory', 'delete-inventory',
       'create-maintenance', 'schedule-maintenance-batch', 'perform-maintenance-batch', 'update-maintenance', 'assign-asset', 'reassign-asset', 'return-asset', 'create-vendor', 'create-warranty',
       'create-procurement', 'create-license', 'create-software-catalog', 'create-installed-software', 'create-software-request',
@@ -170,6 +183,12 @@ export async function POST(request: NextRequest) {
       const csvText = String(body.csvText || '').trim();
       if (!csvText) return err(400, 'csvText is required.');
       return ok(await importItSoftwareRegisterCsv(csvText, actor));
+    }
+    if (action === 'save-software-alert-config') {
+      return ok({ config: await saveSoftwareAlertConfig(body.config || {}, actor) });
+    }
+    if (action === 'run-software-expiry-alerts') {
+      return ok(await runSoftwareExpiryAlerts(base.session, actor));
     }
     if (action === 'create-asset') return ok({ asset: await createItAsset(body.asset || {}, actor), payload: await buildItAssetDashboardPayload() });
     if (action === 'update-asset') {

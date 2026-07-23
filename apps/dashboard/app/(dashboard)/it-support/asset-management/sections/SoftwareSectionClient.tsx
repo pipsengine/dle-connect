@@ -1,8 +1,20 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Filter, Plus, Upload } from 'lucide-react';
+import {
+  AlertCircle,
+  AlertTriangle,
+  Bell,
+  CalendarClock,
+  CheckCircle2,
+  Filter,
+  FileText,
+  Plus,
+  Upload,
+  Wallet,
+} from 'lucide-react';
 import type { ItAssetDashboardPayload } from '@/lib/it-asset-management-store';
+import type { SoftwareLicenseMetrics } from '@/lib/it-software-alert-constants';
 import {
   fetchAssetSection,
   importBundledSoftwareRegister,
@@ -11,6 +23,7 @@ import {
 } from '../lib/asset-management-api';
 import { AssetManagementShell } from '../AssetManagementShell';
 import { ErrorBanner, exportAssetSection, PaginationBar, SectionToolbar } from '../components/AssetManagementShared';
+import { SoftwareAlertConfigModal } from '../components/SoftwareAlertConfigModal';
 import { SoftwareRecordModal, type SoftwareRecordKind } from '../components/SoftwareRecordModal';
 
 type SoftwareSection =
@@ -33,6 +46,15 @@ type SectionPayload = ItAssetDashboardPayload & {
     statuses?: string[];
     categories?: string[];
   };
+  softwareMetrics?: SoftwareLicenseMetrics;
+};
+
+type MetricCard = {
+  label: string;
+  value: string;
+  hint: string;
+  tone: 'blue' | 'green' | 'amber' | 'orange' | 'rose' | 'violet' | 'teal' | 'slate';
+  icon: React.ComponentType<{ className?: string }>;
 };
 
 const currency = (value: number | null | undefined) =>
@@ -42,11 +64,33 @@ const currency = (value: number | null | undefined) =>
 
 const number = (value: number) => new Intl.NumberFormat('en-NG').format(value || 0);
 
+const CARD_TONES: Record<MetricCard['tone'], string> = {
+  blue: 'border-blue-200 bg-blue-50/90',
+  green: 'border-emerald-200 bg-emerald-50/90',
+  amber: 'border-amber-200 bg-amber-50/90',
+  orange: 'border-orange-200 bg-orange-50/90',
+  rose: 'border-rose-200 bg-rose-50/90',
+  violet: 'border-violet-200 bg-violet-50/90',
+  teal: 'border-teal-200 bg-teal-50/90',
+  slate: 'border-slate-200 bg-slate-50/90',
+};
+
+const ICON_TONES: Record<MetricCard['tone'], string> = {
+  blue: 'bg-blue-100 text-blue-700',
+  green: 'bg-emerald-100 text-emerald-700',
+  amber: 'bg-amber-100 text-amber-700',
+  orange: 'bg-orange-100 text-orange-700',
+  rose: 'bg-rose-100 text-rose-700',
+  violet: 'bg-violet-100 text-violet-700',
+  teal: 'bg-teal-100 text-teal-700',
+  slate: 'bg-slate-200 text-slate-700',
+};
+
 const statusTone = (status: string) => {
   const value = status.toLowerCase();
   if (value.includes('compliance') || value.includes('approved') || value.includes('valid') || value.includes('active')) return 'bg-emerald-50 text-emerald-700';
-  if (value.includes('expir')) return 'bg-amber-50 text-amber-700';
   if (value.includes('expired') || value.includes('non-compliant') || value.includes('rejected')) return 'bg-rose-50 text-rose-700';
+  if (value.includes('expir')) return 'bg-amber-50 text-amber-700';
   if (value.includes('review') || value.includes('open')) return 'bg-blue-50 text-blue-700';
   return 'bg-slate-100 text-slate-700';
 };
@@ -75,6 +119,7 @@ export function SoftwareSectionClient({ title, section }: Props) {
   const [importMessage, setImportMessage] = useState('');
   const [importing, setImporting] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [showAlertModal, setShowAlertModal] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
 
   const apiSection = apiSectionFor(section);
@@ -103,45 +148,62 @@ export function SoftwareSectionClient({ title, section }: Props) {
 
   const pagination = payload?.pagination || { page, pageSize: 25, total: 0 };
   const filterOptions = payload?.filterOptions || { vendors: [], statuses: [], categories: [] };
-
   const licenses = payload?.licenses || [];
   const catalog = payload?.softwareCatalog || [];
+  const metrics = payload?.softwareMetrics;
 
-  const summary = useMemo(() => {
+  const summary = useMemo((): MetricCard[] => {
     if (section === 'software-catalog') {
+      const approved = catalog.filter((row) => row.status === 'Approved').length;
+      const review = catalog.filter((row) => row.status === 'Review').length;
+      const deprecated = catalog.filter((row) => /deprecated|restricted/i.test(row.status)).length;
       return [
-        { label: 'Catalog items', value: number(pagination.total || catalog.length) },
-        { label: 'Vendors', value: number(new Set(catalog.map((row) => row.vendorName).filter(Boolean)).size) },
-        { label: 'Approved', value: number(catalog.filter((row) => row.status === 'Approved').length) },
-        { label: 'Annual cost', value: currency(catalog.reduce((sum, row) => sum + (row.annualCost || 0), 0)) },
+        { label: 'Catalog items', value: number(pagination.total || catalog.length), hint: 'Approved software products', tone: 'blue', icon: FileText },
+        { label: 'Vendors', value: number(new Set(catalog.map((row) => row.vendorName).filter(Boolean)).size), hint: 'Publisher coverage', tone: 'teal', icon: CheckCircle2 },
+        { label: 'Approved', value: number(approved), hint: 'Ready for deployment', tone: 'green', icon: CheckCircle2 },
+        { label: 'In review', value: number(review), hint: 'Pending approval', tone: 'amber', icon: AlertTriangle },
+        { label: 'Restricted', value: number(deprecated), hint: 'Deprecated or restricted', tone: 'rose', icon: AlertCircle },
+        { label: 'Annual cost', value: currency(catalog.reduce((sum, row) => sum + (row.annualCost || 0), 0)), hint: 'Catalog book value', tone: 'violet', icon: Wallet },
       ];
     }
     if (section === 'installed-software') {
       const rows = payload?.installedSoftware || [];
+      const active = rows.filter((row) => row.status === 'Active').length;
+      const inactive = rows.filter((row) => row.status !== 'Active').length;
       return [
-        { label: 'Installations', value: number(pagination.total || rows.length) },
-        { label: 'Active', value: number(rows.filter((row) => row.status === 'Active').length) },
-        { label: 'Products', value: number(new Set(rows.map((row) => row.productName)).size) },
-        { label: 'Linked assets', value: number(rows.filter((row) => row.assetTag).length) },
+        { label: 'Installations', value: number(pagination.total || rows.length), hint: 'Tracked installs', tone: 'blue', icon: FileText },
+        { label: 'Active', value: number(active), hint: 'Currently in use', tone: 'green', icon: CheckCircle2 },
+        { label: 'Inactive', value: number(inactive), hint: 'Needs review', tone: 'amber', icon: AlertTriangle },
+        { label: 'Products', value: number(new Set(rows.map((row) => row.productName)).size), hint: 'Distinct titles', tone: 'teal', icon: FileText },
+        { label: 'Linked assets', value: number(rows.filter((row) => row.assetTag).length), hint: 'Tied to hardware', tone: 'violet', icon: CheckCircle2 },
+        { label: 'Unlinked', value: number(rows.filter((row) => !row.assetTag).length), hint: 'Missing asset tag', tone: 'orange', icon: AlertCircle },
       ];
     }
     if (section === 'software-requests') {
       const rows = payload?.softwareRequests || [];
+      const open = rows.filter((row) => row.status === 'Open').length;
+      const high = rows.filter((row) => row.priority === 'High' || row.priority === 'Critical').length;
+      const approved = rows.filter((row) => row.status === 'Approved' || row.status === 'Fulfilled').length;
       return [
-        { label: 'Requests', value: number(pagination.total || rows.length) },
-        { label: 'Open', value: number(rows.filter((row) => row.status === 'Open').length) },
-        { label: 'High priority', value: number(rows.filter((row) => row.priority === 'High' || row.priority === 'Critical').length) },
-        { label: 'Departments', value: number(new Set(rows.map((row) => row.department).filter(Boolean)).size) },
+        { label: 'Requests', value: number(pagination.total || rows.length), hint: 'All software requests', tone: 'blue', icon: FileText },
+        { label: 'Open', value: number(open), hint: 'Awaiting action', tone: 'amber', icon: AlertTriangle },
+        { label: 'High priority', value: number(high), hint: 'High / critical', tone: 'rose', icon: AlertCircle },
+        { label: 'Approved', value: number(approved), hint: 'Approved or fulfilled', tone: 'green', icon: CheckCircle2 },
+        { label: 'Departments', value: number(new Set(rows.map((row) => row.department).filter(Boolean)).size), hint: 'Requesting units', tone: 'teal', icon: FileText },
+        { label: 'In review', value: number(rows.filter((row) => row.status === 'In Review').length), hint: 'Under assessment', tone: 'orange', icon: CalendarClock },
       ];
     }
-    const rows = licenses;
+
+    const m = metrics;
     return [
-      { label: 'Licenses', value: number(pagination.total || rows.length) },
-      { label: 'Seats total', value: number(rows.reduce((sum, row) => sum + (row.seatsTotal || 0), 0)) },
-      { label: 'Expiring / alerts', value: number(rows.filter((row) => /expir|non-compliant/i.test(row.complianceStatus || '')).length) },
-      { label: 'Annual cost', value: currency(rows.reduce((sum, row) => sum + (row.annualCost || 0), 0)) },
+      { label: 'Total licenses', value: number(m?.totalLicenses ?? pagination.total ?? licenses.length), hint: 'Registered software licenses', tone: 'blue', icon: FileText },
+      { label: 'In compliance', value: number(m?.inCompliance ?? 0), hint: 'Within entitlement', tone: 'green', icon: CheckCircle2 },
+      { label: 'Over licensed', value: number(m?.overLicensed ?? 0), hint: 'Usage exceeds seats', tone: 'orange', icon: AlertTriangle },
+      { label: 'Under licensed', value: number(m?.underLicensed ?? 0), hint: 'Low seat utilization', tone: 'teal', icon: AlertCircle },
+      { label: 'Expiring soon', value: number(m?.expiringSoon ?? 0), hint: 'Within 30 days', tone: 'amber', icon: CalendarClock },
+      { label: 'Expired', value: number(m?.expired ?? 0), hint: 'Past expiry date', tone: 'rose', icon: AlertCircle },
     ];
-  }, [section, payload, catalog, licenses, pagination.total]);
+  }, [section, payload, catalog, licenses, pagination.total, metrics]);
 
   const handleImportBundled = async () => {
     setImporting(true);
@@ -191,19 +253,49 @@ export function SoftwareSectionClient({ title, section }: Props) {
   const empty = !loading && pagination.total === 0 && !licenses.length && !catalog.length
     && !(payload?.installedSoftware?.length || payload?.softwareRequests?.length);
 
+  const showExpiryAlerts = section === 'software' || section === 'licenses' || section === 'license-compliance' || section === 'software-catalog';
+
   return (
     <AssetManagementShell title={title} description="Manage enterprise software licenses, catalog, installations, compliance, and requests.">
       <ErrorBanner message={error} />
       {importMessage ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{importMessage}</div> : null}
 
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {summary.map((card) => (
-          <div key={card.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{card.label}</p>
-            <p className="mt-2 text-2xl font-bold text-slate-950">{loading ? '—' : card.value}</p>
-          </div>
-        ))}
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {summary.map((card) => {
+          const Icon = card.icon;
+          return (
+            <div key={card.label} className={`rounded-xl border p-4 shadow-sm ${CARD_TONES[card.tone]}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600">{card.label}</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-950">{loading ? '—' : card.value}</p>
+                  <p className="mt-1 text-xs text-slate-600">{card.hint}</p>
+                </div>
+                <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${ICON_TONES[card.tone]}`}>
+                  <Icon className="h-5 w-5" />
+                </span>
+              </div>
+            </div>
+          );
+        })}
       </section>
+
+      {(section === 'software' || section === 'licenses' || section === 'license-compliance') && metrics ? (
+        <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 shadow-sm">
+          <span className="font-semibold text-slate-800">Alert windows:</span>
+          <span>90d {metrics.byPeriod[90]}</span>
+          <span className="text-slate-300">·</span>
+          <span>60d {metrics.byPeriod[60]}</span>
+          <span className="text-slate-300">·</span>
+          <span>30d {metrics.byPeriod[30]}</span>
+          <span className="text-slate-300">·</span>
+          <span>14d {metrics.byPeriod[14]}</span>
+          <span className="text-slate-300">·</span>
+          <span>7d {metrics.byPeriod[7]}</span>
+          <span className="text-slate-300">·</span>
+          <span>Annual cost {currency(metrics.annualCost)}</span>
+        </div>
+      ) : null}
 
       <SectionToolbar
         title={`${pagination.total || licenses.length || catalog.length || payload?.installedSoftware?.length || payload?.softwareRequests?.length || 0} records`}
@@ -222,6 +314,16 @@ export function SoftwareSectionClient({ title, section }: Props) {
               <Filter className="h-4 w-4" />
               Filters
             </button>
+            {showExpiryAlerts ? (
+              <button
+                type="button"
+                onClick={() => setShowAlertModal(true)}
+                className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+              >
+                <Bell className="h-4 w-4" />
+                Expiration alerts
+              </button>
+            ) : null}
             {(section === 'software-catalog' || section === 'licenses' || section === 'software' || section === 'license-compliance') ? (
               <>
                 <button
@@ -286,6 +388,8 @@ export function SoftwareSectionClient({ title, section }: Props) {
           onSubmit={handleCreate}
         />
       ) : null}
+
+      <SoftwareAlertConfigModal open={showAlertModal} onClose={() => setShowAlertModal(false)} />
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         {(section === 'licenses' || section === 'software' || section === 'license-compliance') ? (
