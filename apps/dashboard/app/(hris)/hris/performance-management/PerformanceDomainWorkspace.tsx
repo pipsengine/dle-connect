@@ -17,6 +17,7 @@ import GoalCascadingView from './GoalCascadingView';
 import OkrKpiManagementView from './OkrKpiManagementView';
 import MidYearReviewsView from './MidYearReviewsView';
 import SelfAppraisalView from './SelfAppraisalView';
+import ManagerAssessmentsView from './ManagerAssessmentsView';
 
 type Props = {
   route: string;
@@ -560,6 +561,10 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
     <SelfAppraisalView payload={payload} onAction={onAction} busy={busy} />
   );
 
+  const managerAssessmentsView = (
+    <ManagerAssessmentsView payload={payload} onAction={onAction} busy={busy} />
+  );
+
   const content = useMemo(() => {
     if (route.includes('performance-cycles') || route === 'planning') return cyclesView;
     if (route.includes('corporate-goals') || route.includes('company-objectives')) return companyObjectivesView;
@@ -567,14 +572,7 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
     if (route.includes('employee-goals') || route.includes('goal-library') || route.includes('kpi-setup')) return goalsView;
     if (route.includes('monthly-check-ins') || route.includes('continuous-feedback') || route.includes('coaching') || route.includes('development-conversations')) return checkInsView;
     if (route.includes('self-appraisal')) return selfAppraisalView;
-    if (route.includes('supervisor-review')) {
-      return (
-        <div className="space-y-4">
-          {teamQueueBanner}
-          {assessmentView('Manager')}
-        </div>
-      );
-    }
+    if (route.includes('supervisor-review')) return managerAssessmentsView;
     if (route.includes('mid-year')) return midYearReviewsView;
     if (route.includes('behaviour') || route.includes('competency')) return assessmentView('Behavioural');
     if (route.includes('360') || route.includes('project-manager-review') || route.includes('matrix')) return threeSixtyView;
