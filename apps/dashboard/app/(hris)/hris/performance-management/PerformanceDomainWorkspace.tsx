@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import type { PerformanceWorkspacePayload } from '@/lib/performance-domain-types';
 import { displayScore } from '@/lib/performance-calculation';
+import PerformanceCyclesView from './PerformanceCyclesView';
 
 type Props = {
   route: string;
@@ -69,50 +70,7 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
   ) : null;
 
   const cyclesView = (
-    <SectionShell
-      title="Performance Cycle Management"
-      detail="Create, approve, publish, and advance controlled performance cycles with eligibility snapshots."
-      actions={isHrScope ? (
-        <button type="button" disabled={busy} className={btn} onClick={() => onAction('cycle.create', { name: form.cycleName || `Performance Cycle ${new Date().getFullYear()}`, type: form.cycleType || 'Annual' })}>
-          <Plus className="h-4 w-4" /> Create Cycle
-        </button>
-      ) : null}
-    >
-      {isHrScope ? (
-      <div className={`${card} grid gap-3 md:grid-cols-3`}>
-        <div><label className={label}>Cycle name</label><input className={input} value={form.cycleName || ''} onChange={(e) => setField('cycleName', e.target.value)} placeholder="H2 2026 Performance Cycle" /></div>
-        <div><label className={label}>Type</label><input className={input} value={form.cycleType || 'Annual'} onChange={(e) => setField('cycleType', e.target.value)} /></div>
-        <div className="flex items-end"><button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.create', { name: form.cycleName, type: form.cycleType || 'Annual' })}>Quick create draft</button></div>
-      </div>
-      ) : (
-        <p className={`${card} text-sm font-semibold text-[#64748B]`}>Cycle administration is limited to HR performance administrators.</p>
-      )}
-      <div className="space-y-3">
-        {domain.cycles.map((cycle) => (
-          <article key={cycle.id} className={card}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-black text-[#0F172A]">{cycle.name}</h3>
-                <p className="text-sm font-semibold text-[#64748B]">{cycle.type} · {cycle.startDate} → {cycle.endDate} · {cycle.eligibilityCount} eligible</p>
-                <p className="mt-1 text-xs font-bold text-[#0052CC]">{cycle.status}</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {isHrScope && cycle.status === 'Draft' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.submit-approval', { cycleId: cycle.id })}>Submit approval</button> : null}
-                {isHrScope && ['Draft', 'Pending Approval'].includes(cycle.status) ? <button type="button" className={btn} disabled={busy} onClick={() => onAction('cycle.approve-publish', { cycleId: cycle.id })}>Publish</button> : null}
-                {isHrScope ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.clone', { cycleId: cycle.id })}>Clone</button> : null}
-                {isHrScope && cycle.status === 'Goal Setting' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.advance-status', { cycleId: cycle.id, status: 'Active' })}>Start Active</button> : null}
-                {isHrScope && cycle.status === 'Active' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.advance-status', { cycleId: cycle.id, status: 'Mid-Year Review' })}>Open Mid-Year</button> : null}
-                {isHrScope && cycle.status === 'Mid-Year Review' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.advance-status', { cycleId: cycle.id, status: 'Year-End Review' })}>Open Year-End</button> : null}
-                {isHrScope && cycle.status === 'Year-End Review' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.advance-status', { cycleId: cycle.id, status: 'Calibration' })}>Open Calibration</button> : null}
-                {isHrScope && cycle.status === 'Calibration' ? <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('cycle.advance-status', { cycleId: cycle.id, status: 'Results Published' })}>Mark Ready to Publish</button> : null}
-              </div>
-            </div>
-            <p className="mt-3 text-xs font-semibold text-[#64748B]">Weights: Company {cycle.sectionWeights.companyObjectives}% · OKRs {cycle.sectionWeights.individualOkrs}% · Behaviour {cycle.sectionWeights.behavioural}%</p>
-          </article>
-        ))}
-        {!domain.cycles.length ? <Empty text="No cycles yet. Create a draft cycle to begin." /> : null}
-      </div>
-    </SectionShell>
+    <PerformanceCyclesView payload={payload} onAction={onAction} busy={busy} />
   );
 
   const companyObjectivesView = (
