@@ -12,6 +12,11 @@ import {
 import type { PerformanceWorkspacePayload } from '@/lib/performance-domain-types';
 import { displayScore } from '@/lib/performance-calculation';
 import PerformanceCyclesView from './PerformanceCyclesView';
+import CompanyObjectivesView from './CompanyObjectivesView';
+import GoalCascadingView from './GoalCascadingView';
+import OkrKpiManagementView from './OkrKpiManagementView';
+import MidYearReviewsView from './MidYearReviewsView';
+import SelfAppraisalView from './SelfAppraisalView';
 
 type Props = {
   route: string;
@@ -74,117 +79,11 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
   );
 
   const companyObjectivesView = (
-    <SectionShell
-      title="Company Objectives"
-      detail="HR creates and publishes; Executive Management scores corporate achievement. Weights must total 100%."
-      actions={
-        <div className="flex gap-2">
-          <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('company-objective.publish', { cycleId: activeCycleId })}>Publish set</button>
-          <button
-            type="button"
-            className={btn}
-            disabled={busy}
-            onClick={() => onAction('company-objective.upsert', {
-              cycleId: activeCycleId,
-              title: form.coTitle || 'New company objective',
-              code: form.coCode || `CO-${domain.companyObjectives.length + 1}`,
-              weight: Number(form.coWeight || 0),
-              kpi: form.coKpi || 'KPI',
-              target: Number(form.coTarget || 100),
-            })}
-          >
-            <Plus className="h-4 w-4" /> Add objective
-          </button>
-        </div>
-      }
-    >
-      <div className={`${card} grid gap-3 md:grid-cols-4`}>
-        <div><label className={label}>Code</label><input className={input} value={form.coCode || ''} onChange={(e) => setField('coCode', e.target.value)} /></div>
-        <div className="md:col-span-2"><label className={label}>Title</label><input className={input} value={form.coTitle || ''} onChange={(e) => setField('coTitle', e.target.value)} /></div>
-        <div><label className={label}>Weight %</label><input className={input} value={form.coWeight || ''} onChange={(e) => setField('coWeight', e.target.value)} /></div>
-      </div>
-      <div className="space-y-3">
-        {domain.companyObjectives.filter((item) => !activeCycleId || item.cycleId === activeCycleId).map((item) => (
-          <article key={item.id} className={card}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold text-[#64748B]">{item.code} · {item.weight}%</p>
-                <h3 className="text-base font-black text-[#0F172A]">{item.title}</h3>
-                <p className="text-sm font-semibold text-[#64748B]">{item.kpi} · Target {item.target}{item.unit}</p>
-                <p className="mt-1 text-xs font-bold text-[#0052CC]">{item.status}{item.corporateAchievement != null ? ` · Achievement ${item.corporateAchievement}` : ''}</p>
-              </div>
-              {item.status === 'Published' || item.status === 'Scored' ? (
-                <div className="flex items-center gap-2">
-                  <input className={`${input} w-28`} placeholder="Score" value={form[`score-${item.id}`] || ''} onChange={(e) => setField(`score-${item.id}`, e.target.value)} />
-                  <button type="button" className={btn} disabled={busy} onClick={() => onAction('company-objective.score', { id: item.id, corporateAchievement: Number(form[`score-${item.id}`] || 0) })}>Lock score</button>
-                </div>
-              ) : null}
-            </div>
-          </article>
-        ))}
-        {!domain.companyObjectives.length ? <Empty text="No company objectives for this cycle." /> : null}
-      </div>
-    </SectionShell>
+    <CompanyObjectivesView payload={payload} onAction={onAction} busy={busy} />
   );
 
   const goalsView = (
-    <SectionShell
-      title="OKR & KPI Management"
-      detail="Assign measurable goals, request discussion, and lock acknowledgement as the performance contract."
-      actions={
-        <button
-          type="button"
-          className={btn}
-          disabled={busy}
-          onClick={() => onAction('goal.upsert', {
-            cycleId: activeCycleId,
-            employeeId: form.goalEmployeeId || payload.actor.employeeId,
-            employeeCode: form.goalEmployeeCode || payload.actor.employeeCode,
-            employeeName: form.goalEmployeeName || payload.actor.fullName,
-            title: form.goalTitle || 'Employee objective',
-            description: form.goalDescription || '',
-            keyResults: [
-              { title: 'Primary KPI', baseline: 0, target: 100, unit: '%', weight: 60 },
-              { title: 'Quality milestone', baseline: 0, target: 100, unit: '%', weight: 40 },
-            ],
-          })}
-        >
-          <Plus className="h-4 w-4" /> Assign goal
-        </button>
-      }
-    >
-      <div className={`${card} grid gap-3 md:grid-cols-3`}>
-        <div><label className={label}>Employee name</label><input className={input} value={form.goalEmployeeName || ''} onChange={(e) => setField('goalEmployeeName', e.target.value)} /></div>
-        <div><label className={label}>Employee ID</label><input className={input} value={form.goalEmployeeId || ''} onChange={(e) => setField('goalEmployeeId', e.target.value)} /></div>
-        <div><label className={label}>Goal title</label><input className={input} value={form.goalTitle || ''} onChange={(e) => setField('goalTitle', e.target.value)} /></div>
-      </div>
-      <div className="space-y-3">
-        {domain.goals.slice(0, 40).map((goal) => (
-          <article key={goal.id} className={card}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="text-base font-black text-[#0F172A]">{goal.title}</h3>
-                <p className="text-sm font-semibold text-[#64748B]">{goal.employeeName} · {goal.department || '—'} · v{goal.version}</p>
-                <p className="mt-1 text-xs font-bold text-[#0052CC]">{goal.status}{goal.acknowledgedAt ? ` · Agreed ${goal.acknowledgedAt.slice(0, 10)}` : ''}</p>
-                <p className="mt-2 text-xs font-semibold text-[#64748B]">Progress {goal.progressPercent}% · {goal.keyResults.length} key results</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {['Assigned', 'Resubmitted'].includes(goal.status) ? (
-                  <>
-                    <button type="button" className={btnGhost} disabled={busy} onClick={() => onAction('goal.request-discussion', { id: goal.id, comment: 'Please clarify targets' })}>Request discussion</button>
-                    <button type="button" className={btn} disabled={busy} onClick={() => onAction('goal.acknowledge', { id: goal.id })}><CheckCircle2 className="h-4 w-4" /> Acknowledge</button>
-                  </>
-                ) : null}
-                {goal.status === 'Discussion Requested' ? (
-                  <button type="button" className={btn} disabled={busy} onClick={() => onAction('goal.upsert', { id: goal.id, title: goal.title, reason: 'Manager response / revision' })}>Resubmit after discussion</button>
-                ) : null}
-              </div>
-            </div>
-          </article>
-        ))}
-        {!domain.goals.length ? <Empty text="No employee goals yet." /> : null}
-      </div>
-    </SectionShell>
+    <OkrKpiManagementView payload={payload} onAction={onAction} busy={busy} />
   );
 
   const checkInsView = (
@@ -649,12 +548,25 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
     </SectionShell>
   );
 
+  const goalCascadingView = (
+    <GoalCascadingView payload={payload} onAction={onAction} busy={busy} />
+  );
+
+  const midYearReviewsView = (
+    <MidYearReviewsView payload={payload} onAction={onAction} busy={busy} />
+  );
+
+  const selfAppraisalView = (
+    <SelfAppraisalView payload={payload} onAction={onAction} busy={busy} />
+  );
+
   const content = useMemo(() => {
     if (route.includes('performance-cycles') || route === 'planning') return cyclesView;
-    if (route.includes('corporate-goals') || route.includes('company-objectives') || route.includes('department-goals')) return companyObjectivesView;
+    if (route.includes('corporate-goals') || route.includes('company-objectives')) return companyObjectivesView;
+    if (route.includes('department-goals')) return goalCascadingView;
     if (route.includes('employee-goals') || route.includes('goal-library') || route.includes('kpi-setup')) return goalsView;
     if (route.includes('monthly-check-ins') || route.includes('continuous-feedback') || route.includes('coaching') || route.includes('development-conversations')) return checkInsView;
-    if (route.includes('self-appraisal')) return assessmentView('Self');
+    if (route.includes('self-appraisal')) return selfAppraisalView;
     if (route.includes('supervisor-review')) {
       return (
         <div className="space-y-4">
@@ -663,24 +575,7 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
         </div>
       );
     }
-    if (route.includes('mid-year')) {
-      return (
-        <div className="space-y-4">
-          {assessmentView('Mid-Year')}
-          <SectionShell title="Mid-year goal change requests" detail="Request interim goal changes; manager acknowledgement is required before lock.">
-            <div className={`${card} grid gap-3 md:grid-cols-[1fr_auto]`}>
-              <div>
-                <label className={label}>Goal ID</label>
-                <input className={input} value={form.midGoalId || ''} onChange={(e) => setField('midGoalId', e.target.value)} placeholder="goal-…" />
-              </div>
-              <div className="flex items-end">
-                <button type="button" className={btn} disabled={busy} onClick={() => onAction('midyear.change-request', { goalId: form.midGoalId, reason: 'Mid-year adjustment' })}>Request change</button>
-              </div>
-            </div>
-          </SectionShell>
-        </div>
-      );
-    }
+    if (route.includes('mid-year')) return midYearReviewsView;
     if (route.includes('behaviour') || route.includes('competency')) return assessmentView('Behavioural');
     if (route.includes('360') || route.includes('project-manager-review') || route.includes('matrix')) return threeSixtyView;
     if (route.includes('calibration') || route.includes('talent-review')) return calibrationView;

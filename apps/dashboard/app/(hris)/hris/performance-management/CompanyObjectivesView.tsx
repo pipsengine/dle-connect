@@ -1,0 +1,651 @@
+'use client';
+
+import { useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  CalendarDays,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  Download,
+  Filter,
+  MoreVertical,
+  Network,
+  Plus,
+  Scale,
+  Search,
+  Settings2,
+  Target,
+  TrendingUp,
+  X,
+} from 'lucide-react';
+import type { CompanyObjective, PerformanceWorkspacePayload } from '@/lib/performance-domain-types';
+import { fmtDate } from './performance-management-ui';
+
+type Props = {
+  payload: PerformanceWorkspacePayload;
+  onAction: (action: string, data?: Record<string, unknown>) => Promise<void>;
+  busy?: boolean;
+};
+
+const TABS = [
+  'Overview',
+  'Objectives',
+  'Alignment & Cascading',
+  'Progress Updates',
+  'Scoring',
+  'Approvals',
+  'Versions & Changes',
+  'Audit',
+] as const;
+
+type TabId = (typeof TABS)[number];
+
+type ObjectiveStatus = 'On Track' | 'At Risk' | 'Awaiting Score' | 'Draft';
+
+const safeFmtDate = (value?: string | null) => {
+  if (!value) return '—';
+  const day = value.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return value;
+  return fmtDate(day);
+};
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('') || '—';
+
+const actualValue = (item: CompanyObjective) =>
+  item.corporateAchievement != null ? Number(item.corporateAchievement) : Number(item.baseline || 0);
+
+const progressPct = (item: CompanyObjective) => {
+  const target = Number(item.target) || 0;
+  if (target <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((actualValue(item) / target) * 100)));
+};
+
+const deriveStatus = (item: CompanyObjective): ObjectiveStatus => {
+  if (item.status === 'Draft' || item.status === 'Pending Approval') return 'Draft';
+  const pct = progressPct(item);
+  if (pct < 85) return 'At Risk';
+  return 'On Track';
+};
+
+const StatusPill = ({ status }: { status: ObjectiveStatus }) => {
+  const styles: Record<ObjectiveStatus, string> = {
+    'On Track': 'bg-[#ecfdf3] text-[#027a48] border-[#abefc6]',
+    'At Risk': 'bg-[#fff6ed] text-[#c4320a] border-[#f9dbaf]',
+    'Awaiting Score': 'bg-[#eff8ff] text-[#175cd3] border-[#b2ddff]',
+    Draft: 'bg-[#f8fafc] text-[#475467] border-[#e4e7ec]',
+  };
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${styles[status]}`}>
+      <i className={`h-1.5 w-1.5 rounded-full ${status === 'At Risk' ? 'bg-[#f79009]' : status === 'On Track' ? 'bg-[#12b76a]' : 'bg-[#2e90fa]'}`} />
+      {status}
+    </span>
+  );
+};
+
+const Donut = ({ value, color, label }: { value: number; color: string; label: string }) => (
+  <div className="relative mx-auto grid h-[88px] w-[88px] place-items-center rounded-full" style={{ background: `conic-gradient(${color} ${Math.max(0, Math.min(100, value)) * 3.6}deg, #e4e7ec 0)` }}>
+    <span className="absolute inset-[12px] grid place-items-center rounded-full bg-white text-center">
+      <b className="block text-lg font-bold text-[#101828]">{value}%</b>
+      <small className="text-[8px] font-semibold uppercase tracking-wide text-[#667085]">{label}</small>
+    </span>
+  </div>
+);
+
+export default function CompanyObjectivesView({ payload, onAction, busy }: Props) {
+  const domain = payload.domain;
+  const isHrScope = payload.actor?.scope === 'global';
+  const cycles = domain.cycles || [];
+  const [cycleId, setCycleId] = useState(domain.activeCycleId || cycles[0]?.id || '');
+  const [activeTab, setActiveTab] = useState<TabId>('Overview');
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All statuses');
+  const [pillarFilter, setPillarFilter] = useState('All pillars');
+  const [ownerFilter, setOwnerFilter] = useState('All owners');
+  const [page, setPage] = useState(1);
+  const [drawer, setDrawer] = useState<CompanyObjective | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ code: '', title: '', weight: '10', kpi: '', target: '100', owner: 'Executive Management', strategicPillar: 'Growth' });
+  const [scoreDraft, setScoreDraft] = useState('');
+  const pageSize = 10;
+
+  const activeCycle = cycles.find((cycle) => cycle.id === cycleId) || cycles.find((cycle) => cycle.id === domain.activeCycleId) || cycles[0];
+  const objectives = useMemo(
+    () => (domain.companyObjectives || []).filter((item) => !cycleId || item.cycleId === cycleId),
+    [domain.companyObjectives, cycleId],
+  );
+  const goals = useMemo(
+    () => (domain.goals || []).filter((goal) => !cycleId || goal.cycleId === cycleId),
+    [domain.goals, cycleId],
+  );
+
+  const pillars = useMemo(() => ['All pillars', ...Array.from(new Set(objectives.map((item) => item.strategicPillar).filter(Boolean)))], [objectives]);
+  const owners = useMemo(() => ['All owners', ...Array.from(new Set(objectives.map((item) => item.owner).filter(Boolean)))], [objectives]);
+
+  const enriched = useMemo(() => objectives.map((item) => {
+    const linked = goals.filter((goal) => goal.parentObjectiveId === item.id);
+    const departments = new Set(linked.map((goal) => goal.department).filter(Boolean)).size;
+    const pct = progressPct(item);
+    const status = deriveStatus(item);
+    return {
+      item,
+      actual: actualValue(item),
+      pct,
+      status,
+      alignedDepartments: departments,
+      alignedGoals: linked.length,
+      lastUpdate: item.scoredAt || item.publishedAt || '',
+    };
+  }), [objectives, goals]);
+
+  const filtered = useMemo(() => enriched.filter((row) => {
+    const q = query.trim().toLowerCase();
+    if (q && !`${row.item.code} ${row.item.title} ${row.item.strategicPillar} ${row.item.owner}`.toLowerCase().includes(q)) return false;
+    if (statusFilter !== 'All statuses' && row.status !== statusFilter) return false;
+    if (pillarFilter !== 'All pillars' && row.item.strategicPillar !== pillarFilter) return false;
+    if (ownerFilter !== 'All owners' && row.item.owner !== ownerFilter) return false;
+    return true;
+  }), [enriched, query, statusFilter, pillarFilter, ownerFilter]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const rows = filtered.slice((page - 1) * pageSize, page * pageSize);
+
+  const totalWeight = objectives.reduce((sum, item) => sum + Number(item.weight || 0), 0);
+  const onTrack = enriched.filter((row) => row.status === 'On Track').length;
+  const atRisk = enriched.filter((row) => row.status === 'At Risk').length;
+  const awaitingScore = enriched.filter((row) => row.item.status === 'Published' && row.item.corporateAchievement == null).length;
+  const alignedGoalCount = goals.filter((goal) => Boolean(goal.parentObjectiveId)).length;
+  const alignmentCoverage = goals.length ? Math.round((alignedGoalCount / goals.length) * 100) : 0;
+  const ownersAssigned = objectives.filter((item) => Boolean(item.owner)).length;
+  const published = objectives.some((item) => ['Published', 'Scored', 'Locked'].includes(item.status));
+  const maxVersion = Math.max(1, ...objectives.map((item) => item.version || 1));
+  const setStatusLabel = published ? 'Published' : objectives.some((item) => item.status === 'Pending Approval') ? 'Pending Approval' : 'Draft';
+
+  const createObjective = async () => {
+    await onAction('company-objective.upsert', {
+      cycleId: cycleId || activeCycle?.id,
+      code: form.code || `CO-${objectives.length + 1}`,
+      title: form.title || 'New company objective',
+      weight: Number(form.weight || 0),
+      kpi: form.kpi || 'KPI',
+      target: Number(form.target || 100),
+      owner: form.owner,
+      strategicPillar: form.strategicPillar,
+    });
+    setCreating(false);
+    setForm({ code: '', title: '', weight: '10', kpi: '', target: '100', owner: 'Executive Management', strategicPillar: 'Growth' });
+  };
+
+  return (
+    <div className="space-y-4 text-[#101828]">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-[#101828]">Company Objectives</h1>
+          <p className="mt-1 text-[11px] font-medium text-[#667085]">Define, align, monitor and govern enterprise objectives.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={cycleId}
+            onChange={(e) => { setCycleId(e.target.value); setPage(1); }}
+            className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-3 text-[11px] font-semibold text-[#344054]"
+          >
+            {cycles.map((cycle) => (
+              <option key={cycle.id} value={cycle.id}>{cycle.name}</option>
+            ))}
+            {!cycles.length ? <option value="">No cycles</option> : null}
+          </select>
+          {isHrScope ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setCreating(true)}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#1570ef] px-3 text-[11px] font-semibold text-white disabled:opacity-50"
+            >
+              <Plus className="h-3.5 w-3.5" /> Create Objective
+            </button>
+          ) : null}
+          <button type="button" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#d0d5dd] bg-white px-3 text-[11px] font-semibold text-[#344054]">
+            <Download className="h-3.5 w-3.5" /> Export
+          </button>
+          <button type="button" className="grid h-9 w-9 place-items-center rounded-lg border border-[#d0d5dd] bg-white text-[#667085]" aria-label="More">
+            <MoreVertical className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex gap-1 overflow-x-auto border-b border-[#eaecf0]">
+        {TABS.map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={`whitespace-nowrap px-4 py-2.5 text-[11px] font-semibold transition ${
+              activeTab === tab ? 'border-b-2 border-[#1570ef] text-[#1570ef]' : 'text-[#475467] hover:text-[#1570ef]'
+            }`}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'Overview' ? (
+        <>
+          <section className="overflow-hidden rounded-xl border border-[#b2ddff] bg-[#f5faff]">
+            <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-sm font-bold text-[#101828]">{activeCycle ? `${activeCycle.name.replace(/Performance Cycle/i, '').trim() || activeCycle.name} Objective Set` : 'Objective Set'}</h2>
+                  <span className="rounded-full border border-[#abefc6] bg-[#ecfdf3] px-2 py-0.5 text-[9px] font-semibold text-[#027a48]">{setStatusLabel}</span>
+                  {activeCycle && !['Closed', 'Archived', 'Draft'].includes(activeCycle.status) ? (
+                    <span className="rounded-full border border-[#b2ddff] bg-white px-2 py-0.5 text-[9px] font-semibold text-[#175cd3]">Active</span>
+                  ) : null}
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    ['Duration', activeCycle ? `${safeFmtDate(activeCycle.startDate)} – ${safeFmtDate(activeCycle.endDate)}` : '—'],
+                    ['Owner', 'Executive Management'],
+                    ['Version', `v${maxVersion}.0`],
+                    ['Next Review', activeCycle?.midYearStart ? safeFmtDate(activeCycle.midYearStart) : activeCycle?.goalSettingEnd ? safeFmtDate(activeCycle.goalSettingEnd) : '—'],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <p className="text-[10px] font-medium text-[#667085]">{label}</p>
+                      <p className="mt-1 text-[11px] font-bold text-[#101828]">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={!objectives.length}
+                onClick={() => setDrawer(objectives[0] || null)}
+                className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-[#84caff] bg-white px-3 text-[11px] font-semibold text-[#175cd3] disabled:opacity-50"
+              >
+                Review objective set <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-x-5 gap-y-2 border-t border-[#d1e9ff] bg-white/70 px-4 py-2.5">
+              {[
+                [`Weights ${totalWeight}%`, totalWeight === 100],
+                [`${ownersAssigned}/${objectives.length || 0} owners assigned`, ownersAssigned === objectives.length && objectives.length > 0],
+                ['KPIs validated', objectives.every((item) => Boolean(item.kpi))],
+                ['Approval completed', published],
+              ].map(([label, ok]) => (
+                <span key={String(label)} className={`inline-flex items-center gap-1.5 text-[10px] font-semibold ${ok ? 'text-[#027a48]' : 'text-[#b54708]'}`}>
+                  {ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                  {label}
+                </span>
+              ))}
+            </div>
+          </section>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            {[
+              { icon: Target, label: 'Total Objectives', value: String(objectives.length), delta: 'No change', tone: 'blue' as const },
+              { icon: Scale, label: 'Total Weight', value: `${totalWeight}%`, delta: totalWeight === 100 ? 'Balanced' : 'Needs balance', tone: 'blue' as const },
+              { icon: Network, label: 'Alignment Coverage', value: `${alignmentCoverage}%`, delta: alignedGoalCount ? `${alignedGoalCount} goals linked` : 'No links yet', tone: 'blue' as const },
+              { icon: TrendingUp, label: 'On Track', value: String(onTrack), delta: onTrack ? `↑ ${onTrack} current` : 'No change', tone: 'green' as const },
+              { icon: AlertTriangle, label: 'At Risk', value: String(atRisk), delta: atRisk ? 'Needs attention' : 'No change', tone: 'orange' as const },
+              { icon: ClipboardList, label: 'Score Awaiting Review', value: String(awaitingScore), delta: awaitingScore ? `↑ ${awaitingScore}` : 'Clear', tone: 'blue' as const },
+            ].map((kpi) => (
+              <article key={kpi.label} className="rounded-xl border border-[#eaecf0] bg-white p-3.5 shadow-sm">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-[10px] font-semibold text-[#667085]">{kpi.label}</p>
+                  <span className={`grid h-8 w-8 place-items-center rounded-lg ${
+                    kpi.tone === 'orange' ? 'bg-[#fff6ed] text-[#dc6803]' : kpi.tone === 'green' ? 'bg-[#ecfdf3] text-[#039855]' : 'bg-[#eff8ff] text-[#1570ef]'
+                  }`}>
+                    <kpi.icon className="h-4 w-4" />
+                  </span>
+                </div>
+                <p className="mt-2 text-2xl font-bold text-[#101828]">{kpi.value}</p>
+                <p className={`mt-1 text-[10px] font-semibold ${kpi.tone === 'orange' && atRisk ? 'text-[#dc6803]' : 'text-[#667085]'}`}>{kpi.delta}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="space-y-4">
+              <section className="overflow-hidden rounded-xl border border-[#eaecf0] bg-white shadow-sm">
+                <div className="flex flex-col gap-2 border-b border-[#eaecf0] p-3 lg:flex-row lg:items-center">
+                  <h3 className="mr-auto text-sm font-bold text-[#101828]">Objective Register</h3>
+                  <label className="flex h-9 min-w-[200px] flex-1 items-center gap-2 rounded-lg border border-[#d0d5dd] px-2.5 lg:max-w-xs">
+                    <Search className="h-3.5 w-3.5 text-[#667085]" />
+                    <input
+                      value={query}
+                      onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+                      placeholder="Search objectives..."
+                      className="w-full border-0 bg-transparent text-[11px] outline-none"
+                    />
+                  </label>
+                  <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-2 text-[11px]">
+                    <option>All statuses</option>
+                    <option>On Track</option>
+                    <option>At Risk</option>
+                    <option>Awaiting Score</option>
+                    <option>Draft</option>
+                  </select>
+                  <select value={pillarFilter} onChange={(e) => { setPillarFilter(e.target.value); setPage(1); }} className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-2 text-[11px]">
+                    {pillars.map((item) => <option key={item} value={item}>{item === 'All pillars' ? 'Strategic Pillar' : item}</option>)}
+                  </select>
+                  <select value={ownerFilter} onChange={(e) => { setOwnerFilter(e.target.value); setPage(1); }} className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-2 text-[11px]">
+                    {owners.map((item) => <option key={item} value={item}>{item === 'All owners' ? 'Owner' : item}</option>)}
+                  </select>
+                  <button type="button" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#d0d5dd] bg-white px-3 text-[11px] font-semibold text-[#344054]">
+                    <Filter className="h-3.5 w-3.5" /> Filters
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <div className="min-w-[980px]">
+                    <div className="grid grid-cols-[1.7fr_1fr_0.45fr_1.1fr_0.55fr_0.7fr_1fr_0.7fr_0.7fr] items-center border-b border-[#eaecf0] bg-[#f9fafb] px-3 py-2 text-[9px] font-semibold uppercase tracking-wide text-[#667085]">
+                      <span>Code & Objective</span>
+                      <span>Owner</span>
+                      <span>Weight</span>
+                      <span>Actual vs Target</span>
+                      <span>Progress %</span>
+                      <span>Status</span>
+                      <span>Aligned</span>
+                      <span>Last Update</span>
+                      <span>Actions</span>
+                    </div>
+                    {rows.map((row) => (
+                      <div key={row.item.id} className="grid grid-cols-[1.7fr_1fr_0.45fr_1.1fr_0.55fr_0.7fr_1fr_0.7fr_0.7fr] items-center border-b border-[#eaecf0] px-3 py-3">
+                        <div className="min-w-0 pr-2">
+                          <p className="text-[10px] font-bold text-[#1570ef]">{row.item.code}</p>
+                          <p className="mt-0.5 truncate text-[12px] font-bold text-[#101828]">{row.item.title}</p>
+                          <span className="mt-1 inline-flex rounded border border-[#eaecf0] bg-[#f9fafb] px-1.5 py-0.5 text-[9px] font-semibold text-[#475467]">{row.item.strategicPillar || 'General'}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="grid h-8 w-8 place-items-center rounded-full bg-[#eff8ff] text-[10px] font-bold text-[#175cd3]">{initials(row.item.owner)}</span>
+                          <div className="min-w-0">
+                            <p className="truncate text-[11px] font-bold text-[#101828]">{row.item.owner}</p>
+                            <p className="truncate text-[9px] text-[#667085]">Objective owner</p>
+                          </div>
+                        </div>
+                        <p className="text-[11px] font-bold">{row.item.weight}%</p>
+                        <div>
+                          <div className="mb-1 flex justify-between text-[9px] font-semibold text-[#475467]">
+                            <span>{row.actual} / {row.item.target}{row.item.unit ? ` ${row.item.unit}` : ''}</span>
+                            <span>{row.pct}%</span>
+                          </div>
+                          <div className="h-1.5 overflow-hidden rounded-full bg-[#f2f4f7]">
+                            <div className={`h-full rounded-full ${row.status === 'At Risk' ? 'bg-[#f79009]' : 'bg-[#1570ef]'}`} style={{ width: `${row.pct}%` }} />
+                          </div>
+                        </div>
+                        <p className="text-[11px] font-bold">{row.pct}%</p>
+                        <StatusPill status={row.status} />
+                        <p className="text-[10px] font-semibold text-[#475467]">{row.alignedDepartments} depts / {row.alignedGoals} goals</p>
+                        <p className="text-[10px] font-semibold text-[#667085]">{safeFmtDate(row.lastUpdate)}</p>
+                        <div className="flex items-center gap-1">
+                          <button type="button" onClick={() => { setDrawer(row.item); setScoreDraft(row.item.corporateAchievement != null ? String(row.item.corporateAchievement) : ''); }} className="h-8 rounded-lg border border-[#d0d5dd] px-2.5 text-[10px] font-semibold text-[#344054]">
+                            Open
+                          </button>
+                          <button type="button" className="p-1 text-[#667085]" aria-label="More actions"><MoreVertical className="h-4 w-4" /></button>
+                        </div>
+                      </div>
+                    ))}
+                    {!rows.length ? (
+                      <div className="px-4 py-12 text-center text-sm font-semibold text-[#667085]">No company objectives for this cycle.</div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#eaecf0] px-3 py-2 text-[10px] text-[#667085]">
+                  <span>
+                    Showing {filtered.length ? (page - 1) * pageSize + 1 : 0}-{Math.min(page * pageSize, filtered.length)} of {filtered.length}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="grid h-7 w-7 place-items-center rounded border border-[#eaecf0] disabled:opacity-40">
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </button>
+                    <span className="grid h-7 w-7 place-items-center rounded bg-[#1570ef] text-white">{page}</span>
+                    <button type="button" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)} className="grid h-7 w-7 place-items-center rounded border border-[#eaecf0] disabled:opacity-40">
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <div className="grid gap-4 lg:grid-cols-[1.4fr_0.8fr]">
+                <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h3 className="text-sm font-bold">Objective Performance Snapshot</h3>
+                    <div className="flex items-center gap-3 text-[10px] font-semibold text-[#667085]">
+                      <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-sm bg-[#1570ef]" /> Actual</span>
+                      <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-sm bg-[#d0d5dd]" /> Remaining to Target</span>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    {enriched.slice(0, 6).map((row) => (
+                      <div key={row.item.id}>
+                        <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px]">
+                          <span className="truncate font-semibold text-[#344054]">{row.item.code} · {row.item.title}</span>
+                          <span className="shrink-0 font-bold text-[#101828]">{row.pct}%</span>
+                        </div>
+                        <div className="flex h-3 overflow-hidden rounded-md bg-[#f2f4f7]">
+                          <div className="h-full bg-[#1570ef]" style={{ width: `${row.pct}%` }} />
+                          <div className="h-full bg-[#d0d5dd]" style={{ width: `${100 - row.pct}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                    {!enriched.length ? <p className="text-sm font-semibold text-[#98a2b3]">No objectives to chart.</p> : null}
+                  </div>
+                </section>
+
+                <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+                  <h3 className="mb-3 text-sm font-bold">Governed Actions</h3>
+                  <div className="space-y-2">
+                    {(
+                      [
+                        { label: 'Open Objective', action: () => setDrawer(objectives[0] || null) },
+                        { label: 'Submit Progress Update', action: () => setActiveTab('Progress Updates') },
+                        { label: 'Review Score', action: () => setActiveTab('Scoring') },
+                      ] as const
+                    ).map((item) => (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={item.action}
+                        className="flex h-11 w-full items-center justify-between rounded-lg border border-[#d0d5dd] px-3 text-[12px] font-semibold text-[#344054] hover:border-[#84caff] hover:bg-[#f5faff]"
+                      >
+                        {item.label}
+                        <ChevronRight className="h-4 w-4 text-[#1570ef]" />
+                      </button>
+                    ))}
+                    {isHrScope ? (
+                      <button
+                        type="button"
+                        disabled={busy || !cycleId || totalWeight !== 100}
+                        onClick={() => void onAction('company-objective.publish', { cycleId })}
+                        className="mt-2 flex h-11 w-full items-center justify-center rounded-lg bg-[#1570ef] text-[12px] font-semibold text-white disabled:opacity-50"
+                      >
+                        Publish objective set
+                      </button>
+                    ) : null}
+                  </div>
+                </section>
+              </div>
+            </div>
+
+            <aside className="space-y-4">
+              <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+                <h3 className="mb-3 text-sm font-bold">Publication & Weight Readiness</h3>
+                <Donut value={Math.min(100, totalWeight === 100 ? 100 : Math.round((totalWeight / 100) * 100))} color="#12b76a" label="Ready" />
+                <ul className="mt-3 space-y-2 text-[11px]">
+                  {[
+                    [`Weights total ${totalWeight}%`, totalWeight === 100],
+                    [`Owners ${ownersAssigned}/${objectives.length || 0}`, ownersAssigned === objectives.length && objectives.length > 0],
+                    ['Set published', published],
+                  ].map(([label, ok]) => (
+                    <li key={String(label)} className="flex items-center justify-between gap-2 border-t border-[#eaecf0] py-2">
+                      <span className="text-[#475467]">{label}</span>
+                      {ok ? <CheckCircle2 className="h-4 w-4 text-[#12b76a]" /> : <AlertTriangle className="h-4 w-4 text-[#f79009]" />}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+
+              <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+                <h3 className="mb-3 text-sm font-bold">Alignment Health</h3>
+                <Donut value={alignmentCoverage} color="#7a5af8" label="Cascaded" />
+                <div className="mt-3 grid grid-cols-2 gap-2 text-center">
+                  <div className="rounded-lg bg-[#f9fafb] p-2">
+                    <p className="text-lg font-bold text-[#101828]">{new Set(goals.map((g) => g.department).filter(Boolean)).size}</p>
+                    <p className="text-[9px] font-semibold text-[#667085]">Aligned Depts</p>
+                  </div>
+                  <div className="rounded-lg bg-[#f9fafb] p-2">
+                    <p className="text-lg font-bold text-[#101828]">{alignedGoalCount}</p>
+                    <p className="text-[9px] font-semibold text-[#667085]">Downstream Goals</p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-[#f9dbaf] bg-[#fffaf5] p-4">
+                <h3 className="mb-2 text-sm font-bold text-[#9a3412]">Attention Required</h3>
+                <ul className="space-y-2 text-[11px] font-semibold text-[#9a3412]">
+                  <li className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {atRisk} objective{atRisk === 1 ? '' : 's'} at risk</li>
+                  <li className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {awaitingScore} score{awaitingScore === 1 ? '' : 's'} awaiting review</li>
+                  <li className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {totalWeight === 100 ? 'Weights balanced' : `Weights total ${totalWeight}% (need 100%)`}</li>
+                </ul>
+              </section>
+
+              <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+                <h3 className="mb-3 text-sm font-bold">Upcoming Governance Dates</h3>
+                {[
+                  [activeCycle?.goalSettingEnd, 'Progress update due'],
+                  [activeCycle?.midYearStart, 'Mid-year objective review'],
+                  [activeCycle?.endDate, 'Final scoring window'],
+                ].filter(([date]) => Boolean(date)).map(([date, title]) => (
+                  <div key={String(title)} className="flex items-center gap-2 border-t border-[#eaecf0] py-2.5 text-[11px]">
+                    <CalendarDays className="h-3.5 w-3.5 text-[#1570ef]" />
+                    <div className="min-w-0">
+                      <p className="font-semibold text-[#101828]">{title}</p>
+                      <p className="text-[10px] text-[#667085]">{safeFmtDate(String(date))}</p>
+                    </div>
+                  </div>
+                ))}
+              </section>
+            </aside>
+          </div>
+        </>
+      ) : (
+        <section className="rounded-xl border border-[#eaecf0] bg-white px-6 py-20 text-center shadow-sm">
+          <Settings2 className="mx-auto h-11 w-11 text-[#1570ef]" />
+          <h2 className="mt-4 text-xl font-bold">{activeTab}</h2>
+          <p className="mx-auto mt-2 max-w-lg text-sm text-[#667085]">
+            This workspace section is ready for {activeTab.toLowerCase()} content aligned to the governed company objectives process.
+          </p>
+          {activeTab === 'Scoring' && drawer === null && objectives[0] ? (
+            <button type="button" onClick={() => setDrawer(objectives.find((item) => item.corporateAchievement == null) || objectives[0])} className="mt-6 inline-flex h-9 items-center rounded-lg bg-[#1570ef] px-4 text-[11px] font-semibold text-white">
+              Open scoring drawer
+            </button>
+          ) : (
+            <button type="button" onClick={() => setActiveTab('Overview')} className="mt-6 inline-flex h-9 items-center rounded-lg bg-[#1570ef] px-4 text-[11px] font-semibold text-white">
+              Back to Overview
+            </button>
+          )}
+        </section>
+      )}
+
+      {creating ? (
+        <>
+          <button type="button" className="fixed inset-0 z-40 bg-[#0c111d80]" aria-label="Close create dialog" onClick={() => setCreating(false)} />
+          <div className="fixed left-1/2 top-1/2 z-50 w-[min(480px,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-[#eaecf0] bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <h2 className="text-lg font-bold">Create Objective</h2>
+                <p className="mt-1 text-xs text-[#667085]">Add a corporate objective to the selected cycle.</p>
+              </div>
+              <button type="button" onClick={() => setCreating(false)} className="grid h-8 w-8 place-items-center rounded-lg text-[#667085] hover:bg-[#f9fafb]"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="grid gap-3">
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-[11px] font-semibold text-[#344054]">Code<input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} placeholder="CO-REV-01" /></label>
+                <label className="text-[11px] font-semibold text-[#344054]">Weight %<input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.weight} onChange={(e) => setForm((f) => ({ ...f, weight: e.target.value }))} /></label>
+              </div>
+              <label className="text-[11px] font-semibold text-[#344054]">Title<input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Improve customer satisfaction" /></label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-[11px] font-semibold text-[#344054]">KPI<input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.kpi} onChange={(e) => setForm((f) => ({ ...f, kpi: e.target.value }))} /></label>
+                <label className="text-[11px] font-semibold text-[#344054]">Target<input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.target} onChange={(e) => setForm((f) => ({ ...f, target: e.target.value }))} /></label>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-[11px] font-semibold text-[#344054]">Owner<input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.owner} onChange={(e) => setForm((f) => ({ ...f, owner: e.target.value }))} /></label>
+                <label className="text-[11px] font-semibold text-[#344054]">Strategic pillar<input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.strategicPillar} onChange={(e) => setForm((f) => ({ ...f, strategicPillar: e.target.value }))} /></label>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setCreating(false)} className="h-9 rounded-lg border border-[#d0d5dd] px-3 text-sm font-semibold">Cancel</button>
+              <button type="button" disabled={busy} onClick={() => void createObjective()} className="h-9 rounded-lg bg-[#1570ef] px-3 text-sm font-semibold text-white disabled:opacity-50">Save objective</button>
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      {drawer ? (
+        <>
+          <button type="button" className="fixed inset-0 z-40 bg-[#0c111d80]" aria-label="Close drawer" onClick={() => setDrawer(null)} />
+          <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[420px] flex-col bg-white shadow-[-12px_0_40px_#0c111d22]">
+            <div className="flex items-start justify-between border-b border-[#eaecf0] p-5">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-[#1570ef]">{drawer.code}</p>
+                <h2 className="mt-1 text-xl font-bold">{drawer.title}</h2>
+                <p className="mt-1 text-sm text-[#667085]">{drawer.strategicPillar} · Weight {drawer.weight}%</p>
+              </div>
+              <button type="button" onClick={() => setDrawer(null)} className="grid h-9 w-9 place-items-center rounded-lg text-[#667085] hover:bg-[#f9fafb]"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              <StatusPill status={deriveStatus(drawer)} />
+              <dl className="mt-5">
+                {[
+                  ['Owner', drawer.owner],
+                  ['KPI', drawer.kpi],
+                  ['Baseline', `${drawer.baseline}${drawer.unit}`],
+                  ['Target', `${drawer.target}${drawer.unit}`],
+                  ['Actual', `${actualValue(drawer)}${drawer.unit}`],
+                  ['Progress', `${progressPct(drawer)}%`],
+                  ['Status', drawer.status],
+                  ['Version', `v${drawer.version}.0`],
+                ].map(([dt, dd]) => (
+                  <div key={dt} className="flex items-center justify-between border-b border-[#eaecf0] py-3 text-sm">
+                    <dt className="text-[#667085]">{dt}</dt>
+                    <dd className="font-semibold text-[#101828]">{dd}</dd>
+                  </div>
+                ))}
+              </dl>
+              {isHrScope && (drawer.status === 'Published' || drawer.status === 'Scored') ? (
+                <div className="mt-5 rounded-xl border border-[#d1e9ff] bg-[#f5faff] p-4">
+                  <h3 className="text-sm font-bold">Lock corporate achievement</h3>
+                  <div className="mt-3 flex gap-2">
+                    <input
+                      className="h-10 flex-1 rounded-lg border border-[#d0d5dd] px-3 text-sm"
+                      placeholder="Achievement score"
+                      value={scoreDraft}
+                      onChange={(e) => setScoreDraft(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void onAction('company-objective.score', { id: drawer.id, corporateAchievement: Number(scoreDraft || 0) })}
+                      className="h-10 rounded-lg bg-[#1570ef] px-3 text-sm font-semibold text-white disabled:opacity-50"
+                    >
+                      Lock score
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-[#eaecf0] px-5 py-4">
+              <button type="button" onClick={() => setDrawer(null)} className="h-9 rounded-lg border border-[#d0d5dd] px-3 text-sm font-semibold">Close</button>
+            </div>
+          </aside>
+        </>
+      ) : null}
+    </div>
+  );
+}
