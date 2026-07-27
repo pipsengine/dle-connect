@@ -111,7 +111,7 @@ export default function CompanyObjectivesView({ payload, onAction, busy }: Props
   const [page, setPage] = useState(1);
   const [drawer, setDrawer] = useState<CompanyObjective | null>(null);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ code: '', title: '', weight: '10', kpi: '', target: '100', owner: 'Executive Management', strategicPillar: 'Growth' });
+  const [form, setForm] = useState({ code: '', title: '', weight: '10', kpi: '', target: '100', owner: '', strategicPillar: '' });
   const [scoreDraft, setScoreDraft] = useState('');
   const [progressDrafts, setProgressDrafts] = useState<Record<string, string>>({});
   const [scoreDrafts, setScoreDrafts] = useState<Record<string, string>>({});
@@ -185,12 +185,17 @@ export default function CompanyObjectivesView({ payload, onAction, busy }: Props
       weight: Number(form.weight || 0),
       kpi: form.kpi || 'KPI',
       target: Number(form.target || 100),
-      owner: form.owner,
-      strategicPillar: form.strategicPillar,
+      owner: form.owner || payload.actor.fullName,
+      strategicPillar: form.strategicPillar || objectives[0]?.strategicPillar || 'Strategy',
     });
     setCreating(false);
-    setForm({ code: '', title: '', weight: '10', kpi: '', target: '100', owner: 'Executive Management', strategicPillar: 'Growth' });
+    setForm({ code: '', title: '', weight: '10', kpi: '', target: '100', owner: '', strategicPillar: '' });
   };
+
+  const setOwnerLabel = objectives.find((item) => Boolean(item.owner))?.owner
+    || activeCycle?.createdBy
+    || payload.actor.fullName
+    || '—';
 
   const cascadeByObjective = useMemo(() => objectives.map((item) => {
     const linked = goals.filter((goal) => goal.parentObjectiveId === item.id);
@@ -372,7 +377,7 @@ export default function CompanyObjectivesView({ payload, onAction, busy }: Props
                 <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   {[
                     ['Duration', activeCycle ? `${safeFmtDate(activeCycle.startDate)} – ${safeFmtDate(activeCycle.endDate)}` : '—'],
-                    ['Owner', 'Executive Management'],
+                    ['Owner', setOwnerLabel],
                     ['Version', `v${maxVersion}.0`],
                     ['Next Review', activeCycle?.midYearStart ? safeFmtDate(activeCycle.midYearStart) : activeCycle?.goalSettingEnd ? safeFmtDate(activeCycle.goalSettingEnd) : '—'],
                   ].map(([label, value]) => (

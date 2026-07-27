@@ -182,7 +182,7 @@ export default function GoalCascadingView({ payload, onAction, busy }: Props) {
         weight,
         status: queueStatus(deptGoals),
         progress: objectiveProgress(deptGoals),
-        teamGoals: Math.max(1, Math.round(deptGoals.length / 2)),
+        teamGoals: Math.max(1, new Set(deptGoals.map((goal) => goal.managerId || goal.managerName).filter(Boolean)).size),
         employeeGoals: deptGoals.length,
         goals: deptGoals,
       };
@@ -194,7 +194,7 @@ export default function GoalCascadingView({ payload, onAction, busy }: Props) {
       progress: objectiveProgress(linked),
       status: objectiveStatusLabel(objective, linked),
       alignedCount,
-      alignedTotal: Math.max(byDept.length, Math.min(5, departments.length || 5)),
+      alignedTotal: Math.max(byDept.length, 1),
       owner: objective.owner,
       linked,
     };
@@ -236,7 +236,7 @@ export default function GoalCascadingView({ payload, onAction, busy }: Props) {
         parentObjectiveId: parent?.id || '',
         owner: deptGoals[0]?.managerName || 'Department lead',
         weight: Math.min(100, deptGoals.reduce((sum, goal) => sum + Number(goal.weight || 0), 0) || 0),
-        teamGoals: Math.max(deptGoals.length ? 1 : 0, Math.round(deptGoals.length / 3)),
+        teamGoals: Math.max(1, new Set(deptGoals.map((goal) => goal.managerId || goal.managerName).filter(Boolean)).size || (deptGoals.length ? 1 : 0)),
         employeeGoals: deptGoals.length,
         status,
         deadline: activeCycle?.goalSettingEnd || activeCycle?.endDate || '',

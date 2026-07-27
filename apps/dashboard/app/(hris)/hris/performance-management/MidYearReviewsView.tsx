@@ -13,7 +13,6 @@ import {
   MoreVertical,
   Plus,
   Search,
-  Settings2,
   Target,
   Users,
   X,
@@ -118,8 +117,19 @@ export default function MidYearReviewsView({ payload, onAction, busy }: Props) {
   const [drawer, setDrawer] = useState<{ employeeId: string; employeeName: string; department: string } | null>(null);
   const [changeOpen, setChangeOpen] = useState(false);
   const [changeGoalId, setChangeGoalId] = useState('');
-  const [changeReason, setChangeReason] = useState('Mid-year adjustment');
+  const [changeReason, setChangeReason] = useState('');
   const pageSize = 10;
+
+  const eligibility = useMemo(
+    () => (domain.eligibility || []).filter((row) => (!cycleId || row.cycleId === cycleId) && row.included),
+    [domain.eligibility, cycleId],
+  );
+  const midYearAudit = useMemo(
+    () => (domain.audit || []).filter((row) => ['PerformanceAssessment', 'EmployeeGoal', 'PerformanceTask'].includes(row.entityType)
+      && /mid[- ]?year|assessment|goal/i.test(`${row.action} ${row.entityType}`)).slice(0, 50),
+    [domain.audit],
+  );
+  const behaviours = domain.config?.behaviourIndicators || [];
 
   const activeCycle = cycles.find((cycle) => cycle.id === cycleId) || cycles.find((cycle) => cycle.id === domain.activeCycleId) || cycles[0];
   const goals = useMemo(
@@ -149,11 +159,26 @@ export default function MidYearReviewsView({ payload, onAction, busy }: Props) {
       goals: EmployeeGoal[];
     }>();
 
+    for (const row of eligibility) {
+      byEmployee.set(row.employeeId, {
+        employeeId: row.employeeId,
+        employeeCode: row.employeeCode,
+        employeeName: row.fullName,
+        department: row.department || '—',
+        managerName: row.managerName || '—',
+        goals: [],
+      });
+    }
+
     for (const goal of goals) {
       const key = goal.employeeId || goal.employeeCode || goal.employeeName;
       const existing = byEmployee.get(key);
-      if (existing) existing.goals.push(goal);
-      else {
+      if (existing) {
+        existing.goals.push(goal);
+        if (!existing.department || existing.department === '—') existing.department = goal.department || existing.department;
+        if (!existing.managerName || existing.managerName === '—') existing.managerName = goal.managerName || existing.managerName;
+        if (!existing.employeeCode) existing.employeeCode = goal.employeeCode;
+      } else {
         byEmployee.set(key, {
           employeeId: goal.employeeId,
           employeeCode: goal.employeeCode,
@@ -165,7 +190,6 @@ export default function MidYearReviewsView({ payload, onAction, busy }: Props) {
       }
     }
 
-    // Include assessment-only employees
     for (const assessment of assessments) {
       const key = assessment.employeeId || assessment.employeeName;
       if (!byEmployee.has(key)) {
@@ -203,7 +227,7 @@ export default function MidYearReviewsView({ payload, onAction, busy }: Props) {
         readinessOk: row.goals.length > 0 && Math.abs(weight - 100) < 0.01,
       };
     });
-  }, [goals, assessments, windowEnd]);
+  }, [eligibility, goals, assessments, windowEnd]);
 
   const departments = useMemo(
     () => ['All departments', ...Array.from(new Set(register.map((row) => row.department).filter((d) => d && d !== '—'))).sort()],
@@ -251,7 +275,7 @@ export default function MidYearReviewsView({ payload, onAction, busy }: Props) {
         employeeId: task.employeeId,
         employeeCode: goal?.employeeCode || task.employeeId,
         change: goal?.discussionComment || 'Target / scope adjustment',
-        impact: 'Medium',
+        impact: Math.abs((goal?.weight || 0) - 20) > 30 ? 'High' : (goal?.weight || 0) >= 25 ? 'Medium' : 'Low',
         submitted: task.createdAt || task.dueDate,
         status: task.status === 'Completed' ? 'Approved' : task.status === 'In Progress' ? 'HR review' : 'Manager review',
         goalId: goal?.id || '',
@@ -267,7 +291,7 @@ export default function MidYearReviewsView({ payload, onAction, busy }: Props) {
         employeeId: goal.employeeId,
         employeeCode: goal.employeeCode,
         change: goal.discussionComment || 'Mid-year change requested',
-        impact: 'Medium',
+        impact: Math.abs((goal?.weight || 0) - 20) > 30 ? 'High' : (goal?.weight || 0) >= 25 ? 'Medium' : 'Low',
         submitted: goal.updatedAt,
         status: 'Manager review',
         goalId: goal.id,
@@ -279,34 +303,64 @@ export default function MidYearReviewsView({ payload, onAction, busy }: Props) {
   const hrReviewChanges = changeRequests.filter((row) => row.status === 'HR review').length;
   const approvedChanges = changeRequests.filter((row) => row.status === 'Approved').length;
 
+  const populationBase = Math.max(eligibility.length, activeCycle?.eligibilityCount || 0, eligible);
+  const populationPct = populationBase ? Math.round((eligible / populationBase) * 100) : 0;
+  const evidenceConfigured = assessments.some((row) => row.items.some((item) => Boolean(item.evidence))) || behaviours.length > 0;
+
   const startReview = async (employeeId?: string, employeeName?: string) => {
     const targetId = employeeId || payload.actor.employeeId;
     const targetName = employeeName || payload.actor.fullName;
-    const employeeGoals = goals.filter((goal) => goal.employeeId === targetId || (!employeeId && goal.employeeId === payload.actor.employeeId));
+    const employeeGoals = goals.filter((goal) => goal.employeeId === targetId);
+    if (!employeeGoals.length) return;
     await onAction('assessment.save', {
       cycleId: cycleId || activeCycle?.id,
       type: 'Mid-Year',
       employeeId: targetId,
       employeeName: targetName,
       status: 'Draft',
-      items: (employeeGoals.length ? employeeGoals : goals.slice(0, 3)).slice(0, 4).map((goal) => ({
+      items: employeeGoals.slice(0, 8).map((goal) => ({
         itemId: goal.id,
         itemType: 'okr',
         title: goal.title,
         weight: goal.weight,
-        selfRating: 3,
-        achievement: 60,
+        achievement: goal.achievementScore ?? goal.progressPercent,
       })),
     });
   };
 
   const submitChangeRequest = async () => {
     if (!changeGoalId) return;
-    await onAction('midyear.change-request', { goalId: changeGoalId, reason: changeReason || 'Mid-year adjustment' });
+    await onAction('midyear.change-request', { goalId: changeGoalId, reason: changeReason.trim() || 'Requested mid-year goal change' });
     setChangeOpen(false);
     setChangeGoalId('');
-    setChangeReason('Mid-year adjustment');
+    setChangeReason('');
   };
+
+  const goalAssessmentRows = useMemo(() => {
+    return assessments.flatMap((assessment) => assessment.items.filter((item) => item.itemType === 'okr').map((item) => ({
+      assessment,
+      item,
+      goal: goals.find((goal) => goal.id === item.itemId),
+    })));
+  }, [assessments, goals]);
+
+  const competencyRows = useMemo(() => {
+    const fromAssessments = assessments.flatMap((assessment) => assessment.items.filter((item) => item.itemType === 'behaviour').map((item) => ({
+      assessment,
+      item,
+    })));
+    if (fromAssessments.length) return fromAssessments;
+    return behaviours.map((ind) => ({
+      assessment: undefined as PerformanceAssessment | undefined,
+      item: { itemId: ind.id, itemType: 'behaviour' as const, title: ind.name, weight: ind.weight },
+    }));
+  }, [assessments, behaviours]);
+
+  const evidenceRows = useMemo(() => assessments.flatMap((assessment) => assessment.items
+    .filter((item) => Boolean(item.evidence) || Boolean(item.selfNarrative) || Boolean(item.managerNarrative))
+    .map((item) => ({ assessment, item }))), [assessments]);
+
+  const pct = (count: number) => (eligible ? Math.round((count / eligible) * 100) : 0);
 
   return (
     <div className="space-y-4 text-[#101828]">
@@ -386,15 +440,15 @@ export default function MidYearReviewsView({ payload, onAction, busy }: Props) {
         ))}
       </div>
 
-      {activeTab === 'Overview' || activeTab === 'Review Register' ? (
+      {activeTab === 'Overview' ? (
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             {[
-              { icon: Users, label: 'Eligible employees', value: String(eligible), sub: '100% of population', tone: 'blue' as const },
-              { icon: CheckCircle2, label: 'Reviews completed', value: String(completed), sub: `${completePct}% · On track`, tone: 'green' as const },
-              { icon: Clock3, label: 'Awaiting employee', value: String(awaitingEmployee), sub: `${eligible ? Math.round((awaitingEmployee / eligible) * 100) : 0}% · Employee action needed`, tone: 'orange' as const },
-              { icon: Target, label: 'Awaiting manager', value: String(awaitingManager), sub: `${eligible ? Math.round((awaitingManager / eligible) * 100) : 0}% · Manager action needed`, tone: 'purple' as const },
-              { icon: AlertTriangle, label: 'Overdue / blocked', value: `${overdue} / ${blocked}`, sub: 'Requires attention', tone: 'red' as const },
+              { icon: Users, label: 'Eligible employees', value: String(eligible), sub: `${populationPct}% of population (${populationBase})`, tone: 'blue' as const },
+              { icon: CheckCircle2, label: 'Reviews completed', value: String(completed), sub: `${completePct}% · ${completed ? 'On track' : 'Not started'}`, tone: 'green' as const },
+              { icon: Clock3, label: 'Awaiting employee', value: String(awaitingEmployee), sub: `${pct(awaitingEmployee)}% · Employee action needed`, tone: 'orange' as const },
+              { icon: Target, label: 'Awaiting manager', value: String(awaitingManager), sub: `${pct(awaitingManager)}% · Manager action needed`, tone: 'purple' as const },
+              { icon: AlertTriangle, label: 'Overdue / blocked', value: `${overdue} / ${blocked}`, sub: overdue || blocked ? 'Requires attention' : 'Clear', tone: 'red' as const },
             ].map((kpi) => (
               <article key={kpi.label} className="rounded-xl border border-[#eaecf0] bg-white p-3.5 shadow-sm">
                 <div className="flex items-start justify-between gap-2">
@@ -478,10 +532,10 @@ export default function MidYearReviewsView({ payload, onAction, busy }: Props) {
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          disabled={busy}
+                          disabled={busy || (!row.assessment && !row.goals.length)}
                           onClick={() => {
                             setDrawer({ employeeId: row.employeeId, employeeName: row.employeeName, department: row.department });
-                            if (!row.assessment) void startReview(row.employeeId, row.employeeName);
+                            if (!row.assessment && row.goals.length) void startReview(row.employeeId, row.employeeName);
                           }}
                           className="text-[10px] font-bold text-[#1570ef] hover:underline disabled:opacity-50"
                         >
@@ -509,9 +563,6 @@ export default function MidYearReviewsView({ payload, onAction, busy }: Props) {
                   <button type="button" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)} className="grid h-7 w-7 place-items-center rounded border border-[#eaecf0] disabled:opacity-40">
                     <ChevronRight className="h-3.5 w-3.5" />
                   </button>
-                  <select className="h-7 rounded border border-[#eaecf0] bg-white px-2 text-[10px]" value={pageSize} disabled>
-                    <option>10 / page</option>
-                  </select>
                 </div>
               </div>
             </section>
@@ -525,7 +576,7 @@ export default function MidYearReviewsView({ payload, onAction, busy }: Props) {
                     [`Goals valid (${goalsValid}/${eligible || 0})`, goalsValid === eligible && eligible > 0],
                     [`Weights equal 100% (${weightsOk}/${eligible || 0})`, weightsOk === eligible && eligible > 0],
                     [`Manager assigned (${managersAssigned}/${eligible || 0})`, managersAssigned === eligible && eligible > 0],
-                    ['Evidence rules configured', true],
+                    ['Evidence available', evidenceConfigured],
                   ].map(([label, ok]) => (
                     <li key={String(label)} className="flex items-center justify-between gap-2 border-t border-[#eaecf0] py-2">
                       <span className="font-semibold text-[#475467]">{label}</span>
@@ -538,7 +589,6 @@ export default function MidYearReviewsView({ payload, onAction, busy }: Props) {
               <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
                 <div className="mb-3 flex items-center justify-between">
                   <h3 className="text-sm font-bold">Key deadlines</h3>
-                  <button type="button" className="text-[10px] font-bold text-[#1570ef]">View schedule ›</button>
                 </div>
                 {[
                   [windowEnd, 'Employee submission deadline', 'red'],
@@ -615,18 +665,253 @@ export default function MidYearReviewsView({ payload, onAction, busy }: Props) {
             </div>
           </section>
         </>
-      ) : (
-        <section className="rounded-xl border border-[#eaecf0] bg-white px-6 py-20 text-center shadow-sm">
-          <Settings2 className="mx-auto h-11 w-11 text-[#1570ef]" />
-          <h2 className="mt-4 text-xl font-bold">{activeTab}</h2>
-          <p className="mx-auto mt-2 max-w-lg text-sm text-[#667085]">
-            This mid-year workspace section is ready for {activeTab.toLowerCase()} detail content.
-          </p>
-          <button type="button" onClick={() => setActiveTab('Overview')} className="mt-6 inline-flex h-9 items-center rounded-lg bg-[#1570ef] px-4 text-[11px] font-semibold text-white">
-            Back to Overview
-          </button>
+      ) : null}
+
+      {activeTab === 'Review Register' ? (
+        <section className="overflow-hidden rounded-xl border border-[#eaecf0] bg-white shadow-sm">
+          <div className="flex flex-col gap-2 border-b border-[#eaecf0] p-3 lg:flex-row lg:items-center">
+            <h3 className="mr-auto text-sm font-bold">Review register</h3>
+            <label className="flex h-9 min-w-[200px] flex-1 items-center gap-2 rounded-lg border border-[#d0d5dd] px-2.5 lg:max-w-xs">
+              <Search className="h-3.5 w-3.5 text-[#667085]" />
+              <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search employee, ID or department" className="w-full border-0 bg-transparent text-[11px] outline-none" />
+            </label>
+            <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-2 text-[11px]">
+              <option>All statuses</option>
+              <option>Completed</option>
+              <option>Awaiting employee</option>
+              <option>Awaiting manager</option>
+              <option>Overdue</option>
+              <option>Blocked</option>
+              <option>Not started</option>
+            </select>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-[11px]">
+              <thead className="bg-[#f9fafb] text-[#667085]">
+                <tr>
+                  <th className="px-3 py-2.5 font-semibold">Employee</th>
+                  <th className="px-3 py-2.5 font-semibold">Department</th>
+                  <th className="px-3 py-2.5 font-semibold">Manager</th>
+                  <th className="px-3 py-2.5 font-semibold">Goals</th>
+                  <th className="px-3 py-2.5 font-semibold">Status</th>
+                  <th className="px-3 py-2.5 font-semibold">Due</th>
+                  <th className="px-3 py-2.5 font-semibold">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((row) => (
+                  <tr key={`reg-${row.employeeId}`} className="border-t border-[#eaecf0]">
+                    <td className="px-3 py-3 font-bold">{row.employeeName}<p className="text-[10px] font-medium text-[#667085]">{row.employeeCode}</p></td>
+                    <td className="px-3 py-3 font-semibold">{row.department}</td>
+                    <td className="px-3 py-3 font-semibold">{row.managerName}</td>
+                    <td className="px-3 py-3 font-semibold">{row.goalCount} · {row.weight}%</td>
+                    <td className="px-3 py-3"><StatusPill label={row.status} /></td>
+                    <td className="px-3 py-3 font-semibold">{safeFmtDate(row.due)}</td>
+                    <td className="px-3 py-3">
+                      <button type="button" onClick={() => setDrawer({ employeeId: row.employeeId, employeeName: row.employeeName, department: row.department })} className="text-[10px] font-bold text-[#1570ef]">Open</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!filtered.length ? <p className="px-4 py-10 text-center text-sm font-semibold text-[#667085]">No employees in register.</p> : null}
+          </div>
         </section>
-      )}
+      ) : null}
+
+      {activeTab === 'Goal Assessment' ? (
+        <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-bold">Goal assessment</h3>
+          <p className="mt-1 text-[11px] font-medium text-[#667085]">OKR items captured on mid-year assessments.</p>
+          <div className="mt-4 overflow-x-auto">
+            <table className="min-w-full text-left text-[11px]">
+              <thead className="bg-[#f9fafb] text-[#667085]">
+                <tr>
+                  <th className="px-3 py-2.5 font-semibold">Employee</th>
+                  <th className="px-3 py-2.5 font-semibold">Goal / Item</th>
+                  <th className="px-3 py-2.5 font-semibold">Weight</th>
+                  <th className="px-3 py-2.5 font-semibold">Achievement</th>
+                  <th className="px-3 py-2.5 font-semibold">Self</th>
+                  <th className="px-3 py-2.5 font-semibold">Manager</th>
+                  <th className="px-3 py-2.5 font-semibold">Review status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {goalAssessmentRows.map(({ assessment, item, goal }) => (
+                  <tr key={`${assessment.id}-${item.itemId}`} className="border-t border-[#eaecf0]">
+                    <td className="px-3 py-3 font-bold">{assessment.employeeName}</td>
+                    <td className="px-3 py-3 font-semibold">{item.title || goal?.title}</td>
+                    <td className="px-3 py-3 font-semibold">{item.weight}%</td>
+                    <td className="px-3 py-3 font-semibold">{item.achievement ?? goal?.progressPercent ?? '—'}</td>
+                    <td className="px-3 py-3 font-semibold">{item.selfRating ?? '—'}</td>
+                    <td className="px-3 py-3 font-semibold">{item.managerRating ?? '—'}</td>
+                    <td className="px-3 py-3"><StatusPill label={assessment.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!goalAssessmentRows.length ? <p className="px-3 py-10 text-center text-[11px] font-semibold text-[#98a2b3]">No mid-year goal assessments yet. Start a review to create drafts.</p> : null}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'Competencies' ? (
+        <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-bold">Competencies</h3>
+          <p className="mt-1 text-[11px] font-medium text-[#667085]">Behavioural indicators from mid-year reviews and organisation config.</p>
+          <div className="mt-4 space-y-2">
+            {competencyRows.map(({ assessment, item }, index) => (
+              <div key={`${assessment?.id || 'cfg'}-${item.itemId}-${index}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#eaecf0] px-3 py-2.5 text-[11px]">
+                <div>
+                  <p className="font-bold">{item.title}</p>
+                  <p className="text-[10px] font-semibold text-[#667085]">{assessment ? assessment.employeeName : 'Catalogue'} · Weight {item.weight}%</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {'selfRating' in item && item.selfRating != null ? <StatusPill label={`Self ${item.selfRating}`} /> : null}
+                  {'managerRating' in item && item.managerRating != null ? <StatusPill label={`Manager ${item.managerRating}`} /> : null}
+                  {!assessment ? <StatusPill label="Configured" /> : <StatusPill label={assessment.status} />}
+                </div>
+              </div>
+            ))}
+            {!competencyRows.length ? <p className="text-[11px] font-semibold text-[#98a2b3]">No competency indicators configured.</p> : null}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'Evidence' ? (
+        <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-bold">Evidence</h3>
+          <p className="mt-1 text-[11px] font-medium text-[#667085]">Narratives and evidence captured on mid-year assessment items.</p>
+          <div className="mt-4 space-y-2">
+            {evidenceRows.map(({ assessment, item }) => (
+              <article key={`${assessment.id}-${item.itemId}-ev`} className="rounded-xl border border-[#eaecf0] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[12px] font-bold">{assessment.employeeName} · {item.title}</p>
+                  <StatusPill label={assessment.status} />
+                </div>
+                {item.evidence ? <p className="mt-2 text-[11px] font-semibold text-[#344054]">{item.evidence}</p> : null}
+                {item.selfNarrative ? <p className="mt-1 text-[10px] font-medium text-[#667085]">Self: {item.selfNarrative}</p> : null}
+                {item.managerNarrative ? <p className="mt-1 text-[10px] font-medium text-[#667085]">Manager: {item.managerNarrative}</p> : null}
+              </article>
+            ))}
+            {!evidenceRows.length ? <p className="text-[11px] font-semibold text-[#98a2b3]">No evidence recorded yet.</p> : null}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'Change Requests' ? (
+        <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold">Change requests</h3>
+              <p className="mt-1 text-[11px] font-medium text-[#667085]">{changeRequests.length} mid-year goal change request{changeRequests.length === 1 ? '' : 's'}</p>
+            </div>
+            <button type="button" onClick={() => { setChangeGoalId(goals[0]?.id || ''); setChangeOpen(true); }} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#1570ef] px-3 text-[11px] font-semibold text-white">
+              <Plus className="h-3.5 w-3.5" /> New change request
+            </button>
+          </div>
+          <div className="mt-4 space-y-2">
+            {changeRequests.map((row) => (
+              <div key={row.id} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-[#eaecf0] px-3 py-3 text-[11px]">
+                <div>
+                  <p className="font-bold">{row.goalTitle}</p>
+                  <p className="mt-1 font-semibold text-[#667085]">{row.employeeName} · {row.change}</p>
+                  <p className="mt-1 text-[10px] font-semibold text-[#475467]">Impact {row.impact} · {safeFmtDate(row.submitted)}</p>
+                </div>
+                <StatusPill label={row.status} />
+              </div>
+            ))}
+            {!changeRequests.length ? <p className="text-[11px] font-semibold text-[#98a2b3]">No change requests.</p> : null}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'Approvals' ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-bold">Awaiting manager ({awaitingManager})</h3>
+            <div className="mt-3 space-y-2">
+              {register.filter((row) => row.status === 'Awaiting manager').map((row) => (
+                <div key={`ap-${row.employeeId}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#eaecf0] px-3 py-2.5 text-[11px]">
+                  <div>
+                    <p className="font-bold">{row.employeeName}</p>
+                    <p className="text-[10px] font-semibold text-[#667085]">{row.department} · {row.stage.employee}</p>
+                  </div>
+                  {row.assessment ? (
+                    <button type="button" onClick={() => setDrawer({ employeeId: row.employeeId, employeeName: row.employeeName, department: row.department })} className="rounded-lg bg-[#1570ef] px-2 py-1 text-[10px] font-semibold text-white">Review</button>
+                  ) : null}
+                </div>
+              ))}
+              {!awaitingManager ? <p className="text-[11px] font-semibold text-[#98a2b3]">No reviews awaiting manager.</p> : null}
+            </div>
+          </section>
+          <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-bold">Completed ({completed})</h3>
+            <div className="mt-3 space-y-2">
+              {register.filter((row) => row.status === 'Completed').map((row) => (
+                <div key={`done-${row.employeeId}`} className="flex items-center justify-between rounded-lg border border-[#eaecf0] px-3 py-2.5 text-[11px]">
+                  <p className="font-bold">{row.employeeName}</p>
+                  <StatusPill label="Completed" />
+                </div>
+              ))}
+              {!completed ? <p className="text-[11px] font-semibold text-[#98a2b3]">No completed mid-year reviews yet.</p> : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {activeTab === 'Exceptions' ? (
+        <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-bold">Exceptions</h3>
+          <div className="mt-4 space-y-2">
+            {register.filter((row) => ['Overdue', 'Blocked'].includes(row.status) || !row.readinessOk).map((row) => (
+              <div key={`ex-${row.employeeId}`} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-[#eaecf0] px-3 py-3 text-[11px]">
+                <div>
+                  <StatusPill label={row.status === 'Overdue' || row.status === 'Blocked' ? 'High' : 'Medium'} />
+                  <p className="mt-2 font-bold">{row.employeeName} · {row.department}</p>
+                  <p className="mt-1 font-semibold text-[#667085]">
+                    {row.status === 'Overdue' ? `Overdue since ${safeFmtDate(row.due)}`
+                      : row.status === 'Blocked' ? 'Blocked by returned review or goal discussion'
+                        : `${row.goalCount} goals · ${row.weight}% weight (expected 100%)`}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setDrawer({ employeeId: row.employeeId, employeeName: row.employeeName, department: row.department })} className="inline-flex h-8 items-center rounded-lg border border-[#d0d5dd] px-2.5 text-[10px] font-semibold">Open</button>
+              </div>
+            ))}
+            {!register.some((row) => ['Overdue', 'Blocked'].includes(row.status) || !row.readinessOk) ? (
+              <div className="rounded-xl border border-[#abefc6] bg-[#ecfdf3] px-4 py-8 text-center text-[12px] font-semibold text-[#027a48]">No mid-year exceptions.</div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'Audit & History' ? (
+        <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-bold">Audit & history</h3>
+          <div className="mt-4 space-y-2">
+            {midYearAudit.map((row) => (
+              <div key={row.id} className="rounded-xl border border-[#eaecf0] px-3 py-2.5 text-[11px]">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-bold">{row.action}</p>
+                  <span className="text-[10px] font-semibold text-[#667085]">{safeFmtDate(row.at)}</span>
+                </div>
+                <p className="mt-1 font-semibold text-[#475467]">{row.actor} · {row.actorRole} · {row.entityType}/{row.entityId}</p>
+              </div>
+            ))}
+            {!midYearAudit.length ? (
+              <div className="space-y-2">
+                {assessments.map((row) => (
+                  <div key={row.id} className="rounded-xl border border-[#eaecf0] px-3 py-2.5 text-[11px]">
+                    <p className="font-bold">{row.employeeName} · Mid-Year · {row.status}</p>
+                    <p className="mt-1 font-semibold text-[#667085]">Submitted {safeFmtDate(row.submittedAt)} · v{row.version}</p>
+                  </div>
+                ))}
+                {!assessments.length ? <p className="text-[11px] font-semibold text-[#98a2b3]">No mid-year audit events yet.</p> : null}
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       {changeOpen ? (
         <>

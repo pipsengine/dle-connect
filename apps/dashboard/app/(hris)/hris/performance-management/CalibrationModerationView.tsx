@@ -112,10 +112,10 @@ export default function CalibrationModerationView({ payload, onAction, busy }: P
   const [form, setForm] = useState({
     employeeId: '',
     employeeName: '',
-    department: 'Operations',
-    originalScore: '78',
-    proposedScore: '82',
-    justification: 'Comparable peer evidence supports uplift.',
+    department: '',
+    originalScore: '',
+    proposedScore: '',
+    justification: '',
   });
   const pageSize = 6;
 
@@ -170,7 +170,13 @@ export default function CalibrationModerationView({ payload, onAction, busy }: P
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const rows = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  const inScope = Math.max(results.length || assessments.length || cases.length, cases.length);
+  const eligibilityCount = useMemo(
+    () => (domain.eligibility || []).filter((row) => (!cycleId || row.cycleId === cycleId) && row.included).length
+      || activeCycle?.eligibilityCount
+      || 0,
+    [domain.eligibility, cycleId, activeCycle?.eligibilityCount],
+  );
+  const inScope = Math.max(eligibilityCount, results.length, assessments.length, cases.length);
   const pending = cases.filter((row) => row.status === 'Open' || row.status === 'Proposed').length;
   const highVariance = enriched.filter((item) => item.highVariance && item.row.status !== 'Approved').length;
   const proposed = cases.filter((row) => row.status === 'Proposed').length;
@@ -178,8 +184,9 @@ export default function CalibrationModerationView({ payload, onAction, busy }: P
   const approved = cases.filter((row) => row.status === 'Approved').length;
   const distributionExceptions = enriched.filter((item) => item.highVariance).length;
   const criticalExceptions = enriched.filter((item) => item.highVariance && Math.abs(item.variance) > THRESHOLD * 30).length;
-  const progressPct = cases.length ? Math.round((approved / cases.length) * 100) : results.length ? 64 : 0;
-  const reviewsReady = inScope ? Math.round((Math.min(inScope, assessments.filter((a) => ['Submitted', 'Pending Manager', 'Pending HR', 'Approved', 'Published', 'Closed'].includes(a.status)).length || inScope * 0.96) / Math.max(inScope, 1)) * 100) : 0;
+  const progressPct = cases.length ? Math.round((approved / cases.length) * 100) : 0;
+  const submittedReviews = assessments.filter((a) => ['Submitted', 'Pending Manager', 'Pending HR', 'Approved', 'Published', 'Closed'].includes(a.status)).length;
+  const reviewsReady = inScope ? Math.round((Math.min(inScope, submittedReviews) / Math.max(inScope, 1)) * 100) : 0;
 
   const distribution = useMemo(() => {
     const bands = [1, 2, 3, 4, 5];
@@ -187,8 +194,9 @@ export default function CalibrationModerationView({ payload, onAction, busy }: P
       const original = results.length
         ? results.filter((row) => toBandScore(row.finalScore) === band).length
         : cases.filter((row) => toBandScore(row.originalScore) === band).length;
-      const proposedCount = cases.filter((row) => toBandScore(row.proposedScore ?? row.originalScore) === band).length
-        || (results.length ? Math.round(original * (band === 5 ? 1.1 : band === 1 ? 0.9 : 1)) : original);
+      const proposedCount = cases.length
+        ? cases.filter((row) => toBandScore(row.proposedScore ?? row.originalScore) === band).length
+        : original;
       const total = Math.max(results.length || cases.length, 1);
       return {
         band,
@@ -202,40 +210,45 @@ export default function CalibrationModerationView({ payload, onAction, busy }: P
 
   const top5 = distribution.find((row) => row.band === 5);
   const top5Proposed = top5?.proposedPct || 0;
-  const top5TargetMid = 7.5;
+  const top5TargetMid = activeCycle?.enableForcedDistribution ? 10 : Math.max(top5Proposed, 0);
   const top5Variance = Math.round((top5Proposed - top5TargetMid) * 10) / 10;
 
   const deptConsistency = useMemo(() => {
-    const depts = Array.from(new Set(cases.map((row) => row.department).filter(Boolean)));
-    const source = depts.length ? depts : ['Operations', 'Finance', 'Engineering', 'Projects'];
-    return source.slice(0, 4).map((dept, index) => {
+    const depts = Array.from(new Set([
+      ...cases.map((row) => row.department).filter(Boolean),
+      ...(domain.eligibility || []).filter((row) => (!cycleId || row.cycleId === cycleId) && row.included).map((row) => row.department).filter(Boolean),
+    ]));
+    return depts.slice(0, 6).map((dept) => {
       const deptCases = cases.filter((row) => row.department === dept);
       const approvedPct = deptCases.length
         ? Math.round((deptCases.filter((row) => row.status === 'Approved').length / deptCases.length) * 100)
-        : [78, 91, 84, 69][index] || 75;
+        : 0;
       return { dept, pct: approvedPct };
     });
-  }, [cases]);
+  }, [cases, domain.eligibility, cycleId]);
 
   const readinessChecks = [
-    ['Manager reviews', `${Math.min(inScope, assessments.length || Math.round(inScope * 0.96))}/${inScope || 0}`, true],
-    ['Evidence complete', `${Math.max(0, cases.length - awaitingEvidence)}/${cases.length || 0}`, awaitingEvidence === 0],
+    ['Manager reviews', `${submittedReviews}/${inScope || 0}`, inScope === 0 || submittedReviews >= inScope],
+    ['Evidence complete', `${Math.max(0, cases.length - awaitingEvidence)}/${cases.length || 0}`, cases.length === 0 || awaitingEvidence === 0],
     ['Variances justified', `${Math.max(0, highVariance - awaitingEvidence)}/${highVariance || 0}`, highVariance === 0 || awaitingEvidence === 0],
     ['Conflicts resolved', `${approved}/${proposed + approved || 0}`, proposed === 0],
   ] as const;
-  const readinessPct = Math.round((readinessChecks.filter(([, , ok]) => ok).length / readinessChecks.length) * 100) || 72;
+  const readinessPct = readinessChecks.length
+    ? Math.round((readinessChecks.filter(([, , ok]) => ok).length / readinessChecks.length) * 100)
+    : 0;
   const blockers = readinessChecks.filter(([, , ok]) => !ok).length;
   const thresholdBreaches = enriched.filter((item) => Math.abs(item.variance) > THRESHOLD * 20 && item.row.status !== 'Rejected').length;
 
   const createSession = async () => {
+    if (!form.employeeId.trim() || !form.employeeName.trim()) return;
     await onAction('calibration.propose', {
       cycleId: cycleId || activeCycle?.id,
-      employeeId: form.employeeId || `emp-${Date.now()}`,
-      employeeName: form.employeeName || 'Employee',
-      department: form.department || 'Operations',
+      employeeId: form.employeeId.trim(),
+      employeeName: form.employeeName.trim(),
+      department: form.department.trim() || undefined,
       originalScore: Number(form.originalScore || 0),
       proposedScore: Number(form.proposedScore || 0),
-      justification: form.justification || 'Calibration adjustment proposed.',
+      justification: form.justification.trim() || 'Calibration adjustment proposed.',
     });
     setCreating(false);
   };
@@ -306,12 +319,12 @@ export default function CalibrationModerationView({ payload, onAction, busy }: P
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             {[
-              { icon: Users, label: 'Employees in scope', value: String(inScope || 248), sub: `${reviewsReady || 96}% reviews ready`, tone: 'blue' as const },
+              { icon: Users, label: 'Employees in scope', value: String(inScope), sub: `${reviewsReady}% reviews ready`, tone: 'blue' as const },
               { icon: AlertTriangle, label: 'Pending cases', value: String(pending), sub: `${highVariance} high variance`, tone: 'orange' as const },
               { icon: CircleGauge, label: 'Proposed adjustments', value: String(proposed), sub: `${awaitingEvidence} awaiting evidence`, tone: 'purple' as const },
               { icon: CheckCircle2, label: 'Approved adjustments', value: String(approved), sub: 'Synced decisions', tone: 'green' as const },
               { icon: AlertTriangle, label: 'Distribution exceptions', value: String(distributionExceptions), sub: `${criticalExceptions} critical`, tone: 'red' as const },
-              { icon: CircleGauge, label: 'Calibration progress', value: `${progressPct || 64}%`, sub: 'Cases decided', tone: 'blue' as const, ring: progressPct || 64 },
+              { icon: CircleGauge, label: 'Calibration progress', value: `${progressPct}%`, sub: 'Cases decided', tone: 'blue' as const, ring: progressPct },
             ].map((kpi) => (
               <article key={kpi.label} className="rounded-xl border border-[#eaecf0] bg-white p-3.5 shadow-sm">
                 <div className="flex items-start justify-between gap-2">

@@ -311,8 +311,8 @@ export default function ResultsApprovalView({ payload, onAction, busy }: Props) 
   const computedCount = results.length;
   const blockedCount = queue.filter((row) => row.blockers.length && !row.result).length;
   const criticalBlockers = queue.filter((row) => row.blockers.length >= 2 && !row.result).length;
-  const awaitingApproval = results.filter((row) => row.status === 'Draft' || row.status === 'Amended').length
-    || results.filter((row) => row.status === 'Approved').length;
+  const awaitingApproval = results.filter((row) => row.status === 'Draft' || row.status === 'Amended').length;
+  const readyToPublish = results.filter((row) => row.status === 'Approved').length;
   const approvedCount = results.filter((row) => ['Approved', 'Amended', 'Published'].includes(row.status)).length;
   const publishedCount = results.filter((row) => row.status === 'Published').length;
   const acknowledgedCount = results.filter((row) => Boolean(row.acknowledgedAt)).length;
@@ -461,7 +461,7 @@ export default function ResultsApprovalView({ payload, onAction, busy }: Props) 
           <div>
             <h2 className="text-sm font-bold">{activeCycle?.name || 'Performance cycle'}</h2>
             <div className="mt-2 flex flex-wrap gap-2">
-              <StatusPill label={`Scoring model: DLE Balanced v${activeCycle?.version || 1}`} />
+              <StatusPill label={`Scoring model: ${activeCycle?.templateId || activeCycle?.type || 'Cycle'} v${activeCycle?.version || 1}`} />
               <StatusPill label={`Approval stage: ${STEPS[Math.min(stepIndex, STEPS.length - 1)]}`} />
               <StatusPill label={`Publication window: ${publicationWindow}`} />
             </div>
@@ -512,7 +512,7 @@ export default function ResultsApprovalView({ payload, onAction, busy }: Props) 
             { icon: Users, label: 'Eligible Results', value: String(eligibleCount || 0), sub: `${readinessPct}% readiness`, tone: 'blue' as const },
             { icon: Calculator, label: 'Computed', value: String(computedCount), sub: `${computedPct}%`, tone: 'teal' as const },
             { icon: AlertTriangle, label: 'Blocked', value: String(blockedCount), sub: `${criticalBlockers} critical`, tone: 'red' as const },
-            { icon: Clock3, label: 'Awaiting Approval', value: String(awaitingApproval), sub: `${openAppeals} appeals open`, tone: 'orange' as const },
+            { icon: Clock3, label: 'Awaiting Approval', value: String(awaitingApproval), sub: `${readyToPublish} ready to publish · ${openAppeals} appeals`, tone: 'orange' as const },
             { icon: CheckCircle2, label: 'Approved', value: String(approvedCount), sub: `${approvedPct}%`, tone: 'green' as const },
             { icon: Globe2, label: 'Published', value: String(publishedCount), sub: `${ackPct}% acknowledged`, tone: 'purple' as const },
           ].map((kpi) => (
