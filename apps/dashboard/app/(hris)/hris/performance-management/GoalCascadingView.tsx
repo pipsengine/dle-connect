@@ -15,7 +15,6 @@ import {
   MoreVertical,
   Plus,
   Search,
-  Settings2,
   Target,
   X,
 } from 'lucide-react';
@@ -291,6 +290,88 @@ export default function GoalCascadingView({ payload, onAction, busy }: Props) {
   const exceptionCount = unalignedDepts + weightExceptions + (noOwner ? 1 : 0);
   const cascadingDeadline = activeCycle?.goalSettingEnd || activeCycle?.endDate || '';
   const deadlineDays = daysLeft(cascadingDeadline);
+
+  const cascadeAudit = useMemo(
+    () => (domain.audit || []).filter((row) => ['EmployeeGoal', 'CompanyObjective', 'CheckIn'].includes(row.entityType)).slice(0, 50),
+    [domain.audit],
+  );
+
+  const teamGroups = useMemo(() => {
+    const map = new Map<string, { manager: string; department: string; goals: EmployeeGoal[] }>();
+    for (const goal of goals) {
+      const key = goal.managerName || goal.managerId || 'Unassigned manager';
+      const existing = map.get(key);
+      if (existing) existing.goals.push(goal);
+      else map.set(key, { manager: key, department: goal.department || '—', goals: [goal] });
+    }
+    return Array.from(map.values()).sort((a, b) => a.manager.localeCompare(b.manager));
+  }, [goals]);
+
+  const exceptions = useMemo(() => {
+    const rows: Array<{ severity: 'High' | 'Medium' | 'Low'; title: string; detail: string; action?: () => void }> = [];
+    for (const row of workQueue) {
+      if (row.status === 'Not Started') {
+        rows.push({
+          severity: 'High',
+          title: `${row.department} has no cascaded goals`,
+          detail: `Parent: ${row.parentObjective}`,
+          action: () => {
+            setForm({
+              title: `${row.department} cascade goal`,
+              department: row.department,
+              parentObjectiveId: row.parentObjectiveId,
+              weight: '20',
+              ownerName: row.owner,
+            });
+            setCreating(true);
+          },
+        });
+      }
+      if (row.weight > 100) {
+        rows.push({
+          severity: 'Medium',
+          title: `${row.department} weight exceeds 100%`,
+          detail: `Current department weight total: ${row.weight}%`,
+        });
+      }
+      if (!row.owner || /unassigned|department lead/i.test(row.owner)) {
+        rows.push({
+          severity: 'Medium',
+          title: `${row.department} owner gap`,
+          detail: 'Assign a department lead before cascading further.',
+        });
+      }
+    }
+    for (const objective of objectives) {
+      const linked = goals.filter((goal) => goal.parentObjectiveId === objective.id);
+      if (!linked.length) {
+        rows.push({
+          severity: 'High',
+          title: `${objective.code} is not cascaded`,
+          detail: objective.title,
+          action: () => {
+            setForm((current) => ({
+              ...current,
+              parentObjectiveId: objective.id,
+              department: departments[0] || '',
+              ownerName: payload.actor.fullName,
+              title: `${objective.code} department outcome`,
+            }));
+            setCreating(true);
+          },
+        });
+      }
+    }
+    const unlinkedGoals = goals.filter((goal) => !goal.parentObjectiveId);
+    if (unlinkedGoals.length) {
+      rows.push({
+        severity: 'Low',
+        title: `${unlinkedGoals.length} employee goal${unlinkedGoals.length === 1 ? '' : 's'} lack a parent objective`,
+        detail: 'Link goals from OKR & KPI Management or create department cascades.',
+      });
+    }
+    return rows;
+  }, [workQueue, objectives, goals, departments, payload.actor.fullName]);
 
   const createDepartmentGoal = async () => {
     const parentId = form.parentObjectiveId || objectives[0]?.id || '';
@@ -661,18 +742,400 @@ export default function GoalCascadingView({ payload, onAction, busy }: Props) {
             </aside>
           </div>
         </>
-      ) : (
-        <section className="rounded-xl border border-[#eaecf0] bg-white px-6 py-20 text-center shadow-sm">
-          <Settings2 className="mx-auto h-11 w-11 text-[#1570ef]" />
-          <h2 className="mt-4 text-xl font-bold">{activeTab}</h2>
-          <p className="mx-auto mt-2 max-w-lg text-sm text-[#667085]">
-            This cascading workspace section is ready for {activeTab.toLowerCase()} detail views.
-          </p>
-          <button type="button" onClick={() => setActiveTab('Cascade Overview')} className="mt-6 inline-flex h-9 items-center rounded-lg bg-[#1570ef] px-4 text-[11px] font-semibold text-white">
-            Back to Cascade Overview
-          </button>
+      ) : null}
+
+      {activeTab === 'Company Objectives' ? (
+        <section className="overflow-hidden rounded-xl border border-[#eaecf0] bg-white shadow-sm">
+          <div className="border-b border-[#eaecf0] p-4">
+            <h3 className="text-sm font-bold">Company objectives in cascade</h3>
+            <p className="mt-1 text-[11px] font-medium text-[#667085]">Track which strategic objectives have been cascaded to departments and employees.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-[11px]">
+              <thead className="bg-[#f9fafb] text-[#667085]">
+                <tr>
+                  <th className="px-3 py-2.5 font-semibold">Objective</th>
+                  <th className="px-3 py-2.5 font-semibold">Owner</th>
+                  <th className="px-3 py-2.5 font-semibold">Weight</th>
+                  <th className="px-3 py-2.5 font-semibold">Cascade status</th>
+                  <th className="px-3 py-2.5 font-semibold">Depts</th>
+                  <th className="px-3 py-2.5 font-semibold">Goals</th>
+                  <th className="px-3 py-2.5 font-semibold">Progress</th>
+                  <th className="px-3 py-2.5 font-semibold">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cascadeTree.map((row) => (
+                  <tr key={row.objective.id} className="border-t border-[#eaecf0]">
+                    <td className="px-3 py-3">
+                      <p className="font-bold text-[#1570ef]">{row.objective.code}</p>
+                      <p className="font-bold text-[#101828]">{row.objective.title}</p>
+                      <p className="text-[10px] font-medium text-[#667085]">{row.objective.strategicPillar}</p>
+                    </td>
+                    <td className="px-3 py-3 font-semibold">{row.owner}</td>
+                    <td className="px-3 py-3 font-bold">{row.objective.weight}%</td>
+                    <td className="px-3 py-3"><StatusPill label={row.status} /></td>
+                    <td className="px-3 py-3 font-semibold">{row.alignedCount}/{row.alignedTotal}</td>
+                    <td className="px-3 py-3 font-semibold">{row.linked.length}</td>
+                    <td className="px-3 py-3"><MiniBar value={row.progress} /></td>
+                    <td className="px-3 py-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForm((current) => ({
+                            ...current,
+                            parentObjectiveId: row.objective.id,
+                            department: departments[0] || '',
+                            ownerName: payload.actor.fullName,
+                            title: `${row.objective.code} department outcome`,
+                          }));
+                          setCreating(true);
+                        }}
+                        className="text-[10px] font-bold text-[#1570ef] hover:underline"
+                      >
+                        Cascade
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!cascadeTree.length ? <p className="px-4 py-10 text-center text-sm font-semibold text-[#667085]">No company objectives for this cycle.</p> : null}
+          </div>
         </section>
-      )}
+      ) : null}
+
+      {activeTab === 'Department Goals' ? (
+        <div className="space-y-4">
+          <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold">Department goals</h3>
+                <p className="mt-1 text-[11px] font-medium text-[#667085]">Work queue for cascading company strategy into department outcomes.</p>
+              </div>
+              {(isHrScope || payload.actor?.scope === 'team') ? (
+                <button type="button" disabled={busy} onClick={() => setCreating(true)} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#1570ef] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
+                  <Plus className="h-3.5 w-3.5" /> Create Department Goal
+                </button>
+              ) : null}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(Object.keys(queueCounts) as QueueFilter[]).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setQueueFilter(key)}
+                  className={`rounded-full border px-3 py-1 text-[10px] font-semibold ${
+                    queueFilter === key ? 'border-[#1570ef] bg-[#eff8ff] text-[#1570ef]' : 'border-[#eaecf0] bg-white text-[#475467]'
+                  }`}
+                >
+                  {key} {queueCounts[key]}
+                </button>
+              ))}
+            </div>
+          </section>
+          <section className="overflow-hidden rounded-xl border border-[#eaecf0] bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <div className="min-w-[980px]">
+                <div className="grid grid-cols-[1.1fr_1.4fr_1fr_0.55fr_0.55fr_0.6fr_0.85fr_0.7fr_0.9fr] border-b border-[#eaecf0] bg-[#f9fafb] px-3 py-2 text-[9px] font-semibold uppercase tracking-wide text-[#667085]">
+                  <span>Department</span>
+                  <span>Parent Objective</span>
+                  <span>Owner</span>
+                  <span>Weight</span>
+                  <span>Team</span>
+                  <span>Employee</span>
+                  <span>Approval</span>
+                  <span>Deadline</span>
+                  <span>Action</span>
+                </div>
+                {filteredQueue.map((row) => (
+                  <div key={`${row.department}-${row.parentObjectiveId}-dept`} className="grid grid-cols-[1.1fr_1.4fr_1fr_0.55fr_0.55fr_0.6fr_0.85fr_0.7fr_0.9fr] items-center border-b border-[#eaecf0] px-3 py-3">
+                    <span className="truncate text-[11px] font-bold">{row.department}</span>
+                    <span className="truncate text-[11px] font-semibold text-[#475467]">{row.parentObjective}</span>
+                    <span className="truncate text-[11px] font-semibold">{row.owner}</span>
+                    <span className="text-[11px] font-bold">{row.weight}%</span>
+                    <span className="text-[11px] font-semibold">{row.teamGoals}</span>
+                    <span className="text-[11px] font-semibold">{row.employeeGoals}</span>
+                    <StatusPill label={row.status} />
+                    <span className="text-[10px] font-semibold text-[#667085]">{safeFmtDate(row.deadline)}</span>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setForm({
+                          title: `${row.department} cascade goal`,
+                          department: row.department,
+                          parentObjectiveId: row.parentObjectiveId,
+                          weight: '20',
+                          ownerName: row.owner,
+                        });
+                        setCreating(true);
+                      }}
+                      className="text-left text-[10px] font-bold text-[#1570ef] hover:underline disabled:opacity-50"
+                    >
+                      {queueActionLabel(row.status)}
+                    </button>
+                  </div>
+                ))}
+                {!filteredQueue.length ? <div className="px-4 py-10 text-center text-sm font-semibold text-[#667085]">No departments in this queue filter.</div> : null}
+              </div>
+            </div>
+          </section>
+          <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-bold">Department goal register</h3>
+            <div className="mt-3 space-y-2">
+              {goals.filter((goal) => Boolean(goal.department)).slice(0, 30).map((goal) => {
+                const parent = objectives.find((item) => item.id === goal.parentObjectiveId);
+                return (
+                  <div key={goal.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#eaecf0] px-3 py-2.5 text-[11px]">
+                    <div className="min-w-0">
+                      <p className="font-bold">{goal.department} · {goal.title}</p>
+                      <p className="text-[10px] font-semibold text-[#667085]">{parent ? `${parent.code} · ${parent.title}` : 'No parent objective'} · {goal.employeeName}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <MiniBar value={goal.progressPercent || 0} />
+                      <StatusPill label={goal.status} />
+                    </div>
+                  </div>
+                );
+              })}
+              {!goals.length ? <p className="text-[11px] font-semibold text-[#98a2b3]">No department goals yet.</p> : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {activeTab === 'Team Goals' ? (
+        <div className="space-y-3">
+          {teamGroups.map((team) => (
+            <section key={team.manager} className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold">{team.manager}</h3>
+                  <p className="mt-1 text-[11px] font-semibold text-[#667085]">{team.department} · {team.goals.length} goal{team.goals.length === 1 ? '' : 's'}</p>
+                </div>
+                <StatusPill label={queueStatus(team.goals)} />
+              </div>
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-full text-left text-[11px]">
+                  <thead className="bg-[#f9fafb] text-[#667085]">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold">Employee / Goal</th>
+                      <th className="px-3 py-2 font-semibold">Parent</th>
+                      <th className="px-3 py-2 font-semibold">Weight</th>
+                      <th className="px-3 py-2 font-semibold">Progress</th>
+                      <th className="px-3 py-2 font-semibold">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {team.goals.map((goal) => {
+                      const parent = objectives.find((item) => item.id === goal.parentObjectiveId);
+                      return (
+                        <tr key={goal.id} className="border-t border-[#eaecf0]">
+                          <td className="px-3 py-2.5">
+                            <p className="font-bold">{goal.employeeName}</p>
+                            <p className="text-[10px] font-medium text-[#667085]">{goal.title}</p>
+                          </td>
+                          <td className="px-3 py-2.5 font-semibold text-[#475467]">{parent ? parent.code : '—'}</td>
+                          <td className="px-3 py-2.5 font-semibold">{goal.weight}%</td>
+                          <td className="px-3 py-2.5"><MiniBar value={goal.progressPercent || 0} /></td>
+                          <td className="px-3 py-2.5"><StatusPill label={goal.status} /></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ))}
+          {!teamGroups.length ? <p className="rounded-xl border border-dashed border-[#eaecf0] bg-[#f8fafc] px-4 py-10 text-center text-sm font-semibold text-[#98a2b3]">No team goals for this cycle.</p> : null}
+        </div>
+      ) : null}
+
+      {activeTab === 'Employee Goals' ? (
+        <section className="overflow-hidden rounded-xl border border-[#eaecf0] bg-white shadow-sm">
+          <div className="flex flex-col gap-2 border-b border-[#eaecf0] p-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h3 className="text-sm font-bold">Employee goals</h3>
+              <p className="mt-1 text-[11px] font-medium text-[#667085]">{goals.length} goals in {activeCycle?.name || 'this cycle'}</p>
+            </div>
+            <label className="flex h-9 min-w-[220px] items-center gap-2 rounded-lg border border-[#d0d5dd] px-2.5">
+              <Search className="h-3.5 w-3.5 text-[#667085]" />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search employee or goal..." className="w-full border-0 bg-transparent text-[11px] outline-none" />
+            </label>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-[11px]">
+              <thead className="bg-[#f9fafb] text-[#667085]">
+                <tr>
+                  <th className="px-3 py-2.5 font-semibold">Employee</th>
+                  <th className="px-3 py-2.5 font-semibold">Goal</th>
+                  <th className="px-3 py-2.5 font-semibold">Department</th>
+                  <th className="px-3 py-2.5 font-semibold">Parent objective</th>
+                  <th className="px-3 py-2.5 font-semibold">Weight</th>
+                  <th className="px-3 py-2.5 font-semibold">Progress</th>
+                  <th className="px-3 py-2.5 font-semibold">Status</th>
+                  <th className="px-3 py-2.5 font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {goals
+                  .filter((goal) => {
+                    const q = query.trim().toLowerCase();
+                    if (!q) return true;
+                    return `${goal.employeeName} ${goal.title} ${goal.department} ${goal.employeeCode}`.toLowerCase().includes(q);
+                  })
+                  .map((goal) => {
+                    const parent = objectives.find((item) => item.id === goal.parentObjectiveId);
+                    return (
+                      <tr key={goal.id} className="border-t border-[#eaecf0]">
+                        <td className="px-3 py-3">
+                          <p className="font-bold">{goal.employeeName}</p>
+                          <p className="text-[10px] font-medium text-[#667085]">{goal.employeeCode}</p>
+                        </td>
+                        <td className="px-3 py-3 font-semibold">{goal.title}</td>
+                        <td className="px-3 py-3 font-semibold text-[#475467]">{goal.department || '—'}</td>
+                        <td className="px-3 py-3 font-semibold text-[#475467]">{parent ? `${parent.code}` : 'Unlinked'}</td>
+                        <td className="px-3 py-3 font-bold">{goal.weight}%</td>
+                        <td className="px-3 py-3"><MiniBar value={goal.progressPercent || 0} /></td>
+                        <td className="px-3 py-3"><StatusPill label={goal.status} /></td>
+                        <td className="px-3 py-3">
+                          <div className="flex flex-wrap gap-1">
+                            {['Assigned', 'Resubmitted', 'Discussion Requested'].includes(goal.status) ? (
+                              <button type="button" disabled={busy} onClick={() => void onAction('goal.acknowledge', { id: goal.id })} className="rounded-lg bg-[#1570ef] px-2 py-1 text-[10px] font-semibold text-white disabled:opacity-50">Acknowledge</button>
+                            ) : null}
+                            {['Assigned', 'Agreed', 'Active'].includes(goal.status) ? (
+                              <button type="button" disabled={busy} onClick={() => void onAction('goal.request-discussion', { id: goal.id, comment: 'Please clarify cascade alignment' })} className="rounded-lg border border-[#d0d5dd] px-2 py-1 text-[10px] font-semibold disabled:opacity-50">Discuss</button>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+            {!goals.length ? <p className="px-4 py-10 text-center text-sm font-semibold text-[#667085]">No employee goals for this cycle.</p> : null}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'Alignment Map' ? (
+        <div className="space-y-4">
+          <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold">Alignment map</h3>
+                <p className="mt-1 text-[11px] font-medium text-[#667085]">Company → department → employee cascade paths for the selected cycle.</p>
+              </div>
+              <AlignmentDonut aligned={fullyAligned || alignedDepts} partial={partialDepts} unaligned={unalignedDepts} />
+            </div>
+          </section>
+          <div className="space-y-3">
+            {cascadeTree.map((row) => (
+              <section key={row.objective.id} className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold text-[#1570ef]">{row.objective.code}</p>
+                    <h3 className="mt-1 text-sm font-bold">{row.objective.title}</h3>
+                    <p className="mt-1 text-[11px] font-semibold text-[#667085]">{row.owner} · Weight {row.objective.weight}%</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <StatusPill label={row.status} />
+                    <MiniBar value={row.progress} />
+                  </div>
+                </div>
+                {row.children.length ? (
+                  <div className="mt-4 space-y-3 border-l-2 border-[#d1e9ff] pl-4">
+                    {row.children.map((child) => (
+                      <div key={`${row.objective.id}-${child.department}`}>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="inline-flex items-center gap-2">
+                            <Building2 className="h-3.5 w-3.5 text-[#1570ef]" />
+                            <span className="text-[12px] font-bold">{child.department}</span>
+                            <span className="text-[10px] font-semibold text-[#667085]">{child.owner}</span>
+                          </div>
+                          <StatusPill label={child.status} />
+                        </div>
+                        <ul className="mt-2 space-y-1.5 pl-6">
+                          {child.goals.map((goal) => (
+                            <li key={goal.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[#f9fafb] px-3 py-2 text-[11px]">
+                              <span className="font-semibold">{goal.employeeName} · {goal.title}</span>
+                              <span className="inline-flex items-center gap-2">
+                                <MiniBar value={goal.progressPercent || 0} />
+                                <StatusPill label={goal.status} />
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 rounded-lg border border-dashed border-[#eaecf0] bg-[#f8fafc] px-3 py-4 text-[11px] font-semibold text-[#98a2b3]">Not cascaded yet.</p>
+                )}
+              </section>
+            ))}
+            {!cascadeTree.length ? <p className="rounded-xl border border-dashed border-[#eaecf0] bg-[#f8fafc] px-4 py-10 text-center text-sm font-semibold text-[#98a2b3]">No objectives to map.</p> : null}
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === 'Exceptions' ? (
+        <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold">Cascading exceptions</h3>
+              <p className="mt-1 text-[11px] font-medium text-[#667085]">{exceptions.length} issue{exceptions.length === 1 ? '' : 's'} requiring attention</p>
+            </div>
+            <span className="rounded-full border border-[#fecdca] bg-[#fef3f2] px-2.5 py-1 text-[10px] font-semibold text-[#b42318]">{exceptionCount} flagged</span>
+          </div>
+          <div className="mt-4 space-y-2">
+            {exceptions.map((item, index) => (
+              <div key={`${item.title}-${index}`} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-[#eaecf0] px-3 py-3">
+                <div>
+                  <StatusPill label={item.severity} />
+                  <p className="mt-2 text-[12px] font-bold">{item.title}</p>
+                  <p className="mt-1 text-[11px] font-semibold text-[#667085]">{item.detail}</p>
+                </div>
+                {item.action ? (
+                  <button type="button" onClick={item.action} className="inline-flex h-8 items-center rounded-lg bg-[#1570ef] px-2.5 text-[10px] font-semibold text-white">
+                    Resolve
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => setActiveTab('Department Goals')} className="inline-flex h-8 items-center rounded-lg border border-[#d0d5dd] px-2.5 text-[10px] font-semibold">
+                    Review
+                  </button>
+                )}
+              </div>
+            ))}
+            {!exceptions.length ? (
+              <div className="rounded-xl border border-[#abefc6] bg-[#ecfdf3] px-4 py-8 text-center text-[12px] font-semibold text-[#027a48]">
+                No cascading exceptions — coverage looks healthy.
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'Audit & History' ? (
+        <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-bold">Audit & history</h3>
+          <p className="mt-1 text-[11px] font-medium text-[#667085]">Goal cascading and alignment actions for this workspace.</p>
+          <div className="mt-4 space-y-2">
+            {cascadeAudit.map((row) => (
+              <div key={row.id} className="rounded-xl border border-[#eaecf0] px-3 py-2.5 text-[11px]">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-bold">{row.action}</p>
+                  <span className="text-[10px] font-semibold text-[#667085]">{safeFmtDate(row.at)}</span>
+                </div>
+                <p className="mt-1 font-semibold text-[#475467]">{row.actor} · {row.actorRole} · {row.entityType}/{row.entityId}</p>
+                {row.after ? <p className="mt-1 text-[10px] font-semibold text-[#667085]">{row.after}</p> : null}
+              </div>
+            ))}
+            {!cascadeAudit.length ? <p className="text-[11px] font-semibold text-[#98a2b3]">No cascade-related audit events yet.</p> : null}
+          </div>
+        </section>
+      ) : null}
 
       {creating ? (
         <>

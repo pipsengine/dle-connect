@@ -15,7 +15,6 @@ import {
   Plus,
   Scale,
   Search,
-  Settings2,
   Target,
   X,
   XCircle,
@@ -171,6 +170,29 @@ export default function OkrKpiManagementView({ payload, onAction, busy }: Props)
     () => (domain.checkIns || []).filter((item) => !cycleId || item.cycleId === cycleId),
     [domain.checkIns, cycleId],
   );
+  const okrAudit = useMemo(
+    () => (domain.audit || []).filter((row) => ['EmployeeGoal', 'CheckIn', 'CompanyObjective'].includes(row.entityType)).slice(0, 50),
+    [domain.audit],
+  );
+  const kpiCatalog = useMemo(() => {
+    const fromGoals = goals.flatMap((goal) => goal.keyResults.map((kr) => ({
+      id: `${goal.id}-${kr.id}`,
+      title: kr.title,
+      unit: kr.unit || '%',
+      weight: kr.weight,
+      source: 'Goal KR' as const,
+      employeeName: goal.employeeName,
+    })));
+    const fromBehaviour = (domain.config?.behaviourIndicators || []).map((ind) => ({
+      id: ind.id,
+      title: ind.name,
+      unit: '%',
+      weight: ind.weight || 0,
+      source: 'Behaviour KPI' as const,
+      employeeName: 'Organisation',
+    }));
+    return [...fromGoals, ...fromBehaviour];
+  }, [goals, domain.config?.behaviourIndicators]);
 
   const departments = useMemo(
     () => ['All departments', ...Array.from(new Set(goals.map((goal) => goal.department).filter(Boolean))).sort()],
@@ -246,19 +268,32 @@ export default function OkrKpiManagementView({ payload, onAction, busy }: Props)
   const exceptionCount = weightExceptions + orphaned + overdue;
   const nextCheckIn = activeCycle?.goalSettingEnd || checkIns[0]?.date || activeCycle?.midYearStart || '';
 
-  const keyResults = useMemo(() => {
-    const items = goals.flatMap((goal) => goal.keyResults.map((kr) => ({
-      goal,
-      kr,
-      actual: kr.actual != null ? Number(kr.actual) : Math.round((goal.progressPercent / 100) * Number(kr.target || 100)),
-      pct: (() => {
-        const target = Number(kr.target) || 0;
-        if (target <= 0) return 0;
-        const actual = kr.actual != null ? Number(kr.actual) : Math.round((goal.progressPercent / 100) * target);
-        return Math.max(0, Math.min(100, Math.round((actual / target) * 100)));
-      })(),
-    })));
-    return items.slice(0, 6);
+  const keyResults = useMemo(() => goals.flatMap((goal) => goal.keyResults.map((kr) => ({
+    goal,
+    kr,
+    actual: kr.actual != null ? Number(kr.actual) : Math.round((goal.progressPercent / 100) * Number(kr.target || 100)),
+    pct: (() => {
+      const target = Number(kr.target) || 0;
+      if (target <= 0) return 0;
+      const actual = kr.actual != null ? Number(kr.actual) : Math.round((goal.progressPercent / 100) * target);
+      return Math.max(0, Math.min(100, Math.round((actual / target) * 100)));
+    })(),
+  }))), [goals]);
+
+  const weightExceptionRows = useMemo(() => {
+    const byEmployee = new Map<string, { name: string; weight: number; goals: EmployeeGoal[] }>();
+    for (const goal of goals) {
+      if (['Cancelled', 'Archived'].includes(goal.status)) continue;
+      const key = goal.employeeId || goal.employeeCode || goal.employeeName;
+      const existing = byEmployee.get(key);
+      if (existing) {
+        existing.weight += Number(goal.weight || 0);
+        existing.goals.push(goal);
+      } else {
+        byEmployee.set(key, { name: goal.employeeName, weight: Number(goal.weight || 0), goals: [goal] });
+      }
+    }
+    return Array.from(byEmployee.values()).filter((row) => row.weight > 100.01 || Math.abs(row.weight - 100) > 0.01);
   }, [goals]);
 
   const assignGoal = async () => {
@@ -519,7 +554,7 @@ export default function OkrKpiManagementView({ payload, onAction, busy }: Props)
                       <span>Trend</span>
                       <span>Status</span>
                     </div>
-                    {keyResults.map(({ goal, kr, actual, pct: krPct }) => (
+                    {keyResults.slice(0, 6).map(({ goal, kr, actual, pct: krPct }) => (
                       <div key={`${goal.id}-${kr.id}`} className="grid grid-cols-[1.4fr_1fr_0.8fr_0.7fr_0.7fr] items-center border-b border-[#eaecf0] px-3 py-2.5">
                         <div className="min-w-0">
                           <p className="truncate text-[11px] font-bold">{kr.title}</p>
@@ -618,18 +653,417 @@ export default function OkrKpiManagementView({ payload, onAction, busy }: Props)
             </aside>
           </div>
         </>
-      ) : (
-        <section className="rounded-xl border border-[#eaecf0] bg-white px-6 py-20 text-center shadow-sm">
-          <Settings2 className="mx-auto h-11 w-11 text-[#1570ef]" />
-          <h2 className="mt-4 text-xl font-bold">{activeTab}</h2>
-          <p className="mx-auto mt-2 max-w-lg text-sm text-[#667085]">
-            This OKR workspace section is ready for {activeTab.toLowerCase()} detail content.
-          </p>
-          <button type="button" onClick={() => setActiveTab('Overview')} className="mt-6 inline-flex h-9 items-center rounded-lg bg-[#1570ef] px-4 text-[11px] font-semibold text-white">
-            Back to Overview
-          </button>
+      ) : null}
+
+      {activeTab === 'Employee Goals' ? (
+        <div className="space-y-4">
+          <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold">Employee goals</h3>
+                <p className="mt-1 text-[11px] font-medium text-[#667085]">Full goal register for {activeCycle?.name || 'the selected cycle'}.</p>
+              </div>
+              {(isHrScope || payload.actor?.scope === 'team') ? (
+                <button type="button" disabled={busy} onClick={() => setAssigning(true)} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#1570ef] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
+                  <Plus className="h-3.5 w-3.5" /> Assign goal
+                </button>
+              ) : null}
+            </div>
+          </section>
+          <section className="overflow-hidden rounded-xl border border-[#eaecf0] bg-white shadow-sm">
+            <div className="flex flex-col gap-2 border-b border-[#eaecf0] p-3 lg:flex-row lg:items-center">
+              <h3 className="mr-auto text-sm font-bold">Employee Goal Register</h3>
+              <label className="flex h-9 min-w-[180px] flex-1 items-center gap-2 rounded-lg border border-[#d0d5dd] px-2.5 lg:max-w-xs">
+                <Search className="h-3.5 w-3.5 text-[#667085]" />
+                <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search employees or goals..." className="w-full border-0 bg-transparent text-[11px] outline-none" />
+              </label>
+              <select value={department} onChange={(e) => { setDepartment(e.target.value); setPage(1); }} className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-2 text-[11px]">
+                {departments.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+              <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-2 text-[11px]">
+                <option>All statuses</option>
+                <option>On Track</option>
+                <option>At Risk</option>
+                <option>Overdue</option>
+                <option>Not Started</option>
+                <option>Completed</option>
+              </select>
+            </div>
+            <div className="overflow-x-auto">
+              <div className="min-w-[1100px]">
+                <div className="grid grid-cols-[1.5fr_1.3fr_1.1fr_0.45fr_0.7fr_0.7fr_0.85fr_0.7fr_0.45fr] border-b border-[#eaecf0] bg-[#f9fafb] px-3 py-2 text-[9px] font-semibold uppercase tracking-wide text-[#667085]">
+                  <span>Employee & Goal</span>
+                  <span>Alignment Path</span>
+                  <span>KPI / Target</span>
+                  <span>Weight</span>
+                  <span>Progress</span>
+                  <span>Status</span>
+                  <span>Approval</span>
+                  <span>Next Update</span>
+                  <span>Actions</span>
+                </div>
+                {rows.map((row) => (
+                  <div key={row.goal.id} className="grid grid-cols-[1.5fr_1.3fr_1.1fr_0.45fr_0.7fr_0.7fr_0.85fr_0.7fr_0.45fr] items-center border-b border-[#eaecf0] px-3 py-3">
+                    <div className="flex min-w-0 items-start gap-2">
+                      <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#eff8ff] text-[10px] font-bold text-[#175cd3]">{initials(row.goal.employeeName)}</span>
+                      <div className="min-w-0">
+                        <p className="truncate text-[11px] font-bold">{row.goal.employeeName}</p>
+                        <p className="truncate text-[10px] font-semibold text-[#667085]">{row.goal.title}</p>
+                      </div>
+                    </div>
+                    <p className="truncate text-[10px] font-semibold text-[#475467]">{row.alignment}</p>
+                    <p className="truncate text-[10px] font-semibold text-[#344054]">{row.kpiLabel}</p>
+                    <p className="text-[11px] font-bold">{row.goal.weight}%</p>
+                    <MiniBar value={row.goal.progressPercent} dual />
+                    <StatusPill label={row.health} />
+                    <StatusPill label={row.approval} />
+                    <p className="text-[10px] font-semibold text-[#667085]">{safeFmtDate(row.nextUpdate)}</p>
+                    <button type="button" onClick={() => setDrawer(row.goal)} className="p-1 text-[#667085]" aria-label="Open goal">
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+                {!rows.length ? <div className="px-4 py-12 text-center text-sm font-semibold text-[#667085]">No employee goals match these filters.</div> : null}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#eaecf0] px-3 py-2 text-[10px] text-[#667085]">
+              <span>Showing {filtered.length ? (page - 1) * pageSize + 1 : 0}-{Math.min(page * pageSize, filtered.length)} of {filtered.length}</span>
+              <div className="flex items-center gap-1">
+                <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="grid h-7 w-7 place-items-center rounded border border-[#eaecf0] disabled:opacity-40"><ChevronLeft className="h-3.5 w-3.5" /></button>
+                <span className="grid h-7 w-7 place-items-center rounded bg-[#1570ef] text-white">{page}</span>
+                <button type="button" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)} className="grid h-7 w-7 place-items-center rounded border border-[#eaecf0] disabled:opacity-40"><ChevronRight className="h-3.5 w-3.5" /></button>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {activeTab === 'Key Results' ? (
+        <section className="overflow-hidden rounded-xl border border-[#eaecf0] bg-white shadow-sm">
+          <div className="border-b border-[#eaecf0] p-4">
+            <h3 className="text-sm font-bold">Key results</h3>
+            <p className="mt-1 text-[11px] font-medium text-[#667085]">{keyResults.length} measurable outcomes across assigned goals.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-[11px]">
+              <thead className="bg-[#f9fafb] text-[#667085]">
+                <tr>
+                  <th className="px-3 py-2.5 font-semibold">Key Result</th>
+                  <th className="px-3 py-2.5 font-semibold">Employee / Goal</th>
+                  <th className="px-3 py-2.5 font-semibold">Actual vs Target</th>
+                  <th className="px-3 py-2.5 font-semibold">Weight</th>
+                  <th className="px-3 py-2.5 font-semibold">Progress</th>
+                  <th className="px-3 py-2.5 font-semibold">Trend</th>
+                  <th className="px-3 py-2.5 font-semibold">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {keyResults.map(({ goal, kr, actual, pct: krPct }) => (
+                  <tr key={`${goal.id}-${kr.id}`} className="border-t border-[#eaecf0]">
+                    <td className="px-3 py-3 font-bold">{kr.title}</td>
+                    <td className="px-3 py-3">
+                      <p className="font-semibold">{goal.employeeName}</p>
+                      <p className="text-[10px] font-medium text-[#667085]">{goal.title}</p>
+                    </td>
+                    <td className="px-3 py-3 font-semibold">{actual} / {kr.target}{kr.unit}</td>
+                    <td className="px-3 py-3 font-semibold">{kr.weight}%</td>
+                    <td className="px-3 py-3"><MiniBar value={krPct} /></td>
+                    <td className="px-3 py-3"><Sparkline value={krPct} /></td>
+                    <td className="px-3 py-3"><StatusPill label={krPct >= 85 ? 'On Track' : krPct >= 50 ? 'At Risk' : 'Behind'} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!keyResults.length ? <p className="px-4 py-10 text-center text-sm font-semibold text-[#667085]">No key results yet.</p> : null}
+          </div>
         </section>
-      )}
+      ) : null}
+
+      {activeTab === 'KPI Setup' ? (
+        <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold">KPI setup</h3>
+              <p className="mt-1 text-[11px] font-medium text-[#667085]">Catalogue of goal key results and organisational behaviour KPIs.</p>
+            </div>
+            <span className="rounded-full border border-[#eaecf0] bg-[#f9fafb] px-2.5 py-1 text-[10px] font-semibold text-[#475467]">{kpiCatalog.length} KPIs</span>
+          </div>
+          <div className="mt-4 overflow-x-auto">
+            <table className="min-w-full text-left text-[11px]">
+              <thead className="bg-[#f9fafb] text-[#667085]">
+                <tr>
+                  <th className="px-3 py-2.5 font-semibold">KPI</th>
+                  <th className="px-3 py-2.5 font-semibold">Source</th>
+                  <th className="px-3 py-2.5 font-semibold">Owner / Employee</th>
+                  <th className="px-3 py-2.5 font-semibold">Unit</th>
+                  <th className="px-3 py-2.5 font-semibold">Weight</th>
+                </tr>
+              </thead>
+              <tbody>
+                {kpiCatalog.map((item) => (
+                  <tr key={item.id} className="border-t border-[#eaecf0]">
+                    <td className="px-3 py-3 font-bold">{item.title}</td>
+                    <td className="px-3 py-3"><StatusPill label={item.source} /></td>
+                    <td className="px-3 py-3 font-semibold text-[#475467]">{item.employeeName}</td>
+                    <td className="px-3 py-3 font-semibold">{item.unit}</td>
+                    <td className="px-3 py-3 font-semibold">{item.weight}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!kpiCatalog.length ? <p className="px-3 py-10 text-center text-[11px] font-semibold text-[#98a2b3]">No KPIs configured yet.</p> : null}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'Alignment' ? (
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              ['Aligned goals', String(goals.length - orphaned)],
+              ['Orphaned goals', String(orphaned)],
+              ['Alignment coverage', `${alignedPct}%`],
+            ].map(([label, value]) => (
+              <article key={label} className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+                <p className="text-[10px] font-semibold text-[#667085]">{label}</p>
+                <p className="mt-2 text-2xl font-bold">{value}</p>
+              </article>
+            ))}
+          </div>
+          <div className="space-y-3">
+            {objectives.map((objective) => {
+              const linked = goals.filter((goal) => goal.parentObjectiveId === objective.id);
+              return (
+                <section key={objective.id} className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] font-bold text-[#1570ef]">{objective.code}</p>
+                      <h3 className="mt-1 text-sm font-bold">{objective.title}</h3>
+                    </div>
+                    <StatusPill label={`${linked.length} linked`} />
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {linked.map((goal) => (
+                      <div key={goal.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#eaecf0] px-3 py-2 text-[11px]">
+                        <span className="font-semibold">{goal.employeeName} · {goal.title}</span>
+                        <span className="inline-flex items-center gap-2">
+                          <MiniBar value={goal.progressPercent} />
+                          <StatusPill label={healthOf(goal)} />
+                        </span>
+                      </div>
+                    ))}
+                    {!linked.length ? <p className="text-[11px] font-semibold text-[#98a2b3]">No employee goals aligned yet.</p> : null}
+                  </div>
+                </section>
+              );
+            })}
+            {orphaned ? (
+              <section className="rounded-xl border border-[#fedf89] bg-[#fffaeb] p-4">
+                <h3 className="text-sm font-bold text-[#9a3412]">Orphaned goals ({orphaned})</h3>
+                <div className="mt-3 space-y-2">
+                  {goals.filter((goal) => !goal.parentObjectiveId).map((goal) => (
+                    <div key={goal.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#f9dbaf] bg-white px-3 py-2 text-[11px]">
+                      <span className="font-semibold">{goal.employeeName} · {goal.title}</span>
+                      <button type="button" onClick={() => setDrawer(goal)} className="text-[10px] font-bold text-[#1570ef]">Open</button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === 'Progress & Check-ins' ? (
+        <div className="grid gap-4 xl:grid-cols-[1.3fr_1fr]">
+          <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-bold">Goal progress</h3>
+            <div className="mt-4 space-y-3">
+              {enriched.map((row) => (
+                <div key={row.goal.id} className="rounded-xl border border-[#eaecf0] px-3 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-[12px] font-bold">{row.goal.employeeName}</p>
+                      <p className="text-[10px] font-semibold text-[#667085]">{row.goal.title}</p>
+                    </div>
+                    <StatusPill label={row.health} />
+                  </div>
+                  <div className="mt-2"><MiniBar value={row.goal.progressPercent} dual /></div>
+                  <p className="mt-1 text-[10px] font-semibold text-[#667085]">Next update {safeFmtDate(row.nextUpdate)}</p>
+                </div>
+              ))}
+              {!enriched.length ? <p className="text-[11px] font-semibold text-[#98a2b3]">No goals to track.</p> : null}
+            </div>
+          </section>
+          <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-bold">Recent check-ins</h3>
+            <div className="mt-4 space-y-2">
+              {checkIns.map((row) => (
+                <div key={row.id} className="rounded-lg border border-[#eaecf0] px-3 py-2.5 text-[11px]">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-bold">{row.employeeName}</p>
+                    <span className="text-[10px] font-semibold text-[#667085]">{safeFmtDate(row.date)}</span>
+                  </div>
+                  <p className="mt-1 font-semibold text-[#475467]">{row.progressPercent}% · {row.status}</p>
+                  {row.sharedNotes ? <p className="mt-1 text-[10px] font-medium text-[#667085] line-clamp-2">{row.sharedNotes}</p> : null}
+                </div>
+              ))}
+              {!checkIns.length ? <p className="text-[11px] font-semibold text-[#98a2b3]">No check-ins recorded for this cycle.</p> : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {activeTab === 'Approvals' ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-bold">Awaiting acknowledgement ({awaitingAck})</h3>
+            <div className="mt-3 space-y-2">
+              {enriched.filter((row) => ['Assigned', 'Resubmitted'].includes(row.goal.status) && !row.goal.acknowledgedAt).map((row) => (
+                <div key={row.goal.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#eaecf0] px-3 py-2.5 text-[11px]">
+                  <div>
+                    <p className="font-bold">{row.goal.employeeName}</p>
+                    <p className="text-[10px] font-semibold text-[#667085]">{row.goal.title}</p>
+                  </div>
+                  <div className="flex gap-1">
+                    <button type="button" disabled={busy} onClick={() => void onAction('goal.acknowledge', { id: row.goal.id })} className="rounded-lg bg-[#1570ef] px-2 py-1 text-[10px] font-semibold text-white disabled:opacity-50">Acknowledge</button>
+                    <button type="button" disabled={busy} onClick={() => void onAction('goal.request-discussion', { id: row.goal.id, comment: 'Clarify targets before acknowledgement' })} className="rounded-lg border border-[#d0d5dd] px-2 py-1 text-[10px] font-semibold disabled:opacity-50">Discuss</button>
+                  </div>
+                </div>
+              ))}
+              {!awaitingAck ? <p className="text-[11px] font-semibold text-[#98a2b3]">No goals awaiting acknowledgement.</p> : null}
+            </div>
+          </section>
+          <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-bold">Acknowledged / active</h3>
+            <div className="mt-3 space-y-2">
+              {enriched.filter((row) => Boolean(row.goal.acknowledgedAt) || ['Agreed', 'Active', 'Completed'].includes(row.goal.status)).map((row) => (
+                <div key={row.goal.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#eaecf0] px-3 py-2.5 text-[11px]">
+                  <div>
+                    <p className="font-bold">{row.goal.employeeName}</p>
+                    <p className="text-[10px] font-semibold text-[#667085]">{row.goal.title}</p>
+                  </div>
+                  <StatusPill label={row.approval} />
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 space-y-3">
+              {[
+                ['Manager approval', managerApprovedPct],
+                ['Employee acknowledgement', employeeAckPct],
+              ].map(([label, value]) => (
+                <div key={String(label)}>
+                  <div className="mb-1 flex items-center justify-between text-[11px] font-semibold">
+                    <span className="text-[#475467]">{label}</span>
+                    <span>{value}%</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-[#f2f4f7]">
+                    <div className="h-full rounded-full bg-[#1570ef]" style={{ width: `${value}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {activeTab === 'Changes & Versions' ? (
+        <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-bold">Changes & versions</h3>
+          <p className="mt-1 text-[11px] font-medium text-[#667085]">Version history and material goal changes.</p>
+          <div className="mt-4 space-y-3">
+            {goals.map((goal) => (
+              <article key={goal.id} className="rounded-xl border border-[#eaecf0] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[12px] font-bold">{goal.employeeName} · {goal.title}</p>
+                    <p className="text-[10px] font-semibold text-[#667085]">v{goal.version} · {goal.status} · Weight {goal.weight}%</p>
+                  </div>
+                  <button type="button" onClick={() => setDrawer(goal)} className="inline-flex h-8 items-center rounded-lg border border-[#d0d5dd] px-2.5 text-[10px] font-semibold">Open</button>
+                </div>
+                <ul className="mt-3 space-y-1">
+                  {(goal.history || []).slice().reverse().slice(0, 5).map((entry, index) => (
+                    <li key={`${goal.id}-${entry.version}-${index}`} className="text-[10px] font-semibold text-[#475467]">
+                      v{entry.version} · {entry.change} · {entry.actor} · {safeFmtDate(entry.at)}
+                      {entry.reason ? ` · ${entry.reason}` : ''}
+                    </li>
+                  ))}
+                  {!goal.history?.length ? <li className="text-[10px] font-semibold text-[#98a2b3]">No change history recorded.</li> : null}
+                </ul>
+              </article>
+            ))}
+            {!goals.length ? <p className="text-[11px] font-semibold text-[#98a2b3]">No version history yet.</p> : null}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'Exceptions' ? (
+        <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold">Exceptions</h3>
+              <p className="mt-1 text-[11px] font-medium text-[#667085]">{exceptionCount} issue{exceptionCount === 1 ? '' : 's'} requiring attention</p>
+            </div>
+          </div>
+          <div className="mt-4 space-y-2">
+            {weightExceptionRows.map((row) => (
+              <div key={row.name} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-[#eaecf0] px-3 py-3">
+                <div>
+                  <StatusPill label={row.weight > 100.01 ? 'High' : 'Medium'} />
+                  <p className="mt-2 text-[12px] font-bold">{row.name} weight total {row.weight}%</p>
+                  <p className="mt-1 text-[11px] font-semibold text-[#667085]">{row.goals.length} goal{row.goals.length === 1 ? '' : 's'} · expected 100%</p>
+                </div>
+                <button type="button" onClick={() => setDrawer(row.goals[0])} className="inline-flex h-8 items-center rounded-lg bg-[#1570ef] px-2.5 text-[10px] font-semibold text-white">Review</button>
+              </div>
+            ))}
+            {enriched.filter((row) => row.health === 'Overdue').map((row) => (
+              <div key={`od-${row.goal.id}`} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-[#eaecf0] px-3 py-3">
+                <div>
+                  <StatusPill label="High" />
+                  <p className="mt-2 text-[12px] font-bold">Overdue: {row.goal.employeeName} · {row.goal.title}</p>
+                  <p className="mt-1 text-[11px] font-semibold text-[#667085]">Due {safeFmtDate(row.goal.dueDate)}</p>
+                </div>
+                <button type="button" onClick={() => setDrawer(row.goal)} className="inline-flex h-8 items-center rounded-lg border border-[#d0d5dd] px-2.5 text-[10px] font-semibold">Open</button>
+              </div>
+            ))}
+            {goals.filter((goal) => !goal.parentObjectiveId).map((goal) => (
+              <div key={`or-${goal.id}`} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-[#eaecf0] px-3 py-3">
+                <div>
+                  <StatusPill label="Medium" />
+                  <p className="mt-2 text-[12px] font-bold">Orphaned goal: {goal.employeeName} · {goal.title}</p>
+                  <p className="mt-1 text-[11px] font-semibold text-[#667085]">No parent company objective linked</p>
+                </div>
+                <button type="button" onClick={() => setDrawer(goal)} className="inline-flex h-8 items-center rounded-lg border border-[#d0d5dd] px-2.5 text-[10px] font-semibold">Open</button>
+              </div>
+            ))}
+            {!exceptionCount ? (
+              <div className="rounded-xl border border-[#abefc6] bg-[#ecfdf3] px-4 py-8 text-center text-[12px] font-semibold text-[#027a48]">
+                No critical goal exceptions.
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'Audit & History' ? (
+        <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-bold">Audit & history</h3>
+          <p className="mt-1 text-[11px] font-medium text-[#667085]">Goal assignment, acknowledgement and check-in events.</p>
+          <div className="mt-4 space-y-2">
+            {okrAudit.map((row) => (
+              <div key={row.id} className="rounded-xl border border-[#eaecf0] px-3 py-2.5 text-[11px]">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-bold">{row.action}</p>
+                  <span className="text-[10px] font-semibold text-[#667085]">{safeFmtDate(row.at)}</span>
+                </div>
+                <p className="mt-1 font-semibold text-[#475467]">{row.actor} · {row.actorRole} · {row.entityType}/{row.entityId}</p>
+                {row.after ? <p className="mt-1 text-[10px] font-semibold text-[#667085]">{row.after}</p> : null}
+              </div>
+            ))}
+            {!okrAudit.length ? <p className="text-[11px] font-semibold text-[#98a2b3]">No OKR-related audit events yet.</p> : null}
+          </div>
+        </section>
+      ) : null}
 
       {assigning ? (
         <>

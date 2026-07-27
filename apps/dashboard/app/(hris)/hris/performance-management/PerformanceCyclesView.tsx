@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Activity,
@@ -19,6 +19,7 @@ import {
   LockKeyhole,
   MoreVertical,
   Plus,
+  Save,
   Search,
   Settings2,
   ShieldCheck,
@@ -26,10 +27,10 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import type { PerformanceCycle, PerformanceWorkspacePayload } from '@/lib/performance-domain-types';
 import type { PerformanceCycleRecord, PerformanceCyclesPageData } from '@/lib/performance-management-types';
-import type { PerformanceWorkspacePayload } from '@/lib/performance-domain-types';
 import { performanceRouteHref } from '@/lib/performance-management-menu-config';
-import { fmtDate } from './performance-management-ui';
+import { fmtDate, fmtDateTime } from './performance-management-ui';
 
 type Props = {
   payload: PerformanceWorkspacePayload;
@@ -150,6 +151,34 @@ export default function PerformanceCyclesView({ payload, onAction, busy }: Props
   const [typeFilter, setTypeFilter] = useState('All types');
   const [drawer, setDrawer] = useState<PerformanceCycleRecord | null>(null);
   const [page, setPage] = useState(1);
+  const [eligQuery, setEligQuery] = useState('');
+  const [eligDept, setEligDept] = useState('All departments');
+  const [configForm, setConfigForm] = useState({
+    name: '',
+    type: 'Annual',
+    description: '',
+    populationRule: '',
+    startDate: '',
+    endDate: '',
+    goalSettingStart: '',
+    goalSettingEnd: '',
+    midYearStart: '',
+    midYearEnd: '',
+    yearEndStart: '',
+    yearEndEnd: '',
+    calibrationStart: '',
+    calibrationEnd: '',
+    publicationDate: '',
+    appealDeadline: '',
+    companyObjectives: '40',
+    individualOkrs: '40',
+    behavioural: '20',
+    achievementCap: '120',
+    enable360: true,
+    enableMatrix: true,
+    enableCalibration: true,
+    enableForcedDistribution: false,
+  });
   const pageSize = 10;
 
   const cycles = data?.cycles || [];
@@ -162,12 +191,127 @@ export default function PerformanceCyclesView({ payload, onAction, busy }: Props
     progress: 0,
   };
   const activeDomain = domainCycles.find((cycle) => cycle.id === payload.domain?.activeCycleId) || domainCycles.find((cycle) => !['Closed', 'Archived', 'Draft'].includes(cycle.status));
+
+  useEffect(() => {
+    if (!activeDomain) return;
+    setConfigForm({
+      name: activeDomain.name,
+      type: activeDomain.type,
+      description: activeDomain.description || '',
+      populationRule: activeDomain.populationRule || '',
+      startDate: activeDomain.startDate || '',
+      endDate: activeDomain.endDate || '',
+      goalSettingStart: activeDomain.goalSettingStart || '',
+      goalSettingEnd: activeDomain.goalSettingEnd || '',
+      midYearStart: activeDomain.midYearStart || '',
+      midYearEnd: activeDomain.midYearEnd || '',
+      yearEndStart: activeDomain.yearEndStart || '',
+      yearEndEnd: activeDomain.yearEndEnd || '',
+      calibrationStart: activeDomain.calibrationStart || '',
+      calibrationEnd: activeDomain.calibrationEnd || '',
+      publicationDate: activeDomain.publicationDate || '',
+      appealDeadline: activeDomain.appealDeadline || '',
+      companyObjectives: String(activeDomain.sectionWeights.companyObjectives),
+      individualOkrs: String(activeDomain.sectionWeights.individualOkrs),
+      behavioural: String(activeDomain.sectionWeights.behavioural),
+      achievementCap: String(activeDomain.achievementCap),
+      enable360: activeDomain.enable360,
+      enableMatrix: activeDomain.enableMatrix,
+      enableCalibration: activeDomain.enableCalibration,
+      enableForcedDistribution: activeDomain.enableForcedDistribution,
+    });
+  }, [activeDomain?.id, activeDomain?.updatedAt]);
+
   const safeFmtDate = (value?: string | null) => {
     if (!value) return '—';
     const day = value.slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return value;
     return fmtDate(day);
   };
+
+  const eligibilityRows = useMemo(() => {
+    const rows = (payload.domain?.eligibility || []).filter((row) => !activeDomain || row.cycleId === activeDomain.id);
+    return rows;
+  }, [payload.domain?.eligibility, activeDomain?.id]);
+
+  const eligDepartments = useMemo(
+    () => ['All departments', ...Array.from(new Set(eligibilityRows.map((row) => row.department).filter(Boolean))).sort()],
+    [eligibilityRows],
+  );
+
+  const filteredEligibility = useMemo(() => eligibilityRows.filter((row) => {
+    const q = eligQuery.trim().toLowerCase();
+    if (q && !`${row.fullName} ${row.employeeCode} ${row.department} ${row.jobTitle} ${row.managerName}`.toLowerCase().includes(q)) return false;
+    if (eligDept !== 'All departments' && row.department !== eligDept) return false;
+    return true;
+  }), [eligibilityRows, eligQuery, eligDept]);
+
+  const cycleObjectives = useMemo(
+    () => (payload.domain?.companyObjectives || []).filter((item) => !activeDomain || item.cycleId === activeDomain.id),
+    [payload.domain?.companyObjectives, activeDomain?.id],
+  );
+
+  const cycleGoals = useMemo(
+    () => (payload.domain?.goals || []).filter((goal) => !activeDomain || goal.cycleId === activeDomain.id),
+    [payload.domain?.goals, activeDomain?.id],
+  );
+
+  const cycleAssessments = useMemo(
+    () => (payload.domain?.assessments || []).filter((item) => !activeDomain || item.cycleId === activeDomain.id),
+    [payload.domain?.assessments, activeDomain?.id],
+  );
+
+  const cycleAudit = useMemo(
+    () => (payload.domain?.audit || []).filter((event) =>
+      !activeDomain
+      || event.entityId === activeDomain.id
+      || /cycle/i.test(event.entityType)
+      || /cycle/i.test(event.action),
+    ).slice(0, 50),
+    [payload.domain?.audit, activeDomain?.id],
+  );
+
+  const weightTotal = Number(configForm.companyObjectives || 0) + Number(configForm.individualOkrs || 0) + Number(configForm.behavioural || 0);
+
+  const saveCycleConfig = async (extra?: Partial<PerformanceCycle> & { sectionWeights?: { companyObjectives: number; individualOkrs: number; behavioural: number } }) => {
+    if (!activeDomain || !isHrScope) return;
+    await onAction('cycle.update', {
+      cycleId: activeDomain.id,
+      name: configForm.name,
+      type: configForm.type,
+      description: configForm.description,
+      populationRule: configForm.populationRule,
+      startDate: configForm.startDate,
+      endDate: configForm.endDate,
+      goalSettingStart: configForm.goalSettingStart,
+      goalSettingEnd: configForm.goalSettingEnd,
+      midYearStart: configForm.midYearStart,
+      midYearEnd: configForm.midYearEnd,
+      yearEndStart: configForm.yearEndStart,
+      yearEndEnd: configForm.yearEndEnd,
+      calibrationStart: configForm.calibrationStart,
+      calibrationEnd: configForm.calibrationEnd,
+      publicationDate: configForm.publicationDate,
+      appealDeadline: configForm.appealDeadline,
+      enable360: configForm.enable360,
+      enableMatrix: configForm.enableMatrix,
+      enableCalibration: configForm.enableCalibration,
+      enableForcedDistribution: configForm.enableForcedDistribution,
+      achievementCap: Number(configForm.achievementCap || 0),
+      sectionWeights: {
+        companyObjectives: Number(configForm.companyObjectives || 0),
+        individualOkrs: Number(configForm.individualOkrs || 0),
+        behavioural: Number(configForm.behavioural || 0),
+      },
+      ...extra,
+    });
+  };
+
+  const field = (key: keyof typeof configForm, value: string | boolean) => setConfigForm((current) => ({ ...current, [key]: value }));
+
+  const inputClass = 'mt-1 h-9 w-full rounded-lg border border-[#ccd4df] px-3 text-sm font-semibold outline-none focus:border-[#0962ec]';
+  const labelClass = 'text-[10px] font-bold uppercase tracking-wide text-[#66738a]';
+  const cardClass = 'rounded-lg border border-[#d8dee8] bg-white p-4';
 
   const years = useMemo(() => {
     const values = Array.from(new Set(cycles.flatMap((cycle) => {
@@ -591,15 +735,360 @@ export default function PerformanceCyclesView({ payload, onAction, busy }: Props
             </section>
           </div>
         </>
+      ) : activeTab === 'Configuration' ? (
+        <section className="space-y-4">
+          {!activeDomain ? (
+            <div className={`${cardClass} py-12 text-center text-sm font-semibold text-[#66738a]`}>Select or create an active cycle to configure.</div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-base font-bold">Cycle configuration</h2>
+                  <p className="mt-1 text-[11px] font-medium text-[#66738a]">Identity, population rule, core dates and feature toggles for {activeDomain.name}.</p>
+                </div>
+                {isHrScope ? (
+                  <button type="button" disabled={busy} onClick={() => void saveCycleConfig()} className="inline-flex h-9 items-center gap-1.5 rounded bg-[#0962ec] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
+                    <Save className="h-3.5 w-3.5" /> Save configuration
+                  </button>
+                ) : null}
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className={cardClass}>
+                  <h3 className="mb-3 text-sm font-bold">Identity</h3>
+                  <div className="grid gap-3">
+                    <label className={labelClass}>Cycle name<input className={inputClass} disabled={!isHrScope} value={configForm.name} onChange={(e) => field('name', e.target.value)} /></label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className={labelClass}>Type<input className={inputClass} disabled={!isHrScope} value={configForm.type} onChange={(e) => field('type', e.target.value)} /></label>
+                      <label className={labelClass}>Status<input className={inputClass} value={activeDomain.status} disabled /></label>
+                    </div>
+                    <label className={labelClass}>Description<textarea className={`${inputClass} min-h-[72px] py-2`} disabled={!isHrScope} value={configForm.description} onChange={(e) => field('description', e.target.value)} /></label>
+                    <label className={labelClass}>Population rule<input className={inputClass} disabled={!isHrScope} value={configForm.populationRule} onChange={(e) => field('populationRule', e.target.value)} /></label>
+                  </div>
+                </div>
+                <div className={cardClass}>
+                  <h3 className="mb-3 text-sm font-bold">Core dates</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      ['startDate', 'Start date'],
+                      ['endDate', 'End date'],
+                      ['goalSettingStart', 'Goal setting start'],
+                      ['goalSettingEnd', 'Goal setting end'],
+                    ].map(([key, label]) => (
+                      <label key={key} className={labelClass}>{label}
+                        <input type="date" className={inputClass} disabled={!isHrScope} value={String(configForm[key as keyof typeof configForm] || '')} onChange={(e) => field(key as keyof typeof configForm, e.target.value)} />
+                      </label>
+                    ))}
+                  </div>
+                  <div className="mt-4 grid gap-2">
+                    {[
+                      ['enable360', 'Enable 360 feedback'],
+                      ['enableMatrix', 'Enable matrix / project inputs'],
+                      ['enableCalibration', 'Enable calibration'],
+                      ['enableForcedDistribution', 'Forced distribution'],
+                    ].map(([key, label]) => (
+                      <label key={key} className="flex items-center justify-between gap-3 rounded-lg border border-[#e8edf3] px-3 py-2 text-[12px] font-semibold">
+                        <span>{label}</span>
+                        <input type="checkbox" disabled={!isHrScope} checked={Boolean(configForm[key as keyof typeof configForm])} onChange={(e) => field(key as keyof typeof configForm, e.target.checked)} />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </section>
+      ) : activeTab === 'Eligibility' ? (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-base font-bold">Eligibility snapshot</h2>
+              <p className="mt-1 text-[11px] font-medium text-[#66738a]">
+                {eligibilityRows.filter((row) => row.included).length} included · {eligibilityRows.length} in snapshot
+                {activeDomain ? ` · ${activeDomain.populationRule}` : ''}
+              </p>
+            </div>
+            {isHrScope && activeDomain && ['Draft', 'Pending Approval'].includes(activeDomain.status) ? (
+              <button type="button" disabled={busy} onClick={() => void onAction('cycle.approve-publish', { cycleId: activeDomain.id })} className="inline-flex h-9 items-center rounded bg-[#0962ec] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
+                Publish & snapshot eligibility
+              </button>
+            ) : null}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              ['Eligible employees', eligibilityRows.filter((row) => row.included).length],
+              ['Departments', new Set(eligibilityRows.map((row) => row.department).filter(Boolean)).size],
+              ['Managers', new Set(eligibilityRows.map((row) => row.managerId).filter(Boolean)).size],
+            ].map(([label, value]) => (
+              <div key={String(label)} className={cardClass}>
+                <p className="text-[10px] font-semibold text-[#66738a]">{label}</p>
+                <p className="mt-2 text-2xl font-bold">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className={`${cardClass} !p-0 overflow-hidden`}>
+            <div className="flex flex-wrap gap-2 border-b border-[#d8dee8] p-3">
+              <input value={eligQuery} onChange={(e) => setEligQuery(e.target.value)} placeholder="Search employee, code or department" className="h-9 min-w-[220px] flex-1 rounded-lg border border-[#ccd4df] px-3 text-[11px]" />
+              <select value={eligDept} onChange={(e) => setEligDept(e.target.value)} className="h-9 rounded-lg border border-[#ccd4df] bg-white px-2 text-[11px]">
+                {eligDepartments.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </div>
+            <div className="overflow-x-auto">
+              <div className="min-w-[860px]">
+                <div className="grid grid-cols-[1.3fr_1fr_1fr_1fr_0.7fr] border-b border-[#d8dee8] bg-[#f7f8fa] px-3 py-2 text-[9px] font-semibold uppercase tracking-wide text-[#46546b]">
+                  <span>Employee</span>
+                  <span>Department</span>
+                  <span>Job title</span>
+                  <span>Manager</span>
+                  <span>Status</span>
+                </div>
+                {filteredEligibility.slice(0, 40).map((row) => (
+                  <div key={row.id} className="grid grid-cols-[1.3fr_1fr_1fr_1fr_0.7fr] items-center border-b border-[#d8dee8] px-3 py-2.5 text-[11px]">
+                    <div>
+                      <p className="font-bold">{row.fullName}</p>
+                      <p className="text-[9px] font-semibold text-[#66738a]">{row.employeeCode}</p>
+                    </div>
+                    <span className="font-semibold text-[#475467]">{row.department || '—'}</span>
+                    <span className="font-semibold text-[#475467]">{row.jobTitle || '—'}</span>
+                    <span className="font-semibold text-[#475467]">{row.managerName || '—'}</span>
+                    <span className={`font-bold ${row.included ? 'text-[#0b963e]' : 'text-[#db6b00]'}`}>{row.included ? 'Included' : 'Excluded'}</span>
+                  </div>
+                ))}
+                {!filteredEligibility.length ? (
+                  <div className="px-4 py-10 text-center text-sm font-semibold text-[#66738a]">No eligibility rows for this cycle yet. Publish the cycle to snapshot the population.</div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : activeTab === 'Objectives & Weights' ? (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-base font-bold">Objectives & weights</h2>
+              <p className="mt-1 text-[11px] font-medium text-[#66738a]">Section weights must total 100%. Company objectives inherit the active cycle.</p>
+            </div>
+            {isHrScope ? (
+              <button type="button" disabled={busy || weightTotal !== 100} onClick={() => void saveCycleConfig()} className="inline-flex h-9 items-center gap-1.5 rounded bg-[#0962ec] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
+                <Save className="h-3.5 w-3.5" /> Save weights
+              </button>
+            ) : null}
+          </div>
+          <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
+            <div className={cardClass}>
+              <h3 className="mb-3 text-sm font-bold">Section weights</h3>
+              <div className="grid gap-3">
+                {[
+                  ['companyObjectives', 'Company objectives'],
+                  ['individualOkrs', 'Individual OKRs'],
+                  ['behavioural', 'Behavioural'],
+                ].map(([key, label]) => (
+                  <label key={key} className={labelClass}>{label}
+                    <input className={inputClass} disabled={!isHrScope} value={String(configForm[key as keyof typeof configForm])} onChange={(e) => field(key as keyof typeof configForm, e.target.value)} />
+                  </label>
+                ))}
+                <label className={labelClass}>Achievement cap %
+                  <input className={inputClass} disabled={!isHrScope} value={configForm.achievementCap} onChange={(e) => field('achievementCap', e.target.value)} />
+                </label>
+                <p className={`text-[11px] font-bold ${weightTotal === 100 ? 'text-[#0b963e]' : 'text-[#e03127]'}`}>Total: {weightTotal}% {weightTotal === 100 ? '(valid)' : '(must equal 100%)'}</p>
+              </div>
+              <div className="mt-4">
+                <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-[#66738a]">Rating bands</h4>
+                <div className="space-y-2">
+                  {(activeDomain?.ratingBands || payload.domain?.config.ratingBands || []).map((band) => (
+                    <div key={band.label} className="flex items-center justify-between rounded-lg border border-[#e8edf3] px-3 py-2 text-[11px] font-semibold">
+                      <span>{band.label}</span>
+                      <span className="text-[#66738a]">{band.min} – {band.max}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className={cardClass}>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="text-sm font-bold">Company objectives</h3>
+                <Link href={performanceRouteHref('planning/corporate-goals')} className="text-[10px] font-bold text-[#0962ec]">Open Company Objectives →</Link>
+              </div>
+              <div className="space-y-2">
+                {cycleObjectives.map((item) => (
+                  <div key={item.id} className="rounded-lg border border-[#e8edf3] px-3 py-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-[11px] font-bold">{item.code} · {item.title}</p>
+                      <span className="text-[10px] font-bold text-[#0962ec]">{item.weight}%</span>
+                    </div>
+                    <p className="mt-1 text-[10px] font-semibold text-[#66738a]">{item.owner} · {item.status} · {item.strategicPillar}</p>
+                  </div>
+                ))}
+                {!cycleObjectives.length ? <p className="py-8 text-center text-sm font-semibold text-[#66738a]">No company objectives for this cycle yet.</p> : null}
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : activeTab === 'Workflow & Schedule' ? (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-base font-bold">Workflow & schedule</h2>
+              <p className="mt-1 text-[11px] font-medium text-[#66738a]">Governed milestones for mid-year, year-end, calibration and publication.</p>
+            </div>
+            {isHrScope ? (
+              <button type="button" disabled={busy || !activeDomain} onClick={() => void saveCycleConfig()} className="inline-flex h-9 items-center gap-1.5 rounded bg-[#0962ec] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
+                <Save className="h-3.5 w-3.5" /> Save schedule
+              </button>
+            ) : null}
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className={cardClass}>
+              <h3 className="mb-3 text-sm font-bold">Milestone dates</h3>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  ['midYearStart', 'Mid-year start'],
+                  ['midYearEnd', 'Mid-year end'],
+                  ['yearEndStart', 'Year-end start'],
+                  ['yearEndEnd', 'Year-end end'],
+                  ['calibrationStart', 'Calibration start'],
+                  ['calibrationEnd', 'Calibration end'],
+                  ['publicationDate', 'Publication date'],
+                  ['appealDeadline', 'Appeal deadline'],
+                ].map(([key, label]) => (
+                  <label key={key} className={labelClass}>{label}
+                    <input type="date" className={inputClass} disabled={!isHrScope} value={String(configForm[key as keyof typeof configForm] || '')} onChange={(e) => field(key as keyof typeof configForm, e.target.value)} />
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className={cardClass}>
+              <h3 className="mb-3 text-sm font-bold">Lifecycle track</h3>
+              <div className="space-y-2">
+                {lifecycleStates.map((stage) => (
+                  <div key={stage.name} className="flex items-center justify-between rounded-lg border border-[#e8edf3] px-3 py-2 text-[11px]">
+                    <span className="inline-flex items-center gap-2 font-semibold">
+                      {stage.state === 'done' ? <CheckCircle2 className="h-3.5 w-3.5 text-[#0b963e]" /> : stage.state === 'current' ? <Target className="h-3.5 w-3.5 text-[#0962ec]" /> : <LockKeyhole className="h-3.5 w-3.5 text-[#94a3b8]" />}
+                      {stage.name}
+                    </span>
+                    <span className={`font-bold ${stage.state === 'current' ? 'text-[#0962ec]' : 'text-[#66738a]'}`}>{stage.date}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : activeTab === 'Progress' ? (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-base font-bold">Cycle progress</h2>
+            <p className="mt-1 text-[11px] font-medium text-[#66738a]">Live completion across goals, assessments and workflow health.</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              ['Overall completion', `${activeSummary.progress}%`],
+              ['Goals', String(cycleGoals.length)],
+              ['Assessments', String(cycleAssessments.length)],
+              ['Results', String((payload.domain?.results || []).filter((row) => !activeDomain || row.cycleId === activeDomain.id).length)],
+            ].map(([label, value]) => (
+              <div key={label} className={cardClass}>
+                <p className="text-[10px] font-semibold text-[#66738a]">{label}</p>
+                <p className="mt-2 text-2xl font-bold">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className={cardClass}>
+              <h3 className="mb-3 text-sm font-bold">Workflow health</h3>
+              <div className="space-y-3">
+                {(data?.workflowHealth || []).map((item) => (
+                  <div key={item.label}>
+                    <div className="mb-1 flex justify-between text-[11px] font-semibold">
+                      <span>{item.label}</span>
+                      <span>{item.percent}%</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-[#e8edf3]">
+                      <div className="h-full rounded-full bg-[#0962ec]" style={{ width: `${item.percent}%` }} />
+                    </div>
+                  </div>
+                ))}
+                {!data?.workflowHealth?.length ? <p className="text-sm font-semibold text-[#66738a]">No workflow health metrics yet.</p> : null}
+              </div>
+            </div>
+            <div className={cardClass}>
+              <h3 className="mb-3 text-sm font-bold">Goal status mix</h3>
+              <div className="space-y-2">
+                {['Draft', 'Assigned', 'Agreed', 'Active', 'Completed'].map((statusLabel) => {
+                  const count = cycleGoals.filter((goal) => goal.status === statusLabel).length;
+                  const pct = cycleGoals.length ? Math.round((count / cycleGoals.length) * 100) : 0;
+                  return (
+                    <div key={statusLabel} className="flex items-center justify-between rounded-lg border border-[#e8edf3] px-3 py-2 text-[11px] font-semibold">
+                      <span>{statusLabel}</span>
+                      <span>{count} · {pct}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : activeTab === 'Exceptions' ? (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-base font-bold">Exceptions</h2>
+            <p className="mt-1 text-[11px] font-medium text-[#66738a]">Open workflow tasks and governance blockers for the active cycle.</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              ['Open tasks', exceptionsCount],
+              ['Weight imbalance', weightTotal === 100 ? 0 : 1],
+              ['Missing eligibility', eligibilityRows.length ? 0 : 1],
+            ].map(([label, value]) => (
+              <div key={String(label)} className={cardClass}>
+                <p className="text-[10px] font-semibold text-[#66738a]">{label}</p>
+                <p className={`mt-2 text-2xl font-bold ${Number(value) > 0 ? 'text-[#e03127]' : 'text-[#0b963e]'}`}>{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className={cardClass}>
+            <h3 className="mb-3 text-sm font-bold">Open tasks</h3>
+            <div className="space-y-2">
+              {(payload.domain?.tasks || []).filter((task) => !['Completed', 'Cancelled'].includes(task.status)).slice(0, 20).map((task) => (
+                <div key={task.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#e8edf3] px-3 py-2.5">
+                  <div>
+                    <p className="text-[11px] font-bold">{task.title}</p>
+                    <p className="mt-1 text-[10px] font-semibold text-[#66738a]">{task.employeeName} · {task.type} · due {safeFmtDate(task.dueDate)}</p>
+                  </div>
+                  <span className="text-[10px] font-bold text-[#db6b00]">{task.status}</span>
+                </div>
+              ))}
+              {!exceptionsCount ? <p className="py-8 text-center text-sm font-semibold text-[#66738a]">No critical exceptions for this cycle.</p> : null}
+            </div>
+          </div>
+        </section>
+      ) : activeTab === 'Audit & History' ? (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-base font-bold">Audit & history</h2>
+            <p className="mt-1 text-[11px] font-medium text-[#66738a]">Governed actions affecting cycles and related performance entities.</p>
+          </div>
+          <div className={cardClass}>
+            <div className="space-y-2">
+              {cycleAudit.map((event) => (
+                <div key={event.id} className="rounded-lg border border-[#e8edf3] px-3 py-2.5 text-[11px]">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-bold">{event.action}</p>
+                    <span className="font-semibold text-[#66738a]">{fmtDateTime(event.at)}</span>
+                  </div>
+                  <p className="mt-1 font-semibold text-[#66738a]">{event.actor} · {event.actorRole} · {event.entityType}/{event.entityId}</p>
+                  {event.reason ? <p className="mt-1 text-[#975000]">{event.reason}</p> : null}
+                </div>
+              ))}
+              {!cycleAudit.length ? <p className="py-8 text-center text-sm font-semibold text-[#66738a]">No audit events for this cycle yet.</p> : null}
+            </div>
+          </div>
+        </section>
       ) : (
         <section className="rounded-lg border border-[#d8dee8] bg-white px-6 py-20 text-center">
           <Settings2 className="mx-auto h-11 w-11 text-[#0962ec]" />
           <h2 className="mt-4 text-xl font-bold">{activeTab}</h2>
-          <p className="mx-auto mt-2 max-w-lg text-sm text-[#66738a]">
-            This governed workspace is ready for the corresponding cycle configuration and operational content.
-          </p>
+          <p className="mx-auto mt-2 max-w-lg text-sm text-[#66738a]">This governed workspace is ready for the corresponding cycle configuration and operational content.</p>
           <button type="button" onClick={() => setActiveTab('Overview')} className="mt-6 inline-flex h-9 items-center rounded bg-[#0962ec] px-4 text-[11px] font-semibold text-white">
-            Open {activeTab}
+            Back to Overview
           </button>
         </section>
       )}

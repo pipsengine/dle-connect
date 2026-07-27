@@ -493,6 +493,7 @@ export type PerformanceWorkspacePayload = PerformancePayload & {
     scheduledReports: ScheduledPerformanceReport[];
     analytics: PerformanceAnalyticsSnapshot | null;
     config: PerformanceConfig;
+    eligibility: CycleEligibility[];
     activeCycleId: string | null;
   };
   actor: {

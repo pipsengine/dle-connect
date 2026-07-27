@@ -15,7 +15,6 @@ import {
   Plus,
   Scale,
   Search,
-  Settings2,
   Target,
   TrendingUp,
   X,
@@ -114,6 +113,8 @@ export default function CompanyObjectivesView({ payload, onAction, busy }: Props
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ code: '', title: '', weight: '10', kpi: '', target: '100', owner: 'Executive Management', strategicPillar: 'Growth' });
   const [scoreDraft, setScoreDraft] = useState('');
+  const [progressDrafts, setProgressDrafts] = useState<Record<string, string>>({});
+  const [scoreDrafts, setScoreDrafts] = useState<Record<string, string>>({});
   const pageSize = 10;
 
   const activeCycle = cycles.find((cycle) => cycle.id === cycleId) || cycles.find((cycle) => cycle.id === domain.activeCycleId) || cycles[0];
@@ -124,6 +125,14 @@ export default function CompanyObjectivesView({ payload, onAction, busy }: Props
   const goals = useMemo(
     () => (domain.goals || []).filter((goal) => !cycleId || goal.cycleId === cycleId),
     [domain.goals, cycleId],
+  );
+  const checkIns = useMemo(
+    () => (domain.checkIns || []).filter((row) => !cycleId || row.cycleId === cycleId).slice(0, 40),
+    [domain.checkIns, cycleId],
+  );
+  const objectiveAudit = useMemo(
+    () => (domain.audit || []).filter((row) => row.entityType === 'CompanyObjective').slice(0, 50),
+    [domain.audit],
   );
 
   const pillars = useMemo(() => ['All pillars', ...Array.from(new Set(objectives.map((item) => item.strategicPillar).filter(Boolean)))], [objectives]);
@@ -182,6 +191,119 @@ export default function CompanyObjectivesView({ payload, onAction, busy }: Props
     setCreating(false);
     setForm({ code: '', title: '', weight: '10', kpi: '', target: '100', owner: 'Executive Management', strategicPillar: 'Growth' });
   };
+
+  const cascadeByObjective = useMemo(() => objectives.map((item) => {
+    const linked = goals.filter((goal) => goal.parentObjectiveId === item.id);
+    const departments = Array.from(new Set(linked.map((goal) => goal.department).filter(Boolean)));
+    return { item, linked, departments };
+  }), [objectives, goals]);
+
+  const pendingApproval = objectives.filter((item) => item.status === 'Draft' || item.status === 'Pending Approval');
+  const publishedObjectives = objectives.filter((item) => ['Published', 'Scored', 'Locked'].includes(item.status));
+  const scoredObjectives = objectives.filter((item) => item.corporateAchievement != null || item.status === 'Locked' || item.status === 'Scored');
+
+  const objectiveRegister = (
+    <section className="overflow-hidden rounded-xl border border-[#eaecf0] bg-white shadow-sm">
+      <div className="flex flex-col gap-2 border-b border-[#eaecf0] p-3 lg:flex-row lg:items-center">
+        <h3 className="mr-auto text-sm font-bold text-[#101828]">Objective Register</h3>
+        <label className="flex h-9 min-w-[200px] flex-1 items-center gap-2 rounded-lg border border-[#d0d5dd] px-2.5 lg:max-w-xs">
+          <Search className="h-3.5 w-3.5 text-[#667085]" />
+          <input
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+            placeholder="Search objectives..."
+            className="w-full border-0 bg-transparent text-[11px] outline-none"
+          />
+        </label>
+        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-2 text-[11px]">
+          <option>All statuses</option>
+          <option>On Track</option>
+          <option>At Risk</option>
+          <option>Awaiting Score</option>
+          <option>Draft</option>
+        </select>
+        <select value={pillarFilter} onChange={(e) => { setPillarFilter(e.target.value); setPage(1); }} className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-2 text-[11px]">
+          {pillars.map((item) => <option key={item} value={item}>{item === 'All pillars' ? 'Strategic Pillar' : item}</option>)}
+        </select>
+        <select value={ownerFilter} onChange={(e) => { setOwnerFilter(e.target.value); setPage(1); }} className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-2 text-[11px]">
+          {owners.map((item) => <option key={item} value={item}>{item === 'All owners' ? 'Owner' : item}</option>)}
+        </select>
+        <button type="button" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#d0d5dd] bg-white px-3 text-[11px] font-semibold text-[#344054]">
+          <Filter className="h-3.5 w-3.5" /> Filters
+        </button>
+      </div>
+
+      <div className="overflow-x-auto">
+        <div className="min-w-[980px]">
+          <div className="grid grid-cols-[1.7fr_1fr_0.45fr_1.1fr_0.55fr_0.7fr_1fr_0.7fr_0.7fr] items-center border-b border-[#eaecf0] bg-[#f9fafb] px-3 py-2 text-[9px] font-semibold uppercase tracking-wide text-[#667085]">
+            <span>Code & Objective</span>
+            <span>Owner</span>
+            <span>Weight</span>
+            <span>Actual vs Target</span>
+            <span>Progress %</span>
+            <span>Status</span>
+            <span>Aligned</span>
+            <span>Last Update</span>
+            <span>Actions</span>
+          </div>
+          {rows.map((row) => (
+            <div key={row.item.id} className="grid grid-cols-[1.7fr_1fr_0.45fr_1.1fr_0.55fr_0.7fr_1fr_0.7fr_0.7fr] items-center border-b border-[#eaecf0] px-3 py-3">
+              <div className="min-w-0 pr-2">
+                <p className="text-[10px] font-bold text-[#1570ef]">{row.item.code}</p>
+                <p className="mt-0.5 truncate text-[12px] font-bold text-[#101828]">{row.item.title}</p>
+                <span className="mt-1 inline-flex rounded border border-[#eaecf0] bg-[#f9fafb] px-1.5 py-0.5 text-[9px] font-semibold text-[#475467]">{row.item.strategicPillar || 'General'}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="grid h-8 w-8 place-items-center rounded-full bg-[#eff8ff] text-[10px] font-bold text-[#175cd3]">{initials(row.item.owner)}</span>
+                <div className="min-w-0">
+                  <p className="truncate text-[11px] font-bold text-[#101828]">{row.item.owner}</p>
+                  <p className="truncate text-[9px] text-[#667085]">Objective owner</p>
+                </div>
+              </div>
+              <p className="text-[11px] font-bold">{row.item.weight}%</p>
+              <div>
+                <div className="mb-1 flex justify-between text-[9px] font-semibold text-[#475467]">
+                  <span>{row.actual} / {row.item.target}{row.item.unit ? ` ${row.item.unit}` : ''}</span>
+                  <span>{row.pct}%</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-[#f2f4f7]">
+                  <div className={`h-full rounded-full ${row.status === 'At Risk' ? 'bg-[#f79009]' : 'bg-[#1570ef]'}`} style={{ width: `${row.pct}%` }} />
+                </div>
+              </div>
+              <p className="text-[11px] font-bold">{row.pct}%</p>
+              <StatusPill status={row.status} />
+              <p className="text-[10px] font-semibold text-[#475467]">{row.alignedDepartments} depts / {row.alignedGoals} goals</p>
+              <p className="text-[10px] font-semibold text-[#667085]">{safeFmtDate(row.lastUpdate)}</p>
+              <div className="flex items-center gap-1">
+                <button type="button" onClick={() => { setDrawer(row.item); setScoreDraft(row.item.corporateAchievement != null ? String(row.item.corporateAchievement) : ''); }} className="h-8 rounded-lg border border-[#d0d5dd] px-2.5 text-[10px] font-semibold text-[#344054]">
+                  Open
+                </button>
+                <button type="button" className="p-1 text-[#667085]" aria-label="More actions"><MoreVertical className="h-4 w-4" /></button>
+              </div>
+            </div>
+          ))}
+          {!rows.length ? (
+            <div className="px-4 py-12 text-center text-sm font-semibold text-[#667085]">No company objectives for this cycle.</div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#eaecf0] px-3 py-2 text-[10px] text-[#667085]">
+        <span>
+          Showing {filtered.length ? (page - 1) * pageSize + 1 : 0}-{Math.min(page * pageSize, filtered.length)} of {filtered.length}
+        </span>
+        <div className="flex items-center gap-1">
+          <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="grid h-7 w-7 place-items-center rounded border border-[#eaecf0] disabled:opacity-40">
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </button>
+          <span className="grid h-7 w-7 place-items-center rounded bg-[#1570ef] text-white">{page}</span>
+          <button type="button" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)} className="grid h-7 w-7 place-items-center rounded border border-[#eaecf0] disabled:opacity-40">
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+    </section>
+  );
 
   return (
     <div className="space-y-4 text-[#101828]">
@@ -311,106 +433,7 @@ export default function CompanyObjectivesView({ payload, onAction, busy }: Props
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
             <div className="space-y-4">
-              <section className="overflow-hidden rounded-xl border border-[#eaecf0] bg-white shadow-sm">
-                <div className="flex flex-col gap-2 border-b border-[#eaecf0] p-3 lg:flex-row lg:items-center">
-                  <h3 className="mr-auto text-sm font-bold text-[#101828]">Objective Register</h3>
-                  <label className="flex h-9 min-w-[200px] flex-1 items-center gap-2 rounded-lg border border-[#d0d5dd] px-2.5 lg:max-w-xs">
-                    <Search className="h-3.5 w-3.5 text-[#667085]" />
-                    <input
-                      value={query}
-                      onChange={(e) => { setQuery(e.target.value); setPage(1); }}
-                      placeholder="Search objectives..."
-                      className="w-full border-0 bg-transparent text-[11px] outline-none"
-                    />
-                  </label>
-                  <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-2 text-[11px]">
-                    <option>All statuses</option>
-                    <option>On Track</option>
-                    <option>At Risk</option>
-                    <option>Awaiting Score</option>
-                    <option>Draft</option>
-                  </select>
-                  <select value={pillarFilter} onChange={(e) => { setPillarFilter(e.target.value); setPage(1); }} className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-2 text-[11px]">
-                    {pillars.map((item) => <option key={item} value={item}>{item === 'All pillars' ? 'Strategic Pillar' : item}</option>)}
-                  </select>
-                  <select value={ownerFilter} onChange={(e) => { setOwnerFilter(e.target.value); setPage(1); }} className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-2 text-[11px]">
-                    {owners.map((item) => <option key={item} value={item}>{item === 'All owners' ? 'Owner' : item}</option>)}
-                  </select>
-                  <button type="button" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#d0d5dd] bg-white px-3 text-[11px] font-semibold text-[#344054]">
-                    <Filter className="h-3.5 w-3.5" /> Filters
-                  </button>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <div className="min-w-[980px]">
-                    <div className="grid grid-cols-[1.7fr_1fr_0.45fr_1.1fr_0.55fr_0.7fr_1fr_0.7fr_0.7fr] items-center border-b border-[#eaecf0] bg-[#f9fafb] px-3 py-2 text-[9px] font-semibold uppercase tracking-wide text-[#667085]">
-                      <span>Code & Objective</span>
-                      <span>Owner</span>
-                      <span>Weight</span>
-                      <span>Actual vs Target</span>
-                      <span>Progress %</span>
-                      <span>Status</span>
-                      <span>Aligned</span>
-                      <span>Last Update</span>
-                      <span>Actions</span>
-                    </div>
-                    {rows.map((row) => (
-                      <div key={row.item.id} className="grid grid-cols-[1.7fr_1fr_0.45fr_1.1fr_0.55fr_0.7fr_1fr_0.7fr_0.7fr] items-center border-b border-[#eaecf0] px-3 py-3">
-                        <div className="min-w-0 pr-2">
-                          <p className="text-[10px] font-bold text-[#1570ef]">{row.item.code}</p>
-                          <p className="mt-0.5 truncate text-[12px] font-bold text-[#101828]">{row.item.title}</p>
-                          <span className="mt-1 inline-flex rounded border border-[#eaecf0] bg-[#f9fafb] px-1.5 py-0.5 text-[9px] font-semibold text-[#475467]">{row.item.strategicPillar || 'General'}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="grid h-8 w-8 place-items-center rounded-full bg-[#eff8ff] text-[10px] font-bold text-[#175cd3]">{initials(row.item.owner)}</span>
-                          <div className="min-w-0">
-                            <p className="truncate text-[11px] font-bold text-[#101828]">{row.item.owner}</p>
-                            <p className="truncate text-[9px] text-[#667085]">Objective owner</p>
-                          </div>
-                        </div>
-                        <p className="text-[11px] font-bold">{row.item.weight}%</p>
-                        <div>
-                          <div className="mb-1 flex justify-between text-[9px] font-semibold text-[#475467]">
-                            <span>{row.actual} / {row.item.target}{row.item.unit ? ` ${row.item.unit}` : ''}</span>
-                            <span>{row.pct}%</span>
-                          </div>
-                          <div className="h-1.5 overflow-hidden rounded-full bg-[#f2f4f7]">
-                            <div className={`h-full rounded-full ${row.status === 'At Risk' ? 'bg-[#f79009]' : 'bg-[#1570ef]'}`} style={{ width: `${row.pct}%` }} />
-                          </div>
-                        </div>
-                        <p className="text-[11px] font-bold">{row.pct}%</p>
-                        <StatusPill status={row.status} />
-                        <p className="text-[10px] font-semibold text-[#475467]">{row.alignedDepartments} depts / {row.alignedGoals} goals</p>
-                        <p className="text-[10px] font-semibold text-[#667085]">{safeFmtDate(row.lastUpdate)}</p>
-                        <div className="flex items-center gap-1">
-                          <button type="button" onClick={() => { setDrawer(row.item); setScoreDraft(row.item.corporateAchievement != null ? String(row.item.corporateAchievement) : ''); }} className="h-8 rounded-lg border border-[#d0d5dd] px-2.5 text-[10px] font-semibold text-[#344054]">
-                            Open
-                          </button>
-                          <button type="button" className="p-1 text-[#667085]" aria-label="More actions"><MoreVertical className="h-4 w-4" /></button>
-                        </div>
-                      </div>
-                    ))}
-                    {!rows.length ? (
-                      <div className="px-4 py-12 text-center text-sm font-semibold text-[#667085]">No company objectives for this cycle.</div>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#eaecf0] px-3 py-2 text-[10px] text-[#667085]">
-                  <span>
-                    Showing {filtered.length ? (page - 1) * pageSize + 1 : 0}-{Math.min(page * pageSize, filtered.length)} of {filtered.length}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="grid h-7 w-7 place-items-center rounded border border-[#eaecf0] disabled:opacity-40">
-                      <ChevronLeft className="h-3.5 w-3.5" />
-                    </button>
-                    <span className="grid h-7 w-7 place-items-center rounded bg-[#1570ef] text-white">{page}</span>
-                    <button type="button" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)} className="grid h-7 w-7 place-items-center rounded border border-[#eaecf0] disabled:opacity-40">
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </section>
+              {objectiveRegister}
 
               <div className="grid gap-4 lg:grid-cols-[1.4fr_0.8fr]">
                 <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
@@ -534,24 +557,340 @@ export default function CompanyObjectivesView({ payload, onAction, busy }: Props
             </aside>
           </div>
         </>
-      ) : (
-        <section className="rounded-xl border border-[#eaecf0] bg-white px-6 py-20 text-center shadow-sm">
-          <Settings2 className="mx-auto h-11 w-11 text-[#1570ef]" />
-          <h2 className="mt-4 text-xl font-bold">{activeTab}</h2>
-          <p className="mx-auto mt-2 max-w-lg text-sm text-[#667085]">
-            This workspace section is ready for {activeTab.toLowerCase()} content aligned to the governed company objectives process.
-          </p>
-          {activeTab === 'Scoring' && drawer === null && objectives[0] ? (
-            <button type="button" onClick={() => setDrawer(objectives.find((item) => item.corporateAchievement == null) || objectives[0])} className="mt-6 inline-flex h-9 items-center rounded-lg bg-[#1570ef] px-4 text-[11px] font-semibold text-white">
-              Open scoring drawer
-            </button>
-          ) : (
-            <button type="button" onClick={() => setActiveTab('Overview')} className="mt-6 inline-flex h-9 items-center rounded-lg bg-[#1570ef] px-4 text-[11px] font-semibold text-white">
-              Back to Overview
-            </button>
-          )}
+      ) : null}
+
+      {activeTab === 'Objectives' ? (
+        <div className="space-y-4">
+          <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold">Objective catalogue</h3>
+                <p className="mt-1 text-[11px] font-medium text-[#667085]">Maintain the corporate objective register for {activeCycle?.name || 'this cycle'}.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${totalWeight === 100 ? 'border-[#abefc6] bg-[#ecfdf3] text-[#027a48]' : 'border-[#fedf89] bg-[#fffaeb] text-[#b54708]'}`}>
+                  Weights {totalWeight}%
+                </span>
+                {isHrScope ? (
+                  <button type="button" disabled={busy} onClick={() => setCreating(true)} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#1570ef] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
+                    <Plus className="h-3.5 w-3.5" /> Create Objective
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </section>
+          {objectiveRegister}
+        </div>
+      ) : null}
+
+      {activeTab === 'Alignment & Cascading' ? (
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              ['Alignment coverage', `${alignmentCoverage}%`],
+              ['Downstream goals', String(alignedGoalCount)],
+              ['Departments cascaded', String(new Set(goals.map((g) => g.department).filter(Boolean)).size)],
+            ].map(([label, value]) => (
+              <article key={label} className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+                <p className="text-[10px] font-semibold text-[#667085]">{label}</p>
+                <p className="mt-2 text-2xl font-bold">{value}</p>
+              </article>
+            ))}
+          </div>
+          <div className="space-y-3">
+            {cascadeByObjective.map(({ item, linked, departments }) => (
+              <section key={item.id} className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-bold text-[#1570ef]">{item.code}</p>
+                    <h3 className="mt-1 text-sm font-bold">{item.title}</h3>
+                    <p className="mt-1 text-[11px] font-semibold text-[#667085]">{item.strategicPillar} · Weight {item.weight}%</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="rounded-full border border-[#eaecf0] bg-[#f9fafb] px-2 py-0.5 text-[10px] font-semibold text-[#475467]">{departments.length} depts</span>
+                    <span className="rounded-full border border-[#b2ddff] bg-[#eff8ff] px-2 py-0.5 text-[10px] font-semibold text-[#175cd3]">{linked.length} goals</span>
+                  </div>
+                </div>
+                {linked.length ? (
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="min-w-full text-left text-[11px]">
+                      <thead className="bg-[#f9fafb] text-[#667085]">
+                        <tr>
+                          <th className="px-3 py-2 font-semibold">Employee / Goal</th>
+                          <th className="px-3 py-2 font-semibold">Department</th>
+                          <th className="px-3 py-2 font-semibold">Weight</th>
+                          <th className="px-3 py-2 font-semibold">Progress</th>
+                          <th className="px-3 py-2 font-semibold">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {linked.map((goal) => (
+                          <tr key={goal.id} className="border-t border-[#eaecf0]">
+                            <td className="px-3 py-2.5">
+                              <p className="font-bold text-[#101828]">{goal.employeeName}</p>
+                              <p className="text-[10px] font-medium text-[#667085]">{goal.title}</p>
+                            </td>
+                            <td className="px-3 py-2.5 font-semibold text-[#475467]">{goal.department || '—'}</td>
+                            <td className="px-3 py-2.5 font-semibold">{goal.weight}%</td>
+                            <td className="px-3 py-2.5 font-semibold">{goal.progressPercent}%</td>
+                            <td className="px-3 py-2.5"><span className="rounded-full border border-[#eaecf0] bg-[#f9fafb] px-2 py-0.5 text-[10px] font-semibold">{goal.status}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="mt-4 rounded-lg border border-dashed border-[#eaecf0] bg-[#f8fafc] px-3 py-4 text-[11px] font-semibold text-[#98a2b3]">No cascaded goals linked yet. Link employee goals via Goal Cascading.</p>
+                )}
+              </section>
+            ))}
+            {!cascadeByObjective.length ? <p className="rounded-xl border border-dashed border-[#eaecf0] bg-[#f8fafc] px-4 py-10 text-center text-sm font-semibold text-[#98a2b3]">No objectives to cascade.</p> : null}
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === 'Progress Updates' ? (
+        <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
+          <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-bold">Corporate progress updates</h3>
+            <p className="mt-1 text-[11px] font-medium text-[#667085]">Capture interim actuals against each published objective KPI.</p>
+            <div className="mt-4 space-y-3">
+              {objectives.map((item) => {
+                const canScore = isHrScope && (item.status === 'Published' || item.status === 'Scored');
+                const draft = progressDrafts[item.id] ?? (item.corporateAchievement != null ? String(item.corporateAchievement) : '');
+                return (
+                  <article key={item.id} className="rounded-xl border border-[#eaecf0] p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="text-[10px] font-bold text-[#1570ef]">{item.code}</p>
+                        <h4 className="text-[12px] font-bold">{item.title}</h4>
+                        <p className="mt-1 text-[10px] font-semibold text-[#667085]">{item.kpi} · Target {item.target}{item.unit}</p>
+                      </div>
+                      <StatusPill status={deriveStatus(item)} />
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-end gap-2">
+                      <label className="min-w-[140px] flex-1 text-[10px] font-semibold text-[#344054]">
+                        Actual / achievement
+                        <input
+                          className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-[11px]"
+                          value={draft}
+                          disabled={!canScore}
+                          onChange={(e) => setProgressDrafts((current) => ({ ...current, [item.id]: e.target.value }))}
+                          placeholder={String(item.baseline || 0)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        disabled={busy || !canScore}
+                        onClick={() => void onAction('company-objective.score', { id: item.id, corporateAchievement: Number(draft || 0) })}
+                        className="inline-flex h-9 items-center rounded-lg bg-[#1570ef] px-3 text-[11px] font-semibold text-white disabled:opacity-50"
+                      >
+                        Save update
+                      </button>
+                    </div>
+                    {!canScore ? <p className="mt-2 text-[10px] font-semibold text-[#b54708]">Publish the objective set before locking progress scores.</p> : null}
+                  </article>
+                );
+              })}
+              {!objectives.length ? <p className="text-[11px] font-semibold text-[#98a2b3]">No objectives available.</p> : null}
+            </div>
+          </section>
+          <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-bold">Recent check-ins</h3>
+            <p className="mt-1 text-[11px] font-medium text-[#667085]">Team progress signals feeding corporate monitoring.</p>
+            <div className="mt-4 space-y-2">
+              {checkIns.map((row) => (
+                <div key={row.id} className="rounded-lg border border-[#eaecf0] px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] font-bold">{row.employeeName}</p>
+                    <span className="text-[10px] font-semibold text-[#667085]">{safeFmtDate(row.date)}</span>
+                  </div>
+                  <p className="mt-1 text-[10px] font-semibold text-[#475467]">{row.progressPercent}% · {row.status}</p>
+                  {row.sharedNotes ? <p className="mt-1 text-[10px] font-medium text-[#667085] line-clamp-2">{row.sharedNotes}</p> : null}
+                </div>
+              ))}
+              {!checkIns.length ? <p className="text-[11px] font-semibold text-[#98a2b3]">No check-ins recorded for this cycle.</p> : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {activeTab === 'Scoring' ? (
+        <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold">Corporate scoring</h3>
+              <p className="mt-1 text-[11px] font-medium text-[#667085]">Lock achievement scores that feed final result computation.</p>
+            </div>
+            <span className="rounded-full border border-[#eaecf0] bg-[#f9fafb] px-2.5 py-1 text-[10px] font-semibold text-[#475467]">
+              {scoredObjectives.length}/{objectives.length} scored
+            </span>
+          </div>
+          <div className="mt-4 overflow-x-auto">
+            <table className="min-w-full text-left text-[11px]">
+              <thead className="bg-[#f9fafb] text-[#667085]">
+                <tr>
+                  <th className="px-3 py-2.5 font-semibold">Objective</th>
+                  <th className="px-3 py-2.5 font-semibold">Weight</th>
+                  <th className="px-3 py-2.5 font-semibold">KPI / Target</th>
+                  <th className="px-3 py-2.5 font-semibold">Achievement</th>
+                  <th className="px-3 py-2.5 font-semibold">Lifecycle</th>
+                  <th className="px-3 py-2.5 font-semibold">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {objectives.map((item) => {
+                  const canScore = isHrScope && (item.status === 'Published' || item.status === 'Scored');
+                  const draft = scoreDrafts[item.id] ?? (item.corporateAchievement != null ? String(item.corporateAchievement) : '');
+                  return (
+                    <tr key={item.id} className="border-t border-[#eaecf0]">
+                      <td className="px-3 py-3">
+                        <p className="font-bold text-[#101828]">{item.code}</p>
+                        <p className="text-[10px] font-medium text-[#667085]">{item.title}</p>
+                      </td>
+                      <td className="px-3 py-3 font-semibold">{item.weight}%</td>
+                      <td className="px-3 py-3 font-semibold text-[#475467]">{item.kpi} · {item.target}{item.unit}</td>
+                      <td className="px-3 py-3">
+                        <input
+                          className="h-9 w-28 rounded-lg border border-[#d0d5dd] px-2 text-[11px]"
+                          value={draft}
+                          disabled={!canScore}
+                          onChange={(e) => setScoreDrafts((current) => ({ ...current, [item.id]: e.target.value }))}
+                        />
+                      </td>
+                      <td className="px-3 py-3"><span className="rounded-full border border-[#eaecf0] bg-[#f9fafb] px-2 py-0.5 text-[10px] font-semibold">{item.status}</span></td>
+                      <td className="px-3 py-3">
+                        <button
+                          type="button"
+                          disabled={busy || !canScore}
+                          onClick={() => void onAction('company-objective.score', { id: item.id, corporateAchievement: Number(draft || 0) })}
+                          className="inline-flex h-8 items-center rounded-lg bg-[#1570ef] px-2.5 text-[10px] font-semibold text-white disabled:opacity-50"
+                        >
+                          Lock score
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {!objectives.length ? <p className="px-3 py-10 text-center text-[11px] font-semibold text-[#98a2b3]">No objectives to score.</p> : null}
+          </div>
         </section>
-      )}
+      ) : null}
+
+      {activeTab === 'Approvals' ? (
+        <div className="space-y-4">
+          <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold">Objective set approval</h3>
+                <p className="mt-1 text-[11px] font-medium text-[#667085]">Validate weights, ownership and KPI completeness before publication.</p>
+              </div>
+              {isHrScope ? (
+                <button
+                  type="button"
+                  disabled={busy || !cycleId || totalWeight !== 100 || !objectives.length}
+                  onClick={() => void onAction('company-objective.publish', { cycleId })}
+                  className="inline-flex h-9 items-center rounded-lg bg-[#1570ef] px-3 text-[11px] font-semibold text-white disabled:opacity-50"
+                >
+                  Publish objective set
+                </button>
+              ) : null}
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                [`Weights ${totalWeight}%`, totalWeight === 100],
+                [`Owners ${ownersAssigned}/${objectives.length || 0}`, ownersAssigned === objectives.length && objectives.length > 0],
+                ['KPIs validated', objectives.every((item) => Boolean(item.kpi))],
+                ['Already published', published],
+              ].map(([label, ok]) => (
+                <div key={String(label)} className={`rounded-lg border px-3 py-3 text-[11px] font-semibold ${ok ? 'border-[#abefc6] bg-[#ecfdf3] text-[#027a48]' : 'border-[#fedf89] bg-[#fffaeb] text-[#b54708]'}`}>
+                  <span className="inline-flex items-center gap-1.5">{ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}{label}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-bold">Pending approval ({pendingApproval.length})</h3>
+              <div className="mt-3 space-y-2">
+                {pendingApproval.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between gap-2 rounded-lg border border-[#eaecf0] px-3 py-2.5 text-[11px]">
+                    <div>
+                      <p className="font-bold">{item.code} · {item.title}</p>
+                      <p className="text-[10px] font-semibold text-[#667085]">{item.owner} · {item.weight}%</p>
+                    </div>
+                    <span className="rounded-full border border-[#fedf89] bg-[#fffaeb] px-2 py-0.5 text-[10px] font-semibold text-[#b54708]">{item.status}</span>
+                  </div>
+                ))}
+                {!pendingApproval.length ? <p className="text-[11px] font-semibold text-[#98a2b3]">No draft objectives awaiting approval.</p> : null}
+              </div>
+            </section>
+            <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-bold">Published ({publishedObjectives.length})</h3>
+              <div className="mt-3 space-y-2">
+                {publishedObjectives.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between gap-2 rounded-lg border border-[#eaecf0] px-3 py-2.5 text-[11px]">
+                    <div>
+                      <p className="font-bold">{item.code} · {item.title}</p>
+                      <p className="text-[10px] font-semibold text-[#667085]">Approved by {item.approvedBy || '—'} · {safeFmtDate(item.publishedAt)}</p>
+                    </div>
+                    <span className="rounded-full border border-[#abefc6] bg-[#ecfdf3] px-2 py-0.5 text-[10px] font-semibold text-[#027a48]">{item.status}</span>
+                  </div>
+                ))}
+                {!publishedObjectives.length ? <p className="text-[11px] font-semibold text-[#98a2b3]">No published objectives yet.</p> : null}
+              </div>
+            </section>
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === 'Versions & Changes' ? (
+        <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-bold">Versions & changes</h3>
+          <p className="mt-1 text-[11px] font-medium text-[#667085]">Objective set currently at v{maxVersion}.0 for {activeCycle?.name || 'the active cycle'}.</p>
+          <div className="mt-4 space-y-3">
+            {objectives.map((item) => (
+              <article key={item.id} className="rounded-xl border border-[#eaecf0] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[12px] font-bold">{item.code} · {item.title}</p>
+                    <p className="text-[10px] font-semibold text-[#667085]">v{item.version}.0 · {item.status} · Weight {item.weight}%</p>
+                  </div>
+                  <button type="button" onClick={() => setDrawer(item)} className="inline-flex h-8 items-center rounded-lg border border-[#d0d5dd] px-2.5 text-[10px] font-semibold">Open</button>
+                </div>
+                <dl className="mt-3 grid gap-2 sm:grid-cols-3 text-[10px] font-semibold text-[#475467]">
+                  <div><dt className="text-[#98a2b3]">Created by</dt><dd>{item.createdBy}</dd></div>
+                  <div><dt className="text-[#98a2b3]">Published</dt><dd>{safeFmtDate(item.publishedAt)}</dd></div>
+                  <div><dt className="text-[#98a2b3]">Scored</dt><dd>{safeFmtDate(item.scoredAt)}{item.scoredBy ? ` · ${item.scoredBy}` : ''}</dd></div>
+                </dl>
+              </article>
+            ))}
+            {!objectives.length ? <p className="text-[11px] font-semibold text-[#98a2b3]">No version history yet.</p> : null}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'Audit' ? (
+        <section className="rounded-xl border border-[#eaecf0] bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-bold">Audit</h3>
+          <p className="mt-1 text-[11px] font-medium text-[#667085]">Governed actions against company objectives.</p>
+          <div className="mt-4 space-y-2">
+            {objectiveAudit.map((row) => (
+              <div key={row.id} className="rounded-xl border border-[#eaecf0] px-3 py-2.5 text-[11px]">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-bold">{row.action}</p>
+                  <span className="text-[10px] font-semibold text-[#667085]">{safeFmtDate(row.at)}</span>
+                </div>
+                <p className="mt-1 font-semibold text-[#475467]">{row.actor} · {row.actorRole} · {row.entityId}</p>
+                {row.after ? <p className="mt-1 text-[10px] font-semibold text-[#667085]">{row.after}</p> : null}
+              </div>
+            ))}
+            {!objectiveAudit.length ? <p className="text-[11px] font-semibold text-[#98a2b3]">No company objective audit events yet.</p> : null}
+          </div>
+        </section>
+      ) : null}
 
       {creating ? (
         <>

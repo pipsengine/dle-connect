@@ -1262,6 +1262,7 @@ export const readPerformanceManagementPayload = async (
       scheduledReports: state.scheduledReports || [],
       analytics: state.analytics || buildAnalytics(state),
       config: state.config,
+      eligibility: state.eligibility,
       activeCycleId: activeCycle(state)?.id || null,
     },
     actor: {
@@ -1419,6 +1420,45 @@ export const applyPerformanceAction = async (
           body: `${cycle.name} is open for goal setting with ${snapshot.length} eligible employees.`,
           href: '/hris/performance-management/planning/performance-cycles',
         });
+        break;
+      }
+      case 'cycle.update': {
+        const cycle = state.cycles.find((item) => item.id === data.cycleId);
+        if (!cycle) return fail('Cycle not found.');
+        if (data.name != null) cycle.name = compact(data.name) || cycle.name;
+        if (data.type != null) cycle.type = compact(data.type) || cycle.type;
+        if (data.description != null) cycle.description = compact(data.description);
+        if (data.populationRule != null) cycle.populationRule = compact(data.populationRule) || cycle.populationRule;
+        if (data.startDate != null) cycle.startDate = compact(data.startDate) || cycle.startDate;
+        if (data.endDate != null) cycle.endDate = compact(data.endDate) || cycle.endDate;
+        if (data.goalSettingStart != null) cycle.goalSettingStart = compact(data.goalSettingStart) || cycle.goalSettingStart;
+        if (data.goalSettingEnd != null) cycle.goalSettingEnd = compact(data.goalSettingEnd) || cycle.goalSettingEnd;
+        if (data.midYearStart != null) cycle.midYearStart = compact(data.midYearStart) || undefined;
+        if (data.midYearEnd != null) cycle.midYearEnd = compact(data.midYearEnd) || undefined;
+        if (data.yearEndStart != null) cycle.yearEndStart = compact(data.yearEndStart) || undefined;
+        if (data.yearEndEnd != null) cycle.yearEndEnd = compact(data.yearEndEnd) || undefined;
+        if (data.calibrationStart != null) cycle.calibrationStart = compact(data.calibrationStart) || undefined;
+        if (data.calibrationEnd != null) cycle.calibrationEnd = compact(data.calibrationEnd) || undefined;
+        if (data.publicationDate != null) cycle.publicationDate = compact(data.publicationDate) || undefined;
+        if (data.appealDeadline != null) cycle.appealDeadline = compact(data.appealDeadline) || undefined;
+        if (data.enable360 != null) cycle.enable360 = Boolean(data.enable360);
+        if (data.enableMatrix != null) cycle.enableMatrix = Boolean(data.enableMatrix);
+        if (data.enableCalibration != null) cycle.enableCalibration = Boolean(data.enableCalibration);
+        if (data.enableForcedDistribution != null) cycle.enableForcedDistribution = Boolean(data.enableForcedDistribution);
+        if (data.achievementCap != null) cycle.achievementCap = Number(data.achievementCap);
+        if (data.sectionWeights && typeof data.sectionWeights === 'object') {
+          const weights = data.sectionWeights as { companyObjectives?: number; individualOkrs?: number; behavioural?: number };
+          cycle.sectionWeights = {
+            companyObjectives: Number(weights.companyObjectives ?? cycle.sectionWeights.companyObjectives),
+            individualOkrs: Number(weights.individualOkrs ?? cycle.sectionWeights.individualOkrs),
+            behavioural: Number(weights.behavioural ?? cycle.sectionWeights.behavioural),
+          };
+          if (!weightsTotalOk([cycle.sectionWeights.companyObjectives, cycle.sectionWeights.individualOkrs, cycle.sectionWeights.behavioural])) {
+            return fail('Section weights must total 100%.');
+          }
+        }
+        cycle.updatedAt = nowIso();
+        pushAudit(state, { actor, actorRole, action: 'Updated cycle configuration', entityType: 'PerformanceCycle', entityId: cycle.id });
         break;
       }
       case 'cycle.advance-status': {

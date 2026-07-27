@@ -18,6 +18,9 @@ import OkrKpiManagementView from './OkrKpiManagementView';
 import MidYearReviewsView from './MidYearReviewsView';
 import SelfAppraisalView from './SelfAppraisalView';
 import ManagerAssessmentsView from './ManagerAssessmentsView';
+import MatrixProjectInputsView from './MatrixProjectInputsView';
+import CalibrationModerationView from './CalibrationModerationView';
+import ResultsApprovalView from './ResultsApprovalView';
 
 type Props = {
   route: string;
@@ -565,6 +568,18 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
     <ManagerAssessmentsView payload={payload} onAction={onAction} busy={busy} />
   );
 
+  const matrixProjectInputsView = (
+    <MatrixProjectInputsView payload={payload} onAction={onAction} busy={busy} />
+  );
+
+  const calibrationModerationView = (
+    <CalibrationModerationView payload={payload} onAction={onAction} busy={busy} />
+  );
+
+  const resultsApprovalView = (
+    <ResultsApprovalView payload={payload} onAction={onAction} busy={busy} />
+  );
+
   const content = useMemo(() => {
     if (route.includes('performance-cycles') || route === 'planning') return cyclesView;
     if (route.includes('corporate-goals') || route.includes('company-objectives')) return companyObjectivesView;
@@ -575,9 +590,12 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
     if (route.includes('supervisor-review')) return managerAssessmentsView;
     if (route.includes('mid-year')) return midYearReviewsView;
     if (route.includes('behaviour') || route.includes('competency')) return assessmentView('Behavioural');
-    if (route.includes('360') || route.includes('project-manager-review') || route.includes('matrix')) return threeSixtyView;
-    if (route.includes('calibration') || route.includes('talent-review')) return calibrationView;
-    if (route.includes('final-evaluation') || route.includes('results') || route.includes('scorecard')) return resultsView;
+    if (route.includes('project-manager-review') || route.includes('matrix')) return matrixProjectInputsView;
+    if (route.includes('360')) return threeSixtyView;
+    if (route.includes('calibration')) return calibrationModerationView;
+    if (route.includes('talent-review')) return calibrationView;
+    if (route.includes('final-evaluation')) return resultsApprovalView;
+    if (route.includes('results') || route.includes('scorecard')) return resultsView;
     if (route.includes('appeal')) return appealsView;
     if (route.includes('pip')) return pipView;
     if (route.includes('development-plans') || route.includes('training-recommendations') || route.includes('career-development')) return developmentView;
