@@ -98,6 +98,39 @@ const Donut = ({ value, color, label }: { value: number; color: string; label: s
   </div>
 );
 
+const DEFAULT_PILLARS = [
+  'Revenue & Growth',
+  'Operational Excellence',
+  'Customer Experience',
+  'People & Culture',
+  'Financial Discipline',
+  'Innovation & Technology',
+  'Health, Safety & Environment',
+] as const;
+
+const emptyForm = () => ({
+  code: '',
+  title: '',
+  weight: '10',
+  kpi: '',
+  target: '100',
+  baseline: '0',
+  unit: '%',
+  owner: '',
+  ownerId: '',
+  strategicPillar: '',
+  description: '',
+});
+
+const nextObjectiveCode = (existing: CompanyObjective[]) => {
+  const used = new Set(existing.map((row) => row.code.toUpperCase()));
+  for (let n = 1; n <= 999; n += 1) {
+    const code = `CO-REV-${String(n).padStart(2, '0')}`;
+    if (!used.has(code)) return code;
+  }
+  return `CO-${Date.now().toString(36).toUpperCase()}`;
+};
+
 export default function CompanyObjectivesView({ payload, onAction, busy }: Props) {
   const domain = payload.domain;
   const isHrScope = payload.actor?.scope === 'global';
@@ -111,7 +144,10 @@ export default function CompanyObjectivesView({ payload, onAction, busy }: Props
   const [page, setPage] = useState(1);
   const [drawer, setDrawer] = useState<CompanyObjective | null>(null);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ code: '', title: '', weight: '10', kpi: '', target: '100', owner: '', strategicPillar: '' });
+  const [form, setForm] = useState(emptyForm);
+  const [formError, setFormError] = useState('');
+  const [ownerQuery, setOwnerQuery] = useState('');
+  const [ownerPickerOpen, setOwnerPickerOpen] = useState(false);
   const [scoreDraft, setScoreDraft] = useState('');
   const [progressDrafts, setProgressDrafts] = useState<Record<string, string>>({});
   const [scoreDrafts, setScoreDrafts] = useState<Record<string, string>>({});
@@ -126,6 +162,10 @@ export default function CompanyObjectivesView({ payload, onAction, busy }: Props
     () => (domain.goals || []).filter((goal) => !cycleId || goal.cycleId === cycleId),
     [domain.goals, cycleId],
   );
+  const eligibility = useMemo(
+    () => (domain.eligibility || []).filter((row) => (!cycleId || row.cycleId === cycleId) && row.included),
+    [domain.eligibility, cycleId],
+  );
   const checkIns = useMemo(
     () => (domain.checkIns || []).filter((row) => !cycleId || row.cycleId === cycleId).slice(0, 40),
     [domain.checkIns, cycleId],
@@ -134,6 +174,35 @@ export default function CompanyObjectivesView({ payload, onAction, busy }: Props
     () => (domain.audit || []).filter((row) => row.entityType === 'CompanyObjective').slice(0, 50),
     [domain.audit],
   );
+
+  const ownerDirectory = useMemo(() => {
+    const map = new Map<string, { employeeId: string; employeeCode: string; fullName: string; department: string; jobTitle: string }>();
+    for (const row of eligibility) {
+      const key = row.employeeId || row.employeeCode || row.fullName;
+      if (!key || map.has(key)) continue;
+      map.set(key, {
+        employeeId: row.employeeId,
+        employeeCode: row.employeeCode,
+        fullName: row.fullName,
+        department: row.department || '',
+        jobTitle: row.jobTitle || '',
+      });
+    }
+    return Array.from(map.values()).sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }, [eligibility]);
+
+  const filteredOwners = useMemo(() => {
+    const q = ownerQuery.trim().toLowerCase();
+    if (!q) return ownerDirectory.slice(0, 40);
+    return ownerDirectory
+      .filter((row) => `${row.fullName} ${row.employeeCode} ${row.employeeId} ${row.department} ${row.jobTitle}`.toLowerCase().includes(q))
+      .slice(0, 40);
+  }, [ownerDirectory, ownerQuery]);
+
+  const pillarOptions = useMemo(() => {
+    const fromData = objectives.map((item) => item.strategicPillar).filter(Boolean);
+    return Array.from(new Set([...DEFAULT_PILLARS, ...fromData])).sort((a, b) => a.localeCompare(b));
+  }, [objectives]);
 
   const pillars = useMemo(() => ['All pillars', ...Array.from(new Set(objectives.map((item) => item.strategicPillar).filter(Boolean)))], [objectives]);
   const owners = useMemo(() => ['All owners', ...Array.from(new Set(objectives.map((item) => item.owner).filter(Boolean)))], [objectives]);
@@ -167,6 +236,7 @@ export default function CompanyObjectivesView({ payload, onAction, busy }: Props
   const rows = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   const totalWeight = objectives.reduce((sum, item) => sum + Number(item.weight || 0), 0);
+  const remainingWeight = Math.max(0, Math.round((100 - totalWeight) * 10) / 10);
   const onTrack = enriched.filter((row) => row.status === 'On Track').length;
   const atRisk = enriched.filter((row) => row.status === 'At Risk').length;
   const awaitingScore = enriched.filter((row) => row.item.status === 'Published' && row.item.corporateAchievement == null).length;
@@ -177,19 +247,103 @@ export default function CompanyObjectivesView({ payload, onAction, busy }: Props
   const maxVersion = Math.max(1, ...objectives.map((item) => item.version || 1));
   const setStatusLabel = published ? 'Published' : objectives.some((item) => item.status === 'Pending Approval') ? 'Pending Approval' : 'Draft';
 
-  const createObjective = async () => {
-    await onAction('company-objective.upsert', {
-      cycleId: cycleId || activeCycle?.id,
-      code: form.code || `CO-${objectives.length + 1}`,
-      title: form.title || 'New company objective',
-      weight: Number(form.weight || 0),
-      kpi: form.kpi || 'KPI',
-      target: Number(form.target || 100),
-      owner: form.owner || payload.actor.fullName,
-      strategicPillar: form.strategicPillar || objectives[0]?.strategicPillar || 'Strategy',
-    });
+  const closeCreate = () => {
     setCreating(false);
-    setForm({ code: '', title: '', weight: '10', kpi: '', target: '100', owner: '', strategicPillar: '' });
+    setOwnerPickerOpen(false);
+    setOwnerQuery('');
+    setFormError('');
+    setForm(emptyForm());
+  };
+
+  const openCreate = () => {
+    const suggestedWeight = remainingWeight > 0 ? String(Math.min(10, remainingWeight)) : '10';
+    setForm({
+      ...emptyForm(),
+      code: nextObjectiveCode(objectives),
+      weight: suggestedWeight,
+    });
+    setOwnerQuery('');
+    setFormError('');
+    setOwnerPickerOpen(false);
+    setCreating(true);
+  };
+
+  const selectOwner = (row: { employeeId: string; fullName: string }) => {
+    setForm((current) => ({ ...current, owner: row.fullName, ownerId: row.employeeId }));
+    setOwnerQuery(row.fullName);
+    setOwnerPickerOpen(false);
+  };
+
+  const createObjective = async () => {
+    const title = form.title.trim();
+    const code = form.code.trim();
+    const kpi = form.kpi.trim();
+    const owner = form.owner.trim();
+    const strategicPillar = form.strategicPillar.trim();
+    const weight = Number(form.weight);
+    const target = Number(form.target);
+    const baseline = Number(form.baseline || 0);
+
+    if (!cycleId && !activeCycle?.id) {
+      setFormError('Select an active performance cycle first.');
+      return;
+    }
+    if (!code) {
+      setFormError('Objective code is required.');
+      return;
+    }
+    if (objectives.some((row) => row.code.toLowerCase() === code.toLowerCase())) {
+      setFormError(`Code ${code} already exists in this cycle.`);
+      return;
+    }
+    if (!title) {
+      setFormError('Title is required.');
+      return;
+    }
+    if (!Number.isFinite(weight) || weight <= 0 || weight > 100) {
+      setFormError('Weight must be between 1 and 100.');
+      return;
+    }
+    if (totalWeight + weight > 100) {
+      setFormError(`Weight exceeds remaining budget (${remainingWeight}%).`);
+      return;
+    }
+    if (!kpi) {
+      setFormError('KPI is required.');
+      return;
+    }
+    if (!Number.isFinite(target) || target <= 0) {
+      setFormError('Target must be a positive number.');
+      return;
+    }
+    if (!owner) {
+      setFormError('Select an owner from the HRIS eligibility directory.');
+      return;
+    }
+    if (!strategicPillar) {
+      setFormError('Strategic pillar is required.');
+      return;
+    }
+
+    setFormError('');
+    try {
+      await onAction('company-objective.upsert', {
+        cycleId: cycleId || activeCycle?.id,
+        code,
+        title,
+        description: form.description.trim(),
+        weight,
+        kpi,
+        baseline,
+        target,
+        unit: form.unit.trim() || '%',
+        owner,
+        strategicPillar,
+      });
+      closeCreate();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to save objective.');
+    }
   };
 
   const setOwnerLabel = objectives.find((item) => Boolean(item.owner))?.owner
@@ -332,7 +486,7 @@ export default function CompanyObjectivesView({ payload, onAction, busy }: Props
             <button
               type="button"
               disabled={busy}
-              onClick={() => setCreating(true)}
+              onClick={() => openCreate()}
               className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#1570ef] px-3 text-[11px] font-semibold text-white disabled:opacity-50"
             >
               <Plus className="h-3.5 w-3.5" /> Create Objective
@@ -577,7 +731,7 @@ export default function CompanyObjectivesView({ payload, onAction, busy }: Props
                   Weights {totalWeight}%
                 </span>
                 {isHrScope ? (
-                  <button type="button" disabled={busy} onClick={() => setCreating(true)} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#1570ef] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
+                  <button type="button" disabled={busy} onClick={() => openCreate()} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#1570ef] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
                     <Plus className="h-3.5 w-3.5" /> Create Objective
                   </button>
                 ) : null}
@@ -903,33 +1057,161 @@ export default function CompanyObjectivesView({ payload, onAction, busy }: Props
 
       {creating ? (
         <>
-          <button type="button" className="fixed inset-0 z-40 bg-[#0c111d80]" aria-label="Close create dialog" onClick={() => setCreating(false)} />
-          <div className="fixed left-1/2 top-1/2 z-50 w-[min(480px,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-[#eaecf0] bg-white p-5 shadow-xl">
+          <button type="button" className="fixed inset-0 z-40 bg-[#0c111d80]" aria-label="Close create dialog" onClick={closeCreate} />
+          <div className="fixed left-1/2 top-1/2 z-50 w-[min(520px,94vw)] max-h-[90vh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-[#eaecf0] bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-start justify-between">
               <div>
-                <h2 className="text-lg font-bold">Create Objective</h2>
-                <p className="mt-1 text-xs text-[#667085]">Add a corporate objective to the selected cycle.</p>
+                <h2 className="text-lg font-bold text-[#101828]">Create Objective</h2>
+                <p className="mt-1 text-xs text-[#667085]">
+                  Add a corporate objective to {activeCycle?.name || 'the selected cycle'}. Remaining weight budget: {remainingWeight}%.
+                </p>
               </div>
-              <button type="button" onClick={() => setCreating(false)} className="grid h-8 w-8 place-items-center rounded-lg text-[#667085] hover:bg-[#f9fafb]"><X className="h-4 w-4" /></button>
+              <button type="button" onClick={closeCreate} className="grid h-8 w-8 place-items-center rounded-lg text-[#667085] hover:bg-[#f9fafb]" aria-label="Close">
+                <X className="h-4 w-4" />
+              </button>
             </div>
+
             <div className="grid gap-3">
               <div className="grid grid-cols-2 gap-3">
-                <label className="text-[11px] font-semibold text-[#344054]">Code<input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} placeholder="CO-REV-01" /></label>
-                <label className="text-[11px] font-semibold text-[#344054]">Weight %<input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.weight} onChange={(e) => setForm((f) => ({ ...f, weight: e.target.value }))} /></label>
+                <label className="text-[11px] font-semibold text-[#344054]">
+                  Code
+                  <input
+                    className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm"
+                    value={form.code}
+                    onChange={(e) => setForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))}
+                    placeholder="CO-REV-01"
+                  />
+                </label>
+                <label className="text-[11px] font-semibold text-[#344054]">
+                  Weight %
+                  <input
+                    className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm"
+                    value={form.weight}
+                    onChange={(e) => setForm((f) => ({ ...f, weight: e.target.value }))}
+                    inputMode="decimal"
+                    placeholder="10"
+                  />
+                </label>
               </div>
-              <label className="text-[11px] font-semibold text-[#344054]">Title<input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Improve customer satisfaction" /></label>
+
+              <label className="text-[11px] font-semibold text-[#344054]">
+                Title
+                <input
+                  className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm"
+                  value={form.title}
+                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                  placeholder="Improve customer satisfaction"
+                />
+              </label>
+
               <div className="grid grid-cols-2 gap-3">
-                <label className="text-[11px] font-semibold text-[#344054]">KPI<input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.kpi} onChange={(e) => setForm((f) => ({ ...f, kpi: e.target.value }))} /></label>
-                <label className="text-[11px] font-semibold text-[#344054]">Target<input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.target} onChange={(e) => setForm((f) => ({ ...f, target: e.target.value }))} /></label>
+                <label className="text-[11px] font-semibold text-[#344054]">
+                  KPI
+                  <input
+                    className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm"
+                    value={form.kpi}
+                    onChange={(e) => setForm((f) => ({ ...f, kpi: e.target.value }))}
+                    placeholder="e.g. CSAT score"
+                  />
+                </label>
+                <label className="text-[11px] font-semibold text-[#344054]">
+                  Target
+                  <input
+                    className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm"
+                    value={form.target}
+                    onChange={(e) => setForm((f) => ({ ...f, target: e.target.value }))}
+                    inputMode="decimal"
+                    placeholder="100"
+                  />
+                </label>
               </div>
+
               <div className="grid grid-cols-2 gap-3">
-                <label className="text-[11px] font-semibold text-[#344054]">Owner<input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.owner} onChange={(e) => setForm((f) => ({ ...f, owner: e.target.value }))} /></label>
-                <label className="text-[11px] font-semibold text-[#344054]">Strategic pillar<input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.strategicPillar} onChange={(e) => setForm((f) => ({ ...f, strategicPillar: e.target.value }))} /></label>
+                <div className="relative">
+                  <label className="text-[11px] font-semibold text-[#344054]">
+                    Owner
+                    <div className="relative mt-1">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#98a2b3]" />
+                      <input
+                        className="h-9 w-full rounded-lg border border-[#d0d5dd] py-2 pl-9 pr-3 text-sm"
+                        value={ownerQuery}
+                        placeholder={ownerDirectory.length ? 'Search HRIS employee…' : 'No eligible employees'}
+                        onFocus={() => setOwnerPickerOpen(true)}
+                        onChange={(e) => {
+                          setOwnerQuery(e.target.value);
+                          setOwnerPickerOpen(true);
+                          setForm((f) => ({ ...f, owner: '', ownerId: '' }));
+                        }}
+                        onBlur={() => {
+                          window.setTimeout(() => setOwnerPickerOpen(false), 150);
+                        }}
+                      />
+                    </div>
+                  </label>
+                  {ownerPickerOpen ? (
+                    <div className="absolute z-20 mt-1 max-h-44 w-full overflow-y-auto rounded-lg border border-[#eaecf0] bg-white shadow-lg">
+                      {filteredOwners.map((row) => (
+                        <button
+                          key={`${row.employeeId}-${row.employeeCode}`}
+                          type="button"
+                          className="flex w-full flex-col items-start gap-0.5 border-b border-[#f2f4f7] px-3 py-2 text-left hover:bg-[#f9fafb]"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => selectOwner(row)}
+                        >
+                          <span className="text-[12px] font-bold text-[#101828]">{row.fullName}</span>
+                          <span className="text-[10px] font-semibold text-[#667085]">
+                            {row.employeeCode || row.employeeId}
+                            {row.department ? ` · ${row.department}` : ''}
+                            {row.jobTitle ? ` · ${row.jobTitle}` : ''}
+                          </span>
+                        </button>
+                      ))}
+                      {!filteredOwners.length ? (
+                        <p className="px-3 py-4 text-[11px] font-semibold text-[#667085]">
+                          {ownerDirectory.length
+                            ? 'No employees match that search.'
+                            : 'No eligible employees in this cycle. Refresh eligibility from HRIS first.'}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {form.owner ? (
+                    <p className="mt-1 text-[10px] font-semibold text-[#027a48]">Selected: {form.owner}</p>
+                  ) : null}
+                </div>
+
+                <label className="text-[11px] font-semibold text-[#344054]">
+                  Strategic pillar
+                  <select
+                    className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] bg-white px-2 text-sm"
+                    value={form.strategicPillar}
+                    onChange={(e) => setForm((f) => ({ ...f, strategicPillar: e.target.value }))}
+                  >
+                    <option value="">Select pillar</option>
+                    {pillarOptions.map((pillar) => (
+                      <option key={pillar} value={pillar}>{pillar}</option>
+                    ))}
+                  </select>
+                </label>
               </div>
+
+              {formError ? (
+                <p className="rounded-lg border border-[#fecdca] bg-[#fef3f2] px-3 py-2 text-[11px] font-semibold text-[#b42318]">{formError}</p>
+              ) : null}
             </div>
+
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setCreating(false)} className="h-9 rounded-lg border border-[#d0d5dd] px-3 text-sm font-semibold">Cancel</button>
-              <button type="button" disabled={busy} onClick={() => void createObjective()} className="h-9 rounded-lg bg-[#1570ef] px-3 text-sm font-semibold text-white disabled:opacity-50">Save objective</button>
+              <button type="button" onClick={closeCreate} className="h-9 rounded-lg border border-[#d0d5dd] px-3 text-sm font-semibold text-[#344054]">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void createObjective()}
+                className="h-9 rounded-lg bg-[#1570ef] px-3 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                Save objective
+              </button>
             </div>
           </div>
         </>

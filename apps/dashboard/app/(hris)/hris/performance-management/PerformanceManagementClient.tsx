@@ -83,6 +83,7 @@ export default function PerformanceManagementClient({
       else await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Action failed.');
+      throw err;
     } finally {
       setBusy(false);
     }

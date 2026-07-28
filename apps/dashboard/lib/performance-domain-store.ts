@@ -1577,43 +1577,88 @@ export const applyPerformanceAction = async (
       case 'company-objective.upsert': {
         const cycleId = compact(data.cycleId) || activeCycle(state)?.id;
         if (!cycleId) return fail('No cycle selected.');
+        const cycle = state.cycles.find((row) => row.id === cycleId);
+        if (cycle && ['Closed', 'Archived'].includes(cycle.status)) {
+          return fail('Cannot change company objectives on a closed cycle.');
+        }
+        const title = compact(data.title);
+        const code = compact(data.code);
+        const kpi = compact(data.kpi);
+        const owner = compact(data.owner);
+        const strategicPillar = compact(data.strategicPillar);
+        const weight = Number(data.weight);
+        const target = Number(data.target);
+        const baseline = Number(data.baseline ?? 0);
+        const unit = compact(data.unit) || '%';
+        const description = compact(data.description) || '';
         const existing = state.companyObjectives.find((item) => item.id === data.id);
-        if (existing) {
-          Object.assign(existing, {
-            title: compact(data.title) || existing.title,
-            description: compact(data.description) || existing.description,
-            weight: Number(data.weight ?? existing.weight),
-            kpi: compact(data.kpi) || existing.kpi,
-            target: Number(data.target ?? existing.target),
-            baseline: Number(data.baseline ?? existing.baseline),
-            strategicPillar: compact(data.strategicPillar) || existing.strategicPillar,
-          });
-        } else {
+
+        if (!existing) {
+          if (!title) return fail('Objective title is required.');
+          if (!code) return fail('Objective code is required.');
+          if (!kpi) return fail('KPI is required.');
+          if (!owner) return fail('Owner is required.');
+          if (!strategicPillar) return fail('Strategic pillar is required.');
+          if (!Number.isFinite(weight) || weight <= 0 || weight > 100) return fail('Weight must be between 1 and 100.');
+          if (!Number.isFinite(target) || target <= 0) return fail('Target must be a positive number.');
+          const cycleRows = state.companyObjectives.filter((item) => item.cycleId === cycleId);
+          if (cycleRows.some((row) => row.code.toLowerCase() === code.toLowerCase())) {
+            return fail(`Objective code ${code} already exists in this cycle.`);
+          }
+          const currentWeight = cycleRows.reduce((sum, row) => sum + Number(row.weight || 0), 0);
+          if (currentWeight + weight > 100.0001) {
+            return fail(`Company objective weights cannot exceed 100% (current ${currentWeight}%, this objective ${weight}%).`);
+          }
           state.companyObjectives.push({
             id: id('co'),
             cycleId,
-            code: compact(data.code) || `CO-${state.companyObjectives.length + 1}`,
-            title: compact(data.title) || 'Company objective',
-            description: compact(data.description),
-            strategicPillar: compact(data.strategicPillar) || 'Strategy',
-            owner: compact(data.owner) || actor,
-            kpi: compact(data.kpi) || 'KPI',
-            baseline: Number(data.baseline || 0),
-            target: Number(data.target || 100),
-            unit: compact(data.unit) || '%',
-            weight: Number(data.weight || 0),
+            code,
+            title,
+            description,
+            strategicPillar,
+            owner,
+            kpi,
+            baseline: Number.isFinite(baseline) ? baseline : 0,
+            target,
+            unit,
+            weight,
             status: 'Draft',
             version: 1,
             createdBy: actor,
           });
+        } else {
+          if (existing.status === 'Locked') return fail('Locked objectives cannot be edited.');
+          const nextWeight = Number.isFinite(weight) ? weight : existing.weight;
+          const siblings = state.companyObjectives.filter((item) => item.cycleId === cycleId && item.id !== existing.id);
+          const siblingWeight = siblings.reduce((sum, row) => sum + Number(row.weight || 0), 0);
+          if (siblingWeight + nextWeight > 100.0001) {
+            return fail(`Company objective weights cannot exceed 100% (current ${siblingWeight}%, this objective ${nextWeight}%).`);
+          }
+          if (code && siblings.some((row) => row.code.toLowerCase() === code.toLowerCase())) {
+            return fail(`Objective code ${code} already exists in this cycle.`);
+          }
+          Object.assign(existing, {
+            code: code || existing.code,
+            title: title || existing.title,
+            description: data.description != null ? description : existing.description,
+            weight: nextWeight,
+            kpi: kpi || existing.kpi,
+            target: Number.isFinite(target) && target > 0 ? target : existing.target,
+            baseline: Number.isFinite(baseline) ? baseline : existing.baseline,
+            unit: unit || existing.unit,
+            owner: owner || existing.owner,
+            strategicPillar: strategicPillar || existing.strategicPillar,
+            version: (existing.version || 1) + 1,
+          });
         }
-        const cycleObjectives = state.companyObjectives.filter((item) => item.cycleId === cycleId && item.status !== 'Draft' ? true : true);
-        const draftOrAll = state.companyObjectives.filter((item) => item.cycleId === cycleId);
-        if (draftOrAll.length && !weightsTotalOk(draftOrAll.map((item) => item.weight))) {
-          /* allow drafts under 100 until publish */
-        }
-        pushAudit(state, { actor, actorRole, action: 'Upserted company objective', entityType: 'CompanyObjective', entityId: compact(data.id) || 'new' });
-        void cycleObjectives;
+        pushAudit(state, {
+          actor,
+          actorRole,
+          action: existing ? 'Updated company objective' : 'Created company objective',
+          entityType: 'CompanyObjective',
+          entityId: existing?.id || compact(data.code) || 'new',
+          after: title || code || undefined,
+        });
         break;
       }
       case 'company-objective.publish': {
