@@ -367,11 +367,17 @@ export default function PerformanceCyclesView({ payload, onAction, busy }: Props
   }, [activeDomain?.status, activeSummary?.name]);
 
   const quickFor = (cycle: PerformanceCycleRecord) => {
-    const base = Math.max(0, Math.min(100, cycle.progress));
+    const goalsForCycle = (payload.domain?.goals || []).filter((goal) => goal.cycleId === cycle.id);
+    const agreed = goalsForCycle.filter((goal) => ['Agreed', 'Active', 'Completed'].includes(goal.status)).length;
+    const ackPct = goalsForCycle.length ? Math.round((agreed / goalsForCycle.length) * 100) : 0;
+    const assessmentsForCycle = (payload.domain?.assessments || []).filter((item) => item.cycleId === cycle.id);
+    const checkInPct = assessmentsForCycle.length
+      ? Math.round((assessmentsForCycle.filter((item) => ['Submitted', 'Approved', 'Published'].includes(item.status)).length / Math.max(cycle.employees || assessmentsForCycle.length, 1)) * 100)
+      : 0;
     return [
-      Math.min(100, Math.round(base * 1.2)),
-      Math.min(100, Math.round(base * 0.85)),
-      Math.min(100, Math.round(base * 0.35)),
+      Math.max(0, Math.min(100, cycle.progress)),
+      Math.max(0, Math.min(100, ackPct)),
+      Math.max(0, Math.min(100, checkInPct)),
     ];
   };
 
@@ -428,7 +434,9 @@ export default function PerformanceCyclesView({ payload, onAction, busy }: Props
           <div className="grid gap-3 sm:grid-cols-3 sm:divide-x sm:divide-[#d8dee8]">
             <div className="sm:px-4">
               <span className="flex items-center gap-1.5 text-[10px] text-[#66738a]"><BriefcaseBusiness className="h-3.5 w-3.5" /> Scope</span>
-              <b className="mt-2 block text-[11px] font-bold">Dorman Long Engineering</b>
+              <b className="mt-2 block text-[11px] font-bold">
+                {activeDomain?.populationRule || payload.dataSource?.employeeDirectorySource || payload.dataSource?.source || 'HRIS employee directory'}
+              </b>
             </div>
             <div className="sm:px-4">
               <span className="flex items-center gap-1.5 text-[10px] text-[#66738a]"><Clock3 className="h-3.5 w-3.5" /> Next deadline</span>
@@ -581,7 +589,7 @@ export default function PerformanceCyclesView({ payload, onAction, busy }: Props
                             <small className="mt-1 block text-[9px] text-[#075fe8]">{accent === 'orange' ? 'See blocker' : 'Track deadline'}</small>
                           </div>
                           <div className={`min-h-[57px] border-l border-[#d8dee8] px-3 ${accent === 'green' ? 'text-[#0b963e]' : accent === 'orange' ? 'text-[#db6b00]' : 'text-[#e03127]'}`}>
-                            <b className="text-[10px] font-bold">{accent === 'green' ? 'No exceptions' : `${Math.max(1, Math.round((100 - cycle.progress) / 12))} blockers`}</b>
+                            <b className="text-[10px] font-bold">{accent === 'green' ? 'No exceptions' : `${Math.max(0, payload.domain?.tasks.filter((task) => task.cycleId === cycle.id && !['Completed', 'Cancelled'].includes(task.status)).length || 0)} open tasks`}</b>
                             <button type="button" onClick={() => setDrawer(cycle)} className="mt-1 block text-[10px] font-semibold text-[#075fe8]">
                               View details <ChevronRight className="inline h-3 w-3" />
                             </button>
@@ -805,19 +813,34 @@ export default function PerformanceCyclesView({ payload, onAction, busy }: Props
               <p className="mt-1 text-[11px] font-medium text-[#66738a]">
                 {eligibilityRows.filter((row) => row.included).length} included · {eligibilityRows.length} in snapshot
                 {activeDomain ? ` · ${activeDomain.populationRule}` : ''}
+                {payload.dataSource?.employeeDirectorySource || payload.dataSource?.source
+                  ? ` · Source: ${payload.dataSource?.employeeDirectorySource || payload.dataSource?.source}`
+                  : ''}
               </p>
             </div>
-            {isHrScope && activeDomain && ['Draft', 'Pending Approval'].includes(activeDomain.status) ? (
-              <button type="button" disabled={busy} onClick={() => void onAction('cycle.approve-publish', { cycleId: activeDomain.id })} className="inline-flex h-9 items-center rounded bg-[#0962ec] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
-                Publish & snapshot eligibility
-              </button>
-            ) : null}
+            <div className="flex flex-wrap gap-2">
+              {isHrScope && activeDomain && !['Closed', 'Archived'].includes(activeDomain.status) ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void onAction('cycle.refresh-eligibility', { cycleId: activeDomain.id })}
+                  className="inline-flex h-9 items-center rounded border border-[#ccd4df] bg-white px-3 text-[11px] font-semibold text-[#2e3b51] disabled:opacity-50"
+                >
+                  Refresh from HRIS
+                </button>
+              ) : null}
+              {isHrScope && activeDomain && ['Draft', 'Pending Approval'].includes(activeDomain.status) ? (
+                <button type="button" disabled={busy} onClick={() => void onAction('cycle.approve-publish', { cycleId: activeDomain.id })} className="inline-flex h-9 items-center rounded bg-[#0962ec] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
+                  Publish & snapshot eligibility
+                </button>
+              ) : null}
+            </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             {[
               ['Eligible employees', eligibilityRows.filter((row) => row.included).length],
               ['Departments', new Set(eligibilityRows.map((row) => row.department).filter(Boolean)).size],
-              ['Managers', new Set(eligibilityRows.map((row) => row.managerId).filter(Boolean)).size],
+              ['Managers', new Set(eligibilityRows.map((row) => row.managerName || row.managerId).filter(Boolean)).size],
             ].map(([label, value]) => (
               <div key={String(label)} className={cardClass}>
                 <p className="text-[10px] font-semibold text-[#66738a]">{label}</p>
@@ -841,7 +864,7 @@ export default function PerformanceCyclesView({ payload, onAction, busy }: Props
                   <span>Manager</span>
                   <span>Status</span>
                 </div>
-                {filteredEligibility.slice(0, 40).map((row) => (
+                {filteredEligibility.slice(0, 100).map((row) => (
                   <div key={row.id} className="grid grid-cols-[1.3fr_1fr_1fr_1fr_0.7fr] items-center border-b border-[#d8dee8] px-3 py-2.5 text-[11px]">
                     <div>
                       <p className="font-bold">{row.fullName}</p>
@@ -854,7 +877,9 @@ export default function PerformanceCyclesView({ payload, onAction, busy }: Props
                   </div>
                 ))}
                 {!filteredEligibility.length ? (
-                  <div className="px-4 py-10 text-center text-sm font-semibold text-[#66738a]">No eligibility rows for this cycle yet. Publish the cycle to snapshot the population.</div>
+                  <div className="px-4 py-10 text-center text-sm font-semibold text-[#66738a]">
+                    No eligibility rows for this cycle yet. Use <b>Refresh from HRIS</b> to snapshot active employees from the payroll directory.
+                  </div>
                 ) : null}
               </div>
             </div>

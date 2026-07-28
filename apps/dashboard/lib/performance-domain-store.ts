@@ -72,6 +72,12 @@ import {
   type PerformanceSqlSourceMeta,
 } from '@/lib/performance-sql-repository';
 import { performanceJsonFallbackAllowed, performanceSqlRequired } from '@/lib/performance-sql-schema';
+import {
+  isDemoEmployee,
+  isDemoObjective,
+  isSeededDemoGoal,
+  stripDemoPerformanceSeed,
+} from '@/lib/performance-demo-seed';
 
 export { buildPerformanceActorContext } from '@/lib/performance-access';
 export type { PerformanceActorContext, PerformanceScope } from '@/lib/performance-access';
@@ -233,11 +239,12 @@ const readJsonFallbackState = async (): Promise<PerformanceDomainState> => {
 };
 
 const readState = async (): Promise<PerformanceDomainState> => {
+  let loadedState: PerformanceDomainState | null = null;
   try {
     const loaded = await readPerformanceDomainFromSql();
     if (loaded?.state) {
       sqlSourceMeta = loaded.meta;
-      return normalizeState(loaded.state);
+      loadedState = normalizeState(loaded.state);
     }
     if (loaded && !loaded.state) {
       sqlSourceMeta = loaded.meta;
@@ -249,7 +256,7 @@ const readState = async (): Promise<PerformanceDomainState> => {
           const afterImport = await readPerformanceDomainFromSql();
           if (afterImport?.state) {
             sqlSourceMeta = afterImport.meta;
-            return normalizeState(afterImport.state);
+            loadedState = normalizeState(afterImport.state);
           }
         } catch (importError) {
           if (performanceSqlRequired()) throw importError;
@@ -272,26 +279,60 @@ const readState = async (): Promise<PerformanceDomainState> => {
     };
   }
 
-  if (performanceSqlRequired() && !performanceJsonFallbackAllowed()) {
-    throw new Error(sqlSourceMeta?.warning || 'Performance SQL store is required and unavailable.');
+  if (!loadedState) {
+    if (performanceSqlRequired() && !performanceJsonFallbackAllowed()) {
+      throw new Error(sqlSourceMeta?.warning || 'Performance SQL store is required and unavailable.');
+    }
+
+    const fallback = await readJsonFallbackState();
+    if (!sqlSourceMeta) {
+      sqlSourceMeta = {
+        databaseAvailable: false,
+        source: 'Local JSON fallback',
+        warning: 'Using local JSON until SQL import/cutover completes.',
+        updatedAt: fallback.updatedAt || null,
+        migrationStatus: null,
+        recordCounts: {
+          cycles: fallback.cycles.length,
+          goals: fallback.goals.length,
+          results: fallback.results.length,
+        },
+      };
+    }
+    loadedState = fallback;
   }
 
-  const fallback = await readJsonFallbackState();
-  if (!sqlSourceMeta) {
-    sqlSourceMeta = {
-      databaseAvailable: false,
-      source: 'Local JSON fallback',
-      warning: 'Using local JSON until SQL import/cutover completes.',
-      updatedAt: fallback.updatedAt || null,
-      migrationStatus: null,
-      recordCounts: {
-        cycles: fallback.cycles.length,
-        goals: fallback.goals.length,
-        results: fallback.results.length,
-      },
-    };
+  const purged = purgeDemoPerformanceSeed(loadedState);
+  let next = purged.state;
+  const cycle = next.cycles.find((item) => !['Closed', 'Archived', 'Draft'].includes(item.status)) || next.cycles[0];
+  const emptyEligibility = Boolean(cycle) && !next.eligibility.some((row) => row.cycleId === cycle!.id && row.included);
+  const hasDemoResidue = stateContainsDemoSeed(next);
+  const shouldTryRefresh = purged.purged || hasDemoResidue || emptyEligibility;
+  if (shouldTryRefresh) {
+    const employees = await mapPayrollEmployeesForSeed();
+    if (cycle && (employees.length || purged.purged || hasDemoResidue)) {
+      next = purgeDemoPerformanceSeed(next).state;
+      if (employees.length) {
+        next = await refreshCycleEligibilityFromPayroll(next, cycle.id, employees);
+      } else {
+        next.eligibility = next.eligibility.filter((row) => !isDemoEmployee(row.employeeId, row.fullName, row.employeeCode));
+        cycle.eligibilityCount = next.eligibility.filter((row) => row.cycleId === cycle.id && row.included).length;
+      }
+      pushAudit(next, {
+        actor: 'System',
+        actorRole: 'System',
+        action: 'Refreshed eligibility from HRIS payroll',
+        entityType: 'PerformanceCycle',
+        entityId: cycle.id,
+        after: `${cycle.eligibilityCount} eligible employees`,
+      });
+      next = await writeState(next, 'System');
+    } else if (purged.purged || hasDemoResidue) {
+      // Always persist a successful purge even when there is no cycle / payroll snapshot.
+      next = await writeState(next, 'System');
+    }
   }
-  return fallback;
+  return next;
 };
 
 const writeState = async (state: PerformanceDomainState, actor = 'System') => {
@@ -520,33 +561,111 @@ const withTimeout = async <T,>(promise: Promise<T>, ms: number, fallback: T): Pr
   }
 };
 
-async function seedDomain(): Promise<PerformanceDomainState> {
-  const state = emptyState();
-  let employees: Array<{ employeeId: string; employeeCode: string; fullName: string; department: string; jobTitle: string; managerName: string; managerEmployeeId?: string; dateJoined?: string; status?: string }> = [];
+type PayrollSeedEmployee = {
+  employeeId: string;
+  employeeCode: string;
+  fullName: string;
+  department: string;
+  jobTitle: string;
+  managerName: string;
+  managerEmployeeId: string;
+  dateJoined: string;
+  status: string;
+};
+
+async function mapPayrollEmployeesForSeed(): Promise<PayrollSeedEmployee[]> {
   try {
     const source = await withTimeout(readPayrollEmployees(), 8000, { employees: [] as any[] } as any);
-    employees = (source.employees || []).slice(0, 40).map((row: any) => ({
-      employeeId: String(row.employeeId || row.employeeCode || ''),
-      employeeCode: String(row.employeeCode || row.employeeId || ''),
-      fullName: String(row.fullName || 'Employee'),
-      department: String(row.department || 'Unassigned'),
-      jobTitle: String(row.jobTitle || row.designation || 'Employee'),
-      managerName: String(row.managerName || row.manager || 'Line Manager'),
-      managerEmployeeId: String(row.managerEmployeeId || row.managerId || ''),
-      dateJoined: String(row.dateJoined || row.contractStartDate || ''),
-      status: String(row.status || ''),
-    }));
+    return (source.employees || [])
+      .filter((row: any) => !/inactive|terminated|resigned|exit/i.test(String(row.status || '')))
+      .map((row: any): PayrollSeedEmployee => ({
+        employeeId: String(row.employeeId || row.employeeCode || ''),
+        employeeCode: String(row.employeeCode || row.employeeId || ''),
+        fullName: String(row.fullName || 'Employee'),
+        department: String(row.department || 'Unassigned'),
+        jobTitle: String(row.jobTitle || row.designation || 'Employee'),
+        managerName: String(row.managerName || row.manager || 'Line Manager'),
+        managerEmployeeId: String(row.managerEmployeeId || row.managerId || ''),
+        dateJoined: String(row.dateJoined || row.contractStartDate || ''),
+        status: String(row.status || ''),
+      }))
+      .filter((row: PayrollSeedEmployee) => Boolean(row.employeeId));
   } catch {
-    employees = [];
+    return [];
   }
-  if (!employees.length) {
-    employees = [
-      { employeeId: 'EMP-1001', employeeCode: 'P1001', fullName: 'Ada Okonkwo', department: 'Engineering', jobTitle: 'Engineer', managerName: 'Line Manager', managerEmployeeId: 'EMP-2001', dateJoined: `${new Date().getFullYear()}-01-15`, status: 'Probation' },
-      { employeeId: 'EMP-1002', employeeCode: 'P1002', fullName: 'Chidi Bello', department: 'Operations', jobTitle: 'Supervisor', managerName: 'Ops Manager', managerEmployeeId: 'EMP-2002', dateJoined: `${new Date().getFullYear() - 2}-03-01`, status: 'Confirmed' },
-      { employeeId: 'EMP-1003', employeeCode: 'P1003', fullName: 'Ngozi Adeyemi', department: 'HR', jobTitle: 'HR Officer', managerName: 'HR Manager', managerEmployeeId: 'EMP-2003', dateJoined: `${new Date().getFullYear() - 1}-06-01`, status: 'Confirmed' },
-      { employeeId: 'EMP-1004', employeeCode: 'P1004', fullName: 'Tunde Bakare', department: 'Finance', jobTitle: 'Accountant', managerName: 'Finance Manager', managerEmployeeId: 'EMP-2004', dateJoined: `${new Date().getFullYear()}-02-01`, status: 'Probation' },
-    ];
+}
+
+const stateContainsDemoSeed = (state: PerformanceDomainState) => {
+  const demoPeople = state.eligibility.filter((row) => isDemoEmployee(row.employeeId, row.fullName, row.employeeCode)).length
+    + state.goals.filter((goal) => isDemoEmployee(goal.employeeId, goal.employeeName, goal.employeeCode)).length;
+  const demoObjectives = state.companyObjectives.filter((row) => isDemoObjective(row.code, row.title)).length;
+  const demoGoals = state.goals.filter((goal) => isSeededDemoGoal(goal)).length;
+  return demoPeople > 0 || demoObjectives > 0 || demoGoals > 0;
+};
+
+/** Remove classic bootstrap demo people/objectives/goals so workspaces show HRIS-backed data only. */
+const purgeDemoPerformanceSeed = (state: PerformanceDomainState): { state: PerformanceDomainState; purged: boolean } => {
+  const next = stripDemoPerformanceSeed(state) as PerformanceDomainState;
+
+  const purged =
+    next.eligibility.length !== state.eligibility.length
+    || next.companyObjectives.length !== state.companyObjectives.length
+    || next.goals.length !== state.goals.length
+    || next.assessments.length !== state.assessments.length
+    || next.results.length !== state.results.length
+    || next.probation.length !== state.probation.length
+    || next.checkIns.length !== state.checkIns.length
+    || next.tasks.length !== state.tasks.length;
+
+  if (purged) {
+    next.cycles = next.cycles.map((cycle) => ({
+      ...cycle,
+      eligibilityCount: next.eligibility.filter((row) => row.cycleId === cycle.id && row.included).length,
+    }));
+    pushAudit(next, {
+      actor: 'System',
+      actorRole: 'System',
+      action: 'Purged demo performance seed',
+      entityType: 'PerformanceDomain',
+      entityId: 'root',
+      after: 'Removed bootstrap demo employees, objectives, and goals',
+    });
   }
+
+  return { state: next, purged };
+};
+
+const refreshCycleEligibilityFromPayroll = async (
+  state: PerformanceDomainState,
+  cycleId: string,
+  employees: Awaited<ReturnType<typeof mapPayrollEmployeesForSeed>>,
+) => {
+  const cycle = state.cycles.find((item) => item.id === cycleId);
+  if (!cycle) return state;
+  state.eligibility = state.eligibility.filter((row) => row.cycleId !== cycle.id);
+  const snapshot = employees.map((employee) => ({
+    id: id('elig'),
+    cycleId: cycle.id,
+    employeeId: employee.employeeId,
+    employeeCode: employee.employeeCode,
+    fullName: employee.fullName,
+    department: employee.department,
+    jobTitle: employee.jobTitle,
+    managerId: employee.managerEmployeeId || '',
+    managerName: employee.managerName,
+    included: true,
+    reason: 'Active employee from HRIS payroll directory',
+    snapshotAt: nowIso(),
+  }));
+  state.eligibility.push(...snapshot);
+  cycle.eligibilityCount = snapshot.length;
+  cycle.updatedAt = nowIso();
+  return state;
+};
+
+async function seedDomain(): Promise<PerformanceDomainState> {
+  const state = emptyState();
+  const employees = await mapPayrollEmployeesForSeed();
 
   const year = new Date().getFullYear();
   const cycleId = id('cyc');
@@ -586,6 +705,7 @@ async function seedDomain(): Promise<PerformanceDomainState> {
   };
   state.cycles = [cycle];
 
+  // Live HRIS directory only — never fabricate demo people, objectives, or goals.
   state.eligibility = employees.map((employee) => ({
     id: id('elig'),
     cycleId,
@@ -597,135 +717,20 @@ async function seedDomain(): Promise<PerformanceDomainState> {
     managerId: employee.managerEmployeeId || '',
     managerName: employee.managerName,
     included: true,
-    reason: 'Active employee in published snapshot',
+    reason: 'Active employee from HRIS payroll directory',
     snapshotAt: nowIso(),
   }));
-
-  state.companyObjectives = [
-    {
-      id: id('co'),
-      cycleId,
-      code: 'CO-REV-01',
-      title: 'Sustainable revenue growth',
-      description: 'Deliver approved revenue plan across operating units.',
-      strategicPillar: 'Growth',
-      owner: 'Executive Management',
-      kpi: 'Revenue vs plan',
-      baseline: 90,
-      target: 100,
-      unit: '%',
-      weight: 40,
-      status: 'Published',
-      version: 1,
-      createdBy: 'HR Administrator',
-      approvedBy: 'Executive Management',
-      publishedAt: nowIso(),
-    },
-    {
-      id: id('co'),
-      cycleId,
-      code: 'CO-OPS-02',
-      title: 'Operational excellence and HSE',
-      description: 'Zero major HSE incidents and improved delivery reliability.',
-      strategicPillar: 'Operations',
-      owner: 'COO',
-      kpi: 'HSE + on-time delivery',
-      baseline: 85,
-      target: 100,
-      unit: '%',
-      weight: 35,
-      status: 'Published',
-      version: 1,
-      createdBy: 'HR Administrator',
-      approvedBy: 'Executive Management',
-      publishedAt: nowIso(),
-    },
-    {
-      id: id('co'),
-      cycleId,
-      code: 'CO-PEO-03',
-      title: 'People capability and engagement',
-      description: 'Build high-performing teams through capability and engagement.',
-      strategicPillar: 'People',
-      owner: 'HR Director',
-      kpi: 'Engagement / capability index',
-      baseline: 70,
-      target: 85,
-      unit: 'score',
-      weight: 25,
-      status: 'Published',
-      version: 1,
-      createdBy: 'HR Administrator',
-      approvedBy: 'Executive Management',
-      publishedAt: nowIso(),
-    },
-  ];
-
-  state.goals = employees.slice(0, 12).flatMap((employee, index) => {
-    const goalId = id('goal');
-    return [{
-      id: goalId,
-      cycleId,
-      employeeId: employee.employeeId,
-      employeeCode: employee.employeeCode,
-      employeeName: employee.fullName,
-      department: employee.department,
-      managerId: employee.managerEmployeeId || '',
-      managerName: employee.managerName,
-      title: index % 2 === 0 ? 'Deliver assigned annual workplan outcomes' : 'Improve process quality and stakeholder service',
-      description: 'Measurable individual contribution aligned to company objectives.',
-      type: 'Annual',
-      parentObjectiveId: state.companyObjectives[index % state.companyObjectives.length]?.id,
-      strategicPillar: state.companyObjectives[index % state.companyObjectives.length]?.strategicPillar,
-      keyResults: [
-        { id: id('kr'), title: 'Primary KPI achievement', baseline: 0, target: 100, unit: '%', weight: 60 },
-        { id: id('kr'), title: 'Quality / compliance milestones', baseline: 0, target: 100, unit: '%', weight: 40 },
-      ],
-      weight: 100,
-      startDate: cycle.goalSettingStart,
-      dueDate: cycle.endDate,
-      status: index < 4 ? 'Agreed' : index < 8 ? 'Assigned' : 'Draft',
-      version: 1,
-      progressPercent: index < 4 ? 35 + index * 5 : 0,
-      acknowledgedAt: index < 4 ? nowIso() : undefined,
-      agreedVersion: index < 4 ? 1 : undefined,
-      createdBy: employee.managerName,
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-      history: [{ version: 1, at: nowIso(), actor: employee.managerName, change: 'Goal created' }],
-    } satisfies EmployeeGoal];
-  });
-
-  const probationCandidates = employees.filter((employee) => /probation/i.test(employee.status || '')).slice(0, 5);
-  state.probation = (probationCandidates.length ? probationCandidates : employees.slice(0, 2)).map((employee) => {
-    const start = employee.dateJoined?.slice(0, 10) || `${year}-01-15`;
-    const endDate = new Date(start);
-    endDate.setMonth(endDate.getMonth() + 6);
-    return {
-      id: id('prob'),
-      employeeId: employee.employeeId,
-      employeeCode: employee.employeeCode,
-      employeeName: employee.fullName,
-      department: employee.department,
-      managerId: employee.managerEmployeeId || '',
-      managerName: employee.managerName,
-      startDate: start,
-      endDate: endDate.toISOString().slice(0, 10),
-      durationMonths: 6,
-      status: 'Active',
-      okrs: [],
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-    } satisfies ProbationRecord;
-  });
+  state.companyObjectives = [];
+  state.goals = [];
+  state.probation = [];
 
   pushAudit(state, {
     actor: 'System',
     actorRole: 'System',
-    action: 'Seeded performance domain',
+    action: 'Bootstrapped performance domain',
     entityType: 'PerformanceDomain',
     entityId: 'root',
-    after: `Cycle ${cycle.name} with ${state.eligibility.length} eligible employees`,
+    after: `Cycle ${cycle.name} with ${state.eligibility.length} HRIS-eligible employees (no demo objectives/goals)`,
   });
 
   return state;
@@ -1119,8 +1124,23 @@ export const readPerformanceManagementPayload = async (
 
   const teamIds = await loadTeamEmployeeIds(actorContext, payrollEmployees, fullState.delegations || []);
   const effectiveActor = withEffectivePerformanceScope(actorContext, teamIds);
-  const scoped = scopePerformanceDomain(fullState, effectiveActor, teamIds);
-  const state = projectDomainForScope(scoped, effectiveActor, fullState.config.anonymityThreshold || 3);
+  // Never surface bootstrap demo seed in workspace payloads (Overview + all tabs).
+  // Persist immediately when SQL still holds residue so the next read stays clean.
+  const cleanedResult = purgeDemoPerformanceSeed(fullState);
+  let cleanedFull = cleanedResult.state;
+  if (cleanedResult.purged || stateContainsDemoSeed(cleanedFull)) {
+    cleanedFull = purgeDemoPerformanceSeed(cleanedFull).state;
+    const cycle = activeCycle(cleanedFull);
+    if (cycle && !cleanedFull.eligibility.some((row) => row.cycleId === cycle.id && row.included)) {
+      const employees = await mapPayrollEmployeesForSeed();
+      if (employees.length) {
+        cleanedFull = await refreshCycleEligibilityFromPayroll(cleanedFull, cycle.id, employees);
+      }
+    }
+    cleanedFull = await writeState(cleanedFull, 'System');
+  }
+  const scoped = scopePerformanceDomain(cleanedFull, effectiveActor, teamIds);
+  const state = projectDomainForScope(scoped, effectiveActor, cleanedFull.config.anonymityThreshold || 3);
   const employeeCount = effectiveActor.scope === 'global'
     ? (payrollEmployees.length || state.eligibility.length)
     : (teamIds.size || 1);
@@ -1363,6 +1383,68 @@ export const applyPerformanceAction = async (
         cycle.status = 'Pending Approval';
         cycle.updatedAt = nowIso();
         pushAudit(state, { actor, actorRole, action: 'Submitted cycle for approval', entityType: 'PerformanceCycle', entityId: cycle.id });
+        break;
+      }
+      case 'cycle.refresh-eligibility': {
+        const cycle = state.cycles.find((item) => item.id === data.cycleId) || activeCycle(state);
+        if (!cycle) return fail('Cycle not found.');
+        if (['Closed', 'Archived'].includes(cycle.status)) return fail('Closed cycles cannot refresh eligibility.');
+        let employees: any[] = [];
+        try {
+          const source = await withTimeout(readPayrollEmployees(), 8000, { employees: [] as any[] } as any);
+          employees = (source.employees || []).filter((row: any) => !/inactive|terminated|resigned|exit/i.test(String(row.status || '')));
+        } catch {
+          employees = [];
+        }
+        if (!employees.length) return fail('No active employees found in the HRIS payroll directory.');
+        // Drop residual demo rows for this cycle before snapshotting live HRIS data.
+        state.eligibility = state.eligibility.filter((row) => row.cycleId !== cycle.id || !isDemoEmployee(row.employeeId, row.fullName, row.employeeCode));
+        await refreshCycleEligibilityFromPayroll(state, cycle.id, employees.map((row: any) => ({
+          employeeId: String(row.employeeId || row.employeeCode || ''),
+          employeeCode: String(row.employeeCode || row.employeeId || ''),
+          fullName: String(row.fullName || 'Employee'),
+          department: String(row.department || 'Unassigned'),
+          jobTitle: String(row.jobTitle || row.designation || 'Employee'),
+          managerName: String(row.managerName || row.manager || 'Line Manager'),
+          managerEmployeeId: String(row.managerEmployeeId || row.managerId || ''),
+          dateJoined: String(row.dateJoined || row.contractStartDate || ''),
+          status: String(row.status || ''),
+        })).filter((row) => Boolean(row.employeeId)));
+        // Also strip demo goals/objectives if still present.
+        const cleaned = purgeDemoPerformanceSeed(state);
+        Object.assign(state, cleaned.state);
+        pushAudit(state, {
+          actor,
+          actorRole,
+          action: 'Refreshed cycle eligibility from HRIS',
+          entityType: 'PerformanceCycle',
+          entityId: cycle.id,
+          after: `${cycle.eligibilityCount} eligible`,
+        });
+        break;
+      }
+      case 'domain.purge-demo': {
+        const cleaned = purgeDemoPerformanceSeed(state);
+        Object.assign(state, cleaned.state);
+        const cycle = activeCycle(state);
+        if (cycle) {
+          try {
+            const employees = await mapPayrollEmployeesForSeed();
+            if (employees.length) {
+              await refreshCycleEligibilityFromPayroll(state, cycle.id, employees);
+            }
+          } catch {
+            /* keep purged state even if payroll refresh fails */
+          }
+        }
+        pushAudit(state, {
+          actor,
+          actorRole,
+          action: 'Purged demo performance seed',
+          entityType: 'PerformanceDomain',
+          entityId: 'root',
+          after: cleaned.purged ? 'Demo seed removed' : 'No demo seed found',
+        });
         break;
       }
       case 'cycle.approve-publish': {

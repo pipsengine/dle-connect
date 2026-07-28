@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import {
   AlertTriangle,
   CalendarDays,
@@ -19,7 +20,8 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import type { EmployeeGoal, PerformanceWorkspacePayload } from '@/lib/performance-domain-types';
+import type { CycleEligibility, EmployeeGoal, PerformanceWorkspacePayload } from '@/lib/performance-domain-types';
+import { isDemoEmployee, isDemoObjective, isSeededDemoGoal, stripDemoPerformanceSeed } from '@/lib/performance-demo-seed';
 import { fmtDate } from './performance-management-ui';
 
 type Props = {
@@ -27,6 +29,23 @@ type Props = {
   onAction: (action: string, data?: Record<string, unknown>) => Promise<void>;
   busy?: boolean;
 };
+
+const emptyAssignForm = () => ({
+  employeeName: '',
+  employeeId: '',
+  employeeCode: '',
+  title: '',
+  department: '',
+  jobTitle: '',
+  managerId: '',
+  managerName: '',
+  parentObjectiveId: '',
+  weight: '100',
+  dueDate: '',
+  krTitle: '',
+  krTarget: '100',
+  krUnit: '%',
+});
 
 const TABS = [
   'Overview',
@@ -83,11 +102,11 @@ const StatusPill = ({ label }: { label: string }) => {
   const style =
     key.includes('track') || key.includes('acknowledged') || key.includes('validated') || key.includes('completed') || key.includes('approved')
       ? 'bg-[#ecfdf3] text-[#027a48] border-[#abefc6]'
-      : key.includes('risk') || key.includes('await') || key.includes('discussion') || key.includes('medium')
+      : key.includes('risk') || key.includes('await') || key.includes('discussion') || key.includes('medium') || key.includes('need')
         ? 'bg-[#fffaeb] text-[#b54708] border-[#fedf89]'
         : key.includes('overdue') || key.includes('high') || key.includes('exception') || key.includes('exceed')
           ? 'bg-[#fef3f2] text-[#b42318] border-[#fecdca]'
-          : key.includes('alignment') || key.includes('check')
+          : key.includes('alignment') || key.includes('check') || key.includes('no goals')
             ? 'bg-[#eff8ff] text-[#175cd3] border-[#b2ddff]'
             : 'bg-[#f8fafc] text-[#475467] border-[#e4e7ec]';
   return <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${style}`}>{label}</span>;
@@ -103,21 +122,36 @@ const MiniBar = ({ value, dual }: { value: number; dual?: boolean }) => (
   </div>
 );
 
+/** Progress sparkline derived only from the current measured value (no decorative fake history). */
 const Sparkline = ({ value }: { value: number }) => {
-  const points = [12, 18, 14, 22, 20, 28, Math.max(8, Math.round(value / 4))].map((y, i) => `${i * 10},${32 - Math.min(28, y)}`).join(' ');
+  const v = Math.max(0, Math.min(100, value));
+  const points = [0, 0.2, 0.4, 0.6, 0.8, 1].map((t, i) => {
+    const y = 28 - Math.round(((v * t) / 100) * 22);
+    return `${i * 10},${y}`;
+  }).join(' ');
   return (
-    <svg width="64" height="32" viewBox="0 0 60 32" className="text-[#1570ef]">
+    <svg width="64" height="32" viewBox="0 0 60 32" className="text-[#1570ef]" aria-hidden>
       <polyline fill="none" stroke="currentColor" strokeWidth="2" points={points} />
     </svg>
   );
 };
 
 const HealthDonut = ({ onTrack, atRisk, overdue, notStarted }: { onTrack: number; atRisk: number; overdue: number; notStarted: number }) => {
-  const total = Math.max(onTrack + atRisk + overdue + notStarted, 1);
-  const a = (onTrack / total) * 100;
-  const b = (atRisk / total) * 100;
-  const c = (overdue / total) * 100;
-  const healthy = Math.round((onTrack / total) * 100);
+  const counted = onTrack + atRisk + overdue + notStarted;
+  if (counted <= 0) {
+    return (
+      <div className="relative mx-auto grid h-[120px] w-[120px] place-items-center rounded-full bg-[#f2f4f7]">
+        <span className="absolute inset-[20px] grid place-items-center rounded-full bg-white text-center">
+          <b className="text-xl font-bold text-[#101828]">—</b>
+          <small className="text-[8px] font-semibold uppercase text-[#667085]">No goals</small>
+        </span>
+      </div>
+    );
+  }
+  const a = (onTrack / counted) * 100;
+  const b = (atRisk / counted) * 100;
+  const c = (overdue / counted) * 100;
+  const healthy = Math.round((onTrack / counted) * 100);
   return (
     <div
       className="relative mx-auto grid h-[120px] w-[120px] place-items-center rounded-full"
@@ -134,11 +168,19 @@ const HealthDonut = ({ onTrack, atRisk, overdue, notStarted }: { onTrack: number
 };
 
 export default function OkrKpiManagementView({ payload, onAction, busy }: Props) {
-  const domain = payload.domain;
+  const pathname = usePathname() || '';
+  const pageBlurb = pathname.includes('goal-library')
+    ? 'Browse and govern employee goals for the active performance cycle.'
+    : pathname.includes('kpi-setup')
+      ? 'Maintain measurable key results linked to assigned employee goals.'
+      : 'Assign measurable goals, track key results, and govern acknowledgement.';
+
+  // Client-side belt-and-suspenders: hide residual bootstrap demo seed across Overview + all tabs.
+  const domain = useMemo(() => stripDemoPerformanceSeed(payload.domain), [payload.domain]);
   const isHrScope = payload.actor?.scope === 'global';
   const cycles = domain.cycles || [];
   const [cycleId, setCycleId] = useState(domain.activeCycleId || cycles[0]?.id || '');
-  const [activeTab, setActiveTab] = useState<TabId>('Overview');
+  const [activeTab, setActiveTab] = useState<TabId>(pathname.includes('kpi-setup') ? 'KPI Setup' : 'Overview');
   const [query, setQuery] = useState('');
   const [department, setDepartment] = useState('All departments');
   const [statusFilter, setStatusFilter] = useState('All statuses');
@@ -146,24 +188,57 @@ export default function OkrKpiManagementView({ payload, onAction, busy }: Props)
   const [page, setPage] = useState(1);
   const [drawer, setDrawer] = useState<EmployeeGoal | null>(null);
   const [assigning, setAssigning] = useState(false);
-  const [form, setForm] = useState({
-    employeeName: '',
-    employeeId: '',
-    employeeCode: '',
-    title: '',
-    department: '',
-    parentObjectiveId: '',
-    weight: '100',
-  });
+  const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
+  const [employeeQuery, setEmployeeQuery] = useState('');
+  const [assignError, setAssignError] = useState('');
+  const [form, setForm] = useState(emptyAssignForm);
   const pageSize = 8;
+  const purgeAttempted = useRef(false);
+  const employeeInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (pathname.includes('kpi-setup')) setActiveTab('KPI Setup');
+    else if (pathname.includes('goal-library') || pathname.includes('employee-goals')) setActiveTab('Overview');
+  }, [pathname]);
+
+  useEffect(() => {
+    if (purgeAttempted.current || !isHrScope) return;
+    const rawGoals = payload.domain?.goals || [];
+    const rawObjectives = payload.domain?.companyObjectives || [];
+    const hasDemo = rawGoals.some((goal) => isSeededDemoGoal(goal))
+      || rawObjectives.some((row) => isDemoObjective(row.code, row.title));
+    if (!hasDemo) return;
+    purgeAttempted.current = true;
+    void onAction('domain.purge-demo');
+  }, [payload.domain, isHrScope, onAction]);
 
   const activeCycle = cycles.find((cycle) => cycle.id === cycleId) || cycles.find((cycle) => cycle.id === domain.activeCycleId) || cycles[0];
   const objectives = useMemo(
-    () => (domain.companyObjectives || []).filter((item) => !cycleId || item.cycleId === cycleId),
+    () => (domain.companyObjectives || []).filter((item) => (!cycleId || item.cycleId === cycleId) && !isDemoObjective(item.code, item.title)),
     [domain.companyObjectives, cycleId],
   );
+  const eligibleEmployees = useMemo(() => {
+    const rows = (domain.eligibility || []).filter((row) =>
+      (!cycleId || row.cycleId === cycleId)
+      && row.included
+      && !isDemoEmployee(row.employeeId, row.fullName, row.employeeCode),
+    );
+    const byKey = new Map<string, CycleEligibility>();
+    for (const row of rows) {
+      const key = row.employeeId || row.employeeCode || row.fullName;
+      if (!byKey.has(key)) byKey.set(key, row);
+    }
+    return Array.from(byKey.values()).sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }, [domain.eligibility, cycleId]);
+  const filteredEmployees = useMemo(() => {
+    const q = employeeQuery.trim().toLowerCase();
+    if (!q) return eligibleEmployees.slice(0, 40);
+    return eligibleEmployees
+      .filter((row) => `${row.fullName} ${row.employeeCode} ${row.employeeId} ${row.department} ${row.jobTitle}`.toLowerCase().includes(q))
+      .slice(0, 40);
+  }, [eligibleEmployees, employeeQuery]);
   const goals = useMemo(
-    () => (domain.goals || []).filter((goal) => !cycleId || goal.cycleId === cycleId),
+    () => (domain.goals || []).filter((goal) => (!cycleId || goal.cycleId === cycleId) && !isSeededDemoGoal(goal)),
     [domain.goals, cycleId],
   );
   const checkIns = useMemo(
@@ -174,25 +249,15 @@ export default function OkrKpiManagementView({ payload, onAction, busy }: Props)
     () => (domain.audit || []).filter((row) => ['EmployeeGoal', 'CheckIn', 'CompanyObjective'].includes(row.entityType)).slice(0, 50),
     [domain.audit],
   );
-  const kpiCatalog = useMemo(() => {
-    const fromGoals = goals.flatMap((goal) => goal.keyResults.map((kr) => ({
-      id: `${goal.id}-${kr.id}`,
-      title: kr.title,
-      unit: kr.unit || '%',
-      weight: kr.weight,
-      source: 'Goal KR' as const,
-      employeeName: goal.employeeName,
-    })));
-    const fromBehaviour = (domain.config?.behaviourIndicators || []).map((ind) => ({
-      id: ind.id,
-      title: ind.name,
-      unit: '%',
-      weight: ind.weight || 0,
-      source: 'Behaviour KPI' as const,
-      employeeName: 'Organisation',
-    }));
-    return [...fromGoals, ...fromBehaviour];
-  }, [goals, domain.config?.behaviourIndicators]);
+  // KPI Setup lists live goal key results only — not behaviour rating-scale placeholders.
+  const kpiCatalog = useMemo(() => goals.flatMap((goal) => goal.keyResults.map((kr) => ({
+    id: `${goal.id}-${kr.id}`,
+    title: kr.title,
+    unit: kr.unit || '%',
+    weight: kr.weight,
+    source: 'Goal KR' as const,
+    employeeName: goal.employeeName,
+  }))), [goals]);
 
   const departments = useMemo(
     () => ['All departments', ...Array.from(new Set(goals.map((goal) => goal.department).filter(Boolean))).sort()],
@@ -258,6 +323,10 @@ export default function OkrKpiManagementView({ payload, onAction, busy }: Props)
   const overallProgress = goals.length ? Math.round(goals.reduce((sum, goal) => sum + (goal.progressPercent || 0), 0) / goals.length) : 0;
   const alignedPct = goals.length ? Math.round(((goals.length - orphaned) / goals.length) * 100) : 0;
   const weightsValidated = employeesOver === 0 && goals.length > 0;
+  const alignmentLabel = goals.length ? `Alignment ${alignedPct}%` : 'No goals yet';
+  const weightLabel = goals.length
+    ? (weightsValidated ? 'Weights validated' : 'Weights need review')
+    : 'No weights to validate';
   const managerApprovedPct = goals.length
     ? Math.round((goals.filter((goal) => ['Agreed', 'Active', 'Completed', 'Assigned', 'Resubmitted'].includes(goal.status)).length / goals.length) * 100)
     : 0;
@@ -296,24 +365,82 @@ export default function OkrKpiManagementView({ payload, onAction, busy }: Props)
     return Array.from(byEmployee.values()).filter((row) => row.weight > 100.01 || Math.abs(row.weight - 100) > 0.01);
   }, [goals]);
 
-  const assignGoal = async () => {
-    await onAction('goal.upsert', {
-      cycleId: cycleId || activeCycle?.id,
-      employeeId: form.employeeId || payload.actor.employeeId,
-      employeeCode: form.employeeCode || payload.actor.employeeCode,
-      employeeName: form.employeeName || payload.actor.fullName,
-      department: form.department || 'General',
-      title: form.title || 'Employee objective',
-      description: '',
-      parentObjectiveId: form.parentObjectiveId || undefined,
-      weight: Number(form.weight || 100),
-      keyResults: [
-        { title: 'Primary KPI', baseline: 0, target: 100, unit: '%', weight: 60 },
-        { title: 'Quality milestone', baseline: 0, target: 100, unit: '%', weight: 40 },
-      ],
+  const openAssignModal = () => {
+    setAssignError('');
+    setEmployeeQuery('');
+    setEmployeePickerOpen(false);
+    setForm({
+      ...emptyAssignForm(),
+      dueDate: activeCycle?.goalSettingEnd || activeCycle?.endDate || '',
     });
-    setAssigning(false);
-    setForm({ employeeName: '', employeeId: '', employeeCode: '', title: '', department: '', parentObjectiveId: '', weight: '100' });
+    setAssigning(true);
+  };
+
+  const selectEmployee = (row: CycleEligibility) => {
+    setForm((current) => ({
+      ...current,
+      employeeName: row.fullName,
+      employeeId: row.employeeId || row.employeeCode,
+      employeeCode: row.employeeCode || row.employeeId,
+      department: row.department || '',
+      jobTitle: row.jobTitle || '',
+      managerId: row.managerId || '',
+      managerName: row.managerName || '',
+    }));
+    setEmployeeQuery(row.fullName);
+    setEmployeePickerOpen(false);
+    setAssignError('');
+  };
+
+  const assignGoal = async () => {
+    setAssignError('');
+    if (!form.title.trim()) {
+      setAssignError('Goal title is required.');
+      return;
+    }
+    if (!form.employeeId.trim() || !form.employeeName.trim()) {
+      setAssignError('Select an employee from the HRIS directory.');
+      return;
+    }
+    const weight = Number(form.weight || 100);
+    if (!Number.isFinite(weight) || weight <= 0 || weight > 100) {
+      setAssignError('Weight must be between 1 and 100.');
+      return;
+    }
+    const krTitle = form.krTitle.trim() || 'Primary key result';
+    const krTarget = Number(form.krTarget || 100);
+    try {
+      await onAction('goal.upsert', {
+        cycleId: cycleId || activeCycle?.id,
+        employeeId: form.employeeId.trim(),
+        employeeCode: form.employeeCode.trim() || form.employeeId.trim(),
+        employeeName: form.employeeName.trim(),
+        department: form.department.trim() || undefined,
+        managerId: form.managerId.trim() || undefined,
+        managerName: form.managerName.trim() || undefined,
+        title: form.title.trim(),
+        description: form.jobTitle ? `Role: ${form.jobTitle}` : '',
+        parentObjectiveId: form.parentObjectiveId || undefined,
+        weight,
+        startDate: activeCycle?.goalSettingStart || activeCycle?.startDate || undefined,
+        dueDate: form.dueDate || activeCycle?.goalSettingEnd || activeCycle?.endDate || undefined,
+        keyResults: [
+          {
+            title: krTitle,
+            baseline: 0,
+            target: Number.isFinite(krTarget) ? krTarget : 100,
+            unit: form.krUnit.trim() || '%',
+            weight: 100,
+          },
+        ],
+      });
+      setAssigning(false);
+      setForm(emptyAssignForm());
+      setEmployeeQuery('');
+      setActiveTab('Employee Goals');
+    } catch (error) {
+      setAssignError(error instanceof Error ? error.message : 'Unable to assign goal.');
+    }
   };
 
   const pct = (count: number) => (goals.length ? Math.round((count / goals.length) * 100) : 0);
@@ -322,14 +449,24 @@ export default function OkrKpiManagementView({ payload, onAction, busy }: Props)
     <div className="space-y-4 text-[#101828]">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h1 className="text-xl font-bold">OKR & KPI Management</h1>
-          <p className="mt-1 text-[11px] font-medium text-[#667085]">Assign measurable goals, track key results, and govern acknowledgement.</p>
+          <p className="text-[11px] font-semibold text-[#667085]">{pageBlurb}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <select value={cycleId} onChange={(e) => { setCycleId(e.target.value); setPage(1); }} className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-3 text-[11px] font-semibold text-[#344054]">
             {cycles.map((cycle) => <option key={cycle.id} value={cycle.id}>{cycle.name}</option>)}
             {!cycles.length ? <option value="">No cycles</option> : null}
           </select>
+          {isHrScope ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => { purgeAttempted.current = true; void onAction('domain.purge-demo'); }}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#d0d5dd] bg-white px-3 text-[11px] font-semibold text-[#344054] disabled:opacity-50"
+              title="Remove bootstrap demo employees, objectives, and goals"
+            >
+              Clear demo data
+            </button>
+          ) : null}
           <button type="button" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#d0d5dd] bg-white px-3 text-[11px] font-semibold text-[#344054]">
             <Download className="h-3.5 w-3.5" /> Export
           </button>
@@ -337,7 +474,7 @@ export default function OkrKpiManagementView({ payload, onAction, busy }: Props)
             <FileText className="h-3.5 w-3.5" /> Goal templates
           </button>
           {(isHrScope || payload.actor?.scope === 'team') ? (
-            <button type="button" disabled={busy} onClick={() => setAssigning(true)} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#1570ef] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
+            <button type="button" disabled={busy} onClick={openAssignModal} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#1570ef] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
               <Plus className="h-3.5 w-3.5" /> Assign goal
             </button>
           ) : null}
@@ -349,8 +486,8 @@ export default function OkrKpiManagementView({ payload, onAction, busy }: Props)
           <div className="min-w-0">
             <h2 className="text-sm font-bold">{activeCycle?.name || 'Goal'} Goal Governance · {activeCycle?.status || 'Inactive'}</h2>
             <div className="mt-3 flex flex-wrap gap-2">
-              <StatusPill label={weightsValidated ? 'Weights validated' : 'Weights need review'} />
-              <span className="inline-flex items-center rounded-full border border-[#b2ddff] bg-[#175cd3] px-2 py-0.5 text-[10px] font-semibold text-white">Alignment {alignedPct}%</span>
+              <StatusPill label={weightLabel} />
+              <span className="inline-flex items-center rounded-full border border-[#b2ddff] bg-[#175cd3] px-2 py-0.5 text-[10px] font-semibold text-white">{alignmentLabel}</span>
               <span className="inline-flex items-center rounded-full border border-[#b2ddff] bg-[#175cd3] px-2 py-0.5 text-[10px] font-semibold text-white">Next check-in {safeFmtDate(nextCheckIn)}</span>
             </div>
           </div>
@@ -489,7 +626,7 @@ export default function OkrKpiManagementView({ payload, onAction, busy }: Props)
                       </div>
                     ))}
                     {!rows.length ? (
-                      <div className="px-4 py-12 text-center text-sm font-semibold text-[#667085]">No employee goals match these filters.</div>
+                      <div className="px-4 py-12 text-center text-sm font-semibold text-[#667085]">No employee goals in this cycle yet. Assign goals from HRIS eligibility or use + Assign goal.</div>
                     ) : null}
                   </div>
                 </div>
@@ -664,7 +801,7 @@ export default function OkrKpiManagementView({ payload, onAction, busy }: Props)
                 <p className="mt-1 text-[11px] font-medium text-[#667085]">Full goal register for {activeCycle?.name || 'the selected cycle'}.</p>
               </div>
               {(isHrScope || payload.actor?.scope === 'team') ? (
-                <button type="button" disabled={busy} onClick={() => setAssigning(true)} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#1570ef] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
+                <button type="button" disabled={busy} onClick={openAssignModal} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#1570ef] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
                   <Plus className="h-3.5 w-3.5" /> Assign goal
                 </button>
               ) : null}
@@ -723,7 +860,7 @@ export default function OkrKpiManagementView({ payload, onAction, busy }: Props)
                     </button>
                   </div>
                 ))}
-                {!rows.length ? <div className="px-4 py-12 text-center text-sm font-semibold text-[#667085]">No employee goals match these filters.</div> : null}
+                {!rows.length ? <div className="px-4 py-12 text-center text-sm font-semibold text-[#667085]">No employee goals in this cycle yet. Assign goals from HRIS eligibility or use + Assign goal.</div> : null}
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#eaecf0] px-3 py-2 text-[10px] text-[#667085]">
@@ -811,7 +948,7 @@ export default function OkrKpiManagementView({ payload, onAction, busy }: Props)
                 ))}
               </tbody>
             </table>
-            {!kpiCatalog.length ? <p className="px-3 py-10 text-center text-[11px] font-semibold text-[#98a2b3]">No KPIs configured yet.</p> : null}
+            {!kpiCatalog.length ? <p className="px-3 py-10 text-center text-[11px] font-semibold text-[#98a2b3]">No goal KPIs yet. Assign employee goals with key results to populate this catalogue.</p> : null}
           </div>
         </section>
       ) : null}
@@ -868,6 +1005,12 @@ export default function OkrKpiManagementView({ payload, onAction, busy }: Props)
                     </div>
                   ))}
                 </div>
+              </section>
+            ) : null}
+            {!objectives.length && !orphaned ? (
+              <section className="rounded-xl border border-[#eaecf0] bg-white p-8 text-center shadow-sm">
+                <p className="text-sm font-semibold text-[#667085]">No company objectives or employee goals to align yet.</p>
+                <p className="mt-1 text-[11px] font-medium text-[#98a2b3]">Publish corporate objectives, then assign employee goals against them.</p>
               </section>
             ) : null}
           </div>
@@ -1067,45 +1210,239 @@ export default function OkrKpiManagementView({ payload, onAction, busy }: Props)
 
       {assigning ? (
         <>
-          <button type="button" className="fixed inset-0 z-40 bg-[#0c111d80]" aria-label="Close assign dialog" onClick={() => setAssigning(false)} />
-          <div className="fixed left-1/2 top-1/2 z-50 w-[min(480px,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-[#eaecf0] bg-white p-5 shadow-xl">
+          <button
+            type="button"
+            className="fixed inset-0 z-40 bg-[#0c111d80]"
+            aria-label="Close assign dialog"
+            onClick={() => { setAssigning(false); setEmployeePickerOpen(false); }}
+          />
+          <div className="fixed left-1/2 top-1/2 z-50 w-[min(560px,94vw)] max-h-[90vh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-[#eaecf0] bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-start justify-between">
               <div>
                 <h2 className="text-lg font-bold">Assign goal</h2>
-                <p className="mt-1 text-xs text-[#667085]">Create a measurable employee objective with key results.</p>
+                <p className="mt-1 text-xs text-[#667085]">
+                  Create a measurable employee objective from the HRIS eligibility directory for {activeCycle?.name || 'the selected cycle'}.
+                </p>
               </div>
-              <button type="button" onClick={() => setAssigning(false)} className="grid h-8 w-8 place-items-center rounded-lg text-[#667085] hover:bg-[#f9fafb]"><X className="h-4 w-4" /></button>
+              <button
+                type="button"
+                onClick={() => { setAssigning(false); setEmployeePickerOpen(false); }}
+                className="grid h-8 w-8 place-items-center rounded-lg text-[#667085] hover:bg-[#f9fafb]"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
+
             <div className="grid gap-3">
               <label className="text-[11px] font-semibold text-[#344054]">Goal title
-                <input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Deliver assigned annual workplan outcomes" />
+                <input
+                  className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm"
+                  value={form.title}
+                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                  placeholder="e.g. Close Q3 delivery milestones"
+                />
               </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="text-[11px] font-semibold text-[#344054]">Employee name
-                  <input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.employeeName} onChange={(e) => setForm((f) => ({ ...f, employeeName: e.target.value }))} />
-                </label>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="relative">
+                  <label className="text-[11px] font-semibold text-[#344054]">Employee
+                    <div className="relative mt-1">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#98a2b3]" />
+                      <input
+                        ref={employeeInputRef}
+                        className="h-9 w-full rounded-lg border border-[#d0d5dd] py-2 pl-9 pr-3 text-sm"
+                        value={employeeQuery}
+                        placeholder={eligibleEmployees.length ? 'Search name, code or department…' : 'No eligible employees'}
+                        onFocus={() => setEmployeePickerOpen(true)}
+                        onBlur={() => {
+                          window.setTimeout(() => setEmployeePickerOpen(false), 150);
+                        }}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setEmployeeQuery(value);
+                          setEmployeePickerOpen(true);
+                          setForm((f) => ({
+                            ...f,
+                            employeeName: '',
+                            employeeId: '',
+                            employeeCode: '',
+                            department: '',
+                            jobTitle: '',
+                            managerId: '',
+                            managerName: '',
+                          }));
+                        }}
+                      />
+                    </div>
+                  </label>
+                  {employeePickerOpen ? (
+                    <div className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-[#eaecf0] bg-white shadow-lg">
+                      {filteredEmployees.map((row) => (
+                        <button
+                          key={`${row.employeeId}-${row.employeeCode}`}
+                          type="button"
+                          className="flex w-full flex-col items-start gap-0.5 border-b border-[#f2f4f7] px-3 py-2 text-left hover:bg-[#f9fafb]"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => selectEmployee(row)}
+                        >
+                          <span className="text-[12px] font-bold text-[#101828]">{row.fullName}</span>
+                          <span className="text-[10px] font-semibold text-[#667085]">
+                            {row.employeeCode || row.employeeId}
+                            {row.department ? ` · ${row.department}` : ''}
+                            {row.jobTitle ? ` · ${row.jobTitle}` : ''}
+                          </span>
+                        </button>
+                      ))}
+                      {!filteredEmployees.length ? (
+                        <p className="px-3 py-4 text-[11px] font-semibold text-[#667085]">
+                          {eligibleEmployees.length
+                            ? 'No employees match that search.'
+                            : 'No eligible employees in this cycle. Refresh eligibility from HRIS.'}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+
                 <label className="text-[11px] font-semibold text-[#344054]">Employee ID
-                  <input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.employeeId} onChange={(e) => setForm((f) => ({ ...f, employeeId: e.target.value }))} />
+                  <input
+                    readOnly
+                    className="mt-1 h-9 w-full cursor-not-allowed rounded-lg border border-[#d0d5dd] bg-[#f9fafb] px-3 text-sm text-[#475467]"
+                    value={form.employeeId}
+                    placeholder="Auto-filled from employee"
+                  />
                 </label>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+
+              <div className="grid gap-3 sm:grid-cols-2">
                 <label className="text-[11px] font-semibold text-[#344054]">Department
-                  <input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} />
+                  <input
+                    readOnly
+                    className="mt-1 h-9 w-full cursor-not-allowed rounded-lg border border-[#d0d5dd] bg-[#f9fafb] px-3 text-sm text-[#475467]"
+                    value={form.department}
+                    placeholder="Auto-filled from HRIS"
+                  />
                 </label>
                 <label className="text-[11px] font-semibold text-[#344054]">Weight %
-                  <input className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm" value={form.weight} onChange={(e) => setForm((f) => ({ ...f, weight: e.target.value }))} />
+                  <input
+                    className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm"
+                    value={form.weight}
+                    onChange={(e) => setForm((f) => ({ ...f, weight: e.target.value }))}
+                    inputMode="decimal"
+                  />
                 </label>
               </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-[11px] font-semibold text-[#344054]">Job title
+                  <input
+                    readOnly
+                    className="mt-1 h-9 w-full cursor-not-allowed rounded-lg border border-[#d0d5dd] bg-[#f9fafb] px-3 text-sm text-[#475467]"
+                    value={form.jobTitle}
+                    placeholder="Auto-filled from HRIS"
+                  />
+                </label>
+                <label className="text-[11px] font-semibold text-[#344054]">Due date
+                  <input
+                    type="date"
+                    className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] px-3 text-sm"
+                    value={form.dueDate}
+                    onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))}
+                  />
+                </label>
+              </div>
+
+              <label className="text-[11px] font-semibold text-[#344054]">Line manager
+                <input
+                  readOnly
+                  className="mt-1 h-9 w-full cursor-not-allowed rounded-lg border border-[#d0d5dd] bg-[#f9fafb] px-3 text-sm text-[#475467]"
+                  value={form.managerName}
+                  placeholder="Auto-filled from HRIS"
+                />
+              </label>
+
               <label className="text-[11px] font-semibold text-[#344054]">Parent company objective
-                <select className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] bg-white px-2 text-sm" value={form.parentObjectiveId} onChange={(e) => setForm((f) => ({ ...f, parentObjectiveId: e.target.value }))}>
-                  <option value="">Optional</option>
-                  {objectives.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.title}</option>)}
+                <select
+                  className="mt-1 h-9 w-full rounded-lg border border-[#d0d5dd] bg-white px-2 text-sm"
+                  value={form.parentObjectiveId}
+                  onChange={(e) => setForm((f) => ({ ...f, parentObjectiveId: e.target.value }))}
+                >
+                  <option value="">Optional — select published objective</option>
+                  {objectives.map((item) => (
+                    <option key={item.id} value={item.id}>{item.code} · {item.title}</option>
+                  ))}
                 </select>
               </label>
+              {!objectives.length ? (
+                <p className="text-[10px] font-semibold text-[#b54708]">No company objectives in this cycle yet. Publish objectives first for alignment.</p>
+              ) : null}
+
+              <div className="rounded-lg border border-[#eaecf0] bg-[#f9fafb] p-3">
+                <p className="text-[11px] font-bold text-[#344054]">Primary key result</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-[1.4fr_0.7fr_0.5fr]">
+                  <input
+                    className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-3 text-sm"
+                    value={form.krTitle}
+                    onChange={(e) => setForm((f) => ({ ...f, krTitle: e.target.value }))}
+                    placeholder="Key result title"
+                  />
+                  <input
+                    className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-3 text-sm"
+                    value={form.krTarget}
+                    onChange={(e) => setForm((f) => ({ ...f, krTarget: e.target.value }))}
+                    placeholder="Target"
+                    inputMode="decimal"
+                  />
+                  <input
+                    className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-3 text-sm"
+                    value={form.krUnit}
+                    onChange={(e) => setForm((f) => ({ ...f, krUnit: e.target.value }))}
+                    placeholder="Unit"
+                  />
+                </div>
+              </div>
+
+              {!eligibleEmployees.length ? (
+                <div className="rounded-lg border border-[#fedf89] bg-[#fffaeb] px-3 py-2.5 text-[11px] font-semibold text-[#b54708]">
+                  No eligible employees loaded for this cycle.
+                  {isHrScope ? (
+                    <button
+                      type="button"
+                      disabled={busy || !activeCycle?.id}
+                      className="ml-2 font-bold text-[#1570ef] underline disabled:opacity-50"
+                      onClick={() => void onAction('cycle.refresh-eligibility', { cycleId: activeCycle?.id })}
+                    >
+                      Refresh from HRIS
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-[10px] font-semibold text-[#667085]">
+                  {eligibleEmployees.length} eligible employee{eligibleEmployees.length === 1 ? '' : 's'} from HRIS cycle snapshot.
+                </p>
+              )}
+
+              {assignError ? (
+                <p className="rounded-lg border border-[#fecdca] bg-[#fef3f2] px-3 py-2 text-[11px] font-semibold text-[#b42318]">{assignError}</p>
+              ) : null}
             </div>
+
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setAssigning(false)} className="h-9 rounded-lg border border-[#d0d5dd] px-3 text-sm font-semibold">Cancel</button>
-              <button type="button" disabled={busy} onClick={() => void assignGoal()} className="h-9 rounded-lg bg-[#1570ef] px-3 text-sm font-semibold text-white disabled:opacity-50">Assign goal</button>
+              <button
+                type="button"
+                onClick={() => { setAssigning(false); setEmployeePickerOpen(false); }}
+                className="h-9 rounded-lg border border-[#d0d5dd] px-3 text-sm font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy || !form.employeeId || !form.title.trim()}
+                onClick={() => void assignGoal()}
+                className="h-9 rounded-lg bg-[#1570ef] px-3 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                Assign goal
+              </button>
             </div>
           </div>
         </>

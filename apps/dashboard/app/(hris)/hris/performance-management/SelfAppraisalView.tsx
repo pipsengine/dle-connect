@@ -11,6 +11,7 @@ import {
   Eye,
   FileSpreadsheet,
   FileText,
+  Link2,
   LockKeyhole,
   Paperclip,
   Save,
@@ -21,7 +22,7 @@ import {
   Upload,
   Users,
 } from 'lucide-react';
-import type { AssessmentItem, EmployeeGoal, PerformanceAssessment, PerformanceWorkspacePayload } from '@/lib/performance-domain-types';
+import type { AssessmentItem, EmployeeGoal, PerformanceWorkspacePayload } from '@/lib/performance-domain-types';
 import { fmtDate, fmtDateTime } from './performance-management-ui';
 
 type Props = {
@@ -42,6 +43,7 @@ const TABS = [
 ] as const;
 
 type TabId = (typeof TABS)[number];
+type ItemDraft = { rating: string; narrative: string; evidence: string };
 
 const WORKFLOW = [
   'Draft',
@@ -140,7 +142,25 @@ export default function SelfAppraisalView({ payload, onAction, busy }: Props) {
   const [draftComments, setDraftComments] = useState('');
   const [draftStrengths, setDraftStrengths] = useState('');
   const [draftImprovements, setDraftImprovements] = useState('');
-  const [itemDrafts, setItemDrafts] = useState<Record<string, { rating: string; narrative: string }>>({});
+  const [itemDrafts, setItemDrafts] = useState<Record<string, ItemDraft>>({});
+
+  const patchItemDraft = (itemId: string, patch: Partial<ItemDraft>, fallback?: Partial<ItemDraft>) => {
+    setItemDrafts((current) => ({
+      ...current,
+      [itemId]: {
+        rating: current[itemId]?.rating ?? fallback?.rating ?? '',
+        narrative: current[itemId]?.narrative ?? fallback?.narrative ?? '',
+        evidence: current[itemId]?.evidence ?? fallback?.evidence ?? '',
+        ...patch,
+      },
+    }));
+  };
+
+  const draftFor = (item: AssessmentItem): ItemDraft => ({
+    rating: itemDrafts[item.itemId]?.rating ?? (item.selfRating != null ? String(item.selfRating) : ''),
+    narrative: itemDrafts[item.itemId]?.narrative ?? item.selfNarrative ?? '',
+    evidence: itemDrafts[item.itemId]?.evidence ?? item.evidence ?? '',
+  });
 
   const activeCycle = cycles.find((cycle) => cycle.id === cycleId) || cycles.find((cycle) => cycle.id === domain.activeCycleId) || cycles[0];
   const myGoals = useMemo(
@@ -190,25 +210,53 @@ export default function SelfAppraisalView({ payload, onAction, busy }: Props) {
     }));
   }, [okrItems, myGoals]);
 
+  const competencyRows = useMemo(() => {
+    if (behaviourItems.length) return behaviourItems;
+    return behaviours.map((ind) => ({
+      itemId: ind.id,
+      itemType: 'behaviour' as const,
+      title: ind.name,
+      weight: ind.weight,
+      selfRating: undefined,
+      selfNarrative: ind.description,
+      evidence: undefined,
+    } satisfies AssessmentItem));
+  }, [behaviourItems, behaviours]);
+
+  const evidenceRows = useMemo(() => {
+    const fromGoals = goalRows.map(({ item, goal }) => ({
+      item,
+      source: 'Goal' as const,
+      subtitle: goal
+        ? `${goal.progressPercent}% progress · Weight ${goal.weight}%`
+        : `Weight ${item.weight}%`,
+    }));
+    const fromCompetencies = competencyRows.map((item) => ({
+      item,
+      source: 'Competency' as const,
+      subtitle: `Weight ${item.weight}%`,
+    }));
+    return [...fromGoals, ...fromCompetencies];
+  }, [goalRows, competencyRows]);
+
   const selected = useMemo(() => {
     const id = selectedGoalId || goalRows[0]?.item.itemId || '';
     return goalRows.find((row) => row.item.itemId === id) || goalRows[0] || null;
   }, [goalRows, selectedGoalId]);
 
-  const ratedGoals = goalRows.filter((row) => Number(row.item.selfRating || itemDrafts[row.item.itemId]?.rating || 0) > 0).length;
-  const ratedBehaviours = behaviourItems.filter((item) => Number(item.selfRating || 0) > 0).length
-    || (myAssessment ? 0 : Math.min(behaviours.length, Math.floor(behaviours.length * 0.6)));
+  const ratedGoals = goalRows.filter((row) => Number(draftFor(row.item).rating || 0) > 0).length;
+  const ratedBehaviours = competencyRows.filter((item) => Number(draftFor(item).rating || 0) > 0).length;
+  const contributionCount = goalRows.filter((row) => Boolean(draftFor(row.item).narrative.trim())).length;
   const reflectionDone = Boolean(myAssessment?.overallComments || draftComments.trim());
-  const evidenceCount = assessmentItems.filter((item) => Boolean(item.evidence)).length
-    + goalRows.filter((row) => Boolean(row.item.evidence)).length;
-  const totalItems = Math.max(goalRows.length + Math.max(behaviours.length, behaviourItems.length) + 1, 1);
+  const evidenceCount = evidenceRows.filter((row) => Boolean(draftFor(row.item).evidence.trim())).length;
+  const totalItems = Math.max(goalRows.length + competencyRows.length + 1, 1);
   const completedItems = ratedGoals + ratedBehaviours + (reflectionDone ? 1 : 0);
   const completionPct = Math.round((completedItems / totalItems) * 100);
   const blockers = [
     ratedGoals < goalRows.length ? 'Goal ratings incomplete' : null,
-    ratedBehaviours < Math.max(behaviours.length, behaviourItems.length) ? 'Competency ratings incomplete' : null,
+    ratedBehaviours < competencyRows.length ? 'Competency ratings incomplete' : null,
     !reflectionDone ? 'Overall reflection missing' : null,
-    evidenceCount < Math.max(1, Math.ceil(goalRows.length / 2)) ? 'Evidence coverage incomplete' : null,
+    evidenceCount < Math.max(1, Math.ceil(Math.max(goalRows.length, 1) / 2)) ? 'Evidence coverage incomplete' : null,
   ].filter(Boolean) as string[];
   const deadline = activeCycle?.yearEndEnd || activeCycle?.endDate || activeCycle?.goalSettingEnd || '';
   const remaining = daysRemaining(deadline);
@@ -218,8 +266,8 @@ export default function SelfAppraisalView({ payload, onAction, busy }: Props) {
   const weightedScore = useMemo(() => {
     const rated = goalRows
       .map((row) => {
-        const draft = itemDrafts[row.item.itemId];
-        const rating = Number(draft?.rating || row.item.selfRating || 0);
+        const draft = draftFor(row.item);
+        const rating = Number(draft.rating || 0);
         return { rating, weight: Number(row.item.weight || row.goal?.weight || 0) };
       })
       .filter((row) => row.rating > 0);
@@ -237,32 +285,29 @@ export default function SelfAppraisalView({ payload, onAction, busy }: Props) {
 
   const buildItemsForSave = (): AssessmentItem[] => {
     const goalItems = goalRows.map(({ item, goal }) => {
-      const draft = itemDrafts[item.itemId];
-      const rating = Number(draft?.rating || item.selfRating || 0) || undefined;
+      const draft = draftFor(item);
+      const rating = Number(draft.rating || 0) || undefined;
       return {
         itemId: item.itemId,
         itemType: 'okr' as const,
         title: item.title || goal?.title || 'Goal',
         weight: item.weight || goal?.weight || 0,
         selfRating: rating,
-        selfNarrative: draft?.narrative || item.selfNarrative || '',
+        selfNarrative: draft.narrative,
         achievement: item.achievement ?? goal?.progressPercent,
-        evidence: item.evidence,
+        evidence: draft.evidence,
       };
     });
-    const competencyItems = (behaviourItems.length ? behaviourItems : behaviours.map((ind) => ({
-      itemId: ind.id,
-      itemType: 'behaviour' as const,
-      title: ind.name,
-      weight: ind.weight,
-      selfRating: undefined,
-      selfNarrative: ind.description,
-    }))).map((item) => ({
-      ...item,
-      itemType: 'behaviour' as const,
-      selfRating: Number(itemDrafts[item.itemId]?.rating || item.selfRating || 0) || item.selfRating,
-      selfNarrative: itemDrafts[item.itemId]?.narrative || item.selfNarrative,
-    }));
+    const competencyItems = competencyRows.map((item) => {
+      const draft = draftFor(item);
+      return {
+        ...item,
+        itemType: 'behaviour' as const,
+        selfRating: Number(draft.rating || 0) || undefined,
+        selfNarrative: draft.narrative || item.selfNarrative,
+        evidence: draft.evidence,
+      };
+    });
     return [...goalItems, ...competencyItems];
   };
 
@@ -311,15 +356,15 @@ export default function SelfAppraisalView({ payload, onAction, busy }: Props) {
       id: 'Competencies' as TabId,
       title: 'Competencies',
       done: ratedBehaviours,
-      total: Math.max(behaviours.length || behaviourItems.length, 1),
-      detail: ratedBehaviours >= Math.max(behaviours.length, behaviourItems.length) ? 'All competencies rated' : 'Complete competency ratings',
+      total: Math.max(competencyRows.length, 1),
+      detail: ratedBehaviours >= competencyRows.length && competencyRows.length > 0 ? 'All competencies rated' : 'Complete competency ratings',
     },
     {
       id: 'Contributions' as TabId,
       title: 'Contributions',
-      done: evidenceCount > 0 ? 1 : 0,
-      total: 1,
-      detail: evidenceCount ? `${evidenceCount} evidence linked` : 'Add contribution evidence',
+      done: contributionCount,
+      total: Math.max(goalRows.length, 1),
+      detail: contributionCount ? `${contributionCount} of ${Math.max(goalRows.length, 1)} narratives captured` : 'Document contributions against goals',
     },
     {
       id: 'Overall Reflection' as TabId,
@@ -332,8 +377,8 @@ export default function SelfAppraisalView({ payload, onAction, busy }: Props) {
 
   const selectedGoal = selected?.goal;
   const selectedItem = selected?.item;
-  const selectedDraft = selectedItem ? itemDrafts[selectedItem.itemId] : undefined;
-  const selectedRating = Number(selectedDraft?.rating || selectedItem?.selfRating || 0);
+  const selectedDraft = selectedItem ? draftFor(selectedItem) : undefined;
+  const selectedRating = Number(selectedDraft?.rating || 0);
   const selectedActual = selectedGoal
     ? Math.round((selectedGoal.progressPercent / 100) * Number(selectedGoal.keyResults[0]?.target || 100))
     : Number(selectedItem?.achievement || 0);
@@ -528,7 +573,7 @@ export default function SelfAppraisalView({ payload, onAction, busy }: Props) {
                   <div className="mt-4 rounded-lg bg-[#f9fafb] p-3">
                     <p className="text-[10px] font-bold uppercase tracking-wide text-[#667085]">Narrative preview</p>
                     <p className="mt-1 text-[12px] font-medium text-[#344054]">
-                      {selectedDraft?.narrative || selectedItem?.selfNarrative || selectedGoal?.description || 'No narrative captured yet. Add evidence-based commentary for this goal.'}
+                      {selectedDraft?.narrative || selectedGoal?.description || 'No contribution narrative captured yet. Add achievements on the Contributions tab.'}
                     </p>
                   </div>
 
@@ -568,14 +613,11 @@ export default function SelfAppraisalView({ payload, onAction, busy }: Props) {
                     {canEdit ? (
                       <select
                         className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-2 text-[11px]"
-                        value={selectedDraft?.rating || (selectedItem?.selfRating != null ? String(selectedItem.selfRating) : '')}
-                        onChange={(e) => setItemDrafts((current) => ({
-                          ...current,
-                          [selectedItem!.itemId]: {
-                            rating: e.target.value,
-                            narrative: current[selectedItem!.itemId]?.narrative || selectedItem?.selfNarrative || '',
-                          },
-                        }))}
+                        value={selectedDraft?.rating || ''}
+                        onChange={(e) => patchItemDraft(selectedItem!.itemId, { rating: e.target.value }, {
+                          narrative: selectedItem?.selfNarrative || '',
+                          evidence: selectedItem?.evidence || '',
+                        })}
                       >
                         <option value="">Select rating</option>
                         {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
@@ -586,9 +628,14 @@ export default function SelfAppraisalView({ payload, onAction, busy }: Props) {
                   <div className="mt-4">
                     <p className="text-[11px] font-bold">Evidence</p>
                     <div className="mt-2 space-y-2">
-                      {(selectedItem?.evidence ? [selectedItem.evidence] : ['No file linked yet — attach evidence when saving narrative']).map((file) => (
+                      {(selectedDraft?.evidence || selectedItem?.evidence
+                        ? [selectedDraft?.evidence || selectedItem?.evidence || '']
+                        : ['No evidence linked yet — add notes or links on the Evidence tab']
+                      ).map((file) => (
                         <div key={file} className="flex items-center gap-2 rounded-lg border border-[#eaecf0] px-3 py-2 text-[11px]">
-                          {/\.xlsx|excel/i.test(file) ? <FileSpreadsheet className="h-4 w-4 text-[#039855]" /> : <FileText className="h-4 w-4 text-[#d92d20]" />}
+                          {/\.xlsx|excel/i.test(file) ? <FileSpreadsheet className="h-4 w-4 text-[#039855]" />
+                            : /^https?:\/\//i.test(file) ? <Link2 className="h-4 w-4 text-[#1570ef]" />
+                              : <FileText className="h-4 w-4 text-[#d92d20]" />}
                           <span className="flex-1 truncate font-semibold text-[#344054]">{file}</span>
                         </div>
                       ))}
@@ -634,7 +681,7 @@ export default function SelfAppraisalView({ payload, onAction, busy }: Props) {
                 <ul className="mt-4 space-y-2 text-[11px]">
                   {[
                     ['Goal ratings complete', ratedGoals >= goalRows.length && goalRows.length > 0],
-                    ['Competency ratings complete', ratedBehaviours >= Math.max(behaviours.length, behaviourItems.length)],
+                    ['Competency ratings complete', ratedBehaviours >= competencyRows.length && competencyRows.length > 0],
                     ['Overall reflection captured', reflectionDone],
                     ['Evidence linked', evidenceCount > 0],
                   ].map(([label, ok]) => (
@@ -720,42 +767,210 @@ export default function SelfAppraisalView({ payload, onAction, busy }: Props) {
         <section className="rounded-xl border border-[#eaecf0] bg-white p-5 shadow-sm">
           <h2 className="mb-4 text-lg font-bold">Competencies</h2>
           <div className="space-y-3">
-            {(behaviourItems.length ? behaviourItems : behaviours.map((ind) => ({
-              itemId: ind.id,
-              itemType: 'behaviour' as const,
-              title: ind.name,
-              weight: ind.weight,
-              selfRating: undefined,
-              selfNarrative: ind.description,
-            }))).map((item) => (
-              <div key={item.itemId} className="rounded-lg border border-[#eaecf0] p-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="text-[12px] font-bold">{item.title}</p>
-                    <p className="mt-1 text-[10px] font-semibold text-[#667085]">Weight {item.weight}% · {item.selfNarrative || 'Competency indicator'}</p>
+            {competencyRows.map((item) => {
+              const draft = draftFor(item);
+              return (
+                <div key={item.itemId} className="rounded-lg border border-[#eaecf0] p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[12px] font-bold">{item.title}</p>
+                      <p className="mt-1 text-[10px] font-semibold text-[#667085]">Weight {item.weight}% · {item.selfNarrative || 'Competency indicator'}</p>
+                    </div>
+                    <select
+                      disabled={!canEdit}
+                      className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-2 text-[11px] disabled:opacity-50"
+                      value={draft.rating}
+                      onChange={(e) => patchItemDraft(item.itemId, { rating: e.target.value }, {
+                        narrative: item.selfNarrative || '',
+                        evidence: item.evidence || '',
+                      })}
+                    >
+                      <option value="">Rate 1–5</option>
+                      {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
                   </div>
-                  <select
-                    disabled={!canEdit}
-                    className="h-9 rounded-lg border border-[#d0d5dd] bg-white px-2 text-[11px] disabled:opacity-50"
-                    value={itemDrafts[item.itemId]?.rating || (item.selfRating != null ? String(item.selfRating) : '')}
-                    onChange={(e) => setItemDrafts((current) => ({
-                      ...current,
-                      [item.itemId]: { rating: e.target.value, narrative: current[item.itemId]?.narrative || item.selfNarrative || '' },
-                    }))}
-                  >
-                    <option value="">Rate 1–5</option>
-                    {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
-                  </select>
                 </div>
-              </div>
-            ))}
-            {!behaviours.length && !behaviourItems.length ? (
+              );
+            })}
+            {!competencyRows.length ? (
               <p className="text-sm font-semibold text-[#667085]">No competency indicators configured.</p>
             ) : null}
           </div>
           <button type="button" disabled={busy || !canEdit} onClick={() => void saveDraft()} className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#1570ef] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
             <Save className="h-3.5 w-3.5" /> Save competency ratings
           </button>
+        </section>
+      ) : activeTab === 'Contributions' ? (
+        <section className="rounded-xl border border-[#eaecf0] bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold">Contributions</h2>
+              <p className="mt-1 text-[11px] font-medium text-[#667085]">
+                Document achievements against your live goals for {activeCycle?.name || 'this cycle'}. Narratives save with your self appraisal draft.
+              </p>
+            </div>
+            <StatusPill label={`${contributionCount} of ${Math.max(goalRows.length, 0)} complete`} />
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {goalRows.map(({ item, goal }) => {
+              const draft = draftFor(item);
+              const progress = goal?.progressPercent ?? Number(item.achievement || 0);
+              const primaryKr = goal?.keyResults?.[0];
+              return (
+                <article key={item.itemId} className="rounded-xl border border-[#eaecf0] p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Target className="h-4 w-4 text-[#1570ef]" />
+                        <p className="text-[13px] font-bold">{item.title || goal?.title}</p>
+                        <StatusPill label={progress >= 70 ? 'On track' : progress > 0 ? 'In progress' : 'Not started'} />
+                      </div>
+                      <p className="mt-1 text-[10px] font-semibold text-[#667085]">
+                        {parentObjective(goal)} · Weight {item.weight || goal?.weight || 0}%
+                        {goal?.dueDate ? ` · Due ${safeFmtDate(goal.dueDate)}` : ''}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-semibold text-[#667085]">Live progress</p>
+                      <p className="text-lg font-bold text-[#101828]">{progress}%</p>
+                    </div>
+                  </div>
+
+                  {primaryKr ? (
+                    <div className="mt-3 rounded-lg bg-[#f9fafb] px-3 py-2 text-[11px]">
+                      <p className="font-bold text-[#344054]">Primary KR: {primaryKr.title}</p>
+                      <p className="mt-0.5 font-semibold text-[#667085]">
+                        {primaryKr.actual != null ? primaryKr.actual : Math.round((progress / 100) * Number(primaryKr.target || 100))}
+                        {' / '}
+                        {primaryKr.target}{primaryKr.unit || ''}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-3">
+                    <div className="mb-1 flex justify-between text-[10px] font-semibold text-[#667085]">
+                      <span>Goal progress</span>
+                      <span>{progress}%</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-[#f2f4f7]">
+                      <div className="h-full rounded-full bg-[#1570ef]" style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+                    </div>
+                  </div>
+
+                  <label className="mt-3 block text-[11px] font-semibold text-[#344054]">
+                    Contribution / achievements
+                    <textarea
+                      className="mt-1 min-h-[88px] w-full rounded-lg border border-[#d0d5dd] px-3 py-2 text-sm disabled:bg-[#f9fafb]"
+                      disabled={!canEdit}
+                      value={draft.narrative}
+                      placeholder="What did you deliver against this goal? Include outcomes, dates, and measurable impact."
+                      onChange={(e) => patchItemDraft(item.itemId, { narrative: e.target.value }, {
+                        rating: item.selfRating != null ? String(item.selfRating) : '',
+                        evidence: item.evidence || '',
+                      })}
+                    />
+                  </label>
+                </article>
+              );
+            })}
+            {!goalRows.length ? (
+              <div className="rounded-xl border border-dashed border-[#d0d5dd] px-4 py-10 text-center text-sm font-semibold text-[#667085]">
+                No employee goals in this cycle yet. Assign goals in OKR &amp; KPI Management, then return here to document contributions.
+              </div>
+            ) : null}
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button type="button" disabled={busy || !canEdit || !goalRows.length} onClick={() => void saveDraft()} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#1570ef] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
+              <Save className="h-3.5 w-3.5" /> Save contributions
+            </button>
+            <button type="button" onClick={() => setActiveTab('Evidence')} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#d0d5dd] px-3 text-[11px] font-semibold">
+              <Paperclip className="h-3.5 w-3.5" /> Continue to Evidence
+            </button>
+          </div>
+        </section>
+      ) : activeTab === 'Evidence' ? (
+        <section className="rounded-xl border border-[#eaecf0] bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold">Evidence</h2>
+              <p className="mt-1 text-[11px] font-medium text-[#667085]">
+                Link supporting notes, deliverables, and URLs for each appraisal item. Stored on your self assessment in HRIS.
+              </p>
+            </div>
+            <StatusPill label={`${evidenceCount} item${evidenceCount === 1 ? '' : 's'} with evidence`} />
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            {[
+              ['Items with evidence', String(evidenceCount)],
+              ['Goals covered', String(goalRows.filter((row) => Boolean(draftFor(row.item).evidence.trim())).length)],
+              ['Competencies covered', String(competencyRows.filter((item) => Boolean(draftFor(item).evidence.trim())).length)],
+            ].map(([label, value]) => (
+              <article key={label} className="rounded-xl border border-[#eaecf0] bg-[#f9fafb] p-3">
+                <p className="text-[10px] font-semibold text-[#667085]">{label}</p>
+                <p className="mt-1 text-xl font-bold">{value}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {evidenceRows.map(({ item, source, subtitle }) => {
+              const draft = draftFor(item);
+              const hasEvidence = Boolean(draft.evidence.trim());
+              return (
+                <article key={`${source}-${item.itemId}`} className="rounded-xl border border-[#eaecf0] p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Paperclip className="h-4 w-4 text-[#1570ef]" />
+                        <p className="text-[12px] font-bold">{item.title}</p>
+                        <StatusPill label={source} />
+                        <StatusPill label={hasEvidence ? 'Linked' : 'Missing'} />
+                      </div>
+                      <p className="mt-1 text-[10px] font-semibold text-[#667085]">{subtitle}</p>
+                    </div>
+                  </div>
+                  <label className="mt-3 block text-[11px] font-semibold text-[#344054]">
+                    Evidence notes / links
+                    <textarea
+                      className="mt-1 min-h-[80px] w-full rounded-lg border border-[#d0d5dd] px-3 py-2 text-sm disabled:bg-[#f9fafb]"
+                      disabled={!canEdit}
+                      value={draft.evidence}
+                      placeholder="Deliverables, dates, document names, or https:// links"
+                      onChange={(e) => patchItemDraft(item.itemId, { evidence: e.target.value }, {
+                        rating: item.selfRating != null ? String(item.selfRating) : '',
+                        narrative: item.selfNarrative || '',
+                      })}
+                    />
+                  </label>
+                  {hasEvidence ? (
+                    <div className="mt-2 flex items-center gap-2 rounded-lg border border-[#eaecf0] bg-[#f9fafb] px-3 py-2 text-[11px]">
+                      {/^https?:\/\//i.test(draft.evidence) ? <Link2 className="h-4 w-4 text-[#1570ef]" />
+                        : /\.xlsx|excel/i.test(draft.evidence) ? <FileSpreadsheet className="h-4 w-4 text-[#039855]" />
+                          : <FileText className="h-4 w-4 text-[#667085]" />}
+                      <span className="truncate font-semibold text-[#344054]">{draft.evidence.split('\n')[0]}</span>
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })}
+            {!evidenceRows.length ? (
+              <div className="rounded-xl border border-dashed border-[#d0d5dd] px-4 py-10 text-center text-sm font-semibold text-[#667085]">
+                No appraisal items yet. Assign goals or save a draft to scaffold competency indicators, then attach evidence.
+              </div>
+            ) : null}
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button type="button" disabled={busy || !canEdit || !evidenceRows.length} onClick={() => void saveDraft()} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#1570ef] px-3 text-[11px] font-semibold text-white disabled:opacity-50">
+              <Save className="h-3.5 w-3.5" /> Save evidence
+            </button>
+            <button type="button" onClick={() => setActiveTab('Overall Reflection')} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#d0d5dd] px-3 text-[11px] font-semibold">
+              Continue to reflection
+            </button>
+          </div>
         </section>
       ) : activeTab === 'History' ? (
         <section className="rounded-xl border border-[#eaecf0] bg-white p-5 shadow-sm">

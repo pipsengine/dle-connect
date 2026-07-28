@@ -645,11 +645,15 @@ export default function CompanyObjectivesView({ payload, onAction, busy }: Props
                     </table>
                   </div>
                 ) : (
-                  <p className="mt-4 rounded-lg border border-dashed border-[#eaecf0] bg-[#f8fafc] px-3 py-4 text-[11px] font-semibold text-[#98a2b3]">No cascaded goals linked yet. Link employee goals via Goal Cascading.</p>
+                  <p className="mt-4 rounded-lg border border-dashed border-[#eaecf0] bg-[#f8fafc] px-3 py-4 text-[11px] font-semibold text-[#98a2b3]">No cascaded goals linked yet. Assign employee goals under this objective from Goal Cascading or OKR & KPI Management.</p>
                 )}
               </section>
             ))}
-            {!cascadeByObjective.length ? <p className="rounded-xl border border-dashed border-[#eaecf0] bg-[#f8fafc] px-4 py-10 text-center text-sm font-semibold text-[#98a2b3]">No objectives to cascade.</p> : null}
+            {!cascadeByObjective.length ? (
+              <p className="rounded-xl border border-dashed border-[#eaecf0] bg-[#f8fafc] px-4 py-10 text-center text-sm font-semibold text-[#98a2b3]">
+                No company objectives yet. Create objectives, then cascade employee goals from Goal Cascading / OKR Management.
+              </p>
+            ) : null}
           </div>
         </div>
       ) : null}
