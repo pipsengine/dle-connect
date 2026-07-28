@@ -20,7 +20,6 @@ import {
   Target,
   Trophy,
   Upload,
-  Users,
 } from 'lucide-react';
 import type { AssessmentItem, EmployeeGoal, PerformanceWorkspacePayload } from '@/lib/performance-domain-types';
 import { fmtDate, fmtDateTime } from './performance-management-ui';
@@ -985,18 +984,7 @@ export default function SelfAppraisalView({ payload, onAction, busy }: Props) {
             {!myAssessment?.history?.length ? <p className="text-sm font-semibold text-[#667085]">No history yet.</p> : null}
           </ul>
         </section>
-      ) : (
-        <section className="rounded-xl border border-[#eaecf0] bg-white px-6 py-16 text-center shadow-sm">
-          <Users className="mx-auto h-10 w-10 text-[#1570ef]" />
-          <h2 className="mt-4 text-xl font-bold">{activeTab}</h2>
-          <p className="mx-auto mt-2 max-w-lg text-sm text-[#667085]">
-            Use Save draft to persist progress. This section supports {activeTab.toLowerCase()} for your self appraisal.
-          </p>
-          <button type="button" onClick={() => setActiveTab('Overview')} className="mt-6 inline-flex h-9 items-center rounded-lg bg-[#1570ef] px-4 text-[11px] font-semibold text-white">
-            Back to Overview
-          </button>
-        </section>
-      )}
+      ) : null}
     </div>
   );
 }
