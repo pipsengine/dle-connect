@@ -133,6 +133,8 @@ type PayrollRecord = {
 type PayrollRun = {
   id: string;
   period: string;
+  pack?: 'salaried' | 'daily-rate';
+  packLabel?: string;
   status: PayrollRunStatus;
   employeeCount: number;
   grossPay: number;
@@ -175,6 +177,8 @@ type PayrollPayload = {
   access?: { financeOnlyAccess?: boolean; salaryReviewAccess?: boolean };
   period: string;
   periodLabel: string;
+  pack?: 'salaried' | 'daily-rate';
+  packLabel?: string;
   dataMode?: 'live' | 'snapshot' | 'run-header' | 'pending';
   payrollComputed?: boolean;
   isViewingActivePeriod?: boolean;
@@ -199,6 +203,7 @@ type PayrollPayload = {
     deferredExceptionCount?: number;
   };
   runs: PayrollRun[];
+  packRuns?: PayrollRun[];
   records: PayrollRecord[];
   exceptions: { id: string; employeeId: string; employeeName: string; issue: string; severity: 'Low' | 'Medium' | 'High'; owner: string }[];
   toleranceMode?: boolean;
@@ -236,8 +241,15 @@ type PayrollPayload = {
   currentRun?: PayrollRun | null;
 };
 
-const payrollRunFor = (payload: PayrollPayload | null) =>
-  payload?.currentRun || payload?.runs.find((run) => run.period === payload?.period) || null;
+const payrollRunFor = (payload: PayrollPayload | null, pack?: 'salaried' | 'daily-rate' | null) => {
+  const selectedPack = pack || payload?.pack || 'salaried';
+  const fromPackRuns = (payload?.packRuns || []).find((run) => (run.pack || 'salaried') === selectedPack && run.period === payload?.period);
+  if (fromPackRuns) return fromPackRuns;
+  if (payload?.currentRun && ((payload.currentRun.pack || payload.pack || 'salaried') === selectedPack)) return payload.currentRun;
+  return payload?.runs.find((run) => run.period === payload?.period && (run.pack || 'salaried') === selectedPack)
+    || payload?.runs.find((run) => run.period === payload?.period)
+    || null;
+};
 
 type PayrollException = PayrollPayload['exceptions'][number];
 type PayrollAuditEntry = {
@@ -1776,6 +1788,8 @@ function ProcessPayrollWorkspace({
   onRegisterViewRequestHandled,
   viewPeriod,
   onSelectPeriod,
+  viewPack = 'salaried',
+  onSelectPack,
 }: {
   payload: PayrollPayload | null;
   canViewMoney: boolean;
@@ -1789,6 +1803,8 @@ function ProcessPayrollWorkspace({
   onRegisterViewRequestHandled?: () => void;
   viewPeriod?: string | null;
   onSelectPeriod?: (period: string) => void;
+  viewPack?: 'salaried' | 'daily-rate';
+  onSelectPack?: (pack: 'salaried' | 'daily-rate') => void;
 }) {
   const [processView, setProcessView] = useState<'ready' | 'issues' | 'outputs' | 'audit'>('ready');
   const [registerQuery, setRegisterQuery] = useState('');
@@ -1801,7 +1817,7 @@ function ProcessPayrollWorkspace({
       document.getElementById('payroll-processing-register')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
   }, [registerViewRequest, onRegisterViewRequestHandled]);
-  const currentRun = payrollRunFor(payload);
+  const currentRun = payrollRunFor(payload, viewPack);
   const status = currentRun?.status || payload?.workflow?.currentStatus || 'Draft';
   const records = payload?.records || [];
   const readyRows = records.filter((record) => record.payrollStatus === 'Ready');
@@ -1871,6 +1887,19 @@ function ProcessPayrollWorkspace({
   const rerunStep = createRunAuth.allowed && status !== 'Closed' ? workflowSteps.find((step) => step.id === 'create-run') || { id: 'create-run', label: 'Run Payroll' } : null;
   const rerunLabel = computedStatuses.includes(status) ? 'Re-run Payroll' : 'Run Payroll';
   const completedCount = workflowSteps.filter((step) => step.done).length;
+  const packCards = ([
+    { pack: 'salaried' as const, packLabel: 'Salaried / Stipend' },
+    { pack: 'daily-rate' as const, packLabel: 'Daily Rate' },
+  ]).map((item) => {
+    const run = (payload?.packRuns || []).find((row) => (row.pack || 'salaried') === item.pack && row.period === payload?.period)
+      || (viewPack === item.pack ? currentRun : null);
+    return {
+      ...item,
+      status: run?.status || 'Draft',
+      netPay: run?.netPay ?? (viewPack === item.pack ? payload?.summary.netPay : null) ?? 0,
+      employeeCount: run?.employeeCount ?? (viewPack === item.pack ? payload?.summary.payrollEligible : 0) ?? 0,
+    };
+  });
 
   const readinessData = [
     { name: 'Ready', value: payload?.summary.readyEmployees || 0, fill: '#16a34a' },
@@ -2038,29 +2067,53 @@ function ProcessPayrollWorkspace({
             </div>
           </div>
 
-          <div className="mt-5 flex flex-col gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-end">
-            {rerunStep ? (
-              <button
-                type="button"
-                onClick={() => fire('create-run')}
-                disabled={busyAction === 'create-run'}
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 hover:bg-slate-50"
-              >
-                <RefreshCcw className={`h-4 w-4 ${busyAction === 'create-run' ? 'animate-spin' : ''}`} />
-                {rerunLabel}
-              </button>
-            ) : null}
-            {nextStep ? (
-              <button
-                type="button"
-                onClick={() => fire(nextStep.id)}
-                disabled={busyAction === nextStep.id}
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-violet-700 px-5 text-sm font-bold text-white hover:bg-violet-800"
-              >
-                {busyAction === nextStep.id ? 'Working...' : `Next: ${nextStep.label}`}
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            ) : null}
+          <div className="mt-5 flex flex-col gap-3 border-t border-slate-100 pt-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+              {packCards.map((item) => {
+                const active = viewPack === item.pack;
+                return (
+                  <button
+                    key={item.pack}
+                    type="button"
+                    onClick={() => onSelectPack?.(item.pack)}
+                    className={`min-w-[180px] flex-1 rounded-xl border px-4 py-2.5 text-left transition sm:flex-none ${
+                      active
+                        ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                        : 'border-slate-200 bg-white text-slate-800 hover:border-blue-300'
+                    }`}
+                  >
+                    <div className="text-xs font-extrabold">{item.packLabel}</div>
+                    <div className={`mt-1 text-[11px] font-semibold ${active ? 'text-blue-100' : 'text-slate-500'}`}>
+                      {item.status} · {money(item.netPay, canViewMoney)} · {number(item.employeeCount)} staff
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+              {rerunStep ? (
+                <button
+                  type="button"
+                  onClick={() => fire('create-run')}
+                  disabled={busyAction === 'create-run'}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 hover:bg-slate-50"
+                >
+                  <RefreshCcw className={`h-4 w-4 ${busyAction === 'create-run' ? 'animate-spin' : ''}`} />
+                  {rerunLabel}
+                </button>
+              ) : null}
+              {nextStep ? (
+                <button
+                  type="button"
+                  onClick={() => fire(nextStep.id)}
+                  disabled={busyAction === nextStep.id}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-violet-700 px-5 text-sm font-bold text-white hover:bg-violet-800"
+                >
+                  {busyAction === nextStep.id ? 'Working...' : `Next: ${nextStep.label}`}
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
           </div>
         </section>
 
@@ -4266,6 +4319,7 @@ export default function PayrollManagementClient({
   const [registerViewRequest, setRegisterViewRequest] = useState<'ready' | 'issues' | null>(null);
   const [fixIssue, setFixIssue] = useState<PayrollException | null>(null);
   const [viewPeriod, setViewPeriod] = useState<string | null>(null);
+  const [viewPack, setViewPack] = useState<'salaried' | 'daily-rate'>('salaried');
   const loadSeq = useRef(0);
 
   const section = sectionById(sectionId);
@@ -4287,7 +4341,7 @@ export default function PayrollManagementClient({
     }
     return sections;
   }, [financeOnlyAccess, salaryReviewAccess]);
-  const currentRun = payrollRunFor(payload);
+  const currentRun = payrollRunFor(payload, viewPack);
   const lastLoaded = payload?.generatedAt || initialNow;
 
   const openSection = (targetSection: SectionId, targetTab?: string) => {
@@ -4317,13 +4371,17 @@ export default function PayrollManagementClient({
     });
   };
 
-  const load = async (periodOverride?: string | null) => {
+  const load = async (periodOverride?: string | null, packOverride?: 'salaried' | 'daily-rate' | null) => {
     const seq = ++loadSeq.current;
     setLoading(true);
     setError('');
     try {
       const periodQuery = periodOverride ?? viewPeriod;
-      const url = periodQuery ? `/api/hris/payroll-management?period=${encodeURIComponent(periodQuery)}` : '/api/hris/payroll-management';
+      const packQuery = packOverride ?? viewPack;
+      const params = new URLSearchParams();
+      if (periodQuery) params.set('period', periodQuery);
+      if (packQuery) params.set('pack', packQuery);
+      const url = params.toString() ? `/api/hris/payroll-management?${params.toString()}` : '/api/hris/payroll-management';
       const res = await fetch(url, { cache: 'no-store' });
       const json = await readApiResponse<PayrollPayload>(res);
       if (seq !== loadSeq.current) return;
@@ -4331,6 +4389,7 @@ export default function PayrollManagementClient({
       setPayload(json.data);
       setRole(json.data.role);
       setViewPeriod(json.data.period);
+      if (json.data.pack === 'daily-rate' || json.data.pack === 'salaried') setViewPack(json.data.pack);
     } catch (e) {
       if (seq !== loadSeq.current) return;
       setError(e instanceof Error ? e.message : 'Unable to load payroll management');
@@ -4417,7 +4476,8 @@ export default function PayrollManagementClient({
         body: JSON.stringify({
           action,
           period,
-          runId: payrollRunFor(payload)?.id,
+          pack: viewPack,
+          runId: payrollRunFor(payload, viewPack)?.id,
           reason,
           report: reportOptions?.report,
           reportName: reportOptions?.reportName,
@@ -4431,7 +4491,7 @@ export default function PayrollManagementClient({
       if (json.data?.run && ['generate-bank-schedule', 'generate-statutory-schedules'].includes(action)) {
         mergePayrollRun(json.data.run);
       } else {
-        await load(period || null);
+        await load(period || null, viewPack);
       }
       return true;
     } catch (e) {
@@ -4489,6 +4549,8 @@ export default function PayrollManagementClient({
           action: 'exclude-from-payroll-run',
           employeeId,
           period: payload?.period || viewPeriod || undefined,
+          pack: viewPack,
+          runId: payrollRunFor(payload, viewPack)?.id,
           reason: 'Unconfigured daily-rate contract removed from payroll run.',
         }),
       });
@@ -4516,6 +4578,8 @@ export default function PayrollManagementClient({
         body: JSON.stringify({
           action: 'exclude-unconfigured-daily-rate-contracts',
           period: payload?.period || viewPeriod || undefined,
+          pack: viewPack,
+          runId: payrollRunFor(payload, viewPack)?.id,
           reason: 'Bulk removal of unconfigured daily-rate contract employees from payroll run.',
         }),
       });
@@ -5308,7 +5372,7 @@ export default function PayrollManagementClient({
                 onPeriodAction={(action, period, reason) => void runAction(action, reason, period)}
               />
             ) : activeTab.id === 'payroll-run' ? (
-              <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} registerViewRequest={registerViewRequest} onRegisterViewRequestHandled={() => setRegisterViewRequest(null)} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period); }} />
+              <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} registerViewRequest={registerViewRequest} onRegisterViewRequestHandled={() => setRegisterViewRequest(null)} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack); }} viewPack={viewPack} onSelectPack={(pack) => { setViewPack(pack); void load(viewPeriod, pack); }} />
             ) : (
               <FeaturePanel tab={activeTab} section={section} payload={payload} canViewMoney={canViewMoney} />
             )}
@@ -5474,7 +5538,7 @@ export default function PayrollManagementClient({
                   onPeriodAction={(action, period, reason) => void runAction(action, reason, period)}
                 />
               ) : (
-                <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period); }} />
+                <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack); }} viewPack={viewPack} onSelectPack={(pack) => { setViewPack(pack); void load(viewPeriod, pack); }} />
               )
             ) : (
               <FeaturePanel tab={activeTab} section={section} payload={payload} canViewMoney={canViewMoney} />

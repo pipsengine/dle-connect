@@ -263,6 +263,13 @@ export type CompetencyIndicator = {
   category: string;
   weight: number;
   anchors: string[];
+  type?: 'Behavioural' | 'Technical' | 'Functional' | 'Core';
+  status?: 'Active' | 'Draft' | 'Review' | 'Retired';
+  levels?: number;
+  rolesMapped?: number;
+  code?: string;
+  updatedAt?: string;
+  updatedBy?: string;
 };
 
 export type RaterAssignment = {

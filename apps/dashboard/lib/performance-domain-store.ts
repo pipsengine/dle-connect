@@ -24,6 +24,7 @@ import type {
   CalibrationCase,
   CheckIn,
   CompanyObjective,
+  CompetencyIndicator,
   CycleEligibility,
   DevelopmentPlan,
   EmployeeGoal,
@@ -127,14 +128,78 @@ const defaultConfig = (): PerformanceConfig => ({
   sectionWeights: { ...DEFAULT_SECTION_WEIGHTS },
   achievementCap: 100,
   anonymityThreshold: 3,
-  behaviourIndicators: DEFAULT_BEHAVIOUR_SCALE.map((row, index) => ({
-    id: `beh-${index + 1}`,
-    name: row.label,
-    description: row.anchor,
-    category: 'Company Values',
-    weight: 20,
-    anchors: [row.anchor],
-  })),
+  behaviourIndicators: [
+    {
+      id: 'comp-strategic-leadership',
+      code: 'CMP-LED-01',
+      name: 'Strategic Leadership',
+      description: 'Sets direction, aligns teams and drives enterprise outcomes.',
+      category: 'Leadership',
+      type: 'Behavioural',
+      weight: 20,
+      levels: 5,
+      status: 'Active',
+      rolesMapped: 0,
+      anchors: DEFAULT_BEHAVIOUR_SCALE.map((row) => row.anchor),
+      updatedAt: nowIso(),
+    },
+    {
+      id: 'comp-project-delivery',
+      code: 'CMP-OPS-01',
+      name: 'Project Delivery',
+      description: 'Plans, executes and closes work packages to agreed quality and schedule.',
+      category: 'Operations',
+      type: 'Technical',
+      weight: 20,
+      levels: 4,
+      status: 'Active',
+      rolesMapped: 0,
+      anchors: DEFAULT_BEHAVIOUR_SCALE.map((row) => row.anchor),
+      updatedAt: nowIso(),
+    },
+    {
+      id: 'comp-commercial-acumen',
+      code: 'CMP-COM-01',
+      name: 'Commercial Acumen',
+      description: 'Understands commercial drivers and applies sound business judgement.',
+      category: 'Commercial',
+      type: 'Functional',
+      weight: 20,
+      levels: 4,
+      status: 'Draft',
+      rolesMapped: 0,
+      anchors: DEFAULT_BEHAVIOUR_SCALE.map((row) => row.anchor),
+      updatedAt: nowIso(),
+    },
+    {
+      id: 'comp-digital-fluency',
+      code: 'CMP-DIG-01',
+      name: 'Digital Fluency',
+      description: 'Uses digital tools confidently to improve productivity and collaboration.',
+      category: 'Digital',
+      type: 'Core',
+      weight: 20,
+      levels: 5,
+      status: 'Review',
+      rolesMapped: 0,
+      anchors: DEFAULT_BEHAVIOUR_SCALE.map((row) => row.anchor),
+      updatedAt: nowIso(),
+    },
+    {
+      id: 'comp-hse-compliance',
+      code: 'CMP-HSE-01',
+      name: 'HSE & Compliance',
+      description: 'Upholds health, safety and regulatory standards in daily work.',
+      category: 'HSE & Compliance',
+      type: 'Core',
+      weight: 20,
+      levels: 5,
+      status: 'Active',
+      rolesMapped: 0,
+      anchors: DEFAULT_BEHAVIOUR_SCALE.map((row) => row.anchor),
+      updatedAt: nowIso(),
+    },
+  ],
 });
 
 const emptyState = (): PerformanceDomainState => ({
@@ -2620,7 +2685,73 @@ export const applyPerformanceAction = async (
         if (Array.isArray(data.ratingBands)) state.config.ratingBands = data.ratingBands as any;
         if (data.achievementCap != null) state.config.achievementCap = Number(data.achievementCap);
         if (data.anonymityThreshold != null) state.config.anonymityThreshold = Number(data.anonymityThreshold);
+        if (Array.isArray(data.behaviourIndicators)) {
+          state.config.behaviourIndicators = data.behaviourIndicators as any;
+        }
         pushAudit(state, { actor, actorRole, action: 'Updated performance configuration', entityType: 'PerformanceConfig', entityId: 'config' });
+        break;
+      }
+      case 'competency.upsert': {
+        const name = compact(data.name);
+        const category = compact(data.category) || 'Core Values';
+        if (!name) return fail('Competency name is required.');
+        const type = (compact(data.type) as CompetencyIndicator['type']) || 'Behavioural';
+        const status = (compact(data.status) as CompetencyIndicator['status']) || 'Draft';
+        const levels = Math.max(1, Math.min(5, Number(data.levels || 5)));
+        const weight = Number(data.weight || 0);
+        if (!Number.isFinite(weight) || weight <= 0 || weight > 100) return fail('Weight must be between 1 and 100.');
+        const anchors = Array.isArray(data.anchors)
+          ? (data.anchors as unknown[]).map((row) => compact(row)).filter(Boolean)
+          : DEFAULT_BEHAVIOUR_SCALE.map((row) => row.anchor);
+        const existing = state.config.behaviourIndicators.find((item) => item.id === data.id);
+        if (existing) {
+          Object.assign(existing, {
+            name,
+            description: compact(data.description) || existing.description,
+            category,
+            type,
+            status,
+            levels,
+            weight,
+            code: compact(data.code) || existing.code,
+            anchors: anchors.length ? anchors : existing.anchors,
+            rolesMapped: data.rolesMapped != null ? Number(data.rolesMapped) : existing.rolesMapped,
+            updatedAt: nowIso(),
+            updatedBy: actor,
+          });
+          pushAudit(state, { actor, actorRole, action: 'Updated competency', entityType: 'CompetencyIndicator', entityId: existing.id, after: name });
+        } else {
+          const code = compact(data.code) || `CMP-${String(state.config.behaviourIndicators.length + 1).padStart(3, '0')}`;
+          if (state.config.behaviourIndicators.some((item) => item.name.toLowerCase() === name.toLowerCase())) {
+            return fail(`Competency "${name}" already exists.`);
+          }
+          const row: CompetencyIndicator = {
+            id: id('comp'),
+            code,
+            name,
+            description: compact(data.description) || name,
+            category,
+            type,
+            status,
+            levels,
+            weight,
+            anchors: anchors.length ? anchors : DEFAULT_BEHAVIOUR_SCALE.map((row) => row.anchor),
+            rolesMapped: Number(data.rolesMapped || 0),
+            updatedAt: nowIso(),
+            updatedBy: actor,
+          };
+          state.config.behaviourIndicators.push(row);
+          pushAudit(state, { actor, actorRole, action: 'Created competency', entityType: 'CompetencyIndicator', entityId: row.id, after: name });
+        }
+        break;
+      }
+      case 'competency.retire': {
+        const item = state.config.behaviourIndicators.find((row) => row.id === data.id);
+        if (!item) return fail('Competency not found.');
+        item.status = 'Retired';
+        item.updatedAt = nowIso();
+        item.updatedBy = actor;
+        pushAudit(state, { actor, actorRole, action: 'Retired competency', entityType: 'CompetencyIndicator', entityId: item.id, after: item.name });
         break;
       }
       default:

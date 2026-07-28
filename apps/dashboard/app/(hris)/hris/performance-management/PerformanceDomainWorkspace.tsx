@@ -21,6 +21,7 @@ import ManagerAssessmentsView from './ManagerAssessmentsView';
 import MatrixProjectInputsView from './MatrixProjectInputsView';
 import CalibrationModerationView from './CalibrationModerationView';
 import ResultsApprovalView from './ResultsApprovalView';
+import CompetencyFrameworkView from './CompetencyFrameworkView';
 
 type Props = {
   route: string;
@@ -580,6 +581,10 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
     <ResultsApprovalView payload={payload} onAction={onAction} busy={busy} />
   );
 
+  const competencyFrameworkView = (
+    <CompetencyFrameworkView payload={payload} onAction={onAction} busy={busy} />
+  );
+
   const content = useMemo(() => {
     if (route.includes('performance-cycles') || route === 'planning') return cyclesView;
     if (route.includes('corporate-goals') || route.includes('company-objectives')) return companyObjectivesView;
@@ -589,6 +594,7 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
     if (route.includes('self-appraisal')) return selfAppraisalView;
     if (route.includes('supervisor-review')) return managerAssessmentsView;
     if (route.includes('mid-year')) return midYearReviewsView;
+    if (route.includes('competency-framework') || route.includes('behaviour-framework') || route.includes('rating-scales') || route === 'competencies') return competencyFrameworkView;
     if (route.includes('behaviour') || route.includes('competency')) return assessmentView('Behavioural');
     if (route.includes('project-manager-review') || route.includes('matrix')) return matrixProjectInputsView;
     if (route.includes('360')) return threeSixtyView;

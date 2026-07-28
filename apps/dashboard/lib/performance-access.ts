@@ -288,6 +288,8 @@ const requiresGlobal = new Set([
   'pip.activate',
   'probation.decide',
   'config.update',
+  'competency.upsert',
+  'competency.retire',
   'report.schedule',
   'report.run',
   'analytics.refresh',
@@ -313,7 +315,7 @@ export const assertPerformanceActionAllowed = (
     if (action.startsWith('cycle.') && !['HR Manager', 'HR Officer', 'Super Administrator'].includes(actor.performanceRole) && !hasAnyPermission(actor.permissions, ['performance.admin', 'performance.cycles'])) {
       return 'You are not authorized to manage performance cycles.';
     }
-    if (action === 'config.update' && !hasAnyPermission(actor.permissions, ['performance.admin']) && !['HR Officer', 'HR Manager', 'Super Administrator'].includes(actor.performanceRole)) {
+    if ((action === 'config.update' || action === 'competency.upsert' || action === 'competency.retire') && !hasAnyPermission(actor.permissions, ['performance.admin']) && !['HR Officer', 'HR Manager', 'Super Administrator'].includes(actor.performanceRole)) {
       return 'You are not authorized to change performance configuration.';
     }
     return null;

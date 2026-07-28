@@ -281,7 +281,8 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const period = url.searchParams.get('period') || undefined;
-    const payload = await buildManagementPayload(request, period);
+    const pack = url.searchParams.get('pack') || undefined;
+    const payload = await buildManagementPayload(request, period, pack);
     const report = compact(url.searchParams.get('report')) || 'payroll-register';
     const exportRecords = filterExportRecords(payload.records, url.searchParams.get('status'));
     if (url.searchParams.get('audit') === '1') return jsonOk({ auditTrail: payload.auditTrail });
