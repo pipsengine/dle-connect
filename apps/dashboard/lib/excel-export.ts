@@ -9,6 +9,11 @@ export type ExcelWorksheetInput = {
   subtitle?: string;
 };
 
+export type ExcelWorkbookInput = {
+  worksheets: ExcelWorksheetInput[];
+  generatedAt?: string;
+};
+
 const escapeHtml = (value: unknown) =>
   String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -76,6 +81,95 @@ export const buildExcelHtml = ({ title, sheetName, columns, rows, generatedAt, s
 };
 
 export const excelMimeType = 'application/vnd.ms-excel;charset=utf-8';
+
+const escapeXml = (value: unknown) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+const spreadsheetCell = (value: ExcelCell, style: 'Odd' | 'Even') => {
+  const normalized = cellText(value);
+  const numeric = typeof normalized === 'number' && Number.isFinite(normalized);
+  return `<Cell ss:StyleID="${numeric ? `${style}Number` : style}"><Data ss:Type="${numeric ? 'Number' : 'String'}">${escapeXml(normalized)}</Data></Cell>`;
+};
+
+/**
+ * SpreadsheetML workbook with one filterable, frozen, formatted table per sheet.
+ * This is used for multi-pack exports without adding a client-side Excel dependency.
+ */
+export const buildExcelWorkbookXml = ({ worksheets, generatedAt }: ExcelWorkbookInput) => {
+  const created = generatedAt || new Date().toISOString();
+  const usedNames = new Set<string>();
+  const sheets = worksheets.map((worksheet, sheetIndex) => {
+    const baseName = (worksheet.sheetName || worksheet.title || `Sheet ${sheetIndex + 1}`)
+      .replace(/[\\/?*[\]:]/g, ' ')
+      .slice(0, 31) || `Sheet ${sheetIndex + 1}`;
+    let sheetName = baseName;
+    let suffix = 2;
+    while (usedNames.has(sheetName)) {
+      const ending = ` ${suffix++}`;
+      sheetName = `${baseName.slice(0, 31 - ending.length)}${ending}`;
+    }
+    usedNames.add(sheetName);
+
+    const columns = worksheet.columns.length ? worksheet.columns : ['Result'];
+    const rows = worksheet.rows.length ? worksheet.rows : [columns.map((_, index) => index === 0 ? 'No records' : '')];
+    const columnCount = columns.length;
+    const headerRow = 4;
+    const lastRow = headerRow + rows.length;
+    const filterRange = `R${headerRow}C1:R${lastRow}C${columnCount}`;
+    const columnDefs = columns.map((column) => {
+      const width = Math.min(260, Math.max(85, column.length * 8 + 24));
+      return `<Column ss:AutoFitWidth="1" ss:Width="${width}"/>`;
+    }).join('');
+    const headerCells = columns
+      .map((column) => `<Cell ss:StyleID="Header"><Data ss:Type="String">${escapeXml(column)}</Data></Cell>`)
+      .join('');
+    const dataRows = rows.map((row, index) => {
+      const style = index % 2 ? 'Even' as const : 'Odd' as const;
+      return `<Row>${columns.map((_, columnIndex) => spreadsheetCell(row[columnIndex], style)).join('')}</Row>`;
+    }).join('');
+
+    return `<Worksheet ss:Name="${escapeXml(sheetName)}">
+ <Names><NamedRange ss:Name="_FilterDatabase" ss:RefersTo="='${escapeXml(sheetName.replace(/'/g, "''"))}'!${filterRange}" ss:Hidden="1"/></Names>
+ <Table ss:ExpandedColumnCount="${columnCount}" ss:ExpandedRowCount="${lastRow}" x:FullColumns="1" x:FullRows="1">
+  ${columnDefs}
+  <Row ss:Height="24"><Cell ss:StyleID="Title" ss:MergeAcross="${Math.max(0, columnCount - 1)}"><Data ss:Type="String">${escapeXml(worksheet.title)}</Data></Cell></Row>
+  <Row><Cell ss:StyleID="Meta" ss:MergeAcross="${Math.max(0, columnCount - 1)}"><Data ss:Type="String">${escapeXml(worksheet.subtitle || '')} · Generated ${escapeXml(worksheet.generatedAt || created)}</Data></Cell></Row>
+  <Row></Row>
+  <Row ss:Height="22">${headerCells}</Row>
+  ${dataRows}
+ </Table>
+ <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+  <Selected/><FreezePanes/><FrozenNoSplit/><SplitHorizontal="${headerRow}"/><TopRowBottomPane>${headerRow}</TopRowBottomPane><ActivePane>2</ActivePane>
+  <ProtectObjects>False</ProtectObjects><ProtectScenarios>False</ProtectScenarios>
+ </WorksheetOptions>
+ <AutoFilter x:Range="${filterRange}" xmlns="urn:schemas-microsoft-com:office:excel"/>
+</Worksheet>`;
+  }).join('');
+
+  return `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office"><Author>DLE Connect HRIS</Author><Created>${escapeXml(created)}</Created></DocumentProperties>
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal"><Alignment ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="11"/></Style>
+  <Style ss:ID="Title"><Font ss:FontName="Calibri" ss:Size="15" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#082F49" ss:Pattern="Solid"/></Style>
+  <Style ss:ID="Meta"><Font ss:FontName="Calibri" ss:Size="10" ss:Color="#075985"/><Interior ss:Color="#E0F2FE" ss:Pattern="Solid"/></Style>
+  <Style ss:ID="Header"><Alignment ss:Vertical="Center" ss:WrapText="1"/><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#0F4C81" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0B3A63"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0B3A63"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0B3A63"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0B3A63"/></Borders></Style>
+  <Style ss:ID="Odd"><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/></Borders></Style>
+  <Style ss:ID="Even" ss:Parent="Odd"><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/></Style>
+  <Style ss:ID="OddNumber" ss:Parent="Odd"><NumberFormat ss:Format="#,##0.00"/><Alignment ss:Horizontal="Right"/></Style>
+  <Style ss:ID="EvenNumber" ss:Parent="Even"><NumberFormat ss:Format="#,##0.00"/><Alignment ss:Horizontal="Right"/></Style>
+ </Styles>
+ ${sheets}
+</Workbook>`;
+};
 
 export const downloadExcelFile = (input: ExcelWorksheetInput & { fileName: string }) => {
   const blob = new Blob([buildExcelHtml(input)], { type: excelMimeType });

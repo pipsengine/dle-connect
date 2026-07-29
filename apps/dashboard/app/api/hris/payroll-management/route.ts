@@ -12,7 +12,7 @@ import { managementPermissions, payrollSessionContext, processingPermissions } f
 import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
 import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
 import { FINANCE_ONLY_PAYROLL_ACTIONS, hasPayrollSalaryReviewAccess, isFinancePayrollOnlyUser } from '@/lib/access/payroll-access';
-import { buildExcelHtml, excelMimeType } from '@/lib/excel-export';
+import { buildExcelHtml, buildExcelWorkbookXml, excelMimeType } from '@/lib/excel-export';
 import { buildSalarySetupExportReport } from '@/lib/payroll-salary-setup-export';
 import { buildPayrollReviewExportReport, previousPayrollPeriod } from '@/lib/payroll-review-export';
 import { readPayrollSnapshotsByPeriods } from '@/lib/payroll-run-store';
@@ -281,8 +281,8 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const period = url.searchParams.get('period') || undefined;
-    const pack = url.searchParams.get('pack') || undefined;
-    const payload = await buildManagementPayload(request, period, pack);
+    const requestedPack = url.searchParams.get('pack') || undefined;
+    const payload = await buildManagementPayload(request, period, requestedPack === 'all' ? 'salaried' : requestedPack);
     const report = compact(url.searchParams.get('report')) || 'payroll-register';
     const exportRecords = filterExportRecords(payload.records, url.searchParams.get('status'));
     if (url.searchParams.get('audit') === '1') return jsonOk({ auditTrail: payload.auditTrail });
@@ -309,14 +309,40 @@ export async function GET(request: Request) {
     }
     if (url.searchParams.get('format') === 'xls' || url.searchParams.get('format') === 'excel') {
       if (!payload.permissions.canExport) return jsonErr(403, 'Permission denied');
-      return new Response(buildExcelHtml({
-        title: exportTitle,
-        subtitle: exportSubtitle,
-        sheetName: reportTitle(report).slice(0, 31),
-        columns: reportData.columns,
-        rows: reportData.rows,
-      }), {
-        headers: { 'content-type': excelMimeType, 'content-disposition': `attachment; filename="${report}-${payload.period}.xls"` },
+      const packPayloads = requestedPack === 'all'
+        ? [
+            payload,
+            await buildManagementPayload(request, period, 'daily-rate'),
+          ]
+        : [payload];
+      const worksheets = await Promise.all(packPayloads.map(async (packPayload) => {
+        const packRecords = filterExportRecords(packPayload.records, url.searchParams.get('status'));
+        let packReportData = reportExport(packRecords, report);
+        if (report === 'payroll-review') {
+          const packPreviousPeriod = previousPayrollPeriod(packPayload.period);
+          const previousRecords = packPreviousPeriod ? await loadReviewRecordsForPeriod(packPreviousPeriod) : [];
+          packReportData = buildPayrollReviewExportReport(
+            packRecords,
+            previousRecords,
+            packPayload.periodLabel,
+            packPreviousPeriod || 'Previous Month',
+          );
+        }
+        return {
+          title: `${reportTitle(report)} - ${packPayload.periodLabel}`,
+          subtitle: `${packPayload.packLabel || 'Payroll'} pack · ${packRecords.length} records · ${packPayload.summary.exceptionCount} exceptions`,
+          sheetName: packPayload.pack === 'daily-rate' ? 'Daily Rate' : 'Salaried Stipend',
+          columns: packReportData.columns,
+          rows: packReportData.rows,
+        };
+      }));
+      const filePack = requestedPack === 'all' ? 'both-packs' : (payload.pack || 'salaried');
+      return new Response(buildExcelWorkbookXml({ worksheets }), {
+        headers: {
+          'content-type': excelMimeType,
+          'content-disposition': `attachment; filename="${report}-${payload.period}-${filePack}.xls"`,
+          'cache-control': 'no-store',
+        },
       });
     }
     if (url.searchParams.get('format') === 'pdf') {

@@ -1790,6 +1790,7 @@ function ProcessPayrollWorkspace({
   onSelectPeriod,
   viewPack = 'salaried',
   onSelectPack,
+  onExportBothExcel,
 }: {
   payload: PayrollPayload | null;
   canViewMoney: boolean;
@@ -1805,6 +1806,7 @@ function ProcessPayrollWorkspace({
   onSelectPeriod?: (period: string) => void;
   viewPack?: 'salaried' | 'daily-rate';
   onSelectPack?: (pack: 'salaried' | 'daily-rate') => void;
+  onExportBothExcel?: () => void;
 }) {
   const [processView, setProcessView] = useState<'ready' | 'issues' | 'outputs' | 'audit'>('ready');
   const [registerQuery, setRegisterQuery] = useState('');
@@ -2091,6 +2093,15 @@ function ProcessPayrollWorkspace({
               })}
             </div>
             <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+              <button
+                type="button"
+                onClick={onExportBothExcel}
+                disabled={!onExportBothExcel || !payload?.permissions.canExport}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 text-sm font-bold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                Export Both Excel
+              </button>
               {rerunStep ? (
                 <button
                   type="button"
@@ -4653,10 +4664,16 @@ export default function PayrollManagementClient({
     });
   };
 
-  const reportExportUrl = (format: 'csv' | 'xls' | 'pdf' | 'html', report = 'payroll-register', status = 'All') => {
+  const reportExportUrl = (
+    format: 'csv' | 'xls' | 'pdf' | 'html',
+    report = 'payroll-register',
+    status = 'All',
+    pack: 'salaried' | 'daily-rate' | 'all' = viewPack,
+  ) => {
     const params = new URLSearchParams({ format, report, status });
     const period = viewPeriod || payload?.period;
     if (period) params.set('period', period);
+    params.set('pack', pack);
     return `/api/hris/payroll-management?${params.toString()}`;
   };
 
@@ -4674,6 +4691,11 @@ export default function PayrollManagementClient({
   const exportReportExcel = (report = 'payroll-register') => {
     if (!ensureCanExport()) return;
     window.location.href = reportExportUrl('xls', report);
+  };
+
+  const exportBothPacksExcel = (report = 'payroll-register') => {
+    if (!ensureCanExport()) return;
+    window.location.href = reportExportUrl('xls', report, 'All', 'all');
   };
 
   const exportReportPdf = (report = 'payroll-register') => {
@@ -5372,7 +5394,7 @@ export default function PayrollManagementClient({
                 onPeriodAction={(action, period, reason) => void runAction(action, reason, period)}
               />
             ) : activeTab.id === 'payroll-run' ? (
-              <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} registerViewRequest={registerViewRequest} onRegisterViewRequestHandled={() => setRegisterViewRequest(null)} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack); }} viewPack={viewPack} onSelectPack={(pack) => { setViewPack(pack); void load(viewPeriod, pack); }} />
+              <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} registerViewRequest={registerViewRequest} onRegisterViewRequestHandled={() => setRegisterViewRequest(null)} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack); }} viewPack={viewPack} onSelectPack={(pack) => { setViewPack(pack); void load(viewPeriod, pack); }} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} />
             ) : (
               <FeaturePanel tab={activeTab} section={section} payload={payload} canViewMoney={canViewMoney} />
             )}
@@ -5538,7 +5560,7 @@ export default function PayrollManagementClient({
                   onPeriodAction={(action, period, reason) => void runAction(action, reason, period)}
                 />
               ) : (
-                <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack); }} viewPack={viewPack} onSelectPack={(pack) => { setViewPack(pack); void load(viewPeriod, pack); }} />
+                <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack); }} viewPack={viewPack} onSelectPack={(pack) => { setViewPack(pack); void load(viewPeriod, pack); }} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} />
               )
             ) : (
               <FeaturePanel tab={activeTab} section={section} payload={payload} canViewMoney={canViewMoney} />
