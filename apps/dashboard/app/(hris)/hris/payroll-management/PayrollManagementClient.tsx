@@ -4697,6 +4697,36 @@ export default function PayrollManagementClient({
     window.location.href = reportExportUrl('xls', report);
   };
 
+  const saveJournalMapping = async (
+    mappings: Array<{ component: string; accountCode: string; accountName: string; side: 'debit' | 'credit' }>,
+  ) => {
+    setBusyAction('save-journal-mapping');
+    setToast('');
+    try {
+      const period = viewPeriod || payload?.period || undefined;
+      const res = await fetch('/api/hris/payroll-management', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save-journal-mapping',
+          period,
+          pack: viewPack,
+          mappings,
+        }),
+      });
+      const json = await readApiResponse<{ message?: string; mappingComplete?: boolean }>(res);
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to save journal GL mapping');
+      setToast(json.data?.message || 'Payroll journal GL mapping saved.');
+      await load(period || null, viewPack);
+      return true;
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'Unable to save journal GL mapping');
+      return false;
+    } finally {
+      setBusyAction('');
+    }
+  };
+
   const exportBothPacksExcel = (report = 'payroll-register') => {
     if (!ensureCanExport()) return;
     window.location.href = reportExportUrl('xls', report, 'All', 'all');
@@ -4927,6 +4957,7 @@ export default function PayrollManagementClient({
           onExportExcel={() => exportReportExcel('bank-schedule')}
           onExportPdf={() => exportReportPdf('bank-schedule')}
           onExportJournalSage={() => exportReportExcel('journal-sage')}
+          onSaveJournalMapping={saveJournalMapping}
           busyAction={busyAction}
           onSelectTab={(tab) => {
             setActiveTabs((prev) => ({ ...prev, 'finance-integration': tab }));

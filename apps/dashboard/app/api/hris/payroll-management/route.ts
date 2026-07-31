@@ -13,7 +13,7 @@ import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
 import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
 import { FINANCE_ONLY_PAYROLL_ACTIONS, hasPayrollSalaryReviewAccess, isFinancePayrollOnlyUser } from '@/lib/access/payroll-access';
 import { buildExcelHtml, buildExcelWorkbookXml, excelMimeType } from '@/lib/excel-export';
-import { buildSageJournalCsv, buildSageJournalExportRows } from '@/lib/payroll-journal-service';
+import { buildSageJournalCsv, buildSageJournalExportRows, savePayrollJournalMappings } from '@/lib/payroll-journal-service';
 import { buildSalarySetupExportReport } from '@/lib/payroll-salary-setup-export';
 import { buildPayrollReviewExportReport, previousPayrollPeriod } from '@/lib/payroll-review-export';
 import { readPayrollSnapshotsByPeriods } from '@/lib/payroll-run-store';
@@ -456,6 +456,37 @@ export async function POST(request: Request) {
     invalidatePayrollEmployeeCache();
     await appendPayrollAudit({ user: actor, role, action, record: employeeId, oldValue: null, newValue: body.nhfApplicable ? 'NHF enabled' : 'NHF disabled', reason: reason || null, comment: comment || null, ip });
     return jsonOk({ option });
+  }
+
+  if (action === 'save-journal-mapping') {
+    if (!perms.canPost && !perms.canConfigure) return jsonErr(403, 'Permission denied');
+    const mappings = Array.isArray(body.mappings) ? body.mappings : [];
+    if (!mappings.length) return jsonErr(400, 'Provide payroll journal GL mappings to save.');
+    try {
+      const saved = await savePayrollJournalMappings({ mappings, actor });
+      await appendPayrollAudit({
+        user: actor,
+        role,
+        action: 'Saved payroll journal GL mapping',
+        record: period,
+        oldValue: null,
+        newValue: `${saved.mapping.filter((item) => item.configured).length}/${saved.mapping.length} components mapped`,
+        reason: reason || null,
+        comment: comment || 'Live GL mapping updated from Bank & Finance → Payroll Journal.',
+        ip,
+      });
+      return jsonOk({
+        mapping: saved.mapping,
+        mappingComplete: saved.mappingComplete,
+        updatedAt: saved.updatedAt,
+        updatedBy: saved.updatedBy,
+        message: saved.mappingComplete
+          ? 'Payroll journal GL mapping saved. All components are mapped.'
+          : `Payroll journal GL mapping saved. ${saved.mapping.filter((item) => item.configured).length} of ${saved.mapping.length} components mapped.`,
+      });
+    } catch (error) {
+      return jsonErr(400, error instanceof Error ? error.message : 'Unable to save payroll journal GL mapping.');
+    }
   }
 
   if (action === 'fix-payroll-setup') {

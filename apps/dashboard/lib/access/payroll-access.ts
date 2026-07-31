@@ -168,6 +168,8 @@ export const FINANCE_ONLY_PAYROLL_ACTIONS = new Set([
   'reconcile-bank-payment',
   'post-run',
   'export-journal-sage',
+  'save-journal-mapping',
+  'reverse-journal-posting',
   'finance-manager-approve',
   'generate-report',
   'export-pdf',

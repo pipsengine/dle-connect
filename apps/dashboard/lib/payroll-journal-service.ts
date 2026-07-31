@@ -29,6 +29,14 @@ export type PayrollJournalMappingItem = {
   accountName: string;
   side: 'debit' | 'credit';
   configured: boolean;
+  description?: string;
+};
+
+export type PayrollJournalMappingInput = {
+  component: string;
+  accountCode: string;
+  accountName: string;
+  side?: 'debit' | 'credit';
 };
 
 export type PayrollJournalPrerequisite = {
@@ -90,23 +98,41 @@ export type PayrollJournalWorkspace = {
 };
 
 type JournalStoreState = { batches: PayrollJournalBatch[] };
+type MappingStoreState = {
+  items: PayrollJournalMappingInput[];
+  updatedAt: string | null;
+  updatedBy: string | null;
+};
 
-const DATA_DIR = path.join(process.cwd(), 'apps', 'dashboard', 'data', 'hris');
+const resolveDashboardRoot = () => {
+  const cwd = process.cwd();
+  const dashboardSuffix = path.join('apps', 'dashboard');
+  return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
+};
+
+const DATA_DIR = path.join(resolveDashboardRoot(), 'data', 'hris');
 const JSON_PATH = path.join(DATA_DIR, 'payroll-journals.json');
+const MAPPING_JSON_PATH = path.join(DATA_DIR, 'payroll-journal-gl-mappings.json');
 const nowIso = () => new Date().toISOString();
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
+const compact = (value: unknown) => String(value || '').trim();
 
-const DEFAULT_MAPPINGS: Array<Omit<PayrollJournalMappingItem, 'configured'>> = [
-  { component: 'Gross Pay / Staff Cost', accountCode: '5100', accountName: 'Staff Salaries & Wages', side: 'debit' },
-  { component: 'Employer Pension Expense', accountCode: '5110', accountName: 'Employer Pension Expense', side: 'debit' },
-  { component: 'Employer Statutory Expense', accountCode: '5120', accountName: 'NSITF / ITF / Employer Statutory', side: 'debit' },
-  { component: 'PAYE Payable', accountCode: '2100', accountName: 'PAYE Tax Payable', side: 'credit' },
-  { component: 'Employee Pension Payable', accountCode: '2110', accountName: 'Employee Pension Payable', side: 'credit' },
-  { component: 'NHF Payable', accountCode: '2120', accountName: 'NHF Payable', side: 'credit' },
-  { component: 'Other Deductions Payable', accountCode: '2130', accountName: 'Other Payroll Deductions Payable', side: 'credit' },
-  { component: 'Employer Pension Payable', accountCode: '2140', accountName: 'Employer Pension Payable', side: 'credit' },
-  { component: 'Employer Statutory Payable', accountCode: '2150', accountName: 'Employer Statutory Payable', side: 'credit' },
-  { component: 'Net Salaries Payable', accountCode: '2200', accountName: 'Net Salaries / Bank Control', side: 'credit' },
+/** Component catalogue only — no GL codes. Finance maps live accounts in the UI. */
+export const PAYROLL_JOURNAL_MAPPING_CATALOGUE: Array<{
+  component: string;
+  side: 'debit' | 'credit';
+  description: string;
+}> = [
+  { component: 'Gross Pay / Staff Cost', side: 'debit', description: 'Staff cost / gross payroll expense' },
+  { component: 'Employer Pension Expense', side: 'debit', description: 'Employer pension expense' },
+  { component: 'Employer Statutory Expense', side: 'debit', description: 'NSITF / ITF / employer statutory expense' },
+  { component: 'PAYE Payable', side: 'credit', description: 'PAYE tax payable' },
+  { component: 'Employee Pension Payable', side: 'credit', description: 'Employee pension payable' },
+  { component: 'NHF Payable', side: 'credit', description: 'NHF payable' },
+  { component: 'Other Deductions Payable', side: 'credit', description: 'Loans and other payroll deductions payable' },
+  { component: 'Employer Pension Payable', side: 'credit', description: 'Employer pension liability' },
+  { component: 'Employer Statutory Payable', side: 'credit', description: 'Employer statutory liability' },
+  { component: 'Net Salaries Payable', side: 'credit', description: 'Net salaries / bank control' },
 ];
 
 let schemaReady = false;
@@ -129,6 +155,16 @@ CREATE TABLE [hris].[PayrollJournals] (
 );
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_PayrollJournals_PeriodPack' AND object_id = OBJECT_ID(N'[hris].[PayrollJournals]'))
   CREATE INDEX [IX_PayrollJournals_PeriodPack] ON [hris].[PayrollJournals] ([period_code], [pack], [status]);
+
+IF OBJECT_ID(N'[hris].[PayrollJournalGlMappings]', N'U') IS NULL
+CREATE TABLE [hris].[PayrollJournalGlMappings] (
+  [component] NVARCHAR(120) NOT NULL PRIMARY KEY,
+  [account_code] NVARCHAR(40) NOT NULL,
+  [account_name] NVARCHAR(200) NOT NULL,
+  [side] NVARCHAR(10) NOT NULL,
+  [updated_at] DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME(),
+  [updated_by] NVARCHAR(120) NULL
+);
 `);
   schemaReady = true;
 };
@@ -231,8 +267,191 @@ const saveJournalBatch = async (batch: PayrollJournalBatch) => {
   return batch;
 };
 
-export const defaultPayrollJournalMappings = (): PayrollJournalMappingItem[] =>
-  DEFAULT_MAPPINGS.map((item) => ({ ...item, configured: Boolean(item.accountCode && item.accountName) }));
+export const emptyPayrollJournalMappings = (): PayrollJournalMappingItem[] =>
+  PAYROLL_JOURNAL_MAPPING_CATALOGUE.map((item) => ({
+    component: item.component,
+    accountCode: '',
+    accountName: '',
+    side: item.side,
+    configured: false,
+    description: item.description,
+  }));
+
+/** @deprecated Use loadPayrollJournalMappings — kept as catalogue shell with no codes. */
+export const defaultPayrollJournalMappings = (): PayrollJournalMappingItem[] => emptyPayrollJournalMappings();
+
+const emptyMappingState = (): MappingStoreState => ({ items: [], updatedAt: null, updatedBy: null });
+
+const readMappingJson = async (): Promise<MappingStoreState> => {
+  try {
+    await access(MAPPING_JSON_PATH);
+    const raw = await readFile(MAPPING_JSON_PATH, 'utf8');
+    const parsed = JSON.parse(raw) as MappingStoreState;
+    return {
+      items: Array.isArray(parsed.items) ? parsed.items : [],
+      updatedAt: parsed.updatedAt || null,
+      updatedBy: parsed.updatedBy || null,
+    };
+  } catch {
+    return emptyMappingState();
+  }
+};
+
+const writeMappingJson = async (state: MappingStoreState) => {
+  await mkdir(DATA_DIR, { recursive: true });
+  await writeFile(MAPPING_JSON_PATH, JSON.stringify(state, null, 2), 'utf8');
+};
+
+const readMappingSql = async (): Promise<PayrollJournalMappingInput[]> => {
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) return [];
+  await ensureJournalSchema(pool);
+  const result = await pool.request().query(`
+SELECT [component], [account_code], [account_name], [side]
+FROM [hris].[PayrollJournalGlMappings]
+`);
+  return (result.recordset || []).map((row: {
+    component?: string;
+    account_code?: string;
+    account_name?: string;
+    side?: string;
+  }) => ({
+    component: compact(row.component),
+    accountCode: compact(row.account_code),
+    accountName: compact(row.account_name),
+    side: row.side === 'debit' ? 'debit' as const : 'credit' as const,
+  })).filter((item) => item.component);
+};
+
+const persistMappingSql = async (items: PayrollJournalMappingItem[], actor: string) => {
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) {
+    if (payrollSqlRequired()) throw new Error('DLE_Enterprise database is not available for payroll journal GL mapping.');
+    return;
+  }
+  await ensureJournalSchema(pool);
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    await new sql.Request(tx).query(`DELETE FROM [hris].[PayrollJournalGlMappings]`);
+    for (const item of items) {
+      if (!item.accountCode || !item.accountName) continue;
+      await new sql.Request(tx)
+        .input('component', sql.NVarChar(120), item.component)
+        .input('account_code', sql.NVarChar(40), item.accountCode)
+        .input('account_name', sql.NVarChar(200), item.accountName)
+        .input('side', sql.NVarChar(10), item.side)
+        .input('updated_by', sql.NVarChar(120), actor)
+        .query(`
+INSERT INTO [hris].[PayrollJournalGlMappings]
+  ([component], [account_code], [account_name], [side], [updated_at], [updated_by])
+VALUES
+  (@component, @account_code, @account_name, @side, SYSUTCDATETIME(), @updated_by);
+`);
+    }
+    await tx.commit();
+  } catch (error) {
+    await tx.rollback();
+    throw error;
+  }
+};
+
+const mergeCatalogueWithStored = (stored: PayrollJournalMappingInput[]): PayrollJournalMappingItem[] => {
+  const byComponent = new Map(
+    stored
+      .filter((item) => compact(item.component))
+      .map((item) => [compact(item.component), item] as const),
+  );
+  return PAYROLL_JOURNAL_MAPPING_CATALOGUE.map((catalogue) => {
+    const saved = byComponent.get(catalogue.component);
+    const accountCode = compact(saved?.accountCode);
+    const accountName = compact(saved?.accountName);
+    return {
+      component: catalogue.component,
+      accountCode,
+      accountName,
+      side: catalogue.side,
+      configured: Boolean(accountCode && accountName),
+      description: catalogue.description,
+    };
+  });
+};
+
+export const loadPayrollJournalMappings = async (): Promise<PayrollJournalMappingItem[]> => {
+  try {
+    const sqlItems = await readMappingSql();
+    if (sqlItems.length) return mergeCatalogueWithStored(sqlItems);
+  } catch {
+    // fall through to JSON
+  }
+  const jsonState = await readMappingJson();
+  return mergeCatalogueWithStored(jsonState.items);
+};
+
+export const savePayrollJournalMappings = async (input: {
+  mappings: PayrollJournalMappingInput[];
+  actor: string;
+}) => {
+  const actor = compact(input.actor) || 'system';
+  const byComponent = new Map(
+    (input.mappings || [])
+      .map((item) => [compact(item.component), item] as const)
+      .filter(([component]) => Boolean(component)),
+  );
+
+  const unknown = [...byComponent.keys()].filter(
+    (component) => !PAYROLL_JOURNAL_MAPPING_CATALOGUE.some((item) => item.component === component),
+  );
+  if (unknown.length) {
+    throw new Error(`Unknown payroll journal components: ${unknown.join(', ')}`);
+  }
+
+  const next = PAYROLL_JOURNAL_MAPPING_CATALOGUE.map((catalogue) => {
+    const incoming = byComponent.get(catalogue.component);
+    const accountCode = compact(incoming?.accountCode);
+    const accountName = compact(incoming?.accountName);
+    if ((accountCode && !accountName) || (!accountCode && accountName)) {
+      throw new Error(`Both account code and account name are required for ${catalogue.component}.`);
+    }
+    return {
+      component: catalogue.component,
+      accountCode,
+      accountName,
+      side: catalogue.side,
+      configured: Boolean(accountCode && accountName),
+      description: catalogue.description,
+    };
+  });
+
+  await persistMappingSql(next, actor);
+  const stamp = nowIso();
+  const jsonState: MappingStoreState = {
+    items: next.map((item) => ({
+      component: item.component,
+      accountCode: item.accountCode,
+      accountName: item.accountName,
+      side: item.side,
+    })),
+    updatedAt: stamp,
+    updatedBy: actor,
+  };
+  if (payrollJsonMirrorEnabled() || !(await getDleEnterpriseDbPool())) {
+    await writeMappingJson(jsonState);
+  } else {
+    try {
+      await writeMappingJson(jsonState);
+    } catch {
+      // soft mirror
+    }
+  }
+
+  return {
+    mapping: next,
+    mappingComplete: next.every((item) => item.configured),
+    updatedAt: stamp,
+    updatedBy: actor,
+  };
+};
 
 const sum = (records: PayrollCalculationRecord[], pick: (row: PayrollCalculationRecord) => number) =>
   roundMoney(records.reduce((total, row) => total + (Number(pick(row)) || 0), 0));
@@ -249,9 +468,9 @@ const buildLinesFromTotals = (input: {
   period: string;
   pack: PayrollRunPack;
   records: PayrollCalculationRecord[];
+  mappings: PayrollJournalMappingItem[];
 }) => {
-  const mappings = defaultPayrollJournalMappings();
-  const byComponent = Object.fromEntries(mappings.map((item) => [item.component, item]));
+  const byComponent = Object.fromEntries(input.mappings.map((item) => [item.component, item]));
   const records = input.records || [];
   const gross = sum(records, (row) => row.grossPay);
   const paye = sum(records, (row) => row.paye);
@@ -274,7 +493,7 @@ const buildLinesFromTotals = (input: {
     description: string,
   ) => {
     const mapped = byComponent[component];
-    if (!mapped || !amount) return;
+    if (!mapped?.configured || !amount) return;
     lines.push({
       lineNo: lines.length + 1,
       accountCode: mapped.accountCode,
@@ -323,7 +542,7 @@ const buildLinesFromTotals = (input: {
     lines: lines.map((line, index) => ({ ...line, lineNo: index + 1 })),
     totalDebit: balancedDebit,
     totalCredit: balancedCredit,
-    balanced: Math.abs(balancedDebit - balancedCredit) < 0.01,
+    balanced: Math.abs(balancedDebit - balancedCredit) < 0.01 && lines.length > 0,
     employeeCount: records.length,
     grossPay: gross,
     deductions: roundMoney(paye + pensionEe + nhf + otherDeductions),
@@ -364,7 +583,9 @@ export const evaluatePayrollJournalPrerequisites = (input: {
       id: 'mapping',
       label: 'GL mapping complete',
       passed: input.mappingComplete,
-      detail: input.mappingComplete ? 'All payroll components are mapped to ledger accounts.' : 'Complete GL mapping for all payroll components.',
+      detail: input.mappingComplete
+        ? 'All payroll components are mapped to ledger accounts.'
+        : 'Map every payroll component to a live GL account code and name, then save.',
     },
     {
       id: 'balanced',
@@ -389,18 +610,23 @@ export const evaluatePayrollJournalPrerequisites = (input: {
   };
 };
 
-export const buildPayrollJournalDraft = (
+export const buildPayrollJournalDraft = async (
   calculation: Pick<PayrollCalculationResult, 'period' | 'periodLabel' | 'records' | 'summary'>,
   pack: PayrollRunPack,
+  mappings?: PayrollJournalMappingItem[],
 ) => {
+  const liveMappings = mappings || await loadPayrollJournalMappings();
   const draft = buildLinesFromTotals({
     period: calculation.period,
     pack,
     records: calculation.records || [],
+    mappings: liveMappings,
   });
   return {
     ...draft,
     periodLabel: calculation.periodLabel,
+    mapping: liveMappings,
+    mappingComplete: liveMappings.every((item) => item.configured),
   };
 };
 
@@ -425,9 +651,9 @@ export const buildPayrollJournalWorkspace = async (input: {
   pack: PayrollRunPack;
 }): Promise<PayrollJournalWorkspace> => {
   const pack = normalizePayrollRunPack(input.pack) || 'salaried';
-  const mapping = defaultPayrollJournalMappings();
+  const mapping = await loadPayrollJournalMappings();
   const mappingComplete = mapping.every((item) => item.configured);
-  const draftCore = buildPayrollJournalDraft(input.calculation, pack);
+  const draftCore = await buildPayrollJournalDraft(input.calculation, pack, mapping);
   const history = await listPayrollJournalHistory(input.calculation.period, pack);
   const activeBatch = history.find((batch) => batch.status === 'Posted') || null;
   const gates = evaluatePayrollJournalPrerequisites({

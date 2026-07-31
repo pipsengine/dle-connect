@@ -2,6 +2,7 @@
 
 import PayrollPeriodContextBar from './PayrollPeriodContextBar';
 import type { ComponentType } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   Banknote,
@@ -98,10 +99,20 @@ type PayrollJournalBatchSummary = {
   exportFileName?: string | null;
 };
 
+type PayrollJournalMappingItem = {
+  component: string;
+  accountCode: string;
+  accountName: string;
+  side: 'debit' | 'credit';
+  configured: boolean;
+  description?: string;
+};
+
 type PayrollJournalWorkspace = {
   mappingComplete: boolean;
   canPost: boolean;
   blockedReason: string | null;
+  mapping?: PayrollJournalMappingItem[];
   prerequisites: PayrollJournalPrerequisite[];
   draft: {
     lines: PayrollJournalLine[];
@@ -141,7 +152,7 @@ export type BankFinancePayload = {
   exceptions: FinanceException[];
   currentRun?: FinanceRun | null;
   journal?: PayrollJournalWorkspace | null;
-  permissions?: { canViewMoney?: boolean; canExport?: boolean; canPost?: boolean };
+  permissions?: { canViewMoney?: boolean; canExport?: boolean; canPost?: boolean; canConfigure?: boolean };
 };
 
 export type BankFinanceTabId =
@@ -167,6 +178,7 @@ type Props = {
   onExportExcel: () => void;
   onExportPdf?: () => void;
   onExportJournalSage?: () => void;
+  onSaveJournalMapping?: (mappings: Array<{ component: string; accountCode: string; accountName: string; side: 'debit' | 'credit' }>) => Promise<boolean | void> | boolean | void;
   onSelectTab: (tab: BankFinanceTabId) => void;
   onFixException: (id: string) => void;
   onViewAllExceptions: () => void;
@@ -258,6 +270,7 @@ export default function BankFinanceHub({
   onExportExcel,
   onExportPdf,
   onExportJournalSage,
+  onSaveJournalMapping,
   onSelectTab,
   onFixException,
   onViewAllExceptions,
@@ -633,9 +646,11 @@ export default function BankFinanceHub({
             run={run}
             canViewMoney={canViewMoney}
             busyAction={busyAction}
+            canEditMapping={Boolean(payload?.permissions?.canPost || payload?.permissions?.canConfigure)}
             onBack={() => onSelectTab('overview')}
             onFinanceAction={onFinanceAction}
             onExportJournalSage={() => (onExportJournalSage ? onExportJournalSage() : onExportExcel())}
+            onSaveJournalMapping={onSaveJournalMapping}
           />
         ) : activeTab === 'reconciliation' ? (
           <ReconciliationPanel onBack={() => onSelectTab('overview')} onFinanceAction={onFinanceAction} />
@@ -975,17 +990,21 @@ function PayrollJournalPanel({
   run,
   canViewMoney,
   busyAction,
+  canEditMapping = false,
   onBack,
   onFinanceAction,
   onExportJournalSage,
+  onSaveJournalMapping,
 }: {
   payload: BankFinancePayload | null;
   run: FinanceRun | null | undefined;
   canViewMoney: boolean;
   busyAction: string;
+  canEditMapping?: boolean;
   onBack: () => void;
   onFinanceAction: (actionId: string) => void;
   onExportJournalSage: () => void;
+  onSaveJournalMapping?: (mappings: Array<{ component: string; accountCode: string; accountName: string; side: 'debit' | 'credit' }>) => Promise<boolean | void> | boolean | void;
 }) {
   const journal = payload?.journal;
   const payrollComputed = payload?.payrollComputed !== false;
@@ -999,6 +1018,48 @@ function PayrollJournalPanel({
   const history = journal?.history || [];
   const prerequisites = journal?.prerequisites || [];
   const activeBatch = journal?.activeBatch;
+  const sourceMapping = journal?.mapping || [];
+  const [draftMapping, setDraftMapping] = useState<PayrollJournalMappingItem[]>(() => sourceMapping);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    setDraftMapping(journal?.mapping || []);
+    setDirty(false);
+  }, [payload?.generatedAt, payload?.period, payload?.pack, journal?.mappingComplete, journal?.mapping]);
+
+  const mappedCount = draftMapping.filter((item) => Boolean(item.accountCode.trim() && item.accountName.trim())).length;
+  const savingMapping = busyAction === 'save-journal-mapping';
+
+  const updateMappingRow = (component: string, field: 'accountCode' | 'accountName', value: string) => {
+    setDraftMapping((prev) =>
+      prev.map((item) =>
+        item.component === component
+          ? {
+              ...item,
+              [field]: value,
+              configured: Boolean(
+                (field === 'accountCode' ? value : item.accountCode).trim()
+                && (field === 'accountName' ? value : item.accountName).trim(),
+              ),
+            }
+          : item,
+      ),
+    );
+    setDirty(true);
+  };
+
+  const handleSaveMapping = async () => {
+    if (!onSaveJournalMapping) return;
+    const ok = await onSaveJournalMapping(
+      draftMapping.map((item) => ({
+        component: item.component,
+        accountCode: item.accountCode.trim(),
+        accountName: item.accountName.trim(),
+        side: item.side,
+      })),
+    );
+    if (ok !== false) setDirty(false);
+  };
 
   return (
     <section className="space-y-4">
@@ -1060,8 +1121,8 @@ function PayrollJournalPanel({
         <WorkflowStepCard
           title="Journal Mapping"
           done={mappingDone}
-          status={mappingDone ? 'GL mapping complete' : 'Mapping incomplete'}
-          detail="Payroll components mapped to finance ledger accounts."
+          status={mappingDone ? 'GL mapping complete' : `${mappedCount}/${draftMapping.length || 10} components mapped`}
+          detail="Enter your live Sage / ledger account codes below. Mapping is stored in production and used for every journal draft."
         />
         <WorkflowStepCard
           title="Journal Posting"
@@ -1085,6 +1146,97 @@ function PayrollJournalPanel({
           status={history.length ? `${history.length} batch${history.length === 1 ? '' : 'es'} recorded` : 'No postings'}
           detail="Posted and reversed batches are retained for audit."
         />
+      </div>
+
+      <div className="rounded-2xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold">GL account mapping</h3>
+            <p className="mt-1 text-sm text-[#64748B]">
+              Map each payroll journal component to your live ledger account. Journal lines use only these saved accounts — nothing is hardcoded.
+            </p>
+          </div>
+          {canEditMapping ? (
+            <button
+              type="button"
+              disabled={!dirty || savingMapping || !onSaveJournalMapping}
+              onClick={() => void handleSaveMapping()}
+              className="inline-flex items-center gap-2 rounded-xl bg-[#0F172A] px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {savingMapping ? 'Saving…' : 'Save GL Mapping'}
+            </button>
+          ) : null}
+        </div>
+        {!mappingDone ? (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+            Mapping incomplete — enter account code and name for every component, then save. Posting stays blocked until mapping is complete.
+          </p>
+        ) : null}
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="border-b border-[#E5E7EB] text-xs uppercase tracking-wide text-[#64748B]">
+              <tr>
+                <th className="px-2 py-2 font-semibold">Component</th>
+                <th className="px-2 py-2 font-semibold">Side</th>
+                <th className="px-2 py-2 font-semibold">Account code</th>
+                <th className="px-2 py-2 font-semibold">Account name</th>
+                <th className="px-2 py-2 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {draftMapping.map((item) => {
+                const configured = Boolean(item.accountCode.trim() && item.accountName.trim());
+                return (
+                  <tr key={item.component} className="border-b border-[#F1F5F9]">
+                    <td className="px-2 py-2">
+                      <p className="font-semibold text-[#0F172A]">{item.component}</p>
+                      {item.description ? <p className="text-xs text-[#64748B]">{item.description}</p> : null}
+                    </td>
+                    <td className="px-2 py-2 capitalize text-[#64748B]">{item.side}</td>
+                    <td className="px-2 py-2">
+                      {canEditMapping ? (
+                        <input
+                          type="text"
+                          value={item.accountCode}
+                          onChange={(event) => updateMappingRow(item.component, 'accountCode', event.target.value)}
+                          placeholder="e.g. live Sage code"
+                          className="w-full min-w-[8rem] rounded-lg border border-[#E5E7EB] px-2 py-1.5 text-sm font-semibold text-[#0F172A]"
+                        />
+                      ) : (
+                        <span className="font-semibold">{item.accountCode || '—'}</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2">
+                      {canEditMapping ? (
+                        <input
+                          type="text"
+                          value={item.accountName}
+                          onChange={(event) => updateMappingRow(item.component, 'accountName', event.target.value)}
+                          placeholder="Ledger account name"
+                          className="w-full min-w-[12rem] rounded-lg border border-[#E5E7EB] px-2 py-1.5 text-sm text-[#0F172A]"
+                        />
+                      ) : (
+                        <span>{item.accountName || '—'}</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${configured ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'}`}>
+                        {configured ? 'Mapped' : 'Required'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!draftMapping.length ? (
+                <tr>
+                  <td colSpan={5} className="px-2 py-6 text-center text-sm font-semibold text-[#64748B]">
+                    Loading live GL mapping catalogue…
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="rounded-2xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
@@ -1133,6 +1285,11 @@ function PayrollJournalPanel({
             Employees {fmtNum(journal?.draft?.employeeCount || 0)} · Net {fmtMoney(journal?.draft?.netPay, canViewMoney, payrollComputed)}
           </p>
         </div>
+        {!mappingDone ? (
+          <p className="mt-3 text-sm font-semibold text-amber-800">
+            Preview only includes components that already have a saved GL mapping. Complete mapping to build the full balanced journal.
+          </p>
+        ) : null}
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="border-b border-[#E5E7EB] text-xs uppercase tracking-wide text-[#64748B]">
@@ -1168,7 +1325,7 @@ function PayrollJournalPanel({
               {!lines.length ? (
                 <tr>
                   <td colSpan={6} className="px-2 py-6 text-center text-sm font-semibold text-[#64748B]">
-                    No journal lines yet. Compute and release payroll for this pack to build a draft.
+                    No journal lines yet. Save live GL mappings and ensure payroll is computed for this pack.
                   </td>
                 </tr>
               ) : null}
