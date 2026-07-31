@@ -1,3 +1,4 @@
+import { departmentsMatch, uniqueDepartmentLabels } from '@/lib/it-asset-department';
 import type { ItAssetRecord } from '@/lib/it-asset-management-store';
 
 export const MAINTENANCE_PRIORITIES = ['Low', 'Medium', 'High', 'Critical'] as const;
@@ -53,14 +54,8 @@ export const maintenanceScopeLabel = (scope: MaintenanceScope) => {
   return 'Individual asset';
 };
 
-export const uniqueAssetDepartments = (assets: ItAssetRecord[]) => {
-  const values = new Set<string>();
-  assets.forEach((asset) => {
-    const department = (asset.department || '').trim();
-    if (department) values.add(department);
-  });
-  return Array.from(values).sort((a, b) => a.localeCompare(b));
-};
+export const uniqueAssetDepartments = (assets: ItAssetRecord[]) =>
+  uniqueDepartmentLabels(assets.map((asset) => asset.department));
 
 export const uniqueAssetLocations = (assets: ItAssetRecord[]) => {
   const values = new Set<string>();
@@ -82,8 +77,7 @@ export const assetsForMaintenanceScope = (
     rows = rows.filter((asset) => asset.assetId === options.assetId);
   } else if (scope === 'department') {
     if (!options.department?.trim()) return [];
-    const department = options.department.trim().toLowerCase();
-    rows = rows.filter((asset) => (asset.department || '').trim().toLowerCase() === department);
+    rows = rows.filter((asset) => departmentsMatch(asset.department, options.department));
   } else if (scope === 'location') {
     if (!options.location?.trim()) return [];
     const location = options.location.trim().toLowerCase();

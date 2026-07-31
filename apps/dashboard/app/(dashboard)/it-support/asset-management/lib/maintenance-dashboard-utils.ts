@@ -1,4 +1,5 @@
 import type { ItAssetRecord, ItMaintenanceRecord } from '@/lib/it-asset-management-store';
+import { departmentsMatch } from '@/lib/it-asset-department';
 import { deriveMaintenanceStatus } from './maintenance-utils';
 
 export type EnrichedMaintenanceRecord = ItMaintenanceRecord & {
@@ -223,7 +224,7 @@ export const filterMaintenanceRecords = (
         .toLowerCase();
       if (!haystack.includes(search)) return false;
     }
-    if (filters.department && (row.department || '').toLowerCase() !== filters.department.toLowerCase()) return false;
+    if (filters.department && !departmentsMatch(row.department, filters.department)) return false;
     if (filters.location && (row.location || '').toLowerCase() !== filters.location.toLowerCase()) return false;
     if (filters.status && row.displayStatus.toLowerCase() !== filters.status.toLowerCase()) return false;
     if (filters.priority) {

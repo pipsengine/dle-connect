@@ -26,6 +26,7 @@ import {
   type ItVendorRecord,
   type ItWarrantyRecord,
 } from '@/lib/it-asset-management-store';
+import { departmentsMatch, uniqueDepartmentLabels } from '@/lib/it-asset-department';
 
 export type PaginatedResult<T> = { items: T[]; total: number; page: number; pageSize: number };
 
@@ -266,8 +267,7 @@ const resolveHardwareAssetsForScope = async (input: {
     assets = assets.filter((asset) => asset.assetId === input.assetId);
   } else if (input.scope === 'department') {
     if (!input.department?.trim()) return [];
-    const department = input.department.trim().toLowerCase();
-    assets = assets.filter((asset) => (asset.department || '').trim().toLowerCase() === department);
+    assets = assets.filter((asset) => departmentsMatch(asset.department, input.department));
   } else if (input.scope === 'location') {
     if (!input.location?.trim()) return [];
     const location = input.location.trim().toLowerCase();
@@ -377,8 +377,7 @@ export const performItMaintenanceBatch = async (
     const selected = new Set(input.maintenanceIds);
     records = records.filter((record) => selected.has(record.maintenanceId));
   } else if (input.scope === 'department' && input.department) {
-    const department = input.department.trim().toLowerCase();
-    records = records.filter((record) => (record.department || '').trim().toLowerCase() === department);
+    records = records.filter((record) => departmentsMatch(record.department, input.department));
   } else if (input.scope === 'location' && input.location) {
     const location = input.location.trim().toLowerCase();
     records = records.filter((record) => (record.location || '').trim().toLowerCase() === location);
@@ -778,7 +777,7 @@ export const buildItAssetSectionPayload = async (section: string, options?: {
       manufacturers: uniqueSorted(assets.map((asset) => asset.manufacturer)),
       models: uniqueSorted(assets.map((asset) => asset.model || asset.name)),
       types: uniqueSorted(assets.map((asset) => asset.subCategory || asset.category)),
-      departments: uniqueSorted(assets.map((asset) => asset.department)),
+      departments: uniqueDepartmentLabels(assets.map((asset) => asset.department)),
       locations: uniqueSorted(assets.map((asset) => asset.location)),
       assignedTo: uniqueSorted([
         ...assets.map((asset) => asset.assignedEmployeeName),
@@ -794,7 +793,7 @@ export const buildItAssetSectionPayload = async (section: string, options?: {
       const model = options.model.trim().toLowerCase();
       assets = assets.filter((asset) => String(asset.model || asset.name || '').trim().toLowerCase() === model);
     }
-    if (options?.department) assets = assets.filter((asset) => eq(asset.department, options.department));
+    if (options?.department) assets = assets.filter((asset) => departmentsMatch(asset.department, options.department));
     if (options?.location) assets = assets.filter((asset) => eq(asset.location, options.location));
     if (options?.registerStatus) {
       assets = assets.filter((asset) => eq(asset.registerStatus || asset.status, options.registerStatus));
@@ -839,8 +838,7 @@ export const buildItAssetSectionPayload = async (section: string, options?: {
   if (section === 'maintenance') {
     let maintenance = enrichMaintenanceRecords(payload.maintenance, payload.assets);
     if (options?.department) {
-      const department = options.department.trim().toLowerCase();
-      maintenance = maintenance.filter((row) => (row.department || '').trim().toLowerCase() === department);
+      maintenance = maintenance.filter((row) => departmentsMatch(row.department, options.department));
     }
     if (options?.location) {
       const location = options.location.trim().toLowerCase();
