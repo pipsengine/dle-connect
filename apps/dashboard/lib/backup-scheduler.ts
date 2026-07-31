@@ -1,4 +1,5 @@
 import {
+  ensureSqlAgentBackupJobsEnabled,
   markBackupPolicyRun,
   resolvePrimaryBackupTarget,
   runApplicationBackup,
@@ -18,6 +19,7 @@ let tickTimer: ReturnType<typeof setInterval> | null = null;
 let tickInFlight = false;
 let lastTickAt: string | null = null;
 let lastTickSummary = '';
+let startedAt: string | null = null;
 
 const runPolicy = async (policy: BackupPolicy) => {
   const kind = policyKind(policy.type);
@@ -62,10 +64,12 @@ const runPolicy = async (policy: BackupPolicy) => {
 
 export const getBackupSchedulerStatus = () => ({
   started,
+  startedAt,
   tickIntervalMs: TICK_MS,
   lastTickAt,
   lastTickSummary,
   tickInFlight,
+  disabled: process.env.DLE_BACKUP_SCHEDULER_DISABLED === '1',
 });
 
 export const runBackupSchedulerTick = async (options?: { force?: boolean }) => {
@@ -78,13 +82,23 @@ export const runBackupSchedulerTick = async (options?: { force?: boolean }) => {
     const state = await readBackupDisasterRecoveryState();
     const primary = resolvePrimaryBackupTarget(state);
     if (!primary?.location.trim()) {
-      lastTickSummary = 'Primary backup location is not configured.';
+      lastTickSummary = 'Primary backup location is not configured. Set Primary Backup path in Backup & Disaster Recovery.';
       return { skipped: true, reason: lastTickSummary, results: [] as Array<{ type: string; status: string }> };
+    }
+
+    // Keep SQL Agent database jobs enabled alongside the app scheduler.
+    try {
+      await ensureSqlAgentBackupJobsEnabled();
+    } catch {
+      // SQL Agent may be unavailable in some environments; app scheduler still runs.
     }
 
     const due = state.backupPolicies.filter((policy) => options?.force || isPolicyDue(policy));
     if (!due.length) {
-      lastTickSummary = 'No automated policies due.';
+      const automated = state.backupPolicies.filter((policy) => String(policy.status).toLowerCase() === 'automated').length;
+      lastTickSummary = automated
+        ? `No automated policies due (${automated} automated). Next check in ${Math.round(TICK_MS / 1000)}s.`
+        : 'No Automated policies configured. Set policy Status to Automated.';
       return { skipped: false, reason: lastTickSummary, results: [] as Array<{ type: string; status: string }> };
     }
 
@@ -104,20 +118,20 @@ export const runBackupSchedulerTick = async (options?: { force?: boolean }) => {
 };
 
 export const ensureBackupSchedulerStarted = () => {
-  if (started) return getBackupSchedulerStatus();
   if (process.env.DLE_BACKUP_SCHEDULER_DISABLED === '1') {
     lastTickSummary = 'Scheduler disabled by DLE_BACKUP_SCHEDULER_DISABLED.';
     return getBackupSchedulerStatus();
   }
+  if (started) return getBackupSchedulerStatus();
+
   started = true;
+  startedAt = new Date().toISOString();
   void runBackupSchedulerTick();
   tickTimer = setInterval(() => {
     void runBackupSchedulerTick();
   }, TICK_MS);
-  if (typeof tickTimer === 'object' && 'unref' in tickTimer && typeof tickTimer.unref === 'function') {
-    tickTimer.unref();
-  }
-  lastTickSummary = 'Scheduler started.';
+  // Keep the timer referenced so the Node process does not drop scheduled ticks.
+  lastTickSummary = `Scheduler started (interval ${TICK_MS}ms).`;
   return getBackupSchedulerStatus();
 };
 

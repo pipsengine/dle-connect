@@ -22,6 +22,20 @@ import type {
   BackupStorageAutomation,
 } from '@/lib/backup-disaster-recovery-types';
 
+type BackupSchedulerStatus = {
+  started: boolean;
+  startedAt?: string | null;
+  tickIntervalMs: number;
+  lastTickAt: string | null;
+  lastTickSummary: string;
+  tickInFlight: boolean;
+  disabled?: boolean;
+};
+
+type BackupCentreState = BackupDisasterRecoveryState & {
+  scheduler?: BackupSchedulerStatus;
+};
+
 type Tone = 'green' | 'blue' | 'amber' | 'red' | 'slate' | 'violet';
 
 const toneStyles: Record<Tone, { card: string; icon: string; badge: string }> = {
@@ -92,7 +106,7 @@ function EmptyState({ message }: { message: string }) {
 }
 
 const locationDraftsFrom = (targets: BackupReplicationTarget[]) => Object.fromEntries(targets.map((target) => [target.target, target.location]));
-const newPolicy = (): BackupPolicy => ({ type: '', schedule: '', validation: '', retention: '', status: 'Configured' });
+const newPolicy = (): BackupPolicy => ({ type: '', schedule: '', validation: '', retention: '', status: 'Automated' });
 const backupTypeOptions = [
   '',
   'Full database backup',
@@ -139,18 +153,25 @@ const retentionOptions = [
   '1 year',
   '10 releases',
 ];
+const policyIdentity = (policy: BackupPolicy) => ({
+  type: policy.type.trim(),
+  schedule: policy.schedule.trim(),
+  validation: policy.validation.trim(),
+  retention: policy.retention.trim(),
+  status: policy.status.trim() || 'Configured',
+});
 const cleanPolicies = (policies: BackupPolicy[]) => policies
   .map((policy) => ({
-    type: policy.type.trim(),
-    schedule: policy.schedule.trim(),
-    validation: policy.validation.trim(),
-    retention: policy.retention.trim(),
-    status: policy.status.trim() || 'Configured',
+    ...policyIdentity(policy),
+    lastRunAt: policy.lastRunAt,
+    lastRunStatus: policy.lastRunStatus,
+    lastRunDetail: policy.lastRunDetail,
   }))
   .filter((policy) => policy.type || policy.schedule || policy.validation || policy.retention);
 
 const policiesEqual = (left: BackupPolicy[], right: BackupPolicy[]) =>
-  JSON.stringify(cleanPolicies(left)) === JSON.stringify(cleanPolicies(right));
+  JSON.stringify(left.map(policyIdentity).filter((policy) => policy.type || policy.schedule || policy.validation || policy.retention))
+  === JSON.stringify(right.map(policyIdentity).filter((policy) => policy.type || policy.schedule || policy.validation || policy.retention));
 
 const locationsEqual = (left: Record<string, string>, right: Record<string, string>) =>
   JSON.stringify(left) === JSON.stringify(right);
@@ -206,8 +227,8 @@ async function parseApiResponse<T>(response: Response): Promise<{ data?: T; erro
   return { error: 'Unexpected response from backup centre API.' };
 }
 
-export default function BackupDisasterRecoveryClient({ initialState }: { initialState: BackupDisasterRecoveryState }) {
-  const [state, setState] = useState(initialState);
+export default function BackupDisasterRecoveryClient({ initialState }: { initialState: BackupCentreState }) {
+  const [state, setState] = useState<BackupCentreState>(initialState);
   const [locationDrafts, setLocationDrafts] = useState<Record<string, string>>(() => locationDraftsFrom(initialState.replicationTargets));
   const [policyDrafts, setPolicyDrafts] = useState<BackupPolicy[]>(() => initialState.backupPolicies.length ? initialState.backupPolicies : [newPolicy()]);
   const [saving, setSaving] = useState(false);
@@ -221,6 +242,7 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
   const locationsDirty = !locationsEqual(locationDrafts, savedLocationDrafts);
   const criticalAlert = useMemo(() => criticalAlertMessage(state), [state]);
   const showCriticalAlert = Boolean(criticalAlert && criticalAlert.message !== dismissedAlert);
+  const scheduler = state.scheduler;
 
   useEffect(() => {
     setState(initialState);
@@ -228,7 +250,7 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
     setPolicyDrafts(initialState.backupPolicies.length ? initialState.backupPolicies : [newPolicy()]);
   }, [initialState]);
 
-  const applyState = (next: BackupDisasterRecoveryState) => {
+  const applyState = (next: BackupCentreState) => {
     setState(next);
     setLocationDrafts(locationDraftsFrom(next.replicationTargets));
     setPolicyDrafts(next.backupPolicies.length ? next.backupPolicies : [newPolicy()]);
@@ -244,7 +266,7 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
     setMessage(null);
     try {
       const response = await fetch('/api/admin/backup-disaster-recovery', { method: 'GET', cache: 'no-store' });
-      const parsed = await parseApiResponse<BackupDisasterRecoveryState>(response);
+      const parsed = await parseApiResponse<BackupCentreState>(response);
       if (parsed.error || !parsed.data) {
         showMessage(parsed.error || 'Unable to refresh backup centre status.', 'error');
         return;
@@ -310,7 +332,7 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ backupPolicies }),
       });
-      const parsed = await parseApiResponse<BackupDisasterRecoveryState>(response);
+      const parsed = await parseApiResponse<BackupCentreState>(response);
       if (parsed.error || !parsed.data) {
         showMessage(parsed.error || 'Unable to save backup policies.', 'error');
         return;
@@ -325,9 +347,22 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
           detail: `${backupPolicies.length} automated backup ${backupPolicies.length === 1 ? 'policy' : 'policies'} saved from the administration centre.`,
         }),
       });
-      const auditParsed = await parseApiResponse<BackupDisasterRecoveryState>(auditResponse);
+      const auditParsed = await parseApiResponse<BackupCentreState>(auditResponse);
       if (auditParsed.data) applyState(auditParsed.data);
-      showMessage(backupPolicies.length ? 'Automated backup policies saved.' : 'Automated backup policies cleared.', 'success');
+
+      // Kick the scheduler so due Automated policies begin running immediately.
+      await fetch('/api/admin/backup-disaster-recovery', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ operation: 'run-scheduler-tick' }),
+      }).catch(() => undefined);
+
+      showMessage(
+        backupPolicies.length
+          ? 'Automated backup policies saved. Scheduler will run them on the configured schedule.'
+          : 'Automated backup policies cleared.',
+        'success',
+      );
     } catch (error) {
       showMessage(error instanceof Error ? error.message : 'Unable to save backup policies.', 'error');
     } finally {
@@ -479,6 +514,33 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
           </div>
         ) : null}
 
+        <Panel
+          title="Automatic Backup Scheduler"
+          action={<StatusBadge value={scheduler?.disabled ? 'Disabled' : scheduler?.started ? 'Running' : 'Not started'} />}
+        >
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+              <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Status</p>
+              <p className="mt-1 text-sm font-black text-slate-900">{scheduler?.disabled ? 'Disabled by env' : scheduler?.started ? 'Active' : 'Waiting for app start'}</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+              <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Check interval</p>
+              <p className="mt-1 text-sm font-black text-slate-900">{scheduler ? `${Math.round(scheduler.tickIntervalMs / 1000)}s` : '—'}</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+              <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Last scheduler tick</p>
+              <p className="mt-1 text-sm font-black text-slate-900">{scheduler?.lastTickAt ? formatTime(scheduler.lastTickAt) : 'Not yet'}</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+              <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Last result</p>
+              <p className="mt-1 text-sm font-bold text-slate-800">{scheduler?.lastTickSummary || 'No tick recorded yet.'}</p>
+            </div>
+          </div>
+          <p className="mt-3 text-xs font-semibold text-slate-600">
+            Policies with Status <strong>Automated</strong> run on their schedule. Database full/log jobs are also kept enabled in SQL Server Agent. Set Primary Backup path before schedules can write files.
+          </p>
+        </Panel>
+
         {state.serviceMetrics.length ? (
           <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             {state.serviceMetrics.map((item) => <MetricCard key={item.label} item={item} />)}
@@ -555,7 +617,7 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
             <div className="overflow-x-auto">
               <table className="w-full min-w-[860px] border-collapse text-sm">
                 <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                  <tr>{['Backup Type', 'Schedule', 'Automatic Validation', 'Retention', 'Status'].map((header) => <th key={header} className="border-b border-slate-200 px-3 py-2 text-left font-black">{header}</th>)}</tr>
+                  <tr>{['Backup Type', 'Schedule', 'Automatic Validation', 'Retention', 'Status', 'Last Run'].map((header) => <th key={header} className="border-b border-slate-200 px-3 py-2 text-left font-black">{header}</th>)}</tr>
                 </thead>
                 <tbody>
                   {state.backupPolicies.length ? state.backupPolicies.map((policy) => (
@@ -565,10 +627,18 @@ export default function BackupDisasterRecoveryClient({ initialState }: { initial
                       <td className="px-3 py-3 font-semibold text-slate-700">{policy.validation}</td>
                       <td className="px-3 py-3 font-semibold text-slate-700">{policy.retention}</td>
                       <td className="px-3 py-3"><StatusBadge value={policy.status} /></td>
+                      <td className="px-3 py-3 text-xs font-semibold text-slate-600">
+                        {policy.lastRunAt ? (
+                          <span>
+                            {formatTime(policy.lastRunAt)}
+                            {policy.lastRunStatus ? ` · ${policy.lastRunStatus}` : ''}
+                          </span>
+                        ) : 'Not run yet'}
+                      </td>
                     </tr>
                   )) : (
                     <tr>
-                      <td colSpan={5} className="px-3 py-4">
+                      <td colSpan={6} className="px-3 py-4">
                         <EmptyState message="No automated backup policies have been configured." />
                       </td>
                     </tr>

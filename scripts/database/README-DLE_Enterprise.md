@@ -64,12 +64,17 @@ The monitor job fails if:
 
 The dashboard also runs `DLE Backup Scheduler` (see `apps/dashboard/lib/backup-scheduler.ts`):
 
-- Starts with the Node process via `instrumentation.ts`
+- Starts with the Node process via `instrumentation.ts` and stays active while the dashboard process is running
+- Checks Automated policies every 60 seconds (override with `DLE_BACKUP_SCHEDULER_INTERVAL_MS`)
 - Executes **Automated** policies from Backup & Disaster Recovery (full/log/diff DB + application/config file backups)
+- Re-enables SQL Agent DLE backup jobs when the scheduler ticks or policies are saved
 - Default near-real-time log policy: every 5 minutes
+- Default full database policy: Daily 23:00
 - Default application file backup: every 15 minutes to `{Primary Backup}\Application\`
 
-Configure the **Primary Backup** location before automated runs succeed.
+Configure the **Primary Backup** location (defaults to `DLE_BACKUP_ROOT` / `BACKUP_ROOT` / `C:\SQLBackups\DLE_Enterprise`) before automated runs succeed.
+
+Set policy **Status = Automated** for schedules to fire. Use **Run Schedules Now** to force an immediate pass.
 ## Payroll cutover backups (HRIS)
 
 When a payroll period is fully posted and closed through the payroll workflow, HRIS automatically:

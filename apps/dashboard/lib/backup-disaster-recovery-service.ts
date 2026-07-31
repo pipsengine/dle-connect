@@ -3,7 +3,7 @@ import path from 'node:path';
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { readBackupDisasterRecoveryState, validateBackupPolicies, writeBackupDisasterRecoveryState } from '@/lib/backup-disaster-recovery-store';
-import { computeNextRun, isAutomatedPolicy } from '@/lib/backup-schedule';
+import { computeNextRun, defaultBackupRoot, isAutomatedPolicy } from '@/lib/backup-schedule';
 import { runApplicationFileBackup } from '@/lib/application-backup-service';
 import type {
   BackupDisasterRecoveryState,
@@ -111,7 +111,17 @@ const incidentRecord = (message: string, at: string, severity: BackupIncident['s
 const targetWithPrimary = (state: BackupDisasterRecoveryState) => {
   const primary = state.replicationTargets.find((target) => target.target === PRIMARY_TARGET);
   if (primary?.location.trim()) return primary;
-  return state.replicationTargets.find((target) => target.location.trim());
+  const configured = state.replicationTargets.find((target) => target.location.trim());
+  if (configured) return configured;
+  const fallback = defaultBackupRoot();
+  if (!fallback) return primary || null;
+  return {
+    target: PRIMARY_TARGET,
+    location: fallback,
+    status: 'Configured',
+    lastCopy: '',
+    lag: '',
+  };
 };
 
 export const resolvePrimaryBackupTarget = (state: BackupDisasterRecoveryState) => targetWithPrimary(state);
@@ -803,8 +813,12 @@ export const markBackupPolicyRun = async (
 ) => {
   const state = await readBackupDisasterRecoveryState();
   const at = new Date().toISOString();
-  const backupPolicies = state.backupPolicies.map((policy) => {
-    if (policy.type !== policyType || policy.schedule !== schedule) return policy;
+  const typeKey = policyType.trim().toLowerCase();
+  const scheduleKey = schedule.trim().toLowerCase();
+  let matchedExact = false;
+  let backupPolicies = state.backupPolicies.map((policy) => {
+    if (policy.type.trim().toLowerCase() !== typeKey || policy.schedule.trim().toLowerCase() !== scheduleKey) return policy;
+    matchedExact = true;
     return {
       ...policy,
       lastRunAt: at,
@@ -812,6 +826,19 @@ export const markBackupPolicyRun = async (
       lastRunDetail: result.detail,
     };
   });
+  if (!matchedExact) {
+    let matchedType = false;
+    backupPolicies = backupPolicies.map((policy) => {
+      if (matchedType || policy.type.trim().toLowerCase() !== typeKey) return policy;
+      matchedType = true;
+      return {
+        ...policy,
+        lastRunAt: at,
+        lastRunStatus: result.status,
+        lastRunDetail: result.detail,
+      };
+    });
+  }
   const next = await writeBackupDisasterRecoveryState({
     ...state,
     backupPolicies,
@@ -826,6 +853,38 @@ export const markBackupPolicyRun = async (
   return enrichBackupDisasterRecoveryState(next);
 };
 
+export const ensureSqlAgentBackupJobsEnabled = async () => {
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) return { enabled: 0, jobs: [] as string[] };
+  try {
+    const result = await pool.request().query(`
+DECLARE @enabled int = 0;
+DECLARE @names nvarchar(max) = N'';
+
+UPDATE msdb.dbo.sysjobs
+SET enabled = 1,
+    @enabled = @enabled + CASE WHEN enabled = 0 THEN 1 ELSE 0 END,
+    @names = @names + CASE WHEN enabled = 0 THEN name + N';' ELSE N'' END
+WHERE name IN (
+  N'DLE_Enterprise - Daily FULL Backup',
+  N'DLE_Enterprise - Real-time LOG Backup',
+  N'DLE_Enterprise - Weekly VERIFY and Restore Test',
+  N'DLE_Enterprise - Backup Retention Cleanup',
+  N'DLE_Enterprise - Backup Health Monitor'
+);
+
+SELECT @enabled AS enabledCount, @names AS enabledNames;
+`);
+    const row = result.recordset?.[0] as { enabledCount?: number; enabledNames?: string } | undefined;
+    return {
+      enabled: Number(row?.enabledCount || 0),
+      jobs: String(row?.enabledNames || '').split(';').map((item) => item.trim()).filter(Boolean),
+    };
+  } catch {
+    return { enabled: 0, jobs: [] as string[] };
+  }
+};
+
 export const runDleEnterpriseFullBackupToPath = executeDleEnterpriseBackupToPath;
 
 export const saveBackupDisasterRecoveryConfiguration = async (
@@ -833,14 +892,52 @@ export const saveBackupDisasterRecoveryConfiguration = async (
   actor: string,
 ) => {
   const current = await readBackupDisasterRecoveryState();
-  const backupPolicies = patch.backupPolicies ? validateBackupPolicies(patch.backupPolicies) : current.backupPolicies;
+  const backupPolicies = patch.backupPolicies
+    ? validateBackupPolicies(patch.backupPolicies).map((policy) => {
+      const existing = current.backupPolicies.find((item) => (
+        item.type.trim().toLowerCase() === policy.type.trim().toLowerCase()
+        && item.schedule.trim().toLowerCase() === policy.schedule.trim().toLowerCase()
+      )) || current.backupPolicies.find((item) => item.type.trim().toLowerCase() === policy.type.trim().toLowerCase());
+      return {
+        ...policy,
+        lastRunAt: policy.lastRunAt || existing?.lastRunAt,
+        lastRunStatus: policy.lastRunStatus || existing?.lastRunStatus,
+        lastRunDetail: policy.lastRunDetail || existing?.lastRunDetail,
+      };
+    })
+    : current.backupPolicies;
+
+  const replicationTargets = Array.isArray(patch.replicationTargets)
+    ? patch.replicationTargets.map((target) => {
+      if (target.target !== 'Primary Backup') return target;
+      const location = String(target.location || '').trim();
+      if (location) return { ...target, location, status: 'Configured' };
+      const fallback = current.replicationTargets.find((item) => item.target === 'Primary Backup')?.location
+        || resolvePrimaryBackupTarget(current)?.location
+        || '';
+      return {
+        ...target,
+        location: fallback,
+        status: fallback ? 'Configured' : 'Not configured',
+      };
+    })
+    : current.replicationTargets;
+
   const saved = await writeBackupDisasterRecoveryState({
     ...current,
     ...patch,
+    replicationTargets,
     backupPolicies,
     failureRecoveryRules: failureRecoveryFromPolicies(backupPolicies),
     storageAutomation: storageAutomationFromPolicies(backupPolicies),
     executionQueue: queueFromPolicies(backupPolicies),
   }, actor);
+
+  try {
+    await ensureSqlAgentBackupJobsEnabled();
+  } catch {
+    // ignore — SQL Agent may be unavailable
+  }
+
   return enrichBackupDisasterRecoveryState(saved);
 };

@@ -1,4 +1,5 @@
 import type { BackupDisasterRecoveryState, BackupPolicy } from '@/lib/backup-disaster-recovery-types';
+import { defaultBackupRoot } from '@/lib/backup-schedule';
 
 export const defaultAutomatedBackupPolicies = (): BackupPolicy[] => [
   {
@@ -31,12 +32,14 @@ export const defaultAutomatedBackupPolicies = (): BackupPolicy[] => [
   },
 ];
 
+const defaultPrimaryLocation = () => defaultBackupRoot();
+
 export const defaultBackupDisasterRecoveryState = (): BackupDisasterRecoveryState => ({
   schemaVersion: 1,
   serviceMetrics: [],
   backupPolicies: defaultAutomatedBackupPolicies(),
   replicationTargets: [
-    { target: 'Primary Backup', location: '', status: 'Not configured', lastCopy: '', lag: '' },
+    { target: 'Primary Backup', location: defaultPrimaryLocation(), status: 'Configured', lastCopy: '', lag: '' },
     { target: 'Secondary Backup', location: '', status: 'Not configured', lastCopy: '', lag: '' },
     { target: 'Disaster Recovery Backup', location: '', status: 'Not configured', lastCopy: '', lag: '' },
     { target: 'Cloud Backup', location: '', status: 'Not configured', lastCopy: '', lag: '' },

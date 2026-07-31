@@ -6,18 +6,26 @@ import type { BackupAuditEvent, BackupDisasterRecoveryState, BackupPolicy } from
 const STATE_KEY = 'backup-disaster-recovery-centre';
 
 const SEEDED_METRIC_LABELS = new Set(['Backup Service', 'Health Check', 'Storage Usage', 'Last Verified Backup']);
-const SEEDED_POLICY_TYPES = new Set([
-  'Database Full Backup',
-  'Differential Backup',
-  'Transaction Log Backup',
-  'Application Backup',
-  'Document Repository Backup',
-  'Configuration Backup',
-  'System Snapshot',
-]);
 const SEEDED_QUEUE_JOBS = new Set(['Transaction Log Backup', 'Health Probe', 'Document Repository Backup', 'Full Database Backup']);
 const SEEDED_RESTORE_CONTROLS = new Set(['Full database restore drill', 'Document repository recovery', 'Configuration rollback package', 'RPO / RTO status']);
 const SEEDED_REPLICATION_LOCATIONS = new Set(['D:\\DLE_Backups', '\\\\BackupServer\\DLEConnect', '\\\\DRServer\\DLEConnect', 'Azure Blob Storage']);
+
+const POLICY_TYPE_ALIASES: Record<string, string> = {
+  'database full backup': 'Full database backup',
+  'full database backup': 'Full database backup',
+  'differential backup': 'Differential database backup',
+  'differential database backup': 'Differential database backup',
+  'transaction log backup': 'Transaction log backup',
+  'application backup': 'Application backup',
+  'document repository backup': 'Document repository backup',
+  'configuration backup': 'Configuration backup',
+  'system snapshot': 'System snapshot',
+};
+
+const canonicalizePolicyType = (type: string) => {
+  const key = String(type || '').trim().toLowerCase();
+  return POLICY_TYPE_ALIASES[key] || String(type || '').trim();
+};
 
 let schemaReady = false;
 
@@ -43,7 +51,7 @@ END;
 };
 
 const cleanPolicy = (policy: BackupPolicy): BackupPolicy => ({
-  type: String(policy.type || '').trim(),
+  type: canonicalizePolicyType(policy.type),
   schedule: String(policy.schedule || '').trim(),
   validation: String(policy.validation || '').trim(),
   retention: String(policy.retention || '').trim(),
@@ -73,23 +81,30 @@ const normalizeState = (value: unknown): BackupDisasterRecoveryState => {
     if (target && SEEDED_REPLICATION_LOCATIONS.has(target.location)) {
       return { ...target, location: '', status: 'Not configured', lastCopy: '', lag: '' };
     }
+    if (target?.target === 'Primary Backup' && !String(target.location || '').trim()) {
+      const location = fallback.replicationTargets.find((item) => item.target === 'Primary Backup')?.location || '';
+      return {
+        ...target,
+        location,
+        status: location ? 'Configured' : 'Not configured',
+      };
+    }
     if (target?.location?.trim() && target.status === 'Not configured') {
       return { ...target, status: 'Configured' };
     }
     return target;
   }) : fallback.replicationTargets;
+
+  const cleanedPolicies = Array.isArray(parsed.backupPolicies)
+    ? parsed.backupPolicies.map(cleanPolicy).filter((policy) => Boolean(policy.type))
+    : [];
+
   return {
     ...fallback,
     ...parsed,
     schemaVersion: 1,
     serviceMetrics: Array.isArray(parsed.serviceMetrics) ? parsed.serviceMetrics.filter((metric) => !SEEDED_METRIC_LABELS.has(metric.label)) : fallback.serviceMetrics,
-    backupPolicies: Array.isArray(parsed.backupPolicies)
-      ? (
-        parsed.backupPolicies.filter((policy) => !SEEDED_POLICY_TYPES.has(policy.type)).length
-          ? parsed.backupPolicies.filter((policy) => !SEEDED_POLICY_TYPES.has(policy.type)).map(cleanPolicy)
-          : fallback.backupPolicies
-      )
-      : fallback.backupPolicies,
+    backupPolicies: cleanedPolicies.length ? cleanedPolicies : fallback.backupPolicies,
     replicationTargets: replicationTargets.length ? replicationTargets : fallback.replicationTargets,
     executionQueue: Array.isArray(parsed.executionQueue) ? parsed.executionQueue.filter((job) => !SEEDED_QUEUE_JOBS.has(job.job)) : fallback.executionQueue,
     failureRecoveryRules: Array.isArray(parsed.failureRecoveryRules) ? parsed.failureRecoveryRules : fallback.failureRecoveryRules,

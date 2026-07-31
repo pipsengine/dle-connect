@@ -1,5 +1,9 @@
 import type { BackupPolicy } from '@/lib/backup-disaster-recovery-types';
 
+/** Default on-disk backup root used when Primary Backup location is blank. */
+export const defaultBackupRoot = () =>
+  String(process.env.DLE_BACKUP_ROOT || process.env.BACKUP_ROOT || 'C:\\SQLBackups\\DLE_Enterprise').trim();
+
 /** Returns the repeating interval in ms for high-frequency schedules, else null (wall-clock schedules). */
 export const scheduleIntervalMs = (schedule: string): number | null => {
   const text = schedule.trim().toLowerCase();
@@ -31,11 +35,19 @@ export const computeNextRun = (schedule: string, from = new Date()) => {
     if (next <= from) next.setDate(next.getDate() + 1);
     return next.toISOString();
   }
-  if (text.includes('weekly sunday')) {
-    next.setHours(23, 0, 0, 0);
+
+  const weeklyMatch = text.match(/weekly\s+sunday(?:\s+(\d{2}):(\d{2}))?/);
+  if (weeklyMatch || text.includes('weekly sunday')) {
+    const hour = weeklyMatch?.[1] ? Number(weeklyMatch[1]) : 23;
+    const minute = weeklyMatch?.[2] ? Number(weeklyMatch[2]) : 0;
+    next.setHours(hour, minute, 0, 0);
     const day = next.getDay();
-    const daysUntilSunday = (7 - day) % 7 || 7;
-    next.setDate(next.getDate() + daysUntilSunday);
+    const daysUntilSunday = (7 - day) % 7;
+    if (daysUntilSunday === 0) {
+      if (next <= from) next.setDate(next.getDate() + 7);
+    } else {
+      next.setDate(next.getDate() + daysUntilSunday);
+    }
     return next.toISOString();
   }
   return '';
@@ -44,7 +56,11 @@ export const computeNextRun = (schedule: string, from = new Date()) => {
 export const isAutomatedPolicy = (policy: BackupPolicy) =>
   String(policy.status || '').trim().toLowerCase() === 'automated';
 
-/** Whether an automated policy is due to run now based on lastRunAt + schedule. */
+/**
+ * Whether an automated policy is due to run now based on lastRunAt + schedule.
+ * Missed wall-clock windows are caught up for up to 36 hours so overnight
+ * process restarts still fire Daily 23:00 backups.
+ */
 export const isPolicyDue = (policy: BackupPolicy, now = new Date()) => {
   if (!isAutomatedPolicy(policy)) return false;
   const schedule = String(policy.schedule || '').trim();
@@ -52,23 +68,25 @@ export const isPolicyDue = (policy: BackupPolicy, now = new Date()) => {
 
   const lastMs = policy.lastRunAt ? new Date(policy.lastRunAt).getTime() : 0;
   const interval = scheduleIntervalMs(schedule);
+  const nowMs = now.getTime();
 
   if (interval != null) {
     if (!lastMs || !Number.isFinite(lastMs)) return true;
-    return now.getTime() - lastMs >= interval;
+    return nowMs - lastMs >= interval;
   }
 
+  // Wall-clock schedules (Daily HH:mm / Weekly Sunday HH:mm)
   if (!lastMs || !Number.isFinite(lastMs)) {
-    // First run: only fire once we are past today's scheduled wall-clock time.
-    const nextToday = computeNextRun(schedule, new Date(now.getTime() - 24 * 60 * 60 * 1000));
-    if (!nextToday) return false;
-    const candidate = new Date(nextToday);
-    return candidate <= now && now.getTime() - candidate.getTime() < 2 * 60 * 60 * 1000;
+    const lookback = new Date(nowMs - 36 * 60 * 60 * 1000);
+    const candidateIso = computeNextRun(schedule, lookback);
+    if (!candidateIso) return false;
+    const candidate = new Date(candidateIso).getTime();
+    return candidate <= nowMs;
   }
 
-  const next = computeNextRun(schedule, new Date(lastMs));
-  if (!next) return false;
-  return new Date(next) <= now;
+  const nextIso = computeNextRun(schedule, new Date(lastMs));
+  if (!nextIso) return false;
+  return new Date(nextIso).getTime() <= nowMs;
 };
 
 export const parseRetentionDays = (retention: string): number | null => {
