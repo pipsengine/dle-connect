@@ -51,6 +51,10 @@ import {
   assertPayrollCutoverBackupBeforeOpen,
   runPayrollCutoverBackup,
 } from '@/lib/payroll-cutover-backup-service';
+import {
+  postPayrollJournalBatch,
+  reversePayrollJournalBatch,
+} from '@/lib/payroll-journal-service';
 
 type WorkflowInput = {
   action: string;
@@ -597,21 +601,72 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     if (!run.bankScheduleGeneratedAt || !run.statutorySchedulesGeneratedAt) {
       throw new Error('Generate bank and statutory schedules before posting payroll.');
     }
+    calculation = calculation || await calculatePayrollForPeriod(period, { pack: resolvePayrollRunPack(run) });
+    const journalBatch = await postPayrollJournalBatch({
+      calculation,
+      run,
+      actor,
+      pack: resolvePayrollRunPack(run),
+    });
     const before = run.status;
     run.status = 'Posted';
-    run.postedAt = nowIso();
+    run.postedAt = journalBatch.postedAt || nowIso();
     run.postedBy = actor;
     run.updatedBy = actor;
     await savePayrollRun(run);
     await appendPayrollArtifact(run.id, {
       type: 'journal',
-      label: 'Payroll journal posted',
-      fileName: `payroll-journal-${period}-${run.pack}.json`,
+      label: `Payroll journal posted (${journalBatch.batchId})`,
+      fileName: journalBatch.exportFileName || `payroll-journal-${period}-${run.pack}.csv`,
       generatedBy: actor,
-      meta: { pack: run.pack },
+      meta: {
+        pack: run.pack,
+        batchId: journalBatch.batchId,
+        lineCount: journalBatch.lines.length,
+        totalDebit: journalBatch.totalDebit,
+        totalCredit: journalBatch.totalCredit,
+        balanced: journalBatch.balanced,
+        employeeCount: journalBatch.employeeCount,
+        netPay: journalBatch.netPay,
+        exportFileName: journalBatch.exportFileName,
+      },
     });
     await audit(action, before, run.status);
-    return { run, calculation };
+    return { run, calculation, journalBatch };
+  }
+
+  if (action === 'reverse-journal-posting' || action === 'reverse-journal') {
+    if (!reason || reason.trim().length < 3) throw new Error('Reversing a payroll journal requires a reason.');
+    const pack = resolvePayrollRunPack(run);
+    if (run.status !== 'Posted' && !run.postedAt) {
+      throw new Error('Only posted payroll journals can be reversed.');
+    }
+    const reversed = await reversePayrollJournalBatch({
+      period,
+      pack,
+      actor,
+      reason,
+    });
+    const before = run.status;
+    run.status = run.releasedAt ? 'Released' : 'Published';
+    run.postedAt = null;
+    run.postedBy = null;
+    run.updatedBy = actor;
+    await savePayrollRun(run);
+    await appendPayrollArtifact(run.id, {
+      type: 'journal',
+      label: `Payroll journal reversed (${reversed.batchId})`,
+      fileName: reversed.exportFileName,
+      generatedBy: actor,
+      meta: {
+        pack,
+        batchId: reversed.batchId,
+        status: 'Reversed',
+        reason,
+      },
+    });
+    await audit(action, before, run.status);
+    return { run, calculation, journalBatch: reversed };
   }
 
   if (action === 'close-period') {

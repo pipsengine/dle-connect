@@ -63,10 +63,66 @@ type FinanceRun = {
   artifacts?: PayrollArtifact[];
 };
 
+type PayrollJournalLine = {
+  lineNo: number;
+  accountCode: string;
+  accountName: string;
+  description: string;
+  debit: number;
+  credit: number;
+  costCentre: string;
+  department: string;
+  component: string;
+};
+
+type PayrollJournalPrerequisite = {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+};
+
+type PayrollJournalBatchSummary = {
+  batchId: string;
+  packLabel?: string;
+  status: string;
+  totalDebit: number;
+  totalCredit: number;
+  netPay: number;
+  employeeCount: number;
+  postedAt?: string | null;
+  postedBy?: string | null;
+  reversedAt?: string | null;
+  reversedBy?: string | null;
+  reverseReason?: string | null;
+  exportFileName?: string | null;
+};
+
+type PayrollJournalWorkspace = {
+  mappingComplete: boolean;
+  canPost: boolean;
+  blockedReason: string | null;
+  prerequisites: PayrollJournalPrerequisite[];
+  draft: {
+    lines: PayrollJournalLine[];
+    totalDebit: number;
+    totalCredit: number;
+    balanced: boolean;
+    employeeCount: number;
+    grossPay: number;
+    deductions: number;
+    netPay: number;
+  };
+  activeBatch: PayrollJournalBatchSummary | null;
+  history: PayrollJournalBatchSummary[];
+};
+
 export type BankFinancePayload = {
   period: string;
   periodLabel: string;
   generatedAt: string;
+  pack?: string;
+  packLabel?: string;
   payrollComputed?: boolean;
   dataSource?: { source: string; employeeCount: number };
   periodRecord?: { status: string } | null;
@@ -84,7 +140,8 @@ export type BankFinancePayload = {
   records?: FinanceRecord[];
   exceptions: FinanceException[];
   currentRun?: FinanceRun | null;
-  permissions?: { canViewMoney?: boolean; canExport?: boolean };
+  journal?: PayrollJournalWorkspace | null;
+  permissions?: { canViewMoney?: boolean; canExport?: boolean; canPost?: boolean };
 };
 
 export type BankFinanceTabId =
@@ -109,6 +166,7 @@ type Props = {
   onExportCsv: () => void;
   onExportExcel: () => void;
   onExportPdf?: () => void;
+  onExportJournalSage?: () => void;
   onSelectTab: (tab: BankFinanceTabId) => void;
   onFixException: (id: string) => void;
   onViewAllExceptions: () => void;
@@ -199,6 +257,7 @@ export default function BankFinanceHub({
   onExportCsv,
   onExportExcel,
   onExportPdf,
+  onExportJournalSage,
   onSelectTab,
   onFixException,
   onViewAllExceptions,
@@ -569,7 +628,15 @@ export default function BankFinanceHub({
             onExportExcel={onExportExcel}
           />
         ) : activeTab === 'payroll-journal' ? (
-          <PayrollJournalPanel run={run} busyAction={busyAction} onBack={() => onSelectTab('overview')} onFinanceAction={onFinanceAction} />
+          <PayrollJournalPanel
+            payload={payload}
+            run={run}
+            canViewMoney={canViewMoney}
+            busyAction={busyAction}
+            onBack={() => onSelectTab('overview')}
+            onFinanceAction={onFinanceAction}
+            onExportJournalSage={() => (onExportJournalSage ? onExportJournalSage() : onExportExcel())}
+          />
         ) : activeTab === 'reconciliation' ? (
           <ReconciliationPanel onBack={() => onSelectTab('overview')} onFinanceAction={onFinanceAction} />
         ) : null}
@@ -904,34 +971,306 @@ function PaymentFilesPanel({
 }
 
 function PayrollJournalPanel({
+  payload,
   run,
+  canViewMoney,
   busyAction,
   onBack,
   onFinanceAction,
+  onExportJournalSage,
 }: {
+  payload: BankFinancePayload | null;
   run: FinanceRun | null | undefined;
+  canViewMoney: boolean;
   busyAction: string;
   onBack: () => void;
   onFinanceAction: (actionId: string) => void;
+  onExportJournalSage: () => void;
 }) {
-  const posted = Boolean(run?.postedAt);
+  const journal = payload?.journal;
+  const payrollComputed = payload?.payrollComputed !== false;
+  const packLabel = payload?.packLabel || 'Current pack';
+  const posted = Boolean(journal?.activeBatch?.status === 'Posted' || run?.postedAt);
+  const mappingDone = Boolean(journal?.mappingComplete);
+  const balanced = Boolean(journal?.draft?.balanced);
+  const canPost = Boolean(journal?.canPost) && !posted && busyAction !== 'post-run';
+  const blockedReason = journal?.blockedReason || (posted ? 'Journal already posted for this pack.' : null);
+  const lines = journal?.draft?.lines || [];
+  const history = journal?.history || [];
+  const prerequisites = journal?.prerequisites || [];
+  const activeBatch = journal?.activeBatch;
+
   return (
-    <section className="rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-sm">
-      <button type="button" onClick={onBack} className="text-sm font-semibold text-[#2563EB] hover:underline">
-        ← Back to Overview
-      </button>
-      <h2 className="mt-4 text-2xl font-semibold">Payroll Journal</h2>
-      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <WorkflowStepCard title="Journal Mapping" done={bankScheduleReadyFor(run)} status="GL mapping ready" detail="Payroll components mapped to finance ledger accounts." />
-        <WorkflowStepCard title="Journal Posting" done={posted} status={posted ? `Posted ${run?.postedAt ? new Date(run.postedAt).toLocaleString('en-GB') : ''}` : 'Not posted'} detail={posted ? `Posted by ${run?.postedBy || 'Finance'}` : 'Post payroll journal after bank schedule and statutory schedules are generated.'} />
-        <WorkflowStepCard title="Posting History" done={posted} status={posted ? 'Recorded in audit trail' : 'No postings'} detail="All journal postings are audit logged." />
-      </div>
-      {!posted ? (
-        <button type="button" disabled={busyAction === 'post-run'} onClick={() => onFinanceAction('post-run')} className="mt-6 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60">
-          {busyAction === 'post-run' ? 'Posting…' : 'Post Payroll Journal'}
-          <ChevronRight className="h-4 w-4" />
+    <section className="space-y-4">
+      <div className="rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-sm">
+        <button type="button" onClick={onBack} className="text-sm font-semibold text-[#2563EB] hover:underline">
+          ← Back to Overview
         </button>
-      ) : null}
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold">Payroll Journal</h2>
+            <p className="mt-1 text-sm text-[#64748B]">
+              {payload?.periodLabel || payload?.period || 'Selected period'}
+              {payload?.packLabel ? ` · ${payload.packLabel}` : ''}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onExportJournalSage}
+              className="inline-flex items-center gap-2 rounded-xl border border-[#E5E7EB] bg-white px-4 py-2.5 text-sm font-bold text-[#0F172A] hover:bg-slate-50"
+            >
+              Export Sage Journal
+            </button>
+            {posted ? (
+              <button
+                type="button"
+                disabled={busyAction === 'reverse-journal-posting'}
+                onClick={() => onFinanceAction('reverse-journal-posting')}
+                className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-900 hover:bg-amber-100 disabled:opacity-60"
+              >
+                {busyAction === 'reverse-journal-posting' ? 'Reversing…' : 'Reverse Posting'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={!canPost}
+                title={blockedReason || undefined}
+                onClick={() => onFinanceAction('post-run')}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {busyAction === 'post-run' ? 'Posting…' : 'Post Payroll Journal'}
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </div>
+        {!posted && blockedReason ? (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">{blockedReason}</p>
+        ) : null}
+        {posted && activeBatch ? (
+          <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900">
+            Posted {activeBatch.postedAt ? fmtDateTime(activeBatch.postedAt) : ''} by {activeBatch.postedBy || 'Finance'}
+            {activeBatch.exportFileName ? ` · ${activeBatch.exportFileName}` : ''}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <WorkflowStepCard
+          title="Journal Mapping"
+          done={mappingDone}
+          status={mappingDone ? 'GL mapping complete' : 'Mapping incomplete'}
+          detail="Payroll components mapped to finance ledger accounts."
+        />
+        <WorkflowStepCard
+          title="Journal Posting"
+          done={posted}
+          status={
+            posted
+              ? `Posted ${activeBatch?.postedAt || run?.postedAt ? fmtDateTime(String(activeBatch?.postedAt || run?.postedAt)) : ''}`
+              : balanced
+                ? 'Draft balanced — ready when prerequisites pass'
+                : 'Draft not balanced'
+          }
+          detail={
+            posted
+              ? `Posted by ${activeBatch?.postedBy || run?.postedBy || 'Finance'}`
+              : 'Post only after release, schedules, mapping, and balance checks pass.'
+          }
+        />
+        <WorkflowStepCard
+          title="Posting History"
+          done={history.length > 0}
+          status={history.length ? `${history.length} batch${history.length === 1 ? '' : 'es'} recorded` : 'No postings'}
+          detail="Posted and reversed batches are retained for audit."
+        />
+      </div>
+
+      <div className="rounded-2xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
+        <h3 className="text-lg font-semibold">Prerequisite checklist</h3>
+        <p className="mt-1 text-sm text-[#64748B]">All items must pass before posting for this pack.</p>
+        <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
+          {(prerequisites.length
+            ? prerequisites
+            : [
+                { id: 'release', label: 'Payroll released', passed: false, detail: 'Awaiting workspace data' },
+                { id: 'bank', label: 'Bank schedule', passed: false, detail: 'Awaiting workspace data' },
+                { id: 'statutory', label: 'Statutory schedules', passed: false, detail: 'Awaiting workspace data' },
+                { id: 'mapping', label: 'GL mapping', passed: mappingDone, detail: mappingDone ? 'Complete' : 'Incomplete' },
+                { id: 'balanced', label: 'Journal balanced', passed: balanced, detail: balanced ? 'Debits equal credits' : 'Not balanced' },
+              ]
+          ).map((item) => (
+            <div
+              key={item.id}
+              className={`flex items-start gap-3 rounded-xl border px-3 py-3 ${item.passed ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}
+            >
+              <span className={`mt-0.5 text-sm font-bold ${item.passed ? 'text-emerald-700' : 'text-amber-800'}`}>
+                {item.passed ? '✓' : '!'}
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-[#0F172A]">{item.label}</p>
+                <p className="text-xs text-[#64748B]">{item.detail}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold">Journal preview</h3>
+            <p className="mt-1 text-sm text-[#64748B]">
+              {lines.length} line{lines.length === 1 ? '' : 's'}
+              {journal?.draft
+                ? ` · Debit ${fmtMoney(journal.draft.totalDebit, canViewMoney, payrollComputed)} · Credit ${fmtMoney(journal.draft.totalCredit, canViewMoney, payrollComputed)}`
+                : ''}
+              {balanced ? ' · Balanced' : ' · Out of balance'}
+            </p>
+          </div>
+          <p className="text-xs font-semibold text-[#64748B]">
+            Employees {fmtNum(journal?.draft?.employeeCount || 0)} · Net {fmtMoney(journal?.draft?.netPay, canViewMoney, payrollComputed)}
+          </p>
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="border-b border-[#E5E7EB] text-xs uppercase tracking-wide text-[#64748B]">
+              <tr>
+                <th className="px-2 py-2 font-semibold">#</th>
+                <th className="px-2 py-2 font-semibold">Account</th>
+                <th className="px-2 py-2 font-semibold">Description</th>
+                <th className="px-2 py-2 font-semibold">Dept / CC</th>
+                <th className="px-2 py-2 text-right font-semibold">Debit</th>
+                <th className="px-2 py-2 text-right font-semibold">Credit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((line) => (
+                <tr key={`${line.lineNo}-${line.accountCode}-${line.component}`} className="border-b border-[#F1F5F9]">
+                  <td className="px-2 py-2 text-[#64748B]">{line.lineNo}</td>
+                  <td className="px-2 py-2">
+                    <p className="font-semibold text-[#0F172A]">{line.accountCode}</p>
+                    <p className="text-xs text-[#64748B]">{line.accountName}</p>
+                  </td>
+                  <td className="px-2 py-2 text-[#334155]">{line.description}</td>
+                  <td className="px-2 py-2 text-xs text-[#64748B]">
+                    {[line.department, line.costCentre].filter(Boolean).join(' / ') || '—'}
+                  </td>
+                  <td className="px-2 py-2 text-right font-semibold tabular-nums">
+                    {line.debit ? fmtMoney(line.debit, canViewMoney, payrollComputed) : '—'}
+                  </td>
+                  <td className="px-2 py-2 text-right font-semibold tabular-nums">
+                    {line.credit ? fmtMoney(line.credit, canViewMoney, payrollComputed) : '—'}
+                  </td>
+                </tr>
+              ))}
+              {!lines.length ? (
+                <tr>
+                  <td colSpan={6} className="px-2 py-6 text-center text-sm font-semibold text-[#64748B]">
+                    No journal lines yet. Compute and release payroll for this pack to build a draft.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+            {lines.length ? (
+              <tfoot>
+                <tr className="bg-slate-50 font-bold">
+                  <td className="px-2 py-3" colSpan={4}>
+                    Totals
+                  </td>
+                  <td className="px-2 py-3 text-right tabular-nums">
+                    {fmtMoney(journal?.draft?.totalDebit, canViewMoney, payrollComputed)}
+                  </td>
+                  <td className="px-2 py-3 text-right tabular-nums">
+                    {fmtMoney(journal?.draft?.totalCredit, canViewMoney, payrollComputed)}
+                  </td>
+                </tr>
+              </tfoot>
+            ) : null}
+          </table>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
+        <h3 className="text-lg font-semibold">Posting history</h3>
+        <p className="mt-1 text-sm text-[#64748B]">Batches for this period and pack, including reversals.</p>
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="border-b border-[#E5E7EB] text-xs uppercase tracking-wide text-[#64748B]">
+              <tr>
+                <th className="px-2 py-2 font-semibold">Batch</th>
+                <th className="px-2 py-2 font-semibold">Pack</th>
+                <th className="px-2 py-2 font-semibold">Status</th>
+                <th className="px-2 py-2 font-semibold">Posted</th>
+                <th className="px-2 py-2 text-right font-semibold">Debit</th>
+                <th className="px-2 py-2 text-right font-semibold">Credit</th>
+                <th className="px-2 py-2 font-semibold">Export</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((batch) => (
+                <tr key={batch.batchId} className="border-b border-[#F1F5F9]">
+                  <td className="px-2 py-2 font-semibold text-[#0F172A]">{batch.batchId}</td>
+                  <td className="px-2 py-2 text-[#64748B]">{batch.packLabel || packLabel}</td>
+                  <td className="px-2 py-2">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
+                        batch.status === 'Posted'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : batch.status === 'Reversed'
+                            ? 'bg-amber-100 text-amber-900'
+                            : 'bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      {batch.status}
+                    </span>
+                  </td>
+                  <td className="px-2 py-2 text-xs text-[#64748B]">
+                    {batch.postedAt ? (
+                      <>
+                        {fmtDateTime(batch.postedAt)}
+                        <br />
+                        by {batch.postedBy || '—'}
+                      </>
+                    ) : (
+                      '—'
+                    )}
+                    {batch.reversedAt ? (
+                      <p className="mt-1 text-amber-800">
+                        Reversed {fmtDateTime(batch.reversedAt)}
+                        {batch.reverseReason ? ` — ${batch.reverseReason}` : ''}
+                      </p>
+                    ) : null}
+                  </td>
+                  <td className="px-2 py-2 text-right tabular-nums font-semibold">
+                    {fmtMoney(batch.totalDebit, canViewMoney, payrollComputed)}
+                  </td>
+                  <td className="px-2 py-2 text-right tabular-nums font-semibold">
+                    {fmtMoney(batch.totalCredit, canViewMoney, payrollComputed)}
+                  </td>
+                  <td className="px-2 py-2">
+                    {batch.status === 'Posted' || batch.exportFileName ? (
+                      <button type="button" onClick={onExportJournalSage} className="text-sm font-semibold text-[#2563EB] hover:underline">
+                        {batch.exportFileName || 'Download'}
+                      </button>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {!history.length ? (
+                <tr>
+                  <td colSpan={7} className="px-2 py-6 text-center text-sm font-semibold text-[#64748B]">
+                    No journal batches posted yet.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
   );
 }

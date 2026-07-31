@@ -4,6 +4,7 @@ import {
   maskPayrollCalculationRecords,
   type PayrollCalculationRecord,
 } from '@/lib/payroll-calculation-service';
+import { buildPayrollJournalWorkspace } from '@/lib/payroll-journal-service';
 import { getActivePayrollPeriod, listPayrollPeriods, payrollPeriodLabel } from '@/lib/payroll-period-store';
 import {
   ensurePayrollRunsForPeriod,
@@ -455,6 +456,11 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
 
   const blocked = calculation.summary.blockedEmployees;
   const workflowStatus = currentRun?.status || (periodRecord?.status === 'Closed' ? 'Closed' : periodRecord?.status === 'Open' ? 'Draft' : periodRecord?.status || 'Draft');
+  const journal = await buildPayrollJournalWorkspace({
+    calculation,
+    run: selectedRun,
+    pack,
+  }).catch(() => null);
 
   return {
     generatedAt: calculation.generatedAt,
@@ -584,6 +590,7 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
     },
     auditTrail,
     artifacts: currentRun?.artifacts || [],
+    journal,
     deferredExceptionCount: calculation.summary.deferredExceptionCount,
   };
 };

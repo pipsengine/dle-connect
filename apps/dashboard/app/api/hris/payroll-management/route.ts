@@ -13,6 +13,7 @@ import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
 import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
 import { FINANCE_ONLY_PAYROLL_ACTIONS, hasPayrollSalaryReviewAccess, isFinancePayrollOnlyUser } from '@/lib/access/payroll-access';
 import { buildExcelHtml, buildExcelWorkbookXml, excelMimeType } from '@/lib/excel-export';
+import { buildSageJournalCsv, buildSageJournalExportRows } from '@/lib/payroll-journal-service';
 import { buildSalarySetupExportReport } from '@/lib/payroll-salary-setup-export';
 import { buildPayrollReviewExportReport, previousPayrollPeriod } from '@/lib/payroll-review-export';
 import { readPayrollSnapshotsByPeriods } from '@/lib/payroll-run-store';
@@ -86,6 +87,8 @@ const reportTitle = (report: string) => ({
   'executive-analytics': 'Executive Payroll Analytics',
   'salary-setup': 'Employee Salary Setup',
   'payroll-review': 'Payroll Review (Month-on-Month)',
+  'journal-sage': 'Sage Payroll Journal',
+  'payroll-journal': 'Payroll Journal',
 }[report] || 'Payroll Register');
 
 const loadReviewRecordsForPeriod = async (period: string) => {
@@ -274,7 +277,7 @@ const workflowActions = new Set([
   'create-period', 'open-period', 'validate-payroll', 'create-run', 'submit-run',
   'hr-manager-approve', 'finance-manager-approve', 'cfo-approve', 'md-ceo-approve', 'approve-run',
   'release-run', 'generate-payslips', 'generate-bank-schedule', 'generate-statutory-schedules', 'post-run', 'lock-run',
-  'close-period', 'reopen-period', 'reject-run', 'request-revision',
+  'close-period', 'reopen-period', 'reject-run', 'request-revision', 'reverse-journal-posting',
 ]);
 
 export async function GET(request: Request) {
@@ -301,6 +304,64 @@ export async function GET(request: Request) {
     const exportSubtitle = report === 'payroll-review'
       ? `${exportRecords.length} current / ${previousPeriod ? `compared to ${previousPeriod}` : 'no previous period'}`
       : `${exportRecords.length} records / ${payload.summary.exceptionCount} total payroll exceptions`;
+
+    if (report === 'journal-sage' || report === 'payroll-journal') {
+      if (!payload.permissions.canExport) return jsonErr(403, 'Permission denied');
+      const journal = payload.journal;
+      const batch = journal?.activeBatch || (journal ? {
+        batchId: `DRAFT-${payload.period}-${payload.pack || 'salaried'}`,
+        period: payload.period,
+        pack: payload.pack || 'salaried',
+        packLabel: payload.packLabel || 'Salaried / Stipend',
+        lines: journal.draft.lines,
+        postedAt: null,
+        postedBy: null,
+        totalDebit: journal.draft.totalDebit,
+        totalCredit: journal.draft.totalCredit,
+        balanced: journal.draft.balanced,
+        employeeCount: journal.draft.employeeCount,
+        grossPay: journal.draft.grossPay,
+        deductions: journal.draft.deductions,
+        netPay: journal.draft.netPay,
+        status: 'Draft' as const,
+        periodLabel: payload.periodLabel,
+        runId: payload.currentRun?.id || '',
+        reversedAt: null,
+        reversedBy: null,
+        reverseReason: null,
+        exportFileName: null,
+        createdAt: payload.generatedAt,
+        updatedAt: payload.generatedAt,
+      } : null);
+      if (!batch?.lines?.length) return jsonErr(404, 'No payroll journal lines available for export.');
+      const format = url.searchParams.get('format') || 'csv';
+      if (format === 'csv') {
+        return new Response(buildSageJournalCsv(batch), {
+          headers: {
+            'content-type': 'text/csv; charset=utf-8',
+            'content-disposition': `attachment; filename="${batch.exportFileName || `sage-payroll-journal-${payload.period}-${payload.pack || 'salaried'}.csv`}"`,
+            'cache-control': 'no-store',
+          },
+        });
+      }
+      const exportRows = buildSageJournalExportRows(batch as any);
+      return new Response(buildExcelWorkbookXml({
+        worksheets: [{
+          title: `${reportTitle(report)} - ${payload.periodLabel}`,
+          subtitle: `${payload.packLabel || 'Payroll'} · ${batch.lines.length} lines · Debit ${batch.totalDebit} / Credit ${batch.totalCredit}`,
+          sheetName: 'Payroll Journal',
+          columns: exportRows.columns,
+          rows: exportRows.rows,
+        }],
+      }), {
+        headers: {
+          'content-type': excelMimeType,
+          'content-disposition': `attachment; filename="sage-payroll-journal-${payload.period}-${payload.pack || 'salaried'}.xls"`,
+          'cache-control': 'no-store',
+        },
+      });
+    }
+
     if (url.searchParams.get('format') === 'csv') {
       if (!payload.permissions.canExport) return jsonErr(403, 'Permission denied');
       return new Response(csvFromReport(reportData), {
@@ -538,7 +599,7 @@ export async function POST(request: Request) {
       return jsonErr(403, 'Reject/revision permission denied');
     }
     if (['validate-payroll', 'create-run', 'submit-run', 'release-run', 'generate-payslips', 'create-period', 'open-period'].includes(action) && !perms.canManageRun) return jsonErr(403, 'Permission denied');
-    if (['generate-bank-schedule', 'post-run'].includes(action) && !perms.canPost) return jsonErr(403, 'Permission denied');
+    if (['generate-bank-schedule', 'post-run', 'reverse-journal-posting'].includes(action) && !perms.canPost) return jsonErr(403, 'Permission denied');
     if (['close-period'].includes(action) && !perms.canManageRun && !perms.canApprove) return jsonErr(403, 'Permission denied');
     if (action === 'reopen-period' && !perms.canReopen) return jsonErr(403, 'Only CFO, Executive Director, or Super Admin can reopen closed payroll periods.');
 

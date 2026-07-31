@@ -4630,6 +4630,10 @@ export default function PayrollManagementClient({
       exportReportExcel('bank-schedule');
       return;
     }
+    if (actionItem.id === 'export-journal-sage') {
+      exportReportExcel('journal-sage');
+      return;
+    }
     if (actionItem.id === 'generate-bank-schedule' && payrollRunFor(payload)?.bankScheduleGeneratedAt) {
       setToast('Bank schedule is already generated. Downloading Excel export…');
       exportReportExcel('bank-schedule');
@@ -4922,6 +4926,7 @@ export default function PayrollManagementClient({
           onExportCsv={() => exportReportCsv('bank-schedule')}
           onExportExcel={() => exportReportExcel('bank-schedule')}
           onExportPdf={() => exportReportPdf('bank-schedule')}
+          onExportJournalSage={() => exportReportExcel('journal-sage')}
           busyAction={busyAction}
           onSelectTab={(tab) => {
             setActiveTabs((prev) => ({ ...prev, 'finance-integration': tab }));
