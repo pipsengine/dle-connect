@@ -103,7 +103,7 @@ export default function UserManagementClient({ section = 'user-accounts' }: { se
       setToast(json.error || 'Action failed');
       return;
     }
-    setToast(`${action.replace(/-/g, ' ')} completed`);
+    setToast(String(json.data?.message || `${action.replace(/-/g, ' ')} completed`));
     await load();
   };
 

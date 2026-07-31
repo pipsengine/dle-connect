@@ -20,6 +20,7 @@ import {
   buildOvertimeApprovalRequestEmail,
   buildOvertimeApprovedEmail,
   buildOvertimeRejectedEmail,
+  buildPasswordResetEmail,
   buildProfileUpdateApprovalRequestEmail,
   buildProfileUpdateDecisionEmail,
   buildPayrollApprovalRequestEmail,
@@ -35,6 +36,7 @@ import {
 } from '@/lib/workflow-email-builders';
 import { leavePortalUrl } from '@/lib/leave-email-action-token';
 import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
+import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 
 type MailProvider = 'graph' | 'smtp';
 
@@ -602,5 +604,40 @@ export const sendFleetTripStatusEmail = async (input: {
   const to = compact(input.recipientEmail);
   if (!to) return { sent: false, reason: 'No recipient email.' };
   const email = buildFleetTripStatusEmail({ ...input, baseUrl: input.baseUrl });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
+
+/**
+ * Notify an employee that IT reset their password.
+ * Never includes the default password value in the message.
+ */
+export const sendPasswordResetEmail = async (input: {
+  recipientName: string;
+  recipientEmail?: string | null;
+  username: string;
+  employeeCode?: string | null;
+  actorName?: string;
+  baseUrl?: string | null;
+}): Promise<MailSendResult> => {
+  const to = compact(input.recipientEmail);
+  if (!to) {
+    console.warn('[mail-service] Password reset email skipped: no mailbox for recipient.', {
+      username: compact(input.username),
+      employeeCode: compact(input.employeeCode),
+    });
+    return { sent: false, reason: 'No recipient email.' };
+  }
+
+  const origin = resolveWorkflowLinkOrigin(input.baseUrl);
+  const loginHint = encodeURIComponent(compact(input.username) || compact(input.employeeCode));
+  const changePasswordLink = `${origin}/change-password${loginHint ? `?user=${loginHint}` : ''}`;
+  const email = buildPasswordResetEmail({
+    recipientName: compact(input.recipientName) || 'Colleague',
+    username: compact(input.username),
+    employeeCode: compact(input.employeeCode) || undefined,
+    changePasswordLink,
+    actorName: compact(input.actorName) || undefined,
+    baseUrl: origin,
+  });
   return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
 };

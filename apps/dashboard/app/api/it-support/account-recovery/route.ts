@@ -4,6 +4,8 @@ import { readLoginHistory, readUsers, updateUser } from '@/lib/auth/auth-store';
 import { hasPermission } from '@/lib/auth/permission-match';
 import { isSuperActor } from '@/lib/auth/role-delegation';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import { sendPasswordResetEmail, type MailSendResult } from '@/lib/mail-service';
+import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
 
 const tokenFrom = (request: Request) =>
   request.headers.get('cookie')?.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${AUTH_COOKIE}=`))?.split('=').slice(1).join('=');
@@ -51,6 +53,11 @@ const accountIssues = (user: Awaited<ReturnType<typeof readUsers>>[number]) => {
   if (user.firstLoginRequired || user.status === 'Pending First Login') issues.push('Pending first login / password change');
   if (user.deleted) issues.push('Marked deleted');
   return issues;
+};
+
+const passwordResetEmailNote = (mail: MailSendResult) => {
+  if (mail.sent) return 'Notification email sent to the employee.';
+  return `Notification email could not be sent${mail.reason ? `: ${mail.reason}` : '.'}`;
 };
 
 export async function GET(request: Request) {
@@ -126,14 +133,35 @@ export async function POST(request: Request) {
       auth.session,
     );
     const issues = accountIssues(updated as typeof target);
+
+    const shouldNotifyReset = action === 'reset-password'
+      || (action === 'recover-account' && Boolean(body.resetPassword));
+    let notification: MailSendResult | null = null;
+    if (shouldNotifyReset) {
+      notification = await sendPasswordResetEmail({
+        recipientName: updated.fullName || updated.username,
+        recipientEmail: updated.email,
+        username: updated.username,
+        employeeCode: updated.employeeCode || updated.employeeId,
+        actorName: auth.session?.username || 'IT Support',
+        baseUrl: resolveWorkflowLinkOriginFromRequest(request),
+      });
+    }
+
+    const baseMessage = issues.length
+      ? `Recovery applied. Remaining notes: ${issues.join(', ')}.`
+      : `Account ${updated.username} is clear for login.`;
+    const message = shouldNotifyReset
+      ? `${action === 'reset-password' ? 'Password reset applied.' : baseMessage} ${passwordResetEmailNote(notification!)}`
+      : baseMessage;
+
     return NextResponse.json({
       status: 'success',
       data: {
         user: updated,
         issues,
-        message: issues.length
-          ? `Recovery applied. Remaining notes: ${issues.join(', ')}.`
-          : `Account ${updated.username} is clear for login.`,
+        notification,
+        message,
       },
     });
   } catch (error) {

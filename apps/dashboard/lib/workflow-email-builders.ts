@@ -714,6 +714,37 @@ export const buildDleTestEmail = (input: {
   footerNote: 'If you received this email, portal and workflow notifications for Logistics & Fleet are ready.',
 }, input.appUrl);
 
+/** Password reset notice — never include the default password value in the email body. */
+export const buildPasswordResetEmail = (input: {
+  recipientName: string;
+  username: string;
+  employeeCode?: string;
+  changePasswordLink: string;
+  actorName?: string;
+  baseUrl?: string | null;
+}) => withBrand({
+  recipientName: input.recipientName,
+  subject: 'Your DLE Connect password was reset',
+  module: 'Security',
+  headline: 'Password reset complete',
+  intro: 'Your DLE Connect account password has been reset by IT Support. Use your default password to sign in and create a new password before continuing.',
+  tone: 'warning',
+  accentColor: '#D97706',
+  statusBadge: 'Action required',
+  preheader: 'Your password was reset. Use your default password to continue.',
+  details: [
+    { label: 'Username', value: input.username },
+    ...(input.employeeCode ? [{ label: 'Employee code', value: input.employeeCode }] : []),
+    ...(input.actorName ? [{ label: 'Reset by', value: input.actorName }] : []),
+    { label: 'Reset at', value: formatEmailDateTime(new Date()) },
+  ],
+  note: 'For security, this email does not include your default password. Enter your default password on the change-password page, then choose a new password that meets DLE policy.',
+  actions: [
+    { href: input.changePasswordLink, label: 'Continue with default password', tone: 'primary' },
+  ],
+  footerNote: 'If you did not expect this reset, contact IT Support immediately. Do not share your password with anyone.',
+}, input.baseUrl);
+
 export const leaveApprovalLinks = (input: {
   request: EssLeaveRequest;
   recipientEmail: string;

@@ -114,8 +114,10 @@ export default function AccountRecoveryClient() {
       });
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || 'Recovery action failed.');
-      setTone('success');
-      setMessage(json.data?.message || 'Account recovered.');
+      const notification = json.data?.notification as { sent?: boolean; reason?: string } | null | undefined;
+      const successMessage = String(json.data?.message || 'Account recovered.');
+      setTone(notification && notification.sent === false ? 'info' : 'success');
+      setMessage(successMessage);
       await load(query, issuesOnly);
       setSelectedId(selected.id);
     } catch (error) {

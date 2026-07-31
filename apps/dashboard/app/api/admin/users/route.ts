@@ -4,6 +4,8 @@ import { readLoginHistory, readUsers, syncUsersFromEmployeeDirectory, updateUser
 import { hasPermission } from '@/lib/auth/permission-match';
 import { isSuperActor } from '@/lib/auth/role-delegation';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import { sendPasswordResetEmail } from '@/lib/mail-service';
+import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
 
 const tokenFrom = (request: Request) => request.headers.get('cookie')?.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${AUTH_COOKIE}=`))?.split('=').slice(1).join('=');
 
@@ -37,7 +39,31 @@ export async function PATCH(request: Request) {
   if (auth.error) return auth.error;
   try {
     const user = await updateUser(String(body.userId || ''), action, body, request.headers, auth.session?.username || 'Admin', auth.session);
-    return NextResponse.json({ status: 'success', data: user });
+    const shouldNotifyReset = action === 'reset-password'
+      || (action === 'recover-account' && Boolean(body.resetPassword));
+    let notification = null as Awaited<ReturnType<typeof sendPasswordResetEmail>> | null;
+    if (shouldNotifyReset) {
+      notification = await sendPasswordResetEmail({
+        recipientName: user.fullName || user.username,
+        recipientEmail: user.email,
+        username: user.username,
+        employeeCode: user.employeeCode || user.employeeId,
+        actorName: auth.session?.username || 'Admin',
+        baseUrl: resolveWorkflowLinkOriginFromRequest(request),
+      });
+    }
+    return NextResponse.json({
+      status: 'success',
+      data: {
+        user,
+        notification,
+        message: shouldNotifyReset
+          ? (notification?.sent
+            ? 'Password reset applied. Notification email sent to the employee.'
+            : `Password reset applied. Notification email could not be sent${notification?.reason ? `: ${notification.reason}` : '.'}`)
+          : undefined,
+      },
+    });
   } catch (error) {
     return NextResponse.json({ status: 'error', error: error instanceof Error ? error.message : 'Unable to update user.' }, { status: 400 });
   }
