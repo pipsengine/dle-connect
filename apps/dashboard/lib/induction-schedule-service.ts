@@ -2,29 +2,57 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sql from 'mssql';
 import { getDleEnterpriseDbPool, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import { resolveEmployeeMailbox, sendTransactionalEmail } from '@/lib/mail-service';
+import { buildDleEmail, formatEmailDateTime, resolveEmailLogoUrl } from '@/lib/email-templates';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 
-export type InductionKind = 'Department' | 'HSE' | 'IT' | 'Corporate';
-export type InductionStatus = 'Scheduled' | 'Completed' | 'Cancelled' | 'Overdue' | 'Needs Scheduling';
+export type InductionStopStatus = 'Scheduled' | 'Completed' | 'Cancelled' | 'Overdue' | 'Needs Scheduling';
+export type InductionTourStatus = 'Scheduled' | 'In Progress' | 'Completed' | 'Cancelled';
 
-export type InductionSession = {
-  id: string;
-  employeeDbId: number | null;
-  employeeCode: string;
-  employeeName: string;
+export type InductionStop = {
+  stopId: string;
+  tourId: string;
   department: string;
-  jobTitle: string;
-  location: string;
-  kind: InductionKind;
-  status: InductionStatus;
+  sequence: number;
   scheduledFor: string;
-  facilitator: string;
+  status: InductionStopStatus;
+  facilitatorName: string;
+  facilitatorEmail: string;
+  facilitatorEmployeeCode: string;
   venue: string;
   notes: string;
-  source: 'sql' | 'json' | 'inferred';
+  notifiedAt: string | null;
+  completedAt: string | null;
+  updatedAt: string;
+};
+
+export type InductionTour = {
+  tourId: string;
+  hireName: string;
+  hireEmail: string;
+  employeeCode: string;
+  employeeDbId: number | null;
+  destinationDepartment: string;
+  startDate: string;
+  status: InductionTourStatus;
+  notes: string;
   createdAt: string;
   updatedAt: string;
-  updatedBy: string | null;
+  createdBy: string;
+  stops: InductionStop[];
+  progressPct: number;
+  completedStops: number;
+  totalStops: number;
+  overdueStops: number;
+};
+
+export type InductionFacilitatorOption = {
+  employeeCode: string;
+  fullName: string;
+  email: string;
+  department: string;
+  jobTitle: string;
 };
 
 export type InductionEmployeeOption = {
@@ -34,44 +62,51 @@ export type InductionEmployeeOption = {
   department: string;
   jobTitle: string;
   location: string;
+  email: string;
 };
 
 export type InductionScheduleWorkspace = {
   generatedAt: string;
   source: string;
   summary: {
-    upcoming: number;
-    completed: number;
-    overdue: number;
-    needsScheduling: number;
-    thisWeek: number;
+    activeTours: number;
+    upcomingStops: number;
+    thisWeekStops: number;
+    completedStops: number;
+    overdueStops: number;
   };
-  kinds: InductionKind[];
-  departments: string[];
   allDepartments: string[];
-  facilitators: string[];
   employeeOptions: InductionEmployeeOption[];
-  sessions: InductionSession[];
+  facilitatorOptions: InductionFacilitatorOption[];
+  tours: InductionTour[];
 };
 
-export type InductionUpsertInput = {
-  id?: string;
+export type ScheduleInductionTourInput = {
+  tourId?: string;
+  hireName: string;
+  hireEmail?: string;
+  employeeCode?: string;
   employeeDbId?: number | null;
-  employeeCode: string;
-  employeeName: string;
-  department?: string;
-  jobTitle?: string;
-  location?: string;
-  kind: InductionKind;
-  status: InductionStatus;
-  scheduledFor: string;
-  facilitator: string;
-  venue?: string;
+  destinationDepartment: string;
+  startDate: string;
   notes?: string;
+  departments: string[];
+  stopOverrides?: Array<{
+    department: string;
+    scheduledFor?: string;
+    facilitatorName?: string;
+    facilitatorEmail?: string;
+    facilitatorEmployeeCode?: string;
+    venue?: string;
+    notes?: string;
+    status?: InductionStopStatus;
+  }>;
+  notifyManagers?: boolean;
   actor: string;
+  baseUrl?: string | null;
 };
 
-type StoreState = { sessions: InductionSession[] };
+type StoreState = { tours: InductionTour[] };
 
 const resolveDashboardRoot = () => {
   const cwd = process.cwd();
@@ -80,21 +115,10 @@ const resolveDashboardRoot = () => {
 };
 
 const DATA_DIR = path.join(resolveDashboardRoot(), 'data', 'hris');
-const JSON_PATH = path.join(DATA_DIR, 'onboarding-induction-schedule.json');
+const JSON_PATH = path.join(DATA_DIR, 'onboarding-induction-tours.json');
 const nowIso = () => new Date().toISOString();
 const compact = (value: unknown) => String(value ?? '').trim();
 const lower = (value: unknown) => compact(value).toLowerCase();
-
-const INDUCTION_KINDS: InductionKind[] = ['Department', 'HSE', 'IT', 'Corporate'];
-const FACILITATOR_BY_KIND: Record<InductionKind, string> = {
-  Department: 'Department Head',
-  HSE: 'HSE Officer',
-  IT: 'IT Administrator',
-  Corporate: 'HR Officer',
-};
-
-const sessionKey = (session: Pick<InductionSession, 'employeeCode' | 'kind'>) =>
-  `${compact(session.employeeCode).toUpperCase()}::${session.kind}`;
 
 let schemaReady = false;
 
@@ -112,79 +136,76 @@ const endOfWeek = (date: Date) => {
   return new Date(start.getTime() + diff * 86400000);
 };
 
-const isActiveEmployment = (employee: DleEmployeeDirectoryRow) => {
-  const status = lower(employee.status);
-  if (!status) return true;
-  return !/(terminat|resign|exit|inactive|dismiss|deceased|left)/.test(status);
-};
-
-const isNewHireCohort = (employee: DleEmployeeDirectoryRow, now = new Date()) => {
-  if (!isActiveEmployment(employee)) return false;
-  if (lower(employee.status).includes('probation')) return true;
-  const joined = parseDate(employee.dateJoined);
-  if (joined) {
-    const days = Math.round((startOfDay(now).getTime() - startOfDay(joined).getTime()) / 86400000);
-    if (days >= 0 && days <= 120) return true;
-  }
-  const probationEnd = parseDate(employee.probationEndDate);
-  return Boolean(probationEnd && probationEnd >= startOfDay(now));
-};
-
-const normalizeStatus = (value: unknown, scheduledFor?: string | null): InductionStatus => {
+const normalizeStopStatus = (value: unknown, scheduledFor?: string | null): InductionStopStatus => {
   const status = lower(value);
   if (status.includes('complete')) return 'Completed';
   if (status.includes('cancel')) return 'Cancelled';
-  if (status.includes('need') || status.includes('unscheduled')) return 'Needs Scheduling';
+  if (status.includes('need')) return 'Needs Scheduling';
   const when = parseDate(scheduledFor);
   if (when && when < startOfDay(new Date()) && !status.includes('complete') && !status.includes('cancel')) return 'Overdue';
   if (status.includes('overdue')) return 'Overdue';
   return 'Scheduled';
 };
 
-const normalizeKind = (value: unknown): InductionKind => {
-  const text = lower(value);
-  if (text.includes('hse')) return 'HSE';
-  if (text.includes('it') || text.includes('tech')) return 'IT';
-  if (text.includes('corporate') || text.includes('hr')) return 'Corporate';
-  return 'Department';
+const deriveTourStatus = (stops: InductionStop[]): InductionTourStatus => {
+  if (!stops.length) return 'Scheduled';
+  if (stops.every((stop) => stop.status === 'Cancelled')) return 'Cancelled';
+  const actionable = stops.filter((stop) => stop.status !== 'Cancelled');
+  if (actionable.length && actionable.every((stop) => stop.status === 'Completed')) return 'Completed';
+  if (actionable.some((stop) => stop.status === 'Completed' || stop.status === 'Overdue' || stop.status === 'Scheduled')) {
+    if (actionable.some((stop) => stop.status === 'Completed')) return 'In Progress';
+  }
+  return 'Scheduled';
+};
+
+const withTourMetrics = (tour: Omit<InductionTour, 'progressPct' | 'completedStops' | 'totalStops' | 'overdueStops' | 'status'> & { status?: InductionTourStatus; stops: InductionStop[] }): InductionTour => {
+  const actionable = tour.stops.filter((stop) => stop.status !== 'Cancelled');
+  const completedStops = actionable.filter((stop) => stop.status === 'Completed').length;
+  const overdueStops = actionable.filter((stop) => stop.status === 'Overdue').length;
+  const totalStops = actionable.length;
+  return {
+    ...tour,
+    status: tour.status || deriveTourStatus(tour.stops),
+    completedStops,
+    totalStops,
+    overdueStops,
+    progressPct: totalStops ? Math.round((completedStops / totalStops) * 1000) / 10 : 0,
+    stops: tour.stops
+      .map((stop) => ({ ...stop, status: normalizeStopStatus(stop.status, stop.scheduledFor) }))
+      .sort((a, b) => a.sequence - b.sequence || a.scheduledFor.localeCompare(b.scheduledFor)),
+  };
 };
 
 const ensureSchema = async (pool: sql.ConnectionPool) => {
   if (schemaReady) return;
   await pool.request().query(`
-IF OBJECT_ID(N'[hris].[OnboardingInductionSchedule]', N'U') IS NULL
-CREATE TABLE [hris].[OnboardingInductionSchedule] (
-  [session_id] NVARCHAR(80) NOT NULL PRIMARY KEY,
-  [employee_id] BIGINT NULL,
-  [employee_code] NVARCHAR(50) NOT NULL,
-  [employee_name] NVARCHAR(250) NOT NULL,
-  [department] NVARCHAR(150) NULL,
-  [job_title] NVARCHAR(150) NULL,
-  [location_name] NVARCHAR(150) NULL,
-  [induction_kind] NVARCHAR(40) NOT NULL,
-  [session_status] NVARCHAR(40) NOT NULL,
-  [scheduled_for] DATETIME2(3) NOT NULL,
-  [facilitator] NVARCHAR(150) NULL,
-  [venue] NVARCHAR(200) NULL,
-  [notes] NVARCHAR(1000) NULL,
+IF OBJECT_ID(N'[hris].[OnboardingInductionTours]', N'U') IS NULL
+CREATE TABLE [hris].[OnboardingInductionTours] (
+  [tour_id] NVARCHAR(80) NOT NULL PRIMARY KEY,
+  [tour_json] NVARCHAR(MAX) NOT NULL,
+  [hire_name] NVARCHAR(250) NOT NULL,
+  [employee_code] NVARCHAR(50) NULL,
+  [destination_department] NVARCHAR(150) NULL,
+  [start_date] DATE NULL,
+  [tour_status] NVARCHAR(40) NOT NULL,
   [created_at] DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME(),
   [updated_at] DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME(),
-  [updated_by] NVARCHAR(120) NULL
+  [created_by] NVARCHAR(120) NULL
 );
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_OnboardingInductionSchedule_Code' AND object_id = OBJECT_ID(N'[hris].[OnboardingInductionSchedule]'))
-  CREATE INDEX [IX_OnboardingInductionSchedule_Code] ON [hris].[OnboardingInductionSchedule] ([employee_code], [scheduled_for]);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_OnboardingInductionTours_Status' AND object_id = OBJECT_ID(N'[hris].[OnboardingInductionTours]'))
+  CREATE INDEX [IX_OnboardingInductionTours_Status] ON [hris].[OnboardingInductionTours] ([tour_status], [start_date]);
 `);
   schemaReady = true;
 };
 
-const emptyStore = (): StoreState => ({ sessions: [] });
+const emptyStore = (): StoreState => ({ tours: [] });
 
 const readJsonStore = async (): Promise<StoreState> => {
   try {
     await access(JSON_PATH);
     const raw = await readFile(JSON_PATH, 'utf8');
     const parsed = JSON.parse(raw) as StoreState;
-    return { sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [] };
+    return { tours: Array.isArray(parsed.tours) ? parsed.tours.map((tour) => withTourMetrics(tour)) : [] };
   } catch {
     return emptyStore();
   }
@@ -195,183 +216,225 @@ const writeJsonStore = async (state: StoreState) => {
   await writeFile(JSON_PATH, JSON.stringify(state, null, 2), 'utf8');
 };
 
-const mapSqlSession = (row: Record<string, unknown>): InductionSession => {
-  const scheduledFor = row.scheduled_for instanceof Date
-    ? row.scheduled_for.toISOString()
-    : compact(row.scheduled_for) || nowIso();
-  return {
-    id: compact(row.session_id),
-    employeeDbId: Number(row.employee_id) || null,
-    employeeCode: compact(row.employee_code),
-    employeeName: compact(row.employee_name),
-    department: compact(row.department) || 'Unassigned',
-    jobTitle: compact(row.job_title) || '—',
-    location: compact(row.location_name) || '—',
-    kind: normalizeKind(row.induction_kind),
-    status: normalizeStatus(row.session_status, scheduledFor),
-    scheduledFor,
-    facilitator: compact(row.facilitator) || FACILITATOR_BY_KIND[normalizeKind(row.induction_kind)],
-    venue: compact(row.venue),
-    notes: compact(row.notes),
-    source: 'sql',
-    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : compact(row.created_at) || nowIso(),
-    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : compact(row.updated_at) || nowIso(),
-    updatedBy: compact(row.updated_by) || null,
-  };
-};
-
-const readSqlSessions = async (): Promise<InductionSession[]> => {
+const readSqlTours = async (): Promise<InductionTour[]> => {
   const pool = await getDleEnterpriseDbPool();
   if (!pool) return [];
   try {
     await ensureSchema(pool);
-    const result = await pool.request().query(`
-SELECT *
-FROM [hris].[OnboardingInductionSchedule]
-ORDER BY [scheduled_for] ASC, [employee_code] ASC;
-`);
-    return (result.recordset || []).map((row: Record<string, unknown>) => mapSqlSession(row));
+    const result = await pool.request().query(`SELECT [tour_json] FROM [hris].[OnboardingInductionTours]`);
+    return (result.recordset || [])
+      .map((row: { tour_json?: string }) => {
+        try {
+          return withTourMetrics(JSON.parse(String(row.tour_json || '{}')) as InductionTour);
+        } catch {
+          return null;
+        }
+      })
+      .filter((tour): tour is InductionTour => Boolean(tour?.tourId));
   } catch {
     return [];
   }
 };
 
-const persistSqlSession = async (session: InductionSession) => {
+const persistSqlTour = async (tour: InductionTour) => {
   const pool = await getDleEnterpriseDbPool();
   if (!pool) return false;
   await ensureSchema(pool);
   await pool.request()
-    .input('session_id', sql.NVarChar(80), session.id)
-    .input('employee_id', sql.BigInt, session.employeeDbId)
-    .input('employee_code', sql.NVarChar(50), session.employeeCode)
-    .input('employee_name', sql.NVarChar(250), session.employeeName)
-    .input('department', sql.NVarChar(150), session.department || null)
-    .input('job_title', sql.NVarChar(150), session.jobTitle || null)
-    .input('location_name', sql.NVarChar(150), session.location || null)
-    .input('induction_kind', sql.NVarChar(40), session.kind)
-    .input('session_status', sql.NVarChar(40), session.status)
-    .input('scheduled_for', sql.DateTime2(3), new Date(session.scheduledFor))
-    .input('facilitator', sql.NVarChar(150), session.facilitator || null)
-    .input('venue', sql.NVarChar(200), session.venue || null)
-    .input('notes', sql.NVarChar(1000), session.notes || null)
-    .input('updated_by', sql.NVarChar(120), session.updatedBy)
+    .input('tour_id', sql.NVarChar(80), tour.tourId)
+    .input('tour_json', sql.NVarChar(sql.MAX), JSON.stringify(tour))
+    .input('hire_name', sql.NVarChar(250), tour.hireName)
+    .input('employee_code', sql.NVarChar(50), tour.employeeCode || null)
+    .input('destination_department', sql.NVarChar(150), tour.destinationDepartment || null)
+    .input('start_date', sql.Date, tour.startDate ? new Date(tour.startDate) : null)
+    .input('tour_status', sql.NVarChar(40), tour.status)
+    .input('created_by', sql.NVarChar(120), tour.createdBy || null)
     .query(`
-MERGE [hris].[OnboardingInductionSchedule] AS target
-USING (SELECT @session_id AS session_id) AS source
-ON target.session_id = source.session_id
+MERGE [hris].[OnboardingInductionTours] AS target
+USING (SELECT @tour_id AS tour_id) AS source
+ON target.tour_id = source.tour_id
 WHEN MATCHED THEN UPDATE SET
-  employee_id = @employee_id,
+  tour_json = @tour_json,
+  hire_name = @hire_name,
   employee_code = @employee_code,
-  employee_name = @employee_name,
-  department = @department,
-  job_title = @job_title,
-  location_name = @location_name,
-  induction_kind = @induction_kind,
-  session_status = @session_status,
-  scheduled_for = @scheduled_for,
-  facilitator = @facilitator,
-  venue = @venue,
-  notes = @notes,
-  updated_at = SYSUTCDATETIME(),
-  updated_by = @updated_by
+  destination_department = @destination_department,
+  start_date = @start_date,
+  tour_status = @tour_status,
+  updated_at = SYSUTCDATETIME()
 WHEN NOT MATCHED THEN INSERT (
-  session_id, employee_id, employee_code, employee_name, department, job_title, location_name,
-  induction_kind, session_status, scheduled_for, facilitator, venue, notes, updated_by
+  tour_id, tour_json, hire_name, employee_code, destination_department, start_date, tour_status, created_by
 ) VALUES (
-  @session_id, @employee_id, @employee_code, @employee_name, @department, @job_title, @location_name,
-  @induction_kind, @session_status, @scheduled_for, @facilitator, @venue, @notes, @updated_by
+  @tour_id, @tour_json, @hire_name, @employee_code, @destination_department, @start_date, @tour_status, @created_by
 );
 `);
   return true;
 };
 
-const inferredSessionsForEmployee = (employee: DleEmployeeDirectoryRow): InductionSession[] => {
-  const joined = parseDate(employee.dateJoined) || new Date();
-  const stamp = nowIso();
-  return (['Department', 'HSE', 'IT'] as InductionKind[]).map((kind, index) => {
-    const scheduled = new Date(joined.getTime() + (index + 1) * 3 * 86400000);
-    const status = normalizeStatus('Scheduled', scheduled.toISOString());
-    return {
-      id: `INF-${employee.employeeCode}-${kind}`,
-      employeeDbId: employee.employeeDbId || null,
-      employeeCode: employee.employeeCode,
-      employeeName: employee.fullName,
-      department: employee.department || 'Unassigned',
-      jobTitle: employee.jobTitle || '—',
-      location: employee.location || employee.workLocation || '—',
-      kind,
-      status: employee.hasManagerAssigned && kind === 'Department' && scheduled < new Date()
-        ? 'Completed'
-        : status,
-      scheduledFor: scheduled.toISOString(),
-      facilitator: FACILITATOR_BY_KIND[kind],
-      venue: kind === 'HSE' ? 'HSE Training Room' : kind === 'IT' ? 'IT Helpdesk' : `${employee.department || 'Department'} floor`,
-      notes: 'Suggested from new-hire onboarding cohort',
-      source: 'inferred',
-      createdAt: stamp,
-      updatedAt: stamp,
-      updatedBy: null,
-    };
+const saveTour = async (tour: InductionTour) => {
+  const next = withTourMetrics(tour);
+  const savedToSql = await persistSqlTour(next).catch(() => false);
+  const state = await readJsonStore();
+  await writeJsonStore({
+    tours: [next, ...state.tours.filter((item) => item.tourId !== next.tourId)],
   });
+  return { tour: next, savedToSql };
+};
+
+const isActiveEmployment = (employee: DleEmployeeDirectoryRow) => {
+  const status = lower(employee.status);
+  if (!status) return true;
+  return !/(terminat|resign|exit|inactive|dismiss|deceased|left)/.test(status);
+};
+
+const looksLikeManager = (employee: DleEmployeeDirectoryRow) =>
+  /head|manager|supervisor|lead|chief/i.test(`${employee.jobTitle || ''} ${employee.designation || ''}`);
+
+export const resolveDepartmentFacilitator = (
+  department: string,
+  employees: DleEmployeeDirectoryRow[],
+): InductionFacilitatorOption => {
+  const dept = compact(department);
+  const inDept = employees.filter((employee) => isActiveEmployment(employee) && compact(employee.department) === dept);
+  const headNames = new Set(
+    inDept.map((employee) => compact(employee.departmentHead)).filter(Boolean).map((name) => lower(name)),
+  );
+  const namedHead = inDept.find((employee) => headNames.has(lower(employee.fullName)));
+  const titledManager = inDept.find((employee) => looksLikeManager(employee));
+  const anyInDept = inDept[0];
+  const chosen = namedHead || titledManager || anyInDept;
+  if (!chosen) {
+    return {
+      employeeCode: '',
+      fullName: `${dept || 'Department'} Line Manager`,
+      email: '',
+      department: dept || 'Unassigned',
+      jobTitle: 'Line Manager',
+    };
+  }
+  return {
+    employeeCode: chosen.employeeCode,
+    fullName: chosen.fullName,
+    email: compact(chosen.officialEmail || chosen.email),
+    department: chosen.department || dept,
+    jobTitle: chosen.jobTitle || 'Line Manager',
+  };
+};
+
+const buildInductionManagerEmail = (input: {
+  recipientName: string;
+  hireName: string;
+  department: string;
+  scheduledFor: string;
+  venue: string;
+  destinationDepartment: string;
+  actorName: string;
+  portalLink: string;
+  baseUrl?: string | null;
+}) => buildDleEmail({
+  logoUrl: resolveEmailLogoUrl(input.baseUrl),
+  module: 'HRIS',
+  subject: `Induction scheduled — ${input.hireName} · ${input.department}`,
+  preheader: `Please host the ${input.department} induction for ${input.hireName}.`,
+  headline: 'Department induction assigned to you',
+  recipientName: input.recipientName,
+  intro: `${input.actorName} scheduled a department induction stop for a new hire. Please host the session and mark it complete in DLE Connect when done.`,
+  statusBadge: 'Induction Schedule',
+  tone: 'info',
+  details: [
+    { label: 'New hire', value: input.hireName },
+    { label: 'Joining department', value: input.destinationDepartment || '—' },
+    { label: 'Your department stop', value: input.department },
+    { label: 'When', value: formatEmailDateTime(input.scheduledFor) },
+    { label: 'Venue', value: input.venue || 'To be confirmed' },
+  ],
+  note: 'The new hire may still be in pre-boarding and not yet fully registered. Your assignment is valid based on this HR schedule.',
+  actions: [{ href: input.portalLink, label: 'Open Induction Schedule', tone: 'primary' }],
+  footerNote: 'This message was sent by DLE Connect HRIS Onboarding.',
+});
+
+const notifyStopFacilitator = async (input: {
+  stop: InductionStop;
+  tour: InductionTour;
+  actor: string;
+  baseUrl?: string | null;
+  employees: DleEmployeeDirectoryRow[];
+}) => {
+  let email = compact(input.stop.facilitatorEmail);
+  if (!email && input.stop.facilitatorEmployeeCode) {
+    const employee = input.employees.find(
+      (row) => lower(row.employeeCode) === lower(input.stop.facilitatorEmployeeCode),
+    );
+    email = compact(await resolveEmployeeMailbox(employee).catch(() => employee?.officialEmail || employee?.email || ''));
+  }
+  if (!email) {
+    return { sent: false, reason: 'No facilitator email on file.', email: '' };
+  }
+  const portalLink = `${resolveWorkflowLinkOrigin(input.baseUrl)}/hris/onboarding/induction-schedule`;
+  const built = buildInductionManagerEmail({
+    recipientName: input.stop.facilitatorName || 'Line Manager',
+    hireName: input.tour.hireName,
+    department: input.stop.department,
+    scheduledFor: input.stop.scheduledFor,
+    venue: input.stop.venue,
+    destinationDepartment: input.tour.destinationDepartment,
+    actorName: input.actor,
+    portalLink,
+    baseUrl: input.baseUrl,
+  });
+  const result = await sendTransactionalEmail({
+    to: email,
+    subject: built.subject,
+    text: built.text,
+    html: built.html,
+  });
+  return { ...result, email };
+};
+
+const listUniqueDepartments = (employees: DleEmployeeDirectoryRow[]) =>
+  Array.from(
+    new Set(
+      employees
+        .filter((employee) => isActiveEmployment(employee))
+        .map((employee) => compact(employee.department))
+        .filter(Boolean),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
+
+const defaultStopSchedule = (startDate: string, index: number) => {
+  const base = parseDate(startDate) || new Date();
+  const scheduled = new Date(base.getTime() + index * 86400000);
+  scheduled.setHours(10, 0, 0, 0);
+  return scheduled.toISOString();
 };
 
 export const buildInductionScheduleWorkspace = async (): Promise<InductionScheduleWorkspace> => {
   const generatedAt = nowIso();
   const employeeSource = await readPayrollEmployees().catch(() => null);
-  const allEmployees = employeeSource?.employees || [];
-  const cohort = allEmployees.filter((employee) => isNewHireCohort(employee));
-  const sqlSessions = await readSqlSessions();
-  const jsonSessions = (await readJsonStore()).sessions.map((session) => ({
-    ...session,
-    status: normalizeStatus(session.status, session.scheduledFor),
-    source: 'json' as const,
-  }));
-
-  const byKey = new Map<string, InductionSession>();
-
-  for (const session of jsonSessions) byKey.set(sessionKey(session), session);
-  for (const session of sqlSessions) byKey.set(sessionKey(session), session);
-
-  const coveredEmployees = new Set(
-    [...byKey.values()].map((session) => compact(session.employeeCode).toUpperCase()).filter(Boolean),
-  );
-
-  for (const employee of cohort) {
-    const code = compact(employee.employeeCode).toUpperCase();
-    if (!code || coveredEmployees.has(code)) continue;
-    for (const session of inferredSessionsForEmployee(employee)) {
-      byKey.set(sessionKey(session), session);
-    }
-  }
-
-  const sessions = [...byKey.values()].sort((a, b) => {
-    const statusRank: Record<InductionStatus, number> = {
-      Overdue: 0,
-      'Needs Scheduling': 1,
-      Scheduled: 2,
-      Completed: 3,
-      Cancelled: 4,
-    };
-    const byStatus = statusRank[a.status] - statusRank[b.status];
-    if (byStatus !== 0) return byStatus;
-    return a.scheduledFor.localeCompare(b.scheduledFor);
-  });
+  const employees = employeeSource?.employees || [];
+  const sqlTours = await readSqlTours();
+  const jsonTours = (await readJsonStore()).tours;
+  const byId = new Map<string, InductionTour>();
+  for (const tour of jsonTours) byId.set(tour.tourId, withTourMetrics(tour));
+  for (const tour of sqlTours) byId.set(tour.tourId, withTourMetrics(tour));
+  const tours = [...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
   const now = new Date();
   const weekEnd = endOfWeek(now);
+  const allStops = tours.flatMap((tour) => tour.stops);
   const summary = {
-    upcoming: sessions.filter((session) => session.status === 'Scheduled').length,
-    completed: sessions.filter((session) => session.status === 'Completed').length,
-    overdue: sessions.filter((session) => session.status === 'Overdue').length,
-    needsScheduling: sessions.filter((session) => session.status === 'Needs Scheduling').length,
-    thisWeek: sessions.filter((session) => {
-      const when = parseDate(session.scheduledFor);
-      return Boolean(when && when >= startOfDay(now) && when <= weekEnd && session.status !== 'Cancelled');
+    activeTours: tours.filter((tour) => tour.status === 'Scheduled' || tour.status === 'In Progress').length,
+    upcomingStops: allStops.filter((stop) => stop.status === 'Scheduled').length,
+    thisWeekStops: allStops.filter((stop) => {
+      const when = parseDate(stop.scheduledFor);
+      return Boolean(when && when >= startOfDay(now) && when <= weekEnd && stop.status !== 'Cancelled' && stop.status !== 'Completed');
     }).length,
+    completedStops: allStops.filter((stop) => stop.status === 'Completed').length,
+    overdueStops: allStops.filter((stop) => stop.status === 'Overdue').length,
   };
 
-  const employeeOptions: InductionEmployeeOption[] = allEmployees
-    .filter((employee) => compact(employee.employeeCode))
+  const allDepartments = listUniqueDepartments(employees);
+  const employeeOptions: InductionEmployeeOption[] = employees
+    .filter((employee) => isActiveEmployment(employee) && compact(employee.employeeCode))
     .map((employee) => ({
       employeeDbId: employee.employeeDbId || null,
       employeeCode: employee.employeeCode,
@@ -379,77 +442,226 @@ export const buildInductionScheduleWorkspace = async (): Promise<InductionSchedu
       department: employee.department || 'Unassigned',
       jobTitle: employee.jobTitle || '—',
       location: employee.location || employee.workLocation || '—',
+      email: compact(employee.officialEmail || employee.email),
     }))
     .sort((a, b) => a.employeeCode.localeCompare(b.employeeCode));
 
-  const allDepartments = Array.from(
-    new Set([
-      ...allEmployees.map((employee) => compact(employee.department)).filter(Boolean),
-      ...sessions.map((session) => compact(session.department)).filter(Boolean),
-    ]),
-  ).sort((a, b) => a.localeCompare(b));
+  const facilitatorOptions: InductionFacilitatorOption[] = employees
+    .filter((employee) => isActiveEmployment(employee) && (looksLikeManager(employee) || compact(employee.departmentHead)))
+    .map((employee) => ({
+      employeeCode: employee.employeeCode,
+      fullName: employee.fullName,
+      email: compact(employee.officialEmail || employee.email),
+      department: employee.department || 'Unassigned',
+      jobTitle: employee.jobTitle || '—',
+    }))
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
 
-  return {
-    generatedAt,
-    source: employeeSource?.source || (sqlSessions.length ? 'HRIS induction schedule' : 'Employee directory'),
-    summary,
-    kinds: INDUCTION_KINDS,
-    departments: Array.from(new Set(sessions.map((session) => session.department).filter(Boolean))).sort(),
-    allDepartments,
-    facilitators: Array.from(new Set(sessions.map((session) => session.facilitator).filter(Boolean))).sort(),
-    employeeOptions,
-    sessions,
-  };
-};
-
-export const upsertInductionSession = async (input: InductionUpsertInput) => {
-  const kind = normalizeKind(input.kind);
-  const scheduledFor = parseDate(input.scheduledFor)?.toISOString() || nowIso();
-  const status = normalizeStatus(input.status, scheduledFor);
-  const stamp = nowIso();
-  const id = compact(input.id) || `IND-${compact(input.employeeCode).toUpperCase()}-${kind}-${Date.now()}`;
-
-  const session: InductionSession = {
-    id,
-    employeeDbId: input.employeeDbId ?? null,
-    employeeCode: compact(input.employeeCode),
-    employeeName: compact(input.employeeName) || compact(input.employeeCode),
-    department: compact(input.department) || 'Unassigned',
-    jobTitle: compact(input.jobTitle) || '—',
-    location: compact(input.location) || '—',
-    kind,
-    status,
-    scheduledFor,
-    facilitator: compact(input.facilitator) || FACILITATOR_BY_KIND[kind],
-    venue: compact(input.venue),
-    notes: compact(input.notes),
-    source: 'sql',
-    createdAt: stamp,
-    updatedAt: stamp,
-    updatedBy: compact(input.actor) || 'HR User',
-  };
-
-  if (!(await persistSqlSession(session))) {
-    const state = await readJsonStore();
-    const next = {
-      sessions: [
-        { ...session, source: 'json' as const },
-        ...state.sessions.filter((item) => item.id !== session.id && sessionKey(item) !== sessionKey(session)),
-      ],
-    };
-    await writeJsonStore(next);
-    session.source = 'json';
-  } else {
-    // Keep JSON mirror warm.
-    try {
-      const state = await readJsonStore();
-      await writeJsonStore({
-        sessions: [{ ...session, source: 'json' }, ...state.sessions.filter((item) => item.id !== session.id)],
-      });
-    } catch {
-      // ignore mirror failures
+  // Ensure department heads appear even if title doesn't match manager pattern.
+  for (const department of allDepartments) {
+    const resolved = resolveDepartmentFacilitator(department, employees);
+    if (resolved.employeeCode && !facilitatorOptions.some((item) => item.employeeCode === resolved.employeeCode)) {
+      facilitatorOptions.push(resolved);
     }
   }
 
-  return session;
+  return {
+    generatedAt,
+    source: employeeSource?.source || (sqlTours.length ? 'HRIS induction tours' : 'Employee directory'),
+    summary,
+    allDepartments,
+    employeeOptions,
+    facilitatorOptions: facilitatorOptions.sort((a, b) => a.fullName.localeCompare(b.fullName)),
+    tours,
+  };
+};
+
+export const scheduleInductionTour = async (input: ScheduleInductionTourInput) => {
+  const hireName = compact(input.hireName);
+  const destinationDepartment = compact(input.destinationDepartment);
+  const startDate = compact(input.startDate);
+  const departments = Array.from(new Set((input.departments || []).map(compact).filter(Boolean)));
+  if (!hireName) throw new Error('New hire name is required.');
+  if (!destinationDepartment) throw new Error('Destination department is required.');
+  if (!startDate) throw new Error('Induction start date is required.');
+  if (!departments.length) throw new Error('Select at least one department for the induction tour.');
+
+  const employeeSource = await readPayrollEmployees().catch(() => null);
+  const employees = employeeSource?.employees || [];
+  const stamp = nowIso();
+  const tourId = compact(input.tourId) || `TOUR-${Date.now()}`;
+  const overrides = new Map(
+    (input.stopOverrides || []).map((item) => [compact(item.department), item] as const),
+  );
+
+  const existing = (await buildInductionScheduleWorkspace()).tours.find((tour) => tour.tourId === tourId);
+  const stops: InductionStop[] = departments.map((department, index) => {
+    const override = overrides.get(department);
+    const inferred = resolveDepartmentFacilitator(department, employees);
+    const scheduledFor = override?.scheduledFor
+      || existing?.stops.find((stop) => stop.department === department)?.scheduledFor
+      || defaultStopSchedule(startDate, index);
+    const facilitatorName = compact(override?.facilitatorName) || inferred.fullName;
+    const facilitatorEmail = compact(override?.facilitatorEmail) || inferred.email;
+    const facilitatorEmployeeCode = compact(override?.facilitatorEmployeeCode) || inferred.employeeCode;
+    const existingStop = existing?.stops.find((stop) => stop.department === department);
+    return {
+      stopId: existingStop?.stopId || `STOP-${tourId}-${index + 1}`,
+      tourId,
+      department,
+      sequence: index + 1,
+      scheduledFor,
+      status: normalizeStopStatus(override?.status || existingStop?.status || 'Scheduled', scheduledFor),
+      facilitatorName,
+      facilitatorEmail,
+      facilitatorEmployeeCode,
+      venue: compact(override?.venue) || existingStop?.venue || `${department} Office`,
+      notes: compact(override?.notes) || existingStop?.notes || '',
+      notifiedAt: existingStop?.notifiedAt || null,
+      completedAt: existingStop?.completedAt || null,
+      updatedAt: stamp,
+    };
+  });
+
+  const tour = withTourMetrics({
+    tourId,
+    hireName,
+    hireEmail: compact(input.hireEmail),
+    employeeCode: compact(input.employeeCode),
+    employeeDbId: input.employeeDbId ?? null,
+    destinationDepartment,
+    startDate,
+    notes: compact(input.notes),
+    createdAt: existing?.createdAt || stamp,
+    updatedAt: stamp,
+    createdBy: existing?.createdBy || compact(input.actor) || 'HR User',
+    stops,
+  });
+
+  const saved = await saveTour(tour);
+  const notifyManagers = input.notifyManagers !== false;
+  const notifications: Array<{ department: string; email: string; sent: boolean; reason?: string }> = [];
+  if (notifyManagers) {
+    for (const stop of saved.tour.stops) {
+      if (stop.status === 'Cancelled' || stop.status === 'Completed') continue;
+      const result = await notifyStopFacilitator({
+        stop,
+        tour: saved.tour,
+        actor: input.actor,
+        baseUrl: input.baseUrl,
+        employees,
+      });
+      notifications.push({
+        department: stop.department,
+        email: result.email || stop.facilitatorEmail,
+        sent: Boolean(result.sent),
+        reason: result.reason,
+      });
+      if (result.sent) {
+        stop.notifiedAt = nowIso();
+        stop.updatedAt = nowIso();
+      }
+    }
+    await saveTour({ ...saved.tour, stops: saved.tour.stops, updatedAt: nowIso() });
+  }
+
+  const workspace = await buildInductionScheduleWorkspace();
+  return {
+    tour: workspace.tours.find((item) => item.tourId === tourId) || saved.tour,
+    workspace,
+    notifications,
+    notifiedCount: notifications.filter((item) => item.sent).length,
+  };
+};
+
+export const updateInductionStop = async (input: {
+  tourId: string;
+  stopId: string;
+  status?: InductionStopStatus;
+  scheduledFor?: string;
+  facilitatorName?: string;
+  facilitatorEmail?: string;
+  facilitatorEmployeeCode?: string;
+  venue?: string;
+  notes?: string;
+  notifyManager?: boolean;
+  actor: string;
+  baseUrl?: string | null;
+}) => {
+  const workspace = await buildInductionScheduleWorkspace();
+  const tour = workspace.tours.find((item) => item.tourId === input.tourId);
+  if (!tour) throw new Error('Induction tour not found.');
+  const stop = tour.stops.find((item) => item.stopId === input.stopId);
+  if (!stop) throw new Error('Induction stop not found.');
+
+  const scheduledFor = input.scheduledFor || stop.scheduledFor;
+  const nextStop: InductionStop = {
+    ...stop,
+    scheduledFor,
+    status: normalizeStopStatus(input.status || stop.status, scheduledFor),
+    facilitatorName: compact(input.facilitatorName) || stop.facilitatorName,
+    facilitatorEmail: compact(input.facilitatorEmail) || stop.facilitatorEmail,
+    facilitatorEmployeeCode: compact(input.facilitatorEmployeeCode) || stop.facilitatorEmployeeCode,
+    venue: compact(input.venue) || stop.venue,
+    notes: input.notes == null ? stop.notes : compact(input.notes),
+    completedAt: normalizeStopStatus(input.status || stop.status, scheduledFor) === 'Completed' ? nowIso() : stop.completedAt,
+    updatedAt: nowIso(),
+  };
+
+  const nextTour = withTourMetrics({
+    ...tour,
+    stops: tour.stops.map((item) => (item.stopId === stop.stopId ? nextStop : item)),
+    updatedAt: nowIso(),
+  });
+
+  await saveTour(nextTour);
+
+  let notification: { sent: boolean; email: string; reason?: string } | null = null;
+  if (input.notifyManager) {
+    const employees = (await readPayrollEmployees().catch(() => null))?.employees || [];
+    const result = await notifyStopFacilitator({
+      stop: nextStop,
+      tour: nextTour,
+      actor: input.actor,
+      baseUrl: input.baseUrl,
+      employees,
+    });
+    notification = { sent: Boolean(result.sent), email: result.email || nextStop.facilitatorEmail, reason: result.reason };
+    if (result.sent) {
+      nextStop.notifiedAt = nowIso();
+      await saveTour({
+        ...nextTour,
+        stops: nextTour.stops.map((item) => (item.stopId === nextStop.stopId ? nextStop : item)),
+        updatedAt: nowIso(),
+      });
+    }
+  }
+
+  const refreshed = await buildInductionScheduleWorkspace();
+  return {
+    tour: refreshed.tours.find((item) => item.tourId === input.tourId) || nextTour,
+    workspace: refreshed,
+    notification,
+  };
+};
+
+export const previewDepartmentStops = async (input: {
+  departments?: string[];
+  startDate: string;
+}) => {
+  const employeeSource = await readPayrollEmployees().catch(() => null);
+  const employees = employeeSource?.employees || [];
+  const departments = (input.departments?.length ? input.departments : listUniqueDepartments(employees)).map(compact).filter(Boolean);
+  return departments.map((department, index) => {
+    const facilitator = resolveDepartmentFacilitator(department, employees);
+    return {
+      department,
+      sequence: index + 1,
+      scheduledFor: defaultStopSchedule(input.startDate || nowIso(), index),
+      facilitatorName: facilitator.fullName,
+      facilitatorEmail: facilitator.email,
+      facilitatorEmployeeCode: facilitator.employeeCode,
+      venue: `${department} Office`,
+    };
+  });
 };

@@ -1,11 +1,12 @@
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import {
   buildInductionScheduleWorkspace,
-  upsertInductionSession,
-  type InductionKind,
-  type InductionStatus,
+  previewDepartmentStops,
+  scheduleInductionTour,
+  updateInductionStop,
+  type InductionStopStatus,
 } from '@/lib/induction-schedule-service';
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
@@ -18,8 +19,22 @@ const resolveActor = async () => {
   return session?.fullName || session?.username || session?.sub || 'HR User';
 };
 
-export async function GET() {
+const resolveBaseUrl = async () => {
+  const headerStore = await headers();
+  const host = headerStore.get('x-forwarded-host') || headerStore.get('host');
+  const proto = headerStore.get('x-forwarded-proto') || 'https';
+  return host ? `${proto}://${host}` : null;
+};
+
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    if (searchParams.get('preview') === 'stops') {
+      const startDate = String(searchParams.get('startDate') || new Date().toISOString());
+      const departments = searchParams.getAll('department').map((item) => item.trim()).filter(Boolean);
+      const stops = await previewDepartmentStops({ startDate, departments });
+      return jsonOk({ stops });
+    }
     const workspace = await buildInductionScheduleWorkspace();
     return jsonOk(workspace);
   } catch (error) {
@@ -30,39 +45,63 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const actor = await resolveActor();
+    const baseUrl = await resolveBaseUrl();
     const body = await request.json().catch(() => ({}));
-    const action = String(body.action || 'upsert-session').trim();
-    if (action !== 'upsert-session') return jsonErr(400, 'Unsupported induction action.');
+    const action = String(body.action || 'schedule-tour').trim();
 
-    const employeeCode = String(body.employeeCode || '').trim();
-    const employeeName = String(body.employeeName || '').trim();
-    const kind = String(body.kind || '').trim() as InductionKind;
-    const status = String(body.status || 'Scheduled').trim() as InductionStatus;
-    const scheduledFor = String(body.scheduledFor || '').trim();
-    if (!employeeCode) return jsonErr(400, 'employeeCode is required.');
-    if (!employeeName) return jsonErr(400, 'employeeName is required.');
-    if (!kind) return jsonErr(400, 'kind is required.');
-    if (!scheduledFor) return jsonErr(400, 'scheduledFor is required.');
+    if (action === 'schedule-tour') {
+      const result = await scheduleInductionTour({
+        tourId: body.tourId,
+        hireName: body.hireName,
+        hireEmail: body.hireEmail,
+        employeeCode: body.employeeCode,
+        employeeDbId: body.employeeDbId == null || body.employeeDbId === '' ? null : Number(body.employeeDbId),
+        destinationDepartment: body.destinationDepartment,
+        startDate: body.startDate,
+        notes: body.notes,
+        departments: Array.isArray(body.departments) ? body.departments : [],
+        stopOverrides: Array.isArray(body.stopOverrides) ? body.stopOverrides : [],
+        notifyManagers: body.notifyManagers !== false,
+        actor,
+        baseUrl,
+      });
+      return jsonOk({
+        tour: result.tour,
+        workspace: result.workspace,
+        notifications: result.notifications,
+        notifiedCount: result.notifiedCount,
+        message: `Induction tour scheduled. ${result.notifiedCount} manager notification${result.notifiedCount === 1 ? '' : 's'} sent.`,
+      });
+    }
 
-    const session = await upsertInductionSession({
-      id: body.id,
-      employeeDbId: body.employeeDbId == null ? null : Number(body.employeeDbId),
-      employeeCode,
-      employeeName,
-      department: body.department,
-      jobTitle: body.jobTitle,
-      location: body.location,
-      kind,
-      status,
-      scheduledFor,
-      facilitator: body.facilitator,
-      venue: body.venue,
-      notes: body.notes,
-      actor,
-    });
-    const workspace = await buildInductionScheduleWorkspace();
-    return jsonOk({ session, workspace, message: 'Induction session saved.' });
+    if (action === 'update-stop') {
+      const tourId = String(body.tourId || '').trim();
+      const stopId = String(body.stopId || '').trim();
+      if (!tourId || !stopId) return jsonErr(400, 'tourId and stopId are required.');
+      const result = await updateInductionStop({
+        tourId,
+        stopId,
+        status: body.status ? String(body.status).trim() as InductionStopStatus : undefined,
+        scheduledFor: body.scheduledFor,
+        facilitatorName: body.facilitatorName,
+        facilitatorEmail: body.facilitatorEmail,
+        facilitatorEmployeeCode: body.facilitatorEmployeeCode,
+        venue: body.venue,
+        notes: body.notes,
+        notifyManager: Boolean(body.notifyManager),
+        actor,
+        baseUrl,
+      });
+      return jsonOk({
+        tour: result.tour,
+        workspace: result.workspace,
+        notification: result.notification,
+        message: 'Induction stop updated.',
+      });
+    }
+
+    return jsonErr(400, 'Unsupported induction action.');
   } catch (error) {
-    return jsonErr(400, error instanceof Error ? error.message : 'Unable to save induction session.');
+    return jsonErr(400, error instanceof Error ? error.message : 'Unable to save induction schedule.');
   }
 }

@@ -207,6 +207,7 @@ export const buildOnboardingDashboardMetrics = (
   employees: DleEmployeeDirectoryRow[],
   period: OnboardingPeriod = 'MTD',
   generatedAt = new Date().toISOString(),
+  options?: { inductions?: OnboardingInductionItem[] },
 ): OnboardingDashboardMetrics => {
   const now = new Date();
   const from = periodStart(period, now);
@@ -282,7 +283,7 @@ export const buildOnboardingDashboardMetrics = (
       };
     });
 
-  const inductions: OnboardingInductionItem[] = cohort
+  const fallbackInductions: OnboardingInductionItem[] = cohort
     .filter((employee) => isProbationLike(employee) && !isOnboardingComplete(employee) && employee.hasManagerAssigned)
     .slice(0, 6)
     .map((employee) => {
@@ -317,6 +318,6 @@ export const buildOnboardingDashboardMetrics = (
     funnel,
     status,
     activities,
-    inductions,
+    inductions: options?.inductions?.length ? options.inductions.slice(0, 6) : fallbackInductions,
   };
 };

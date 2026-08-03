@@ -99,7 +99,11 @@ export default function OnboardingDashboardClient({ employees, initialMetrics, g
   const [period, setPeriod] = useState<OnboardingPeriod>(initialMetrics.period || 'MTD');
 
   const metrics = useMemo(
-    () => (period === initialMetrics.period ? initialMetrics : buildOnboardingDashboardMetrics(employees, period, generatedAt)),
+    () => (
+      period === initialMetrics.period
+        ? initialMetrics
+        : buildOnboardingDashboardMetrics(employees, period, generatedAt, { inductions: initialMetrics.inductions })
+    ),
     [employees, generatedAt, initialMetrics, period],
   );
 
