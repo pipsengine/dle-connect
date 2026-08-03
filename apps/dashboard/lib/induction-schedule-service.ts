@@ -27,6 +27,15 @@ export type InductionSession = {
   updatedBy: string | null;
 };
 
+export type InductionEmployeeOption = {
+  employeeDbId: number | null;
+  employeeCode: string;
+  employeeName: string;
+  department: string;
+  jobTitle: string;
+  location: string;
+};
+
 export type InductionScheduleWorkspace = {
   generatedAt: string;
   source: string;
@@ -39,7 +48,9 @@ export type InductionScheduleWorkspace = {
   };
   kinds: InductionKind[];
   departments: string[];
+  allDepartments: string[];
   facilitators: string[];
+  employeeOptions: InductionEmployeeOption[];
   sessions: InductionSession[];
 };
 
@@ -307,7 +318,8 @@ const inferredSessionsForEmployee = (employee: DleEmployeeDirectoryRow): Inducti
 export const buildInductionScheduleWorkspace = async (): Promise<InductionScheduleWorkspace> => {
   const generatedAt = nowIso();
   const employeeSource = await readPayrollEmployees().catch(() => null);
-  const cohort = (employeeSource?.employees || []).filter((employee) => isNewHireCohort(employee));
+  const allEmployees = employeeSource?.employees || [];
+  const cohort = allEmployees.filter((employee) => isNewHireCohort(employee));
   const sqlSessions = await readSqlSessions();
   const jsonSessions = (await readJsonStore()).sessions.map((session) => ({
     ...session,
@@ -358,13 +370,34 @@ export const buildInductionScheduleWorkspace = async (): Promise<InductionSchedu
     }).length,
   };
 
+  const employeeOptions: InductionEmployeeOption[] = allEmployees
+    .filter((employee) => compact(employee.employeeCode))
+    .map((employee) => ({
+      employeeDbId: employee.employeeDbId || null,
+      employeeCode: employee.employeeCode,
+      employeeName: employee.fullName,
+      department: employee.department || 'Unassigned',
+      jobTitle: employee.jobTitle || '—',
+      location: employee.location || employee.workLocation || '—',
+    }))
+    .sort((a, b) => a.employeeCode.localeCompare(b.employeeCode));
+
+  const allDepartments = Array.from(
+    new Set([
+      ...allEmployees.map((employee) => compact(employee.department)).filter(Boolean),
+      ...sessions.map((session) => compact(session.department)).filter(Boolean),
+    ]),
+  ).sort((a, b) => a.localeCompare(b));
+
   return {
     generatedAt,
     source: employeeSource?.source || (sqlSessions.length ? 'HRIS induction schedule' : 'Employee directory'),
     summary,
     kinds: INDUCTION_KINDS,
     departments: Array.from(new Set(sessions.map((session) => session.department).filter(Boolean))).sort(),
+    allDepartments,
     facilitators: Array.from(new Set(sessions.map((session) => session.facilitator).filter(Boolean))).sort(),
+    employeeOptions,
     sessions,
   };
 };

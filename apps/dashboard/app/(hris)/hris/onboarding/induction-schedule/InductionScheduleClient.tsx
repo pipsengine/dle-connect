@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -12,8 +12,10 @@ import {
   RefreshCcw,
   Search,
   Users,
+  X,
 } from 'lucide-react';
 import type {
+  InductionEmployeeOption,
   InductionKind,
   InductionScheduleWorkspace,
   InductionSession,
@@ -84,6 +86,9 @@ export default function InductionScheduleClient({ initialWorkspace }: Props) {
   const [busyId, setBusyId] = useState('');
   const [toast, setToast] = useState('');
   const [composerOpen, setComposerOpen] = useState(false);
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [employeeMenuOpen, setEmployeeMenuOpen] = useState(false);
+  const employeeSearchRef = useRef<HTMLDivElement | null>(null);
   const [form, setForm] = useState({
     id: '',
     employeeCode: '',
@@ -99,6 +104,57 @@ export default function InductionScheduleClient({ initialWorkspace }: Props) {
     notes: '',
     employeeDbId: '' as string | number,
   });
+
+  useEffect(() => {
+    if (!composerOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setComposerOpen(false);
+        setEmployeeMenuOpen(false);
+      }
+    };
+    const onClick = (event: MouseEvent) => {
+      if (!employeeSearchRef.current?.contains(event.target as Node)) setEmployeeMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onClick);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onClick);
+    };
+  }, [composerOpen]);
+
+  const employeeMatches = useMemo(() => {
+    const q = employeeSearch.trim().toLowerCase();
+    const options = workspace.employeeOptions || [];
+    if (!q) return options.slice(0, 8);
+    return options
+      .filter((item) =>
+        item.employeeCode.toLowerCase().includes(q)
+        || item.employeeName.toLowerCase().includes(q)
+        || item.department.toLowerCase().includes(q),
+      )
+      .slice(0, 12);
+  }, [workspace.employeeOptions, employeeSearch]);
+
+  const departmentOptions = workspace.allDepartments?.length
+    ? workspace.allDepartments
+    : Array.from(new Set([...(workspace.departments || []), form.department].filter(Boolean))).sort();
+
+  const selectEmployee = (employee: InductionEmployeeOption) => {
+    setForm((prev) => ({
+      ...prev,
+      employeeCode: employee.employeeCode,
+      employeeName: employee.employeeName,
+      department: employee.department || prev.department,
+      jobTitle: employee.jobTitle || prev.jobTitle,
+      location: employee.location || prev.location,
+      employeeDbId: employee.employeeDbId || '',
+      venue: prev.venue || (employee.department ? `${employee.department} floor` : prev.venue),
+    }));
+    setEmployeeSearch(employee.employeeCode);
+    setEmployeeMenuOpen(false);
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -149,6 +205,7 @@ export default function InductionScheduleClient({ initialWorkspace }: Props) {
         notes: session.notes,
         employeeDbId: session.employeeDbId || '',
       });
+      setEmployeeSearch(session.employeeCode);
     } else {
       setForm({
         id: '',
@@ -165,7 +222,9 @@ export default function InductionScheduleClient({ initialWorkspace }: Props) {
         notes: '',
         employeeDbId: '',
       });
+      setEmployeeSearch('');
     }
+    setEmployeeMenuOpen(false);
     setComposerOpen(true);
   };
 
@@ -376,106 +435,260 @@ export default function InductionScheduleClient({ initialWorkspace }: Props) {
         </section>
 
         {composerOpen ? (
-          <section className="rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] p-5 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-lg font-bold text-[#0F172A]">{form.id ? 'Edit induction' : 'Schedule induction'}</h2>
-              <button type="button" onClick={() => setComposerOpen(false)} className="text-sm font-bold text-[#2563EB]">
-                Close
-              </button>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+            <button
+              type="button"
+              aria-label="Close schedule induction modal"
+              className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
+              onClick={() => {
+                setComposerOpen(false);
+                setEmployeeMenuOpen(false);
+              }}
+            />
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="induction-modal-title"
+              className="relative z-10 flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-[#E6EAF2] bg-white shadow-[0_24px_80px_rgba(15,23,42,.28)]"
+            >
+              <div className="flex items-start justify-between gap-4 border-b border-[#E6EAF2] bg-gradient-to-r from-[#EFF6FF] to-white px-6 py-5">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-[#2563EB]">Onboarding</p>
+                  <h2 id="induction-modal-title" className="mt-1 text-xl font-bold text-[#0F172A]">
+                    {form.id ? 'Edit induction' : 'Schedule induction'}
+                  </h2>
+                  <p className="mt-1 text-sm text-[#64748B]">
+                    Search an employee by code, confirm details, then save the live induction session.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setComposerOpen(false);
+                    setEmployeeMenuOpen(false);
+                  }}
+                  className="rounded-xl border border-[#E6EAF2] bg-white p-2 text-[#64748B] hover:bg-slate-50 hover:text-[#0F172A]"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-6 py-5">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="md:col-span-1" ref={employeeSearchRef}>
+                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[#64748B]">
+                      Employee code
+                    </label>
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
+                      <input
+                        value={employeeSearch}
+                        onFocus={() => setEmployeeMenuOpen(true)}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setEmployeeSearch(value);
+                          setEmployeeMenuOpen(true);
+                          setForm((prev) => ({
+                            ...prev,
+                            employeeCode: '',
+                            employeeName: '',
+                            employeeDbId: '',
+                          }));
+                        }}
+                        placeholder="Search code or name…"
+                        className="min-h-11 w-full rounded-xl border border-[#E6EAF2] bg-[#F8FAFC] py-2.5 pl-9 pr-3 text-sm font-semibold text-[#0F172A] outline-none ring-[#2563EB] focus:bg-white focus:ring-2"
+                        autoComplete="off"
+                      />
+                      {employeeMenuOpen ? (
+                        <div className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-[#E6EAF2] bg-white shadow-xl">
+                          {employeeMatches.length ? (
+                            employeeMatches.map((employee) => (
+                              <button
+                                key={`${employee.employeeCode}-${employee.employeeDbId || 'x'}`}
+                                type="button"
+                                onClick={() => selectEmployee(employee)}
+                                className="flex w-full flex-col gap-0.5 border-b border-[#F1F5F9] px-3 py-2.5 text-left last:border-b-0 hover:bg-[#EFF6FF]"
+                              >
+                                <span className="text-sm font-bold text-[#0F172A]">{employee.employeeCode}</span>
+                                <span className="text-xs font-semibold text-[#64748B]">
+                                  {employee.employeeName} · {employee.department}
+                                </span>
+                              </button>
+                            ))
+                          ) : (
+                            <p className="px-3 py-4 text-sm font-semibold text-[#64748B]">No employees match that search.</p>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                    {form.employeeCode ? (
+                      <p className="mt-1.5 text-xs font-semibold text-emerald-700">Selected: {form.employeeCode}</p>
+                    ) : (
+                      <p className="mt-1.5 text-xs font-semibold text-amber-700">Select an employee from the search results.</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[#64748B]">
+                      Employee name
+                    </label>
+                    <input
+                      value={form.employeeName}
+                      readOnly
+                      placeholder="Populates when employee is selected"
+                      className="min-h-11 w-full cursor-default rounded-xl border border-[#E6EAF2] bg-[#F1F5F9] px-3 text-sm font-semibold text-[#0F172A]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[#64748B]">
+                      Department
+                    </label>
+                    <select
+                      value={form.department}
+                      onChange={(event) => setForm((prev) => ({
+                        ...prev,
+                        department: event.target.value,
+                        venue: prev.venue || (event.target.value ? `${event.target.value} floor` : prev.venue),
+                      }))}
+                      className="min-h-11 w-full rounded-xl border border-[#E6EAF2] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none ring-[#2563EB] focus:ring-2"
+                    >
+                      <option value="">Select department</option>
+                      {departmentOptions.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[#64748B]">
+                      Induction type
+                    </label>
+                    <select
+                      value={form.kind}
+                      onChange={(event) => {
+                        const kind = event.target.value as InductionKind;
+                        setForm((prev) => ({
+                          ...prev,
+                          kind,
+                          facilitator:
+                            kind === 'HSE'
+                              ? 'HSE Officer'
+                              : kind === 'IT'
+                                ? 'IT Administrator'
+                                : kind === 'Corporate'
+                                  ? 'HR Officer'
+                                  : 'Department Head',
+                        }));
+                      }}
+                      className="min-h-11 w-full rounded-xl border border-[#E6EAF2] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none ring-[#2563EB] focus:ring-2"
+                    >
+                      {workspace.kinds.map((kind) => (
+                        <option key={kind} value={kind}>
+                          {kind}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[#64748B]">
+                      Status
+                    </label>
+                    <select
+                      value={form.status}
+                      onChange={(event) => setForm((prev) => ({ ...prev, status: event.target.value as InductionStatus }))}
+                      className="min-h-11 w-full rounded-xl border border-[#E6EAF2] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none ring-[#2563EB] focus:ring-2"
+                    >
+                      {STATUS_OPTIONS.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[#64748B]">
+                      Date & time
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={form.scheduledFor}
+                      onChange={(event) => setForm((prev) => ({ ...prev, scheduledFor: event.target.value }))}
+                      className="min-h-11 w-full rounded-xl border border-[#E6EAF2] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none ring-[#2563EB] focus:ring-2"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[#64748B]">
+                      Facilitator
+                    </label>
+                    <input
+                      value={form.facilitator}
+                      onChange={(event) => setForm((prev) => ({ ...prev, facilitator: event.target.value }))}
+                      placeholder="Facilitator"
+                      className="min-h-11 w-full rounded-xl border border-[#E6EAF2] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none ring-[#2563EB] focus:ring-2"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[#64748B]">
+                      Venue
+                    </label>
+                    <input
+                      value={form.venue}
+                      onChange={(event) => setForm((prev) => ({ ...prev, venue: event.target.value }))}
+                      placeholder="Venue / room"
+                      className="min-h-11 w-full rounded-xl border border-[#E6EAF2] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none ring-[#2563EB] focus:ring-2"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[#64748B]">
+                      Notes
+                    </label>
+                    <textarea
+                      value={form.notes}
+                      onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))}
+                      rows={3}
+                      placeholder="Optional notes for facilitators"
+                      className="w-full rounded-xl border border-[#E6EAF2] bg-white px-3 py-2.5 text-sm font-semibold text-[#0F172A] outline-none ring-[#2563EB] focus:ring-2"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col-reverse gap-2 border-t border-[#E6EAF2] bg-[#F8FAFC] px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs font-semibold text-[#64748B]">
+                  {form.jobTitle ? `${form.jobTitle} · ` : ''}
+                  {form.location || 'Location set on save'}
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setComposerOpen(false);
+                      setEmployeeMenuOpen(false);
+                    }}
+                    className="min-h-11 rounded-xl border border-[#E6EAF2] bg-white px-4 text-sm font-bold text-[#0F172A] hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(busyId) || !form.employeeCode || !form.employeeName || !form.department || !form.scheduledFor}
+                    onClick={() => void saveSession()}
+                    className="min-h-11 rounded-xl bg-[#2563EB] px-5 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {busyId ? 'Saving…' : 'Save Induction'}
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              <input
-                value={form.employeeCode}
-                onChange={(event) => setForm((prev) => ({ ...prev, employeeCode: event.target.value }))}
-                placeholder="Employee code"
-                className="min-h-10 rounded-[10px] border border-[#E6EAF2] bg-white px-3 text-sm font-semibold"
-              />
-              <input
-                value={form.employeeName}
-                onChange={(event) => setForm((prev) => ({ ...prev, employeeName: event.target.value }))}
-                placeholder="Employee name"
-                className="min-h-10 rounded-[10px] border border-[#E6EAF2] bg-white px-3 text-sm font-semibold"
-              />
-              <input
-                value={form.department}
-                onChange={(event) => setForm((prev) => ({ ...prev, department: event.target.value }))}
-                placeholder="Department"
-                className="min-h-10 rounded-[10px] border border-[#E6EAF2] bg-white px-3 text-sm font-semibold"
-              />
-              <select
-                value={form.kind}
-                onChange={(event) => {
-                  const kind = event.target.value as InductionKind;
-                  setForm((prev) => ({
-                    ...prev,
-                    kind,
-                    facilitator: prev.facilitator || (
-                      kind === 'HSE' ? 'HSE Officer' : kind === 'IT' ? 'IT Administrator' : kind === 'Corporate' ? 'HR Officer' : 'Department Head'
-                    ),
-                  }));
-                }}
-                className="min-h-10 rounded-[10px] border border-[#E6EAF2] bg-white px-3 text-sm font-semibold"
-              >
-                {workspace.kinds.map((kind) => (
-                  <option key={kind} value={kind}>
-                    {kind}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={form.status}
-                onChange={(event) => setForm((prev) => ({ ...prev, status: event.target.value as InductionStatus }))}
-                className="min-h-10 rounded-[10px] border border-[#E6EAF2] bg-white px-3 text-sm font-semibold"
-              >
-                {STATUS_OPTIONS.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="datetime-local"
-                value={form.scheduledFor}
-                onChange={(event) => setForm((prev) => ({ ...prev, scheduledFor: event.target.value }))}
-                className="min-h-10 rounded-[10px] border border-[#E6EAF2] bg-white px-3 text-sm font-semibold"
-              />
-              <input
-                value={form.facilitator}
-                onChange={(event) => setForm((prev) => ({ ...prev, facilitator: event.target.value }))}
-                placeholder="Facilitator"
-                className="min-h-10 rounded-[10px] border border-[#E6EAF2] bg-white px-3 text-sm font-semibold"
-              />
-              <input
-                value={form.venue}
-                onChange={(event) => setForm((prev) => ({ ...prev, venue: event.target.value }))}
-                placeholder="Venue"
-                className="min-h-10 rounded-[10px] border border-[#E6EAF2] bg-white px-3 text-sm font-semibold"
-              />
-              <input
-                value={form.notes}
-                onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))}
-                placeholder="Notes"
-                className="min-h-10 rounded-[10px] border border-[#E6EAF2] bg-white px-3 text-sm font-semibold md:col-span-2 xl:col-span-1"
-              />
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setComposerOpen(false)}
-                className="rounded-[10px] border border-[#E6EAF2] bg-white px-4 py-2 text-sm font-bold text-[#0F172A]"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={Boolean(busyId) || !form.employeeCode || !form.employeeName || !form.scheduledFor}
-                onClick={() => void saveSession()}
-                className="rounded-[10px] bg-[#2563EB] px-4 py-2 text-sm font-bold text-white disabled:opacity-60"
-              >
-                {busyId ? 'Saving…' : 'Save Induction'}
-              </button>
-            </div>
-          </section>
+          </div>
         ) : null}
 
         <section className="rounded-2xl border border-[#E6EAF2] bg-white shadow-[0_1px_2px_rgba(15,23,42,.04),0_8px_24px_rgba(15,23,42,.06)]">
