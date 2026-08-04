@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
   Building2,
@@ -29,10 +29,62 @@ import type {
   PaymentRequestType,
   PaymentRequestsWorkspace,
 } from '@/lib/finance-intelligence/payment-requests-service';
+import type { PaymentRequestLookups } from '@/lib/finance-intelligence/payment-request-lookups';
 
 type Props = {
   initialWorkspace: PaymentRequestsWorkspace;
 };
+
+type ComposerForm = {
+  employeeCode: string;
+  employeeName: string;
+  department: string;
+  location: string;
+  projectCode: string;
+  paymentSiteCode: string;
+  expenseCode: string;
+  title: string;
+  businessJustification: string;
+  beneficiaryName: string;
+  beneficiaryCode: string;
+  amount: string;
+  currencyCode: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  dueDate: string;
+  vatAmount: string;
+  whtAmount: string;
+  retentionAmount: string;
+  purchaseOrderNo: string;
+  deliveryNoteNo: string;
+  submit: boolean;
+};
+
+const emptyForm = (): ComposerForm => ({
+  employeeCode: '',
+  employeeName: '',
+  department: '',
+  location: '',
+  projectCode: '',
+  paymentSiteCode: '',
+  expenseCode: '',
+  title: '',
+  businessJustification: '',
+  beneficiaryName: '',
+  beneficiaryCode: '',
+  amount: '',
+  currencyCode: 'NGN',
+  invoiceNumber: '',
+  invoiceDate: '',
+  dueDate: '',
+  vatAmount: '',
+  whtAmount: '',
+  retentionAmount: '',
+  purchaseOrderNo: '',
+  deliveryNoteNo: '',
+  submit: true,
+});
+
 
 const moneyCompact = (value: number) => {
   if (!value) return '₦0.00';
@@ -98,31 +150,63 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
   const [composerType, setComposerType] = useState<PaymentRequestType>('Cash Advance Payment');
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState({
-    title: '',
-    purpose: '',
-    businessJustification: '',
-    beneficiaryName: '',
-    beneficiaryCode: '',
-    amount: '',
-    currencyCode: 'NGN',
-    department: '',
-    costCentre: '',
-    projectCode: '',
-    priority: 'Normal',
-    requiredDate: '',
-    invoiceNumber: '',
-    invoiceDate: '',
-    dueDate: '',
-    vatAmount: '',
-    whtAmount: '',
-    retentionAmount: '',
-    purchaseOrderNo: '',
-    deliveryNoteNo: '',
-    overrideOutstandingAdvance: false,
-    overrideReason: '',
-    submit: true,
-  });
+  const [lookups, setLookups] = useState<PaymentRequestLookups | null>(null);
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
+  const [form, setForm] = useState<ComposerForm>(emptyForm());
+
+  useEffect(() => {
+    if (!composerOpen) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [lookupsRes, userRes] = await Promise.all([
+          fetch('/api/finance/payment-request-lookups', { cache: 'no-store' }),
+          fetch('/api/current-user?context=enterprise', { cache: 'no-store' }),
+        ]);
+        const lookupsJson = await lookupsRes.json();
+        const userJson = await userRes.json();
+        if (cancelled) return;
+        if (lookupsRes.ok && lookupsJson.status === 'success') {
+          setLookups(lookupsJson.data as PaymentRequestLookups);
+        }
+        if (userRes.ok && userJson.status === 'success' && composerType === 'Cash Advance Payment') {
+          const user = userJson.data as {
+            name?: string;
+            employeeCode?: string;
+            department?: string;
+            location?: string;
+          };
+          setForm((prev) => ({
+            ...prev,
+            employeeName: prev.employeeName || user.name || '',
+            employeeCode: prev.employeeCode || user.employeeCode || '',
+            department: prev.department || user.department || '',
+            location: prev.location || user.location || '',
+            beneficiaryName: prev.beneficiaryName || user.name || '',
+            beneficiaryCode: prev.beneficiaryCode || user.employeeCode || '',
+          }));
+          setEmployeeSearch(user.name || '');
+        }
+      } catch {
+        // keep empty lookups; submit will still validate server-side
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [composerOpen, composerType]);
+
+  const filteredEmployees = useMemo(() => {
+    const q = employeeSearch.trim().toLowerCase();
+    const rows = lookups?.employees || [];
+    if (!q) return rows.slice(0, 12);
+    return rows
+      .filter((employee) =>
+        employee.fullName.toLowerCase().includes(q)
+        || employee.employeeCode.toLowerCase().includes(q)
+        || employee.department.toLowerCase().includes(q))
+      .slice(0, 12);
+  }, [lookups?.employees, employeeSearch]);
 
   const refresh = async () => {
     setLoading(true);
@@ -158,6 +242,7 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
         || row.paymentType.toLowerCase().includes(q)
         || row.projectCode.toLowerCase().includes(q)
         || row.department.toLowerCase().includes(q)
+        || row.title.toLowerCase().includes(q)
       );
     });
   }, [workspace.rows, tab, query, paymentTypeFilter]);
@@ -165,50 +250,62 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
   const openComposer = (type: PaymentRequestType) => {
     setComposerType(type);
     setTypeMenuOpen(false);
-    setForm({
-      title: '',
-      purpose: '',
-      businessJustification: '',
-      beneficiaryName: '',
-      beneficiaryCode: '',
-      amount: '',
-      currencyCode: 'NGN',
-      department: '',
-      costCentre: '',
-      projectCode: '',
-      priority: 'Normal',
-      requiredDate: '',
-      invoiceNumber: '',
-      invoiceDate: '',
-      dueDate: '',
-      vatAmount: '',
-      whtAmount: '',
-      retentionAmount: '',
-      purchaseOrderNo: '',
-      deliveryNoteNo: '',
-      overrideOutstandingAdvance: false,
-      overrideReason: '',
-      submit: true,
-    });
+    setForm(emptyForm());
+    setEmployeeSearch('');
+    setEmployeePickerOpen(false);
     setComposerOpen(true);
+  };
+
+  const selectEmployee = (employee: PaymentRequestLookups['employees'][number]) => {
+    setForm((prev) => ({
+      ...prev,
+      employeeCode: employee.employeeCode,
+      employeeName: employee.fullName,
+      department: employee.department || prev.department,
+      location: employee.location || prev.location,
+      projectCode: employee.projectCode || prev.projectCode,
+      beneficiaryCode: employee.employeeCode,
+      beneficiaryName: employee.fullName,
+    }));
+    setEmployeeSearch(employee.fullName);
+    setEmployeePickerOpen(false);
   };
 
   const submitRequest = async () => {
     setBusy(true);
     setToast('');
     try {
+      const selectedExpense = lookups?.expenseCodes.find((item) => item.expenseCode === form.expenseCode);
+      const selectedSite = lookups?.paymentSites.find((item) => item.siteCode === form.paymentSiteCode);
       const res = await fetch('/api/finance/payment-requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'create',
           paymentType: composerType,
-          ...form,
+          title: composerType === 'Cash Advance Payment' ? (selectedExpense?.label || form.title) : form.title,
+          expenseCode: form.expenseCode,
+          purpose: selectedExpense?.description || '',
+          businessJustification: form.businessJustification,
+          beneficiaryCode: form.employeeCode || form.beneficiaryCode,
+          beneficiaryName: form.employeeName || form.beneficiaryName,
           amount: Number(form.amount || 0),
+          currencyCode: form.currencyCode,
+          paymentSiteCode: form.paymentSiteCode,
+          paymentSiteName: selectedSite?.siteName,
+          companyCode: form.paymentSiteCode,
+          department: form.department,
+          location: form.location,
+          projectCode: form.projectCode,
+          invoiceNumber: form.invoiceNumber,
+          invoiceDate: form.invoiceDate,
+          dueDate: form.dueDate,
           vatAmount: Number(form.vatAmount || 0),
           whtAmount: Number(form.whtAmount || 0),
           retentionAmount: Number(form.retentionAmount || 0),
-          beneficiaryName: form.beneficiaryName || (composerType === 'Cash Advance Payment' ? 'Self' : ''),
+          purchaseOrderNo: form.purchaseOrderNo,
+          deliveryNoteNo: form.deliveryNoteNo,
+          submit: form.submit,
         }),
       });
       const json = await res.json();
@@ -550,52 +647,147 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
               </button>
             </div>
             <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
-              <label className="block text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Request title *</span>
-                <input value={form.title} onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
-              </label>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">Amount *</span>
-                  <input type="number" min="0" value={form.amount} onChange={(e) => setForm((prev) => ({ ...prev, amount: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
-                </label>
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">Currency</span>
-                  <select value={form.currencyCode} onChange={(e) => setForm((prev) => ({ ...prev, currencyCode: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
-                    <option>NGN</option>
-                    <option>USD</option>
-                    <option>EUR</option>
-                  </select>
-                </label>
-              </div>
               {composerType === 'Cash Advance Payment' ? (
                 <>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="relative block text-sm">
+                      <span className="mb-1 block font-medium text-slate-700">Employee *</span>
+                      <input
+                        value={employeeSearch}
+                        onChange={(e) => {
+                          setEmployeeSearch(e.target.value);
+                          setEmployeePickerOpen(true);
+                          setForm((prev) => ({ ...prev, employeeName: e.target.value }));
+                        }}
+                        onFocus={() => setEmployeePickerOpen(true)}
+                        placeholder="Search employee name or code"
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]"
+                      />
+                      {employeePickerOpen ? (
+                        <div className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                          {filteredEmployees.length ? filteredEmployees.map((employee) => (
+                            <button
+                              key={employee.employeeCode}
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => selectEmployee(employee)}
+                              className="block w-full px-3 py-2 text-left hover:bg-slate-50"
+                            >
+                              <span className="block text-sm font-semibold text-slate-900">{employee.fullName}</span>
+                              <span className="block text-xs text-slate-500">{employee.employeeCode} · {employee.department || 'No department'}</span>
+                            </button>
+                          )) : (
+                            <p className="px-3 py-3 text-xs text-slate-500">No employees match that search.</p>
+                          )}
+                        </div>
+                      ) : null}
+                    </label>
+                    <label className="block text-sm">
+                      <span className="mb-1 block font-medium text-slate-700">Employee code</span>
+                      <input value={form.employeeCode} readOnly className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-600" />
+                    </label>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <label className="block text-sm">
+                      <span className="mb-1 block font-medium text-slate-700">Department *</span>
+                      <select value={form.department} onChange={(e) => setForm((prev) => ({ ...prev, department: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
+                        <option value="">Select department</option>
+                        {(lookups?.departments || []).map((item) => <option key={item} value={item}>{item}</option>)}
+                        {form.department && !(lookups?.departments || []).includes(form.department) ? <option value={form.department}>{form.department}</option> : null}
+                      </select>
+                    </label>
+                    <label className="block text-sm">
+                      <span className="mb-1 block font-medium text-slate-700">Location</span>
+                      <select value={form.location} onChange={(e) => setForm((prev) => ({ ...prev, location: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
+                        <option value="">Select location</option>
+                        {(lookups?.locations || []).map((item) => <option key={item} value={item}>{item}</option>)}
+                        {form.location && !(lookups?.locations || []).includes(form.location) ? <option value={form.location}>{form.location}</option> : null}
+                      </select>
+                    </label>
+                    <label className="block text-sm">
+                      <span className="mb-1 block font-medium text-slate-700">Project</span>
+                      <select value={form.projectCode} onChange={(e) => setForm((prev) => ({ ...prev, projectCode: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
+                        <option value="">Select project</option>
+                        {(lookups?.projects || []).map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
+                      </select>
+                    </label>
+                  </div>
+
                   <label className="block text-sm">
-                    <span className="mb-1 block font-medium text-slate-700">Purpose</span>
-                    <select value={form.purpose} onChange={(e) => setForm((prev) => ({ ...prev, purpose: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
-                      <option value="">Select purpose</option>
-                      {['Site Purchase', 'Project Mobilisation', 'Official Assignment', 'Diesel Purchase', 'Travel', 'Hotel Accommodation', 'Emergency Repairs', 'Petty Cash'].map((item) => (
-                        <option key={item}>{item}</option>
+                    <span className="mb-1 block font-medium text-slate-700">Payment site *</span>
+                    <select value={form.paymentSiteCode} onChange={(e) => setForm((prev) => ({ ...prev, paymentSiteCode: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
+                      <option value="">Select payment site</option>
+                      {(lookups?.paymentSites || []).map((site) => (
+                        <option key={site.siteCode} value={site.siteCode}>{site.siteCode} – {site.siteName}</option>
                       ))}
                     </select>
                   </label>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block text-sm">
+                      <span className="mb-1 block font-medium text-slate-700">Amount *</span>
+                      <input type="number" min="0" value={form.amount} onChange={(e) => setForm((prev) => ({ ...prev, amount: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
+                    </label>
+                    <label className="block text-sm">
+                      <span className="mb-1 block font-medium text-slate-700">Currency</span>
+                      <select value={form.currencyCode} onChange={(e) => setForm((prev) => ({ ...prev, currencyCode: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
+                        <option>NGN</option>
+                        <option>USD</option>
+                        <option>EUR</option>
+                        <option>GBP</option>
+                      </select>
+                    </label>
+                  </div>
+
                   <label className="block text-sm">
-                    <span className="mb-1 block font-medium text-slate-700">Business justification</span>
+                    <span className="mb-1 block font-medium text-slate-700">Request title *</span>
+                    <select
+                      value={form.expenseCode}
+                      onChange={(e) => {
+                        const code = e.target.value;
+                        const match = lookups?.expenseCodes.find((item) => item.expenseCode === code);
+                        setForm((prev) => ({
+                          ...prev,
+                          expenseCode: code,
+                          title: match?.label || '',
+                        }));
+                      }}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+                    >
+                      <option value="">Select expense / request title</option>
+                      {(lookups?.expenseCodes || []).map((item) => (
+                        <option key={item.expenseCode} value={item.expenseCode}>{item.label}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium text-slate-700">Business justification *</span>
                     <textarea value={form.businessJustification} onChange={(e) => setForm((prev) => ({ ...prev, businessJustification: e.target.value }))} rows={3} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
                   </label>
-                  <label className="flex items-start gap-2 text-xs text-slate-600">
-                    <input type="checkbox" checked={form.overrideOutstandingAdvance} onChange={(e) => setForm((prev) => ({ ...prev, overrideOutstandingAdvance: e.target.checked }))} className="mt-0.5 rounded border-slate-300 text-[#008FD5]" />
-                    Finance override for outstanding cash advance (reason required)
-                  </label>
-                  {form.overrideOutstandingAdvance ? (
-                    <label className="block text-sm">
-                      <span className="mb-1 block font-medium text-slate-700">Override reason *</span>
-                      <textarea value={form.overrideReason} onChange={(e) => setForm((prev) => ({ ...prev, overrideReason: e.target.value }))} rows={2} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
-                    </label>
-                  ) : null}
                 </>
               ) : (
                 <>
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium text-slate-700">Request title *</span>
+                    <input value={form.title} onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
+                  </label>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block text-sm">
+                      <span className="mb-1 block font-medium text-slate-700">Amount *</span>
+                      <input type="number" min="0" value={form.amount} onChange={(e) => setForm((prev) => ({ ...prev, amount: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
+                    </label>
+                    <label className="block text-sm">
+                      <span className="mb-1 block font-medium text-slate-700">Currency</span>
+                      <select value={form.currencyCode} onChange={(e) => setForm((prev) => ({ ...prev, currencyCode: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
+                        <option>NGN</option>
+                        <option>USD</option>
+                        <option>EUR</option>
+                        <option>GBP</option>
+                      </select>
+                    </label>
+                  </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block text-sm">
                       <span className="mb-1 block font-medium text-slate-700">Supplier code</span>
@@ -630,18 +822,24 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
                       <input type="number" value={form.retentionAmount} onChange={(e) => setForm((prev) => ({ ...prev, retentionAmount: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
                     </label>
                   </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block text-sm">
+                      <span className="mb-1 block font-medium text-slate-700">Department</span>
+                      <select value={form.department} onChange={(e) => setForm((prev) => ({ ...prev, department: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
+                        <option value="">Select department</option>
+                        {(lookups?.departments || []).map((item) => <option key={item} value={item}>{item}</option>)}
+                      </select>
+                    </label>
+                    <label className="block text-sm">
+                      <span className="mb-1 block font-medium text-slate-700">Project</span>
+                      <select value={form.projectCode} onChange={(e) => setForm((prev) => ({ ...prev, projectCode: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
+                        <option value="">Select project</option>
+                        {(lookups?.projects || []).map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
+                      </select>
+                    </label>
+                  </div>
                 </>
               )}
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">Department</span>
-                  <input value={form.department} onChange={(e) => setForm((prev) => ({ ...prev, department: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
-                </label>
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">Project</span>
-                  <input value={form.projectCode} onChange={(e) => setForm((prev) => ({ ...prev, projectCode: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
-                </label>
-              </div>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4">
               <label className="inline-flex items-center gap-2 text-xs text-slate-600">

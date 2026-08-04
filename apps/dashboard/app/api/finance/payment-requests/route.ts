@@ -4,10 +4,12 @@ import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import {
   buildPaymentRequestsWorkspace,
   createPaymentRequest,
+  grantCashAdvanceWaiver,
   PAYMENT_TYPES,
   transitionPaymentRequest,
   type PaymentRequestType,
 } from '@/lib/finance-intelligence/payment-requests-service';
+import { listExpenseCodes, listPaymentSites } from '@/lib/finance-intelligence/payment-request-lookups';
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -50,26 +52,49 @@ export async function POST(request: Request) {
       if (!PAYMENT_TYPES.includes(paymentType)) {
         return jsonErr(400, 'Only Cash Advance Payment and Supplier Invoice Payment are enabled.');
       }
+
+      const sites = await listPaymentSites();
+      const expenses = await listExpenseCodes();
+      const paymentSiteCode = String(body.paymentSiteCode || body.companyCode || '').trim();
+      const paymentSite = sites.find((site) => site.siteCode === paymentSiteCode) || null;
+      const expenseCode = String(body.expenseCode || '').trim();
+      const expense = expenses.find((item) => item.expenseCode === expenseCode) || null;
+      const title = paymentType === 'Cash Advance Payment'
+        ? (expense?.label || String(body.title || '').trim())
+        : String(body.title || '').trim();
+
+      if (paymentType === 'Cash Advance Payment') {
+        if (!paymentSite) return jsonErr(400, 'Select a valid payment site.');
+        if (!expense) return jsonErr(400, 'Select a valid request title (expense code).');
+      }
+
+      const employeeCode = String(body.beneficiaryCode || body.employeeCode || actor.actorCode || '').trim();
+      const employeeName = String(body.beneficiaryName || body.employeeName || actor.actor || '').trim();
+
       const result = await createPaymentRequest({
         paymentType,
-        title: body.title,
-        purpose: body.purpose,
+        title,
+        purpose: expense?.description || body.purpose,
+        expenseCode: expense?.expenseCode || expenseCode || undefined,
         businessJustification: body.businessJustification,
-        beneficiaryCode: body.beneficiaryCode,
-        beneficiaryName: body.beneficiaryName || (paymentType === 'Cash Advance Payment' ? actor.actor : ''),
+        beneficiaryCode: employeeCode,
+        beneficiaryName: employeeName || (paymentType === 'Cash Advance Payment' ? actor.actor : ''),
         beneficiaryBankSummary: body.beneficiaryBankSummary,
-        description: body.description,
+        description: body.description || title,
         amount: Number(body.amount || 0),
         currencyCode: body.currencyCode,
-        companyCode: body.companyCode,
+        companyCode: paymentSite?.siteCode || paymentSiteCode || body.companyCode,
+        paymentSiteCode: paymentSite?.siteCode || paymentSiteCode || undefined,
+        paymentSiteName: paymentSite?.siteName || body.paymentSiteName,
         department: body.department || actor.department,
+        location: body.location,
         costCentre: body.costCentre,
         projectCode: body.projectCode,
         priority: body.priority,
         requiredDate: body.requiredDate,
-        requesterCode: actor.actorCode,
-        requesterName: actor.actor,
-        requesterJobTitle: actor.jobTitle,
+        requesterCode: employeeCode || actor.actorCode,
+        requesterName: employeeName || actor.actor,
+        requesterJobTitle: body.requesterJobTitle || actor.jobTitle,
         supervisorName: body.supervisorName,
         requestCategory: body.requestCategory,
         invoiceNumber: body.invoiceNumber,
@@ -82,8 +107,6 @@ export async function POST(request: Request) {
         deliveryNoteNo: body.deliveryNoteNo,
         grnNo: body.grnNo,
         contractNo: body.contractNo,
-        overrideOutstandingAdvance: Boolean(body.overrideOutstandingAdvance),
-        overrideReason: body.overrideReason,
         submit: body.submit !== false,
         actor: actor.actor,
       });
@@ -91,6 +114,19 @@ export async function POST(request: Request) {
         ...result,
         message: result.request?.status === 'Draft' ? 'Draft saved.' : 'Payment request submitted.',
       });
+    }
+
+    if (action === 'grant-cash-advance-waiver') {
+      const employeeCode = String(body.employeeCode || '').trim();
+      const reason = String(body.reason || '').trim();
+      if (!employeeCode) return jsonErr(400, 'employeeCode is required.');
+      if (!reason) return jsonErr(400, 'reason is required.');
+      const result = await grantCashAdvanceWaiver({
+        employeeCode,
+        reason,
+        grantedBy: actor.actor,
+      });
+      return jsonOk({ ...result, message: 'Outstanding cash advance waiver granted.' });
     }
 
     if (action === 'transition') {

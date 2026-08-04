@@ -284,6 +284,95 @@ CREATE TABLE [finance].[SageSyncQueue] (
   [ProcessedAt] DATETIME2(0) NULL
 );
 
+IF OBJECT_ID(N'[finance].[PaymentSites]', N'U') IS NULL
+CREATE TABLE [finance].[PaymentSites] (
+  [SiteCode] NVARCHAR(40) NOT NULL CONSTRAINT [PK_FinancePaymentSites] PRIMARY KEY,
+  [SiteName] NVARCHAR(200) NOT NULL,
+  [IsActive] BIT NOT NULL CONSTRAINT [DF_FinancePaymentSites_Active] DEFAULT 1,
+  [SortOrder] INT NOT NULL CONSTRAINT [DF_FinancePaymentSites_Sort] DEFAULT 0,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinancePaymentSites_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinancePaymentSites_UpdatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF OBJECT_ID(N'[finance].[ExpenseCodes]', N'U') IS NULL
+CREATE TABLE [finance].[ExpenseCodes] (
+  [ExpenseCode] NVARCHAR(40) NOT NULL CONSTRAINT [PK_FinanceExpenseCodes] PRIMARY KEY,
+  [Description] NVARCHAR(250) NOT NULL,
+  [IsActive] BIT NOT NULL CONSTRAINT [DF_FinanceExpenseCodes_Active] DEFAULT 1,
+  [SortOrder] INT NOT NULL CONSTRAINT [DF_FinanceExpenseCodes_Sort] DEFAULT 0,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceExpenseCodes_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceExpenseCodes_UpdatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF OBJECT_ID(N'[finance].[CashAdvanceWaivers]', N'U') IS NULL
+CREATE TABLE [finance].[CashAdvanceWaivers] (
+  [WaiverId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceCashAdvanceWaivers] PRIMARY KEY,
+  [EmployeeCode] NVARCHAR(60) NOT NULL,
+  [GrantedBy] NVARCHAR(200) NOT NULL,
+  [Reason] NVARCHAR(MAX) NOT NULL,
+  [Status] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinanceCashAdvanceWaivers_Status] DEFAULT N'Active',
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceCashAdvanceWaivers_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [ConsumedAt] DATETIME2(0) NULL,
+  [ConsumedByRequestId] NVARCHAR(60) NULL
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinanceCashAdvanceWaivers_Employee' AND object_id = OBJECT_ID(N'[finance].[CashAdvanceWaivers]'))
+  CREATE INDEX [IX_FinanceCashAdvanceWaivers_Employee] ON [finance].[CashAdvanceWaivers] ([EmployeeCode], [Status], [CreatedAt] DESC);
+
+MERGE [finance].[PaymentSites] AS target
+USING (VALUES
+  (N'DLENG', N'Dorman Long Engineering Limited', 1),
+  (N'DLPCG', N'Dorman Long Protective Coatings', 2)
+) AS source ([SiteCode], [SiteName], [SortOrder])
+ON target.[SiteCode] = source.[SiteCode]
+WHEN MATCHED THEN UPDATE SET
+  [SiteName] = source.[SiteName],
+  [SortOrder] = source.[SortOrder],
+  [IsActive] = 1,
+  [UpdatedAt] = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([SiteCode], [SiteName], [SortOrder], [IsActive])
+VALUES (source.[SiteCode], source.[SiteName], source.[SortOrder], 1);
+
+MERGE [finance].[ExpenseCodes] AS target
+USING (VALUES
+  (N'COE', N'Corporate Office Expenses', 1),
+  (N'DEM', N'Demurrage payment', 2),
+  (N'DPR', N'Department of Petroleum Resources', 3),
+  (N'DUTY', N'Duty Payment', 4),
+  (N'ENT', N'Entertainment Expense', 5),
+  (N'EXP', N'Expatriate Expenses', 6),
+  (N'FLD', N'Petrol and Diesel', 7),
+  (N'FLT', N'Float', 8),
+  (N'GAS', N'Maintenance', 9),
+  (N'HTA', N'Hotel Accommodation', 10),
+  (N'INT', N'Internet Expense', 11),
+  (N'LOG', N'Logistics cost of project', 12),
+  (N'LTP', N'Local Transportation', 13),
+  (N'MDE', N'Medical Expenses', 14),
+  (N'MIS', N'Miscellaneous', 15),
+  (N'MKT', N'Marketing Expense', 16),
+  (N'MOE', N'Maintenance of equipment', 17),
+  (N'MTN', N'Maintenance', 18),
+  (N'NWS', N'Newspapers and Subscriptions', 19),
+  (N'OFFS', N'Office Stationaries', 20),
+  (N'OFS', N'Office Supply', 21),
+  (N'ORE', N'Office Running Expenses', 22),
+  (N'PRE', N'Project Expense', 23),
+  (N'PRT', N'Printing and Stationery', 24),
+  (N'PTC', N'Postage and Courier', 25),
+  (N'SND', N'Sundry Admin Expenses', 26),
+  (N'SPG', N'Safety and Protective Gear', 27),
+  (N'TLE', N'Telephone Expenses', 28)
+) AS source ([ExpenseCode], [Description], [SortOrder])
+ON target.[ExpenseCode] = source.[ExpenseCode]
+WHEN MATCHED THEN UPDATE SET
+  [Description] = source.[Description],
+  [SortOrder] = source.[SortOrder],
+  [IsActive] = 1,
+  [UpdatedAt] = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([ExpenseCode], [Description], [SortOrder], [IsActive])
+VALUES (source.[ExpenseCode], source.[Description], source.[SortOrder], 1);
+
 IF OBJECT_ID(N'[finance].[PaymentRequests]', N'U') IS NULL
 CREATE TABLE [finance].[PaymentRequests] (
   [RequestId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinancePaymentRequests] PRIMARY KEY,
@@ -305,7 +394,11 @@ CREATE TABLE [finance].[PaymentRequests] (
   [NetAmount] DECIMAL(19,4) NOT NULL CONSTRAINT [DF_FinancePayReq_Net] DEFAULT 0,
   [CurrencyCode] NVARCHAR(10) NOT NULL CONSTRAINT [DF_FinancePayReq_Currency] DEFAULT N'NGN',
   [CompanyCode] NVARCHAR(40) NULL,
+  [PaymentSiteCode] NVARCHAR(40) NULL,
+  [PaymentSiteName] NVARCHAR(200) NULL,
+  [ExpenseCode] NVARCHAR(40) NULL,
   [Department] NVARCHAR(150) NULL,
+  [Location] NVARCHAR(150) NULL,
   [CostCentre] NVARCHAR(80) NULL,
   [ProjectCode] NVARCHAR(80) NULL,
   [Priority] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinancePayReq_Priority] DEFAULT N'Normal',
@@ -349,6 +442,15 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinancePaymentRequest
   CREATE INDEX [IX_FinancePaymentRequests_Type] ON [finance].[PaymentRequests] ([PaymentType], [Status]);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinancePaymentRequests_Requester' AND object_id = OBJECT_ID(N'[finance].[PaymentRequests]'))
   CREATE INDEX [IX_FinancePaymentRequests_Requester] ON [finance].[PaymentRequests] ([RequesterCode], [Status]);
+
+IF COL_LENGTH(N'finance.PaymentRequests', N'ExpenseCode') IS NULL
+  ALTER TABLE [finance].[PaymentRequests] ADD [ExpenseCode] NVARCHAR(40) NULL;
+IF COL_LENGTH(N'finance.PaymentRequests', N'Location') IS NULL
+  ALTER TABLE [finance].[PaymentRequests] ADD [Location] NVARCHAR(150) NULL;
+IF COL_LENGTH(N'finance.PaymentRequests', N'PaymentSiteCode') IS NULL
+  ALTER TABLE [finance].[PaymentRequests] ADD [PaymentSiteCode] NVARCHAR(40) NULL;
+IF COL_LENGTH(N'finance.PaymentRequests', N'PaymentSiteName') IS NULL
+  ALTER TABLE [finance].[PaymentRequests] ADD [PaymentSiteName] NVARCHAR(200) NULL;
 
 IF OBJECT_ID(N'[finance].[PaymentRequestActions]', N'U') IS NULL
 CREATE TABLE [finance].[PaymentRequestActions] (

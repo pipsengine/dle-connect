@@ -60,7 +60,11 @@ export type PaymentRequestRow = {
   netAmount: number;
   currencyCode: string;
   companyCode: string;
+  paymentSiteCode: string;
+  paymentSiteName: string;
+  expenseCode: string;
   department: string;
+  location: string;
   costCentre: string;
   projectCode: string;
   priority: string;
@@ -135,7 +139,11 @@ export type CreatePaymentRequestInput = {
   amount: number;
   currencyCode?: string;
   companyCode?: string;
+  paymentSiteCode?: string;
+  paymentSiteName?: string;
+  expenseCode?: string;
   department?: string;
+  location?: string;
   costCentre?: string;
   projectCode?: string;
   priority?: string;
@@ -212,7 +220,11 @@ const mapRow = (row: Record<string, unknown>): PaymentRequestRow => {
     netAmount: Number(row.NetAmount || 0),
     currencyCode: compact(row.CurrencyCode) || 'NGN',
     companyCode: compact(row.CompanyCode),
+    paymentSiteCode: compact(row.PaymentSiteCode) || compact(row.CompanyCode),
+    paymentSiteName: compact(row.PaymentSiteName),
+    expenseCode: compact(row.ExpenseCode),
     department: compact(row.Department),
+    location: compact(row.Location),
     costCentre: compact(row.CostCentre),
     projectCode: compact(row.ProjectCode),
     priority: compact(row.Priority) || 'Normal',
@@ -321,17 +333,20 @@ ORDER BY COALESCE([SubmittedAt], [CreatedAt]) DESC
   }
 };
 
-const countOutstandingCashAdvances = async (requesterCode: string) => {
+const countOutstandingCashAdvances = async (employeeCode: string) => {
   const pool = await ensureFinanceDb().catch(() => null);
-  if (!pool || !requesterCode) return 0;
+  if (!pool || !employeeCode) return 0;
   try {
     const result = await pool.request()
-      .input('requester', sql.NVarChar(60), requesterCode)
+      .input('employee', sql.NVarChar(60), employeeCode)
       .query(`
 SELECT COUNT(1) AS count
 FROM [finance].[PaymentRequests]
 WHERE [PaymentType] = N'Cash Advance Payment'
-  AND [RequesterCode] = @requester
+  AND (
+    [BeneficiaryCode] = @employee
+    OR [RequesterCode] = @employee
+  )
   AND [Status] IN (
     N'Submitted', N'Pending Approval', N'Approved', N'Ready for Treasury', N'Paid',
     N'Awaiting Retirement', N'Retirement Submitted', N'Treasury Verification', N'Finance Verification'
@@ -341,6 +356,72 @@ WHERE [PaymentType] = N'Cash Advance Payment'
   } catch {
     return 0;
   }
+};
+
+const findActiveCashAdvanceWaiver = async (employeeCode: string) => {
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool || !employeeCode) return null;
+  try {
+    const result = await pool.request()
+      .input('employee', sql.NVarChar(60), employeeCode)
+      .query(`
+SELECT TOP 1 [WaiverId], [Reason], [GrantedBy], [CreatedAt]
+FROM [finance].[CashAdvanceWaivers]
+WHERE [EmployeeCode] = @employee
+  AND [Status] = N'Active'
+ORDER BY [CreatedAt] DESC
+`);
+    const row = result.recordset?.[0] as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      waiverId: compact(row.WaiverId),
+      reason: compact(row.Reason),
+      grantedBy: compact(row.GrantedBy),
+      createdAt: row.CreatedAt ? new Date(String(row.CreatedAt)).toISOString() : nowIso(),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const consumeCashAdvanceWaiver = async (waiverId: string, requestId: string) => {
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool || !waiverId) return;
+  await pool.request()
+    .input('WaiverId', sql.NVarChar(60), waiverId)
+    .input('RequestId', sql.NVarChar(60), requestId)
+    .query(`
+UPDATE [finance].[CashAdvanceWaivers]
+SET [Status] = N'Consumed',
+    [ConsumedAt] = SYSUTCDATETIME(),
+    [ConsumedByRequestId] = @RequestId
+WHERE [WaiverId] = @WaiverId
+  AND [Status] = N'Active'
+`);
+};
+
+export const grantCashAdvanceWaiver = async (input: {
+  employeeCode: string;
+  reason: string;
+  grantedBy: string;
+}) => {
+  const employeeCode = compact(input.employeeCode);
+  const reason = compact(input.reason);
+  if (!employeeCode) throw new Error('Employee code is required.');
+  if (!reason) throw new Error('Waiver reason is required.');
+  const pool = await ensureFinanceDb();
+  if (!pool) throw new Error('Finance database is unavailable.');
+  const waiverId = `CAW-${Date.now()}`;
+  await pool.request()
+    .input('WaiverId', sql.NVarChar(60), waiverId)
+    .input('EmployeeCode', sql.NVarChar(60), employeeCode)
+    .input('GrantedBy', sql.NVarChar(200), input.grantedBy)
+    .input('Reason', sql.NVarChar(sql.MAX), reason)
+    .query(`
+INSERT INTO [finance].[CashAdvanceWaivers] ([WaiverId], [EmployeeCode], [GrantedBy], [Reason], [Status])
+VALUES (@WaiverId, @EmployeeCode, @GrantedBy, @Reason, N'Active')
+`);
+  return { waiverId };
 };
 
 const nextRequestNumber = async () => {
@@ -464,24 +545,41 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
   }
   const title = compact(input.title);
   const beneficiaryName = compact(input.beneficiaryName);
+  const beneficiaryCode = compact(input.beneficiaryCode);
   const amount = moneyRound(Number(input.amount || 0));
+  const paymentSiteCode = compact(input.paymentSiteCode || input.companyCode);
+  const paymentSiteName = compact(input.paymentSiteName);
+  const expenseCode = compact(input.expenseCode);
+  const department = compact(input.department);
+  const location = compact(input.location);
+  let waiverIdToConsume: string | null = null;
+
   if (!title) throw new Error('Request title is required.');
-  if (!beneficiaryName) throw new Error('Beneficiary is required.');
+  if (!beneficiaryName) throw new Error('Employee / beneficiary is required.');
   if (!(amount > 0)) throw new Error('Amount must be greater than zero.');
 
   if (input.paymentType === 'Cash Advance Payment') {
-    const outstanding = await countOutstandingCashAdvances(input.requesterCode);
-    if (outstanding > 0 && !input.overrideOutstandingAdvance) {
-      throw new Error('You have one outstanding cash advance awaiting retirement. Please retire the previous advance before creating another request.');
-    }
-    if (outstanding > 0 && input.overrideOutstandingAdvance && !compact(input.overrideReason)) {
-      throw new Error('Override reason is required when an outstanding cash advance exists.');
+    if (!beneficiaryCode) throw new Error('Employee code is required.');
+    if (!paymentSiteCode) throw new Error('Payment site is required.');
+    if (!expenseCode) throw new Error('Request title (expense code) is required.');
+    if (!department) throw new Error('Department is required.');
+    if (!compact(input.businessJustification)) throw new Error('Business justification is required.');
+
+    const outstanding = await countOutstandingCashAdvances(beneficiaryCode);
+    if (outstanding > 0) {
+      const waiver = await findActiveCashAdvanceWaiver(beneficiaryCode);
+      if (!waiver) {
+        throw new Error('You have an outstanding cash advance awaiting retirement. A new request cannot be raised until the previous advance is retired, or Finance/CFO grants a waiver.');
+      }
+      waiverIdToConsume = waiver.waiverId;
+      input.overrideOutstandingAdvance = true;
+      input.overrideReason = `CFO waiver ${waiver.waiverId}: ${waiver.reason}`;
     }
   }
 
   if (input.paymentType === 'Supplier Invoice Payment') {
     if (!compact(input.invoiceNumber)) throw new Error('Invoice number is required for supplier payments.');
-    if (!compact(input.beneficiaryCode) && !beneficiaryName) throw new Error('Select a supplier from the supplier master.');
+    if (!beneficiaryCode && !beneficiaryName) throw new Error('Select a supplier from the supplier master.');
   }
 
   const pool = await ensureFinanceDb();
@@ -505,10 +603,10 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
     .input('PaymentType', sql.NVarChar(80), input.paymentType)
     .input('RequestCategory', sql.NVarChar(80), compact(input.requestCategory) || input.paymentType)
     .input('Title', sql.NVarChar(250), title)
-    .input('Purpose', sql.NVarChar(sql.MAX), compact(input.purpose) || null)
+    .input('Purpose', sql.NVarChar(sql.MAX), compact(input.purpose) || expenseCode || null)
     .input('BusinessJustification', sql.NVarChar(sql.MAX), compact(input.businessJustification) || null)
     .input('BeneficiaryType', sql.NVarChar(40), input.paymentType === 'Supplier Invoice Payment' ? 'Supplier' : 'Employee')
-    .input('BeneficiaryCode', sql.NVarChar(80), compact(input.beneficiaryCode) || null)
+    .input('BeneficiaryCode', sql.NVarChar(80), beneficiaryCode || null)
     .input('BeneficiaryName', sql.NVarChar(250), beneficiaryName)
     .input('BeneficiaryBankSummary', sql.NVarChar(500), compact(input.beneficiaryBankSummary) || null)
     .input('Description', sql.NVarChar(sql.MAX), compact(input.description) || title)
@@ -518,13 +616,17 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
     .input('RetentionAmount', sql.Decimal(19, 4), retentionAmount)
     .input('NetAmount', sql.Decimal(19, 4), netAmount)
     .input('CurrencyCode', sql.NVarChar(10), compact(input.currencyCode) || 'NGN')
-    .input('CompanyCode', sql.NVarChar(40), compact(input.companyCode) || 'DLE')
-    .input('Department', sql.NVarChar(150), compact(input.department) || null)
+    .input('CompanyCode', sql.NVarChar(40), paymentSiteCode || 'DLE')
+    .input('PaymentSiteCode', sql.NVarChar(40), paymentSiteCode || null)
+    .input('PaymentSiteName', sql.NVarChar(200), paymentSiteName || null)
+    .input('ExpenseCode', sql.NVarChar(40), expenseCode || null)
+    .input('Department', sql.NVarChar(150), department || null)
+    .input('Location', sql.NVarChar(150), location || null)
     .input('CostCentre', sql.NVarChar(80), compact(input.costCentre) || null)
     .input('ProjectCode', sql.NVarChar(80), compact(input.projectCode) || null)
     .input('Priority', sql.NVarChar(40), compact(input.priority) || 'Normal')
     .input('RequiredDate', sql.Date, input.requiredDate ? new Date(input.requiredDate) : null)
-    .input('RequesterCode', sql.NVarChar(60), compact(input.requesterCode) || null)
+    .input('RequesterCode', sql.NVarChar(60), compact(input.requesterCode) || beneficiaryCode || null)
     .input('RequesterName', sql.NVarChar(200), compact(input.requesterName) || input.actor)
     .input('RequesterJobTitle', sql.NVarChar(150), compact(input.requesterJobTitle) || null)
     .input('SupervisorName', sql.NVarChar(200), compact(input.supervisorName) || null)
@@ -543,13 +645,17 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
     .input('PayloadJson', sql.NVarChar(sql.MAX), JSON.stringify({
       matrixRuleName: stageInfo.matrixRuleName,
       approvalLevel: stageInfo.approvalLevel,
+      expenseCode,
+      paymentSiteCode,
+      paymentSiteName,
+      location,
     }))
     .query(`
 INSERT INTO [finance].[PaymentRequests] (
   [RequestId], [RequestNumber], [PaymentType], [RequestCategory], [Title], [Purpose], [BusinessJustification],
   [BeneficiaryType], [BeneficiaryCode], [BeneficiaryName], [BeneficiaryBankSummary], [Description],
   [GrossAmount], [VatAmount], [WhtAmount], [RetentionAmount], [NetAmount], [CurrencyCode],
-  [CompanyCode], [Department], [CostCentre], [ProjectCode], [Priority], [RequiredDate],
+  [CompanyCode], [PaymentSiteCode], [PaymentSiteName], [ExpenseCode], [Department], [Location], [CostCentre], [ProjectCode], [Priority], [RequiredDate],
   [RequesterCode], [RequesterName], [RequesterJobTitle], [SupervisorName], [SubmittedAt],
   [CurrentStage], [Status], [OverrideOutstandingAdvance], [OverrideReason],
   [InvoiceNumber], [InvoiceDate], [DueDate], [PurchaseOrderNo], [DeliveryNoteNo], [GrnNo], [ContractNo], [PayloadJson]
@@ -557,13 +663,17 @@ INSERT INTO [finance].[PaymentRequests] (
   @RequestId, @RequestNumber, @PaymentType, @RequestCategory, @Title, @Purpose, @BusinessJustification,
   @BeneficiaryType, @BeneficiaryCode, @BeneficiaryName, @BeneficiaryBankSummary, @Description,
   @GrossAmount, @VatAmount, @WhtAmount, @RetentionAmount, @NetAmount, @CurrencyCode,
-  @CompanyCode, @Department, @CostCentre, @ProjectCode, @Priority, @RequiredDate,
+  @CompanyCode, @PaymentSiteCode, @PaymentSiteName, @ExpenseCode, @Department, @Location, @CostCentre, @ProjectCode, @Priority, @RequiredDate,
   @RequesterCode, @RequesterName, @RequesterJobTitle, @SupervisorName, @SubmittedAt,
   @CurrentStage, @Status, @OverrideOutstandingAdvance, @OverrideReason,
   @InvoiceNumber, @InvoiceDate, @DueDate, @PurchaseOrderNo, @DeliveryNoteNo, @GrnNo, @ContractNo, @PayloadJson
 )
 `);
 
+  const waiverId = waiverIdToConsume;
+  if (waiverId) {
+    await consumeCashAdvanceWaiver(waiverId, requestId);
+  }
   await logAction({
     requestId,
     actionType: submit ? 'Submitted' : 'Created',
