@@ -101,8 +101,8 @@ const loadReviewRecordsForPeriod = async (period: string) => {
 };
 
 const dailyRateDaysWorked = (record: {
-  timesheetDaysWorked?: number | null;
-  daysWorked?: number | null;
+  timesheetDaysWorked?: number | string | null;
+  daysWorked?: number | string | null;
 }) => {
   const raw = record?.timesheetDaysWorked ?? record?.daysWorked;
   if (raw == null || raw === '') return 0;
@@ -112,8 +112,8 @@ const dailyRateDaysWorked = (record: {
 
 const employeeWorkedInPeriod = (record: {
   isDailyRate?: boolean;
-  timesheetDaysWorked?: number | null;
-  daysWorked?: number | null;
+  timesheetDaysWorked?: number | string | null;
+  daysWorked?: number | string | null;
 }) => {
   // Salaried / stipend staff are always included.
   // Daily-rate export must only include employees with Days Worked > 0 for the period.
