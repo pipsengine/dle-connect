@@ -1,5 +1,6 @@
 import sql from 'mssql';
 import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
+import { resolveApprovalStageFromMatrix } from '@/lib/finance-intelligence/approval-matrix-service';
 
 export const PAYMENT_TYPES = ['Cash Advance Payment', 'Supplier Invoice Payment'] as const;
 export type PaymentRequestType = (typeof PAYMENT_TYPES)[number];
@@ -164,20 +165,22 @@ const compact = (value: unknown) => String(value ?? '').trim();
 const nowIso = () => new Date().toISOString();
 const moneyRound = (value: number) => Math.round(value * 10000) / 10000;
 
-const APPROVAL_LIMITS = [
-  { max: 100_000, stage: 'Supervisor', approverRole: 'Line Manager' },
-  { max: 500_000, stage: 'Department Head', approverRole: 'Department Head' },
-  { max: 2_000_000, stage: 'Finance Manager', approverRole: 'Finance Manager' },
-  { max: 10_000_000, stage: 'CFO', approverRole: 'CFO' },
-  { max: Number.POSITIVE_INFINITY, stage: 'Managing Director', approverRole: 'Managing Director' },
-] as const;
-
-const resolveInitialStage = (amount: number, paymentType: PaymentRequestType) => {
-  if (paymentType === 'Supplier Invoice Payment') {
-    return { stage: 'Department Head', status: 'Pending Approval' as const };
+const resolveInitialStage = async (amount: number, paymentType: PaymentRequestType) => {
+  const matched = await resolveApprovalStageFromMatrix(paymentType, amount);
+  if (matched) {
+    return {
+      stage: matched.stage,
+      status: 'Pending Approval' as const,
+      matrixRuleName: matched.ruleName,
+      approvalLevel: matched.approvalLevel,
+    };
   }
-  const limit = APPROVAL_LIMITS.find((item) => amount <= item.max) || APPROVAL_LIMITS[APPROVAL_LIMITS.length - 1];
-  return { stage: limit.stage, status: 'Pending Approval' as const };
+  return {
+    stage: 'Line Manager',
+    status: 'Pending Approval' as const,
+    matrixRuleName: null as string | null,
+    approvalLevel: 1,
+  };
 };
 
 const mapRow = (row: Record<string, unknown>): PaymentRequestRow => {
@@ -493,8 +496,8 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
   const netAmount = moneyRound(grossAmount + vatAmount - whtAmount - retentionAmount);
   const submit = Boolean(input.submit);
   const stageInfo = submit
-    ? resolveInitialStage(netAmount, input.paymentType)
-    : { stage: 'Draft', status: 'Draft' as const };
+    ? await resolveInitialStage(netAmount, input.paymentType)
+    : { stage: 'Draft', status: 'Draft' as const, matrixRuleName: null as string | null, approvalLevel: 0 };
 
   await pool.request()
     .input('RequestId', sql.NVarChar(60), requestId)
@@ -537,7 +540,10 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
     .input('DeliveryNoteNo', sql.NVarChar(120), compact(input.deliveryNoteNo) || null)
     .input('GrnNo', sql.NVarChar(120), compact(input.grnNo) || null)
     .input('ContractNo', sql.NVarChar(120), compact(input.contractNo) || null)
-    .input('PayloadJson', sql.NVarChar(sql.MAX), JSON.stringify({ approvalLimits: APPROVAL_LIMITS }))
+    .input('PayloadJson', sql.NVarChar(sql.MAX), JSON.stringify({
+      matrixRuleName: stageInfo.matrixRuleName,
+      approvalLevel: stageInfo.approvalLevel,
+    }))
     .query(`
 INSERT INTO [finance].[PaymentRequests] (
   [RequestId], [RequestNumber], [PaymentType], [RequestCategory], [Title], [Purpose], [BusinessJustification],

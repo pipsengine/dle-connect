@@ -38,14 +38,18 @@ import type {
   FinanceCommandCentreSnapshot,
 } from '@/lib/finance-intelligence/store';
 import type { PaymentRequestsWorkspace } from '@/lib/finance-intelligence/payment-requests-service';
+import type { ApprovalMatrixWorkspace } from '@/lib/finance-intelligence/approval-matrix-service';
 import { FinanceBreadcrumbs } from './finance-portal-shell';
 import PaymentRequestsClient from './PaymentRequestsClient';
+import ApprovalMatrixClient from './ApprovalMatrixClient';
+import ApprovalLimitsClient from './ApprovalLimitsClient';
 
 type Props = {
   page: FinancePageMeta;
   commandCentre?: FinanceCommandCentreSnapshot | null;
   approvalCentre?: FinanceApprovalCentreSnapshot | null;
   paymentRequests?: PaymentRequestsWorkspace | null;
+  approvalMatrix?: ApprovalMatrixWorkspace | null;
   childLinks?: Array<{ href: string; title: string; description?: string }>;
 };
 
@@ -944,7 +948,7 @@ function GenericWorkspace({ page }: { page: FinancePageMeta }) {
   );
 }
 
-export default function FinanceWorkspaceClient({ page, commandCentre, approvalCentre, paymentRequests, childLinks }: Props) {
+export default function FinanceWorkspaceClient({ page, commandCentre, approvalCentre, paymentRequests, approvalMatrix, childLinks }: Props) {
   const reportingCards = useMemo(
     () => [
       {
@@ -987,10 +991,12 @@ export default function FinanceWorkspaceClient({ page, commandCentre, approvalCe
       {page.kind === 'ai-copilot' ? <AiCopilotView page={page} /> : null}
       {page.kind === 'approvals-dashboard' ? <ApprovalsDashboard snapshot={approvalCentre} /> : null}
       {page.kind === 'payment-requests' && paymentRequests ? <PaymentRequestsClient initialWorkspace={paymentRequests} /> : null}
+      {page.kind === 'approval-matrix' && approvalMatrix ? <ApprovalMatrixClient initialWorkspace={approvalMatrix} /> : null}
+      {page.kind === 'approval-limits' && approvalMatrix ? <ApprovalLimitsClient initialWorkspace={approvalMatrix} /> : null}
       {page.kind === 'approval-queue' ? <ApprovalQueue page={page} /> : null}
       {page.kind === 'approval-detail' ? <ApprovalDetail /> : null}
       {page.kind === 'section-dashboard' ? <SectionDashboard page={page} childLinks={childLinks} /> : null}
-      {!['command-centre', 'reporting-hub', 'analysis-hub', 'analysis-workspace', 'ai-copilot', 'approvals-dashboard', 'payment-requests', 'approval-queue', 'approval-detail', 'section-dashboard'].includes(page.kind)
+      {!['command-centre', 'reporting-hub', 'analysis-hub', 'analysis-workspace', 'ai-copilot', 'approvals-dashboard', 'payment-requests', 'approval-matrix', 'approval-limits', 'approval-queue', 'approval-detail', 'section-dashboard'].includes(page.kind)
         ? <GenericWorkspace page={page} />
         : null}
     </div>

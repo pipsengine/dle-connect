@@ -217,12 +217,58 @@ CREATE TABLE [finance].[Exceptions] (
 IF OBJECT_ID(N'[finance].[ApprovalMatrix]', N'U') IS NULL
 CREATE TABLE [finance].[ApprovalMatrix] (
   [MatrixId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceApprovalMatrix] PRIMARY KEY,
+  [RuleName] NVARCHAR(80) NOT NULL,
   [PaymentType] NVARCHAR(80) NOT NULL,
+  [CompanyCode] NVARCHAR(40) NULL,
+  [EntityName] NVARCHAR(200) NULL,
   [MinAmount] DECIMAL(19,4) NOT NULL CONSTRAINT [DF_FinanceMatrix_Min] DEFAULT 0,
   [MaxAmount] DECIMAL(19,4) NULL,
-  [StagesJson] NVARCHAR(MAX) NOT NULL,
+  [ApprovalLevel] INT NOT NULL CONSTRAINT [DF_FinanceMatrix_Level] DEFAULT 1,
+  [ApproverRoles] NVARCHAR(250) NOT NULL,
+  [StagesJson] NVARCHAR(MAX) NULL,
+  [CurrencyCode] NVARCHAR(10) NOT NULL CONSTRAINT [DF_FinanceMatrix_Currency] DEFAULT N'NGN',
+  [DualControl] BIT NOT NULL CONSTRAINT [DF_FinanceMatrix_Dual] DEFAULT 0,
+  [Status] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinanceMatrix_Status] DEFAULT N'Active',
   [IsActive] BIT NOT NULL CONSTRAINT [DF_FinanceMatrix_Active] DEFAULT 1,
+  [CreatedBy] NVARCHAR(120) NULL,
+  [UpdatedBy] NVARCHAR(120) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceMatrix_CreatedAt] DEFAULT SYSUTCDATETIME(),
   [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceMatrix_UpdatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'RuleName') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [RuleName] NVARCHAR(80) NULL;
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'CompanyCode') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [CompanyCode] NVARCHAR(40) NULL;
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'EntityName') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [EntityName] NVARCHAR(200) NULL;
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'ApprovalLevel') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [ApprovalLevel] INT NOT NULL CONSTRAINT [DF_FinanceMatrix_Level2] DEFAULT 1;
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'ApproverRoles') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [ApproverRoles] NVARCHAR(250) NULL;
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'StagesJson') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [StagesJson] NVARCHAR(MAX) NULL;
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'CurrencyCode') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [CurrencyCode] NVARCHAR(10) NULL;
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'DualControl') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [DualControl] BIT NOT NULL CONSTRAINT [DF_FinanceMatrix_Dual2] DEFAULT 0;
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'Status') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [Status] NVARCHAR(40) NULL;
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'CreatedBy') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [CreatedBy] NVARCHAR(120) NULL;
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'UpdatedBy') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [UpdatedBy] NVARCHAR(120) NULL;
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'CreatedAt') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [CreatedAt] DATETIME2(0) NULL;
+
+IF OBJECT_ID(N'[finance].[ApprovalMatrixAudit]', N'U') IS NULL
+CREATE TABLE [finance].[ApprovalMatrixAudit] (
+  [AuditId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceApprovalMatrixAudit] PRIMARY KEY,
+  [MatrixId] NVARCHAR(60) NULL,
+  [ActionType] NVARCHAR(40) NOT NULL,
+  [ActorName] NVARCHAR(200) NULL,
+  [DetailJson] NVARCHAR(MAX) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceMatrixAudit_CreatedAt] DEFAULT SYSUTCDATETIME()
 );
 
 IF OBJECT_ID(N'[finance].[SageSyncQueue]', N'U') IS NULL

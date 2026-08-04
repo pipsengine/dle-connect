@@ -49,6 +49,8 @@ export type FinancePageKind =
   | 'distribution'
   | 'audit'
   | 'configuration'
+  | 'approval-matrix'
+  | 'approval-limits'
   | 'workspace';
 
 export type FinancePageMeta = {
@@ -507,8 +509,8 @@ export const FINANCE_PAGES: FinancePageMeta[] = [
   page('/finance/configuration/periods', 'Reporting Periods', 'Configure fiscal periods and reporting calendars.', 'configuration', 'configuration', ['Finance Configuration', 'Reporting Periods']),
   page('/finance/configuration/entities', 'Company & Entity Setup', 'Company, business unit and entity hierarchy.', 'configuration', 'configuration', ['Finance Configuration', 'Company & Entity Setup']),
   page('/finance/configuration/currency', 'Currency Configuration', 'Functional and reporting currency setup.', 'configuration', 'configuration', ['Finance Configuration', 'Currency Configuration']),
-  page('/finance/configuration/approval-matrix', 'Approval Matrix', 'Configurable approval stages by payment type and amount.', 'configuration', 'configuration', ['Finance Configuration', 'Approval Matrix']),
-  page('/finance/configuration/approval-limits', 'Approval Limits', 'Approver monetary limits and dual-control thresholds.', 'configuration', 'configuration', ['Finance Configuration', 'Approval Limits']),
+  page('/finance/configuration/approval-matrix', 'Approval Matrix', 'Configure approval strategies and workflows based on payment type, amount thresholds and organisational structure.', 'configuration', 'approval-matrix', ['Finance Configuration', 'Approval Matrix']),
+  page('/finance/configuration/approval-limits', 'Approval Limits', 'Define monetary limits and dual-control thresholds for approvals.', 'configuration', 'approval-limits', ['Finance Configuration', 'Approval Limits']),
   page('/finance/configuration/delegation-rules', 'Delegation Rules', 'Rules for temporary and standing approval delegation.', 'configuration', 'configuration', ['Finance Configuration', 'Delegation Rules']),
   page('/finance/configuration/distribution-rules', 'Report Distribution Rules', 'Rules governing report distribution audiences.', 'configuration', 'configuration', ['Finance Configuration', 'Report Distribution Rules']),
   page('/finance/configuration/ai-governance', 'AI Governance', 'AI confidence, human-review and usage controls.', 'configuration', 'configuration', ['Finance Configuration', 'AI Governance']),

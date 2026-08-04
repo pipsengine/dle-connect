@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { FINANCE_PAGES, resolveFinancePage } from '@/lib/finance-intelligence/nav';
 import { buildFinanceApprovalCentre, buildFinanceCommandCentre } from '@/lib/finance-intelligence/store';
 import { buildPaymentRequestsWorkspace } from '@/lib/finance-intelligence/payment-requests-service';
+import { buildApprovalMatrixWorkspace } from '@/lib/finance-intelligence/approval-matrix-service';
 import FinanceWorkspaceClient from '../FinanceWorkspaceClient';
 
 export const dynamic = 'force-dynamic';
@@ -40,6 +41,25 @@ export default async function FinanceCatchAllPage({ params }: Props) {
     ? await buildPaymentRequestsWorkspace({ paymentType }).catch(() => null)
     : null;
 
+  const approvalMatrix = page.kind === 'approval-matrix' || page.kind === 'approval-limits'
+    ? await buildApprovalMatrixWorkspace().catch(() => ({
+      generatedAt: new Date().toISOString(),
+      source: 'DLE Enterprise · finance.ApprovalMatrix',
+      summary: {
+        paymentTypes: 0,
+        activeRules: 0,
+        approvalLevels: 0,
+        pendingChanges: 0,
+        coveragePct: 0,
+        dualControlRules: 0,
+        companyCoveragePct: 0,
+        compliancePct: 0,
+      },
+      rules: [],
+      audit: [],
+    }))
+    : null;
+
   const childLinks = page.kind === 'section-dashboard' || page.features?.length
     ? childLinksFor(page.href)
     : [];
@@ -63,6 +83,7 @@ export default async function FinanceCatchAllPage({ params }: Props) {
       commandCentre={commandCentre}
       approvalCentre={approvalCentre}
       paymentRequests={paymentRequests}
+      approvalMatrix={approvalMatrix}
       childLinks={childLinks.length ? childLinks : featureLinks}
     />
   );
