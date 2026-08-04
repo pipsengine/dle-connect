@@ -4,11 +4,9 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
 import {
-  buildSalarySetupExportReport,
   salarySetupCsvFromRecords,
   type SalarySetupExportRecord,
 } from '@/lib/payroll-salary-setup-export';
-import { downloadExcelFile } from '@/lib/excel-export';
 import {
   AccordionSection,
   DonutChart,
@@ -474,15 +472,16 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
   };
 
   const exportExcel = () => {
-    const report = buildSalarySetupExportReport(filtered as SalarySetupExportRecord[]);
-    downloadExcelFile({
-      title: 'Employee Salary Setup',
-      subtitle: `${filtered.length} employees · ${payload?.periodLabel || payload?.period || 'Current period'}`,
-      sheetName: 'Salary Setup',
-      columns: report.columns,
-      rows: report.rows,
-      fileName: `employee-salary-setup-${payload?.period || 'export'}.xls`,
+    if (!payload?.permissions.canExport) return;
+    // Match Process Payroll: one workbook with Salaried Stipend + Daily Rate sheets.
+    const params = new URLSearchParams({
+      format: 'xls',
+      report: 'salary-setup',
+      status: 'All',
+      pack: 'all',
     });
+    if (payload.period) params.set('period', payload.period);
+    window.location.href = `/api/hris/payroll-management?${params.toString()}`;
   };
 
   const setNhfApplicability = async (employeeId: string, nhfApplicable: boolean) => {

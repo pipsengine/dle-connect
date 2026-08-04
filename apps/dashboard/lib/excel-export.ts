@@ -84,6 +84,8 @@ export const excelMimeType = 'application/vnd.ms-excel;charset=utf-8';
 
 const escapeXml = (value: unknown) =>
   String(value ?? '')
+    // XML 1.0 disallows most C0 controls; leaving them in makes Excel report the file as corrupt.
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -131,6 +133,7 @@ export const buildExcelWorkbookXml = ({ worksheets, generatedAt }: ExcelWorkbook
       const style = index % 2 ? 'Even' as const : 'Odd' as const;
       return `<Row>${columns.map((_, columnIndex) => spreadsheetCell(row[columnIndex], style)).join('')}</Row>`;
     }).join('');
+    const selected = sheetIndex === 0 ? '<Selected/>' : '';
 
     return `<Worksheet ss:Name="${escapeXml(sheetName)}">
  <Names><NamedRange ss:Name="_FilterDatabase" ss:RefersTo="='${escapeXml(sheetName.replace(/'/g, "''"))}'!${filterRange}" ss:Hidden="1"/></Names>
@@ -143,19 +146,20 @@ export const buildExcelWorkbookXml = ({ worksheets, generatedAt }: ExcelWorkbook
   ${dataRows}
  </Table>
  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
-  <Selected/><FreezePanes/><FrozenNoSplit/><SplitHorizontal="${headerRow}"/><TopRowBottomPane>${headerRow}</TopRowBottomPane><ActivePane>2</ActivePane>
+  ${selected}<FreezePanes/><FrozenNoSplit/><SplitHorizontal>${headerRow}</SplitHorizontal><TopRowBottomPane>${headerRow}</TopRowBottomPane><ActivePane>2</ActivePane>
   <ProtectObjects>False</ProtectObjects><ProtectScenarios>False</ProtectScenarios>
  </WorksheetOptions>
  <AutoFilter x:Range="${filterRange}" xmlns="urn:schemas-microsoft-com:office:excel"/>
 </Worksheet>`;
   }).join('');
 
-  return `<?xml version="1.0"?>
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <?mso-application progid="Excel.Sheet"?>
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
  xmlns:o="urn:schemas-microsoft-com:office:office"
  xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
  <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office"><Author>DLE Connect HRIS</Author><Created>${escapeXml(created)}</Created></DocumentProperties>
  <Styles>
   <Style ss:ID="Default" ss:Name="Normal"><Alignment ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="11"/></Style>

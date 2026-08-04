@@ -5157,7 +5157,7 @@ export default function PayrollManagementClient({
           viewPeriod={viewPeriod}
           onRefresh={() => void load()}
           onExportCsv={() => exportReportCsv('salary-setup')}
-          onExportExcel={() => exportReportExcel('salary-setup')}
+          onExportExcel={() => exportBothPacksExcel('salary-setup')}
           onSelectTab={(tab) => {
             setActiveTabs((prev) => ({ ...prev, 'salary-management': tab }));
             window.history.pushState(null, '', sectionHref('salary-management'));
