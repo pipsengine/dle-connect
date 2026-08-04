@@ -42,7 +42,8 @@ export async function POST(request: Request) {
   try {
     const actor = await resolveActor();
     const body = await request.json().catch(() => ({}));
-    const action = String(body.action || 'upsert').trim();
+    const action = String(body.action || '').trim();
+    if (!action) return jsonErr(400, 'action is required (upsert, delete, seed-defaults, or resolve-preview).');
 
     if (action === 'upsert') {
       const stages = parseStages(body);

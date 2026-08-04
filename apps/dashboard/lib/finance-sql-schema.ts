@@ -543,8 +543,14 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinancePaymentRequest
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinancePaymentRequests_Requester' AND object_id = OBJECT_ID(N'[finance].[PaymentRequests]'))
   CREATE INDEX [IX_FinancePaymentRequests_Requester] ON [finance].[PaymentRequests] ([RequesterCode], [Status]);
 
+IF COL_LENGTH(N'finance.PaymentRequests', N'Purpose') IS NULL
+  ALTER TABLE [finance].[PaymentRequests] ADD [Purpose] NVARCHAR(MAX) NULL;
+IF COL_LENGTH(N'finance.PaymentRequests', N'BusinessJustification') IS NULL
+  ALTER TABLE [finance].[PaymentRequests] ADD [BusinessJustification] NVARCHAR(MAX) NULL;
 IF COL_LENGTH(N'finance.PaymentRequests', N'ExpenseCode') IS NULL
   ALTER TABLE [finance].[PaymentRequests] ADD [ExpenseCode] NVARCHAR(40) NULL;
+IF COL_LENGTH(N'finance.PaymentRequests', N'Department') IS NULL
+  ALTER TABLE [finance].[PaymentRequests] ADD [Department] NVARCHAR(150) NULL;
 IF COL_LENGTH(N'finance.PaymentRequests', N'Location') IS NULL
   ALTER TABLE [finance].[PaymentRequests] ADD [Location] NVARCHAR(150) NULL;
 IF COL_LENGTH(N'finance.PaymentRequests', N'PaymentSiteCode') IS NULL

@@ -18,7 +18,7 @@ import {
   transitionPaymentRequest,
   type PaymentRequestType,
 } from '@/lib/finance-intelligence/payment-requests-service';
-import { listExpenseCodes, listPaymentSites } from '@/lib/finance-intelligence/payment-request-lookups';
+import { FALLBACK_EXPENSE_CODES, FALLBACK_SITES, listExpenseCodes, listPaymentSites } from '@/lib/finance-intelligence/payment-request-lookups';
 import {
   canAccessPaymentRequest,
   canViewAllPaymentRequests,
@@ -98,10 +98,9 @@ export async function GET(request: Request) {
     }
 
     if (view === 'eligibility') {
+      // Eligibility is needed while composing a cash advance for the selected employee.
+      // Payment list/detail remain scoped; this only returns outstanding-advance status.
       const requestedCode = String(searchParams.get('employeeCode') || actor.actorCode || '').trim();
-      if (!viewAll && requestedCode.toLowerCase() !== String(actor.actorCode || '').trim().toLowerCase()) {
-        return jsonErr(403, 'You can only check cash-advance eligibility for your own employee record.');
-      }
       return jsonOk(await getCashAdvanceEligibility(requestedCode || ''));
     }
 
@@ -158,9 +157,13 @@ export async function POST(request: Request) {
       const sites = await listPaymentSites();
       const expenses = await listExpenseCodes();
       const paymentSiteCode = String(body.paymentSiteCode || body.companyCode || '').trim().toUpperCase();
-      const paymentSite = sites.find((site) => site.siteCode.toUpperCase() === paymentSiteCode) || null;
+      const paymentSite = sites.find((site) => site.siteCode.toUpperCase() === paymentSiteCode)
+        || FALLBACK_SITES.find((site) => site.siteCode.toUpperCase() === paymentSiteCode)
+        || null;
       const expenseCode = String(body.expenseCode || '').trim().toUpperCase();
-      const expense = expenses.find((item) => item.expenseCode.toUpperCase() === expenseCode) || null;
+      const expense = expenses.find((item) => item.expenseCode.toUpperCase() === expenseCode)
+        || FALLBACK_EXPENSE_CODES.find((item) => item.expenseCode.toUpperCase() === expenseCode)
+        || null;
       const currencyCode = String(body.currencyCode || 'NGN').trim().toUpperCase();
       if (!ALLOWED_PAYMENT_CURRENCIES.includes(currencyCode as typeof ALLOWED_PAYMENT_CURRENCIES[number])) {
         return jsonErr(400, 'Currency must be NGN, USD, EUR or GBP.');
@@ -171,8 +174,10 @@ export async function POST(request: Request) {
         : String(body.title || '').trim();
 
       if (paymentType === 'Cash Advance Payment') {
-        if (!paymentSite) return jsonErr(400, 'Select a valid payment site.');
-        if (!expense) return jsonErr(400, 'Select a valid request title (expense code).');
+        if (!paymentSiteCode) return jsonErr(400, 'Payment site is required.');
+        if (!paymentSite) return jsonErr(400, `Select a valid payment site (unknown code: ${paymentSiteCode}).`);
+        if (!expenseCode) return jsonErr(400, 'Request title (expense code) is required.');
+        if (!expense) return jsonErr(400, `Select a valid request title (unknown expense code: ${expenseCode}).`);
         if (!String(body.location || '').trim()) return jsonErr(400, 'Location is required.');
         if (!String(body.department || '').trim()) return jsonErr(400, 'Department is required.');
         if (String(body.businessJustification || '').trim().length < 10) {

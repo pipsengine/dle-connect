@@ -35,12 +35,12 @@ const compact = (value: unknown) => String(value ?? '').trim();
 const uniqueSorted = (values: string[]) =>
   Array.from(new Set(values.map(compact).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
-const FALLBACK_SITES: PaymentSite[] = [
+export const FALLBACK_SITES: PaymentSite[] = [
   { siteCode: 'DLENG', siteName: 'Dorman Long Engineering Limited' },
   { siteCode: 'DLPCG', siteName: 'Dorman Long Protective Coatings' },
 ];
 
-const FALLBACK_EXPENSE_CODES: ExpenseCodeOption[] = [
+export const FALLBACK_EXPENSE_CODES: ExpenseCodeOption[] = [
   ['COE', 'Corporate Office Expenses'],
   ['DEM', 'Demurrage payment'],
   ['DPR', 'Department of Petroleum Resources'],

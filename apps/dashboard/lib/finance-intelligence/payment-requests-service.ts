@@ -265,23 +265,27 @@ const resolveInitialStage = async (
   paymentType: PaymentRequestType,
   context?: { currencyCode?: string; department?: string; projectCode?: string },
 ) => {
-  const matched = await resolveApprovalChain({
-    amount,
-    currencyCode: context?.currencyCode || 'NGN',
-    department: context?.department,
-    projectCode: context?.projectCode,
-  });
-  if (matched) {
-    return {
-      stage: matched.currentStage,
-      status: 'Pending Approval' as const,
-      matrixRuleName: matched.ruleName,
-      approvalLevel: matched.approvalLevel,
-      stages: matched.stages,
-      pathType: matched.pathType,
-      amountNgn: matched.amountNgn,
-      fxRate: matched.fxRate,
-    };
+  try {
+    const matched = await resolveApprovalChain({
+      amount,
+      currencyCode: context?.currencyCode || 'NGN',
+      department: context?.department,
+      projectCode: context?.projectCode,
+    });
+    if (matched) {
+      return {
+        stage: matched.currentStage,
+        status: 'Pending Approval' as const,
+        matrixRuleName: matched.ruleName,
+        approvalLevel: matched.approvalLevel,
+        stages: matched.stages,
+        pathType: matched.pathType,
+        amountNgn: matched.amountNgn,
+        fxRate: matched.fxRate,
+      };
+    }
+  } catch (error) {
+    console.error('[payment-requests] approval chain resolve failed; using fallback stage', error);
   }
 
   // Safe fallback if matrix unavailable — still convert for consistent NGN routing metadata.
@@ -1083,7 +1087,9 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
     if (outstanding > 0) {
       const waiver = await findActiveCashAdvanceWaiver(beneficiaryCode);
       if (!waiver) {
-        throw new Error('You have an outstanding cash advance awaiting retirement. A new request cannot be raised until the previous advance is retired, or Finance/CFO grants a waiver.');
+        throw new Error(
+          `${beneficiaryCode} has ${outstanding} outstanding cash advance${outstanding === 1 ? '' : 's'} awaiting retirement. Retire the previous advance, or ask Finance/CFO to cancel or waive it before raising a new one.`,
+        );
       }
       waiverIdToConsume = waiver.waiverId;
       input.overrideOutstandingAdvance = true;

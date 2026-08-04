@@ -283,15 +283,18 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
   const loadEligibility = async (employeeCode: string) => {
     if (!employeeCode) {
       setEligibility(null);
-      return;
+      return null;
     }
     try {
       const res = await fetch(`/api/finance/payment-requests?view=eligibility&employeeCode=${encodeURIComponent(employeeCode)}`, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to check eligibility');
-      setEligibility(json.data as CashAdvanceEligibility);
-    } catch {
+      const next = json.data as CashAdvanceEligibility;
+      setEligibility(next);
+      return next;
+    } catch (error) {
       setEligibility(null);
+      return null;
     }
   };
 
@@ -440,9 +443,35 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
   };
 
   const submitRequest = async () => {
-    if (!validateComposer()) return;
-    setBusy(true);
+    setFormErrors([]);
     setToast('');
+
+    let latestEligibility = eligibility;
+    if (composerType === 'Cash Advance Payment' && form.employeeCode.trim()) {
+      latestEligibility = await loadEligibility(form.employeeCode.trim());
+    }
+
+    const errors: string[] = [];
+    if (composerType === 'Cash Advance Payment') {
+      if (!form.employeeCode.trim()) errors.push('Select an employee.');
+      if (!form.department.trim()) errors.push('Department is required.');
+      if (!form.location.trim()) errors.push('Location is required.');
+      if (!form.paymentSiteCode.trim()) errors.push('Payment site is required.');
+      if (!form.expenseCode.trim()) errors.push('Request title is required.');
+      if (!(Number(form.amount) >= 1)) errors.push('Amount must be at least 1.00.');
+      if (form.businessJustification.trim().length < 10) errors.push('Business justification must be at least 10 characters.');
+      if (latestEligibility?.blocked) errors.push(latestEligibility.message);
+    } else {
+      if (!form.title.trim()) errors.push('Request title is required.');
+      if (!form.beneficiaryName.trim()) errors.push('Supplier name is required.');
+      if (!form.invoiceNumber.trim()) errors.push('Invoice number is required.');
+      if (!(Number(form.amount) >= 1)) errors.push('Amount must be at least 1.00.');
+      if (!supportingFiles.length) errors.push('Supporting documents are required.');
+    }
+    setFormErrors(errors);
+    if (errors.length) return;
+
+    setBusy(true);
     try {
       const selectedExpense = lookups?.expenseCodes.find((item) => item.expenseCode === form.expenseCode);
       const selectedSite = lookups?.paymentSites.find((item) => item.siteCode === form.paymentSiteCode);
@@ -485,14 +514,19 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
           attachmentUploads,
         }),
       });
-      const json = await res.json();
-      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to create request.');
+      const json = await res.json().catch(() => ({ status: 'error', error: 'Unable to create request.' }));
+      if (!res.ok || json.status !== 'success') {
+        throw new Error(json.error || `Unable to create request (${res.status}).`);
+      }
       setWorkspace(json.data.workspace as PaymentRequestsWorkspace);
       setComposerOpen(false);
       setSupportingFiles([]);
+      setFormErrors([]);
       setToast(json.data.message || 'Payment request saved.');
     } catch (error) {
-      setToast(error instanceof Error ? error.message : 'Unable to create request.');
+      const message = error instanceof Error ? error.message : 'Unable to create request.';
+      setFormErrors([message]);
+      setToast(message);
       if (form.employeeCode) void loadEligibility(form.employeeCode);
     } finally {
       setBusy(false);
@@ -815,7 +849,7 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
 
       {composerOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-0 sm:items-center sm:p-4">
-          <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl">
+                <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl">
             <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#008FD5]">New payment request</p>
@@ -828,6 +862,7 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
             <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
               {formErrors.length ? (
                 <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                  <p className="mb-1 font-semibold">Unable to submit</p>
                   <ul className="list-disc space-y-1 pl-4">
                     {formErrors.map((item) => <li key={item}>{item}</li>)}
                   </ul>
