@@ -1,0 +1,240 @@
+/** Idempotent DDL for Finance Intelligence & Approvals in DLE_Enterprise. */
+export const ensureFinanceSchemaSql = `
+IF SCHEMA_ID(N'finance') IS NULL EXEC(N'CREATE SCHEMA [finance]');
+
+IF OBJECT_ID(N'[finance].[IntegrationStatus]', N'U') IS NULL
+CREATE TABLE [finance].[IntegrationStatus] (
+  [IntegrationId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceIntegrationStatus] PRIMARY KEY,
+  [SourceSystem] NVARCHAR(80) NOT NULL CONSTRAINT [DF_FinanceIntegration_Source] DEFAULT N'Sage X3 Enterprise',
+  [CompanyCode] NVARCHAR(40) NULL,
+  [Status] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinanceIntegration_Status] DEFAULT N'Pending',
+  [LastRefreshAt] DATETIME2(0) NULL,
+  [LastSuccessAt] DATETIME2(0) NULL,
+  [LastError] NVARCHAR(MAX) NULL,
+  [RecordsSynced] INT NOT NULL CONSTRAINT [DF_FinanceIntegration_Records] DEFAULT 0,
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceIntegration_UpdatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF OBJECT_ID(N'[finance].[Entities]', N'U') IS NULL
+CREATE TABLE [finance].[Entities] (
+  [EntityId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceEntities] PRIMARY KEY,
+  [EntityCode] NVARCHAR(40) NOT NULL,
+  [EntityName] NVARCHAR(200) NOT NULL,
+  [ParentEntityId] NVARCHAR(60) NULL,
+  [CurrencyCode] NVARCHAR(10) NOT NULL CONSTRAINT [DF_FinanceEntities_Currency] DEFAULT N'NGN',
+  [IsActive] BIT NOT NULL CONSTRAINT [DF_FinanceEntities_Active] DEFAULT 1,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceEntities_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceEntities_UpdatedAt] DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT [UQ_FinanceEntities_Code] UNIQUE ([EntityCode])
+);
+
+IF OBJECT_ID(N'[finance].[ReportingPeriods]', N'U') IS NULL
+CREATE TABLE [finance].[ReportingPeriods] (
+  [PeriodId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceReportingPeriods] PRIMARY KEY,
+  [FiscalYear] INT NOT NULL,
+  [PeriodNumber] INT NOT NULL,
+  [PeriodLabel] NVARCHAR(80) NOT NULL,
+  [StartDate] DATE NOT NULL,
+  [EndDate] DATE NOT NULL,
+  [Status] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinancePeriods_Status] DEFAULT N'Open',
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinancePeriods_CreatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF OBJECT_ID(N'[finance].[ApprovalRequests]', N'U') IS NULL
+CREATE TABLE [finance].[ApprovalRequests] (
+  [RequestId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceApprovalRequests] PRIMARY KEY,
+  [RequestNumber] NVARCHAR(60) NOT NULL,
+  [PaymentType] NVARCHAR(80) NOT NULL,
+  [Title] NVARCHAR(250) NOT NULL,
+  [Beneficiary] NVARCHAR(250) NOT NULL,
+  [Description] NVARCHAR(MAX) NULL,
+  [Amount] DECIMAL(19,4) NOT NULL,
+  [CurrencyCode] NVARCHAR(10) NOT NULL CONSTRAINT [DF_FinanceApprovals_Currency] DEFAULT N'NGN',
+  [Department] NVARCHAR(150) NULL,
+  [ProjectCode] NVARCHAR(80) NULL,
+  [CostCentre] NVARCHAR(80) NULL,
+  [RequesterCode] NVARCHAR(60) NULL,
+  [RequesterName] NVARCHAR(200) NULL,
+  [SubmittedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceApprovals_SubmittedAt] DEFAULT SYSUTCDATETIME(),
+  [CurrentStage] NVARCHAR(80) NOT NULL,
+  [CurrentApproverCode] NVARCHAR(60) NULL,
+  [CurrentApproverName] NVARCHAR(200) NULL,
+  [Status] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinanceApprovals_Status] DEFAULT N'Pending',
+  [Priority] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinanceApprovals_Priority] DEFAULT N'Normal',
+  [DueDate] DATE NULL,
+  [SageReference] NVARCHAR(120) NULL,
+  [SourceDocumentNo] NVARCHAR(120) NULL,
+  [RiskFlags] NVARCHAR(MAX) NULL,
+  [BankDetailsSummary] NVARCHAR(500) NULL,
+  [FinancialContextJson] NVARCHAR(MAX) NULL,
+  [PayloadJson] NVARCHAR(MAX) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceApprovals_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceApprovals_UpdatedAt] DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT [UQ_FinanceApprovals_RequestNumber] UNIQUE ([RequestNumber])
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinanceApprovals_Status' AND object_id = OBJECT_ID(N'[finance].[ApprovalRequests]'))
+  CREATE INDEX [IX_FinanceApprovals_Status] ON [finance].[ApprovalRequests] ([Status], [SubmittedAt] DESC);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinanceApprovals_Approver' AND object_id = OBJECT_ID(N'[finance].[ApprovalRequests]'))
+  CREATE INDEX [IX_FinanceApprovals_Approver] ON [finance].[ApprovalRequests] ([CurrentApproverCode], [Status]);
+
+IF OBJECT_ID(N'[finance].[ApprovalActions]', N'U') IS NULL
+CREATE TABLE [finance].[ApprovalActions] (
+  [ActionId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceApprovalActions] PRIMARY KEY,
+  [RequestId] NVARCHAR(60) NOT NULL,
+  [ActionType] NVARCHAR(40) NOT NULL,
+  [Stage] NVARCHAR(80) NULL,
+  [ActorCode] NVARCHAR(60) NULL,
+  [ActorName] NVARCHAR(200) NULL,
+  [Comment] NVARCHAR(MAX) NULL,
+  [Reason] NVARCHAR(MAX) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceApprovalActions_CreatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinanceApprovalActions_Request' AND object_id = OBJECT_ID(N'[finance].[ApprovalActions]'))
+  CREATE INDEX [IX_FinanceApprovalActions_Request] ON [finance].[ApprovalActions] ([RequestId], [CreatedAt] DESC);
+
+IF OBJECT_ID(N'[finance].[ApprovalDelegations]', N'U') IS NULL
+CREATE TABLE [finance].[ApprovalDelegations] (
+  [DelegationId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceApprovalDelegations] PRIMARY KEY,
+  [FromEmployeeCode] NVARCHAR(60) NOT NULL,
+  [ToEmployeeCode] NVARCHAR(60) NOT NULL,
+  [StartsAt] DATETIME2(0) NOT NULL,
+  [EndsAt] DATETIME2(0) NULL,
+  [IsActive] BIT NOT NULL CONSTRAINT [DF_FinanceDelegations_Active] DEFAULT 1,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceDelegations_CreatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF OBJECT_ID(N'[finance].[Reports]', N'U') IS NULL
+CREATE TABLE [finance].[Reports] (
+  [ReportId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceReports] PRIMARY KEY,
+  [ReportCode] NVARCHAR(80) NOT NULL,
+  [ReportName] NVARCHAR(200) NOT NULL,
+  [Category] NVARCHAR(80) NOT NULL,
+  [DefinitionJson] NVARCHAR(MAX) NULL,
+  [Status] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinanceReports_Status] DEFAULT N'Draft',
+  [LastGeneratedAt] DATETIME2(0) NULL,
+  [PendingSignOffCount] INT NOT NULL CONSTRAINT [DF_FinanceReports_PendingSignOff] DEFAULT 0,
+  [CreatedBy] NVARCHAR(120) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceReports_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceReports_UpdatedAt] DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT [UQ_FinanceReports_Code] UNIQUE ([ReportCode])
+);
+
+IF OBJECT_ID(N'[finance].[ReportVersions]', N'U') IS NULL
+CREATE TABLE [finance].[ReportVersions] (
+  [VersionId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceReportVersions] PRIMARY KEY,
+  [ReportId] NVARCHAR(60) NOT NULL,
+  [VersionNumber] INT NOT NULL,
+  [SnapshotJson] NVARCHAR(MAX) NULL,
+  [CreatedBy] NVARCHAR(120) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceReportVersions_CreatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF OBJECT_ID(N'[finance].[ReportSignOffs]', N'U') IS NULL
+CREATE TABLE [finance].[ReportSignOffs] (
+  [SignOffId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceReportSignOffs] PRIMARY KEY,
+  [ReportId] NVARCHAR(60) NOT NULL,
+  [VersionId] NVARCHAR(60) NULL,
+  [SignerCode] NVARCHAR(60) NULL,
+  [SignerName] NVARCHAR(200) NULL,
+  [Status] NVARCHAR(40) NOT NULL,
+  [Comment] NVARCHAR(MAX) NULL,
+  [SignedAt] DATETIME2(0) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceReportSignOffs_CreatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF OBJECT_ID(N'[finance].[ReportDistributions]', N'U') IS NULL
+CREATE TABLE [finance].[ReportDistributions] (
+  [DistributionId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceReportDistributions] PRIMARY KEY,
+  [ReportId] NVARCHAR(60) NULL,
+  [PackId] NVARCHAR(60) NULL,
+  [Channel] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinanceDist_Channel] DEFAULT N'Email',
+  [RecipientsJson] NVARCHAR(MAX) NULL,
+  [ScheduledFor] DATETIME2(0) NULL,
+  [Status] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinanceDist_Status] DEFAULT N'Scheduled',
+  [FailureReason] NVARCHAR(MAX) NULL,
+  [DeliveredAt] DATETIME2(0) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceDist_CreatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF OBJECT_ID(N'[finance].[FinancePacks]', N'U') IS NULL
+CREATE TABLE [finance].[FinancePacks] (
+  [PackId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinancePacks] PRIMARY KEY,
+  [PackType] NVARCHAR(80) NOT NULL,
+  [PackName] NVARCHAR(200) NOT NULL,
+  [PeriodLabel] NVARCHAR(80) NULL,
+  [Status] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinancePacks_Status] DEFAULT N'Draft',
+  [ContentsJson] NVARCHAR(MAX) NULL,
+  [CreatedBy] NVARCHAR(120) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinancePacks_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinancePacks_UpdatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF OBJECT_ID(N'[finance].[AiAnalyses]', N'U') IS NULL
+CREATE TABLE [finance].[AiAnalyses] (
+  [AnalysisId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceAiAnalyses] PRIMARY KEY,
+  [ConversationId] NVARCHAR(60) NULL,
+  [Question] NVARCHAR(MAX) NOT NULL,
+  [Response] NVARCHAR(MAX) NULL,
+  [Confidence] NVARCHAR(40) NULL,
+  [PeriodLabel] NVARCHAR(80) NULL,
+  [SourceSystem] NVARCHAR(80) NOT NULL CONSTRAINT [DF_FinanceAi_Source] DEFAULT N'Sage X3 Enterprise',
+  [EvidenceJson] NVARCHAR(MAX) NULL,
+  [AssumptionsJson] NVARCHAR(MAX) NULL,
+  [CreatedBy] NVARCHAR(120) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceAi_CreatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF OBJECT_ID(N'[finance].[AuditEvents]', N'U') IS NULL
+CREATE TABLE [finance].[AuditEvents] (
+  [EventId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceAuditEvents] PRIMARY KEY,
+  [EventType] NVARCHAR(80) NOT NULL,
+  [ActorCode] NVARCHAR(60) NULL,
+  [ActorName] NVARCHAR(200) NULL,
+  [ResourceType] NVARCHAR(80) NULL,
+  [ResourceId] NVARCHAR(120) NULL,
+  [DetailJson] NVARCHAR(MAX) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceAudit_CreatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinanceAudit_CreatedAt' AND object_id = OBJECT_ID(N'[finance].[AuditEvents]'))
+  CREATE INDEX [IX_FinanceAudit_CreatedAt] ON [finance].[AuditEvents] ([CreatedAt] DESC);
+
+IF OBJECT_ID(N'[finance].[Exceptions]', N'U') IS NULL
+CREATE TABLE [finance].[Exceptions] (
+  [ExceptionId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceExceptions] PRIMARY KEY,
+  [ExceptionType] NVARCHAR(80) NOT NULL,
+  [Severity] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinanceExceptions_Severity] DEFAULT N'Medium',
+  [Title] NVARCHAR(250) NOT NULL,
+  [Detail] NVARCHAR(MAX) NULL,
+  [Status] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinanceExceptions_Status] DEFAULT N'Open',
+  [RelatedRequestId] NVARCHAR(60) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceExceptions_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [ResolvedAt] DATETIME2(0) NULL
+);
+
+IF OBJECT_ID(N'[finance].[ApprovalMatrix]', N'U') IS NULL
+CREATE TABLE [finance].[ApprovalMatrix] (
+  [MatrixId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceApprovalMatrix] PRIMARY KEY,
+  [PaymentType] NVARCHAR(80) NOT NULL,
+  [MinAmount] DECIMAL(19,4) NOT NULL CONSTRAINT [DF_FinanceMatrix_Min] DEFAULT 0,
+  [MaxAmount] DECIMAL(19,4) NULL,
+  [StagesJson] NVARCHAR(MAX) NOT NULL,
+  [IsActive] BIT NOT NULL CONSTRAINT [DF_FinanceMatrix_Active] DEFAULT 1,
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceMatrix_UpdatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF OBJECT_ID(N'[finance].[SageSyncQueue]', N'U') IS NULL
+CREATE TABLE [finance].[SageSyncQueue] (
+  [QueueId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceSageSyncQueue] PRIMARY KEY,
+  [Direction] NVARCHAR(20) NOT NULL,
+  [Operation] NVARCHAR(80) NOT NULL,
+  [PayloadJson] NVARCHAR(MAX) NULL,
+  [Status] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinanceSageQueue_Status] DEFAULT N'Pending',
+  [Attempts] INT NOT NULL CONSTRAINT [DF_FinanceSageQueue_Attempts] DEFAULT 0,
+  [LastError] NVARCHAR(MAX) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceSageQueue_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [ProcessedAt] DATETIME2(0) NULL
+);
+`;

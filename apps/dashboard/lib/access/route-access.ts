@@ -14,6 +14,8 @@ const routePathFromRequestPath = (pathname: string) => {
   if (path.startsWith('/api/it-support/account-recovery')) return '/it-support/account-recovery';
   if (path.startsWith('/api/it-support/')) return path.replace(/^\/api\/it-support/, '/it-support');
   if (path === '/api/it-support') return '/it-support';
+  if (path.startsWith('/api/finance/')) return path.replace(/^\/api\/finance/, '/finance');
+  if (path === '/api/finance') return '/finance';
   return path;
 };
 
@@ -385,6 +387,18 @@ export const canAccessRoute = (session: SessionLike, pathname: string) => {
   if (itOptions) {
     if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
     return hasAnyPermission(session.permissions || [], itOptions);
+  }
+  if (path.startsWith('/finance') || path.startsWith('/api/finance') || path.startsWith('/finance-accounting')) {
+    if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
+    return hasAnyPermission(session.permissions || [], [
+      'finance.view',
+      'finance.*',
+      'finance.approve',
+      'view_finance_intelligence',
+      'view_finance_accounting',
+      'budget.view',
+      'treasury.view',
+    ]);
   }
   return true;
 };

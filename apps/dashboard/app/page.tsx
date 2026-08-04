@@ -83,12 +83,12 @@ const workspaceModules = [
     permissions: ['page.operations.center.view', 'operations.view', 'operations.dashboard.view', 'operations.timesheets.submit', 'operations.allocation.view', 'operations.production.view', 'operations.*'],
   },
   {
-    title: 'Finance & Accounting',
-    href: '/finance-accounting',
+    title: 'Finance Intelligence & Approvals',
+    href: '/finance',
     icon: Banknote,
-    status: 'Ready',
-    signal: 'Financial controls, accounting workflows, budgets, and treasury operations',
-    permissions: ['finance.view', 'finance.*', 'budget.view', 'treasury.view'],
+    status: 'Live',
+    signal: 'Financial reporting, analytics, AI insights and payment approvals with Sage X3',
+    permissions: ['finance.view', 'finance.*', 'view_finance_intelligence', 'view_finance_accounting', 'budget.view', 'treasury.view'],
   },
   {
     title: 'Procurement',

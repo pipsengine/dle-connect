@@ -59,8 +59,10 @@ export async function middleware(request: NextRequest) {
         || !pathname.startsWith('/api')
         || pathname.startsWith('/api/hris')
         || pathname.startsWith('/api/it-support')
+        || pathname.startsWith('/api/finance')
         || pathname.startsWith('/administration')
         || pathname.startsWith('/it-support')
+        || pathname.startsWith('/finance')
         || pathname.startsWith('/hris')
       );
 

@@ -67,6 +67,7 @@ export const PLATFORM_WITHOUT_HRIS_PERMISSIONS = [
   'reports.export',
   'view_reports_analytics',
   'finance.*',
+  'view_finance_intelligence',
   'view_finance_accounting',
   'procurement.*',
   'view_procurement',

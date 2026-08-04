@@ -83,13 +83,20 @@ export const navigationConfig: NavItem[] = [
     permissionKey: 'view_erp'
   },
   {
-    id: 'finance-accounting',
-    label: 'Finance & Accounting',
-    slug: 'finance-accounting',
+    id: 'finance',
+    label: 'Finance Intelligence & Approvals',
+    slug: 'finance',
     icon: Banknote,
     group: 'main',
-    route: '/finance-accounting',
-    permissionKey: 'view_finance_accounting'
+    route: '/finance',
+    permissionKey: 'view_finance_intelligence',
+    subItems: [
+      { title: 'Finance Command Centre', slug: 'command-centre', route: '/finance/overview/command-centre', permissionKey: 'finance.view' },
+      { title: 'Financial Reporting', slug: 'reporting', route: '/finance/reporting', permissionKey: 'finance.view' },
+      { title: 'AI Finance Copilot', slug: 'ai-copilot', route: '/finance/ai-copilot', permissionKey: 'finance.view' },
+      { title: 'Payment Approvals', slug: 'approvals', route: '/finance/approvals', permissionKey: 'finance.approve' },
+      { title: 'Finance Configuration', slug: 'configuration', route: '/finance/configuration', permissionKey: 'finance.view' },
+    ],
   },
   {
     id: 'procurement',

@@ -200,6 +200,18 @@ export const expandPublishedPermissions = (permissions: string[]) => {
   )) {
     out.add('payroll.view');
   }
+  if (list.some((permission) =>
+    permission === 'finance'
+    || permission.startsWith('finance.')
+    || permission === 'view_finance_accounting'
+    || permission === 'view_finance_intelligence'
+    || permission.startsWith('budget.')
+    || permission.startsWith('treasury.'),
+  )) {
+    out.add('finance.view');
+    out.add('view_finance_intelligence');
+    out.add('view_finance_accounting');
+  }
 
   return Array.from(out);
 };
