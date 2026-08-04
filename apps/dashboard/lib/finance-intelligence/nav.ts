@@ -41,6 +41,8 @@ export type FinancePageKind =
   | 'approvals-dashboard'
   | 'payment-requests'
   | 'cash-advance-controls'
+  | 'treasury-ops'
+  | 'finance-posting'
   | 'approval-queue'
   | 'approval-detail'
   | 'statement'
@@ -147,6 +149,7 @@ export const FINANCE_NAV_SECTIONS: FinanceNavSection[] = [
       { id: 'cash-advances', label: 'Cash Advances', href: '/finance/approvals/cash-advances' },
       { id: 'cash-advance-controls', label: 'Cash Advance Controls', href: '/finance/approvals/advance-retirement' },
       { id: 'treasury', label: 'Treasury Operations', href: '/finance/approvals/treasury' },
+      { id: 'sage-posting', label: 'Finance Posting Desk', href: '/finance/approvals/sage-posting' },
       { id: 'supplier-payments', label: 'Supplier Payments', href: '/finance/approvals/supplier-payments' },
       { id: 'payment-batches', label: 'Payment Batches', href: '/finance/approvals/batches' },
       { id: 'other-requests', label: 'Other Finance Requests', href: '/finance/approvals/other' },
@@ -429,7 +432,8 @@ export const FINANCE_PAGES: FinancePageMeta[] = [
   page('/finance/approvals/inbox', 'My Approval Inbox', 'Requests awaiting your decision.', 'approvals', 'approval-queue', ['Payment Approvals', 'My Approval Inbox']),
   page('/finance/approvals/payments', 'Payment Requests', 'Create, submit, track and manage payment requests through the full approval lifecycle.', 'approvals', 'payment-requests', ['Payment Approvals', 'Payment Requests']),
   page('/finance/approvals/my-requests', 'My Requests', 'Drafts, pending, returned, approved, awaiting retirement and completed requests you own.', 'approvals', 'payment-requests', ['Payment Approvals', 'My Requests']),
-  page('/finance/approvals/treasury', 'Treasury Operations', 'Ready for payment, batches, paid today, retirement verification and payment history.', 'approvals', 'payment-requests', ['Payment Approvals', 'Treasury Operations']),
+  page('/finance/approvals/treasury', 'Treasury Operations', 'Ready for payment, paid today, retirement verification and payment history.', 'approvals', 'treasury-ops', ['Payment Approvals', 'Treasury Operations']),
+  page('/finance/approvals/sage-posting', 'Finance Posting Desk', 'Approved and paid payments ready for Sage posting, with supporting documents and voucher acknowledgement.', 'approvals', 'finance-posting', ['Payment Approvals', 'Finance Posting Desk']),
   page('/finance/approvals/supplier-payments', 'Supplier Payments', 'Supplier invoice payment queue.', 'approvals', 'payment-requests', ['Payment Approvals', 'Supplier Payments']),
   page('/finance/approvals/batches', 'Payment Batches', 'Batch payment approval and release monitoring.', 'approvals', 'approval-queue', ['Payment Approvals', 'Payment Batches']),
   page('/finance/approvals/cash-advances', 'Cash Advances', 'Cash advance requests for approval.', 'approvals', 'payment-requests', ['Payment Approvals', 'Cash Advances']),

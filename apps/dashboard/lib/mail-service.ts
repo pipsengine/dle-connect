@@ -700,7 +700,7 @@ export const sendPaymentDecisionEmail = async (input: {
     currentStage?: string;
     status?: string;
   };
-  event: 'approved' | 'rejected' | 'returned' | 'stage-advanced';
+  event: 'approved' | 'rejected' | 'returned' | 'stage-advanced' | 'paid' | 'posted';
   actorName?: string;
   stage?: string;
   nextStage?: string;

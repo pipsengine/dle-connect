@@ -5,7 +5,9 @@ import { permissionsForRoles } from '@/lib/auth/rbac';
 import {
   ALLOWED_PAYMENT_CURRENCIES,
   buildCashAdvanceControlsWorkspace,
+  buildFinancePostingWorkspace,
   buildPaymentRequestsWorkspace,
+  buildTreasuryWorkspace,
   cancelOutstandingCashAdvance,
   createPaymentRequest,
   getCashAdvanceEligibility,
@@ -49,6 +51,29 @@ const canManageCashAdvanceOverrides = (actor: Awaited<ReturnType<typeof resolveA
     /^(cfo|finance manager|finance controller|finance administrator|treasury officer)$/i.test(role.trim()));
 };
 
+const canOperateTreasury = (actor: Awaited<ReturnType<typeof resolveActor>>) => {
+  if (actor.isGlobalAdmin) return true;
+  if (
+    hasPermission(actor.permissions, 'finance.treasury.operate')
+    || hasPermission(actor.permissions, 'treasury.edit')
+    || hasPermission(actor.permissions, 'treasury.*')
+    || hasPermission(actor.permissions, 'finance.*')
+  ) return true;
+  return actor.roles.some((role) =>
+    /^(treasury officer|finance manager|finance controller|finance administrator|cfo)$/i.test(role.trim()));
+};
+
+const canOperatePosting = (actor: Awaited<ReturnType<typeof resolveActor>>) => {
+  if (actor.isGlobalAdmin) return true;
+  if (
+    hasPermission(actor.permissions, 'finance.posting.operate')
+    || hasPermission(actor.permissions, 'finance.approve')
+    || hasPermission(actor.permissions, 'finance.*')
+  ) return true;
+  return actor.roles.some((role) =>
+    /^(accountant|accounts payable officer|finance manager|finance controller|finance administrator|cfo)$/i.test(role.trim()));
+};
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -73,6 +98,20 @@ export async function GET(request: Request) {
         return jsonErr(403, 'Only CFO / Finance approvers can open cash advance controls.');
       }
       return jsonOk(await buildCashAdvanceControlsWorkspace());
+    }
+
+    if (view === 'treasury') {
+      if (!canOperateTreasury(actor)) {
+        return jsonErr(403, 'Treasury Operations requires Treasury or Finance access.');
+      }
+      return jsonOk(await buildTreasuryWorkspace());
+    }
+
+    if (view === 'sage-posting') {
+      if (!canOperatePosting(actor)) {
+        return jsonErr(403, 'Finance Posting Desk requires Finance posting access.');
+      }
+      return jsonOk(await buildFinancePostingWorkspace());
     }
 
     const paymentType = searchParams.get('paymentType') || undefined;
@@ -209,6 +248,15 @@ export async function POST(request: Request) {
     if (action === 'transition') {
       const requestId = String(body.requestId || '').trim();
       if (!requestId) return jsonErr(400, 'requestId is required.');
+      const transition = String(body.transition || '').trim();
+      const treasuryActions = ['mark-paid', 'acknowledge-retirement', 'return-retirement', 'mark-ready-treasury'];
+      const postingActions = ['mark-posted', 'ready-to-post'];
+      if (treasuryActions.includes(transition) && !canOperateTreasury(actor)) {
+        return jsonErr(403, 'Treasury actions require Treasury or Finance access.');
+      }
+      if (postingActions.includes(transition) && !canOperatePosting(actor)) {
+        return jsonErr(403, 'Posting actions require Finance posting access.');
+      }
       const hdrs = await headers();
       const origin = resolvePublicAppOrigin(hdrs.get('origin') || hdrs.get('x-forwarded-host') || undefined);
       const result = await transitionPaymentRequest({
@@ -219,6 +267,7 @@ export async function POST(request: Request) {
         comment: body.comment,
         reason: body.reason,
         paymentReference: body.paymentReference,
+        sageReference: body.sageReference,
         baseUrl: origin,
         delegateToCode: body.delegateToCode,
         delegateToName: body.delegateToName,

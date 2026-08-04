@@ -255,7 +255,7 @@ export const notifyPaymentApprovalRequired = async (input: {
 
 export const notifyPaymentDecision = async (input: {
   request: PaymentNotifyRequest;
-  event: 'approved' | 'rejected' | 'returned' | 'stage-advanced';
+  event: 'approved' | 'rejected' | 'returned' | 'stage-advanced' | 'paid' | 'posted';
   actorName: string;
   stage?: string;
   nextStage?: string;
@@ -275,22 +275,30 @@ export const notifyPaymentDecision = async (input: {
     rejected: 'Payment request rejected',
     returned: 'Payment request returned',
     'stage-advanced': 'Payment approval progressed',
+    paid: 'Payment disbursed',
+    posted: 'Payment posted to Sage',
   };
   const severity: Record<typeof input.event, 'info' | 'success' | 'warning' | 'critical'> = {
     approved: 'success',
     rejected: 'critical',
     returned: 'warning',
     'stage-advanced': 'info',
+    paid: 'success',
+    posted: 'info',
   };
   const body = input.event === 'stage-advanced'
     ? `${input.request.requestNumber} cleared ${input.stage || 'prior stage'}. Now awaiting ${input.nextStage || 'next stage'}.`
     : input.event === 'approved'
       ? `${input.request.requestNumber} is fully approved and ready for treasury hand-off.`
-      : `${input.request.requestNumber} was ${input.event} by ${input.actorName}.${input.reason ? ` Reason: ${input.reason}` : ''}`;
+      : input.event === 'paid'
+        ? `${input.request.requestNumber} has been paid by Treasury.${input.reason ? ` ${input.reason}` : ''}`
+        : input.event === 'posted'
+          ? `${input.request.requestNumber} was marked posted to Sage by ${input.actorName}.${input.reason ? ` ${input.reason}` : ''}`
+          : `${input.request.requestNumber} was ${input.event} by ${input.actorName}.${input.reason ? ` Reason: ${input.reason}` : ''}`;
 
   const href = paymentRequestDetailPath(input.request.requestId);
 
-  if (requester) {
+  if (requester && input.event !== 'posted') {
     await safeNotify('requester in-app', async () => {
       await createEnterpriseNotification(session, {
         kind: 'Approval',
@@ -322,6 +330,23 @@ export const notifyPaymentDecision = async (input: {
           baseUrl: input.baseUrl,
         }));
     }
+  }
+
+  if (input.event === 'posted') {
+    await safeNotify('finance posting in-app', async () => {
+      await createEnterpriseNotification(session, {
+        kind: 'Approval',
+        module: 'Finance Approvals',
+        title: titles.posted,
+        body,
+        severity: 'info',
+        recipientRoles: ['Finance Manager', 'Finance Controller', 'Accountant', 'Finance Administrator'],
+        href,
+        channels: ['In-App'],
+        metadata: { requestId: input.request.requestId, event: input.event },
+        actor: input.actorName,
+      });
+    });
   }
 
   if (input.event === 'stage-advanced' && input.nextStage) {

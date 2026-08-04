@@ -836,7 +836,7 @@ export const buildPaymentApprovalRequestEmail = (input: {
 export const buildPaymentDecisionEmail = (input: {
   recipientName: string;
   request: PaymentEmailRequest;
-  event: 'approved' | 'rejected' | 'returned' | 'stage-advanced';
+  event: 'approved' | 'rejected' | 'returned' | 'stage-advanced' | 'paid' | 'posted';
   actorName?: string;
   stage?: string;
   nextStage?: string;
@@ -849,24 +849,32 @@ export const buildPaymentDecisionEmail = (input: {
     rejected: `Payment rejected — ${input.request.requestNumber}`,
     returned: `Payment returned — ${input.request.requestNumber}`,
     'stage-advanced': `Payment progressed — ${input.request.requestNumber}`,
+    paid: `Payment disbursed — ${input.request.requestNumber}`,
+    posted: `Payment posted — ${input.request.requestNumber}`,
   } as const;
   const headlineMap = {
     approved: 'Payment request approved',
     rejected: 'Payment request rejected',
     returned: 'Payment request returned',
     'stage-advanced': 'Payment approval progressed',
+    paid: 'Payment disbursed by Treasury',
+    posted: 'Payment marked posted to Sage',
   } as const;
   const introMap = {
     approved: 'Your payment request has been fully approved and can proceed to treasury.',
     rejected: 'Your payment request has been rejected. Review the details below.',
     returned: 'Your payment request was returned for correction.',
     'stage-advanced': `Your payment request cleared ${input.stage || 'a stage'} and is now awaiting ${input.nextStage || 'the next approver'}.`,
+    paid: 'Treasury has marked your payment as paid. See the payment reference below.',
+    posted: 'Finance has acknowledged Sage posting for this payment.',
   } as const;
   const toneMap = {
     approved: 'success',
     rejected: 'danger',
     returned: 'warning',
     'stage-advanced': 'info',
+    paid: 'success',
+    posted: 'info',
   } as const;
 
   return withBrand({

@@ -103,6 +103,8 @@ export const SUPPLIER_PAYMENT_STATUSES = [
 
 export type PaymentRequestStatus = string;
 
+export type PaymentPostingStatus = 'NotReady' | 'ReadyToPost' | 'Posted' | 'PostingFailed';
+
 export type PaymentRequestRow = {
   requestId: string;
   requestNumber: string;
@@ -156,6 +158,10 @@ export type PaymentRequestRow = {
   contractNo: string;
   paidAt: string | null;
   paymentReference: string;
+  postingStatus: PaymentPostingStatus;
+  postedAt: string | null;
+  postedBy: string;
+  posting: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
   payload: Record<string, unknown>;
@@ -358,6 +364,10 @@ const mapRow = (row: Record<string, unknown>): PaymentRequestRow => {
     contractNo: compact(row.ContractNo),
     paidAt: row.PaidAt ? new Date(String(row.PaidAt)).toISOString() : null,
     paymentReference: compact(row.PaymentReference),
+    postingStatus: (compact(row.PostingStatus) as PaymentPostingStatus) || 'NotReady',
+    postedAt: row.PostedAt ? new Date(String(row.PostedAt)).toISOString() : null,
+    postedBy: compact(row.PostedBy),
+    posting: parseJson(row.PostingJson, null),
     createdAt: row.CreatedAt ? new Date(String(row.CreatedAt)).toISOString() : nowIso(),
     updatedAt: row.UpdatedAt ? new Date(String(row.UpdatedAt)).toISOString() : nowIso(),
     payload: parseJson(row.PayloadJson, {}),
@@ -1243,14 +1253,167 @@ INSERT INTO [finance].[PaymentRequests] (
   return { request, workspace };
 };
 
+export type TreasuryWorkspace = {
+  generatedAt: string;
+  source: string;
+  summary: {
+    readyToPay: number;
+    readyValue: number;
+    paidToday: number;
+    paidTodayValue: number;
+    awaitingRetirement: number;
+    retirementToVerify: number;
+    history: number;
+  };
+  readyToPay: PaymentRequestRow[];
+  paidToday: PaymentRequestRow[];
+  awaitingRetirement: PaymentRequestRow[];
+  retirementToVerify: PaymentRequestRow[];
+  history: PaymentRequestRow[];
+};
+
+export type FinancePostingWorkspace = {
+  generatedAt: string;
+  source: string;
+  summary: {
+    readyToPost: number;
+    readyValue: number;
+    posted: number;
+    notReady: number;
+    failed: number;
+    withDocuments: number;
+  };
+  rows: PaymentRequestRow[];
+  readyToPost: PaymentRequestRow[];
+  posted: PaymentRequestRow[];
+  notReady: PaymentRequestRow[];
+};
+
+const isSameDay = (iso: string | null | undefined, now = new Date()) => {
+  if (!iso) return false;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+};
+
+export const buildTreasuryWorkspace = async (): Promise<TreasuryWorkspace> => {
+  const rows = await listRows();
+  const sum = (list: PaymentRequestRow[]) => list.reduce((total, row) => total + Number(row.netAmount || 0), 0);
+  const readyToPay = rows.filter((row) => /^(ready for treasury|approved)$/i.test(row.status));
+  const paidToday = rows.filter((row) => Boolean(row.paidAt) && isSameDay(row.paidAt));
+  const awaitingRetirement = rows.filter((row) => /^awaiting retirement$/i.test(row.status));
+  const retirementToVerify = rows.filter((row) =>
+    /retirement submitted|treasury verification|finance verification/i.test(row.status));
+  const history = rows.filter((row) =>
+    /^(paid|completed|retired|closed)$/i.test(row.status)
+    || (Boolean(row.paidAt) && !isSameDay(row.paidAt)));
+
+  return {
+    generatedAt: nowIso(),
+    source: 'DLE Enterprise · finance.PaymentRequests · Treasury',
+    summary: {
+      readyToPay: readyToPay.length,
+      readyValue: sum(readyToPay),
+      paidToday: paidToday.length,
+      paidTodayValue: sum(paidToday),
+      awaitingRetirement: awaitingRetirement.length,
+      retirementToVerify: retirementToVerify.length,
+      history: history.length,
+    },
+    readyToPay,
+    paidToday,
+    awaitingRetirement,
+    retirementToVerify,
+    history: history.slice(0, 200),
+  };
+};
+
+export const buildFinancePostingWorkspace = async (): Promise<FinancePostingWorkspace> => {
+  const rows = (await listRows()).filter((row) =>
+    /^(approved|ready for treasury|paid|awaiting retirement|retirement submitted|treasury verification|retired|completed|closed)$/i.test(row.status)
+    || row.postingStatus === 'ReadyToPost'
+    || row.postingStatus === 'Posted'
+    || row.postingStatus === 'PostingFailed');
+
+  const derivePosting = (row: PaymentRequestRow): PaymentPostingStatus => {
+    if (row.postingStatus && row.postingStatus !== 'NotReady') return row.postingStatus;
+    if (row.sageReference && row.postedAt) return 'Posted';
+    if (/^(paid|completed|retired|closed)$/i.test(row.status)) return 'ReadyToPost';
+    return row.postingStatus || 'NotReady';
+  };
+
+  const enriched = rows.map((row) => ({ ...row, postingStatus: derivePosting(row) }));
+  const sum = (list: PaymentRequestRow[]) => list.reduce((total, row) => total + Number(row.netAmount || 0), 0);
+  const readyToPost = enriched.filter((row) => row.postingStatus === 'ReadyToPost');
+  const posted = enriched.filter((row) => row.postingStatus === 'Posted');
+  const notReady = enriched.filter((row) => row.postingStatus === 'NotReady' || row.postingStatus === 'PostingFailed');
+  const failed = enriched.filter((row) => row.postingStatus === 'PostingFailed');
+
+  return {
+    generatedAt: nowIso(),
+    source: 'DLE Enterprise · finance.PaymentRequests · Sage Posting',
+    summary: {
+      readyToPost: readyToPost.length,
+      readyValue: sum(readyToPost),
+      posted: posted.length,
+      notReady: notReady.length,
+      failed: failed.length,
+      withDocuments: enriched.filter((row) => (row.attachments?.length || 0) > 0).length,
+    },
+    rows: enriched,
+    readyToPost,
+    posted,
+    notReady,
+  };
+};
+
+const enqueueSagePaymentPost = async (input: {
+  request: PaymentRequestRow;
+  sageReference: string;
+  actor: string;
+}) => {
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) return;
+  try {
+    await pool.request()
+      .input('QueueId', sql.NVarChar(60), `SSQ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`)
+      .input('Direction', sql.NVarChar(20), 'Outbound')
+      .input('Operation', sql.NVarChar(80), 'PaymentPost')
+      .input('PayloadJson', sql.NVarChar(sql.MAX), JSON.stringify({
+        requestId: input.request.requestId,
+        requestNumber: input.request.requestNumber,
+        paymentType: input.request.paymentType,
+        netAmount: input.request.netAmount,
+        currencyCode: input.request.currencyCode,
+        beneficiaryName: input.request.beneficiaryName,
+        paymentReference: input.request.paymentReference,
+        sageReference: input.sageReference,
+        expenseCode: input.request.expenseCode,
+        paymentSiteCode: input.request.paymentSiteCode,
+        queuedBy: input.actor,
+        queuedAt: nowIso(),
+      }))
+      .input('Status', sql.NVarChar(40), 'Pending')
+      .query(`
+INSERT INTO [finance].[SageSyncQueue] ([QueueId], [Direction], [Operation], [PayloadJson], [Status])
+VALUES (@QueueId, @Direction, @Operation, @PayloadJson, @Status)
+`);
+  } catch (error) {
+    console.error('[payment-requests] SageSyncQueue enqueue failed', error);
+  }
+};
+
 export const transitionPaymentRequest = async (input: {
   requestId: string;
-  action: 'approve' | 'reject' | 'return' | 'clarify' | 'delegate' | 'escalate' | 'mark-ready-treasury' | 'mark-paid' | 'submit-retirement';
+  action: 'approve' | 'reject' | 'return' | 'clarify' | 'delegate' | 'escalate' | 'mark-ready-treasury' | 'mark-paid' | 'submit-retirement' | 'acknowledge-retirement' | 'return-retirement' | 'mark-posted' | 'ready-to-post';
   actor: string;
   actorCode?: string;
   comment?: string;
   reason?: string;
   paymentReference?: string;
+  sageReference?: string;
   baseUrl?: string | null;
   delegateToCode?: string;
   delegateToName?: string;
@@ -1263,7 +1426,7 @@ export const transitionPaymentRequest = async (input: {
     || await getPaymentRequestById(input.requestId);
   if (!existing) throw new Error('Payment request not found.');
 
-  const requiresReason = ['reject', 'return', 'delegate', 'escalate', 'clarify'].includes(input.action);
+  const requiresReason = ['reject', 'return', 'delegate', 'escalate', 'clarify', 'return-retirement'].includes(input.action);
   if (requiresReason && !compact(input.reason || input.comment)) {
     throw new Error('A reason is required for this action.');
   }
@@ -1272,7 +1435,14 @@ export const transitionPaymentRequest = async (input: {
   let nextStage = existing.currentStage;
   let paidAt: Date | null = null;
   let paymentReference = existing.paymentReference || null;
-  let notifyEvent: 'approved' | 'rejected' | 'returned' | 'stage-advanced' | null = null;
+  let sageReference = existing.sageReference || null;
+  let postingStatus: PaymentPostingStatus | null = null;
+  let postedAt: Date | null = null;
+  let postedBy: string | null = null;
+  let treasuryJson: Record<string, unknown> | null = existing.treasury;
+  let retirementJson: Record<string, unknown> | null = existing.retirement;
+  let postingJson: Record<string, unknown> | null = existing.posting;
+  let notifyEvent: 'approved' | 'rejected' | 'returned' | 'stage-advanced' | 'paid' | 'posted' | null = null;
   let completedStage = existing.currentStage;
   let advancedTo: string | undefined;
 
@@ -1286,13 +1456,11 @@ export const transitionPaymentRequest = async (input: {
         nextStatus = 'Pending Approval';
         notifyEvent = 'stage-advanced';
         advancedTo = nextStage;
-      } else if (/pending|submitted|finance review/i.test(existing.status) || stages.length > 0) {
-        nextStatus = 'Approved';
-        nextStage = 'Final Approval';
-        notifyEvent = 'approved';
-      } else if (/approved/i.test(existing.status)) {
+      } else if (/pending|submitted|finance review|approved/i.test(existing.status) || stages.length > 0) {
+        // Final approval hands off directly to Treasury queue.
         nextStatus = 'Ready for Treasury';
         nextStage = 'Treasury';
+        notifyEvent = 'approved';
       }
       break;
     }
@@ -1310,16 +1478,88 @@ export const transitionPaymentRequest = async (input: {
       nextStatus = 'Ready for Treasury';
       nextStage = 'Treasury';
       break;
-    case 'mark-paid':
-      nextStatus = existing.paymentType === 'Cash Advance Payment' ? 'Awaiting Retirement' : 'Paid';
-      nextStage = existing.paymentType === 'Cash Advance Payment' ? 'Awaiting Retirement' : 'Paid';
+    case 'mark-paid': {
+      const reference = compact(input.paymentReference);
+      if (!reference) throw new Error('Payment reference is required to mark as paid.');
+      if (!/^(ready for treasury|approved|payment scheduled|payment processing)$/i.test(existing.status)) {
+        throw new Error('Only Approved / Ready for Treasury payments can be marked paid.');
+      }
+      const isAdvance = existing.paymentType === 'Cash Advance Payment';
+      nextStatus = isAdvance ? 'Awaiting Retirement' : 'Paid';
+      nextStage = isAdvance ? 'Awaiting Retirement' : 'Paid';
       paidAt = new Date();
-      paymentReference = compact(input.paymentReference) || `PAYREF-${Date.now()}`;
+      paymentReference = reference;
+      postingStatus = isAdvance ? 'NotReady' : 'ReadyToPost';
+      treasuryJson = {
+        ...(existing.treasury || {}),
+        paidBy: input.actor,
+        paidByCode: input.actorCode || null,
+        paidAt: paidAt.toISOString(),
+        paymentReference: reference,
+        channel: compact(input.comment) || 'Treasury disbursement',
+      };
+      notifyEvent = 'paid';
       break;
+    }
     case 'submit-retirement':
       nextStatus = 'Retirement Submitted';
       nextStage = 'Treasury Verification';
+      retirementJson = {
+        ...(existing.retirement || {}),
+        submittedAt: nowIso(),
+        submittedBy: input.actor,
+        note: compact(input.comment || input.reason),
+      };
       break;
+    case 'acknowledge-retirement': {
+      if (!/retirement submitted|treasury verification|finance verification|awaiting retirement/i.test(existing.status)) {
+        throw new Error('This payment is not awaiting retirement acknowledgement.');
+      }
+      nextStatus = 'Retired';
+      nextStage = 'Retired';
+      postingStatus = 'ReadyToPost';
+      retirementJson = {
+        ...(existing.retirement || {}),
+        acknowledgedAt: nowIso(),
+        acknowledgedBy: input.actor,
+        note: compact(input.comment || input.reason) || 'Retirement acknowledged by Treasury',
+      };
+      break;
+    }
+    case 'return-retirement':
+      nextStatus = 'Awaiting Retirement';
+      nextStage = 'Returned for Retirement Fix';
+      notifyEvent = 'returned';
+      retirementJson = {
+        ...(existing.retirement || {}),
+        returnedAt: nowIso(),
+        returnedBy: input.actor,
+        returnReason: compact(input.reason || input.comment),
+      };
+      break;
+    case 'ready-to-post':
+      if (!existing.paidAt && !/^(paid|completed|retired|closed)$/i.test(existing.status)) {
+        throw new Error('Payment must be paid or retired before it is ready to post.');
+      }
+      postingStatus = 'ReadyToPost';
+      break;
+    case 'mark-posted': {
+      const voucher = compact(input.sageReference);
+      if (!voucher) throw new Error('Sage voucher / document reference is required to mark as posted.');
+      sageReference = voucher;
+      postingStatus = 'Posted';
+      postedAt = new Date();
+      postedBy = input.actor;
+      postingJson = {
+        ...(existing.posting || {}),
+        postedAt: postedAt.toISOString(),
+        postedBy: input.actor,
+        sageReference: voucher,
+        notes: compact(input.comment || input.reason),
+      };
+      notifyEvent = 'posted';
+      break;
+    }
     case 'clarify':
       nextStatus = 'Returned';
       nextStage = 'Clarification Requested';
@@ -1379,12 +1619,26 @@ WHERE [RequestId] = @RequestId
     .input('CurrentStage', sql.NVarChar(80), nextStage)
     .input('PaidAt', sql.DateTime2, paidAt)
     .input('PaymentReference', sql.NVarChar(120), paymentReference)
+    .input('SageReference', sql.NVarChar(120), sageReference)
+    .input('PostingStatus', sql.NVarChar(40), postingStatus)
+    .input('PostedAt', sql.DateTime2, postedAt)
+    .input('PostedBy', sql.NVarChar(120), postedBy)
+    .input('TreasuryJson', sql.NVarChar(sql.MAX), treasuryJson ? JSON.stringify(treasuryJson) : null)
+    .input('RetirementJson', sql.NVarChar(sql.MAX), retirementJson ? JSON.stringify(retirementJson) : null)
+    .input('PostingJson', sql.NVarChar(sql.MAX), postingJson ? JSON.stringify(postingJson) : null)
     .query(`
 UPDATE [finance].[PaymentRequests]
 SET [Status] = @Status,
     [CurrentStage] = @CurrentStage,
     [PaidAt] = COALESCE(@PaidAt, [PaidAt]),
     [PaymentReference] = COALESCE(@PaymentReference, [PaymentReference]),
+    [SageReference] = COALESCE(@SageReference, [SageReference]),
+    [PostingStatus] = COALESCE(@PostingStatus, [PostingStatus]),
+    [PostedAt] = COALESCE(@PostedAt, [PostedAt]),
+    [PostedBy] = COALESCE(@PostedBy, [PostedBy]),
+    [TreasuryJson] = COALESCE(@TreasuryJson, [TreasuryJson]),
+    [RetirementJson] = COALESCE(@RetirementJson, [RetirementJson]),
+    [PostingJson] = COALESCE(@PostingJson, [PostingJson]),
     [UpdatedAt] = SYSUTCDATETIME()
 WHERE [RequestId] = @RequestId
 `);
@@ -1398,7 +1652,7 @@ WHERE [RequestId] = @RequestId
       supervisorName: existing.supervisorName,
       paymentType: existing.paymentType,
     });
-  } else if (notifyEvent === 'approved' || notifyEvent === 'rejected' || notifyEvent === 'returned') {
+  } else if (notifyEvent === 'approved' || notifyEvent === 'rejected' || notifyEvent === 'returned' || notifyEvent === 'paid') {
     await pool.request()
       .input('RequestId', sql.NVarChar(60), input.requestId)
       .query(`
@@ -1421,7 +1675,16 @@ WHERE [RequestId] = @RequestId
   });
 
   const workspace = await buildPaymentRequestsWorkspace();
-  const request = workspace.rows.find((row) => row.requestId === input.requestId) || null;
+  const request = workspace.rows.find((row) => row.requestId === input.requestId)
+    || await getPaymentRequestById(input.requestId);
+
+  if (input.action === 'mark-posted' && request && sageReference) {
+    await enqueueSagePaymentPost({
+      request,
+      sageReference,
+      actor: input.actor,
+    });
+  }
 
   if (notifyEvent && request) {
     await notifyPaymentDecision({
@@ -1430,7 +1693,7 @@ WHERE [RequestId] = @RequestId
       actorName: input.actor,
       stage: completedStage,
       nextStage: advancedTo,
-      reason: input.reason || input.comment,
+      reason: input.reason || input.comment || (notifyEvent === 'paid' ? `Payment reference: ${paymentReference}` : undefined),
       baseUrl: input.baseUrl,
     }).catch((error) => console.error('[payment-requests] transition notification failed', error));
   }

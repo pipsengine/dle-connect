@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { FINANCE_PAGES, resolveFinancePage } from '@/lib/finance-intelligence/nav';
 import { buildFinanceApprovalCentre, buildFinanceCommandCentre } from '@/lib/finance-intelligence/store';
-import { buildCashAdvanceControlsWorkspace, buildPaymentRequestsWorkspace } from '@/lib/finance-intelligence/payment-requests-service';
+import { buildCashAdvanceControlsWorkspace, buildFinancePostingWorkspace, buildPaymentRequestsWorkspace, buildTreasuryWorkspace } from '@/lib/finance-intelligence/payment-requests-service';
 import { buildApprovalMatrixWorkspace } from '@/lib/finance-intelligence/approval-matrix-service';
 import { buildApprovalDelegationWorkspace } from '@/lib/finance-intelligence/approval-delegation-service';
 import FinanceWorkspaceClient from '../FinanceWorkspaceClient';
@@ -53,6 +53,46 @@ export default async function FinanceCatchAllPage({ params }: Props) {
         activeWaivers: 0,
         blockedEmployees: 0,
       },
+    }))
+    : null;
+
+  const treasuryWorkspace = page.kind === 'treasury-ops'
+    ? await buildTreasuryWorkspace().catch(() => ({
+      generatedAt: new Date().toISOString(),
+      source: 'DLE Enterprise · finance.PaymentRequests · Treasury',
+      summary: {
+        readyToPay: 0,
+        readyValue: 0,
+        paidToday: 0,
+        paidTodayValue: 0,
+        awaitingRetirement: 0,
+        retirementToVerify: 0,
+        history: 0,
+      },
+      readyToPay: [],
+      paidToday: [],
+      awaitingRetirement: [],
+      retirementToVerify: [],
+      history: [],
+    }))
+    : null;
+
+  const financePostingWorkspace = page.kind === 'finance-posting'
+    ? await buildFinancePostingWorkspace().catch(() => ({
+      generatedAt: new Date().toISOString(),
+      source: 'DLE Enterprise · finance.PaymentRequests · Sage Posting',
+      summary: {
+        readyToPost: 0,
+        readyValue: 0,
+        posted: 0,
+        notReady: 0,
+        failed: 0,
+        withDocuments: 0,
+      },
+      rows: [],
+      readyToPost: [],
+      posted: [],
+      notReady: [],
     }))
     : null;
 
@@ -126,6 +166,8 @@ export default async function FinanceCatchAllPage({ params }: Props) {
       approvalMatrix={approvalMatrix}
       approvalDelegations={approvalDelegations}
       cashAdvanceControls={cashAdvanceControls}
+      treasuryWorkspace={treasuryWorkspace}
+      financePostingWorkspace={financePostingWorkspace}
       childLinks={childLinks.length ? childLinks : featureLinks}
     />
   );

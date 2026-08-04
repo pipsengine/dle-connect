@@ -551,6 +551,14 @@ IF COL_LENGTH(N'finance.PaymentRequests', N'PaymentSiteCode') IS NULL
   ALTER TABLE [finance].[PaymentRequests] ADD [PaymentSiteCode] NVARCHAR(40) NULL;
 IF COL_LENGTH(N'finance.PaymentRequests', N'PaymentSiteName') IS NULL
   ALTER TABLE [finance].[PaymentRequests] ADD [PaymentSiteName] NVARCHAR(200) NULL;
+IF COL_LENGTH(N'finance.PaymentRequests', N'PostingStatus') IS NULL
+  ALTER TABLE [finance].[PaymentRequests] ADD [PostingStatus] NVARCHAR(40) NULL;
+IF COL_LENGTH(N'finance.PaymentRequests', N'PostedAt') IS NULL
+  ALTER TABLE [finance].[PaymentRequests] ADD [PostedAt] DATETIME2(0) NULL;
+IF COL_LENGTH(N'finance.PaymentRequests', N'PostedBy') IS NULL
+  ALTER TABLE [finance].[PaymentRequests] ADD [PostedBy] NVARCHAR(120) NULL;
+IF COL_LENGTH(N'finance.PaymentRequests', N'PostingJson') IS NULL
+  ALTER TABLE [finance].[PaymentRequests] ADD [PostingJson] NVARCHAR(MAX) NULL;
 
 IF OBJECT_ID(N'[finance].[PaymentRequestActions]', N'U') IS NULL
 CREATE TABLE [finance].[PaymentRequestActions] (
