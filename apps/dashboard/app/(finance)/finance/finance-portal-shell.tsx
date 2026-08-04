@@ -13,7 +13,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCcw,
-  Search,
   X,
 } from 'lucide-react';
 import { NotificationCenter } from '@/components/layout/notification-center';
@@ -256,13 +255,11 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-[11px] font-semibold text-slate-700">Sage X3 Integration</p>
-              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                Connected
+              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                Not connected
               </span>
             </div>
-            <p className="mt-1.5 text-[11px] text-slate-500">
-              Last sync: {liveBadges ? '04 Aug 2026, 06:30 AM' : '—'}
-            </p>
+            <p className="mt-1.5 text-[11px] text-slate-500">Last sync: —</p>
             <Link
               href="/finance/overview/data-integration"
               className="mt-2 inline-flex text-[11px] font-semibold text-[#008FD5] hover:underline"
@@ -273,10 +270,10 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
         ) : (
           <Link
             href="/finance/overview/data-integration"
-            title="Sage X3 Connected"
-            className="mx-auto flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600"
+            title="Sage X3 status"
+            className="mx-auto flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-500"
           >
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+            <span className="h-2.5 w-2.5 rounded-full bg-slate-400" />
           </Link>
         )}
         <Link
@@ -323,7 +320,7 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
       ) : null}
 
       <div className={`flex min-w-0 flex-1 flex-col ${contentPad}`}>
-        <header className="sticky top-0 z-20 flex h-[72px] items-center gap-3 border-b border-slate-200 bg-white px-3.5 sm:px-5">
+        <header className="sticky top-0 z-20 flex h-[72px] items-center gap-2 border-b border-slate-200 bg-white px-3.5 sm:gap-3 sm:px-5">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
@@ -331,24 +328,38 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <div className="hidden min-w-0 sm:block lg:max-w-[220px]">
+          <div className="hidden min-w-0 xl:block xl:max-w-[180px]">
             <p className="truncate text-[11px] font-bold uppercase tracking-[0.14em] text-[#008FD5]">
               {FINANCE_MODULE.shortName}
             </p>
-            <h1 className="truncate text-[14px] font-bold text-slate-900">{FINANCE_MODULE.name}</h1>
+            <h1 className="truncate text-[13px] font-bold text-slate-900">{FINANCE_MODULE.name}</h1>
           </div>
-          <div className="relative mx-auto hidden max-w-xl flex-1 md:block">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="search"
-              placeholder="Search payments, requests, beneficiaries, projects..."
-              className="h-11 w-full rounded-xl border border-slate-200 bg-[#F8FAFC] py-2 pl-10 pr-16 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-[#93C5FD] focus:bg-white focus:ring-2 focus:ring-[#DBEAFE]"
-            />
-            <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">
-              Ctrl + K
-            </kbd>
+          <div className="hidden items-center gap-1.5 lg:flex">
+            {[
+              { label: 'Company', value: 'Dorman Long Nigeria Ltd' },
+              { label: 'FY', value: 'FY 2026' },
+              { label: 'Period', value: 'Jul 2026' },
+              { label: 'Currency', value: 'NGN' },
+            ].map((item) => (
+              <label key={item.label} className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-[#F8FAFC] px-2 text-[11px] text-slate-600">
+                <span className="hidden text-slate-400 2xl:inline">{item.label}</span>
+                <select defaultValue={item.value} className="max-w-[140px] truncate bg-transparent font-semibold text-slate-800 outline-none">
+                  <option>{item.value}</option>
+                </select>
+                <ChevronDown className="h-3 w-3 shrink-0 text-slate-400" />
+              </label>
+            ))}
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
+            <div className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 xl:flex">
+              <span className="relative flex h-2 w-2">
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-slate-400" />
+              </span>
+              <div className="leading-tight">
+                <p className="text-[11px] font-semibold text-slate-700">Sage X3</p>
+                <p className="text-[10px] text-slate-500">Last Sync: —</p>
+              </div>
+            </div>
             <button
               type="button"
               onClick={() => router.refresh()}
@@ -374,10 +385,13 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
         </main>
 
         <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-3.5 py-2.5 text-[11px] text-slate-500 sm:px-5">
-          <p>
-            Sage X3 remains the authoritative accounting system. DLE Connect presents reporting, analytics, AI insights and controlled approvals.
-          </p>
-          <span className="shrink-0 text-slate-400">Permissions: finance.view · finance.approve · finance.report</span>
+          <p>© {new Date().getFullYear()} Dorman Long DLE Connect. All rights reserved.</p>
+          <div className="flex items-center gap-3">
+            <span>Privacy</span>
+            <span>Terms</span>
+            <span>Support</span>
+            <span className="hidden text-slate-400 sm:inline">finance.view · finance.approve · finance.report</span>
+          </div>
         </footer>
       </div>
     </div>

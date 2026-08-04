@@ -5,29 +5,47 @@ import { useMemo, useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
+  ArrowUpRight,
   BadgeCheck,
   CheckCircle2,
+  ChevronDown,
+  Clock3,
   Database,
+  Download,
+  ExternalLink,
   FileBarChart,
   Filter,
   FolderOpen,
+  History,
+  Inbox,
+  Info,
+  MessageSquare,
   MessageSquarePlus,
   RefreshCcw,
+  RotateCcw,
+  Search,
   Send,
+  Settings2,
   Sparkles,
+  UserPlus,
+  Wallet,
   Workflow,
+  XCircle,
 } from 'lucide-react';
 import type { FinancePageMeta } from '@/lib/finance-intelligence/nav';
 import type {
   FinanceApprovalCentreSnapshot,
   FinanceCommandCentreSnapshot,
 } from '@/lib/finance-intelligence/store';
+import type { PaymentRequestsWorkspace } from '@/lib/finance-intelligence/payment-requests-service';
 import { FinanceBreadcrumbs } from './finance-portal-shell';
+import PaymentRequestsClient from './PaymentRequestsClient';
 
 type Props = {
   page: FinancePageMeta;
   commandCentre?: FinanceCommandCentreSnapshot | null;
   approvalCentre?: FinanceApprovalCentreSnapshot | null;
+  paymentRequests?: PaymentRequestsWorkspace | null;
   childLinks?: Array<{ href: string; title: string; description?: string }>;
 };
 
@@ -449,6 +467,16 @@ function ApprovalsDashboard({ snapshot }: { snapshot?: FinanceApprovalCentreSnap
   ];
   const columns = snapshot?.queueColumns?.length ? snapshot.queueColumns : [...APPROVAL_COLUMNS];
   const rows = snapshot?.queueRows || [];
+  const kpiIcons: Record<string, { icon: typeof Inbox; wrap: string; color: string }> = {
+    'pending-mine': { icon: Inbox, wrap: 'bg-blue-50', color: 'text-[#008FD5]' },
+    'pending-value': { icon: Wallet, wrap: 'bg-teal-50', color: 'text-teal-600' },
+    overdue: { icon: Clock3, wrap: 'bg-orange-50', color: 'text-orange-500' },
+    returned: { icon: RotateCcw, wrap: 'bg-violet-50', color: 'text-violet-600' },
+    'high-value': { icon: AlertTriangle, wrap: 'bg-rose-50', color: 'text-rose-600' },
+    'awaiting-release': { icon: Send, wrap: 'bg-blue-50', color: 'text-[#008FD5]' },
+    'approved-today': { icon: CheckCircle2, wrap: 'bg-emerald-50', color: 'text-emerald-600' },
+    'rejected-month': { icon: XCircle, wrap: 'bg-rose-50', color: 'text-rose-700' },
+  };
 
   return (
     <div className="space-y-4">
@@ -460,15 +488,24 @@ function ApprovalsDashboard({ snapshot }: { snapshot?: FinanceApprovalCentreSnap
       </header>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {kpis.map((kpi) => (
-          <article key={kpi.id} className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">{kpi.label}</p>
-            <p className={`mt-2 text-[28px] font-semibold leading-none tabular-nums ${kpiToneClass[kpi.tone] || 'text-slate-900'}`}>
-              {kpi.primary}
-            </p>
-            <p className="mt-2 text-xs font-medium text-slate-500">{kpi.secondary}</p>
-          </article>
-        ))}
+        {kpis.map((kpi) => {
+          const meta = kpiIcons[kpi.id] || { icon: Inbox, wrap: 'bg-slate-50', color: 'text-slate-500' };
+          const Icon = meta.icon;
+          return (
+            <article key={kpi.id} className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">{kpi.label}</p>
+                <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl ${meta.wrap}`}>
+                  <Icon className={`h-4 w-4 ${meta.color}`} />
+                </span>
+              </div>
+              <p className={`mt-2 text-[28px] font-semibold leading-none tabular-nums ${kpiToneClass[kpi.tone] || 'text-slate-900'}`}>
+                {kpi.primary}
+              </p>
+              <p className="mt-2 text-xs font-medium text-slate-500">{kpi.secondary}</p>
+            </article>
+          );
+        })}
       </div>
 
       <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
@@ -548,52 +585,217 @@ function ApprovalsDashboard({ snapshot }: { snapshot?: FinanceApprovalCentreSnap
   );
 }
 
+const INBOX_COLUMNS = [
+  'Request Number',
+  'Payment Type',
+  'Beneficiary',
+  'Description',
+  'Amount',
+  'Currency',
+  'Department',
+  'Project',
+  'Submitted Date',
+  'Current Stage',
+  'Age',
+  'Risk Flags',
+  'Status',
+] as const;
+
+type InboxFilterId = 'pending' | 'value' | 'overdue' | 'returned' | 'approved' | 'rejected';
+
 function ApprovalQueue({ page }: { page: FinancePageMeta }) {
+  const isInbox = page.href === '/finance/approvals/inbox';
+  const [activeFilter, setActiveFilter] = useState<InboxFilterId>('pending');
+  const [query, setQuery] = useState('');
+  const [selectedAction, setSelectedAction] = useState<string | null>(null);
+
+  const filters: Array<{
+    id: InboxFilterId;
+    label: string;
+    value: string;
+    icon: typeof Inbox;
+    iconWrap: string;
+    iconColor: string;
+  }> = [
+    { id: 'pending', label: 'Pending', value: '0', icon: Inbox, iconWrap: 'bg-blue-50', iconColor: 'text-[#008FD5]' },
+    { id: 'value', label: 'Total Value', value: '₦0.00', icon: Wallet, iconWrap: 'bg-emerald-50', iconColor: 'text-emerald-600' },
+    { id: 'overdue', label: 'Overdue', value: '0', icon: Clock3, iconWrap: 'bg-orange-50', iconColor: 'text-orange-500' },
+    { id: 'returned', label: 'Returned', value: '0', icon: RotateCcw, iconWrap: 'bg-violet-50', iconColor: 'text-violet-600' },
+    { id: 'approved', label: 'Approved Today', value: '0', icon: CheckCircle2, iconWrap: 'bg-teal-50', iconColor: 'text-teal-600' },
+    { id: 'rejected', label: 'Rejected This Month', value: '0', icon: XCircle, iconWrap: 'bg-rose-50', iconColor: 'text-rose-600' },
+  ];
+
+  const primaryActions = [
+    { id: 'return', label: 'Return for Correction', icon: RotateCcw, className: 'border-[#BFDBFE] text-[#1D4ED8] hover:bg-blue-50' },
+    { id: 'clarify', label: 'Request Clarification', icon: MessageSquare, className: 'border-[#BAE6FD] text-[#0369A1] hover:bg-sky-50' },
+    { id: 'delegate', label: 'Delegate', icon: UserPlus, className: 'border-[#DDD6FE] text-[#6D28D9] hover:bg-violet-50' },
+    { id: 'reject', label: 'Reject', icon: XCircle, className: 'border-[#FECDD3] text-[#BE123C] hover:bg-rose-50' },
+    { id: 'approve', label: 'Approve', icon: CheckCircle2, className: 'border-emerald-200 bg-emerald-600 text-white hover:bg-emerald-700' },
+  ] as const;
+
+  const secondaryActions = [
+    { id: 'comment', label: 'Add Comment', icon: MessageSquare },
+    { id: 'download', label: 'Download Documents', icon: Download },
+    { id: 'sage', label: 'View Sage Source', icon: ExternalLink },
+    { id: 'history', label: 'View Approval History', icon: History },
+    { id: 'escalate', label: 'Escalate', icon: ArrowUpRight },
+  ] as const;
+
+  const columns = isInbox ? INBOX_COLUMNS : APPROVAL_COLUMNS;
+
   return (
-    <div className="space-y-4">
-      <header className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-        <h1 className="text-2xl font-semibold text-slate-900">{page.title}</h1>
-        <p className="mt-1 text-sm text-slate-500">{page.description}</p>
+    <div className="space-y-4 pb-2">
+      <header>
+        <h1 className="text-[28px] font-semibold tracking-tight text-slate-900">{page.title}</h1>
+        <p className="mt-1 text-sm text-slate-500">{page.description || 'Requests awaiting your decision.'}</p>
       </header>
-      <Panel title="Queue">
+
+      {isInbox ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          {filters.map((filter) => {
+            const active = activeFilter === filter.id;
+            return (
+              <button
+                key={filter.id}
+                type="button"
+                onClick={() => setActiveFilter(filter.id)}
+                className={`rounded-2xl border bg-white p-3.5 text-left shadow-sm transition ${
+                  active
+                    ? 'border-[#008FD5] ring-1 ring-[#008FD5]/30'
+                    : 'border-slate-200/80 hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className={`inline-flex h-9 w-9 items-center justify-center rounded-xl ${filter.iconWrap}`}>
+                    <filter.icon className={`h-4 w-4 ${filter.iconColor}`} />
+                  </span>
+                </div>
+                <p className={`mt-3 text-2xl font-semibold tabular-nums ${active ? 'text-[#008FD5]' : 'text-slate-900'}`}>
+                  {filter.value}
+                </p>
+                <p className="mt-1 text-xs font-medium text-slate-500">{filter.label}</p>
+                {active ? <span className="mt-2 block h-0.5 w-8 rounded-full bg-[#008FD5]" /> : <span className="mt-2 block h-0.5 w-8" />}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-sm font-semibold text-slate-900">Approval Queue</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <Filter className="h-3.5 w-3.5" />
+              Filters
+            </button>
+            <div className="relative min-w-[200px] flex-1 sm:flex-none">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search requests..."
+                className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-8 pr-3 text-xs outline-none ring-[#008FD5] placeholder:text-slate-400 focus:bg-white focus:ring-2 sm:w-56"
+              />
+            </div>
+            <button
+              type="button"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
+              aria-label="Queue settings"
+            >
+              <Settings2 className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-xs">
-            <thead className="border-b border-slate-100 text-slate-500">
+            <thead className="bg-slate-50/90 text-slate-500">
               <tr>
-                {APPROVAL_COLUMNS.map((column) => (
-                  <th key={column} className="whitespace-nowrap px-2 py-2 font-semibold">{column}</th>
+                {columns.map((column) => (
+                  <th key={column} className="whitespace-nowrap px-3 py-2.5 font-semibold">
+                    <span className="inline-flex items-center gap-1">
+                      {column}
+                      {column === 'Submitted Date' ? <ChevronDown className="h-3 w-3 text-slate-400" /> : null}
+                    </span>
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td colSpan={APPROVAL_COLUMNS.length} className="px-2 py-10 text-center text-slate-500">
-                  No records in this queue.
+                <td colSpan={columns.length} className="px-3 py-16 text-center">
+                  <div className="mx-auto flex max-w-md flex-col items-center">
+                    <span className="relative inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                      <FolderOpen className="h-8 w-8" />
+                      <span className="absolute -right-1 -top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] font-bold text-slate-400 shadow-sm">
+                        0
+                      </span>
+                    </span>
+                    <p className="mt-4 text-base font-semibold text-slate-800">
+                      {isInbox ? 'No requests in your inbox' : 'No records in this queue'}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {isInbox
+                        ? 'When Sage X3 or source systems assign payment approvals to you, they will appear here for decision.'
+                        : 'Requests will appear here when matching workflows are submitted.'}
+                    </p>
+                    {isInbox ? (
+                      <Link
+                        href="/finance/approvals/payments"
+                        className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#008FD5] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#007bb8]"
+                      >
+                        View Other Requests
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    ) : null}
+                  </div>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-      </Panel>
-      <div className="sticky bottom-3 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur">
+      </section>
+
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-slate-900">Actions</h2>
+          {selectedAction ? (
+            <span className="text-xs font-medium text-slate-500">Selected: {selectedAction}</span>
+          ) : null}
+        </div>
         <div className="flex flex-wrap gap-2">
-          {['Return for Correction', 'Request Clarification', 'Delegate', 'Reject', 'Approve'].map((action) => (
+          {primaryActions.map((action) => (
             <button
-              key={action}
+              key={action.id}
               type="button"
-              className={`rounded-xl px-3 py-2 text-xs font-semibold ${action === 'Approve' ? 'bg-emerald-600 text-white' : action === 'Reject' ? 'bg-rose-600 text-white' : 'border border-slate-200 text-slate-700'}`}
+              onClick={() => setSelectedAction(action.label)}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition ${action.className}`}
             >
-              {action}
+              <action.icon className="h-3.5 w-3.5" />
+              {action.label}
             </button>
           ))}
-          {['Add Comment', 'Download Documents', 'View Sage Source', 'View Approval History', 'Escalate'].map((action) => (
-            <button key={action} type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600">
-              {action}
+          {secondaryActions.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              onClick={() => setSelectedAction(action.label)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              <action.icon className="h-3.5 w-3.5" />
+              {action.label}
             </button>
           ))}
         </div>
-        <p className="mt-2 text-[11px] text-slate-500">Rejection, return, delegation and escalation require a mandatory reason. High-value approvals require authentication confirmation.</p>
-      </div>
+        <p className="mt-3 inline-flex items-start gap-1.5 text-[11px] leading-relaxed text-slate-500">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+          Rejection, return, delegation and escalation require a mandatory reason. High-value approvals require authentication confirmation.
+        </p>
+      </section>
     </div>
   );
 }
@@ -742,7 +944,7 @@ function GenericWorkspace({ page }: { page: FinancePageMeta }) {
   );
 }
 
-export default function FinanceWorkspaceClient({ page, commandCentre, approvalCentre, childLinks }: Props) {
+export default function FinanceWorkspaceClient({ page, commandCentre, approvalCentre, paymentRequests, childLinks }: Props) {
   const reportingCards = useMemo(
     () => [
       {
@@ -784,10 +986,11 @@ export default function FinanceWorkspaceClient({ page, commandCentre, approvalCe
       {page.kind === 'analysis-workspace' ? <AnalysisWorkspace page={page} /> : null}
       {page.kind === 'ai-copilot' ? <AiCopilotView page={page} /> : null}
       {page.kind === 'approvals-dashboard' ? <ApprovalsDashboard snapshot={approvalCentre} /> : null}
+      {page.kind === 'payment-requests' && paymentRequests ? <PaymentRequestsClient initialWorkspace={paymentRequests} /> : null}
       {page.kind === 'approval-queue' ? <ApprovalQueue page={page} /> : null}
       {page.kind === 'approval-detail' ? <ApprovalDetail /> : null}
       {page.kind === 'section-dashboard' ? <SectionDashboard page={page} childLinks={childLinks} /> : null}
-      {!['command-centre', 'reporting-hub', 'analysis-hub', 'analysis-workspace', 'ai-copilot', 'approvals-dashboard', 'approval-queue', 'approval-detail', 'section-dashboard'].includes(page.kind)
+      {!['command-centre', 'reporting-hub', 'analysis-hub', 'analysis-workspace', 'ai-copilot', 'approvals-dashboard', 'payment-requests', 'approval-queue', 'approval-detail', 'section-dashboard'].includes(page.kind)
         ? <GenericWorkspace page={page} />
         : null}
     </div>

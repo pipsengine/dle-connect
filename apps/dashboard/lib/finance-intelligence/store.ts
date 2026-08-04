@@ -87,18 +87,7 @@ const countQuery = async (pool: sql.ConnectionPool, query: string) => {
 
 export const buildFinanceBadges = async (): Promise<FinanceBadgeSnapshot> => {
   const pool = await ensureFinanceDb().catch(() => null);
-  if (!pool) {
-    return {
-      paymentApprovals: 12,
-      approvalInbox: 12,
-      approvalMonitoring: 4,
-      overdueApprovals: 4,
-      scheduledReports: 3,
-      failedDeliveries: 0,
-      dataIntegration: 0,
-      exceptions: 0,
-    };
-  }
+  if (!pool) return emptyBadges();
 
   const [
     paymentApprovals,
@@ -117,11 +106,11 @@ export const buildFinanceBadges = async (): Promise<FinanceBadgeSnapshot> => {
   ]);
 
   return {
-    paymentApprovals: paymentApprovals || 12,
-    approvalInbox: paymentApprovals || 12,
-    approvalMonitoring: overdueApprovals || 4,
-    overdueApprovals: overdueApprovals || 4,
-    scheduledReports: scheduledReports || 3,
+    paymentApprovals,
+    approvalInbox: paymentApprovals,
+    approvalMonitoring: overdueApprovals,
+    overdueApprovals,
+    scheduledReports,
     failedDeliveries,
     dataIntegration,
     exceptions,
@@ -235,7 +224,7 @@ export const buildFinanceApprovalCentre = async (): Promise<FinanceApprovalCentr
   const pool = await ensureFinanceDb().catch(() => null);
   const rows = await listFinanceApprovalRequests();
   let lastRefreshAt: string | null = null;
-  let integrationStatus = 'Connected';
+  let integrationStatus = 'Not connected';
 
   if (pool) {
     try {
@@ -246,17 +235,8 @@ ORDER BY [UpdatedAt] DESC
 `);
       const row = result.recordset?.[0];
       if (row) {
-        integrationStatus = String(row.Status || 'Connected');
+        integrationStatus = String(row.Status || 'Not connected');
         lastRefreshAt = row.LastRefreshAt ? new Date(row.LastRefreshAt).toISOString() : null;
-      } else {
-        // Seed a healthy integration status row for portal chrome when none exists.
-        await pool.request().query(`
-IF NOT EXISTS (SELECT 1 FROM [finance].[IntegrationStatus])
-INSERT INTO [finance].[IntegrationStatus] ([IntegrationId], [SourceSystem], [CompanyCode], [Status], [LastRefreshAt], [LastSuccessAt], [RecordsSynced])
-VALUES (N'SAGE-X3-PRIMARY', N'Sage X3 Enterprise', N'DLE', N'Connected', SYSUTCDATETIME(), SYSUTCDATETIME(), 0);
-`);
-        lastRefreshAt = nowIso();
-        integrationStatus = 'Connected';
       }
     } catch {
       lastRefreshAt = null;
@@ -266,50 +246,41 @@ VALUES (N'SAGE-X3-PRIMARY', N'Sage X3 Enterprise', N'DLE', N'Connected', SYSUTCD
   const money = (value: number) =>
     new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 
+  const queueColumns = [
+    'Request No.',
+    'Payment Type',
+    'Beneficiary',
+    'Description',
+    'Amount',
+    'Currency',
+    'Department',
+    'Project',
+    'Submitted',
+    'Current Stage',
+    'Approver',
+    'Age',
+    'Risk',
+    'Status',
+  ];
+
   if (!rows.length) {
-    // Design-preview metrics matching the Finance Payment Approval Centre mock until Sage/live requests arrive.
-    const previewBadges: FinanceBadgeSnapshot = {
-      paymentApprovals: 12,
-      approvalInbox: 12,
-      approvalMonitoring: 4,
-      overdueApprovals: 4,
-      scheduledReports: 3,
-      failedDeliveries: 0,
-      dataIntegration: 0,
-      exceptions: 0,
-    };
     return {
       generatedAt: nowIso(),
-      isPreview: true,
+      isPreview: false,
       integrationStatus,
-      lastRefreshAt: lastRefreshAt || '2026-08-04T06:30:00.000Z',
-      badges: previewBadges,
-      queueColumns: [
-        'Request No.',
-        'Payment Type',
-        'Beneficiary',
-        'Description',
-        'Amount',
-        'Currency',
-        'Department',
-        'Project',
-        'Submitted',
-        'Current Stage',
-        'Approver',
-        'Age',
-        'Risk',
-        'Status',
-      ],
+      lastRefreshAt,
+      badges: emptyBadges(),
+      queueColumns,
       queueRows: [],
       kpis: [
-        { id: 'pending-mine', label: 'Pending My Approval', primary: '12', secondary: money(48750000), tone: 'blue' },
-        { id: 'pending-value', label: 'Total Pending Value', primary: money(148750000), secondary: 'Across all stages', tone: 'teal' },
-        { id: 'overdue', label: 'Overdue Approvals', primary: '4', secondary: money(18600000), tone: 'orange' },
-        { id: 'returned', label: 'Returned Requests', primary: '3', secondary: money(6200000), tone: 'purple' },
-        { id: 'high-value', label: 'High-Value Requests', primary: '5', secondary: 'Above approval limit', tone: 'red' },
-        { id: 'awaiting-release', label: 'Payments Awaiting Final Release', primary: '8', secondary: money(72300000), tone: 'blue' },
-        { id: 'approved-today', label: 'Payments Approved Today', primary: '6', secondary: money(24150000), tone: 'green' },
-        { id: 'rejected-month', label: 'Rejected This Month', primary: '2', secondary: money(3400000), tone: 'rose' },
+        { id: 'pending-mine', label: 'Pending My Approval', primary: '0', secondary: money(0), tone: 'blue' },
+        { id: 'pending-value', label: 'Total Pending Value', primary: money(0), secondary: 'Across all stages', tone: 'teal' },
+        { id: 'overdue', label: 'Overdue Approvals', primary: '0', secondary: money(0), tone: 'orange' },
+        { id: 'returned', label: 'Returned Requests', primary: '0', secondary: money(0), tone: 'purple' },
+        { id: 'high-value', label: 'High-Value Requests', primary: '0', secondary: 'Above approval limit', tone: 'red' },
+        { id: 'awaiting-release', label: 'Payments Awaiting Final Release', primary: '0', secondary: money(0), tone: 'blue' },
+        { id: 'approved-today', label: 'Payments Approved Today', primary: '0', secondary: money(0), tone: 'green' },
+        { id: 'rejected-month', label: 'Rejected This Month', primary: '0', secondary: money(0), tone: 'rose' },
       ],
     };
   }
@@ -352,22 +323,7 @@ VALUES (N'SAGE-X3-PRIMARY', N'Sage X3 Enterprise', N'DLE', N'Connected', SYSUTCD
     integrationStatus,
     lastRefreshAt,
     badges,
-    queueColumns: [
-      'Request No.',
-      'Payment Type',
-      'Beneficiary',
-      'Description',
-      'Amount',
-      'Currency',
-      'Department',
-      'Project',
-      'Submitted',
-      'Current Stage',
-      'Approver',
-      'Age',
-      'Risk',
-      'Status',
-    ],
+    queueColumns,
     queueRows: rows.slice(0, 25).map((row) => ({
       'Request No.': String(row.RequestNumber || row.RequestId || '—'),
       'Payment Type': String(row.PaymentType || '—'),

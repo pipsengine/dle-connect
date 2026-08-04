@@ -237,4 +237,86 @@ CREATE TABLE [finance].[SageSyncQueue] (
   [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceSageQueue_CreatedAt] DEFAULT SYSUTCDATETIME(),
   [ProcessedAt] DATETIME2(0) NULL
 );
+
+IF OBJECT_ID(N'[finance].[PaymentRequests]', N'U') IS NULL
+CREATE TABLE [finance].[PaymentRequests] (
+  [RequestId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinancePaymentRequests] PRIMARY KEY,
+  [RequestNumber] NVARCHAR(60) NOT NULL,
+  [PaymentType] NVARCHAR(80) NOT NULL,
+  [RequestCategory] NVARCHAR(80) NULL,
+  [Title] NVARCHAR(250) NOT NULL,
+  [Purpose] NVARCHAR(MAX) NULL,
+  [BusinessJustification] NVARCHAR(MAX) NULL,
+  [BeneficiaryType] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinancePayReq_BeneficiaryType] DEFAULT N'Employee',
+  [BeneficiaryCode] NVARCHAR(80) NULL,
+  [BeneficiaryName] NVARCHAR(250) NOT NULL,
+  [BeneficiaryBankSummary] NVARCHAR(500) NULL,
+  [Description] NVARCHAR(MAX) NULL,
+  [GrossAmount] DECIMAL(19,4) NOT NULL CONSTRAINT [DF_FinancePayReq_Gross] DEFAULT 0,
+  [VatAmount] DECIMAL(19,4) NOT NULL CONSTRAINT [DF_FinancePayReq_Vat] DEFAULT 0,
+  [WhtAmount] DECIMAL(19,4) NOT NULL CONSTRAINT [DF_FinancePayReq_Wht] DEFAULT 0,
+  [RetentionAmount] DECIMAL(19,4) NOT NULL CONSTRAINT [DF_FinancePayReq_Retention] DEFAULT 0,
+  [NetAmount] DECIMAL(19,4) NOT NULL CONSTRAINT [DF_FinancePayReq_Net] DEFAULT 0,
+  [CurrencyCode] NVARCHAR(10) NOT NULL CONSTRAINT [DF_FinancePayReq_Currency] DEFAULT N'NGN',
+  [CompanyCode] NVARCHAR(40) NULL,
+  [Department] NVARCHAR(150) NULL,
+  [CostCentre] NVARCHAR(80) NULL,
+  [ProjectCode] NVARCHAR(80) NULL,
+  [Priority] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinancePayReq_Priority] DEFAULT N'Normal',
+  [RequiredDate] DATE NULL,
+  [RequesterCode] NVARCHAR(60) NULL,
+  [RequesterName] NVARCHAR(200) NULL,
+  [RequesterJobTitle] NVARCHAR(150) NULL,
+  [SupervisorName] NVARCHAR(200) NULL,
+  [SubmittedAt] DATETIME2(0) NULL,
+  [CurrentStage] NVARCHAR(80) NOT NULL CONSTRAINT [DF_FinancePayReq_Stage] DEFAULT N'Draft',
+  [CurrentApproverCode] NVARCHAR(60) NULL,
+  [CurrentApproverName] NVARCHAR(200) NULL,
+  [Status] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinancePayReq_Status] DEFAULT N'Draft',
+  [RiskLevel] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinancePayReq_Risk] DEFAULT N'Normal',
+  [RiskFlags] NVARCHAR(MAX) NULL,
+  [OverrideOutstandingAdvance] BIT NOT NULL CONSTRAINT [DF_FinancePayReq_Override] DEFAULT 0,
+  [OverrideReason] NVARCHAR(MAX) NULL,
+  [SageReference] NVARCHAR(120) NULL,
+  [SourceDocumentNo] NVARCHAR(120) NULL,
+  [InvoiceNumber] NVARCHAR(120) NULL,
+  [InvoiceDate] DATE NULL,
+  [DueDate] DATE NULL,
+  [PurchaseOrderNo] NVARCHAR(120) NULL,
+  [DeliveryNoteNo] NVARCHAR(120) NULL,
+  [GrnNo] NVARCHAR(120) NULL,
+  [ContractNo] NVARCHAR(120) NULL,
+  [PayloadJson] NVARCHAR(MAX) NULL,
+  [AttachmentsJson] NVARCHAR(MAX) NULL,
+  [RetirementJson] NVARCHAR(MAX) NULL,
+  [TreasuryJson] NVARCHAR(MAX) NULL,
+  [PaidAt] DATETIME2(0) NULL,
+  [PaymentReference] NVARCHAR(120) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinancePayReq_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinancePayReq_UpdatedAt] DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT [UQ_FinancePaymentRequests_Number] UNIQUE ([RequestNumber])
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinancePaymentRequests_Status' AND object_id = OBJECT_ID(N'[finance].[PaymentRequests]'))
+  CREATE INDEX [IX_FinancePaymentRequests_Status] ON [finance].[PaymentRequests] ([Status], [SubmittedAt] DESC);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinancePaymentRequests_Type' AND object_id = OBJECT_ID(N'[finance].[PaymentRequests]'))
+  CREATE INDEX [IX_FinancePaymentRequests_Type] ON [finance].[PaymentRequests] ([PaymentType], [Status]);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinancePaymentRequests_Requester' AND object_id = OBJECT_ID(N'[finance].[PaymentRequests]'))
+  CREATE INDEX [IX_FinancePaymentRequests_Requester] ON [finance].[PaymentRequests] ([RequesterCode], [Status]);
+
+IF OBJECT_ID(N'[finance].[PaymentRequestActions]', N'U') IS NULL
+CREATE TABLE [finance].[PaymentRequestActions] (
+  [ActionId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinancePaymentRequestActions] PRIMARY KEY,
+  [RequestId] NVARCHAR(60) NOT NULL,
+  [ActionType] NVARCHAR(40) NOT NULL,
+  [Stage] NVARCHAR(80) NULL,
+  [ActorCode] NVARCHAR(60) NULL,
+  [ActorName] NVARCHAR(200) NULL,
+  [Comment] NVARCHAR(MAX) NULL,
+  [Reason] NVARCHAR(MAX) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinancePayReqActions_CreatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinancePayReqActions_Request' AND object_id = OBJECT_ID(N'[finance].[PaymentRequestActions]'))
+  CREATE INDEX [IX_FinancePayReqActions_Request] ON [finance].[PaymentRequestActions] ([RequestId], [CreatedAt] DESC);
 `;

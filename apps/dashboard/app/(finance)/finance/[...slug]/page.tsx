@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { FINANCE_PAGES, resolveFinancePage } from '@/lib/finance-intelligence/nav';
 import { buildFinanceApprovalCentre, buildFinanceCommandCentre } from '@/lib/finance-intelligence/store';
+import { buildPaymentRequestsWorkspace } from '@/lib/finance-intelligence/payment-requests-service';
 import FinanceWorkspaceClient from '../FinanceWorkspaceClient';
 
 export const dynamic = 'force-dynamic';
@@ -31,6 +32,14 @@ export default async function FinanceCatchAllPage({ params }: Props) {
     ? await buildFinanceApprovalCentre().catch(() => null)
     : null;
 
+  let paymentType: string | undefined;
+  if (pathname.includes('cash-advance') || pathname.endsWith('/cash-advances')) paymentType = 'Cash Advance Payment';
+  if (pathname.includes('supplier')) paymentType = 'Supplier Invoice Payment';
+
+  const paymentRequests = page.kind === 'payment-requests'
+    ? await buildPaymentRequestsWorkspace({ paymentType }).catch(() => null)
+    : null;
+
   const childLinks = page.kind === 'section-dashboard' || page.features?.length
     ? childLinksFor(page.href)
     : [];
@@ -53,6 +62,7 @@ export default async function FinanceCatchAllPage({ params }: Props) {
       page={page}
       commandCentre={commandCentre}
       approvalCentre={approvalCentre}
+      paymentRequests={paymentRequests}
       childLinks={childLinks.length ? childLinks : featureLinks}
     />
   );

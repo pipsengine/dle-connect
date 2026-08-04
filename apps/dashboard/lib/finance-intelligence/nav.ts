@@ -39,6 +39,7 @@ export type FinancePageKind =
   | 'analysis-hub'
   | 'ai-copilot'
   | 'approvals-dashboard'
+  | 'payment-requests'
   | 'approval-queue'
   | 'approval-detail'
   | 'statement'
@@ -138,6 +139,8 @@ export const FINANCE_NAV_SECTIONS: FinanceNavSection[] = [
       { id: 'approval-dashboard', label: 'Approval Dashboard', href: '/finance/approvals' },
       { id: 'inbox', label: 'My Approval Inbox', href: '/finance/approvals/inbox', badgeKey: 'approvalInbox' },
       { id: 'payment-requests', label: 'Payment Requests', href: '/finance/approvals/payments' },
+      { id: 'my-requests', label: 'My Requests', href: '/finance/approvals/my-requests' },
+      { id: 'treasury', label: 'Treasury Operations', href: '/finance/approvals/treasury' },
       { id: 'supplier-payments', label: 'Supplier Payments', href: '/finance/approvals/supplier-payments' },
       { id: 'payment-batches', label: 'Payment Batches', href: '/finance/approvals/batches' },
       { id: 'other-requests', label: 'Other Finance Requests', href: '/finance/approvals/other' },
@@ -418,10 +421,12 @@ export const FINANCE_PAGES: FinancePageMeta[] = [
   // Payment Approvals — full request types
   page('/finance/approvals', 'Approval Dashboard', 'Payment and finance approval command centre.', 'approvals', 'approvals-dashboard', ['Payment Approvals', 'Approval Dashboard']),
   page('/finance/approvals/inbox', 'My Approval Inbox', 'Requests awaiting your decision.', 'approvals', 'approval-queue', ['Payment Approvals', 'My Approval Inbox']),
-  page('/finance/approvals/payments', 'Payment Requests', 'All payment approval requests received from source systems.', 'approvals', 'approval-queue', ['Payment Approvals', 'Payment Requests']),
-  page('/finance/approvals/supplier-payments', 'Supplier Payments', 'Supplier payment approval queue.', 'approvals', 'approval-queue', ['Payment Approvals', 'Supplier Payments']),
+  page('/finance/approvals/payments', 'Payment Requests', 'Create, submit, track and manage payment requests through the full approval lifecycle.', 'approvals', 'payment-requests', ['Payment Approvals', 'Payment Requests']),
+  page('/finance/approvals/my-requests', 'My Requests', 'Drafts, pending, returned, approved, awaiting retirement and completed requests you own.', 'approvals', 'payment-requests', ['Payment Approvals', 'My Requests']),
+  page('/finance/approvals/treasury', 'Treasury Operations', 'Ready for payment, batches, paid today, retirement verification and payment history.', 'approvals', 'payment-requests', ['Payment Approvals', 'Treasury Operations']),
+  page('/finance/approvals/supplier-payments', 'Supplier Payments', 'Supplier invoice payment queue.', 'approvals', 'payment-requests', ['Payment Approvals', 'Supplier Payments']),
   page('/finance/approvals/batches', 'Payment Batches', 'Batch payment approval and release monitoring.', 'approvals', 'approval-queue', ['Payment Approvals', 'Payment Batches']),
-  page('/finance/approvals/cash-advances', 'Cash Advances', 'Cash advance requests for approval.', 'approvals', 'approval-queue', ['Payment Approvals', 'Cash Advances']),
+  page('/finance/approvals/cash-advances', 'Cash Advances', 'Cash advance requests for approval.', 'approvals', 'payment-requests', ['Payment Approvals', 'Cash Advances']),
   page('/finance/approvals/advance-retirement', 'Advance Retirement', 'Advance retirement and reconciliation requests.', 'approvals', 'approval-queue', ['Payment Approvals', 'Advance Retirement']),
   page('/finance/approvals/expense-claims', 'Expense Claims', 'Employee expense claim approvals.', 'approvals', 'approval-queue', ['Payment Approvals', 'Expense Claims']),
   page('/finance/approvals/budget-requests', 'Budget Requests', 'Budget request approvals.', 'approvals', 'approval-queue', ['Payment Approvals', 'Budget Requests']),
