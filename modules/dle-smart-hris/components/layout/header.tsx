@@ -1,8 +1,8 @@
 'use client';
 
-import Link from 'next/link';
-import { Search, Menu, Building2 } from 'lucide-react';
+import { Search, Menu } from 'lucide-react';
 import { usePathname } from 'next/navigation';
+import { EnterpriseHomeButton } from '@/components/layout/enterprise-home-button';
 import { NotificationCenter } from '@/components/layout/notification-center';
 import { EnterpriseUserProfile } from './enterprise-user-profile';
 
@@ -36,10 +36,7 @@ export function Header({
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
-        <Link href="/" aria-label="Go to enterprise landing page" className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 text-xs font-extrabold text-slate-700 transition-colors hover:bg-slate-50 sm:px-3">
-          <Building2 className="h-4 w-4" />
-          <span className="hidden sm:inline">Enterprise Home</span>
-        </Link>
+        <EnterpriseHomeButton />
 
         <NotificationCenter scope="notifications" />
         <NotificationCenter scope="messages" />

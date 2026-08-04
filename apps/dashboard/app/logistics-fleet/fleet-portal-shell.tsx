@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { Activity, Building2, ChevronDown, Menu, RefreshCcw, Search, X } from 'lucide-react';
+import { Activity, ChevronDown, Menu, RefreshCcw, Search, X } from 'lucide-react';
+import { EnterpriseHomeButton } from '@/components/layout/enterprise-home-button';
 import { NotificationCenter } from '@/components/layout/notification-center';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
 import {
@@ -208,9 +209,7 @@ export function FleetPortalShell({ workspace, loading, onRefresh, employee, chil
             />
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            <Link href="/" className="hidden h-10 items-center gap-2 rounded-[14px] border border-[#E5E7EB] bg-white px-3 text-[13px] font-semibold text-[#475569] hover:bg-[#F5F8FC] sm:inline-flex">
-              <Building2 className="h-4 w-4" /> Enterprise Home
-            </Link>
+            <EnterpriseHomeButton />
             <NotificationCenter scope="notifications" />
             <EnterpriseUserProfile
               context="enterprise"

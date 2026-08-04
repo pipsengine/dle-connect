@@ -100,8 +100,25 @@ const loadReviewRecordsForPeriod = async (period: string) => {
   return calculation.records;
 };
 
-const filterExportRecords = (records: any[], status: string | null) =>
-  status && status !== 'All' ? records.filter((record) => record.payrollStatus === status) : records;
+const employeeWorkedInPeriod = (record: {
+  isDailyRate?: boolean;
+  timesheetDaysWorked?: number | null;
+  timesheetBookedHours?: number | null;
+}) => {
+  // Salaried / stipend staff are always included. Daily-rate export is limited to
+  // people who actually worked in the payroll period (days or booked hours > 0).
+  if (!record?.isDailyRate) return true;
+  const daysWorked = Number(record.timesheetDaysWorked ?? 0);
+  const bookedHours = Number(record.timesheetBookedHours ?? 0);
+  return daysWorked > 0 || bookedHours > 0;
+};
+
+const filterExportRecords = (records: any[], status: string | null) => {
+  const worked = records.filter(employeeWorkedInPeriod);
+  return status && status !== 'All'
+    ? worked.filter((record) => record.payrollStatus === status)
+    : worked;
+};
 
 const csvFromReport = (reportData: { columns: string[]; rows: unknown[][] }) => {
   const escape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;

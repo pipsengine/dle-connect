@@ -1,6 +1,7 @@
 'use client';
 
 import { Search, Menu } from 'lucide-react';
+import { EnterpriseHomeButton } from '@/components/layout/enterprise-home-button';
 import { NotificationCenter } from '@/components/layout/notification-center';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
 
@@ -34,6 +35,8 @@ export function Header({
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-3 lg:gap-4">
+        <EnterpriseHomeButton />
+
         <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-dle-green/10 text-dle-green rounded-full text-xs font-medium">
           <div className="w-2 h-2 rounded-full bg-dle-green animate-pulse"></div>
           Systems Optimal

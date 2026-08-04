@@ -15,6 +15,7 @@ import {
   RefreshCcw,
   X,
 } from 'lucide-react';
+import { EnterpriseHomeButton } from '@/components/layout/enterprise-home-button';
 import { NotificationCenter } from '@/components/layout/notification-center';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
 import { canAccessFinanceSection } from '@/lib/access/finance-access';
@@ -360,6 +361,7 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
                 <p className="text-[10px] text-slate-500">Last Sync: —</p>
               </div>
             </div>
+            <EnterpriseHomeButton />
             <button
               type="button"
               onClick={() => router.refresh()}

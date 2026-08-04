@@ -8,7 +8,6 @@ import {
   Activity,
   Banknote,
   BriefcaseBusiness,
-  Building2,
   CalendarCheck,
   ChevronDown,
   ClipboardList,
@@ -30,6 +29,7 @@ import {
   WalletCards,
   GitBranch,
 } from 'lucide-react';
+import { EnterpriseHomeButton } from '@/components/layout/enterprise-home-button';
 import { NotificationCenter } from '@/components/layout/notification-center';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
 import { essTokens } from './ess-portal-ui';
@@ -209,12 +209,7 @@ export function EssPortalShell({
           </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            <Link
-              href="/"
-              className="hidden h-10 items-center gap-2 rounded-[14px] border border-[#E5E7EB] bg-white px-3 text-[13px] font-semibold text-[#475569] hover:bg-[#F5F8FC] sm:inline-flex"
-            >
-              <Building2 className="h-4 w-4" /> Enterprise Home
-            </Link>
+            <EnterpriseHomeButton />
             <select
               value={locale}
               onChange={(e) => onLocaleChange(e.target.value)}
