@@ -292,6 +292,16 @@ IF COL_LENGTH(N'finance.ApprovalMatrix', N'CreatedAt') IS NULL
   ALTER TABLE [finance].[ApprovalMatrix] ADD [CreatedAt] DATETIME2(0) NULL;
 IF COL_LENGTH(N'finance.ApprovalMatrix', N'PathType') IS NULL
   ALTER TABLE [finance].[ApprovalMatrix] ADD [PathType] NVARCHAR(40) NULL;
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'IsActive') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [IsActive] BIT NOT NULL CONSTRAINT [DF_FinanceMatrix_Active2] DEFAULT 1;
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'MinAmount') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [MinAmount] DECIMAL(19,4) NOT NULL CONSTRAINT [DF_FinanceMatrix_Min2] DEFAULT 0;
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'MaxAmount') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [MaxAmount] DECIMAL(19,4) NULL;
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'PaymentType') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [PaymentType] NVARCHAR(80) NULL;
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'UpdatedAt') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [UpdatedAt] DATETIME2(0) NULL;
 
 IF OBJECT_ID(N'[finance].[FxRates]', N'U') IS NULL
 CREATE TABLE [finance].[FxRates] (
@@ -326,40 +336,45 @@ WHEN MATCHED THEN UPDATE SET
 WHEN NOT MATCHED THEN INSERT ([RateId], [FromCurrency], [ToCurrency], [RateDate], [Rate], [Source])
 VALUES (source.[RateId], source.[FromCurrency], source.[ToCurrency], source.[RateDate], source.[Rate], source.[Source]);
 
--- Employee payment approval limits (same for Cash Advance + Supplier Invoice). Path drives the chain.
+-- Dynamic SQL so PathType ALTER above is visible (same-batch MERGE would fail compile on older tables).
+IF OBJECT_ID(N'[finance].[ApprovalMatrix]', N'U') IS NOT NULL
+ AND COL_LENGTH(N'finance.ApprovalMatrix', N'PathType') IS NOT NULL
+BEGIN
+  EXEC(N'
 MERGE [finance].[ApprovalMatrix] AS target
 USING (VALUES
-  (N'LIM-NONPROJ-200K', N'NONPROJ_LE_200K', N'Employee Payment', N'Non-project', CAST(0 AS DECIMAL(19,4)), CAST(200000 AS DECIMAL(19,4)), 2,
-   N'Reporting Manager → Finance Manager',
-   N'["Reporting Manager","Finance Manager"]'),
-  (N'LIM-NONPROJ-1M', N'NONPROJ_LE_1M', N'Employee Payment', N'Non-project', CAST(200000.01 AS DECIMAL(19,4)), CAST(1000000 AS DECIMAL(19,4)), 3,
-   N'Reporting Manager → Finance Manager → CFO',
-   N'["Reporting Manager","Finance Manager","CFO"]'),
-  (N'LIM-NONPROJ-OPEN', N'NONPROJ_GT_1M', N'Employee Payment', N'Non-project', CAST(1000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 4,
-   N'Reporting Manager → Finance Manager → CFO → MD/CEO',
-   N'["Reporting Manager","Finance Manager","CFO","MD/CEO"]'),
-  (N'LIM-PROJ-200K', N'PROJ_LE_200K', N'Employee Payment', N'Project', CAST(0 AS DECIMAL(19,4)), CAST(200000 AS DECIMAL(19,4)), 3,
-   N'Project Manager → Cost Controller → Finance Manager',
-   N'["Project Manager","Cost Controller","Finance Manager"]'),
-  (N'LIM-PROJ-5M', N'PROJ_LE_5M', N'Employee Payment', N'Project', CAST(200000.01 AS DECIMAL(19,4)), CAST(5000000 AS DECIMAL(19,4)), 5,
-   N'Project Manager → Cost Controller → Finance Manager → GM → CFO',
-   N'["Project Manager","Cost Controller","Finance Manager","GM","CFO"]'),
-  (N'LIM-PROJ-OPEN', N'PROJ_GT_5M', N'Employee Payment', N'Project', CAST(5000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 6,
-   N'Project Manager → Cost Controller → Finance Manager → GM → CFO → MD/CEO',
-   N'["Project Manager","Cost Controller","Finance Manager","GM","CFO","MD/CEO"]')
+  (N''LIM-NONPROJ-200K'', N''NONPROJ_LE_200K'', N''Employee Payment'', N''Non-project'', CAST(0 AS DECIMAL(19,4)), CAST(200000 AS DECIMAL(19,4)), 2,
+   N''Reporting Manager → Finance Manager'',
+   N''["Reporting Manager","Finance Manager"]''),
+  (N''LIM-NONPROJ-1M'', N''NONPROJ_LE_1M'', N''Employee Payment'', N''Non-project'', CAST(200000.01 AS DECIMAL(19,4)), CAST(1000000 AS DECIMAL(19,4)), 3,
+   N''Reporting Manager → Finance Manager → CFO'',
+   N''["Reporting Manager","Finance Manager","CFO"]''),
+  (N''LIM-NONPROJ-OPEN'', N''NONPROJ_GT_1M'', N''Employee Payment'', N''Non-project'', CAST(1000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 4,
+   N''Reporting Manager → Finance Manager → CFO → MD/CEO'',
+   N''["Reporting Manager","Finance Manager","CFO","MD/CEO"]''),
+  (N''LIM-PROJ-200K'', N''PROJ_LE_200K'', N''Employee Payment'', N''Project'', CAST(0 AS DECIMAL(19,4)), CAST(200000 AS DECIMAL(19,4)), 3,
+   N''Project Manager → Cost Controller → Finance Manager'',
+   N''["Project Manager","Cost Controller","Finance Manager"]''),
+  (N''LIM-PROJ-5M'', N''PROJ_LE_5M'', N''Employee Payment'', N''Project'', CAST(200000.01 AS DECIMAL(19,4)), CAST(5000000 AS DECIMAL(19,4)), 5,
+   N''Project Manager → Cost Controller → Finance Manager → GM → CFO'',
+   N''["Project Manager","Cost Controller","Finance Manager","GM","CFO"]''),
+  (N''LIM-PROJ-OPEN'', N''PROJ_GT_5M'', N''Employee Payment'', N''Project'', CAST(5000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 6,
+   N''Project Manager → Cost Controller → Finance Manager → GM → CFO → MD/CEO'',
+   N''["Project Manager","Cost Controller","Finance Manager","GM","CFO","MD/CEO"]'')
 ) AS source (
   [MatrixId], [RuleName], [PaymentType], [PathType], [MinAmount], [MaxAmount], [ApprovalLevel], [ApproverRoles], [StagesJson]
 )
 ON target.[MatrixId] = source.[MatrixId]
--- Insert-only: do not overwrite finance-tuned bands on every schema ensure.
 WHEN NOT MATCHED THEN INSERT (
   [MatrixId], [RuleName], [PaymentType], [PathType], [CompanyCode], [EntityName], [MinAmount], [MaxAmount],
   [ApprovalLevel], [ApproverRoles], [StagesJson], [CurrencyCode], [DualControl], [Status], [IsActive], [CreatedBy], [UpdatedBy]
 ) VALUES (
-  source.[MatrixId], source.[RuleName], source.[PaymentType], source.[PathType], N'DLE', N'Dorman Long Nigeria Ltd',
+  source.[MatrixId], source.[RuleName], source.[PaymentType], source.[PathType], N''DLE'', N''Dorman Long Nigeria Ltd'',
   source.[MinAmount], source.[MaxAmount], source.[ApprovalLevel], source.[ApproverRoles], source.[StagesJson],
-  N'NGN', 0, N'Active', 1, N'System Seed', N'System Seed'
+  N''NGN'', 0, N''Active'', 1, N''System Seed'', N''System Seed''
 );
+');
+END
 
 IF OBJECT_ID(N'[finance].[ApprovalMatrixAudit]', N'U') IS NULL
 CREATE TABLE [finance].[ApprovalMatrixAudit] (

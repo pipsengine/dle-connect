@@ -59,8 +59,14 @@ export const ensureFinanceDb = async () => {
   const pool = await getDleEnterpriseDbPool();
   if (!pool) return null;
   if (!schemaReady) {
-    await pool.request().query(ensureFinanceSchemaSql);
-    schemaReady = true;
+    try {
+      await pool.request().query(ensureFinanceSchemaSql);
+      schemaReady = true;
+    } catch (error) {
+      // Do not cache failure — next call retries after deploy/schema fixes.
+      console.error('[finance] schema ensure failed', error);
+      throw error;
+    }
   }
   return pool;
 };

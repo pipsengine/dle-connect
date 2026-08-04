@@ -409,10 +409,16 @@ export const listApprovalMatrixRules = async (): Promise<ApprovalMatrixRule[]> =
   const pool = await ensureFinanceDb().catch(() => null);
   if (!pool) return [];
   try {
+    // Ensure PathType exists in its own batch before any ORDER BY / MERGE that references it.
+    await pool.request().query(`
+IF OBJECT_ID(N'[finance].[ApprovalMatrix]', N'U') IS NOT NULL
+ AND COL_LENGTH(N'finance.ApprovalMatrix', N'PathType') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [PathType] NVARCHAR(40) NULL;
+`);
     const result = await pool.request().query(`
 SELECT *
 FROM [finance].[ApprovalMatrix]
-ORDER BY [PathType], [ApprovalLevel], [MinAmount]
+ORDER BY COALESCE([PathType], N'Non-project'), [ApprovalLevel], [MinAmount]
 `);
     return (result.recordset || []).map((row: Record<string, unknown>) => mapRule(row));
   } catch {
@@ -426,6 +432,43 @@ export const seedDefaultApprovalLimits = async (actor = 'System Seed') => {
   seedInFlight = (async () => {
     const pool = await ensureFinanceDb();
     if (!pool) throw new Error('Finance database is unavailable.');
+
+    // Separate batch from MERGE so SQL Server can see the new column.
+    await pool.request().query(`
+IF OBJECT_ID(N'[finance].[ApprovalMatrix]', N'U') IS NULL
+BEGIN
+  CREATE TABLE [finance].[ApprovalMatrix] (
+    [MatrixId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceApprovalMatrix_Seed] PRIMARY KEY,
+    [RuleName] NVARCHAR(80) NOT NULL,
+    [PaymentType] NVARCHAR(80) NOT NULL,
+    [PathType] NVARCHAR(40) NULL,
+    [CompanyCode] NVARCHAR(40) NULL,
+    [EntityName] NVARCHAR(200) NULL,
+    [MinAmount] DECIMAL(19,4) NOT NULL CONSTRAINT [DF_FinanceMatrix_Min_Seed] DEFAULT 0,
+    [MaxAmount] DECIMAL(19,4) NULL,
+    [ApprovalLevel] INT NOT NULL CONSTRAINT [DF_FinanceMatrix_Level_Seed] DEFAULT 1,
+    [ApproverRoles] NVARCHAR(250) NOT NULL,
+    [StagesJson] NVARCHAR(MAX) NULL,
+    [CurrencyCode] NVARCHAR(10) NOT NULL CONSTRAINT [DF_FinanceMatrix_Currency_Seed] DEFAULT N'NGN',
+    [DualControl] BIT NOT NULL CONSTRAINT [DF_FinanceMatrix_Dual_Seed] DEFAULT 0,
+    [Status] NVARCHAR(40) NOT NULL CONSTRAINT [DF_FinanceMatrix_Status_Seed] DEFAULT N'Active',
+    [IsActive] BIT NOT NULL CONSTRAINT [DF_FinanceMatrix_Active_Seed] DEFAULT 1,
+    [CreatedBy] NVARCHAR(120) NULL,
+    [UpdatedBy] NVARCHAR(120) NULL,
+    [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceMatrix_CreatedAt_Seed] DEFAULT SYSUTCDATETIME(),
+    [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceMatrix_UpdatedAt_Seed] DEFAULT SYSUTCDATETIME()
+  );
+END
+ELSE
+BEGIN
+  IF COL_LENGTH(N'finance.ApprovalMatrix', N'PathType') IS NULL
+    ALTER TABLE [finance].[ApprovalMatrix] ADD [PathType] NVARCHAR(40) NULL;
+  IF COL_LENGTH(N'finance.ApprovalMatrix', N'StagesJson') IS NULL
+    ALTER TABLE [finance].[ApprovalMatrix] ADD [StagesJson] NVARCHAR(MAX) NULL;
+  IF COL_LENGTH(N'finance.ApprovalMatrix', N'RuleName') IS NULL
+    ALTER TABLE [finance].[ApprovalMatrix] ADD [RuleName] NVARCHAR(80) NULL;
+END
+`);
 
     // Single MERGE keeps seeding idempotent and concurrency-safe under PK MatrixId.
     await pool.request()
