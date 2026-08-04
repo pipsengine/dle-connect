@@ -23,6 +23,8 @@ import {
   buildPasswordResetEmail,
   buildProfileUpdateApprovalRequestEmail,
   buildProfileUpdateDecisionEmail,
+  buildPaymentApprovalRequestEmail,
+  buildPaymentDecisionEmail,
   buildPayrollApprovalRequestEmail,
   buildPayrollFullyApprovedEmail,
   buildPayrollRejectedEmail,
@@ -638,6 +640,86 @@ export const sendPasswordResetEmail = async (input: {
     changePasswordLink,
     actorName: compact(input.actorName) || undefined,
     baseUrl: origin,
+  });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
+
+export const sendPaymentApprovalRequestEmail = async (input: {
+  recipientName: string;
+  recipientEmail: string;
+  request: {
+    requestId: string;
+    requestNumber: string;
+    paymentType: string;
+    title: string;
+    requesterName: string;
+    beneficiaryName: string;
+    netAmount: number;
+    currencyCode: string;
+    department?: string;
+    projectCode?: string;
+    paymentSiteName?: string;
+    currentStage?: string;
+    status?: string;
+  };
+  stage: string;
+  approveUrl: string;
+  rejectUrl: string;
+  detailUrl: string;
+  baseUrl?: string | null;
+}): Promise<MailSendResult> => {
+  const to = compact(input.recipientEmail);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const email = buildPaymentApprovalRequestEmail({
+    recipientName: input.recipientName,
+    request: input.request,
+    stage: input.stage,
+    approveUrl: input.approveUrl,
+    rejectUrl: input.rejectUrl,
+    detailUrl: input.detailUrl,
+    baseUrl: input.baseUrl,
+  });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
+
+export const sendPaymentDecisionEmail = async (input: {
+  recipientName: string;
+  recipientEmail: string;
+  request: {
+    requestId: string;
+    requestNumber: string;
+    paymentType: string;
+    title: string;
+    requesterName: string;
+    beneficiaryName: string;
+    netAmount: number;
+    currencyCode: string;
+    department?: string;
+    projectCode?: string;
+    paymentSiteName?: string;
+    currentStage?: string;
+    status?: string;
+  };
+  event: 'approved' | 'rejected' | 'returned' | 'stage-advanced';
+  actorName?: string;
+  stage?: string;
+  nextStage?: string;
+  reason?: string;
+  detailUrl: string;
+  baseUrl?: string | null;
+}): Promise<MailSendResult> => {
+  const to = compact(input.recipientEmail);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const email = buildPaymentDecisionEmail({
+    recipientName: input.recipientName,
+    request: input.request,
+    event: input.event,
+    actorName: input.actorName,
+    stage: input.stage,
+    nextStage: input.nextStage,
+    reason: input.reason,
+    detailUrl: input.detailUrl,
+    baseUrl: input.baseUrl,
   });
   return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
 };

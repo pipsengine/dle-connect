@@ -1,9 +1,70 @@
 import sql from 'mssql';
 import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
-import { resolveApprovalStageFromMatrix } from '@/lib/finance-intelligence/approval-matrix-service';
+import { resolveApprovalChain } from '@/lib/finance-intelligence/approval-matrix-service';
+import {
+  notifyPaymentApprovalRequired,
+  notifyPaymentDecision,
+  resolvePaymentStageApprover,
+} from '@/lib/finance-intelligence/payment-approval-notify';
 
+export const ALLOWED_PAYMENT_CURRENCIES = ['NGN', 'USD', 'EUR', 'GBP'] as const;
 export const PAYMENT_TYPES = ['Cash Advance Payment', 'Supplier Invoice Payment'] as const;
 export type PaymentRequestType = (typeof PAYMENT_TYPES)[number];
+
+const OUTSTANDING_CASH_ADVANCE_STATUSES = [
+  'Submitted',
+  'Pending Approval',
+  'Approved',
+  'Ready for Treasury',
+  'Paid',
+  'Awaiting Retirement',
+  'Retirement Submitted',
+  'Treasury Verification',
+  'Finance Verification',
+] as const;
+
+export type CashAdvanceEligibility = {
+  employeeCode: string;
+  outstandingCount: number;
+  canRaise: boolean;
+  blocked: boolean;
+  message: string;
+  activeWaiver: {
+    waiverId: string;
+    reason: string;
+    grantedBy: string;
+    createdAt: string;
+  } | null;
+  outstanding: Array<{
+    requestId: string;
+    requestNumber: string;
+    title: string;
+    netAmount: number;
+    currencyCode: string;
+    status: string;
+    currentStage: string;
+    submittedAt: string | null;
+    paymentSiteCode: string;
+  }>;
+};
+
+export type CashAdvanceControlsWorkspace = {
+  generatedAt: string;
+  outstanding: PaymentRequestRow[];
+  activeWaivers: Array<{
+    waiverId: string;
+    employeeCode: string;
+    reason: string;
+    grantedBy: string;
+    createdAt: string;
+  }>;
+  summary: {
+    outstandingCount: number;
+    awaitingRetirement: number;
+    activeWaivers: number;
+    blockedEmployees: number;
+  };
+};
 
 export const CASH_ADVANCE_STATUSES = [
   'Draft',
@@ -173,21 +234,40 @@ const compact = (value: unknown) => String(value ?? '').trim();
 const nowIso = () => new Date().toISOString();
 const moneyRound = (value: number) => Math.round(value * 10000) / 10000;
 
-const resolveInitialStage = async (amount: number, paymentType: PaymentRequestType) => {
-  const matched = await resolveApprovalStageFromMatrix(paymentType, amount);
+const resolveInitialStage = async (
+  amount: number,
+  paymentType: PaymentRequestType,
+  context?: { currencyCode?: string; department?: string; projectCode?: string },
+) => {
+  const matched = await resolveApprovalChain({
+    amount,
+    currencyCode: context?.currencyCode || 'NGN',
+    department: context?.department,
+    projectCode: context?.projectCode,
+  });
   if (matched) {
     return {
-      stage: matched.stage,
+      stage: matched.currentStage,
       status: 'Pending Approval' as const,
       matrixRuleName: matched.ruleName,
       approvalLevel: matched.approvalLevel,
+      stages: matched.stages,
+      pathType: matched.pathType,
+      amountNgn: matched.amountNgn,
+      fxRate: matched.fxRate,
     };
   }
+  // Safe fallback if matrix not seeded yet
+  const fallbackStage = paymentType === 'Supplier Invoice Payment' ? 'Finance Manager' : 'Reporting Manager';
   return {
-    stage: 'Line Manager',
+    stage: fallbackStage,
     status: 'Pending Approval' as const,
     matrixRuleName: null as string | null,
     approvalLevel: 1,
+    stages: [fallbackStage],
+    pathType: context?.projectCode || /project/i.test(context?.department || '') ? 'Project' : 'Non-project',
+    amountNgn: amount,
+    fxRate: 1,
   };
 };
 
@@ -333,28 +413,133 @@ ORDER BY COALESCE([SubmittedAt], [CreatedAt]) DESC
   }
 };
 
-const countOutstandingCashAdvances = async (employeeCode: string) => {
+export const getPaymentRequestById = async (requestId: string): Promise<PaymentRequestRow | null> => {
+  const id = compact(requestId);
+  if (!id) return null;
   const pool = await ensureFinanceDb().catch(() => null);
-  if (!pool || !employeeCode) return 0;
+  if (!pool) return null;
   try {
     const result = await pool.request()
-      .input('employee', sql.NVarChar(60), employeeCode)
+      .input('RequestId', sql.NVarChar(60), id)
       .query(`
-SELECT COUNT(1) AS count
+SELECT TOP 1 *
+FROM [finance].[PaymentRequests]
+WHERE [RequestId] = @RequestId OR [RequestNumber] = @RequestId
+`);
+    const row = result.recordset?.[0] as Record<string, unknown> | undefined;
+    return row ? mapRow(row) : null;
+  } catch {
+    return null;
+  }
+};
+
+export type PaymentRequestActionRow = {
+  actionId: string;
+  requestId: string;
+  actionType: string;
+  stage: string;
+  actorCode: string;
+  actorName: string;
+  comment: string;
+  reason: string;
+  createdAt: string;
+};
+
+export const listPaymentRequestActions = async (requestId: string): Promise<PaymentRequestActionRow[]> => {
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) return [];
+  try {
+    const result = await pool.request()
+      .input('RequestId', sql.NVarChar(60), requestId)
+      .query(`
+SELECT TOP 100 [ActionId], [RequestId], [ActionType], [Stage], [ActorCode], [ActorName], [Comment], [Reason], [CreatedAt]
+FROM [finance].[PaymentRequestActions]
+WHERE [RequestId] = @RequestId
+ORDER BY [CreatedAt] DESC
+`);
+    return (result.recordset || []).map((row: Record<string, unknown>) => ({
+      actionId: compact(row.ActionId),
+      requestId: compact(row.RequestId),
+      actionType: compact(row.ActionType),
+      stage: compact(row.Stage),
+      actorCode: compact(row.ActorCode),
+      actorName: compact(row.ActorName),
+      comment: compact(row.Comment),
+      reason: compact(row.Reason),
+      createdAt: row.CreatedAt ? new Date(String(row.CreatedAt)).toISOString() : nowIso(),
+    }));
+  } catch {
+    return [];
+  }
+};
+
+const assignCurrentApprover = async (input: {
+  requestId: string;
+  stage: string;
+  requesterCode?: string;
+  projectCode?: string;
+  supervisorName?: string;
+}) => {
+  const approver = await resolvePaymentStageApprover({
+    stage: input.stage,
+    requesterCode: input.requesterCode,
+    projectCode: input.projectCode,
+    supervisorName: input.supervisorName,
+  });
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (pool) {
+    try {
+      await pool.request()
+        .input('RequestId', sql.NVarChar(60), input.requestId)
+        .input('ApproverCode', sql.NVarChar(60), approver.code || null)
+        .input('ApproverName', sql.NVarChar(200), approver.name || input.stage)
+        .query(`
+UPDATE [finance].[PaymentRequests]
+SET [CurrentApproverCode] = @ApproverCode,
+    [CurrentApproverName] = @ApproverName,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+    } catch {
+      // best-effort
+    }
+  }
+  return approver;
+};
+
+const stagesFromPayload = (payload: Record<string, unknown>) => {
+  const raw = payload.stages;
+  if (Array.isArray(raw)) return raw.map((item) => compact(item)).filter(Boolean);
+  return [] as string[];
+};
+
+const countOutstandingCashAdvances = async (employeeCode: string) => {
+  const outstanding = await listOutstandingCashAdvances(employeeCode);
+  return outstanding.length;
+};
+
+export const listOutstandingCashAdvances = async (employeeCode?: string): Promise<PaymentRequestRow[]> => {
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) return [];
+  try {
+    const request = pool.request();
+    let employeeFilter = '';
+    if (compact(employeeCode)) {
+      request.input('employee', sql.NVarChar(60), compact(employeeCode));
+      employeeFilter = ' AND ([BeneficiaryCode] = @employee OR [RequesterCode] = @employee)';
+    }
+    const statusList = OUTSTANDING_CASH_ADVANCE_STATUSES.map((status) => `N'${status.replace(/'/g, "''")}'`).join(', ');
+    const result = await request.query(`
+SELECT *
 FROM [finance].[PaymentRequests]
 WHERE [PaymentType] = N'Cash Advance Payment'
-  AND (
-    [BeneficiaryCode] = @employee
-    OR [RequesterCode] = @employee
-  )
-  AND [Status] IN (
-    N'Submitted', N'Pending Approval', N'Approved', N'Ready for Treasury', N'Paid',
-    N'Awaiting Retirement', N'Retirement Submitted', N'Treasury Verification', N'Finance Verification'
-  )
+  AND [Status] IN (${statusList})
+  ${employeeFilter}
+ORDER BY COALESCE([SubmittedAt], [CreatedAt]) DESC
 `);
-    return Number(result.recordset?.[0]?.count || 0);
+    return (result.recordset || []).map((row: Record<string, unknown>) => mapRow(row));
   } catch {
-    return 0;
+    return [];
   }
 };
 
@@ -384,6 +569,28 @@ ORDER BY [CreatedAt] DESC
   }
 };
 
+const listActiveCashAdvanceWaivers = async () => {
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) return [];
+  try {
+    const result = await pool.request().query(`
+SELECT [WaiverId], [EmployeeCode], [Reason], [GrantedBy], [CreatedAt]
+FROM [finance].[CashAdvanceWaivers]
+WHERE [Status] = N'Active'
+ORDER BY [CreatedAt] DESC
+`);
+    return (result.recordset || []).map((row: Record<string, unknown>) => ({
+      waiverId: compact(row.WaiverId),
+      employeeCode: compact(row.EmployeeCode),
+      reason: compact(row.Reason),
+      grantedBy: compact(row.GrantedBy),
+      createdAt: row.CreatedAt ? new Date(String(row.CreatedAt)).toISOString() : nowIso(),
+    }));
+  } catch {
+    return [];
+  }
+};
+
 const consumeCashAdvanceWaiver = async (waiverId: string, requestId: string) => {
   const pool = await ensureFinanceDb().catch(() => null);
   if (!pool || !waiverId) return;
@@ -400,17 +607,89 @@ WHERE [WaiverId] = @WaiverId
 `);
 };
 
+export const getCashAdvanceEligibility = async (employeeCode: string): Promise<CashAdvanceEligibility> => {
+  const code = compact(employeeCode);
+  const outstanding = await listOutstandingCashAdvances(code);
+  const activeWaiver = code ? await findActiveCashAdvanceWaiver(code) : null;
+  const blocked = outstanding.length > 0 && !activeWaiver;
+  const canRaise = !blocked && Boolean(code);
+  let message = 'Eligible to raise a cash advance.';
+  if (!code) message = 'Select an employee before continuing.';
+  else if (blocked) {
+    message = `Blocked: ${outstanding.length} outstanding cash advance${outstanding.length === 1 ? '' : 's'} must be retired first, or CFO must cancel/waive.`;
+  } else if (outstanding.length > 0 && activeWaiver) {
+    message = `Outstanding advance exists, but CFO waiver ${activeWaiver.waiverId} is active.`;
+  }
+  return {
+    employeeCode: code,
+    outstandingCount: outstanding.length,
+    canRaise,
+    blocked,
+    message,
+    activeWaiver,
+    outstanding: outstanding.map((row) => ({
+      requestId: row.requestId,
+      requestNumber: row.requestNumber,
+      title: row.title,
+      netAmount: row.netAmount,
+      currencyCode: row.currencyCode,
+      status: row.status,
+      currentStage: row.currentStage,
+      submittedAt: row.submittedAt,
+      paymentSiteCode: row.paymentSiteCode || row.companyCode,
+    })),
+  };
+};
+
+export const buildCashAdvanceControlsWorkspace = async (): Promise<CashAdvanceControlsWorkspace> => {
+  const [outstanding, activeWaivers] = await Promise.all([
+    listOutstandingCashAdvances(),
+    listActiveCashAdvanceWaivers(),
+  ]);
+  const awaitingRetirement = outstanding.filter((row) =>
+    /awaiting retirement|retirement submitted|treasury verification|finance verification/i.test(row.status));
+  const blockedEmployees = new Set(
+    outstanding
+      .map((row) => compact(row.beneficiaryCode || row.requesterCode))
+      .filter(Boolean)
+      .filter((code) => !activeWaivers.some((waiver) => waiver.employeeCode === code)),
+  );
+  return {
+    generatedAt: nowIso(),
+    outstanding,
+    activeWaivers,
+    summary: {
+      outstandingCount: outstanding.length,
+      awaitingRetirement: awaitingRetirement.length,
+      activeWaivers: activeWaivers.length,
+      blockedEmployees: blockedEmployees.size,
+    },
+  };
+};
+
 export const grantCashAdvanceWaiver = async (input: {
   employeeCode: string;
   reason: string;
   grantedBy: string;
+  grantedByCode?: string;
 }) => {
   const employeeCode = compact(input.employeeCode);
   const reason = compact(input.reason);
   if (!employeeCode) throw new Error('Employee code is required.');
-  if (!reason) throw new Error('Waiver reason is required.');
+  if (reason.length < 10) throw new Error('Provide a clear CFO reason (at least 10 characters).');
   const pool = await ensureFinanceDb();
   if (!pool) throw new Error('Finance database is unavailable.');
+
+  const existing = await findActiveCashAdvanceWaiver(employeeCode);
+  if (existing) {
+    return { waiverId: existing.waiverId, alreadyActive: true as const };
+  }
+
+  const outstanding = await listOutstandingCashAdvances(employeeCode);
+  if (!outstanding.length) {
+    throw new Error('This employee has no outstanding cash advance to waive.');
+  }
+
   const waiverId = `CAW-${Date.now()}`;
   await pool.request()
     .input('WaiverId', sql.NVarChar(60), waiverId)
@@ -421,7 +700,91 @@ export const grantCashAdvanceWaiver = async (input: {
 INSERT INTO [finance].[CashAdvanceWaivers] ([WaiverId], [EmployeeCode], [GrantedBy], [Reason], [Status])
 VALUES (@WaiverId, @EmployeeCode, @GrantedBy, @Reason, N'Active')
 `);
-  return { waiverId };
+
+  await logAction({
+    requestId: outstanding[0].requestId,
+    actionType: 'CFO Waiver Granted',
+    stage: outstanding[0].currentStage,
+    actorName: input.grantedBy,
+    actorCode: input.grantedByCode,
+    comment: `Waiver ${waiverId} granted for ${employeeCode}.`,
+    reason,
+  });
+
+  return { waiverId, alreadyActive: false as const, workspace: await buildCashAdvanceControlsWorkspace() };
+};
+
+export const cancelOutstandingCashAdvance = async (input: {
+  requestId: string;
+  reason: string;
+  actor: string;
+  actorCode?: string;
+}) => {
+  const requestId = compact(input.requestId);
+  const reason = compact(input.reason);
+  if (!requestId) throw new Error('Request id is required.');
+  if (reason.length < 10) throw new Error('Provide a clear CFO cancellation reason (at least 10 characters).');
+
+  const pool = await ensureFinanceDb();
+  if (!pool) throw new Error('Finance database is unavailable.');
+
+  const existing = (await listRows()).find((row) => row.requestId === requestId);
+  if (!existing) throw new Error('Payment request not found.');
+  if (existing.paymentType !== 'Cash Advance Payment') {
+    throw new Error('Only cash advance requests can be cancelled for retirement control.');
+  }
+  const outstandingMatch = OUTSTANDING_CASH_ADVANCE_STATUSES.some(
+    (status) => status.toLowerCase() === existing.status.toLowerCase(),
+  );
+  if (!outstandingMatch) {
+    throw new Error(`Request ${existing.requestNumber} is not in an outstanding state.`);
+  }
+
+  await pool.request()
+    .input('RequestId', sql.NVarChar(60), requestId)
+    .input('Status', sql.NVarChar(40), 'Cancelled')
+    .input('CurrentStage', sql.NVarChar(80), 'CFO Cancelled – Retirement Not Required')
+    .query(`
+UPDATE [finance].[PaymentRequests]
+SET [Status] = @Status,
+    [CurrentStage] = @CurrentStage,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+
+  await logAction({
+    requestId,
+    actionType: 'CFO Cancelled Outstanding',
+    stage: 'CFO Cancelled – Retirement Not Required',
+    actorName: input.actor,
+    actorCode: input.actorCode,
+    comment: 'Outstanding cash advance cancelled by CFO. Retirement requirement removed.',
+    reason,
+  });
+
+  const employeeCode = compact(existing.beneficiaryCode || existing.requesterCode);
+  if (employeeCode) {
+    const waiver = await findActiveCashAdvanceWaiver(employeeCode);
+    if (waiver) {
+      await pool.request()
+        .input('WaiverId', sql.NVarChar(60), waiver.waiverId)
+        .input('RequestId', sql.NVarChar(60), requestId)
+        .query(`
+UPDATE [finance].[CashAdvanceWaivers]
+SET [Status] = N'Revoked',
+    [ConsumedAt] = SYSUTCDATETIME(),
+    [ConsumedByRequestId] = @RequestId
+WHERE [WaiverId] = @WaiverId
+  AND [Status] = N'Active'
+`);
+    }
+  }
+
+  return {
+    request: (await listRows()).find((row) => row.requestId === requestId) || null,
+    workspace: await buildCashAdvanceControlsWorkspace(),
+    paymentWorkspace: await buildPaymentRequestsWorkspace({ paymentType: 'Cash Advance Payment' }),
+  };
 };
 
 const nextRequestNumber = async () => {
@@ -563,7 +926,16 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
     if (!paymentSiteCode) throw new Error('Payment site is required.');
     if (!expenseCode) throw new Error('Request title (expense code) is required.');
     if (!department) throw new Error('Department is required.');
-    if (!compact(input.businessJustification)) throw new Error('Business justification is required.');
+    if (!location) throw new Error('Location is required.');
+    if (!compact(input.businessJustification) || compact(input.businessJustification).length < 10) {
+      throw new Error('Business justification must be at least 10 characters.');
+    }
+    const currency = compact(input.currencyCode || 'NGN').toUpperCase();
+    if (!ALLOWED_PAYMENT_CURRENCIES.includes(currency as typeof ALLOWED_PAYMENT_CURRENCIES[number])) {
+      throw new Error('Currency must be NGN, USD, EUR or GBP.');
+    }
+    input.currencyCode = currency;
+    if (!(amount >= 1)) throw new Error('Amount must be at least 1.00.');
 
     const outstanding = await countOutstandingCashAdvances(beneficiaryCode);
     if (outstanding > 0) {
@@ -575,6 +947,12 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
       input.overrideOutstandingAdvance = true;
       input.overrideReason = `CFO waiver ${waiver.waiverId}: ${waiver.reason}`;
     }
+  } else {
+    const currency = compact(input.currencyCode || 'NGN').toUpperCase();
+    if (!ALLOWED_PAYMENT_CURRENCIES.includes(currency as typeof ALLOWED_PAYMENT_CURRENCIES[number])) {
+      throw new Error('Currency must be NGN, USD, EUR or GBP.');
+    }
+    input.currencyCode = currency;
   }
 
   if (input.paymentType === 'Supplier Invoice Payment') {
@@ -594,8 +972,21 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
   const netAmount = moneyRound(grossAmount + vatAmount - whtAmount - retentionAmount);
   const submit = Boolean(input.submit);
   const stageInfo = submit
-    ? await resolveInitialStage(netAmount, input.paymentType)
-    : { stage: 'Draft', status: 'Draft' as const, matrixRuleName: null as string | null, approvalLevel: 0 };
+    ? await resolveInitialStage(netAmount, input.paymentType, {
+      currencyCode: compact(input.currencyCode) || 'NGN',
+      department,
+      projectCode: compact(input.projectCode),
+    })
+    : {
+      stage: 'Draft',
+      status: 'Draft' as const,
+      matrixRuleName: null as string | null,
+      approvalLevel: 0,
+      stages: [] as string[],
+      pathType: 'Non-project' as const,
+      amountNgn: netAmount,
+      fxRate: 1,
+    };
 
   await pool.request()
     .input('RequestId', sql.NVarChar(60), requestId)
@@ -645,6 +1036,10 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
     .input('PayloadJson', sql.NVarChar(sql.MAX), JSON.stringify({
       matrixRuleName: stageInfo.matrixRuleName,
       approvalLevel: stageInfo.approvalLevel,
+      stages: 'stages' in stageInfo ? stageInfo.stages : [],
+      pathType: 'pathType' in stageInfo ? stageInfo.pathType : null,
+      amountNgn: 'amountNgn' in stageInfo ? stageInfo.amountNgn : netAmount,
+      fxRate: 'fxRate' in stageInfo ? stageInfo.fxRate : 1,
       expenseCode,
       paymentSiteCode,
       paymentSiteName,
@@ -684,8 +1079,27 @@ INSERT INTO [finance].[PaymentRequests] (
     reason: input.overrideReason,
   });
 
+  if (submit && stageInfo.stage && stageInfo.stage !== 'Draft') {
+    await assignCurrentApprover({
+      requestId,
+      stage: stageInfo.stage,
+      requesterCode: compact(input.requesterCode) || beneficiaryCode,
+      projectCode: compact(input.projectCode),
+      supervisorName: compact(input.supervisorName),
+    });
+  }
+
   const workspace = await buildPaymentRequestsWorkspace();
   const request = workspace.rows.find((row) => row.requestId === requestId) || null;
+
+  if (submit && request) {
+    await notifyPaymentApprovalRequired({
+      request,
+      stage: request.currentStage || stageInfo.stage,
+      actorName: input.actor,
+    }).catch((error) => console.error('[payment-requests] submit notification failed', error));
+  }
+
   return { request, workspace };
 };
 
@@ -697,11 +1111,13 @@ export const transitionPaymentRequest = async (input: {
   comment?: string;
   reason?: string;
   paymentReference?: string;
+  baseUrl?: string | null;
 }) => {
   const pool = await ensureFinanceDb();
   if (!pool) throw new Error('Finance database is unavailable.');
 
-  const existing = (await listRows()).find((row) => row.requestId === input.requestId);
+  const existing = (await listRows()).find((row) => row.requestId === input.requestId)
+    || await getPaymentRequestById(input.requestId);
   if (!existing) throw new Error('Payment request not found.');
 
   const requiresReason = ['reject', 'return', 'delegate', 'escalate', 'clarify'].includes(input.action);
@@ -713,24 +1129,39 @@ export const transitionPaymentRequest = async (input: {
   let nextStage = existing.currentStage;
   let paidAt: Date | null = null;
   let paymentReference = existing.paymentReference || null;
+  let notifyEvent: 'approved' | 'rejected' | 'returned' | 'stage-advanced' | null = null;
+  let completedStage = existing.currentStage;
+  let advancedTo: string | undefined;
 
   switch (input.action) {
-    case 'approve':
-      if (/pending|submitted|finance review/i.test(existing.status)) {
+    case 'approve': {
+      const stages = stagesFromPayload(existing.payload);
+      const currentIdx = stages.findIndex((stage) => stage.toLowerCase() === compact(existing.currentStage).toLowerCase());
+      const hasNext = currentIdx >= 0 && currentIdx < stages.length - 1;
+      if (hasNext) {
+        nextStage = stages[currentIdx + 1];
+        nextStatus = 'Pending Approval';
+        notifyEvent = 'stage-advanced';
+        advancedTo = nextStage;
+      } else if (/pending|submitted|finance review/i.test(existing.status) || stages.length > 0) {
         nextStatus = 'Approved';
         nextStage = 'Final Approval';
+        notifyEvent = 'approved';
       } else if (/approved/i.test(existing.status)) {
         nextStatus = 'Ready for Treasury';
         nextStage = 'Treasury';
       }
       break;
+    }
     case 'reject':
       nextStatus = 'Rejected';
       nextStage = 'Rejected';
+      notifyEvent = 'rejected';
       break;
     case 'return':
       nextStatus = 'Returned';
       nextStage = 'Returned for Correction';
+      notifyEvent = 'returned';
       break;
     case 'mark-ready-treasury':
       nextStatus = 'Ready for Treasury';
@@ -749,6 +1180,7 @@ export const transitionPaymentRequest = async (input: {
     case 'clarify':
       nextStatus = 'Returned';
       nextStage = 'Clarification Requested';
+      notifyEvent = 'returned';
       break;
     case 'delegate':
       nextStage = `Delegated · ${existing.currentStage}`;
@@ -776,6 +1208,26 @@ SET [Status] = @Status,
 WHERE [RequestId] = @RequestId
 `);
 
+  if (notifyEvent === 'stage-advanced' && advancedTo) {
+    await assignCurrentApprover({
+      requestId: input.requestId,
+      stage: advancedTo,
+      requesterCode: existing.requesterCode,
+      projectCode: existing.projectCode,
+      supervisorName: existing.supervisorName,
+    });
+  } else if (notifyEvent === 'approved' || notifyEvent === 'rejected' || notifyEvent === 'returned') {
+    await pool.request()
+      .input('RequestId', sql.NVarChar(60), input.requestId)
+      .query(`
+UPDATE [finance].[PaymentRequests]
+SET [CurrentApproverCode] = NULL,
+    [CurrentApproverName] = NULL,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+  }
+
   await logAction({
     requestId: input.requestId,
     actionType: input.action,
@@ -787,8 +1239,22 @@ WHERE [RequestId] = @RequestId
   });
 
   const workspace = await buildPaymentRequestsWorkspace();
+  const request = workspace.rows.find((row) => row.requestId === input.requestId) || null;
+
+  if (notifyEvent && request) {
+    await notifyPaymentDecision({
+      request,
+      event: notifyEvent,
+      actorName: input.actor,
+      stage: completedStage,
+      nextStage: advancedTo,
+      reason: input.reason || input.comment,
+      baseUrl: input.baseUrl,
+    }).catch((error) => console.error('[payment-requests] transition notification failed', error));
+  }
+
   return {
-    request: workspace.rows.find((row) => row.requestId === input.requestId) || null,
+    request,
     workspace,
   };
 };

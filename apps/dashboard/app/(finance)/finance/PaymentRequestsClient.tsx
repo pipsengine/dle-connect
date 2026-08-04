@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   ArrowRight,
   Building2,
   CalendarDays,
@@ -26,6 +27,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import type {
+  CashAdvanceEligibility,
   PaymentRequestType,
   PaymentRequestsWorkspace,
 } from '@/lib/finance-intelligence/payment-requests-service';
@@ -84,6 +86,98 @@ const emptyForm = (): ComposerForm => ({
   deliveryNoteNo: '',
   submit: true,
 });
+
+type SearchableOption = {
+  value: string;
+  label: string;
+};
+
+function SearchableSelect({
+  label,
+  required,
+  value,
+  options,
+  placeholder,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  required?: boolean;
+  value: string;
+  options: SearchableOption[];
+  placeholder: string;
+  onChange: (value: string, option?: SearchableOption) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const selected = options.find((option) => option.value === value) || null;
+
+  useEffect(() => {
+    if (!open) setQuery(selected?.label || '');
+  }, [open, selected?.label, value]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q || (selected && query === selected.label)) return options;
+    return options.filter((option) =>
+      option.label.toLowerCase().includes(q)
+      || option.value.toLowerCase().includes(q));
+  }, [options, query, selected]);
+
+  return (
+    <label className="relative block text-sm">
+      <span className="mb-1 block font-medium text-slate-700">
+        {label}{required ? ' *' : ''}
+      </span>
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+        <input
+          value={open ? query : (selected?.label || '')}
+          disabled={disabled}
+          placeholder={placeholder}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+            if (!e.target.value) onChange('');
+          }}
+          onFocus={() => {
+            setOpen(true);
+            setQuery('');
+          }}
+          onBlur={() => window.setTimeout(() => setOpen(false), 150)}
+          className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-9 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE] disabled:bg-slate-50"
+          autoComplete="off"
+          inputMode="search"
+        />
+        <ChevronDown className={`pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 transition ${open ? 'rotate-180' : ''}`} />
+      </div>
+      {open ? (
+        <div className="absolute z-30 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+          {filtered.length ? filtered.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onChange(option.value, option);
+                setQuery(option.label);
+                setOpen(false);
+              }}
+              className={`block w-full px-3 py-2.5 text-left text-sm hover:bg-slate-50 ${
+                option.value === value ? 'bg-[#F0F9FF] font-semibold text-[#008FD5]' : 'text-slate-700'
+              }`}
+            >
+              {option.label}
+            </button>
+          )) : (
+            <p className="px-3 py-3 text-xs text-slate-500">No matches. Try another search.</p>
+          )}
+        </div>
+      ) : null}
+    </label>
+  );
+}
 
 
 const moneyCompact = (value: number) => {
@@ -154,6 +248,23 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
   const [form, setForm] = useState<ComposerForm>(emptyForm());
+  const [eligibility, setEligibility] = useState<CashAdvanceEligibility | null>(null);
+  const [formErrors, setFormErrors] = useState<string[]>([]);
+
+  const loadEligibility = async (employeeCode: string) => {
+    if (!employeeCode) {
+      setEligibility(null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/finance/payment-requests?view=eligibility&employeeCode=${encodeURIComponent(employeeCode)}`, { cache: 'no-store' });
+      const json = await res.json();
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to check eligibility');
+      setEligibility(json.data as CashAdvanceEligibility);
+    } catch {
+      setEligibility(null);
+    }
+  };
 
   useEffect(() => {
     if (!composerOpen) return;
@@ -177,16 +288,18 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
             department?: string;
             location?: string;
           };
+          const nextCode = user.employeeCode || '';
           setForm((prev) => ({
             ...prev,
             employeeName: prev.employeeName || user.name || '',
-            employeeCode: prev.employeeCode || user.employeeCode || '',
+            employeeCode: prev.employeeCode || nextCode,
             department: prev.department || user.department || '',
             location: prev.location || user.location || '',
             beneficiaryName: prev.beneficiaryName || user.name || '',
-            beneficiaryCode: prev.beneficiaryCode || user.employeeCode || '',
+            beneficiaryCode: prev.beneficiaryCode || nextCode,
           }));
           setEmployeeSearch(user.name || '');
+          if (nextCode) void loadEligibility(nextCode);
         }
       } catch {
         // keep empty lookups; submit will still validate server-side
@@ -253,6 +366,8 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
     setForm(emptyForm());
     setEmployeeSearch('');
     setEmployeePickerOpen(false);
+    setEligibility(null);
+    setFormErrors([]);
     setComposerOpen(true);
   };
 
@@ -269,9 +384,32 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
     }));
     setEmployeeSearch(employee.fullName);
     setEmployeePickerOpen(false);
+    void loadEligibility(employee.employeeCode);
+  };
+
+  const validateComposer = () => {
+    const errors: string[] = [];
+    if (composerType === 'Cash Advance Payment') {
+      if (!form.employeeCode.trim()) errors.push('Select an employee.');
+      if (!form.department.trim()) errors.push('Department is required.');
+      if (!form.location.trim()) errors.push('Location is required.');
+      if (!form.paymentSiteCode.trim()) errors.push('Payment site is required.');
+      if (!form.expenseCode.trim()) errors.push('Request title is required.');
+      if (!(Number(form.amount) >= 1)) errors.push('Amount must be at least 1.00.');
+      if (form.businessJustification.trim().length < 10) errors.push('Business justification must be at least 10 characters.');
+      if (eligibility?.blocked) errors.push(eligibility.message);
+    } else {
+      if (!form.title.trim()) errors.push('Request title is required.');
+      if (!form.beneficiaryName.trim()) errors.push('Supplier name is required.');
+      if (!form.invoiceNumber.trim()) errors.push('Invoice number is required.');
+      if (!(Number(form.amount) >= 1)) errors.push('Amount must be at least 1.00.');
+    }
+    setFormErrors(errors);
+    return errors.length === 0;
   };
 
   const submitRequest = async () => {
+    if (!validateComposer()) return;
     setBusy(true);
     setToast('');
     try {
@@ -315,6 +453,7 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
       setToast(json.data.message || 'Payment request saved.');
     } catch (error) {
       setToast(error instanceof Error ? error.message : 'Unable to create request.');
+      if (form.employeeCode) void loadEligibility(form.employeeCode);
     } finally {
       setBusy(false);
     }
@@ -647,31 +786,69 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
               </button>
             </div>
             <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+              {formErrors.length ? (
+                <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                  <ul className="list-disc space-y-1 pl-4">
+                    {formErrors.map((item) => <li key={item}>{item}</li>)}
+                  </ul>
+                </div>
+              ) : null}
+              {composerType === 'Cash Advance Payment' && eligibility?.blocked ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                    <div>
+                      <p className="font-semibold">New cash advance blocked</p>
+                      <p className="mt-1">{eligibility.message}</p>
+                      {eligibility.outstanding[0] ? (
+                        <p className="mt-1 text-xs text-amber-800">
+                          Outstanding: {eligibility.outstanding[0].requestNumber} · {eligibility.outstanding[0].status} · {eligibility.outstanding[0].title}
+                        </p>
+                      ) : null}
+                      <Link href="/finance/approvals/advance-retirement" className="mt-2 inline-flex text-xs font-semibold text-[#008FD5] hover:underline">
+                        Open Cash Advance Controls (CFO)
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              {composerType === 'Cash Advance Payment' && eligibility && !eligibility.blocked && eligibility.outstandingCount > 0 ? (
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                  {eligibility.message}
+                </div>
+              ) : null}
               {composerType === 'Cash Advance Payment' ? (
                 <>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="relative block text-sm">
                       <span className="mb-1 block font-medium text-slate-700">Employee *</span>
-                      <input
-                        value={employeeSearch}
-                        onChange={(e) => {
-                          setEmployeeSearch(e.target.value);
-                          setEmployeePickerOpen(true);
-                          setForm((prev) => ({ ...prev, employeeName: e.target.value }));
-                        }}
-                        onFocus={() => setEmployeePickerOpen(true)}
-                        placeholder="Search employee name or code"
-                        className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]"
-                      />
+                      <div className="relative">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                        <input
+                          value={employeeSearch}
+                          onChange={(e) => {
+                            setEmployeeSearch(e.target.value);
+                            setEmployeePickerOpen(true);
+                            setForm((prev) => ({ ...prev, employeeName: e.target.value, employeeCode: '' }));
+                            setEligibility(null);
+                          }}
+                          onFocus={() => setEmployeePickerOpen(true)}
+                          onBlur={() => window.setTimeout(() => setEmployeePickerOpen(false), 150)}
+                          placeholder="Search employee name or code"
+                          className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]"
+                          autoComplete="off"
+                          inputMode="search"
+                        />
+                      </div>
                       {employeePickerOpen ? (
-                        <div className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                        <div className="absolute z-30 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg">
                           {filteredEmployees.length ? filteredEmployees.map((employee) => (
                             <button
                               key={employee.employeeCode}
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => selectEmployee(employee)}
-                              className="block w-full px-3 py-2 text-left hover:bg-slate-50"
+                              className="block w-full px-3 py-2.5 text-left hover:bg-slate-50"
                             >
                               <span className="block text-sm font-semibold text-slate-900">{employee.fullName}</span>
                               <span className="block text-xs text-slate-500">{employee.employeeCode} · {employee.department || 'No department'}</span>
@@ -689,78 +866,76 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-3">
-                    <label className="block text-sm">
-                      <span className="mb-1 block font-medium text-slate-700">Department *</span>
-                      <select value={form.department} onChange={(e) => setForm((prev) => ({ ...prev, department: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
-                        <option value="">Select department</option>
-                        {(lookups?.departments || []).map((item) => <option key={item} value={item}>{item}</option>)}
-                        {form.department && !(lookups?.departments || []).includes(form.department) ? <option value={form.department}>{form.department}</option> : null}
-                      </select>
-                    </label>
-                    <label className="block text-sm">
-                      <span className="mb-1 block font-medium text-slate-700">Location</span>
-                      <select value={form.location} onChange={(e) => setForm((prev) => ({ ...prev, location: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
-                        <option value="">Select location</option>
-                        {(lookups?.locations || []).map((item) => <option key={item} value={item}>{item}</option>)}
-                        {form.location && !(lookups?.locations || []).includes(form.location) ? <option value={form.location}>{form.location}</option> : null}
-                      </select>
-                    </label>
-                    <label className="block text-sm">
-                      <span className="mb-1 block font-medium text-slate-700">Project</span>
-                      <select value={form.projectCode} onChange={(e) => setForm((prev) => ({ ...prev, projectCode: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
-                        <option value="">Select project</option>
-                        {(lookups?.projects || []).map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
-                      </select>
-                    </label>
+                    <SearchableSelect
+                      label="Department"
+                      required
+                      value={form.department}
+                      placeholder="Search department"
+                      options={(lookups?.departments || []).concat(
+                        form.department && !(lookups?.departments || []).includes(form.department) ? [form.department] : [],
+                      ).map((item) => ({ value: item, label: item }))}
+                      onChange={(value) => setForm((prev) => ({ ...prev, department: value }))}
+                    />
+                    <SearchableSelect
+                      label="Location"
+                      required
+                      value={form.location}
+                      placeholder="Search location"
+                      options={(lookups?.locations || []).concat(
+                        form.location && !(lookups?.locations || []).includes(form.location) ? [form.location] : [],
+                      ).map((item) => ({ value: item, label: item }))}
+                      onChange={(value) => setForm((prev) => ({ ...prev, location: value }))}
+                    />
+                    <SearchableSelect
+                      label="Project"
+                      value={form.projectCode}
+                      placeholder="Search project"
+                      options={(lookups?.projects || []).map((item) => ({ value: item.code, label: item.label }))}
+                      onChange={(value) => setForm((prev) => ({ ...prev, projectCode: value }))}
+                    />
                   </div>
 
-                  <label className="block text-sm">
-                    <span className="mb-1 block font-medium text-slate-700">Payment site *</span>
-                    <select value={form.paymentSiteCode} onChange={(e) => setForm((prev) => ({ ...prev, paymentSiteCode: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
-                      <option value="">Select payment site</option>
-                      {(lookups?.paymentSites || []).map((site) => (
-                        <option key={site.siteCode} value={site.siteCode}>{site.siteCode} – {site.siteName}</option>
-                      ))}
-                    </select>
-                  </label>
+                  <SearchableSelect
+                    label="Payment site"
+                    required
+                    value={form.paymentSiteCode}
+                    placeholder="Search payment site"
+                    options={(lookups?.paymentSites || []).map((site) => ({
+                      value: site.siteCode,
+                      label: `${site.siteCode} – ${site.siteName}`,
+                    }))}
+                    onChange={(value) => setForm((prev) => ({ ...prev, paymentSiteCode: value }))}
+                  />
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block text-sm">
                       <span className="mb-1 block font-medium text-slate-700">Amount *</span>
                       <input type="number" min="0" value={form.amount} onChange={(e) => setForm((prev) => ({ ...prev, amount: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
                     </label>
-                    <label className="block text-sm">
-                      <span className="mb-1 block font-medium text-slate-700">Currency</span>
-                      <select value={form.currencyCode} onChange={(e) => setForm((prev) => ({ ...prev, currencyCode: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
-                        <option>NGN</option>
-                        <option>USD</option>
-                        <option>EUR</option>
-                        <option>GBP</option>
-                      </select>
-                    </label>
+                    <SearchableSelect
+                      label="Currency"
+                      value={form.currencyCode}
+                      placeholder="Search currency"
+                      options={['NGN', 'USD', 'EUR', 'GBP'].map((item) => ({ value: item, label: item }))}
+                      onChange={(value) => setForm((prev) => ({ ...prev, currencyCode: value || 'NGN' }))}
+                    />
                   </div>
 
-                  <label className="block text-sm">
-                    <span className="mb-1 block font-medium text-slate-700">Request title *</span>
-                    <select
-                      value={form.expenseCode}
-                      onChange={(e) => {
-                        const code = e.target.value;
-                        const match = lookups?.expenseCodes.find((item) => item.expenseCode === code);
-                        setForm((prev) => ({
-                          ...prev,
-                          expenseCode: code,
-                          title: match?.label || '',
-                        }));
-                      }}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
-                    >
-                      <option value="">Select expense / request title</option>
-                      {(lookups?.expenseCodes || []).map((item) => (
-                        <option key={item.expenseCode} value={item.expenseCode}>{item.label}</option>
-                      ))}
-                    </select>
-                  </label>
+                  <SearchableSelect
+                    label="Request title"
+                    required
+                    value={form.expenseCode}
+                    placeholder="Search expense / request title"
+                    options={(lookups?.expenseCodes || []).map((item) => ({
+                      value: item.expenseCode,
+                      label: item.label,
+                    }))}
+                    onChange={(value, option) => setForm((prev) => ({
+                      ...prev,
+                      expenseCode: value,
+                      title: option?.label || '',
+                    }))}
+                  />
 
                   <label className="block text-sm">
                     <span className="mb-1 block font-medium text-slate-700">Business justification *</span>
@@ -778,66 +953,81 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
                       <span className="mb-1 block font-medium text-slate-700">Amount *</span>
                       <input type="number" min="0" value={form.amount} onChange={(e) => setForm((prev) => ({ ...prev, amount: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
                     </label>
-                    <label className="block text-sm">
-                      <span className="mb-1 block font-medium text-slate-700">Currency</span>
-                      <select value={form.currencyCode} onChange={(e) => setForm((prev) => ({ ...prev, currencyCode: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
-                        <option>NGN</option>
-                        <option>USD</option>
-                        <option>EUR</option>
-                        <option>GBP</option>
-                      </select>
-                    </label>
+                    <SearchableSelect
+                      label="Currency"
+                      value={form.currencyCode}
+                      placeholder="Search currency"
+                      options={['NGN', 'USD', 'EUR', 'GBP'].map((item) => ({ value: item, label: item }))}
+                      onChange={(value) => setForm((prev) => ({ ...prev, currencyCode: value || 'NGN' }))}
+                    />
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block text-sm">
                       <span className="mb-1 block font-medium text-slate-700">Supplier code</span>
-                      <input value={form.beneficiaryCode} onChange={(e) => setForm((prev) => ({ ...prev, beneficiaryCode: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+                      <input value={form.beneficiaryCode} onChange={(e) => setForm((prev) => ({ ...prev, beneficiaryCode: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
                     </label>
                     <label className="block text-sm">
                       <span className="mb-1 block font-medium text-slate-700">Supplier name *</span>
-                      <input value={form.beneficiaryName} onChange={(e) => setForm((prev) => ({ ...prev, beneficiaryName: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+                      <input value={form.beneficiaryName} onChange={(e) => setForm((prev) => ({ ...prev, beneficiaryName: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" placeholder="Search / enter supplier" />
                     </label>
                   </div>
+                  <SearchableSelect
+                    label="Payment site"
+                    value={form.paymentSiteCode}
+                    placeholder="Search payment site"
+                    options={(lookups?.paymentSites || []).map((site) => ({
+                      value: site.siteCode,
+                      label: `${site.siteCode} – ${site.siteName}`,
+                    }))}
+                    onChange={(value) => setForm((prev) => ({ ...prev, paymentSiteCode: value }))}
+                  />
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block text-sm">
                       <span className="mb-1 block font-medium text-slate-700">Invoice number *</span>
-                      <input value={form.invoiceNumber} onChange={(e) => setForm((prev) => ({ ...prev, invoiceNumber: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+                      <input value={form.invoiceNumber} onChange={(e) => setForm((prev) => ({ ...prev, invoiceNumber: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
                     </label>
                     <label className="block text-sm">
                       <span className="mb-1 block font-medium text-slate-700">Purchase order</span>
-                      <input value={form.purchaseOrderNo} onChange={(e) => setForm((prev) => ({ ...prev, purchaseOrderNo: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+                      <input value={form.purchaseOrderNo} onChange={(e) => setForm((prev) => ({ ...prev, purchaseOrderNo: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
                     </label>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-3">
                     <label className="block text-sm">
                       <span className="mb-1 block font-medium text-slate-700">VAT</span>
-                      <input type="number" value={form.vatAmount} onChange={(e) => setForm((prev) => ({ ...prev, vatAmount: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+                      <input type="number" value={form.vatAmount} onChange={(e) => setForm((prev) => ({ ...prev, vatAmount: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
                     </label>
                     <label className="block text-sm">
                       <span className="mb-1 block font-medium text-slate-700">WHT</span>
-                      <input type="number" value={form.whtAmount} onChange={(e) => setForm((prev) => ({ ...prev, whtAmount: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+                      <input type="number" value={form.whtAmount} onChange={(e) => setForm((prev) => ({ ...prev, whtAmount: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
                     </label>
                     <label className="block text-sm">
                       <span className="mb-1 block font-medium text-slate-700">Retention</span>
-                      <input type="number" value={form.retentionAmount} onChange={(e) => setForm((prev) => ({ ...prev, retentionAmount: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+                      <input type="number" value={form.retentionAmount} onChange={(e) => setForm((prev) => ({ ...prev, retentionAmount: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
                     </label>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="block text-sm">
-                      <span className="mb-1 block font-medium text-slate-700">Department</span>
-                      <select value={form.department} onChange={(e) => setForm((prev) => ({ ...prev, department: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
-                        <option value="">Select department</option>
-                        {(lookups?.departments || []).map((item) => <option key={item} value={item}>{item}</option>)}
-                      </select>
-                    </label>
-                    <label className="block text-sm">
-                      <span className="mb-1 block font-medium text-slate-700">Project</span>
-                      <select value={form.projectCode} onChange={(e) => setForm((prev) => ({ ...prev, projectCode: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
-                        <option value="">Select project</option>
-                        {(lookups?.projects || []).map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
-                      </select>
-                    </label>
+                    <SearchableSelect
+                      label="Department"
+                      value={form.department}
+                      placeholder="Search department"
+                      options={(lookups?.departments || []).map((item) => ({ value: item, label: item }))}
+                      onChange={(value) => setForm((prev) => ({ ...prev, department: value }))}
+                    />
+                    <SearchableSelect
+                      label="Project"
+                      value={form.projectCode}
+                      placeholder="Search project"
+                      options={(lookups?.projects || []).map((item) => ({ value: item.code, label: item.label }))}
+                      onChange={(value) => setForm((prev) => ({ ...prev, projectCode: value }))}
+                    />
                   </div>
+                  <SearchableSelect
+                    label="Location"
+                    value={form.location}
+                    placeholder="Search location"
+                    options={(lookups?.locations || []).map((item) => ({ value: item, label: item }))}
+                    onChange={(value) => setForm((prev) => ({ ...prev, location: value }))}
+                  />
                 </>
               )}
             </div>
@@ -848,7 +1038,12 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
               </label>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setComposerOpen(false)} className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700">Cancel</button>
-                <button type="button" disabled={busy} onClick={() => void submitRequest()} className="rounded-xl bg-[#008FD5] px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-60">
+                <button
+                  type="button"
+                  disabled={busy || (composerType === 'Cash Advance Payment' && Boolean(eligibility?.blocked))}
+                  onClick={() => void submitRequest()}
+                  className="rounded-xl bg-[#008FD5] px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                >
                   {busy ? 'Saving…' : form.submit ? 'Submit request' : 'Save draft'}
                 </button>
               </div>

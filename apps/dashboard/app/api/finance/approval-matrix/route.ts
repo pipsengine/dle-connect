@@ -5,6 +5,7 @@ import {
   buildApprovalMatrixWorkspace,
   deleteApprovalMatrixRule,
   upsertApprovalMatrixRule,
+  type ApprovalPathType,
   type ApprovalRuleStatus,
 } from '@/lib/finance-intelligence/approval-matrix-service';
 
@@ -16,6 +17,15 @@ const resolveActor = async () => {
   const token = jar.get(AUTH_COOKIE)?.value;
   const session = token ? await verifySessionToken(token) : null;
   return session?.fullName || session?.username || session?.sub || 'Finance User';
+};
+
+const parseStages = (body: Record<string, unknown>) => {
+  if (Array.isArray(body.stages)) {
+    return body.stages.map((item) => String(item || '').trim()).filter(Boolean);
+  }
+  const roles = String(body.approverRoles || '').trim();
+  if (!roles) return [];
+  return roles.split(/→|,/).map((item) => item.trim()).filter(Boolean);
 };
 
 export async function GET() {
@@ -33,30 +43,33 @@ export async function POST(request: Request) {
     const action = String(body.action || 'upsert').trim();
 
     if (action === 'upsert') {
+      const stages = parseStages(body);
+      const pathType = (/project/i.test(String(body.pathType || '')) ? 'Project' : 'Non-project') as ApprovalPathType;
       const result = await upsertApprovalMatrixRule({
         matrixId: body.matrixId,
         ruleName: body.ruleName,
-        paymentType: body.paymentType,
+        pathType,
+        paymentType: 'Employee Payment',
         companyCode: body.companyCode,
         entityName: body.entityName,
         minAmount: Number(body.minAmount || 0),
         maxAmount: body.maxAmount === '' || body.maxAmount == null ? null : Number(body.maxAmount),
-        approvalLevel: Number(body.approvalLevel || 1),
-        approverRoles: body.approverRoles,
-        currencyCode: body.currencyCode,
+        approvalLevel: Number(body.approvalLevel || stages.length || 1),
+        approverRoles: stages.join(' → ') || body.approverRoles,
+        currencyCode: 'NGN',
         dualControl: Boolean(body.dualControl),
         status: (body.status || 'Active') as ApprovalRuleStatus,
-        stages: Array.isArray(body.stages) ? body.stages : undefined,
+        stages,
         actor,
       });
-      return jsonOk({ ...result, message: body.matrixId ? 'Approval rule updated.' : 'Approval rule created.' });
+      return jsonOk({ ...result, message: body.matrixId ? 'Approval limit updated.' : 'Approval limit created.' });
     }
 
     if (action === 'delete') {
       const matrixId = String(body.matrixId || '').trim();
       if (!matrixId) return jsonErr(400, 'matrixId is required.');
       const result = await deleteApprovalMatrixRule({ matrixId, actor });
-      return jsonOk({ ...result, message: 'Approval rule deleted.' });
+      return jsonOk({ ...result, message: 'Approval limit deleted.' });
     }
 
     return jsonErr(400, 'Unsupported approval matrix action.');

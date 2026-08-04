@@ -775,3 +775,115 @@ export const leaveApprovalLinks = (input: {
 
 export const employeeDisplayName = (employee?: DleEmployeeDirectoryRow | null, fallback = 'Colleague') =>
   String(employee?.fullName || fallback).trim() || fallback;
+
+type PaymentEmailRequest = {
+  requestId: string;
+  requestNumber: string;
+  paymentType: string;
+  title: string;
+  requesterName: string;
+  beneficiaryName: string;
+  netAmount: number;
+  currencyCode: string;
+  department?: string;
+  projectCode?: string;
+  paymentSiteName?: string;
+  currentStage?: string;
+  status?: string;
+};
+
+const paymentDetails = (request: PaymentEmailRequest) => [
+  { label: 'Request number', value: request.requestNumber || request.requestId },
+  { label: 'Payment type', value: request.paymentType },
+  { label: 'Title', value: request.title },
+  { label: 'Requester', value: request.requesterName },
+  { label: 'Beneficiary', value: request.beneficiaryName },
+  { label: 'Net amount', value: `${request.currencyCode || 'NGN'} ${Number(request.netAmount || 0).toLocaleString('en-NG')}` },
+  ...(request.department ? [{ label: 'Department', value: request.department }] : []),
+  ...(request.projectCode ? [{ label: 'Project', value: request.projectCode }] : []),
+  ...(request.paymentSiteName ? [{ label: 'Payment site', value: request.paymentSiteName }] : []),
+];
+
+export const buildPaymentApprovalRequestEmail = (input: {
+  recipientName: string;
+  request: PaymentEmailRequest;
+  stage: string;
+  approveUrl: string;
+  rejectUrl: string;
+  detailUrl: string;
+  baseUrl?: string | null;
+}) => withBrand({
+  recipientName: input.recipientName,
+  subject: `Payment approval required — ${input.request.requestNumber}`,
+  module: 'Finance Approvals',
+  headline: 'Payment approval required',
+  intro: `A payment request is waiting for your review as ${input.stage}.`,
+  tone: 'warning',
+  accentColor: '#008FD5',
+  details: [
+    ...paymentDetails(input.request),
+    { label: 'Approval stage', value: input.stage },
+  ],
+  note: 'Sign in with your approver account, then use Approve or Reject on the payment detail page.',
+  actions: [
+    { href: input.approveUrl, label: 'Review & Approve', tone: 'success' },
+    { href: input.rejectUrl, label: 'Review & Reject', tone: 'danger' },
+    { href: input.detailUrl, label: 'Open Payment Details', tone: 'primary' },
+  ],
+  footerNote: 'Links open the payment detail page in DLE Connect Finance Approvals.',
+}, input.baseUrl);
+
+export const buildPaymentDecisionEmail = (input: {
+  recipientName: string;
+  request: PaymentEmailRequest;
+  event: 'approved' | 'rejected' | 'returned' | 'stage-advanced';
+  actorName?: string;
+  stage?: string;
+  nextStage?: string;
+  reason?: string;
+  detailUrl: string;
+  baseUrl?: string | null;
+}) => {
+  const subjectMap = {
+    approved: `Payment approved — ${input.request.requestNumber}`,
+    rejected: `Payment rejected — ${input.request.requestNumber}`,
+    returned: `Payment returned — ${input.request.requestNumber}`,
+    'stage-advanced': `Payment progressed — ${input.request.requestNumber}`,
+  } as const;
+  const headlineMap = {
+    approved: 'Payment request approved',
+    rejected: 'Payment request rejected',
+    returned: 'Payment request returned',
+    'stage-advanced': 'Payment approval progressed',
+  } as const;
+  const introMap = {
+    approved: 'Your payment request has been fully approved and can proceed to treasury.',
+    rejected: 'Your payment request has been rejected. Review the details below.',
+    returned: 'Your payment request was returned for correction.',
+    'stage-advanced': `Your payment request cleared ${input.stage || 'a stage'} and is now awaiting ${input.nextStage || 'the next approver'}.`,
+  } as const;
+  const toneMap = {
+    approved: 'success',
+    rejected: 'danger',
+    returned: 'warning',
+    'stage-advanced': 'info',
+  } as const;
+
+  return withBrand({
+    recipientName: input.recipientName,
+    subject: subjectMap[input.event],
+    module: 'Finance Approvals',
+    headline: headlineMap[input.event],
+    intro: introMap[input.event],
+    tone: toneMap[input.event],
+    accentColor: '#008FD5',
+    details: [
+      ...paymentDetails(input.request),
+      ...(input.actorName ? [{ label: 'Actioned by', value: input.actorName }] : []),
+      ...(input.stage ? [{ label: 'Completed stage', value: input.stage }] : []),
+      ...(input.nextStage ? [{ label: 'Next stage', value: input.nextStage }] : []),
+      ...(input.reason ? [{ label: 'Reason', value: input.reason }] : []),
+    ],
+    actions: [{ href: input.detailUrl, label: 'Open Payment Details', tone: 'primary' }],
+  }, input.baseUrl);
+};

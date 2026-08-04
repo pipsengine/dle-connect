@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { FINANCE_PAGES, resolveFinancePage } from '@/lib/finance-intelligence/nav';
 import { buildFinanceApprovalCentre, buildFinanceCommandCentre } from '@/lib/finance-intelligence/store';
-import { buildPaymentRequestsWorkspace } from '@/lib/finance-intelligence/payment-requests-service';
+import { buildCashAdvanceControlsWorkspace, buildPaymentRequestsWorkspace } from '@/lib/finance-intelligence/payment-requests-service';
 import { buildApprovalMatrixWorkspace } from '@/lib/finance-intelligence/approval-matrix-service';
 import FinanceWorkspaceClient from '../FinanceWorkspaceClient';
 
@@ -41,12 +41,26 @@ export default async function FinanceCatchAllPage({ params }: Props) {
     ? await buildPaymentRequestsWorkspace({ paymentType }).catch(() => null)
     : null;
 
+  const cashAdvanceControls = page.kind === 'cash-advance-controls'
+    ? await buildCashAdvanceControlsWorkspace().catch(() => ({
+      generatedAt: new Date().toISOString(),
+      outstanding: [],
+      activeWaivers: [],
+      summary: {
+        outstandingCount: 0,
+        awaitingRetirement: 0,
+        activeWaivers: 0,
+        blockedEmployees: 0,
+      },
+    }))
+    : null;
+
   const approvalMatrix = page.kind === 'approval-matrix' || page.kind === 'approval-limits'
     ? await buildApprovalMatrixWorkspace().catch(() => ({
       generatedAt: new Date().toISOString(),
       source: 'DLE Enterprise · finance.ApprovalMatrix',
       summary: {
-        paymentTypes: 0,
+        pathTypes: 0,
         activeRules: 0,
         approvalLevels: 0,
         pendingChanges: 0,
@@ -54,9 +68,12 @@ export default async function FinanceCatchAllPage({ params }: Props) {
         dualControlRules: 0,
         companyCoveragePct: 0,
         compliancePct: 0,
+        nonProjectRules: 0,
+        projectRules: 0,
       },
       rules: [],
       audit: [],
+      fxRates: [],
     }))
     : null;
 
@@ -84,6 +101,7 @@ export default async function FinanceCatchAllPage({ params }: Props) {
       approvalCentre={approvalCentre}
       paymentRequests={paymentRequests}
       approvalMatrix={approvalMatrix}
+      cashAdvanceControls={cashAdvanceControls}
       childLinks={childLinks.length ? childLinks : featureLinks}
     />
   );

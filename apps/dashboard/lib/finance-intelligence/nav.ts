@@ -40,6 +40,7 @@ export type FinancePageKind =
   | 'ai-copilot'
   | 'approvals-dashboard'
   | 'payment-requests'
+  | 'cash-advance-controls'
   | 'approval-queue'
   | 'approval-detail'
   | 'statement'
@@ -142,6 +143,8 @@ export const FINANCE_NAV_SECTIONS: FinanceNavSection[] = [
       { id: 'inbox', label: 'My Approval Inbox', href: '/finance/approvals/inbox', badgeKey: 'approvalInbox' },
       { id: 'payment-requests', label: 'Payment Requests', href: '/finance/approvals/payments' },
       { id: 'my-requests', label: 'My Requests', href: '/finance/approvals/my-requests' },
+      { id: 'cash-advances', label: 'Cash Advances', href: '/finance/approvals/cash-advances' },
+      { id: 'cash-advance-controls', label: 'Cash Advance Controls', href: '/finance/approvals/advance-retirement' },
       { id: 'treasury', label: 'Treasury Operations', href: '/finance/approvals/treasury' },
       { id: 'supplier-payments', label: 'Supplier Payments', href: '/finance/approvals/supplier-payments' },
       { id: 'payment-batches', label: 'Payment Batches', href: '/finance/approvals/batches' },
@@ -429,7 +432,7 @@ export const FINANCE_PAGES: FinancePageMeta[] = [
   page('/finance/approvals/supplier-payments', 'Supplier Payments', 'Supplier invoice payment queue.', 'approvals', 'payment-requests', ['Payment Approvals', 'Supplier Payments']),
   page('/finance/approvals/batches', 'Payment Batches', 'Batch payment approval and release monitoring.', 'approvals', 'approval-queue', ['Payment Approvals', 'Payment Batches']),
   page('/finance/approvals/cash-advances', 'Cash Advances', 'Cash advance requests for approval.', 'approvals', 'payment-requests', ['Payment Approvals', 'Cash Advances']),
-  page('/finance/approvals/advance-retirement', 'Advance Retirement', 'Advance retirement and reconciliation requests.', 'approvals', 'approval-queue', ['Payment Approvals', 'Advance Retirement']),
+  page('/finance/approvals/advance-retirement', 'Cash Advance Controls', 'CFO controls for outstanding cash advances: cancel retirement requirement or grant a one-time waiver.', 'approvals', 'cash-advance-controls', ['Payment Approvals', 'Cash Advance Controls']),
   page('/finance/approvals/expense-claims', 'Expense Claims', 'Employee expense claim approvals.', 'approvals', 'approval-queue', ['Payment Approvals', 'Expense Claims']),
   page('/finance/approvals/budget-requests', 'Budget Requests', 'Budget request approvals.', 'approvals', 'approval-queue', ['Payment Approvals', 'Budget Requests']),
   page('/finance/approvals/budget-transfers', 'Budget Transfers', 'Budget transfer approvals.', 'approvals', 'approval-queue', ['Payment Approvals', 'Budget Transfers']),
@@ -440,7 +443,7 @@ export const FINANCE_PAGES: FinancePageMeta[] = [
   page('/finance/approvals/project-variations', 'Project Variation Requests', 'Project variation / change-order financial approvals.', 'approvals', 'approval-queue', ['Payment Approvals', 'Project Variation Requests']),
   page('/finance/approvals/report-signoff', 'Report Sign-Off Requests', 'Financial report sign-off requests.', 'approvals', 'approval-queue', ['Payment Approvals', 'Report Sign-Off Requests']),
   page('/finance/approvals/other', 'Other Finance Requests', 'Cash advances, expenses, budget, FX, tax, write-offs and related requests.', 'approvals', 'section-dashboard', ['Payment Approvals', 'Other Finance Requests'], [
-    'Cash Advances', 'Advance Retirement', 'Expense Claims', 'Budget Requests', 'Budget Transfers', 'Foreign Exchange Requests', 'Tax Payments', 'Write-Off Requests', 'Asset Disposal Requests', 'Project Variation Requests', 'Report Sign-Off Requests',
+    'Cash Advances', 'Cash Advance Controls', 'Expense Claims', 'Budget Requests', 'Budget Transfers', 'Foreign Exchange Requests', 'Tax Payments', 'Write-Off Requests', 'Asset Disposal Requests', 'Project Variation Requests', 'Report Sign-Off Requests',
   ]),
   page('/finance/approvals/request/[requestId]', 'Approval Detail', 'Payment approval detail with financial context, evidence and workflow actions.', 'approvals', 'approval-detail', ['Payment Approvals', 'Approval Detail']),
 

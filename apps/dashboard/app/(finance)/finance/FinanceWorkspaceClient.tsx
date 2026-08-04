@@ -37,12 +37,14 @@ import type {
   FinanceApprovalCentreSnapshot,
   FinanceCommandCentreSnapshot,
 } from '@/lib/finance-intelligence/store';
-import type { PaymentRequestsWorkspace } from '@/lib/finance-intelligence/payment-requests-service';
+import type { PaymentRequestsWorkspace, CashAdvanceControlsWorkspace } from '@/lib/finance-intelligence/payment-requests-service';
 import type { ApprovalMatrixWorkspace } from '@/lib/finance-intelligence/approval-matrix-service';
 import { FinanceBreadcrumbs } from './finance-portal-shell';
 import PaymentRequestsClient from './PaymentRequestsClient';
 import ApprovalMatrixClient from './ApprovalMatrixClient';
 import ApprovalLimitsClient from './ApprovalLimitsClient';
+import CashAdvanceControlsClient from './CashAdvanceControlsClient';
+import PaymentApprovalDetailClient from './PaymentApprovalDetailClient';
 
 type Props = {
   page: FinancePageMeta;
@@ -50,6 +52,7 @@ type Props = {
   approvalCentre?: FinanceApprovalCentreSnapshot | null;
   paymentRequests?: PaymentRequestsWorkspace | null;
   approvalMatrix?: ApprovalMatrixWorkspace | null;
+  cashAdvanceControls?: CashAdvanceControlsWorkspace | null;
   childLinks?: Array<{ href: string; title: string; description?: string }>;
 };
 
@@ -804,60 +807,6 @@ function ApprovalQueue({ page }: { page: FinancePageMeta }) {
   );
 }
 
-function ApprovalDetail() {
-  return (
-    <div className="space-y-4 pb-24">
-      <header className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-        <h1 className="text-2xl font-semibold text-slate-900">Approval Detail</h1>
-        <p className="mt-1 text-sm text-slate-500">Request summary, financial context, supporting records and configurable workflow stages.</p>
-      </header>
-      <div className="grid gap-4 xl:grid-cols-3">
-        <Panel title="Request summary">
-          <ul className="space-y-1.5 text-sm text-slate-600">
-            {['Request number', 'Title', 'Request type', 'Beneficiary', 'Bank details summary', 'Amount', 'Currency', 'Description', 'Payment due date', 'Payment priority', 'Sage X3 reference', 'Source document number'].map((item) => (
-              <li key={item} className="flex justify-between gap-3 border-b border-slate-50 py-1.5"><span>{item}</span><span className="text-slate-400">—</span></li>
-            ))}
-          </ul>
-        </Panel>
-        <Panel title="Financial context">
-          <ul className="space-y-1.5 text-sm text-slate-600">
-            {['Available budget', 'Budget consumption', 'Previous payments to beneficiary', 'Outstanding supplier balance', 'Purchase-order amount', 'Invoice amount', 'Retention amount', 'Tax deduction', 'Net payable amount', 'Cash-flow impact', 'Project margin impact'].map((item) => (
-              <li key={item} className="flex justify-between gap-3 border-b border-slate-50 py-1.5"><span>{item}</span><span className="text-slate-400">—</span></li>
-            ))}
-          </ul>
-        </Panel>
-        <Panel title="Supporting records">
-          <ul className="space-y-1.5 text-sm text-slate-600">
-            {['Supplier invoice', 'Purchase order', 'Goods received note', 'Contract', 'Payment certificate', 'Tax calculation', 'Bank details', 'Approval memo', 'Other attachments'].map((item) => (
-              <li key={item} className="rounded-lg bg-slate-50 px-3 py-2">{item}</li>
-            ))}
-          </ul>
-        </Panel>
-      </div>
-      <Panel title="Workflow">
-        <div className="flex flex-wrap gap-2">
-          {['Initiator', 'Reviewer', 'Project Manager', 'Department Head', 'Finance', 'Finance Manager', 'CFO', 'Managing Director', 'Payment release'].map((stage, index) => (
-            <span key={stage} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-500">{index + 1}</span>
-              {stage}
-            </span>
-          ))}
-        </div>
-        <p className="mt-3 text-xs text-slate-500">Stages remain configurable by payment type and amount in Finance Configuration → Approval Matrix.</p>
-      </Panel>
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur lg:left-[270px]">
-        <div className="mx-auto flex max-w-[1400px] flex-wrap gap-2">
-          {['Return for Correction', 'Request Clarification', 'Delegate', 'Reject', 'Approve'].map((action) => (
-            <button key={action} type="button" className={`rounded-xl px-3 py-2 text-xs font-semibold ${action === 'Approve' ? 'bg-emerald-600 text-white' : action === 'Reject' ? 'bg-rose-600 text-white' : 'border border-slate-200 text-slate-700'}`}>
-              {action}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function SectionDashboard({ page, childLinks }: { page: FinancePageMeta; childLinks: Props['childLinks'] }) {
   const links = childLinks?.length
     ? childLinks
@@ -948,7 +897,7 @@ function GenericWorkspace({ page }: { page: FinancePageMeta }) {
   );
 }
 
-export default function FinanceWorkspaceClient({ page, commandCentre, approvalCentre, paymentRequests, approvalMatrix, childLinks }: Props) {
+export default function FinanceWorkspaceClient({ page, commandCentre, approvalCentre, paymentRequests, approvalMatrix, cashAdvanceControls, childLinks }: Props) {
   const reportingCards = useMemo(
     () => [
       {
@@ -991,12 +940,13 @@ export default function FinanceWorkspaceClient({ page, commandCentre, approvalCe
       {page.kind === 'ai-copilot' ? <AiCopilotView page={page} /> : null}
       {page.kind === 'approvals-dashboard' ? <ApprovalsDashboard snapshot={approvalCentre} /> : null}
       {page.kind === 'payment-requests' && paymentRequests ? <PaymentRequestsClient initialWorkspace={paymentRequests} /> : null}
+      {page.kind === 'cash-advance-controls' && cashAdvanceControls ? <CashAdvanceControlsClient initialWorkspace={cashAdvanceControls} /> : null}
       {page.kind === 'approval-matrix' && approvalMatrix ? <ApprovalMatrixClient initialWorkspace={approvalMatrix} /> : null}
       {page.kind === 'approval-limits' && approvalMatrix ? <ApprovalLimitsClient initialWorkspace={approvalMatrix} /> : null}
       {page.kind === 'approval-queue' ? <ApprovalQueue page={page} /> : null}
-      {page.kind === 'approval-detail' ? <ApprovalDetail /> : null}
+      {page.kind === 'approval-detail' ? <PaymentApprovalDetailClient /> : null}
       {page.kind === 'section-dashboard' ? <SectionDashboard page={page} childLinks={childLinks} /> : null}
-      {!['command-centre', 'reporting-hub', 'analysis-hub', 'analysis-workspace', 'ai-copilot', 'approvals-dashboard', 'payment-requests', 'approval-matrix', 'approval-limits', 'approval-queue', 'approval-detail', 'section-dashboard'].includes(page.kind)
+      {!['command-centre', 'reporting-hub', 'analysis-hub', 'analysis-workspace', 'ai-copilot', 'approvals-dashboard', 'payment-requests', 'cash-advance-controls', 'approval-matrix', 'approval-limits', 'approval-queue', 'approval-detail', 'section-dashboard'].includes(page.kind)
         ? <GenericWorkspace page={page} />
         : null}
     </div>

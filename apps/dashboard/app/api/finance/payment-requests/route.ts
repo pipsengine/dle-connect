@@ -1,15 +1,23 @@
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import { AUTH_COOKIE, hasPermission, verifySessionToken } from '@/lib/auth/session';
+import { permissionsForRoles } from '@/lib/auth/rbac';
 import {
+  ALLOWED_PAYMENT_CURRENCIES,
+  buildCashAdvanceControlsWorkspace,
   buildPaymentRequestsWorkspace,
+  cancelOutstandingCashAdvance,
   createPaymentRequest,
+  getCashAdvanceEligibility,
+  getPaymentRequestById,
   grantCashAdvanceWaiver,
+  listPaymentRequestActions,
   PAYMENT_TYPES,
   transitionPaymentRequest,
   type PaymentRequestType,
 } from '@/lib/finance-intelligence/payment-requests-service';
 import { listExpenseCodes, listPaymentSites } from '@/lib/finance-intelligence/payment-request-lookups';
+import { resolvePublicAppOrigin } from '@/lib/public-app-url';
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -18,19 +26,56 @@ const resolveActor = async () => {
   const jar = await cookies();
   const token = jar.get(AUTH_COOKIE)?.value;
   const session = token ? await verifySessionToken(token) : null;
+  const roles = session?.roles || [];
+  const permissions = session?.isGlobalAdmin
+    ? ['*']
+    : permissionsForRoles(roles);
   return {
     actor: session?.fullName || session?.username || session?.sub || 'Finance User',
     actorCode: session?.employeeCode || session?.username || session?.sub || '',
     department: session?.department || '',
     jobTitle: '',
+    roles,
+    permissions,
+    isGlobalAdmin: Boolean(session?.isGlobalAdmin),
+    authenticated: Boolean(session),
   };
+};
+
+const canManageCashAdvanceOverrides = (actor: Awaited<ReturnType<typeof resolveActor>>) => {
+  if (actor.isGlobalAdmin) return true;
+  if (hasPermission(actor.permissions, 'finance.approve') || hasPermission(actor.permissions, 'finance.*')) return true;
+  return actor.roles.some((role) =>
+    /^(cfo|finance manager|finance controller|finance administrator|treasury officer)$/i.test(role.trim()));
 };
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const paymentType = searchParams.get('paymentType') || undefined;
     const actor = await resolveActor();
+    const view = searchParams.get('view');
+    const requestId = searchParams.get('requestId');
+
+    if (requestId) {
+      const paymentRequest = await getPaymentRequestById(requestId);
+      if (!paymentRequest) return jsonErr(404, 'Payment request not found.');
+      const actions = await listPaymentRequestActions(paymentRequest.requestId);
+      return jsonOk({ request: paymentRequest, actions });
+    }
+
+    if (view === 'eligibility') {
+      const employeeCode = searchParams.get('employeeCode') || actor.actorCode;
+      return jsonOk(await getCashAdvanceEligibility(employeeCode || ''));
+    }
+
+    if (view === 'cash-advance-controls') {
+      if (!canManageCashAdvanceOverrides(actor)) {
+        return jsonErr(403, 'Only CFO / Finance approvers can open cash advance controls.');
+      }
+      return jsonOk(await buildCashAdvanceControlsWorkspace());
+    }
+
+    const paymentType = searchParams.get('paymentType') || undefined;
     const workspace = await buildPaymentRequestsWorkspace({
       paymentType: paymentType || undefined,
       mineFor: searchParams.get('mine') === '1' ? actor.actorCode : undefined,
@@ -44,6 +89,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const actor = await resolveActor();
+    if (!actor.authenticated) return jsonErr(401, 'Sign in required.');
     const body = await request.json().catch(() => ({}));
     const action = String(body.action || 'create').trim();
 
@@ -55,10 +101,15 @@ export async function POST(request: Request) {
 
       const sites = await listPaymentSites();
       const expenses = await listExpenseCodes();
-      const paymentSiteCode = String(body.paymentSiteCode || body.companyCode || '').trim();
-      const paymentSite = sites.find((site) => site.siteCode === paymentSiteCode) || null;
-      const expenseCode = String(body.expenseCode || '').trim();
-      const expense = expenses.find((item) => item.expenseCode === expenseCode) || null;
+      const paymentSiteCode = String(body.paymentSiteCode || body.companyCode || '').trim().toUpperCase();
+      const paymentSite = sites.find((site) => site.siteCode.toUpperCase() === paymentSiteCode) || null;
+      const expenseCode = String(body.expenseCode || '').trim().toUpperCase();
+      const expense = expenses.find((item) => item.expenseCode.toUpperCase() === expenseCode) || null;
+      const currencyCode = String(body.currencyCode || 'NGN').trim().toUpperCase();
+      if (!ALLOWED_PAYMENT_CURRENCIES.includes(currencyCode as typeof ALLOWED_PAYMENT_CURRENCIES[number])) {
+        return jsonErr(400, 'Currency must be NGN, USD, EUR or GBP.');
+      }
+
       const title = paymentType === 'Cash Advance Payment'
         ? (expense?.label || String(body.title || '').trim())
         : String(body.title || '').trim();
@@ -66,6 +117,11 @@ export async function POST(request: Request) {
       if (paymentType === 'Cash Advance Payment') {
         if (!paymentSite) return jsonErr(400, 'Select a valid payment site.');
         if (!expense) return jsonErr(400, 'Select a valid request title (expense code).');
+        if (!String(body.location || '').trim()) return jsonErr(400, 'Location is required.');
+        if (!String(body.department || '').trim()) return jsonErr(400, 'Department is required.');
+        if (String(body.businessJustification || '').trim().length < 10) {
+          return jsonErr(400, 'Business justification must be at least 10 characters.');
+        }
       }
 
       const employeeCode = String(body.beneficiaryCode || body.employeeCode || actor.actorCode || '').trim();
@@ -82,7 +138,7 @@ export async function POST(request: Request) {
         beneficiaryBankSummary: body.beneficiaryBankSummary,
         description: body.description || title,
         amount: Number(body.amount || 0),
-        currencyCode: body.currencyCode,
+        currencyCode,
         companyCode: paymentSite?.siteCode || paymentSiteCode || body.companyCode,
         paymentSiteCode: paymentSite?.siteCode || paymentSiteCode || undefined,
         paymentSiteName: paymentSite?.siteName || body.paymentSiteName,
@@ -117,21 +173,43 @@ export async function POST(request: Request) {
     }
 
     if (action === 'grant-cash-advance-waiver') {
+      if (!canManageCashAdvanceOverrides(actor)) {
+        return jsonErr(403, 'Only CFO / Finance approvers can grant cash advance waivers.');
+      }
       const employeeCode = String(body.employeeCode || '').trim();
       const reason = String(body.reason || '').trim();
-      if (!employeeCode) return jsonErr(400, 'employeeCode is required.');
-      if (!reason) return jsonErr(400, 'reason is required.');
       const result = await grantCashAdvanceWaiver({
         employeeCode,
         reason,
         grantedBy: actor.actor,
+        grantedByCode: actor.actorCode,
       });
-      return jsonOk({ ...result, message: 'Outstanding cash advance waiver granted.' });
+      return jsonOk({
+        ...result,
+        message: result.alreadyActive
+          ? 'An active waiver already exists for this employee.'
+          : 'Outstanding cash advance waiver granted.',
+      });
+    }
+
+    if (action === 'cancel-outstanding-cash-advance') {
+      if (!canManageCashAdvanceOverrides(actor)) {
+        return jsonErr(403, 'Only CFO / Finance approvers can cancel outstanding cash advances.');
+      }
+      const result = await cancelOutstandingCashAdvance({
+        requestId: String(body.requestId || '').trim(),
+        reason: String(body.reason || '').trim(),
+        actor: actor.actor,
+        actorCode: actor.actorCode,
+      });
+      return jsonOk({ ...result, message: 'Outstanding cash advance cancelled. Retirement is no longer required.' });
     }
 
     if (action === 'transition') {
       const requestId = String(body.requestId || '').trim();
       if (!requestId) return jsonErr(400, 'requestId is required.');
+      const hdrs = await headers();
+      const origin = resolvePublicAppOrigin(hdrs.get('origin') || hdrs.get('x-forwarded-host') || undefined);
       const result = await transitionPaymentRequest({
         requestId,
         action: body.transition,
@@ -140,8 +218,12 @@ export async function POST(request: Request) {
         comment: body.comment,
         reason: body.reason,
         paymentReference: body.paymentReference,
+        baseUrl: origin,
       });
-      return jsonOk({ ...result, message: 'Payment request updated.' });
+      const actions = result.request
+        ? await listPaymentRequestActions(result.request.requestId)
+        : [];
+      return jsonOk({ ...result, actions, message: 'Payment request updated.' });
     }
 
     return jsonErr(400, 'Unsupported payment request action.');

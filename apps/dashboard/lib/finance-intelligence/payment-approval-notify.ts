@@ -1,0 +1,298 @@
+import type { SessionPayload } from '@/lib/auth/session';
+import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
+import {
+  sendPaymentApprovalRequestEmail,
+  sendPaymentDecisionEmail,
+  resolveEmployeeMailbox,
+} from '@/lib/mail-service';
+import { resolveLineManagerForEmployee } from '@/lib/leave-workflow-service';
+import { readDirectoryEmployees } from '@/lib/payroll-employee-source';
+import { resolvePublicAppOrigin } from '@/lib/public-app-url';
+
+export type PaymentNotifyRequest = {
+  requestId: string;
+  requestNumber: string;
+  paymentType: string;
+  title: string;
+  requesterCode: string;
+  requesterName: string;
+  beneficiaryName: string;
+  netAmount: number;
+  currencyCode: string;
+  department?: string;
+  projectCode?: string;
+  paymentSiteName?: string;
+  supervisorName?: string;
+  currentStage?: string;
+  status?: string;
+};
+
+export type ResolvedPaymentApprover = {
+  code: string;
+  name: string;
+  employee: DleEmployeeDirectoryRow | null;
+  roles: string[];
+};
+
+const compact = (value: unknown) => String(value ?? '').trim();
+
+const financeSystemSession = (actor: string): SessionPayload => ({
+  sub: 'system-finance-workflow',
+  username: 'system-finance-workflow',
+  fullName: actor || 'Finance Workflow',
+  roles: ['System'],
+  permissions: ['*'],
+  status: 'Active',
+  firstLoginRequired: false,
+  passwordResetRequired: false,
+  iat: Math.floor(Date.now() / 1000),
+  exp: Math.floor(Date.now() / 1000) + 3600,
+});
+
+const employeeCodeOf = (employee: DleEmployeeDirectoryRow) =>
+  compact(employee.employeeCode || employee.employeeId || employee.sourceEmployeeId);
+
+const matchJobTitle = (employees: DleEmployeeDirectoryRow[], patterns: RegExp[]) => {
+  const inactive = /inactive|terminated|resigned|retired|deceased|suspend/i;
+  return employees.find((employee) => {
+    if (inactive.test(compact(employee.status))) return false;
+    const title = compact(employee.jobTitle || employee.designation);
+    return patterns.some((pattern) => pattern.test(title));
+  }) || null;
+};
+
+const roleFallbacksForStage = (stage: string): string[] => {
+  const value = compact(stage).toLowerCase();
+  if (/reporting manager|line manager|supervisor|lead/.test(value)) {
+    return ['Line Manager', 'Supervisor', 'Lead', 'Department Head'];
+  }
+  if (/project manager/.test(value)) return ['Project Manager'];
+  if (/cost controller/.test(value)) return ['Cost Controller'];
+  if (/finance manager/.test(value)) return ['Finance Manager', 'Finance Controller'];
+  if (/^gm$|general manager/.test(value)) return ['General Manager', 'GM'];
+  if (/cfo|chief financial/.test(value)) return ['CFO', 'Chief Financial Officer'];
+  if (/md\/?ceo|managing director|chief executive/.test(value)) return ['MD', 'CEO', 'Managing Director'];
+  return [compact(stage) || 'Finance Approver'];
+};
+
+export const paymentRequestDetailPath = (requestId: string) =>
+  `/finance/approvals/request/${encodeURIComponent(requestId)}`;
+
+export const paymentRequestDetailUrl = (requestId: string, baseUrl?: string | null, action?: 'approve' | 'reject') => {
+  const origin = resolvePublicAppOrigin(baseUrl);
+  const path = paymentRequestDetailPath(requestId);
+  if (!action) return `${origin}${path}`;
+  return `${origin}${path}?action=${action}`;
+};
+
+export const resolvePaymentStageApprover = async (input: {
+  stage: string;
+  requesterCode?: string | null;
+  projectCode?: string | null;
+  supervisorName?: string | null;
+}): Promise<ResolvedPaymentApprover> => {
+  const stage = compact(input.stage) || 'Finance Manager';
+  const roles = roleFallbacksForStage(stage);
+  const directory = await readDirectoryEmployees().catch(() => ({ employees: [] as DleEmployeeDirectoryRow[] }));
+  const employees = directory.employees || [];
+  const requester = employees.find((employee) => {
+    const code = employeeCodeOf(employee).toUpperCase();
+    const target = compact(input.requesterCode).toUpperCase();
+    return target && (code === target || compact(employee.employeeId).toUpperCase() === target);
+  }) || null;
+
+  let matched: DleEmployeeDirectoryRow | null = null;
+  const stageKey = stage.toLowerCase();
+
+  if (/reporting manager|line manager|supervisor|lead/.test(stageKey)) {
+    if (requester) {
+      matched = resolveLineManagerForEmployee(requester, employees)?.employee || null;
+    }
+    if (!matched && compact(input.supervisorName)) {
+      matched = employees.find((employee) =>
+        compact(employee.fullName).toLowerCase() === compact(input.supervisorName).toLowerCase()) || null;
+    }
+  } else if (/project manager/.test(stageKey)) {
+    const project = compact(input.projectCode).toLowerCase();
+    matched = employees.find((employee) => {
+      const title = compact(employee.jobTitle || employee.designation);
+      if (!/project\s*manager/i.test(title)) return false;
+      if (!project) return true;
+      const site = compact(employee.projectSite || employee.department).toLowerCase();
+      return site.includes(project) || project.includes(site);
+    }) || matchJobTitle(employees, [/project\s*manager/i]);
+  } else if (/cost controller/.test(stageKey)) {
+    matched = matchJobTitle(employees, [/cost\s*controller/i]);
+  } else if (/finance manager/.test(stageKey)) {
+    matched = matchJobTitle(employees, [/finance\s*manager/i, /financial\s*controller/i]);
+  } else if (/^gm$|general manager/.test(stageKey)) {
+    matched = matchJobTitle(employees, [/^gm$/i, /general\s*manager/i]);
+  } else if (/cfo|chief financial/.test(stageKey)) {
+    matched = matchJobTitle(employees, [/\bcfo\b/i, /chief\s*financial/i]);
+  } else if (/md\/?ceo|managing director|chief executive/.test(stageKey)) {
+    matched = matchJobTitle(employees, [/managing\s*director/i, /\bmd\b/i, /\bceo\b/i, /chief\s*executive/i]);
+  }
+
+  if (matched) {
+    return {
+      code: employeeCodeOf(matched),
+      name: compact(matched.fullName) || stage,
+      employee: matched,
+      roles,
+    };
+  }
+
+  return {
+    code: '',
+    name: stage,
+    employee: null,
+    roles,
+  };
+};
+
+const safeNotify = async (label: string, task: () => Promise<unknown>) => {
+  try {
+    await task();
+  } catch (error) {
+    console.error(`[payment-approval] ${label} failed`, error);
+  }
+};
+
+export const notifyPaymentApprovalRequired = async (input: {
+  request: PaymentNotifyRequest;
+  stage: string;
+  actorName: string;
+  baseUrl?: string | null;
+}) => {
+  const session = financeSystemSession(input.actorName);
+  const approver = await resolvePaymentStageApprover({
+    stage: input.stage,
+    requesterCode: input.request.requesterCode,
+    projectCode: input.request.projectCode,
+    supervisorName: input.request.supervisorName,
+  });
+  const href = paymentRequestDetailPath(input.request.requestId);
+  const amountLabel = `${input.request.currencyCode} ${Number(input.request.netAmount || 0).toLocaleString('en-NG')}`;
+  const body = `${input.request.requesterName} submitted ${input.request.paymentType} ${input.request.requestNumber} (${amountLabel}) for ${input.stage} approval.`;
+
+  await safeNotify('approver in-app', async () => {
+    await createEnterpriseNotification(session, {
+      kind: 'Approval',
+      module: 'Finance Approvals',
+      title: 'Payment approval required',
+      body,
+      severity: 'warning',
+      recipientEmployeeCode: approver.code || undefined,
+      recipientRoles: approver.code ? [] : approver.roles,
+      href,
+      channels: ['In-App', 'Email'],
+      metadata: {
+        requestId: input.request.requestId,
+        requestNumber: input.request.requestNumber,
+        stage: input.stage,
+      },
+      actor: input.actorName,
+    });
+  });
+
+  if (approver.employee) {
+    const mailbox = await resolveEmployeeMailbox(approver.employee);
+    if (mailbox) {
+      await safeNotify('approver email', () =>
+        sendPaymentApprovalRequestEmail({
+          recipientName: approver.name,
+          recipientEmail: mailbox,
+          request: input.request,
+          stage: input.stage,
+          approveUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl, 'approve'),
+          rejectUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl, 'reject'),
+          detailUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl),
+          baseUrl: input.baseUrl,
+        }));
+    }
+  }
+
+  return approver;
+};
+
+export const notifyPaymentDecision = async (input: {
+  request: PaymentNotifyRequest;
+  event: 'approved' | 'rejected' | 'returned' | 'stage-advanced';
+  actorName: string;
+  stage?: string;
+  nextStage?: string;
+  reason?: string;
+  baseUrl?: string | null;
+}) => {
+  const session = financeSystemSession(input.actorName);
+  const directory = await readDirectoryEmployees().catch(() => ({ employees: [] as DleEmployeeDirectoryRow[] }));
+  const requester = (directory.employees || []).find((employee) => {
+    const code = employeeCodeOf(employee).toUpperCase();
+    const target = compact(input.request.requesterCode).toUpperCase();
+    return target && (code === target || compact(employee.employeeId).toUpperCase() === target);
+  }) || null;
+
+  const titles: Record<typeof input.event, string> = {
+    approved: 'Payment request approved',
+    rejected: 'Payment request rejected',
+    returned: 'Payment request returned',
+    'stage-advanced': 'Payment approval progressed',
+  };
+  const severity: Record<typeof input.event, 'info' | 'success' | 'warning' | 'critical'> = {
+    approved: 'success',
+    rejected: 'critical',
+    returned: 'warning',
+    'stage-advanced': 'info',
+  };
+  const body = input.event === 'stage-advanced'
+    ? `${input.request.requestNumber} cleared ${input.stage || 'prior stage'}. Now awaiting ${input.nextStage || 'next stage'}.`
+    : input.event === 'approved'
+      ? `${input.request.requestNumber} is fully approved and ready for treasury hand-off.`
+      : `${input.request.requestNumber} was ${input.event} by ${input.actorName}.${input.reason ? ` Reason: ${input.reason}` : ''}`;
+
+  const href = paymentRequestDetailPath(input.request.requestId);
+
+  if (requester) {
+    await safeNotify('requester in-app', async () => {
+      await createEnterpriseNotification(session, {
+        kind: 'Approval',
+        module: 'Finance Approvals',
+        title: titles[input.event],
+        body,
+        severity: severity[input.event],
+        recipientEmployeeCode: employeeCodeOf(requester),
+        href,
+        channels: ['In-App', 'Email'],
+        metadata: { requestId: input.request.requestId, event: input.event },
+        actor: input.actorName,
+      });
+    });
+
+    const mailbox = await resolveEmployeeMailbox(requester);
+    if (mailbox) {
+      await safeNotify('requester email', () =>
+        sendPaymentDecisionEmail({
+          recipientName: compact(requester.fullName) || input.request.requesterName,
+          recipientEmail: mailbox,
+          request: input.request,
+          event: input.event === 'stage-advanced' ? 'stage-advanced' : input.event,
+          actorName: input.actorName,
+          stage: input.stage,
+          nextStage: input.nextStage,
+          reason: input.reason,
+          detailUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl),
+          baseUrl: input.baseUrl,
+        }));
+    }
+  }
+
+  if (input.event === 'stage-advanced' && input.nextStage) {
+    await notifyPaymentApprovalRequired({
+      request: { ...input.request, currentStage: input.nextStage, status: 'Pending Approval' },
+      stage: input.nextStage,
+      actorName: input.actorName,
+      baseUrl: input.baseUrl,
+    });
+  }
+};

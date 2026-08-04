@@ -31,13 +31,13 @@ export default function ApprovalMatrixClient({ initialWorkspace }: Props) {
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
     ruleName: '',
-    paymentType: 'Cash Advance Payment',
+    pathType: 'Non-project',
     entityName: 'Dorman Long Nigeria Ltd',
     companyCode: 'DLE',
     minAmount: '0',
     maxAmount: '',
-    approvalLevel: '1',
-    approverRoles: 'Line Manager',
+    approvalLevel: '2',
+    approverRoles: 'Reporting Manager → Finance Manager',
     dualControl: false,
     status: 'Active',
   });
@@ -85,11 +85,11 @@ export default function ApprovalMatrixClient({ initialWorkspace }: Props) {
   };
 
   const summary = [
-    { label: 'Payment Types', value: String(workspace.summary.paymentTypes), detail: 'Configured', icon: Database, wrap: 'bg-blue-50', color: 'text-[#008FD5]' },
+    { label: 'Approval Paths', value: String(workspace.summary.pathTypes), detail: 'Non-project · Project', icon: Database, wrap: 'bg-blue-50', color: 'text-[#008FD5]' },
     { label: 'Approval Rules', value: String(workspace.summary.activeRules), detail: 'Active', icon: Users, wrap: 'bg-emerald-50', color: 'text-emerald-600' },
     { label: 'Approval Levels', value: String(workspace.summary.approvalLevels), detail: 'Across all rules', icon: Network, wrap: 'bg-violet-50', color: 'text-violet-600' },
     { label: 'Pending Changes', value: String(workspace.summary.pendingChanges), detail: 'Awaiting publish', icon: Clock3, wrap: 'bg-orange-50', color: 'text-orange-500' },
-    { label: 'Rule Coverage', value: `${workspace.summary.coveragePct}%`, detail: 'Enabled payment types', icon: CheckCircle2, wrap: 'bg-teal-50', color: 'text-teal-600' },
+    { label: 'Path Coverage', value: `${workspace.summary.coveragePct}%`, detail: 'Required paths covered', icon: CheckCircle2, wrap: 'bg-teal-50', color: 'text-teal-600' },
   ];
 
   return (
@@ -234,7 +234,7 @@ export default function ApprovalMatrixClient({ initialWorkspace }: Props) {
             <table className="min-w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-500">
                 <tr>
-                  {['Rule', 'Payment type', 'Amount band', 'Level', 'Approvers', 'Status'].map((column) => (
+                  {['Rule', 'Path', 'Amount band', 'Level', 'Approvers', 'Status'].map((column) => (
                     <th key={column} className="px-3 py-2 font-semibold">{column}</th>
                   ))}
                 </tr>
@@ -243,7 +243,7 @@ export default function ApprovalMatrixClient({ initialWorkspace }: Props) {
                 {workspace.rules.map((rule) => (
                   <tr key={rule.matrixId} className="border-t border-slate-100">
                     <td className="px-3 py-2.5 font-semibold text-slate-800">{rule.ruleName}</td>
-                    <td className="px-3 py-2.5">{rule.paymentType.replace(' Payment', '')}</td>
+                    <td className="px-3 py-2.5">{rule.pathType}</td>
                     <td className="px-3 py-2.5 tabular-nums">
                       {new Intl.NumberFormat('en-NG').format(rule.minAmount)}
                       {' – '}
@@ -280,15 +280,15 @@ export default function ApprovalMatrixClient({ initialWorkspace }: Props) {
                 <input value={form.ruleName} onChange={(e) => setForm((p) => ({ ...p, ruleName: e.target.value }))} placeholder="CASH_ADV_001" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block text-sm"><span className="mb-1 block font-medium">Payment type *</span>
-                  <select value={form.paymentType} onChange={(e) => setForm((p) => ({ ...p, paymentType: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
-                    <option>Cash Advance Payment</option>
-                    <option>Supplier Invoice Payment</option>
+                <label className="block text-sm"><span className="mb-1 block font-medium">Path *</span>
+                  <select value={form.pathType} onChange={(e) => setForm((p) => ({ ...p, pathType: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
+                    <option>Non-project</option>
+                    <option>Project</option>
                   </select>
                 </label>
                 <label className="block text-sm"><span className="mb-1 block font-medium">Approval level *</span>
                   <select value={form.approvalLevel} onChange={(e) => setForm((p) => ({ ...p, approvalLevel: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
-                    {[1, 2, 3, 4, 5].map((level) => <option key={level} value={level}>Level {level}</option>)}
+                    {[1, 2, 3, 4, 5, 6].map((level) => <option key={level} value={level}>Level {level}</option>)}
                   </select>
                 </label>
               </div>
@@ -301,7 +301,7 @@ export default function ApprovalMatrixClient({ initialWorkspace }: Props) {
                 </label>
               </div>
               <label className="block text-sm"><span className="mb-1 block font-medium">Approver role(s) *</span>
-                <input value={form.approverRoles} onChange={(e) => setForm((p) => ({ ...p, approverRoles: e.target.value }))} placeholder="Line Manager" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+                <input value={form.approverRoles} onChange={(e) => setForm((p) => ({ ...p, approverRoles: e.target.value }))} placeholder="Reporting Manager → Finance Manager" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
               </label>
               <label className="inline-flex items-center gap-2 text-sm text-slate-700">
                 <input type="checkbox" checked={form.dualControl} onChange={(e) => setForm((p) => ({ ...p, dualControl: e.target.checked }))} className="rounded border-slate-300 text-[#008FD5]" />

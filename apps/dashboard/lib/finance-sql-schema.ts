@@ -219,6 +219,7 @@ CREATE TABLE [finance].[ApprovalMatrix] (
   [MatrixId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceApprovalMatrix] PRIMARY KEY,
   [RuleName] NVARCHAR(80) NOT NULL,
   [PaymentType] NVARCHAR(80) NOT NULL,
+  [PathType] NVARCHAR(40) NULL,
   [CompanyCode] NVARCHAR(40) NULL,
   [EntityName] NVARCHAR(200) NULL,
   [MinAmount] DECIMAL(19,4) NOT NULL CONSTRAINT [DF_FinanceMatrix_Min] DEFAULT 0,
@@ -260,6 +261,89 @@ IF COL_LENGTH(N'finance.ApprovalMatrix', N'UpdatedBy') IS NULL
   ALTER TABLE [finance].[ApprovalMatrix] ADD [UpdatedBy] NVARCHAR(120) NULL;
 IF COL_LENGTH(N'finance.ApprovalMatrix', N'CreatedAt') IS NULL
   ALTER TABLE [finance].[ApprovalMatrix] ADD [CreatedAt] DATETIME2(0) NULL;
+IF COL_LENGTH(N'finance.ApprovalMatrix', N'PathType') IS NULL
+  ALTER TABLE [finance].[ApprovalMatrix] ADD [PathType] NVARCHAR(40) NULL;
+
+IF OBJECT_ID(N'[finance].[FxRates]', N'U') IS NULL
+CREATE TABLE [finance].[FxRates] (
+  [RateId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceFxRates] PRIMARY KEY,
+  [FromCurrency] NVARCHAR(10) NOT NULL,
+  [ToCurrency] NVARCHAR(10) NOT NULL CONSTRAINT [DF_FinanceFxRates_To] DEFAULT N'NGN',
+  [RateDate] DATE NOT NULL,
+  [Rate] DECIMAL(19,8) NOT NULL,
+  [Source] NVARCHAR(80) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceFxRates_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceFxRates_UpdatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinanceFxRates_Lookup' AND object_id = OBJECT_ID(N'[finance].[FxRates]'))
+  CREATE UNIQUE INDEX [IX_FinanceFxRates_Lookup] ON [finance].[FxRates] ([FromCurrency], [ToCurrency], [RateDate]);
+
+-- Seed today's prevailing rates (NGN per unit). Updated daily via MERGE on ensure.
+MERGE [finance].[FxRates] AS target
+USING (VALUES
+  (N'FX-USD-' + CONVERT(NVARCHAR(8), CAST(SYSUTCDATETIME() AS DATE), 112), N'USD', N'NGN', CAST(SYSUTCDATETIME() AS DATE), CAST(1600.00000000 AS DECIMAL(19,8)), N'System daily seed'),
+  (N'FX-EUR-' + CONVERT(NVARCHAR(8), CAST(SYSUTCDATETIME() AS DATE), 112), N'EUR', N'NGN', CAST(SYSUTCDATETIME() AS DATE), CAST(1750.00000000 AS DECIMAL(19,8)), N'System daily seed'),
+  (N'FX-GBP-' + CONVERT(NVARCHAR(8), CAST(SYSUTCDATETIME() AS DATE), 112), N'GBP', N'NGN', CAST(SYSUTCDATETIME() AS DATE), CAST(2050.00000000 AS DECIMAL(19,8)), N'System daily seed'),
+  (N'FX-NGN-' + CONVERT(NVARCHAR(8), CAST(SYSUTCDATETIME() AS DATE), 112), N'NGN', N'NGN', CAST(SYSUTCDATETIME() AS DATE), CAST(1.00000000 AS DECIMAL(19,8)), N'System daily seed')
+) AS source ([RateId], [FromCurrency], [ToCurrency], [RateDate], [Rate], [Source])
+ON target.[FromCurrency] = source.[FromCurrency]
+ AND target.[ToCurrency] = source.[ToCurrency]
+ AND target.[RateDate] = source.[RateDate]
+WHEN MATCHED THEN UPDATE SET
+  [Rate] = source.[Rate],
+  [Source] = source.[Source],
+  [UpdatedAt] = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([RateId], [FromCurrency], [ToCurrency], [RateDate], [Rate], [Source])
+VALUES (source.[RateId], source.[FromCurrency], source.[ToCurrency], source.[RateDate], source.[Rate], source.[Source]);
+
+-- Employee payment approval limits (same for Cash Advance + Supplier Invoice). Path drives the chain.
+MERGE [finance].[ApprovalMatrix] AS target
+USING (VALUES
+  (N'LIM-NONPROJ-200K', N'NONPROJ_LE_200K', N'Employee Payment', N'Non-project', CAST(0 AS DECIMAL(19,4)), CAST(200000 AS DECIMAL(19,4)), 2,
+   N'Reporting Manager → Finance Manager',
+   N'["Reporting Manager","Finance Manager"]'),
+  (N'LIM-NONPROJ-1M', N'NONPROJ_LE_1M', N'Employee Payment', N'Non-project', CAST(200000.01 AS DECIMAL(19,4)), CAST(1000000 AS DECIMAL(19,4)), 3,
+   N'Reporting Manager → Finance Manager → CFO',
+   N'["Reporting Manager","Finance Manager","CFO"]'),
+  (N'LIM-NONPROJ-OPEN', N'NONPROJ_GT_1M', N'Employee Payment', N'Non-project', CAST(1000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 4,
+   N'Reporting Manager → Finance Manager → CFO → MD/CEO',
+   N'["Reporting Manager","Finance Manager","CFO","MD/CEO"]'),
+  (N'LIM-PROJ-200K', N'PROJ_LE_200K', N'Employee Payment', N'Project', CAST(0 AS DECIMAL(19,4)), CAST(200000 AS DECIMAL(19,4)), 3,
+   N'Project Manager → Cost Controller → Finance Manager',
+   N'["Project Manager","Cost Controller","Finance Manager"]'),
+  (N'LIM-PROJ-5M', N'PROJ_LE_5M', N'Employee Payment', N'Project', CAST(200000.01 AS DECIMAL(19,4)), CAST(5000000 AS DECIMAL(19,4)), 5,
+   N'Project Manager → Cost Controller → Finance Manager → GM → CFO',
+   N'["Project Manager","Cost Controller","Finance Manager","GM","CFO"]'),
+  (N'LIM-PROJ-OPEN', N'PROJ_GT_5M', N'Employee Payment', N'Project', CAST(5000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 6,
+   N'Project Manager → Cost Controller → Finance Manager → GM → CFO → MD/CEO',
+   N'["Project Manager","Cost Controller","Finance Manager","GM","CFO","MD/CEO"]')
+) AS source (
+  [MatrixId], [RuleName], [PaymentType], [PathType], [MinAmount], [MaxAmount], [ApprovalLevel], [ApproverRoles], [StagesJson]
+)
+ON target.[MatrixId] = source.[MatrixId]
+WHEN MATCHED THEN UPDATE SET
+  [RuleName] = source.[RuleName],
+  [PaymentType] = source.[PaymentType],
+  [PathType] = source.[PathType],
+  [MinAmount] = source.[MinAmount],
+  [MaxAmount] = source.[MaxAmount],
+  [ApprovalLevel] = source.[ApprovalLevel],
+  [ApproverRoles] = source.[ApproverRoles],
+  [StagesJson] = source.[StagesJson],
+  [CurrencyCode] = N'NGN',
+  [Status] = N'Active',
+  [IsActive] = 1,
+  [UpdatedBy] = N'System Seed',
+  [UpdatedAt] = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT (
+  [MatrixId], [RuleName], [PaymentType], [PathType], [CompanyCode], [EntityName], [MinAmount], [MaxAmount],
+  [ApprovalLevel], [ApproverRoles], [StagesJson], [CurrencyCode], [DualControl], [Status], [IsActive], [CreatedBy], [UpdatedBy]
+) VALUES (
+  source.[MatrixId], source.[RuleName], source.[PaymentType], source.[PathType], N'DLE', N'Dorman Long Nigeria Ltd',
+  source.[MinAmount], source.[MaxAmount], source.[ApprovalLevel], source.[ApproverRoles], source.[StagesJson],
+  N'NGN', 0, N'Active', 1, N'System Seed', N'System Seed'
+);
 
 IF OBJECT_ID(N'[finance].[ApprovalMatrixAudit]', N'U') IS NULL
 CREATE TABLE [finance].[ApprovalMatrixAudit] (
