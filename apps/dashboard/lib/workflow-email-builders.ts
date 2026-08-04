@@ -850,7 +850,7 @@ export const buildPaymentDecisionEmail = (input: {
     returned: `Payment returned — ${input.request.requestNumber}`,
     'stage-advanced': `Payment progressed — ${input.request.requestNumber}`,
     paid: `Payment disbursed — ${input.request.requestNumber}`,
-    posted: `Payment posted — ${input.request.requestNumber}`,
+    posted: `Payment marked posted — ${input.request.requestNumber}`,
   } as const;
   const headlineMap = {
     approved: 'Payment request approved',
@@ -858,7 +858,7 @@ export const buildPaymentDecisionEmail = (input: {
     returned: 'Payment request returned',
     'stage-advanced': 'Payment approval progressed',
     paid: 'Payment disbursed by Treasury',
-    posted: 'Payment marked posted to Sage',
+    posted: 'Payment marked posted',
   } as const;
   const introMap = {
     approved: 'Your payment request has been fully approved and can proceed to treasury.',
@@ -866,7 +866,7 @@ export const buildPaymentDecisionEmail = (input: {
     returned: 'Your payment request was returned for correction.',
     'stage-advanced': `Your payment request cleared ${input.stage || 'a stage'} and is now awaiting ${input.nextStage || 'the next approver'}.`,
     paid: 'Treasury has marked your payment as paid. See the payment reference below.',
-    posted: 'Finance has acknowledged Sage posting for this payment.',
+    posted: 'Finance has marked this payment as posted. It is cleared from the Finance Posting Desk.',
   } as const;
   const toneMap = {
     approved: 'success',

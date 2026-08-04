@@ -21,11 +21,11 @@ import type {
   ApprovalDelegationWorkspace,
   DelegationScope,
   DelegationStatus,
-} from '@/lib/finance-intelligence/approval-delegation-service';
+} from '@/lib/finance-intelligence/approval-delegation-types';
 import {
   DELEGATION_APPROVER_ROLE_OPTIONS,
   DELEGATION_SCOPE_OPTIONS,
-} from '@/lib/finance-intelligence/approval-delegation-service';
+} from '@/lib/finance-intelligence/approval-delegation-types';
 
 type Props = { initialWorkspace: ApprovalDelegationWorkspace };
 

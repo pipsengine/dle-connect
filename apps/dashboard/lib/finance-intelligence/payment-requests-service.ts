@@ -418,6 +418,8 @@ const listRows = async (input?: {
   status?: string;
   requesterCode?: string;
   mineFor?: string;
+  /** When set without view-all rights, restrict to requester / approver / beneficiary. */
+  scopedToActorCode?: string;
 }): Promise<PaymentRequestRow[]> => {
   const pool = await ensureFinanceDb().catch(() => null);
   if (!pool) return [];
@@ -435,6 +437,13 @@ const listRows = async (input?: {
     if (input?.requesterCode || input?.mineFor) {
       request.input('requester', sql.NVarChar(60), input.requesterCode || input.mineFor);
       where += ' AND [RequesterCode] = @requester';
+    } else if (input?.scopedToActorCode) {
+      request.input('scopedActor', sql.NVarChar(60), compact(input.scopedToActorCode));
+      where += ` AND (
+  [RequesterCode] = @scopedActor
+  OR [CurrentApproverCode] = @scopedActor
+  OR [BeneficiaryCode] = @scopedActor
+)`;
     }
     const result = await request.query(`
 SELECT TOP 500 *
@@ -881,9 +890,13 @@ VALUES
 export const buildPaymentRequestsWorkspace = async (input?: {
   paymentType?: string;
   mineFor?: string;
+  /** Non-elevated users: only own / assigned / beneficiary rows. */
+  scopedToActorCode?: string;
 }): Promise<PaymentRequestsWorkspace> => {
   const rows = await listRows({
     paymentType: input?.paymentType,
+    mineFor: input?.mineFor,
+    scopedToActorCode: input?.scopedToActorCode,
   });
   const workspace = emptyWorkspace();
   workspace.source = rows.length || (await ensureFinanceDb().catch(() => null))
@@ -906,8 +919,9 @@ export const buildPaymentRequestsWorkspace = async (input?: {
   });
   const rejected = rows.filter((row) => /rejected|cancelled/i.test(row.status));
   const drafts = rows.filter((row) => /draft/i.test(row.status));
-  const mine = input?.mineFor
-    ? rows.filter((row) => row.requesterCode.toLowerCase() === input.mineFor!.toLowerCase())
+  const actorCode = compact(input?.mineFor || input?.scopedToActorCode).toLowerCase();
+  const mine = actorCode
+    ? rows.filter((row) => row.requesterCode.toLowerCase() === actorCode)
     : [];
 
   workspace.summary = {
@@ -930,7 +944,7 @@ export const buildPaymentRequestsWorkspace = async (input?: {
   };
   workspace.tabCounts = {
     all: rows.length,
-    mine: mine.length || (input?.mineFor ? 0 : rows.length),
+    mine: mine.length,
     drafts: drafts.length,
     pending: pending.length,
     returned: returned.length,
@@ -1331,78 +1345,47 @@ export const buildTreasuryWorkspace = async (): Promise<TreasuryWorkspace> => {
 };
 
 export const buildFinancePostingWorkspace = async (): Promise<FinancePostingWorkspace> => {
-  const rows = (await listRows()).filter((row) =>
-    /^(approved|ready for treasury|paid|awaiting retirement|retirement submitted|treasury verification|retired|completed|closed)$/i.test(row.status)
-    || row.postingStatus === 'ReadyToPost'
-    || row.postingStatus === 'Posted'
-    || row.postingStatus === 'PostingFailed');
+  // Worklist only: payments due for books acknowledgement. Marked Posted items leave this desk.
+  const candidates = (await listRows()).filter((row) => {
+    if (row.postingStatus === 'Posted') return false;
+    if (row.postedAt) return false;
+    return /^(approved|ready for treasury|paid|awaiting retirement|retirement submitted|treasury verification|retired|completed|closed)$/i.test(row.status)
+      || row.postingStatus === 'ReadyToPost'
+      || row.postingStatus === 'PostingFailed';
+  });
 
   const derivePosting = (row: PaymentRequestRow): PaymentPostingStatus => {
-    if (row.postingStatus && row.postingStatus !== 'NotReady') return row.postingStatus;
-    if (row.sageReference && row.postedAt) return 'Posted';
+    if (row.postingStatus === 'Posted') return 'Posted';
+    if (row.postingStatus === 'ReadyToPost' || row.postingStatus === 'PostingFailed') return row.postingStatus;
     if (/^(paid|completed|retired|closed)$/i.test(row.status)) return 'ReadyToPost';
     return row.postingStatus || 'NotReady';
   };
 
-  const enriched = rows.map((row) => ({ ...row, postingStatus: derivePosting(row) }));
+  const enriched = candidates
+    .map((row) => ({ ...row, postingStatus: derivePosting(row) }))
+    .filter((row) => row.postingStatus !== 'Posted');
+
   const sum = (list: PaymentRequestRow[]) => list.reduce((total, row) => total + Number(row.netAmount || 0), 0);
   const readyToPost = enriched.filter((row) => row.postingStatus === 'ReadyToPost');
-  const posted = enriched.filter((row) => row.postingStatus === 'Posted');
   const notReady = enriched.filter((row) => row.postingStatus === 'NotReady' || row.postingStatus === 'PostingFailed');
   const failed = enriched.filter((row) => row.postingStatus === 'PostingFailed');
 
   return {
     generatedAt: nowIso(),
-    source: 'DLE Enterprise · finance.PaymentRequests · Sage Posting',
+    source: 'DLE Enterprise · finance.PaymentRequests · Finance Posting',
     summary: {
       readyToPost: readyToPost.length,
       readyValue: sum(readyToPost),
-      posted: posted.length,
+      posted: 0,
       notReady: notReady.length,
       failed: failed.length,
       withDocuments: enriched.filter((row) => (row.attachments?.length || 0) > 0).length,
     },
     rows: enriched,
     readyToPost,
-    posted,
+    posted: [],
     notReady,
   };
-};
-
-const enqueueSagePaymentPost = async (input: {
-  request: PaymentRequestRow;
-  sageReference: string;
-  actor: string;
-}) => {
-  const pool = await ensureFinanceDb().catch(() => null);
-  if (!pool) return;
-  try {
-    await pool.request()
-      .input('QueueId', sql.NVarChar(60), `SSQ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`)
-      .input('Direction', sql.NVarChar(20), 'Outbound')
-      .input('Operation', sql.NVarChar(80), 'PaymentPost')
-      .input('PayloadJson', sql.NVarChar(sql.MAX), JSON.stringify({
-        requestId: input.request.requestId,
-        requestNumber: input.request.requestNumber,
-        paymentType: input.request.paymentType,
-        netAmount: input.request.netAmount,
-        currencyCode: input.request.currencyCode,
-        beneficiaryName: input.request.beneficiaryName,
-        paymentReference: input.request.paymentReference,
-        sageReference: input.sageReference,
-        expenseCode: input.request.expenseCode,
-        paymentSiteCode: input.request.paymentSiteCode,
-        queuedBy: input.actor,
-        queuedAt: nowIso(),
-      }))
-      .input('Status', sql.NVarChar(40), 'Pending')
-      .query(`
-INSERT INTO [finance].[SageSyncQueue] ([QueueId], [Direction], [Operation], [PayloadJson], [Status])
-VALUES (@QueueId, @Direction, @Operation, @PayloadJson, @Status)
-`);
-  } catch (error) {
-    console.error('[payment-requests] SageSyncQueue enqueue failed', error);
-  }
 };
 
 export const transitionPaymentRequest = async (input: {
@@ -1544,9 +1527,9 @@ export const transitionPaymentRequest = async (input: {
       postingStatus = 'ReadyToPost';
       break;
     case 'mark-posted': {
+      // Acknowledge-only: Finance marks the payment posted in their books; no Sage write from Connect.
       const voucher = compact(input.sageReference);
-      if (!voucher) throw new Error('Sage voucher / document reference is required to mark as posted.');
-      sageReference = voucher;
+      sageReference = voucher || existing.sageReference || null;
       postingStatus = 'Posted';
       postedAt = new Date();
       postedBy = input.actor;
@@ -1554,8 +1537,9 @@ export const transitionPaymentRequest = async (input: {
         ...(existing.posting || {}),
         postedAt: postedAt.toISOString(),
         postedBy: input.actor,
-        sageReference: voucher,
+        sageReference: sageReference || null,
         notes: compact(input.comment || input.reason),
+        acknowledgedInConnectOnly: true,
       };
       notifyEvent = 'posted';
       break;
@@ -1677,14 +1661,6 @@ WHERE [RequestId] = @RequestId
   const workspace = await buildPaymentRequestsWorkspace();
   const request = workspace.rows.find((row) => row.requestId === input.requestId)
     || await getPaymentRequestById(input.requestId);
-
-  if (input.action === 'mark-posted' && request && sageReference) {
-    await enqueueSagePaymentPost({
-      request,
-      sageReference,
-      actor: input.actor,
-    });
-  }
 
   if (notifyEvent && request) {
     await notifyPaymentDecision({

@@ -433,7 +433,7 @@ export const FINANCE_PAGES: FinancePageMeta[] = [
   page('/finance/approvals/payments', 'Payment Requests', 'Create, submit, track and manage payment requests through the full approval lifecycle.', 'approvals', 'payment-requests', ['Payment Approvals', 'Payment Requests']),
   page('/finance/approvals/my-requests', 'My Requests', 'Drafts, pending, returned, approved, awaiting retirement and completed requests you own.', 'approvals', 'payment-requests', ['Payment Approvals', 'My Requests']),
   page('/finance/approvals/treasury', 'Treasury Operations', 'Ready for payment, paid today, retirement verification and payment history.', 'approvals', 'treasury-ops', ['Payment Approvals', 'Treasury Operations']),
-  page('/finance/approvals/sage-posting', 'Finance Posting Desk', 'Approved and paid payments ready for Sage posting, with supporting documents and voucher acknowledgement.', 'approvals', 'finance-posting', ['Payment Approvals', 'Finance Posting Desk']),
+  page('/finance/approvals/sage-posting', 'Finance Posting Desk', 'Paid and retired payments awaiting finance acknowledgement as posted. Marked posted items leave this worklist.', 'approvals', 'finance-posting', ['Payment Approvals', 'Finance Posting Desk']),
   page('/finance/approvals/supplier-payments', 'Supplier Payments', 'Supplier invoice payment queue.', 'approvals', 'payment-requests', ['Payment Approvals', 'Supplier Payments']),
   page('/finance/approvals/batches', 'Payment Batches', 'Batch payment approval and release monitoring.', 'approvals', 'approval-queue', ['Payment Approvals', 'Payment Batches']),
   page('/finance/approvals/cash-advances', 'Cash Advances', 'Cash advance requests for approval.', 'approvals', 'payment-requests', ['Payment Approvals', 'Cash Advances']),

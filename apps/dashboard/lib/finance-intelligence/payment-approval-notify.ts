@@ -276,7 +276,7 @@ export const notifyPaymentDecision = async (input: {
     returned: 'Payment request returned',
     'stage-advanced': 'Payment approval progressed',
     paid: 'Payment disbursed',
-    posted: 'Payment posted to Sage',
+    posted: 'Payment marked posted',
   };
   const severity: Record<typeof input.event, 'info' | 'success' | 'warning' | 'critical'> = {
     approved: 'success',
@@ -293,7 +293,7 @@ export const notifyPaymentDecision = async (input: {
       : input.event === 'paid'
         ? `${input.request.requestNumber} has been paid by Treasury.${input.reason ? ` ${input.reason}` : ''}`
         : input.event === 'posted'
-          ? `${input.request.requestNumber} was marked posted to Sage by ${input.actorName}.${input.reason ? ` ${input.reason}` : ''}`
+          ? `${input.request.requestNumber} was marked posted by ${input.actorName} and cleared from the Finance Posting Desk.${input.reason ? ` ${input.reason}` : ''}`
           : `${input.request.requestNumber} was ${input.event} by ${input.actorName}.${input.reason ? ` Reason: ${input.reason}` : ''}`;
 
   const href = paymentRequestDetailPath(input.request.requestId);

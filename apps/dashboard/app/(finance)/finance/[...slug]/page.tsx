@@ -1,15 +1,33 @@
 import { notFound } from 'next/navigation';
+import { cookies } from 'next/headers';
 import { FINANCE_PAGES, resolveFinancePage } from '@/lib/finance-intelligence/nav';
 import { buildFinanceApprovalCentre, buildFinanceCommandCentre } from '@/lib/finance-intelligence/store';
 import { buildCashAdvanceControlsWorkspace, buildFinancePostingWorkspace, buildPaymentRequestsWorkspace, buildTreasuryWorkspace } from '@/lib/finance-intelligence/payment-requests-service';
 import { buildApprovalMatrixWorkspace } from '@/lib/finance-intelligence/approval-matrix-service';
 import { buildApprovalDelegationWorkspace } from '@/lib/finance-intelligence/approval-delegation-service';
+import { canViewAllPaymentRequests } from '@/lib/finance-intelligence/payment-access';
+import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import { permissionsForRoles } from '@/lib/auth/rbac';
 import FinanceWorkspaceClient from '../FinanceWorkspaceClient';
 
 export const dynamic = 'force-dynamic';
 
 type Props = {
   params: Promise<{ slug?: string[] }>;
+};
+
+const resolveFinanceActor = async () => {
+  const jar = await cookies();
+  const token = jar.get(AUTH_COOKIE)?.value;
+  const session = token ? await verifySessionToken(token) : null;
+  const roles = session?.roles || [];
+  const permissions = session?.isGlobalAdmin ? ['*'] : permissionsForRoles(roles);
+  return {
+    actorCode: session?.employeeCode || session?.username || session?.sub || '',
+    roles,
+    permissions,
+    isGlobalAdmin: Boolean(session?.isGlobalAdmin),
+  };
 };
 
 const childLinksFor = (href: string) =>
@@ -27,6 +45,10 @@ export default async function FinanceCatchAllPage({ params }: Props) {
   const page = resolveFinancePage(pathname);
   if (!page) notFound();
 
+  const actor = await resolveFinanceActor();
+  const viewAllPayments = canViewAllPaymentRequests(actor);
+  const mineOnlyPage = pathname.includes('/my-requests');
+
   const commandCentre = page.kind === 'command-centre'
     ? await buildFinanceCommandCentre().catch(() => null)
     : null;
@@ -39,7 +61,11 @@ export default async function FinanceCatchAllPage({ params }: Props) {
   if (pathname.includes('supplier')) paymentType = 'Supplier Invoice Payment';
 
   const paymentRequests = page.kind === 'payment-requests'
-    ? await buildPaymentRequestsWorkspace({ paymentType }).catch(() => null)
+    ? await buildPaymentRequestsWorkspace({
+      paymentType,
+      mineFor: mineOnlyPage ? actor.actorCode : undefined,
+      scopedToActorCode: !viewAllPayments && !mineOnlyPage ? actor.actorCode : undefined,
+    }).catch(() => null)
     : null;
 
   const cashAdvanceControls = page.kind === 'cash-advance-controls'

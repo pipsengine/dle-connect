@@ -3,10 +3,10 @@
 import { useMemo, useState } from 'react';
 import {
   CheckCircle2,
-  Database,
+  Clock3,
   FileText,
   RefreshCcw,
-  UploadCloud,
+  Wallet,
   X,
 } from 'lucide-react';
 import type {
@@ -17,7 +17,7 @@ import type {
 import PaymentRequestDetailPanel from './PaymentRequestDetailPanel';
 
 type Props = { initialWorkspace: FinancePostingWorkspace };
-type TabId = 'ready' | 'posted' | 'notReady' | 'all';
+type TabId = 'ready' | 'notReady' | 'all';
 
 const money = (amount: number, currency = 'NGN') =>
   new Intl.NumberFormat('en-NG', { style: 'currency', currency: currency || 'NGN', maximumFractionDigits: 0 }).format(amount || 0);
@@ -84,9 +84,14 @@ export default function FinancePostingClient({ initialWorkspace }: Props) {
       });
       const json = await res.json();
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Action failed');
-      setToast(json.data.message || 'Updated.');
-      setActions(json.data.actions || []);
-      if (json.data.request) setSelected(json.data.request as PaymentRequestRow);
+      if (transition === 'mark-posted') {
+        setSelected(null);
+        setToast('Marked posted — payment removed from this desk.');
+      } else {
+        setToast(json.data.message || 'Updated.');
+        setActions(json.data.actions || []);
+        if (json.data.request) setSelected(json.data.request as PaymentRequestRow);
+      }
       await refresh();
     } catch (error) {
       setToast(error instanceof Error ? error.message : 'Action failed');
@@ -97,15 +102,14 @@ export default function FinancePostingClient({ initialWorkspace }: Props) {
 
   const rows = useMemo(() => {
     if (tab === 'ready') return workspace.readyToPost;
-    if (tab === 'posted') return workspace.posted;
     if (tab === 'notReady') return workspace.notReady;
     return workspace.rows;
   }, [tab, workspace]);
 
   const kpis = [
-    { label: 'Ready to post', value: String(workspace.summary.readyToPost), detail: money(workspace.summary.readyValue), icon: UploadCloud, wrap: 'bg-sky-50', color: 'text-sky-600' },
-    { label: 'Posted', value: String(workspace.summary.posted), detail: 'Acknowledged in Connect', icon: CheckCircle2, wrap: 'bg-emerald-50', color: 'text-emerald-600' },
-    { label: 'Not ready / failed', value: String(workspace.summary.notReady), detail: `${workspace.summary.failed} failed`, icon: Database, wrap: 'bg-amber-50', color: 'text-amber-600' },
+    { label: 'Ready to mark posted', value: String(workspace.summary.readyToPost), detail: money(workspace.summary.readyValue), icon: Wallet, wrap: 'bg-sky-50', color: 'text-sky-600' },
+    { label: 'Open on desk', value: String(workspace.rows.length), detail: 'Not yet marked posted', icon: Clock3, wrap: 'bg-amber-50', color: 'text-amber-600' },
+    { label: 'Needs review', value: String(workspace.summary.notReady), detail: 'Not ready / incomplete', icon: CheckCircle2, wrap: 'bg-slate-100', color: 'text-slate-600' },
     { label: 'With documents', value: String(workspace.summary.withDocuments), detail: 'Supporting files present', icon: FileText, wrap: 'bg-violet-50', color: 'text-violet-600' },
   ];
 
@@ -115,7 +119,7 @@ export default function FinancePostingClient({ initialWorkspace }: Props) {
         <div>
           <h1 className="text-[28px] font-semibold tracking-tight text-slate-900">Finance Posting Desk</h1>
           <p className="mt-1 max-w-3xl text-sm text-slate-500">
-            Review approved and paid payments due for Sage posting. Open supporting documents, capture the Sage voucher reference, and queue the outbound sync.
+            Review paid and retired payments with their supporting documents, then mark them posted once entered in Sage. Marked posted items leave this worklist — Connect does not post into Sage from here.
           </p>
         </div>
         <button type="button" onClick={() => void refresh()} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-600">
@@ -143,10 +147,9 @@ export default function FinancePostingClient({ initialWorkspace }: Props) {
       <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
         <div className="flex flex-wrap gap-2 border-b border-slate-100 px-4 py-3">
           {([
-            ['ready', 'Ready to post', workspace.summary.readyToPost],
-            ['posted', 'Posted', workspace.summary.posted],
-            ['notReady', 'Not ready', workspace.summary.notReady],
-            ['all', 'All bookable', workspace.rows.length],
+            ['ready', 'Ready to mark posted', workspace.summary.readyToPost],
+            ['notReady', 'Needs review', workspace.summary.notReady],
+            ['all', 'Open on desk', workspace.rows.length],
           ] as const).map(([id, label, count]) => (
             <button
               key={id}
@@ -183,7 +186,7 @@ export default function FinancePostingClient({ initialWorkspace }: Props) {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={8} className="px-3 py-12 text-center text-sm text-slate-500">No payments in this queue.</td>
+                  <td colSpan={8} className="px-3 py-12 text-center text-sm text-slate-500">No open payments on this desk. Marked posted items are cleared automatically.</td>
                 </tr>
               )}
             </tbody>
@@ -195,7 +198,7 @@ export default function FinancePostingClient({ initialWorkspace }: Props) {
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-0 sm:items-center sm:p-4">
           <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-              <h2 className="text-lg font-semibold text-slate-900">Sage posting</h2>
+              <h2 className="text-lg font-semibold text-slate-900">Mark posted</h2>
               <button type="button" onClick={() => setSelected(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X className="h-5 w-5" /></button>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -204,32 +207,24 @@ export default function FinancePostingClient({ initialWorkspace }: Props) {
                 actions={actions}
                 footer={(
                   <div className="space-y-3">
-                    {selected.postingStatus !== 'Posted' ? (
-                      <>
-                        <label className="block text-sm">
-                          <span className="mb-1 block font-medium">Sage voucher / document # *</span>
-                          <input value={sageReference} onChange={(e) => setSageReference(e.target.value)} placeholder="e.g. PAY-2026-00123" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
-                        </label>
-                        <label className="block text-sm">
-                          <span className="mb-1 block font-medium">Notes</span>
-                          <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Optional posting note" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
-                        </label>
-                        <div className="flex flex-wrap gap-2">
-                          {selected.postingStatus === 'NotReady' ? (
-                            <button type="button" disabled={busy} onClick={() => void runTransition('ready-to-post')} className="rounded-xl border border-slate-200 px-3.5 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60">
-                              Mark ready to post
-                            </button>
-                          ) : null}
-                          <button type="button" disabled={busy} onClick={() => void runTransition('mark-posted')} className="inline-flex items-center gap-1.5 rounded-xl bg-[#008FD5] px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-60">
-                            <UploadCloud className="h-4 w-4" /> Mark posted & queue Sage sync
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                        Posted · {selected.sageReference || '—'} · {selected.postedBy || '—'}
-                      </p>
-                    )}
+                    <label className="block text-sm">
+                      <span className="mb-1 block font-medium">Sage / journal reference (optional)</span>
+                      <input value={sageReference} onChange={(e) => setSageReference(e.target.value)} placeholder="Optional voucher or journal number from Sage" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+                    </label>
+                    <label className="block text-sm">
+                      <span className="mb-1 block font-medium">Notes</span>
+                      <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Optional note" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {selected.postingStatus === 'NotReady' ? (
+                        <button type="button" disabled={busy} onClick={() => void runTransition('ready-to-post')} className="rounded-xl border border-slate-200 px-3.5 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60">
+                          Mark ready
+                        </button>
+                      ) : null}
+                      <button type="button" disabled={busy} onClick={() => void runTransition('mark-posted')} className="inline-flex items-center gap-1.5 rounded-xl bg-[#008FD5] px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-60">
+                        <CheckCircle2 className="h-4 w-4" /> Mark posted (clear from desk)
+                      </button>
+                    </div>
                   </div>
                 )}
               />

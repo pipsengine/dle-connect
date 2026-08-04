@@ -19,6 +19,10 @@ import {
   type PaymentRequestType,
 } from '@/lib/finance-intelligence/payment-requests-service';
 import { listExpenseCodes, listPaymentSites } from '@/lib/finance-intelligence/payment-request-lookups';
+import {
+  canAccessPaymentRequest,
+  canViewAllPaymentRequests,
+} from '@/lib/finance-intelligence/payment-access';
 import { resolvePublicAppOrigin } from '@/lib/public-app-url';
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
@@ -78,19 +82,27 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const actor = await resolveActor();
+    if (!actor.authenticated) return jsonErr(401, 'Sign in required.');
     const view = searchParams.get('view');
     const requestId = searchParams.get('requestId');
+    const viewAll = canViewAllPaymentRequests(actor);
 
     if (requestId) {
       const paymentRequest = await getPaymentRequestById(requestId);
       if (!paymentRequest) return jsonErr(404, 'Payment request not found.');
+      if (!canAccessPaymentRequest(actor, paymentRequest)) {
+        return jsonErr(403, 'You do not have access to this payment request.');
+      }
       const actions = await listPaymentRequestActions(paymentRequest.requestId);
       return jsonOk({ request: paymentRequest, actions });
     }
 
     if (view === 'eligibility') {
-      const employeeCode = searchParams.get('employeeCode') || actor.actorCode;
-      return jsonOk(await getCashAdvanceEligibility(employeeCode || ''));
+      const requestedCode = String(searchParams.get('employeeCode') || actor.actorCode || '').trim();
+      if (!viewAll && requestedCode.toLowerCase() !== String(actor.actorCode || '').trim().toLowerCase()) {
+        return jsonErr(403, 'You can only check cash-advance eligibility for your own employee record.');
+      }
+      return jsonOk(await getCashAdvanceEligibility(requestedCode || ''));
     }
 
     if (view === 'cash-advance-controls') {
@@ -115,9 +127,14 @@ export async function GET(request: Request) {
     }
 
     const paymentType = searchParams.get('paymentType') || undefined;
+    const mineOnly = searchParams.get('mine') === '1';
     const workspace = await buildPaymentRequestsWorkspace({
       paymentType: paymentType || undefined,
-      mineFor: searchParams.get('mine') === '1' ? actor.actorCode : undefined,
+      // Elevated + My Requests tab → requester only.
+      // Non-elevated default → own requests plus items assigned to them as approver/beneficiary.
+      // Non-elevated + mine=1 → requester only.
+      mineFor: mineOnly ? actor.actorCode : undefined,
+      scopedToActorCode: !viewAll && !mineOnly ? actor.actorCode : undefined,
     });
     return jsonOk(workspace);
   } catch (error) {

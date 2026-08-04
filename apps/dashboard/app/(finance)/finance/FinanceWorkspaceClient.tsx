@@ -39,7 +39,7 @@ import type {
 } from '@/lib/finance-intelligence/store';
 import type { PaymentRequestsWorkspace, CashAdvanceControlsWorkspace, TreasuryWorkspace, FinancePostingWorkspace } from '@/lib/finance-intelligence/payment-requests-service';
 import type { ApprovalMatrixWorkspace } from '@/lib/finance-intelligence/approval-matrix-service';
-import type { ApprovalDelegationWorkspace } from '@/lib/finance-intelligence/approval-delegation-service';
+import type { ApprovalDelegationWorkspace } from '@/lib/finance-intelligence/approval-delegation-types';
 import { FinanceBreadcrumbs } from './finance-portal-shell';
 import PaymentRequestsClient from './PaymentRequestsClient';
 import ApprovalMatrixClient from './ApprovalMatrixClient';

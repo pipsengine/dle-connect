@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { AUTH_COOKIE, hasPermission, verifySessionToken } from '@/lib/auth/session';
+import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { permissionsForRoles } from '@/lib/auth/rbac';
 import {
   appendPaymentRequestAttachments,
@@ -11,6 +11,7 @@ import {
   readPaymentAttachmentFile,
   savePaymentAttachmentFile,
 } from '@/lib/finance-intelligence/payment-requests-service';
+import { canAccessPaymentRequest } from '@/lib/finance-intelligence/payment-access';
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -29,24 +30,6 @@ const resolveActor = async () => {
     isGlobalAdmin: Boolean(session?.isGlobalAdmin),
     authenticated: Boolean(session),
   };
-};
-
-const canAccessPaymentRequest = (
-  actor: Awaited<ReturnType<typeof resolveActor>>,
-  request: NonNullable<Awaited<ReturnType<typeof getPaymentRequestById>>>,
-) => {
-  if (actor.isGlobalAdmin) return true;
-  if (hasPermission(actor.permissions, 'finance.view')
-    || hasPermission(actor.permissions, 'finance.approve')
-    || hasPermission(actor.permissions, 'finance.*')) {
-    return true;
-  }
-  const code = actor.actorCode.trim().toLowerCase();
-  if (!code) return false;
-  return (
-    request.requesterCode.trim().toLowerCase() === code
-    || request.currentApproverCode.trim().toLowerCase() === code
-  );
 };
 
 export async function GET(request: Request) {
