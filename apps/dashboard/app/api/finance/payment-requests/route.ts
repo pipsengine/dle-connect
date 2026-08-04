@@ -220,6 +220,9 @@ export async function POST(request: Request) {
         reason: body.reason,
         paymentReference: body.paymentReference,
         baseUrl: origin,
+        delegateToCode: body.delegateToCode,
+        delegateToName: body.delegateToName,
+        delegateEndsAt: body.delegateEndsAt,
       });
       const actions = result.request
         ? await listPaymentRequestActions(result.request.requestId)

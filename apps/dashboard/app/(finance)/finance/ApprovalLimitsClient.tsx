@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2,
   Clock3,
@@ -91,6 +91,35 @@ export default function ApprovalLimitsClient({ initialWorkspace }: Props) {
       setToast(error instanceof Error ? error.message : 'Refresh failed');
     } finally {
       setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!initialWorkspace.rules.length) {
+      void refresh();
+    }
+    // Auto-seed on first empty load (API GET seeds when table is empty).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const seedDefaults = async () => {
+    setBusy(true);
+    setToast('');
+    try {
+      const res = await fetch('/api/finance/approval-matrix', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'seed-defaults' }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to load standard limits');
+      setWorkspace(json.data.workspace as ApprovalMatrixWorkspace);
+      setToast(json.data.message || 'Standard approval limits loaded.');
+      setTab('limits');
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'Unable to load standard limits');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -234,6 +263,17 @@ export default function ApprovalLimitsClient({ initialWorkspace }: Props) {
 
       {toast ? <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">{toast}</div> : null}
 
+      {(workspace.warnings?.length || 0) > 0 ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-semibold">Coverage warnings</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5">
+            {workspace.warnings.slice(0, 6).map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         {kpis.map((card) => (
           <article key={card.label} className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
@@ -278,6 +318,14 @@ export default function ApprovalLimitsClient({ initialWorkspace }: Props) {
           </button>
           <button type="button" onClick={() => openCreate('Project')} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">
             <Plus className="h-3.5 w-3.5" /> Project band
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void seedDefaults()}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+          >
+            <Sparkles className="h-3.5 w-3.5" /> Load standard limits
           </button>
           <button type="button" className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">
             <Upload className="h-3.5 w-3.5" /> Import
@@ -395,10 +443,22 @@ export default function ApprovalLimitsClient({ initialWorkspace }: Props) {
                   <tr>
                     <td colSpan={10} className="px-3 py-14 text-center">
                       <p className="text-sm font-semibold text-slate-800">No approval limit rules yet</p>
-                      <p className="mt-1 text-sm text-slate-500">Seeded Non-project and Project bands appear after the finance schema runs.</p>
-                      <button type="button" onClick={() => openCreate('Non-project')} className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#008FD5] px-3.5 py-2 text-xs font-semibold text-white">
-                        <Plus className="h-3.5 w-3.5" /> New Limit Rule
-                      </button>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Load the standard Non-project and Project bands first, then adjust as needed.
+                      </p>
+                      <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void seedDefaults()}
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-[#008FD5] px-3.5 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                        >
+                          <Sparkles className="h-3.5 w-3.5" /> Load standard limits
+                        </button>
+                        <button type="button" onClick={() => openCreate('Non-project')} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-semibold text-slate-700">
+                          <Plus className="h-3.5 w-3.5" /> New Limit Rule
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )}

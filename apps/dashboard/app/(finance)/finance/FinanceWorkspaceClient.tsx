@@ -39,10 +39,12 @@ import type {
 } from '@/lib/finance-intelligence/store';
 import type { PaymentRequestsWorkspace, CashAdvanceControlsWorkspace } from '@/lib/finance-intelligence/payment-requests-service';
 import type { ApprovalMatrixWorkspace } from '@/lib/finance-intelligence/approval-matrix-service';
+import type { ApprovalDelegationWorkspace } from '@/lib/finance-intelligence/approval-delegation-service';
 import { FinanceBreadcrumbs } from './finance-portal-shell';
 import PaymentRequestsClient from './PaymentRequestsClient';
 import ApprovalMatrixClient from './ApprovalMatrixClient';
 import ApprovalLimitsClient from './ApprovalLimitsClient';
+import DelegationRulesClient from './DelegationRulesClient';
 import CashAdvanceControlsClient from './CashAdvanceControlsClient';
 import PaymentApprovalDetailClient from './PaymentApprovalDetailClient';
 
@@ -52,6 +54,7 @@ type Props = {
   approvalCentre?: FinanceApprovalCentreSnapshot | null;
   paymentRequests?: PaymentRequestsWorkspace | null;
   approvalMatrix?: ApprovalMatrixWorkspace | null;
+  approvalDelegations?: ApprovalDelegationWorkspace | null;
   cashAdvanceControls?: CashAdvanceControlsWorkspace | null;
   childLinks?: Array<{ href: string; title: string; description?: string }>;
 };
@@ -897,7 +900,7 @@ function GenericWorkspace({ page }: { page: FinancePageMeta }) {
   );
 }
 
-export default function FinanceWorkspaceClient({ page, commandCentre, approvalCentre, paymentRequests, approvalMatrix, cashAdvanceControls, childLinks }: Props) {
+export default function FinanceWorkspaceClient({ page, commandCentre, approvalCentre, paymentRequests, approvalMatrix, approvalDelegations, cashAdvanceControls, childLinks }: Props) {
   const reportingCards = useMemo(
     () => [
       {
@@ -943,10 +946,11 @@ export default function FinanceWorkspaceClient({ page, commandCentre, approvalCe
       {page.kind === 'cash-advance-controls' && cashAdvanceControls ? <CashAdvanceControlsClient initialWorkspace={cashAdvanceControls} /> : null}
       {page.kind === 'approval-matrix' && approvalMatrix ? <ApprovalMatrixClient initialWorkspace={approvalMatrix} /> : null}
       {page.kind === 'approval-limits' && approvalMatrix ? <ApprovalLimitsClient initialWorkspace={approvalMatrix} /> : null}
+      {page.kind === 'delegation-rules' && approvalDelegations ? <DelegationRulesClient initialWorkspace={approvalDelegations} /> : null}
       {page.kind === 'approval-queue' ? <ApprovalQueue page={page} /> : null}
       {page.kind === 'approval-detail' ? <PaymentApprovalDetailClient /> : null}
       {page.kind === 'section-dashboard' ? <SectionDashboard page={page} childLinks={childLinks} /> : null}
-      {!['command-centre', 'reporting-hub', 'analysis-hub', 'analysis-workspace', 'ai-copilot', 'approvals-dashboard', 'payment-requests', 'cash-advance-controls', 'approval-matrix', 'approval-limits', 'approval-queue', 'approval-detail', 'section-dashboard'].includes(page.kind)
+      {!['command-centre', 'reporting-hub', 'analysis-hub', 'analysis-workspace', 'ai-copilot', 'approvals-dashboard', 'payment-requests', 'cash-advance-controls', 'approval-matrix', 'approval-limits', 'delegation-rules', 'approval-queue', 'approval-detail', 'section-dashboard'].includes(page.kind)
         ? <GenericWorkspace page={page} />
         : null}
     </div>

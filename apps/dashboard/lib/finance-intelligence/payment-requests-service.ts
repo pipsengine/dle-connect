@@ -2,7 +2,7 @@ import sql from 'mssql';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
-import { resolveApprovalChain } from '@/lib/finance-intelligence/approval-matrix-service';
+import { convertAmountToNgn, resolveApprovalChain } from '@/lib/finance-intelligence/approval-matrix-service';
 import {
   notifyPaymentApprovalRequired,
   notifyPaymentDecision,
@@ -277,7 +277,12 @@ const resolveInitialStage = async (
       fxRate: matched.fxRate,
     };
   }
-  // Safe fallback if matrix not seeded yet
+
+  // Safe fallback if matrix unavailable — still convert for consistent NGN routing metadata.
+  const converted = await convertAmountToNgn(amount, context?.currencyCode || 'NGN').catch(() => ({
+    amountNgn: amount,
+    fxRate: 1,
+  }));
   const fallbackStage = paymentType === 'Supplier Invoice Payment' ? 'Finance Manager' : 'Reporting Manager';
   return {
     stage: fallbackStage,
@@ -286,8 +291,8 @@ const resolveInitialStage = async (
     approvalLevel: 1,
     stages: [fallbackStage],
     pathType: context?.projectCode || /project/i.test(context?.department || '') ? 'Project' : 'Non-project',
-    amountNgn: amount,
-    fxRate: 1,
+    amountNgn: converted.amountNgn,
+    fxRate: converted.fxRate,
   };
 };
 
@@ -499,20 +504,25 @@ const assignCurrentApprover = async (input: {
   requesterCode?: string;
   projectCode?: string;
   supervisorName?: string;
+  paymentType?: string;
 }) => {
   const approver = await resolvePaymentStageApprover({
     stage: input.stage,
     requesterCode: input.requesterCode,
     projectCode: input.projectCode,
     supervisorName: input.supervisorName,
+    paymentType: input.paymentType,
   });
+  const displayName = approver.delegatedFrom
+    ? `${approver.name} (Delegated from ${approver.delegatedFrom.name || approver.delegatedFrom.code})`
+    : (approver.name || input.stage);
   const pool = await ensureFinanceDb().catch(() => null);
   if (pool) {
     try {
       await pool.request()
         .input('RequestId', sql.NVarChar(60), input.requestId)
         .input('ApproverCode', sql.NVarChar(60), approver.code || null)
-        .input('ApproverName', sql.NVarChar(200), approver.name || input.stage)
+        .input('ApproverName', sql.NVarChar(200), displayName)
         .query(`
 UPDATE [finance].[PaymentRequests]
 SET [CurrentApproverCode] = @ApproverCode,
@@ -1215,6 +1225,7 @@ INSERT INTO [finance].[PaymentRequests] (
       requesterCode: compact(input.requesterCode) || beneficiaryCode,
       projectCode: compact(input.projectCode),
       supervisorName: compact(input.supervisorName),
+      paymentType: input.paymentType,
     });
   }
 
@@ -1241,6 +1252,9 @@ export const transitionPaymentRequest = async (input: {
   reason?: string;
   paymentReference?: string;
   baseUrl?: string | null;
+  delegateToCode?: string;
+  delegateToName?: string;
+  delegateEndsAt?: string | null;
 }) => {
   const pool = await ensureFinanceDb();
   if (!pool) throw new Error('Finance database is unavailable.');
@@ -1311,9 +1325,47 @@ export const transitionPaymentRequest = async (input: {
       nextStage = 'Clarification Requested';
       notifyEvent = 'returned';
       break;
-    case 'delegate':
-      nextStage = `Delegated · ${existing.currentStage}`;
+    case 'delegate': {
+      const delegateToCode = compact(input.delegateToCode);
+      const delegateToName = compact(input.delegateToName) || delegateToCode;
+      if (!delegateToCode) {
+        throw new Error('delegateToCode is required to reassign this approval.');
+      }
+      const principalCode = compact(existing.currentApproverCode) || compact(input.actorCode);
+      const principalName = compact(existing.currentApproverName).replace(/\s*\(Delegated.*$/i, '') || compact(input.actor);
+      if (principalCode) {
+        const { upsertApprovalDelegation } = await import('@/lib/finance-intelligence/approval-delegation-service');
+        const endsAt = input.delegateEndsAt
+          ? input.delegateEndsAt
+          : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        await upsertApprovalDelegation({
+          fromEmployeeCode: principalCode,
+          fromEmployeeName: principalName,
+          toEmployeeCode: delegateToCode,
+          toEmployeeName: delegateToName,
+          approverRole: existing.currentStage || 'All Stages',
+          scope: existing.paymentType,
+          startsAt: new Date().toISOString(),
+          endsAt,
+          reason: compact(input.reason || input.comment) || `Ad-hoc delegation for ${existing.requestNumber}`,
+          actor: input.actor,
+        });
+      }
+      nextStage = existing.currentStage;
+      nextStatus = existing.status;
+      await pool.request()
+        .input('RequestId', sql.NVarChar(60), input.requestId)
+        .input('ApproverCode', sql.NVarChar(60), delegateToCode)
+        .input('ApproverName', sql.NVarChar(200), `${delegateToName} (Delegated from ${principalName || 'current approver'})`)
+        .query(`
+UPDATE [finance].[PaymentRequests]
+SET [CurrentApproverCode] = @ApproverCode,
+    [CurrentApproverName] = @ApproverName,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
       break;
+    }
     case 'escalate':
       nextStage = 'Escalated';
       break;
@@ -1344,6 +1396,7 @@ WHERE [RequestId] = @RequestId
       requesterCode: existing.requesterCode,
       projectCode: existing.projectCode,
       supervisorName: existing.supervisorName,
+      paymentType: existing.paymentType,
     });
   } else if (notifyEvent === 'approved' || notifyEvent === 'rejected' || notifyEvent === 'returned') {
     await pool.request()

@@ -41,7 +41,11 @@ export type ApprovalMatrixWorkspace = {
     compliancePct: number;
     nonProjectRules: number;
     projectRules: number;
+    bandGaps: number;
+    bandOverlaps: number;
   };
+  /** Policy / coverage warnings for operators (empty when healthy). */
+  warnings: string[];
   rules: ApprovalMatrixRule[];
   audit: Array<{ auditId: string; matrixId: string; actionType: string; actorName: string; createdAt: string; detail: string }>;
   fxRates: Array<{ fromCurrency: string; toCurrency: string; rateDate: string; rate: number; source: string }>;
@@ -83,12 +87,93 @@ export type ApprovalChainResolution = {
 const compact = (value: unknown) => String(value ?? '').trim();
 const nowIso = () => new Date().toISOString();
 const moneyRound = (value: number) => Math.round(value * 10000) / 10000;
+/** NGN matching uses kobo (2dp) so 200000.01 bands stay stable across JS/SQL. */
+const moneyRound2 = (value: number) => Math.round(Number(value || 0) * 100) / 100;
 
 const FALLBACK_FX: Record<string, number> = {
   NGN: 1,
   USD: 1600,
   EUR: 1750,
   GBP: 2050,
+};
+
+/** In-flight seed de-dupe so concurrent page loads do not race MERGE. */
+let seedInFlight: Promise<ApprovalMatrixWorkspace> | null = null;
+
+const amountInBand = (amountNgn: number, minAmount: number, maxAmount: number | null) => {
+  const amount = moneyRound2(amountNgn);
+  const min = moneyRound2(minAmount);
+  const max = maxAmount == null ? null : moneyRound2(maxAmount);
+  return amount >= min && (max == null || amount <= max);
+};
+
+const bandsOverlap = (
+  aMin: number,
+  aMax: number | null,
+  bMin: number,
+  bMax: number | null,
+) => {
+  const aLo = moneyRound2(aMin);
+  const bLo = moneyRound2(bMin);
+  const aHi = aMax == null ? Number.POSITIVE_INFINITY : moneyRound2(aMax);
+  const bHi = bMax == null ? Number.POSITIVE_INFINITY : moneyRound2(bMax);
+  return aLo <= bHi && bLo <= aHi;
+};
+
+const analyzeBandCoverage = (rules: ApprovalMatrixRule[]) => {
+  const warnings: string[] = [];
+  let bandGaps = 0;
+  let bandOverlaps = 0;
+  const paths: ApprovalPathType[] = ['Non-project', 'Project'];
+
+  for (const pathType of paths) {
+    const sorted = rules
+      .filter((rule) => rule.pathType === pathType && rule.isActive && rule.status === 'Active')
+      .sort((a, b) => moneyRound2(a.minAmount) - moneyRound2(b.minAmount) || a.approvalLevel - b.approvalLevel);
+
+    if (!sorted.length) {
+      warnings.push(`${pathType} path has no active limit bands.`);
+      continue;
+    }
+
+    if (moneyRound2(sorted[0].minAmount) > 0) {
+      bandGaps += 1;
+      warnings.push(`${pathType}: coverage gap below ${moneyRound2(sorted[0].minAmount).toLocaleString('en-NG')} NGN.`);
+    }
+
+    for (let i = 0; i < sorted.length; i += 1) {
+      const current = sorted[i];
+      for (let j = i + 1; j < sorted.length; j += 1) {
+        const other = sorted[j];
+        if (bandsOverlap(current.minAmount, current.maxAmount, other.minAmount, other.maxAmount)) {
+          bandOverlaps += 1;
+          warnings.push(`${pathType}: overlapping bands ${current.ruleName} and ${other.ruleName}.`);
+        }
+      }
+      if (i === sorted.length - 1) {
+        if (current.maxAmount != null) {
+          bandGaps += 1;
+          warnings.push(`${pathType}: no open-ended band above ${moneyRound2(current.maxAmount).toLocaleString('en-NG')} NGN.`);
+        }
+        continue;
+      }
+      const next = sorted[i + 1];
+      if (current.maxAmount == null) {
+        bandOverlaps += 1;
+        warnings.push(`${pathType}: open-ended band ${current.ruleName} leaves later band ${next.ruleName} unreachable.`);
+        continue;
+      }
+      const expectedNext = moneyRound2(moneyRound2(current.maxAmount) + 0.01);
+      if (moneyRound2(next.minAmount) > expectedNext) {
+        bandGaps += 1;
+        warnings.push(
+          `${pathType}: gap between ${moneyRound2(current.maxAmount).toLocaleString('en-NG')} and ${moneyRound2(next.minAmount).toLocaleString('en-NG')} NGN.`,
+        );
+      }
+    }
+  }
+
+  return { warnings, bandGaps, bandOverlaps };
 };
 
 const normalizePathType = (value: unknown): ApprovalPathType =>
@@ -147,11 +232,84 @@ const emptyWorkspace = (): ApprovalMatrixWorkspace => ({
     compliancePct: 0,
     nonProjectRules: 0,
     projectRules: 0,
+    bandGaps: 0,
+    bandOverlaps: 0,
   },
+  warnings: [],
   rules: [],
   audit: [],
   fxRates: [],
 });
+
+/** Standard DLE employee-payment approval bands (Cash Advance + Supplier Invoice). */
+export const DEFAULT_APPROVAL_LIMIT_RULES: Array<Omit<UpsertApprovalRuleInput, 'actor'> & { matrixId: string }> = [
+  {
+    matrixId: 'LIM-NONPROJ-200K',
+    ruleName: 'NONPROJ_LE_200K',
+    pathType: 'Non-project',
+    minAmount: 0,
+    maxAmount: 200000,
+    approvalLevel: 2,
+    stages: ['Reporting Manager', 'Finance Manager'],
+    approverRoles: 'Reporting Manager → Finance Manager',
+    status: 'Active',
+  },
+  {
+    matrixId: 'LIM-NONPROJ-1M',
+    ruleName: 'NONPROJ_LE_1M',
+    pathType: 'Non-project',
+    minAmount: 200000.01,
+    maxAmount: 1000000,
+    approvalLevel: 3,
+    stages: ['Reporting Manager', 'Finance Manager', 'CFO'],
+    approverRoles: 'Reporting Manager → Finance Manager → CFO',
+    status: 'Active',
+  },
+  {
+    matrixId: 'LIM-NONPROJ-OPEN',
+    ruleName: 'NONPROJ_GT_1M',
+    pathType: 'Non-project',
+    minAmount: 1000000.01,
+    maxAmount: null,
+    approvalLevel: 4,
+    stages: ['Reporting Manager', 'Finance Manager', 'CFO', 'MD/CEO'],
+    approverRoles: 'Reporting Manager → Finance Manager → CFO → MD/CEO',
+    status: 'Active',
+  },
+  {
+    matrixId: 'LIM-PROJ-200K',
+    ruleName: 'PROJ_LE_200K',
+    pathType: 'Project',
+    minAmount: 0,
+    maxAmount: 200000,
+    approvalLevel: 3,
+    stages: ['Project Manager', 'Cost Controller', 'Finance Manager'],
+    approverRoles: 'Project Manager → Cost Controller → Finance Manager',
+    status: 'Active',
+  },
+  {
+    matrixId: 'LIM-PROJ-5M',
+    ruleName: 'PROJ_LE_5M',
+    pathType: 'Project',
+    minAmount: 200000.01,
+    maxAmount: 5000000,
+    approvalLevel: 5,
+    stages: ['Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO'],
+    approverRoles: 'Project Manager → Cost Controller → Finance Manager → GM → CFO',
+    status: 'Active',
+  },
+  {
+    matrixId: 'LIM-PROJ-OPEN',
+    ruleName: 'PROJ_GT_5M',
+    pathType: 'Project',
+    minAmount: 5000000.01,
+    maxAmount: null,
+    approvalLevel: 6,
+    stages: ['Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO', 'MD/CEO'],
+    approverRoles: 'Project Manager → Cost Controller → Finance Manager → GM → CFO → MD/CEO',
+    status: 'Active',
+  },
+];
 
 const writeAudit = async (input: {
   matrixId?: string;
@@ -262,8 +420,100 @@ ORDER BY [PathType], [ApprovalLevel], [MinAmount]
   }
 };
 
-export const buildApprovalMatrixWorkspace = async (): Promise<ApprovalMatrixWorkspace> => {
-  const rules = await listApprovalMatrixRules();
+export const seedDefaultApprovalLimits = async (actor = 'System Seed') => {
+  if (seedInFlight) return seedInFlight;
+
+  seedInFlight = (async () => {
+    const pool = await ensureFinanceDb();
+    if (!pool) throw new Error('Finance database is unavailable.');
+
+    // Single MERGE keeps seeding idempotent and concurrency-safe under PK MatrixId.
+    await pool.request()
+      .input('Actor', sql.NVarChar(120), actor)
+      .query(`
+MERGE [finance].[ApprovalMatrix] AS target
+USING (VALUES
+  (N'LIM-NONPROJ-200K', N'NONPROJ_LE_200K', N'Employee Payment', N'Non-project', CAST(0 AS DECIMAL(19,4)), CAST(200000 AS DECIMAL(19,4)), 2,
+   N'Reporting Manager → Finance Manager',
+   N'["Reporting Manager","Finance Manager"]'),
+  (N'LIM-NONPROJ-1M', N'NONPROJ_LE_1M', N'Employee Payment', N'Non-project', CAST(200000.01 AS DECIMAL(19,4)), CAST(1000000 AS DECIMAL(19,4)), 3,
+   N'Reporting Manager → Finance Manager → CFO',
+   N'["Reporting Manager","Finance Manager","CFO"]'),
+  (N'LIM-NONPROJ-OPEN', N'NONPROJ_GT_1M', N'Employee Payment', N'Non-project', CAST(1000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 4,
+   N'Reporting Manager → Finance Manager → CFO → MD/CEO',
+   N'["Reporting Manager","Finance Manager","CFO","MD/CEO"]'),
+  (N'LIM-PROJ-200K', N'PROJ_LE_200K', N'Employee Payment', N'Project', CAST(0 AS DECIMAL(19,4)), CAST(200000 AS DECIMAL(19,4)), 3,
+   N'Project Manager → Cost Controller → Finance Manager',
+   N'["Project Manager","Cost Controller","Finance Manager"]'),
+  (N'LIM-PROJ-5M', N'PROJ_LE_5M', N'Employee Payment', N'Project', CAST(200000.01 AS DECIMAL(19,4)), CAST(5000000 AS DECIMAL(19,4)), 5,
+   N'Project Manager → Cost Controller → Finance Manager → GM → CFO',
+   N'["Project Manager","Cost Controller","Finance Manager","GM","CFO"]'),
+  (N'LIM-PROJ-OPEN', N'PROJ_GT_5M', N'Employee Payment', N'Project', CAST(5000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 6,
+   N'Project Manager → Cost Controller → Finance Manager → GM → CFO → MD/CEO',
+   N'["Project Manager","Cost Controller","Finance Manager","GM","CFO","MD/CEO"]')
+) AS source (
+  [MatrixId], [RuleName], [PaymentType], [PathType], [MinAmount], [MaxAmount], [ApprovalLevel], [ApproverRoles], [StagesJson]
+)
+ON target.[MatrixId] = source.[MatrixId]
+WHEN MATCHED THEN UPDATE SET
+  [RuleName] = source.[RuleName],
+  [PaymentType] = source.[PaymentType],
+  [PathType] = source.[PathType],
+  [CompanyCode] = N'DLE',
+  [EntityName] = N'Dorman Long Nigeria Ltd',
+  [MinAmount] = source.[MinAmount],
+  [MaxAmount] = source.[MaxAmount],
+  [ApprovalLevel] = source.[ApprovalLevel],
+  [ApproverRoles] = source.[ApproverRoles],
+  [StagesJson] = source.[StagesJson],
+  [CurrencyCode] = N'NGN',
+  [DualControl] = 0,
+  [Status] = N'Active',
+  [IsActive] = 1,
+  [UpdatedBy] = @Actor,
+  [UpdatedAt] = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT (
+  [MatrixId], [RuleName], [PaymentType], [PathType], [CompanyCode], [EntityName], [MinAmount], [MaxAmount],
+  [ApprovalLevel], [ApproverRoles], [StagesJson], [CurrencyCode], [DualControl], [Status], [IsActive], [CreatedBy], [UpdatedBy]
+) VALUES (
+  source.[MatrixId], source.[RuleName], source.[PaymentType], source.[PathType], N'DLE', N'Dorman Long Nigeria Ltd',
+  source.[MinAmount], source.[MaxAmount], source.[ApprovalLevel], source.[ApproverRoles], source.[StagesJson],
+  N'NGN', 0, N'Active', 1, @Actor, @Actor
+);
+`);
+
+    await writeAudit({
+      actionType: 'Seeded',
+      actorName: actor,
+      detail: {
+        count: DEFAULT_APPROVAL_LIMIT_RULES.length,
+        rules: DEFAULT_APPROVAL_LIMIT_RULES.map((rule) => rule.ruleName),
+      },
+    });
+
+    return buildApprovalMatrixWorkspace({ autoSeed: false });
+  })().finally(() => {
+    seedInFlight = null;
+  });
+
+  return seedInFlight;
+};
+
+export const buildApprovalMatrixWorkspace = async (options?: {
+  autoSeed?: boolean;
+}): Promise<ApprovalMatrixWorkspace> => {
+  let rules = await listApprovalMatrixRules();
+  if (!rules.length && options?.autoSeed !== false) {
+    const pool = await ensureFinanceDb().catch(() => null);
+    if (pool) {
+      try {
+        await seedDefaultApprovalLimits('System Auto-Seed');
+        rules = await listApprovalMatrixRules();
+      } catch (error) {
+        console.error('[approval-limits] auto-seed failed', error);
+      }
+    }
+  }
   const workspace = emptyWorkspace();
   workspace.rules = rules;
   workspace.generatedAt = nowIso();
@@ -289,7 +539,20 @@ export const buildApprovalMatrixWorkspace = async (): Promise<ApprovalMatrixWork
     compliancePct: rules.length && pending.length === 0 ? 100 : rules.length ? Math.max(0, 100 - pending.length * 5) : 0,
     nonProjectRules: nonProject.length,
     projectRules: project.length,
+    bandGaps: 0,
+    bandOverlaps: 0,
   };
+
+  const coverage = analyzeBandCoverage(active);
+  workspace.summary.bandGaps = coverage.bandGaps;
+  workspace.summary.bandOverlaps = coverage.bandOverlaps;
+  workspace.warnings = coverage.warnings;
+  if (workspace.summary.bandGaps || workspace.summary.bandOverlaps) {
+    workspace.summary.compliancePct = Math.max(
+      0,
+      workspace.summary.compliancePct - (workspace.summary.bandGaps + workspace.summary.bandOverlaps) * 10,
+    );
+  }
 
   const pool = await ensureFinanceDb().catch(() => null);
   if (pool) {
@@ -340,12 +603,19 @@ export const upsertApprovalMatrixRule = async (input: UpsertApprovalRuleInput) =
     .map((item) => compact(item))
     .filter(Boolean);
   const approverRoles = compact(input.approverRoles) || stages.join(' → ');
+  const minAmount = moneyRound2(Number(input.minAmount || 0));
+  const maxAmount = input.maxAmount == null || String(input.maxAmount).trim() === ''
+    ? null
+    : moneyRound2(Number(input.maxAmount));
+  if (maxAmount != null && Number.isNaN(maxAmount)) {
+    throw new Error('To amount is invalid.');
+  }
 
   if (!ruleName) throw new Error('Rule name is required.');
   if (!pathType) throw new Error('Path type is required (Non-project or Project).');
   if (!stages.length) throw new Error('At least one approval stage / approver role is required.');
-  if (!(Number(input.minAmount) >= 0)) throw new Error('From amount must be zero or greater.');
-  if (input.maxAmount != null && Number(input.maxAmount) < Number(input.minAmount)) {
+  if (!(minAmount >= 0)) throw new Error('From amount must be zero or greater.');
+  if (maxAmount != null && maxAmount < minAmount) {
     throw new Error('To amount must be greater than or equal to from amount.');
   }
 
@@ -357,6 +627,22 @@ export const upsertApprovalMatrixRule = async (input: UpsertApprovalRuleInput) =
   const isActive = status === 'Active' ? 1 : 0;
   const paymentType = 'Employee Payment';
 
+  if (status === 'Active') {
+    const existing = await listApprovalMatrixRules();
+    const conflict = existing.find((rule) => (
+      rule.matrixId !== matrixId
+      && rule.pathType === pathType
+      && rule.isActive
+      && rule.status === 'Active'
+      && bandsOverlap(minAmount, maxAmount, rule.minAmount, rule.maxAmount)
+    ));
+    if (conflict) {
+      throw new Error(
+        `Amount band overlaps active rule ${conflict.ruleName} (${conflict.pathType}). Adjust From/To amounts or deactivate the other rule.`,
+      );
+    }
+  }
+
   await pool.request()
     .input('MatrixId', sql.NVarChar(60), matrixId)
     .input('RuleName', sql.NVarChar(80), ruleName)
@@ -364,8 +650,8 @@ export const upsertApprovalMatrixRule = async (input: UpsertApprovalRuleInput) =
     .input('PathType', sql.NVarChar(40), pathType)
     .input('CompanyCode', sql.NVarChar(40), compact(input.companyCode) || 'DLE')
     .input('EntityName', sql.NVarChar(200), compact(input.entityName) || 'Dorman Long Nigeria Ltd')
-    .input('MinAmount', sql.Decimal(19, 4), Number(input.minAmount || 0))
-    .input('MaxAmount', sql.Decimal(19, 4), input.maxAmount == null ? null : Number(input.maxAmount))
+    .input('MinAmount', sql.Decimal(19, 4), minAmount)
+    .input('MaxAmount', sql.Decimal(19, 4), maxAmount)
     .input('ApprovalLevel', sql.Int, Number(input.approvalLevel || stages.length || 1))
     .input('ApproverRoles', sql.NVarChar(250), approverRoles)
     .input('StagesJson', sql.NVarChar(sql.MAX), JSON.stringify(stages))
@@ -408,10 +694,10 @@ WHEN NOT MATCHED THEN INSERT (
     matrixId,
     actionType: input.matrixId ? 'Updated' : 'Created',
     actorName: input.actor,
-    detail: { ruleName, pathType, minAmount: input.minAmount, maxAmount: input.maxAmount, stages },
+    detail: { ruleName, pathType, minAmount, maxAmount, stages },
   });
 
-  const workspace = await buildApprovalMatrixWorkspace();
+  const workspace = await buildApprovalMatrixWorkspace({ autoSeed: false });
   return {
     rule: workspace.rules.find((item) => item.matrixId === matrixId) || null,
     workspace,
@@ -429,7 +715,7 @@ export const deleteApprovalMatrixRule = async (input: { matrixId: string; actor:
     actionType: 'Deleted',
     actorName: input.actor,
   });
-  return { workspace: await buildApprovalMatrixWorkspace() };
+  return { workspace: await buildApprovalMatrixWorkspace({ autoSeed: false }) };
 };
 
 /** Resolve full sequential approval chain for an employee payment (advance or supplier). */
@@ -439,18 +725,28 @@ export const resolveApprovalChain = async (input: {
   department?: string | null;
   projectCode?: string | null;
   projectDepartment?: boolean;
+  /** When true (default), seed standard bands if the matrix table is empty. */
+  autoSeed?: boolean;
 }): Promise<ApprovalChainResolution | null> => {
   const pathType: ApprovalPathType = isProjectPaymentPath(input) ? 'Project' : 'Non-project';
   const converted = await convertAmountToNgn(input.amount, input.currencyCode);
-  const rules = (await listApprovalMatrixRules())
+
+  let rules = (await listApprovalMatrixRules())
     .filter((rule) => rule.isActive && rule.status === 'Active' && rule.pathType === pathType)
-    .sort((a, b) => a.minAmount - b.minAmount || a.approvalLevel - b.approvalLevel);
+    .sort((a, b) => moneyRound2(a.minAmount) - moneyRound2(b.minAmount) || a.approvalLevel - b.approvalLevel);
 
-  const match = rules.find((rule) => {
-    const max = rule.maxAmount == null ? Number.POSITIVE_INFINITY : rule.maxAmount;
-    return converted.amountNgn >= rule.minAmount && converted.amountNgn <= max;
-  });
+  if (!rules.length && input.autoSeed !== false) {
+    try {
+      await seedDefaultApprovalLimits('System Auto-Seed');
+      rules = (await listApprovalMatrixRules())
+        .filter((rule) => rule.isActive && rule.status === 'Active' && rule.pathType === pathType)
+        .sort((a, b) => moneyRound2(a.minAmount) - moneyRound2(b.minAmount) || a.approvalLevel - b.approvalLevel);
+    } catch (error) {
+      console.error('[approval-limits] resolve auto-seed failed', error);
+    }
+  }
 
+  const match = rules.find((rule) => amountInBand(converted.amountNgn, rule.minAmount, rule.maxAmount));
   if (!match || !match.stages.length) return null;
 
   return {

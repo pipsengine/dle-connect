@@ -33,6 +33,7 @@ export type ResolvedPaymentApprover = {
   name: string;
   employee: DleEmployeeDirectoryRow | null;
   roles: string[];
+  delegatedFrom?: { code: string; name: string; delegationId: string };
 };
 
 const compact = (value: unknown) => String(value ?? '').trim();
@@ -91,7 +92,8 @@ export const resolvePaymentStageApprover = async (input: {
   requesterCode?: string | null;
   projectCode?: string | null;
   supervisorName?: string | null;
-}): Promise<ResolvedPaymentApprover> => {
+  paymentType?: string | null;
+}): Promise<ResolvedPaymentApprover & { delegatedFrom?: { code: string; name: string; delegationId: string } }> => {
   const stage = compact(input.stage) || 'Finance Manager';
   const roles = roleFallbacksForStage(stage);
   const directory = await readDirectoryEmployees().catch(() => ({ employees: [] as DleEmployeeDirectoryRow[] }));
@@ -134,21 +136,55 @@ export const resolvePaymentStageApprover = async (input: {
     matched = matchJobTitle(employees, [/managing\s*director/i, /\bmd\b/i, /\bceo\b/i, /chief\s*executive/i]);
   }
 
-  if (matched) {
-    return {
+  const principal = matched
+    ? {
       code: employeeCodeOf(matched),
       name: compact(matched.fullName) || stage,
       employee: matched,
       roles,
+    }
+    : {
+      code: '',
+      name: stage,
+      employee: null,
+      roles,
     };
-  }
 
-  return {
-    code: '',
-    name: stage,
-    employee: null,
-    roles,
-  };
+  if (!principal.code && !principal.name) return principal;
+
+  try {
+    const { resolveActiveDelegation } = await import('@/lib/finance-intelligence/approval-delegation-service');
+    const delegation = await resolveActiveDelegation({
+      fromEmployeeCode: principal.code || null,
+      fromEmployeeName: principal.name || null,
+      stage,
+      paymentType: input.paymentType,
+    });
+    if (!delegation) return principal;
+
+    const delegate = employees.find((employee) => {
+      const code = employeeCodeOf(employee).toUpperCase();
+      return code === delegation.toEmployeeCode.toUpperCase()
+        || compact(employee.employeeId).toUpperCase() === delegation.toEmployeeCode.toUpperCase();
+    }) || null;
+
+    return {
+      code: delegation.toEmployeeCode || (delegate ? employeeCodeOf(delegate) : ''),
+      name: delegation.toEmployeeName
+        || (delegate ? compact(delegate.fullName) : '')
+        || `Delegate for ${principal.name}`,
+      employee: delegate,
+      roles,
+      delegatedFrom: {
+        code: principal.code,
+        name: principal.name,
+        delegationId: delegation.delegationId,
+      },
+    };
+  } catch (error) {
+    console.error('[payment-approval] delegation lookup failed', error);
+    return principal;
+  }
 };
 
 const safeNotify = async (label: string, task: () => Promise<unknown>) => {
@@ -171,6 +207,7 @@ export const notifyPaymentApprovalRequired = async (input: {
     requesterCode: input.request.requesterCode,
     projectCode: input.request.projectCode,
     supervisorName: input.request.supervisorName,
+    paymentType: input.request.paymentType,
   });
   const href = paymentRequestDetailPath(input.request.requestId);
   const amountLabel = `${input.request.currencyCode} ${Number(input.request.netAmount || 0).toLocaleString('en-NG')}`;

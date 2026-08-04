@@ -105,6 +105,35 @@ CREATE TABLE [finance].[ApprovalDelegations] (
   [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceDelegations_CreatedAt] DEFAULT SYSUTCDATETIME()
 );
 
+IF COL_LENGTH(N'finance.ApprovalDelegations', N'FromEmployeeName') IS NULL
+  ALTER TABLE [finance].[ApprovalDelegations] ADD [FromEmployeeName] NVARCHAR(200) NULL;
+IF COL_LENGTH(N'finance.ApprovalDelegations', N'ToEmployeeName') IS NULL
+  ALTER TABLE [finance].[ApprovalDelegations] ADD [ToEmployeeName] NVARCHAR(200) NULL;
+IF COL_LENGTH(N'finance.ApprovalDelegations', N'ApproverRole') IS NULL
+  ALTER TABLE [finance].[ApprovalDelegations] ADD [ApproverRole] NVARCHAR(120) NULL;
+IF COL_LENGTH(N'finance.ApprovalDelegations', N'Scope') IS NULL
+  ALTER TABLE [finance].[ApprovalDelegations] ADD [Scope] NVARCHAR(80) NULL;
+IF COL_LENGTH(N'finance.ApprovalDelegations', N'Status') IS NULL
+  ALTER TABLE [finance].[ApprovalDelegations] ADD [Status] NVARCHAR(40) NULL;
+IF COL_LENGTH(N'finance.ApprovalDelegations', N'Reason') IS NULL
+  ALTER TABLE [finance].[ApprovalDelegations] ADD [Reason] NVARCHAR(500) NULL;
+IF COL_LENGTH(N'finance.ApprovalDelegations', N'CreatedBy') IS NULL
+  ALTER TABLE [finance].[ApprovalDelegations] ADD [CreatedBy] NVARCHAR(120) NULL;
+IF COL_LENGTH(N'finance.ApprovalDelegations', N'UpdatedBy') IS NULL
+  ALTER TABLE [finance].[ApprovalDelegations] ADD [UpdatedBy] NVARCHAR(120) NULL;
+IF COL_LENGTH(N'finance.ApprovalDelegations', N'UpdatedAt') IS NULL
+  ALTER TABLE [finance].[ApprovalDelegations] ADD [UpdatedAt] DATETIME2(0) NULL;
+
+IF OBJECT_ID(N'[finance].[ApprovalDelegationAudit]', N'U') IS NULL
+CREATE TABLE [finance].[ApprovalDelegationAudit] (
+  [AuditId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceApprovalDelegationAudit] PRIMARY KEY,
+  [DelegationId] NVARCHAR(60) NULL,
+  [ActionType] NVARCHAR(40) NOT NULL,
+  [ActorName] NVARCHAR(200) NULL,
+  [DetailJson] NVARCHAR(MAX) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinanceDelegationAudit_CreatedAt] DEFAULT SYSUTCDATETIME()
+);
+
 IF OBJECT_ID(N'[finance].[Reports]', N'U') IS NULL
 CREATE TABLE [finance].[Reports] (
   [ReportId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinanceReports] PRIMARY KEY,
@@ -322,20 +351,7 @@ USING (VALUES
   [MatrixId], [RuleName], [PaymentType], [PathType], [MinAmount], [MaxAmount], [ApprovalLevel], [ApproverRoles], [StagesJson]
 )
 ON target.[MatrixId] = source.[MatrixId]
-WHEN MATCHED THEN UPDATE SET
-  [RuleName] = source.[RuleName],
-  [PaymentType] = source.[PaymentType],
-  [PathType] = source.[PathType],
-  [MinAmount] = source.[MinAmount],
-  [MaxAmount] = source.[MaxAmount],
-  [ApprovalLevel] = source.[ApprovalLevel],
-  [ApproverRoles] = source.[ApproverRoles],
-  [StagesJson] = source.[StagesJson],
-  [CurrencyCode] = N'NGN',
-  [Status] = N'Active',
-  [IsActive] = 1,
-  [UpdatedBy] = N'System Seed',
-  [UpdatedAt] = SYSUTCDATETIME()
+-- Insert-only: do not overwrite finance-tuned bands on every schema ensure.
 WHEN NOT MATCHED THEN INSERT (
   [MatrixId], [RuleName], [PaymentType], [PathType], [CompanyCode], [EntityName], [MinAmount], [MaxAmount],
   [ApprovalLevel], [ApproverRoles], [StagesJson], [CurrencyCode], [DualControl], [Status], [IsActive], [CreatedBy], [UpdatedBy]

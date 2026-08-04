@@ -3,6 +3,7 @@ import { FINANCE_PAGES, resolveFinancePage } from '@/lib/finance-intelligence/na
 import { buildFinanceApprovalCentre, buildFinanceCommandCentre } from '@/lib/finance-intelligence/store';
 import { buildCashAdvanceControlsWorkspace, buildPaymentRequestsWorkspace } from '@/lib/finance-intelligence/payment-requests-service';
 import { buildApprovalMatrixWorkspace } from '@/lib/finance-intelligence/approval-matrix-service';
+import { buildApprovalDelegationWorkspace } from '@/lib/finance-intelligence/approval-delegation-service';
 import FinanceWorkspaceClient from '../FinanceWorkspaceClient';
 
 export const dynamic = 'force-dynamic';
@@ -70,10 +71,32 @@ export default async function FinanceCatchAllPage({ params }: Props) {
         compliancePct: 0,
         nonProjectRules: 0,
         projectRules: 0,
+        bandGaps: 0,
+        bandOverlaps: 0,
       },
+      warnings: ['Unable to load approval limits from the finance database.'],
       rules: [],
       audit: [],
       fxRates: [],
+    }))
+    : null;
+
+  const approvalDelegations = page.kind === 'delegation-rules'
+    ? await buildApprovalDelegationWorkspace().catch(() => ({
+      generatedAt: new Date().toISOString(),
+      source: 'DLE Enterprise · finance.ApprovalDelegations',
+      summary: {
+        total: 0,
+        active: 0,
+        scheduled: 0,
+        expired: 0,
+        cancelled: 0,
+        standing: 0,
+        temporary: 0,
+      },
+      warnings: ['Unable to load delegation rules from the finance database.'],
+      rows: [],
+      audit: [],
     }))
     : null;
 
@@ -101,6 +124,7 @@ export default async function FinanceCatchAllPage({ params }: Props) {
       approvalCentre={approvalCentre}
       paymentRequests={paymentRequests}
       approvalMatrix={approvalMatrix}
+      approvalDelegations={approvalDelegations}
       cashAdvanceControls={cashAdvanceControls}
       childLinks={childLinks.length ? childLinks : featureLinks}
     />

@@ -52,6 +52,7 @@ export type FinancePageKind =
   | 'configuration'
   | 'approval-matrix'
   | 'approval-limits'
+  | 'delegation-rules'
   | 'workspace';
 
 export type FinancePageMeta = {
@@ -514,7 +515,7 @@ export const FINANCE_PAGES: FinancePageMeta[] = [
   page('/finance/configuration/currency', 'Currency Configuration', 'Functional and reporting currency setup.', 'configuration', 'configuration', ['Finance Configuration', 'Currency Configuration']),
   page('/finance/configuration/approval-matrix', 'Approval Matrix', 'Configure approval strategies and workflows based on payment type, amount thresholds and organisational structure.', 'configuration', 'approval-matrix', ['Finance Configuration', 'Approval Matrix']),
   page('/finance/configuration/approval-limits', 'Approval Limits', 'Define monetary limits and dual-control thresholds for approvals.', 'configuration', 'approval-limits', ['Finance Configuration', 'Approval Limits']),
-  page('/finance/configuration/delegation-rules', 'Delegation Rules', 'Rules for temporary and standing approval delegation.', 'configuration', 'configuration', ['Finance Configuration', 'Delegation Rules']),
+  page('/finance/configuration/delegation-rules', 'Delegation Rules', 'Rules for temporary and standing approval delegation.', 'configuration', 'delegation-rules', ['Finance Configuration', 'Delegation Rules']),
   page('/finance/configuration/distribution-rules', 'Report Distribution Rules', 'Rules governing report distribution audiences.', 'configuration', 'configuration', ['Finance Configuration', 'Report Distribution Rules']),
   page('/finance/configuration/ai-governance', 'AI Governance', 'AI confidence, human-review and usage controls.', 'configuration', 'configuration', ['Finance Configuration', 'AI Governance']),
   page('/finance/configuration/permissions', 'Finance Permissions', 'Finance Intelligence permission catalogue and role mapping.', 'configuration', 'configuration', ['Finance Configuration', 'Finance Permissions']),

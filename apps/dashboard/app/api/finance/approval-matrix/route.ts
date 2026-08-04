@@ -4,6 +4,8 @@ import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import {
   buildApprovalMatrixWorkspace,
   deleteApprovalMatrixRule,
+  resolveApprovalChain,
+  seedDefaultApprovalLimits,
   upsertApprovalMatrixRule,
   type ApprovalPathType,
   type ApprovalRuleStatus,
@@ -70,6 +72,33 @@ export async function POST(request: Request) {
       if (!matrixId) return jsonErr(400, 'matrixId is required.');
       const result = await deleteApprovalMatrixRule({ matrixId, actor });
       return jsonOk({ ...result, message: 'Approval limit deleted.' });
+    }
+
+    if (action === 'seed-defaults') {
+      const workspace = await seedDefaultApprovalLimits(actor);
+      return jsonOk({
+        workspace,
+        message: `Loaded ${workspace.rules.length} standard approval limit rules (Non-project + Project).`,
+      });
+    }
+
+    if (action === 'resolve-preview') {
+      const amount = Number(body.amount);
+      if (!(amount > 0) || Number.isNaN(amount)) return jsonErr(400, 'A positive amount is required.');
+      const chain = await resolveApprovalChain({
+        amount,
+        currencyCode: String(body.currencyCode || 'NGN'),
+        department: body.department ? String(body.department) : null,
+        projectCode: body.projectCode ? String(body.projectCode) : null,
+        projectDepartment: Boolean(body.projectDepartment),
+      });
+      if (!chain) {
+        return jsonErr(404, 'No active approval limit matches this amount/path. Load standard limits or adjust bands.');
+      }
+      return jsonOk({
+        chain,
+        message: `Matched ${chain.ruleName} · ${chain.pathType} · Level ${chain.approvalLevel}`,
+      });
     }
 
     return jsonErr(400, 'Unsupported approval matrix action.');
