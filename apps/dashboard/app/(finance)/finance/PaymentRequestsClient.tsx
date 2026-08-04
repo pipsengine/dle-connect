@@ -16,11 +16,13 @@ import {
   Filter,
   Inbox,
   MoreHorizontal,
+  Paperclip,
   Plus,
   RefreshCcw,
   RotateCcw,
   Search,
   Settings2,
+  Trash2,
   Upload,
   Wallet,
   X,
@@ -250,6 +252,33 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
   const [form, setForm] = useState<ComposerForm>(emptyForm());
   const [eligibility, setEligibility] = useState<CashAdvanceEligibility | null>(null);
   const [formErrors, setFormErrors] = useState<string[]>([]);
+  const [supportingFiles, setSupportingFiles] = useState<File[]>([]);
+
+  const fileToBase64 = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result || '');
+        const base64 = result.includes(',') ? result.split(',')[1] || '' : result;
+        resolve(base64);
+      };
+      reader.onerror = () => reject(new Error(`Unable to read ${file.name}`));
+      reader.readAsDataURL(file);
+    });
+
+  const addSupportingFiles = (fileList: FileList | null) => {
+    if (!fileList?.length) return;
+    const next = Array.from(fileList);
+    setSupportingFiles((current) => {
+      const merged = [...current];
+      for (const file of next) {
+        if (merged.some((item) => item.name === file.name && item.size === file.size)) continue;
+        if (merged.length >= 8) break;
+        merged.push(file);
+      }
+      return merged;
+    });
+  };
 
   const loadEligibility = async (employeeCode: string) => {
     if (!employeeCode) {
@@ -368,6 +397,7 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
     setEmployeePickerOpen(false);
     setEligibility(null);
     setFormErrors([]);
+    setSupportingFiles([]);
     setComposerOpen(true);
   };
 
@@ -403,6 +433,7 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
       if (!form.beneficiaryName.trim()) errors.push('Supplier name is required.');
       if (!form.invoiceNumber.trim()) errors.push('Invoice number is required.');
       if (!(Number(form.amount) >= 1)) errors.push('Amount must be at least 1.00.');
+      if (!supportingFiles.length) errors.push('Supporting documents are required.');
     }
     setFormErrors(errors);
     return errors.length === 0;
@@ -415,6 +446,13 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
     try {
       const selectedExpense = lookups?.expenseCodes.find((item) => item.expenseCode === form.expenseCode);
       const selectedSite = lookups?.paymentSites.find((item) => item.siteCode === form.paymentSiteCode);
+      const attachmentUploads = composerType === 'Supplier Invoice Payment'
+        ? await Promise.all(supportingFiles.map(async (file) => ({
+          fileName: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          contentBase64: await fileToBase64(file),
+        })))
+        : undefined;
       const res = await fetch('/api/finance/payment-requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -444,12 +482,14 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
           purchaseOrderNo: form.purchaseOrderNo,
           deliveryNoteNo: form.deliveryNoteNo,
           submit: form.submit,
+          attachmentUploads,
         }),
       });
       const json = await res.json();
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to create request.');
       setWorkspace(json.data.workspace as PaymentRequestsWorkspace);
       setComposerOpen(false);
+      setSupportingFiles([]);
       setToast(json.data.message || 'Payment request saved.');
     } catch (error) {
       setToast(error instanceof Error ? error.message : 'Unable to create request.');
@@ -1028,6 +1068,53 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
                     options={(lookups?.locations || []).map((item) => ({ value: item, label: item }))}
                     onChange={(value) => setForm((prev) => ({ ...prev, location: value }))}
                   />
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">
+                          Supporting documents <span className="text-rose-600">*</span>
+                        </p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          Upload invoice, PO, delivery note or other evidence (PDF, image, Word, Excel · max 8 files, 8 MB each).
+                        </p>
+                      </div>
+                      <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                        <Upload className="h-3.5 w-3.5" />
+                        Add files
+                        <input
+                          type="file"
+                          multiple
+                          accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            addSupportingFiles(e.target.files);
+                            e.currentTarget.value = '';
+                          }}
+                        />
+                      </label>
+                    </div>
+                    {supportingFiles.length ? (
+                      <ul className="mt-3 space-y-1.5">
+                        {supportingFiles.map((file) => (
+                          <li key={`${file.name}-${file.size}`} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700">
+                            <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                            <span className="min-w-0 flex-1 truncate font-medium">{file.name}</span>
+                            <span className="shrink-0 text-slate-400">{(file.size / 1024).toFixed(0)} KB</span>
+                            <button
+                              type="button"
+                              onClick={() => setSupportingFiles((current) => current.filter((item) => item !== file))}
+                              className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                              aria-label={`Remove ${file.name}`}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-3 text-xs font-medium text-rose-600">At least one supporting document is required.</p>
+                    )}
+                  </div>
                 </>
               )}
             </div>

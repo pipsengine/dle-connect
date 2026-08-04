@@ -1,4 +1,6 @@
 import sql from 'mssql';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
 import { resolveApprovalChain } from '@/lib/finance-intelligence/approval-matrix-service';
 import {
@@ -157,9 +159,19 @@ export type PaymentRequestRow = {
   createdAt: string;
   updatedAt: string;
   payload: Record<string, unknown>;
-  attachments: unknown[];
+  attachments: PaymentRequestAttachment[];
   retirement: Record<string, unknown> | null;
   treasury: Record<string, unknown> | null;
+};
+
+export type PaymentRequestAttachment = {
+  id: string;
+  fileName: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  uploadedAt: string;
+  uploadedBy: string;
 };
 
 export type PaymentRequestsWorkspace = {
@@ -228,6 +240,14 @@ export type CreatePaymentRequestInput = {
   overrideReason?: string;
   submit?: boolean;
   actor: string;
+  /** Final metadata already saved to disk (optional). */
+  attachments?: PaymentRequestAttachment[];
+  /** Raw uploads to persist during create (supplier invoices require at least one). */
+  attachmentUploads?: Array<{
+    fileName: string;
+    mimeType?: string;
+    contentBase64: string;
+  }>;
 };
 
 const compact = (value: unknown) => String(value ?? '').trim();
@@ -336,7 +356,7 @@ const mapRow = (row: Record<string, unknown>): PaymentRequestRow => {
     createdAt: row.CreatedAt ? new Date(String(row.CreatedAt)).toISOString() : nowIso(),
     updatedAt: row.UpdatedAt ? new Date(String(row.UpdatedAt)).toISOString() : nowIso(),
     payload: parseJson(row.PayloadJson, {}),
-    attachments: parseJson(row.AttachmentsJson, []),
+    attachments: parseJson(row.AttachmentsJson, []) as PaymentRequestAttachment[],
     retirement: parseJson(row.RetirementJson, null),
     treasury: parseJson(row.TreasuryJson, null),
   };
@@ -902,6 +922,94 @@ export const buildPaymentRequestsWorkspace = async (input?: {
   return workspace;
 };
 
+const resolveFinanceDataRoot = () => {
+  if (process.env.DLE_FINANCE_DATA_DIR) return path.resolve(process.env.DLE_FINANCE_DATA_DIR);
+  if (process.env.DLE_HRIS_DATA_DIR) return path.join(path.resolve(process.env.DLE_HRIS_DATA_DIR), '..', 'finance');
+  const cwd = process.cwd();
+  if (cwd.replace(/\\/g, '/').endsWith('/apps/dashboard')) return path.join(cwd, 'data', 'finance');
+  return path.join(cwd, 'apps', 'dashboard', 'data', 'finance');
+};
+
+export const PAYMENT_ATTACHMENTS_ROOT = path.join(resolveFinanceDataRoot(), 'payment-attachments');
+export const PAYMENT_ATTACHMENT_MAX_BYTES = 8 * 1024 * 1024;
+export const PAYMENT_ATTACHMENT_MAX_FILES = 8;
+const PAYMENT_ATTACHMENT_ALLOWED_EXT = new Set([
+  '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.txt',
+]);
+
+const safeAttachmentName = (fileName: string) =>
+  String(fileName || 'attachment.bin').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120) || 'attachment.bin';
+
+export const normalizePaymentAttachmentUpload = (input: {
+  fileName: string;
+  mimeType?: string;
+  contentBase64: string;
+  uploadedBy?: string;
+}): { meta: PaymentRequestAttachment; bytes: Buffer } => {
+  const originalName = compact(input.fileName) || 'attachment.bin';
+  const ext = path.extname(originalName).toLowerCase();
+  if (ext && !PAYMENT_ATTACHMENT_ALLOWED_EXT.has(ext)) {
+    throw new Error(`Unsupported file type for ${originalName}. Use PDF, image, Word, Excel, CSV or TXT.`);
+  }
+  const bytes = Buffer.from(String(input.contentBase64 || ''), 'base64');
+  if (!bytes.length) throw new Error(`Attachment ${originalName} is empty or invalid.`);
+  if (bytes.length > PAYMENT_ATTACHMENT_MAX_BYTES) {
+    throw new Error(`Attachment ${originalName} exceeds the 8 MB limit.`);
+  }
+  const id = `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const fileName = `${id}-${safeAttachmentName(originalName)}`;
+  return {
+    bytes,
+    meta: {
+      id,
+      fileName,
+      originalName,
+      mimeType: compact(input.mimeType) || 'application/octet-stream',
+      size: bytes.length,
+      uploadedAt: nowIso(),
+      uploadedBy: compact(input.uploadedBy) || 'System',
+    },
+  };
+};
+
+export const savePaymentAttachmentFile = async (requestId: string, fileName: string, bytes: Buffer) => {
+  const directory = path.join(PAYMENT_ATTACHMENTS_ROOT, compact(requestId));
+  await mkdir(directory, { recursive: true });
+  const target = path.join(directory, safeAttachmentName(fileName));
+  await writeFile(target, bytes);
+  return path.basename(target);
+};
+
+export const readPaymentAttachmentFile = async (requestId: string, fileName: string) => {
+  const safeRequestId = compact(requestId);
+  const safeName = safeAttachmentName(fileName);
+  if (!safeRequestId || !safeName || safeName.includes('..')) throw new Error('Invalid attachment path.');
+  const target = path.join(PAYMENT_ATTACHMENTS_ROOT, safeRequestId, safeName);
+  const bytes = await readFile(target);
+  return { bytes, fileName: safeName };
+};
+
+export const appendPaymentRequestAttachments = async (
+  requestId: string,
+  attachments: PaymentRequestAttachment[],
+) => {
+  const pool = await ensureFinanceDb();
+  if (!pool) throw new Error('Finance database is unavailable.');
+  const existing = await getPaymentRequestById(requestId);
+  if (!existing) throw new Error('Payment request not found.');
+  const merged = [...(existing.attachments || []), ...attachments];
+  await pool.request()
+    .input('RequestId', sql.NVarChar(60), requestId)
+    .input('AttachmentsJson', sql.NVarChar(sql.MAX), JSON.stringify(merged))
+    .query(`
+UPDATE [finance].[PaymentRequests]
+SET [AttachmentsJson] = @AttachmentsJson,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+  return merged;
+};
+
 export const createPaymentRequest = async (input: CreatePaymentRequestInput) => {
   if (!PAYMENT_TYPES.includes(input.paymentType)) {
     throw new Error('Only Cash Advance Payment and Supplier Invoice Payment are enabled.');
@@ -958,12 +1066,32 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
   if (input.paymentType === 'Supplier Invoice Payment') {
     if (!compact(input.invoiceNumber)) throw new Error('Invoice number is required for supplier payments.');
     if (!beneficiaryCode && !beneficiaryName) throw new Error('Select a supplier from the supplier master.');
+    const uploadCount = (input.attachmentUploads?.length || 0) + (input.attachments?.length || 0);
+    if (uploadCount < 1) {
+      throw new Error('Supporting documents are required for supplier invoice payments.');
+    }
   }
 
   const pool = await ensureFinanceDb();
   if (!pool) throw new Error('Finance database is unavailable.');
 
   const requestId = `PREQ-${Date.now()}`;
+  const preparedUploads = (input.attachmentUploads || []).map((item) =>
+    normalizePaymentAttachmentUpload({ ...item, uploadedBy: input.actor }));
+  if (preparedUploads.length > PAYMENT_ATTACHMENT_MAX_FILES) {
+    throw new Error(`You can attach up to ${PAYMENT_ATTACHMENT_MAX_FILES} supporting documents.`);
+  }
+  for (const item of preparedUploads) {
+    await savePaymentAttachmentFile(requestId, item.meta.fileName, item.bytes);
+  }
+  const attachments = [
+    ...(input.attachments || []),
+    ...preparedUploads.map((item) => item.meta),
+  ];
+  if (input.paymentType === 'Supplier Invoice Payment' && attachments.length < 1) {
+    throw new Error('Supporting documents are required for supplier invoice payments.');
+  }
+
   const requestNumber = await nextRequestNumber();
   const vatAmount = moneyRound(Number(input.vatAmount || 0));
   const whtAmount = moneyRound(Number(input.whtAmount || 0));
@@ -1045,6 +1173,7 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
       paymentSiteName,
       location,
     }))
+    .input('AttachmentsJson', sql.NVarChar(sql.MAX), JSON.stringify(attachments))
     .query(`
 INSERT INTO [finance].[PaymentRequests] (
   [RequestId], [RequestNumber], [PaymentType], [RequestCategory], [Title], [Purpose], [BusinessJustification],
@@ -1053,7 +1182,7 @@ INSERT INTO [finance].[PaymentRequests] (
   [CompanyCode], [PaymentSiteCode], [PaymentSiteName], [ExpenseCode], [Department], [Location], [CostCentre], [ProjectCode], [Priority], [RequiredDate],
   [RequesterCode], [RequesterName], [RequesterJobTitle], [SupervisorName], [SubmittedAt],
   [CurrentStage], [Status], [OverrideOutstandingAdvance], [OverrideReason],
-  [InvoiceNumber], [InvoiceDate], [DueDate], [PurchaseOrderNo], [DeliveryNoteNo], [GrnNo], [ContractNo], [PayloadJson]
+  [InvoiceNumber], [InvoiceDate], [DueDate], [PurchaseOrderNo], [DeliveryNoteNo], [GrnNo], [ContractNo], [PayloadJson], [AttachmentsJson]
 ) VALUES (
   @RequestId, @RequestNumber, @PaymentType, @RequestCategory, @Title, @Purpose, @BusinessJustification,
   @BeneficiaryType, @BeneficiaryCode, @BeneficiaryName, @BeneficiaryBankSummary, @Description,
@@ -1061,7 +1190,7 @@ INSERT INTO [finance].[PaymentRequests] (
   @CompanyCode, @PaymentSiteCode, @PaymentSiteName, @ExpenseCode, @Department, @Location, @CostCentre, @ProjectCode, @Priority, @RequiredDate,
   @RequesterCode, @RequesterName, @RequesterJobTitle, @SupervisorName, @SubmittedAt,
   @CurrentStage, @Status, @OverrideOutstandingAdvance, @OverrideReason,
-  @InvoiceNumber, @InvoiceDate, @DueDate, @PurchaseOrderNo, @DeliveryNoteNo, @GrnNo, @ContractNo, @PayloadJson
+  @InvoiceNumber, @InvoiceDate, @DueDate, @PurchaseOrderNo, @DeliveryNoteNo, @GrnNo, @ContractNo, @PayloadJson, @AttachmentsJson
 )
 `);
 

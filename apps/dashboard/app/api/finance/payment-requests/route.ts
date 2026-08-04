@@ -165,6 +165,7 @@ export async function POST(request: Request) {
         contractNo: body.contractNo,
         submit: body.submit !== false,
         actor: actor.actor,
+        attachmentUploads: Array.isArray(body.attachmentUploads) ? body.attachmentUploads : undefined,
       });
       return jsonOk({
         ...result,

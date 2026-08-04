@@ -100,21 +100,33 @@ const loadReviewRecordsForPeriod = async (period: string) => {
   return calculation.records;
 };
 
+const dailyRateDaysWorked = (record: {
+  timesheetDaysWorked?: number | null;
+  daysWorked?: number | null;
+}) => {
+  const raw = record?.timesheetDaysWorked ?? record?.daysWorked;
+  if (raw == null || raw === '') return 0;
+  const days = Number(raw);
+  return Number.isFinite(days) ? days : 0;
+};
+
 const employeeWorkedInPeriod = (record: {
   isDailyRate?: boolean;
   timesheetDaysWorked?: number | null;
-  timesheetBookedHours?: number | null;
+  daysWorked?: number | null;
 }) => {
-  // Salaried / stipend staff are always included. Daily-rate export is limited to
-  // people who actually worked in the payroll period (days or booked hours > 0).
+  // Salaried / stipend staff are always included.
+  // Daily-rate export must only include employees with Days Worked > 0 for the period.
   if (!record?.isDailyRate) return true;
-  const daysWorked = Number(record.timesheetDaysWorked ?? 0);
-  const bookedHours = Number(record.timesheetBookedHours ?? 0);
-  return daysWorked > 0 || bookedHours > 0;
+  return dailyRateDaysWorked(record) > 0;
 };
 
-const filterExportRecords = (records: any[], status: string | null) => {
-  const worked = records.filter(employeeWorkedInPeriod);
+const filterExportRecords = (records: any[], status: string | null, pack?: string | null) => {
+  // Daily Rate pack sheet: always require days worked, even if isDailyRate flag is missing.
+  const worked = records.filter((record) => {
+    if (pack === 'daily-rate') return dailyRateDaysWorked(record) > 0;
+    return employeeWorkedInPeriod(record);
+  });
   return status && status !== 'All'
     ? worked.filter((record) => record.payrollStatus === status)
     : worked;
@@ -304,7 +316,7 @@ export async function GET(request: Request) {
     const requestedPack = url.searchParams.get('pack') || undefined;
     const payload = await buildManagementPayload(request, period, requestedPack === 'all' ? 'salaried' : requestedPack);
     const report = compact(url.searchParams.get('report')) || 'payroll-register';
-    const exportRecords = filterExportRecords(payload.records, url.searchParams.get('status'));
+    const exportRecords = filterExportRecords(payload.records, url.searchParams.get('status'), payload.pack);
     if (url.searchParams.get('audit') === '1') return jsonOk({ auditTrail: payload.auditTrail });
     let reportData = reportExport(exportRecords, report);
     const previousPeriod = previousPayrollPeriod(payload.period);
@@ -394,7 +406,7 @@ export async function GET(request: Request) {
           ]
         : [payload];
       const worksheets = await Promise.all(packPayloads.map(async (packPayload) => {
-        const packRecords = filterExportRecords(packPayload.records, url.searchParams.get('status'));
+        const packRecords = filterExportRecords(packPayload.records, url.searchParams.get('status'), packPayload.pack);
         let packReportData = reportExport(packRecords, report);
         if (report === 'payroll-review') {
           const packPreviousPeriod = previousPayrollPeriod(packPayload.period);
