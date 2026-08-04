@@ -416,7 +416,7 @@ export const FINANCE_PAGES: FinancePageMeta[] = [
   page('/finance/ai-copilot/history', 'AI Analysis History', 'History of AI queries, drafts and shared analyses.', 'ai-copilot', 'workspace', ['AI Finance Copilot', 'AI Analysis History']),
 
   // Payment Approvals — full request types
-  page('/finance/approvals', 'Approval Dashboard', 'Payment and finance approval command centre.', 'approvals', 'approvals-dashboard', ['Payment Approvals']),
+  page('/finance/approvals', 'Approval Dashboard', 'Payment and finance approval command centre.', 'approvals', 'approvals-dashboard', ['Payment Approvals', 'Approval Dashboard']),
   page('/finance/approvals/inbox', 'My Approval Inbox', 'Requests awaiting your decision.', 'approvals', 'approval-queue', ['Payment Approvals', 'My Approval Inbox']),
   page('/finance/approvals/payments', 'Payment Requests', 'All payment approval requests received from source systems.', 'approvals', 'approval-queue', ['Payment Approvals', 'Payment Requests']),
   page('/finance/approvals/supplier-payments', 'Supplier Payments', 'Supplier payment approval queue.', 'approvals', 'approval-queue', ['Payment Approvals', 'Supplier Payments']),

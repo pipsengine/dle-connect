@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
-import { buildFinanceBadges, buildFinanceCommandCentre, listFinanceApprovalRequests } from '@/lib/finance-intelligence/store';
+import {
+  buildFinanceApprovalCentre,
+  buildFinanceBadges,
+  buildFinanceCommandCentre,
+  listFinanceApprovalRequests,
+} from '@/lib/finance-intelligence/store';
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -11,6 +16,9 @@ export async function GET(request: Request) {
 
     if (view === 'badges') {
       return jsonOk(await buildFinanceBadges());
+    }
+    if (view === 'approval-centre') {
+      return jsonOk(await buildFinanceApprovalCentre());
     }
     if (view === 'approvals') {
       const status = searchParams.get('status') || undefined;

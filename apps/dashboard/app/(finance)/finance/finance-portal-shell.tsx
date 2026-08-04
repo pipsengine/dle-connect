@@ -13,6 +13,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCcw,
+  Search,
   X,
 } from 'lucide-react';
 import { NotificationCenter } from '@/components/layout/notification-center';
@@ -251,9 +252,36 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
       </nav>
 
       <div className="border-t border-slate-200 px-3 py-3">
+        {!railCollapsed ? (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold text-slate-700">Sage X3 Integration</p>
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                Connected
+              </span>
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-500">
+              Last sync: {liveBadges ? '04 Aug 2026, 06:30 AM' : '—'}
+            </p>
+            <Link
+              href="/finance/overview/data-integration"
+              className="mt-2 inline-flex text-[11px] font-semibold text-[#008FD5] hover:underline"
+            >
+              View status
+            </Link>
+          </div>
+        ) : (
+          <Link
+            href="/finance/overview/data-integration"
+            title="Sage X3 Connected"
+            className="mx-auto flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600"
+          >
+            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+          </Link>
+        )}
         <Link
           href="/"
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-[#008FD5]"
+          className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-[#008FD5]"
         >
           <ChevronLeft className="h-3.5 w-3.5" />
           {!railCollapsed ? 'Enterprise home' : null}
@@ -303,38 +331,53 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <div className="min-w-0 flex-1">
+          <div className="hidden min-w-0 sm:block lg:max-w-[220px]">
             <p className="truncate text-[11px] font-bold uppercase tracking-[0.14em] text-[#008FD5]">
               {FINANCE_MODULE.shortName}
             </p>
-            <h1 className="truncate text-[15px] font-bold text-slate-900">{FINANCE_MODULE.name}</h1>
+            <h1 className="truncate text-[14px] font-bold text-slate-900">{FINANCE_MODULE.name}</h1>
           </div>
-          <button
-            type="button"
-            onClick={() => router.refresh()}
-            className="hidden h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 hover:bg-slate-50 sm:inline-flex"
-          >
-            <RefreshCcw className="h-4 w-4" />
-            Refresh
-          </button>
-          <NotificationCenter scope="notifications" />
-          <EnterpriseUserProfile
-            context="enterprise"
-            name={employee?.fullName}
-            role={employee?.jobTitle || 'Finance User'}
-            employeeCode={employee?.employeeCode}
-            department={employee?.department}
-            profileHref="/"
-          />
+          <div className="relative mx-auto hidden max-w-xl flex-1 md:block">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              placeholder="Search payments, requests, beneficiaries, projects..."
+              className="h-11 w-full rounded-xl border border-slate-200 bg-[#F8FAFC] py-2 pl-10 pr-16 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-[#93C5FD] focus:bg-white focus:ring-2 focus:ring-[#DBEAFE]"
+            />
+            <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">
+              Ctrl + K
+            </kbd>
+          </div>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => router.refresh()}
+              className="hidden h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 hover:bg-slate-50 sm:inline-flex"
+            >
+              <RefreshCcw className="h-4 w-4" />
+              Refresh
+            </button>
+            <NotificationCenter scope="notifications" />
+            <EnterpriseUserProfile
+              context="enterprise"
+              name={employee?.fullName}
+              role={employee?.jobTitle || 'Finance User'}
+              employeeCode={employee?.employeeCode}
+              department={employee?.department}
+              profileHref="/"
+            />
+          </div>
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto px-3.5 py-4 sm:px-5 lg:px-6">
           {children}
         </main>
 
-        <footer className="border-t border-slate-200 bg-white px-3.5 py-2 text-[11px] text-slate-500 sm:px-5">
-          Sage X3 remains the authoritative accounting system. DLE Connect presents reporting, analytics, AI insights and controlled approvals.
-          <span className="ml-2 text-slate-400">Permissions: finance.view · view_finance_intelligence</span>
+        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-3.5 py-2.5 text-[11px] text-slate-500 sm:px-5">
+          <p>
+            Sage X3 remains the authoritative accounting system. DLE Connect presents reporting, analytics, AI insights and controlled approvals.
+          </p>
+          <span className="shrink-0 text-slate-400">Permissions: finance.view · finance.approve · finance.report</span>
         </footer>
       </div>
     </div>

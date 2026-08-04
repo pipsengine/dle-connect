@@ -10,6 +10,7 @@ import {
   Database,
   FileBarChart,
   Filter,
+  FolderOpen,
   MessageSquarePlus,
   RefreshCcw,
   Send,
@@ -17,12 +18,16 @@ import {
   Workflow,
 } from 'lucide-react';
 import type { FinancePageMeta } from '@/lib/finance-intelligence/nav';
-import type { FinanceCommandCentreSnapshot } from '@/lib/finance-intelligence/store';
+import type {
+  FinanceApprovalCentreSnapshot,
+  FinanceCommandCentreSnapshot,
+} from '@/lib/finance-intelligence/store';
 import { FinanceBreadcrumbs } from './finance-portal-shell';
 
 type Props = {
   page: FinancePageMeta;
   commandCentre?: FinanceCommandCentreSnapshot | null;
+  approvalCentre?: FinanceApprovalCentreSnapshot | null;
   childLinks?: Array<{ href: string; title: string; description?: string }>;
 };
 
@@ -56,23 +61,31 @@ const SUGGESTED_AI_QUESTIONS = [
 ];
 
 const APPROVAL_COLUMNS = [
-  'Request number',
-  'Payment type',
+  'Request No.',
+  'Payment Type',
   'Beneficiary',
   'Description',
   'Amount',
   'Currency',
   'Department',
   'Project',
-  'Cost centre',
-  'Requester',
-  'Submitted date',
-  'Current stage',
-  'Current approver',
+  'Submitted',
+  'Current Stage',
+  'Approver',
   'Age',
-  'Risk flags',
+  'Risk',
   'Status',
 ] as const;
+
+const kpiToneClass: Record<string, string> = {
+  blue: 'text-[#008FD5]',
+  teal: 'text-teal-600',
+  orange: 'text-orange-500',
+  purple: 'text-violet-600',
+  red: 'text-rose-600',
+  green: 'text-emerald-600',
+  rose: 'text-rose-700',
+};
 
 function Panel({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
   return (
@@ -423,65 +436,111 @@ function AiCopilotView({ page }: { page: FinancePageMeta }) {
   );
 }
 
-function ApprovalsDashboard() {
+function ApprovalsDashboard({ snapshot }: { snapshot?: FinanceApprovalCentreSnapshot | null }) {
+  const kpis = snapshot?.kpis || [
+    { id: 'pending-mine', label: 'Pending My Approval', primary: '0', secondary: '₦0.00', tone: 'blue' as const },
+    { id: 'pending-value', label: 'Total Pending Value', primary: '₦0.00', secondary: 'Across all stages', tone: 'teal' as const },
+    { id: 'overdue', label: 'Overdue Approvals', primary: '0', secondary: '₦0.00', tone: 'orange' as const },
+    { id: 'returned', label: 'Returned Requests', primary: '0', secondary: '₦0.00', tone: 'purple' as const },
+    { id: 'high-value', label: 'High-Value Requests', primary: '0', secondary: 'Above approval limit', tone: 'red' as const },
+    { id: 'awaiting-release', label: 'Payments Awaiting Final Release', primary: '0', secondary: '₦0.00', tone: 'blue' as const },
+    { id: 'approved-today', label: 'Payments Approved Today', primary: '0', secondary: '₦0.00', tone: 'green' as const },
+    { id: 'rejected-month', label: 'Rejected This Month', primary: '0', secondary: '₦0.00', tone: 'rose' as const },
+  ];
+  const columns = snapshot?.queueColumns?.length ? snapshot.queueColumns : [...APPROVAL_COLUMNS];
+  const rows = snapshot?.queueRows || [];
+
   return (
     <div className="space-y-4">
       <header className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-        <h1 className="text-2xl font-semibold text-slate-900">Payment Approval Centre</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <h1 className="text-[28px] font-semibold tracking-tight text-slate-900">Payment Approval Centre</h1>
+        <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-500">
           Receive approval requests from Sage X3 or source systems. DLE Connect owns workflow, evidence and audit — not GL posting.
         </p>
       </header>
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          'Pending my approval',
-          'Total pending value',
-          'Overdue approvals',
-          'Returned requests',
-          'High-value requests',
-          'Payments awaiting final release',
-          'Payments approved today',
-          'Rejected this month',
-        ].map((label) => (
-          <article key={label} className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">0</p>
+        {kpis.map((kpi) => (
+          <article key={kpi.id} className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">{kpi.label}</p>
+            <p className={`mt-2 text-[28px] font-semibold leading-none tabular-nums ${kpiToneClass[kpi.tone] || 'text-slate-900'}`}>
+              {kpi.primary}
+            </p>
+            <p className="mt-2 text-xs font-medium text-slate-500">{kpi.secondary}</p>
           </article>
         ))}
       </div>
-      <Panel
-        title="Approval queue"
-        action={<Link href="/finance/approvals/inbox" className="text-xs font-semibold text-[#008FD5]">Open inbox</Link>}
-      >
+
+      <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3.5">
+          <h2 className="text-sm font-semibold text-slate-900">Approval Queue</h2>
+          <Link
+            href="/finance/approvals/inbox"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#008FD5] hover:bg-[#EAF6FF]"
+          >
+            Open full inbox
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-xs">
-            <thead className="border-b border-slate-100 text-slate-500">
+            <thead className="bg-slate-50/80 text-slate-500">
               <tr>
-                {APPROVAL_COLUMNS.map((column) => (
-                  <th key={column} className="whitespace-nowrap px-2 py-2 font-semibold">{column}</th>
+                {columns.map((column) => (
+                  <th key={column} className="whitespace-nowrap px-3 py-2.5 font-semibold">{column}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td colSpan={APPROVAL_COLUMNS.length} className="px-2 py-10 text-center text-slate-500">
-                  No approval requests yet. Requests will appear here when Sage X3 or source systems submit payment workflows.
-                </td>
-              </tr>
+              {rows.length ? (
+                rows.map((row) => (
+                  <tr key={row['Request No.']} className="border-t border-slate-100 hover:bg-slate-50/70">
+                    {columns.map((column) => (
+                      <td key={column} className="whitespace-nowrap px-3 py-2.5 text-slate-700">
+                        {row[column] || '—'}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={columns.length} className="px-3 py-14 text-center">
+                    <div className="mx-auto flex max-w-md flex-col items-center">
+                      <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                        <FolderOpen className="h-7 w-7" />
+                      </span>
+                      <p className="mt-3 text-sm font-semibold text-slate-700">No approval requests yet</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Requests will appear here when Sage X3 or source systems submit payment workflows.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
-      </Panel>
+      </section>
+
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {[
-          { href: '/finance/approvals/inbox', label: 'My Approval Inbox', icon: BadgeCheck },
-          { href: '/finance/approvals/payments', label: 'Payment Requests', icon: Send },
-          { href: '/finance/approvals/batches', label: 'Payment Batches', icon: Workflow },
-          { href: '/finance/approvals/other', label: 'Other Finance Requests', icon: FileBarChart },
+          { href: '/finance/approvals/inbox', label: 'My Approval Inbox', detail: 'View and action requests', icon: BadgeCheck },
+          { href: '/finance/approvals/payments', label: 'Payment Requests', detail: 'Create or review requests', icon: Send },
+          { href: '/finance/approvals/batches', label: 'Payment Batches', detail: 'Approve payment batches', icon: Workflow },
+          { href: '/finance/approvals/other', label: 'Other Finance Requests', detail: 'View all finance requests', icon: FileBarChart },
         ].map((item) => (
-          <Link key={item.href} href={item.href} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:border-[#008FD5]/40">
-            <item.icon className="h-5 w-5 text-[#008FD5]" />
-            <span className="text-sm font-semibold text-slate-800">{item.label}</span>
+          <Link
+            key={item.href}
+            href={item.href}
+            className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-[#008FD5]/40 hover:bg-[#F8FBFF]"
+          >
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EAF6FF] text-[#008FD5]">
+              <item.icon className="h-5 w-5" />
+            </span>
+            <span>
+              <span className="block text-sm font-semibold text-slate-900">{item.label}</span>
+              <span className="mt-0.5 block text-xs text-slate-500">{item.detail}</span>
+            </span>
           </Link>
         ))}
       </div>
@@ -683,7 +742,7 @@ function GenericWorkspace({ page }: { page: FinancePageMeta }) {
   );
 }
 
-export default function FinanceWorkspaceClient({ page, commandCentre, childLinks }: Props) {
+export default function FinanceWorkspaceClient({ page, commandCentre, approvalCentre, childLinks }: Props) {
   const reportingCards = useMemo(
     () => [
       {
@@ -724,7 +783,7 @@ export default function FinanceWorkspaceClient({ page, commandCentre, childLinks
       {page.kind === 'analysis-hub' ? <AnalysisHub /> : null}
       {page.kind === 'analysis-workspace' ? <AnalysisWorkspace page={page} /> : null}
       {page.kind === 'ai-copilot' ? <AiCopilotView page={page} /> : null}
-      {page.kind === 'approvals-dashboard' ? <ApprovalsDashboard /> : null}
+      {page.kind === 'approvals-dashboard' ? <ApprovalsDashboard snapshot={approvalCentre} /> : null}
       {page.kind === 'approval-queue' ? <ApprovalQueue page={page} /> : null}
       {page.kind === 'approval-detail' ? <ApprovalDetail /> : null}
       {page.kind === 'section-dashboard' ? <SectionDashboard page={page} childLinks={childLinks} /> : null}

@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import { FINANCE_PAGES, resolveFinancePage } from '@/lib/finance-intelligence/nav';
-import { buildFinanceCommandCentre } from '@/lib/finance-intelligence/store';
+import { buildFinanceApprovalCentre, buildFinanceCommandCentre } from '@/lib/finance-intelligence/store';
 import FinanceWorkspaceClient from '../FinanceWorkspaceClient';
 
 export const dynamic = 'force-dynamic';
@@ -27,12 +27,14 @@ export default async function FinanceCatchAllPage({ params }: Props) {
   const commandCentre = page.kind === 'command-centre'
     ? await buildFinanceCommandCentre().catch(() => null)
     : null;
+  const approvalCentre = page.kind === 'approvals-dashboard'
+    ? await buildFinanceApprovalCentre().catch(() => null)
+    : null;
 
   const childLinks = page.kind === 'section-dashboard' || page.features?.length
     ? childLinksFor(page.href)
     : [];
 
-  // Prefer explicit child routes when available; otherwise map feature labels to known pages under this section.
   const featureLinks = (page.features || [])
     .map((feature) => {
       const match = FINANCE_PAGES.find(
@@ -50,6 +52,7 @@ export default async function FinanceCatchAllPage({ params }: Props) {
     <FinanceWorkspaceClient
       page={page}
       commandCentre={commandCentre}
+      approvalCentre={approvalCentre}
       childLinks={childLinks.length ? childLinks : featureLinks}
     />
   );
