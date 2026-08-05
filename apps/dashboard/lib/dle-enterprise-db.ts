@@ -2713,7 +2713,7 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
         );
       `);
 
-    const officialEmail = nullable(contacts.officialEmail);
+    const officialEmail = nullable(String(contacts.officialEmail || '').trim().replace(/^[^a-zA-Z0-9]+/, '').toLowerCase());
     await new sql.Request(tx)
       .input('employee_id', sql.BigInt, employeeId)
       .input('official_email', sql.NVarChar(320), officialEmail)

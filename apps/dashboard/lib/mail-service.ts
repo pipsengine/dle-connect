@@ -87,8 +87,17 @@ const createSmtpTransport = () => {
   });
 };
 
+/** Strip leading placeholder punctuation (e.g. "-" from empty profile edit fields) and validate shape. */
+export const normalizeMailboxAddress = (value: unknown) => {
+  let email = compact(value).toLowerCase();
+  if (!email) return '';
+  email = email.replace(/^[^a-z0-9]+/i, '');
+  if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(email)) return '';
+  return email;
+};
+
 export const employeeEmailAddress = (employee?: DleEmployeeDirectoryRow | null) =>
-  compact(employee?.officialEmail || employee?.email || employee?.personalEmail);
+  normalizeMailboxAddress(employee?.officialEmail || employee?.email || employee?.personalEmail);
 
 export const resolveEmployeeMailbox = async (employee?: DleEmployeeDirectoryRow | null) => {
   const direct = employeeEmailAddress(employee);
@@ -103,7 +112,7 @@ export const resolveEmployeeMailbox = async (employee?: DleEmployeeDirectoryRow 
       .map((value) => compact(value).toUpperCase())
       .includes(normalized),
   );
-  return compact(match?.email);
+  return normalizeMailboxAddress(match?.email);
 };
 
 export const sendTransactionalEmail = async (input: { to: string; subject: string; text: string; html?: string }): Promise<MailSendResult> => {

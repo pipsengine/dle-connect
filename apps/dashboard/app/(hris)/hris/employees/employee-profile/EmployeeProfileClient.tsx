@@ -1269,6 +1269,8 @@ export default function EmployeeProfileClient({
   };
 
   const v = (x: unknown) => (typeof x === 'string' && x.trim() ? x.trim() : '-');
+  // Never put the display dash into editable inputs — it was being saved into emails (e.g. "-name@domain").
+  const editValue = (x: unknown) => (typeof x === 'string' ? x : x == null ? '' : String(x));
   const naira = (n: number | null) => (typeof n === 'number' ? `NGN ${formatNumber(Math.round(n))}` : '-');
 
   const breadcrumb = (
@@ -1533,7 +1535,7 @@ export default function EmployeeProfileClient({
                             <EditField
                               key={f.key}
                               label={f.label}
-                              value={restricted ? '••••••' : v(personalDraft?.[f.key] ?? current)}
+                              value={restricted ? '••••••' : editValue(personalDraft?.[f.key] ?? current)}
                               disabled={restricted}
                               onChange={(next) => {
                                 setPersonalDraft((prev) => ({ ...(prev || {}), [f.key]: next } as PersonalInfo));
@@ -1618,7 +1620,7 @@ export default function EmployeeProfileClient({
                               <EditField
                                 key={k}
                                 label={employmentLabel(k)}
-                                value={v(employmentDraft?.[k] ?? val)}
+                                value={editValue(employmentDraft?.[k] ?? val)}
                                 onChange={(next) => setEmploymentDraft((prev) => ({ ...(prev || {}), [k]: next }))}
                               />
                             );
@@ -1791,7 +1793,7 @@ export default function EmployeeProfileClient({
                             <EditField
                               key={k}
                               label={jobLabel(k)}
-                              value={v(jobDraft?.[k] ?? val)}
+                              value={editValue(jobDraft?.[k] ?? val)}
                               onChange={(next) => setJobDraft((prev) => ({ ...(prev || {}), [k]: next }))}
                             />
                           );
@@ -1866,7 +1868,7 @@ export default function EmployeeProfileClient({
                             <EditField
                               key={k}
                               label={k}
-                              value={v(contactsDraft?.[k] ?? val)}
+                              value={editValue(contactsDraft?.[k] ?? val)}
                               onChange={(next) => setContactsDraft((prev) => ({ ...(prev || {}), [k]: next }))}
                             />
                           );
@@ -2311,15 +2313,15 @@ export default function EmployeeProfileClient({
                           </>
                         ) : (
                           <>
-                            <EditField label="Salary Grade" value={v(payrollDraft?.salaryGrade)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), salaryGrade: next }))} />
+                            <EditField label="Salary Grade" value={editValue(payrollDraft?.salaryGrade)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), salaryGrade: next }))} />
                             <EditField label="Basic Salary (NGN)" value={payrollDraft?.basicSalary != null ? String(payrollDraft.basicSalary) : ''} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), basicSalary: next ? Number(next) : null }))} />
                             <EditField label="Allowances (NGN)" value={payrollDraft?.allowances != null ? String(payrollDraft.allowances) : ''} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), allowances: next ? Number(next) : null }))} />
                             <EditField label="Deductions (NGN)" value={payrollDraft?.deductions != null ? String(payrollDraft.deductions) : ''} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), deductions: next ? Number(next) : null }))} />
-                            <EditField label="Bank Name" value={v(payrollDraft?.bankName)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), bankName: next }))} />
-                            <EditField label="Account Number" value={v(payrollDraft?.accountNumberMasked)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), accountNumberMasked: next }))} />
-                            <EditField label="Pension Provider" value={v(payrollDraft?.pensionProvider)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), pensionProvider: next }))} />
-                            <EditField label="Tax ID" value={v(payrollDraft?.taxId)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), taxId: next }))} />
-                            <EditField label="Payroll Group" value={v(payrollDraft?.payrollGroup)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), payrollGroup: next }))} />
+                            <EditField label="Bank Name" value={editValue(payrollDraft?.bankName)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), bankName: next }))} />
+                            <EditField label="Account Number" value={editValue(payrollDraft?.accountNumberMasked)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), accountNumberMasked: next }))} />
+                            <EditField label="Pension Provider" value={editValue(payrollDraft?.pensionProvider)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), pensionProvider: next }))} />
+                            <EditField label="Tax ID" value={editValue(payrollDraft?.taxId)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), taxId: next }))} />
+                            <EditField label="Payroll Group" value={editValue(payrollDraft?.payrollGroup)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), payrollGroup: next }))} />
                           </>
                         )}
                         <Field label="Last Payroll Processed" value={profileData.payrollSummary.lastPayrollProcessed ? formatDateUtc(profileData.payrollSummary.lastPayrollProcessed) : '—'} />
@@ -2398,7 +2400,7 @@ export default function EmployeeProfileClient({
                                 </select>
                               </div>
                               <EditField label="Last Review (YYYY-MM-DD)" value={performanceDraft?.lastReviewAt ? performanceDraft.lastReviewAt.slice(0, 10) : ''} onChange={(next) => setPerformanceDraft((prev) => ({ ...(prev || profileData.performanceSummary), lastReviewAt: next ? `${next}T00:00:00.000Z` : null }))} />
-                              <EditField label="Manager Feedback" value={v(performanceDraft?.managerFeedback)} onChange={(next) => setPerformanceDraft((prev) => ({ ...(prev || profileData.performanceSummary), managerFeedback: next }))} />
+                              <EditField label="Manager Feedback" value={editValue(performanceDraft?.managerFeedback)} onChange={(next) => setPerformanceDraft((prev) => ({ ...(prev || profileData.performanceSummary), managerFeedback: next }))} />
                             </>
                           )}
                         </div>
@@ -2687,7 +2689,7 @@ export default function EmployeeProfileClient({
                                 <EditField label="Asset Type" value={a.assetType} onChange={(next) => setAssetsDraft((prev) => { const rows = [...(prev || profileData.assets)]; rows[idx] = { ...rows[idx], assetType: next }; return rows; })} />
                                 <EditField label="Asset Name" value={a.assetName} onChange={(next) => setAssetsDraft((prev) => { const rows = [...(prev || profileData.assets)]; rows[idx] = { ...rows[idx], assetName: next }; return rows; })} />
                                 <EditField label="Asset Tag" value={a.assetTag} onChange={(next) => setAssetsDraft((prev) => { const rows = [...(prev || profileData.assets)]; rows[idx] = { ...rows[idx], assetTag: next }; return rows; })} />
-                                <EditField label="Serial Number" value={v(a.serialNumber)} onChange={(next) => setAssetsDraft((prev) => { const rows = [...(prev || profileData.assets)]; rows[idx] = { ...rows[idx], serialNumber: next || null }; return rows; })} />
+                                <EditField label="Serial Number" value={editValue(a.serialNumber)} onChange={(next) => setAssetsDraft((prev) => { const rows = [...(prev || profileData.assets)]; rows[idx] = { ...rows[idx], serialNumber: next || null }; return rows; })} />
                                 <EditField label="Assigned Date" value={a.assignedDate.slice(0, 10)} onChange={(next) => setAssetsDraft((prev) => { const rows = [...(prev || profileData.assets)]; rows[idx] = { ...rows[idx], assignedDate: next ? `${next}T00:00:00.000Z` : rows[idx].assignedDate }; return rows; })} />
                                 <div className="rounded-xl border border-slate-200 bg-white p-2.5">
                                   <div className="text-[11px] font-extrabold text-slate-600">Condition</div>
@@ -2782,11 +2784,11 @@ export default function EmployeeProfileClient({
                               </>
                             ) : (
                               <>
-                                <EditField label="Medical Fitness Status" value={v(medicalDraft?.medicalFitnessStatus)} onChange={(next) => setMedicalDraft((prev) => ({ ...(prev || profileData.medicalHse!), medicalFitnessStatus: next }))} />
-                                <EditField label="Blood Group" value={v(medicalDraft?.bloodGroup)} onChange={(next) => setMedicalDraft((prev) => ({ ...(prev || profileData.medicalHse!), bloodGroup: next }))} />
-                                <EditField label="Known Allergies" value={v(medicalDraft?.knownAllergies)} onChange={(next) => setMedicalDraft((prev) => ({ ...(prev || profileData.medicalHse!), knownAllergies: next }))} />
-                                <EditField label="Medical Restrictions" value={v(medicalDraft?.medicalRestrictions)} onChange={(next) => setMedicalDraft((prev) => ({ ...(prev || profileData.medicalHse!), medicalRestrictions: next }))} />
-                                <EditField label="Fit-to-Work Status" value={v(medicalDraft?.fitToWorkStatus)} onChange={(next) => setMedicalDraft((prev) => ({ ...(prev || profileData.medicalHse!), fitToWorkStatus: next }))} />
+                                <EditField label="Medical Fitness Status" value={editValue(medicalDraft?.medicalFitnessStatus)} onChange={(next) => setMedicalDraft((prev) => ({ ...(prev || profileData.medicalHse!), medicalFitnessStatus: next }))} />
+                                <EditField label="Blood Group" value={editValue(medicalDraft?.bloodGroup)} onChange={(next) => setMedicalDraft((prev) => ({ ...(prev || profileData.medicalHse!), bloodGroup: next }))} />
+                                <EditField label="Known Allergies" value={editValue(medicalDraft?.knownAllergies)} onChange={(next) => setMedicalDraft((prev) => ({ ...(prev || profileData.medicalHse!), knownAllergies: next }))} />
+                                <EditField label="Medical Restrictions" value={editValue(medicalDraft?.medicalRestrictions)} onChange={(next) => setMedicalDraft((prev) => ({ ...(prev || profileData.medicalHse!), medicalRestrictions: next }))} />
+                                <EditField label="Fit-to-Work Status" value={editValue(medicalDraft?.fitToWorkStatus)} onChange={(next) => setMedicalDraft((prev) => ({ ...(prev || profileData.medicalHse!), fitToWorkStatus: next }))} />
                               </>
                             )}
                           </div>
@@ -2907,8 +2909,8 @@ export default function EmployeeProfileClient({
                                   </div>
                                   <EditField label="Date Reported" value={d.dateReported.slice(0, 10)} onChange={(next) => setDisciplinaryDraft((prev) => { const rows = [...(prev || profileData.disciplinary || [])]; rows[idx] = { ...rows[idx], dateReported: next ? `${next}T00:00:00.000Z` : rows[idx].dateReported }; return rows; })} />
                                   <EditField label="Description" value={d.description} onChange={(next) => setDisciplinaryDraft((prev) => { const rows = [...(prev || profileData.disciplinary || [])]; rows[idx] = { ...rows[idx], description: next }; return rows; })} />
-                                  <EditField label="Action Taken" value={v(d.actionTaken)} onChange={(next) => setDisciplinaryDraft((prev) => { const rows = [...(prev || profileData.disciplinary || [])]; rows[idx] = { ...rows[idx], actionTaken: next || null }; return rows; })} />
-                                  <EditField label="Approver" value={v(d.approver)} onChange={(next) => setDisciplinaryDraft((prev) => { const rows = [...(prev || profileData.disciplinary || [])]; rows[idx] = { ...rows[idx], approver: next || null }; return rows; })} />
+                                  <EditField label="Action Taken" value={editValue(d.actionTaken)} onChange={(next) => setDisciplinaryDraft((prev) => { const rows = [...(prev || profileData.disciplinary || [])]; rows[idx] = { ...rows[idx], actionTaken: next || null }; return rows; })} />
+                                  <EditField label="Approver" value={editValue(d.approver)} onChange={(next) => setDisciplinaryDraft((prev) => { const rows = [...(prev || profileData.disciplinary || [])]; rows[idx] = { ...rows[idx], approver: next || null }; return rows; })} />
                                   <button type="button" onClick={() => setDisciplinaryDraft((prev) => (prev || profileData.disciplinary || []).filter((_, i) => i !== idx))} className="p-2 rounded-xl border border-red-200 hover:bg-red-50 self-end">
                                     <Trash2 className="w-4 h-4 text-red-700" />
                                   </button>

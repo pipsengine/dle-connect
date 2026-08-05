@@ -278,8 +278,8 @@ export const notifyPaymentApprovalRequired = async (input: {
     } as DleEmployeeDirectoryRow);
   }
   if (mailbox) {
-    await safeNotify('approver email', () =>
-      sendPaymentApprovalRequestEmail({
+    await safeNotify('approver email', async () => {
+      const result = await sendPaymentApprovalRequestEmail({
         recipientName: approver.name,
         recipientEmail: mailbox,
         request: input.request,
@@ -288,12 +288,15 @@ export const notifyPaymentApprovalRequired = async (input: {
         rejectUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl, 'reject'),
         detailUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl),
         baseUrl: input.baseUrl,
-      }));
-    console.info('[payment-approval] approver email queued/sent', {
-      to: mailbox,
-      code: approver.code,
-      requestNumber: input.request.requestNumber,
-      stage: input.stage,
+      });
+      console.info('[payment-approval] approver email result', {
+        to: mailbox,
+        code: approver.code,
+        requestNumber: input.request.requestNumber,
+        stage: input.stage,
+        sent: result.sent,
+        reason: result.reason || null,
+      });
     });
   } else {
     console.warn('[payment-approval] no mailbox for approver', {
