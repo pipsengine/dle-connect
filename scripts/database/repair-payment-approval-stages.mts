@@ -1,11 +1,14 @@
 /**
- * Repair approval stages on open payment requests after PathType mapping bug.
+ * Re-seed Approval Limits (MD removed from default open bands) and repair open payment stages.
  *
  * Usage:
  *   npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/database/repair-payment-approval-stages.mts
  */
 import { loadWorkspaceEnv } from '../../apps/dashboard/lib/dle-enterprise-db.ts';
-import { resolveApprovalChain } from '../../apps/dashboard/lib/finance-intelligence/approval-matrix-service.ts';
+import {
+  resolveApprovalChain,
+  seedDefaultApprovalLimits,
+} from '../../apps/dashboard/lib/finance-intelligence/approval-matrix-service.ts';
 import {
   buildPaymentRequestsWorkspace,
   getPaymentRequestById,
@@ -16,6 +19,9 @@ import sql from 'mssql';
 loadWorkspaceEnv();
 
 const main = async () => {
+  console.log('Seeding default approval limit bands…');
+  await seedDefaultApprovalLimits('System MD/Treasury Repair');
+
   const workspace = await buildPaymentRequestsWorkspace();
   const open = workspace.rows.filter((row) =>
     /pending approval|submitted|finance review|ready for treasury|approved/i.test(row.status));
@@ -31,6 +37,8 @@ const main = async () => {
       currencyCode: fresh.currencyCode || 'NGN',
       department: fresh.department,
       projectCode: fresh.projectCode,
+      requesterCode: fresh.requesterCode,
+      supervisorName: fresh.supervisorName,
     });
     if (!matched?.stages?.length) {
       console.log(`SKIP ${fresh.requestNumber}: no matrix match`);

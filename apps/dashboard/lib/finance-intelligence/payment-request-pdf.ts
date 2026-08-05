@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { PaymentRequestActionRow, PaymentRequestRow } from '@/lib/finance-intelligence/payment-requests-service';
+import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-requests-service';
 
 const compact = (value: unknown) => String(value ?? '').trim();
 
@@ -227,9 +228,7 @@ export const buildPaymentRequestDocumentPdf = async (
   cmds.push(textAt(margin + 200, y - 12, 8, 'STAGE'));
   cmds.push(textAt(margin + 320, y - 12, 8, 'ACTOR'));
   let histY = y - 34;
-  const history = actions.length
-    ? actions.slice(0, 10)
-    : [];
+  const history = filterDocumentPaymentActions(actions).slice(0, 10);
   if (!history.length) {
     cmds.push(textAt(margin + 10, histY, 9, 'No workflow actions recorded.'));
   } else {

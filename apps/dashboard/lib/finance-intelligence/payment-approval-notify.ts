@@ -4,6 +4,7 @@ import { createEnterpriseNotification } from '@/lib/enterprise-notifications-sto
 import {
   sendPaymentApprovalRequestEmail,
   sendPaymentDecisionEmail,
+  sendTreasuryPaymentReadyEmail,
   resolveEmployeeMailbox,
 } from '@/lib/mail-service';
 import { resolveLineManagerForEmployee } from '@/lib/leave-workflow-service';
@@ -22,6 +23,7 @@ export type PaymentNotifyRequest = {
   currencyCode: string;
   department?: string;
   projectCode?: string;
+  paymentSiteCode?: string;
   paymentSiteName?: string;
   supervisorName?: string;
   currentStage?: string;
@@ -29,6 +31,17 @@ export type PaymentNotifyRequest = {
   currentApproverName?: string | null;
   status?: string;
 };
+
+/** Treasury officers notified when a payment reaches Ready for Treasury. */
+const TREASURY_READY_CONTACTS: Array<{
+  code: string;
+  email: string;
+  /** Empty = all payment sites; otherwise only these site codes. */
+  sites: string[];
+}> = [
+  { code: 'P0385', email: 'ifeanyiemesiana@dormanlongeng.com', sites: [] },
+  { code: 'P0387', email: 'omotolaniagboola@dormanlongeng.com', sites: ['DLPCG'] },
+];
 
 export type ResolvedPaymentApprover = {
   code: string;
@@ -146,7 +159,11 @@ export const resolvePaymentStageApprover = async (input: {
   } else if (/cfo|chief financial/.test(stageKey)) {
     matched = matchJobTitle(employees, [/\bcfo\b/i, /chief\s*financial/i]);
   } else if (/md\/?ceo|managing director|chief executive/.test(stageKey)) {
-    matched = matchJobTitle(employees, [/managing\s*director/i, /\bmd\b/i, /\bceo\b/i, /chief\s*executive/i]);
+    // Managing Director: Mr CHRIS IJELI (P0413)
+    matched = employees.find((employee) => {
+      if (/inactive|terminated|resigned|retired|deceased|suspend/i.test(compact(employee.status))) return false;
+      return employeeCodeOf(employee).toUpperCase() === 'P0413';
+    }) || matchJobTitle(employees, [/managing\s*director/i, /\bmd\s*\/?\s*ceo\b/i, /chief\s*executive/i]);
   }
 
   const principal = matched
@@ -310,6 +327,53 @@ export const notifyPaymentApprovalRequired = async (input: {
   return approver;
 };
 
+/** Email Treasury when final approval completes (Ready for Treasury). */
+export const notifyTreasuryReadyForPayment = async (input: {
+  request: PaymentNotifyRequest;
+  actorName: string;
+  baseUrl?: string | null;
+}) => {
+  const session = financeSystemSession(input.actorName);
+  const directory = await readDirectoryEmployees().catch(() => ({ employees: [] as DleEmployeeDirectoryRow[] }));
+  const employees = directory.employees || [];
+  const site = compact(input.request.paymentSiteCode).toUpperCase();
+  const detailUrl = paymentRequestDetailUrl(input.request.requestId, input.baseUrl);
+  const treasuryHref = '/finance/approvals/treasury';
+
+  await safeNotify('treasury ready in-app', async () => {
+    await createEnterpriseNotification(session, {
+      kind: 'Approval',
+      module: 'Finance Approvals',
+      title: 'Payment ready for Treasury',
+      body: `${input.request.requestNumber} is fully approved and ready for payment.`,
+      severity: 'warning',
+      recipientRoles: ['Treasury Officer', 'Finance Manager', 'Finance Controller', 'Accountant'],
+      href: treasuryHref,
+      channels: ['In-App'],
+      metadata: { requestId: input.request.requestId, event: 'treasury-ready' },
+      actor: input.actorName,
+    });
+  });
+
+  for (const contact of TREASURY_READY_CONTACTS) {
+    if (contact.sites.length > 0 && !contact.sites.includes(site)) continue;
+
+    const employee = employees.find((row) => employeeCodeOf(row).toUpperCase() === contact.code) || null;
+    const mailbox = (await resolveEmployeeMailbox(employee).catch(() => null)) || contact.email;
+    const recipientName = compact(employee?.fullName) || contact.code;
+
+    await safeNotify(`treasury ready email ${contact.code}`, () =>
+      sendTreasuryPaymentReadyEmail({
+        recipientName,
+        recipientEmail: mailbox,
+        request: input.request,
+        actorName: input.actorName,
+        detailUrl,
+        baseUrl: input.baseUrl,
+      }));
+  }
+};
+
 export const notifyPaymentDecision = async (input: {
   request: PaymentNotifyRequest;
   event: 'approved' | 'rejected' | 'returned' | 'stage-advanced' | 'paid' | 'posted' | 'retirement-submitted' | 'retirement-acknowledged';
@@ -415,6 +479,14 @@ export const notifyPaymentDecision = async (input: {
         actor: input.actorName,
       });
     });
+  }
+
+  if (input.event === 'approved') {
+    await notifyTreasuryReadyForPayment({
+      request: input.request,
+      actorName: input.actorName,
+      baseUrl: input.baseUrl,
+    }).catch((error) => console.error('[payment-approval] treasury ready notify failed', error));
   }
 
   if (input.event === 'posted') {

@@ -16,6 +16,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { PaymentRequestActionRow, PaymentRequestAttachment, PaymentRequestRow } from '@/lib/finance-intelligence/payment-requests-service';
+import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-requests-service';
 
 const money = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 2 });
 
@@ -239,6 +240,7 @@ export default function PaymentApprovalDetailClient() {
   }
 
   const request = detail.request;
+  const visibleActions = filterDocumentPaymentActions(detail.actions || []);
   const stages = Array.isArray(request.payload?.stages)
     ? (request.payload.stages as string[]).map((item) => String(item))
     : [];
@@ -442,7 +444,7 @@ export default function PaymentApprovalDetailClient() {
       <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-900">Action history</h2>
         <div className="mt-3 space-y-2">
-          {detail.actions.length ? detail.actions.map((action) => (
+          {visibleActions.length ? visibleActions.map((action) => (
             <div key={action.actionId} className="flex items-start gap-3 rounded-xl border border-slate-100 px-3 py-2.5">
               <Clock3 className="mt-0.5 h-4 w-4 text-slate-400" />
               <div className="min-w-0 flex-1">

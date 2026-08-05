@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import type { PaymentRequestActionRow, PaymentRequestRow } from '@/lib/finance-intelligence/payment-requests-service';
+import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-requests-service';
 
 const money = (amount: number, currency = 'NGN') =>
   new Intl.NumberFormat('en-NG', {
@@ -35,6 +36,7 @@ export default function PaymentRequestDetailPanel({ request, actions = [], foote
   const paymentEvidence = (request.attachments || []).filter((file) => file.kind === 'payment-evidence');
   const retirementEvidence = (request.attachments || []).filter((file) => file.kind === 'retirement-evidence');
   const retirementNote = String(request.retirement?.note || '');
+  const visibleActions = filterDocumentPaymentActions(actions);
 
   const fields: Array<[string, string]> = [
     ['Request #', request.requestNumber],
@@ -124,9 +126,9 @@ export default function PaymentRequestDetailPanel({ request, actions = [], foote
 
       <section>
         <h4 className="mb-2 text-sm font-semibold text-slate-900">Action history</h4>
-        {actions.length ? (
+        {visibleActions.length ? (
           <ul className="max-h-48 space-y-2 overflow-y-auto">
-            {actions.map((item) => (
+            {visibleActions.map((item) => (
               <li key={item.actionId} className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
                 <div className="font-semibold text-slate-800">{item.actionType} · {item.stage || '—'}</div>
                 <div>{item.actorName} · {fmtDate(item.createdAt)}</div>

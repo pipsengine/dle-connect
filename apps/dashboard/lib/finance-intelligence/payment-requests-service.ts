@@ -2,7 +2,7 @@ import sql from 'mssql';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
-import { convertAmountToNgn, resolveApprovalChain } from '@/lib/finance-intelligence/approval-matrix-service';
+import { convertAmountToNgn, resolveApprovalChain, applyMdLineManagerLastApproverRule } from '@/lib/finance-intelligence/approval-matrix-service';
 import {
   notifyPaymentApprovalRequired,
   notifyPaymentDecision,
@@ -265,7 +265,13 @@ const moneyRound = (value: number) => Math.round(value * 10000) / 10000;
 const resolveInitialStage = async (
   amount: number,
   paymentType: PaymentRequestType,
-  context?: { currencyCode?: string; department?: string; projectCode?: string },
+  context?: {
+    currencyCode?: string;
+    department?: string;
+    projectCode?: string;
+    requesterCode?: string;
+    supervisorName?: string;
+  },
 ) => {
   try {
     const matched = await resolveApprovalChain({
@@ -273,6 +279,8 @@ const resolveInitialStage = async (
       currencyCode: context?.currencyCode || 'NGN',
       department: context?.department,
       projectCode: context?.projectCode,
+      requesterCode: context?.requesterCode,
+      supervisorName: context?.supervisorName,
     });
     if (matched) {
       return {
@@ -291,7 +299,7 @@ const resolveInitialStage = async (
   }
 
   // Safe fallback if matrix unavailable — still convert for consistent NGN routing metadata.
-  // Use the same amount bands as DEFAULT_APPROVAL_LIMIT_RULES so CFO/MD are not dropped.
+  // MD/CEO is not in default bands; applied only when MD is line manager and amount > 200k.
   const converted = await convertAmountToNgn(amount, context?.currencyCode || 'NGN').catch(() => ({
     amountNgn: amount,
     fxRate: 1,
@@ -308,7 +316,7 @@ const resolveInitialStage = async (
       fallbackStages = ['Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO'];
       matrixRuleName = 'PROJ_LE_5M';
     } else {
-      fallbackStages = ['Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO', 'MD/CEO'];
+      fallbackStages = ['Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO'];
       matrixRuleName = 'PROJ_GT_5M';
     }
   } else if (amountNgn <= 200000) {
@@ -318,9 +326,15 @@ const resolveInitialStage = async (
     fallbackStages = ['Reporting Manager', 'Finance Manager', 'CFO'];
     matrixRuleName = 'NONPROJ_LE_1M';
   } else {
-    fallbackStages = ['Reporting Manager', 'Finance Manager', 'CFO', 'MD/CEO'];
+    fallbackStages = ['Reporting Manager', 'Finance Manager', 'CFO'];
     matrixRuleName = 'NONPROJ_GT_1M';
   }
+  fallbackStages = await applyMdLineManagerLastApproverRule({
+    stages: fallbackStages,
+    amountNgn,
+    requesterCode: context?.requesterCode,
+    supervisorName: context?.supervisorName,
+  });
   return {
     stage: fallbackStages[0],
     status: 'Pending Approval' as const,
@@ -515,12 +529,21 @@ export type PaymentRequestActionRow = {
   requestId: string;
   actionType: string;
   stage: string;
-  actorCode: string;
   actorName: string;
+  actorCode: string;
   comment: string;
   reason: string;
   createdAt: string;
 };
+
+/** Document / PDF action history shows only submission and approvals. */
+export const isDocumentVisiblePaymentAction = (action: { actionType?: string | null }) => {
+  const type = compact(action.actionType).toLowerCase();
+  return type === 'submitted' || type === 'approve' || type === 'approved';
+};
+
+export const filterDocumentPaymentActions = <T extends { actionType?: string | null }>(actions: T[]) =>
+  actions.filter(isDocumentVisiblePaymentAction);
 
 export const listPaymentRequestActions = async (requestId: string): Promise<PaymentRequestActionRow[]> => {
   const pool = await ensureFinanceDb().catch(() => null);
@@ -652,6 +675,8 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
       currencyCode: row.currencyCode || 'NGN',
       department: row.department,
       projectCode: row.projectCode,
+      requesterCode: row.requesterCode,
+      supervisorName: row.supervisorName,
     });
     if (matched?.stages?.length) {
       matchedStages = matched.stages;
@@ -1434,6 +1459,8 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
       currencyCode: compact(input.currencyCode) || 'NGN',
       department,
       projectCode: compact(input.projectCode),
+      requesterCode: compact(input.requesterCode) || beneficiaryCode,
+      supervisorName: compact(input.supervisorName),
     })
     : {
       stage: 'Draft',
@@ -2045,17 +2072,6 @@ WHERE [RequestId] = @RequestId
         : undefined),
       baseUrl: input.baseUrl,
     }).catch((error) => console.error('[payment-requests] transition notification failed', error));
-
-    if (notifyEvent === 'stage-advanced' && assignedApprover?.code) {
-      await logAction({
-        requestId: input.requestId,
-        actionType: 'notify-approver',
-        stage: advancedTo || nextStage,
-        actorName: 'System',
-        actorCode: 'system',
-        comment: `Approval notification targeted to ${assignedApprover.name || assignedApprover.code} (${assignedApprover.code}).`,
-      });
-    }
   }
 
   const workspace = await buildPaymentRequestsWorkspace();

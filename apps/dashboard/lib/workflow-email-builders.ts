@@ -895,3 +895,28 @@ export const buildPaymentDecisionEmail = (input: {
     actions: [{ href: input.detailUrl, label: 'Open Payment Details', tone: 'primary' }],
   }, input.baseUrl);
 };
+
+export const buildTreasuryPaymentReadyEmail = (input: {
+  recipientName: string;
+  request: PaymentEmailRequest;
+  actorName?: string;
+  detailUrl: string;
+  baseUrl?: string | null;
+}) => withBrand({
+  recipientName: input.recipientName,
+  subject: `Ready for Treasury — ${input.request.requestNumber}`,
+  module: 'Finance Approvals',
+  headline: 'Payment ready for Treasury',
+  intro: 'A payment request has completed final approval and is ready for disbursement.',
+  tone: 'warning',
+  accentColor: '#008FD5',
+  details: [
+    ...paymentDetails(input.request),
+    ...(input.actorName ? [{ label: 'Final approved by', value: input.actorName }] : []),
+  ],
+  note: 'Open Treasury Operations to review and mark the payment as paid with evidence.',
+  actions: [
+    { href: input.detailUrl, label: 'Open Payment Details', tone: 'primary' },
+  ],
+  footerNote: 'This notification is sent to Treasury when the last approver clears the payment.',
+}, input.baseUrl);

@@ -25,6 +25,7 @@ import {
   buildProfileUpdateDecisionEmail,
   buildPaymentApprovalRequestEmail,
   buildPaymentDecisionEmail,
+  buildTreasuryPaymentReadyEmail,
   buildPayrollApprovalRequestEmail,
   buildPayrollFullyApprovedEmail,
   buildPayrollRejectedEmail,
@@ -727,6 +728,40 @@ export const sendPaymentDecisionEmail = async (input: {
     stage: input.stage,
     nextStage: input.nextStage,
     reason: input.reason,
+    detailUrl: input.detailUrl,
+    baseUrl: input.baseUrl,
+  });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
+
+export const sendTreasuryPaymentReadyEmail = async (input: {
+  recipientName: string;
+  recipientEmail: string;
+  request: {
+    requestId: string;
+    requestNumber: string;
+    paymentType: string;
+    title: string;
+    requesterName: string;
+    beneficiaryName: string;
+    netAmount: number;
+    currencyCode: string;
+    department?: string;
+    projectCode?: string;
+    paymentSiteName?: string;
+    currentStage?: string;
+    status?: string;
+  };
+  actorName?: string;
+  detailUrl: string;
+  baseUrl?: string | null;
+}): Promise<MailSendResult> => {
+  const to = compact(input.recipientEmail);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const email = buildTreasuryPaymentReadyEmail({
+    recipientName: input.recipientName,
+    request: input.request,
+    actorName: input.actorName,
     detailUrl: input.detailUrl,
     baseUrl: input.baseUrl,
   });
