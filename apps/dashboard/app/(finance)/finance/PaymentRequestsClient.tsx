@@ -811,7 +811,6 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
             { id: 'reject', label: 'Reject' },
             { id: 'approve', label: 'Approve' },
             { id: 'mark-ready-treasury', label: 'Ready for Treasury' },
-            { id: 'mark-paid', label: 'Mark Paid' },
           ].map((action) => (
             <button
               key={action.id}

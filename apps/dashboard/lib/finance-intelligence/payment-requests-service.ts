@@ -178,6 +178,8 @@ export type PaymentRequestAttachment = {
   size: number;
   uploadedAt: string;
   uploadedBy: string;
+  /** supporting = request docs; payment-evidence = treasury disbursement proof */
+  kind?: 'supporting' | 'payment-evidence';
 };
 
 export type PaymentRequestsWorkspace = {
@@ -1223,6 +1225,7 @@ export const normalizePaymentAttachmentUpload = (input: {
   mimeType?: string;
   contentBase64: string;
   uploadedBy?: string;
+  kind?: 'supporting' | 'payment-evidence';
 }): { meta: PaymentRequestAttachment; bytes: Buffer } => {
   const originalName = compact(input.fileName) || 'attachment.bin';
   const ext = path.extname(originalName).toLowerCase();
@@ -1246,6 +1249,7 @@ export const normalizePaymentAttachmentUpload = (input: {
       size: bytes.length,
       uploadedAt: nowIso(),
       uploadedBy: compact(input.uploadedBy) || 'System',
+      kind: input.kind || 'supporting',
     },
   };
 };
@@ -1650,6 +1654,12 @@ export const transitionPaymentRequest = async (input: {
   delegateToCode?: string;
   delegateToName?: string;
   delegateEndsAt?: string | null;
+  /** Treasury disbursement proof (PDF/image) required for mark-paid. */
+  paymentEvidenceUpload?: {
+    fileName: string;
+    mimeType?: string;
+    contentBase64: string;
+  } | null;
 }) => {
   const pool = await ensureFinanceDb();
   if (!pool) throw new Error('Finance database is unavailable.');
@@ -1675,6 +1685,7 @@ export const transitionPaymentRequest = async (input: {
   let treasuryJson: Record<string, unknown> | null = existing.treasury;
   let retirementJson: Record<string, unknown> | null = existing.retirement;
   let postingJson: Record<string, unknown> | null = existing.posting;
+  let attachmentsJson: PaymentRequestAttachment[] | null = null;
   let notifyEvent: 'approved' | 'rejected' | 'returned' | 'stage-advanced' | 'paid' | 'posted' | null = null;
   let completedStage = existing.currentStage;
   let advancedTo: string | undefined;
@@ -1717,11 +1728,22 @@ export const transitionPaymentRequest = async (input: {
       nextStage = 'Treasury';
       break;
     case 'mark-paid': {
-      const reference = compact(input.paymentReference);
-      if (!reference) throw new Error('Payment reference is required to mark as paid.');
       if (!/^(ready for treasury|approved|payment scheduled|payment processing)$/i.test(existing.status)) {
         throw new Error('Only Approved / Ready for Treasury payments can be marked paid.');
       }
+      const evidenceUpload = input.paymentEvidenceUpload;
+      if (!evidenceUpload?.contentBase64) {
+        throw new Error('Upload payment evidence (bank receipt / transfer proof) to mark as paid.');
+      }
+      const prepared = normalizePaymentAttachmentUpload({
+        ...evidenceUpload,
+        uploadedBy: input.actor,
+        kind: 'payment-evidence',
+      });
+      await savePaymentAttachmentFile(input.requestId, prepared.meta.fileName, prepared.bytes);
+      attachmentsJson = [...(existing.attachments || []), prepared.meta];
+      const reference = compact(input.paymentReference)
+        || `Evidence: ${prepared.meta.originalName}`.slice(0, 120);
       const isAdvance = existing.paymentType === 'Cash Advance Payment';
       nextStatus = isAdvance ? 'Awaiting Retirement' : 'Paid';
       nextStage = isAdvance ? 'Awaiting Retirement' : 'Paid';
@@ -1734,6 +1756,9 @@ export const transitionPaymentRequest = async (input: {
         paidByCode: input.actorCode || null,
         paidAt: paidAt.toISOString(),
         paymentReference: reference,
+        paymentEvidenceFileName: prepared.meta.fileName,
+        paymentEvidenceOriginalName: prepared.meta.originalName,
+        paymentEvidenceId: prepared.meta.id,
         channel: compact(input.comment) || 'Treasury disbursement',
       };
       notifyEvent = 'paid';
@@ -1865,6 +1890,7 @@ WHERE [RequestId] = @RequestId
     .input('TreasuryJson', sql.NVarChar(sql.MAX), treasuryJson ? JSON.stringify(treasuryJson) : null)
     .input('RetirementJson', sql.NVarChar(sql.MAX), retirementJson ? JSON.stringify(retirementJson) : null)
     .input('PostingJson', sql.NVarChar(sql.MAX), postingJson ? JSON.stringify(postingJson) : null)
+    .input('AttachmentsJson', sql.NVarChar(sql.MAX), attachmentsJson ? JSON.stringify(attachmentsJson) : null)
     .query(`
 UPDATE [finance].[PaymentRequests]
 SET [Status] = @Status,
@@ -1878,6 +1904,7 @@ SET [Status] = @Status,
     [TreasuryJson] = COALESCE(@TreasuryJson, [TreasuryJson]),
     [RetirementJson] = COALESCE(@RetirementJson, [RetirementJson]),
     [PostingJson] = COALESCE(@PostingJson, [PostingJson]),
+    [AttachmentsJson] = COALESCE(@AttachmentsJson, [AttachmentsJson]),
     [UpdatedAt] = SYSUTCDATETIME()
 WHERE [RequestId] = @RequestId
 `);
@@ -1929,7 +1956,7 @@ WHERE [RequestId] = @RequestId
       actorName: input.actor,
       stage: completedStage,
       nextStage: advancedTo,
-      reason: input.reason || input.comment || (notifyEvent === 'paid' ? `Payment reference: ${paymentReference}` : undefined),
+      reason: input.reason || input.comment || (notifyEvent === 'paid' ? `Payment evidence uploaded (${paymentReference}).` : undefined),
       baseUrl: input.baseUrl,
     }).catch((error) => console.error('[payment-requests] transition notification failed', error));
 

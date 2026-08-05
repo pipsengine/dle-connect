@@ -66,9 +66,11 @@ const canOperateTreasury = (actor: Awaited<ReturnType<typeof resolveActor>>) => 
     || hasPermission(actor.permissions, 'treasury.edit')
     || hasPermission(actor.permissions, 'treasury.*')
     || hasPermission(actor.permissions, 'finance.*')
+    || hasPermission(actor.permissions, 'finance.edit')
+    || hasPermission(actor.permissions, 'finance.view')
   ) return true;
   return actor.roles.some((role) =>
-    /^(treasury officer|finance manager|finance controller|finance administrator|cfo)$/i.test(role.trim()));
+    /^(treasury officer|finance manager|finance controller|finance administrator|cfo|accountant|accounts payable officer|accounts receivable officer)$/i.test(role.trim()));
 };
 
 const canOperatePosting = (actor: Awaited<ReturnType<typeof resolveActor>>) => {
@@ -316,6 +318,9 @@ export async function POST(request: Request) {
         delegateToCode: body.delegateToCode,
         delegateToName: body.delegateToName,
         delegateEndsAt: body.delegateEndsAt,
+        paymentEvidenceUpload: body.paymentEvidenceUpload && typeof body.paymentEvidenceUpload === 'object'
+          ? body.paymentEvidenceUpload
+          : undefined,
       });
       const actions = result.request
         ? await listPaymentRequestActions(result.request.requestId)

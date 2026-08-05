@@ -30,6 +30,9 @@ type Props = {
 };
 
 export default function PaymentRequestDetailPanel({ request, actions = [], footer }: Props) {
+  const supportingDocs = (request.attachments || []).filter((file) => file.kind !== 'payment-evidence');
+  const paymentEvidence = (request.attachments || []).filter((file) => file.kind === 'payment-evidence');
+
   const fields: Array<[string, string]> = [
     ['Request #', request.requestNumber],
     ['Type', request.paymentType],
@@ -46,7 +49,7 @@ export default function PaymentRequestDetailPanel({ request, actions = [], foote
     ['Requester', request.requesterName || '—'],
     ['Invoice #', request.invoiceNumber || '—'],
     ['PO / GRN', [request.purchaseOrderNo, request.grnNo].filter(Boolean).join(' / ') || '—'],
-    ['Payment ref', request.paymentReference || '—'],
+    ['Payment evidence', paymentEvidence[0]?.originalName || request.paymentReference || '—'],
     ['Paid at', fmtDate(request.paidAt)],
     ['Sage ref', request.sageReference || '—'],
     ['Posting', request.postingStatus || 'NotReady'],
@@ -70,10 +73,33 @@ export default function PaymentRequestDetailPanel({ request, actions = [], foote
       </dl>
 
       <section>
-        <h4 className="mb-2 text-sm font-semibold text-slate-900">Supporting documents</h4>
-        {request.attachments?.length ? (
+        <h4 className="mb-2 text-sm font-semibold text-slate-900">Payment evidence</h4>
+        {paymentEvidence.length ? (
           <ul className="space-y-2">
-            {request.attachments.map((file) => (
+            {paymentEvidence.map((file) => (
+              <li key={file.id || file.fileName} className="flex items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-sm">
+                <span className="truncate font-medium text-slate-800">{file.originalName || file.fileName}</span>
+                <a
+                  className="shrink-0 text-xs font-semibold text-[#008FD5] hover:underline"
+                  href={`/api/finance/payment-requests/attachments?requestId=${encodeURIComponent(request.requestId)}&fileName=${encodeURIComponent(file.fileName)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Download
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-sm text-slate-500">No payment evidence uploaded yet.</p>
+        )}
+      </section>
+
+      <section>
+        <h4 className="mb-2 text-sm font-semibold text-slate-900">Supporting documents</h4>
+        {supportingDocs.length ? (
+          <ul className="space-y-2">
+            {supportingDocs.map((file) => (
               <li key={file.id || file.fileName} className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm">
                 <span className="truncate font-medium text-slate-800">{file.originalName || file.fileName}</span>
                 <a

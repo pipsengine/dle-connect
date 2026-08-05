@@ -251,10 +251,35 @@ export default function PaymentApprovalDetailClient() {
             </div>
           ) : null}
           <div className="mt-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Supporting documents</p>
-            {Array.isArray(request.attachments) && request.attachments.length ? (
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Payment evidence</p>
+            {Array.isArray(request.attachments) && (request.attachments as PaymentRequestAttachment[]).some((file) => file.kind === 'payment-evidence') ? (
               <ul className="mt-2 space-y-1.5">
-                {(request.attachments as PaymentRequestAttachment[]).map((file) => (
+                {(request.attachments as PaymentRequestAttachment[])
+                  .filter((file) => file.kind === 'payment-evidence')
+                  .map((file) => (
+                    <li key={file.id || file.fileName}>
+                      <a
+                        href={`/api/finance/payment-requests/attachments?requestId=${encodeURIComponent(request.requestId)}&fileName=${encodeURIComponent(file.fileName)}`}
+                        className="inline-flex max-w-full items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs font-medium text-[#008FD5] hover:bg-[#EAF6FF]"
+                      >
+                        <Paperclip className="h-3.5 w-3.5 shrink-0" />
+                        <span className="min-w-0 truncate">{file.originalName || file.fileName}</span>
+                        <Download className="h-3.5 w-3.5 shrink-0" />
+                      </a>
+                    </li>
+                  ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-xs text-slate-500">No payment evidence uploaded yet.</p>
+            )}
+          </div>
+          <div className="mt-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Supporting documents</p>
+            {Array.isArray(request.attachments) && (request.attachments as PaymentRequestAttachment[]).some((file) => file.kind !== 'payment-evidence') ? (
+              <ul className="mt-2 space-y-1.5">
+                {(request.attachments as PaymentRequestAttachment[])
+                  .filter((file) => file.kind !== 'payment-evidence')
+                  .map((file) => (
                   <li key={file.id || file.fileName}>
                     <a
                       href={`/api/finance/payment-requests/attachments?requestId=${encodeURIComponent(request.requestId)}&fileName=${encodeURIComponent(file.fileName)}`}

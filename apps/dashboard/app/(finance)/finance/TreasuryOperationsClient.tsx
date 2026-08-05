@@ -5,6 +5,7 @@ import {
   Banknote,
   CheckCircle2,
   Clock3,
+  FileUp,
   RefreshCcw,
   ShieldCheck,
   Wallet,
@@ -23,15 +24,27 @@ type TabId = 'ready' | 'paidToday' | 'awaiting' | 'verify' | 'history';
 const money = (amount: number, currency = 'NGN') =>
   new Intl.NumberFormat('en-NG', { style: 'currency', currency: currency || 'NGN', maximumFractionDigits: 0 }).format(amount || 0);
 
+const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = String(reader.result || '');
+    const comma = result.indexOf(',');
+    resolve(comma >= 0 ? result.slice(comma + 1) : result);
+  };
+  reader.onerror = () => reject(new Error(`Unable to read ${file.name}`));
+  reader.readAsDataURL(file);
+});
+
 export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
   const [workspace, setWorkspace] = useState(initialWorkspace);
   const [tab, setTab] = useState<TabId>('ready');
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState('');
+  const [modalError, setModalError] = useState('');
   const [selected, setSelected] = useState<PaymentRequestRow | null>(null);
   const [actions, setActions] = useState<PaymentRequestActionRow[]>([]);
-  const [paymentReference, setPaymentReference] = useState('');
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [comment, setComment] = useState('');
 
   const refresh = async () => {
@@ -51,8 +64,9 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
 
   const openDetail = async (row: PaymentRequestRow) => {
     setSelected(row);
-    setPaymentReference(row.paymentReference || '');
+    setEvidenceFile(null);
     setComment('');
+    setModalError('');
     setActions([]);
     try {
       const res = await fetch(`/api/finance/payment-requests?requestId=${encodeURIComponent(row.requestId)}`, { cache: 'no-store' });
@@ -70,7 +84,20 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
     if (!selected) return;
     setBusy(true);
     setToast('');
+    setModalError('');
     try {
+      let paymentEvidenceUpload: { fileName: string; mimeType: string; contentBase64: string } | undefined;
+      if (transition === 'mark-paid') {
+        if (!evidenceFile) {
+          throw new Error('Upload payment evidence (bank receipt / transfer proof) before marking paid.');
+        }
+        paymentEvidenceUpload = {
+          fileName: evidenceFile.name,
+          mimeType: evidenceFile.type || 'application/octet-stream',
+          contentBase64: await fileToBase64(evidenceFile),
+        };
+      }
+
       const res = await fetch('/api/finance/payment-requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -78,20 +105,24 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
           action: 'transition',
           transition,
           requestId: selected.requestId,
-          paymentReference: paymentReference || undefined,
           comment: comment || undefined,
           reason: comment || undefined,
+          paymentEvidenceUpload,
           ...extra,
         }),
       });
-      const json = await res.json();
-      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Action failed');
+      const json = await res.json().catch(() => ({ status: 'error', error: 'Action failed' }));
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || `Action failed (${res.status}).`);
       setToast(json.data.message || 'Updated.');
       setActions(json.data.actions || []);
       if (json.data.request) setSelected(json.data.request as PaymentRequestRow);
+      setEvidenceFile(null);
       await refresh();
+      if (transition === 'mark-paid') setSelected(null);
     } catch (error) {
-      setToast(error instanceof Error ? error.message : 'Action failed');
+      const message = error instanceof Error ? error.message : 'Action failed';
+      setModalError(message);
+      setToast(message);
     } finally {
       setBusy(false);
     }
@@ -118,7 +149,7 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
         <div>
           <h1 className="text-[28px] font-semibold tracking-tight text-slate-900">Treasury Operations</h1>
           <p className="mt-1 max-w-3xl text-sm text-slate-500">
-            Disburse fully approved payments, capture payment references, notify requesters, and acknowledge cash-advance retirements.
+            Disburse fully approved payments, upload payment evidence, notify requesters, and acknowledge cash-advance retirements.
           </p>
         </div>
         <button type="button" onClick={() => void refresh()} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-600">
@@ -202,6 +233,11 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
               <button type="button" onClick={() => setSelected(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X className="h-5 w-5" /></button>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4">
+              {modalError ? (
+                <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                  {modalError}
+                </div>
+              ) : null}
               <PaymentRequestDetailPanel
                 request={selected}
                 actions={actions}
@@ -210,14 +246,40 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
                     {/ready for treasury|approved/i.test(selected.status) ? (
                       <>
                         <label className="block text-sm">
-                          <span className="mb-1 block font-medium">Payment reference *</span>
-                          <input value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} placeholder="Bank ref / transfer ID" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+                          <span className="mb-1 block font-medium">Payment evidence *</span>
+                          <span className="mb-2 block text-xs text-slate-500">
+                            Upload bank receipt / transfer proof (PDF or image, max 8 MB). Requesters can download it from the request.
+                          </span>
+                          <div className="flex items-center gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3">
+                            <FileUp className="h-5 w-5 shrink-0 text-[#008FD5]" />
+                            <div className="min-w-0 flex-1">
+                              <input
+                                type="file"
+                                accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,image/*"
+                                onChange={(e) => {
+                                  setEvidenceFile(e.target.files?.[0] || null);
+                                  setModalError('');
+                                }}
+                                className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-[#EAF6FF] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-[#008FD5]"
+                              />
+                              {evidenceFile ? (
+                                <p className="mt-1 truncate text-xs font-medium text-slate-600">
+                                  Selected: {evidenceFile.name} ({Math.max(1, Math.round(evidenceFile.size / 1024))} KB)
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
                         </label>
                         <label className="block text-sm">
                           <span className="mb-1 block font-medium">Note</span>
                           <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Optional disbursement note" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
                         </label>
-                        <button type="button" disabled={busy} onClick={() => void runTransition('mark-paid')} className="inline-flex items-center gap-1.5 rounded-xl bg-[#008FD5] px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-60">
+                        <button
+                          type="button"
+                          disabled={busy || !evidenceFile}
+                          onClick={() => void runTransition('mark-paid')}
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-[#008FD5] px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                        >
                           <CheckCircle2 className="h-4 w-4" /> Mark paid & notify requester
                         </button>
                       </>
