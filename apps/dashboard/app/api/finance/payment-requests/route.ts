@@ -3,6 +3,14 @@ import { NextResponse } from 'next/server';
 import { AUTH_COOKIE, hasPermission, verifySessionToken } from '@/lib/auth/session';
 import { permissionsForRoles } from '@/lib/auth/rbac';
 import {
+  canAccessPaymentRequest,
+  canActOnPaymentApproval,
+  canDownloadPaymentDocumentPdf,
+  canViewAllPaymentRequests,
+  isPaymentRequesterOnly,
+} from '@/lib/finance-intelligence/payment-access';
+import { resolvePublicAppOrigin } from '@/lib/public-app-url';
+import {
   ALLOWED_PAYMENT_CURRENCIES,
   buildCashAdvanceControlsWorkspace,
   buildFinancePostingWorkspace,
@@ -15,15 +23,11 @@ import {
   grantCashAdvanceWaiver,
   listPaymentRequestActions,
   PAYMENT_TYPES,
+  repairPrematureTreasuryHandoff,
   transitionPaymentRequest,
   type PaymentRequestType,
 } from '@/lib/finance-intelligence/payment-requests-service';
 import { FALLBACK_EXPENSE_CODES, FALLBACK_SITES, listExpenseCodes, listPaymentSites } from '@/lib/finance-intelligence/payment-request-lookups';
-import {
-  canAccessPaymentRequest,
-  canViewAllPaymentRequests,
-} from '@/lib/finance-intelligence/payment-access';
-import { resolvePublicAppOrigin } from '@/lib/public-app-url';
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -88,13 +92,23 @@ export async function GET(request: Request) {
     const viewAll = canViewAllPaymentRequests(actor);
 
     if (requestId) {
-      const paymentRequest = await getPaymentRequestById(requestId);
+      let paymentRequest = await getPaymentRequestById(requestId);
       if (!paymentRequest) return jsonErr(404, 'Payment request not found.');
+      paymentRequest = await repairPrematureTreasuryHandoff(paymentRequest);
       if (!canAccessPaymentRequest(actor, paymentRequest)) {
         return jsonErr(403, 'You do not have access to this payment request.');
       }
       const actions = await listPaymentRequestActions(paymentRequest.requestId);
-      return jsonOk({ request: paymentRequest, actions });
+      return jsonOk({
+        request: paymentRequest,
+        actions,
+        viewer: {
+          actorCode: actor.actorCode,
+          canApprove: canActOnPaymentApproval(actor, paymentRequest),
+          isRequesterOnly: isPaymentRequesterOnly(actor, paymentRequest),
+          canDownloadPdf: canDownloadPaymentDocumentPdf(paymentRequest),
+        },
+      });
     }
 
     if (view === 'eligibility') {
@@ -273,11 +287,19 @@ export async function POST(request: Request) {
       const transition = String(body.transition || '').trim();
       const treasuryActions = ['mark-paid', 'acknowledge-retirement', 'return-retirement', 'mark-ready-treasury'];
       const postingActions = ['mark-posted', 'ready-to-post'];
+      const approvalActions = ['approve', 'reject', 'return', 'clarify', 'delegate', 'escalate'];
       if (treasuryActions.includes(transition) && !canOperateTreasury(actor)) {
         return jsonErr(403, 'Treasury actions require Treasury or Finance access.');
       }
       if (postingActions.includes(transition) && !canOperatePosting(actor)) {
         return jsonErr(403, 'Posting actions require Finance posting access.');
+      }
+      if (approvalActions.includes(transition)) {
+        const paymentRequest = await getPaymentRequestById(requestId);
+        if (!paymentRequest) return jsonErr(404, 'Payment request not found.');
+        if (!canActOnPaymentApproval(actor, paymentRequest)) {
+          return jsonErr(403, 'Only the assigned approver can action this payment request.');
+        }
       }
       const hdrs = await headers();
       const origin = resolvePublicAppOrigin(hdrs.get('origin') || hdrs.get('x-forwarded-host') || undefined);

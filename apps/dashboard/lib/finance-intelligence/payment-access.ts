@@ -68,6 +68,46 @@ export const canAccessPaymentRequest = (
   );
 };
 
+const codesMatch = (left?: string | null, right?: string | null) => {
+  const a = String(left || '').trim().toLowerCase();
+  const b = String(right || '').trim().toLowerCase();
+  return Boolean(a && b && a === b);
+};
+
+/** Requester viewing their own request (not also the assigned approver). */
+export const isPaymentRequesterOnly = (
+  actor: PaymentAccessActor,
+  request: Pick<PaymentRequestRow, 'requesterCode' | 'currentApproverCode' | 'beneficiaryCode'>,
+) => {
+  if (canViewAllPaymentRequests(actor)) return false;
+  const code = String(actor.actorCode || '').trim().toLowerCase();
+  if (!code) return false;
+  const isRequester = codesMatch(actor.actorCode, request.requesterCode)
+    || codesMatch(actor.actorCode, request.beneficiaryCode);
+  const isAssignedApprover = codesMatch(actor.actorCode, request.currentApproverCode);
+  return isRequester && !isAssignedApprover;
+};
+
+/**
+ * May Approve / Reject / Return / Clarify / Delegate on a pending request.
+ * Assigned current approver, or elevated finance/admin — never the requester alone.
+ */
+export const canActOnPaymentApproval = (
+  actor: PaymentAccessActor,
+  request: Pick<PaymentRequestRow, 'requesterCode' | 'currentApproverCode' | 'status'>,
+) => {
+  if (!/pending|submitted|finance review/i.test(String(request.status || ''))) return false;
+  if (canViewAllPaymentRequests(actor)) return true;
+  return codesMatch(actor.actorCode, request.currentApproverCode);
+};
+
+/** Fully approved (or later) payment document may be downloaded as PDF. */
+export const canDownloadPaymentDocumentPdf = (
+  request: Pick<PaymentRequestRow, 'status'>,
+) => /ready for treasury|approved|payment scheduled|payment processing|paid|awaiting retirement|retirement submitted|treasury verification|retired|completed|closed|posted/i.test(
+  String(request.status || ''),
+);
+
 /** Nav leaf ids under Payment Approvals that employees may see. */
 export const EMPLOYEE_PAYMENT_NAV_IDS = new Set([
   'approval-dashboard', // rendered as "My Payments" for self-service

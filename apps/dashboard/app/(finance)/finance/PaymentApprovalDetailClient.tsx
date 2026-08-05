@@ -52,6 +52,12 @@ const compactStage = (value?: string | null) => String(value || '').trim().toLow
 type DetailPayload = {
   request: PaymentRequestRow;
   actions: PaymentRequestActionRow[];
+  viewer?: {
+    actorCode?: string;
+    canApprove?: boolean;
+    isRequesterOnly?: boolean;
+    canDownloadPdf?: boolean;
+  };
 };
 
 export default function PaymentApprovalDetailClient() {
@@ -104,13 +110,13 @@ export default function PaymentApprovalDetailClient() {
   }, [requestId]);
 
   useEffect(() => {
-    if (!actionHint || !detail?.request) return;
+    if (!actionHint || !detail?.request || !detail.viewer?.canApprove) return;
     if (actionHint === 'approve' || actionHint === 'reject') {
       window.setTimeout(() => {
         document.getElementById('payment-detail-actions')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }, 200);
     }
-  }, [actionHint, detail?.request?.requestId]);
+  }, [actionHint, detail?.request?.requestId, detail?.viewer?.canApprove]);
 
   const transition = async (action: 'approve' | 'reject' | 'return' | 'clarify') => {
     if (!detail?.request) return;
@@ -177,16 +183,29 @@ export default function PaymentApprovalDetailClient() {
     ? (request.payload.stages as string[]).map((item) => String(item))
     : [];
   const pending = /pending|submitted|finance review/i.test(request.status);
+  const canApprove = Boolean(detail.viewer?.canApprove) && pending;
+  const canDownloadPdf = Boolean(detail.viewer?.canDownloadPdf);
+  const showActionBar = canApprove;
 
   return (
-    <div className="space-y-4 pb-28">
+    <div className={`space-y-4 ${showActionBar ? 'pb-28' : 'pb-6'}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link href="/finance/approvals/payments" className="inline-flex items-center gap-1.5 text-sm font-medium text-[#008FD5]">
           <ArrowLeft className="h-4 w-4" /> Payment requests
         </Link>
-        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone(request.status)}`}>
-          {request.status}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          {canDownloadPdf ? (
+            <a
+              href={`/api/finance/payment-requests/pdf?requestId=${encodeURIComponent(request.requestId)}`}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-[#008FD5]/40 hover:text-[#008FD5]"
+            >
+              <Download className="h-3.5 w-3.5" /> Download PDF
+            </a>
+          ) : null}
+          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone(request.status)}`}>
+            {request.status}
+          </span>
+        </div>
       </div>
 
       <header className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
@@ -329,6 +348,7 @@ export default function PaymentApprovalDetailClient() {
         </div>
       </section>
 
+      {showActionBar ? (
       <div id="payment-detail-actions" className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur lg:left-[270px]">
         <div className="mx-auto flex max-w-[1400px] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <input
@@ -366,6 +386,9 @@ export default function PaymentApprovalDetailClient() {
           </div>
         </div>
       </div>
+      ) : message ? (
+        <p className="text-xs text-slate-600">{message}</p>
+      ) : null}
     </div>
   );
 }

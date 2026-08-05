@@ -127,7 +127,14 @@ export const resolvePaymentStageApprover = async (input: {
   } else if (/cost controller/.test(stageKey)) {
     matched = matchJobTitle(employees, [/cost\s*controller/i]);
   } else if (/finance manager/.test(stageKey)) {
-    matched = matchJobTitle(employees, [/finance\s*manager/i, /financial\s*controller/i]);
+    // Acting Finance Manager (temporary): Raphael Iyanda until a permanent FM job title is set.
+    matched = employees.find((employee) => {
+      if (/inactive|terminated|resigned|retired|deceased|suspend/i.test(compact(employee.status))) return false;
+      return /raphael/i.test(compact(employee.fullName)) && /iyanda/i.test(compact(employee.fullName));
+    }) || null;
+    if (!matched) {
+      matched = matchJobTitle(employees, [/finance\s*manager/i, /financial\s*controller/i]);
+    }
   } else if (/^gm$|general manager/.test(stageKey)) {
     matched = matchJobTitle(employees, [/^gm$/i, /general\s*manager/i]);
   } else if (/cfo|chief financial/.test(stageKey)) {

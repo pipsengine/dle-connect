@@ -289,18 +289,26 @@ const resolveInitialStage = async (
   }
 
   // Safe fallback if matrix unavailable — still convert for consistent NGN routing metadata.
+  // Always include Finance Manager so Reporting Manager approve cannot skip straight to Treasury.
   const converted = await convertAmountToNgn(amount, context?.currencyCode || 'NGN').catch(() => ({
     amountNgn: amount,
     fxRate: 1,
   }));
-  const fallbackStage = paymentType === 'Supplier Invoice Payment' ? 'Finance Manager' : 'Reporting Manager';
+  const isProject = Boolean(context?.projectCode) || /project/i.test(context?.department || '');
+  const fallbackStages = paymentType === 'Supplier Invoice Payment'
+    ? (isProject
+      ? ['Project Manager', 'Cost Controller', 'Finance Manager']
+      : ['Finance Manager'])
+    : (isProject
+      ? ['Project Manager', 'Cost Controller', 'Finance Manager']
+      : ['Reporting Manager', 'Finance Manager']);
   return {
-    stage: fallbackStage,
+    stage: fallbackStages[0],
     status: 'Pending Approval' as const,
     matrixRuleName: null as string | null,
-    approvalLevel: 1,
-    stages: [fallbackStage],
-    pathType: context?.projectCode || /project/i.test(context?.department || '') ? 'Project' : 'Non-project',
+    approvalLevel: fallbackStages.length,
+    stages: fallbackStages,
+    pathType: isProject ? 'Project' : 'Non-project',
     amountNgn: converted.amountNgn,
     fxRate: converted.fxRate,
   };
@@ -564,6 +572,155 @@ const stagesFromPayload = (payload: Record<string, unknown>) => {
   const raw = payload.stages;
   if (Array.isArray(raw)) return raw.map((item) => compact(item)).filter(Boolean);
   return [] as string[];
+};
+
+const defaultStagesForPayment = (paymentType: string, projectCode?: string | null, department?: string | null) => {
+  const isProject = Boolean(compact(projectCode)) || /project/i.test(compact(department));
+  if (paymentType === 'Supplier Invoice Payment') {
+    return isProject
+      ? ['Project Manager', 'Cost Controller', 'Finance Manager']
+      : ['Finance Manager'];
+  }
+  return isProject
+    ? ['Project Manager', 'Cost Controller', 'Finance Manager']
+    : ['Reporting Manager', 'Finance Manager'];
+};
+
+const persistPayloadStages = async (
+  requestId: string,
+  payload: Record<string, unknown>,
+  stages: string[],
+  extras?: Record<string, unknown>,
+) => {
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) return { ...payload, ...extras, stages };
+  const nextPayload = { ...payload, ...extras, stages };
+  try {
+    await pool.request()
+      .input('RequestId', sql.NVarChar(60), requestId)
+      .input('PayloadJson', sql.NVarChar(sql.MAX), JSON.stringify(nextPayload))
+      .query(`
+UPDATE [finance].[PaymentRequests]
+SET [PayloadJson] = @PayloadJson,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+  } catch {
+    // best-effort
+  }
+  return nextPayload;
+};
+
+/** Re-resolve Approval Limits when payload.stages is missing/incomplete (legacy single-stage bug). */
+const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> => {
+  const existing = stagesFromPayload(row.payload);
+  const hasFinanceManager = existing.some((stage) => /finance manager/i.test(stage));
+  const onlyReportingManager = existing.length === 1 && /reporting manager|line manager|supervisor/i.test(existing[0]);
+  const needsRepair = existing.length === 0
+    || onlyReportingManager
+    || (row.paymentType !== 'Supplier Invoice Payment' && existing.length > 0 && !hasFinanceManager);
+
+  if (!needsRepair) return existing;
+
+  let stages = existing;
+  try {
+    const matched = await resolveApprovalChain({
+      amount: row.netAmount,
+      currencyCode: row.currencyCode || 'NGN',
+      department: row.department,
+      projectCode: row.projectCode,
+    });
+    if (matched?.stages?.length) {
+      stages = matched.stages;
+      row.payload = await persistPayloadStages(row.requestId, row.payload, stages, {
+        matrixRuleName: matched.ruleName,
+        approvalLevel: matched.approvalLevel,
+        pathType: matched.pathType,
+        amountNgn: matched.amountNgn,
+        fxRate: matched.fxRate,
+      });
+      return stages;
+    }
+  } catch (error) {
+    console.error('[payment-requests] ensureApprovalStages re-resolve failed', error);
+  }
+
+  stages = defaultStagesForPayment(row.paymentType, row.projectCode, row.department);
+  // Keep any already-started stage at the front if it was the only stage stored.
+  if (existing[0] && !stages.some((stage) => stage.toLowerCase() === existing[0].toLowerCase())) {
+    stages = [existing[0], ...stages.filter((stage) => stage.toLowerCase() !== existing[0].toLowerCase())];
+  }
+  row.payload = await persistPayloadStages(row.requestId, row.payload, stages, {
+    matrixRuleName: row.payload.matrixRuleName || null,
+    repairedStages: true,
+  });
+  return stages;
+};
+
+/**
+ * Requests that jumped to Treasury after Reporting Manager only (missing Finance Manager)
+ * are pulled back to Pending Approval at Finance Manager.
+ */
+export const repairPrematureTreasuryHandoff = async (row: PaymentRequestRow): Promise<PaymentRequestRow> => {
+  if (!/ready for treasury/i.test(row.status) && !/^treasury$/i.test(compact(row.currentStage))) {
+    return row;
+  }
+
+  const stages = await ensureApprovalStages(row);
+  const financeIdx = stages.findIndex((stage) => /finance manager/i.test(stage));
+  if (financeIdx < 0) return row;
+
+  const actions = await listPaymentRequestActions(row.requestId);
+  const financeApproved = actions.some((action) =>
+    /approve/i.test(action.actionType)
+    && /finance manager/i.test(action.stage || ''));
+  if (financeApproved) return row;
+
+  // Only rewind when the last approval stage that should run has not happened yet.
+  const lastRequired = stages[stages.length - 1];
+  const lastRequiredApproved = actions.some((action) =>
+    /approve/i.test(action.actionType)
+    && compact(action.stage).toLowerCase() === lastRequired.toLowerCase());
+  if (lastRequiredApproved) return row;
+
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) return row;
+
+  const nextStage = stages[financeIdx] || 'Finance Manager';
+  try {
+    await pool.request()
+      .input('RequestId', sql.NVarChar(60), row.requestId)
+      .input('Status', sql.NVarChar(40), 'Pending Approval')
+      .input('CurrentStage', sql.NVarChar(80), nextStage)
+      .query(`
+UPDATE [finance].[PaymentRequests]
+SET [Status] = @Status,
+    [CurrentStage] = @CurrentStage,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+    await assignCurrentApprover({
+      requestId: row.requestId,
+      stage: nextStage,
+      requesterCode: row.requesterCode,
+      projectCode: row.projectCode,
+      supervisorName: row.supervisorName,
+      paymentType: row.paymentType,
+    });
+    await logAction({
+      requestId: row.requestId,
+      actionType: 'repair-stages',
+      stage: nextStage,
+      actorName: 'System',
+      actorCode: 'system',
+      comment: 'Restored Finance Manager approval step skipped by incomplete approval chain.',
+    });
+  } catch (error) {
+    console.error('[payment-requests] repairPrematureTreasuryHandoff failed', error);
+    return row;
+  }
+
+  return (await getPaymentRequestById(row.requestId)) || row;
 };
 
 const countOutstandingCashAdvances = async (employeeCode: string) => {
@@ -1497,9 +1654,10 @@ export const transitionPaymentRequest = async (input: {
   const pool = await ensureFinanceDb();
   if (!pool) throw new Error('Finance database is unavailable.');
 
-  const existing = (await listRows()).find((row) => row.requestId === input.requestId)
+  const existingRaw = (await listRows()).find((row) => row.requestId === input.requestId)
     || await getPaymentRequestById(input.requestId);
-  if (!existing) throw new Error('Payment request not found.');
+  if (!existingRaw) throw new Error('Payment request not found.');
+  const existing = await repairPrematureTreasuryHandoff(existingRaw);
 
   const requiresReason = ['reject', 'return', 'delegate', 'escalate', 'clarify', 'return-retirement'].includes(input.action);
   if (requiresReason && !compact(input.reason || input.comment)) {
@@ -1523,8 +1681,12 @@ export const transitionPaymentRequest = async (input: {
 
   switch (input.action) {
     case 'approve': {
-      const stages = stagesFromPayload(existing.payload);
-      const currentIdx = stages.findIndex((stage) => stage.toLowerCase() === compact(existing.currentStage).toLowerCase());
+      let stages = await ensureApprovalStages(existing);
+      let currentIdx = stages.findIndex((stage) => stage.toLowerCase() === compact(existing.currentStage).toLowerCase());
+      // Stage label drift (e.g. "Line Manager" vs "Reporting Manager") — treat as first pending stage.
+      if (currentIdx < 0 && stages.length) {
+        currentIdx = 0;
+      }
       const hasNext = currentIdx >= 0 && currentIdx < stages.length - 1;
       if (hasNext) {
         nextStage = stages[currentIdx + 1];
@@ -1743,7 +1905,7 @@ WHERE [RequestId] = @RequestId
   await logAction({
     requestId: input.requestId,
     actionType: input.action,
-    stage: nextStage,
+    stage: input.action === 'approve' ? completedStage : nextStage,
     actorName: input.actor,
     actorCode: input.actorCode,
     comment: input.comment,

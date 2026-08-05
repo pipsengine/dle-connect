@@ -800,6 +800,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
         </div>
       </section>
 
+      {!selfServiceMode ? (
       <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
         <p className="mb-3 text-[11px] text-slate-500">All amounts are in NGN unless otherwise stated. Net Amount includes VAT less WHT and retention.</p>
         <div className="flex flex-wrap gap-2">
@@ -833,6 +834,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
           Rejection, return, delegation and escalation require a mandatory reason. High-value approvals require authentication confirmation.
         </p>
       </section>
+      ) : null}
 
       <div className="flex flex-wrap gap-2 text-xs">
         <Link href="/finance/approvals/cash-advances" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
