@@ -43,10 +43,16 @@ export type NotificationScope = 'all' | 'messages' | 'notifications' | 'approval
 const compact = (value: unknown) => String(value || '').trim();
 const normalizeRecipientKey = (value: unknown) => compact(value).toUpperCase();
 
-const resolveNotificationsFile = () => {
+const notificationsCandidatePaths = () => {
   const override = compact(process.env.DLE_NOTIFICATIONS_PATH);
-  if (override) return override;
-  return path.join(process.cwd(), 'data', 'enterprise', 'notifications.json');
+  if (override) return [override];
+  const cwd = process.cwd();
+  const dashboardRoot = /[\\/]apps[\\/]dashboard$/i.test(cwd) ? cwd : path.join(cwd, 'apps', 'dashboard');
+  // Prefer apps/dashboard/data so Next/IIS/scripts share one store regardless of process.cwd().
+  return [
+    path.join(dashboardRoot, 'data', 'enterprise', 'notifications.json'),
+    path.join(cwd, 'data', 'enterprise', 'notifications.json'),
+  ];
 };
 
 const isStorageAccessError = (error: unknown) => {
@@ -57,37 +63,51 @@ const isStorageAccessError = (error: unknown) => {
 const nowIso = () => new Date().toISOString();
 
 const readStore = async (): Promise<NotificationFile> => {
-  try {
-    const raw = await fs.readFile(resolveNotificationsFile(), 'utf8');
-    const parsed = JSON.parse(raw) as NotificationFile;
-    return {
-      schemaVersion: parsed.schemaVersion || 1,
-      notifications: Array.isArray(parsed.notifications) ? parsed.notifications : [],
-    };
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return { schemaVersion: 1, notifications: [] };
-    if (isStorageAccessError(error)) {
-      console.warn('[enterprise-notifications] Unable to read notifications store; continuing with empty feed.', error);
-      return { schemaVersion: 1, notifications: [] };
+  let lastAccessError: unknown = null;
+  for (const dataFile of notificationsCandidatePaths()) {
+    try {
+      const raw = await fs.readFile(dataFile, 'utf8');
+      const parsed = JSON.parse(raw) as NotificationFile;
+      return {
+        schemaVersion: parsed.schemaVersion || 1,
+        notifications: Array.isArray(parsed.notifications) ? parsed.notifications : [],
+      };
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') continue;
+      if (isStorageAccessError(error)) {
+        lastAccessError = error;
+        continue;
+      }
+      throw error;
     }
-    throw error;
   }
+  if (lastAccessError) {
+    console.warn('[enterprise-notifications] Unable to read notifications store; continuing with empty feed.', lastAccessError);
+  }
+  return { schemaVersion: 1, notifications: [] };
 };
 
 const writeStore = async (store: NotificationFile) => {
-  try {
-    const dataFile = resolveNotificationsFile();
-    await fs.mkdir(path.dirname(dataFile), { recursive: true });
-    await fs.writeFile(dataFile, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
-    return true;
-  } catch (error) {
-    if (isStorageAccessError(error)) {
-      console.warn('[enterprise-notifications] Unable to persist notifications store.', error);
-      return false;
+  const payload = `${JSON.stringify(store, null, 2)}\n`;
+  let lastAccessError: unknown = null;
+  for (const dataFile of notificationsCandidatePaths()) {
+    try {
+      await fs.mkdir(path.dirname(dataFile), { recursive: true });
+      await fs.writeFile(dataFile, payload, 'utf8');
+      return true;
+    } catch (error) {
+      if (isStorageAccessError(error)) {
+        lastAccessError = error;
+        continue;
+      }
+      throw error;
     }
-    throw error;
   }
+  if (lastAccessError) {
+    console.warn('[enterprise-notifications] Unable to persist notifications store.', lastAccessError);
+  }
+  return false;
 };
 
 const ownerMatches = (item: EnterpriseNotification, session: SessionPayload) => {

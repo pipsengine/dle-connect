@@ -237,7 +237,7 @@ export const notifyPaymentApprovalRequired = async (input: {
   const body = `${input.request.requesterName} submitted ${input.request.paymentType} ${input.request.requestNumber} (${amountLabel}) for ${input.stage} approval.`;
 
   await safeNotify('approver in-app', async () => {
-    await createEnterpriseNotification(session, {
+    const created = await createEnterpriseNotification(session, {
       kind: 'Approval',
       module: 'Finance Approvals',
       title: 'Payment approval required',
@@ -251,28 +251,57 @@ export const notifyPaymentApprovalRequired = async (input: {
         requestId: input.request.requestId,
         requestNumber: input.request.requestNumber,
         stage: input.stage,
+        recipientCode: approver.code || '',
+        recipientName: approver.name || '',
       },
       actor: input.actorName,
     });
+    console.info('[payment-approval] in-app notification created', {
+      id: created.id,
+      recipientEmployeeCode: created.recipientEmployeeCode,
+      requestNumber: input.request.requestNumber,
+      stage: input.stage,
+    });
   });
 
-  if (approver.employee || approver.code) {
-    const employee = approver.employee || (await readDirectoryEmployees().catch(() => ({ employees: [] as DleEmployeeDirectoryRow[] }))).employees
-      .find((row) => employeeCodeOf(row).toUpperCase() === approver.code.toUpperCase()) || null;
-    const mailbox = employee ? await resolveEmployeeMailbox(employee) : null;
-    if (mailbox) {
-      await safeNotify('approver email', () =>
-        sendPaymentApprovalRequestEmail({
-          recipientName: approver.name,
-          recipientEmail: mailbox,
-          request: input.request,
-          stage: input.stage,
-          approveUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl, 'approve'),
-          rejectUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl, 'reject'),
-          detailUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl),
-          baseUrl: input.baseUrl,
-        }));
-    }
+  const directoryEmployees = (await readDirectoryEmployees().catch(() => ({ employees: [] as DleEmployeeDirectoryRow[] }))).employees || [];
+  const employee = approver.employee
+    || directoryEmployees.find((row) => employeeCodeOf(row).toUpperCase() === compact(approver.code).toUpperCase())
+    || null;
+  // Resolve mailbox even when directory row is thin — fall back to auth user email by employee code.
+  let mailbox = employee ? await resolveEmployeeMailbox(employee) : '';
+  if (!mailbox && approver.code) {
+    mailbox = await resolveEmployeeMailbox({
+      employeeCode: approver.code,
+      employeeId: approver.code,
+      fullName: approver.name,
+    } as DleEmployeeDirectoryRow);
+  }
+  if (mailbox) {
+    await safeNotify('approver email', () =>
+      sendPaymentApprovalRequestEmail({
+        recipientName: approver.name,
+        recipientEmail: mailbox,
+        request: input.request,
+        stage: input.stage,
+        approveUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl, 'approve'),
+        rejectUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl, 'reject'),
+        detailUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl),
+        baseUrl: input.baseUrl,
+      }));
+    console.info('[payment-approval] approver email queued/sent', {
+      to: mailbox,
+      code: approver.code,
+      requestNumber: input.request.requestNumber,
+      stage: input.stage,
+    });
+  } else {
+    console.warn('[payment-approval] no mailbox for approver', {
+      code: approver.code,
+      name: approver.name,
+      requestNumber: input.request.requestNumber,
+      stage: input.stage,
+    });
   }
 
   return approver;

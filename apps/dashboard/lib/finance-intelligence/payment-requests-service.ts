@@ -1678,6 +1678,7 @@ export const transitionPaymentRequest = async (input: {
   let notifyEvent: 'approved' | 'rejected' | 'returned' | 'stage-advanced' | 'paid' | 'posted' | null = null;
   let completedStage = existing.currentStage;
   let advancedTo: string | undefined;
+  let assignedApprover: Awaited<ReturnType<typeof assignCurrentApprover>> | null = null;
 
   switch (input.action) {
     case 'approve': {
@@ -1882,7 +1883,7 @@ WHERE [RequestId] = @RequestId
 `);
 
   if (notifyEvent === 'stage-advanced' && advancedTo) {
-    await assignCurrentApprover({
+    assignedApprover = await assignCurrentApprover({
       requestId: input.requestId,
       stage: advancedTo,
       requesterCode: existing.requesterCode,
@@ -1912,9 +1913,14 @@ WHERE [RequestId] = @RequestId
     reason: input.reason,
   });
 
-  const workspace = await buildPaymentRequestsWorkspace();
-  const request = workspace.rows.find((row) => row.requestId === input.requestId)
-    || await getPaymentRequestById(input.requestId);
+  // Always reload the persisted row so notification uses the assigned Finance Manager code/name.
+  const request = (await getPaymentRequestById(input.requestId)) || existing;
+  if (assignedApprover) {
+    request.currentApproverCode = assignedApprover.code || request.currentApproverCode;
+    request.currentApproverName = assignedApprover.name || request.currentApproverName;
+    request.currentStage = advancedTo || request.currentStage;
+    request.status = nextStatus;
+  }
 
   if (notifyEvent && request) {
     await notifyPaymentDecision({
@@ -1926,10 +1932,23 @@ WHERE [RequestId] = @RequestId
       reason: input.reason || input.comment || (notifyEvent === 'paid' ? `Payment reference: ${paymentReference}` : undefined),
       baseUrl: input.baseUrl,
     }).catch((error) => console.error('[payment-requests] transition notification failed', error));
+
+    if (notifyEvent === 'stage-advanced' && assignedApprover?.code) {
+      await logAction({
+        requestId: input.requestId,
+        actionType: 'notify-approver',
+        stage: advancedTo || nextStage,
+        actorName: 'System',
+        actorCode: 'system',
+        comment: `Approval notification targeted to ${assignedApprover.name || assignedApprover.code} (${assignedApprover.code}).`,
+      });
+    }
   }
 
+  const workspace = await buildPaymentRequestsWorkspace();
+
   return {
-    request,
+    request: workspace.rows.find((row) => row.requestId === input.requestId) || request,
     workspace,
   };
 };
