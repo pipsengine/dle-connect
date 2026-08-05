@@ -30,8 +30,11 @@ type Props = {
 };
 
 export default function PaymentRequestDetailPanel({ request, actions = [], footer }: Props) {
-  const supportingDocs = (request.attachments || []).filter((file) => file.kind !== 'payment-evidence');
+  const supportingDocs = (request.attachments || []).filter((file) =>
+    file.kind !== 'payment-evidence' && file.kind !== 'retirement-evidence');
   const paymentEvidence = (request.attachments || []).filter((file) => file.kind === 'payment-evidence');
+  const retirementEvidence = (request.attachments || []).filter((file) => file.kind === 'retirement-evidence');
+  const retirementNote = String(request.retirement?.note || '');
 
   const fields: Array<[string, string]> = [
     ['Request #', request.requestNumber],
@@ -56,6 +59,32 @@ export default function PaymentRequestDetailPanel({ request, actions = [], foote
     ['Posted', request.postedAt ? `${fmtDate(request.postedAt)} · ${request.postedBy || '—'}` : '—'],
   ];
 
+  const renderFiles = (
+    files: typeof paymentEvidence,
+    emptyLabel: string,
+    tone: string,
+  ) => (
+    files.length ? (
+      <ul className="space-y-2">
+        {files.map((file) => (
+          <li key={file.id || file.fileName} className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm ${tone}`}>
+            <span className="truncate font-medium text-slate-800">{file.originalName || file.fileName}</span>
+            <a
+              className="shrink-0 text-xs font-semibold text-[#008FD5] hover:underline"
+              href={`/api/finance/payment-requests/attachments?requestId=${encodeURIComponent(request.requestId)}&fileName=${encodeURIComponent(file.fileName)}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Download
+            </a>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-sm text-slate-500">{emptyLabel}</p>
+    )
+  );
+
   return (
     <div className="space-y-4">
       <div>
@@ -74,48 +103,23 @@ export default function PaymentRequestDetailPanel({ request, actions = [], foote
 
       <section>
         <h4 className="mb-2 text-sm font-semibold text-slate-900">Payment evidence</h4>
-        {paymentEvidence.length ? (
-          <ul className="space-y-2">
-            {paymentEvidence.map((file) => (
-              <li key={file.id || file.fileName} className="flex items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-sm">
-                <span className="truncate font-medium text-slate-800">{file.originalName || file.fileName}</span>
-                <a
-                  className="shrink-0 text-xs font-semibold text-[#008FD5] hover:underline"
-                  href={`/api/finance/payment-requests/attachments?requestId=${encodeURIComponent(request.requestId)}&fileName=${encodeURIComponent(file.fileName)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Download
-                </a>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-sm text-slate-500">No payment evidence uploaded yet.</p>
-        )}
+        {renderFiles(paymentEvidence, 'No payment evidence uploaded yet.', 'border-emerald-200 bg-emerald-50/60')}
+      </section>
+
+      <section>
+        <h4 className="mb-2 text-sm font-semibold text-slate-900">Retirement evidence</h4>
+        {retirementNote ? (
+          <div className="mb-2 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-sm text-slate-700">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-800">Retirement note</p>
+            <p className="mt-1 whitespace-pre-wrap">{retirementNote}</p>
+          </div>
+        ) : null}
+        {renderFiles(retirementEvidence, 'No retirement receipts uploaded yet.', 'border-amber-200 bg-amber-50/60')}
       </section>
 
       <section>
         <h4 className="mb-2 text-sm font-semibold text-slate-900">Supporting documents</h4>
-        {supportingDocs.length ? (
-          <ul className="space-y-2">
-            {supportingDocs.map((file) => (
-              <li key={file.id || file.fileName} className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm">
-                <span className="truncate font-medium text-slate-800">{file.originalName || file.fileName}</span>
-                <a
-                  className="shrink-0 text-xs font-semibold text-[#008FD5] hover:underline"
-                  href={`/api/finance/payment-requests/attachments?requestId=${encodeURIComponent(request.requestId)}&fileName=${encodeURIComponent(file.fileName)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Download
-                </a>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-sm text-slate-500">No supporting documents uploaded.</p>
-        )}
+        {renderFiles(supportingDocs, 'No supporting documents uploaded.', 'border-slate-200')}
       </section>
 
       <section>

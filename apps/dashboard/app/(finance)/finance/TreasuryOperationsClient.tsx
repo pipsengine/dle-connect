@@ -118,7 +118,7 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
       if (json.data.request) setSelected(json.data.request as PaymentRequestRow);
       setEvidenceFile(null);
       await refresh();
-      if (transition === 'mark-paid') setSelected(null);
+      if (transition === 'mark-paid' || transition === 'acknowledge-retirement') setSelected(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Action failed';
       setModalError(message);
@@ -286,7 +286,12 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
                     ) : null}
                     {/retirement submitted|treasury verification|finance verification/i.test(selected.status) ? (
                       <div className="flex flex-wrap gap-2">
-                        <button type="button" disabled={busy} onClick={() => void runTransition('acknowledge-retirement')} className="rounded-xl bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-60">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void runTransition('acknowledge-retirement')}
+                          className="rounded-xl bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                        >
                           Acknowledge retirement
                         </button>
                         <button

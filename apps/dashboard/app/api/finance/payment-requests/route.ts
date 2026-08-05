@@ -6,6 +6,7 @@ import {
   canAccessPaymentRequest,
   canActOnPaymentApproval,
   canDownloadPaymentDocumentPdf,
+  canSubmitCashAdvanceRetirement,
   canViewAllPaymentRequests,
   isPaymentRequesterOnly,
 } from '@/lib/finance-intelligence/payment-access';
@@ -109,6 +110,7 @@ export async function GET(request: Request) {
           canApprove: canActOnPaymentApproval(actor, paymentRequest),
           isRequesterOnly: isPaymentRequesterOnly(actor, paymentRequest),
           canDownloadPdf: canDownloadPaymentDocumentPdf(paymentRequest),
+          canSubmitRetirement: canSubmitCashAdvanceRetirement(actor, paymentRequest),
         },
       });
     }
@@ -303,6 +305,13 @@ export async function POST(request: Request) {
           return jsonErr(403, 'Only the assigned approver can action this payment request.');
         }
       }
+      if (transition === 'submit-retirement') {
+        const paymentRequest = await getPaymentRequestById(requestId);
+        if (!paymentRequest) return jsonErr(404, 'Payment request not found.');
+        if (!canSubmitCashAdvanceRetirement(actor, paymentRequest)) {
+          return jsonErr(403, 'Only the requester (or beneficiary) can submit retirement for this cash advance.');
+        }
+      }
       const hdrs = await headers();
       const origin = resolvePublicAppOrigin(hdrs.get('origin') || hdrs.get('x-forwarded-host') || undefined);
       const result = await transitionPaymentRequest({
@@ -320,6 +329,9 @@ export async function POST(request: Request) {
         delegateEndsAt: body.delegateEndsAt,
         paymentEvidenceUpload: body.paymentEvidenceUpload && typeof body.paymentEvidenceUpload === 'object'
           ? body.paymentEvidenceUpload
+          : undefined,
+        retirementEvidenceUploads: Array.isArray(body.retirementEvidenceUploads)
+          ? body.retirementEvidenceUploads
           : undefined,
       });
       const actions = result.request

@@ -220,6 +220,7 @@ const fmtDateTime = (value?: string | null) => {
 
 const statusTone = (status: string) => {
   if (/approved|paid|completed|retired|closed/i.test(status)) return 'bg-emerald-50 text-emerald-700';
+  if (/awaiting retirement|retirement submitted|treasury verification/i.test(status)) return 'bg-amber-50 text-amber-800';
   if (/pending|submitted|finance review/i.test(status)) return 'bg-blue-50 text-[#1D4ED8]';
   if (/returned|clarification/i.test(status)) return 'bg-violet-50 text-violet-700';
   if (/ready for treasury|payment scheduled|payment processing/i.test(status)) return 'bg-teal-50 text-teal-700';
@@ -234,7 +235,7 @@ const typeIcon = (paymentType: string) => {
   return FileText;
 };
 
-type TabId = 'all' | 'mine' | 'drafts' | 'pending' | 'returned' | 'approved' | 'ready' | 'paid' | 'rejected';
+type TabId = 'all' | 'mine' | 'drafts' | 'pending' | 'returned' | 'approved' | 'ready' | 'paid' | 'rejected' | 'retirement';
 
 export default function PaymentRequestsClient({ initialWorkspace, selfServiceMode = false }: Props) {
   const [workspace, setWorkspace] = useState(initialWorkspace);
@@ -380,6 +381,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
       if (tab === 'approved' && !/^approved$/i.test(row.status)) return false;
       if (tab === 'ready' && !/ready for treasury/i.test(row.status)) return false;
       if (tab === 'paid' && !/paid|completed|retired|closed/i.test(row.status)) return false;
+      if (tab === 'retirement' && !/awaiting retirement|retirement submitted|treasury verification|finance verification/i.test(row.status)) return false;
       if (tab === 'rejected' && !/rejected|cancelled/i.test(row.status)) return false;
       if (!q) return true;
       return (
@@ -587,6 +589,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
     { id: 'returned', label: 'Returned', count: workspace.tabCounts.returned },
     { id: 'approved', label: 'Approved', count: workspace.tabCounts.approved },
     { id: 'ready', label: 'Ready for Treasury', count: workspace.tabCounts.ready },
+    { id: 'retirement', label: 'Retirement', count: workspace.tabCounts.retirement },
     { id: 'paid', label: 'Paid', count: workspace.tabCounts.paid },
     { id: 'rejected', label: 'Rejected', count: workspace.tabCounts.rejected },
   ];

@@ -178,8 +178,8 @@ export type PaymentRequestAttachment = {
   size: number;
   uploadedAt: string;
   uploadedBy: string;
-  /** supporting = request docs; payment-evidence = treasury disbursement proof */
-  kind?: 'supporting' | 'payment-evidence';
+  /** supporting = request docs; payment-evidence = treasury proof; retirement-evidence = cash advance retirement receipts */
+  kind?: 'supporting' | 'payment-evidence' | 'retirement-evidence';
 };
 
 export type PaymentRequestsWorkspace = {
@@ -423,6 +423,8 @@ const emptyWorkspace = (): PaymentRequestsWorkspace => ({
     ready: 0,
     paid: 0,
     rejected: 0,
+    retirement: 0,
+    awaitingRetirement: 0,
   },
   rows: [],
 });
@@ -1126,6 +1128,9 @@ export const buildPaymentRequestsWorkspace = async (input?: {
     rejected: rejected.length,
     rejectedValue: sum(rejected),
   };
+  const awaitingRetirement = rows.filter((row) => /^awaiting retirement$/i.test(row.status));
+  const retirementSubmitted = rows.filter((row) =>
+    /retirement submitted|treasury verification|finance verification/i.test(row.status));
   workspace.tabCounts = {
     all: rows.length,
     mine: mine.length,
@@ -1136,6 +1141,8 @@ export const buildPaymentRequestsWorkspace = async (input?: {
     ready: ready.length,
     paid: paidMonth.length,
     rejected: rejected.length,
+    retirement: awaitingRetirement.length + retirementSubmitted.length,
+    awaitingRetirement: awaitingRetirement.length,
   };
   return workspace;
 };
@@ -1225,7 +1232,7 @@ export const normalizePaymentAttachmentUpload = (input: {
   mimeType?: string;
   contentBase64: string;
   uploadedBy?: string;
-  kind?: 'supporting' | 'payment-evidence';
+  kind?: 'supporting' | 'payment-evidence' | 'retirement-evidence';
 }): { meta: PaymentRequestAttachment; bytes: Buffer } => {
   const originalName = compact(input.fileName) || 'attachment.bin';
   const ext = path.extname(originalName).toLowerCase();
@@ -1660,6 +1667,12 @@ export const transitionPaymentRequest = async (input: {
     mimeType?: string;
     contentBase64: string;
   } | null;
+  /** Cash advance retirement receipts (one or more). */
+  retirementEvidenceUploads?: Array<{
+    fileName: string;
+    mimeType?: string;
+    contentBase64: string;
+  }> | null;
 }) => {
   const pool = await ensureFinanceDb();
   if (!pool) throw new Error('Finance database is unavailable.');
@@ -1686,7 +1699,7 @@ export const transitionPaymentRequest = async (input: {
   let retirementJson: Record<string, unknown> | null = existing.retirement;
   let postingJson: Record<string, unknown> | null = existing.posting;
   let attachmentsJson: PaymentRequestAttachment[] | null = null;
-  let notifyEvent: 'approved' | 'rejected' | 'returned' | 'stage-advanced' | 'paid' | 'posted' | null = null;
+  let notifyEvent: 'approved' | 'rejected' | 'returned' | 'stage-advanced' | 'paid' | 'posted' | 'retirement-submitted' | 'retirement-acknowledged' | null = null;
   let completedStage = existing.currentStage;
   let advancedTo: string | undefined;
   let assignedApprover: Awaited<ReturnType<typeof assignCurrentApprover>> | null = null;
@@ -1764,18 +1777,49 @@ export const transitionPaymentRequest = async (input: {
       notifyEvent = 'paid';
       break;
     }
-    case 'submit-retirement':
+    case 'submit-retirement': {
+      if (existing.paymentType !== 'Cash Advance Payment') {
+        throw new Error('Only cash advances require retirement.');
+      }
+      if (!/^awaiting retirement$/i.test(existing.status)) {
+        throw new Error('This cash advance is not awaiting retirement.');
+      }
+      const note = compact(input.comment || input.reason);
+      if (note.length < 10) {
+        throw new Error('Provide a retirement note (at least 10 characters) describing how the advance was used.');
+      }
+      const uploads = input.retirementEvidenceUploads || [];
+      if (!uploads.length) {
+        throw new Error('Upload at least one retirement receipt / supporting document.');
+      }
+      if ((existing.attachments?.length || 0) + uploads.length > PAYMENT_ATTACHMENT_MAX_FILES) {
+        throw new Error(`You can attach up to ${PAYMENT_ATTACHMENT_MAX_FILES} documents in total.`);
+      }
+      const prepared = uploads.map((item) => normalizePaymentAttachmentUpload({
+        ...item,
+        uploadedBy: input.actor,
+        kind: 'retirement-evidence',
+      }));
+      for (const item of prepared) {
+        await savePaymentAttachmentFile(input.requestId, item.meta.fileName, item.bytes);
+      }
+      attachmentsJson = [...(existing.attachments || []), ...prepared.map((item) => item.meta)];
       nextStatus = 'Retirement Submitted';
       nextStage = 'Treasury Verification';
       retirementJson = {
         ...(existing.retirement || {}),
         submittedAt: nowIso(),
         submittedBy: input.actor,
-        note: compact(input.comment || input.reason),
+        submittedByCode: input.actorCode || null,
+        note,
+        evidenceCount: prepared.length,
+        evidenceFileNames: prepared.map((item) => item.meta.fileName),
       };
+      notifyEvent = 'retirement-submitted';
       break;
+    }
     case 'acknowledge-retirement': {
-      if (!/retirement submitted|treasury verification|finance verification|awaiting retirement/i.test(existing.status)) {
+      if (!/retirement submitted|treasury verification|finance verification/i.test(existing.status)) {
         throw new Error('This payment is not awaiting retirement acknowledgement.');
       }
       nextStatus = 'Retired';
@@ -1785,8 +1829,10 @@ export const transitionPaymentRequest = async (input: {
         ...(existing.retirement || {}),
         acknowledgedAt: nowIso(),
         acknowledgedBy: input.actor,
+        acknowledgedByCode: input.actorCode || null,
         note: compact(input.comment || input.reason) || 'Retirement acknowledged by Treasury',
       };
+      notifyEvent = 'retirement-acknowledged';
       break;
     }
     case 'return-retirement':
@@ -1918,7 +1964,7 @@ WHERE [RequestId] = @RequestId
       supervisorName: existing.supervisorName,
       paymentType: existing.paymentType,
     });
-  } else if (notifyEvent === 'approved' || notifyEvent === 'rejected' || notifyEvent === 'returned' || notifyEvent === 'paid') {
+  } else if (notifyEvent === 'approved' || notifyEvent === 'rejected' || notifyEvent === 'returned' || notifyEvent === 'paid' || notifyEvent === 'retirement-acknowledged') {
     await pool.request()
       .input('RequestId', sql.NVarChar(60), input.requestId)
       .query(`
@@ -1956,7 +2002,11 @@ WHERE [RequestId] = @RequestId
       actorName: input.actor,
       stage: completedStage,
       nextStage: advancedTo,
-      reason: input.reason || input.comment || (notifyEvent === 'paid' ? `Payment evidence uploaded (${paymentReference}).` : undefined),
+      reason: input.reason || input.comment || (notifyEvent === 'paid'
+        ? (existing.paymentType === 'Cash Advance Payment'
+          ? `Payment evidence uploaded (${paymentReference}). Please submit retirement with receipts.`
+          : `Payment evidence uploaded (${paymentReference}).`)
+        : undefined),
       baseUrl: input.baseUrl,
     }).catch((error) => console.error('[payment-requests] transition notification failed', error));
 

@@ -10,6 +10,7 @@ import {
   Clock3,
   Download,
   FileText,
+  FileUp,
   Loader2,
   Paperclip,
   XCircle,
@@ -41,13 +42,24 @@ const fmtDate = (value?: string | null) => {
 
 const statusTone = (status: string) => {
   if (/approved|paid|completed|retired|closed/i.test(status)) return 'bg-emerald-50 text-emerald-700';
-  if (/pending|submitted|review|treasury/i.test(status)) return 'bg-amber-50 text-amber-800';
+  if (/pending|submitted|review|treasury|awaiting retirement/i.test(status)) return 'bg-amber-50 text-amber-800';
   if (/rejected|cancelled/i.test(status)) return 'bg-rose-50 text-rose-700';
   if (/returned|clarification/i.test(status)) return 'bg-orange-50 text-orange-800';
   return 'bg-slate-100 text-slate-700';
 };
 
 const compactStage = (value?: string | null) => String(value || '').trim().toLowerCase();
+
+const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = String(reader.result || '');
+    const comma = result.indexOf(',');
+    resolve(comma >= 0 ? result.slice(comma + 1) : result);
+  };
+  reader.onerror = () => reject(new Error(`Unable to read ${file.name}`));
+  reader.readAsDataURL(file);
+});
 
 type DetailPayload = {
   request: PaymentRequestRow;
@@ -57,6 +69,7 @@ type DetailPayload = {
     canApprove?: boolean;
     isRequesterOnly?: boolean;
     canDownloadPdf?: boolean;
+    canSubmitRetirement?: boolean;
   };
 };
 
@@ -75,6 +88,8 @@ export default function PaymentApprovalDetailClient() {
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState('');
   const [message, setMessage] = useState('');
+  const [retirementNote, setRetirementNote] = useState('');
+  const [retirementFiles, setRetirementFiles] = useState<File[]>([]);
 
   useEffect(() => {
     setActionHint(new URLSearchParams(window.location.search).get('action') || '');
@@ -154,6 +169,51 @@ export default function PaymentApprovalDetailClient() {
     }
   };
 
+  const submitRetirement = async () => {
+    if (!detail?.request) return;
+    if (retirementNote.trim().length < 10) {
+      setMessage('Provide a retirement note of at least 10 characters.');
+      return;
+    }
+    if (!retirementFiles.length) {
+      setMessage('Upload at least one retirement receipt / supporting document.');
+      return;
+    }
+    setBusy(true);
+    setMessage('');
+    try {
+      const retirementEvidenceUploads = await Promise.all(retirementFiles.map(async (file) => ({
+        fileName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        contentBase64: await fileToBase64(file),
+      })));
+      const response = await fetch('/api/finance/payment-requests', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'transition',
+          requestId: detail.request.requestId,
+          transition: 'submit-retirement',
+          comment: retirementNote.trim(),
+          reason: retirementNote.trim(),
+          retirementEvidenceUploads,
+        }),
+      });
+      const json = await response.json().catch(() => ({ status: 'error', error: 'Unable to submit retirement.' }));
+      if (!response.ok || json.status !== 'success') {
+        throw new Error(json.error || `Unable to submit retirement (${response.status}).`);
+      }
+      setMessage(json.data?.message || 'Retirement submitted for Treasury verification.');
+      setRetirementNote('');
+      setRetirementFiles([]);
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to submit retirement.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center rounded-2xl border border-slate-200 bg-white">
@@ -185,10 +245,15 @@ export default function PaymentApprovalDetailClient() {
   const pending = /pending|submitted|finance review/i.test(request.status);
   const canApprove = Boolean(detail.viewer?.canApprove) && pending;
   const canDownloadPdf = Boolean(detail.viewer?.canDownloadPdf);
+  const canSubmitRetirement = Boolean(detail.viewer?.canSubmitRetirement);
+  const retirementNoteExisting = String(request.retirement?.note || '');
+  const retirementEvidence = (request.attachments || []).filter((file) => file.kind === 'retirement-evidence');
+  const supportingDocs = (request.attachments || []).filter((file) => file.kind !== 'payment-evidence' && file.kind !== 'retirement-evidence');
   const showActionBar = canApprove;
+  const showRetirementBar = canSubmitRetirement;
 
   return (
-    <div className={`space-y-4 ${showActionBar ? 'pb-28' : 'pb-6'}`}>
+    <div className={`space-y-4 ${showActionBar || showRetirementBar ? 'pb-36' : 'pb-6'}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link href="/finance/approvals/payments" className="inline-flex items-center gap-1.5 text-sm font-medium text-[#008FD5]">
           <ArrowLeft className="h-4 w-4" /> Payment requests
@@ -274,12 +339,37 @@ export default function PaymentApprovalDetailClient() {
             )}
           </div>
           <div className="mt-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Supporting documents</p>
-            {Array.isArray(request.attachments) && (request.attachments as PaymentRequestAttachment[]).some((file) => file.kind !== 'payment-evidence') ? (
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Retirement evidence</p>
+            {retirementEvidence.length ? (
               <ul className="mt-2 space-y-1.5">
-                {(request.attachments as PaymentRequestAttachment[])
-                  .filter((file) => file.kind !== 'payment-evidence')
-                  .map((file) => (
+                {retirementEvidence.map((file) => (
+                  <li key={file.id || file.fileName}>
+                    <a
+                      href={`/api/finance/payment-requests/attachments?requestId=${encodeURIComponent(request.requestId)}&fileName=${encodeURIComponent(file.fileName)}`}
+                      className="inline-flex max-w-full items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs font-medium text-[#008FD5] hover:bg-[#EAF6FF]"
+                    >
+                      <Paperclip className="h-3.5 w-3.5 shrink-0" />
+                      <span className="min-w-0 truncate">{file.originalName || file.fileName}</span>
+                      <Download className="h-3.5 w-3.5 shrink-0" />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-xs text-slate-500">No retirement receipts uploaded yet.</p>
+            )}
+            {retirementNoteExisting ? (
+              <div className="mt-2 rounded-xl bg-amber-50/70 p-3 text-xs text-slate-700">
+                <p className="font-semibold uppercase tracking-wide text-amber-800">Retirement note</p>
+                <p className="mt-1 whitespace-pre-wrap">{retirementNoteExisting}</p>
+              </div>
+            ) : null}
+          </div>
+          <div className="mt-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Supporting documents</p>
+            {supportingDocs.length ? (
+              <ul className="mt-2 space-y-1.5">
+                {supportingDocs.map((file) => (
                   <li key={file.id || file.fileName}>
                     <a
                       href={`/api/finance/payment-requests/attachments?requestId=${encodeURIComponent(request.requestId)}&fileName=${encodeURIComponent(file.fileName)}`}
@@ -407,6 +497,43 @@ export default function PaymentApprovalDetailClient() {
               className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
             >
               <CheckCircle2 className="h-3.5 w-3.5" /> Approve
+            </button>
+          </div>
+        </div>
+      </div>
+      ) : showRetirementBar ? (
+      <div id="payment-detail-actions" className="fixed inset-x-0 bottom-0 z-20 border-t border-amber-200 bg-amber-50/95 px-4 py-3 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur lg:left-[270px]">
+        <div className="mx-auto flex max-w-[1400px] flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-amber-900">Submit cash advance retirement</p>
+            {message ? <p className="text-xs text-slate-700">{message}</p> : null}
+          </div>
+          <textarea
+            value={retirementNote}
+            onChange={(e) => setRetirementNote(e.target.value)}
+            rows={2}
+            placeholder="Describe how the advance was used (required, min 10 characters)"
+            className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-200"
+          />
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900">
+              <FileUp className="h-4 w-4" />
+              <span>{retirementFiles.length ? `${retirementFiles.length} file(s) selected` : 'Upload retirement receipts *'}</span>
+              <input
+                type="file"
+                multiple
+                accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,image/*"
+                className="hidden"
+                onChange={(e) => setRetirementFiles(Array.from(e.target.files || []))}
+              />
+            </label>
+            <button
+              type="button"
+              disabled={busy || !retirementFiles.length || retirementNote.trim().length < 10}
+              onClick={() => void submitRetirement()}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#008FD5] px-3.5 py-2 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" /> Submit retirement
             </button>
           </div>
         </div>

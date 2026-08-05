@@ -104,6 +104,22 @@ export const canActOnPaymentApproval = (
     /^(super administrator|system administrator|application administrator)$/i.test(String(role || '').trim()));
 };
 
+/** Requester/beneficiary may submit retirement for their paid cash advance. */
+export const canSubmitCashAdvanceRetirement = (
+  actor: PaymentAccessActor,
+  request: Pick<PaymentRequestRow, 'paymentType' | 'status' | 'requesterCode' | 'beneficiaryCode'>,
+) => {
+  if (request.paymentType !== 'Cash Advance Payment') return false;
+  if (!/^awaiting retirement$/i.test(String(request.status || ''))) return false;
+  if (actor.isGlobalAdmin) return true;
+  const code = String(actor.actorCode || '').trim().toLowerCase();
+  if (!code) return false;
+  return (
+    String(request.requesterCode || '').trim().toLowerCase() === code
+    || String(request.beneficiaryCode || '').trim().toLowerCase() === code
+  );
+};
+
 /** Fully approved (or later) payment document may be downloaded as PDF. */
 export const canDownloadPaymentDocumentPdf = (
   request: Pick<PaymentRequestRow, 'status'>,

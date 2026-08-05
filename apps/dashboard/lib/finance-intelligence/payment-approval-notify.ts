@@ -312,7 +312,7 @@ export const notifyPaymentApprovalRequired = async (input: {
 
 export const notifyPaymentDecision = async (input: {
   request: PaymentNotifyRequest;
-  event: 'approved' | 'rejected' | 'returned' | 'stage-advanced' | 'paid' | 'posted';
+  event: 'approved' | 'rejected' | 'returned' | 'stage-advanced' | 'paid' | 'posted' | 'retirement-submitted' | 'retirement-acknowledged';
   actorName: string;
   stage?: string;
   nextStage?: string;
@@ -334,6 +334,8 @@ export const notifyPaymentDecision = async (input: {
     'stage-advanced': 'Payment approval progressed',
     paid: 'Payment disbursed',
     posted: 'Payment marked posted',
+    'retirement-submitted': 'Cash advance retirement submitted',
+    'retirement-acknowledged': 'Cash advance retirement acknowledged',
   };
   const severity: Record<typeof input.event, 'info' | 'success' | 'warning' | 'critical'> = {
     approved: 'success',
@@ -342,6 +344,8 @@ export const notifyPaymentDecision = async (input: {
     'stage-advanced': 'info',
     paid: 'success',
     posted: 'info',
+    'retirement-submitted': 'warning',
+    'retirement-acknowledged': 'success',
   };
   const body = input.event === 'stage-advanced'
     ? `${input.request.requestNumber} cleared ${input.stage || 'prior stage'}. Now awaiting ${input.nextStage || 'next stage'}.`
@@ -351,11 +355,15 @@ export const notifyPaymentDecision = async (input: {
         ? `${input.request.requestNumber} has been paid by Treasury.${input.reason ? ` ${input.reason}` : ''}`
         : input.event === 'posted'
           ? `${input.request.requestNumber} was marked posted by ${input.actorName} and cleared from the Finance Posting Desk.${input.reason ? ` ${input.reason}` : ''}`
-          : `${input.request.requestNumber} was ${input.event} by ${input.actorName}.${input.reason ? ` Reason: ${input.reason}` : ''}`;
+          : input.event === 'retirement-submitted'
+            ? `${input.request.requestNumber} retirement was submitted by ${input.actorName} and is awaiting Treasury verification.${input.reason ? ` ${input.reason}` : ''}`
+            : input.event === 'retirement-acknowledged'
+              ? `${input.request.requestNumber} retirement was acknowledged by Treasury. The advance is now closed.${input.reason ? ` ${input.reason}` : ''}`
+              : `${input.request.requestNumber} was ${input.event} by ${input.actorName}.${input.reason ? ` Reason: ${input.reason}` : ''}`;
 
   const href = paymentRequestDetailPath(input.request.requestId);
 
-  if (requester && input.event !== 'posted') {
+  if (requester && input.event !== 'posted' && input.event !== 'retirement-submitted') {
     await safeNotify('requester in-app', async () => {
       await createEnterpriseNotification(session, {
         kind: 'Approval',
@@ -378,15 +386,35 @@ export const notifyPaymentDecision = async (input: {
           recipientName: compact(requester.fullName) || input.request.requesterName,
           recipientEmail: mailbox,
           request: input.request,
-          event: input.event === 'stage-advanced' ? 'stage-advanced' : input.event,
+          event: input.event === 'stage-advanced' ? 'stage-advanced'
+            : input.event === 'retirement-acknowledged' ? 'approved'
+              : input.event === 'retirement-submitted' ? 'stage-advanced'
+                : input.event,
           actorName: input.actorName,
           stage: input.stage,
           nextStage: input.nextStage,
-          reason: input.reason,
+          reason: input.reason || body,
           detailUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl),
           baseUrl: input.baseUrl,
         }));
     }
+  }
+
+  if (input.event === 'retirement-submitted') {
+    await safeNotify('treasury retirement in-app', async () => {
+      await createEnterpriseNotification(session, {
+        kind: 'Approval',
+        module: 'Finance Approvals',
+        title: titles['retirement-submitted'],
+        body,
+        severity: 'warning',
+        recipientRoles: ['Treasury Officer', 'Finance Manager', 'Finance Controller', 'Finance Administrator', 'Accountant'],
+        href: '/finance/approvals/treasury',
+        channels: ['In-App'],
+        metadata: { requestId: input.request.requestId, event: input.event },
+        actor: input.actorName,
+      });
+    });
   }
 
   if (input.event === 'posted') {
