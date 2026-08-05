@@ -549,7 +549,10 @@ async function apiCall<T>(
     },
   });
   const json = (await res.json()) as { status: string; data?: T; error?: string };
-  if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Request failed');
+  // Accept both success and ok — some HRIS endpoints historically used status: 'ok'.
+  if (!res.ok || (json.status !== 'success' && json.status !== 'ok')) {
+    throw new Error(json.error || 'Request failed');
+  }
   return json.data as T;
 }
 
@@ -1481,7 +1484,14 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
         <p className="text-sm font-semibold text-[#0F172A]">Employee Category Selection</p>
         <p className="mt-1 text-xs text-[#64748B]">Selecting a category automatically generates the employee code and loads onboarding, payroll, and leave rules.</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          {(['Permanent', 'Lumpsum', 'Daily Rate', 'NYSC', 'IT', 'Intern'] as EmploymentType[]).map((type) => (
+          {([
+            { type: 'Permanent' as EmploymentType, label: 'Permanent' },
+            { type: 'Lumpsum' as EmploymentType, label: 'Lumpsum' },
+            { type: 'Daily Rate' as EmploymentType, label: 'Contract' },
+            { type: 'NYSC' as EmploymentType, label: 'NYSC' },
+            { type: 'IT' as EmploymentType, label: 'IT' },
+            { type: 'Intern' as EmploymentType, label: 'Intern' },
+          ]).map(({ type, label }) => (
             <button
               key={type}
               type="button"
@@ -1493,7 +1503,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
                 draft.employment.employmentType === type ? 'bg-[#2563EB] text-white' : 'border border-[#E5E7EB] bg-white text-slate-700 hover:bg-slate-50'
               }`}
             >
-              {type === 'Daily Rate' ? 'Contract' : type === 'IT' || type === 'Intern' ? 'IT / Intern' : type}
+              {label}
             </button>
           ))}
         </div>
@@ -1518,7 +1528,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
           label="Employee Code"
           value={codePreview.status === 'loading' ? 'Generating...' : draft.employment.employeeId}
           onChange={() => {}}
-          placeholder="Select employee type"
+          placeholder={draft.employment.employmentType ? 'Generating…' : 'Select employee type first'}
           disabled
           error={codePreview.status === 'error' ? codePreview.error : undefined}
         />
@@ -1571,7 +1581,6 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <Field label="Engagement Start Date" type="date" value={draft.employment.contractStartDate} onChange={(v) => setDraft((d) => ({ ...d, employment: { ...d.employment, contractStartDate: v } }))} error={requiredErrors['employment.contractStartDate']} />
             <Field label="Engagement End Date" type="date" value={draft.employment.contractEndDate} onChange={(v) => setDraft((d) => ({ ...d, employment: { ...d.employment, contractEndDate: v } }))} error={requiredErrors['employment.contractEndDate']} />
-            <Field label="Union Status" value={draft.employment.unionStatus} onChange={(v) => setDraft((d) => ({ ...d, employment: { ...d.employment, unionStatus: v } }))} />
           </div>
         </div>
       )}

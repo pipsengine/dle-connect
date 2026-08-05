@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { previewNextEmployeeCodeFromDb } from '@/lib/dle-enterprise-db';
 
-const jsonOk = (data: any) => NextResponse.json({ status: 'ok', data });
+const jsonOk = (data: any) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 
 const employeeTypePrefix = (employeeType: unknown) => {
