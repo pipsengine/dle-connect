@@ -2726,6 +2726,27 @@ const ensureRecordFromDb = async (employeeId: string) => {
   return record;
 };
 
+/** Action paths that must not be treated as employee IDs (use static routes / [...action] instead). */
+const RESERVED_EMPLOYEE_ACTION_IDS = new Set([
+  'draft',
+  'documents',
+  'onboarding',
+  'form-options',
+  'employee-code',
+  'pending-approvals',
+  'validate',
+  'duplicate-check',
+  'submit-approval',
+  'approve',
+  'reject',
+  'import-sage',
+  'employment-history',
+  'employee-confirmation',
+  'employee-promotion',
+  'employee-exit-status',
+  'contract-payroll-classification',
+]);
+
 const getRole = (request: Request): Role => {
   const v = request.headers.get('x-hris-role');
   const all: Role[] = [
@@ -2868,6 +2889,9 @@ const validateNextOfKin = (items: NextOfKinRecord[], employmentStatus?: string |
 
 export async function GET(request: Request, ctx: { params: Promise<{ id: string; resource: string[] }> }) {
   const { id, resource } = await ctx.params;
+  if (RESERVED_EMPLOYEE_ACTION_IDS.has(String(id || '').trim().toLowerCase())) {
+    return jsonErr(404, 'Not found');
+  }
   const employeeId = id;
   const role = getRole(request);
   const viewerEmployeeId = getViewerEmployeeId(request);
@@ -4499,6 +4523,9 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string;
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string; resource: string[] }> }) {
   const { id, resource } = await ctx.params;
+  if (RESERVED_EMPLOYEE_ACTION_IDS.has(String(id || '').trim().toLowerCase())) {
+    return jsonErr(404, 'Not found');
+  }
   const employeeId = id;
   const role = getRole(request);
   const viewerEmployeeId = getViewerEmployeeId(request);
@@ -5471,6 +5498,9 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 
 export async function POST(request: Request, ctx: { params: Promise<{ id: string; resource: string[] }> }) {
   const { id, resource } = await ctx.params;
+  if (RESERVED_EMPLOYEE_ACTION_IDS.has(String(id || '').trim().toLowerCase())) {
+    return jsonErr(404, 'Not found');
+  }
   const employeeId = id;
   const role = getRole(request);
   const viewerEmployeeId = getViewerEmployeeId(request);
@@ -6768,6 +6798,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
 
 export async function DELETE(request: Request, ctx: { params: Promise<{ id: string; resource: string[] }> }) {
   const { id, resource } = await ctx.params;
+  if (RESERVED_EMPLOYEE_ACTION_IDS.has(String(id || '').trim().toLowerCase())) {
+    return jsonErr(404, 'Not found');
+  }
   const employeeId = id;
   const role = getRole(request);
   const viewerEmployeeId = getViewerEmployeeId(request);

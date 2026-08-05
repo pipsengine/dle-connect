@@ -719,23 +719,48 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
   }, [role]);
 
   useEffect(() => {
-    if (!draftId) return;
+    // Only hydrate from the URL draft once — do not re-fetch after Save creates/updates draftId.
+    const idFromUrl = (initialDraftId || '').trim();
+    if (!idFromUrl) return;
+    let cancelled = false;
     const loadDraft = async () => {
       setSaving(true);
       try {
-        const res = await apiCall<{ draft: EmployeeDraftPayload; meta: DraftResponse }>(`/api/hris/employees/draft/${encodeURIComponent(draftId)}`, { method: 'GET', role });
+        const res = await apiCall<{ draft: EmployeeDraftPayload; meta: DraftResponse }>(
+          `/api/hris/employees/draft/${encodeURIComponent(idFromUrl)}`,
+          { method: 'GET', role }
+        );
+        if (cancelled) return;
         setDraft(res.draft);
         setDraftId(res.meta.draftId);
         setDraftStatus(res.meta.status);
         setToast({ title: 'Draft loaded', detail: `Draft ${res.meta.draftId} loaded at ${nowStamp}`, tone: 'ok' });
       } catch (e) {
-        setToast({ title: 'Load failed', detail: e instanceof Error ? e.message : 'Unable to load draft', tone: 'err' });
+        if (cancelled) return;
+        const message = e instanceof Error ? e.message : 'Unable to load draft';
+        // Stale / missing draft in URL — clear and continue with a fresh form.
+        setDraftId(null);
+        try {
+          router.replace('/hris/employees/add-new-employee');
+        } catch {
+          /* ignore */
+        }
+        setToast({
+          title: message.toLowerCase().includes('not found') ? 'Draft not found' : 'Load failed',
+          detail: message.toLowerCase().includes('not found')
+            ? 'That draft no longer exists. Starting a new employee form.'
+            : message,
+          tone: message.toLowerCase().includes('not found') ? 'warn' : 'err',
+        });
       } finally {
-        setSaving(false);
+        if (!cancelled) setSaving(false);
       }
     };
     void loadDraft();
-  }, [draftId, nowStamp, role]);
+    return () => {
+      cancelled = true;
+    };
+  }, [initialDraftId, nowStamp, role, router]);
 
   useEffect(() => {
     const employeeType = draft.employment.employmentType;
@@ -901,7 +926,22 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
         meta = await apiCall<DraftResponse>('/api/hris/employees/draft', { method: 'POST', role, body: JSON.stringify({ draft }) });
         setDraftId(meta.draftId);
       } else {
-        meta = await apiCall<DraftResponse>(`/api/hris/employees/draft/${encodeURIComponent(draftId)}`, { method: 'PATCH', role, body: JSON.stringify({ draft }) });
+        try {
+          meta = await apiCall<DraftResponse>(`/api/hris/employees/draft/${encodeURIComponent(draftId)}`, {
+            method: 'PATCH',
+            role,
+            body: JSON.stringify({ draft }),
+          });
+        } catch (patchErr) {
+          const msg = patchErr instanceof Error ? patchErr.message : '';
+          // Stale draft id or prior route conflict — create a fresh draft instead of failing hard.
+          if (/not found/i.test(msg)) {
+            meta = await apiCall<DraftResponse>('/api/hris/employees/draft', { method: 'POST', role, body: JSON.stringify({ draft }) });
+            setDraftId(meta.draftId);
+          } else {
+            throw patchErr;
+          }
+        }
       }
       setDraftStatus(meta.status);
       setLastSavedAt(meta.updatedAt);
