@@ -840,22 +840,43 @@ WHERE [WaiverId] = @WaiverId
   };
 };
 
-const nextRequestNumber = async () => {
-  const year = new Date().getFullYear();
+/** Document type code for human-facing request numbers: CA / SI. */
+const paymentTypeCode = (paymentType: PaymentRequestType | string) =>
+  /supplier/i.test(compact(paymentType)) ? 'SI' : 'CA';
+
+/**
+ * Site-scoped document number: {SITE}{TYPE}{YYYY}{MM}{#####}
+ * e.g. DLENGCA20260800001 — sequence resets per site + type + calendar month.
+ */
+const nextRequestNumber = async (input: {
+  paymentType: PaymentRequestType | string;
+  paymentSiteCode?: string | null;
+}) => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const site = (compact(input.paymentSiteCode) || 'DLE').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'DLE';
+  const typeCode = paymentTypeCode(input.paymentType);
+  const prefix = `${site}${typeCode}${year}${month}`;
+  const format = (seq: number) => `${prefix}${String(seq).padStart(5, '0')}`;
+
   const pool = await ensureFinanceDb().catch(() => null);
-  if (!pool) return `PAY-${year}-00001`;
+  if (!pool) return format(1);
   try {
-    const result = await pool.request().query(`
+    const result = await pool.request()
+      .input('prefix', sql.NVarChar(40), prefix)
+      .query(`
 SELECT TOP 1 [RequestNumber]
 FROM [finance].[PaymentRequests]
-WHERE [RequestNumber] LIKE N'PAY-${year}-%'
+WHERE [RequestNumber] LIKE @prefix + N'%'
 ORDER BY [RequestNumber] DESC
 `);
     const latest = compact(result.recordset?.[0]?.RequestNumber);
-    const seq = latest ? Number(latest.split('-').pop() || '0') + 1 : 1;
-    return `PAY-${year}-${String(seq).padStart(5, '0')}`;
+    const trailing = latest.startsWith(prefix) ? latest.slice(prefix.length) : '';
+    const seq = trailing && /^\d+$/.test(trailing) ? Number(trailing) + 1 : 1;
+    return format(Number.isFinite(seq) && seq > 0 ? seq : 1);
   } catch {
-    return `PAY-${year}-${String(Date.now()).slice(-5)}`;
+    return format(Number(String(Date.now()).slice(-5)) || 1);
   }
 };
 
@@ -1132,7 +1153,10 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
     throw new Error('Supporting documents are required for supplier invoice payments.');
   }
 
-  const requestNumber = await nextRequestNumber();
+  const requestNumber = await nextRequestNumber({
+    paymentType: input.paymentType,
+    paymentSiteCode,
+  });
   const vatAmount = moneyRound(Number(input.vatAmount || 0));
   const whtAmount = moneyRound(Number(input.whtAmount || 0));
   const retentionAmount = moneyRound(Number(input.retentionAmount || 0));
