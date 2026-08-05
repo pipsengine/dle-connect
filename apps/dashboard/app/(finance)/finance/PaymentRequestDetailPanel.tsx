@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react';
 import type { PaymentRequestActionRow, PaymentRequestRow } from '@/lib/finance-intelligence/payment-requests-service';
-import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-requests-service';
+import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-action-visibility';
 
 const money = (amount: number, currency = 'NGN') =>
   new Intl.NumberFormat('en-NG', {

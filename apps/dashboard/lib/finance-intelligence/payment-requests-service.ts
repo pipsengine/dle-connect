@@ -537,13 +537,10 @@ export type PaymentRequestActionRow = {
 };
 
 /** Document / PDF action history shows only submission and approvals. */
-export const isDocumentVisiblePaymentAction = (action: { actionType?: string | null }) => {
-  const type = compact(action.actionType).toLowerCase();
-  return type === 'submitted' || type === 'approve' || type === 'approved';
-};
-
-export const filterDocumentPaymentActions = <T extends { actionType?: string | null }>(actions: T[]) =>
-  actions.filter(isDocumentVisiblePaymentAction);
+export {
+  filterDocumentPaymentActions,
+  isDocumentVisiblePaymentAction,
+} from '@/lib/finance-intelligence/payment-action-visibility';
 
 export const listPaymentRequestActions = async (requestId: string): Promise<PaymentRequestActionRow[]> => {
   const pool = await ensureFinanceDb().catch(() => null);

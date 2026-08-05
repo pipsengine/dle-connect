@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { PaymentRequestActionRow, PaymentRequestRow } from '@/lib/finance-intelligence/payment-requests-service';
-import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-requests-service';
+import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-action-visibility';
 
 const compact = (value: unknown) => String(value ?? '').trim();
 

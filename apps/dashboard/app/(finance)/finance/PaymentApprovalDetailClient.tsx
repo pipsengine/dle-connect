@@ -16,7 +16,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { PaymentRequestActionRow, PaymentRequestAttachment, PaymentRequestRow } from '@/lib/finance-intelligence/payment-requests-service';
-import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-requests-service';
+import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-action-visibility';
 
 const money = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 2 });
 
