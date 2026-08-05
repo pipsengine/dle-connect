@@ -176,8 +176,13 @@ const analyzeBandCoverage = (rules: ApprovalMatrixRule[]) => {
   return { warnings, bandGaps, bandOverlaps };
 };
 
-const normalizePathType = (value: unknown): ApprovalPathType =>
-  /project/i.test(compact(value)) ? 'Project' : 'Non-project';
+const normalizePathType = (value: unknown): ApprovalPathType => {
+  const text = compact(value);
+  // Must check Non-project before /project/ — otherwise "Non-project" matches as Project.
+  if (/non[-\s]?project/i.test(text)) return 'Non-project';
+  if (/^project$/i.test(text)) return 'Project';
+  return 'Non-project';
+};
 
 const parseStages = (row: Record<string, unknown>) => {
   let stages: string[] = [];
@@ -199,7 +204,7 @@ const mapRule = (row: Record<string, unknown>): ApprovalMatrixRule => {
     matrixId: compact(row.MatrixId),
     ruleName: compact(row.RuleName) || compact(row.MatrixId),
     paymentType: compact(row.PaymentType) || 'Employee Payment',
-    pathType: normalizePathType(row.PathType || row.PaymentType),
+    pathType: normalizePathType(compact(row.PathType) || 'Non-project'),
     companyCode: compact(row.CompanyCode) || 'DLE',
     entityName: compact(row.EntityName) || 'Dorman Long Nigeria Ltd',
     minAmount: Number(row.MinAmount || 0),
@@ -421,7 +426,8 @@ FROM [finance].[ApprovalMatrix]
 ORDER BY COALESCE([PathType], N'Non-project'), [ApprovalLevel], [MinAmount]
 `);
     return (result.recordset || []).map((row: Record<string, unknown>) => mapRule(row));
-  } catch {
+  } catch (error) {
+    console.error('[approval-limits] listApprovalMatrixRules failed', error);
     return [];
   }
 };

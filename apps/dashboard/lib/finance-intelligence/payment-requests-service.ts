@@ -291,23 +291,40 @@ const resolveInitialStage = async (
   }
 
   // Safe fallback if matrix unavailable — still convert for consistent NGN routing metadata.
-  // Always include Finance Manager so Reporting Manager approve cannot skip straight to Treasury.
+  // Use the same amount bands as DEFAULT_APPROVAL_LIMIT_RULES so CFO/MD are not dropped.
   const converted = await convertAmountToNgn(amount, context?.currencyCode || 'NGN').catch(() => ({
     amountNgn: amount,
     fxRate: 1,
   }));
   const isProject = Boolean(context?.projectCode) || /project/i.test(context?.department || '');
-  const fallbackStages = paymentType === 'Supplier Invoice Payment'
-    ? (isProject
-      ? ['Project Manager', 'Cost Controller', 'Finance Manager']
-      : ['Finance Manager'])
-    : (isProject
-      ? ['Project Manager', 'Cost Controller', 'Finance Manager']
-      : ['Reporting Manager', 'Finance Manager']);
+  const amountNgn = Number(converted.amountNgn || amount || 0);
+  let fallbackStages: string[];
+  let matrixRuleName: string | null = null;
+  if (isProject) {
+    if (amountNgn <= 200000) {
+      fallbackStages = ['Project Manager', 'Cost Controller', 'Finance Manager'];
+      matrixRuleName = 'PROJ_LE_200K';
+    } else if (amountNgn <= 5000000) {
+      fallbackStages = ['Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO'];
+      matrixRuleName = 'PROJ_LE_5M';
+    } else {
+      fallbackStages = ['Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO', 'MD/CEO'];
+      matrixRuleName = 'PROJ_GT_5M';
+    }
+  } else if (amountNgn <= 200000) {
+    fallbackStages = ['Reporting Manager', 'Finance Manager'];
+    matrixRuleName = 'NONPROJ_LE_200K';
+  } else if (amountNgn <= 1000000) {
+    fallbackStages = ['Reporting Manager', 'Finance Manager', 'CFO'];
+    matrixRuleName = 'NONPROJ_LE_1M';
+  } else {
+    fallbackStages = ['Reporting Manager', 'Finance Manager', 'CFO', 'MD/CEO'];
+    matrixRuleName = 'NONPROJ_GT_1M';
+  }
   return {
     stage: fallbackStages[0],
     status: 'Pending Approval' as const,
-    matrixRuleName: null as string | null,
+    matrixRuleName,
     approvalLevel: fallbackStages.length,
     stages: fallbackStages,
     pathType: isProject ? 'Project' : 'Non-project',
@@ -615,18 +632,20 @@ WHERE [RequestId] = @RequestId
   return nextPayload;
 };
 
-/** Re-resolve Approval Limits when payload.stages is missing/incomplete (legacy single-stage bug). */
+/** Re-resolve Approval Limits when payload.stages is missing/incomplete or amount band changed. */
 const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> => {
   const existing = stagesFromPayload(row.payload);
   const hasFinanceManager = existing.some((stage) => /finance manager/i.test(stage));
   const onlyReportingManager = existing.length === 1 && /reporting manager|line manager|supervisor/i.test(existing[0]);
-  const needsRepair = existing.length === 0
-    || onlyReportingManager
-    || (row.paymentType !== 'Supplier Invoice Payment' && existing.length > 0 && !hasFinanceManager);
 
-  if (!needsRepair) return existing;
-
-  let stages = existing;
+  let matchedStages: string[] | null = null;
+  let matchedMeta: {
+    matrixRuleName: string;
+    approvalLevel: number;
+    pathType: string;
+    amountNgn: number;
+    fxRate: number;
+  } | null = null;
   try {
     const matched = await resolveApprovalChain({
       amount: row.netAmount,
@@ -635,27 +654,44 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
       projectCode: row.projectCode,
     });
     if (matched?.stages?.length) {
-      stages = matched.stages;
-      row.payload = await persistPayloadStages(row.requestId, row.payload, stages, {
+      matchedStages = matched.stages;
+      matchedMeta = {
         matrixRuleName: matched.ruleName,
         approvalLevel: matched.approvalLevel,
         pathType: matched.pathType,
         amountNgn: matched.amountNgn,
         fxRate: matched.fxRate,
-      });
-      return stages;
+      };
     }
   } catch (error) {
     console.error('[payment-requests] ensureApprovalStages re-resolve failed', error);
   }
 
-  stages = defaultStagesForPayment(row.paymentType, row.projectCode, row.department);
-  // Keep any already-started stage at the front if it was the only stage stored.
-  if (existing[0] && !stages.some((stage) => stage.toLowerCase() === existing[0].toLowerCase())) {
-    stages = [existing[0], ...stages.filter((stage) => stage.toLowerCase() !== existing[0].toLowerCase())];
+  const stagesEqual = (left: string[], right: string[]) =>
+    left.length === right.length
+    && left.every((stage, index) => stage.toLowerCase() === right[index].toLowerCase());
+
+  const needsRepair = existing.length === 0
+    || onlyReportingManager
+    || (row.paymentType !== 'Supplier Invoice Payment' && existing.length > 0 && !hasFinanceManager)
+    || (matchedStages != null && !stagesEqual(existing, matchedStages));
+
+  if (!needsRepair) return existing;
+
+  let stages = matchedStages || existing;
+  if (!matchedStages) {
+    stages = defaultStagesForPayment(row.paymentType, row.projectCode, row.department);
+    if (existing[0] && !stages.some((stage) => stage.toLowerCase() === existing[0].toLowerCase())) {
+      stages = [existing[0], ...stages.filter((stage) => stage.toLowerCase() !== existing[0].toLowerCase())];
+    }
   }
+
   row.payload = await persistPayloadStages(row.requestId, row.payload, stages, {
-    matrixRuleName: row.payload.matrixRuleName || null,
+    matrixRuleName: matchedMeta?.matrixRuleName || row.payload.matrixRuleName || null,
+    approvalLevel: matchedMeta?.approvalLevel || row.payload.approvalLevel || stages.length,
+    pathType: matchedMeta?.pathType || row.payload.pathType || null,
+    amountNgn: matchedMeta?.amountNgn || row.payload.amountNgn || row.netAmount,
+    fxRate: matchedMeta?.fxRate || row.payload.fxRate || 1,
     repairedStages: true,
   });
   return stages;
