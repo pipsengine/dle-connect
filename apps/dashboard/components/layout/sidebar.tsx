@@ -74,6 +74,12 @@ const requiredPermission = (route?: string) => {
 
 const canAccess = (permissions: string[], required: string) => !required || hasPermission(permissions, required);
 
+const canAccessFinanceNav = (permissions: string[]) =>
+  canAccess(permissions, 'finance.view')
+  || canAccess(permissions, 'finance.payments.self')
+  || canAccess(permissions, 'view_finance_intelligence')
+  || canAccess(permissions, 'ess.view');
+
 export function Sidebar({
   isOpen,
   toggle,
@@ -140,6 +146,9 @@ export function Sidebar({
           ) {
             return canAccessBankFinanceNav(sessionLike);
           }
+          if (sub.route === '/finance' || sub.route?.startsWith('/finance/') || sub.route === '/finance-accounting') {
+            return canAccessFinanceNav(permissions);
+          }
           if (sub.route?.startsWith('/hris/') && platformOnly && !sessionContext.isGlobalAdmin && !sessionContext.roles.includes('Super Administrator')) {
             return false;
           }
@@ -148,7 +157,9 @@ export function Sidebar({
         const canSeeItem = item.id === 'hris'
           ? !!subItems?.length
           : item.id === 'logistics-fleet'
-            || canAccess(permissions, requiredPermission(item.route))
+            || (item.route === '/finance' || item.route?.startsWith('/finance')
+              ? canAccessFinanceNav(permissions)
+              : canAccess(permissions, requiredPermission(item.route)))
             || !!subItems?.length;
         return canSeeItem ? { ...item, subItems } : null;
       })

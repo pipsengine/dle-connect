@@ -37,7 +37,7 @@ import type {
   FinanceApprovalCentreSnapshot,
   FinanceCommandCentreSnapshot,
 } from '@/lib/finance-intelligence/store';
-import type { PaymentRequestsWorkspace, CashAdvanceControlsWorkspace, TreasuryWorkspace, FinancePostingWorkspace } from '@/lib/finance-intelligence/payment-requests-service';
+import type { PaymentRequestsWorkspace, CashAdvanceControlsWorkspace, TreasuryWorkspace, FinancePostingWorkspace, EmployeePaymentDashboard } from '@/lib/finance-intelligence/payment-requests-service';
 import type { ApprovalMatrixWorkspace } from '@/lib/finance-intelligence/approval-matrix-service';
 import type { ApprovalDelegationWorkspace } from '@/lib/finance-intelligence/approval-delegation-types';
 import { FinanceBreadcrumbs } from './finance-portal-shell';
@@ -49,11 +49,15 @@ import CashAdvanceControlsClient from './CashAdvanceControlsClient';
 import TreasuryOperationsClient from './TreasuryOperationsClient';
 import FinancePostingClient from './FinancePostingClient';
 import PaymentApprovalDetailClient from './PaymentApprovalDetailClient';
+import EmployeePaymentsDashboardClient from './EmployeePaymentsDashboardClient';
 
 type Props = {
   page: FinancePageMeta;
   commandCentre?: FinanceCommandCentreSnapshot | null;
   approvalCentre?: FinanceApprovalCentreSnapshot | null;
+  employeePaymentDashboard?: EmployeePaymentDashboard | null;
+  employeeName?: string;
+  paymentSelfService?: boolean;
   paymentRequests?: PaymentRequestsWorkspace | null;
   approvalMatrix?: ApprovalMatrixWorkspace | null;
   approvalDelegations?: ApprovalDelegationWorkspace | null;
@@ -904,7 +908,21 @@ function GenericWorkspace({ page }: { page: FinancePageMeta }) {
   );
 }
 
-export default function FinanceWorkspaceClient({ page, commandCentre, approvalCentre, paymentRequests, approvalMatrix, approvalDelegations, cashAdvanceControls, treasuryWorkspace, financePostingWorkspace, childLinks }: Props) {
+export default function FinanceWorkspaceClient({
+  page,
+  commandCentre,
+  approvalCentre,
+  employeePaymentDashboard,
+  employeeName,
+  paymentSelfService,
+  paymentRequests,
+  approvalMatrix,
+  approvalDelegations,
+  cashAdvanceControls,
+  treasuryWorkspace,
+  financePostingWorkspace,
+  childLinks,
+}: Props) {
   const reportingCards = useMemo(
     () => [
       {
@@ -945,8 +963,15 @@ export default function FinanceWorkspaceClient({ page, commandCentre, approvalCe
       {page.kind === 'analysis-hub' ? <AnalysisHub /> : null}
       {page.kind === 'analysis-workspace' ? <AnalysisWorkspace page={page} /> : null}
       {page.kind === 'ai-copilot' ? <AiCopilotView page={page} /> : null}
-      {page.kind === 'approvals-dashboard' ? <ApprovalsDashboard snapshot={approvalCentre} /> : null}
-      {page.kind === 'payment-requests' && paymentRequests ? <PaymentRequestsClient initialWorkspace={paymentRequests} /> : null}
+      {page.kind === 'approvals-dashboard' && employeePaymentDashboard
+        ? <EmployeePaymentsDashboardClient dashboard={employeePaymentDashboard} employeeName={employeeName} />
+        : null}
+      {page.kind === 'approvals-dashboard' && !employeePaymentDashboard
+        ? <ApprovalsDashboard snapshot={approvalCentre} />
+        : null}
+      {page.kind === 'payment-requests' && paymentRequests
+        ? <PaymentRequestsClient initialWorkspace={paymentRequests} selfServiceMode={paymentSelfService} />
+        : null}
       {page.kind === 'cash-advance-controls' && cashAdvanceControls ? <CashAdvanceControlsClient initialWorkspace={cashAdvanceControls} /> : null}
       {page.kind === 'treasury-ops' && treasuryWorkspace ? <TreasuryOperationsClient initialWorkspace={treasuryWorkspace} /> : null}
       {page.kind === 'finance-posting' && financePostingWorkspace ? <FinancePostingClient initialWorkspace={financePostingWorkspace} /> : null}

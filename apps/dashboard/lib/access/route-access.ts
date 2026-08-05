@@ -390,7 +390,8 @@ export const canAccessRoute = (session: SessionLike, pathname: string) => {
   }
   if (path.startsWith('/finance') || path.startsWith('/api/finance') || path.startsWith('/finance-accounting')) {
     if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
-    return hasAnyPermission(session.permissions || [], [
+    const perms = session.permissions || [];
+    const fullFinance = hasAnyPermission(perms, [
       'finance.view',
       'finance.*',
       'finance.approve',
@@ -399,6 +400,14 @@ export const canAccessRoute = (session: SessionLike, pathname: string) => {
       'budget.view',
       'treasury.view',
     ]);
+    if (fullFinance) return true;
+    // Employees may open payment self-service routes only.
+    const paymentSelf = hasAnyPermission(perms, ['finance.payments.self', 'ess.view', 'workflow.approve']);
+    if (!paymentSelf) return false;
+    const clean = path.split('?')[0].replace(/\/$/, '') || '/finance';
+    if (clean === '/finance' || clean === '/api/finance') return true;
+    if (clean.startsWith('/finance/approvals') || clean.startsWith('/api/finance/payment')) return true;
+    return false;
   }
   return true;
 };

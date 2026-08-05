@@ -1,11 +1,20 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { FINANCE_PAGES, resolveFinancePage } from '@/lib/finance-intelligence/nav';
 import { buildFinanceApprovalCentre, buildFinanceCommandCentre } from '@/lib/finance-intelligence/store';
-import { buildCashAdvanceControlsWorkspace, buildFinancePostingWorkspace, buildPaymentRequestsWorkspace, buildTreasuryWorkspace } from '@/lib/finance-intelligence/payment-requests-service';
+import {
+  buildCashAdvanceControlsWorkspace,
+  buildEmployeePaymentDashboard,
+  buildFinancePostingWorkspace,
+  buildPaymentRequestsWorkspace,
+  buildTreasuryWorkspace,
+} from '@/lib/finance-intelligence/payment-requests-service';
 import { buildApprovalMatrixWorkspace } from '@/lib/finance-intelligence/approval-matrix-service';
 import { buildApprovalDelegationWorkspace } from '@/lib/finance-intelligence/approval-delegation-service';
-import { canViewAllPaymentRequests } from '@/lib/finance-intelligence/payment-access';
+import {
+  canAccessFinancePaymentPage,
+  canViewAllPaymentRequests,
+} from '@/lib/finance-intelligence/payment-access';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { permissionsForRoles } from '@/lib/auth/rbac';
 import FinanceWorkspaceClient from '../FinanceWorkspaceClient';
@@ -24,6 +33,7 @@ const resolveFinanceActor = async () => {
   const permissions = session?.isGlobalAdmin ? ['*'] : permissionsForRoles(roles);
   return {
     actorCode: session?.employeeCode || session?.username || session?.sub || '',
+    actorName: session?.fullName || session?.username || session?.sub || '',
     roles,
     permissions,
     isGlobalAdmin: Boolean(session?.isGlobalAdmin),
@@ -47,13 +57,25 @@ export default async function FinanceCatchAllPage({ params }: Props) {
 
   const actor = await resolveFinanceActor();
   const viewAllPayments = canViewAllPaymentRequests(actor);
+  const paymentSelfService = !viewAllPayments;
+
+  if (!viewAllPayments && !canAccessFinancePaymentPage(pathname, actor)) {
+    redirect('/finance/approvals');
+  }
+  if (paymentSelfService && page.kind === 'command-centre') {
+    redirect('/finance/approvals');
+  }
+
   const mineOnlyPage = pathname.includes('/my-requests');
 
-  const commandCentre = page.kind === 'command-centre'
+  const commandCentre = page.kind === 'command-centre' && viewAllPayments
     ? await buildFinanceCommandCentre().catch(() => null)
     : null;
-  const approvalCentre = page.kind === 'approvals-dashboard'
+  const approvalCentre = page.kind === 'approvals-dashboard' && viewAllPayments
     ? await buildFinanceApprovalCentre().catch(() => null)
+    : null;
+  const employeePaymentDashboard = page.kind === 'approvals-dashboard' && paymentSelfService
+    ? await buildEmployeePaymentDashboard(actor.actorCode).catch(() => null)
     : null;
 
   let paymentType: string | undefined;
@@ -63,107 +85,29 @@ export default async function FinanceCatchAllPage({ params }: Props) {
   const paymentRequests = page.kind === 'payment-requests'
     ? await buildPaymentRequestsWorkspace({
       paymentType,
-      mineFor: mineOnlyPage ? actor.actorCode : undefined,
+      mineFor: mineOnlyPage || paymentSelfService ? actor.actorCode : undefined,
       scopedToActorCode: !viewAllPayments && !mineOnlyPage ? actor.actorCode : undefined,
     }).catch(() => null)
     : null;
 
-  const cashAdvanceControls = page.kind === 'cash-advance-controls'
-    ? await buildCashAdvanceControlsWorkspace().catch(() => ({
-      generatedAt: new Date().toISOString(),
-      outstanding: [],
-      activeWaivers: [],
-      summary: {
-        outstandingCount: 0,
-        awaitingRetirement: 0,
-        activeWaivers: 0,
-        blockedEmployees: 0,
-      },
-    }))
+  const cashAdvanceControls = page.kind === 'cash-advance-controls' && viewAllPayments
+    ? await buildCashAdvanceControlsWorkspace().catch(() => null)
     : null;
 
-  const treasuryWorkspace = page.kind === 'treasury-ops'
-    ? await buildTreasuryWorkspace().catch(() => ({
-      generatedAt: new Date().toISOString(),
-      source: 'DLE Enterprise · finance.PaymentRequests · Treasury',
-      summary: {
-        readyToPay: 0,
-        readyValue: 0,
-        paidToday: 0,
-        paidTodayValue: 0,
-        awaitingRetirement: 0,
-        retirementToVerify: 0,
-        history: 0,
-      },
-      readyToPay: [],
-      paidToday: [],
-      awaitingRetirement: [],
-      retirementToVerify: [],
-      history: [],
-    }))
+  const treasuryWorkspace = page.kind === 'treasury-ops' && viewAllPayments
+    ? await buildTreasuryWorkspace().catch(() => null)
     : null;
 
-  const financePostingWorkspace = page.kind === 'finance-posting'
-    ? await buildFinancePostingWorkspace().catch(() => ({
-      generatedAt: new Date().toISOString(),
-      source: 'DLE Enterprise · finance.PaymentRequests · Sage Posting',
-      summary: {
-        readyToPost: 0,
-        readyValue: 0,
-        posted: 0,
-        notReady: 0,
-        failed: 0,
-        withDocuments: 0,
-      },
-      rows: [],
-      readyToPost: [],
-      posted: [],
-      notReady: [],
-    }))
+  const financePostingWorkspace = page.kind === 'finance-posting' && viewAllPayments
+    ? await buildFinancePostingWorkspace().catch(() => null)
     : null;
 
-  const approvalMatrix = page.kind === 'approval-matrix' || page.kind === 'approval-limits'
-    ? await buildApprovalMatrixWorkspace().catch(() => ({
-      generatedAt: new Date().toISOString(),
-      source: 'DLE Enterprise · finance.ApprovalMatrix',
-      summary: {
-        pathTypes: 0,
-        activeRules: 0,
-        approvalLevels: 0,
-        pendingChanges: 0,
-        coveragePct: 0,
-        dualControlRules: 0,
-        companyCoveragePct: 0,
-        compliancePct: 0,
-        nonProjectRules: 0,
-        projectRules: 0,
-        bandGaps: 0,
-        bandOverlaps: 0,
-      },
-      warnings: ['Unable to load approval limits from the finance database.'],
-      rules: [],
-      audit: [],
-      fxRates: [],
-    }))
+  const approvalMatrix = (page.kind === 'approval-matrix' || page.kind === 'approval-limits') && viewAllPayments
+    ? await buildApprovalMatrixWorkspace().catch(() => null)
     : null;
 
-  const approvalDelegations = page.kind === 'delegation-rules'
-    ? await buildApprovalDelegationWorkspace().catch(() => ({
-      generatedAt: new Date().toISOString(),
-      source: 'DLE Enterprise · finance.ApprovalDelegations',
-      summary: {
-        total: 0,
-        active: 0,
-        scheduled: 0,
-        expired: 0,
-        cancelled: 0,
-        standing: 0,
-        temporary: 0,
-      },
-      warnings: ['Unable to load delegation rules from the finance database.'],
-      rows: [],
-      audit: [],
-    }))
+  const approvalDelegations = page.kind === 'delegation-rules' && viewAllPayments
+    ? await buildApprovalDelegationWorkspace().catch(() => null)
     : null;
 
   const childLinks = page.kind === 'section-dashboard' || page.features?.length
@@ -183,11 +127,23 @@ export default async function FinanceCatchAllPage({ params }: Props) {
     })
     .filter((item): item is { href: string; title: string; description: string } => Boolean(item));
 
+  const pageForClient = paymentSelfService && page.kind === 'approvals-dashboard'
+    ? {
+      ...page,
+      title: 'My Payments',
+      description: 'Your payment requests, cash advances, and items awaiting your approval.',
+      breadcrumbs: ['Payment Approvals', 'My Payments'],
+    }
+    : page;
+
   return (
     <FinanceWorkspaceClient
-      page={page}
+      page={pageForClient}
       commandCentre={commandCentre}
       approvalCentre={approvalCentre}
+      employeePaymentDashboard={employeePaymentDashboard}
+      employeeName={actor.actorName}
+      paymentSelfService={paymentSelfService}
       paymentRequests={paymentRequests}
       approvalMatrix={approvalMatrix}
       approvalDelegations={approvalDelegations}

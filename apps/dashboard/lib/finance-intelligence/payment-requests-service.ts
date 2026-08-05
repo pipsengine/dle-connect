@@ -981,6 +981,68 @@ export const buildPaymentRequestsWorkspace = async (input?: {
   return workspace;
 };
 
+export type EmployeePaymentDashboard = {
+  generatedAt: string;
+  employeeCode: string;
+  summary: {
+    myRequests: number;
+    drafts: number;
+    pendingApproval: number;
+    returned: number;
+    awaitingMyApproval: number;
+    paidThisMonth: number;
+    outstandingAdvances: number;
+  };
+  recentMine: PaymentRequestRow[];
+  awaitingMyApproval: PaymentRequestRow[];
+  outstandingAdvances: PaymentRequestRow[];
+  eligibility: CashAdvanceEligibility | null;
+};
+
+export const buildEmployeePaymentDashboard = async (employeeCode: string): Promise<EmployeePaymentDashboard> => {
+  const code = compact(employeeCode);
+  const [mineWorkspace, scopedWorkspace, eligibility] = await Promise.all([
+    buildPaymentRequestsWorkspace({ mineFor: code || undefined }),
+    buildPaymentRequestsWorkspace({ scopedToActorCode: code || undefined }),
+    code ? getCashAdvanceEligibility(code).catch(() => null) : Promise.resolve(null),
+  ]);
+
+  const mine = mineWorkspace.rows;
+  const awaitingMyApproval = scopedWorkspace.rows.filter((row) =>
+    code
+    && String(row.currentApproverCode || '').trim().toLowerCase() === code.toLowerCase()
+    && /pending|submitted|finance review/i.test(row.status));
+  const outstandingAdvances = (eligibility?.outstanding || []).map((item) =>
+    mine.find((row) => row.requestId === item.requestId)
+    || scopedWorkspace.rows.find((row) => row.requestId === item.requestId)
+    || null).filter(Boolean) as PaymentRequestRow[];
+
+  const now = new Date();
+  const paidThisMonth = mine.filter((row) => {
+    if (!/paid|completed|retired|closed/i.test(row.status)) return false;
+    const paidAt = row.paidAt ? new Date(row.paidAt) : row.updatedAt ? new Date(row.updatedAt) : null;
+    return Boolean(paidAt && paidAt.getMonth() === now.getMonth() && paidAt.getFullYear() === now.getFullYear());
+  });
+
+  return {
+    generatedAt: nowIso(),
+    employeeCode: code,
+    summary: {
+      myRequests: mine.length,
+      drafts: mine.filter((row) => /draft/i.test(row.status)).length,
+      pendingApproval: mine.filter((row) => /pending|submitted|finance review/i.test(row.status)).length,
+      returned: mine.filter((row) => /returned/i.test(row.status)).length,
+      awaitingMyApproval: awaitingMyApproval.length,
+      paidThisMonth: paidThisMonth.length,
+      outstandingAdvances: eligibility?.outstandingCount || outstandingAdvances.length,
+    },
+    recentMine: mine.slice(0, 8),
+    awaitingMyApproval: awaitingMyApproval.slice(0, 8),
+    outstandingAdvances,
+    eligibility,
+  };
+};
+
 const resolveFinanceDataRoot = () => {
   if (process.env.DLE_FINANCE_DATA_DIR) return path.resolve(process.env.DLE_FINANCE_DATA_DIR);
   if (process.env.DLE_HRIS_DATA_DIR) return path.join(path.resolve(process.env.DLE_HRIS_DATA_DIR), '..', 'finance');

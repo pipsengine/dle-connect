@@ -20,6 +20,11 @@ import { NotificationCenter } from '@/components/layout/notification-center';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
 import { canAccessFinanceSection } from '@/lib/access/finance-access';
 import {
+  canAccessPaymentSelfService,
+  canViewAllPaymentRequests,
+  filterFinanceNavForActor,
+} from '@/lib/finance-intelligence/payment-access';
+import {
   FINANCE_MODULE,
   FINANCE_NAV_SECTIONS,
   type FinanceBadgeTone,
@@ -79,6 +84,7 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [session, setSession] = useState({
     permissions: [] as string[],
+    roles: [] as string[],
     isGlobalAdmin: false,
     employeeCode: employee?.employeeCode || '',
     ready: false,
@@ -93,6 +99,7 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
         if (!active) return;
         setSession({
           permissions: Array.isArray(json?.data?.permissions) ? json.data.permissions : [],
+          roles: Array.isArray(json?.data?.roles) ? json.data.roles : [],
           isGlobalAdmin: Boolean(json?.data?.isGlobalAdmin),
           employeeCode: String(json?.data?.employeeCode || json?.data?.username || employee?.employeeCode || ''),
           ready: true,
@@ -120,13 +127,22 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
     };
   }, [pathname]);
 
-  const visibleSections = useMemo(
-    () =>
-      FINANCE_NAV_SECTIONS.filter((section) =>
-        canAccessFinanceSection(section.id, session.permissions, session.isGlobalAdmin),
-      ),
-    [session],
-  );
+  const accessActor = useMemo(() => ({
+    actorCode: session.employeeCode,
+    roles: session.roles,
+    permissions: session.permissions,
+    isGlobalAdmin: session.isGlobalAdmin,
+  }), [session]);
+
+  const visibleSections = useMemo(() => {
+    const base = FINANCE_NAV_SECTIONS.filter((section) =>
+      canAccessFinanceSection(section.id, session.permissions, session.isGlobalAdmin));
+    if (canViewAllPaymentRequests(accessActor)) return base;
+    if (canAccessPaymentSelfService(accessActor)) {
+      return filterFinanceNavForActor(FINANCE_NAV_SECTIONS, accessActor);
+    }
+    return base;
+  }, [session, accessActor]);
 
   useEffect(() => {
     const activeSection = visibleSections.find(

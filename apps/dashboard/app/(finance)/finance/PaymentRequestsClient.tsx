@@ -37,6 +37,8 @@ import type { PaymentRequestLookups } from '@/lib/finance-intelligence/payment-r
 
 type Props = {
   initialWorkspace: PaymentRequestsWorkspace;
+  /** Hide finance-ops shortcuts for employee self-service users. */
+  selfServiceMode?: boolean;
 };
 
 type ComposerForm = {
@@ -234,7 +236,7 @@ const typeIcon = (paymentType: string) => {
 
 type TabId = 'all' | 'mine' | 'drafts' | 'pending' | 'returned' | 'approved' | 'ready' | 'paid' | 'rejected';
 
-export default function PaymentRequestsClient({ initialWorkspace }: Props) {
+export default function PaymentRequestsClient({ initialWorkspace, selfServiceMode = false }: Props) {
   const [workspace, setWorkspace] = useState(initialWorkspace);
   const [tab, setTab] = useState<TabId>('all');
   const [query, setQuery] = useState('');
@@ -833,18 +835,20 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
       </section>
 
       <div className="flex flex-wrap gap-2 text-xs">
-        <Link href="/finance/approvals/payments?view=cash-advance" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
-          Cash Advance Requests
+        <Link href="/finance/approvals/cash-advances" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
+          Cash Advances
         </Link>
-        <Link href="/finance/approvals/payments?view=supplier" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
-          Supplier Invoice Requests
+        <Link href="/finance/approvals/supplier-payments" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
+          Supplier Payments
         </Link>
         <Link href="/finance/approvals/my-requests" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
           My Requests
         </Link>
-        <Link href="/finance/approvals/treasury" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
-          <Wallet className="h-3.5 w-3.5" /> Treasury Operations
-        </Link>
+        {!selfServiceMode ? (
+          <Link href="/finance/approvals/treasury" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
+            <Wallet className="h-3.5 w-3.5" /> Treasury Operations
+          </Link>
+        ) : null}
       </div>
 
       {composerOpen ? (
@@ -880,9 +884,13 @@ export default function PaymentRequestsClient({ initialWorkspace }: Props) {
                           Outstanding: {eligibility.outstanding[0].requestNumber} · {eligibility.outstanding[0].status} · {eligibility.outstanding[0].title}
                         </p>
                       ) : null}
-                      <Link href="/finance/approvals/advance-retirement" className="mt-2 inline-flex text-xs font-semibold text-[#008FD5] hover:underline">
-                        Open Cash Advance Controls (CFO)
-                      </Link>
+                      {!selfServiceMode ? (
+                        <Link href="/finance/approvals/advance-retirement" className="mt-2 inline-flex text-xs font-semibold text-[#008FD5] hover:underline">
+                          Open Cash Advance Controls (CFO)
+                        </Link>
+                      ) : (
+                        <p className="mt-2 text-xs text-amber-800">Contact Finance / CFO to retire, cancel, or waive the outstanding advance.</p>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -1,4 +1,5 @@
 import { hasAnyPermission } from '@/lib/auth/permission-match';
+import { FINANCE_PAYMENTS_SELF_PERMISSION } from '@/lib/finance-intelligence/payment-access';
 
 export const FINANCE_VIEW_PERMISSIONS = [
   'finance.view',
@@ -7,6 +8,12 @@ export const FINANCE_VIEW_PERMISSIONS = [
   'view_finance_accounting',
   'budget.view',
   'treasury.view',
+] as const;
+
+export const FINANCE_PAYMENT_SELF_PERMISSIONS = [
+  FINANCE_PAYMENTS_SELF_PERMISSION,
+  'ess.view',
+  'workflow.approve',
 ] as const;
 
 export const FINANCE_APPROVE_PERMISSIONS = [
@@ -24,6 +31,15 @@ export const FINANCE_CONFIG_PERMISSIONS = [
 ] as const;
 
 export const canAccessFinanceModule = (
+  permissions: string[] | undefined | null,
+  isGlobalAdmin = false,
+) => {
+  if (isGlobalAdmin) return true;
+  return hasAnyPermission(permissions || [], [...FINANCE_VIEW_PERMISSIONS, ...FINANCE_PAYMENT_SELF_PERMISSIONS]);
+};
+
+/** Full Finance Intelligence (reporting, config, ops desks) — not payment self-service alone. */
+export const canAccessFullFinanceIntelligence = (
   permissions: string[] | undefined | null,
   isGlobalAdmin = false,
 ) => {
@@ -53,9 +69,17 @@ export const canAccessFinanceSection = (
   isGlobalAdmin = false,
 ) => {
   if (!canAccessFinanceModule(permissions, isGlobalAdmin)) return false;
+  const fullFinance = canAccessFullFinanceIntelligence(permissions, isGlobalAdmin);
   if (sectionId === 'configuration') return canConfigureFinance(permissions, isGlobalAdmin);
-  if (sectionId === 'approvals' || sectionId === 'monitoring') {
-    return canApproveFinance(permissions, isGlobalAdmin) || canAccessFinanceModule(permissions, isGlobalAdmin);
+  if (sectionId === 'approvals') {
+    return fullFinance
+      || canApproveFinance(permissions, isGlobalAdmin)
+      || hasAnyPermission(permissions || [], [...FINANCE_PAYMENT_SELF_PERMISSIONS]);
   }
+  if (sectionId === 'monitoring') {
+    return fullFinance || canApproveFinance(permissions, isGlobalAdmin);
+  }
+  // Self-service users only see Payment Approvals — not reporting/overview/etc.
+  if (!fullFinance) return false;
   return true;
 };

@@ -88,7 +88,7 @@ const workspaceModules = [
     icon: Banknote,
     status: 'Live',
     signal: 'Financial reporting, analytics, AI insights and payment approvals with Sage X3',
-    permissions: ['finance.view', 'finance.*', 'view_finance_intelligence', 'view_finance_accounting', 'budget.view', 'treasury.view'],
+    permissions: ['finance.view', 'finance.*', 'finance.payments.self', 'view_finance_intelligence', 'view_finance_accounting', 'budget.view', 'treasury.view', 'ess.view'],
   },
   {
     title: 'Procurement',
