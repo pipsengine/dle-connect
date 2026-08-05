@@ -127,10 +127,14 @@ export const resolvePaymentStageApprover = async (input: {
   } else if (/cost controller/.test(stageKey)) {
     matched = matchJobTitle(employees, [/cost\s*controller/i]);
   } else if (/finance manager/.test(stageKey)) {
-    // Acting Finance Manager (temporary): Raphael Iyanda until a permanent FM job title is set.
+    // Acting Finance Manager (temporary): Rapheal/Raphael Iyanda until a permanent FM job title is set.
+    // HRIS spelling is RAPHEAL OLAITAN IYANDA (P0429).
     matched = employees.find((employee) => {
       if (/inactive|terminated|resigned|retired|deceased|suspend/i.test(compact(employee.status))) return false;
-      return /raphael/i.test(compact(employee.fullName)) && /iyanda/i.test(compact(employee.fullName));
+      const name = compact(employee.fullName);
+      const code = employeeCodeOf(employee).toUpperCase();
+      if (code === 'P0429') return true;
+      return /iyanda/i.test(name) && /raphael|rapheal|olaitan/i.test(name);
     }) || null;
     if (!matched) {
       matched = matchJobTitle(employees, [/finance\s*manager/i, /financial\s*controller/i]);
@@ -209,13 +213,23 @@ export const notifyPaymentApprovalRequired = async (input: {
   baseUrl?: string | null;
 }) => {
   const session = financeSystemSession(input.actorName);
-  const approver = await resolvePaymentStageApprover({
+  const resolved = await resolvePaymentStageApprover({
     stage: input.stage,
     requesterCode: input.request.requesterCode,
     projectCode: input.request.projectCode,
     supervisorName: input.request.supervisorName,
     paymentType: input.request.paymentType,
   });
+  // Prefer the assignee already persisted on the request (set by assignCurrentApprover).
+  const assignedCode = compact(input.request.currentApproverCode);
+  const assignedName = compact(input.request.currentApproverName).replace(/\s*\(Delegated.*$/i, '');
+  const approver = assignedCode
+    ? {
+      ...resolved,
+      code: assignedCode,
+      name: assignedName || resolved.name,
+    }
+    : resolved;
   const href = paymentRequestDetailPath(input.request.requestId);
   const amountLabel = `${input.request.currencyCode} ${Number(input.request.netAmount || 0).toLocaleString('en-NG')}`;
   const body = `${input.request.requesterName} submitted ${input.request.paymentType} ${input.request.requestNumber} (${amountLabel}) for ${input.stage} approval.`;
@@ -240,8 +254,10 @@ export const notifyPaymentApprovalRequired = async (input: {
     });
   });
 
-  if (approver.employee) {
-    const mailbox = await resolveEmployeeMailbox(approver.employee);
+  if (approver.employee || approver.code) {
+    const employee = approver.employee || (await readDirectoryEmployees().catch(() => ({ employees: [] as DleEmployeeDirectoryRow[] }))).employees
+      .find((row) => employeeCodeOf(row).toUpperCase() === approver.code.toUpperCase()) || null;
+    const mailbox = employee ? await resolveEmployeeMailbox(employee) : null;
     if (mailbox) {
       await safeNotify('approver email', () =>
         sendPaymentApprovalRequestEmail({

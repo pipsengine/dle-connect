@@ -90,15 +90,18 @@ export const isPaymentRequesterOnly = (
 
 /**
  * May Approve / Reject / Return / Clarify / Delegate on a pending request.
- * Assigned current approver, or elevated finance/admin — never the requester alone.
+ * Assigned current approver, or Super Admin / System Administrator only.
+ * Finance "view all" does not grant stage approval — that kept skipping the Finance Manager assignee.
  */
 export const canActOnPaymentApproval = (
   actor: PaymentAccessActor,
   request: Pick<PaymentRequestRow, 'requesterCode' | 'currentApproverCode' | 'status'>,
 ) => {
   if (!/pending|submitted|finance review/i.test(String(request.status || ''))) return false;
-  if (canViewAllPaymentRequests(actor)) return true;
-  return codesMatch(actor.actorCode, request.currentApproverCode);
+  if (codesMatch(actor.actorCode, request.currentApproverCode)) return true;
+  if (actor.isGlobalAdmin) return true;
+  return (actor.roles || []).some((role) =>
+    /^(super administrator|system administrator|application administrator)$/i.test(String(role || '').trim()));
 };
 
 /** Fully approved (or later) payment document may be downloaded as PDF. */

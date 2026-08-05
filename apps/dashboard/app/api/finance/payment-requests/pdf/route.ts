@@ -50,7 +50,7 @@ export async function GET(request: Request) {
     }
 
     const actions = await listPaymentRequestActions(paymentRequest.requestId);
-    const pdf = buildPaymentRequestDocumentPdf(paymentRequest, actions);
+    const pdf = await buildPaymentRequestDocumentPdf(paymentRequest, actions);
     const fileName = `${paymentRequest.requestNumber || paymentRequest.requestId}-payment-document.pdf`;
 
     return new NextResponse(new Uint8Array(pdf), {
