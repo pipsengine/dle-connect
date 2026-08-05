@@ -25,6 +25,8 @@ export type PaymentNotifyRequest = {
   paymentSiteName?: string;
   supervisorName?: string;
   currentStage?: string;
+  currentApproverCode?: string | null;
+  currentApproverName?: string | null;
   status?: string;
 };
 
