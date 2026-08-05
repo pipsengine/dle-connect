@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'motion/react';
@@ -691,6 +691,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<{ title: string; detail: string; tone: 'ok' | 'warn' | 'err' } | null>(null);
   const [codePreview, setCodePreview] = useState<ApiState<EmployeeCodePreviewResponse>>({ status: 'idle' });
+  const codeRequestSeq = useRef(0);
 
   const [validation, setValidation] = useState<ApiState<ValidationResult>>({ status: 'idle' });
   const [duplicate, setDuplicate] = useState<ApiState<DuplicateResult>>({ status: 'idle' });
@@ -707,6 +708,38 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
   const contactRegion = draft.contact.region || getRegionForState(draft.contact.state);
   const contactStateOptions = useMemo(() => getNigeriaStates(contactRegion), [contactRegion]);
   const contactLgaOptions = useMemo(() => getNigeriaLgas(draft.contact.state), [draft.contact.state]);
+
+  const requestNextEmployeeCode = async (employeeType: EmploymentType | '') => {
+    const type = String(employeeType || '').trim() as EmploymentType | '';
+    if (!type) {
+      setCodePreview({ status: 'idle' });
+      setDraft((d) => (d.employment.employeeId ? { ...d, employment: { ...d.employment, employeeId: '' } } : d));
+      return;
+    }
+    const seq = ++codeRequestSeq.current;
+    setCodePreview({ status: 'loading' });
+    setDraft((d) => ({ ...d, employment: { ...d.employment, employmentType: type, employeeId: '' } }));
+    try {
+      const res = await apiCall<EmployeeCodePreviewResponse>(
+        `/api/hris/employees/employee-code/next?employeeType=${encodeURIComponent(type)}`,
+        { method: 'GET', role },
+      );
+      if (seq !== codeRequestSeq.current) return;
+      setCodePreview({ status: 'ready', data: res });
+      setDraft((d) => ({
+        ...d,
+        employment: {
+          ...d.employment,
+          employmentType: type,
+          employeeId: res.employeeCode,
+        },
+      }));
+    } catch (e) {
+      if (seq !== codeRequestSeq.current) return;
+      setCodePreview({ status: 'error', error: e instanceof Error ? e.message : 'Unable to generate employee code' });
+      setDraft((d) => ({ ...d, employment: { ...d.employment, employmentType: type, employeeId: '' } }));
+    }
+  };
 
   useEffect(() => {
     const loadOptions = async () => {
@@ -737,6 +770,18 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
         setDraft(res.draft);
         setDraftId(res.meta.draftId);
         setDraftStatus(res.meta.status);
+        if (res.draft?.employment?.employmentType && res.draft?.employment?.employeeId) {
+          setCodePreview({
+            status: 'ready',
+            data: {
+              employeeCode: res.draft.employment.employeeId,
+              prefix: res.draft.employment.employeeId.replace(/[0-9].*$/, '') || '',
+              employeeType: res.draft.employment.employmentType,
+            },
+          });
+        } else if (res.draft?.employment?.employmentType) {
+          void requestNextEmployeeCode(res.draft.employment.employmentType);
+        }
         setToast({ title: 'Draft loaded', detail: `Draft ${res.meta.draftId} loaded at ${nowStamp}`, tone: 'ok' });
       } catch (e) {
         if (cancelled) return;
@@ -764,28 +809,6 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
       cancelled = true;
     };
   }, [initialDraftId, nowStamp, role, router]);
-
-  useEffect(() => {
-    const employeeType = draft.employment.employmentType;
-    if (!employeeType) return;
-
-    let alive = true;
-    apiCall<EmployeeCodePreviewResponse>(`/api/hris/employees/employee-code/next?employeeType=${encodeURIComponent(employeeType)}`, { method: 'GET', role })
-      .then((res) => {
-        if (!alive) return;
-        setCodePreview({ status: 'ready', data: res });
-        setDraft((d) => ({ ...d, employment: { ...d.employment, employeeId: res.employeeCode } }));
-      })
-      .catch((e) => {
-        if (!alive) return;
-        setCodePreview({ status: 'error', error: e instanceof Error ? e.message : 'Unable to generate employee code' });
-        setDraft((d) => (d.employment.employeeId ? { ...d, employment: { ...d.employment, employeeId: '' } } : d));
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, [draft.employment.employmentType, role]);
 
   const requiredErrors = useMemo(() => {
     const errs: Record<string, string> = {};
@@ -889,7 +912,18 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
   }, [draft, requiredErrors, validation]);
 
   const categoryLabel = draft.employment.employmentType || 'Not selected';
-  const generatedCode = codePreview.status === 'loading' ? 'Generating...' : draft.employment.employeeId || 'Auto Generated';
+  const generatedCode =
+    codePreview.status === 'loading'
+      ? 'Generating...'
+      : codePreview.status === 'ready' && codePreview.data?.employeeCode
+        ? codePreview.data.employeeCode
+        : draft.employment.employeeId || 'Auto Generated';
+  const employeeCodeFieldValue =
+    codePreview.status === 'loading'
+      ? 'Generating...'
+      : codePreview.status === 'ready' && codePreview.data?.employeeCode
+        ? codePreview.data.employeeCode
+        : draft.employment.employeeId;
 
   const runAI = async () => {
     setValidation({ status: 'loading' });
@@ -1496,8 +1530,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
               key={type}
               type="button"
               onClick={() => {
-                setCodePreview(type ? { status: 'loading' } : { status: 'idle' });
-                setDraft((d) => ({ ...d, employment: { ...d.employment, employmentType: type, employeeId: '' } }));
+                void requestNextEmployeeCode(type);
               }}
               className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
                 draft.employment.employmentType === type ? 'bg-[#2563EB] text-white' : 'border border-[#E5E7EB] bg-white text-slate-700 hover:bg-slate-50'
@@ -1518,15 +1551,14 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
           required
           value={draft.employment.employmentType}
           onChange={(v) => {
-            setCodePreview(v ? { status: 'loading' } : { status: 'idle' });
-            setDraft((d) => ({ ...d, employment: { ...d.employment, employmentType: v as EmploymentType, employeeId: '' } }));
+            void requestNextEmployeeCode((v || '') as EmploymentType | '');
           }}
           options={['Permanent', 'Lumpsum', 'Daily Rate', 'NYSC', 'IT', 'Intern', 'Industrial Trainee']}
           error={requiredErrors['employment.employmentType']}
         />
         <Field
           label="Employee Code"
-          value={codePreview.status === 'loading' ? 'Generating...' : draft.employment.employeeId}
+          value={employeeCodeFieldValue}
           onChange={() => {}}
           placeholder={draft.employment.employmentType ? 'Generating…' : 'Select employee type first'}
           disabled

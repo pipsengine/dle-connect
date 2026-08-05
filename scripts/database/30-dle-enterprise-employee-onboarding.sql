@@ -544,10 +544,10 @@ BEGIN
   BEGIN TRANSACTION;
 
   DECLARE @latestExisting int = 0;
-  SELECT @latestExisting = ISNULL(MAX(TRY_CONVERT(int, SUBSTRING(employee_code, 2, 20))), 0)
+  SELECT @latestExisting = ISNULL(MAX(TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20))), 0)
   FROM [hris].[Employees] WITH (UPDLOCK, HOLDLOCK)
-  WHERE employee_code LIKE @typeCode + '[0-9][0-9][0-9][0-9]%'
-    AND TRY_CONVERT(int, SUBSTRING(employee_code, 2, 20)) IS NOT NULL;
+  WHERE UPPER(LTRIM(RTRIM(employee_code))) LIKE @typeCode + '[0-9]%'
+    AND TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20)) IS NOT NULL;
 
   UPDATE [hris].[EmployeeCodeCounters] WITH (UPDLOCK, HOLDLOCK)
   SET last_sequence = CASE WHEN last_sequence < @latestExisting THEN @latestExisting + 1 ELSE last_sequence + 1 END,
@@ -561,9 +561,14 @@ BEGIN
     VALUES (@typeCode, @EmployeeTypeName, @latestExisting + 1);
   END;
 
-  SELECT @EmployeeCode = @typeCode + RIGHT('0000' + CONVERT(varchar(20), last_sequence), 4)
+  DECLARE @seq int;
+  SELECT @seq = last_sequence
   FROM [hris].[EmployeeCodeCounters]
   WHERE employee_type_code = @typeCode;
+
+  -- Keep at least 4 digits, but never truncate sequences past 9999.
+  SELECT @EmployeeCode = @typeCode + RIGHT(REPLICATE('0', 8) + CONVERT(varchar(20), @seq),
+    CASE WHEN LEN(CONVERT(varchar(20), @seq)) > 4 THEN LEN(CONVERT(varchar(20), @seq)) ELSE 4 END);
 
   COMMIT TRANSACTION;
 END;

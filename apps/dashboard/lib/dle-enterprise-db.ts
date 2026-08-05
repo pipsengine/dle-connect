@@ -1950,6 +1950,13 @@ export const previewNextEmployeeCodeFromDb = async (employeeType: string) => {
   if (!code) return null;
   const p = await pool();
   if (!p) return null;
+
+  const formatNext = (prefix: string, latest: number) => {
+    const next = Math.max(0, latest) + 1;
+    const width = Math.max(4, String(next).length);
+    return `${prefix}${String(next).padStart(width, '0')}`;
+  };
+
   if (code === 'N' || code === 'I') {
     const employeeCodePrefix = employeeCodePrefixForTypeCode(code);
     const rs = await p
@@ -1959,15 +1966,36 @@ export const previewNextEmployeeCodeFromDb = async (employeeType: string) => {
       .query(`
         SELECT
           ISNULL((
-            SELECT MAX(TRY_CONVERT(int,
-              CASE
-                WHEN employee_code LIKE 'P' + @employee_code_prefix + '[0-9]%' THEN SUBSTRING(employee_code, LEN(@employee_code_prefix) + 2, 20)
-                WHEN employee_code LIKE @employee_code_prefix + '[0-9]%' THEN SUBSTRING(employee_code, LEN(@employee_code_prefix) + 1, 20)
-              END
-            ))
-            FROM [hris].[Employees]
-            WHERE employee_code LIKE @employee_code_prefix + '[0-9]%'
-              OR employee_code LIKE 'P' + @employee_code_prefix + '[0-9]%'
+            SELECT MAX(seq_no) FROM (
+              SELECT TRY_CONVERT(int,
+                CASE
+                  WHEN UPPER(LTRIM(RTRIM(employee_code))) LIKE 'P' + @employee_code_prefix + '[0-9]%'
+                    THEN SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), LEN(@employee_code_prefix) + 2, 20)
+                  WHEN UPPER(LTRIM(RTRIM(employee_code))) LIKE @employee_code_prefix + '[0-9]%'
+                    THEN SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), LEN(@employee_code_prefix) + 1, 20)
+                END
+              ) AS seq_no
+              FROM [hris].[Employees]
+              WHERE UPPER(LTRIM(RTRIM(employee_code))) LIKE @employee_code_prefix + '[0-9]%'
+                 OR UPPER(LTRIM(RTRIM(employee_code))) LIKE 'P' + @employee_code_prefix + '[0-9]%'
+
+              UNION ALL
+
+              SELECT TRY_CONVERT(int,
+                CASE
+                  WHEN UPPER(LTRIM(RTRIM(employee_code))) LIKE 'P' + @employee_code_prefix + '[0-9]%'
+                    THEN SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), LEN(@employee_code_prefix) + 2, 20)
+                  WHEN UPPER(LTRIM(RTRIM(employee_code))) LIKE @employee_code_prefix + '[0-9]%'
+                    THEN SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), LEN(@employee_code_prefix) + 1, 20)
+                END
+              )
+              FROM [hris].[EmployeeDrafts]
+              WHERE employee_code IS NOT NULL
+                AND (
+                  UPPER(LTRIM(RTRIM(employee_code))) LIKE @employee_code_prefix + '[0-9]%'
+                  OR UPPER(LTRIM(RTRIM(employee_code))) LIKE 'P' + @employee_code_prefix + '[0-9]%'
+                )
+            ) codes
           ), 0) AS latest_employee,
           ISNULL((
             SELECT last_sequence
@@ -1976,19 +2004,30 @@ export const previewNextEmployeeCodeFromDb = async (employeeType: string) => {
           ), 0) AS latest_counter;
       `);
     const row = rs.recordset[0];
-    const next = Math.max(Number(row?.latest_employee || 0), Number(row?.latest_counter || 0)) + 1;
-    return `${employeeCodePrefix}${String(next).padStart(4, '0')}`;
+    const latest = Math.max(Number(row?.latest_employee || 0), Number(row?.latest_counter || 0));
+    return formatNext(employeeCodePrefix, latest);
   }
+
   const rs = await p
     .request()
     .input('type_code', sql.Char(1), code)
     .query(`
       SELECT
         ISNULL((
-          SELECT MAX(TRY_CONVERT(int, SUBSTRING(employee_code, 2, 20)))
-          FROM [hris].[Employees]
-          WHERE employee_code LIKE @type_code + '[0-9][0-9][0-9][0-9]%'
-            AND TRY_CONVERT(int, SUBSTRING(employee_code, 2, 20)) IS NOT NULL
+          SELECT MAX(seq_no) FROM (
+            SELECT TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20)) AS seq_no
+            FROM [hris].[Employees]
+            WHERE UPPER(LTRIM(RTRIM(employee_code))) LIKE @type_code + '[0-9]%'
+              AND TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20)) IS NOT NULL
+
+            UNION ALL
+
+            SELECT TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20))
+            FROM [hris].[EmployeeDrafts]
+            WHERE employee_code IS NOT NULL
+              AND UPPER(LTRIM(RTRIM(employee_code))) LIKE @type_code + '[0-9]%'
+              AND TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20)) IS NOT NULL
+          ) codes
         ), 0) AS latest_employee,
         ISNULL((
           SELECT last_sequence
@@ -1997,8 +2036,8 @@ export const previewNextEmployeeCodeFromDb = async (employeeType: string) => {
         ), 0) AS latest_counter;
     `);
   const row = rs.recordset[0];
-  const next = Math.max(Number(row?.latest_employee || 0), Number(row?.latest_counter || 0)) + 1;
-  return `${code}${String(next).padStart(4, '0')}`;
+  const latest = Math.max(Number(row?.latest_employee || 0), Number(row?.latest_counter || 0));
+  return formatNext(code, latest);
 };
 
 export const nextEmployeeCodeFromDb = async (employeeType: string) => {
