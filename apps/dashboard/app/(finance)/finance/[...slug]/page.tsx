@@ -14,6 +14,7 @@ import { buildApprovalDelegationWorkspace } from '@/lib/finance-intelligence/app
 import {
   canAccessFinancePaymentPage,
   canActOnPaymentApproval,
+  canEditReturnedPaymentRequest,
   canViewAllPaymentRequests,
 } from '@/lib/finance-intelligence/payment-access';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
@@ -97,6 +98,9 @@ export default async function FinanceCatchAllPage({ params }: Props) {
         actorCode: actor.actorCode,
         approvableRequestIds: paymentRequestsRaw.rows
           .filter((row) => canActOnPaymentApproval(actor, row))
+          .map((row) => row.requestId),
+        editableReturnedRequestIds: paymentRequestsRaw.rows
+          .filter((row) => canEditReturnedPaymentRequest(actor, row))
           .map((row) => row.requestId),
       },
     }

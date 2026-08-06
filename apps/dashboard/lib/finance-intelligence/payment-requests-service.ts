@@ -219,6 +219,7 @@ export type PaymentRequestsWorkspace = {
   viewer?: {
     actorCode: string;
     approvableRequestIds: string[];
+    editableReturnedRequestIds?: string[];
   };
 };
 
@@ -1678,6 +1679,293 @@ INSERT INTO [finance].[PaymentRequests] (
   }
 
   return { request, workspace };
+};
+
+export type UpdateReturnedPaymentRequestInput = CreatePaymentRequestInput & {
+  requestId: string;
+  actorCode?: string;
+  /** When true (default), send back into approval. When false, keep Returned after saving edits. */
+  resubmit?: boolean;
+};
+
+/** Edit a returned payment request and optionally resubmit into the approval chain. */
+export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentRequestInput) => {
+  const requestId = compact(input.requestId);
+  if (!requestId) throw new Error('requestId is required.');
+
+  const existing = await getPaymentRequestById(requestId);
+  if (!existing) throw new Error('Payment request not found.');
+  if (!/^returned$/i.test(existing.status)) {
+    throw new Error('Only returned payment requests can be edited and resent.');
+  }
+
+  const actorCode = compact(input.actorCode || input.requesterCode);
+  const isOwner = actorCode
+    && (
+      actorCode.toLowerCase() === compact(existing.requesterCode).toLowerCase()
+      || (
+        existing.paymentType === 'Cash Advance Payment'
+        && actorCode.toLowerCase() === compact(existing.beneficiaryCode).toLowerCase()
+      )
+    );
+  if (!isOwner) {
+    throw new Error('Only the requester can edit and resend this returned payment request.');
+  }
+
+  if (existing.paymentType !== input.paymentType) {
+    throw new Error('Payment type cannot be changed when editing a returned request.');
+  }
+
+  const title = compact(input.title) || existing.title;
+  const beneficiaryName = compact(input.beneficiaryName) || existing.beneficiaryName;
+  const beneficiaryCode = compact(input.beneficiaryCode) || existing.beneficiaryCode;
+  const amount = moneyRound(Number(input.amount || 0));
+  const paymentSiteCode = compact(input.paymentSiteCode || input.companyCode) || existing.paymentSiteCode;
+  const paymentSiteName = compact(input.paymentSiteName) || existing.paymentSiteName;
+  const expenseCode = compact(input.expenseCode) || existing.expenseCode;
+  const department = compact(input.department) || existing.department;
+  const location = compact(input.location) || existing.location;
+  const resubmit = input.resubmit !== false;
+
+  if (!title) throw new Error('Request title is required.');
+  if (!beneficiaryName) throw new Error('Employee / beneficiary is required.');
+  if (!(amount > 0)) throw new Error('Amount must be greater than zero.');
+
+  if (existing.paymentType === 'Cash Advance Payment') {
+    if (!beneficiaryCode) throw new Error('Employee code is required.');
+    if (!paymentSiteCode) throw new Error('Payment site is required.');
+    if (!expenseCode) throw new Error('Request title (expense code) is required.');
+    if (!department) throw new Error('Department is required.');
+    if (!location) throw new Error('Location is required.');
+    if (!compact(input.businessJustification) || compact(input.businessJustification).length < 10) {
+      throw new Error('Business justification must be at least 10 characters.');
+    }
+  }
+
+  const currency = compact(input.currencyCode || existing.currencyCode || 'NGN').toUpperCase();
+  if (!ALLOWED_PAYMENT_CURRENCIES.includes(currency as typeof ALLOWED_PAYMENT_CURRENCIES[number])) {
+    throw new Error('Currency must be NGN, USD, EUR or GBP.');
+  }
+
+  let requestCategory = compact(input.requestCategory) || existing.requestCategory;
+  let invoiceCategory = compact(input.invoiceCategory) || compact(existing.payload?.invoiceCategory) || 'po-backed';
+  let expenseNature = compact(input.expenseNature) || compact(existing.payload?.expenseNature);
+  let purchaseOrderNo = compact(input.purchaseOrderNo);
+  let deliveryNoteNo = compact(input.deliveryNoteNo);
+  let grnNo = compact(input.grnNo);
+
+  if (existing.paymentType === 'Supplier Invoice Payment') {
+    if (!compact(input.invoiceNumber) && !existing.invoiceNumber) {
+      throw new Error('Invoice number is required for supplier payments.');
+    }
+    invoiceCategory = /expense|no[- ]?po/i.test(invoiceCategory || requestCategory)
+      ? 'expense-no-po'
+      : 'po-backed';
+    if (invoiceCategory === 'expense-no-po') {
+      purchaseOrderNo = '';
+      deliveryNoteNo = '';
+      grnNo = '';
+      requestCategory = 'Expense (No PO)';
+      if (!expenseNature) {
+        throw new Error('Expense nature is required for expense payments without a PO (e.g. Utility, LAWMA).');
+      }
+    } else {
+      requestCategory = compact(input.requestCategory) || 'PO-backed Invoice';
+    }
+  }
+
+  const preparedUploads = (input.attachmentUploads || []).map((item) =>
+    normalizePaymentAttachmentUpload({ ...item, uploadedBy: input.actor }));
+  for (const item of preparedUploads) {
+    await savePaymentAttachmentFile(requestId, item.meta.fileName, item.bytes);
+  }
+  const keepExisting = Array.isArray(existing.attachments) ? existing.attachments : [];
+  const attachments = [...keepExisting, ...preparedUploads.map((item) => item.meta)];
+  if (existing.paymentType === 'Supplier Invoice Payment' && attachments.length < 1) {
+    throw new Error('Supporting documents are required for supplier invoice payments.');
+  }
+
+  const vatAmount = moneyRound(Number(input.vatAmount ?? existing.vatAmount ?? 0));
+  const whtAmount = moneyRound(Number(input.whtAmount ?? existing.whtAmount ?? 0));
+  const retentionAmount = moneyRound(Number(input.retentionAmount ?? existing.retentionAmount ?? 0));
+  const grossAmount = amount;
+  const netAmount = moneyRound(grossAmount + vatAmount - whtAmount - retentionAmount);
+
+  const stageInfo = resubmit
+    ? await resolveInitialStage(netAmount, existing.paymentType, {
+      currencyCode: currency,
+      department,
+      projectCode: compact(input.projectCode) || existing.projectCode,
+      requesterCode: compact(input.requesterCode) || existing.requesterCode || beneficiaryCode,
+      supervisorName: compact(input.supervisorName) || existing.supervisorName,
+    })
+    : {
+      stage: 'Returned for Correction',
+      status: 'Returned' as const,
+      matrixRuleName: compact(existing.payload?.matrixRuleName) || null,
+      approvalLevel: Number(existing.payload?.approvalLevel || 0),
+      stages: Array.isArray(existing.payload?.stages)
+        ? (existing.payload.stages as unknown[]).map((item) => compact(item)).filter(Boolean)
+        : [],
+      pathType: (compact(existing.payload?.pathType) || 'Non-project') as 'Project' | 'Non-project',
+      amountNgn: Number(existing.payload?.amountNgn || netAmount),
+      fxRate: Number(existing.payload?.fxRate || 1),
+      fxRateDate: compact(existing.payload?.fxRateDate) || null,
+      fxSource: compact(existing.payload?.fxSource) || null,
+    };
+
+  const pool = await ensureFinanceDb();
+  if (!pool) throw new Error('Finance database is unavailable.');
+
+  const payload = {
+    ...(existing.payload || {}),
+    matrixRuleName: stageInfo.matrixRuleName,
+    approvalLevel: stageInfo.approvalLevel,
+    stages: 'stages' in stageInfo ? stageInfo.stages : [],
+    pathType: 'pathType' in stageInfo ? stageInfo.pathType : null,
+    amountNgn: 'amountNgn' in stageInfo ? stageInfo.amountNgn : netAmount,
+    fxRate: 'fxRate' in stageInfo ? stageInfo.fxRate : 1,
+    fxRateDate: 'fxRateDate' in stageInfo ? stageInfo.fxRateDate : null,
+    fxSource: 'fxSource' in stageInfo ? stageInfo.fxSource : null,
+    expenseCode,
+    paymentSiteCode,
+    paymentSiteName,
+    location,
+    invoiceCategory: existing.paymentType === 'Supplier Invoice Payment' ? invoiceCategory : null,
+    expenseNature: existing.paymentType === 'Supplier Invoice Payment' ? (expenseNature || null) : null,
+  };
+
+  await pool.request()
+    .input('RequestId', sql.NVarChar(60), requestId)
+    .input('RequestCategory', sql.NVarChar(80), requestCategory || existing.paymentType)
+    .input('Title', sql.NVarChar(250), title)
+    .input('Purpose', sql.NVarChar(sql.MAX), compact(input.purpose) || expenseCode || existing.purpose || null)
+    .input('BusinessJustification', sql.NVarChar(sql.MAX), compact(input.businessJustification) || existing.businessJustification || null)
+    .input('BeneficiaryCode', sql.NVarChar(80), beneficiaryCode || null)
+    .input('BeneficiaryName', sql.NVarChar(250), beneficiaryName)
+    .input('BeneficiaryBankSummary', sql.NVarChar(500), compact(input.beneficiaryBankSummary) || existing.beneficiaryBankSummary || null)
+    .input('Description', sql.NVarChar(sql.MAX), compact(input.description) || title)
+    .input('GrossAmount', sql.Decimal(19, 4), grossAmount)
+    .input('VatAmount', sql.Decimal(19, 4), vatAmount)
+    .input('WhtAmount', sql.Decimal(19, 4), whtAmount)
+    .input('RetentionAmount', sql.Decimal(19, 4), retentionAmount)
+    .input('NetAmount', sql.Decimal(19, 4), netAmount)
+    .input('CurrencyCode', sql.NVarChar(10), currency)
+    .input('CompanyCode', sql.NVarChar(40), paymentSiteCode || existing.companyCode || 'DLE')
+    .input('PaymentSiteCode', sql.NVarChar(40), paymentSiteCode || null)
+    .input('PaymentSiteName', sql.NVarChar(200), paymentSiteName || null)
+    .input('ExpenseCode', sql.NVarChar(40), expenseCode || null)
+    .input('Department', sql.NVarChar(150), department || null)
+    .input('Location', sql.NVarChar(150), location || null)
+    .input('CostCentre', sql.NVarChar(80), compact(input.costCentre) || existing.costCentre || null)
+    .input('ProjectCode', sql.NVarChar(80), compact(input.projectCode) || existing.projectCode || null)
+    .input('Priority', sql.NVarChar(40), compact(input.priority) || existing.priority || 'Normal')
+    .input('RequiredDate', sql.Date, input.requiredDate ? new Date(input.requiredDate) : (existing.requiredDate ? new Date(existing.requiredDate) : null))
+    .input('SubmittedAt', sql.DateTime2, resubmit ? new Date() : (existing.submittedAt ? new Date(existing.submittedAt) : null))
+    .input('CurrentStage', sql.NVarChar(80), stageInfo.stage)
+    .input('Status', sql.NVarChar(40), stageInfo.status)
+    .input('InvoiceNumber', sql.NVarChar(120), compact(input.invoiceNumber) || existing.invoiceNumber || null)
+    .input('InvoiceDate', sql.Date, input.invoiceDate ? new Date(input.invoiceDate) : (existing.invoiceDate ? new Date(existing.invoiceDate) : null))
+    .input('DueDate', sql.Date, input.dueDate ? new Date(input.dueDate) : (existing.dueDate ? new Date(existing.dueDate) : null))
+    .input('PurchaseOrderNo', sql.NVarChar(120), existing.paymentType === 'Supplier Invoice Payment' ? (purchaseOrderNo || null) : (existing.purchaseOrderNo || null))
+    .input('DeliveryNoteNo', sql.NVarChar(120), existing.paymentType === 'Supplier Invoice Payment' ? (deliveryNoteNo || null) : (existing.deliveryNoteNo || null))
+    .input('GrnNo', sql.NVarChar(120), existing.paymentType === 'Supplier Invoice Payment' ? (grnNo || null) : (existing.grnNo || null))
+    .input('ContractNo', sql.NVarChar(120), compact(input.contractNo) || existing.contractNo || null)
+    .input('PayloadJson', sql.NVarChar(sql.MAX), JSON.stringify(payload))
+    .input('AttachmentsJson', sql.NVarChar(sql.MAX), JSON.stringify(attachments))
+    .query(`
+UPDATE [finance].[PaymentRequests]
+SET [RequestCategory] = @RequestCategory,
+    [Title] = @Title,
+    [Purpose] = @Purpose,
+    [BusinessJustification] = @BusinessJustification,
+    [BeneficiaryCode] = @BeneficiaryCode,
+    [BeneficiaryName] = @BeneficiaryName,
+    [BeneficiaryBankSummary] = @BeneficiaryBankSummary,
+    [Description] = @Description,
+    [GrossAmount] = @GrossAmount,
+    [VatAmount] = @VatAmount,
+    [WhtAmount] = @WhtAmount,
+    [RetentionAmount] = @RetentionAmount,
+    [NetAmount] = @NetAmount,
+    [CurrencyCode] = @CurrencyCode,
+    [CompanyCode] = @CompanyCode,
+    [PaymentSiteCode] = @PaymentSiteCode,
+    [PaymentSiteName] = @PaymentSiteName,
+    [ExpenseCode] = @ExpenseCode,
+    [Department] = @Department,
+    [Location] = @Location,
+    [CostCentre] = @CostCentre,
+    [ProjectCode] = @ProjectCode,
+    [Priority] = @Priority,
+    [RequiredDate] = @RequiredDate,
+    [SubmittedAt] = COALESCE(@SubmittedAt, [SubmittedAt]),
+    [CurrentStage] = @CurrentStage,
+    [Status] = @Status,
+    [InvoiceNumber] = @InvoiceNumber,
+    [InvoiceDate] = @InvoiceDate,
+    [DueDate] = @DueDate,
+    [PurchaseOrderNo] = @PurchaseOrderNo,
+    [DeliveryNoteNo] = @DeliveryNoteNo,
+    [GrnNo] = @GrnNo,
+    [ContractNo] = @ContractNo,
+    [PayloadJson] = @PayloadJson,
+    [AttachmentsJson] = @AttachmentsJson,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+
+  await logAction({
+    requestId,
+    actionType: resubmit ? 'Resubmitted' : 'Updated',
+    stage: stageInfo.stage,
+    actorName: input.actor,
+    actorCode,
+    comment: resubmit
+      ? 'Payment request corrected and resent for approval.'
+      : 'Returned payment request updated.',
+  });
+
+  if (resubmit && stageInfo.stage && stageInfo.stage !== 'Draft' && stageInfo.stage !== 'Returned for Correction') {
+    await assignCurrentApprover({
+      requestId,
+      stage: stageInfo.stage,
+      requesterCode: compact(input.requesterCode) || existing.requesterCode || beneficiaryCode,
+      projectCode: compact(input.projectCode) || existing.projectCode,
+      supervisorName: compact(input.supervisorName) || existing.supervisorName,
+      paymentType: existing.paymentType,
+    });
+  } else if (!resubmit) {
+    await pool.request()
+      .input('RequestId', sql.NVarChar(60), requestId)
+      .query(`
+UPDATE [finance].[PaymentRequests]
+SET [CurrentApproverCode] = NULL,
+    [CurrentApproverName] = NULL,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+  }
+
+  const workspace = await buildPaymentRequestsWorkspace();
+  const request = workspace.rows.find((row) => row.requestId === requestId)
+    || (await getPaymentRequestById(requestId));
+
+  if (resubmit && request) {
+    await notifyPaymentApprovalRequired({
+      request,
+      stage: request.currentStage || stageInfo.stage,
+      actorName: input.actor,
+    }).catch((error) => console.error('[payment-requests] resubmit notification failed', error));
+  }
+
+  return {
+    request,
+    workspace,
+    message: resubmit
+      ? 'Payment request updated and resent for approval.'
+      : 'Returned payment request saved.',
+  };
 };
 
 export type TreasuryWorkspace = {

@@ -50,36 +50,53 @@ const fmtDate = (value?: string | null) => {
   });
 };
 
-const resolveLogoPath = () => {
+const resolveLogoCandidates = () => {
   const cwd = process.cwd();
-  const dashboardRoot = /[\\/]apps[\\/]dashboard$/i.test(cwd) ? cwd : path.join(cwd, 'apps', 'dashboard');
-  return path.join(dashboardRoot, 'public', 'brand', 'dorman-long-logo.png');
+  const names = ['dorman-long-logo.jpg', 'dorman-long-logo.png'];
+  const roots = [
+    path.join(cwd, 'apps', 'dashboard', 'public', 'brand'),
+    path.join(cwd, 'public', 'brand'),
+    path.join(cwd, 'apps', 'dashboard', '.next', 'standalone', 'apps', 'dashboard', 'public', 'brand'),
+  ];
+  if (/[\\/]apps[\\/]dashboard$/i.test(cwd)) {
+    roots.unshift(path.join(cwd, 'public', 'brand'));
+  }
+  const candidates: string[] = [];
+  for (const root of roots) {
+    for (const name of names) candidates.push(path.join(root, name));
+  }
+  return candidates;
 };
 
 const readJpegLogo = async (): Promise<{ bytes: Buffer; width: number; height: number } | null> => {
-  try {
-    const bytes = await readFile(resolveLogoPath());
-    if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
-    // Parse SOF0/SOF2 for dimensions.
-    let offset = 2;
-    while (offset < bytes.length - 8) {
-      if (bytes[offset] !== 0xff) {
-        offset += 1;
-        continue;
+  for (const logoPath of resolveLogoCandidates()) {
+    try {
+      const bytes = await readFile(logoPath);
+      if (bytes[0] !== 0xff || bytes[1] !== 0xd8) continue;
+      // Parse SOF0/SOF2 for dimensions.
+      let offset = 2;
+      let width = 780;
+      let height = 220;
+      while (offset < bytes.length - 8) {
+        if (bytes[offset] !== 0xff) {
+          offset += 1;
+          continue;
+        }
+        const marker = bytes[offset + 1];
+        const size = bytes.readUInt16BE(offset + 2);
+        if (marker === 0xc0 || marker === 0xc2) {
+          height = bytes.readUInt16BE(offset + 5);
+          width = bytes.readUInt16BE(offset + 7);
+          break;
+        }
+        offset += 2 + size;
       }
-      const marker = bytes[offset + 1];
-      const size = bytes.readUInt16BE(offset + 2);
-      if (marker === 0xc0 || marker === 0xc2) {
-        const height = bytes.readUInt16BE(offset + 5);
-        const width = bytes.readUInt16BE(offset + 7);
-        return { bytes, width, height };
-      }
-      offset += 2 + size;
+      return { bytes, width, height };
+    } catch {
+      // try next candidate
     }
-    return { bytes, width: 780, height: 220 };
-  } catch {
-    return null;
   }
+  return null;
 };
 
 type DrawCmd = string;
@@ -129,14 +146,25 @@ export const buildPaymentRequestDocumentPdf = async (
 
   const cmds: DrawCmd[] = [];
 
-  // Header band
-  cmds.push(rect(0, pageH - 108, pageW, 108, brandBlue));
-  cmds.push('1 1 1 rg');
-  cmds.push(textAt(margin + (logo ? 132 : 0), pageH - 42, 16, COMPANY.name, 'F2'));
-  cmds.push(textAt(margin + (logo ? 132 : 0), pageH - 58, 9, COMPANY.addressLines[0]));
-  cmds.push(textAt(margin + (logo ? 132 : 0), pageH - 70, 9, COMPANY.addressLines[1]));
-  cmds.push(textAt(margin + (logo ? 132 : 0), pageH - 84, 8, `${COMPANY.website}  |  ${COMPANY.email}`));
-  cmds.push('0 0 0 rg');
+  // Light document header — official blue-on-white Dorman Long logo reads clearly on print/PDF.
+  cmds.push(rect(0, pageH - 108, pageW, 108, [1, 1, 1]));
+  cmds.push(rect(0, pageH - 110, pageW, 3, brandBlue));
+  if (!logo) {
+    cmds.push(`${brandBlue[0]} ${brandBlue[1]} ${brandBlue[2]} rg`);
+    cmds.push(textAt(margin, pageH - 42, 16, COMPANY.name, 'F2'));
+    cmds.push(`${muted[0]} ${muted[1]} ${muted[2]} rg`);
+    cmds.push(textAt(margin, pageH - 58, 9, COMPANY.addressLines[0]));
+    cmds.push(textAt(margin, pageH - 70, 9, COMPANY.addressLines[1]));
+    cmds.push(textAt(margin, pageH - 84, 8, `${COMPANY.website}  |  ${COMPANY.email}`));
+    cmds.push('0 0 0 rg');
+  } else {
+    cmds.push(`${muted[0]} ${muted[1]} ${muted[2]} rg`);
+    const textX = margin + 150;
+    cmds.push(textAt(textX, pageH - 48, 9, COMPANY.addressLines[0]));
+    cmds.push(textAt(textX, pageH - 62, 9, COMPANY.addressLines[1]));
+    cmds.push(textAt(textX, pageH - 76, 8, `${COMPANY.website}  |  ${COMPANY.email}`));
+    cmds.push('0 0 0 rg');
+  }
 
   // Document title strip
   cmds.push(rect(margin, pageH - 148, contentW, 28, panel, border));
@@ -250,10 +278,10 @@ export const buildPaymentRequestDocumentPdf = async (
   cmds.push(textAt(margin, 14, 8, 'Confidential - for authorised Dorman Long finance use only'));
   cmds.push('0 0 0 rg');
 
-  // Logo image draw command (object 6)
+  // Logo image draw command (object 6) — official blue-on-white horizontal mark.
   if (logo) {
-    const maxW = 118;
-    const maxH = 34;
+    const maxW = 148;
+    const maxH = 44;
     const scale = Math.min(maxW / logo.width, maxH / logo.height);
     const drawW = logo.width * scale;
     const drawH = logo.height * scale;

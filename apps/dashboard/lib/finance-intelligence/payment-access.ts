@@ -151,6 +151,24 @@ export const canSubmitCashAdvanceRetirement = (
   );
 };
 
+/** Requester may edit and resubmit a payment request that was returned for correction. */
+export const canEditReturnedPaymentRequest = (
+  actor: PaymentAccessActor,
+  request: Pick<PaymentRequestRow, 'status' | 'requesterCode' | 'beneficiaryCode' | 'paymentType'>,
+) => {
+  if (!/^returned$/i.test(String(request.status || ''))) return false;
+  if (actor.isGlobalAdmin) return true;
+  if (codesMatch(actor.actorCode, request.requesterCode)) return true;
+  // Cash advances: beneficiary is usually the same employee who raised it.
+  if (
+    request.paymentType === 'Cash Advance Payment'
+    && codesMatch(actor.actorCode, request.beneficiaryCode)
+  ) {
+    return true;
+  }
+  return false;
+};
+
 /** Fully approved (or later) payment document may be downloaded as PDF. */
 export const canDownloadPaymentDocumentPdf = (
   request: Pick<PaymentRequestRow, 'status'>,

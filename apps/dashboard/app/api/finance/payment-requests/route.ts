@@ -6,6 +6,7 @@ import {
   canAccessPaymentRequest,
   canActOnPaymentApproval,
   canDownloadPaymentDocumentPdf,
+  canEditReturnedPaymentRequest,
   canSubmitCashAdvanceRetirement,
   canViewAllPaymentRequests,
   isPaymentRequesterOnly,
@@ -26,6 +27,7 @@ import {
   PAYMENT_TYPES,
   repairPrematureTreasuryHandoff,
   transitionPaymentRequest,
+  updateReturnedPaymentRequest,
   type PaymentRequestType,
 } from '@/lib/finance-intelligence/payment-requests-service';
 import { FALLBACK_EXPENSE_CODES, FALLBACK_SITES, listExpenseCodes, listPaymentSites } from '@/lib/finance-intelligence/payment-request-lookups';
@@ -110,6 +112,7 @@ export async function GET(request: Request) {
         viewer: {
           actorCode: actor.actorCode,
           canApprove: canActOnPaymentApproval(actor, paymentRequest),
+          canEditReturned: canEditReturnedPaymentRequest(actor, paymentRequest),
           isRequesterOnly: isPaymentRequesterOnly(actor, paymentRequest),
           canDownloadPdf: canDownloadPaymentDocumentPdf(paymentRequest),
           canSubmitRetirement: canSubmitCashAdvanceRetirement(actor, paymentRequest),
@@ -158,11 +161,15 @@ export async function GET(request: Request) {
     const approvableRequestIds = workspace.rows
       .filter((row) => canActOnPaymentApproval(actor, row))
       .map((row) => row.requestId);
+    const editableReturnedRequestIds = workspace.rows
+      .filter((row) => canEditReturnedPaymentRequest(actor, row))
+      .map((row) => row.requestId);
     return jsonOk({
       ...workspace,
       viewer: {
         actorCode: actor.actorCode,
         approvableRequestIds,
+        editableReturnedRequestIds,
       },
     });
   } catch (error) {
@@ -284,6 +291,109 @@ export async function POST(request: Request) {
       return jsonOk({
         ...result,
         message: result.request?.status === 'Draft' ? 'Draft saved.' : 'Payment request submitted.',
+      });
+    }
+
+    if (action === 'update-returned') {
+      const requestId = String(body.requestId || '').trim();
+      if (!requestId) return jsonErr(400, 'requestId is required.');
+      const existing = await getPaymentRequestById(requestId);
+      if (!existing) return jsonErr(404, 'Payment request not found.');
+      if (!canEditReturnedPaymentRequest(actor, existing)) {
+        return jsonErr(403, 'Only the requester can edit and resend this returned payment request.');
+      }
+
+      const paymentType = existing.paymentType as PaymentRequestType;
+      const sites = await listPaymentSites();
+      const expenses = await listExpenseCodes();
+      const paymentSiteCode = String(body.paymentSiteCode || body.companyCode || existing.paymentSiteCode || '').trim().toUpperCase();
+      const paymentSite = sites.find((site) => site.siteCode.toUpperCase() === paymentSiteCode)
+        || FALLBACK_SITES.find((site) => site.siteCode.toUpperCase() === paymentSiteCode)
+        || null;
+      const expenseCode = String(body.expenseCode || existing.expenseCode || '').trim().toUpperCase();
+      const expense = expenses.find((item) => item.expenseCode.toUpperCase() === expenseCode)
+        || FALLBACK_EXPENSE_CODES.find((item) => item.expenseCode.toUpperCase() === expenseCode)
+        || null;
+      const currencyCode = String(body.currencyCode || existing.currencyCode || 'NGN').trim().toUpperCase();
+      if (!ALLOWED_PAYMENT_CURRENCIES.includes(currencyCode as typeof ALLOWED_PAYMENT_CURRENCIES[number])) {
+        return jsonErr(400, 'Currency must be NGN, USD, EUR or GBP.');
+      }
+
+      const title = paymentType === 'Cash Advance Payment'
+        ? (expense?.label || String(body.title || existing.title || '').trim())
+        : String(body.title || existing.title || '').trim();
+
+      const beneficiaryCode = String(
+        paymentType === 'Cash Advance Payment'
+          ? (body.employeeCode || body.beneficiaryCode || existing.beneficiaryCode || actor.actorCode || '')
+          : (body.beneficiaryCode || existing.beneficiaryCode || ''),
+      ).trim();
+      const beneficiaryName = String(
+        paymentType === 'Cash Advance Payment'
+          ? (body.employeeName || body.beneficiaryName || existing.beneficiaryName || actor.actor || '')
+          : (body.beneficiaryName || existing.beneficiaryName || ''),
+      ).trim();
+
+      const result = await updateReturnedPaymentRequest({
+        requestId,
+        paymentType,
+        title,
+        purpose: expense?.description || body.purpose || existing.purpose,
+        expenseCode: expense?.expenseCode || expenseCode || undefined,
+        businessJustification: body.businessJustification ?? existing.businessJustification,
+        beneficiaryCode,
+        beneficiaryName,
+        beneficiaryBankSummary: body.beneficiaryBankSummary ?? existing.beneficiaryBankSummary,
+        description: body.description || title,
+        amount: Number(body.amount ?? existing.grossAmount ?? 0),
+        currencyCode,
+        companyCode: paymentSite?.siteCode || paymentSiteCode || existing.companyCode,
+        paymentSiteCode: paymentSite?.siteCode || paymentSiteCode || undefined,
+        paymentSiteName: paymentSite?.siteName || body.paymentSiteName || existing.paymentSiteName,
+        department: body.department || existing.department || actor.department,
+        location: body.location || existing.location,
+        costCentre: body.costCentre || existing.costCentre,
+        projectCode: body.projectCode || existing.projectCode,
+        priority: body.priority || existing.priority,
+        requiredDate: body.requiredDate || existing.requiredDate || undefined,
+        requesterCode: existing.requesterCode || actor.actorCode,
+        requesterName: existing.requesterName || actor.actor,
+        requesterJobTitle: body.requesterJobTitle || existing.requesterJobTitle || actor.jobTitle,
+        supervisorName: body.supervisorName || existing.supervisorName,
+        requestCategory: body.requestCategory || existing.requestCategory,
+        invoiceCategory: body.invoiceCategory || existing.payload?.invoiceCategory,
+        expenseNature: body.expenseNature || existing.payload?.expenseNature,
+        invoiceNumber: body.invoiceNumber ?? existing.invoiceNumber,
+        invoiceDate: body.invoiceDate || existing.invoiceDate || undefined,
+        dueDate: body.dueDate || existing.dueDate || undefined,
+        vatAmount: body.vatAmount ?? existing.vatAmount,
+        whtAmount: body.whtAmount ?? existing.whtAmount,
+        retentionAmount: body.retentionAmount ?? existing.retentionAmount,
+        purchaseOrderNo: body.purchaseOrderNo ?? existing.purchaseOrderNo,
+        deliveryNoteNo: body.deliveryNoteNo ?? existing.deliveryNoteNo,
+        grnNo: body.grnNo ?? existing.grnNo,
+        contractNo: body.contractNo ?? existing.contractNo,
+        resubmit: body.resubmit !== false,
+        actor: actor.actor,
+        actorCode: actor.actorCode,
+        attachmentUploads: Array.isArray(body.attachmentUploads) ? body.attachmentUploads : undefined,
+      });
+      const approvableRequestIds = (result.workspace?.rows || [])
+        .filter((row) => canActOnPaymentApproval(actor, row))
+        .map((row) => row.requestId);
+      const editableReturnedRequestIds = (result.workspace?.rows || [])
+        .filter((row) => canEditReturnedPaymentRequest(actor, row))
+        .map((row) => row.requestId);
+      return jsonOk({
+        ...result,
+        workspace: {
+          ...result.workspace,
+          viewer: {
+            actorCode: actor.actorCode,
+            approvableRequestIds,
+            editableReturnedRequestIds,
+          },
+        },
       });
     }
 

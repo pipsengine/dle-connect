@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   ArrowRight,
@@ -29,6 +30,8 @@ import {
 } from 'lucide-react';
 import type {
   CashAdvanceEligibility,
+  PaymentRequestAttachment,
+  PaymentRequestRow,
   PaymentRequestType,
   PaymentRequestsWorkspace,
 } from '@/lib/finance-intelligence/payment-requests-service';
@@ -280,6 +283,7 @@ const typeIcon = (paymentType: string) => {
 type TabId = 'all' | 'mine' | 'drafts' | 'pending' | 'returned' | 'approved' | 'ready' | 'paid' | 'rejected' | 'retirement';
 
 export default function PaymentRequestsClient({ initialWorkspace, selfServiceMode = false }: Props) {
+  const router = useRouter();
   const [workspace, setWorkspace] = useState(initialWorkspace);
   const [tab, setTab] = useState<TabId>('all');
   const [query, setQuery] = useState('');
@@ -289,6 +293,9 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
   const [toast, setToast] = useState('');
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerType, setComposerType] = useState<PaymentRequestType>('Cash Advance Payment');
+  const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
+  const [editingRequestNumber, setEditingRequestNumber] = useState('');
+  const [existingAttachments, setExistingAttachments] = useState<PaymentRequestAttachment[]>([]);
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [lookups, setLookups] = useState<PaymentRequestLookups | null>(null);
@@ -462,6 +469,9 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
 
   const openComposer = (type: PaymentRequestType) => {
     setComposerType(type);
+    setEditingRequestId(null);
+    setEditingRequestNumber('');
+    setExistingAttachments([]);
     setTypeMenuOpen(false);
     setForm(emptyForm());
     setEmployeeSearch('');
@@ -471,6 +481,86 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
     setSupportingFiles([]);
     setComposerOpen(true);
   };
+
+  const openEditReturned = (row: PaymentRequestRow) => {
+    const type = (/supplier/i.test(row.paymentType)
+      ? 'Supplier Invoice Payment'
+      : 'Cash Advance Payment') as PaymentRequestType;
+    const invoiceCategory: SupplierInvoiceCategory = /expense|no[- ]?po/i.test(
+      String(row.payload?.invoiceCategory || row.requestCategory || ''),
+    )
+      ? 'expense-no-po'
+      : 'po-backed';
+    setComposerType(type);
+    setEditingRequestId(row.requestId);
+    setEditingRequestNumber(row.requestNumber);
+    setExistingAttachments(
+      (row.attachments || []).filter((file) => file.kind !== 'payment-evidence' && file.kind !== 'retirement-evidence'),
+    );
+    setTypeMenuOpen(false);
+    setForm({
+      ...emptyForm(),
+      employeeCode: type === 'Cash Advance Payment' ? row.beneficiaryCode || row.requesterCode : '',
+      employeeName: type === 'Cash Advance Payment' ? row.beneficiaryName || row.requesterName : '',
+      department: row.department || '',
+      location: row.location || '',
+      projectCode: row.projectCode || '',
+      paymentSiteCode: row.paymentSiteCode || row.companyCode || '',
+      expenseCode: row.expenseCode || '',
+      title: row.title || '',
+      businessJustification: row.businessJustification || '',
+      beneficiaryName: row.beneficiaryName || '',
+      beneficiaryCode: row.beneficiaryCode || '',
+      amount: String(row.grossAmount || row.netAmount || ''),
+      currencyCode: row.currencyCode || 'NGN',
+      invoiceNumber: row.invoiceNumber || '',
+      invoiceDate: row.invoiceDate ? String(row.invoiceDate).slice(0, 10) : '',
+      dueDate: row.dueDate ? String(row.dueDate).slice(0, 10) : '',
+      vatAmount: String(row.vatAmount || ''),
+      whtAmount: String(row.whtAmount || ''),
+      retentionAmount: String(row.retentionAmount || ''),
+      purchaseOrderNo: row.purchaseOrderNo || '',
+      deliveryNoteNo: row.deliveryNoteNo || '',
+      invoiceCategory,
+      expenseNature: String(row.payload?.expenseNature || ''),
+      submit: true,
+    });
+    setEmployeeSearch(type === 'Cash Advance Payment' ? (row.beneficiaryName || row.requesterName || '') : '');
+    setEmployeePickerOpen(false);
+    setEligibility(null);
+    setFormErrors([]);
+    setSupportingFiles([]);
+    setComposerOpen(true);
+    setTab('returned');
+    if (type === 'Cash Advance Payment' && (row.beneficiaryCode || row.requesterCode)) {
+      void loadEligibility(row.beneficiaryCode || row.requesterCode);
+    }
+  };
+
+  useEffect(() => {
+    const editId = typeof window !== 'undefined'
+      ? String(new URLSearchParams(window.location.search).get('edit') || '').trim()
+      : '';
+    if (!editId || composerOpen) return;
+    const row = workspace.rows.find((item) => item.requestId === editId);
+    if (!row) return;
+    if (!/^returned$/i.test(row.status)) {
+      setToast('Only returned payment requests can be edited and resent.');
+      return;
+    }
+    const canEdit = workspace.viewer?.editableReturnedRequestIds?.includes(row.requestId)
+      || (
+        workspace.viewer?.actorCode
+        && workspace.viewer.actorCode.toLowerCase() === row.requesterCode.toLowerCase()
+      );
+    if (!canEdit) {
+      setToast('You can only edit your own returned payment requests.');
+      return;
+    }
+    openEditReturned(row);
+    router.replace('/finance/approvals/payments');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace.rows, workspace.viewer?.editableReturnedRequestIds, workspace.viewer?.actorCode]);
 
   const selectEmployee = (employee: PaymentRequestLookups['employees'][number]) => {
     setForm((prev) => ({
@@ -498,13 +588,15 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
       if (!form.expenseCode.trim()) errors.push('Request title is required.');
       if (!(Number(form.amount) >= 1)) errors.push('Amount must be at least 1.00.');
       if (form.businessJustification.trim().length < 10) errors.push('Business justification must be at least 10 characters.');
-      if (eligibility?.blocked) errors.push(eligibility.message);
+      if (!editingRequestId && eligibility?.blocked) errors.push(eligibility.message);
     } else {
       if (!form.title.trim()) errors.push('Request title is required.');
       if (!form.beneficiaryName.trim()) errors.push('Supplier name is required.');
       if (!form.invoiceNumber.trim()) errors.push('Invoice number is required.');
       if (!(Number(form.amount) >= 1)) errors.push('Amount must be at least 1.00.');
-      if (!supportingFiles.length) errors.push('Supporting documents are required.');
+      if (!supportingFiles.length && !(editingRequestId && existingAttachments.length)) {
+        errors.push('Supporting documents are required.');
+      }
       if (form.invoiceCategory === 'expense-no-po' && !form.expenseNature.trim()) {
         errors.push('Select the expense nature (e.g. Utility, LAWMA).');
       }
@@ -518,7 +610,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
     setToast('');
 
     let latestEligibility = eligibility;
-    if (composerType === 'Cash Advance Payment' && form.employeeCode.trim()) {
+    if (composerType === 'Cash Advance Payment' && form.employeeCode.trim() && !editingRequestId) {
       latestEligibility = await loadEligibility(form.employeeCode.trim());
     }
 
@@ -531,13 +623,15 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
       if (!form.expenseCode.trim()) errors.push('Request title is required.');
       if (!(Number(form.amount) >= 1)) errors.push('Amount must be at least 1.00.');
       if (form.businessJustification.trim().length < 10) errors.push('Business justification must be at least 10 characters.');
-      if (latestEligibility?.blocked) errors.push(latestEligibility.message);
+      if (!editingRequestId && latestEligibility?.blocked) errors.push(latestEligibility.message);
     } else {
       if (!form.title.trim()) errors.push('Request title is required.');
       if (!form.beneficiaryName.trim()) errors.push('Supplier name is required.');
       if (!form.invoiceNumber.trim()) errors.push('Invoice number is required.');
       if (!(Number(form.amount) >= 1)) errors.push('Amount must be at least 1.00.');
-      if (!supportingFiles.length) errors.push('Supporting documents are required.');
+      if (!supportingFiles.length && !(editingRequestId && existingAttachments.length)) {
+        errors.push('Supporting documents are required.');
+      }
       if (form.invoiceCategory === 'expense-no-po' && !form.expenseNature.trim()) {
         errors.push('Select the expense nature (e.g. Utility, LAWMA).');
       }
@@ -549,7 +643,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
     try {
       const selectedExpense = lookups?.expenseCodes.find((item) => item.expenseCode === form.expenseCode);
       const selectedSite = lookups?.paymentSites.find((item) => item.siteCode === form.paymentSiteCode);
-      const attachmentUploads = composerType === 'Supplier Invoice Payment'
+      const attachmentUploads = composerType === 'Supplier Invoice Payment' && supportingFiles.length
         ? await Promise.all(supportingFiles.map(async (file) => ({
           fileName: file.name,
           mimeType: file.type || 'application/octet-stream',
@@ -560,7 +654,9 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'create',
+          action: editingRequestId ? 'update-returned' : 'create',
+          requestId: editingRequestId || undefined,
+          resubmit: editingRequestId ? true : undefined,
           paymentType: composerType,
           title: composerType === 'Cash Advance Payment' ? (selectedExpense?.label || form.title) : form.title,
           expenseCode: form.expenseCode,
@@ -605,9 +701,12 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
       }
       setWorkspace(json.data.workspace as PaymentRequestsWorkspace);
       setComposerOpen(false);
+      setEditingRequestId(null);
+      setEditingRequestNumber('');
+      setExistingAttachments([]);
       setSupportingFiles([]);
       setFormErrors([]);
-      setToast(json.data.message || 'Payment request saved.');
+      setToast(json.data.message || (editingRequestId ? 'Payment request resent for approval.' : 'Payment request saved.'));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to create request.';
       setFormErrors([message]);
@@ -620,6 +719,8 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
 
   const canApproveRow = (requestId: string) =>
     Boolean(workspace.viewer?.approvableRequestIds?.includes(requestId));
+  const canEditReturnedRow = (requestId: string) =>
+    Boolean(workspace.viewer?.editableReturnedRequestIds?.includes(requestId));
 
   const openRowAction = (row: { requestId: string; requestNumber: string }, action: 'approve' | 'reject' | 'return') => {
     setRowAction({ requestId: row.requestId, requestNumber: row.requestNumber, action });
@@ -889,6 +990,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                 const fxRate = rowFxRate(row);
                 const fxDate = rowFxRateDate(row);
                 const showApproveActions = canApproveRow(row.requestId);
+                const showEditReturned = canEditReturnedRow(row.requestId);
                 return (
                   <tr key={row.requestId} className="border-t border-slate-100 hover:bg-slate-50/70">
                     <td className="px-3 py-2.5">
@@ -987,6 +1089,24 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                             Reject
                           </button>
                         </div>
+                      ) : showEditReturned ? (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => openEditReturned(row)}
+                            className="inline-flex items-center gap-1 rounded-lg bg-[#008FD5] px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#007bb8] disabled:opacity-50"
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            Edit & resend
+                          </button>
+                          <Link
+                            href={`/finance/approvals/request/${row.requestId}`}
+                            className="text-[11px] font-semibold text-[#008FD5] hover:underline"
+                          >
+                            View
+                          </Link>
+                        </div>
                       ) : (
                         <Link
                           href={`/finance/approvals/request/${row.requestId}`}
@@ -1080,10 +1200,28 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                 <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl">
             <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#008FD5]">New payment request</p>
-                <h2 className="mt-1 text-lg font-semibold text-slate-900">{composerType}</h2>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#008FD5]">
+                  {editingRequestId ? 'Edit returned request' : 'New payment request'}
+                </p>
+                <h2 className="mt-1 text-lg font-semibold text-slate-900">
+                  {editingRequestId ? `${editingRequestNumber} · ${composerType}` : composerType}
+                </h2>
+                {editingRequestId ? (
+                  <p className="mt-1 text-xs text-violet-700">
+                    Correct the details below and resend into the approval workflow.
+                  </p>
+                ) : null}
               </div>
-              <button type="button" onClick={() => setComposerOpen(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setComposerOpen(false);
+                  setEditingRequestId(null);
+                  setEditingRequestNumber('');
+                  setExistingAttachments([]);
+                }}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -1440,6 +1578,17 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                         />
                       </label>
                     </div>
+                    {existingAttachments.length ? (
+                      <ul className="mt-3 space-y-1.5">
+                        {existingAttachments.map((file) => (
+                          <li key={file.id || file.fileName} className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50/70 px-2.5 py-2 text-xs text-slate-700">
+                            <Paperclip className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                            <span className="min-w-0 flex-1 truncate font-medium">{file.originalName || file.fileName}</span>
+                            <span className="shrink-0 text-emerald-700">On file</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                     {supportingFiles.length ? (
                       <ul className="mt-3 space-y-1.5">
                         {supportingFiles.map((file) => (
@@ -1458,27 +1607,49 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                           </li>
                         ))}
                       </ul>
-                    ) : (
+                    ) : null}
+                    {!supportingFiles.length && !existingAttachments.length ? (
                       <p className="mt-3 text-xs font-medium text-rose-600">At least one supporting document is required.</p>
-                    )}
+                    ) : null}
                   </div>
                 </>
               )}
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4">
-              <label className="inline-flex items-center gap-2 text-xs text-slate-600">
-                <input type="checkbox" checked={form.submit} onChange={(e) => setForm((prev) => ({ ...prev, submit: e.target.checked }))} className="rounded border-slate-300 text-[#008FD5]" />
-                Submit for approval now
-              </label>
+              {editingRequestId ? (
+                <p className="text-xs text-slate-600">Changes will restart approval from the first stage.</p>
+              ) : (
+                <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+                  <input type="checkbox" checked={form.submit} onChange={(e) => setForm((prev) => ({ ...prev, submit: e.target.checked }))} className="rounded border-slate-300 text-[#008FD5]" />
+                  Submit for approval now
+                </label>
+              )}
               <div className="flex gap-2">
-                <button type="button" onClick={() => setComposerOpen(false)} className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700">Cancel</button>
                 <button
                   type="button"
-                  disabled={busy || (composerType === 'Cash Advance Payment' && Boolean(eligibility?.blocked))}
+                  onClick={() => {
+                    setComposerOpen(false);
+                    setEditingRequestId(null);
+                    setEditingRequestNumber('');
+                    setExistingAttachments([]);
+                  }}
+                  className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || (!editingRequestId && composerType === 'Cash Advance Payment' && Boolean(eligibility?.blocked))}
                   onClick={() => void submitRequest()}
                   className="rounded-xl bg-[#008FD5] px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-60"
                 >
-                  {busy ? 'Saving…' : form.submit ? 'Submit request' : 'Save draft'}
+                  {busy
+                    ? 'Saving…'
+                    : editingRequestId
+                      ? 'Resend for approval'
+                      : form.submit
+                        ? 'Submit request'
+                        : 'Save draft'}
                 </button>
               </div>
             </div>

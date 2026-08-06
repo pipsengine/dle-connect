@@ -72,6 +72,7 @@ type DetailPayload = {
   viewer?: {
     actorCode?: string;
     canApprove?: boolean;
+    canEditReturned?: boolean;
     isRequesterOnly?: boolean;
     canDownloadPdf?: boolean;
     canSubmitRetirement?: boolean;
@@ -282,7 +283,9 @@ export default function PaymentApprovalDetailClient() {
     ? (request.payload.stages as string[]).map((item) => String(item))
     : [];
   const pending = /pending|submitted|finance review/i.test(request.status);
+  const returned = /^returned$/i.test(request.status);
   const canApprove = Boolean(detail.viewer?.canApprove) && pending;
+  const canEditReturned = Boolean(detail.viewer?.canEditReturned) && returned;
   const canDownloadPdf = Boolean(detail.viewer?.canDownloadPdf);
   const canSubmitRetirement = Boolean(detail.viewer?.canSubmitRetirement);
   const retirementNoteExisting = String(request.retirement?.note || '');
@@ -290,6 +293,10 @@ export default function PaymentApprovalDetailClient() {
   const supportingDocs = (request.attachments || []).filter((file) => file.kind !== 'payment-evidence' && file.kind !== 'retirement-evidence');
   const showActionBar = canApprove;
   const showRetirementBar = canSubmitRetirement;
+  const returnReason = [...(detail.actions || [])]
+    .find((action) => /return/i.test(action.actionType))?.reason
+    || [...(detail.actions || [])].find((action) => /return/i.test(action.actionType))?.comment
+    || '';
 
   return (
     <div className={`space-y-4 ${showActionBar || showRetirementBar ? 'pb-36' : 'pb-6'}`}>
@@ -298,6 +305,14 @@ export default function PaymentApprovalDetailClient() {
           <ArrowLeft className="h-4 w-4" /> Payment requests
         </Link>
         <div className="flex flex-wrap items-center gap-2">
+          {canEditReturned ? (
+            <Link
+              href={`/finance/approvals/payments?edit=${encodeURIComponent(request.requestId)}`}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#008FD5] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#007bb8]"
+            >
+              <FileUp className="h-3.5 w-3.5" /> Edit & resend
+            </Link>
+          ) : null}
           {canDownloadPdf ? (
             <a
               href={`/api/finance/payment-requests/pdf?requestId=${encodeURIComponent(request.requestId)}`}
@@ -311,6 +326,28 @@ export default function PaymentApprovalDetailClient() {
           </span>
         </div>
       </div>
+
+      {returned ? (
+        <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-950">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-violet-700" />
+            <div>
+              <p className="font-semibold">Returned for correction</p>
+              <p className="mt-1 text-violet-900">
+                {returnReason || 'An approver returned this request. Update the details and resend for approval.'}
+              </p>
+              {canEditReturned ? (
+                <Link
+                  href={`/finance/approvals/payments?edit=${encodeURIComponent(request.requestId)}`}
+                  className="mt-2 inline-flex text-xs font-semibold text-[#008FD5] hover:underline"
+                >
+                  Open editor to correct and resend
+                </Link>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <header className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#008FD5]">{request.paymentType}</p>
