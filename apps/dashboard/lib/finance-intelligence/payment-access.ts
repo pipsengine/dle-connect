@@ -9,7 +9,24 @@ export type PaymentAccessActor = {
   isGlobalAdmin?: boolean;
 };
 
-const FINANCE_ELEVATED_ROLE = /^(super administrator|admin|system administrator|application administrator|cfo|finance manager|finance controller|finance administrator|finance payroll reviewer|accountant|accounts payable officer|accounts receivable officer|budget officer|treasury officer|executive director|executive management)$/i;
+const FINANCE_ELEVATED_ROLE = /^(super administrator|admin|system administrator|application administrator|cfo|finance manager|finance controller|finance administrator|finance payroll reviewer|accountant|accounts payable officer|accounts receivable officer|budget officer|treasury officer|executive director|executive management|managing director|md\s*\/?\s*ceo|chief executive( officer)?|\bmd\b|\bceo\b)$/i;
+
+/** Directory employee code for Managing Director / MD-CEO (Mr CHRIS IJELI). */
+export const MD_CEO_EMPLOYEE_CODE = 'P0413';
+
+const MD_CEO_ROLE = /managing\s*director|md\s*\/?\s*ceo|chief\s*executive|\bmd\b|\bceo\b/i;
+const MD_CEO_STAGE = /md\s*\/?\s*ceo|managing\s*director|chief\s*executive/i;
+
+/** True when the signed-in actor is the MD/CEO seat (by code or role). */
+export const isMdCeoActor = (actor: PaymentAccessActor) => {
+  const code = String(actor.actorCode || '').trim().toUpperCase();
+  if (code === MD_CEO_EMPLOYEE_CODE) return true;
+  // Directory MD defaults to Enterprise role "Executive Director".
+  return (actor.roles || []).some((role) => {
+    const value = String(role || '').trim();
+    return MD_CEO_ROLE.test(value) || /^executive director$/i.test(value);
+  });
+};
 
 /** Self-service permission: raise/view own payments without full Finance Intelligence. */
 export const FINANCE_PAYMENTS_SELF_PERMISSION = 'finance.payments.self';
@@ -17,6 +34,8 @@ export const FINANCE_PAYMENTS_SELF_PERMISSION = 'finance.payments.self';
 /** Finance / treasury / posting / global admin — may see all payment requests. */
 export const canViewAllPaymentRequests = (actor: PaymentAccessActor) => {
   if (actor.isGlobalAdmin) return true;
+  // MD/CEO must always retain document access before and after approving.
+  if (isMdCeoActor(actor)) return true;
   const permissions = actor.permissions || [];
   if (
     hasPermission(permissions, '*')
@@ -53,19 +72,25 @@ export const canAccessPaymentSelfService = (actor: PaymentAccessActor) => {
     /^(employee|manager|supervisor|department head|project manager|project cost controller|lead)$/i.test(String(role || '').trim()));
 };
 
-/** Own request, assigned approver, or elevated finance/admin. */
+/** Own request, assigned approver, prior workflow actor, or elevated finance/admin. */
 export const canAccessPaymentRequest = (
   actor: PaymentAccessActor,
   request: Pick<PaymentRequestRow, 'requesterCode' | 'currentApproverCode' | 'beneficiaryCode'>,
+  options?: { priorActorCodes?: Array<string | null | undefined> },
 ) => {
   if (canViewAllPaymentRequests(actor)) return true;
   const code = String(actor.actorCode || '').trim().toLowerCase();
   if (!code) return false;
-  return (
+  if (
     String(request.requesterCode || '').trim().toLowerCase() === code
     || String(request.currentApproverCode || '').trim().toLowerCase() === code
     || String(request.beneficiaryCode || '').trim().toLowerCase() === code
-  );
+  ) {
+    return true;
+  }
+  // After final approval, currentApprover is cleared — still allow anyone who already acted.
+  return (options?.priorActorCodes || []).some((actorCode) =>
+    String(actorCode || '').trim().toLowerCase() === code);
 };
 
 const codesMatch = (left?: string | null, right?: string | null) => {
@@ -92,13 +117,19 @@ export const isPaymentRequesterOnly = (
  * May Approve / Reject / Return / Clarify / Delegate on a pending request.
  * Assigned current approver, or Super Admin / System Administrator only.
  * Finance "view all" does not grant stage approval — that kept skipping the Finance Manager assignee.
+ * MD/CEO may always act when the request is on the MD stage or assigned to the MD seat.
  */
 export const canActOnPaymentApproval = (
   actor: PaymentAccessActor,
-  request: Pick<PaymentRequestRow, 'requesterCode' | 'currentApproverCode' | 'status'>,
+  request: Pick<PaymentRequestRow, 'requesterCode' | 'currentApproverCode' | 'currentStage' | 'status'>,
 ) => {
   if (!/pending|submitted|finance review/i.test(String(request.status || ''))) return false;
   if (codesMatch(actor.actorCode, request.currentApproverCode)) return true;
+  if (isMdCeoActor(actor)) {
+    const assigned = String(request.currentApproverCode || '').trim().toUpperCase();
+    if (assigned === MD_CEO_EMPLOYEE_CODE) return true;
+    if (MD_CEO_STAGE.test(String(request.currentStage || ''))) return true;
+  }
   if (actor.isGlobalAdmin) return true;
   return (actor.roles || []).some((role) =>
     /^(super administrator|system administrator|application administrator)$/i.test(String(role || '').trim()));

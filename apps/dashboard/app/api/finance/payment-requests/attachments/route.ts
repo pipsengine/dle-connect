@@ -5,6 +5,7 @@ import { permissionsForRoles } from '@/lib/auth/rbac';
 import {
   appendPaymentRequestAttachments,
   getPaymentRequestById,
+  listPaymentRequestActions,
   normalizePaymentAttachmentUpload,
   PAYMENT_ATTACHMENT_MAX_BYTES,
   PAYMENT_ATTACHMENT_MAX_FILES,
@@ -43,7 +44,10 @@ export async function GET(request: Request) {
 
     const paymentRequest = await getPaymentRequestById(requestId);
     if (!paymentRequest) return jsonErr(404, 'Payment request not found.');
-    if (!canAccessPaymentRequest(actor, paymentRequest)) {
+    const actions = await listPaymentRequestActions(requestId);
+    if (!canAccessPaymentRequest(actor, paymentRequest, {
+      priorActorCodes: actions.map((item) => item.actorCode),
+    })) {
       return jsonErr(403, 'You do not have access to this payment request attachment.');
     }
 
@@ -76,7 +80,10 @@ export async function POST(request: Request) {
 
     const paymentRequest = await getPaymentRequestById(requestId);
     if (!paymentRequest) return jsonErr(404, 'Payment request not found.');
-    if (!canAccessPaymentRequest(actor, paymentRequest)) {
+    const actions = await listPaymentRequestActions(requestId);
+    if (!canAccessPaymentRequest(actor, paymentRequest, {
+      priorActorCodes: actions.map((item) => item.actorCode),
+    })) {
       return jsonErr(403, 'You do not have access to upload attachments for this request.');
     }
 

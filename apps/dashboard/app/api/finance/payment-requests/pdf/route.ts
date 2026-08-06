@@ -42,14 +42,15 @@ export async function GET(request: Request) {
     if (!paymentRequest) return jsonErr(404, 'Payment request not found.');
     paymentRequest = await repairPrematureTreasuryHandoff(paymentRequest);
 
-    if (!canAccessPaymentRequest(actor, paymentRequest)) {
+    const actions = await listPaymentRequestActions(paymentRequest.requestId);
+    if (!canAccessPaymentRequest(actor, paymentRequest, {
+      priorActorCodes: actions.map((item) => item.actorCode),
+    })) {
       return jsonErr(403, 'You do not have access to this payment request.');
     }
     if (!canDownloadPaymentDocumentPdf(paymentRequest)) {
       return jsonErr(409, 'PDF download is available after the payment is fully approved.');
     }
-
-    const actions = await listPaymentRequestActions(paymentRequest.requestId);
     const pdf = await buildPaymentRequestDocumentPdf(paymentRequest, actions);
     const fileName = `${paymentRequest.requestNumber || paymentRequest.requestId}-payment-document.pdf`;
 

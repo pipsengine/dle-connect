@@ -100,14 +100,16 @@ export default function PaymentApprovalDetailClient() {
     setActionHint(new URLSearchParams(window.location.search).get('action') || '');
   }, [pathname]);
 
-  const load = async () => {
+  const load = async (opts?: { soft?: boolean }) => {
     if (!requestId) {
       setError('Payment request id is missing.');
       setLoading(false);
       return;
     }
-    setLoading(true);
-    setError('');
+    if (!opts?.soft) {
+      setLoading(true);
+      setError('');
+    }
     try {
       const response = await fetch(`/api/finance/payment-requests?requestId=${encodeURIComponent(requestId)}`, {
         cache: 'no-store',
@@ -117,11 +119,18 @@ export default function PaymentApprovalDetailClient() {
         throw new Error(json.error || 'Unable to load payment request.');
       }
       setDetail(json.data as DetailPayload);
+      setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to load payment request.');
+      const message = err instanceof Error ? err.message : 'Unable to load payment request.';
+      // After approve, keep the successful detail on screen — never flash a hard access error.
+      if (opts?.soft) {
+        setMessage((prev) => prev || message);
+        return;
+      }
+      setError(message);
       setDetail(null);
     } finally {
-      setLoading(false);
+      if (!opts?.soft) setLoading(false);
     }
   };
 
@@ -163,10 +172,24 @@ export default function PaymentApprovalDetailClient() {
       if (!response.ok || json.status !== 'success') {
         throw new Error(json.error || 'Unable to update payment request.');
       }
+      // Apply transition payload immediately so a post-approve reload cannot blank the page.
+      if (json.data?.request) {
+        setDetail((prev) => ({
+          request: json.data.request as PaymentRequestRow,
+          actions: (json.data.actions as PaymentRequestActionRow[]) || prev?.actions || [],
+          viewer: {
+            ...(prev?.viewer || {}),
+            canApprove: false,
+            canDownloadPdf: /ready for treasury|approved|payment scheduled|payment processing|paid|awaiting retirement|retirement submitted|treasury verification|retired|completed|closed|posted/i.test(
+              String(json.data.request.status || ''),
+            ),
+          },
+        }));
+      }
       setMessage(json.data?.message || 'Payment request updated.');
       setReason('');
       if (actionHint) router.replace(pathname);
-      await load();
+      await load({ soft: true });
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Unable to update payment request.');
     } finally {
@@ -211,7 +234,17 @@ export default function PaymentApprovalDetailClient() {
       setMessage(json.data?.message || 'Retirement submitted for Treasury verification.');
       setRetirementNote('');
       setRetirementFiles([]);
-      await load();
+      if (json.data?.request) {
+        setDetail((prev) => ({
+          request: json.data.request as PaymentRequestRow,
+          actions: (json.data.actions as PaymentRequestActionRow[]) || prev?.actions || [],
+          viewer: {
+            ...(prev?.viewer || {}),
+            canSubmitRetirement: false,
+          },
+        }));
+      }
+      await load({ soft: true });
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Unable to submit retirement.');
     } finally {

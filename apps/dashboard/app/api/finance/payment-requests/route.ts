@@ -98,10 +98,12 @@ export async function GET(request: Request) {
       let paymentRequest = await getPaymentRequestById(requestId);
       if (!paymentRequest) return jsonErr(404, 'Payment request not found.');
       paymentRequest = await repairPrematureTreasuryHandoff(paymentRequest);
-      if (!canAccessPaymentRequest(actor, paymentRequest)) {
+      const actions = await listPaymentRequestActions(paymentRequest.requestId);
+      if (!canAccessPaymentRequest(actor, paymentRequest, {
+        priorActorCodes: actions.map((item) => item.actorCode),
+      })) {
         return jsonErr(403, 'You do not have access to this payment request.');
       }
-      const actions = await listPaymentRequestActions(paymentRequest.requestId);
       return jsonOk({
         request: paymentRequest,
         actions,
