@@ -41,7 +41,7 @@ export function ScrollTable({
   return (
     <div className={`relative min-w-0 ${className}`.trim()}>
       {hint ? (
-        <p className="px-3 pb-1 text-[10px] font-medium text-slate-400 md:hidden">
+        <p className="px-3 pb-1 text-[10px] font-medium text-slate-400 lg:hidden">
           Swipe sideways to see all columns
         </p>
       ) : null}
@@ -84,7 +84,7 @@ export function ActionToolbar({
   );
 }
 
-/** Mobile-first card list companion to ScrollTable (show below md, hide table). */
+/** Mobile-first card list companion to ScrollTable (show below lg — tablets included). */
 export function MobileCardList({
   children,
   className = '',
@@ -93,7 +93,7 @@ export function MobileCardList({
   className?: string;
 }) {
   return (
-    <div className={`space-y-3 p-3 md:hidden ${className}`.trim()}>
+    <div className={`space-y-3 p-3 lg:hidden ${className}`.trim()}>
       {children}
     </div>
   );
@@ -107,7 +107,7 @@ export function DesktopOnlyTable({
   className?: string;
 }) {
   return (
-    <div className={`hidden md:block ${className}`.trim()}>
+    <div className={`hidden lg:block ${className}`.trim()}>
       {children}
     </div>
   );

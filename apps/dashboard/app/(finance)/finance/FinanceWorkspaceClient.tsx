@@ -60,6 +60,8 @@ type Props = {
   employeeName?: string;
   paymentSelfService?: boolean;
   paymentRequests?: PaymentRequestsWorkspace | null;
+  paymentListMode?: 'default' | 'inbox' | 'mine' | 'approved';
+  initialPaymentType?: 'All' | 'Cash Advance Payment' | 'Supplier Invoice Payment' | 'Expense Payment';
   approvalMatrix?: ApprovalMatrixWorkspace | null;
   approvalDelegations?: ApprovalDelegationWorkspace | null;
   cashAdvanceControls?: CashAdvanceControlsWorkspace | null;
@@ -484,8 +486,6 @@ function ApprovalsDashboard({ snapshot }: { snapshot?: FinanceApprovalCentreSnap
     { id: 'approved-today', label: 'Payments Approved Today', primary: '0', secondary: '₦0.00', tone: 'green' as const },
     { id: 'rejected-month', label: 'Rejected This Month', primary: '0', secondary: '₦0.00', tone: 'rose' as const },
   ];
-  const columns = snapshot?.queueColumns?.length ? snapshot.queueColumns : [...APPROVAL_COLUMNS];
-  const rows = snapshot?.queueRows || [];
   const kpiIcons: Record<string, { icon: typeof Inbox; wrap: string; color: string }> = {
     'pending-mine': { icon: Inbox, wrap: 'bg-blue-50', color: 'text-[#008FD5]' },
     'pending-value': { icon: Wallet, wrap: 'bg-teal-50', color: 'text-teal-600' },
@@ -499,10 +499,10 @@ function ApprovalsDashboard({ snapshot }: { snapshot?: FinanceApprovalCentreSnap
 
   return (
     <div className="space-y-4">
-      <header className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-        <h1 className="text-[28px] font-semibold tracking-tight text-slate-900">Payment Approval Centre</h1>
+      <header className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5">
+        <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[28px]">Payment Approval Centre</h1>
         <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-500">
-          Receive approval requests from Sage X3 or source systems. DLE Connect owns workflow, evidence and audit — not GL posting.
+          Summary of payment approval activity. Action pending items in My Approval Inbox. Approved payments live under Payment Requests.
         </p>
       </header>
 
@@ -527,61 +527,12 @@ function ApprovalsDashboard({ snapshot }: { snapshot?: FinanceApprovalCentreSnap
         })}
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3.5">
-          <h2 className="text-sm font-semibold text-slate-900">Approval Queue</h2>
-          <Link
-            href="/finance/approvals/inbox"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#008FD5] hover:bg-[#EAF6FF]"
-          >
-            Open full inbox
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
-        </div>
-        <ScrollTable minWidth={960}><table className="w-full text-left text-xs">
-            <thead className="bg-slate-50/80 text-slate-500">
-              <tr>
-                {columns.map((column) => (
-                  <th key={column} className="whitespace-nowrap px-3 py-2.5 font-semibold">{column}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length ? (
-                rows.map((row) => (
-                  <tr key={row['Request No.']} className="border-t border-slate-100 hover:bg-slate-50/70">
-                    {columns.map((column) => (
-                      <td key={column} className="whitespace-nowrap px-3 py-2.5 text-slate-700">
-                        {row[column] || '—'}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={columns.length} className="px-3 py-14 text-center">
-                    <div className="mx-auto flex max-w-md flex-col items-center">
-                      <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
-                        <FolderOpen className="h-7 w-7" />
-                      </span>
-                      <p className="mt-3 text-sm font-semibold text-slate-700">No approval requests yet</p>
-                      <p className="mt-1 text-sm text-slate-500">
-                        Requests will appear here when Sage X3 or source systems submit payment workflows.
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table></ScrollTable>
-      </section>
-
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { href: '/finance/approvals/inbox', label: 'My Approval Inbox', detail: 'View and action requests', icon: BadgeCheck },
-          { href: '/finance/approvals/payments', label: 'Payment Requests', detail: 'Create or review requests', icon: Send },
-          { href: '/finance/approvals/batches', label: 'Payment Batches', detail: 'Approve payment batches', icon: Workflow },
-          { href: '/finance/approvals/other', label: 'Other Finance Requests', detail: 'View all finance requests', icon: FileBarChart },
+          { href: '/finance/approvals/inbox', label: 'My Approval Inbox', detail: 'Action pending approvals', icon: BadgeCheck },
+          { href: '/finance/approvals/payments', label: 'Payment Requests', detail: 'Approved & in-progress payments', icon: Send },
+          { href: '/finance/approvals/my-requests', label: 'My Requests', detail: 'Requests you raised', icon: Inbox },
+          { href: '/finance/approvals/treasury', label: 'Treasury Operations', detail: 'Pay and verify retirements', icon: Wallet },
         ].map((item) => (
           <Link
             key={item.href}
@@ -913,6 +864,8 @@ export default function FinanceWorkspaceClient({
   employeeName,
   paymentSelfService,
   paymentRequests,
+  paymentListMode = 'default',
+  initialPaymentType = 'All',
   approvalMatrix,
   approvalDelegations,
   cashAdvanceControls,
@@ -967,7 +920,14 @@ export default function FinanceWorkspaceClient({
         ? <ApprovalsDashboard snapshot={approvalCentre} />
         : null}
       {page.kind === 'payment-requests' && paymentRequests
-        ? <PaymentRequestsClient initialWorkspace={paymentRequests} selfServiceMode={paymentSelfService} />
+        ? (
+          <PaymentRequestsClient
+            initialWorkspace={paymentRequests}
+            selfServiceMode={paymentSelfService}
+            listMode={paymentListMode}
+            initialPaymentType={initialPaymentType}
+          />
+        )
         : null}
       {page.kind === 'cash-advance-controls' && cashAdvanceControls ? <CashAdvanceControlsClient initialWorkspace={cashAdvanceControls} /> : null}
       {page.kind === 'treasury-ops' && treasuryWorkspace ? <TreasuryOperationsClient initialWorkspace={treasuryWorkspace} /> : null}
@@ -975,7 +935,6 @@ export default function FinanceWorkspaceClient({
       {page.kind === 'approval-matrix' && approvalMatrix ? <ApprovalMatrixClient initialWorkspace={approvalMatrix} /> : null}
       {page.kind === 'approval-limits' && approvalMatrix ? <ApprovalLimitsClient initialWorkspace={approvalMatrix} /> : null}
       {page.kind === 'delegation-rules' && approvalDelegations ? <DelegationRulesClient initialWorkspace={approvalDelegations} /> : null}
-      {page.kind === 'approval-queue' ? <ApprovalQueue page={page} /> : null}
       {page.kind === 'approval-detail' ? <PaymentApprovalDetailClient /> : null}
       {page.kind === 'section-dashboard' ? <SectionDashboard page={page} childLinks={childLinks} /> : null}
       {!['command-centre', 'reporting-hub', 'analysis-hub', 'analysis-workspace', 'ai-copilot', 'approvals-dashboard', 'payment-requests', 'cash-advance-controls', 'treasury-ops', 'finance-posting', 'approval-matrix', 'approval-limits', 'delegation-rules', 'approval-queue', 'approval-detail', 'section-dashboard'].includes(page.kind)

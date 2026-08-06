@@ -373,24 +373,15 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
               </label>
             ))}
           </div>
-          <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2">
-            <div className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 2xl:flex">
-              <span className="relative flex h-2 w-2">
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-slate-400" />
-              </span>
-              <div className="leading-tight">
-                <p className="text-[11px] font-semibold text-slate-700">Sage X3</p>
-                <p className="text-[10px] text-slate-500">Last Sync: —</p>
-              </div>
-            </div>
+          <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1 sm:gap-1.5">
             <EnterpriseHomeButton />
             <button
               type="button"
               onClick={() => router.refresh()}
-              className="hidden h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 hover:bg-slate-50 sm:inline-flex"
+              className="hidden h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 xl:inline-flex"
+              title="Refresh"
             >
               <RefreshCcw className="h-4 w-4" />
-              Refresh
             </button>
             <NotificationCenter scope="notifications" />
             <EnterpriseUserProfile

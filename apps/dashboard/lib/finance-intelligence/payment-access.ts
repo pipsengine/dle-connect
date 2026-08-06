@@ -182,9 +182,6 @@ export const EMPLOYEE_PAYMENT_NAV_IDS = new Set([
   'inbox',
   'payment-requests',
   'my-requests',
-  'cash-advances',
-  'supplier-payments',
-  'expense-payments',
 ]);
 
 const EMPLOYEE_PAYMENT_PATH_PREFIXES = [

@@ -56,6 +56,15 @@ type Props = {
   initialWorkspace: PaymentRequestsWorkspace;
   /** Hide finance-ops shortcuts for employee self-service users. */
   selfServiceMode?: boolean;
+  /**
+   * inbox — pending approvals only (My Approval Inbox)
+   * approved — approved / post-approval lifecycle (Payment Requests)
+   * mine — requester-owned items (My Requests)
+   * default — full list (legacy type deep-links)
+   */
+  listMode?: 'default' | 'inbox' | 'mine' | 'approved';
+  /** Prefill Payment Type filter (from ?type= or legacy redirects). */
+  initialPaymentType?: 'All' | PaymentRequestType;
 };
 
 type ComposerForm = {
@@ -292,12 +301,22 @@ const typeIcon = (paymentType: string) => {
 
 type TabId = 'all' | 'mine' | 'drafts' | 'pending' | 'returned' | 'approved' | 'ready' | 'paid' | 'rejected' | 'retirement';
 
-export default function PaymentRequestsClient({ initialWorkspace, selfServiceMode = false }: Props) {
+export default function PaymentRequestsClient({
+  initialWorkspace,
+  selfServiceMode = false,
+  listMode = 'default',
+  initialPaymentType = 'All',
+}: Props) {
   const router = useRouter();
   const [workspace, setWorkspace] = useState(initialWorkspace);
-  const [tab, setTab] = useState<TabId>('all');
+  const [tab, setTab] = useState<TabId>(() => {
+    if (listMode === 'inbox') return 'pending';
+    if (listMode === 'approved') return 'approved';
+    if (listMode === 'mine') return 'mine';
+    return 'all';
+  });
   const [query, setQuery] = useState('');
-  const [paymentTypeFilter, setPaymentTypeFilter] = useState<'All' | PaymentRequestType>('All');
+  const [paymentTypeFilter, setPaymentTypeFilter] = useState<'All' | PaymentRequestType>(initialPaymentType);
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState('');
@@ -451,14 +470,36 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
     const q = query.trim().toLowerCase();
     return workspace.rows.filter((row) => {
       if (paymentTypeFilter !== 'All' && row.paymentType !== paymentTypeFilter) return false;
+
+      if (listMode === 'inbox') {
+        if (tab === 'returned') {
+          if (!/returned/i.test(row.status)) return false;
+        } else if (!/pending|submitted|finance review/i.test(row.status)) {
+          return false;
+        }
+      } else if (listMode === 'approved' && tab === 'all') {
+        // Payment Requests hub: keep drafts/returned/approved+; pending lives in Inbox.
+        if (/^(pending approval|submitted|finance review)$/i.test(row.status)) return false;
+      }
+
       if (tab === 'drafts' && !/draft/i.test(row.status)) return false;
       if (tab === 'pending' && !/pending|submitted|finance review/i.test(row.status)) return false;
       if (tab === 'returned' && !/returned/i.test(row.status)) return false;
-      if (tab === 'approved' && !/^approved$/i.test(row.status)) return false;
+      if (tab === 'approved') {
+        if (listMode === 'approved') {
+          if (!/^approved$/i.test(row.status) && !/ready for treasury/i.test(row.status)) return false;
+        } else if (!/^approved$/i.test(row.status)) {
+          return false;
+        }
+      }
       if (tab === 'ready' && !/ready for treasury/i.test(row.status)) return false;
       if (tab === 'paid' && !/paid|completed|retired|closed/i.test(row.status)) return false;
       if (tab === 'retirement' && !/awaiting retirement|retirement submitted|treasury verification|finance verification/i.test(row.status)) return false;
       if (tab === 'rejected' && !/rejected|cancelled/i.test(row.status)) return false;
+      if (tab === 'mine' && listMode !== 'mine') {
+        const actor = String(workspace.viewer?.actorCode || '').trim().toLowerCase();
+        if (actor && String(row.requesterCode || '').trim().toLowerCase() !== actor) return false;
+      }
       if (!q) return true;
       return (
         row.requestNumber.toLowerCase().includes(q)
@@ -470,7 +511,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
         || row.title.toLowerCase().includes(q)
       );
     });
-  }, [workspace.rows, tab, query, paymentTypeFilter]);
+  }, [workspace.rows, tab, query, paymentTypeFilter, listMode, workspace.viewer?.actorCode]);
 
   const showFxColumn = useMemo(
     () => filteredRows.some((row) => isForeignCurrency(row.currencyCode)),
@@ -865,17 +906,25 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
   ];
 
   const tabs: Array<{ id: TabId; label: string; count?: number }> = [
-    { id: 'all', label: 'All Requests', count: workspace.tabCounts.all },
-    { id: 'mine', label: 'My Requests', count: workspace.tabCounts.mine },
-    { id: 'drafts', label: 'Drafts', count: workspace.tabCounts.drafts },
-    { id: 'pending', label: 'Pending Approval', count: workspace.tabCounts.pending },
+    { id: 'all', label: listMode === 'approved' ? 'All (excl. pending)' : 'All Requests', count: workspace.tabCounts.all },
+    ...(listMode === 'inbox' ? [] : [
+      { id: 'mine' as TabId, label: 'My Requests', count: workspace.tabCounts.mine },
+      { id: 'drafts' as TabId, label: 'Drafts', count: workspace.tabCounts.drafts },
+    ]),
+    ...(listMode === 'approved' ? [] : [
+      { id: 'pending' as TabId, label: 'Pending Approval', count: workspace.tabCounts.pending },
+    ]),
     { id: 'returned', label: 'Returned', count: workspace.tabCounts.returned },
     { id: 'approved', label: 'Approved', count: workspace.tabCounts.approved },
     { id: 'ready', label: 'Ready for Treasury', count: workspace.tabCounts.ready },
     { id: 'retirement', label: 'Retirement', count: workspace.tabCounts.retirement },
     { id: 'paid', label: 'Paid', count: workspace.tabCounts.paid },
     { id: 'rejected', label: 'Rejected', count: workspace.tabCounts.rejected },
-  ];
+  ].filter((item) => {
+    if (listMode === 'inbox') return item.id === 'pending' || item.id === 'all' || item.id === 'returned';
+    if (listMode === 'mine') return true;
+    return true;
+  });
 
   const toggleSelected = (requestId: string) => {
     setSelected((current) => (current.includes(requestId) ? current.filter((id) => id !== requestId) : [...current, requestId]));
@@ -885,15 +934,45 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
     <PageFrame>
       <header className="flex flex-col gap-4 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
-          <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[28px]">Payment Requests</h1>
+          <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[28px]">
+            {listMode === 'inbox'
+              ? 'My Approval Inbox'
+              : listMode === 'mine'
+                ? 'My Requests'
+                : listMode === 'approved'
+                  ? 'Payment Requests'
+                  : 'Payment Requests'}
+          </h1>
           <p className="mt-1 max-w-3xl text-sm text-slate-500">
-            Create, submit, track and manage payment requests through the full approval lifecycle.
+            {listMode === 'inbox'
+              ? 'Requests awaiting your approval decision. Approved items move to Payment Requests.'
+              : listMode === 'mine'
+                ? 'Payment requests you raised — drafts, pending, returned, approved and completed.'
+                : listMode === 'approved'
+                  ? 'Approved and in-progress payments. Use Payment Type to filter Cash Advance, Supplier Invoice, or Expense.'
+                  : 'Create, submit, track and manage payment requests through the full approval lifecycle.'}
           </p>
-          <p className="mt-2 text-xs font-medium text-slate-400">
-            Enabled types: Cash Advance Payment · Supplier Invoice Payment · Expense Payment
-          </p>
+          {listMode !== 'inbox' ? (
+            <p className="mt-2 text-xs font-medium text-slate-400">
+              Enabled types: Cash Advance Payment · Supplier Invoice Payment · Expense Payment
+            </p>
+          ) : null}
         </div>
-        <ActionToolbar>
+        {listMode === 'inbox' ? (
+          <ActionToolbar>
+            <Link
+              href="/finance/approvals/payments"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              View approved payments
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <button type="button" onClick={() => void refresh()} disabled={loading} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-60">
+              <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </ActionToolbar>
+        ) : (
+          <ActionToolbar>
           <div className="relative">
             <button
               type="button"
@@ -941,7 +1020,8 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
           <button type="button" onClick={() => void refresh()} disabled={loading} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-60">
             <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
-        </ActionToolbar>
+          </ActionToolbar>
+        )}
       </header>
 
       {toast ? <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">{toast}</div> : null}
@@ -1310,14 +1390,11 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
       ) : null}
 
       <div className="flex flex-wrap gap-2 text-xs">
-        <Link href="/finance/approvals/cash-advances" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
-          Cash Advances
+        <Link href="/finance/approvals/inbox" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
+          My Approval Inbox
         </Link>
-        <Link href="/finance/approvals/supplier-payments" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
-          Supplier Payments
-        </Link>
-        <Link href="/finance/approvals/expense-payments" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
-          Expense Payments
+        <Link href="/finance/approvals/payments" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
+          Payment Requests
         </Link>
         <Link href="/finance/approvals/my-requests" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
           My Requests

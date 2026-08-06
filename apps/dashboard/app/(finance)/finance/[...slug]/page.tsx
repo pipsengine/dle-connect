@@ -25,6 +25,7 @@ export const dynamic = 'force-dynamic';
 
 type Props = {
   params: Promise<{ slug?: string[] }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 const resolveFinanceActor = async () => {
@@ -51,9 +52,22 @@ const childLinksFor = (href: string) =>
       description: page.description,
     }));
 
-export default async function FinanceCatchAllPage({ params }: Props) {
+export default async function FinanceCatchAllPage({ params, searchParams }: Props) {
   const { slug } = await params;
+  const query = (await searchParams) || {};
   const pathname = `/finance/${(slug || []).join('/')}`.replace(/\/$/, '') || '/finance';
+
+  // Consolidate type-specific pages into Payment Requests + Payment Type filter.
+  if (pathname === '/finance/approvals/cash-advances') {
+    redirect('/finance/approvals/payments?type=cash-advance');
+  }
+  if (pathname === '/finance/approvals/supplier-payments') {
+    redirect('/finance/approvals/payments?type=supplier');
+  }
+  if (pathname === '/finance/approvals/expense-payments') {
+    redirect('/finance/approvals/payments?type=expense');
+  }
+
   const page = resolveFinancePage(pathname);
   if (!page) notFound();
 
@@ -69,6 +83,17 @@ export default async function FinanceCatchAllPage({ params }: Props) {
   }
 
   const mineOnlyPage = pathname.includes('/my-requests');
+  const inboxPage = pathname === '/finance/approvals/inbox';
+  const paymentsHub = pathname === '/finance/approvals/payments';
+
+  const typeRaw = String(Array.isArray(query.type) ? query.type[0] : query.type || '').trim().toLowerCase();
+  const initialPaymentType = typeRaw === 'cash-advance' || typeRaw === 'cash'
+    ? 'Cash Advance Payment' as const
+    : typeRaw === 'supplier' || typeRaw === 'si'
+      ? 'Supplier Invoice Payment' as const
+      : typeRaw === 'expense' || typeRaw === 'ex'
+        ? 'Expense Payment' as const
+        : 'All' as const;
 
   const commandCentre = page.kind === 'command-centre' && viewAllPayments
     ? await buildFinanceCommandCentre().catch(() => null)
@@ -80,15 +105,10 @@ export default async function FinanceCatchAllPage({ params }: Props) {
     ? await buildEmployeePaymentDashboard(actor.actorCode).catch(() => null)
     : null;
 
-  let paymentType: string | undefined;
-  if (pathname.includes('cash-advance') || pathname.endsWith('/cash-advances')) paymentType = 'Cash Advance Payment';
-  if (pathname.includes('supplier')) paymentType = 'Supplier Invoice Payment';
-  if (pathname.includes('expense-payment') || pathname.endsWith('/expense-payments')) paymentType = 'Expense Payment';
-
   const paymentRequestsRaw = page.kind === 'payment-requests'
     ? await buildPaymentRequestsWorkspace({
-      paymentType,
-      mineFor: mineOnlyPage || paymentSelfService ? actor.actorCode : undefined,
+      paymentType: initialPaymentType === 'All' ? undefined : initialPaymentType,
+      mineFor: mineOnlyPage || (paymentSelfService && !inboxPage) ? actor.actorCode : undefined,
       scopedToActorCode: !viewAllPayments && !mineOnlyPage ? actor.actorCode : undefined,
     }).catch(() => null)
     : null;
@@ -106,6 +126,14 @@ export default async function FinanceCatchAllPage({ params }: Props) {
       },
     }
     : null;
+
+  const paymentListMode = inboxPage
+    ? 'inbox' as const
+    : mineOnlyPage
+      ? 'mine' as const
+      : paymentsHub
+        ? 'approved' as const
+        : 'default' as const;
 
   const cashAdvanceControls = page.kind === 'cash-advance-controls' && viewAllPayments
     ? await buildCashAdvanceControlsWorkspace().catch(() => null)
@@ -162,6 +190,8 @@ export default async function FinanceCatchAllPage({ params }: Props) {
       employeeName={actor.actorName}
       paymentSelfService={paymentSelfService}
       paymentRequests={paymentRequests}
+      paymentListMode={paymentListMode}
+      initialPaymentType={initialPaymentType}
       approvalMatrix={approvalMatrix}
       approvalDelegations={approvalDelegations}
       cashAdvanceControls={cashAdvanceControls}
