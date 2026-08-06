@@ -276,6 +276,7 @@ const statusTone = (status: string) => {
 
 const typeIcon = (paymentType: string) => {
   if (/cash advance/i.test(paymentType)) return CreditCard;
+  if (/expense payment/i.test(paymentType)) return Wallet;
   if (/supplier/i.test(paymentType)) return Building2;
   return FileText;
 };
@@ -473,7 +474,10 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
     setEditingRequestNumber('');
     setExistingAttachments([]);
     setTypeMenuOpen(false);
-    setForm(emptyForm());
+    setForm({
+      ...emptyForm(),
+      invoiceCategory: type === 'Expense Payment' ? 'expense-no-po' : 'po-backed',
+    });
     setEmployeeSearch('');
     setEmployeePickerOpen(false);
     setEligibility(null);
@@ -483,14 +487,11 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
   };
 
   const openEditReturned = (row: PaymentRequestRow) => {
-    const type = (/supplier/i.test(row.paymentType)
-      ? 'Supplier Invoice Payment'
-      : 'Cash Advance Payment') as PaymentRequestType;
-    const invoiceCategory: SupplierInvoiceCategory = /expense|no[- ]?po/i.test(
-      String(row.payload?.invoiceCategory || row.requestCategory || ''),
-    )
-      ? 'expense-no-po'
-      : 'po-backed';
+    const type = (/expense payment/i.test(row.paymentType) || isExpenseNoPoPayment(row)
+      ? 'Expense Payment'
+      : /supplier/i.test(row.paymentType)
+        ? 'Supplier Invoice Payment'
+        : 'Cash Advance Payment') as PaymentRequestType;
     setComposerType(type);
     setEditingRequestId(row.requestId);
     setEditingRequestNumber(row.requestNumber);
@@ -519,9 +520,9 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
       vatAmount: String(row.vatAmount || ''),
       whtAmount: String(row.whtAmount || ''),
       retentionAmount: String(row.retentionAmount || ''),
-      purchaseOrderNo: row.purchaseOrderNo || '',
-      deliveryNoteNo: row.deliveryNoteNo || '',
-      invoiceCategory,
+      purchaseOrderNo: type === 'Expense Payment' ? '' : (row.purchaseOrderNo || ''),
+      deliveryNoteNo: type === 'Expense Payment' ? '' : (row.deliveryNoteNo || ''),
+      invoiceCategory: type === 'Expense Payment' ? 'expense-no-po' : 'po-backed',
       expenseNature: String(row.payload?.expenseNature || ''),
       submit: true,
     });
@@ -591,13 +592,17 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
       if (!editingRequestId && eligibility?.blocked) errors.push(eligibility.message);
     } else {
       if (!form.title.trim()) errors.push('Request title is required.');
-      if (!form.beneficiaryName.trim()) errors.push('Supplier name is required.');
-      if (!form.invoiceNumber.trim()) errors.push('Invoice number is required.');
+      if (!form.beneficiaryName.trim()) {
+        errors.push(composerType === 'Expense Payment' ? 'Payee / supplier name is required.' : 'Supplier name is required.');
+      }
+      if (!form.invoiceNumber.trim()) {
+        errors.push(composerType === 'Expense Payment' ? 'Bill / invoice number is required.' : 'Invoice number is required.');
+      }
       if (!(Number(form.amount) >= 1)) errors.push('Amount must be at least 1.00.');
       if (!supportingFiles.length && !(editingRequestId && existingAttachments.length)) {
         errors.push('Supporting documents are required.');
       }
-      if (form.invoiceCategory === 'expense-no-po' && !form.expenseNature.trim()) {
+      if (composerType === 'Expense Payment' && !form.expenseNature.trim()) {
         errors.push('Select the expense nature (e.g. Utility, LAWMA).');
       }
     }
@@ -626,13 +631,17 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
       if (!editingRequestId && latestEligibility?.blocked) errors.push(latestEligibility.message);
     } else {
       if (!form.title.trim()) errors.push('Request title is required.');
-      if (!form.beneficiaryName.trim()) errors.push('Supplier name is required.');
-      if (!form.invoiceNumber.trim()) errors.push('Invoice number is required.');
+      if (!form.beneficiaryName.trim()) {
+        errors.push(composerType === 'Expense Payment' ? 'Payee / supplier name is required.' : 'Supplier name is required.');
+      }
+      if (!form.invoiceNumber.trim()) {
+        errors.push(composerType === 'Expense Payment' ? 'Bill / invoice number is required.' : 'Invoice number is required.');
+      }
       if (!(Number(form.amount) >= 1)) errors.push('Amount must be at least 1.00.');
       if (!supportingFiles.length && !(editingRequestId && existingAttachments.length)) {
         errors.push('Supporting documents are required.');
       }
-      if (form.invoiceCategory === 'expense-no-po' && !form.expenseNature.trim()) {
+      if (composerType === 'Expense Payment' && !form.expenseNature.trim()) {
         errors.push('Select the expense nature (e.g. Utility, LAWMA).');
       }
     }
@@ -643,7 +652,8 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
     try {
       const selectedExpense = lookups?.expenseCodes.find((item) => item.expenseCode === form.expenseCode);
       const selectedSite = lookups?.paymentSites.find((item) => item.siteCode === form.paymentSiteCode);
-      const attachmentUploads = composerType === 'Supplier Invoice Payment' && supportingFiles.length
+      const isVendorComposer = composerType === 'Supplier Invoice Payment' || composerType === 'Expense Payment';
+      const attachmentUploads = isVendorComposer && supportingFiles.length
         ? await Promise.all(supportingFiles.map(async (file) => ({
           fileName: file.name,
           mimeType: file.type || 'application/octet-stream',
@@ -681,16 +691,14 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
           vatAmount: Number(form.vatAmount || 0),
           whtAmount: Number(form.whtAmount || 0),
           retentionAmount: Number(form.retentionAmount || 0),
-          invoiceCategory: composerType === 'Supplier Invoice Payment' ? form.invoiceCategory : undefined,
-          expenseNature: composerType === 'Supplier Invoice Payment' && form.invoiceCategory === 'expense-no-po'
-            ? form.expenseNature
-            : undefined,
-          purchaseOrderNo: composerType === 'Supplier Invoice Payment' && form.invoiceCategory === 'expense-no-po'
-            ? ''
-            : form.purchaseOrderNo,
-          deliveryNoteNo: composerType === 'Supplier Invoice Payment' && form.invoiceCategory === 'expense-no-po'
-            ? ''
-            : form.deliveryNoteNo,
+          invoiceCategory: composerType === 'Expense Payment'
+            ? 'expense-no-po'
+            : composerType === 'Supplier Invoice Payment'
+              ? 'po-backed'
+              : undefined,
+          expenseNature: composerType === 'Expense Payment' ? form.expenseNature : undefined,
+          purchaseOrderNo: composerType === 'Expense Payment' ? '' : form.purchaseOrderNo,
+          deliveryNoteNo: composerType === 'Expense Payment' ? '' : form.deliveryNoteNo,
           submit: form.submit,
           attachmentUploads,
         }),
@@ -840,7 +848,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
             Create, submit, track and manage payment requests through the full approval lifecycle.
           </p>
           <p className="mt-2 text-xs font-medium text-slate-400">
-            Enabled types: Cash Advance Payment · Supplier Invoice Payment
+            Enabled types: Cash Advance Payment · Supplier Invoice Payment · Expense Payment
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -855,7 +863,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
               <ChevronDown className="h-4 w-4" />
             </button>
             {typeMenuOpen ? (
-              <div className="absolute right-0 z-20 mt-1 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+              <div className="absolute right-0 z-20 mt-1 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
                 <button type="button" onClick={() => openComposer('Cash Advance Payment')} className="flex w-full items-start gap-2 px-3 py-2.5 text-left hover:bg-slate-50">
                   <CreditCard className="mt-0.5 h-4 w-4 text-[#008FD5]" />
                   <span>
@@ -867,7 +875,14 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                   <Building2 className="mt-0.5 h-4 w-4 text-[#008FD5]" />
                   <span>
                     <span className="block text-sm font-semibold text-slate-900">Supplier Invoice Payment</span>
-                    <span className="block text-xs text-slate-500">Pay supplier — PO invoice or expense bill (no PO)</span>
+                    <span className="block text-xs text-slate-500">Pay supplier against a purchase order</span>
+                  </span>
+                </button>
+                <button type="button" onClick={() => openComposer('Expense Payment')} className="flex w-full items-start gap-2 border-t border-slate-100 px-3 py-2.5 text-left hover:bg-slate-50">
+                  <Wallet className="mt-0.5 h-4 w-4 text-[#008FD5]" />
+                  <span>
+                    <span className="block text-sm font-semibold text-slate-900">Expense Payment</span>
+                    <span className="block text-xs text-slate-500">Utility, LAWMA, rent and other bills without a PO</span>
                   </span>
                 </button>
               </div>
@@ -929,6 +944,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
             <option value="All">Payment Type</option>
             <option value="Cash Advance Payment">Cash Advance Payment</option>
             <option value="Supplier Invoice Payment">Supplier Invoice Payment</option>
+            <option value="Expense Payment">Expense Payment</option>
           </select>
           <select className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs">
             <option>Status</option>
@@ -1185,6 +1201,9 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
         <Link href="/finance/approvals/supplier-payments" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
           Supplier Payments
         </Link>
+        <Link href="/finance/approvals/expense-payments" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
+          Expense Payments
+        </Link>
         <Link href="/finance/approvals/my-requests" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
           My Requests
         </Link>
@@ -1428,12 +1447,16 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block text-sm">
-                      <span className="mb-1 block font-medium text-slate-700">Supplier code</span>
+                      <span className="mb-1 block font-medium text-slate-700">
+                        {composerType === 'Expense Payment' ? 'Payee code' : 'Supplier code'}
+                      </span>
                       <input value={form.beneficiaryCode} onChange={(e) => setForm((prev) => ({ ...prev, beneficiaryCode: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
                     </label>
                     <label className="block text-sm">
-                      <span className="mb-1 block font-medium text-slate-700">Supplier name *</span>
-                      <input value={form.beneficiaryName} onChange={(e) => setForm((prev) => ({ ...prev, beneficiaryName: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" placeholder="Search / enter supplier" />
+                      <span className="mb-1 block font-medium text-slate-700">
+                        {composerType === 'Expense Payment' ? 'Payee / supplier name *' : 'Supplier name *'}
+                      </span>
+                      <input value={form.beneficiaryName} onChange={(e) => setForm((prev) => ({ ...prev, beneficiaryName: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" placeholder={composerType === 'Expense Payment' ? 'Enter payee name' : 'Search / enter supplier'} />
                     </label>
                   </div>
                   <SearchableSelect
@@ -1446,48 +1469,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                     }))}
                     onChange={(value) => setForm((prev) => ({ ...prev, paymentSiteCode: value }))}
                   />
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-                    <p className="text-sm font-medium text-slate-700">Invoice category *</p>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      Use Expense (no PO) for utility, LAWMA, rent and similar bills without a purchase order.
-                    </p>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      <button
-                        type="button"
-                        onClick={() => setForm((prev) => ({
-                          ...prev,
-                          invoiceCategory: 'po-backed',
-                          expenseNature: '',
-                        }))}
-                        className={`rounded-xl border px-3 py-2.5 text-left text-sm ${
-                          form.invoiceCategory === 'po-backed'
-                            ? 'border-[#008FD5] bg-[#EFF8FF] text-slate-900'
-                            : 'border-slate-200 bg-white text-slate-700'
-                        }`}
-                      >
-                        <span className="block font-semibold">PO-backed invoice</span>
-                        <span className="mt-0.5 block text-xs text-slate-500">Supplier invoice linked to a purchase order</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setForm((prev) => ({
-                          ...prev,
-                          invoiceCategory: 'expense-no-po',
-                          purchaseOrderNo: '',
-                          deliveryNoteNo: '',
-                        }))}
-                        className={`rounded-xl border px-3 py-2.5 text-left text-sm ${
-                          form.invoiceCategory === 'expense-no-po'
-                            ? 'border-amber-400 bg-amber-50 text-slate-900'
-                            : 'border-slate-200 bg-white text-slate-700'
-                        }`}
-                      >
-                        <span className="block font-semibold">Expense (no PO)</span>
-                        <span className="mt-0.5 block text-xs text-slate-500">Utility, LAWMA, rent and other non-PO bills</span>
-                      </button>
-                    </div>
-                  </div>
-                  {form.invoiceCategory === 'expense-no-po' ? (
+                  {composerType === 'Expense Payment' ? (
                     <SearchableSelect
                       label="Expense nature"
                       required
@@ -1496,13 +1478,20 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                       options={EXPENSE_NATURE_OPTIONS.map((item) => ({ value: item, label: item }))}
                       onChange={(value) => setForm((prev) => ({ ...prev, expenseNature: value }))}
                     />
-                  ) : null}
+                  ) : (
+                    <div className="rounded-xl border border-[#DBEAFE] bg-[#EFF8FF] px-3 py-2.5 text-sm text-slate-700">
+                      <p className="font-semibold text-slate-900">PO-backed supplier invoice</p>
+                      <p className="mt-0.5 text-xs text-slate-500">Use Expense Payment for utility, LAWMA, rent and other bills without a purchase order.</p>
+                    </div>
+                  )}
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block text-sm">
-                      <span className="mb-1 block font-medium text-slate-700">Invoice number *</span>
+                      <span className="mb-1 block font-medium text-slate-700">
+                        {composerType === 'Expense Payment' ? 'Bill / invoice number *' : 'Invoice number *'}
+                      </span>
                       <input value={form.invoiceNumber} onChange={(e) => setForm((prev) => ({ ...prev, invoiceNumber: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
                     </label>
-                    {form.invoiceCategory === 'po-backed' ? (
+                    {composerType === 'Supplier Invoice Payment' ? (
                       <label className="block text-sm">
                         <span className="mb-1 block font-medium text-slate-700">Purchase order</span>
                         <input value={form.purchaseOrderNo} onChange={(e) => setForm((prev) => ({ ...prev, purchaseOrderNo: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
@@ -1510,7 +1499,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                     ) : (
                       <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/60 px-3 py-2.5 text-sm text-amber-900">
                         <p className="font-medium">PO not applicable</p>
-                        <p className="mt-0.5 text-xs">This expense bill does not require a purchase order.</p>
+                        <p className="mt-0.5 text-xs">Expense payments do not require a purchase order.</p>
                       </div>
                     )}
                   </div>
@@ -1558,7 +1547,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                           Supporting documents <span className="text-rose-600">*</span>
                         </p>
                         <p className="mt-0.5 text-xs text-slate-500">
-                          {form.invoiceCategory === 'expense-no-po'
+                          {composerType === 'Expense Payment'
                             ? 'Upload the bill / invoice and any supporting evidence (PDF, image, Word, Excel · max 8 files, 8 MB each).'
                             : 'Upload invoice, PO, delivery note or other evidence (PDF, image, Word, Excel · max 8 files, 8 MB each).'}
                         </p>

@@ -377,7 +377,7 @@ export default function PaymentApprovalDetailClient() {
               ['Location', request.location || '—'],
               ['Project', request.projectCode || '—'],
               ['Invoice', request.invoiceNumber || '—'],
-              ['Invoice category', supplierInvoiceCategoryLabel(request) || '—'],
+              ['Category', supplierInvoiceCategoryLabel(request) || '—'],
               ...(isExpenseNoPoPayment(request) && request.payload?.expenseNature
                 ? [['Expense nature', String(request.payload.expenseNature)] as [string, string]]
                 : []),

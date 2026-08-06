@@ -187,7 +187,7 @@ export async function POST(request: Request) {
     if (action === 'create') {
       const paymentType = String(body.paymentType || '').trim() as PaymentRequestType;
       if (!PAYMENT_TYPES.includes(paymentType)) {
-        return jsonErr(400, 'Only Cash Advance Payment and Supplier Invoice Payment are enabled.');
+        return jsonErr(400, 'Only Cash Advance, Supplier Invoice, and Expense payments are enabled.');
       }
 
       const sites = await listPaymentSites();
@@ -223,7 +223,8 @@ export async function POST(request: Request) {
 
       // Keep requester (who raises) separate from beneficiary (who is paid).
       // Cash advance: beneficiary/requester are the employee for LM routing.
-      // Supplier invoice: beneficiary is the supplier; requester is always the signed-in user.
+      // Supplier / Expense: beneficiary is the payee; requester is always the signed-in user.
+      const isVendorPayment = paymentType === 'Supplier Invoice Payment' || paymentType === 'Expense Payment';
       const beneficiaryCode = String(
         paymentType === 'Cash Advance Payment'
           ? (body.employeeCode || body.beneficiaryCode || actor.actorCode || '')
@@ -242,7 +243,7 @@ export async function POST(request: Request) {
         ? (beneficiaryName || actor.actor)
         : String(body.requesterName || actor.actor || '').trim();
 
-      if (paymentType === 'Supplier Invoice Payment' && !requesterName) {
+      if (isVendorPayment && !requesterName) {
         return jsonErr(400, 'Requester could not be resolved from your signed-in account.');
       }
 
@@ -272,17 +273,21 @@ export async function POST(request: Request) {
         requesterJobTitle: body.requesterJobTitle || actor.jobTitle,
         supervisorName: body.supervisorName,
         requestCategory: body.requestCategory,
-        invoiceCategory: body.invoiceCategory,
-        expenseNature: body.expenseNature,
+        invoiceCategory: paymentType === 'Expense Payment'
+          ? 'expense-no-po'
+          : paymentType === 'Supplier Invoice Payment'
+            ? 'po-backed'
+            : body.invoiceCategory,
+        expenseNature: paymentType === 'Expense Payment' ? body.expenseNature : undefined,
         invoiceNumber: body.invoiceNumber,
         invoiceDate: body.invoiceDate,
         dueDate: body.dueDate,
         vatAmount: body.vatAmount,
         whtAmount: body.whtAmount,
         retentionAmount: body.retentionAmount,
-        purchaseOrderNo: body.purchaseOrderNo,
-        deliveryNoteNo: body.deliveryNoteNo,
-        grnNo: body.grnNo,
+        purchaseOrderNo: paymentType === 'Expense Payment' ? '' : body.purchaseOrderNo,
+        deliveryNoteNo: paymentType === 'Expense Payment' ? '' : body.deliveryNoteNo,
+        grnNo: paymentType === 'Expense Payment' ? '' : body.grnNo,
         contractNo: body.contractNo,
         submit: body.submit !== false,
         actor: actor.actor,

@@ -184,6 +184,7 @@ export const EMPLOYEE_PAYMENT_NAV_IDS = new Set([
   'my-requests',
   'cash-advances',
   'supplier-payments',
+  'expense-payments',
 ]);
 
 const EMPLOYEE_PAYMENT_PATH_PREFIXES = [
@@ -193,6 +194,7 @@ const EMPLOYEE_PAYMENT_PATH_PREFIXES = [
   '/finance/approvals/my-requests',
   '/finance/approvals/cash-advances',
   '/finance/approvals/supplier-payments',
+  '/finance/approvals/expense-payments',
   '/finance/approvals/request/',
 ];
 

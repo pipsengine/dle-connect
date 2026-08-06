@@ -2,7 +2,8 @@ export type DelegationStatus = 'Active' | 'Scheduled' | 'Expired' | 'Cancelled';
 export type DelegationScope =
   | 'All Employee Payments'
   | 'Cash Advance Payment'
-  | 'Supplier Invoice Payment';
+  | 'Supplier Invoice Payment'
+  | 'Expense Payment';
 
 export type ApprovalDelegation = {
   delegationId: string;
@@ -79,4 +80,5 @@ export const DELEGATION_SCOPE_OPTIONS: DelegationScope[] = [
   'All Employee Payments',
   'Cash Advance Payment',
   'Supplier Invoice Payment',
+  'Expense Payment',
 ];

@@ -83,6 +83,7 @@ export default async function FinanceCatchAllPage({ params }: Props) {
   let paymentType: string | undefined;
   if (pathname.includes('cash-advance') || pathname.endsWith('/cash-advances')) paymentType = 'Cash Advance Payment';
   if (pathname.includes('supplier')) paymentType = 'Supplier Invoice Payment';
+  if (pathname.includes('expense-payment') || pathname.endsWith('/expense-payments')) paymentType = 'Expense Payment';
 
   const paymentRequestsRaw = page.kind === 'payment-requests'
     ? await buildPaymentRequestsWorkspace({

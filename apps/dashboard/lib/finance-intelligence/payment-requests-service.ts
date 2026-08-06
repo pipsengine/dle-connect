@@ -10,17 +10,31 @@ import {
 } from '@/lib/finance-intelligence/payment-approval-notify';
 
 export const ALLOWED_PAYMENT_CURRENCIES = ['NGN', 'USD', 'EUR', 'GBP'] as const;
-export const PAYMENT_TYPES = ['Cash Advance Payment', 'Supplier Invoice Payment'] as const;
+export const PAYMENT_TYPES = [
+  'Cash Advance Payment',
+  'Supplier Invoice Payment',
+  'Expense Payment',
+] as const;
 export type PaymentRequestType = (typeof PAYMENT_TYPES)[number];
 
 export {
   EXPENSE_NATURE_OPTIONS,
   SUPPLIER_INVOICE_CATEGORIES,
+  invoiceCategoryForPaymentType,
   isExpenseNoPoPayment,
+  isSupplierPoInvoicePayment,
   supplierInvoiceCategoryLabel,
   type SupplierInvoiceCategory,
 } from '@/lib/finance-intelligence/payment-invoice-category';
-import type { SupplierInvoiceCategory } from '@/lib/finance-intelligence/payment-invoice-category';
+import {
+  invoiceCategoryForPaymentType,
+  isExpenseNoPoPayment,
+  type SupplierInvoiceCategory,
+} from '@/lib/finance-intelligence/payment-invoice-category';
+
+/** Supplier invoice (PO) or expense (no PO) — both pay a vendor/supplier. */
+export const isVendorPaymentType = (paymentType?: string | null) =>
+  /supplier invoice|expense payment/i.test(String(paymentType || ''));
 
 const OUTSTANDING_CASH_ADVANCE_STATUSES = [
   'Submitted',
@@ -642,7 +656,7 @@ const stagesFromPayload = (payload: Record<string, unknown>) => {
 
 const defaultStagesForPayment = (paymentType: string, projectCode?: string | null, department?: string | null) => {
   const isProject = Boolean(compact(projectCode)) || /project/i.test(compact(department));
-  if (paymentType === 'Supplier Invoice Payment') {
+  if (isVendorPaymentType(paymentType)) {
     return isProject
       ? ['Project Manager', 'Cost Controller', 'Finance Manager']
       : ['Finance Manager'];
@@ -738,7 +752,7 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
 
   const needsRepair = existing.length === 0
     || onlyReportingManager
-    || (row.paymentType !== 'Supplier Invoice Payment' && existing.length > 0 && !hasFinanceManager)
+    || (row.paymentType === 'Cash Advance Payment' && existing.length > 0 && !hasFinanceManager)
     || (matchedStages != null && !stagesEqual(existing, matchedStages))
     || needsFxRepair;
 
@@ -1106,8 +1120,12 @@ WHERE [WaiverId] = @WaiverId
 };
 
 /** Document type code for human-facing request numbers: CA / SI. */
-const paymentTypeCode = (paymentType: PaymentRequestType | string) =>
-  /supplier/i.test(compact(paymentType)) ? 'SI' : 'CA';
+const paymentTypeCode = (paymentType: PaymentRequestType | string) => {
+  const value = compact(paymentType);
+  if (/^expense payment$/i.test(value)) return 'EX';
+  if (/supplier/i.test(value)) return 'SI';
+  return 'CA';
+};
 
 /**
  * Site-scoped document number: {SITE}{TYPE}{YYYY}{MM}{#####}
@@ -1177,12 +1195,39 @@ VALUES
   }
 };
 
+export const migrateLegacyExpensePayments = async () => {
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) return { updated: 0 };
+  try {
+    const result = await pool.request().query(`
+UPDATE [finance].[PaymentRequests]
+SET [PaymentType] = N'Expense Payment',
+    [RequestCategory] = COALESCE(NULLIF(LTRIM(RTRIM([RequestCategory])), N''), N'Expense (No PO)'),
+    [PurchaseOrderNo] = NULL,
+    [DeliveryNoteNo] = NULL,
+    [GrnNo] = NULL,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [PaymentType] = N'Supplier Invoice Payment'
+  AND (
+    LOWER(COALESCE([RequestCategory], N'')) LIKE N'%expense%'
+    OR LOWER(COALESCE([RequestCategory], N'')) LIKE N'%no po%'
+    OR LOWER(COALESCE([PayloadJson], N'')) LIKE N'%"invoicecategory":"expense-no-po"%'
+  )
+`);
+    return { updated: Number(result.rowsAffected?.[0] || 0) };
+  } catch (error) {
+    console.error('[payment-requests] migrateLegacyExpensePayments failed', error);
+    return { updated: 0 };
+  }
+};
+
 export const buildPaymentRequestsWorkspace = async (input?: {
   paymentType?: string;
   mineFor?: string;
   /** Non-elevated users: only own / assigned / beneficiary rows. */
   scopedToActorCode?: string;
 }): Promise<PaymentRequestsWorkspace> => {
+  await migrateLegacyExpensePayments();
   const rows = await listRows({
     paymentType: input?.paymentType,
     mineFor: input?.mineFor,
@@ -1430,7 +1475,7 @@ WHERE [RequestId] = @RequestId
 
 export const createPaymentRequest = async (input: CreatePaymentRequestInput) => {
   if (!PAYMENT_TYPES.includes(input.paymentType)) {
-    throw new Error('Only Cash Advance Payment and Supplier Invoice Payment are enabled.');
+    throw new Error('Only Cash Advance, Supplier Invoice, and Expense payments are enabled.');
   }
   const title = compact(input.title);
   const beneficiaryName = compact(input.beneficiaryName);
@@ -1490,21 +1535,26 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
     if (uploadCount < 1) {
       throw new Error('Supporting documents are required for supplier invoice payments.');
     }
-    const invoiceCategory: SupplierInvoiceCategory = /expense|no[- ]?po/i.test(compact(input.invoiceCategory) || compact(input.requestCategory))
-      ? 'expense-no-po'
-      : 'po-backed';
-    input.invoiceCategory = invoiceCategory;
-    if (invoiceCategory === 'expense-no-po') {
-      input.purchaseOrderNo = '';
-      input.deliveryNoteNo = '';
-      input.grnNo = '';
-      input.requestCategory = 'Expense (No PO)';
-      if (!compact(input.expenseNature)) {
-        throw new Error('Expense nature is required for expense payments without a PO (e.g. Utility, LAWMA).');
-      }
-    } else {
-      input.requestCategory = compact(input.requestCategory) || 'PO-backed Invoice';
+    input.invoiceCategory = 'po-backed';
+    input.requestCategory = compact(input.requestCategory) || 'PO-backed Invoice';
+    input.expenseNature = '';
+  }
+
+  if (input.paymentType === 'Expense Payment') {
+    if (!compact(input.invoiceNumber)) throw new Error('Bill / invoice number is required for expense payments.');
+    if (!beneficiaryCode && !beneficiaryName) throw new Error('Payee / supplier name is required.');
+    const uploadCount = (input.attachmentUploads?.length || 0) + (input.attachments?.length || 0);
+    if (uploadCount < 1) {
+      throw new Error('Supporting documents are required for expense payments.');
     }
+    if (!compact(input.expenseNature)) {
+      throw new Error('Expense nature is required (e.g. Utility, LAWMA).');
+    }
+    input.invoiceCategory = 'expense-no-po';
+    input.requestCategory = 'Expense (No PO)';
+    input.purchaseOrderNo = '';
+    input.deliveryNoteNo = '';
+    input.grnNo = '';
   }
 
   const pool = await ensureFinanceDb();
@@ -1523,8 +1573,8 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
     ...(input.attachments || []),
     ...preparedUploads.map((item) => item.meta),
   ];
-  if (input.paymentType === 'Supplier Invoice Payment' && attachments.length < 1) {
-    throw new Error('Supporting documents are required for supplier invoice payments.');
+  if (isVendorPaymentType(input.paymentType) && attachments.length < 1) {
+    throw new Error('Supporting documents are required for supplier and expense payments.');
   }
 
   const requestNumber = await nextRequestNumber({
@@ -1564,7 +1614,7 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
     .input('Title', sql.NVarChar(250), title)
     .input('Purpose', sql.NVarChar(sql.MAX), compact(input.purpose) || expenseCode || null)
     .input('BusinessJustification', sql.NVarChar(sql.MAX), compact(input.businessJustification) || null)
-    .input('BeneficiaryType', sql.NVarChar(40), input.paymentType === 'Supplier Invoice Payment' ? 'Supplier' : 'Employee')
+    .input('BeneficiaryType', sql.NVarChar(40), isVendorPaymentType(input.paymentType) ? 'Supplier' : 'Employee')
     .input('BeneficiaryCode', sql.NVarChar(80), beneficiaryCode || null)
     .input('BeneficiaryName', sql.NVarChar(250), beneficiaryName)
     .input('BeneficiaryBankSummary', sql.NVarChar(500), compact(input.beneficiaryBankSummary) || null)
@@ -1614,10 +1664,8 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
       paymentSiteCode,
       paymentSiteName,
       location,
-      invoiceCategory: input.paymentType === 'Supplier Invoice Payment'
-        ? (compact(input.invoiceCategory) || 'po-backed')
-        : null,
-      expenseNature: input.paymentType === 'Supplier Invoice Payment'
+      invoiceCategory: invoiceCategoryForPaymentType(input.paymentType),
+      expenseNature: input.paymentType === 'Expense Payment'
         ? (compact(input.expenseNature) || null)
         : null,
     }))
@@ -1748,7 +1796,7 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
   }
 
   let requestCategory = compact(input.requestCategory) || existing.requestCategory;
-  let invoiceCategory = compact(input.invoiceCategory) || compact(existing.payload?.invoiceCategory) || 'po-backed';
+  let invoiceCategory = compact(input.invoiceCategory) || compact(existing.payload?.invoiceCategory) || '';
   let expenseNature = compact(input.expenseNature) || compact(existing.payload?.expenseNature);
   let purchaseOrderNo = compact(input.purchaseOrderNo);
   let deliveryNoteNo = compact(input.deliveryNoteNo);
@@ -1758,19 +1806,22 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
     if (!compact(input.invoiceNumber) && !existing.invoiceNumber) {
       throw new Error('Invoice number is required for supplier payments.');
     }
-    invoiceCategory = /expense|no[- ]?po/i.test(invoiceCategory || requestCategory)
-      ? 'expense-no-po'
-      : 'po-backed';
-    if (invoiceCategory === 'expense-no-po') {
-      purchaseOrderNo = '';
-      deliveryNoteNo = '';
-      grnNo = '';
-      requestCategory = 'Expense (No PO)';
-      if (!expenseNature) {
-        throw new Error('Expense nature is required for expense payments without a PO (e.g. Utility, LAWMA).');
-      }
-    } else {
-      requestCategory = compact(input.requestCategory) || 'PO-backed Invoice';
+    invoiceCategory = 'po-backed';
+    requestCategory = compact(input.requestCategory) || 'PO-backed Invoice';
+    expenseNature = '';
+  }
+
+  if (existing.paymentType === 'Expense Payment' || isExpenseNoPoPayment(existing)) {
+    if (!compact(input.invoiceNumber) && !existing.invoiceNumber) {
+      throw new Error('Bill / invoice number is required for expense payments.');
+    }
+    invoiceCategory = 'expense-no-po';
+    purchaseOrderNo = '';
+    deliveryNoteNo = '';
+    grnNo = '';
+    requestCategory = 'Expense (No PO)';
+    if (!expenseNature) {
+      throw new Error('Expense nature is required (e.g. Utility, LAWMA).');
     }
   }
 
@@ -1781,8 +1832,8 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
   }
   const keepExisting = Array.isArray(existing.attachments) ? existing.attachments : [];
   const attachments = [...keepExisting, ...preparedUploads.map((item) => item.meta)];
-  if (existing.paymentType === 'Supplier Invoice Payment' && attachments.length < 1) {
-    throw new Error('Supporting documents are required for supplier invoice payments.');
+  if (isVendorPaymentType(existing.paymentType) && attachments.length < 1) {
+    throw new Error('Supporting documents are required for supplier and expense payments.');
   }
 
   const vatAmount = moneyRound(Number(input.vatAmount ?? existing.vatAmount ?? 0));
@@ -1831,8 +1882,12 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
     paymentSiteCode,
     paymentSiteName,
     location,
-    invoiceCategory: existing.paymentType === 'Supplier Invoice Payment' ? invoiceCategory : null,
-    expenseNature: existing.paymentType === 'Supplier Invoice Payment' ? (expenseNature || null) : null,
+    invoiceCategory: isVendorPaymentType(existing.paymentType)
+      ? (invoiceCategory || invoiceCategoryForPaymentType(existing.paymentType))
+      : null,
+    expenseNature: (existing.paymentType === 'Expense Payment' || isExpenseNoPoPayment(existing))
+      ? (expenseNature || null)
+      : null,
   };
 
   await pool.request()
@@ -1867,9 +1922,9 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
     .input('InvoiceNumber', sql.NVarChar(120), compact(input.invoiceNumber) || existing.invoiceNumber || null)
     .input('InvoiceDate', sql.Date, input.invoiceDate ? new Date(input.invoiceDate) : (existing.invoiceDate ? new Date(existing.invoiceDate) : null))
     .input('DueDate', sql.Date, input.dueDate ? new Date(input.dueDate) : (existing.dueDate ? new Date(existing.dueDate) : null))
-    .input('PurchaseOrderNo', sql.NVarChar(120), existing.paymentType === 'Supplier Invoice Payment' ? (purchaseOrderNo || null) : (existing.purchaseOrderNo || null))
-    .input('DeliveryNoteNo', sql.NVarChar(120), existing.paymentType === 'Supplier Invoice Payment' ? (deliveryNoteNo || null) : (existing.deliveryNoteNo || null))
-    .input('GrnNo', sql.NVarChar(120), existing.paymentType === 'Supplier Invoice Payment' ? (grnNo || null) : (existing.grnNo || null))
+    .input('PurchaseOrderNo', sql.NVarChar(120), isVendorPaymentType(existing.paymentType) ? (purchaseOrderNo || null) : (existing.purchaseOrderNo || null))
+    .input('DeliveryNoteNo', sql.NVarChar(120), isVendorPaymentType(existing.paymentType) ? (deliveryNoteNo || null) : (existing.deliveryNoteNo || null))
+    .input('GrnNo', sql.NVarChar(120), isVendorPaymentType(existing.paymentType) ? (grnNo || null) : (existing.grnNo || null))
     .input('ContractNo', sql.NVarChar(120), compact(input.contractNo) || existing.contractNo || null)
     .input('PayloadJson', sql.NVarChar(sql.MAX), JSON.stringify(payload))
     .input('AttachmentsJson', sql.NVarChar(sql.MAX), JSON.stringify(attachments))

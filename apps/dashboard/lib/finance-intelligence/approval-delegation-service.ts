@@ -27,6 +27,7 @@ const nowIso = () => new Date().toISOString();
 const normalizeScope = (value: unknown): DelegationScope => {
   const raw = compact(value);
   if (/cash\s*advance/i.test(raw)) return 'Cash Advance Payment';
+  if (/expense/i.test(raw)) return 'Expense Payment';
   if (/supplier/i.test(raw)) return 'Supplier Invoice Payment';
   return 'All Employee Payments';
 };
