@@ -32,13 +32,13 @@ import type {
   CashAdvanceEligibility,
   PaymentRequestType,
   PaymentRequestsWorkspace,
-  SupplierInvoiceCategory,
 } from '@/lib/finance-intelligence/payment-requests-service';
 import {
   EXPENSE_NATURE_OPTIONS,
   isExpenseNoPoPayment,
   supplierInvoiceCategoryLabel,
-} from '@/lib/finance-intelligence/payment-requests-service';
+  type SupplierInvoiceCategory,
+} from '@/lib/finance-intelligence/payment-invoice-category';
 import type { PaymentRequestLookups } from '@/lib/finance-intelligence/payment-request-lookups';
 
 type Props = {

@@ -19,7 +19,7 @@ import type { PaymentRequestActionRow, PaymentRequestAttachment, PaymentRequestR
 import {
   isExpenseNoPoPayment,
   supplierInvoiceCategoryLabel,
-} from '@/lib/finance-intelligence/payment-requests-service';
+} from '@/lib/finance-intelligence/payment-invoice-category';
 import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-action-visibility';
 
 const money = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 2 });

@@ -5,7 +5,7 @@ import type { PaymentRequestActionRow, PaymentRequestRow } from '@/lib/finance-i
 import {
   isExpenseNoPoPayment,
   supplierInvoiceCategoryLabel,
-} from '@/lib/finance-intelligence/payment-requests-service';
+} from '@/lib/finance-intelligence/payment-invoice-category';
 import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-action-visibility';
 
 const money = (amount: number, currency = 'NGN') =>

@@ -13,44 +13,14 @@ export const ALLOWED_PAYMENT_CURRENCIES = ['NGN', 'USD', 'EUR', 'GBP'] as const;
 export const PAYMENT_TYPES = ['Cash Advance Payment', 'Supplier Invoice Payment'] as const;
 export type PaymentRequestType = (typeof PAYMENT_TYPES)[number];
 
-/** Supplier invoice subtypes — same payment type, clearer no-PO expense capture. */
-export const SUPPLIER_INVOICE_CATEGORIES = ['po-backed', 'expense-no-po'] as const;
-export type SupplierInvoiceCategory = (typeof SUPPLIER_INVOICE_CATEGORIES)[number];
-
-export const EXPENSE_NATURE_OPTIONS = [
-  'Utility',
-  'LAWMA / Waste',
-  'Rent / Lease',
-  'Telecom / Internet',
-  'Professional fees',
-  'Insurance',
-  'Subscription / License',
-  'Statutory / Regulatory',
-  'Other',
-] as const;
-
-const textOf = (value: unknown) => String(value ?? '').trim();
-
-export const isExpenseNoPoPayment = (row: {
-  paymentType?: string | null;
-  requestCategory?: string | null;
-  payload?: Record<string, unknown> | null;
-}) => {
-  if (!/supplier invoice/i.test(textOf(row.paymentType))) return false;
-  const fromPayload = textOf(row.payload?.invoiceCategory).toLowerCase();
-  if (fromPayload === 'expense-no-po') return true;
-  if (fromPayload === 'po-backed') return false;
-  return /expense|no\s*po/i.test(textOf(row.requestCategory));
-};
-
-export const supplierInvoiceCategoryLabel = (row: {
-  paymentType?: string | null;
-  requestCategory?: string | null;
-  payload?: Record<string, unknown> | null;
-}) => {
-  if (!/supplier invoice/i.test(textOf(row.paymentType))) return '';
-  return isExpenseNoPoPayment(row) ? 'Expense · No PO' : 'PO-backed';
-};
+export {
+  EXPENSE_NATURE_OPTIONS,
+  SUPPLIER_INVOICE_CATEGORIES,
+  isExpenseNoPoPayment,
+  supplierInvoiceCategoryLabel,
+  type SupplierInvoiceCategory,
+} from '@/lib/finance-intelligence/payment-invoice-category';
+import type { SupplierInvoiceCategory } from '@/lib/finance-intelligence/payment-invoice-category';
 
 const OUTSTANDING_CASH_ADVANCE_STATUSES = [
   'Submitted',
