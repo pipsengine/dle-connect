@@ -153,7 +153,16 @@ export async function GET(request: Request) {
       mineFor: mineOnly ? actor.actorCode : undefined,
       scopedToActorCode: !viewAll && !mineOnly ? actor.actorCode : undefined,
     });
-    return jsonOk(workspace);
+    const approvableRequestIds = workspace.rows
+      .filter((row) => canActOnPaymentApproval(actor, row))
+      .map((row) => row.requestId);
+    return jsonOk({
+      ...workspace,
+      viewer: {
+        actorCode: actor.actorCode,
+        approvableRequestIds,
+      },
+    });
   } catch (error) {
     return jsonErr(500, error instanceof Error ? error.message : 'Unable to load payment requests.');
   }
@@ -361,7 +370,21 @@ export async function POST(request: Request) {
       const actions = result.request
         ? await listPaymentRequestActions(result.request.requestId)
         : [];
-      return jsonOk({ ...result, actions, message: 'Payment request updated.' });
+      const approvableRequestIds = (result.workspace?.rows || [])
+        .filter((row) => canActOnPaymentApproval(actor, row))
+        .map((row) => row.requestId);
+      return jsonOk({
+        ...result,
+        workspace: {
+          ...result.workspace,
+          viewer: {
+            actorCode: actor.actorCode,
+            approvableRequestIds,
+          },
+        },
+        actions,
+        message: 'Payment request updated.',
+      });
     }
 
     return jsonErr(400, 'Unsupported payment request action.');

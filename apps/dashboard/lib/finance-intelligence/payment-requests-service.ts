@@ -215,6 +215,11 @@ export type PaymentRequestsWorkspace = {
   };
   tabCounts: Record<string, number>;
   rows: PaymentRequestRow[];
+  /** Present when list is loaded for a signed-in viewer. */
+  viewer?: {
+    actorCode: string;
+    approvableRequestIds: string[];
+  };
 };
 
 export type CreatePaymentRequestInput = {

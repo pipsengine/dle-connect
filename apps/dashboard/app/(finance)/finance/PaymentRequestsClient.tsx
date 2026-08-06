@@ -15,7 +15,6 @@ import {
   FileText,
   Filter,
   Inbox,
-  MoreHorizontal,
   Paperclip,
   Plus,
   RefreshCcw,
@@ -300,6 +299,13 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
   const [eligibility, setEligibility] = useState<CashAdvanceEligibility | null>(null);
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [supportingFiles, setSupportingFiles] = useState<File[]>([]);
+  const [rowAction, setRowAction] = useState<{
+    requestId: string;
+    requestNumber: string;
+    action: 'approve' | 'reject' | 'return';
+  } | null>(null);
+  const [rowActionReason, setRowActionReason] = useState('');
+  const [rowActionBusy, setRowActionBusy] = useState(false);
 
   const fileToBase64 = (file: File) =>
     new Promise<string>((resolve, reject) => {
@@ -612,6 +618,57 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
     }
   };
 
+  const canApproveRow = (requestId: string) =>
+    Boolean(workspace.viewer?.approvableRequestIds?.includes(requestId));
+
+  const openRowAction = (row: { requestId: string; requestNumber: string }, action: 'approve' | 'reject' | 'return') => {
+    setRowAction({ requestId: row.requestId, requestNumber: row.requestNumber, action });
+    setRowActionReason('');
+    setToast('');
+  };
+
+  const submitRowAction = async () => {
+    if (!rowAction) return;
+    const needsReason = rowAction.action === 'reject' || rowAction.action === 'return';
+    if (needsReason && rowActionReason.trim().length < 3) {
+      setToast(`Please enter a reason for ${rowAction.action}.`);
+      return;
+    }
+    setRowActionBusy(true);
+    setToast('');
+    try {
+      const res = await fetch('/api/finance/payment-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'transition',
+          requestId: rowAction.requestId,
+          transition: rowAction.action,
+          reason: needsReason ? rowActionReason.trim() : undefined,
+          comment: rowActionReason.trim() || undefined,
+        }),
+      });
+      const json = await res.json().catch(() => ({ status: 'error', error: `Unable to ${rowAction.action}.` }));
+      if (!res.ok || json.status !== 'success') {
+        throw new Error(json.error || `Unable to ${rowAction.action} request.`);
+      }
+      setWorkspace(json.data.workspace as PaymentRequestsWorkspace);
+      setToast(
+        rowAction.action === 'approve'
+          ? `${rowAction.requestNumber} approved.`
+          : rowAction.action === 'reject'
+            ? `${rowAction.requestNumber} rejected.`
+            : `${rowAction.requestNumber} returned.`,
+      );
+      setRowAction(null);
+      setRowActionReason('');
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : `Unable to ${rowAction.action} request.`);
+    } finally {
+      setRowActionBusy(false);
+    }
+  };
+
   const transitionSelected = async (transition: string) => {
     if (!selected.length) {
       setToast('Select at least one request.');
@@ -819,7 +876,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                   'Current Stage',
                   'Approver',
                   'Status',
-                  '',
+                  'Action',
                 ].map((column) => (
                   <th key={column || 'actions'} className="whitespace-nowrap px-3 py-2.5 font-semibold">{column}</th>
                 ))}
@@ -831,6 +888,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                 const foreign = isForeignCurrency(row.currencyCode);
                 const fxRate = rowFxRate(row);
                 const fxDate = rowFxRateDate(row);
+                const showApproveActions = canApproveRow(row.requestId);
                 return (
                   <tr key={row.requestId} className="border-t border-slate-100 hover:bg-slate-50/70">
                     <td className="px-3 py-2.5">
@@ -899,9 +957,44 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusTone(row.status)}`}>{row.status}</span>
                     </td>
                     <td className="px-3 py-2.5">
-                      <button type="button" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </button>
+                      {showApproveActions ? (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={busy || rowActionBusy}
+                            onClick={() => openRowAction(row, 'approve')}
+                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                          >
+                            <CheckCircle2 className="h-3 w-3" />
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy || rowActionBusy}
+                            onClick={() => openRowAction(row, 'return')}
+                            className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            Return
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy || rowActionBusy}
+                            onClick={() => openRowAction(row, 'reject')}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                          >
+                            <XCircle className="h-3 w-3" />
+                            Reject
+                          </button>
+                        </div>
+                      ) : (
+                        <Link
+                          href={`/finance/approvals/request/${row.requestId}`}
+                          className="text-[11px] font-semibold text-[#008FD5] hover:underline"
+                        >
+                          View
+                        </Link>
+                      )}
                     </td>
                   </tr>
                 );
@@ -1388,6 +1481,90 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                   {busy ? 'Saving…' : form.submit ? 'Submit request' : 'Save draft'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {rowAction ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">
+                  {rowAction.action === 'approve'
+                    ? 'Approve payment'
+                    : rowAction.action === 'return'
+                      ? 'Return payment'
+                      : 'Reject payment'}
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">{rowAction.requestNumber}</p>
+              </div>
+              <button
+                type="button"
+                disabled={rowActionBusy}
+                onClick={() => { setRowAction(null); setRowActionReason(''); }}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3 px-5 py-4">
+              {rowAction.action === 'approve' ? (
+                <p className="text-sm text-slate-600">
+                  Confirm approval for this stage. You can add an optional comment below.
+                </p>
+              ) : (
+                <p className="text-sm text-slate-600">
+                  A reason is required to {rowAction.action} this payment request.
+                </p>
+              )}
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium text-slate-700">
+                  {rowAction.action === 'approve' ? 'Comment (optional)' : 'Reason *'}
+                </span>
+                <textarea
+                  value={rowActionReason}
+                  onChange={(e) => setRowActionReason(e.target.value)}
+                  rows={4}
+                  placeholder={
+                    rowAction.action === 'approve'
+                      ? 'Optional note for the requester / next stage'
+                      : `Enter reason for ${rowAction.action}`
+                  }
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]"
+                />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4">
+              <button
+                type="button"
+                disabled={rowActionBusy}
+                onClick={() => { setRowAction(null); setRowActionReason(''); }}
+                className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={rowActionBusy}
+                onClick={() => void submitRowAction()}
+                className={`rounded-xl px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-60 ${
+                  rowAction.action === 'approve'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : rowAction.action === 'return'
+                      ? 'bg-amber-600 hover:bg-amber-700'
+                      : 'bg-rose-600 hover:bg-rose-700'
+                }`}
+              >
+                {rowActionBusy
+                  ? 'Saving…'
+                  : rowAction.action === 'approve'
+                    ? 'Confirm approve'
+                    : rowAction.action === 'return'
+                      ? 'Confirm return'
+                      : 'Confirm reject'}
+              </button>
             </div>
           </div>
         </div>

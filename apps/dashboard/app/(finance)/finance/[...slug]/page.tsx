@@ -13,6 +13,7 @@ import { buildApprovalMatrixWorkspace } from '@/lib/finance-intelligence/approva
 import { buildApprovalDelegationWorkspace } from '@/lib/finance-intelligence/approval-delegation-service';
 import {
   canAccessFinancePaymentPage,
+  canActOnPaymentApproval,
   canViewAllPaymentRequests,
 } from '@/lib/finance-intelligence/payment-access';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
@@ -82,12 +83,23 @@ export default async function FinanceCatchAllPage({ params }: Props) {
   if (pathname.includes('cash-advance') || pathname.endsWith('/cash-advances')) paymentType = 'Cash Advance Payment';
   if (pathname.includes('supplier')) paymentType = 'Supplier Invoice Payment';
 
-  const paymentRequests = page.kind === 'payment-requests'
+  const paymentRequestsRaw = page.kind === 'payment-requests'
     ? await buildPaymentRequestsWorkspace({
       paymentType,
       mineFor: mineOnlyPage || paymentSelfService ? actor.actorCode : undefined,
       scopedToActorCode: !viewAllPayments && !mineOnlyPage ? actor.actorCode : undefined,
     }).catch(() => null)
+    : null;
+  const paymentRequests = paymentRequestsRaw
+    ? {
+      ...paymentRequestsRaw,
+      viewer: {
+        actorCode: actor.actorCode,
+        approvableRequestIds: paymentRequestsRaw.rows
+          .filter((row) => canActOnPaymentApproval(actor, row))
+          .map((row) => row.requestId),
+      },
+    }
     : null;
 
   const cashAdvanceControls = page.kind === 'cash-advance-controls' && viewAllPayments
