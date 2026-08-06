@@ -232,6 +232,8 @@ export async function POST(request: Request) {
         requesterJobTitle: body.requesterJobTitle || actor.jobTitle,
         supervisorName: body.supervisorName,
         requestCategory: body.requestCategory,
+        invoiceCategory: body.invoiceCategory,
+        expenseNature: body.expenseNature,
         invoiceNumber: body.invoiceNumber,
         invoiceDate: body.invoiceDate,
         dueDate: body.dueDate,

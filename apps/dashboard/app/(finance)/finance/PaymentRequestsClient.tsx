@@ -32,6 +32,12 @@ import type {
   CashAdvanceEligibility,
   PaymentRequestType,
   PaymentRequestsWorkspace,
+  SupplierInvoiceCategory,
+} from '@/lib/finance-intelligence/payment-requests-service';
+import {
+  EXPENSE_NATURE_OPTIONS,
+  isExpenseNoPoPayment,
+  supplierInvoiceCategoryLabel,
 } from '@/lib/finance-intelligence/payment-requests-service';
 import type { PaymentRequestLookups } from '@/lib/finance-intelligence/payment-request-lookups';
 
@@ -63,6 +69,8 @@ type ComposerForm = {
   retentionAmount: string;
   purchaseOrderNo: string;
   deliveryNoteNo: string;
+  invoiceCategory: SupplierInvoiceCategory;
+  expenseNature: string;
   submit: boolean;
 };
 
@@ -88,6 +96,8 @@ const emptyForm = (): ComposerForm => ({
   retentionAmount: '',
   purchaseOrderNo: '',
   deliveryNoteNo: '',
+  invoiceCategory: 'po-backed',
+  expenseNature: '',
   submit: true,
 });
 
@@ -472,6 +482,9 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
       if (!form.invoiceNumber.trim()) errors.push('Invoice number is required.');
       if (!(Number(form.amount) >= 1)) errors.push('Amount must be at least 1.00.');
       if (!supportingFiles.length) errors.push('Supporting documents are required.');
+      if (form.invoiceCategory === 'expense-no-po' && !form.expenseNature.trim()) {
+        errors.push('Select the expense nature (e.g. Utility, LAWMA).');
+      }
     }
     setFormErrors(errors);
     return errors.length === 0;
@@ -502,6 +515,9 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
       if (!form.invoiceNumber.trim()) errors.push('Invoice number is required.');
       if (!(Number(form.amount) >= 1)) errors.push('Amount must be at least 1.00.');
       if (!supportingFiles.length) errors.push('Supporting documents are required.');
+      if (form.invoiceCategory === 'expense-no-po' && !form.expenseNature.trim()) {
+        errors.push('Select the expense nature (e.g. Utility, LAWMA).');
+      }
     }
     setFormErrors(errors);
     if (errors.length) return;
@@ -543,8 +559,16 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
           vatAmount: Number(form.vatAmount || 0),
           whtAmount: Number(form.whtAmount || 0),
           retentionAmount: Number(form.retentionAmount || 0),
-          purchaseOrderNo: form.purchaseOrderNo,
-          deliveryNoteNo: form.deliveryNoteNo,
+          invoiceCategory: composerType === 'Supplier Invoice Payment' ? form.invoiceCategory : undefined,
+          expenseNature: composerType === 'Supplier Invoice Payment' && form.invoiceCategory === 'expense-no-po'
+            ? form.expenseNature
+            : undefined,
+          purchaseOrderNo: composerType === 'Supplier Invoice Payment' && form.invoiceCategory === 'expense-no-po'
+            ? ''
+            : form.purchaseOrderNo,
+          deliveryNoteNo: composerType === 'Supplier Invoice Payment' && form.invoiceCategory === 'expense-no-po'
+            ? ''
+            : form.deliveryNoteNo,
           submit: form.submit,
           attachmentUploads,
         }),
@@ -665,7 +689,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                   <Building2 className="mt-0.5 h-4 w-4 text-[#008FD5]" />
                   <span>
                     <span className="block text-sm font-semibold text-slate-900">Supplier Invoice Payment</span>
-                    <span className="block text-xs text-slate-500">Pay supplier against invoice / PO</span>
+                    <span className="block text-xs text-slate-500">Pay supplier — PO invoice or expense bill (no PO)</span>
                   </span>
                 </button>
               </div>
@@ -803,9 +827,23 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                       </Link>
                     </td>
                     <td className="px-3 py-2.5">
-                      <span className="inline-flex items-center gap-1.5">
-                        <TypeIcon className="h-3.5 w-3.5 text-slate-400" />
-                        {row.paymentType}
+                      <span className="inline-flex flex-col gap-1">
+                        <span className="inline-flex items-center gap-1.5">
+                          <TypeIcon className="h-3.5 w-3.5 text-slate-400" />
+                          {row.paymentType}
+                        </span>
+                        {supplierInvoiceCategoryLabel(row) ? (
+                          <span className={`w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            isExpenseNoPoPayment(row)
+                              ? 'bg-amber-50 text-amber-800'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {supplierInvoiceCategoryLabel(row)}
+                            {isExpenseNoPoPayment(row) && row.payload?.expenseNature
+                              ? ` · ${String(row.payload.expenseNature)}`
+                              : ''}
+                          </span>
+                        ) : null}
                       </span>
                     </td>
                     <td className="px-3 py-2.5 text-slate-700">{row.beneficiaryName || '—'}</td>
@@ -1137,15 +1175,73 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                     }))}
                     onChange={(value) => setForm((prev) => ({ ...prev, paymentSiteCode: value }))}
                   />
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                    <p className="text-sm font-medium text-slate-700">Invoice category *</p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Use Expense (no PO) for utility, LAWMA, rent and similar bills without a purchase order.
+                    </p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() => setForm((prev) => ({
+                          ...prev,
+                          invoiceCategory: 'po-backed',
+                          expenseNature: '',
+                        }))}
+                        className={`rounded-xl border px-3 py-2.5 text-left text-sm ${
+                          form.invoiceCategory === 'po-backed'
+                            ? 'border-[#008FD5] bg-[#EFF8FF] text-slate-900'
+                            : 'border-slate-200 bg-white text-slate-700'
+                        }`}
+                      >
+                        <span className="block font-semibold">PO-backed invoice</span>
+                        <span className="mt-0.5 block text-xs text-slate-500">Supplier invoice linked to a purchase order</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setForm((prev) => ({
+                          ...prev,
+                          invoiceCategory: 'expense-no-po',
+                          purchaseOrderNo: '',
+                          deliveryNoteNo: '',
+                        }))}
+                        className={`rounded-xl border px-3 py-2.5 text-left text-sm ${
+                          form.invoiceCategory === 'expense-no-po'
+                            ? 'border-amber-400 bg-amber-50 text-slate-900'
+                            : 'border-slate-200 bg-white text-slate-700'
+                        }`}
+                      >
+                        <span className="block font-semibold">Expense (no PO)</span>
+                        <span className="mt-0.5 block text-xs text-slate-500">Utility, LAWMA, rent and other non-PO bills</span>
+                      </button>
+                    </div>
+                  </div>
+                  {form.invoiceCategory === 'expense-no-po' ? (
+                    <SearchableSelect
+                      label="Expense nature"
+                      required
+                      value={form.expenseNature}
+                      placeholder="Search expense nature"
+                      options={EXPENSE_NATURE_OPTIONS.map((item) => ({ value: item, label: item }))}
+                      onChange={(value) => setForm((prev) => ({ ...prev, expenseNature: value }))}
+                    />
+                  ) : null}
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block text-sm">
                       <span className="mb-1 block font-medium text-slate-700">Invoice number *</span>
                       <input value={form.invoiceNumber} onChange={(e) => setForm((prev) => ({ ...prev, invoiceNumber: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
                     </label>
-                    <label className="block text-sm">
-                      <span className="mb-1 block font-medium text-slate-700">Purchase order</span>
-                      <input value={form.purchaseOrderNo} onChange={(e) => setForm((prev) => ({ ...prev, purchaseOrderNo: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
-                    </label>
+                    {form.invoiceCategory === 'po-backed' ? (
+                      <label className="block text-sm">
+                        <span className="mb-1 block font-medium text-slate-700">Purchase order</span>
+                        <input value={form.purchaseOrderNo} onChange={(e) => setForm((prev) => ({ ...prev, purchaseOrderNo: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
+                      </label>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/60 px-3 py-2.5 text-sm text-amber-900">
+                        <p className="font-medium">PO not applicable</p>
+                        <p className="mt-0.5 text-xs">This expense bill does not require a purchase order.</p>
+                      </div>
+                    )}
                   </div>
                   <div className="grid gap-3 sm:grid-cols-3">
                     <label className="block text-sm">
@@ -1191,7 +1287,9 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                           Supporting documents <span className="text-rose-600">*</span>
                         </p>
                         <p className="mt-0.5 text-xs text-slate-500">
-                          Upload invoice, PO, delivery note or other evidence (PDF, image, Word, Excel · max 8 files, 8 MB each).
+                          {form.invoiceCategory === 'expense-no-po'
+                            ? 'Upload the bill / invoice and any supporting evidence (PDF, image, Word, Excel · max 8 files, 8 MB each).'
+                            : 'Upload invoice, PO, delivery note or other evidence (PDF, image, Word, Excel · max 8 files, 8 MB each).'}
                         </p>
                       </div>
                       <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">

@@ -2,6 +2,10 @@
 
 import type { ReactNode } from 'react';
 import type { PaymentRequestActionRow, PaymentRequestRow } from '@/lib/finance-intelligence/payment-requests-service';
+import {
+  isExpenseNoPoPayment,
+  supplierInvoiceCategoryLabel,
+} from '@/lib/finance-intelligence/payment-requests-service';
 import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-action-visibility';
 
 const money = (amount: number, currency = 'NGN') =>
@@ -53,7 +57,13 @@ export default function PaymentRequestDetailPanel({ request, actions = [], foote
     ['Project', request.projectCode || '—'],
     ['Requester', request.requesterName || '—'],
     ['Invoice #', request.invoiceNumber || '—'],
-    ['PO / GRN', [request.purchaseOrderNo, request.grnNo].filter(Boolean).join(' / ') || '—'],
+    ['Invoice category', supplierInvoiceCategoryLabel(request) || '—'],
+    ...(isExpenseNoPoPayment(request) && request.payload?.expenseNature
+      ? [['Expense nature', String(request.payload.expenseNature)] as [string, string]]
+      : []),
+    ['PO / GRN', isExpenseNoPoPayment(request)
+      ? 'N/A (expense · no PO)'
+      : ([request.purchaseOrderNo, request.grnNo].filter(Boolean).join(' / ') || '—')],
     ['Payment evidence', paymentEvidence[0]?.originalName || request.paymentReference || '—'],
     ['Paid at', fmtDate(request.paidAt)],
     ['Sage ref', request.sageReference || '—'],

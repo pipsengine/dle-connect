@@ -16,6 +16,10 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { PaymentRequestActionRow, PaymentRequestAttachment, PaymentRequestRow } from '@/lib/finance-intelligence/payment-requests-service';
+import {
+  isExpenseNoPoPayment,
+  supplierInvoiceCategoryLabel,
+} from '@/lib/finance-intelligence/payment-requests-service';
 import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-action-visibility';
 
 const money = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 2 });
@@ -303,7 +307,11 @@ export default function PaymentApprovalDetailClient() {
               ['Location', request.location || '—'],
               ['Project', request.projectCode || '—'],
               ['Invoice', request.invoiceNumber || '—'],
-              ['PO', request.purchaseOrderNo || '—'],
+              ['Invoice category', supplierInvoiceCategoryLabel(request) || '—'],
+              ...(isExpenseNoPoPayment(request) && request.payload?.expenseNature
+                ? [['Expense nature', String(request.payload.expenseNature)] as [string, string]]
+                : []),
+              ['PO', isExpenseNoPoPayment(request) ? 'N/A (expense · no PO)' : (request.purchaseOrderNo || '—')],
             ].map(([label, value]) => (
               <li key={label} className="flex justify-between gap-3 border-b border-slate-50 py-1.5">
                 <span>{label}</span>
