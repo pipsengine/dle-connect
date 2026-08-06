@@ -15,7 +15,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, []);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-white">
+    <div className="flex h-dvh min-w-0 overflow-hidden bg-white" data-dle-shell>
       <Sidebar isOpen={sidebarOpen} toggle={() => setSidebarOpen(!sidebarOpen)} />
       {sidebarOpen ? (
         <button
@@ -26,13 +26,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         />
       ) : null}
       
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header 
           toggleSidebar={() => setSidebarOpen(!sidebarOpen)} 
         />
         
-        <main className="flex-1 overflow-hidden flex flex-col relative">
-          <div className="flex-1 overflow-auto px-3 pb-32 pt-0 space-y-8 sm:px-6">
+        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="min-w-0 flex-1 space-y-6 overflow-x-clip overflow-y-auto px-2.5 pb-28 pt-0 sm:space-y-8 sm:px-6 sm:pb-32">
             {children}
           </div>
         </main>

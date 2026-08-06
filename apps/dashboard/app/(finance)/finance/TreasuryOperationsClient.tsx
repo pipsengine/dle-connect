@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { ScrollTable } from '@/components/ui/responsive';
 import {
   Banknote,
   CheckCircle2,
@@ -193,8 +194,7 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
             </button>
           ))}
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-xs">
+        <ScrollTable minWidth={960}><table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500">
               <tr>
                 {['Request', 'Type', 'Beneficiary', 'Amount', 'Status', 'Site', ''].map((column) => (
@@ -221,8 +221,7 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
                 </tr>
               )}
             </tbody>
-          </table>
-        </div>
+          </table></ScrollTable>
       </section>
 
       {selected ? (

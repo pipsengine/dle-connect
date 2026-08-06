@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { ScrollTable } from '@/components/ui/responsive';
 import {
   AlertTriangle,
   Ban,
@@ -183,8 +184,7 @@ export default function CashAdvanceControlsClient({ initialWorkspace }: Props) {
           <div className="border-b border-slate-100 px-4 py-3">
             <h2 className="text-sm font-semibold text-slate-900">Outstanding cash advances</h2>
           </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-xs">
+          <ScrollTable minWidth={960}><table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-500">
                 <tr>
                   {['Select', 'Request', 'Employee', 'Title', 'Amount', 'Site', 'Status', 'Updated'].map((column) => (
@@ -226,8 +226,7 @@ export default function CashAdvanceControlsClient({ initialWorkspace }: Props) {
                   </tr>
                 )}
               </tbody>
-            </table>
-          </div>
+            </table></ScrollTable>
         </section>
 
         <div className="space-y-4">

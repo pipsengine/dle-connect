@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useMemo, useState, type ReactNode } from 'react';
+import { ScrollTable } from '@/components/ui/responsive';
 import {
   AlertTriangle,
   ArrowRight,
@@ -537,8 +538,7 @@ function ApprovalsDashboard({ snapshot }: { snapshot?: FinanceApprovalCentreSnap
             <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-xs">
+        <ScrollTable minWidth={960}><table className="w-full text-left text-xs">
             <thead className="bg-slate-50/80 text-slate-500">
               <tr>
                 {columns.map((column) => (
@@ -573,8 +573,7 @@ function ApprovalsDashboard({ snapshot }: { snapshot?: FinanceApprovalCentreSnap
                 </tr>
               )}
             </tbody>
-          </table>
-        </div>
+          </table></ScrollTable>
       </section>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -729,8 +728,7 @@ function ApprovalQueue({ page }: { page: FinancePageMeta }) {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-xs">
+        <ScrollTable minWidth={960}><table className="w-full text-left text-xs">
             <thead className="bg-slate-50/90 text-slate-500">
               <tr>
                 {columns.map((column) => (
@@ -774,8 +772,7 @@ function ApprovalQueue({ page }: { page: FinancePageMeta }) {
                 </td>
               </tr>
             </tbody>
-          </table>
-        </div>
+          </table></ScrollTable>
       </section>
 
       <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">

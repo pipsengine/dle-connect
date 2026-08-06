@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { ScrollTable } from '@/components/ui/responsive';
 import {
   CheckCircle2,
   Clock3,
@@ -161,8 +162,7 @@ export default function FinancePostingClient({ initialWorkspace }: Props) {
             </button>
           ))}
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-xs">
+        <ScrollTable minWidth={960}><table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500">
               <tr>
                 {['Request', 'Type', 'Beneficiary', 'Amount', 'Payment status', 'Posting', 'Docs', ''].map((column) => (
@@ -190,8 +190,7 @@ export default function FinancePostingClient({ initialWorkspace }: Props) {
                 </tr>
               )}
             </tbody>
-          </table>
-        </div>
+          </table></ScrollTable>
       </section>
 
       {selected ? (

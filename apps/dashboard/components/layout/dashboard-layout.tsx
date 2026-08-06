@@ -10,7 +10,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-white">
+    <div className="flex h-dvh min-w-0 overflow-hidden bg-white" data-dle-shell>
       <SessionPermissionRefresh />
       <Sidebar isOpen={sidebarOpen} toggle={() => setSidebarOpen(!sidebarOpen)} variant="desktop" />
       {mobileSidebarOpen && (
@@ -30,14 +30,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       )}
       
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header 
           toggleSidebar={() => setMobileSidebarOpen(true)}
           toggleDesktopSidebar={() => setSidebarOpen(!sidebarOpen)}
         />
         
-        <main className="flex-1 overflow-hidden flex flex-col relative">
-          <div className="flex-1 overflow-auto px-3 pb-24 pt-0 sm:px-6 sm:pb-32">
+        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="min-w-0 flex-1 overflow-x-clip overflow-y-auto px-2.5 pb-24 pt-0 sm:px-6 sm:pb-32">
             {children}
           </div>
         </main>

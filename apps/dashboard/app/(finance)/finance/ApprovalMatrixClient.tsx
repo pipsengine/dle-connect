@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { ScrollTable } from '@/components/ui/responsive';
 import {
   CheckCircle2,
   Clock3,
@@ -321,8 +322,7 @@ export default function ApprovalMatrixClient({ initialWorkspace }: Props) {
           <button type="button" onClick={() => setOpen(true)} className="text-xs font-semibold text-[#008FD5]">+ Add rule</button>
         </div>
         {workspace.rules.length ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-xs">
+          <ScrollTable minWidth={960}><table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-500">
                 <tr>
                   {['Rule', 'Path', 'Amount band', 'Level', 'Approvers', 'Status'].map((column) => (
@@ -350,8 +350,7 @@ export default function ApprovalMatrixClient({ initialWorkspace }: Props) {
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
+            </table></ScrollTable>
         ) : (
           <div className="rounded-xl bg-slate-50 px-4 py-8 text-center">
             <p className="text-sm font-semibold text-slate-800">No rules in the database yet</p>

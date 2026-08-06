@@ -165,6 +165,12 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
   const widthClass = railCollapsed ? 'w-[72px]' : 'w-[270px]';
   const contentPad = railCollapsed ? 'lg:pl-[72px]' : 'lg:pl-[270px]';
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    // Mid-size laptops: start collapsed so tables keep usable width; user can expand.
+    setRailCollapsed(window.matchMedia('(max-width: 1279px)').matches);
+  }, []);
+
   const NavBody = (
     <>
       <div className="border-b border-slate-200 px-3.5 py-4">
@@ -305,7 +311,7 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
   );
 
   return (
-    <div className="flex min-h-dvh bg-[#F5F7FB] text-slate-900">
+    <div className="flex min-h-dvh min-w-0 overflow-x-clip bg-[#F5F7FB] text-slate-900" data-dle-shell>
       <aside
         className={`fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-slate-200 bg-white transition-[width] duration-200 lg:flex ${widthClass}`}
       >
@@ -325,7 +331,7 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
       {mobileOpen ? (
         <div className="fixed inset-0 z-40 lg:hidden">
           <button type="button" className="absolute inset-0 bg-slate-950/40" aria-label="Close menu" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 flex w-[270px] flex-col bg-white shadow-xl">
+          <aside className="absolute inset-y-0 left-0 flex w-[min(288px,calc(100vw-2.5rem))] max-w-[85vw] flex-col bg-white shadow-xl">
             <div className="flex justify-end p-2">
               <button type="button" onClick={() => setMobileOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
                 <X className="h-5 w-5" />
@@ -337,11 +343,11 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
       ) : null}
 
       <div className={`flex min-w-0 flex-1 flex-col ${contentPad}`}>
-        <header className="sticky top-0 z-20 flex h-[72px] items-center gap-2 border-b border-slate-200 bg-white px-3.5 sm:gap-3 sm:px-5">
+        <header className="sticky top-0 z-20 flex min-h-[64px] flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-2.5 py-2 sm:min-h-[72px] sm:gap-3 sm:px-4 lg:px-5">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 lg:hidden"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 lg:hidden"
           >
             <Menu className="h-5 w-5" />
           </button>
@@ -351,24 +357,24 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
             </p>
             <h1 className="truncate text-[13px] font-bold text-slate-900">{FINANCE_MODULE.name}</h1>
           </div>
-          <div className="hidden items-center gap-1.5 lg:flex">
+          <div className="hidden min-w-0 flex-1 items-center gap-1.5 overflow-x-auto dle-scroll-x xl:flex 2xl:overflow-visible">
             {[
               { label: 'Company', value: 'Dorman Long Nigeria Ltd' },
               { label: 'FY', value: 'FY 2026' },
               { label: 'Period', value: 'Jul 2026' },
               { label: 'Currency', value: 'NGN' },
             ].map((item) => (
-              <label key={item.label} className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-[#F8FAFC] px-2 text-[11px] text-slate-600">
+              <label key={item.label} className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-[#F8FAFC] px-2 text-[11px] text-slate-600">
                 <span className="hidden text-slate-400 2xl:inline">{item.label}</span>
-                <select defaultValue={item.value} className="max-w-[140px] truncate bg-transparent font-semibold text-slate-800 outline-none">
+                <select defaultValue={item.value} className="max-w-[120px] truncate bg-transparent font-semibold text-slate-800 outline-none 2xl:max-w-[140px]">
                   <option>{item.value}</option>
                 </select>
                 <ChevronDown className="h-3 w-3 shrink-0 text-slate-400" />
               </label>
             ))}
           </div>
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            <div className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 xl:flex">
+          <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2">
+            <div className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 2xl:flex">
               <span className="relative flex h-2 w-2">
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-slate-400" />
               </span>
@@ -398,17 +404,17 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-3.5 py-4 sm:px-5 lg:px-6">
+        <main className="min-h-0 min-w-0 flex-1 overflow-x-clip overflow-y-auto px-2.5 py-3 sm:px-4 sm:py-4 lg:px-6">
           {children}
         </main>
 
-        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-3.5 py-2.5 text-[11px] text-slate-500 sm:px-5">
+        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-2.5 py-2.5 text-[11px] text-slate-500 sm:px-5">
           <p>© {new Date().getFullYear()} Dorman Long DLE Connect. All rights reserved.</p>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span>Privacy</span>
             <span>Terms</span>
             <span>Support</span>
-            <span className="hidden text-slate-400 sm:inline">finance.view · finance.approve · finance.report</span>
+            <span className="hidden text-slate-400 lg:inline">finance.view · finance.approve · finance.report</span>
           </div>
         </footer>
       </div>

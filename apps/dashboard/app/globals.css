@@ -18,9 +18,21 @@
 }
 
 @layer base {
+  html {
+    overflow-x: clip;
+  }
+
   body {
     background-color: var(--color-surface-dim);
     color: var(--color-slate-900);
+    overflow-x: clip;
+    min-width: 0;
+  }
+
+  /* Nested flex children must be allowed to shrink or tables blow out the page. */
+  main,
+  [data-dle-shell] {
+    min-width: 0;
   }
 }
 
@@ -36,5 +48,24 @@
   }
   .custom-scrollbar:hover::-webkit-scrollbar-thumb {
     @apply bg-slate-300;
+  }
+
+  /* Shared horizontal table / chip scroller used across Finance + HRIS. */
+  .dle-scroll-x {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+  .dle-scroll-x::-webkit-scrollbar {
+    height: 6px;
+  }
+  .dle-scroll-x::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-slate-300;
+  }
+  .dle-scroll-x::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .dle-page {
+    @apply min-w-0 w-full max-w-full;
   }
 }

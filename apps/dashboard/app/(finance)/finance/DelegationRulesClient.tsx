@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
+import { ScrollTable } from '@/components/ui/responsive';
 import {
   CalendarRange,
   CheckCircle2,
@@ -274,8 +275,7 @@ export default function DelegationRulesClient({ initialWorkspace }: Props) {
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-xs">
+        <ScrollTable minWidth={960}><table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500">
               <tr>
                 {['Principal', 'Delegate', 'Role', 'Scope', 'Window', 'Status', 'Actions'].map((column) => (
@@ -327,8 +327,7 @@ export default function DelegationRulesClient({ initialWorkspace }: Props) {
                 </tr>
               )}
             </tbody>
-          </table>
-        </div>
+          </table></ScrollTable>
       </section>
 
       <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">

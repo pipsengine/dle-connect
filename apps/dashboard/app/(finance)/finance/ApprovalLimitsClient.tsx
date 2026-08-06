@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { ScrollTable } from '@/components/ui/responsive';
 import {
   CheckCircle2,
   Clock3,
@@ -339,8 +340,7 @@ export default function ApprovalLimitsClient({ initialWorkspace }: Props) {
         </div>
 
         {tab === 'history' ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-xs">
+          <ScrollTable minWidth={960}><table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-500">
                 <tr>
                   {['When', 'Action', 'Rule', 'Actor'].map((column) => (
@@ -360,11 +360,9 @@ export default function ApprovalLimitsClient({ initialWorkspace }: Props) {
                   <tr><td colSpan={4} className="px-3 py-12 text-center text-slate-500">No change history yet.</td></tr>
                 )}
               </tbody>
-            </table>
-          </div>
+            </table></ScrollTable>
         ) : tab === 'fx' ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-xs">
+          <ScrollTable minWidth={960}><table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-500">
                 <tr>
                   {['From', 'To', 'Rate date', 'Prevailing rate', 'Source'].map((column) => (
@@ -385,11 +383,9 @@ export default function ApprovalLimitsClient({ initialWorkspace }: Props) {
                   <tr><td colSpan={5} className="px-3 py-12 text-center text-slate-500">No FX rates loaded yet. Rates seed on first finance DB ensure.</td></tr>
                 )}
               </tbody>
-            </table>
-          </div>
+            </table></ScrollTable>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-xs">
+          <ScrollTable minWidth={960}><table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-500">
                 <tr>
                   <th className="px-3 py-2.5"><span className="sr-only">Select</span></th>
@@ -463,8 +459,7 @@ export default function ApprovalLimitsClient({ initialWorkspace }: Props) {
                   </tr>
                 )}
               </tbody>
-            </table>
-          </div>
+            </table></ScrollTable>
         )}
 
         <div className="border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
