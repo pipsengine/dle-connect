@@ -36,9 +36,17 @@ const uniqueSorted = (values: string[]) =>
   Array.from(new Set(values.map(compact).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
 export const FALLBACK_SITES: PaymentSite[] = [
-  { siteCode: 'DLENG', siteName: 'Dorman Long Engineering Limited' },
-  { siteCode: 'DLPCG', siteName: 'Dorman Long Protective Coatings' },
+  { siteCode: 'DLE', siteName: 'Dorman Long Engineering Limited' },
+  { siteCode: 'DLPC', siteName: 'Dorman Long Protective Coatings' },
 ];
+
+/** Normalize legacy site codes (DLENG/DLPCG) to the short codes Finance uses. */
+export const normalizePaymentSiteCode = (value?: string | null) => {
+  const code = compact(value).toUpperCase();
+  if (code === 'DLENG' || code === 'DLE') return 'DLE';
+  if (code === 'DLPCG' || code === 'DLPC') return 'DLPC';
+  return code;
+};
 
 export const FALLBACK_EXPENSE_CODES: ExpenseCodeOption[] = [
   ['COE', 'Corporate Office Expenses'],
@@ -77,6 +85,26 @@ export const FALLBACK_EXPENSE_CODES: ExpenseCodeOption[] = [
 
 export const listPaymentSites = async (): Promise<PaymentSite[]> => {
   const pool = await ensureFinanceDb().catch(() => null);
+  const normalizeRows = (rows: PaymentSite[]) => {
+    const mapped = rows.map((row) => ({
+      siteCode: normalizePaymentSiteCode(row.siteCode),
+      siteName: row.siteName
+        || (normalizePaymentSiteCode(row.siteCode) === 'DLPC'
+          ? 'Dorman Long Protective Coatings'
+          : 'Dorman Long Engineering Limited'),
+    }));
+    const byCode = new Map<string, PaymentSite>();
+    for (const row of mapped) {
+      if (!row.siteCode) continue;
+      if (!byCode.has(row.siteCode)) byCode.set(row.siteCode, row);
+    }
+    // Always expose canonical short codes.
+    for (const fallback of FALLBACK_SITES) {
+      if (!byCode.has(fallback.siteCode)) byCode.set(fallback.siteCode, fallback);
+    }
+    return Array.from(byCode.values()).sort((a, b) => a.siteCode.localeCompare(b.siteCode));
+  };
+
   if (!pool) return FALLBACK_SITES;
   try {
     const result = await pool.request().query(`
@@ -89,7 +117,7 @@ ORDER BY [SortOrder], [SiteCode]
       siteCode: compact(row.SiteCode),
       siteName: compact(row.SiteName),
     })).filter((row) => row.siteCode);
-    return rows.length ? rows : FALLBACK_SITES;
+    return rows.length ? normalizeRows(rows) : FALLBACK_SITES;
   } catch {
     return FALLBACK_SITES;
   }

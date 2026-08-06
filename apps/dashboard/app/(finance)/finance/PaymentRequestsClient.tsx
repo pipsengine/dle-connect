@@ -22,6 +22,7 @@ import {
   RotateCcw,
   Search,
   Settings2,
+  Send,
   Trash2,
   Upload,
   Wallet,
@@ -729,6 +730,39 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
     Boolean(workspace.viewer?.approvableRequestIds?.includes(requestId));
   const canEditReturnedRow = (requestId: string) =>
     Boolean(workspace.viewer?.editableReturnedRequestIds?.includes(requestId));
+  const canRemindRow = (row: PaymentRequestRow) => {
+    if (!/pending approval|submitted|finance review/i.test(row.status)) return false;
+    if (!row.currentApproverCode && !row.currentApproverName) return false;
+    const actorCode = String(workspace.viewer?.actorCode || '').trim().toLowerCase();
+    if (!actorCode) return false;
+    return actorCode === String(row.requesterCode || '').trim().toLowerCase()
+      || actorCode === String(row.beneficiaryCode || '').trim().toLowerCase();
+  };
+
+  const sendReminder = async (row: PaymentRequestRow) => {
+    setRowActionBusy(true);
+    setToast('');
+    try {
+      const res = await fetch('/api/finance/payment-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'send-reminder',
+          requestId: row.requestId,
+        }),
+      });
+      const json = await res.json().catch(() => ({ status: 'error', error: 'Unable to send reminder.' }));
+      if (!res.ok || json.status !== 'success') {
+        throw new Error(json.error || 'Unable to send reminder.');
+      }
+      setToast(json.data?.message || `Reminder sent for ${row.requestNumber}.`);
+      await refresh();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'Unable to send reminder.');
+    } finally {
+      setRowActionBusy(false);
+    }
+  };
 
   const openRowAction = (row: { requestId: string; requestNumber: string }, action: 'approve' | 'reject' | 'return') => {
     setRowAction({ requestId: row.requestId, requestNumber: row.requestNumber, action });
@@ -1007,6 +1041,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                 const fxDate = rowFxRateDate(row);
                 const showApproveActions = canApproveRow(row.requestId);
                 const showEditReturned = canEditReturnedRow(row.requestId);
+                const showSendReminder = canRemindRow(row);
                 return (
                   <tr key={row.requestId} className="border-t border-slate-100 hover:bg-slate-50/70">
                     <td className="px-3 py-2.5">
@@ -1115,6 +1150,24 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                           >
                             <RotateCcw className="h-3 w-3" />
                             Edit & resend
+                          </button>
+                          <Link
+                            href={`/finance/approvals/request/${row.requestId}`}
+                            className="text-[11px] font-semibold text-[#008FD5] hover:underline"
+                          >
+                            View
+                          </Link>
+                        </div>
+                      ) : showSendReminder ? (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={busy || rowActionBusy}
+                            onClick={() => void sendReminder(row)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800 hover:bg-sky-100 disabled:opacity-50"
+                          >
+                            <Send className="h-3 w-3" />
+                            Send reminder
                           </button>
                           <Link
                             href={`/finance/approvals/request/${row.requestId}`}

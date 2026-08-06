@@ -5,4 +5,6 @@
 export async function registerNodeInstrumentation() {
   const { ensureBackupSchedulerStarted } = await import('@/lib/backup-scheduler');
   ensureBackupSchedulerStarted();
+  const { ensurePaymentReminderSchedulerStarted } = await import('@/lib/finance-intelligence/payment-approval-reminder-scheduler');
+  ensurePaymentReminderSchedulerStarted();
 }

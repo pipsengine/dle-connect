@@ -5,19 +5,42 @@ import { getActivePayrollPeriod } from '@/lib/payroll-period-store';
 import { payrollSessionContext, processingPermissions } from '@/lib/payroll-session';
 import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
 import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
+import { buildExcelWorkbookXml, excelMimeType } from '@/lib/excel-export';
 
 const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 const compact = (value: unknown) => String(value || '').trim();
 
+const exportHeaders = ['Employee ID', 'Name', 'Department', 'Payroll Group', 'Generated Gross', 'Sage Gross', 'Gross Variance', 'Generated PAYE', 'Generated Pension Employee', 'Generated Statutory Employee', 'Generated Loan', 'Generated Deductions', 'Sage Deductions', 'Deduction Variance', 'Generated Net Pay', 'Sage Net Pay', 'Net Variance', 'Employer Cost', 'Discrepancy Status', 'Payroll Status', 'Issues'];
+
+const exportRows = (records: any[]) => records.map((record) => [
+  record.employeeId,
+  record.fullName,
+  record.department,
+  record.payrollGroup,
+  record.grossPay,
+  record.sageActual?.grossPay ?? '',
+  record.discrepancies?.grossVariance ?? '',
+  record.paye,
+  record.pensionEmployee,
+  record.statutoryEmployee,
+  record.loanRecovery,
+  record.totalDeductions,
+  record.sageActual?.totalDeductions ?? '',
+  record.discrepancies?.deductionVariance ?? '',
+  record.netPay,
+  record.sageActual?.netPay ?? '',
+  record.discrepancies?.netVariance ?? '',
+  record.employerCost,
+  record.discrepancies?.status || '',
+  record.status,
+  Array.isArray(record.issues) ? record.issues.join('; ') : '',
+]);
+
 const csv = (records: any[]) => {
-  const headers = ['Employee ID', 'Name', 'Department', 'Payroll Group', 'Generated Gross', 'Sage Gross', 'Gross Variance', 'Generated PAYE', 'Generated Pension Employee', 'Generated Statutory Employee', 'Generated Loan', 'Generated Deductions', 'Sage Deductions', 'Deduction Variance', 'Generated Net Pay', 'Sage Net Pay', 'Net Variance', 'Employer Cost', 'Discrepancy Status', 'Payroll Status', 'Issues'];
-  const lines = records.map((record) =>
-    [record.employeeId, record.fullName, record.department, record.payrollGroup, record.grossPay, record.sageActual?.grossPay ?? '', record.discrepancies?.grossVariance ?? '', record.paye, record.pensionEmployee, record.statutoryEmployee, record.loanRecovery, record.totalDeductions, record.sageActual?.totalDeductions ?? '', record.discrepancies?.deductionVariance ?? '', record.netPay, record.sageActual?.netPay ?? '', record.discrepancies?.netVariance ?? '', record.employerCost, record.discrepancies?.status || '', record.status, record.issues.join('; ')]
-      .map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`)
-      .join(','),
-  );
-  return [headers.join(','), ...lines].join('\n');
+  const lines = exportRows(records).map((row) =>
+    row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','));
+  return [exportHeaders.join(','), ...lines].join('\n');
 };
 
 export async function GET(request: Request) {
@@ -25,13 +48,32 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const period = url.searchParams.get('period') || (await getActivePayrollPeriod());
     const pack = url.searchParams.get('pack');
+    const format = compact(url.searchParams.get('format')).toLowerCase();
     const payload = await buildProcessingPayload(request, period, pack);
-    if (url.searchParams.get('format') === 'csv') {
+    if (format === 'csv') {
       if (!payload.permissions.canExport) return err(403, 'Permission denied');
       return new Response(csv(payload.records), {
         headers: {
           'content-type': 'text/csv; charset=utf-8',
-          'content-disposition': `attachment; filename="payroll-processing-${period}-${payload.pack || 'salaried'}.csv"`,
+          'content-disposition': `attachment; filename="payroll-approval-${period}-${payload.pack || 'salaried'}.csv"`,
+        },
+      });
+    }
+    if (format === 'xls' || format === 'excel') {
+      const xml = buildExcelWorkbookXml({
+        worksheets: [{
+          title: `Payroll Approval — ${payload.periodLabel || period}`,
+          subtitle: `${payload.packLabel || payload.pack || 'Payroll'} · ${payload.records.length} employees`,
+          sheetName: payload.pack === 'daily-rate' ? 'Daily Rate' : 'Salaried Stipend',
+          columns: exportHeaders,
+          rows: exportRows(payload.records),
+        }],
+      });
+      return new Response(xml, {
+        headers: {
+          'content-type': excelMimeType,
+          'content-disposition': `attachment; filename="payroll-approval-${period}-${payload.pack || 'salaried'}.xls"`,
+          'cache-control': 'no-store',
         },
       });
     }

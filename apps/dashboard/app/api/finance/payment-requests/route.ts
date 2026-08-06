@@ -30,10 +30,14 @@ import {
   updateReturnedPaymentRequest,
   type PaymentRequestType,
 } from '@/lib/finance-intelligence/payment-requests-service';
-import { FALLBACK_EXPENSE_CODES, FALLBACK_SITES, listExpenseCodes, listPaymentSites } from '@/lib/finance-intelligence/payment-request-lookups';
+import { FALLBACK_EXPENSE_CODES, FALLBACK_SITES, listExpenseCodes, listPaymentSites, normalizePaymentSiteCode } from '@/lib/finance-intelligence/payment-request-lookups';
+import { sendPaymentApprovalReminder } from '@/lib/finance-intelligence/payment-approval-reminder-service';
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
+const codesEqual = (left?: string | null, right?: string | null) =>
+  String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase()
+  && Boolean(String(left || '').trim());
 
 const resolveActor = async () => {
   const jar = await cookies();
@@ -192,7 +196,7 @@ export async function POST(request: Request) {
 
       const sites = await listPaymentSites();
       const expenses = await listExpenseCodes();
-      const paymentSiteCode = String(body.paymentSiteCode || body.companyCode || '').trim().toUpperCase();
+      const paymentSiteCode = normalizePaymentSiteCode(body.paymentSiteCode || body.companyCode);
       const paymentSite = sites.find((site) => site.siteCode.toUpperCase() === paymentSiteCode)
         || FALLBACK_SITES.find((site) => site.siteCode.toUpperCase() === paymentSiteCode)
         || null;
@@ -311,7 +315,7 @@ export async function POST(request: Request) {
       const paymentType = existing.paymentType as PaymentRequestType;
       const sites = await listPaymentSites();
       const expenses = await listExpenseCodes();
-      const paymentSiteCode = String(body.paymentSiteCode || body.companyCode || existing.paymentSiteCode || '').trim().toUpperCase();
+      const paymentSiteCode = normalizePaymentSiteCode(body.paymentSiteCode || body.companyCode || existing.paymentSiteCode);
       const paymentSite = sites.find((site) => site.siteCode.toUpperCase() === paymentSiteCode)
         || FALLBACK_SITES.find((site) => site.siteCode.toUpperCase() === paymentSiteCode)
         || null;
@@ -433,6 +437,30 @@ export async function POST(request: Request) {
         actorCode: actor.actorCode,
       });
       return jsonOk({ ...result, message: 'Outstanding cash advance cancelled. Retirement is no longer required.' });
+    }
+
+    if (action === 'send-reminder') {
+      const requestId = String(body.requestId || '').trim();
+      if (!requestId) return jsonErr(400, 'requestId is required.');
+      const paymentRequest = await getPaymentRequestById(requestId);
+      if (!paymentRequest) return jsonErr(404, 'Payment request not found.');
+      const isRequester = codesEqual(actor.actorCode, paymentRequest.requesterCode)
+        || codesEqual(actor.actorCode, paymentRequest.beneficiaryCode);
+      if (!isRequester && !canViewAllPaymentRequests(actor)) {
+        return jsonErr(403, 'Only the requester can send a reminder for this payment request.');
+      }
+      const hdrs = await headers();
+      const origin = resolvePublicAppOrigin(hdrs.get('origin') || hdrs.get('x-forwarded-host') || undefined);
+      const result = await sendPaymentApprovalReminder({
+        requestId,
+        actor: actor.actor,
+        actorCode: actor.actorCode,
+        baseUrl: origin,
+      });
+      return jsonOk({
+        ...result,
+        message: `Reminder sent to ${paymentRequest.currentApproverName || paymentRequest.currentApproverCode || 'current approver'}.`,
+      });
     }
 
     if (action === 'transition') {

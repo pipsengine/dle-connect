@@ -434,8 +434,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinanceCashAdvanceWai
 
 MERGE [finance].[PaymentSites] AS target
 USING (VALUES
-  (N'DLENG', N'Dorman Long Engineering Limited', 1),
-  (N'DLPCG', N'Dorman Long Protective Coatings', 2)
+  (N'DLE', N'Dorman Long Engineering Limited', 1),
+  (N'DLPC', N'Dorman Long Protective Coatings', 2)
 ) AS source ([SiteCode], [SiteName], [SortOrder])
 ON target.[SiteCode] = source.[SiteCode]
 WHEN MATCHED THEN UPDATE SET
@@ -445,6 +445,26 @@ WHEN MATCHED THEN UPDATE SET
   [UpdatedAt] = SYSUTCDATETIME()
 WHEN NOT MATCHED THEN INSERT ([SiteCode], [SiteName], [SortOrder], [IsActive])
 VALUES (source.[SiteCode], source.[SiteName], source.[SortOrder], 1);
+
+-- Retire legacy long site codes (DLENG / DLPCG → DLE / DLPC).
+UPDATE [finance].[PaymentSites]
+SET [IsActive] = 0, [UpdatedAt] = SYSUTCDATETIME()
+WHERE [SiteCode] IN (N'DLENG', N'DLPCG');
+
+IF OBJECT_ID(N'[finance].[PaymentRequests]', N'U') IS NOT NULL
+BEGIN
+  UPDATE [finance].[PaymentRequests]
+  SET [PaymentSiteCode] = N'DLE',
+      [CompanyCode] = CASE WHEN [CompanyCode] IN (N'DLENG', N'DLE') THEN N'DLE' ELSE [CompanyCode] END,
+      [UpdatedAt] = SYSUTCDATETIME()
+  WHERE [PaymentSiteCode] = N'DLENG' OR [CompanyCode] = N'DLENG';
+
+  UPDATE [finance].[PaymentRequests]
+  SET [PaymentSiteCode] = N'DLPC',
+      [CompanyCode] = CASE WHEN [CompanyCode] IN (N'DLPCG', N'DLPC') THEN N'DLPC' ELSE [CompanyCode] END,
+      [UpdatedAt] = SYSUTCDATETIME()
+  WHERE [PaymentSiteCode] = N'DLPCG' OR [CompanyCode] = N'DLPCG';
+END;
 
 MERGE [finance].[ExpenseCodes] AS target
 USING (VALUES
@@ -578,6 +598,10 @@ IF COL_LENGTH(N'finance.PaymentRequests', N'PostedBy') IS NULL
   ALTER TABLE [finance].[PaymentRequests] ADD [PostedBy] NVARCHAR(120) NULL;
 IF COL_LENGTH(N'finance.PaymentRequests', N'PostingJson') IS NULL
   ALTER TABLE [finance].[PaymentRequests] ADD [PostingJson] NVARCHAR(MAX) NULL;
+IF COL_LENGTH(N'finance.PaymentRequests', N'StageEnteredAt') IS NULL
+  ALTER TABLE [finance].[PaymentRequests] ADD [StageEnteredAt] DATETIME2(0) NULL;
+IF COL_LENGTH(N'finance.PaymentRequests', N'LastReminderAt') IS NULL
+  ALTER TABLE [finance].[PaymentRequests] ADD [LastReminderAt] DATETIME2(0) NULL;
 
 IF OBJECT_ID(N'[finance].[PaymentRequestActions]', N'U') IS NULL
 CREATE TABLE [finance].[PaymentRequestActions] (

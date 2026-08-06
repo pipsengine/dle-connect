@@ -404,8 +404,30 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
     }
   };
 
-  const exportCsv = () => {
-    window.location.href = `/api/hris/payroll/payroll-processing?period=${encodeURIComponent(period)}&pack=${encodeURIComponent(pack)}&format=csv`;
+  const exportExcel = async () => {
+    setToast('');
+    try {
+      const res = await fetch(
+        `/api/hris/payroll/payroll-processing?period=${encodeURIComponent(period)}&pack=${encodeURIComponent(pack)}&format=xls`,
+        { cache: 'no-store' },
+      );
+      if (!res.ok) {
+        const json = await res.json().catch(() => null) as { error?: string } | null;
+        throw new Error(json?.error || `Export failed (${res.status}).`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `payroll-approval-${period}-${pack || 'salaried'}.xls`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setToast('Excel export downloaded.');
+    } catch (event) {
+      setToast(event instanceof Error ? event.message : 'Unable to export Excel.');
+    }
   };
 
   const selectPack = (nextPack: PayrollPack) => {
@@ -444,9 +466,9 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
             <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
-          <button type="button" onClick={exportCsv} disabled={!payload?.permissions.canExport} className="inline-flex h-10 items-center gap-2 rounded-xl bg-slate-900 px-3 text-xs font-extrabold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400">
+          <button type="button" onClick={() => void exportExcel()} disabled={!payload || loading} className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-extrabold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400">
             <Download className="h-4 w-4" />
-            Export
+            Export Excel
           </button>
         </div>
       </div>

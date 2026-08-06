@@ -187,6 +187,8 @@ export type PaymentRequestRow = {
   posting: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
+  stageEnteredAt: string | null;
+  lastReminderAt: string | null;
   payload: Record<string, unknown>;
   attachments: PaymentRequestAttachment[];
   retirement: Record<string, unknown> | null;
@@ -454,6 +456,8 @@ const mapRow = (row: Record<string, unknown>): PaymentRequestRow => {
     posting: parseJson(row.PostingJson, null),
     createdAt: row.CreatedAt ? new Date(String(row.CreatedAt)).toISOString() : nowIso(),
     updatedAt: row.UpdatedAt ? new Date(String(row.UpdatedAt)).toISOString() : nowIso(),
+    stageEnteredAt: row.StageEnteredAt ? new Date(String(row.StageEnteredAt)).toISOString() : null,
+    lastReminderAt: row.LastReminderAt ? new Date(String(row.LastReminderAt)).toISOString() : null,
     payload: parseJson(row.PayloadJson, {}),
     attachments: parseJson(row.AttachmentsJson, []) as PaymentRequestAttachment[],
     retirement: parseJson(row.RetirementJson, null),
@@ -638,11 +642,28 @@ const assignCurrentApprover = async (input: {
 UPDATE [finance].[PaymentRequests]
 SET [CurrentApproverCode] = @ApproverCode,
     [CurrentApproverName] = @ApproverName,
+    [StageEnteredAt] = SYSUTCDATETIME(),
+    [LastReminderAt] = NULL,
     [UpdatedAt] = SYSUTCDATETIME()
 WHERE [RequestId] = @RequestId
 `);
     } catch {
-      // best-effort
+      // best-effort — StageEnteredAt/LastReminderAt may not exist until schema migrate
+      try {
+        await pool.request()
+          .input('RequestId', sql.NVarChar(60), input.requestId)
+          .input('ApproverCode', sql.NVarChar(60), approver.code || null)
+          .input('ApproverName', sql.NVarChar(200), displayName)
+          .query(`
+UPDATE [finance].[PaymentRequests]
+SET [CurrentApproverCode] = @ApproverCode,
+    [CurrentApproverName] = @ApproverName,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+      } catch {
+        // ignore
+      }
     }
   }
   return approver;
@@ -1119,47 +1140,53 @@ WHERE [WaiverId] = @WaiverId
   };
 };
 
-/** Document type code for human-facing request numbers: CA / SI. */
-const paymentTypeCode = (paymentType: PaymentRequestType | string) => {
-  const value = compact(paymentType);
-  if (/^expense payment$/i.test(value)) return 'EX';
-  if (/supplier/i.test(value)) return 'SI';
-  return 'CA';
+/** Document type code kept for legacy lookups only — new numbers are site+yymm+serial. */
+const normalizeSiteCode = (value?: string | null) => {
+  const code = compact(value).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (code === 'DLENG' || code === 'DLE') return 'DLE';
+  if (code === 'DLPCG' || code === 'DLPC') return 'DLPC';
+  return code || 'DLE';
 };
 
 /**
- * Site-scoped document number: {SITE}{TYPE}{YYYY}{MM}{#####}
- * e.g. DLENGCA20260800001 — sequence resets per site + type + calendar month.
+ * Site-scoped document number: {SITE}{yy}{mm}{serial}
+ * e.g. DLE26081, DLPC26082 — serial is not zero-padded; resets per site + calendar month.
  */
 const nextRequestNumber = async (input: {
   paymentType: PaymentRequestType | string;
   paymentSiteCode?: string | null;
 }) => {
   const now = new Date();
-  const year = now.getFullYear();
+  const yy = String(now.getFullYear()).slice(-2);
   const month = String(now.getMonth() + 1).padStart(2, '0');
-  const site = (compact(input.paymentSiteCode) || 'DLE').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'DLE';
-  const typeCode = paymentTypeCode(input.paymentType);
-  const prefix = `${site}${typeCode}${year}${month}`;
-  const format = (seq: number) => `${prefix}${String(seq).padStart(5, '0')}`;
+  const site = normalizeSiteCode(input.paymentSiteCode);
+  const prefix = `${site}${yy}${month}`;
+  const format = (seq: number) => `${prefix}${seq}`;
 
   const pool = await ensureFinanceDb().catch(() => null);
   if (!pool) return format(1);
   try {
+    // Match both new format (DLE26081) and any legacy numbers that share this site+month stem.
     const result = await pool.request()
       .input('prefix', sql.NVarChar(40), prefix)
       .query(`
-SELECT TOP 1 [RequestNumber]
+SELECT TOP 50 [RequestNumber]
 FROM [finance].[PaymentRequests]
 WHERE [RequestNumber] LIKE @prefix + N'%'
-ORDER BY [RequestNumber] DESC
+ORDER BY LEN([RequestNumber]) DESC, [RequestNumber] DESC
 `);
-    const latest = compact(result.recordset?.[0]?.RequestNumber);
-    const trailing = latest.startsWith(prefix) ? latest.slice(prefix.length) : '';
-    const seq = trailing && /^\d+$/.test(trailing) ? Number(trailing) + 1 : 1;
-    return format(Number.isFinite(seq) && seq > 0 ? seq : 1);
+    let maxSeq = 0;
+    for (const row of result.recordset || []) {
+      const latest = compact(row.RequestNumber);
+      if (!latest.startsWith(prefix)) continue;
+      const trailing = latest.slice(prefix.length);
+      if (!/^\d+$/.test(trailing)) continue;
+      const seq = Number(trailing);
+      if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
+    }
+    return format(maxSeq + 1);
   } catch {
-    return format(Number(String(Date.now()).slice(-5)) || 1);
+    return format(1);
   }
 };
 
@@ -1383,13 +1410,40 @@ export const buildEmployeePaymentDashboard = async (employeeCode: string): Promi
   };
 };
 
-const resolveFinanceDataRoot = () => {
-  if (process.env.DLE_FINANCE_DATA_DIR) return path.resolve(process.env.DLE_FINANCE_DATA_DIR);
-  if (process.env.DLE_HRIS_DATA_DIR) return path.join(path.resolve(process.env.DLE_HRIS_DATA_DIR), '..', 'finance');
+const resolveFinanceDataRootCandidates = () => {
+  const candidates: string[] = [];
+  const push = (value?: string | null) => {
+    const next = compact(value);
+    if (!next) return;
+    const resolved = path.resolve(next);
+    if (!candidates.includes(resolved)) candidates.push(resolved);
+  };
+
+  if (process.env.DLE_FINANCE_DATA_DIR) push(process.env.DLE_FINANCE_DATA_DIR);
+  if (process.env.DLE_HRIS_DATA_DIR) {
+    push(path.join(path.resolve(process.env.DLE_HRIS_DATA_DIR), '..', 'finance'));
+  }
+
   const cwd = process.cwd();
-  if (cwd.replace(/\\/g, '/').endsWith('/apps/dashboard')) return path.join(cwd, 'data', 'finance');
-  return path.join(cwd, 'apps', 'dashboard', 'data', 'finance');
+  const normalized = cwd.replace(/\\/g, '/');
+  if (/\/apps\/dashboard$/i.test(normalized)) {
+    push(path.join(cwd, 'data', 'finance'));
+  } else {
+    push(path.join(cwd, 'apps', 'dashboard', 'data', 'finance'));
+    push(path.join(cwd, 'data', 'finance'));
+  }
+
+  // IIS package often runs with cwd = deployment/iis/site
+  push(path.join(cwd, 'apps', 'dashboard', 'data', 'finance'));
+  // Sibling repo / alternate drive layouts (e.g. E:\Dorman-Long vs C:\Next-Generation)
+  push(path.join(cwd, '..', 'apps', 'dashboard', 'data', 'finance'));
+  push(path.join(cwd, '..', '..', 'apps', 'dashboard', 'data', 'finance'));
+
+  return candidates;
 };
+
+const resolveFinanceDataRoot = () => resolveFinanceDataRootCandidates()[0]
+  || path.join(process.cwd(), 'apps', 'dashboard', 'data', 'finance');
 
 export const PAYMENT_ATTACHMENTS_ROOT = path.join(resolveFinanceDataRoot(), 'payment-attachments');
 export const PAYMENT_ATTACHMENT_MAX_BYTES = 8 * 1024 * 1024;
@@ -1447,9 +1501,56 @@ export const readPaymentAttachmentFile = async (requestId: string, fileName: str
   const safeRequestId = compact(requestId);
   const safeName = safeAttachmentName(fileName);
   if (!safeRequestId || !safeName || safeName.includes('..')) throw new Error('Invalid attachment path.');
-  const target = path.join(PAYMENT_ATTACHMENTS_ROOT, safeRequestId, safeName);
-  const bytes = await readFile(target);
-  return { bytes, fileName: safeName };
+
+  const roots = resolveFinanceDataRootCandidates().map((root) => path.join(root, 'payment-attachments'));
+  const tried: string[] = [];
+  for (const root of roots) {
+    const target = path.join(root, safeRequestId, safeName);
+    tried.push(target);
+    try {
+      const bytes = await readFile(target);
+      return { bytes, fileName: safeName };
+    } catch {
+      // try next root / name variant
+    }
+    // Also try original requested name (before sanitize) under same folder.
+    try {
+      const alt = path.join(root, safeRequestId, path.basename(fileName));
+      if (!tried.includes(alt)) {
+        tried.push(alt);
+        const bytes = await readFile(alt);
+        return { bytes, fileName: path.basename(alt) };
+      }
+    } catch {
+      // continue
+    }
+  }
+
+  // Last resort: list the request folder under each root and match by suffix / original stem.
+  const { readdir } = await import('node:fs/promises');
+  const needle = safeName.toLowerCase();
+  const originalNeedle = path.basename(fileName).toLowerCase();
+  for (const root of roots) {
+    const dir = path.join(root, safeRequestId);
+    try {
+      const entries = await readdir(dir);
+      const match = entries.find((entry) => {
+        const lower = entry.toLowerCase();
+        return lower === needle
+          || lower === originalNeedle
+          || lower.endsWith(originalNeedle)
+          || (originalNeedle.length > 8 && lower.includes(originalNeedle.slice(-24)));
+      });
+      if (match) {
+        const bytes = await readFile(path.join(dir, match));
+        return { bytes, fileName: match };
+      }
+    } catch {
+      // folder missing in this root
+    }
+  }
+
+  throw new Error(`Attachment file not found for ${safeRequestId}/${safeName}. Checked: ${tried.slice(0, 3).join(' | ')}`);
 };
 
 export const appendPaymentRequestAttachments = async (
@@ -1481,7 +1582,7 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
   const beneficiaryName = compact(input.beneficiaryName);
   const beneficiaryCode = compact(input.beneficiaryCode);
   const amount = moneyRound(Number(input.amount || 0));
-  const paymentSiteCode = compact(input.paymentSiteCode || input.companyCode);
+  const paymentSiteCode = normalizeSiteCode(input.paymentSiteCode || input.companyCode);
   const paymentSiteName = compact(input.paymentSiteName);
   const expenseCode = compact(input.expenseCode);
   const department = compact(input.department);
@@ -1768,7 +1869,7 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
   const beneficiaryName = compact(input.beneficiaryName) || existing.beneficiaryName;
   const beneficiaryCode = compact(input.beneficiaryCode) || existing.beneficiaryCode;
   const amount = moneyRound(Number(input.amount || 0));
-  const paymentSiteCode = compact(input.paymentSiteCode || input.companyCode) || existing.paymentSiteCode;
+  const paymentSiteCode = normalizeSiteCode(input.paymentSiteCode || input.companyCode) || existing.paymentSiteCode;
   const paymentSiteName = compact(input.paymentSiteName) || existing.paymentSiteName;
   const expenseCode = compact(input.expenseCode) || existing.expenseCode;
   const department = compact(input.department) || existing.department;
@@ -2407,6 +2508,8 @@ export const transitionPaymentRequest = async (input: {
 UPDATE [finance].[PaymentRequests]
 SET [CurrentApproverCode] = @ApproverCode,
     [CurrentApproverName] = @ApproverName,
+    [StageEnteredAt] = SYSUTCDATETIME(),
+    [LastReminderAt] = NULL,
     [UpdatedAt] = SYSUTCDATETIME()
 WHERE [RequestId] = @RequestId
 `);
@@ -2418,6 +2521,10 @@ WHERE [RequestId] = @RequestId
     default:
       break;
   }
+
+  const pendingStatuses = ['Pending Approval', 'Submitted', 'Finance Review'];
+  const stageChanged = nextStage !== existing.currentStage || nextStatus !== existing.status;
+  const enteringPending = pendingStatuses.some((status) => status.toLowerCase() === nextStatus.toLowerCase());
 
   await pool.request()
     .input('RequestId', sql.NVarChar(60), input.requestId)
@@ -2433,6 +2540,8 @@ WHERE [RequestId] = @RequestId
     .input('RetirementJson', sql.NVarChar(sql.MAX), retirementJson ? JSON.stringify(retirementJson) : null)
     .input('PostingJson', sql.NVarChar(sql.MAX), postingJson ? JSON.stringify(postingJson) : null)
     .input('AttachmentsJson', sql.NVarChar(sql.MAX), attachmentsJson ? JSON.stringify(attachmentsJson) : null)
+    .input('ResetStageClock', sql.Bit, stageChanged && enteringPending ? 1 : 0)
+    .input('ClearStageClock', sql.Bit, stageChanged && !enteringPending ? 1 : 0)
     .query(`
 UPDATE [finance].[PaymentRequests]
 SET [Status] = @Status,
@@ -2447,6 +2556,15 @@ SET [Status] = @Status,
     [RetirementJson] = COALESCE(@RetirementJson, [RetirementJson]),
     [PostingJson] = COALESCE(@PostingJson, [PostingJson]),
     [AttachmentsJson] = COALESCE(@AttachmentsJson, [AttachmentsJson]),
+    [StageEnteredAt] = CASE
+      WHEN @ResetStageClock = 1 THEN SYSUTCDATETIME()
+      WHEN @ClearStageClock = 1 THEN NULL
+      ELSE [StageEnteredAt]
+    END,
+    [LastReminderAt] = CASE
+      WHEN @ResetStageClock = 1 THEN NULL
+      ELSE [LastReminderAt]
+    END,
     [UpdatedAt] = SYSUTCDATETIME()
 WHERE [RequestId] = @RequestId
 `);

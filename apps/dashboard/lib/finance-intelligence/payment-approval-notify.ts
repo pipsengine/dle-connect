@@ -40,7 +40,7 @@ const TREASURY_READY_CONTACTS: Array<{
   sites: string[];
 }> = [
   { code: 'P0385', email: 'ifeanyiemesiana@dormanlongeng.com', sites: [] },
-  { code: 'P0387', email: 'omotolaniagboola@dormanlongeng.com', sites: ['DLPCG'] },
+  { code: 'P0387', email: 'omotolaniagboola@dormanlongeng.com', sites: ['DLPC', 'DLPCG'] },
 ];
 
 export type ResolvedPaymentApprover = {
