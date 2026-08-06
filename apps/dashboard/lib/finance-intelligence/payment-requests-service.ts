@@ -292,6 +292,8 @@ const resolveInitialStage = async (
         pathType: matched.pathType,
         amountNgn: matched.amountNgn,
         fxRate: matched.fxRate,
+        fxRateDate: matched.fxRateDate,
+        fxSource: matched.fxSource,
       };
     }
   } catch (error) {
@@ -303,6 +305,8 @@ const resolveInitialStage = async (
   const converted = await convertAmountToNgn(amount, context?.currencyCode || 'NGN').catch(() => ({
     amountNgn: amount,
     fxRate: 1,
+    fxRateDate: new Date().toISOString().slice(0, 10),
+    fxSource: 'Fallback',
   }));
   const isProject = Boolean(context?.projectCode) || /project/i.test(context?.department || '');
   const amountNgn = Number(converted.amountNgn || amount || 0);
@@ -341,9 +345,11 @@ const resolveInitialStage = async (
     matrixRuleName,
     approvalLevel: fallbackStages.length,
     stages: fallbackStages,
-    pathType: isProject ? 'Project' : 'Non-project',
+    pathType: isProject ? 'Project' as const : 'Non-project' as const,
     amountNgn: converted.amountNgn,
     fxRate: converted.fxRate,
+    fxRateDate: converted.fxRateDate,
+    fxSource: converted.fxSource,
   };
 };
 
@@ -665,6 +671,8 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
     pathType: string;
     amountNgn: number;
     fxRate: number;
+    fxRateDate: string;
+    fxSource: string;
   } | null = null;
   try {
     const matched = await resolveApprovalChain({
@@ -683,6 +691,8 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
         pathType: matched.pathType,
         amountNgn: matched.amountNgn,
         fxRate: matched.fxRate,
+        fxRateDate: matched.fxRateDate,
+        fxSource: matched.fxSource,
       };
     }
   } catch (error) {
@@ -693,10 +703,22 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
     left.length === right.length
     && left.every((stage, index) => stage.toLowerCase() === right[index].toLowerCase());
 
+  const currency = compact(row.currencyCode).toUpperCase() || 'NGN';
+  const storedFxRate = Number(row.payload?.fxRate);
+  const storedAmountNgn = Number(row.payload?.amountNgn);
+  const needsFxRepair = currency !== 'NGN' && (
+    !Number.isFinite(storedAmountNgn)
+    || storedAmountNgn <= 0
+    || !Number.isFinite(storedFxRate)
+    || storedFxRate <= 0
+    || !compact(row.payload?.fxRateDate)
+  );
+
   const needsRepair = existing.length === 0
     || onlyReportingManager
     || (row.paymentType !== 'Supplier Invoice Payment' && existing.length > 0 && !hasFinanceManager)
-    || (matchedStages != null && !stagesEqual(existing, matchedStages));
+    || (matchedStages != null && !stagesEqual(existing, matchedStages))
+    || needsFxRepair;
 
   if (!needsRepair) return existing;
 
@@ -714,6 +736,8 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
     pathType: matchedMeta?.pathType || row.payload.pathType || null,
     amountNgn: matchedMeta?.amountNgn || row.payload.amountNgn || row.netAmount,
     fxRate: matchedMeta?.fxRate || row.payload.fxRate || 1,
+    fxRateDate: matchedMeta?.fxRateDate || row.payload.fxRateDate || null,
+    fxSource: matchedMeta?.fxSource || row.payload.fxSource || null,
     repairedStages: true,
   });
   return stages;
@@ -1142,6 +1166,22 @@ export const buildPaymentRequestsWorkspace = async (input?: {
     mineFor: input?.mineFor,
     scopedToActorCode: input?.scopedToActorCode,
   });
+
+  // Backfill prevailing FX metadata for foreign-currency rows missing conversion fields.
+  for (const row of rows) {
+    const currency = compact(row.currencyCode).toUpperCase() || 'NGN';
+    if (currency === 'NGN') continue;
+    const hasFx = Number(row.payload?.fxRate) > 0
+      && Number(row.payload?.amountNgn) > 0
+      && compact(row.payload?.fxRateDate);
+    if (hasFx) continue;
+    try {
+      await ensureApprovalStages(row);
+    } catch (error) {
+      console.error('[payment-requests] FX backfill failed', row.requestNumber, error);
+    }
+  }
+
   const workspace = emptyWorkspace();
   workspace.source = rows.length || (await ensureFinanceDb().catch(() => null))
     ? 'DLE Enterprise · finance.PaymentRequests'
@@ -1150,7 +1190,12 @@ export const buildPaymentRequestsWorkspace = async (input?: {
   workspace.generatedAt = nowIso();
 
   const now = new Date();
-  const sum = (list: PaymentRequestRow[]) => list.reduce((total, row) => total + Number(row.netAmount || 0), 0);
+  const amountNgnOf = (row: PaymentRequestRow) => {
+    const fromPayload = Number(row.payload?.amountNgn);
+    if (Number.isFinite(fromPayload) && fromPayload > 0) return fromPayload;
+    return Number(row.netAmount || 0);
+  };
+  const sum = (list: PaymentRequestRow[]) => list.reduce((total, row) => total + amountNgnOf(row), 0);
   const pending = rows.filter((row) => /pending|submitted|finance review/i.test(row.status));
   const returned = rows.filter((row) => /returned/i.test(row.status));
   const approved = rows.filter((row) => /^approved$/i.test(row.status));
@@ -1522,6 +1567,8 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
       pathType: 'pathType' in stageInfo ? stageInfo.pathType : null,
       amountNgn: 'amountNgn' in stageInfo ? stageInfo.amountNgn : netAmount,
       fxRate: 'fxRate' in stageInfo ? stageInfo.fxRate : 1,
+      fxRateDate: 'fxRateDate' in stageInfo ? stageInfo.fxRateDate : null,
+      fxSource: 'fxSource' in stageInfo ? stageInfo.fxSource : null,
       expenseCode,
       paymentSiteCode,
       paymentSiteName,

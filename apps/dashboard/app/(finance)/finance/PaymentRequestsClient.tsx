@@ -197,13 +197,39 @@ const moneyCompact = (value: number) => {
   }).format(value);
 };
 
-const moneyFull = (value: number) =>
-  new Intl.NumberFormat('en-NG', {
-    style: 'currency',
-    currency: 'NGN',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
+const moneyFull = (value: number, currency = 'NGN') => {
+  const code = String(currency || 'NGN').trim().toUpperCase() || 'NGN';
+  try {
+    return new Intl.NumberFormat('en-NG', {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value || 0);
+  } catch {
+    return `${code} ${Number(value || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+};
+
+const moneyNgn = (value: number) => moneyFull(value, 'NGN');
+
+const rowAmountNgn = (row: { netAmount: number; currencyCode?: string; payload?: Record<string, unknown> | null }) => {
+  const fromPayload = Number(row.payload?.amountNgn);
+  if (Number.isFinite(fromPayload) && fromPayload > 0) return fromPayload;
+  return Number(row.netAmount || 0);
+};
+
+const rowFxRate = (row: { currencyCode?: string; payload?: Record<string, unknown> | null }) => {
+  const rate = Number(row.payload?.fxRate);
+  if (Number.isFinite(rate) && rate > 0) return rate;
+  return String(row.currencyCode || 'NGN').toUpperCase() === 'NGN' ? 1 : null;
+};
+
+const rowFxRateDate = (row: { payload?: Record<string, unknown> | null }) =>
+  String(row.payload?.fxRateDate || '').trim() || null;
+
+const isForeignCurrency = (currencyCode?: string | null) =>
+  String(currencyCode || 'NGN').trim().toUpperCase() !== 'NGN';
 
 const fmtDateTime = (value?: string | null) => {
   if (!value) return '—';
@@ -395,6 +421,11 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
       );
     });
   }, [workspace.rows, tab, query, paymentTypeFilter]);
+
+  const showFxColumn = useMemo(
+    () => filteredRows.some((row) => isForeignCurrency(row.currencyCode)),
+    [filteredRows],
+  );
 
   const openComposer = (type: PaymentRequestType) => {
     setComposerType(type);
@@ -729,7 +760,23 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
             <thead className="bg-slate-50/90 text-slate-500">
               <tr>
                 <th className="px-3 py-2.5"><span className="sr-only">Select</span></th>
-                {['Request No.', 'Payment Type', 'Beneficiary', 'Description', 'Gross Amount', 'Net Amount', 'Currency', 'Department', 'Project', 'Submitted', 'Current Stage', 'Approver', 'Status', ''].map((column) => (
+                {[
+                  'Request No.',
+                  'Payment Type',
+                  'Beneficiary',
+                  'Description',
+                  'Gross Amount',
+                  'Net Amount',
+                  ...(showFxColumn ? ['Amount (NGN)'] : []),
+                  'Currency',
+                  'Department',
+                  'Project',
+                  'Submitted',
+                  'Current Stage',
+                  'Approver',
+                  'Status',
+                  '',
+                ].map((column) => (
                   <th key={column || 'actions'} className="whitespace-nowrap px-3 py-2.5 font-semibold">{column}</th>
                 ))}
               </tr>
@@ -737,6 +784,9 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
             <tbody>
               {filteredRows.length ? filteredRows.map((row) => {
                 const TypeIcon = typeIcon(row.paymentType);
+                const foreign = isForeignCurrency(row.currencyCode);
+                const fxRate = rowFxRate(row);
+                const fxDate = rowFxRateDate(row);
                 return (
                   <tr key={row.requestId} className="border-t border-slate-100 hover:bg-slate-50/70">
                     <td className="px-3 py-2.5">
@@ -760,8 +810,25 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                     </td>
                     <td className="px-3 py-2.5 text-slate-700">{row.beneficiaryName || '—'}</td>
                     <td className="max-w-[220px] truncate px-3 py-2.5 text-slate-600">{row.description || row.title}</td>
-                    <td className="px-3 py-2.5 tabular-nums">{moneyFull(row.grossAmount)}</td>
-                    <td className="px-3 py-2.5 tabular-nums font-semibold">{moneyFull(row.netAmount)}</td>
+                    <td className="px-3 py-2.5 tabular-nums">{moneyFull(row.grossAmount, row.currencyCode)}</td>
+                    <td className="px-3 py-2.5 tabular-nums font-semibold">{moneyFull(row.netAmount, row.currencyCode)}</td>
+                    {showFxColumn ? (
+                      <td className="px-3 py-2.5">
+                        {foreign ? (
+                          <div>
+                            <div className="tabular-nums font-semibold text-slate-800">{moneyNgn(rowAmountNgn(row))}</div>
+                            {fxRate ? (
+                              <div className="mt-0.5 text-[10px] font-medium text-slate-500">
+                                Rate {Number(fxRate).toLocaleString('en-NG', { maximumFractionDigits: 6 })}
+                                {fxDate ? ` · ${fxDate}` : ''}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                    ) : null}
                     <td className="px-3 py-2.5">{row.currencyCode}</td>
                     <td className="px-3 py-2.5">{row.department || '—'}</td>
                     <td className="px-3 py-2.5">{row.projectCode || '—'}</td>
@@ -782,7 +849,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                 );
               }) : (
                 <tr>
-                  <td colSpan={14} className="px-3 py-16 text-center">
+                  <td colSpan={showFxColumn ? 15 : 14} className="px-3 py-16 text-center">
                     <Inbox className="mx-auto h-10 w-10 text-slate-300" />
                     <p className="mt-3 text-sm font-semibold text-slate-800">No payment requests yet</p>
                     <p className="mt-1 text-sm text-slate-500">
@@ -805,7 +872,9 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
 
       {!selfServiceMode ? (
       <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
-        <p className="mb-3 text-[11px] text-slate-500">All amounts are in NGN unless otherwise stated. Net Amount includes VAT less WHT and retention.</p>
+        <p className="mb-3 text-[11px] text-slate-500">
+          Amounts show in the request currency. For foreign currency, Amount (NGN) uses the prevailing FX rate for that day (used for approval-band routing). Net Amount includes VAT less WHT and retention.
+        </p>
         <div className="flex flex-wrap gap-2">
           {[
             { id: 'return', label: 'Return for Correction' },

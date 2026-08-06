@@ -399,7 +399,9 @@ export default function PaymentApprovalDetailClient() {
               ['Path', String(request.payload?.pathType || '—')],
               ['Matrix rule', String(request.payload?.matrixRuleName || '—')],
               ['Amount (NGN routing)', fmtMoney(Number(request.payload?.amountNgn || request.netAmount), 'NGN')],
-              ['FX rate', String(request.payload?.fxRate || 1)],
+              ['FX rate', request.payload?.fxRate
+                ? `${request.payload.fxRate}${request.payload?.fxRateDate ? ` · ${request.payload.fxRateDate}` : ''}`
+                : '—'],
               ['Priority', request.priority || 'Normal'],
               ['Risk', request.riskLevel || 'Normal'],
             ].map(([label, value]) => (
