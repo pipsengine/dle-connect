@@ -19,20 +19,20 @@ export const getPaymentReminderSchedulerStatus = () => ({
 
 export const runPaymentReminderSchedulerTick = async () => {
   if (tickInFlight) {
-    return { skipped: true, reason: 'Tick already in progress.' };
+    return { tickSkipped: true as const, reason: 'Tick already in progress.' };
   }
   if (process.env.DLE_PAYMENT_REMINDER_SCHEDULER_DISABLED === '1') {
-    return { skipped: true, reason: 'Scheduler disabled.' };
+    return { tickSkipped: true as const, reason: 'Scheduler disabled.' };
   }
   tickInFlight = true;
   lastTickAt = new Date().toISOString();
   try {
     const result = await processOverduePaymentApprovalReminders();
     lastTickSummary = `scanned=${result.scanned} reminded=${result.reminded} skipped=${result.skipped}`;
-    return { skipped: false, ...result };
+    return { tickSkipped: false as const, ...result };
   } catch (error) {
     lastTickSummary = error instanceof Error ? error.message : 'Reminder tick failed.';
-    return { skipped: false, error: lastTickSummary };
+    return { tickSkipped: false as const, error: lastTickSummary };
   } finally {
     tickInFlight = false;
   }
