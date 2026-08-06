@@ -905,24 +905,25 @@ export default function PaymentRequestsClient({
     { id: 'rejected', label: 'Rejected', count: workspace.summary.rejected, value: workspace.summary.rejectedValue, icon: XCircle, wrap: 'bg-rose-50', color: 'text-rose-600' },
   ];
 
-  const tabs: Array<{ id: TabId; label: string; count?: number }> = [
-    { id: 'all', label: listMode === 'approved' ? 'All (excl. pending)' : 'All Requests', count: workspace.tabCounts.all },
-    ...(listMode === 'inbox' ? [] : [
-      { id: 'mine' as TabId, label: 'My Requests', count: workspace.tabCounts.mine },
-      { id: 'drafts' as TabId, label: 'Drafts', count: workspace.tabCounts.drafts },
-    ]),
-    ...(listMode === 'approved' ? [] : [
-      { id: 'pending' as TabId, label: 'Pending Approval', count: workspace.tabCounts.pending },
-    ]),
-    { id: 'returned', label: 'Returned', count: workspace.tabCounts.returned },
-    { id: 'approved', label: 'Approved', count: workspace.tabCounts.approved },
-    { id: 'ready', label: 'Ready for Treasury', count: workspace.tabCounts.ready },
-    { id: 'retirement', label: 'Retirement', count: workspace.tabCounts.retirement },
-    { id: 'paid', label: 'Paid', count: workspace.tabCounts.paid },
-    { id: 'rejected', label: 'Rejected', count: workspace.tabCounts.rejected },
-  ].filter((item) => {
+  const tabs: Array<{ id: TabId; label: string; count?: number }> = (
+    [
+      { id: 'all' as TabId, label: listMode === 'approved' ? 'All (excl. pending)' : 'All Requests', count: workspace.tabCounts.all },
+      ...(listMode === 'inbox' ? [] : [
+        { id: 'mine' as TabId, label: 'My Requests', count: workspace.tabCounts.mine },
+        { id: 'drafts' as TabId, label: 'Drafts', count: workspace.tabCounts.drafts },
+      ]),
+      ...(listMode === 'approved' ? [] : [
+        { id: 'pending' as TabId, label: 'Pending Approval', count: workspace.tabCounts.pending },
+      ]),
+      { id: 'returned' as TabId, label: 'Returned', count: workspace.tabCounts.returned },
+      { id: 'approved' as TabId, label: 'Approved', count: workspace.tabCounts.approved },
+      { id: 'ready' as TabId, label: 'Ready for Treasury', count: workspace.tabCounts.ready },
+      { id: 'retirement' as TabId, label: 'Retirement', count: workspace.tabCounts.retirement },
+      { id: 'paid' as TabId, label: 'Paid', count: workspace.tabCounts.paid },
+      { id: 'rejected' as TabId, label: 'Rejected', count: workspace.tabCounts.rejected },
+    ] as Array<{ id: TabId; label: string; count?: number }>
+  ).filter((item) => {
     if (listMode === 'inbox') return item.id === 'pending' || item.id === 'all' || item.id === 'returned';
-    if (listMode === 'mine') return true;
     return true;
   });
 
