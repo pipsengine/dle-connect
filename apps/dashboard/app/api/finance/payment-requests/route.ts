@@ -203,8 +203,30 @@ export async function POST(request: Request) {
         }
       }
 
-      const employeeCode = String(body.beneficiaryCode || body.employeeCode || actor.actorCode || '').trim();
-      const employeeName = String(body.beneficiaryName || body.employeeName || actor.actor || '').trim();
+      // Keep requester (who raises) separate from beneficiary (who is paid).
+      // Cash advance: beneficiary/requester are the employee for LM routing.
+      // Supplier invoice: beneficiary is the supplier; requester is always the signed-in user.
+      const beneficiaryCode = String(
+        paymentType === 'Cash Advance Payment'
+          ? (body.employeeCode || body.beneficiaryCode || actor.actorCode || '')
+          : (body.beneficiaryCode || ''),
+      ).trim();
+      const beneficiaryName = String(
+        paymentType === 'Cash Advance Payment'
+          ? (body.employeeName || body.beneficiaryName || actor.actor || '')
+          : (body.beneficiaryName || ''),
+      ).trim();
+
+      const requesterCode = paymentType === 'Cash Advance Payment'
+        ? (beneficiaryCode || actor.actorCode)
+        : String(body.requesterCode || actor.actorCode || '').trim();
+      const requesterName = paymentType === 'Cash Advance Payment'
+        ? (beneficiaryName || actor.actor)
+        : String(body.requesterName || actor.actor || '').trim();
+
+      if (paymentType === 'Supplier Invoice Payment' && !requesterName) {
+        return jsonErr(400, 'Requester could not be resolved from your signed-in account.');
+      }
 
       const result = await createPaymentRequest({
         paymentType,
@@ -212,8 +234,8 @@ export async function POST(request: Request) {
         purpose: expense?.description || body.purpose,
         expenseCode: expense?.expenseCode || expenseCode || undefined,
         businessJustification: body.businessJustification,
-        beneficiaryCode: employeeCode,
-        beneficiaryName: employeeName || (paymentType === 'Cash Advance Payment' ? actor.actor : ''),
+        beneficiaryCode,
+        beneficiaryName: beneficiaryName || (paymentType === 'Cash Advance Payment' ? actor.actor : ''),
         beneficiaryBankSummary: body.beneficiaryBankSummary,
         description: body.description || title,
         amount: Number(body.amount || 0),
@@ -227,8 +249,8 @@ export async function POST(request: Request) {
         projectCode: body.projectCode,
         priority: body.priority,
         requiredDate: body.requiredDate,
-        requesterCode: employeeCode || actor.actorCode,
-        requesterName: employeeName || actor.actor,
+        requesterCode: requesterCode || actor.actorCode,
+        requesterName: requesterName || actor.actor,
         requesterJobTitle: body.requesterJobTitle || actor.jobTitle,
         supervisorName: body.supervisorName,
         requestCategory: body.requestCategory,

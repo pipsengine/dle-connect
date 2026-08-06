@@ -74,6 +74,13 @@ type ComposerForm = {
   submit: boolean;
 };
 
+type SignedInRequester = {
+  name: string;
+  employeeCode: string;
+  department: string;
+  jobTitle: string;
+};
+
 const emptyForm = (): ComposerForm => ({
   employeeCode: '',
   employeeName: '',
@@ -289,6 +296,7 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
   const [form, setForm] = useState<ComposerForm>(emptyForm());
+  const [signedInRequester, setSignedInRequester] = useState<SignedInRequester | null>(null);
   const [eligibility, setEligibility] = useState<CashAdvanceEligibility | null>(null);
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [supportingFiles, setSupportingFiles] = useState<File[]>([]);
@@ -352,25 +360,34 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
         if (lookupsRes.ok && lookupsJson.status === 'success') {
           setLookups(lookupsJson.data as PaymentRequestLookups);
         }
-        if (userRes.ok && userJson.status === 'success' && composerType === 'Cash Advance Payment') {
+        if (userRes.ok && userJson.status === 'success') {
           const user = userJson.data as {
             name?: string;
             employeeCode?: string;
             department?: string;
             location?: string;
+            role?: string;
           };
-          const nextCode = user.employeeCode || '';
-          setForm((prev) => ({
-            ...prev,
-            employeeName: prev.employeeName || user.name || '',
-            employeeCode: prev.employeeCode || nextCode,
-            department: prev.department || user.department || '',
-            location: prev.location || user.location || '',
-            beneficiaryName: prev.beneficiaryName || user.name || '',
-            beneficiaryCode: prev.beneficiaryCode || nextCode,
-          }));
-          setEmployeeSearch(user.name || '');
-          if (nextCode) void loadEligibility(nextCode);
+          setSignedInRequester({
+            name: user.name || '',
+            employeeCode: user.employeeCode || '',
+            department: user.department || '',
+            jobTitle: user.role || '',
+          });
+          if (composerType === 'Cash Advance Payment') {
+            const nextCode = user.employeeCode || '';
+            setForm((prev) => ({
+              ...prev,
+              employeeName: prev.employeeName || user.name || '',
+              employeeCode: prev.employeeCode || nextCode,
+              department: prev.department || user.department || '',
+              location: prev.location || user.location || '',
+              beneficiaryName: prev.beneficiaryName || user.name || '',
+              beneficiaryCode: prev.beneficiaryCode || nextCode,
+            }));
+            setEmployeeSearch(user.name || '');
+            if (nextCode) void loadEligibility(nextCode);
+          }
         }
       } catch {
         // keep empty lookups; submit will still validate server-side
@@ -553,6 +570,9 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
           department: form.department,
           location: form.location,
           projectCode: form.projectCode,
+          requesterCode: signedInRequester?.employeeCode || undefined,
+          requesterName: signedInRequester?.name || undefined,
+          requesterJobTitle: signedInRequester?.jobTitle || undefined,
           invoiceNumber: form.invoiceNumber,
           invoiceDate: form.invoiceDate,
           dueDate: form.dueDate,
@@ -1011,6 +1031,26 @@ export default function PaymentRequestsClient({ initialWorkspace, selfServiceMod
                   {eligibility.message}
                 </div>
               ) : null}
+              <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  {composerType === 'Cash Advance Payment' ? 'Raised by' : 'Requested by'}
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">
+                  {signedInRequester?.name || 'Signed-in user'}
+                </p>
+                <p className="mt-0.5 text-xs text-slate-600">
+                  {[
+                    signedInRequester?.employeeCode,
+                    signedInRequester?.jobTitle,
+                    signedInRequester?.department,
+                  ].filter(Boolean).join(' · ') || 'Loaded from your signed-in account'}
+                </p>
+                {composerType === 'Cash Advance Payment' ? (
+                  <p className="mt-1.5 text-[11px] text-slate-500">
+                    Approval routing follows the selected employee’s reporting manager.
+                  </p>
+                ) : null}
+              </div>
               {composerType === 'Cash Advance Payment' ? (
                 <>
                   <div className="grid gap-3 sm:grid-cols-2">
