@@ -92,9 +92,9 @@ const moneyRound2 = (value: number) => Math.round(Number(value || 0) * 100) / 10
 
 const FALLBACK_FX: Record<string, number> = {
   NGN: 1,
-  USD: 1600,
-  EUR: 1750,
-  GBP: 2050,
+  USD: 1360,
+  EUR: 1580,
+  GBP: 1830,
 };
 
 /** In-flight seed de-dupe so concurrent page loads do not race MERGE. */
@@ -358,6 +358,14 @@ export const getPrevailingFxRate = async (fromCurrency: string, rateDate = new D
     return { fromCurrency: 'NGN', toCurrency: 'NGN', rate: 1, rateDate: rateDate.toISOString().slice(0, 10), source: 'Identity' };
   }
 
+  // Keep finance.FxRates current from live market providers (USD/EUR/GBP → NGN).
+  try {
+    const { ensureLiveFxRates } = await import('@/lib/finance-intelligence/fx-rates-service');
+    await ensureLiveFxRates();
+  } catch (error) {
+    console.warn('[approval-limits] live FX sync skipped', error);
+  }
+
   const pool = await ensureFinanceDb().catch(() => null);
   if (pool) {
     try {
@@ -370,16 +378,40 @@ FROM [finance].[FxRates]
 WHERE [FromCurrency] = @from
   AND [ToCurrency] = N'NGN'
   AND [RateDate] <= @onDate
+  AND ([Source] IS NULL OR [Source] NOT LIKE N'%seed%')
 ORDER BY [RateDate] DESC
 `);
       const row = result.recordset?.[0] as Record<string, unknown> | undefined;
-      if (row) {
+      if (row && Number(row.Rate || 0) > 0) {
         return {
           fromCurrency: compact(row.FromCurrency),
           toCurrency: compact(row.ToCurrency) || 'NGN',
           rate: Number(row.Rate || 0),
           rateDate: row.RateDate ? new Date(String(row.RateDate)).toISOString().slice(0, 10) : rateDate.toISOString().slice(0, 10),
           source: compact(row.Source) || 'finance.FxRates',
+        };
+      }
+
+      // Last resort: any stored rate including legacy seed if live sync failed.
+      const anyRate = await pool.request()
+        .input('from', sql.NVarChar(10), from)
+        .input('onDate', sql.Date, rateDate)
+        .query(`
+SELECT TOP 1 [FromCurrency], [ToCurrency], [RateDate], [Rate], [Source]
+FROM [finance].[FxRates]
+WHERE [FromCurrency] = @from
+  AND [ToCurrency] = N'NGN'
+  AND [RateDate] <= @onDate
+ORDER BY [RateDate] DESC
+`);
+      const fallbackRow = anyRate.recordset?.[0] as Record<string, unknown> | undefined;
+      if (fallbackRow && Number(fallbackRow.Rate || 0) > 0) {
+        return {
+          fromCurrency: compact(fallbackRow.FromCurrency),
+          toCurrency: compact(fallbackRow.ToCurrency) || 'NGN',
+          rate: Number(fallbackRow.Rate || 0),
+          rateDate: fallbackRow.RateDate ? new Date(String(fallbackRow.RateDate)).toISOString().slice(0, 10) : rateDate.toISOString().slice(0, 10),
+          source: compact(fallbackRow.Source) || 'finance.FxRates',
         };
       }
     } catch {
@@ -624,6 +656,8 @@ ORDER BY [CreatedAt] DESC
     }
 
     try {
+      const { ensureLiveFxRates } = await import('@/lib/finance-intelligence/fx-rates-service');
+      await ensureLiveFxRates().catch((error) => console.warn('[approval-limits] FX sync for workspace failed', error));
       const fx = await pool.request().query(`
 SELECT TOP 20 [FromCurrency], [ToCurrency], [RateDate], [Rate], [Source]
 FROM [finance].[FxRates]

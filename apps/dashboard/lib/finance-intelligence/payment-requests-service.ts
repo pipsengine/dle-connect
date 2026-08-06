@@ -706,12 +706,15 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
   const currency = compact(row.currencyCode).toUpperCase() || 'NGN';
   const storedFxRate = Number(row.payload?.fxRate);
   const storedAmountNgn = Number(row.payload?.amountNgn);
+  const storedFxSource = compact(row.payload?.fxSource);
   const needsFxRepair = currency !== 'NGN' && (
     !Number.isFinite(storedAmountNgn)
     || storedAmountNgn <= 0
     || !Number.isFinite(storedFxRate)
     || storedFxRate <= 0
     || !compact(row.payload?.fxRateDate)
+    || !storedFxSource
+    || /seed|fallback/i.test(storedFxSource)
   );
 
   const needsRepair = existing.length === 0
@@ -1167,14 +1170,18 @@ export const buildPaymentRequestsWorkspace = async (input?: {
     scopedToActorCode: input?.scopedToActorCode,
   });
 
-  // Backfill prevailing FX metadata for foreign-currency rows missing conversion fields.
+  // Backfill prevailing FX metadata for foreign-currency rows missing conversion fields
+  // (or still on obsolete system seed rates).
   for (const row of rows) {
     const currency = compact(row.currencyCode).toUpperCase() || 'NGN';
     if (currency === 'NGN') continue;
-    const hasFx = Number(row.payload?.fxRate) > 0
+    const fxSource = compact(row.payload?.fxSource);
+    const hasLiveFx = Number(row.payload?.fxRate) > 0
       && Number(row.payload?.amountNgn) > 0
-      && compact(row.payload?.fxRateDate);
-    if (hasFx) continue;
+      && compact(row.payload?.fxRateDate)
+      && fxSource
+      && !/seed|fallback/i.test(fxSource);
+    if (hasLiveFx) continue;
     try {
       await ensureApprovalStages(row);
     } catch (error) {

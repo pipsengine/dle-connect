@@ -83,6 +83,17 @@ export async function POST(request: Request) {
       });
     }
 
+    if (action === 'sync-fx') {
+      const { ensureLiveFxRates } = await import('@/lib/finance-intelligence/fx-rates-service');
+      const sync = await ensureLiveFxRates({ force: true });
+      const workspace = await buildApprovalMatrixWorkspace({ autoSeed: false });
+      return jsonOk({
+        workspace,
+        sync,
+        message: `FX rates refreshed from ${sync.provider} for ${sync.rateDate}.`,
+      });
+    }
+
     if (action === 'resolve-preview') {
       const amount = Number(body.amount);
       if (!(amount > 0) || Number.isNaN(amount)) return jsonErr(400, 'A positive amount is required.');

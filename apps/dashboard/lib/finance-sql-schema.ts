@@ -318,18 +318,16 @@ CREATE TABLE [finance].[FxRates] (
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinanceFxRates_Lookup' AND object_id = OBJECT_ID(N'[finance].[FxRates]'))
   CREATE UNIQUE INDEX [IX_FinanceFxRates_Lookup] ON [finance].[FxRates] ([FromCurrency], [ToCurrency], [RateDate]);
 
--- Seed today's prevailing rates (NGN per unit). Updated daily via MERGE on ensure.
+-- Keep NGN identity only. Live USD/EUR/GBP rates are synced from market providers
+-- (see fx-rates-service). Do NOT overwrite market rates with hardcoded seed values.
 MERGE [finance].[FxRates] AS target
 USING (VALUES
-  (N'FX-USD-' + CONVERT(NVARCHAR(8), CAST(SYSUTCDATETIME() AS DATE), 112), N'USD', N'NGN', CAST(SYSUTCDATETIME() AS DATE), CAST(1600.00000000 AS DECIMAL(19,8)), N'System daily seed'),
-  (N'FX-EUR-' + CONVERT(NVARCHAR(8), CAST(SYSUTCDATETIME() AS DATE), 112), N'EUR', N'NGN', CAST(SYSUTCDATETIME() AS DATE), CAST(1750.00000000 AS DECIMAL(19,8)), N'System daily seed'),
-  (N'FX-GBP-' + CONVERT(NVARCHAR(8), CAST(SYSUTCDATETIME() AS DATE), 112), N'GBP', N'NGN', CAST(SYSUTCDATETIME() AS DATE), CAST(2050.00000000 AS DECIMAL(19,8)), N'System daily seed'),
-  (N'FX-NGN-' + CONVERT(NVARCHAR(8), CAST(SYSUTCDATETIME() AS DATE), 112), N'NGN', N'NGN', CAST(SYSUTCDATETIME() AS DATE), CAST(1.00000000 AS DECIMAL(19,8)), N'System daily seed')
+  (N'FX-NGN-' + CONVERT(NVARCHAR(8), CAST(SYSUTCDATETIME() AS DATE), 112), N'NGN', N'NGN', CAST(SYSUTCDATETIME() AS DATE), CAST(1.00000000 AS DECIMAL(19,8)), N'Identity')
 ) AS source ([RateId], [FromCurrency], [ToCurrency], [RateDate], [Rate], [Source])
 ON target.[FromCurrency] = source.[FromCurrency]
  AND target.[ToCurrency] = source.[ToCurrency]
  AND target.[RateDate] = source.[RateDate]
-WHEN MATCHED THEN UPDATE SET
+WHEN MATCHED AND (target.[Source] IS NULL OR target.[Source] LIKE N'%seed%' OR target.[Source] = N'Identity') THEN UPDATE SET
   [Rate] = source.[Rate],
   [Source] = source.[Source],
   [UpdatedAt] = SYSUTCDATETIME()
