@@ -33,6 +33,13 @@ const resolveActor = async () => {
   };
 };
 
+const isInlineViewable = (mimeType?: string | null, fileName?: string | null) => {
+  const mime = String(mimeType || '').toLowerCase();
+  const name = String(fileName || '').toLowerCase();
+  if (mime.startsWith('image/') || mime === 'application/pdf' || mime === 'text/plain') return true;
+  return /\.(pdf|png|jpe?g|gif|webp|txt)$/i.test(name);
+};
+
 export async function GET(request: Request) {
   try {
     const actor = await resolveActor();
@@ -40,6 +47,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const requestId = String(searchParams.get('requestId') || '').trim();
     const fileName = String(searchParams.get('fileName') || '').trim();
+    const dispositionParam = String(searchParams.get('disposition') || '').trim().toLowerCase();
+    const wantInline = dispositionParam === 'inline' || searchParams.get('view') === '1';
     if (!requestId || !fileName) return jsonErr(400, 'requestId and fileName are required.');
 
     const paymentRequest = await getPaymentRequestById(requestId);
@@ -53,15 +62,22 @@ export async function GET(request: Request) {
 
     const attachment = (paymentRequest.attachments || []).find((item) =>
       item.fileName === fileName || item.originalName === fileName || item.id === fileName);
+    if (!attachment && !(paymentRequest.attachments || []).length) {
+      return jsonErr(404, 'This payment request has no uploaded attachments.');
+    }
     const storedName = attachment?.fileName || fileName;
     const { bytes } = await readPaymentAttachmentFile(requestId, storedName);
     const downloadName = attachment?.originalName || storedName;
+    const mimeType = attachment?.mimeType || 'application/octet-stream';
+    const inline = wantInline && isInlineViewable(mimeType, downloadName);
+    const safeDownloadName = downloadName.replace(/"/g, '');
 
     return new NextResponse(new Uint8Array(bytes), {
       headers: {
-        'content-type': attachment?.mimeType || 'application/octet-stream',
-        'content-disposition': `attachment; filename="${downloadName.replace(/"/g, '')}"`,
+        'content-type': mimeType,
+        'content-disposition': `${inline ? 'inline' : 'attachment'}; filename="${safeDownloadName}"`,
         'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
       },
     });
   } catch (error) {

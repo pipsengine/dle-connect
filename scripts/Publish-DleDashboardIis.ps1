@@ -483,10 +483,17 @@ try {
   }
 
   $ExistingRuntimeData = Join-Path $ResolvedOutputPath "data"
+  $ExistingNestedFinanceData = Join-Path $ResolvedOutputPath "apps\dashboard\data\finance"
   if (Test-Path -LiteralPath $ExistingRuntimeData) {
     Copy-DirectoryContents -SourcePath $ExistingRuntimeData -DestinationPath $RuntimeDataBackupPath
   } elseif (Test-Path -LiteralPath $RuntimeDataBackupPath) {
     Remove-PathWithRetry -TargetDirectory $RuntimeDataBackupPath
+  }
+  # Preserve payment attachments previously stored under apps/dashboard/data/finance (pre-durable-root).
+  if (Test-Path -LiteralPath $ExistingNestedFinanceData) {
+    $NestedFinanceBackup = Join-Path $RuntimeDataBackupPath "finance"
+    New-Item -ItemType Directory -Path $NestedFinanceBackup -Force | Out-Null
+    Copy-DirectoryContents -SourcePath $ExistingNestedFinanceData -DestinationPath $NestedFinanceBackup
   }
 
   if (-not $NoStop -and (Test-Path -LiteralPath $ResolvedOutputPath)) {

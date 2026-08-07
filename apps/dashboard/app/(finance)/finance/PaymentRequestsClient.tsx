@@ -317,7 +317,6 @@ export default function PaymentRequestsClient({
   });
   const [query, setQuery] = useState('');
   const [paymentTypeFilter, setPaymentTypeFilter] = useState<'All' | PaymentRequestType>(initialPaymentType);
-  const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState('');
   const [composerOpen, setComposerOpen] = useState(false);
@@ -861,39 +860,6 @@ export default function PaymentRequestsClient({
     }
   };
 
-  const transitionSelected = async (transition: string) => {
-    if (!selected.length) {
-      setToast('Select at least one request.');
-      return;
-    }
-    const reasonRequired = ['reject', 'return', 'delegate', 'escalate', 'clarify'].includes(transition);
-    const reason = reasonRequired ? window.prompt('Reason is required for this action:') : undefined;
-    if (reasonRequired && !reason?.trim()) {
-      setToast('Action cancelled — reason is required.');
-      return;
-    }
-    setBusy(true);
-    setToast('');
-    try {
-      for (const requestId of selected) {
-        const res = await fetch('/api/finance/payment-requests', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'transition', requestId, transition, reason, comment: reason }),
-        });
-        const json = await res.json();
-        if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to update request.');
-        setWorkspace(json.data.workspace as PaymentRequestsWorkspace);
-      }
-      setSelected([]);
-      setToast('Selected requests updated.');
-    } catch (error) {
-      setToast(error instanceof Error ? error.message : 'Unable to update request.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const kpis = [
     { id: 'total', label: 'Total Requests', count: workspace.summary.totalRequests, value: workspace.summary.totalValue, icon: FileText, wrap: 'bg-slate-100', color: 'text-slate-600' },
     { id: 'pending', label: 'Pending Approval', count: workspace.summary.pendingApproval, value: workspace.summary.pendingValue, icon: Clock3, wrap: 'bg-orange-50', color: 'text-orange-500' },
@@ -926,10 +892,6 @@ export default function PaymentRequestsClient({
     if (listMode === 'inbox') return item.id === 'pending' || item.id === 'all' || item.id === 'returned';
     return true;
   });
-
-  const toggleSelected = (requestId: string) => {
-    setSelected((current) => (current.includes(requestId) ? current.filter((id) => id !== requestId) : [...current, requestId]));
-  };
 
   return (
     <PageFrame>
@@ -1110,6 +1072,12 @@ export default function PaymentRequestsClient({
                       {row.requestNumber}
                     </Link>
                     <p className="mt-0.5 truncate text-xs text-slate-500">{row.paymentType}</p>
+                    {(row.attachments || []).filter((file) => file.kind !== 'payment-evidence' && file.kind !== 'retirement-evidence').length ? (
+                      <p className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500">
+                        <Paperclip className="h-3 w-3" />
+                        {(row.attachments || []).filter((file) => file.kind !== 'payment-evidence' && file.kind !== 'retirement-evidence').length} supporting doc(s)
+                      </p>
+                    ) : null}
                   </div>
                   <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusTone(row.status)}`}>{row.status}</span>
                 </div>
@@ -1153,7 +1121,6 @@ export default function PaymentRequestsClient({
             <table className="w-full text-left text-xs">
             <thead className="bg-slate-50/90 text-slate-500">
               <tr>
-                <th className="px-3 py-2.5"><span className="sr-only">Select</span></th>
                 {[
                   'Request No.',
                   'Payment Type',
@@ -1187,17 +1154,21 @@ export default function PaymentRequestsClient({
                 return (
                   <tr key={row.requestId} className="border-t border-slate-100 hover:bg-slate-50/70">
                     <td className="px-3 py-2.5">
-                      <input
-                        type="checkbox"
-                        checked={selected.includes(row.requestId)}
-                        onChange={() => toggleSelected(row.requestId)}
-                        className="rounded border-slate-300 text-[#008FD5]"
-                      />
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <Link href={`/finance/approvals/request/${row.requestId}`} className="font-semibold text-[#008FD5] hover:underline">
-                        {row.requestNumber}
-                      </Link>
+                      <div className="flex flex-col gap-1">
+                        <Link href={`/finance/approvals/request/${row.requestId}`} className="font-semibold text-[#008FD5] hover:underline">
+                          {row.requestNumber}
+                        </Link>
+                        {(row.attachments || []).filter((file) => file.kind !== 'payment-evidence' && file.kind !== 'retirement-evidence').length ? (
+                          <Link
+                            href={`/finance/approvals/request/${row.requestId}`}
+                            className="inline-flex w-fit items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-[#008FD5]"
+                            title="View supporting documents"
+                          >
+                            <Paperclip className="h-3 w-3" />
+                            {(row.attachments || []).filter((file) => file.kind !== 'payment-evidence' && file.kind !== 'retirement-evidence').length} doc(s)
+                          </Link>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-3 py-2.5">
                       <span className="inline-flex flex-col gap-1">
@@ -1353,42 +1324,11 @@ export default function PaymentRequestsClient({
         </DesktopOnlyTable>
       </section>
 
-      {!selfServiceMode ? (
       <section className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm sm:p-4">
-        <p className="mb-3 text-[11px] text-slate-500">
-          Amounts show in the request currency. For foreign currency, Amount (NGN) uses the prevailing FX rate for that day (used for approval-band routing). Net Amount includes VAT less WHT and retention.
-        </p>
-        <ActionToolbar>
-          {[
-            { id: 'return', label: 'Return for Correction' },
-            { id: 'clarify', label: 'Request Clarification' },
-            { id: 'delegate', label: 'Delegate' },
-            { id: 'reject', label: 'Reject' },
-            { id: 'approve', label: 'Approve' },
-            { id: 'mark-ready-treasury', label: 'Ready for Treasury' },
-          ].map((action) => (
-            <button
-              key={action.id}
-              type="button"
-              disabled={busy}
-              onClick={() => void transitionSelected(action.id)}
-              className={`rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
-                action.id === 'approve'
-                  ? 'border-emerald-200 bg-emerald-600 text-white'
-                  : action.id === 'reject'
-                    ? 'border-rose-200 bg-rose-600 text-white'
-                    : 'border-slate-200 text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              {action.label}
-            </button>
-          ))}
-        </ActionToolbar>
-        <p className="mt-3 text-[11px] text-slate-500">
-          Rejection, return, delegation and escalation require a mandatory reason. High-value approvals require authentication confirmation.
+        <p className="text-[11px] text-slate-500">
+          Amounts show in the request currency. For foreign currency, Amount (NGN) uses the prevailing FX rate for that day (used for approval-band routing). Net Amount includes VAT less WHT and retention. Open a request to view or download supporting documents. Approve / Reject from My Approval Inbox or the request detail page.
         </p>
       </section>
-      ) : null}
 
       <div className="flex flex-wrap gap-2 text-xs">
         <Link href="/finance/approvals/inbox" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">

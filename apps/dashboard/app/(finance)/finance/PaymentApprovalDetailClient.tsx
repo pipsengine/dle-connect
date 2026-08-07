@@ -21,6 +21,7 @@ import {
   supplierInvoiceCategoryLabel,
 } from '@/lib/finance-intelligence/payment-invoice-category';
 import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-action-visibility';
+import PaymentAttachmentLinks from '@/app/(finance)/finance/PaymentAttachmentLinks';
 
 const money = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 2 });
 
@@ -397,47 +398,25 @@ export default function PaymentApprovalDetailClient() {
           ) : null}
           <div className="mt-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Payment evidence</p>
-            {Array.isArray(request.attachments) && (request.attachments as PaymentRequestAttachment[]).some((file) => file.kind === 'payment-evidence') ? (
-              <ul className="mt-2 space-y-1.5">
-                {(request.attachments as PaymentRequestAttachment[])
-                  .filter((file) => file.kind === 'payment-evidence')
-                  .map((file) => (
-                    <li key={file.id || file.fileName}>
-                      <a
-                        href={`/api/finance/payment-requests/attachments?requestId=${encodeURIComponent(request.requestId)}&fileName=${encodeURIComponent(file.fileName)}`}
-                        className="inline-flex max-w-full items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs font-medium text-[#008FD5] hover:bg-[#EAF6FF]"
-                      >
-                        <Paperclip className="h-3.5 w-3.5 shrink-0" />
-                        <span className="min-w-0 truncate">{file.originalName || file.fileName}</span>
-                        <Download className="h-3.5 w-3.5 shrink-0" />
-                      </a>
-                    </li>
-                  ))}
-              </ul>
-            ) : (
-              <p className="mt-2 text-xs text-slate-500">No payment evidence uploaded yet.</p>
-            )}
+            <div className="mt-2">
+              <PaymentAttachmentLinks
+                requestId={request.requestId}
+                files={((request.attachments as PaymentRequestAttachment[]) || []).filter((file) => file.kind === 'payment-evidence')}
+                emptyLabel="No payment evidence uploaded yet."
+                tone="border-emerald-200 bg-emerald-50"
+              />
+            </div>
           </div>
           <div className="mt-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Retirement evidence</p>
-            {retirementEvidence.length ? (
-              <ul className="mt-2 space-y-1.5">
-                {retirementEvidence.map((file) => (
-                  <li key={file.id || file.fileName}>
-                    <a
-                      href={`/api/finance/payment-requests/attachments?requestId=${encodeURIComponent(request.requestId)}&fileName=${encodeURIComponent(file.fileName)}`}
-                      className="inline-flex max-w-full items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs font-medium text-[#008FD5] hover:bg-[#EAF6FF]"
-                    >
-                      <Paperclip className="h-3.5 w-3.5 shrink-0" />
-                      <span className="min-w-0 truncate">{file.originalName || file.fileName}</span>
-                      <Download className="h-3.5 w-3.5 shrink-0" />
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-2 text-xs text-slate-500">No retirement receipts uploaded yet.</p>
-            )}
+            <div className="mt-2">
+              <PaymentAttachmentLinks
+                requestId={request.requestId}
+                files={retirementEvidence}
+                emptyLabel="No retirement receipts uploaded yet."
+                tone="border-amber-200 bg-amber-50"
+              />
+            </div>
             {retirementNoteExisting ? (
               <div className="mt-2 rounded-xl bg-amber-50/70 p-3 text-xs text-slate-700">
                 <p className="font-semibold uppercase tracking-wide text-amber-800">Retirement note</p>
@@ -447,26 +426,14 @@ export default function PaymentApprovalDetailClient() {
           </div>
           <div className="mt-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Supporting documents</p>
-            {supportingDocs.length ? (
-              <ul className="mt-2 space-y-1.5">
-                {supportingDocs.map((file) => (
-                  <li key={file.id || file.fileName}>
-                    <a
-                      href={`/api/finance/payment-requests/attachments?requestId=${encodeURIComponent(request.requestId)}&fileName=${encodeURIComponent(file.fileName)}`}
-                      className="inline-flex max-w-full items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-medium text-[#008FD5] hover:bg-[#EAF6FF]"
-                    >
-                      <Paperclip className="h-3.5 w-3.5 shrink-0" />
-                      <span className="min-w-0 truncate">{file.originalName || file.fileName}</span>
-                      <Download className="h-3.5 w-3.5 shrink-0" />
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-slate-500">
-                <FileText className="h-3.5 w-3.5" /> No supporting documents attached.
-              </p>
-            )}
+            <div className="mt-2">
+              <PaymentAttachmentLinks
+                requestId={request.requestId}
+                files={supportingDocs}
+                emptyLabel="No supporting documents attached."
+                tone="border-slate-200 bg-slate-50"
+              />
+            </div>
           </div>
         </section>
 

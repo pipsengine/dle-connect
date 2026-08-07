@@ -1419,6 +1419,7 @@ const resolveFinanceDataRootCandidates = () => {
     if (!candidates.includes(resolved)) candidates.push(resolved);
   };
 
+  // Preferred durable roots first (survive IIS republish). Nested apps/dashboard/data is wiped on publish.
   if (process.env.DLE_FINANCE_DATA_DIR) push(process.env.DLE_FINANCE_DATA_DIR);
   if (process.env.DLE_HRIS_DATA_DIR) {
     push(path.join(path.resolve(process.env.DLE_HRIS_DATA_DIR), '..', 'finance'));
@@ -1427,15 +1428,16 @@ const resolveFinanceDataRootCandidates = () => {
   const cwd = process.cwd();
   const normalized = cwd.replace(/\\/g, '/');
   if (/\/apps\/dashboard$/i.test(normalized)) {
+    // Production server.js chdirs here — use site/data/finance (backed up on publish).
+    push(path.join(cwd, '..', '..', 'data', 'finance'));
     push(path.join(cwd, 'data', 'finance'));
   } else {
-    push(path.join(cwd, 'apps', 'dashboard', 'data', 'finance'));
+    // Repo root / IIS site root.
     push(path.join(cwd, 'data', 'finance'));
+    push(path.join(cwd, 'apps', 'dashboard', 'data', 'finance'));
   }
 
-  // IIS package often runs with cwd = deployment/iis/site
   push(path.join(cwd, 'apps', 'dashboard', 'data', 'finance'));
-  // Sibling repo / alternate drive layouts (e.g. E:\Dorman-Long vs C:\Next-Generation)
   push(path.join(cwd, '..', 'apps', 'dashboard', 'data', 'finance'));
   push(path.join(cwd, '..', '..', 'apps', 'dashboard', 'data', 'finance'));
 
@@ -1443,9 +1445,12 @@ const resolveFinanceDataRootCandidates = () => {
 };
 
 const resolveFinanceDataRoot = () => resolveFinanceDataRootCandidates()[0]
-  || path.join(process.cwd(), 'apps', 'dashboard', 'data', 'finance');
+  || path.join(process.cwd(), 'data', 'finance');
 
-export const PAYMENT_ATTACHMENTS_ROOT = path.join(resolveFinanceDataRoot(), 'payment-attachments');
+/** Resolved at call time so env/cwd changes after import still apply. */
+export const paymentAttachmentsRoot = () => path.join(resolveFinanceDataRoot(), 'payment-attachments');
+/** @deprecated Prefer paymentAttachmentsRoot() — kept for older imports. */
+export const PAYMENT_ATTACHMENTS_ROOT = paymentAttachmentsRoot();
 export const PAYMENT_ATTACHMENT_MAX_BYTES = 8 * 1024 * 1024;
 export const PAYMENT_ATTACHMENT_MAX_FILES = 8;
 const PAYMENT_ATTACHMENT_ALLOWED_EXT = new Set([
@@ -1490,7 +1495,7 @@ export const normalizePaymentAttachmentUpload = (input: {
 };
 
 export const savePaymentAttachmentFile = async (requestId: string, fileName: string, bytes: Buffer) => {
-  const directory = path.join(PAYMENT_ATTACHMENTS_ROOT, compact(requestId));
+  const directory = path.join(paymentAttachmentsRoot(), compact(requestId));
   await mkdir(directory, { recursive: true });
   const target = path.join(directory, safeAttachmentName(fileName));
   await writeFile(target, bytes);

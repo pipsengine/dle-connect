@@ -7,6 +7,7 @@ import {
   supplierInvoiceCategoryLabel,
 } from '@/lib/finance-intelligence/payment-invoice-category';
 import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-action-visibility';
+import PaymentAttachmentLinks from '@/app/(finance)/finance/PaymentAttachmentLinks';
 
 const money = (amount: number, currency = 'NGN') =>
   new Intl.NumberFormat('en-NG', {
@@ -71,32 +72,6 @@ export default function PaymentRequestDetailPanel({ request, actions = [], foote
     ['Posted', request.postedAt ? `${fmtDate(request.postedAt)} · ${request.postedBy || '—'}` : '—'],
   ];
 
-  const renderFiles = (
-    files: typeof paymentEvidence,
-    emptyLabel: string,
-    tone: string,
-  ) => (
-    files.length ? (
-      <ul className="space-y-2">
-        {files.map((file) => (
-          <li key={file.id || file.fileName} className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm ${tone}`}>
-            <span className="truncate font-medium text-slate-800">{file.originalName || file.fileName}</span>
-            <a
-              className="shrink-0 text-xs font-semibold text-[#008FD5] hover:underline"
-              href={`/api/finance/payment-requests/attachments?requestId=${encodeURIComponent(request.requestId)}&fileName=${encodeURIComponent(file.fileName)}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Download
-            </a>
-          </li>
-        ))}
-      </ul>
-    ) : (
-      <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-sm text-slate-500">{emptyLabel}</p>
-    )
-  );
-
   return (
     <div className="space-y-4">
       <div>
@@ -115,7 +90,12 @@ export default function PaymentRequestDetailPanel({ request, actions = [], foote
 
       <section>
         <h4 className="mb-2 text-sm font-semibold text-slate-900">Payment evidence</h4>
-        {renderFiles(paymentEvidence, 'No payment evidence uploaded yet.', 'border-emerald-200 bg-emerald-50/60')}
+        <PaymentAttachmentLinks
+          requestId={request.requestId}
+          files={paymentEvidence}
+          emptyLabel="No payment evidence uploaded yet."
+          tone="border-emerald-200 bg-emerald-50/60"
+        />
       </section>
 
       <section>
@@ -126,12 +106,22 @@ export default function PaymentRequestDetailPanel({ request, actions = [], foote
             <p className="mt-1 whitespace-pre-wrap">{retirementNote}</p>
           </div>
         ) : null}
-        {renderFiles(retirementEvidence, 'No retirement receipts uploaded yet.', 'border-amber-200 bg-amber-50/60')}
+        <PaymentAttachmentLinks
+          requestId={request.requestId}
+          files={retirementEvidence}
+          emptyLabel="No retirement receipts uploaded yet."
+          tone="border-amber-200 bg-amber-50/60"
+        />
       </section>
 
       <section>
         <h4 className="mb-2 text-sm font-semibold text-slate-900">Supporting documents</h4>
-        {renderFiles(supportingDocs, 'No supporting documents uploaded.', 'border-slate-200')}
+        <PaymentAttachmentLinks
+          requestId={request.requestId}
+          files={supportingDocs}
+          emptyLabel="No supporting documents uploaded."
+          tone="border-slate-200"
+        />
       </section>
 
       <section>

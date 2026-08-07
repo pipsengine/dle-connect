@@ -385,10 +385,17 @@ export const notifyPaymentDecision = async (input: {
 }) => {
   const session = financeSystemSession(input.actorName);
   const directory = await readDirectoryEmployees().catch(() => ({ employees: [] as DleEmployeeDirectoryRow[] }));
+  const requesterTarget = compact(input.request.requesterCode).toUpperCase();
+  const requesterNameTarget = compact(input.request.requesterName).toLowerCase();
   const requester = (directory.employees || []).find((employee) => {
     const code = employeeCodeOf(employee).toUpperCase();
-    const target = compact(input.request.requesterCode).toUpperCase();
-    return target && (code === target || compact(employee.employeeId).toUpperCase() === target);
+    if (requesterTarget && (code === requesterTarget || compact(employee.employeeId).toUpperCase() === requesterTarget)) {
+      return true;
+    }
+    if (!requesterTarget && requesterNameTarget) {
+      return compact(employee.fullName).toLowerCase() === requesterNameTarget;
+    }
+    return false;
   }) || null;
 
   const titles: Record<typeof input.event, string> = {
@@ -426,28 +433,41 @@ export const notifyPaymentDecision = async (input: {
               : `${input.request.requestNumber} was ${input.event} by ${input.actorName}.${input.reason ? ` Reason: ${input.reason}` : ''}`;
 
   const href = paymentRequestDetailPath(input.request.requestId);
+  const shouldNotifyRequester = input.event !== 'posted' && input.event !== 'retirement-submitted';
 
-  if (requester && input.event !== 'posted' && input.event !== 'retirement-submitted') {
-    await safeNotify('requester in-app', async () => {
-      await createEnterpriseNotification(session, {
-        kind: 'Approval',
-        module: 'Finance Approvals',
-        title: titles[input.event],
-        body,
-        severity: severity[input.event],
-        recipientEmployeeCode: employeeCodeOf(requester),
-        href,
-        channels: ['In-App', 'Email'],
-        metadata: { requestId: input.request.requestId, event: input.event },
-        actor: input.actorName,
+  if (shouldNotifyRequester) {
+    const recipientCode = (requester ? employeeCodeOf(requester) : '') || requesterTarget;
+    if (recipientCode) {
+      await safeNotify('requester in-app', async () => {
+        await createEnterpriseNotification(session, {
+          kind: 'Approval',
+          module: 'Finance Approvals',
+          title: titles[input.event],
+          body,
+          severity: severity[input.event],
+          recipientEmployeeCode: recipientCode,
+          href,
+          channels: ['In-App', 'Email'],
+          metadata: { requestId: input.request.requestId, event: input.event },
+          actor: input.actorName,
+        });
       });
-    });
+    }
 
-    const mailbox = await resolveEmployeeMailbox(requester);
+    // Always attempt email on return/reject (and other requester events), even if directory row is missing.
+    let mailbox = requester ? await resolveEmployeeMailbox(requester) : '';
+    if (!mailbox && requesterTarget) {
+      mailbox = await resolveEmployeeMailbox({
+        employeeCode: requesterTarget,
+        employeeId: requesterTarget,
+        sourceEmployeeId: requesterTarget,
+        fullName: input.request.requesterName,
+      } as DleEmployeeDirectoryRow);
+    }
     if (mailbox) {
       await safeNotify('requester email', () =>
         sendPaymentDecisionEmail({
-          recipientName: compact(requester.fullName) || input.request.requesterName,
+          recipientName: compact(requester?.fullName) || input.request.requesterName,
           recipientEmail: mailbox,
           request: input.request,
           event: input.event === 'stage-advanced' ? 'stage-advanced'
@@ -461,6 +481,12 @@ export const notifyPaymentDecision = async (input: {
           detailUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl),
           baseUrl: input.baseUrl,
         }));
+    } else if (input.event === 'rejected' || input.event === 'returned') {
+      console.warn('[payment-approval] requester email skipped — no mailbox', {
+        requestId: input.request.requestId,
+        requesterCode: input.request.requesterCode,
+        event: input.event,
+      });
     }
   }
 
