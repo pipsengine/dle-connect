@@ -1,5 +1,4 @@
 import sql from 'mssql';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
 import { convertAmountToNgn, resolveApprovalChain, applyMdLineManagerLastApproverRule } from '@/lib/finance-intelligence/approval-matrix-service';
@@ -8,6 +7,13 @@ import {
   notifyPaymentDecision,
   resolvePaymentStageApprover,
 } from '@/lib/finance-intelligence/payment-approval-notify';
+import {
+  describePaymentAttachmentStorage,
+  ensurePaymentAttachmentsStorage,
+  paymentAttachmentsRoot,
+  readPaymentAttachmentFile as readPaymentAttachmentFileFromStore,
+  savePaymentAttachmentFile as savePaymentAttachmentFileToStore,
+} from '@/lib/finance-intelligence/payment-attachment-storage';
 
 export const ALLOWED_PAYMENT_CURRENCIES = ['NGN', 'USD', 'EUR', 'GBP'] as const;
 export const PAYMENT_TYPES = [
@@ -1410,45 +1416,8 @@ export const buildEmployeePaymentDashboard = async (employeeCode: string): Promi
   };
 };
 
-const resolveFinanceDataRootCandidates = () => {
-  const candidates: string[] = [];
-  const push = (value?: string | null) => {
-    const next = compact(value);
-    if (!next) return;
-    const resolved = path.resolve(next);
-    if (!candidates.includes(resolved)) candidates.push(resolved);
-  };
-
-  // Preferred durable roots first (survive IIS republish). Nested apps/dashboard/data is wiped on publish.
-  if (process.env.DLE_FINANCE_DATA_DIR) push(process.env.DLE_FINANCE_DATA_DIR);
-  if (process.env.DLE_HRIS_DATA_DIR) {
-    push(path.join(path.resolve(process.env.DLE_HRIS_DATA_DIR), '..', 'finance'));
-  }
-
-  const cwd = process.cwd();
-  const normalized = cwd.replace(/\\/g, '/');
-  if (/\/apps\/dashboard$/i.test(normalized)) {
-    // Production server.js chdirs here — use site/data/finance (backed up on publish).
-    push(path.join(cwd, '..', '..', 'data', 'finance'));
-    push(path.join(cwd, 'data', 'finance'));
-  } else {
-    // Repo root / IIS site root.
-    push(path.join(cwd, 'data', 'finance'));
-    push(path.join(cwd, 'apps', 'dashboard', 'data', 'finance'));
-  }
-
-  push(path.join(cwd, 'apps', 'dashboard', 'data', 'finance'));
-  push(path.join(cwd, '..', 'apps', 'dashboard', 'data', 'finance'));
-  push(path.join(cwd, '..', '..', 'apps', 'dashboard', 'data', 'finance'));
-
-  return candidates;
-};
-
-const resolveFinanceDataRoot = () => resolveFinanceDataRootCandidates()[0]
-  || path.join(process.cwd(), 'data', 'finance');
-
-/** Resolved at call time so env/cwd changes after import still apply. */
-export const paymentAttachmentsRoot = () => path.join(resolveFinanceDataRoot(), 'payment-attachments');
+/** Durable finance data root (site/data/finance). Survives IIS republish. */
+export { paymentAttachmentsRoot, describePaymentAttachmentStorage, ensurePaymentAttachmentsStorage };
 /** @deprecated Prefer paymentAttachmentsRoot() — kept for older imports. */
 export const PAYMENT_ATTACHMENTS_ROOT = paymentAttachmentsRoot();
 export const PAYMENT_ATTACHMENT_MAX_BYTES = 8 * 1024 * 1024;
@@ -1495,67 +1464,13 @@ export const normalizePaymentAttachmentUpload = (input: {
 };
 
 export const savePaymentAttachmentFile = async (requestId: string, fileName: string, bytes: Buffer) => {
-  const directory = path.join(paymentAttachmentsRoot(), compact(requestId));
-  await mkdir(directory, { recursive: true });
-  const target = path.join(directory, safeAttachmentName(fileName));
-  await writeFile(target, bytes);
-  return path.basename(target);
+  const saved = await savePaymentAttachmentFileToStore(requestId, fileName, bytes);
+  return saved.fileName;
 };
 
 export const readPaymentAttachmentFile = async (requestId: string, fileName: string) => {
-  const safeRequestId = compact(requestId);
-  const safeName = safeAttachmentName(fileName);
-  if (!safeRequestId || !safeName || safeName.includes('..')) throw new Error('Invalid attachment path.');
-
-  const roots = resolveFinanceDataRootCandidates().map((root) => path.join(root, 'payment-attachments'));
-  const tried: string[] = [];
-  for (const root of roots) {
-    const target = path.join(root, safeRequestId, safeName);
-    tried.push(target);
-    try {
-      const bytes = await readFile(target);
-      return { bytes, fileName: safeName };
-    } catch {
-      // try next root / name variant
-    }
-    // Also try original requested name (before sanitize) under same folder.
-    try {
-      const alt = path.join(root, safeRequestId, path.basename(fileName));
-      if (!tried.includes(alt)) {
-        tried.push(alt);
-        const bytes = await readFile(alt);
-        return { bytes, fileName: path.basename(alt) };
-      }
-    } catch {
-      // continue
-    }
-  }
-
-  // Last resort: list the request folder under each root and match by suffix / original stem.
-  const { readdir } = await import('node:fs/promises');
-  const needle = safeName.toLowerCase();
-  const originalNeedle = path.basename(fileName).toLowerCase();
-  for (const root of roots) {
-    const dir = path.join(root, safeRequestId);
-    try {
-      const entries = await readdir(dir);
-      const match = entries.find((entry) => {
-        const lower = entry.toLowerCase();
-        return lower === needle
-          || lower === originalNeedle
-          || lower.endsWith(originalNeedle)
-          || (originalNeedle.length > 8 && lower.includes(originalNeedle.slice(-24)));
-      });
-      if (match) {
-        const bytes = await readFile(path.join(dir, match));
-        return { bytes, fileName: match };
-      }
-    } catch {
-      // folder missing in this root
-    }
-  }
-
-  throw new Error(`Attachment file not found for ${safeRequestId}/${safeName}. Checked: ${tried.slice(0, 3).join(' | ')}`);
+  const result = await readPaymentAttachmentFileFromStore(requestId, fileName);
+  return { bytes: result.bytes, fileName: result.fileName };
 };
 
 export const appendPaymentRequestAttachments = async (

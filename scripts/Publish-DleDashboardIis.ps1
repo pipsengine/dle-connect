@@ -376,18 +376,21 @@ function Copy-IisEnvironmentFile {
     return
   }
 
+  $FinanceDataDir = [System.IO.Path]::GetFullPath((Join-Path $DestinationRoot "data\finance"))
+
   $DestinationEnv = Join-Path $DestinationRoot ".env"
   Copy-Item -LiteralPath $EnvSource -Destination $DestinationEnv -Force
-  Ensure-InternalDeployEnvDefaults -EnvFilePath $DestinationEnv
+  Ensure-InternalDeployEnvDefaults -EnvFilePath $DestinationEnv -FinanceDataDir $FinanceDataDir
 
   $DashboardEnvTargetDirectory = Join-Path $DestinationRoot "apps\dashboard"
   if (Test-Path -LiteralPath $DashboardEnvTargetDirectory) {
     $DashboardEnv = Join-Path $DashboardEnvTargetDirectory ".env"
     Copy-Item -LiteralPath $EnvSource -Destination $DashboardEnv -Force
-    Ensure-InternalDeployEnvDefaults -EnvFilePath $DashboardEnv
+    Ensure-InternalDeployEnvDefaults -EnvFilePath $DashboardEnv -FinanceDataDir $FinanceDataDir
   }
 
   Write-Host "Copied IIS runtime environment from $EnvSource"
+  Write-Host "DLE_FINANCE_DATA_DIR => $FinanceDataDir"
 
   $SyncMailScript = Join-Path $RepoRoot "scripts\Sync-MailEnvironment.ps1"
   if (Test-Path -LiteralPath $SyncMailScript) {
@@ -401,11 +404,47 @@ function Copy-IisEnvironmentFile {
       Write-Warning "Mail environment was not merged into the IIS package: $($_.Exception.Message)"
     }
   }
+
+  # Re-assert after mail sync so attachment path cannot be dropped.
+  Set-Or-AppendEnvValue -EnvFilePath $DestinationEnv -Key "DLE_FINANCE_DATA_DIR" -Value $FinanceDataDir
+  if (Test-Path -LiteralPath $DashboardEnvTargetDirectory) {
+    Set-Or-AppendEnvValue -EnvFilePath (Join-Path $DashboardEnvTargetDirectory ".env") -Key "DLE_FINANCE_DATA_DIR" -Value $FinanceDataDir
+  }
+}
+
+function Set-Or-AppendEnvValue {
+  param(
+    [Parameter(Mandatory = $true)][string]$EnvFilePath,
+    [Parameter(Mandatory = $true)][string]$Key,
+    [Parameter(Mandatory = $true)][string]$Value
+  )
+
+  if (-not (Test-Path -LiteralPath $EnvFilePath)) { return }
+
+  $Lines = @(Get-Content -LiteralPath $EnvFilePath)
+  $Found = $false
+  $Next = foreach ($Line in $Lines) {
+    if ($Line -match ("^\s*" + [regex]::Escape($Key) + "\s*=")) {
+      $Found = $true
+      "{0}={1}" -f $Key, $Value
+    } else {
+      $Line
+    }
+  }
+
+  if (-not $Found) {
+    $Next += ""
+    $Next += "# Durable payment attachment / finance file store"
+    $Next += ("{0}={1}" -f $Key, $Value)
+  }
+
+  Set-Content -LiteralPath $EnvFilePath -Value $Next
 }
 
 function Ensure-InternalDeployEnvDefaults {
   param(
-    [Parameter(Mandatory = $true)][string]$EnvFilePath
+    [Parameter(Mandatory = $true)][string]$EnvFilePath,
+    [string]$FinanceDataDir = ""
   )
 
   if (-not (Test-Path -LiteralPath $EnvFilePath)) { return }
@@ -437,6 +476,10 @@ function Ensure-InternalDeployEnvDefaults {
     Add-Content -LiteralPath $EnvFilePath -Value "# Added by Publish-DleDashboardIis.ps1 for internal UAT parity"
     Add-Content -LiteralPath $EnvFilePath -Value $Appended
     Write-Host "Ensured internal deploy defaults in $EnvFilePath"
+  }
+
+  if ($FinanceDataDir) {
+    Set-Or-AppendEnvValue -EnvFilePath $EnvFilePath -Key "DLE_FINANCE_DATA_DIR" -Value $FinanceDataDir
   }
 }
 
@@ -530,6 +573,18 @@ try {
       Copy-DirectoryContents -SourcePath $DataSource -DestinationPath $RootDataTarget
     }
   }
+
+  # Seed / ensure durable finance attachment store (never rely solely on nested apps/dashboard/data).
+  $RepoFinanceData = Join-Path $RepoRoot "data\finance"
+  $DurableFinanceData = Join-Path $ResolvedOutputPath "data\finance"
+  $DurableAttachments = Join-Path $DurableFinanceData "payment-attachments"
+  $NestedAttachments = Join-Path $ResolvedOutputPath "apps\dashboard\data\finance\payment-attachments"
+  if (Test-Path -LiteralPath $RepoFinanceData) {
+    Copy-DirectoryContents -SourcePath $RepoFinanceData -DestinationPath $DurableFinanceData
+  }
+  New-Item -ItemType Directory -Path $DurableAttachments -Force | Out-Null
+  New-Item -ItemType Directory -Path $NestedAttachments -Force | Out-Null
+  Write-Host "Ensured durable payment attachments folder: $DurableAttachments"
 
   $WebConfigSource = if ($HostingMode -eq "HttpPlatform") {
     Join-Path $RepoRoot "deployment\iis\web.httpplatform.config"

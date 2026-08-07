@@ -66,20 +66,26 @@ export async function GET(request: Request) {
       return jsonErr(404, 'This payment request has no uploaded attachments.');
     }
     const storedName = attachment?.fileName || fileName;
-    const { bytes } = await readPaymentAttachmentFile(requestId, storedName);
-    const downloadName = attachment?.originalName || storedName;
-    const mimeType = attachment?.mimeType || 'application/octet-stream';
-    const inline = wantInline && isInlineViewable(mimeType, downloadName);
-    const safeDownloadName = downloadName.replace(/"/g, '');
+    try {
+      const { bytes } = await readPaymentAttachmentFile(requestId, storedName);
+      const downloadName = attachment?.originalName || storedName;
+      const mimeType = attachment?.mimeType || 'application/octet-stream';
+      const inline = wantInline && isInlineViewable(mimeType, downloadName);
+      const safeDownloadName = downloadName.replace(/"/g, '');
 
-    return new NextResponse(new Uint8Array(bytes), {
-      headers: {
-        'content-type': mimeType,
-        'content-disposition': `${inline ? 'inline' : 'attachment'}; filename="${safeDownloadName}"`,
-        'cache-control': 'no-store',
-        'x-content-type-options': 'nosniff',
-      },
-    });
+      return new NextResponse(new Uint8Array(bytes), {
+        headers: {
+          'content-type': mimeType,
+          'content-disposition': `${inline ? 'inline' : 'attachment'}; filename="${safeDownloadName}"`,
+          'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff',
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to download attachment.';
+      if (/not found/i.test(message)) return jsonErr(404, message);
+      return jsonErr(500, message);
+    }
   } catch (error) {
     return jsonErr(500, error instanceof Error ? error.message : 'Unable to download attachment.');
   }
