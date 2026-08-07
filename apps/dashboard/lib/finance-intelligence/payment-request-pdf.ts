@@ -53,9 +53,11 @@ const fmtDate = (value?: string | null) => {
 const resolveLogoCandidates = () => {
   const cwd = process.cwd();
   const names = ['dorman-long-logo.jpg', 'dorman-long-logo.png'];
+  // Production IIS: server.js chdirs to apps/dashboard → public/brand is under cwd.
+  // Dev / monorepo root: apps/dashboard/public/brand.
   const roots = [
-    path.join(cwd, 'apps', 'dashboard', 'public', 'brand'),
     path.join(cwd, 'public', 'brand'),
+    path.join(cwd, 'apps', 'dashboard', 'public', 'brand'),
     path.join(cwd, 'apps', 'dashboard', '.next', 'standalone', 'apps', 'dashboard', 'public', 'brand'),
   ];
   if (/[\\/]apps[\\/]dashboard$/i.test(cwd)) {
@@ -68,30 +70,46 @@ const resolveLogoCandidates = () => {
   return candidates;
 };
 
+const parseJpegDimensions = (bytes: Buffer): { width: number; height: number } | null => {
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  let offset = 2;
+  while (offset < bytes.length - 8) {
+    if (bytes[offset] !== 0xff) {
+      offset += 1;
+      continue;
+    }
+    const marker = bytes[offset + 1];
+    if (marker === 0xd9) break;
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      offset += 2;
+      continue;
+    }
+    const size = bytes.readUInt16BE(offset + 2);
+    if (size < 2) break;
+    // SOF0..SOF3, SOF5..SOF7, SOF9..SOF11, SOF13..SOF15 (skip DHT etc.)
+    if (
+      (marker >= 0xc0 && marker <= 0xc3)
+      || (marker >= 0xc5 && marker <= 0xc7)
+      || (marker >= 0xc9 && marker <= 0xcb)
+      || (marker >= 0xcd && marker <= 0xcf)
+    ) {
+      return {
+        height: bytes.readUInt16BE(offset + 5),
+        width: bytes.readUInt16BE(offset + 7),
+      };
+    }
+    offset += 2 + size;
+  }
+  return null;
+};
+
 const readJpegLogo = async (): Promise<{ bytes: Buffer; width: number; height: number } | null> => {
   for (const logoPath of resolveLogoCandidates()) {
     try {
       const bytes = await readFile(logoPath);
-      if (bytes[0] !== 0xff || bytes[1] !== 0xd8) continue;
-      // Parse SOF0/SOF2 for dimensions.
-      let offset = 2;
-      let width = 780;
-      let height = 220;
-      while (offset < bytes.length - 8) {
-        if (bytes[offset] !== 0xff) {
-          offset += 1;
-          continue;
-        }
-        const marker = bytes[offset + 1];
-        const size = bytes.readUInt16BE(offset + 2);
-        if (marker === 0xc0 || marker === 0xc2) {
-          height = bytes.readUInt16BE(offset + 5);
-          width = bytes.readUInt16BE(offset + 7);
-          break;
-        }
-        offset += 2 + size;
-      }
-      return { bytes, width, height };
+      const dims = parseJpegDimensions(bytes);
+      if (!dims || dims.width < 1 || dims.height < 1) continue;
+      return { bytes, width: dims.width, height: dims.height };
     } catch {
       // try next candidate
     }
@@ -146,23 +164,31 @@ export const buildPaymentRequestDocumentPdf = async (
 
   const cmds: DrawCmd[] = [];
 
-  // Light document header — official blue-on-white Dorman Long logo reads clearly on print/PDF.
+  // Light document header — draw logo AFTER the white band so it is not covered.
   cmds.push(rect(0, pageH - 108, pageW, 108, [1, 1, 1]));
   cmds.push(rect(0, pageH - 110, pageW, 3, brandBlue));
-  if (!logo) {
+  if (logo) {
+    const maxW = 148;
+    const maxH = 44;
+    const scale = Math.min(maxW / logo.width, maxH / logo.height);
+    const drawW = logo.width * scale;
+    const drawH = logo.height * scale;
+    const logoX = margin;
+    const logoY = pageH - 28 - drawH;
+    cmds.push(`q ${drawW.toFixed(2)} 0 0 ${drawH.toFixed(2)} ${logoX.toFixed(2)} ${logoY.toFixed(2)} cm /Im1 Do Q`);
+    cmds.push(`${muted[0]} ${muted[1]} ${muted[2]} rg`);
+    const textX = margin + 150;
+    cmds.push(textAt(textX, pageH - 48, 9, COMPANY.addressLines[0]));
+    cmds.push(textAt(textX, pageH - 62, 9, COMPANY.addressLines[1]));
+    cmds.push(textAt(textX, pageH - 76, 8, `${COMPANY.website}  |  ${COMPANY.email}`));
+    cmds.push('0 0 0 rg');
+  } else {
     cmds.push(`${brandBlue[0]} ${brandBlue[1]} ${brandBlue[2]} rg`);
     cmds.push(textAt(margin, pageH - 42, 16, COMPANY.name, 'F2'));
     cmds.push(`${muted[0]} ${muted[1]} ${muted[2]} rg`);
     cmds.push(textAt(margin, pageH - 58, 9, COMPANY.addressLines[0]));
     cmds.push(textAt(margin, pageH - 70, 9, COMPANY.addressLines[1]));
     cmds.push(textAt(margin, pageH - 84, 8, `${COMPANY.website}  |  ${COMPANY.email}`));
-    cmds.push('0 0 0 rg');
-  } else {
-    cmds.push(`${muted[0]} ${muted[1]} ${muted[2]} rg`);
-    const textX = margin + 150;
-    cmds.push(textAt(textX, pageH - 48, 9, COMPANY.addressLines[0]));
-    cmds.push(textAt(textX, pageH - 62, 9, COMPANY.addressLines[1]));
-    cmds.push(textAt(textX, pageH - 76, 8, `${COMPANY.website}  |  ${COMPANY.email}`));
     cmds.push('0 0 0 rg');
   }
 
@@ -277,18 +303,6 @@ export const buildPaymentRequestDocumentPdf = async (
   cmds.push(textAt(margin, 28, 8, `Generated ${fmtDate(new Date().toISOString())}  |  System-generated from DLE Connect Finance Intelligence`));
   cmds.push(textAt(margin, 14, 8, 'Confidential - for authorised Dorman Long finance use only'));
   cmds.push('0 0 0 rg');
-
-  // Logo image draw command (object 6) — official blue-on-white horizontal mark.
-  if (logo) {
-    const maxW = 148;
-    const maxH = 44;
-    const scale = Math.min(maxW / logo.width, maxH / logo.height);
-    const drawW = logo.width * scale;
-    const drawH = logo.height * scale;
-    const logoX = margin;
-    const logoY = pageH - 28 - drawH;
-    cmds.unshift(`q ${drawW.toFixed(2)} 0 0 ${drawH.toFixed(2)} ${logoX.toFixed(2)} ${logoY.toFixed(2)} cm /Im1 Do Q`);
-  }
 
   const stream = cmds.join('\n');
 
