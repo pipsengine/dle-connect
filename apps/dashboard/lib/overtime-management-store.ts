@@ -469,54 +469,85 @@ const buildCandidateRecords = async () => {
   return { employeeSource, records };
 };
 
-const upsertCandidates = async (records: OvertimeRecord[]) => {
-  const pool = await ensureDb();
-  for (const record of records) {
-    await pool.request()
-      .input('Id', sql.NVarChar(220), record.id)
-      .input('SourceLineId', sql.NVarChar(220), record.sourceLineId)
-      .input('HeaderId', sql.NVarChar(160), record.headerId)
-      .input('PeriodId', sql.NVarChar(60), record.periodId)
-      .input('WorkDate', sql.Date, record.date)
-      .input('EmployeeId', sql.NVarChar(80), record.employeeId)
-      .input('EmployeeName', sql.NVarChar(220), record.employeeName)
-      .input('Department', sql.NVarChar(180), record.department)
-      .input('JobTitle', sql.NVarChar(180), record.jobTitle)
-      .input('Location', sql.NVarChar(180), record.location)
-      .input('Supervisor', sql.NVarChar(180), record.supervisor)
-      .input('WorkCenter', sql.NVarChar(180), record.workCenter)
-      .input('EmploymentType', sql.NVarChar(120), record.employmentType)
-      .input('SalaryGrade', sql.NVarChar(120), record.salaryGrade)
-      .input('DayType', sql.NVarChar(40), record.dayType)
-      .input('WorkedHours', sql.Decimal(9, 2), record.workedHours)
-      .input('StandardHours', sql.Decimal(9, 2), record.standardHours)
-      .input('OvertimeHours', sql.Decimal(9, 2), record.overtimeHours)
-      .input('PayableHours', sql.Decimal(9, 2), record.payableHours)
-      .input('Multiplier', sql.Decimal(9, 2), record.multiplier)
-      .input('HourlyRate', sql.Decimal(19, 2), record.hourlyRate)
-      .input('GrossPay', sql.Decimal(19, 2), record.grossPay)
-      .input('EarningCode', sql.NVarChar(80), record.earningCode)
-      .input('EarningName', sql.NVarChar(180), record.earningName)
-      .input('TimesheetStatus', sql.NVarChar(60), record.timesheetStatus)
-      .input('PayrollReady', sql.Bit, record.payrollReady)
-      .input('WorkflowStatus', sql.NVarChar(60), record.status)
-      .input('CurrentOwner', sql.NVarChar(120), record.currentOwner)
-      .input('Severity', sql.NVarChar(20), record.severity)
-      .input('IssuesJson', sql.NVarChar(sql.MAX), JSON.stringify(record.issues))
-      .input('ProjectCodesJson', sql.NVarChar(sql.MAX), JSON.stringify(record.projectCodes))
-      .query(`
-MERGE [hris].[OvertimeManagementRecords] AS target
-USING (SELECT @Id AS [Id]) AS source ON target.[Id]=source.[Id]
-WHEN MATCHED THEN UPDATE SET
-  [SourceLineId]=@SourceLineId,[HeaderId]=@HeaderId,[PeriodId]=@PeriodId,[WorkDate]=@WorkDate,[EmployeeId]=@EmployeeId,[EmployeeName]=@EmployeeName,
+const isDuplicateKeyError = (error: unknown) => {
+  const code = typeof error === 'object' && error && 'number' in error ? Number((error as { number?: number }).number) : NaN;
+  if (code === 2627 || code === 2601) return true;
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /primary key|duplicate key|unique (index|constraint)/i.test(message);
+};
+
+const bindOvertimeUpsert = (request: sql.Request, record: OvertimeRecord) => request
+  .input('Id', sql.NVarChar(220), record.id)
+  .input('SourceLineId', sql.NVarChar(220), record.sourceLineId)
+  .input('HeaderId', sql.NVarChar(160), record.headerId)
+  .input('PeriodId', sql.NVarChar(60), record.periodId)
+  .input('WorkDate', sql.Date, record.date)
+  .input('EmployeeId', sql.NVarChar(80), record.employeeId)
+  .input('EmployeeName', sql.NVarChar(220), record.employeeName)
+  .input('Department', sql.NVarChar(180), record.department)
+  .input('JobTitle', sql.NVarChar(180), record.jobTitle)
+  .input('Location', sql.NVarChar(180), record.location)
+  .input('Supervisor', sql.NVarChar(180), record.supervisor)
+  .input('WorkCenter', sql.NVarChar(180), record.workCenter)
+  .input('EmploymentType', sql.NVarChar(120), record.employmentType)
+  .input('SalaryGrade', sql.NVarChar(120), record.salaryGrade)
+  .input('DayType', sql.NVarChar(40), record.dayType)
+  .input('WorkedHours', sql.Decimal(9, 2), record.workedHours)
+  .input('StandardHours', sql.Decimal(9, 2), record.standardHours)
+  .input('OvertimeHours', sql.Decimal(9, 2), record.overtimeHours)
+  .input('PayableHours', sql.Decimal(9, 2), record.payableHours)
+  .input('Multiplier', sql.Decimal(9, 2), record.multiplier)
+  .input('HourlyRate', sql.Decimal(19, 2), record.hourlyRate)
+  .input('GrossPay', sql.Decimal(19, 2), record.grossPay)
+  .input('EarningCode', sql.NVarChar(80), record.earningCode)
+  .input('EarningName', sql.NVarChar(180), record.earningName)
+  .input('TimesheetStatus', sql.NVarChar(60), record.timesheetStatus)
+  .input('PayrollReady', sql.Bit, record.payrollReady)
+  .input('WorkflowStatus', sql.NVarChar(60), record.status)
+  .input('CurrentOwner', sql.NVarChar(120), record.currentOwner)
+  .input('Severity', sql.NVarChar(20), record.severity)
+  .input('IssuesJson', sql.NVarChar(sql.MAX), JSON.stringify(record.issues))
+  .input('ProjectCodesJson', sql.NVarChar(sql.MAX), JSON.stringify(record.projectCodes));
+
+const OVERTIME_UPDATE_SQL = `
+UPDATE [hris].[OvertimeManagementRecords]
+SET [SourceLineId]=@SourceLineId,[HeaderId]=@HeaderId,[PeriodId]=@PeriodId,[WorkDate]=@WorkDate,[EmployeeId]=@EmployeeId,[EmployeeName]=@EmployeeName,
   [Department]=@Department,[JobTitle]=@JobTitle,[Location]=@Location,[Supervisor]=@Supervisor,[WorkCenter]=@WorkCenter,[EmploymentType]=@EmploymentType,
   [SalaryGrade]=@SalaryGrade,[DayType]=@DayType,[WorkedHours]=@WorkedHours,[StandardHours]=@StandardHours,[OvertimeHours]=@OvertimeHours,
   [PayableHours]=@PayableHours,[Multiplier]=@Multiplier,[HourlyRate]=@HourlyRate,[GrossPay]=@GrossPay,[EarningCode]=@EarningCode,[EarningName]=@EarningName,
   [TimesheetStatus]=@TimesheetStatus,[PayrollReady]=@PayrollReady,[Severity]=@Severity,[IssuesJson]=@IssuesJson,[ProjectCodesJson]=@ProjectCodesJson,[UpdatedAt]=SYSUTCDATETIME()
-WHEN NOT MATCHED THEN INSERT
+WHERE [Id]=@Id;`;
+
+const OVERTIME_INSERT_SQL = `
+INSERT INTO [hris].[OvertimeManagementRecords]
   ([Id],[SourceLineId],[HeaderId],[PeriodId],[WorkDate],[EmployeeId],[EmployeeName],[Department],[JobTitle],[Location],[Supervisor],[WorkCenter],[EmploymentType],[SalaryGrade],[DayType],[WorkedHours],[StandardHours],[OvertimeHours],[PayableHours],[Multiplier],[HourlyRate],[GrossPay],[EarningCode],[EarningName],[TimesheetStatus],[PayrollReady],[WorkflowStatus],[CurrentOwner],[Severity],[IssuesJson],[ProjectCodesJson])
 VALUES
-  (@Id,@SourceLineId,@HeaderId,@PeriodId,@WorkDate,@EmployeeId,@EmployeeName,@Department,@JobTitle,@Location,@Supervisor,@WorkCenter,@EmploymentType,@SalaryGrade,@DayType,@WorkedHours,@StandardHours,@OvertimeHours,@PayableHours,@Multiplier,@HourlyRate,@GrossPay,@EarningCode,@EarningName,@TimesheetStatus,@PayrollReady,@WorkflowStatus,@CurrentOwner,@Severity,@IssuesJson,@ProjectCodesJson);`);
+  (@Id,@SourceLineId,@HeaderId,@PeriodId,@WorkDate,@EmployeeId,@EmployeeName,@Department,@JobTitle,@Location,@Supervisor,@WorkCenter,@EmploymentType,@SalaryGrade,@DayType,@WorkedHours,@StandardHours,@OvertimeHours,@PayableHours,@Multiplier,@HourlyRate,@GrossPay,@EarningCode,@EarningName,@TimesheetStatus,@PayrollReady,@WorkflowStatus,@CurrentOwner,@Severity,@IssuesJson,@ProjectCodesJson);`;
+
+const upsertOneCandidate = async (pool: sql.ConnectionPool, record: OvertimeRecord) => {
+  // Prefer update-first so concurrent page loads do not race on INSERT of the same timesheet line id.
+  const updated = await bindOvertimeUpsert(pool.request(), record).query(OVERTIME_UPDATE_SQL);
+  if ((updated.rowsAffected?.[0] || 0) > 0) return;
+
+  try {
+    await bindOvertimeUpsert(pool.request(), record).query(OVERTIME_INSERT_SQL);
+  } catch (error) {
+    if (!isDuplicateKeyError(error)) throw error;
+    // Another request inserted the same id between UPDATE and INSERT — refresh non-workflow fields.
+    await bindOvertimeUpsert(pool.request(), record).query(OVERTIME_UPDATE_SQL);
+  }
+};
+
+const upsertCandidates = async (records: OvertimeRecord[]) => {
+  const pool = await ensureDb();
+  const unique = new Map<string, OvertimeRecord>();
+  for (const record of records) {
+    const id = clean(record.id);
+    if (!id) continue;
+    unique.set(id, { ...record, id });
+  }
+  for (const record of unique.values()) {
+    await upsertOneCandidate(pool, record);
   }
 };
 
@@ -627,7 +658,12 @@ export const readOvertimeManagementPayload = async (roleInput?: string | null) =
     readTimesheetWorkCenters().catch(() => []),
     readSupervisorAssignments().catch(() => []),
   ]);
-  await upsertCandidates(candidates);
+  await upsertCandidates(candidates).catch((error) => {
+    console.warn(
+      '[OvertimeManagement] Timesheet candidate sync skipped:',
+      error instanceof Error ? error.message : error,
+    );
+  });
   const records = await readRecords();
   const activeEmployees = employeeSource.employees.filter((employee) => !['Resigned', 'Terminated', 'Retired', 'Inactive'].includes(clean(employee.status)));
   const employeeByCode = new Map(activeEmployees.map((employee) => [clean(employee.employeeCode).toLowerCase(), employee]));
