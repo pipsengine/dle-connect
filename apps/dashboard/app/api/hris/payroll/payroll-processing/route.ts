@@ -6,18 +6,84 @@ import { payrollSessionContext, processingPermissions } from '@/lib/payroll-sess
 import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
 import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
 import { buildExcelWorkbookXml, excelMimeType } from '@/lib/excel-export';
+import {
+  basicEarningAmount,
+  summarizePayrollComponentKey,
+  unionDeductionAmount,
+} from '@/lib/payroll-earning-summary';
 
 const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 const compact = (value: unknown) => String(value || '').trim();
 
-const exportHeaders = ['Employee ID', 'Name', 'Department', 'Payroll Group', 'Generated Gross', 'Sage Gross', 'Gross Variance', 'Generated PAYE', 'Generated Pension Employee', 'Generated Statutory Employee', 'Generated Loan', 'Generated Deductions', 'Sage Deductions', 'Deduction Variance', 'Generated Net Pay', 'Sage Net Pay', 'Net Variance', 'Employer Cost', 'Discrepancy Status', 'Payroll Status', 'Issues'];
+const baseExportHeaders = [
+  'Employee ID',
+  'Name',
+  'Department',
+  'Payroll Group',
+  'Basic earning',
+  'Union Deductions',
+  'Generated Gross',
+  'Sage Gross',
+  'Gross Variance',
+  'Generated PAYE',
+  'Generated Pension Employee',
+  'Generated Statutory Employee',
+  'Generated Loan',
+  'Generated Deductions',
+  'Sage Deductions',
+  'Deduction Variance',
+  'Generated Net Pay',
+  'Sage Net Pay',
+  'Net Variance',
+  'Employer Cost',
+  'Discrepancy Status',
+  'Payroll Status',
+  'Issues',
+];
 
-const exportRows = (records: any[]) => records.map((record) => [
+const otherEarningColumns = (records: any[]) => {
+  const map = new Map<string, string>();
+  for (const record of records) {
+    for (const line of record.earningLines || []) {
+      const code = compact(line.code);
+      const name = compact(line.name || code);
+      const summarized = summarizePayrollComponentKey('earning', code, name);
+      if (summarized.key === 'earning:BASIC_EARNING') continue;
+      if (!map.has(summarized.key)) map.set(summarized.key, summarized.label);
+    }
+  }
+  return Array.from(map.entries())
+    .map(([key, label]) => ({ key, label }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+};
+
+const otherEarningAmount = (record: any, key: string) => {
+  let total = 0;
+  for (const line of record.earningLines || []) {
+    const summarized = summarizePayrollComponentKey('earning', line.code, line.name || line.code);
+    if (summarized.key !== key) continue;
+    total += Number(line.amount || 0);
+  }
+  return Math.round(total * 100) / 100;
+};
+
+const exportHeadersFor = (records: any[]) => {
+  const extras = otherEarningColumns(records);
+  const headers = [...baseExportHeaders];
+  const insertAt = headers.indexOf('Union Deductions') + 1;
+  headers.splice(insertAt, 0, ...extras.map((item) => item.label));
+  return { headers, extras };
+};
+
+const exportRows = (records: any[], extras: Array<{ key: string; label: string }>) => records.map((record) => [
   record.employeeId,
   record.fullName,
   record.department,
   record.payrollGroup,
+  basicEarningAmount(record.earningLines),
+  unionDeductionAmount(record.deductionLines),
+  ...extras.map((item) => otherEarningAmount(record, item.key)),
   record.grossPay,
   record.sageActual?.grossPay ?? '',
   record.discrepancies?.grossVariance ?? '',
@@ -38,9 +104,10 @@ const exportRows = (records: any[]) => records.map((record) => [
 ]);
 
 const csv = (records: any[]) => {
-  const lines = exportRows(records).map((row) =>
+  const { headers, extras } = exportHeadersFor(records);
+  const lines = exportRows(records, extras).map((row) =>
     row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','));
-  return [exportHeaders.join(','), ...lines].join('\n');
+  return [headers.join(','), ...lines].join('\n');
 };
 
 export async function GET(request: Request) {
@@ -60,13 +127,14 @@ export async function GET(request: Request) {
       });
     }
     if (format === 'xls' || format === 'excel') {
+      const { headers, extras } = exportHeadersFor(payload.records);
       const xml = buildExcelWorkbookXml({
         worksheets: [{
           title: `Payroll Approval — ${payload.periodLabel || period}`,
           subtitle: `${payload.packLabel || payload.pack || 'Payroll'} · ${payload.records.length} employees`,
           sheetName: payload.pack === 'daily-rate' ? 'Daily Rate' : 'Salaried Stipend',
-          columns: exportHeaders,
-          rows: exportRows(payload.records),
+          columns: headers,
+          rows: exportRows(payload.records, extras),
         }],
       });
       return new Response(xml, {

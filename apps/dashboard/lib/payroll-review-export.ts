@@ -1,4 +1,5 @@
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
+import { summarizePayrollComponentKey } from '@/lib/payroll-earning-summary';
 
 export const previousPayrollPeriod = (period: string) => {
   const match = /^(\d{4})-(\d{2})$/.exec(String(period || '').trim());
@@ -36,14 +37,21 @@ type ComponentDef = {
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 
-const lineAmount = (lines: Array<Record<string, unknown>> | undefined, code: string) => {
-  const line = (lines || []).find((item) => String(item.code || '').toUpperCase() === code.toUpperCase());
-  return Number(line?.amount || 0);
-};
-
-const deductionAmount = (lines: PayrollReviewRecord['deductionLines'] | undefined, code: string) => {
-  const line = (lines || []).find((item) => String(item.code || item.label || '').toUpperCase() === code.toUpperCase());
-  return Number(line?.amount || 0);
+const lineBucketAmount = (
+  lines: Array<Record<string, unknown>> | undefined,
+  kind: 'earning' | 'benefit' | 'deduction',
+  targetKey: string,
+) => {
+  let total = 0;
+  for (const line of lines || []) {
+    const code = String(line.code || line.label || '').trim();
+    const name = String(line.name || line.label || code).trim();
+    if (!code && !name) continue;
+    const summarized = summarizePayrollComponentKey(kind, code, name);
+    if (summarized.key !== targetKey) continue;
+    total += Number(line.amount || 0);
+  }
+  return roundMoney(total);
 };
 
 const collectComponentDefs = (records: PayrollReviewRecord[]) => {
@@ -56,23 +64,35 @@ const collectComponentDefs = (records: PayrollReviewRecord[]) => {
   records.forEach((record) => {
     (record.earningLines || []).forEach((line) => {
       const code = String(line.code || '').trim();
-      if (!code) return;
-      const label = String(line.name || code);
-      add(`earning:${code}`, label, (row) => lineAmount(row.earningLines as Array<Record<string, unknown>>, code));
+      const name = String(line.name || code).trim();
+      if (!code && !name) return;
+      const summarized = summarizePayrollComponentKey('earning', code, name);
+      add(summarized.key, summarized.label, (row) =>
+        lineBucketAmount(row.earningLines as Array<Record<string, unknown>>, 'earning', summarized.key));
     });
     (record.annualBenefitLines || []).forEach((line) => {
       const code = String(line.code || '').trim();
-      if (!code) return;
-      const label = `Benefit: ${String(line.name || code)}`;
-      add(`benefit:${code}`, label, (row) => lineAmount(row.annualBenefitLines as Array<Record<string, unknown>>, code));
+      const name = String(line.name || code).trim();
+      if (!code && !name) return;
+      const summarized = summarizePayrollComponentKey('benefit', code, name);
+      add(summarized.key, summarized.label, (row) =>
+        lineBucketAmount(row.annualBenefitLines as Array<Record<string, unknown>>, 'benefit', summarized.key));
     });
     (record.deductionLines || []).forEach((line) => {
       const code = String(line.code || line.label || '').trim();
-      if (!code) return;
-      const label = String(line.label || code);
-      add(`deduction:${code}`, label, (row) => deductionAmount(row.deductionLines, code));
+      const name = String(line.label || code).trim();
+      if (!code && !name) return;
+      const summarized = summarizePayrollComponentKey('deduction', code, name);
+      add(summarized.key, summarized.label, (row) =>
+        lineBucketAmount(row.deductionLines as unknown as Array<Record<string, unknown>>, 'deduction', summarized.key));
     });
   });
+
+  // Ensure HR-required summary columns always appear when any staff have the underlying lines.
+  add('earning:BASIC_EARNING', 'Basic earning', (row) =>
+    lineBucketAmount(row.earningLines as Array<Record<string, unknown>>, 'earning', 'earning:BASIC_EARNING'));
+  add('deduction:UNION_DEDUCTIONS', 'Union Deductions', (row) =>
+    lineBucketAmount(row.deductionLines as unknown as Array<Record<string, unknown>>, 'deduction', 'deduction:UNION_DEDUCTIONS'));
 
   add('total:gross', 'Gross Salary', (row) => Number(row.grossPay || 0));
   add('total:deductions', 'Total Deductions', (row) => Number(row.deductions || 0));
@@ -80,7 +100,25 @@ const collectComponentDefs = (records: PayrollReviewRecord[]) => {
   add('total:pension', 'Pension', (row) => Number(row.pension || 0));
   add('total:net', 'Net Salary', (row) => Number(row.netPay || 0));
 
-  return Array.from(defs.values()).sort((a, b) => a.label.localeCompare(b.label));
+  const preferredOrder = [
+    'earning:BASIC_EARNING',
+    'deduction:UNION_DEDUCTIONS',
+    'total:gross',
+    'total:deductions',
+    'total:paye',
+    'total:pension',
+    'total:net',
+  ];
+  return Array.from(defs.values()).sort((a, b) => {
+    const ai = preferredOrder.indexOf(a.key);
+    const bi = preferredOrder.indexOf(b.key);
+    if (ai >= 0 || bi >= 0) {
+      if (ai < 0) return 1;
+      if (bi < 0) return -1;
+      return ai - bi;
+    }
+    return a.label.localeCompare(b.label);
+  });
 };
 
 const pctChange = (previous: number, current: number) => {

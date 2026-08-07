@@ -1324,12 +1324,6 @@ export default function PaymentRequestsClient({
         </DesktopOnlyTable>
       </section>
 
-      <section className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm sm:p-4">
-        <p className="text-[11px] text-slate-500">
-          Amounts show in the request currency. For foreign currency, Amount (NGN) uses the prevailing FX rate for that day (used for approval-band routing). Net Amount includes VAT less WHT and retention. Open a request to view or download supporting documents. Approve / Reject from My Approval Inbox or the request detail page.
-        </p>
-      </section>
-
       <div className="flex flex-wrap gap-2 text-xs">
         <Link href="/finance/approvals/inbox" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
           My Approval Inbox

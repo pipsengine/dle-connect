@@ -45,13 +45,23 @@ export type SalarySetupExportColumn = {
 };
 
 const earningLineAmount = (record: SalarySetupExportRecord, pattern: RegExp) => {
-  const line = (record.earningLines || []).find((item) => pattern.test(String(item.code || '')) || pattern.test(String(item.name || '')));
-  return line?.amount ?? null;
+  const total = (record.earningLines || []).reduce((sum, item) => {
+    const code = String(item.code || '');
+    const name = String(item.name || '');
+    if (!pattern.test(code) && !pattern.test(name)) return sum;
+    return sum + Number(item.amount || 0);
+  }, 0);
+  return total ? total : null;
 };
 
 const deductionLineAmount = (record: SalarySetupExportRecord, pattern: RegExp) => {
-  const line = (record.deductionLines || []).find((item) => pattern.test(String(item.code || '')) || pattern.test(String(item.label || '')));
-  if (line?.amount != null) return line.amount;
+  const total = (record.deductionLines || []).reduce((sum, item) => {
+    const code = String(item.code || '');
+    const label = String(item.label || '');
+    if (!pattern.test(code) && !pattern.test(label)) return sum;
+    return sum + Number(item.amount || 0);
+  }, 0);
+  if (total) return total;
   if (/PAYE/i.test(pattern.source)) return record.paye ?? null;
   if (/PENSION/i.test(pattern.source)) return record.pension ?? null;
   if (/OTHER/i.test(pattern.source)) return record.otherDeductions ?? null;
@@ -64,12 +74,16 @@ const benefitLineAmount = (record: SalarySetupExportRecord, code: string) => {
 };
 
 const STANDARD_EARNING_COLUMNS: Array<{ id: string; label: string; pattern: RegExp }> = [
-  { id: 'earning-basic', label: 'Basic Salary', pattern: /(_BASIC|^BASIC$)|BASIC SALARY/i },
+  { id: 'earning-basic', label: 'Basic earning', pattern: /(_BASIC|^BASIC$)|BASIC SALARY|BASIC EARNING|JUNIOR\s*BASIC|SENIOR\s*BASIC/i },
   { id: 'earning-housing', label: 'Housing', pattern: /HOUSIN|HOUSING/i },
   { id: 'earning-other', label: 'Other Allowance', pattern: /OTHALL|OTHER ALLOW/i },
   { id: 'earning-transport', label: 'Transport Allowance', pattern: /TRANSP|TRANSPORT/i },
   { id: 'earning-furniture', label: 'Furniture Allowance', pattern: /FURN|FURNITURE/i },
   { id: 'earning-utilities', label: 'Utilities', pattern: /UTILIT|UTILIT/i },
+  { id: 'earning-meal', label: 'Meal Allowance', pattern: /MEAL/i },
+  { id: 'earning-overtime', label: 'Overtime', pattern: /OVERTIME|\bOVT\b/i },
+  { id: 'earning-stockcount', label: 'Stockcount', pattern: /STOCK\s*COUNT|STOCKCOUNT/i },
+  { id: 'earning-union', label: 'Union earning', pattern: /UNION.*EARN|EARN.*UNION/i },
 ];
 
 const CONTRACT_EARNING_COLUMNS: Array<{ id: string; label: string; pattern: RegExp }> = [
@@ -79,7 +93,7 @@ const CONTRACT_EARNING_COLUMNS: Array<{ id: string; label: string; pattern: RegE
   { id: 'earning-pubhol', label: 'Public Holiday', pattern: /PUBHOL|PUBLIC HOLIDAY/i },
   { id: 'earning-saturday', label: 'Saturday Earning', pattern: /SATEARN|SATURDAY EARNING/i },
   { id: 'earning-sunday', label: 'Sunday Earning', pattern: /SUNDAYEARN|SUNDAY EARNING/i },
-  { id: 'earning-meal', label: 'Meal Allowance', pattern: /^MEAL$/i },
+  { id: 'earning-meal', label: 'Meal Allowance', pattern: /MEAL/i },
 ];
 
 const DEDUCTION_COLUMNS: Array<{ id: string; label: string; pattern: RegExp }> = [
@@ -87,6 +101,7 @@ const DEDUCTION_COLUMNS: Array<{ id: string; label: string; pattern: RegExp }> =
   { id: 'deduction-pension', label: 'Pension', pattern: /PENSION/i },
   { id: 'deduction-nhf', label: 'NHF', pattern: /NHF/i },
   { id: 'deduction-loan', label: 'Loan Recovery', pattern: /LOAN/i },
+  { id: 'deduction-union', label: 'Union Deductions', pattern: /UNION/i },
   { id: 'deduction-other', label: 'Other Deductions', pattern: /OTHER/i },
 ];
 
@@ -117,15 +132,22 @@ export const buildSalarySetupExportColumns = (records: SalarySetupExportRecord[]
 
   [...STANDARD_EARNING_COLUMNS, ...CONTRACT_EARNING_COLUMNS].forEach((column) => {
     records.forEach((record) => {
-      const line = (record.earningLines || []).find((item) => column.pattern.test(String(item.code || '')) || column.pattern.test(String(item.name || '')));
-      if (line?.code) matchedEarningCodes.add(String(line.code).toUpperCase());
+      (record.earningLines || []).forEach((item) => {
+        if (column.pattern.test(String(item.code || '')) || column.pattern.test(String(item.name || ''))) {
+          if (item?.code) matchedEarningCodes.add(String(item.code).toUpperCase());
+        }
+      });
     });
   });
 
   DEDUCTION_COLUMNS.forEach((column) => {
     records.forEach((record) => {
-      const line = (record.deductionLines || []).find((item) => column.pattern.test(String(item.code || '')) || column.pattern.test(String(item.label || '')));
-      if (line?.code) matchedDeductionCodes.add(String(line.code).toUpperCase());
+      (record.deductionLines || []).forEach((item) => {
+        if (column.pattern.test(String(item.code || '')) || column.pattern.test(String(item.label || ''))) {
+          if (item?.code) matchedDeductionCodes.add(String(item.code).toUpperCase());
+          if (item?.label) matchedDeductionCodes.add(String(item.label).toUpperCase());
+        }
+      });
     });
   });
 
