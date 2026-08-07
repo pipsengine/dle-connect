@@ -22,7 +22,11 @@ import {
   PAYROLL_APPROVAL_STAGES,
   type PayrollApprovalStageId,
 } from '@/lib/payroll-approval-workflow';
-import { PAYROLL_ACTING_FINANCE_MANAGER_CODES } from '@/lib/payroll-acting-approvers';
+import {
+  PAYROLL_ACTING_FINANCE_MANAGER_CODES,
+  PAYROLL_NAMED_CFO_CODES,
+  PAYROLL_NAMED_MD_CEO_CODES,
+} from '@/lib/payroll-acting-approvers';
 import type { UnifiedPayrollRun } from '@/lib/payroll-run-store';
 import type { PayrollSessionRole } from '@/lib/payroll-session';
 
@@ -34,6 +38,18 @@ const STAGE_ROLE_PATTERNS: Record<Exclude<PayrollApprovalStageId, 'payroll-offic
   'finance-manager': [/finance manager/i, /finance controller/i, /finance payroll reviewer/i],
   cfo: [/\bcfo\b/i, /chief financial/i],
   'md-ceo': [/executive director/i, /executive management/i, /\bceo\b/i, /\bmd\b/i, /managing director/i],
+};
+
+const STAGE_JOB_TITLE_PATTERNS: Partial<Record<Exclude<PayrollApprovalStageId, 'payroll-officer'>, RegExp[]>> = {
+  cfo: [/\bcfo\b/i, /chief financial officer/i],
+  // Avoid matching "PA to MD/CEO" and similar support titles.
+  'md-ceo': [/managing director/i, /executive director/i, /chief executive officer/i],
+};
+
+const STAGE_NAMED_CODES: Partial<Record<Exclude<PayrollApprovalStageId, 'payroll-officer'>, readonly string[]>> = {
+  'finance-manager': PAYROLL_ACTING_FINANCE_MANAGER_CODES,
+  cfo: PAYROLL_NAMED_CFO_CODES,
+  'md-ceo': PAYROLL_NAMED_MD_CEO_CODES,
 };
 
 const NEXT_STAGE_LABEL: Partial<Record<PayrollApprovalStageId, string>> = {
@@ -80,11 +96,15 @@ export const resolvePayrollApproverRecipients = async (stageId: PayrollApprovalS
     const roleText = user.roles.join(' ');
     const byRole = patterns.some((pattern) => pattern.test(roleText));
     if (byRole) return true;
-    // Always include named acting Finance Managers for the FM stage.
-    if (stageId === 'finance-manager') {
-      const code = compact(user.employeeCode || user.employeeId || user.username).toUpperCase();
-      return PAYROLL_ACTING_FINANCE_MANAGER_CODES.some((item) => item === code);
-    }
+
+    const code = compact(user.employeeCode || user.employeeId || user.username).toUpperCase();
+    const namedCodes = STAGE_NAMED_CODES[stageId] || [];
+    if (namedCodes.some((item) => item === code)) return true;
+
+    const jobTitle = compact((user as { jobTitle?: string }).jobTitle);
+    const jobPatterns = STAGE_JOB_TITLE_PATTERNS[stageId] || [];
+    if (jobTitle && jobPatterns.some((pattern) => pattern.test(jobTitle))) return true;
+
     return false;
   });
   const withEmail = matches
