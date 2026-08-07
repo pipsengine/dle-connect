@@ -25868,29 +25868,45 @@
     "location": "IDI_ORO",
     "employmentStatus": "Active",
     "reportingManager": "0458 - Mrs MAMORA",
-    "passwordHash": "e35d40f92666aeccfcf51babfdcb9484bde775b8d2de8730178dd9c2ddc7f62c",
-    "passwordSalt": "997bcf74c0127519c8475e025822779e",
-    "status": "Pending First Login",
+    "passwordHash": "c9a50b401cb03e85716ce491ce186c49f97743e642c16bcfad752634dbac905f",
+    "passwordSalt": "8455ee6043dacbe41c75205e15df577b",
+    "status": "Active",
     "roles": [
-      "Accountant"
+      "Accountant",
+      "Finance Manager"
     ],
     "permissions": [
       "enterprise.view",
       "finance.view",
       "finance.create",
-      "finance.edit"
+      "finance.edit",
+      "finance.approve",
+      "finance.posting.operate",
+      "view_finance_intelligence",
+      "reports.view",
+      "page.payroll.management.bank-finance.view",
+      "reports.payroll.bank-schedule.view",
+      "button.payroll.post.view",
+      "payroll.workflow.finance-review.view",
+      "payroll.workflow.finance-review.approve",
+      "page.hris.payroll.approval.view",
+      "page.payroll.management.approval.view",
+      "page.hris.payroll.salary-management.view",
+      "page.hris.payroll.salary-structure.view",
+      "page.hris.payroll.employee-salary-setup.view",
+      "payroll.approve"
     ],
     "departmentAccess": [
       "FINANCE AND ACCOUNT"
     ],
     "moduleAccess": [],
-    "firstLoginRequired": true,
+    "firstLoginRequired": false,
     "passwordResetRequired": false,
     "failedAttempts": 0,
     "lockedUntil": null,
-    "lastLoginAt": null,
+    "lastLoginAt": "2026-08-07T08:15:48.287Z",
     "createdAt": "2026-06-14T12:32:33.562Z",
-    "updatedAt": "2026-08-05T12:58:50.470Z",
+    "updatedAt": "2026-08-07T08:30:35.868Z",
     "disabledAt": null,
     "deleted": false
   },

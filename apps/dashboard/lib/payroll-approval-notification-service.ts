@@ -22,6 +22,7 @@ import {
   PAYROLL_APPROVAL_STAGES,
   type PayrollApprovalStageId,
 } from '@/lib/payroll-approval-workflow';
+import { PAYROLL_ACTING_FINANCE_MANAGER_CODES } from '@/lib/payroll-acting-approvers';
 import type { UnifiedPayrollRun } from '@/lib/payroll-run-store';
 import type { PayrollSessionRole } from '@/lib/payroll-session';
 
@@ -30,7 +31,7 @@ const lower = (value: unknown) => compact(value).toLowerCase();
 
 const STAGE_ROLE_PATTERNS: Record<Exclude<PayrollApprovalStageId, 'payroll-officer'>, RegExp[]> = {
   'hr-manager': [/hr manager/i, /hr director/i],
-  'finance-manager': [/finance manager/i, /finance controller/i],
+  'finance-manager': [/finance manager/i, /finance controller/i, /finance payroll reviewer/i],
   cfo: [/\bcfo\b/i, /chief financial/i],
   'md-ceo': [/executive director/i, /executive management/i, /\bceo\b/i, /\bmd\b/i, /managing director/i],
 };
@@ -77,7 +78,14 @@ export const resolvePayrollApproverRecipients = async (stageId: PayrollApprovalS
   const patterns = STAGE_ROLE_PATTERNS[stageId];
   const matches = users.filter((user) => {
     const roleText = user.roles.join(' ');
-    return patterns.some((pattern) => pattern.test(roleText));
+    const byRole = patterns.some((pattern) => pattern.test(roleText));
+    if (byRole) return true;
+    // Always include named acting Finance Managers for the FM stage.
+    if (stageId === 'finance-manager') {
+      const code = compact(user.employeeCode || user.employeeId || user.username).toUpperCase();
+      return PAYROLL_ACTING_FINANCE_MANAGER_CODES.some((item) => item === code);
+    }
+    return false;
   });
   const withEmail = matches
     .map((user) => ({
@@ -89,7 +97,16 @@ export const resolvePayrollApproverRecipients = async (stageId: PayrollApprovalS
     }))
     .filter((user) => user.email);
 
-  if (withEmail.length) return withEmail;
+  // Deduplicate by email.
+  const seen = new Set<string>();
+  const unique = withEmail.filter((user) => {
+    const key = lower(user.email);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  if (unique.length) return unique;
 
   const fallbackRole: Record<Exclude<PayrollApprovalStageId, 'payroll-officer'>, PayrollSessionRole> = {
     'hr-manager': 'HR Manager',
@@ -147,6 +164,7 @@ export const resolvePayrollOfficerRecipients = async (run: UnifiedPayrollRun): P
 const FINANCE_HR_ROLE_PATTERNS = [
   /finance manager/i,
   /finance controller/i,
+  /finance payroll reviewer/i,
   /\bcfo\b/i,
   /chief financial/i,
   /treasury/i,

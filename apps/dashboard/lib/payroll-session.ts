@@ -1,5 +1,6 @@
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import { isPayrollActingFinanceManager } from '@/lib/payroll-acting-approvers';
 import { payrollApprovalPermissions } from '@/lib/payroll-approval-workflow';
 
 export type PayrollSessionRole =
@@ -33,11 +34,14 @@ export const roleFromSession = (session: Awaited<ReturnType<typeof verifySession
   if (/system administrator/i.test(text)) return 'System Administrator';
   if (/payroll supervisor/i.test(text)) return 'Payroll Supervisor';
   if (/payroll officer|payroll administrator/i.test(text)) return 'Payroll Officer';
+  // Named acting Finance Manager (e.g. Rapheal Iyanda P0429) before generic finance titles.
+  if (isPayrollActingFinanceManager(session?.employeeCode, session?.username)) return 'Finance Manager';
   if (/finance manager/i.test(text)) return 'Finance Manager';
   if (/\bcfo\b/i.test(text)) return 'CFO';
   if (/executive director/i.test(text)) return 'Executive Director';
   if (/executive/i.test(text)) return 'Executive Management';
   if (/finance controller/i.test(text)) return 'Finance Controller';
+  if (/finance payroll reviewer/i.test(text)) return 'Finance Manager';
   if (/hr director/i.test(text)) return 'HR Director';
   if (/hr manager/i.test(text)) return 'HR Manager';
   if (/hr officer/i.test(text)) return 'HR Officer';
