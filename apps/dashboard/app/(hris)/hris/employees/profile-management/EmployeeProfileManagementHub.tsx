@@ -10,16 +10,13 @@ import {
   BriefcaseBusiness,
   Building2,
   ChevronRight,
-  ClipboardList,
   Contact,
   Download,
   FileText,
-  GitBranch,
   IdCard,
   Layers3,
   Network,
   Plus,
-  RefreshCcw,
   ShieldCheck,
   Upload,
   UserRound,
@@ -305,7 +302,6 @@ function CompletenessCard({ label, value, onView }: { label: string; value: numb
 
 export default function EmployeeProfileManagementHub({ activeTab, onSelectTab }: Props) {
   const [employees, setEmployees] = useState<DirectoryEmployee[]>([]);
-  const [directorySource, setDirectorySource] = useState('DLE Enterprise HRIS');
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -322,7 +318,6 @@ export default function EmployeeProfileManagementHub({ activeTab, onSelectTab }:
       }
       const data = payload.data;
       setEmployees((Array.isArray(data.employees) ? data.employees : []).map(normalizeDirectoryEmployee));
-      setDirectorySource(data.dataSource?.source || data.source || 'DLE Enterprise HRIS');
       setSyncedAt(data.syncedAt || new Date().toISOString());
     } catch (loadError) {
       setEmployees([]);
@@ -404,8 +399,6 @@ export default function EmployeeProfileManagementHub({ activeTab, onSelectTab }:
               Manage employee personal, employment, organizational, category, contact, and profile governance information.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-[#10B981]">Source: {directorySource}</span>
-              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">Employees: {formatNumber(total)}</span>
               <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">Updated: {formatDateTime(syncedAt)}</span>
             </div>
           </div>
@@ -414,18 +407,6 @@ export default function EmployeeProfileManagementHub({ activeTab, onSelectTab }:
               <Plus className="h-4 w-4" />
               Add Employee
             </Link>
-            <Link href="/hris/payroll-management/payroll-computation-workflow" className="inline-flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              <GitBranch className="h-4 w-4" />
-              Workflow Approvals
-            </Link>
-            <Link href="/hris/employees/employee-profile" className="inline-flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              <ClipboardList className="h-4 w-4" />
-              Audit Trail
-            </Link>
-            <button type="button" onClick={() => void loadEmployees()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
-              <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
           </div>
         </div>
       </div>
