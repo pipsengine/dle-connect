@@ -9,7 +9,6 @@ import LeaveDrilldownModal, { type LeaveDrilldownPanel, type LeaveDrilldownRow }
 import { LeaveBalanceDetailModal, LeaveOperationalSection } from './LeaveOperationalSections';
 import { normalizeAnnualLeaveBalances } from '@/lib/leave-reports-engine';
 import {
-  AlertTriangle,
   Archive,
   BadgeCheck,
   Banknote,
@@ -353,7 +352,6 @@ const workspaceForSection = (section: string, payload: Payload | null) => {
 
 export default function LeaveManagementClient({ initialNow, initialSection = 'dashboard' }: { initialNow: string; initialSection?: string }) {
   const [role, setRole] = useState<LeaveRole>('Leave Administrator');
-  const [signedInAs, setSignedInAs] = useState('');
   const [sessionReady, setSessionReady] = useState(false);
   const [section, setSection] = useState(initialSection);
   const [payload, setPayload] = useState<Payload | null>(null);
@@ -387,7 +385,6 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
           isGlobalAdmin: Boolean(json.data.isGlobalAdmin),
         };
         setRole(leaveRoleFromSession(user));
-        setSignedInAs(user.fullName || user.roles[0] || 'Signed in');
       }
     } catch {
       // keep default leave role
@@ -518,19 +515,8 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex h-10 items-center rounded-lg border border-[#E5E7EB] bg-slate-50 px-3 text-xs font-semibold text-slate-700">
-              Signed in: {signedInAs || role} · {role}
-            </span>
             {!isTransactionsHub ? (
               <>
-                <button
-                  type="button"
-                  onClick={() => navigateSection('leave-allowance-exceptions')}
-                  className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800 hover:bg-red-100"
-                >
-                  <AlertTriangle className="h-4 w-4" />
-                  Allowance Exceptions{payload?.summary.allowanceExceptionCount ? ` (${payload.summary.allowanceExceptionCount})` : ''}
-                </button>
                 <button
                   type="button"
                   onClick={() => navigateSection('leave-reports')}
