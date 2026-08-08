@@ -1,11 +1,7 @@
 'use client';
 
-import { CheckCircle2, Circle, Clock3, UserCheck, XCircle } from 'lucide-react';
-import {
-  buildPayrollApprovalChecklist,
-  payrollApprovalChecklistReady,
-  type PayrollApprovalStageId,
-} from '@/lib/payroll-approval-workflow';
+import { CheckCircle2, Circle, Clock3, UserCheck } from 'lucide-react';
+import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
 
 type StageState = {
   id: PayrollApprovalStageId;
@@ -19,23 +15,8 @@ type StageState = {
   signedBy: string | null;
 };
 
-type ChecklistPayload = {
-  blockedEmployees?: number;
-  reviewEmployees?: number;
-  exceptionCount?: number;
-  payrollEligible?: number;
-  readyEmployees?: number;
-  employees?: number;
-  grossPay?: number | null;
-  netPay?: number | null;
-  employerCost?: number | null;
-  exceptions?: Array<{ issue: string; employeeName?: string }>;
-  records?: Array<{ employmentStatus?: string; payrollStatus?: string; issues?: string[]; exceptions?: string[] }>;
-};
-
 type PayrollApprovalStagePanelProps = {
   stages: StageState[];
-  payload: ChecklistPayload | null;
   activeStageId: PayrollApprovalStageId | null;
   onSelectStage: (id: PayrollApprovalStageId) => void;
   onApprove: (action: string) => void;
@@ -62,7 +43,6 @@ const stageTone: Record<PayrollApprovalStageId, string> = {
 
 export default function PayrollApprovalStagePanel({
   stages,
-  payload,
   activeStageId,
   onSelectStage,
   onApprove,
@@ -79,21 +59,6 @@ export default function PayrollApprovalStagePanel({
   onNoteChange,
 }: PayrollApprovalStagePanelProps) {
   const active = stages.find((stage) => stage.id === activeStageId) || stages.find((stage) => stage.current) || stages[0];
-  const checklist = active
-    ? buildPayrollApprovalChecklist(active.id, {
-        blockedEmployees: payload?.blockedEmployees || 0,
-        reviewEmployees: payload?.reviewEmployees || 0,
-        exceptionCount: payload?.exceptionCount || 0,
-        payrollEligible: payload?.payrollEligible || payload?.employees || 0,
-        readyEmployees: payload?.readyEmployees || 0,
-        grossPay: payload?.grossPay ?? null,
-        netPay: payload?.netPay ?? null,
-        employerCost: payload?.employerCost ?? null,
-        exceptions: payload?.exceptions || [],
-        records: payload?.records || [],
-      })
-    : [];
-  const checklistReady = payrollApprovalChecklistReady(checklist);
 
   const canActOnStage = (stage: StageState) => {
     if (canApproveAnyStage && !stage.done) return true;
@@ -139,24 +104,15 @@ export default function PayrollApprovalStagePanel({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <UserCheck className="h-5 w-5 text-slate-700" />
-                <h2 className="text-sm font-black uppercase tracking-normal text-slate-900">{active.title} Review Checklist</h2>
+                <h2 className="text-sm font-black uppercase tracking-normal text-slate-900">{active.title} Approval</h2>
               </div>
               <p className="mt-1 text-xs font-semibold text-slate-500">
-                Sequential approval: HR Manager → Finance Manager → CFO → MD / CEO. Super Administrators can action any pending stage.
+                {active.done
+                  ? `Signed by ${active.signedBy || active.owner}${active.stamp ? ` · ${new Date(active.stamp).toLocaleString('en-GB')}` : ''}`
+                  : active.current
+                    ? `Awaiting ${active.owner} action.`
+                    : 'This stage is not active yet.'}
               </p>
-              <div className="mt-4 space-y-2">
-                {checklist.map((item) => (
-                  <div key={item.id} className={`rounded-xl border px-3 py-2 ${item.passed ? 'border-emerald-200 bg-emerald-50' : item.required ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
-                    <div className="flex items-start gap-2">
-                      {item.passed ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /> : <XCircle className={`mt-0.5 h-4 w-4 shrink-0 ${item.required ? 'text-red-600' : 'text-amber-600'}`} />}
-                      <div>
-                        <p className="text-xs font-black text-slate-900">{item.label}{item.required ? ' *' : ''}</p>
-                        <p className="mt-0.5 text-[11px] font-semibold text-slate-600">{item.detail}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
             <div className="w-full max-w-md shrink-0 space-y-3">
               <textarea
@@ -169,7 +125,7 @@ export default function PayrollApprovalStagePanel({
                 <div className="grid grid-cols-1 gap-2">
                   <button
                     type="button"
-                    disabled={!canActOnStage(active) || !checklistReady || posting === active.action}
+                    disabled={!canActOnStage(active) || posting === active.action}
                     onClick={() => onApprove(active.action)}
                     className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-xs font-extrabold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
                   >
@@ -192,17 +148,7 @@ export default function PayrollApprovalStagePanel({
                   {active.done ? 'This stage is complete. Select the current stage to take action.' : 'This stage is not active yet.'}
                 </p>
               )}
-              {!checklistReady && (active.current || (canApproveAnyStage && !active.done)) ? (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2">
-                  <p className="text-xs font-bold text-red-700">Resolve required checklist items before approving this stage.</p>
-                  <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] font-semibold text-red-700">
-                    {checklist.filter((item) => item.required && !item.passed).map((item) => (
-                      <li key={item.id}>{item.label}: {item.detail}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {checklistReady && active.current && !canActOnStage(active) ? (
+              {active.current && !canActOnStage(active) ? (
                 <p className="text-xs font-bold text-amber-700">
                   Your signed-in role cannot action this stage. Wait for the stage owner, or sign in with an authorized role.
                 </p>

@@ -538,17 +538,6 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
       <section className="mt-6">
         <PayrollApprovalStagePanel
           stages={stages}
-          payload={{
-            blockedEmployees: payload?.summary.blocked,
-            reviewEmployees: payload?.summary.review,
-            exceptionCount: payload?.summary.exceptionCount,
-            payrollEligible: payload?.summary.employees,
-            readyEmployees: payload?.summary.ready,
-            grossPay: payload?.summary.grossPay,
-            netPay: payload?.summary.netPay,
-            employerCost: payload?.summary.employerCost,
-            records: payload?.records,
-          }}
           activeStageId={activeStageId}
           onSelectStage={setActiveStageId}
           onApprove={(actionName) => void action(actionName)}
