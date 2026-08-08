@@ -5276,9 +5276,6 @@ export default function PayrollManagementClient({
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-slate-500">HRIS / Payroll Management / Process Payroll</p>
                 <h1 className="mt-1 text-[28px] font-bold tracking-tight text-slate-950 sm:text-[32px]">Payroll Processing</h1>
-                <p className="mt-1 text-sm font-medium text-slate-600">
-                  {payload?.periodLabel || 'Loading'} payroll run · {payload?.dataSource?.source || 'DLE_Enterprise HRIS'} · {number(payload?.dataSource?.employeeCount || totalEmployees)} employees
-                </p>
                 <div className="mt-3">
                   <PayrollPeriodContextBar
                     payload={payload}
@@ -5287,6 +5284,7 @@ export default function PayrollManagementClient({
                       setViewPeriod(period);
                       void load(period);
                     }}
+                    showMetaBadges={false}
                   />
                 </div>
               </div>
