@@ -233,7 +233,6 @@ function DrawerField({ label, value }: { label: string; value: string }) {
 export default function EmployeeDirectoryHub({ initialNow }: { initialNow: string }) {
   const router = useRouter();
   const [employees, setEmployees] = useState<DirectoryEmployee[]>([]);
-  const [directorySource, setDirectorySource] = useState('DLE Enterprise HRIS');
   const [directoryWarning, setDirectoryWarning] = useState<string | null>(null);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -262,7 +261,6 @@ export default function EmployeeDirectoryHub({ initialNow }: { initialNow: strin
       }
       const data = payload.data;
       setEmployees((Array.isArray(data.employees) ? data.employees : []).map(normalizeDirectoryEmployee));
-      setDirectorySource(data.dataSource?.source || data.source || 'DLE Enterprise HRIS');
       setDirectoryWarning(data.dataSource?.warning || null);
       setSyncedAt(data.syncedAt || initialNow);
       setPage(1);
@@ -412,8 +410,6 @@ export default function EmployeeDirectoryHub({ initialNow }: { initialNow: strin
             <h1 className="text-4xl font-bold tracking-tight">Employee Directory</h1>
             <p className="mt-1 max-w-3xl text-sm text-[#64748B]">Centralized directory to search, view and manage employees across the organization.</p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-[#10B981]">Source: {directorySource}</span>
-              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">Employees: {formatNumber(enrichedEmployees.length)}</span>
               <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">Last Updated: {formatDateTime(syncedAt)}</span>
               <button type="button" onClick={() => void loadEmployees()} disabled={loading} className="inline-flex items-center gap-1 rounded-full border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
                 <RefreshCcw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
