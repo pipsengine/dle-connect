@@ -303,12 +303,10 @@ function CompletenessCard({ label, value, onView }: { label: string; value: numb
 export default function EmployeeProfileManagementHub({ activeTab, onSelectTab }: Props) {
   const [employees, setEmployees] = useState<DirectoryEmployee[]>([]);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAllExceptions, setShowAllExceptions] = useState(false);
 
   const loadEmployees = useCallback(async () => {
-    setLoading(true);
     setError(null);
     try {
       const res = await fetch('/api/hris/employees', { method: 'GET', cache: 'no-store' });
@@ -322,8 +320,6 @@ export default function EmployeeProfileManagementHub({ activeTab, onSelectTab }:
     } catch (loadError) {
       setEmployees([]);
       setError(loadError instanceof Error ? loadError.message : 'Unable to load employees');
-    } finally {
-      setLoading(false);
     }
   }, []);
 
