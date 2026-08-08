@@ -260,7 +260,6 @@ const primaryRoleFromSession = (user: SessionUser | null): Role => {
 
 export default function PayrollApprovalClient({ initialNow }: { initialNow: string }) {
   const [payload, setPayload] = useState<Payload | null>(null);
-  const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [role, setRole] = useState<Role>('Employee');
   const [period, setPeriod] = useState('');
   const [pack, setPack] = useState<PayrollPack>('salaried');
@@ -286,7 +285,6 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
           roles: Array.isArray(json.data.roles) ? json.data.roles : [],
           isGlobalAdmin: Boolean(json.data.isGlobalAdmin),
         };
-        setSessionUser(user);
         setRole(primaryRoleFromSession(user));
       }
     } catch {
@@ -331,8 +329,6 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
 
   const run = payload?.run || null;
   const canViewMoney = Boolean(payload?.permissions.canViewMoney);
-  const runStatus = run?.status || 'Draft';
-  const signedInAs = sessionUser?.fullName || sessionUser?.username || role;
   const packSummaries = payload?.packs || [];
 
   const salaryRows = useMemo(() => {
@@ -452,12 +448,6 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-extrabold text-blue-800">Period: {payload?.periodLabel || 'Loading'}</span>
-            <span className="rounded-full bg-cyan-100 px-3 py-1 text-xs font-extrabold text-cyan-900">Pack: {payload?.packLabel || pack}</span>
-            <span className={`rounded-full px-3 py-1 text-xs font-extrabold ${toneStyles[statusTone(runStatus)].chip}`}>Run: {runStatus}</span>
-            <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-extrabold text-violet-800">Stage: {payload?.approvalWorkflow?.stageLabel || 'Preparation'}</span>
-            <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-extrabold text-indigo-900">Owner: {payload?.approvalWorkflow?.nextOwner || '—'}</span>
-            <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-extrabold text-indigo-900">Signed in: {signedInAs} · {role}</span>
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-extrabold text-emerald-800">{payload?.summary.employees || 0} employees in pack</span>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -479,10 +469,6 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
 
       <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
         <p className="font-semibold text-slate-900">Dual-pack approval</p>
-        <p className="mt-1 text-xs leading-relaxed">
-          Salaried/Stipend (Permanent, Lumpsum, NYSC/IT) and Contract Daily Rate are separate runs with the same Officer → HR → Finance → CFO → MD chain.
-          Costs are split per pack. Timesheet HR acknowledgement feeds OT / daily-rate calculation; this screen is the executive pack sign-off.
-        </p>
         {packSummaries.some((item) => item.run?.status === 'Draft' || !item.run) && packSummaries.some((item) => item.run && !['Draft', 'Open'].includes(item.run.status)) ? (
           <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-950">
             One pack is still Draft. Open Payroll Processing and run Calculate / Create Run for this period (processes both packs). Then refresh this approval screen.
