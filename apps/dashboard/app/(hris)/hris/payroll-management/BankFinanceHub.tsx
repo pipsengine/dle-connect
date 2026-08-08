@@ -215,15 +215,6 @@ const tabs: { id: BankFinanceTabId; label: string }[] = [
   { id: 'exceptions', label: 'Finance Exceptions' },
 ];
 
-const financeStatusLabel = (run: FinanceRun | null | undefined, issueCount: number, payrollComputed?: boolean) => {
-  if (!payrollComputed) return 'Awaiting Payroll';
-  if (issueCount > 0) return 'Review Required';
-  if (run?.postedAt && run?.bankScheduleGeneratedAt) return 'Ready for Finance';
-  if (run?.bankScheduleGeneratedAt) return 'Schedule Ready';
-  if (['Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(run?.status || '')) return 'Ready';
-  return 'Pending Release';
-};
-
 const readinessLabel = (run: FinanceRun | null | undefined, issueCount: number, payrollComputed?: boolean) => {
   if (!payrollComputed) return 'Pending';
   if (issueCount > 0) return 'Review';
@@ -351,7 +342,6 @@ export default function BankFinanceHub({
   ];
 
   const nextAction = nextActionFor(run, workspaces);
-  const financeStatus = financeStatusLabel(run, financeIssues.length, payrollComputed);
   const readiness = readinessLabel(run, financeIssues.length, payrollComputed);
   const workflowOwner = payload?.workflow?.nextOwner || 'Finance Manager';
   const workflowStatus = run?.status || payload?.workflow?.currentStatus || 'Ready';
@@ -412,21 +402,12 @@ export default function BankFinanceHub({
         </div>
 
         <div className="mt-4">
-          <PayrollPeriodContextBar payload={payload} viewPeriod={viewPeriod} onSelectPeriod={onSelectPeriod} />
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-            <span className="rounded-full bg-slate-100 px-3 py-1.5 font-semibold text-slate-700">
-              Net Payroll: {fmtMoney(payload?.summary.netPay, canViewMoney, payrollComputed)}
-            </span>
-            <span
-              className={`rounded-full px-3 py-1.5 font-semibold ${
-                financeStatus === 'Ready for Finance' || financeStatus === 'Schedule Ready' || financeStatus === 'Ready'
-                  ? 'bg-emerald-50 text-emerald-700'
-                  : 'bg-amber-50 text-amber-800'
-              }`}
-            >
-              Finance: {financeStatus}
-            </span>
-          </div>
+          <PayrollPeriodContextBar
+            payload={payload}
+            viewPeriod={viewPeriod}
+            onSelectPeriod={onSelectPeriod}
+            showMetaBadges={false}
+          />
         </div>
 
         <nav className="mt-4 overflow-x-auto">
