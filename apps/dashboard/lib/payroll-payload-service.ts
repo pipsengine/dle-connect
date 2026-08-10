@@ -28,7 +28,7 @@ import {
 } from '@/lib/payroll-readiness';
 import { reapplyPayrollValidationPolicy } from '@/lib/payroll-tolerance';
 import { managementPermissions, payrollSessionContext, processingPermissions } from '@/lib/payroll-session';
-import { hasFullPayrollManagementAccess, hasPayrollSalaryReviewAccess, isFinancePayrollOnlyUser } from '@/lib/access/payroll-access';
+import { hasBankFinanceAccess, hasFullPayrollManagementAccess, hasPayrollSalaryReviewAccess, isFinancePayrollOnlyUser, isRestrictedPayrollStageApprover } from '@/lib/access/payroll-access';
 import {
   getPayrollApprovalStageState,
   resolvePayrollApprovalNextOwner,
@@ -410,11 +410,20 @@ const mapManagementRun = (item: Awaited<ReturnType<typeof listPayrollRuns>>[numb
 });
 
 export const buildManagementPayload = async (request: Request, requestedPeriod?: string, requestedPack?: string | null) => {
-  const { role, permissions, isGlobalAdmin } = await payrollSessionContext(request);
+  const { role, permissions, isGlobalAdmin, session } = await payrollSessionContext(request);
   const perms = managementPermissions(role);
-  const financeOnlyAccess = isFinancePayrollOnlyUser(permissions || [], { isGlobalAdmin });
-  const fullPayrollAccess = hasFullPayrollManagementAccess(permissions || []) || Boolean(isGlobalAdmin);
-  const salaryReviewAccess = !fullPayrollAccess && hasPayrollSalaryReviewAccess(permissions || []);
+  const identity = {
+    isGlobalAdmin,
+    roles: session?.roles || [],
+    employeeCode: session?.employeeCode,
+    username: session?.username,
+  };
+  const restrictedApprover = isRestrictedPayrollStageApprover(identity);
+  const financeOnlyAccess = restrictedApprover
+    ? hasBankFinanceAccess(permissions || [])
+    : isFinancePayrollOnlyUser(permissions || [], identity);
+  const fullPayrollAccess = !restrictedApprover && (hasFullPayrollManagementAccess(permissions || []) || Boolean(isGlobalAdmin));
+  const salaryReviewAccess = restrictedApprover || (!fullPayrollAccess && hasPayrollSalaryReviewAccess(permissions || []));
   const periodState = await listPayrollPeriods();
   const period = requestedPeriod || periodState.activePeriod || (await getActivePayrollPeriod());
   const pack = normalizePayrollRunPack(requestedPack) || 'salaried';

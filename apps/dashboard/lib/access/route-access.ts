@@ -3,7 +3,7 @@ import { canAccessAdministrationCentre, hasAnyPermission, hasPermission } from '
 import { PLATFORM_ROLES_WITHOUT_HRIS } from '@/lib/auth/platform-access';
 import { canAccessPayrollPath, isBankFinancePayrollPath, isPayrollSalaryReviewPath, payrollRoutePermissionOptions } from '@/lib/access/payroll-access';
 
-type SessionLike = Pick<SessionPayload, 'department' | 'unit' | 'roles' | 'permissions' | 'isGlobalAdmin'>;
+type SessionLike = Pick<SessionPayload, 'department' | 'unit' | 'roles' | 'permissions' | 'isGlobalAdmin' | 'employeeCode' | 'username'>;
 
 const normalizePath = (pathname: string) => pathname.replace(/\/+$/, '') || '/';
 const routePathFromRequestPath = (pathname: string) => {
@@ -313,7 +313,12 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
   if (explicitOptions) {
     if (!hasAnyPermission(permissions, explicitOptions)) return false;
     if ((path.startsWith('/hris/payroll') || path.startsWith('/hris/payroll-management'))
-      && !canAccessPayrollPath(permissions, path, { isGlobalAdmin: session.isGlobalAdmin })) {
+      && !canAccessPayrollPath(permissions, path, {
+        isGlobalAdmin: session.isGlobalAdmin,
+        roles: session.roles,
+        employeeCode: session.employeeCode,
+        username: session.username,
+      })) {
       return false;
     }
     return true;

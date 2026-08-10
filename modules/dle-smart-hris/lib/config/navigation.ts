@@ -184,6 +184,7 @@ export const navigationConfig: NavItem[] = [
     ], 'page.payroll.management').map((item) => {
       if (item.slug === 'process-payroll') return { ...item, route: '/payroll-management/payroll-processing' };
       if (item.slug === 'payroll-approval') return { ...item, route: '/payroll/payroll-approval', permissionKey: 'page.hris.payroll.approval.view' };
+      if (item.slug === 'pay-setup') return { ...item, route: '/payroll-management/pay-setup', permissionKey: 'page.hris.payroll.salary-management.view' };
       if (item.slug === 'bank-finance') return { ...item, route: '/payroll-management/bank-finance', permissionKey: 'page.payroll.management.bank-finance.view' };
       return item;
     }),

@@ -464,15 +464,24 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { role, actor, ip, isGlobalAdmin, processingPerms, permissions } = await payrollSessionContext(request);
+  const { role, actor, ip, isGlobalAdmin, processingPerms, permissions, session } = await payrollSessionContext(request);
   const perms = managementPermissions(role);
   const body = await request.json().catch(() => ({}));
   const action = normalizePayrollApprovalAction(compact(body.action));
   const period = compact(body.period) || (await getActivePayrollPeriod());
   const reason = compact(body.reason);
   const comment = compact(body.comment);
+  const identity = {
+    isGlobalAdmin,
+    roles: session?.roles || [],
+    employeeCode: session?.employeeCode,
+    username: session?.username,
+  };
 
-  if (isFinancePayrollOnlyUser(permissions || [], { isGlobalAdmin }) && !FINANCE_ONLY_PAYROLL_ACTIONS.has(action)) {
+  if (
+    isFinancePayrollOnlyUser(permissions || [], identity)
+    && !FINANCE_ONLY_PAYROLL_ACTIONS.has(action)
+  ) {
     return jsonErr(403, 'Finance users are restricted to Bank & Finance payroll actions only.');
   }
 

@@ -16,7 +16,15 @@ import { PerformanceNavTree } from './PerformanceNavTree';
 export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => void }) {
   const pathname = usePathname();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
-  const [sessionContext, setSessionContext] = useState({ roles: [] as string[], permissions: [] as string[], department: '', unit: '', isGlobalAdmin: false });
+  const [sessionContext, setSessionContext] = useState({
+    roles: [] as string[],
+    permissions: [] as string[],
+    department: '',
+    unit: '',
+    isGlobalAdmin: false,
+    employeeCode: '',
+    username: '',
+  });
   const HRIS_BASE = '/hris';
   const currentPath = pathname.startsWith(HRIS_BASE) ? pathname.slice(HRIS_BASE.length) || '/' : pathname;
 
@@ -37,10 +45,20 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
           department: String(json.data.department || ''),
           unit: String(json.data.unit || ''),
           isGlobalAdmin: Boolean(json.data.isGlobalAdmin),
+          employeeCode: String(json.data.employeeCode || ''),
+          username: String(json.data.username || ''),
         });
       })
       .catch(() => {
-        setSessionContext({ roles: [], permissions: [], department: '', unit: '', isGlobalAdmin: false });
+        setSessionContext({
+          roles: [],
+          permissions: [],
+          department: '',
+          unit: '',
+          isGlobalAdmin: false,
+          employeeCode: '',
+          username: '',
+        });
       });
   }, []);
 

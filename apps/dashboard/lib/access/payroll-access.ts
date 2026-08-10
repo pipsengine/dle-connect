@@ -1,3 +1,9 @@
+import {
+  isPayrollActingFinanceManager,
+  isPayrollNamedCfo,
+  isPayrollNamedMdCeo,
+} from '@/lib/payroll-acting-approvers';
+
 const normalizePath = (pathname: string) => pathname.replace(/\/+$/, '') || '/';
 
 const BANK_FINANCE_SECTIONS = new Set([
@@ -41,6 +47,34 @@ export const PAYROLL_WORKFLOW_REVIEW_PERMISSIONS = [
   'payroll.approve',
 ];
 
+/** Finance / CFO / MD stage owners — Payroll Approval + Pay Setup + Bank & Finance only. */
+const RESTRICTED_PAYROLL_STAGE_APPROVER_ROLES = [
+  'Finance Manager',
+  'Finance Controller',
+  'Finance Payroll Reviewer',
+  'Finance Administrator',
+  'CFO',
+  'Executive Director',
+  'Executive Management',
+  'Executive User',
+];
+
+const PAYROLL_OPERATOR_ROLES = [
+  'Payroll Administrator',
+  'Payroll Officer',
+  'Payroll Supervisor',
+  'Payroll Approver',
+  'Payroll Auditor',
+  'HR Administrator',
+];
+
+export type PayrollAccessIdentity = {
+  isGlobalAdmin?: boolean;
+  roles?: string[];
+  employeeCode?: string | null;
+  username?: string | null;
+};
+
 export const hasPermission = (permissions: string[], required: string) => {
   if (permissions.includes('*')) return true;
   if (permissions.includes(required)) return true;
@@ -71,11 +105,35 @@ export const hasPayrollWorkflowReviewAccess = (permissions: string[]) =>
 export const hasPayrollSalaryReviewAccess = (permissions: string[]) =>
   hasFullPayrollManagementAccess(permissions) || hasPayrollWorkflowReviewAccess(permissions);
 
+const hasPayrollOperatorRole = (roles: string[] = []) =>
+  roles.some((role) => PAYROLL_OPERATOR_ROLES.some((item) => new RegExp(`^${item}$`, 'i').test(role)));
+
+const hasRestrictedStageApproverRole = (roles: string[] = []) =>
+  roles.some((role) => RESTRICTED_PAYROLL_STAGE_APPROVER_ROLES.some((item) => new RegExp(`^${item}$`, 'i').test(role)));
+
+/**
+ * Finance Manager (incl. Raphael), CFO, and MD/CEO must only open:
+ * Payroll Approval, Pay Setup, and Bank & Finance — even if ACL also has payroll.view.
+ */
+export const isRestrictedPayrollStageApprover = (identity?: PayrollAccessIdentity) => {
+  if (!identity || identity.isGlobalAdmin) return false;
+  if (hasPayrollOperatorRole(identity.roles)) return false;
+  if (
+    isPayrollActingFinanceManager(identity.employeeCode, identity.username)
+    || isPayrollNamedCfo(identity.employeeCode, identity.username)
+    || isPayrollNamedMdCeo(identity.employeeCode, identity.username)
+  ) {
+    return true;
+  }
+  return hasRestrictedStageApproverRole(identity.roles);
+};
+
 export const isFinancePayrollOnlyUser = (
   permissions: string[],
-  options?: { isGlobalAdmin?: boolean },
+  options?: PayrollAccessIdentity,
 ) => {
   if (options?.isGlobalAdmin) return false;
+  if (isRestrictedPayrollStageApprover(options)) return false;
   if (hasFullPayrollManagementAccess(permissions)) return false;
   return hasBankFinanceAccess(permissions);
 };
@@ -100,8 +158,7 @@ export const isPayrollApprovalPath = (pathname: string) => {
 /** Paths workflow approvers may open without full payroll administration rights. */
 export const isPayrollApproverAccessiblePath = (pathname: string) => {
   const path = normalizePath(pathname.split('?')[0] || pathname);
-  if (path === '/hris/payroll-management' || path === '/hris/payroll-management/dashboard') return true;
-  return isPayrollSalaryReviewPath(path) || isPayrollApprovalPath(path);
+  return isPayrollSalaryReviewPath(path) || isPayrollApprovalPath(path) || isBankFinancePayrollPath(path);
 };
 
 export const payrollRoutePermissionOptions = (pathname: string): string[] | null => {
@@ -134,10 +191,14 @@ export const payrollRoutePermissionOptions = (pathname: string): string[] | null
 export const canAccessPayrollPath = (
   permissions: string[],
   pathname: string,
-  options?: { isGlobalAdmin?: boolean },
+  options?: PayrollAccessIdentity,
 ) => {
   if (options?.isGlobalAdmin) return true;
   const path = normalizePath(pathname.split('?')[0] || pathname);
+  const restricted = isRestrictedPayrollStageApprover(options);
+  if (restricted) {
+    return isPayrollApproverAccessiblePath(path);
+  }
   const optionsList = payrollRoutePermissionOptions(path);
   if (!optionsList) return true;
   if (!hasAnyPermission(permissions, optionsList)) return false;
