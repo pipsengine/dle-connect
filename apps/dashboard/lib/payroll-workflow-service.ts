@@ -31,9 +31,11 @@ import {
 } from '@/lib/payroll-employee-classification';
 import type { PayrollSessionRole } from '@/lib/payroll-session';
 import {
+  clearPayrollApprovalReminder,
   clearPayrollApprovalSignoffs,
   normalizePayrollApprovalAction,
   resolvePayrollApprovalActionForRun,
+  type PayrollApprovalStageId,
 } from '@/lib/payroll-approval-workflow';
 import {
   notifyNextPayrollApprovalStage,
@@ -44,7 +46,6 @@ import {
   notifyPayrollStageCompleted,
   notifyPayrollSubmitted,
 } from '@/lib/payroll-approval-notification-service';
-import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
 import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import { invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
 import {
@@ -465,6 +466,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     run.status = 'Submitted';
     run.submittedAt = nowIso();
     run.submittedBy = actor;
+    clearPayrollApprovalReminder(run);
     run.updatedBy = actor;
     await savePayrollRun(run);
     await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
@@ -483,6 +485,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     run.status = 'HR Approved';
     run.hrReviewedAt = nowIso();
     run.hrReviewedBy = actor;
+    clearPayrollApprovalReminder(run);
     run.updatedBy = actor;
     await savePayrollRun(run);
     await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
@@ -501,6 +504,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     run.status = 'Finance Approved';
     run.financeReviewedAt = nowIso();
     run.financeReviewedBy = actor;
+    clearPayrollApprovalReminder(run);
     run.updatedBy = actor;
     await savePayrollRun(run);
     await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
@@ -520,6 +524,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     run.status = 'CFO Approved';
     run.cfoReviewedAt = nowIso();
     run.cfoReviewedBy = actor;
+    clearPayrollApprovalReminder(run);
     run.updatedBy = actor;
     await savePayrollRun(run);
     await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
@@ -539,6 +544,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     run.status = 'Approved';
     run.approvedAt = nowIso();
     run.approvedBy = actor;
+    clearPayrollApprovalReminder(run);
     run.updatedBy = actor;
     await savePayrollRun(run);
     await capturePayrollSnapshot(run.id, action, actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);

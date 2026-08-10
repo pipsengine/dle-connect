@@ -7,4 +7,6 @@ export async function registerNodeInstrumentation() {
   ensureBackupSchedulerStarted();
   const { ensurePaymentReminderSchedulerStarted } = await import('@/lib/finance-intelligence/payment-approval-reminder-scheduler');
   ensurePaymentReminderSchedulerStarted();
+  const { ensurePayrollReminderSchedulerStarted } = await import('@/lib/payroll-approval-reminder-scheduler');
+  ensurePayrollReminderSchedulerStarted();
 }

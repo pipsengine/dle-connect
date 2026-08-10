@@ -99,6 +99,9 @@ export type UnifiedPayrollRun = {
   cfoReviewedBy?: string | null;
   approvedAt?: string | null;
   approvedBy?: string | null;
+  /** Last approval reminder (auto or manual) for the current pending stage. */
+  lastReminderAt?: string | null;
+  lastReminderStageId?: string | null;
   releasedAt?: string | null;
   releasedBy?: string | null;
   lockedAt?: string | null;

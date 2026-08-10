@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { buildProcessingPayload } from '@/lib/payroll-payload-service';
 import { normalizePayrollApprovalAction } from '@/lib/payroll-approval-workflow';
+import { sendPayrollApprovalReminder } from '@/lib/payroll-approval-reminder-service';
 import { getActivePayrollPeriod } from '@/lib/payroll-period-store';
 import { payrollSessionContext, processingPermissions } from '@/lib/payroll-session';
 import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
@@ -169,6 +170,45 @@ export async function POST(request: Request) {
       return err(403, 'Permission denied');
     }
     if ((action === 'submit' || action === 'submit-run') && !perms.canSubmit) return err(403, 'Submit permission denied');
+    if (action === 'send-reminder' || action === 'approval-reminder') {
+      if (!perms.canSubmit && !isGlobalAdmin) {
+        return err(403, 'Only the Payroll Officer can send approval reminders.');
+      }
+      const reminder = await sendPayrollApprovalReminder({
+        runId,
+        period,
+        pack,
+        actor,
+        role,
+        baseUrl: origin,
+      });
+      return ok({
+        reminder: {
+          stageId: reminder.stageId,
+          stageTitle: reminder.stageTitle,
+          notified: reminder.notified,
+          emailed: reminder.emailed,
+        },
+        run: {
+          id: reminder.run.id,
+          period: reminder.run.period,
+          periodLabel: reminder.run.periodLabel,
+          pack: reminder.run.pack,
+          status: reminder.run.status,
+          employeeCount: reminder.run.employeeCount,
+          grossPay: reminder.run.grossPay,
+          netPay: reminder.run.netPay,
+          totalDeductions: reminder.run.deductions,
+          employerCost: reminder.run.employerCost,
+          exceptionCount: reminder.run.exceptionCount,
+          createdAt: reminder.run.createdAt,
+          createdBy: reminder.run.createdBy,
+          updatedAt: reminder.run.updatedAt,
+          updatedBy: reminder.run.updatedBy,
+          lastReminderAt: reminder.run.lastReminderAt || null,
+        },
+      });
+    }
     if (action === 'hr-manager-approve' && !perms.canApproveHrManager) return err(403, 'HR Manager approval permission denied');
     if (action === 'finance-manager-approve' && !perms.canApproveFinanceManager) return err(403, 'Finance Manager approval permission denied');
     if (action === 'cfo-approve' && !perms.canApproveCfo) return err(403, 'CFO approval permission denied');

@@ -132,6 +132,36 @@ export const clearPayrollApprovalSignoffs = (run: UnifiedPayrollRun) => {
   run.cfoReviewedBy = null;
   run.approvedAt = null;
   run.approvedBy = null;
+  run.lastReminderAt = null;
+  run.lastReminderStageId = null;
+};
+
+export const clearPayrollApprovalReminder = (run: UnifiedPayrollRun) => {
+  run.lastReminderAt = null;
+  run.lastReminderStageId = null;
+};
+
+const PENDING_APPROVAL_STATUSES: UnifiedPayrollRunStatus[] = [
+  'Submitted',
+  'Under Review',
+  'HR Approved',
+  'Finance Approved',
+  'CFO Approved',
+];
+
+export const isPayrollRunAwaitingApproval = (run: UnifiedPayrollRun | null | undefined) =>
+  Boolean(run && PENDING_APPROVAL_STATUSES.includes(run.status));
+
+/** When the current approval stage became pending (clock for 24h auto-reminder). */
+export const resolvePayrollApprovalStageEnteredAt = (run: UnifiedPayrollRun | null | undefined) => {
+  if (!run || !isPayrollRunAwaitingApproval(run)) return null;
+  const stage = getCurrentPayrollApprovalStage(run);
+  if (!stage || stage.id === 'payroll-officer') return null;
+  if (stage.id === 'hr-manager') return run.submittedAt || null;
+  if (stage.id === 'finance-manager') return run.hrReviewedAt || null;
+  if (stage.id === 'cfo') return run.financeReviewedAt || null;
+  if (stage.id === 'md-ceo') return run.cfoReviewedAt || null;
+  return null;
 };
 
 export const payrollApprovalStageIndex = (status: UnifiedPayrollRunStatus) => {

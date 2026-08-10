@@ -202,6 +202,8 @@ const mapRunForProcessing = (run: Awaited<ReturnType<typeof getPayrollRunForPeri
         cfoReviewedBy: run.cfoReviewedBy || null,
         approvedAt: run.approvedAt || null,
         approvedBy: run.approvedBy || null,
+        lastReminderAt: run.lastReminderAt || null,
+        lastReminderStageId: run.lastReminderStageId || null,
         audit: (run.audit || []).map((entry) => ({
           at: entry.at,
           actor: entry.user,

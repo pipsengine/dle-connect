@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckCircle2, Circle, Clock3, UserCheck } from 'lucide-react';
+import { BellRing, CheckCircle2, Circle, Clock3, UserCheck } from 'lucide-react';
 import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
 
 type StageState = {
@@ -22,6 +22,7 @@ type PayrollApprovalStagePanelProps = {
   onApprove: (action: string) => void;
   onReject: () => void;
   onRequestRevision: () => void;
+  onSendReminder?: () => void;
   posting: string;
   canApproveHrManager: boolean;
   canApproveFinanceManager: boolean;
@@ -29,6 +30,8 @@ type PayrollApprovalStagePanelProps = {
   canApproveMdCeo: boolean;
   canApproveAnyStage: boolean;
   canSubmit: boolean;
+  canSendReminder?: boolean;
+  lastReminderAt?: string | null;
   note: string;
   onNoteChange: (value: string) => void;
 };
@@ -48,6 +51,7 @@ export default function PayrollApprovalStagePanel({
   onApprove,
   onReject,
   onRequestRevision,
+  onSendReminder,
   posting,
   canApproveHrManager,
   canApproveFinanceManager,
@@ -55,10 +59,14 @@ export default function PayrollApprovalStagePanel({
   canApproveMdCeo,
   canApproveAnyStage,
   canSubmit,
+  canSendReminder = false,
+  lastReminderAt = null,
   note,
   onNoteChange,
 }: PayrollApprovalStagePanelProps) {
   const active = stages.find((stage) => stage.id === activeStageId) || stages.find((stage) => stage.current) || stages[0];
+  const pendingApproverStage = stages.find((stage) => stage.current && stage.id !== 'payroll-officer') || null;
+  const showReminder = Boolean(canSendReminder && pendingApproverStage && onSendReminder);
 
   const canActOnStage = (stage: StageState) => {
     if (canApproveAnyStage && !stage.done) return true;
@@ -97,6 +105,29 @@ export default function PayrollApprovalStagePanel({
           </button>
         ))}
       </div>
+
+      {showReminder ? (
+        <div className="flex flex-col gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-extrabold text-sky-950">
+              Reminder · awaiting {pendingApproverStage?.owner || 'approver'}
+            </p>
+            <p className="mt-0.5 text-[11px] font-semibold text-sky-800">
+              Auto reminder sends after 24 hours without action.
+              {lastReminderAt ? ` Last reminder: ${new Date(lastReminderAt).toLocaleString('en-GB')}.` : ' No reminder sent yet for this stage.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={posting === 'send-reminder'}
+            onClick={onSendReminder}
+            className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-sky-300 bg-white px-4 text-xs font-extrabold text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+          >
+            <BellRing className={`h-4 w-4 ${posting === 'send-reminder' ? 'animate-pulse' : ''}`} />
+            Send reminder
+          </button>
+        </div>
+      ) : null}
 
       {active ? (
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">

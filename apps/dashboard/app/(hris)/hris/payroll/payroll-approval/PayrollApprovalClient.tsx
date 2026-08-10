@@ -42,6 +42,10 @@ type PayrollRun = {
   createdBy: Role;
   updatedAt: string;
   updatedBy: Role;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
+  lastReminderAt?: string | null;
+  lastReminderStageId?: string | null;
   audit: Array<{ at: string; actor: Role; action: string; from?: RunStatus; to?: RunStatus; note?: string }>;
 };
 
@@ -388,10 +392,21 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
           note: note || `${actionName} from payroll approval console (${pack})`,
         }),
       });
-      const json = (await res.json()) as ApiResponse<{ run: PayrollRun }>;
+      const json = (await res.json()) as ApiResponse<{
+        run: PayrollRun;
+        reminder?: { stageTitle?: string; emailed?: number; notified?: number };
+      }>;
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to update payroll approval');
-      setToast(`${json.data?.run.packLabel || pack} pack moved to ${json.data?.run.status || 'updated'}.`);
-      setNote('');
+      if (actionName === 'send-reminder') {
+        const reminder = json.data?.reminder;
+        setToast(
+          `Reminder sent to ${reminder?.stageTitle || 'current approver'}`
+          + (typeof reminder?.emailed === 'number' ? ` (${reminder.emailed} email${reminder.emailed === 1 ? '' : 's'}).` : '.'),
+        );
+      } else {
+        setToast(`${json.data?.run.packLabel || pack} pack moved to ${json.data?.run.status || 'updated'}.`);
+        setNote('');
+      }
       await load(period, role, pack);
     } catch (event) {
       setToast(event instanceof Error ? event.message : 'Unable to update payroll approval');
@@ -543,6 +558,7 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
           onApprove={(actionName) => void action(actionName)}
           onReject={() => void action('reject-run')}
           onRequestRevision={() => void action('request-revision')}
+          onSendReminder={() => void action('send-reminder')}
           posting={posting}
           canApproveHrManager={Boolean(payload?.permissions.canApproveHrManager)}
           canApproveFinanceManager={Boolean(payload?.permissions.canApproveFinanceManager)}
@@ -550,6 +566,8 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
           canApproveMdCeo={Boolean(payload?.permissions.canApproveMdCeo)}
           canApproveAnyStage={Boolean(payload?.permissions.canApproveAnyStage)}
           canSubmit={Boolean(payload?.permissions.canSubmit)}
+          canSendReminder={Boolean(payload?.permissions.canSubmit)}
+          lastReminderAt={run?.lastReminderAt || null}
           note={note}
           onNoteChange={setNote}
         />
