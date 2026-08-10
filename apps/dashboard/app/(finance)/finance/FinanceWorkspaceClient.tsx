@@ -42,6 +42,7 @@ import type { PaymentRequestsWorkspace, CashAdvanceControlsWorkspace, TreasuryWo
 import type { ApprovalMatrixWorkspace } from '@/lib/finance-intelligence/approval-matrix-service';
 import type { ApprovalDelegationWorkspace } from '@/lib/finance-intelligence/approval-delegation-types';
 import { FinanceBreadcrumbs } from './finance-portal-shell';
+import CfoDashboardClient from './CfoDashboardClient';
 import PaymentRequestsClient from './PaymentRequestsClient';
 import ApprovalMatrixClient from './ApprovalMatrixClient';
 import ApprovalLimitsClient from './ApprovalLimitsClient';
@@ -169,87 +170,8 @@ function FilterBar({ period, currency, basis }: { period: string; currency: stri
   );
 }
 
-function CommandCentreView({ snapshot }: { snapshot: FinanceCommandCentreSnapshot }) {
-  return (
-    <div className="space-y-4">
-      <header className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#008FD5]">Overview</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Finance Command Centre</h1>
-        <p className="mt-1 max-w-3xl text-sm text-slate-500">
-          Financial reporting, analytics, AI-assisted insights and payment approvals integrated with Sage X3 Enterprise.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Link href="/finance/configuration/sage-x3" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-            <RefreshCcw className="h-4 w-4" /> Refresh Sage Data
-          </Link>
-          <Link href="/finance/reporting/builder/report-builder" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-            <FileBarChart className="h-4 w-4" /> Generate Report
-          </Link>
-          <Link href="/finance/ai-copilot" className="inline-flex items-center gap-2 rounded-xl bg-[#008FD5] px-3 py-2 text-sm font-semibold text-white hover:bg-[#007bb8]">
-            <Sparkles className="h-4 w-4" /> Ask Finance AI
-          </Link>
-          <Link href="/finance/approvals/inbox" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-            <BadgeCheck className="h-4 w-4" /> View Approval Inbox
-          </Link>
-        </div>
-      </header>
-
-      <FilterBar period={snapshot.filters.period} currency={snapshot.filters.currency} basis={snapshot.filters.basis} />
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {snapshot.kpis.map((kpi) => (
-          <article key={kpi.id} className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{kpi.label}</p>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
-              {kpi.unit === 'currency' ? fmtMoney(kpi.value) : kpi.value}
-            </p>
-            <p className="mt-1 text-[11px] text-slate-400">Sage X3 · {snapshot.filters.basis}</p>
-          </article>
-        ))}
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Panel title="Revenue and expense trend"><EmptyChart label="Revenue / expense trend" /></Panel>
-        <Panel title="Cash-flow outlook"><EmptyChart label="Cash-flow outlook" /></Panel>
-        <Panel title="Budget versus actual"><EmptyChart label="Budget vs actual" /></Panel>
-        <Panel title="Receivable ageing"><EmptyChart label="Receivable ageing" /></Panel>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-4">
-        <Panel title="Pending approvals" action={<Link href="/finance/approvals" className="text-xs font-semibold text-[#008FD5]">Open</Link>}>
-          <p className="text-3xl font-semibold tabular-nums text-slate-900">{snapshot.pendingApprovals}</p>
-          <p className="mt-1 text-xs text-slate-500">{snapshot.overdueApprovals} overdue</p>
-        </Panel>
-        <Panel title="Project profitability"><EmptyChart label="Project margins" /></Panel>
-        <Panel title="Financial exceptions" action={<Link href="/finance/audit/exceptions" className="text-xs font-semibold text-[#008FD5]">Register</Link>}>
-          <p className="text-3xl font-semibold tabular-nums text-slate-900">{snapshot.exceptions}</p>
-          <p className="mt-1 text-xs text-slate-500">Open governance exceptions</p>
-        </Panel>
-        <Panel title="AI-generated finance summary" action={<Link href="/finance/ai-copilot" className="text-xs font-semibold text-[#008FD5]">Ask AI</Link>}>
-          <p className="text-sm text-slate-600">
-            Connect Sage X3 to generate period commentary with confidence scoring and source evidence.
-          </p>
-        </Panel>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-4">
-        <Panel title="Recent reports" action={<Link href="/finance/reporting" className="text-xs font-semibold text-[#008FD5]">All</Link>}>
-          <p className="text-sm text-slate-500">No reports generated yet.</p>
-        </Panel>
-        <Panel title="Scheduled reports" action={<Link href="/finance/distribution/scheduled" className="text-xs font-semibold text-[#008FD5]">Schedule</Link>}>
-          <p className="text-sm text-slate-500">{snapshot.badges.scheduledReports} scheduled</p>
-        </Panel>
-        <Panel title="Data integration health">
-          <p className="text-sm font-semibold text-slate-800">{snapshot.integrationStatus}</p>
-          <p className="mt-1 text-xs text-slate-500">Last refresh: {fmtDateTime(snapshot.lastRefreshAt)}</p>
-        </Panel>
-        <Panel title="Period reporting status">
-          <p className="text-sm text-slate-600">{snapshot.filters.period} · {snapshot.filters.basis}</p>
-          <p className="mt-1 text-xs text-slate-500">Source: {snapshot.source}</p>
-        </Panel>
-      </div>
-    </div>
-  );
+function CommandCentreView({ snapshot }: { snapshot: FinanceCommandCentreSnapshot | null }) {
+  return <CfoDashboardClient snapshot={snapshot} />;
 }
 
 function CategoryCards({
@@ -900,9 +822,9 @@ export default function FinanceWorkspaceClient({
   );
 
   return (
-    <div className="mx-auto max-w-[1400px]">
-      <FinanceBreadcrumbs items={page.breadcrumbs} />
-      {page.kind === 'command-centre' && commandCentre ? <CommandCentreView snapshot={commandCentre} /> : null}
+    <div className={`mx-auto ${page.kind === 'command-centre' ? 'max-w-[1600px]' : 'max-w-[1400px]'}`}>
+      {page.kind === 'command-centre' ? null : <FinanceBreadcrumbs items={page.breadcrumbs} />}
+      {page.kind === 'command-centre' ? <CommandCentreView snapshot={commandCentre || null} /> : null}
       {page.kind === 'reporting-hub' ? (
         <CategoryCards
           title="Reporting Dashboard"

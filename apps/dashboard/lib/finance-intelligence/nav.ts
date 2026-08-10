@@ -77,7 +77,7 @@ export const FINANCE_NAV_SECTIONS: FinanceNavSection[] = [
     href: '/finance/overview',
     icon: LayoutDashboard,
     children: [
-      { id: 'command-centre', label: 'Finance Command Centre', href: '/finance/overview/command-centre' },
+      { id: 'command-centre', label: 'CFO Dashboard', href: '/finance/overview/command-centre' },
       { id: 'my-workspace', label: 'My Finance Workspace', href: '/finance/overview/my-workspace' },
       { id: 'executive-overview', label: 'Executive Overview', href: '/finance/overview/executive' },
       { id: 'data-integration', label: 'Data Integration Status', href: '/finance/overview/data-integration', badgeKey: 'dataIntegration' },
@@ -281,7 +281,7 @@ const page = (
 export const FINANCE_PAGES: FinancePageMeta[] = [
   // Overview
   page('/finance/overview', 'Overview', 'Finance Intelligence overview and command surfaces.', 'overview', 'section-dashboard', ['Overview'], ['Command Centre', 'Workspace', 'Executive', 'Integration']),
-  page('/finance/overview/command-centre', 'Finance Command Centre', 'Financial reporting, analytics, AI-assisted insights and payment approvals integrated with Sage X3 Enterprise.', 'overview', 'command-centre', ['Overview', 'Finance Command Centre']),
+  page('/finance/overview/command-centre', 'CFO Dashboard', 'Real-time overview of financial performance, approvals and strategic insights.', 'overview', 'command-centre', ['Overview', 'CFO Dashboard']),
   page('/finance/overview/my-workspace', 'My Finance Workspace', 'Personal finance tasks, drafts, approvals and saved analyses.', 'overview', 'workspace', ['Overview', 'My Finance Workspace'], ['Pending approvals', 'Draft reports', 'Saved analyses', 'Recent packs']),
   page('/finance/overview/executive', 'Executive Overview', 'Executive-level financial performance and risk snapshot.', 'overview', 'workspace', ['Overview', 'Executive Overview'], ['KPI strip', 'Trend', 'Exceptions', 'Ask Finance AI']),
   page('/finance/overview/data-integration', 'Data Integration Status', 'Sage X3 read-only integration health, refresh status and sync exceptions.', 'overview', 'configuration', ['Overview', 'Data Integration Status'], ['Connection status', 'Last refresh', 'Failed syncs', 'Source systems']),
