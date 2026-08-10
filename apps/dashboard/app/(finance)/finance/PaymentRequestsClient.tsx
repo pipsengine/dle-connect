@@ -301,6 +301,24 @@ const typeIcon = (paymentType: string) => {
 };
 
 type TabId = 'all' | 'mine' | 'drafts' | 'pending' | 'returned' | 'approved' | 'ready' | 'paid' | 'rejected' | 'retirement';
+type KpiId = 'total' | 'pending' | 'returned' | 'approved' | 'ready' | 'progress' | 'paid' | 'rejected';
+
+const KPI_STATUS_MATCH: Record<Exclude<KpiId, 'total' | 'paid'>, RegExp> = {
+  pending: /pending|submitted|finance review/i,
+  returned: /returned/i,
+  approved: /^approved$/i,
+  ready: /ready for treasury/i,
+  progress: /payment scheduled|payment processing|awaiting retirement|retirement submitted|treasury verification|finance verification/i,
+  rejected: /rejected|cancelled/i,
+};
+
+const isPaidThisMonth = (row: PaymentRequestRow) => {
+  if (!/paid|completed|retired|closed/i.test(row.status)) return false;
+  const paidAt = row.paidAt ? new Date(row.paidAt) : row.updatedAt ? new Date(row.updatedAt) : null;
+  if (!paidAt || Number.isNaN(paidAt.getTime())) return false;
+  const now = new Date();
+  return paidAt.getMonth() === now.getMonth() && paidAt.getFullYear() === now.getFullYear();
+};
 
 export default function PaymentRequestsClient({
   initialWorkspace,
@@ -316,6 +334,7 @@ export default function PaymentRequestsClient({
     if (listMode === 'mine') return 'mine';
     return 'all';
   });
+  const [detailFocus, setDetailFocus] = useState<KpiId | null>(null);
   const [query, setQuery] = useState('');
   const [paymentTypeFilter, setPaymentTypeFilter] = useState<'All' | PaymentRequestType>(initialPaymentType);
   const [statusFilter, setStatusFilter] = useState('All');
@@ -529,7 +548,13 @@ export default function PaymentRequestsClient({
         if (submittedTo && localDay > submittedTo) return false;
       }
 
-      if (listMode === 'inbox') {
+      if (detailFocus) {
+        if (detailFocus === 'paid') {
+          if (!isPaidThisMonth(row)) return false;
+        } else if (detailFocus !== 'total') {
+          if (!KPI_STATUS_MATCH[detailFocus].test(row.status)) return false;
+        }
+      } else if (listMode === 'inbox') {
         if (tab === 'returned') {
           if (!/returned/i.test(row.status)) return false;
         } else if (!/pending|submitted|finance review/i.test(row.status)) {
@@ -540,23 +565,25 @@ export default function PaymentRequestsClient({
         if (/^(pending approval|submitted|finance review)$/i.test(row.status)) return false;
       }
 
-      if (tab === 'drafts' && !/draft/i.test(row.status)) return false;
-      if (tab === 'pending' && !/pending|submitted|finance review/i.test(row.status)) return false;
-      if (tab === 'returned' && !/returned/i.test(row.status)) return false;
-      if (tab === 'approved') {
-        if (listMode === 'approved') {
-          if (!/^approved$/i.test(row.status) && !/ready for treasury/i.test(row.status)) return false;
-        } else if (!/^approved$/i.test(row.status)) {
-          return false;
+      if (!detailFocus) {
+        if (tab === 'drafts' && !/draft/i.test(row.status)) return false;
+        if (tab === 'pending' && !/pending|submitted|finance review/i.test(row.status)) return false;
+        if (tab === 'returned' && !/returned/i.test(row.status)) return false;
+        if (tab === 'approved') {
+          if (listMode === 'approved') {
+            if (!/^approved$/i.test(row.status) && !/ready for treasury/i.test(row.status)) return false;
+          } else if (!/^approved$/i.test(row.status)) {
+            return false;
+          }
         }
-      }
-      if (tab === 'ready' && !/ready for treasury/i.test(row.status)) return false;
-      if (tab === 'paid' && !/paid|completed|retired|closed/i.test(row.status)) return false;
-      if (tab === 'retirement' && !/awaiting retirement|retirement submitted|treasury verification|finance verification/i.test(row.status)) return false;
-      if (tab === 'rejected' && !/rejected|cancelled/i.test(row.status)) return false;
-      if (tab === 'mine' && listMode !== 'mine') {
-        const actor = String(workspace.viewer?.actorCode || '').trim().toLowerCase();
-        if (actor && String(row.requesterCode || '').trim().toLowerCase() !== actor) return false;
+        if (tab === 'ready' && !/ready for treasury/i.test(row.status)) return false;
+        if (tab === 'paid' && !/paid|completed|retired|closed/i.test(row.status)) return false;
+        if (tab === 'retirement' && !/awaiting retirement|retirement submitted|treasury verification|finance verification/i.test(row.status)) return false;
+        if (tab === 'rejected' && !/rejected|cancelled/i.test(row.status)) return false;
+        if (tab === 'mine' && listMode !== 'mine') {
+          const actor = String(workspace.viewer?.actorCode || '').trim().toLowerCase();
+          if (actor && String(row.requesterCode || '').trim().toLowerCase() !== actor) return false;
+        }
       }
       if (!q) return true;
       return (
@@ -584,6 +611,7 @@ export default function PaymentRequestsClient({
     locationFilter,
     submittedFrom,
     submittedTo,
+    detailFocus,
     listMode,
     workspace.viewer?.actorCode,
   ]);
@@ -1018,7 +1046,15 @@ export default function PaymentRequestsClient({
     }
   };
 
-  const kpis = [
+  const kpis: Array<{
+    id: KpiId;
+    label: string;
+    count: number;
+    value: number;
+    icon: typeof FileText;
+    wrap: string;
+    color: string;
+  }> = [
     { id: 'total', label: 'Total Requests', count: workspace.summary.totalRequests, value: workspace.summary.totalValue, icon: FileText, wrap: 'bg-slate-100', color: 'text-slate-600' },
     { id: 'pending', label: 'Pending Approval', count: workspace.summary.pendingApproval, value: workspace.summary.pendingValue, icon: Clock3, wrap: 'bg-orange-50', color: 'text-orange-500' },
     { id: 'returned', label: 'Returned', count: workspace.summary.returned, value: workspace.summary.returnedValue, icon: RotateCcw, wrap: 'bg-violet-50', color: 'text-violet-600' },
@@ -1028,6 +1064,22 @@ export default function PaymentRequestsClient({
     { id: 'paid', label: 'Paid This Month', count: workspace.summary.paidThisMonth, value: workspace.summary.paidValue, icon: CalendarDays, wrap: 'bg-emerald-50', color: 'text-emerald-600' },
     { id: 'rejected', label: 'Rejected', count: workspace.summary.rejected, value: workspace.summary.rejectedValue, icon: XCircle, wrap: 'bg-rose-50', color: 'text-rose-600' },
   ];
+
+  const selectKpi = (kpiId: KpiId) => {
+    setDetailFocus(kpiId);
+    setStatusFilter('All');
+    if (kpiId === 'total') setTab('all');
+    else if (kpiId === 'pending') setTab(listMode === 'approved' ? 'all' : 'pending');
+    else if (kpiId === 'returned') setTab('returned');
+    else if (kpiId === 'approved') setTab('approved');
+    else if (kpiId === 'ready') setTab('ready');
+    else if (kpiId === 'progress') setTab(listMode === 'inbox' ? 'all' : 'retirement');
+    else if (kpiId === 'paid') setTab('paid');
+    else if (kpiId === 'rejected') setTab('rejected');
+    window.requestAnimationFrame(() => {
+      document.getElementById('payment-requests-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
 
   const tabs: Array<{ id: TabId; label: string; count?: number }> = (
     [
@@ -1153,29 +1205,57 @@ export default function PaymentRequestsClient({
       {toast ? <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">{toast}</div> : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {kpis.map((kpi) => (
-          <article key={kpi.id} className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">{kpi.label}</p>
-              <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl ${kpi.wrap}`}>
-                <kpi.icon className={`h-4 w-4 ${kpi.color}`} />
-              </span>
-            </div>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{kpi.count}</p>
-            <p className="mt-1 text-xs font-medium text-slate-500">{moneyCompact(kpi.value)}</p>
-          </article>
-        ))}
+        {kpis.map((kpi) => {
+          const active = detailFocus === kpi.id;
+          return (
+            <button
+              key={kpi.id}
+              type="button"
+              onClick={() => selectKpi(kpi.id)}
+              className={`rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:border-[#93C5FD] hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#008FD5]/40 ${
+                active ? 'border-[#008FD5] ring-2 ring-[#008FD5]/20' : 'border-slate-200/80'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">{kpi.label}</p>
+                <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl ${kpi.wrap}`}>
+                  <kpi.icon className={`h-4 w-4 ${kpi.color}`} />
+                </span>
+              </div>
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{kpi.count}</p>
+              <p className="mt-1 text-xs font-medium text-slate-500">{moneyCompact(kpi.value)}</p>
+            </button>
+          );
+        })}
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+      <section id="payment-requests-list" className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+        {detailFocus ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-[#EAF6FF] px-4 py-2.5">
+            <p className="text-xs font-semibold text-[#0369A1]">
+              Showing {kpis.find((item) => item.id === detailFocus)?.label || 'selected'} details
+              <span className="ml-1 font-medium opacity-80">· {filteredRows.length} request{filteredRows.length === 1 ? '' : 's'}</span>
+            </p>
+            <button
+              type="button"
+              onClick={() => setDetailFocus(null)}
+              className="rounded-lg border border-[#93C5FD] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#0369A1] hover:bg-[#F0F9FF]"
+            >
+              Clear card filter
+            </button>
+          </div>
+        ) : null}
         <div className="flex gap-1 overflow-x-auto border-b border-slate-100 px-3 pt-3">
           {tabs.map((item) => (
             <button
               key={item.id}
               type="button"
-              onClick={() => setTab(item.id)}
+              onClick={() => {
+                setDetailFocus(null);
+                setTab(item.id);
+              }}
               className={`whitespace-nowrap rounded-t-lg px-3 py-2 text-xs font-semibold ${
-                tab === item.id ? 'bg-[#EAF6FF] text-[#008FD5]' : 'text-slate-500 hover:text-slate-800'
+                !detailFocus && tab === item.id ? 'bg-[#EAF6FF] text-[#008FD5]' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
               {item.label}
