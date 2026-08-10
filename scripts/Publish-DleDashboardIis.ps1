@@ -70,6 +70,37 @@ function Stop-NodeProcessesUsingPath {
   return $stopped
 }
 
+function Invoke-IisControlWithRetry {
+  param(
+    [Parameter(Mandatory = $true)][scriptblock]$Action,
+    [Parameter(Mandatory = $true)][string]$Label,
+    [int]$Attempts = 6,
+    [int]$DelaySeconds = 3
+  )
+
+  for ($Attempt = 1; $Attempt -le $Attempts; $Attempt++) {
+    try {
+      & $Action
+      return $true
+    } catch {
+      $message = [string]$_.Exception.Message
+      $busy = $message -match 'cannot accept control messages|0x80070425|2147943461'
+      if ($Attempt -eq $Attempts) {
+        Write-Warning ("{0} failed after {1} attempts: {2}" -f $Label, $Attempts, $message)
+        return $false
+      }
+      if ($busy) {
+        Write-Warning ("{0}: IIS busy (attempt {1}/{2}). Waiting {3}s..." -f $Label, $Attempt, $Attempts, $DelaySeconds)
+      } else {
+        Write-Warning ("{0} failed (attempt {1}/{2}): {3}" -f $Label, $Attempt, $Attempts, $message)
+      }
+      Start-Sleep -Seconds $DelaySeconds
+    }
+  }
+
+  return $false
+}
+
 function Stop-IisSitesUsingPath {
   param([Parameter(Mandatory = $true)][string]$TargetDirectory)
 
@@ -101,16 +132,31 @@ function Stop-IisSitesUsingPath {
 
     $poolName = [string]$site.applicationPool
     if ($poolName) {
-      $poolState = (Get-WebAppPoolState -Name $poolName -ErrorAction SilentlyContinue).Value
+      $poolState = $null
+      try {
+        $poolState = (Get-WebAppPoolState -Name $poolName -ErrorAction Stop).Value
+      } catch {
+        $poolState = $null
+      }
+
       if ($poolState -and $poolState -ne "Stopped") {
-        Stop-WebAppPool -Name $poolName -ErrorAction SilentlyContinue
-        $stopped.Add("IIS app pool '$poolName'")
+        # ErrorAction alone is not enough: IIS COM errors can still terminate under $ErrorActionPreference=Stop.
+        $ok = Invoke-IisControlWithRetry -Label "Stop app pool '$poolName'" -Action {
+          Stop-WebAppPool -Name $poolName -ErrorAction Stop
+        }
+        if ($ok) {
+          $stopped.Add("IIS app pool '$poolName'")
+        }
       }
     }
 
     if ($site.State -ne "Stopped") {
-      Stop-Website -Name $site.Name -ErrorAction SilentlyContinue
-      $stopped.Add("IIS site '$($site.Name)'")
+      $ok = Invoke-IisControlWithRetry -Label "Stop site '$($site.Name)'" -Action {
+        Stop-Website -Name $site.Name -ErrorAction Stop
+      }
+      if ($ok) {
+        $stopped.Add("IIS site '$($site.Name)'")
+      }
     }
   }
 
@@ -148,16 +194,30 @@ function Start-IisSitesUsingPath {
 
     $poolName = [string]$site.applicationPool
     if ($poolName) {
-      $poolState = (Get-WebAppPoolState -Name $poolName -ErrorAction SilentlyContinue).Value
+      $poolState = $null
+      try {
+        $poolState = (Get-WebAppPoolState -Name $poolName -ErrorAction Stop).Value
+      } catch {
+        $poolState = $null
+      }
+
       if ($poolState -ne "Started") {
-        Start-WebAppPool -Name $poolName -ErrorAction SilentlyContinue
-        $started.Add("IIS app pool '$poolName'")
+        $ok = Invoke-IisControlWithRetry -Label "Start app pool '$poolName'" -Action {
+          Start-WebAppPool -Name $poolName -ErrorAction Stop
+        }
+        if ($ok) {
+          $started.Add("IIS app pool '$poolName'")
+        }
       }
     }
 
     if ($site.State -ne "Started") {
-      Start-Website -Name $site.Name -ErrorAction SilentlyContinue
-      $started.Add("IIS site '$($site.Name)'")
+      $ok = Invoke-IisControlWithRetry -Label "Start site '$($site.Name)'" -Action {
+        Start-Website -Name $site.Name -ErrorAction Stop
+      }
+      if ($ok) {
+        $started.Add("IIS site '$($site.Name)'")
+      }
     }
   }
 
