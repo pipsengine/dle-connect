@@ -1819,17 +1819,17 @@ export default function PaymentRequestsClient({
                       </div>
                       {existingAttachments.length ? (
                         <ul className="mt-3 space-y-1.5">
-                          {existingAttachments.map((file) => (
-                            <li key={file.id || file.fileName} className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50/70 px-2.5 py-2 text-xs text-slate-700">
+                          {existingAttachments.map((file, index) => (
+                            <li key={`${file.id || file.fileName || file.originalName}-${index}`} className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50/70 px-2.5 py-2 text-xs text-slate-700">
                               <Paperclip className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
                               <span className="min-w-0 flex-1 truncate font-medium">{file.originalName || file.fileName}</span>
                               <button
                                 type="button"
-                                onClick={() => setExistingAttachments((current) => current.filter((item) => (item.id || item.fileName) !== (file.id || file.fileName)))}
-                                className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                                aria-label={`Remove ${file.originalName || file.fileName}`}
+                                onClick={() => setExistingAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                                className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-50"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
+                                Remove
                               </button>
                             </li>
                           ))}
@@ -1973,13 +1973,15 @@ export default function PaymentRequestsClient({
                   <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-sm font-medium text-slate-700">
+                          <p className="text-sm font-medium text-slate-700">
                           Supporting documents <span className="text-rose-600">*</span>
                         </p>
                         <p className="mt-0.5 text-xs text-slate-500">
-                          {composerType === 'Expense Payment'
-                            ? 'Upload the bill / invoice and any supporting evidence (PDF, image, Word, Excel · max 8 files, 8 MB each).'
-                            : 'Upload invoice, PO, delivery note or other evidence (PDF, image, Word, Excel · max 8 files, 8 MB each).'}
+                          {editingRequestId
+                            ? 'Remove any documents that should not be resent, then add replacements if needed (PDF, image, Word, Excel · max 8 files, 8 MB each).'
+                            : composerType === 'Expense Payment'
+                              ? 'Upload the bill / invoice and any supporting evidence (PDF, image, Word, Excel · max 8 files, 8 MB each).'
+                              : 'Upload invoice, PO, delivery note or other evidence (PDF, image, Word, Excel · max 8 files, 8 MB each).'}
                         </p>
                       </div>
                       <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
@@ -1999,21 +2001,18 @@ export default function PaymentRequestsClient({
                     </div>
                     {existingAttachments.length ? (
                       <ul className="mt-3 space-y-1.5">
-                        {existingAttachments.map((file) => (
-                          <li key={file.id || file.fileName} className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50/70 px-2.5 py-2 text-xs text-slate-700">
+                        {existingAttachments.map((file, index) => (
+                          <li key={`${file.id || file.fileName || file.originalName}-${index}`} className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50/70 px-2.5 py-2 text-xs text-slate-700">
                             <Paperclip className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
                             <span className="min-w-0 flex-1 truncate font-medium">{file.originalName || file.fileName}</span>
-                            <span className="shrink-0 text-emerald-700">On file</span>
-                            {editingRequestId ? (
-                              <button
-                                type="button"
-                                onClick={() => setExistingAttachments((current) => current.filter((item) => (item.id || item.fileName) !== (file.id || file.fileName)))}
-                                className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                                aria-label={`Remove ${file.originalName || file.fileName}`}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => setExistingAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-50"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Remove
+                            </button>
                           </li>
                         ))}
                       </ul>
