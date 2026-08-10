@@ -2,26 +2,46 @@ import { access, constants, mkdir, readdir, readFile, writeFile } from 'node:fs/
 import path from 'node:path';
 
 const compact = (value: unknown) => String(value || '').trim();
+const norm = (value: string) => value.replace(/\\/g, '/');
 
 /**
  * Durable payment-attachment storage.
  *
- * Canonical location (survives IIS republish):
- *   {siteRoot}/data/finance/payment-attachments/<requestId>/<file>
+ * Canonical location (survives IIS republish of deployment/iis/site):
+ *   {repoRoot}/data/finance/payment-attachments/<requestId>/<file>
  *
- * Nested apps/dashboard/data is wiped/replaced on publish, so it is only a
- * secondary mirror / legacy read path.
+ * On the live server that is:
+ *   F:\Dorman-Long\dle-connect\data\finance\payment-attachments
+ *
+ * Nested apps/dashboard/data and deployment/iis/site/data are legacy / mirror
+ * read paths only — they are wiped or replaced on publish.
  */
-const isDashboardCwd = (cwd: string) => {
-  const normalized = cwd.replace(/\\/g, '/');
-  return /\/apps\/dashboard$/i.test(normalized);
+const isDashboardCwd = (cwd: string) => /\/apps\/dashboard$/i.test(norm(cwd));
+const isIisSiteRoot = (cwd: string) => /\/deployment\/iis\/site$/i.test(norm(cwd));
+
+export const resolveRepoRoot = (cwd = process.cwd()) => {
+  const resolved = path.resolve(cwd);
+  if (isDashboardCwd(resolved)) {
+    const upTwo = path.resolve(resolved, '..', '..');
+    // IIS package: .../deployment/iis/site/apps/dashboard → climb to repo root
+    // site = .../deployment/iis/site → ../../.. = repo root
+    if (isIisSiteRoot(upTwo)) return path.resolve(upTwo, '..', '..', '..');
+    return upTwo;
+  }
+  // .../deployment/iis/site → ../../.. = repo root
+  if (isIisSiteRoot(resolved)) return path.resolve(resolved, '..', '..', '..');
+  return resolved;
 };
 
-const siteRootFromCwd = (cwd: string) => {
-  if (isDashboardCwd(cwd)) return path.resolve(cwd, '..', '..');
-  // IIS site root or repo root both expose apps/dashboard.
-  if (path.basename(cwd).toLowerCase() === 'site') return cwd;
-  return cwd;
+export const resolveIisSiteRoot = (cwd = process.cwd()) => {
+  const resolved = path.resolve(cwd);
+  if (isDashboardCwd(resolved)) {
+    const upTwo = path.resolve(resolved, '..', '..');
+    if (isIisSiteRoot(upTwo)) return upTwo;
+  }
+  if (isIisSiteRoot(resolved)) return resolved;
+  const packaged = path.join(resolveRepoRoot(resolved), 'deployment', 'iis', 'site');
+  return packaged;
 };
 
 export const resolveFinanceDataRootCandidates = (): string[] => {
@@ -34,41 +54,45 @@ export const resolveFinanceDataRootCandidates = (): string[] => {
   };
 
   const cwd = process.cwd();
-  const siteRoot = siteRootFromCwd(cwd);
+  const repoRoot = resolveRepoRoot(cwd);
+  const siteRoot = resolveIisSiteRoot(cwd);
 
-  // 1) Explicit override (preferred).
+  // 1) Explicit override (preferred). Publish sets this to {repoRoot}/data/finance.
   if (process.env.DLE_FINANCE_DATA_DIR) {
     push(path.resolve(process.env.DLE_FINANCE_DATA_DIR));
   }
 
-  // 2) Durable site/repo root data/finance (publish-backed).
+  // 2) Durable repo-root store — never wiped by IIS site republish.
+  push(path.join(repoRoot, 'data', 'finance'));
+
+  // 3) Legacy site package store (older deploys wrote here).
   push(path.join(siteRoot, 'data', 'finance'));
 
-  // 3) Sibling of durable HRIS/auth roots when those point at site/data/*.
-  for (const envKey of ['DLE_HRIS_DATA_DIR', 'DLE_AUTH_DATA_DIR'] as const) {
-    const raw = compact(process.env[envKey]);
-    if (!raw) continue;
-    const resolved = path.resolve(raw);
-    // If env is relative ".\data\hris" under apps/dashboard cwd, climb to site data.
-    if (/[\\/]apps[\\/]dashboard[\\/]data[\\/]/i.test(resolved)) {
-      push(path.join(siteRoot, 'data', 'finance'));
-    } else {
-      push(path.join(path.dirname(resolved), 'finance'));
-    }
-  }
-
-  // 4) Nested dashboard data (legacy / local-dev mirror).
+  // 4) Nested dashboard data (local-dev / pre-durable mirror).
   if (isDashboardCwd(cwd)) {
     push(path.join(cwd, 'data', 'finance'));
   } else {
     push(path.join(cwd, 'apps', 'dashboard', 'data', 'finance'));
+    push(path.join(siteRoot, 'apps', 'dashboard', 'data', 'finance'));
+  }
+
+  // 5) Sibling of durable HRIS/auth roots when those point at site/data/*.
+  for (const envKey of ['DLE_HRIS_DATA_DIR', 'DLE_AUTH_DATA_DIR'] as const) {
+    const raw = compact(process.env[envKey]);
+    if (!raw) continue;
+    const resolved = path.resolve(raw);
+    if (/[\\/]apps[\\/]dashboard[\\/]data[\\/]/i.test(norm(resolved))) {
+      push(path.join(repoRoot, 'data', 'finance'));
+    } else {
+      push(path.join(path.dirname(resolved), 'finance'));
+    }
   }
 
   return candidates;
 };
 
 export const resolveFinanceDataRoot = () =>
-  resolveFinanceDataRootCandidates()[0] || path.join(siteRootFromCwd(process.cwd()), 'data', 'finance');
+  resolveFinanceDataRootCandidates()[0] || path.join(resolveRepoRoot(), 'data', 'finance');
 
 export const paymentAttachmentsRoot = () => path.join(resolveFinanceDataRoot(), 'payment-attachments');
 
@@ -80,8 +104,15 @@ export const safeAttachmentFileName = (fileName: string) =>
 
 export const ensurePaymentAttachmentsStorage = async () => {
   const roots = paymentAttachmentRootCandidates();
-  for (const root of roots) {
-    await mkdir(root, { recursive: true });
+  // Always ensure the durable primary root exists.
+  if (roots[0]) await mkdir(roots[0], { recursive: true });
+  // Best-effort mirrors.
+  for (const root of roots.slice(1)) {
+    try {
+      await mkdir(root, { recursive: true });
+    } catch {
+      // ignore mirror mkdir failures
+    }
   }
   return roots[0];
 };
@@ -122,16 +153,16 @@ export const savePaymentAttachmentFile = async (
     try {
       await mkdir(directory, { recursive: true });
       await writeFile(target, bytes);
-      // Verify write landed before treating it as success.
       const verify = await readFile(target);
       if (verify.length !== bytes.length) {
         throw new Error(`Attachment verify failed at ${target}`);
       }
       written.push(target);
     } catch (error) {
-      if (index === 0) primaryError = error;
-      // Primary must succeed; mirrors are best-effort.
-      if (index === 0) break;
+      if (index === 0) {
+        primaryError = error;
+        break;
+      }
     }
   }
 
@@ -172,7 +203,6 @@ export const readPaymentAttachmentFile = async (requestId: string, fileName: str
     }
   }
 
-  // Fuzzy match inside each request folder (sanitized / original variants).
   const needle = safeName.toLowerCase();
   const originalNeedle = path.basename(fileName).toLowerCase();
   for (const root of roots) {
@@ -199,8 +229,8 @@ export const readPaymentAttachmentFile = async (requestId: string, fileName: str
   throw new Error(
     `Attachment file not found for ${safeRequestId}/${safeName}. `
     + `Primary store: ${roots[0] || '(none)'}. `
-    + `Checked: ${tried.slice(0, 4).join(' | ')}. `
-    + 'If this request was uploaded before durable storage, re-upload the file.',
+    + `Checked: ${tried.slice(0, 6).join(' | ')}. `
+    + 'Upload the file again if it was stored before the durable repo-root folder was configured.',
   );
 };
 
@@ -208,5 +238,6 @@ export const describePaymentAttachmentStorage = () => ({
   primaryRoot: paymentAttachmentsRoot(),
   roots: paymentAttachmentRootCandidates(),
   financeDataDir: process.env.DLE_FINANCE_DATA_DIR || null,
+  repoRoot: resolveRepoRoot(),
   cwd: process.cwd(),
 });

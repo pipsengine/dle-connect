@@ -6,15 +6,21 @@ Uploaded payment-request files are stored here:
 data/finance/payment-attachments/<PREQ-...>/<att-...-original-name.ext>
 ```
 
+On the live server:
+
+```text
+F:\Dorman-Long\dle-connect\data\finance\payment-attachments
+```
+
 ## Why this folder
 
-IIS republish replaces `apps/dashboard/data`. Attachments must live under the site/repo
+IIS republish replaces `deployment/iis/site`. Attachments must live under the **repo-root**
 `data/finance` tree so they survive deploy.
 
 ## Runtime
 
-- Env override: `DLE_FINANCE_DATA_DIR` (defaults to `{siteRoot}/data/finance` in IIS)
-- The app dual-writes to this durable root and a nested mirror when possible
-- Downloads search every known root so older paths still resolve
+- Env: `DLE_FINANCE_DATA_DIR=F:\Dorman-Long\dle-connect\data\finance`
+- Uploads write here first, then mirror into the IIS package when possible
+- Downloads search the durable root plus legacy site/nested paths
 
 Do not delete request subfolders while the payment request is open.

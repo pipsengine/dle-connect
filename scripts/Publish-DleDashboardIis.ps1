@@ -376,7 +376,9 @@ function Copy-IisEnvironmentFile {
     return
   }
 
-  $FinanceDataDir = [System.IO.Path]::GetFullPath((Join-Path $DestinationRoot "data\finance"))
+  # Durable finance attachments live OUTSIDE the IIS package so publish cannot wipe them.
+  # Live server path: F:\Dorman-Long\dle-connect\data\finance\payment-attachments
+  $FinanceDataDir = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot "data\finance"))
 
   $DestinationEnv = Join-Path $DestinationRoot ".env"
   Copy-Item -LiteralPath $EnvSource -Destination $DestinationEnv -Force
@@ -527,6 +529,24 @@ try {
 
   $ExistingRuntimeData = Join-Path $ResolvedOutputPath "data"
   $ExistingNestedFinanceData = Join-Path $ResolvedOutputPath "apps\dashboard\data\finance"
+  $DurableAttachments = Join-Path $RepoRoot "data\finance\payment-attachments"
+  New-Item -ItemType Directory -Path $DurableAttachments -Force | Out-Null
+
+  # BEFORE site wipe: pull any existing attachments into the durable repo-root store.
+  foreach ($LegacyRoot in @(
+    (Join-Path $ExistingRuntimeData "finance\payment-attachments"),
+    (Join-Path $ExistingNestedFinanceData "payment-attachments")
+  )) {
+    if (Test-Path -LiteralPath $LegacyRoot) {
+      $legacyFiles = @(Get-ChildItem -LiteralPath $LegacyRoot -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ne '.gitkeep' -and $_.Name -ne 'README.md' })
+      if ($legacyFiles.Count -gt 0) {
+        Write-Host "Pre-publish migrate $($legacyFiles.Count) attachment file(s): $LegacyRoot -> $DurableAttachments"
+        Copy-DirectoryContents -SourcePath $LegacyRoot -DestinationPath $DurableAttachments
+      }
+    }
+  }
+
   if (Test-Path -LiteralPath $ExistingRuntimeData) {
     Copy-DirectoryContents -SourcePath $ExistingRuntimeData -DestinationPath $RuntimeDataBackupPath
   } elseif (Test-Path -LiteralPath $RuntimeDataBackupPath) {
@@ -574,16 +594,32 @@ try {
     }
   }
 
-  # Seed / ensure durable finance attachment store (never rely solely on nested apps/dashboard/data).
+  # Seed / ensure durable finance attachment store at REPO ROOT (not under IIS site package).
   $RepoFinanceData = Join-Path $RepoRoot "data\finance"
-  $DurableFinanceData = Join-Path $ResolvedOutputPath "data\finance"
-  $DurableAttachments = Join-Path $DurableFinanceData "payment-attachments"
+  $DurableAttachments = Join-Path $RepoFinanceData "payment-attachments"
   $NestedAttachments = Join-Path $ResolvedOutputPath "apps\dashboard\data\finance\payment-attachments"
-  if (Test-Path -LiteralPath $RepoFinanceData) {
-    Copy-DirectoryContents -SourcePath $RepoFinanceData -DestinationPath $DurableFinanceData
-  }
+  $SitePackageAttachments = Join-Path $ResolvedOutputPath "data\finance\payment-attachments"
   New-Item -ItemType Directory -Path $DurableAttachments -Force | Out-Null
   New-Item -ItemType Directory -Path $NestedAttachments -Force | Out-Null
+  New-Item -ItemType Directory -Path $SitePackageAttachments -Force | Out-Null
+
+  # Migrate any attachments previously written into the IIS package into the durable repo store.
+  foreach ($LegacyRoot in @($SitePackageAttachments, $NestedAttachments)) {
+    if (Test-Path -LiteralPath $LegacyRoot) {
+      $legacyFiles = Get-ChildItem -LiteralPath $LegacyRoot -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ne '.gitkeep' -and $_.Name -ne 'README.md' }
+      if ($legacyFiles) {
+        Write-Host "Migrating $($legacyFiles.Count) legacy attachment file(s) from $LegacyRoot -> $DurableAttachments"
+        Copy-DirectoryContents -SourcePath $LegacyRoot -DestinationPath $DurableAttachments
+      }
+    }
+  }
+
+  # Keep a read-only mirror under the site package for older code paths (primary is repo root).
+  if (Test-Path -LiteralPath $DurableAttachments) {
+    Copy-DirectoryContents -SourcePath $DurableAttachments -DestinationPath $SitePackageAttachments
+    Copy-DirectoryContents -SourcePath $DurableAttachments -DestinationPath $NestedAttachments
+  }
   Write-Host "Ensured durable payment attachments folder: $DurableAttachments"
 
   $WebConfigSource = if ($HostingMode -eq "HttpPlatform") {
