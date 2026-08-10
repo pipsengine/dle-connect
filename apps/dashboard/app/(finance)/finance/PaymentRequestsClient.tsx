@@ -51,6 +51,7 @@ import {
   type SupplierInvoiceCategory,
 } from '@/lib/finance-intelligence/payment-invoice-category';
 import type { PaymentRequestLookups } from '@/lib/finance-intelligence/payment-request-lookups';
+import { downloadExcelWorkbook } from '@/lib/excel-export';
 
 type Props = {
   initialWorkspace: PaymentRequestsWorkspace;
@@ -317,6 +318,13 @@ export default function PaymentRequestsClient({
   });
   const [query, setQuery] = useState('');
   const [paymentTypeFilter, setPaymentTypeFilter] = useState<'All' | PaymentRequestType>(initialPaymentType);
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [departmentFilter, setDepartmentFilter] = useState('All');
+  const [projectFilter, setProjectFilter] = useState('All');
+  const [currencyFilter, setCurrencyFilter] = useState('All');
+  const [approverFilter, setApproverFilter] = useState('All');
+  const [locationFilter, setLocationFilter] = useState('All');
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState('');
   const [composerOpen, setComposerOpen] = useState(false);
@@ -465,10 +473,46 @@ export default function PaymentRequestsClient({
     }
   };
 
+  const filterOptions = useMemo(() => {
+    const statuses = new Set<string>();
+    const departments = new Set<string>();
+    const projects = new Set<string>();
+    const currencies = new Set<string>();
+    const approvers = new Set<string>();
+    const locations = new Set<string>();
+    for (const row of workspace.rows) {
+      if (row.status) statuses.add(row.status);
+      if (row.department) departments.add(row.department);
+      if (row.projectCode) projects.add(row.projectCode);
+      if (row.currencyCode) currencies.add(row.currencyCode);
+      if (row.currentApproverName) approvers.add(row.currentApproverName);
+      else if (row.currentApproverCode) approvers.add(row.currentApproverCode);
+      if (row.location) locations.add(row.location);
+    }
+    const sort = (values: Set<string>) => Array.from(values).sort((a, b) => a.localeCompare(b));
+    return {
+      statuses: sort(statuses),
+      departments: sort(departments),
+      projects: sort(projects),
+      currencies: sort(currencies),
+      approvers: sort(approvers),
+      locations: sort(locations),
+    };
+  }, [workspace.rows]);
+
   const filteredRows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return workspace.rows.filter((row) => {
       if (paymentTypeFilter !== 'All' && row.paymentType !== paymentTypeFilter) return false;
+      if (statusFilter !== 'All' && row.status !== statusFilter) return false;
+      if (departmentFilter !== 'All' && row.department !== departmentFilter) return false;
+      if (projectFilter !== 'All' && row.projectCode !== projectFilter) return false;
+      if (currencyFilter !== 'All' && row.currencyCode !== currencyFilter) return false;
+      if (locationFilter !== 'All' && row.location !== locationFilter) return false;
+      if (approverFilter !== 'All') {
+        const approver = row.currentApproverName || row.currentApproverCode || '';
+        if (approver !== approverFilter) return false;
+      }
 
       if (listMode === 'inbox') {
         if (tab === 'returned') {
@@ -508,9 +552,98 @@ export default function PaymentRequestsClient({
         || row.projectCode.toLowerCase().includes(q)
         || row.department.toLowerCase().includes(q)
         || row.title.toLowerCase().includes(q)
+        || row.status.toLowerCase().includes(q)
+        || String(row.currentApproverName || '').toLowerCase().includes(q)
       );
     });
-  }, [workspace.rows, tab, query, paymentTypeFilter, listMode, workspace.viewer?.actorCode]);
+  }, [
+    workspace.rows,
+    tab,
+    query,
+    paymentTypeFilter,
+    statusFilter,
+    departmentFilter,
+    projectFilter,
+    currencyFilter,
+    approverFilter,
+    locationFilter,
+    listMode,
+    workspace.viewer?.actorCode,
+  ]);
+
+  const activeFilterCount = [
+    paymentTypeFilter !== 'All',
+    statusFilter !== 'All',
+    departmentFilter !== 'All',
+    projectFilter !== 'All',
+    currencyFilter !== 'All',
+    approverFilter !== 'All',
+    locationFilter !== 'All',
+    Boolean(query.trim()),
+  ].filter(Boolean).length;
+
+  const clearListFilters = () => {
+    setPaymentTypeFilter('All');
+    setStatusFilter('All');
+    setDepartmentFilter('All');
+    setProjectFilter('All');
+    setCurrencyFilter('All');
+    setApproverFilter('All');
+    setLocationFilter('All');
+    setQuery('');
+  };
+
+  const exportFilteredRows = () => {
+    const stamp = new Date().toISOString().slice(0, 10);
+    const columns = [
+      'Request No.',
+      'Payment Type',
+      'Beneficiary',
+      'Description',
+      'Gross Amount',
+      'Net Amount',
+      'Currency',
+      'Department',
+      'Project',
+      'Location',
+      'Submitted',
+      'Current Stage',
+      'Approver',
+      'Status',
+      'Requester',
+    ];
+    const rows = filteredRows.map((row) => [
+      row.requestNumber,
+      row.paymentType,
+      row.beneficiaryName,
+      row.description || row.title || '',
+      Number(row.grossAmount || 0),
+      Number(row.netAmount || 0),
+      row.currencyCode || 'NGN',
+      row.department || '',
+      row.projectCode || '',
+      row.location || '',
+      row.submittedAt ? new Date(row.submittedAt).toLocaleString('en-GB') : '',
+      row.currentStage || '',
+      row.currentApproverName || row.currentApproverCode || '',
+      row.status,
+      row.requesterName || row.requesterCode || '',
+    ]);
+    downloadExcelWorkbook({
+      fileName: `payment-requests-${stamp}.xls`,
+      generatedAt: new Date().toISOString(),
+      worksheets: [{
+        title: 'Payment Requests',
+        sheetName: 'Payment Requests',
+        subtitle: activeFilterCount
+          ? `Filtered export · ${filteredRows.length} row(s) · ${activeFilterCount} active filter(s)`
+          : `Full current view · ${filteredRows.length} row(s)`,
+        columns,
+        rows,
+      }],
+    });
+    setToast(`Exported ${filteredRows.length} payment request${filteredRows.length === 1 ? '' : 's'} to Excel.`);
+  };
 
   const showFxColumn = useMemo(
     () => filteredRows.some((row) => isForeignCurrency(row.currencyCode)),
@@ -702,7 +835,8 @@ export default function PaymentRequestsClient({
       const selectedExpense = lookups?.expenseCodes.find((item) => item.expenseCode === form.expenseCode);
       const selectedSite = lookups?.paymentSites.find((item) => item.siteCode === form.paymentSiteCode);
       const isVendorComposer = composerType === 'Supplier Invoice Payment' || composerType === 'Expense Payment';
-      const attachmentUploads = isVendorComposer && supportingFiles.length
+      const shouldUploadFiles = isVendorComposer || Boolean(editingRequestId);
+      const attachmentUploads = shouldUploadFiles && supportingFiles.length
         ? await Promise.all(supportingFiles.map(async (file) => ({
           fileName: file.name,
           mimeType: file.type || 'application/octet-stream',
@@ -750,6 +884,9 @@ export default function PaymentRequestsClient({
           deliveryNoteNo: composerType === 'Expense Payment' ? '' : form.deliveryNoteNo,
           submit: form.submit,
           attachmentUploads,
+          keepAttachmentIds: editingRequestId
+            ? existingAttachments.map((file) => file.id || file.fileName).filter(Boolean)
+            : undefined,
         }),
       });
       const json = await res.json().catch(() => ({ status: 'error', error: 'Unable to create request.' }));
@@ -977,7 +1114,12 @@ export default function PaymentRequestsClient({
             <Upload className="h-4 w-4" />
             Import from Sage X3
           </button>
-          <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50">
+          <button
+            type="button"
+            onClick={exportFilteredRows}
+            title={`Export ${filteredRows.length} row(s) to Excel`}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50"
+          >
             <Download className="h-4 w-4" />
           </button>
           <button type="button" onClick={() => void refresh()} disabled={loading} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-60">
@@ -1032,16 +1174,45 @@ export default function PaymentRequestsClient({
             <option value="Supplier Invoice Payment">Supplier Invoice Payment</option>
             <option value="Expense Payment">Expense Payment</option>
           </select>
-          <select className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs md:w-auto">
-            <option>Status</option>
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs md:w-auto"
+          >
+            <option value="All">Status</option>
+            {filterOptions.statuses.map((status) => (
+              <option key={status} value={status}>{status}</option>
+            ))}
           </select>
-          <select className="hidden rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs sm:block md:w-auto">
-            <option>Department</option>
+          <select
+            value={departmentFilter}
+            onChange={(event) => setDepartmentFilter(event.target.value)}
+            className="hidden rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs sm:block md:w-auto"
+          >
+            <option value="All">Department</option>
+            {filterOptions.departments.map((department) => (
+              <option key={department} value={department}>{department}</option>
+            ))}
           </select>
-          <select className="hidden rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs lg:block md:w-auto">
-            <option>Project</option>
+          <select
+            value={projectFilter}
+            onChange={(event) => setProjectFilter(event.target.value)}
+            className="hidden rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs lg:block md:w-auto"
+          >
+            <option value="All">Project</option>
+            {filterOptions.projects.map((project) => (
+              <option key={project} value={project}>{project}</option>
+            ))}
           </select>
-          <button type="button" className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-semibold text-slate-600 md:w-auto">
+          <button
+            type="button"
+            onClick={() => setMoreFiltersOpen((open) => !open)}
+            className={`inline-flex w-full items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold md:w-auto ${
+              moreFiltersOpen || currencyFilter !== 'All' || approverFilter !== 'All' || locationFilter !== 'All'
+                ? 'border-[#93C5FD] bg-[#EAF6FF] text-[#0369A1]'
+                : 'border-slate-200 text-slate-600'
+            }`}
+          >
             <Filter className="h-3.5 w-3.5" />
             More Filters
           </button>
@@ -1054,10 +1225,79 @@ export default function PaymentRequestsClient({
               className="h-9 w-full min-w-0 rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-8 pr-3 text-xs outline-none focus:bg-white focus:ring-2 focus:ring-[#DBEAFE]"
             />
           </div>
-          <button type="button" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500">
+          <button
+            type="button"
+            onClick={clearListFilters}
+            title="Clear filters"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
+          >
             <Settings2 className="h-4 w-4" />
           </button>
         </FilterToolbar>
+
+        {moreFiltersOpen ? (
+          <div className="flex flex-wrap gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-3">
+            <select
+              value={departmentFilter}
+              onChange={(event) => setDepartmentFilter(event.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs sm:hidden"
+            >
+              <option value="All">Department</option>
+              {filterOptions.departments.map((department) => (
+                <option key={`m-${department}`} value={department}>{department}</option>
+              ))}
+            </select>
+            <select
+              value={projectFilter}
+              onChange={(event) => setProjectFilter(event.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs lg:hidden"
+            >
+              <option value="All">Project</option>
+              {filterOptions.projects.map((project) => (
+                <option key={`m-${project}`} value={project}>{project}</option>
+              ))}
+            </select>
+            <select
+              value={currencyFilter}
+              onChange={(event) => setCurrencyFilter(event.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs"
+            >
+              <option value="All">Currency</option>
+              {filterOptions.currencies.map((currency) => (
+                <option key={currency} value={currency}>{currency}</option>
+              ))}
+            </select>
+            <select
+              value={approverFilter}
+              onChange={(event) => setApproverFilter(event.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs"
+            >
+              <option value="All">Approver</option>
+              {filterOptions.approvers.map((approver) => (
+                <option key={approver} value={approver}>{approver}</option>
+              ))}
+            </select>
+            <select
+              value={locationFilter}
+              onChange={(event) => setLocationFilter(event.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs"
+            >
+              <option value="All">Location</option>
+              {filterOptions.locations.map((location) => (
+                <option key={location} value={location}>{location}</option>
+              ))}
+            </select>
+            {activeFilterCount ? (
+              <button
+                type="button"
+                onClick={clearListFilters}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                Clear filters ({activeFilterCount})
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
         <MobileCardList>
           {filteredRows.length ? filteredRows.map((row) => {
@@ -1552,6 +1792,69 @@ export default function PaymentRequestsClient({
                     <span className="mb-1 block font-medium text-slate-700">Business justification *</span>
                     <textarea value={form.businessJustification} onChange={(e) => setForm((prev) => ({ ...prev, businessJustification: e.target.value }))} rows={3} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
                   </label>
+
+                  {editingRequestId ? (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-700">Supporting documents</p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            Remove or replace attachments before resending this returned request.
+                          </p>
+                        </div>
+                        <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                          <Upload className="h-3.5 w-3.5" />
+                          Add files
+                          <input
+                            type="file"
+                            multiple
+                            accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              addSupportingFiles(e.target.files);
+                              e.currentTarget.value = '';
+                            }}
+                          />
+                        </label>
+                      </div>
+                      {existingAttachments.length ? (
+                        <ul className="mt-3 space-y-1.5">
+                          {existingAttachments.map((file) => (
+                            <li key={file.id || file.fileName} className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50/70 px-2.5 py-2 text-xs text-slate-700">
+                              <Paperclip className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                              <span className="min-w-0 flex-1 truncate font-medium">{file.originalName || file.fileName}</span>
+                              <button
+                                type="button"
+                                onClick={() => setExistingAttachments((current) => current.filter((item) => (item.id || item.fileName) !== (file.id || file.fileName)))}
+                                className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                                aria-label={`Remove ${file.originalName || file.fileName}`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {supportingFiles.length ? (
+                        <ul className="mt-3 space-y-1.5">
+                          {supportingFiles.map((file) => (
+                            <li key={`${file.name}-${file.size}`} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700">
+                              <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                              <span className="min-w-0 flex-1 truncate font-medium">{file.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => setSupportingFiles((current) => current.filter((item) => item !== file))}
+                                className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                                aria-label={`Remove ${file.name}`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <>
@@ -1701,6 +2004,16 @@ export default function PaymentRequestsClient({
                             <Paperclip className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
                             <span className="min-w-0 flex-1 truncate font-medium">{file.originalName || file.fileName}</span>
                             <span className="shrink-0 text-emerald-700">On file</span>
+                            {editingRequestId ? (
+                              <button
+                                type="button"
+                                onClick={() => setExistingAttachments((current) => current.filter((item) => (item.id || item.fileName) !== (file.id || file.fileName)))}
+                                className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                                aria-label={`Remove ${file.originalName || file.fileName}`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            ) : null}
                           </li>
                         ))}
                       </ul>

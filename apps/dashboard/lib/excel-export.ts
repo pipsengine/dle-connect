@@ -184,3 +184,15 @@ export const downloadExcelFile = (input: ExcelWorksheetInput & { fileName: strin
   link.click();
   URL.revokeObjectURL(url);
 };
+
+/** Client download for SpreadsheetML workbook (table, auto-filter, freeze panes, number formats). */
+export const downloadExcelWorkbook = (input: ExcelWorkbookInput & { fileName: string }) => {
+  const xml = buildExcelWorkbookXml(input);
+  const blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = input.fileName.endsWith('.xls') ? input.fileName : `${input.fileName}.xls`;
+  link.click();
+  URL.revokeObjectURL(url);
+};

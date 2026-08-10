@@ -386,6 +386,9 @@ export async function POST(request: Request) {
         actor: actor.actor,
         actorCode: actor.actorCode,
         attachmentUploads: Array.isArray(body.attachmentUploads) ? body.attachmentUploads : undefined,
+        keepAttachmentIds: Array.isArray(body.keepAttachmentIds)
+          ? body.keepAttachmentIds.map((id: unknown) => String(id || '').trim()).filter(Boolean)
+          : undefined,
       });
       const approvableRequestIds = (result.workspace?.rows || [])
         .filter((row) => canActOnPaymentApproval(actor, row))

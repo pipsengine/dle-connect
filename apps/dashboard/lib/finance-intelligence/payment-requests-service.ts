@@ -1755,6 +1755,11 @@ export type UpdateReturnedPaymentRequestInput = CreatePaymentRequestInput & {
   actorCode?: string;
   /** When true (default), send back into approval. When false, keep Returned after saving edits. */
   resubmit?: boolean;
+  /**
+   * Supporting attachment IDs to retain. When provided, other supporting docs are removed.
+   * Payment/retirement evidence is always retained.
+   */
+  keepAttachmentIds?: string[];
 };
 
 /** Edit a returned payment request and optionally resubmit into the approval chain. */
@@ -1851,9 +1856,20 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
   for (const item of preparedUploads) {
     await savePaymentAttachmentFile(requestId, item.meta.fileName, item.bytes);
   }
-  const keepExisting = Array.isArray(existing.attachments) ? existing.attachments : [];
+  const existingList = Array.isArray(existing.attachments) ? existing.attachments : [];
+  const protectedKinds = new Set(['payment-evidence', 'retirement-evidence']);
+  const keepIds = Array.isArray(input.keepAttachmentIds)
+    ? new Set(input.keepAttachmentIds.map((id) => compact(id)).filter(Boolean))
+    : null;
+  const keepExisting = keepIds
+    ? existingList.filter((att) => {
+      const kind = compact(att.kind) || 'supporting';
+      if (protectedKinds.has(kind)) return true;
+      return keepIds.has(compact(att.id)) || keepIds.has(compact(att.fileName));
+    })
+    : existingList;
   const attachments = [...keepExisting, ...preparedUploads.map((item) => item.meta)];
-  if (isVendorPaymentType(existing.paymentType) && attachments.length < 1) {
+  if (isVendorPaymentType(existing.paymentType) && attachments.filter((att) => !protectedKinds.has(compact(att.kind) || 'supporting')).length < 1) {
     throw new Error('Supporting documents are required for supplier and expense payments.');
   }
 
