@@ -324,6 +324,8 @@ export default function PaymentRequestsClient({
   const [currencyFilter, setCurrencyFilter] = useState('All');
   const [approverFilter, setApproverFilter] = useState('All');
   const [locationFilter, setLocationFilter] = useState('All');
+  const [submittedFrom, setSubmittedFrom] = useState('');
+  const [submittedTo, setSubmittedTo] = useState('');
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState('');
@@ -513,6 +515,19 @@ export default function PaymentRequestsClient({
         const approver = row.currentApproverName || row.currentApproverCode || '';
         if (approver !== approverFilter) return false;
       }
+      if (submittedFrom || submittedTo) {
+        const stamp = row.submittedAt || row.createdAt;
+        if (!stamp) return false;
+        const submittedDay = new Date(stamp);
+        if (Number.isNaN(submittedDay.getTime())) return false;
+        const localDay = [
+          submittedDay.getFullYear(),
+          String(submittedDay.getMonth() + 1).padStart(2, '0'),
+          String(submittedDay.getDate()).padStart(2, '0'),
+        ].join('-');
+        if (submittedFrom && localDay < submittedFrom) return false;
+        if (submittedTo && localDay > submittedTo) return false;
+      }
 
       if (listMode === 'inbox') {
         if (tab === 'returned') {
@@ -567,6 +582,8 @@ export default function PaymentRequestsClient({
     currencyFilter,
     approverFilter,
     locationFilter,
+    submittedFrom,
+    submittedTo,
     listMode,
     workspace.viewer?.actorCode,
   ]);
@@ -579,6 +596,8 @@ export default function PaymentRequestsClient({
     currencyFilter !== 'All',
     approverFilter !== 'All',
     locationFilter !== 'All',
+    Boolean(submittedFrom),
+    Boolean(submittedTo),
     Boolean(query.trim()),
   ].filter(Boolean).length;
 
@@ -590,6 +609,8 @@ export default function PaymentRequestsClient({
     setCurrencyFilter('All');
     setApproverFilter('All');
     setLocationFilter('All');
+    setSubmittedFrom('');
+    setSubmittedTo('');
     setQuery('');
   };
 
@@ -1208,7 +1229,7 @@ export default function PaymentRequestsClient({
             type="button"
             onClick={() => setMoreFiltersOpen((open) => !open)}
             className={`inline-flex w-full items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold md:w-auto ${
-              moreFiltersOpen || currencyFilter !== 'All' || approverFilter !== 'All' || locationFilter !== 'All'
+              moreFiltersOpen || currencyFilter !== 'All' || approverFilter !== 'All' || locationFilter !== 'All' || submittedFrom || submittedTo
                 ? 'border-[#93C5FD] bg-[#EAF6FF] text-[#0369A1]'
                 : 'border-slate-200 text-slate-600'
             }`}
@@ -1287,6 +1308,26 @@ export default function PaymentRequestsClient({
                 <option key={location} value={location}>{location}</option>
               ))}
             </select>
+            <label className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600">
+              <span className="font-semibold whitespace-nowrap">Submitted from</span>
+              <input
+                type="date"
+                value={submittedFrom}
+                max={submittedTo || undefined}
+                onChange={(event) => setSubmittedFrom(event.target.value)}
+                className="rounded border-0 bg-transparent py-0.5 text-xs text-slate-800 outline-none"
+              />
+            </label>
+            <label className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600">
+              <span className="font-semibold whitespace-nowrap">Submitted to</span>
+              <input
+                type="date"
+                value={submittedTo}
+                min={submittedFrom || undefined}
+                onChange={(event) => setSubmittedTo(event.target.value)}
+                className="rounded border-0 bg-transparent py-0.5 text-xs text-slate-800 outline-none"
+              />
+            </label>
             {activeFilterCount ? (
               <button
                 type="button"
