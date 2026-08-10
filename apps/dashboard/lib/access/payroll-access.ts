@@ -155,10 +155,30 @@ export const isPayrollApprovalPath = (pathname: string) => {
     || path.includes('/payroll-approval');
 };
 
+/** Approval workspace data API (PayrollApprovalClient). */
+export const isPayrollProcessingPath = (pathname: string) => {
+  const path = normalizePath(pathname.split('?')[0] || pathname);
+  return path.startsWith('/hris/payroll/payroll-processing')
+    || path.includes('/payroll-processing');
+};
+
+/**
+ * Payroll Management hub / payload API used by Pay Setup.
+ * Section routes like /dashboard or /process-payroll stay excluded.
+ */
+export const isPayrollManagementHubPath = (pathname: string) => {
+  const path = normalizePath(pathname.split('?')[0] || pathname);
+  return path === '/hris/payroll-management' || path === '/hris/payroll';
+};
+
 /** Paths workflow approvers may open without full payroll administration rights. */
 export const isPayrollApproverAccessiblePath = (pathname: string) => {
   const path = normalizePath(pathname.split('?')[0] || pathname);
-  return isPayrollSalaryReviewPath(path) || isPayrollApprovalPath(path) || isBankFinancePayrollPath(path);
+  return isPayrollSalaryReviewPath(path)
+    || isPayrollApprovalPath(path)
+    || isPayrollProcessingPath(path)
+    || isPayrollManagementHubPath(path)
+    || isBankFinancePayrollPath(path);
 };
 
 export const payrollRoutePermissionOptions = (pathname: string): string[] | null => {
@@ -178,6 +198,7 @@ export const payrollRoutePermissionOptions = (pathname: string): string[] | null
       ...PAYROLL_WORKFLOW_REVIEW_PERMISSIONS,
       'payroll.view',
       'page.payroll.management.view',
+      'hris.view',
     ];
   }
 

@@ -305,6 +305,14 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
   if (isPayrollSalaryReviewPath(path)) {
     return canAccessPaySetupNav(session);
   }
+  // Pay Setup / Approval load these hub + processing APIs (mapped from /api/hris/...).
+  if (
+    path === '/hris/payroll-management'
+    || path === '/hris/payroll'
+    || path.startsWith('/hris/payroll/payroll-processing')
+  ) {
+    return canAccessPayrollManagementNav(session) || canAccessPaySetupNav(session);
+  }
   if (path.startsWith('/hris/payroll') || path.startsWith('/hris/payroll-management')) {
     if (!canAccessPayrollManagementNav(session)) return false;
   }
