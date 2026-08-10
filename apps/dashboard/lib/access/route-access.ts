@@ -3,7 +3,10 @@ import { canAccessAdministrationCentre, hasAnyPermission, hasPermission } from '
 import { PLATFORM_ROLES_WITHOUT_HRIS } from '@/lib/auth/platform-access';
 import { canAccessPayrollPath, isBankFinancePayrollPath, isPayrollSalaryReviewPath, payrollRoutePermissionOptions } from '@/lib/access/payroll-access';
 
-type SessionLike = Pick<SessionPayload, 'department' | 'unit' | 'roles' | 'permissions' | 'isGlobalAdmin' | 'employeeCode' | 'username'>;
+type SessionLike = Pick<SessionPayload, 'department' | 'unit' | 'roles' | 'permissions' | 'isGlobalAdmin'> & {
+  employeeCode?: string;
+  username?: string;
+};
 
 const normalizePath = (pathname: string) => pathname.replace(/\/+$/, '') || '/';
 const routePathFromRequestPath = (pathname: string) => {
