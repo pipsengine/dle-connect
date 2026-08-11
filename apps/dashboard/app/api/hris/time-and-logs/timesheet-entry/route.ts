@@ -125,6 +125,10 @@ type TimesheetPayload = {
     location: string;
     status: string;
   } | null;
+  suggestedContext: {
+    location: string;
+    workCenter: string;
+  };
   approvedOvertimeAuthorizations: OvertimeAuthorizationRequest[];
   overtimeBooking: {
     enabled: boolean;
@@ -994,10 +998,12 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
     return canonicalManager === targetSupervisor || managerMatches({ managerName: canonicalManager || employee.managerName }, targetSupervisor);
   });
   const selectedSupervisorAllDirectReports = assignedSupervisorEmployees.length ? assignedSupervisorEmployees : reportingManagerEmployees;
-  if (supervisorMode) {
+  // Always resolve location / work centre from the selected supervisor when not explicitly provided.
+  {
     const supervisorRecordsForDefault = timesheetRecords.filter((record) => managerMatches({ managerName: record.supervisor }, targetSupervisor));
     targetLocation = targetLocation ||
       preferredLocationFromDirectory(selectedSupervisorAllDirectReports, locations, workCenters) ||
+      clean(selectedSupervisorProfile ? employeeLocation(selectedSupervisorProfile) : '') ||
       mostCommon(supervisorRecordsForDefault.flatMap((record) => [record.location, record.site]));
     targetWorkCenter = targetWorkCenter ||
       workCenterFromSupervisorProfile(selectedSupervisorProfile, workCenters) ||
@@ -1008,6 +1014,22 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
       preferredLocationFromDirectory([], locations, workCenters) ||
       clean(workCenters.find((workCenter) => workCenter.name === targetWorkCenter)?.site || workCenters.find((workCenter) => workCenter.name === targetWorkCenter)?.location) ||
       mostCommon(locations.flatMap((location) => [location.name, location.site]));
+    if (targetLocation && targetWorkCenter) {
+      const workCentersForLocation = workCenters.filter((workCenter) => {
+        const selected = clean(targetLocation).toLowerCase();
+        if (!selected) return true;
+        return [workCenter.location, workCenter.site, workCenter.name]
+          .map((value) => clean(value).toLowerCase())
+          .filter(Boolean)
+          .some((value) => value === selected || value.includes(selected) || selected.includes(value));
+      });
+      if (workCentersForLocation.length && !workCentersForLocation.some((workCenter) => clean(workCenter.name) === targetWorkCenter)) {
+        targetWorkCenter =
+          defaultWorkCenterForEmployees(selectedSupervisorAllDirectReports, workCentersForLocation, targetLocation)
+          || workCentersForLocation[0]?.name
+          || targetWorkCenter;
+      }
+    }
   }
   const selectedSupervisorDirectReports = targetLocation
     ? selectedSupervisorAllDirectReports.filter((employee) => employeeMatchesLocation(employee, targetLocation))
@@ -1138,6 +1160,10 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
     projectManagers,
     supervisorEmployees: selectedSupervisorEmployees,
     supervisorProfile: selectedSupervisorProfile ? employeeSummary(selectedSupervisorProfile) : null,
+    suggestedContext: {
+      location: targetLocation,
+      workCenter: targetWorkCenter,
+    },
     approvedOvertimeAuthorizations,
     overtimeBooking,
     canBookOvertime: canBookOvertimeOnTimesheet(header, period, overtimeBooking),

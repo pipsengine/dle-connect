@@ -231,6 +231,10 @@ type Payload = {
     location: string;
     status: string;
   } | null;
+  suggestedContext?: {
+    location: string;
+    workCenter: string;
+  };
   approvedOvertimeAuthorizations: Array<{
     id: string;
     projectCode: string;
@@ -495,15 +499,29 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       if (data.header?.timesheetDate) setSelectedDate(data.header.timesheetDate);
       if (data.header?.supervisorId) setSelectedSupervisor(data.header.supervisorId);
       else if (!selectedSupervisor) setSelectedSupervisor(data.filterOptions.supervisors[0] || data.permissions.actor);
+      const suggestedLocation = String(data.suggestedContext?.location || data.supervisorProfile?.location || '').trim();
+      const suggestedWorkCenter = String(data.suggestedContext?.workCenter || data.header?.workCenterName || '').trim();
       setSelectedLocation((current) => {
+        // Empty location arg means supervisor just changed (or first load) — prefer supervisor defaults.
+        if (!location) {
+          if (suggestedLocation && dbLocationNames.includes(suggestedLocation)) return suggestedLocation;
+          return dbLocationNames[0] || '';
+        }
         if (current && dbLocationNames.includes(current)) return current;
+        if (suggestedLocation && dbLocationNames.includes(suggestedLocation)) return suggestedLocation;
         return dbLocationNames[0] || '';
       });
       setSelectedWorkCenter((current) => {
-        const locationName = location || selectedLocation || dbLocationNames[0] || '';
+        const locationName = location || suggestedLocation || selectedLocation || dbLocationNames[0] || '';
         const dbWorkCenterNames = workCenterNamesForLocation(dbWorkCenters, locationName);
-        if (data.header?.workCenterName) return data.header.workCenterName;
+        if (!workCenter) {
+          if (suggestedWorkCenter && dbWorkCenterNames.includes(suggestedWorkCenter)) return suggestedWorkCenter;
+          if (data.header?.workCenterName && dbWorkCenterNames.includes(data.header.workCenterName)) return data.header.workCenterName;
+          return dbWorkCenterNames[0] || '';
+        }
+        if (data.header?.workCenterName && dbWorkCenterNames.includes(data.header.workCenterName)) return data.header.workCenterName;
         if (current && dbWorkCenterNames.includes(current)) return current;
+        if (suggestedWorkCenter && dbWorkCenterNames.includes(suggestedWorkCenter)) return suggestedWorkCenter;
         return dbWorkCenterNames[0] || '';
       });
       if (headerId) setRequestedHeaderId('');
@@ -1449,11 +1467,14 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           selectedWorkCenter={selectedWorkCenter}
           onSupervisorChange={(value) => {
             setSelectedSupervisor(value);
+            setSelectedLocation('');
+            setSelectedWorkCenter('');
             setSelectedEmployees([]);
             setQuery('');
           }}
           onLocationChange={(value) => {
             setSelectedLocation(value);
+            setSelectedWorkCenter('');
             setSelectedEmployees([]);
             setQuery('');
           }}
@@ -1607,6 +1628,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                   className="max-w-[280px]"
                   onChange={(value) => {
                     setSelectedSupervisor(value);
+                    setSelectedLocation('');
+                    setSelectedWorkCenter('');
                     setSelectedEmployees([]);
                     setQuery('');
                   }}
@@ -1621,6 +1644,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                   className="max-w-[220px]"
                   onChange={(value) => {
                     setSelectedLocation(value);
+                    setSelectedWorkCenter('');
                     setSelectedEmployees([]);
                     setQuery('');
                   }}
