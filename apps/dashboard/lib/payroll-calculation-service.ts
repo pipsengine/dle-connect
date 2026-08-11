@@ -174,14 +174,37 @@ const inputOnlyEmployee = (employee: DleEmployeeDirectoryRow): DleEmployeeDirect
 const dualCurrencyLocalEmployee = (employee: DleEmployeeDirectoryRow): DleEmployeeDirectoryRow | null => {
   const localLines = employee.sageLocalPayrollEarnings || [];
   if (!employee.hasDualCurrencyPayroll || localLines.length === 0) return null;
+  const localGrade = inferNgnGradeFromLocalEarnings(localLines) || employee.salaryGrade || employee.jobGrade;
+  const localPayeRules = employee.payeCalculation
+    ? {
+        ...employee.payeCalculation,
+        // USD-only PAYE controls must not drive the Naira run.
+        usdFlatRate: undefined,
+        monthlyPayeOverride: undefined,
+      }
+    : undefined;
   return {
     ...employee,
     payCurrency: employee.localPayCurrency || 'NGN',
     payrollGroup: employee.localPayrollGroup || 'DLE',
     periodSalary: employee.localPeriodSalary ?? employee.periodSalary,
+    salaryGrade: localGrade,
+    jobGrade: localGrade,
+    payeCalculation: localPayeRules,
     sagePayrollEarnings: localLines,
     sagePayrollDeductions: employee.sageLocalPayrollDeductions,
   };
+};
+
+const inferNgnGradeFromLocalEarnings = (
+  lines: Array<{ code?: string | null; name?: string | null }>,
+) => {
+  const blob = lines.map((line) => `${line.code || ''} ${line.name || ''}`).join(' ').toUpperCase();
+  if (/\bSNM|SENIOR MANAGEMENT/.test(blob)) return 'SNM - SENIOR MANAGEMENT';
+  if (/\bMGT|MANAGEMENT/.test(blob)) return 'MGT - MANAGEMENT';
+  if (/\bSNR|SENIOR\b/.test(blob)) return 'SNR - SENIOR';
+  if (/\bJNR|JUNIOR/.test(blob)) return 'JNR - JUNIOR';
+  return null;
 };
 
 /** Dual-currency staff: USD package lives on the DLE_USD (primary) run. */
@@ -868,18 +891,58 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
         .map((key) => sageByKey.get(key))
         .find(Boolean) || null
       : null;
-    const paye = variant.payCurrency === 'USD' ? 0 : tax.monthlyPaye;
-    const employeePension = variant.payCurrency === 'USD' ? 0 : pension.employeeContribution;
+    const localDeductions = variant.payCurrency === 'NGN' && variant.hasDualCurrencyPayroll
+      ? (employee.sageLocalPayrollDeductions || null)
+      : null;
+    const localDeductionLines = localDeductions?.lines || [];
+    const localPaye = localDeductionLines
+      .filter((line) => /^PAYE$/i.test(String(line.code || '')))
+      .reduce((sum, line) => sum + Number(line.amount || 0), 0);
+    const localPension = localDeductionLines
+      .filter((line) => /PENSION/i.test(String(line.code || '')) && !/ER$/i.test(String(line.code || '')))
+      .reduce((sum, line) => sum + Number(line.amount || 0), 0);
+    const localNhf = localDeductionLines
+      .filter((line) => /^NHF$/i.test(String(line.code || '')))
+      .reduce((sum, line) => sum + Number(line.amount || 0), 0);
+    const localOther = localDeductionLines
+      .filter((line) => !/^(PAYE|NHF)$/i.test(String(line.code || '')) && !/PENSION/i.test(String(line.code || '')))
+      .reduce((sum, line) => sum + Number(line.amount || 0), 0);
+    const useLocalDeductions = Boolean(localDeductions && localDeductionLines.length > 0);
+    const usdPayeOverride = variant.payCurrency === 'USD'
+      ? Number(employee.payeCalculation?.monthlyPayeOverride)
+      : NaN;
+    const paye = variant.payCurrency === 'USD'
+      ? (Number.isFinite(usdPayeOverride) ? roundMoney(usdPayeOverride) : roundMoney(tax.monthlyPaye))
+      : useLocalDeductions
+        ? roundMoney(localPaye || Number(localDeductions?.paye || 0))
+        : tax.monthlyPaye;
+    const employeePension = variant.payCurrency === 'USD'
+      ? 0
+      : useLocalDeductions
+        ? roundMoney(localPension || Number(localDeductions?.pensionEmployee || 0))
+        : pension.employeeContribution;
     const statutoryEmployee = variant.payCurrency === 'USD' ? 0 : funds.employeeDeductions;
     const loanRecovery = roundMoney(loans.reduce((sum, loan) => sum + loan.payrollRecovery, 0));
     const taxComponentMonthly = (componentId: string) => (tax.statutoryItems.find((item) => item.id === componentId)?.amount || 0) / 12;
-    const nhf = variant.payCurrency === 'USD' ? 0 : taxComponentMonthly('nhf');
+    const nhf = variant.payCurrency === 'USD'
+      ? 0
+      : useLocalDeductions
+        ? roundMoney(localNhf || Number(localDeductions?.nhf || 0))
+        : taxComponentMonthly('nhf');
     const nhfFundDeduction = roundMoney(funds.fundResults.find((item) => item.id === 'nhf')?.monthlyAmount || 0);
-    const statutoryEmployeeDeductions = roundMoney(Math.max(0, statutoryEmployee - (nhf > 0 && nhfFundDeduction > 0 ? nhfFundDeduction : 0)));
-    const unionDues = variant.payCurrency === 'USD' ? 0 : taxComponentMonthly('union-dues');
-    const otherStatutory = variant.payCurrency === 'USD' ? 0 : taxComponentMonthly('other-statutory');
+    const statutoryEmployeeDeductions = useLocalDeductions
+      ? 0
+      : roundMoney(Math.max(0, statutoryEmployee - (nhf > 0 && nhfFundDeduction > 0 ? nhfFundDeduction : 0)));
+    const unionDues = variant.payCurrency === 'USD' || useLocalDeductions ? 0 : taxComponentMonthly('union-dues');
+    const otherStatutory = variant.payCurrency === 'USD'
+      ? 0
+      : useLocalDeductions
+        ? roundMoney(localOther || Number(localDeductions?.other || 0))
+        : taxComponentMonthly('other-statutory');
     const otherDeductions = roundMoney(unionDues + otherStatutory);
-    const totalDeductions = roundMoney(paye + employeePension + statutoryEmployeeDeductions + loanRecovery + nhf + otherDeductions);
+    const totalDeductions = useLocalDeductions
+      ? roundMoney(Number(localDeductions?.totalDeductions || (paye + employeePension + nhf + otherDeductions + loanRecovery)))
+      : roundMoney(paye + employeePension + statutoryEmployeeDeductions + loanRecovery + nhf + otherDeductions);
     const netPay = roundMoney(Math.max(0, amounts.grossPay - totalDeductions));
     const grossVariance = sageActual ? moneyVariance(sageActual.grossPay, amounts.grossPay) : null;
     const netVariance = sageActual ? moneyVariance(sageActual.netPay, netPay) : null;
@@ -1033,14 +1096,20 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       salaryStructure: dailyRateEmployee ? 'Daily Rate' : employee.salaryGrade || employee.jobGrade || 'Unassigned',
       earningLines: (amounts.paidEarningLines || amounts.earningLines).map((line) => ({ ...line, amount: roundMoney(line.amount) })),
       annualBenefitLines: amounts.annualBenefitLines.map((line) => ({ ...line, amount: roundMoney(line.amount) })),
-      deductionLines: [
-        { code: 'PAYE', label: 'PAYE', amount: roundMoney(paye) },
-        { code: 'PENSION_EE', label: 'Pension', amount: roundMoney(employeePension) },
-        { code: 'NHF', label: 'NHF', amount: roundMoney(nhf) },
-        { code: 'LOAN', label: 'Loan Recovery', amount: roundMoney(loanRecovery) },
-        { code: 'SNR_UNION', label: 'Union Dues', amount: roundMoney(unionDues) },
-        { code: 'OTHER', label: 'Other Deductions', amount: roundMoney(otherStatutory) },
-      ].filter((line) => line.amount > 0),
+      deductionLines: useLocalDeductions
+        ? localDeductionLines.map((line) => ({
+            code: String(line.code || 'DED'),
+            label: String(line.name || line.code || 'Deduction'),
+            amount: roundMoney(Number(line.amount || 0)),
+          })).filter((line) => line.amount > 0)
+        : [
+            { code: 'PAYE', label: 'PAYE', amount: roundMoney(paye) },
+            { code: 'PENSION_EE', label: 'Pension', amount: roundMoney(employeePension) },
+            { code: 'NHF', label: 'NHF', amount: roundMoney(nhf) },
+            { code: 'LOAN', label: 'Loan Recovery', amount: roundMoney(loanRecovery) },
+            { code: 'SNR_UNION', label: 'Union Dues', amount: roundMoney(unionDues) },
+            { code: 'OTHER', label: 'Other Deductions', amount: roundMoney(otherStatutory) },
+          ].filter((line) => line.amount > 0),
     };
     });
   });

@@ -288,8 +288,19 @@ export const hrisPayeFromEmployee = (input: {
   const category = payeCategoryFromProfile(input.earnings.profileId);
   const salaryGrade = input.employee.salaryGrade || input.employee.jobGrade;
   const payeRules = resolvePayeRules(input.employee);
+  const payCurrency = String(input.employee.payCurrency || '').trim().toUpperCase();
+  const isNgnRun = payCurrency === 'NGN' || payCurrency === 'NAIRA';
+  const isUsdRun = payCurrency === 'USD' || payCurrency === 'US$';
 
-  if (Number.isFinite(Number(payeRules?.monthlyPayeOverride))) {
+  // USD monthly overrides / flat rates apply only to the USD payroll run.
+  if (isUsdRun && Number.isFinite(Number(payeRules?.monthlyPayeOverride))) {
+    return {
+      paye: roundMoney(Number(payeRules?.monthlyPayeOverride)),
+      monthlyTaxable: payeTaxableFromEarningLines(earningLines, category, salaryGrade, payeRules),
+    };
+  }
+
+  if (!isNgnRun && Number.isFinite(Number(payeRules?.monthlyPayeOverride))) {
     return {
       paye: roundMoney(Number(payeRules?.monthlyPayeOverride)),
       monthlyTaxable: payeTaxableFromEarningLines(earningLines, category, salaryGrade, payeRules),
@@ -297,7 +308,7 @@ export const hrisPayeFromEmployee = (input: {
   }
 
   const grade = normalizedGrade(salaryGrade);
-  if (/^EXP_USD|EXP_USDSNMGT|USD SENIOR/i.test(grade)) {
+  if (!isNgnRun && /^EXP_USD|EXP_USDSNMGT|USD SENIOR/i.test(grade)) {
     const monthlyTaxable = payeTaxableFromEarningLines(earningLines, category, salaryGrade, payeRules);
     return {
       paye: calculateUsdSeniorManagementPaye(monthlyTaxable, Number(payeRules?.usdFlatRate || 0.212)),
@@ -311,23 +322,28 @@ export const hrisPayeFromEmployee = (input: {
       ? { disablePensionPayeRelief: true, annualRentRelief: 400000 }
       : null);
 
+  // Strip USD-only controls when computing Nigerian PAYE.
+  const ngnRules = isNgnRun && effectiveRules
+    ? { ...effectiveRules, usdFlatRate: undefined, monthlyPayeOverride: undefined }
+    : effectiveRules;
+
   if (category === 'permanent') {
     return calculatePermanentSplitPaye({
       earningLines,
       employee: input.employee,
       category,
       salaryGrade: String(salaryGrade || ''),
-      effectiveRules,
+      effectiveRules: ngnRules,
       nhfApplicable: input.nhfApplicable,
     });
   }
 
-  const taxable = payeTaxableFromEarningLines(earningLines, category, salaryGrade, effectiveRules);
+  const taxable = payeTaxableFromEarningLines(earningLines, category, salaryGrade, ngnRules);
   const rentRelief = resolveSageAlignedAnnualRentRelief({
     employee: input.employee,
     category,
     monthlyTaxable: taxable,
-    payeRules: effectiveRules,
+    payeRules: ngnRules,
   });
 
   const paye = calculatePayeWithReliefs({
