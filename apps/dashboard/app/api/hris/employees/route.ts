@@ -332,8 +332,9 @@ export async function POST(request: Request) {
   if (!draftRec) return jsonErr(404, 'Draft not found');
   storeDrafts.set(draftId, draftRec);
   if (draftRec.status === 'created') return jsonErr(400, 'Draft already created');
-  if (draftRec.status !== 'approved' && !permissions(role).canCreateWithoutApproval) {
-    return jsonErr(409, 'Employee draft must be approved before creation. Submit for approval and wait for HR approval.');
+  // Approval gate disabled for now: any creatable draft/submitted/approved record can be saved directly.
+  if (!['draft', 'submitted', 'approved'].includes(String(draftRec.status || ''))) {
+    return jsonErr(400, `Cannot create employee from draft status "${draftRec.status}".`);
   }
 
   let employeeId = '';

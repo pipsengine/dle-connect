@@ -604,18 +604,21 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
   }
 
   if (seg0 === 'submit-approval') {
-    if (!perms.canSubmitApproval) return jsonErr(403, 'Permission denied');
+    // Legacy endpoint retained for compatibility: submission now creates the employee immediately
+    // (approval workflow is disabled for Add Employee).
+    if (!perms.canCreate) return jsonErr(403, 'Permission denied');
     const draftId = normalize(body?.draftId);
     if (!draftId) return jsonErr(400, 'draftId is required');
     const rec = await loadDraftRecord(draftId);
     if (!rec) return jsonErr(404, 'Draft not found');
+    if (rec.status === 'created') return jsonErr(400, 'Draft already created');
     const v = validateDraft(rec.draft);
     if (!v.valid) return jsonErr(400, 'Validation failed');
-    rec.status = 'submitted';
+    rec.status = 'approved';
     rec.updatedAt = nowIso();
-    audit(rec, role, 'Employee submitted for approval');
+    audit(rec, role, 'Employee submitted and approved automatically (approval bypass)');
     await saveEmployeeDraftToDb(rec);
-    return jsonOk({ draftId: rec.draftId, status: 'submitted' });
+    return jsonOk({ draftId: rec.draftId, status: 'approved', createReady: true });
   }
 
   if (seg0 === 'approve') {
