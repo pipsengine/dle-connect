@@ -78,7 +78,7 @@ export function AssetManagementShell({ title, description, children }: Props) {
             <Link
               key={section.id}
               href={section.href}
-              className={`flex h-10 shrink-0 items-center gap-2 rounded-md px-3 text-xs font-black transition-colors ${selected ? 'bg-slate-950 text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
+              className={`flex h-10 shrink-0 items-center gap-2 rounded-md px-3 text-xs font-black transition-colors ${selected ? 'bg-teal-700 text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
             >
               <Icon className="h-4 w-4" />
               {section.label}

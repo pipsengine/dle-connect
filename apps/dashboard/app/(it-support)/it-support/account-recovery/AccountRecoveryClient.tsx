@@ -12,6 +12,7 @@ import {
   Unlock,
   UserRoundCheck,
 } from 'lucide-react';
+import { ItSupportBreadcrumbs } from '../it-support-portal-shell';
 
 type RecoveryUser = {
   id: string;
@@ -135,16 +136,17 @@ export default function AccountRecoveryClient() {
       : 'border-blue-200 bg-blue-50 text-blue-900';
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-6">
-      <div className="mx-auto max-w-[1400px] space-y-4">
+    <div className="space-y-4">
+      <ItSupportBreadcrumbs items={['Service Operations', 'Account Recovery']} />
+      <div className="space-y-4">
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex items-start gap-3">
-              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-950 text-white">
+              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-teal-700 text-white">
                 <LifeBuoy className="h-6 w-6" />
               </span>
               <div>
-                <p className="text-xs font-black uppercase tracking-wide text-blue-700">IT & Support</p>
+                <p className="text-xs font-black uppercase tracking-wide text-teal-700">Service Operations</p>
                 <h1 className="mt-1 text-2xl font-black text-slate-950">Account Recovery</h1>
                 <p className="mt-1 max-w-3xl text-sm font-semibold text-slate-600">
                   Clear locked accounts, failed login lockouts, disabled status, and stuck password-change flags so staff can sign in again.

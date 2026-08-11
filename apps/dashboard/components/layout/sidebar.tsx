@@ -18,6 +18,7 @@ import {
   canAccessHrManagementNav,
   canAccessPaySetupNav,
 } from '@/lib/access/route-access';
+import { canAccessItSupportPortal } from '@/lib/access/it-support-access';
 
 const requiredPermission = (route?: string) => {
   if (!route || route === '/') return 'enterprise.view';
@@ -157,9 +158,11 @@ export function Sidebar({
         const canSeeItem = item.id === 'hris'
           ? !!subItems?.length
           : item.id === 'logistics-fleet'
-            || (item.route === '/finance' || item.route?.startsWith('/finance')
-              ? canAccessFinanceNav(permissions)
-              : canAccess(permissions, requiredPermission(item.route)))
+            || (item.id === 'it-support'
+              ? canAccessItSupportPortal(permissions, sessionContext.isGlobalAdmin)
+              : (item.route === '/finance' || item.route?.startsWith('/finance')
+                ? canAccessFinanceNav(permissions)
+                : canAccess(permissions, requiredPermission(item.route))))
             || !!subItems?.length;
         return canSeeItem ? { ...item, subItems } : null;
       })

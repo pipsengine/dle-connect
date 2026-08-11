@@ -158,9 +158,9 @@ const workspaceModules = [
     title: 'IT & Support',
     href: '/it-support',
     icon: HelpCircle,
-    status: 'Ready',
-    signal: 'Service desk, platform support, infrastructure, and application support',
-    permissions: ['it.view', 'it.*', 'infrastructure.view', 'application-support.view', 'service-desk.view'],
+    status: 'Live',
+    signal: 'IT Service & Operations portal — recovery, assets, service desk, and monitoring',
+    permissions: ['it.view', 'it.*', 'infrastructure.view', 'application-support.view', 'service-desk.view', 'view_it_support', 'view_it_assets'],
   },
   {
     title: 'ERP',
