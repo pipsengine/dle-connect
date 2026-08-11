@@ -13,6 +13,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCcw,
+  ShieldCheck,
   X,
 } from 'lucide-react';
 import { EnterpriseHomeButton } from '@/components/layout/enterprise-home-button';
@@ -20,7 +21,6 @@ import { NotificationCenter } from '@/components/layout/notification-center';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
 import { filterItSupportNavSections } from '@/lib/access/it-support-access';
 import {
-  IT_SUPPORT_CAPABILITY_HINT,
   IT_SUPPORT_MODULE,
   type ItSupportBadgeTone,
 } from '@/lib/it-support/nav';
@@ -226,11 +226,21 @@ export function ItSupportPortalShell({ children, employee }: Props) {
 
       <div className="border-t border-slate-200 px-3 py-3">
         {!railCollapsed ? (
-          <div className="rounded-xl border border-teal-100 bg-gradient-to-br from-teal-50/80 to-slate-50 p-3">
-            <p className="text-[11px] font-semibold text-slate-700">Operations posture</p>
-            <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+          <div className="rounded-2xl border border-teal-100 bg-gradient-to-br from-white to-teal-50/50 p-4">
+            <div className="mb-2 flex items-center gap-2 text-[11px] font-bold tracking-wide text-teal-800">
+              <ShieldCheck className="h-4 w-4" />
+              OPERATIONS POSTURE
+            </div>
+            <p className="text-[11px] leading-relaxed text-slate-600">
               Controlled IT services with audit-ready account recovery and asset lifecycle tooling.
             </p>
+            <Link
+              href="/it-support"
+              className="mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold text-teal-700 hover:underline"
+            >
+              Learn more
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
           </div>
         ) : (
           <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-lg bg-teal-50 text-teal-700" title="IT operations">
@@ -249,7 +259,7 @@ export function ItSupportPortalShell({ children, employee }: Props) {
   );
 
   return (
-    <div className="flex min-h-dvh min-w-0 overflow-x-clip bg-[#F4F7F8] text-slate-900" data-dle-shell data-it-support-portal>
+    <div className="flex min-h-dvh min-w-0 overflow-x-clip bg-[#f8fafb] text-slate-900" data-dle-shell data-it-support-portal>
       <aside
         className={`fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-slate-200 bg-white transition-[width] duration-200 lg:flex ${widthClass}`}
       >
@@ -281,26 +291,31 @@ export function ItSupportPortalShell({ children, employee }: Props) {
       ) : null}
 
       <div className={`flex min-w-0 flex-1 flex-col ${contentPad}`}>
-        <header className="sticky top-0 z-20 flex min-h-[64px] flex-wrap items-center gap-2 border-b border-slate-200 bg-white/95 px-2.5 py-2 backdrop-blur sm:min-h-[72px] sm:gap-3 sm:px-4 lg:px-5">
+        <header className="sticky top-0 z-20 flex min-h-[72px] flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:min-h-[92px] sm:px-6 lg:px-8">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 lg:hidden"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 lg:hidden"
           >
             <Menu className="h-5 w-5" />
           </button>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[11px] font-bold uppercase tracking-[0.14em] text-teal-700">
-              {IT_SUPPORT_MODULE.shortName}
-            </p>
-            <h1 className="truncate text-[13px] font-bold text-slate-900 sm:text-sm">{IT_SUPPORT_MODULE.name}</h1>
+          <div className="flex min-w-0 flex-1 items-center gap-4">
+            <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 sm:flex">
+              <ShieldCheck className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-bold tracking-[0.18em] text-teal-700">
+                {IT_SUPPORT_MODULE.shortName.toUpperCase()}
+              </p>
+              <h1 className="truncate text-base font-semibold text-slate-950">{IT_SUPPORT_MODULE.name}</h1>
+            </div>
           </div>
-          <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1 sm:gap-1.5">
+          <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-3">
             <EnterpriseHomeButton />
             <button
               type="button"
               onClick={() => router.refresh()}
-              className="hidden h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 xl:inline-flex"
+              className="hidden h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 xl:inline-flex"
               title="Refresh"
             >
               <RefreshCcw className="h-4 w-4" />
@@ -317,17 +332,20 @@ export function ItSupportPortalShell({ children, employee }: Props) {
           </div>
         </header>
 
-        <main className="min-h-0 min-w-0 flex-1 overflow-x-clip overflow-y-auto px-2.5 py-3 sm:px-4 sm:py-4 lg:px-6">
+        <main className="min-h-0 min-w-0 flex-1 overflow-x-clip overflow-y-auto px-5 py-6 lg:px-8 xl:px-10">
           {children}
         </main>
 
-        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-2.5 py-2.5 text-[11px] text-slate-500 sm:px-5">
+        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-5 py-4 text-xs text-slate-500 sm:px-8">
           <p>© {new Date().getFullYear()} Dorman Long DLE Connect. All rights reserved.</p>
           <div className="flex flex-wrap items-center gap-3">
             <span>Privacy</span>
+            <span>•</span>
             <span>Terms</span>
+            <span>•</span>
             <span>Support</span>
-            <span className="hidden text-slate-400 lg:inline">{IT_SUPPORT_CAPABILITY_HINT}</span>
+            <span>•</span>
+            <span>v2.0.0</span>
           </div>
         </footer>
       </div>

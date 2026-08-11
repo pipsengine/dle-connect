@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Activity,
   BookOpen,
+  Boxes,
   Headphones,
   KeyRound,
   LayoutDashboard,
@@ -233,7 +234,7 @@ export const IT_SUPPORT_MODULE_CARDS = [
     title: 'Asset Management',
     description: 'Hardware, software, assignment, maintenance, and procurement lifecycle.',
     href: '/it-support/asset-management',
-    icon: Package,
+    icon: Boxes,
     status: 'live' as const,
     permissionKeys: [
       'view_it_assets',
