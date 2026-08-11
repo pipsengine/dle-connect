@@ -30661,5 +30661,5145 @@
     "amount": 150000,
     "taxable": true,
     "source": "Sage payslip supplemental earning sync"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C0129",
+    "employeeCode": "C0129",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C0293",
+    "employeeCode": "C0293",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 14000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C0293",
+    "employeeCode": "C0293",
+    "code": "NIGHT",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 7700,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C0293",
+    "employeeCode": "C0293",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 55734.375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C0293",
+    "employeeCode": "C0293",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 46125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C0293",
+    "employeeCode": "C0293",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 119156.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C0585",
+    "employeeCode": "C0585",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C0695",
+    "employeeCode": "C0695",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C0695",
+    "employeeCode": "C0695",
+    "code": "NIGHT",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 13200,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C0695",
+    "employeeCode": "C0695",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 73031.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C0695",
+    "employeeCode": "C0695",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 71750,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C0695",
+    "employeeCode": "C0695",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 101859.375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C0974",
+    "employeeCode": "C0974",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1001",
+    "employeeCode": "C1001",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1001",
+    "employeeCode": "C1001",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 36562.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1001",
+    "employeeCode": "C1001",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 29250,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1001",
+    "employeeCode": "C1001",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 40218.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1035",
+    "employeeCode": "C1035",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1035",
+    "employeeCode": "C1035",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 17259.375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1035",
+    "employeeCode": "C1035",
+    "code": "STOCK",
+    "name": "STOCK COUNT ALLOWANCE",
+    "amount": 14066,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1035",
+    "employeeCode": "C1035",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 27121.875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1065",
+    "employeeCode": "C1065",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1065",
+    "employeeCode": "C1065",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 15806.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1065",
+    "employeeCode": "C1065",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 68493.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1078",
+    "employeeCode": "C1078",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1078",
+    "employeeCode": "C1078",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 57375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1078",
+    "employeeCode": "C1078",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 4781.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1096",
+    "employeeCode": "C1096",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1096",
+    "employeeCode": "C1096",
+    "code": "NIGHT",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 5500,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1096",
+    "employeeCode": "C1096",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 76875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1096",
+    "employeeCode": "C1096",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 66625,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1096",
+    "employeeCode": "C1096",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 103781.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1144",
+    "employeeCode": "C1144",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1144",
+    "employeeCode": "C1144",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 30487.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1162",
+    "employeeCode": "C1162",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1162",
+    "employeeCode": "C1162",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 52875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1162",
+    "employeeCode": "C1162",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 70500,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1220",
+    "employeeCode": "C1220",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1220",
+    "employeeCode": "C1220",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 52087.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1229",
+    "employeeCode": "C1229",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1229",
+    "employeeCode": "C1229",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 88481.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1229",
+    "employeeCode": "C1229",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 85078.125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1491",
+    "employeeCode": "C1491",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1491",
+    "employeeCode": "C1491",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 13453.125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1533",
+    "employeeCode": "C1533",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 14000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1533",
+    "employeeCode": "C1533",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 99000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1533",
+    "employeeCode": "C1533",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 132000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1544",
+    "employeeCode": "C1544",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1544",
+    "employeeCode": "C1544",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 88087.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1544",
+    "employeeCode": "C1544",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 15187.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1607",
+    "employeeCode": "C1607",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1607",
+    "employeeCode": "C1607",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 87768.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1607",
+    "employeeCode": "C1607",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 25481.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1612",
+    "employeeCode": "C1612",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1612",
+    "employeeCode": "C1612",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 12000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1686",
+    "employeeCode": "C1686",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 7000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1686",
+    "employeeCode": "C1686",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 18787.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1686",
+    "employeeCode": "C1686",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 15656.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1705",
+    "employeeCode": "C1705",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 14500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1705",
+    "employeeCode": "C1705",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 73031.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1705",
+    "employeeCode": "C1705",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 82000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1705",
+    "employeeCode": "C1705",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 82640.625,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1720",
+    "employeeCode": "C1720",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1720",
+    "employeeCode": "C1720",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 47418.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1720",
+    "employeeCode": "C1720",
+    "code": "TRANSPORT",
+    "name": "TRANSPORT ALLOWANCE",
+    "amount": 24000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1720",
+    "employeeCode": "C1720",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 7903.125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1728",
+    "employeeCode": "C1728",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1728",
+    "employeeCode": "C1728",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 52875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1728",
+    "employeeCode": "C1728",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 88125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1736",
+    "employeeCode": "C1736",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1736",
+    "employeeCode": "C1736",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 18787.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1736",
+    "employeeCode": "C1736",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 115856.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1771",
+    "employeeCode": "C1771",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1771",
+    "employeeCode": "C1771",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 59175,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1771",
+    "employeeCode": "C1771",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 7396.875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1772",
+    "employeeCode": "C1772",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1772",
+    "employeeCode": "C1772",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 44381.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1772",
+    "employeeCode": "C1772",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 12328.125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1775",
+    "employeeCode": "C1775",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1775",
+    "employeeCode": "C1775",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 46125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1775",
+    "employeeCode": "C1775",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 3843.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1779",
+    "employeeCode": "C1779",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1779",
+    "employeeCode": "C1779",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 96937.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1783",
+    "employeeCode": "C1783",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1783",
+    "employeeCode": "C1783",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 63225,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1783",
+    "employeeCode": "C1783",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 23709.375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1788",
+    "employeeCode": "C1788",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1788",
+    "employeeCode": "C1788",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 39515.625,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1789",
+    "employeeCode": "C1789",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 15000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1789",
+    "employeeCode": "C1789",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 115912.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1789",
+    "employeeCode": "C1789",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 154550,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1793",
+    "employeeCode": "C1793",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1793",
+    "employeeCode": "C1793",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 45731.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1793",
+    "employeeCode": "C1793",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 27946.875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1804",
+    "employeeCode": "C1804",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1804",
+    "employeeCode": "C1804",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 34593.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1804",
+    "employeeCode": "C1804",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 3843.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1815",
+    "employeeCode": "C1815",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 5000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1815",
+    "employeeCode": "C1815",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 15243.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1820",
+    "employeeCode": "C1820",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1820",
+    "employeeCode": "C1820",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 39515.625,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1823",
+    "employeeCode": "C1823",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1823",
+    "employeeCode": "C1823",
+    "code": "TRANSPORT",
+    "name": "TRANSPORT ALLOWANCE",
+    "amount": 14000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1824",
+    "employeeCode": "C1824",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1840",
+    "employeeCode": "C1840",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1840",
+    "employeeCode": "C1840",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 11531.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1840",
+    "employeeCode": "C1840",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 32671.875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1849",
+    "employeeCode": "C1849",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1870",
+    "employeeCode": "C1870",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1870",
+    "employeeCode": "C1870",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 54675,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1870",
+    "employeeCode": "C1870",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 40500,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1870",
+    "employeeCode": "C1870",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 127575,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1882",
+    "employeeCode": "C1882",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 15000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1882",
+    "employeeCode": "C1882",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 147262.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1882",
+    "employeeCode": "C1882",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 196350,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1883",
+    "employeeCode": "C1883",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 2500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1888",
+    "employeeCode": "C1888",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 12000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1888",
+    "employeeCode": "C1888",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 21918.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1888",
+    "employeeCode": "C1888",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 25050,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1888",
+    "employeeCode": "C1888",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 75150,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1920",
+    "employeeCode": "C1920",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1920",
+    "employeeCode": "C1920",
+    "code": "PUBHOL",
+    "name": "PUBLIC HOLIDAY",
+    "amount": 19125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1924",
+    "employeeCode": "C1924",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 51600,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1924",
+    "employeeCode": "C1924",
+    "code": "SITE",
+    "name": "SITE ALLOWANCE",
+    "amount": 150000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1924",
+    "employeeCode": "C1924",
+    "code": "STOCK",
+    "name": "STOCK COUNT ALLOWANCE",
+    "amount": 14066,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1924",
+    "employeeCode": "C1924",
+    "code": "TCMMEAL",
+    "name": "TCM MEAL",
+    "amount": 150000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1924",
+    "employeeCode": "C1924",
+    "code": "TCMTRANS",
+    "name": "TCM TRANSPORT",
+    "amount": 150000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1926",
+    "employeeCode": "C1926",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1926",
+    "employeeCode": "C1926",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 15243.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1931",
+    "employeeCode": "C1931",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1931",
+    "employeeCode": "C1931",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 23906.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1931",
+    "employeeCode": "C1931",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 19125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1931",
+    "employeeCode": "C1931",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 21515.625,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1933",
+    "employeeCode": "C1933",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1933",
+    "employeeCode": "C1933",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 23906.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1933",
+    "employeeCode": "C1933",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 19125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1933",
+    "employeeCode": "C1933",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 26296.875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1938",
+    "employeeCode": "C1938",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1938",
+    "employeeCode": "C1938",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 22612.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1938",
+    "employeeCode": "C1938",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 124368.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1954",
+    "employeeCode": "C1954",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1954",
+    "employeeCode": "C1954",
+    "code": "NIGHT",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 15400,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1954",
+    "employeeCode": "C1954",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 61500,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1954",
+    "employeeCode": "C1954",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 61500,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1954",
+    "employeeCode": "C1954",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 113390.625,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1955",
+    "employeeCode": "C1955",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1955",
+    "employeeCode": "C1955",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 13021.875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1955",
+    "employeeCode": "C1955",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 6510.9375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1966",
+    "employeeCode": "C1966",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1966",
+    "employeeCode": "C1966",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 19725,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1966",
+    "employeeCode": "C1966",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 39450,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1967",
+    "employeeCode": "C1967",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1967",
+    "employeeCode": "C1967",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 36984.375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1975",
+    "employeeCode": "C1975",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1975",
+    "employeeCode": "C1975",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 23062.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1975",
+    "employeeCode": "C1975",
+    "code": "TRANSPORT",
+    "name": "TRANSPORT ALLOWANCE",
+    "amount": 44000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1975",
+    "employeeCode": "C1975",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 23062.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1979",
+    "employeeCode": "C1979",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 14500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1979",
+    "employeeCode": "C1979",
+    "code": "NIGHT",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 2200,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1979",
+    "employeeCode": "C1979",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 67265.625,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1979",
+    "employeeCode": "C1979",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 76875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1979",
+    "employeeCode": "C1979",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 105703.125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1982",
+    "employeeCode": "C1982",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1982",
+    "employeeCode": "C1982",
+    "code": "PUBHOL",
+    "name": "PUBLIC HOLIDAY",
+    "amount": 19125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1983",
+    "employeeCode": "C1983",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1989",
+    "employeeCode": "C1989",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1989",
+    "employeeCode": "C1989",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 41925,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1989",
+    "employeeCode": "C1989",
+    "code": "STOCK",
+    "name": "STOCK COUNT ALLOWANCE",
+    "amount": 6250.48,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1989",
+    "employeeCode": "C1989",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 51600,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1989",
+    "employeeCode": "C1989",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 30637.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2000",
+    "employeeCode": "C2000",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 4000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2000",
+    "employeeCode": "C2000",
+    "code": "NIGHT",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 8800,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2000",
+    "employeeCode": "C2000",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 15243.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2000",
+    "employeeCode": "C2000",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 10162.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2002",
+    "employeeCode": "C2002",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2002",
+    "employeeCode": "C2002",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 18787.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2002",
+    "employeeCode": "C2002",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 100200,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2011",
+    "employeeCode": "C2011",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2011",
+    "employeeCode": "C2011",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 47418.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2011",
+    "employeeCode": "C2011",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 5268.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2015",
+    "employeeCode": "C2015",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2015",
+    "employeeCode": "C2015",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 39656.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2015",
+    "employeeCode": "C2015",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 15421.875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2023",
+    "employeeCode": "C2023",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2023",
+    "employeeCode": "C2023",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 17390.625,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2023",
+    "employeeCode": "C2023",
+    "code": "TRANSPORT",
+    "name": "TRANSPORT ALLOWANCE",
+    "amount": 46000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2023",
+    "employeeCode": "C2023",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 4968.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2052",
+    "employeeCode": "C2052",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2052",
+    "employeeCode": "C2052",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 42150,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2080",
+    "employeeCode": "C2080",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2080",
+    "employeeCode": "C2080",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 17259.375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2080",
+    "employeeCode": "C2080",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 29587.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2082",
+    "employeeCode": "C2082",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2082",
+    "employeeCode": "C2082",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 14343.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2082",
+    "employeeCode": "C2082",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 4781.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2083",
+    "employeeCode": "C2083",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 8000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2083",
+    "employeeCode": "C2083",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 31612.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2087",
+    "employeeCode": "C2087",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 9000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2087",
+    "employeeCode": "C2087",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 47418.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2088",
+    "employeeCode": "C2088",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2088",
+    "employeeCode": "C2088",
+    "code": "TRANSPORT",
+    "name": "TRANSPORT ALLOWANCE",
+    "amount": 40000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2088",
+    "employeeCode": "C2088",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 34518.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2097",
+    "employeeCode": "C2097",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2097",
+    "employeeCode": "C2097",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 23906.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2097",
+    "employeeCode": "C2097",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 19125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2097",
+    "employeeCode": "C2097",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 19125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2098",
+    "employeeCode": "C2098",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2098",
+    "employeeCode": "C2098",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 23906.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2098",
+    "employeeCode": "C2098",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 19125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2098",
+    "employeeCode": "C2098",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 19125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2116",
+    "employeeCode": "C2116",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 15000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2116",
+    "employeeCode": "C2116",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 109312.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2116",
+    "employeeCode": "C2116",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 145750,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2121",
+    "employeeCode": "C2121",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2121",
+    "employeeCode": "C2121",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 15806.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2121",
+    "employeeCode": "C2121",
+    "code": "TRANSPORT",
+    "name": "TRANSPORT ALLOWANCE",
+    "amount": 32000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2121",
+    "employeeCode": "C2121",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 28978.125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2129",
+    "employeeCode": "C2129",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2129",
+    "employeeCode": "C2129",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 40359.375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2130",
+    "employeeCode": "C2130",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2130",
+    "employeeCode": "C2130",
+    "code": "PUBHOL",
+    "name": "PUBLIC HOLIDAY",
+    "amount": 19125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2136",
+    "employeeCode": "C2136",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2136",
+    "employeeCode": "C2136",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 34593.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2136",
+    "employeeCode": "C2136",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 3843.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2138",
+    "employeeCode": "C2138",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2138",
+    "employeeCode": "C2138",
+    "code": "NIGHT",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 12100,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2138",
+    "employeeCode": "C2138",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 84562.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2138",
+    "employeeCode": "C2138",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 87125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2138",
+    "employeeCode": "C2138",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 130687.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2154",
+    "employeeCode": "C2154",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 9500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2154",
+    "employeeCode": "C2154",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 31612.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2171",
+    "employeeCode": "C2171",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 8000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2171",
+    "employeeCode": "C2171",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 47418.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2193",
+    "employeeCode": "C2193",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2193",
+    "employeeCode": "C2193",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 14906.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2193",
+    "employeeCode": "C2193",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 12421.875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2220",
+    "employeeCode": "C2220",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2220",
+    "employeeCode": "C2220",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 39656.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2221",
+    "employeeCode": "C2221",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2221",
+    "employeeCode": "C2221",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 26437.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2222",
+    "employeeCode": "C2222",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2222",
+    "employeeCode": "C2222",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 39656.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2224",
+    "employeeCode": "C2224",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2224",
+    "employeeCode": "C2224",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 26437.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2225",
+    "employeeCode": "C2225",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2225",
+    "employeeCode": "C2225",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 52875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2236",
+    "employeeCode": "C2236",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2290",
+    "employeeCode": "C2290",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 4000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2290",
+    "employeeCode": "C2290",
+    "code": "NIGHT",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 8800,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2290",
+    "employeeCode": "C2290",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 13021.875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2290",
+    "employeeCode": "C2290",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 8681.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2291",
+    "employeeCode": "C2291",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2291",
+    "employeeCode": "C2291",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 27337.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2300",
+    "employeeCode": "C2300",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2300",
+    "employeeCode": "C2300",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 31612.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2312",
+    "employeeCode": "C2312",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2319",
+    "employeeCode": "C2319",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2319",
+    "employeeCode": "C2319",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 30487.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2319",
+    "employeeCode": "C2319",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 20325,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2326",
+    "employeeCode": "C2326",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2326",
+    "employeeCode": "C2326",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 44784.375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2328",
+    "employeeCode": "C2328",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 8500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2328",
+    "employeeCode": "C2328",
+    "code": "NIGHT",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 4400,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2328",
+    "employeeCode": "C2328",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 45731.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2337",
+    "employeeCode": "C2337",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2337",
+    "employeeCode": "C2337",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 5268.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2338",
+    "employeeCode": "C2338",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2338",
+    "employeeCode": "C2338",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 31612.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2340",
+    "employeeCode": "C2340",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2340",
+    "employeeCode": "C2340",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 45731.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2341",
+    "employeeCode": "C2341",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2341",
+    "employeeCode": "C2341",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 46125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2341",
+    "employeeCode": "C2341",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 13453.125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2342",
+    "employeeCode": "C2342",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 9000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2342",
+    "employeeCode": "C2342",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 13021.875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2343",
+    "employeeCode": "C2343",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2343",
+    "employeeCode": "C2343",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 47418.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2383",
+    "employeeCode": "C2383",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2383",
+    "employeeCode": "C2383",
+    "code": "TRANSPORT",
+    "name": "TRANSPORT ALLOWANCE",
+    "amount": 56000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2383",
+    "employeeCode": "C2383",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 36881.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2387",
+    "employeeCode": "C2387",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2387",
+    "employeeCode": "C2387",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 38517.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2394",
+    "employeeCode": "C2394",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2395",
+    "employeeCode": "C2395",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2395",
+    "employeeCode": "C2395",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 63225,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2396",
+    "employeeCode": "C2396",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2402",
+    "employeeCode": "C2402",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2404",
+    "employeeCode": "C2404",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2404",
+    "employeeCode": "C2404",
+    "code": "STOCK",
+    "name": "STOCK COUNT ALLOWANCE",
+    "amount": 14066,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2404",
+    "employeeCode": "C2404",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 42234.375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2408",
+    "employeeCode": "C2408",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2410",
+    "employeeCode": "C2410",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2412",
+    "employeeCode": "C2412",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2412",
+    "employeeCode": "C2412",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 47418.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2413",
+    "employeeCode": "C2413",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 4000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2413",
+    "employeeCode": "C2413",
+    "code": "NIGHT",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 7700,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2413",
+    "employeeCode": "C2413",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 5081.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2421",
+    "employeeCode": "C2421",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2421",
+    "employeeCode": "C2421",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 26437.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2421",
+    "employeeCode": "C2421",
+    "code": "STOCK",
+    "name": "STOCK COUNT ALLOWANCE",
+    "amount": 14066,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2421",
+    "employeeCode": "C2421",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 57281.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2422",
+    "employeeCode": "C2422",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2422",
+    "employeeCode": "C2422",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 20325,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2422",
+    "employeeCode": "C2422",
+    "code": "STOCK",
+    "name": "STOCK COUNT ALLOWANCE",
+    "amount": 14066,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2422",
+    "employeeCode": "C2422",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 73678.125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2427",
+    "employeeCode": "C2427",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 9500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2427",
+    "employeeCode": "C2427",
+    "code": "STOCK",
+    "name": "STOCK COUNT ALLOWANCE",
+    "amount": 14066,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2427",
+    "employeeCode": "C2427",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 18225,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2431",
+    "employeeCode": "C2431",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2431",
+    "employeeCode": "C2431",
+    "code": "NIGHT",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 15400,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2431",
+    "employeeCode": "C2431",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 80718.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2431",
+    "employeeCode": "C2431",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 61500,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2431",
+    "employeeCode": "C2431",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 107625,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2438",
+    "employeeCode": "C2438",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2438",
+    "employeeCode": "C2438",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 9112.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2438",
+    "employeeCode": "C2438",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 18225,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2443",
+    "employeeCode": "C2443",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2445",
+    "employeeCode": "C2445",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2445",
+    "employeeCode": "C2445",
+    "code": "STOCK",
+    "name": "STOCK COUNT ALLOWANCE",
+    "amount": 6250.48,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2445",
+    "employeeCode": "C2445",
+    "code": "TRANSPORT",
+    "name": "TRANSPORT ALLOWANCE",
+    "amount": 8000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2445",
+    "employeeCode": "C2445",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 38109.375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2449",
+    "employeeCode": "C2449",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2449",
+    "employeeCode": "C2449",
+    "code": "NIGHT",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 9900,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2449",
+    "employeeCode": "C2449",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 17784.375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2449",
+    "employeeCode": "C2449",
+    "code": "TRANSPORT",
+    "name": "TRANSPORT ALLOWANCE",
+    "amount": 16000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2449",
+    "employeeCode": "C2449",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 5081.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2456",
+    "employeeCode": "C2456",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 13500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2456",
+    "employeeCode": "C2456",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 36895.3125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2456",
+    "employeeCode": "C2456",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 95493.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2456",
+    "employeeCode": "C2456",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 4340.625,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2460",
+    "employeeCode": "C2460",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2460",
+    "employeeCode": "C2460",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 82640.625,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2460",
+    "employeeCode": "C2460",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 102500,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2460",
+    "employeeCode": "C2460",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 130687.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2462",
+    "employeeCode": "C2462",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 12000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2462",
+    "employeeCode": "C2462",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 26381.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2462",
+    "employeeCode": "C2462",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 30150,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2462",
+    "employeeCode": "C2462",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 113062.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2463",
+    "employeeCode": "C2463",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2463",
+    "employeeCode": "C2463",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 17784.375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2463",
+    "employeeCode": "C2463",
+    "code": "TRANSPORT",
+    "name": "TRANSPORT ALLOWANCE",
+    "amount": 10000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2463",
+    "employeeCode": "C2463",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 15243.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2469",
+    "employeeCode": "C2469",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2469",
+    "employeeCode": "C2469",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 93937.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2470",
+    "employeeCode": "C2470",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2470",
+    "employeeCode": "C2470",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 13453.125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2471",
+    "employeeCode": "C2471",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 3500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2477",
+    "employeeCode": "C2477",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2477",
+    "employeeCode": "C2477",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 37265.625,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2482",
+    "employeeCode": "C2482",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2482",
+    "employeeCode": "C2482",
+    "code": "STOCK",
+    "name": "STOCK COUNT ALLOWANCE",
+    "amount": 14066,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2482",
+    "employeeCode": "C2482",
+    "code": "TRANSPORT",
+    "name": "TRANSPORT ALLOWANCE",
+    "amount": 2000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2482",
+    "employeeCode": "C2482",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 30487.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2483",
+    "employeeCode": "C2483",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2483",
+    "employeeCode": "C2483",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 34593.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2484",
+    "employeeCode": "C2484",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2484",
+    "employeeCode": "C2484",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 63225,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2491",
+    "employeeCode": "C2491",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2491",
+    "employeeCode": "C2491",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 15806.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2491",
+    "employeeCode": "C2491",
+    "code": "TRANSPORT",
+    "name": "TRANSPORT ALLOWANCE",
+    "amount": 32000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2491",
+    "employeeCode": "C2491",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 18440.625,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2492",
+    "employeeCode": "C2492",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 14000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2492",
+    "employeeCode": "C2492",
+    "code": "NIGHT",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 6600,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2492",
+    "employeeCode": "C2492",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 59578.125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2492",
+    "employeeCode": "C2492",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 51250,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2492",
+    "employeeCode": "C2492",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 92250,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2506",
+    "employeeCode": "C2506",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2507",
+    "employeeCode": "C2507",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 12000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2507",
+    "employeeCode": "C2507",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 40706.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2507",
+    "employeeCode": "C2507",
+    "code": "TRANSPORT",
+    "name": "TRANSPORT ALLOWANCE",
+    "amount": 8000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2507",
+    "employeeCode": "C2507",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 37575,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2512",
+    "employeeCode": "C2512",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2512",
+    "employeeCode": "C2512",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 12900,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2512",
+    "employeeCode": "C2512",
+    "code": "STOCK",
+    "name": "STOCK COUNT ALLOWANCE",
+    "amount": 6250.48,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2512",
+    "employeeCode": "C2512",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 29025,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2513",
+    "employeeCode": "C2513",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2513",
+    "employeeCode": "C2513",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 50053.125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2515",
+    "employeeCode": "C2515",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2515",
+    "employeeCode": "C2515",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 41235.9375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2516",
+    "employeeCode": "C2516",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2516",
+    "employeeCode": "C2516",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 39065.625,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2516",
+    "employeeCode": "C2516",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 17362.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2522",
+    "employeeCode": "C2522",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2523",
+    "employeeCode": "C2523",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2523",
+    "employeeCode": "C2523",
+    "code": "NIGHT",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 2200,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2523",
+    "employeeCode": "C2523",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 92250,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2523",
+    "employeeCode": "C2523",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 30750,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2523",
+    "employeeCode": "C2523",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 61500,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2526",
+    "employeeCode": "C2526",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2526",
+    "employeeCode": "C2526",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 32436,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2534",
+    "employeeCode": "C2534",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2534",
+    "employeeCode": "C2534",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 66825,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2534",
+    "employeeCode": "C2534",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 51975,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2536",
+    "employeeCode": "C2536",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 9500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2536",
+    "employeeCode": "C2536",
+    "code": "STOCK",
+    "name": "STOCK COUNT ALLOWANCE",
+    "amount": 14066,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2536",
+    "employeeCode": "C2536",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 28381.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2537",
+    "employeeCode": "C2537",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 13500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2537",
+    "employeeCode": "C2537",
+    "code": "NIGHT",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 2200,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2537",
+    "employeeCode": "C2537",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 57656.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2537",
+    "employeeCode": "C2537",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 30750,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2537",
+    "employeeCode": "C2537",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 94171.875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2555",
+    "employeeCode": "C2555",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2555",
+    "employeeCode": "C2555",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 76875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2585",
+    "employeeCode": "C2585",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 4000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2585",
+    "employeeCode": "C2585",
+    "code": "NIGHT",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 8800,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2585",
+    "employeeCode": "C2585",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 15243.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2585",
+    "employeeCode": "C2585",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 10162.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2597",
+    "employeeCode": "C2597",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 12000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2597",
+    "employeeCode": "C2597",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 45225,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2597",
+    "employeeCode": "C2597",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 97987.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2604",
+    "employeeCode": "C2604",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2604",
+    "employeeCode": "C2604",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 24468.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2605",
+    "employeeCode": "C2605",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 12000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2605",
+    "employeeCode": "C2605",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 33028.125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2605",
+    "employeeCode": "C2605",
+    "code": "TRANSPORT",
+    "name": "TRANSPORT ALLOWANCE",
+    "amount": 24000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2607",
+    "employeeCode": "C2607",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2614",
+    "employeeCode": "C2614",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2614",
+    "employeeCode": "C2614",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 63225,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2615",
+    "employeeCode": "C2615",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2615",
+    "employeeCode": "C2615",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 42150,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2622",
+    "employeeCode": "C2622",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2622",
+    "employeeCode": "C2622",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 6510.9375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2623",
+    "employeeCode": "C2623",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2623",
+    "employeeCode": "C2623",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 72018.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2626",
+    "employeeCode": "C2626",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2626",
+    "employeeCode": "C2626",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 27328.125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2632",
+    "employeeCode": "C2632",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2632",
+    "employeeCode": "C2632",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 57281.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2632",
+    "employeeCode": "C2632",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 15421.875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2633",
+    "employeeCode": "C2633",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2633",
+    "employeeCode": "C2633",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 50671.875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2633",
+    "employeeCode": "C2633",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 4406.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2647",
+    "employeeCode": "C2647",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2647",
+    "employeeCode": "C2647",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 45225,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2647",
+    "employeeCode": "C2647",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 18843.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2656",
+    "employeeCode": "C2656",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 2000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2663",
+    "employeeCode": "C2663",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2663",
+    "employeeCode": "C2663",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 67837.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2663",
+    "employeeCode": "C2663",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 52762.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2664",
+    "employeeCode": "C2664",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2664",
+    "employeeCode": "C2664",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 30487.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2664",
+    "employeeCode": "C2664",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 20325,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2665",
+    "employeeCode": "C2665",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 9000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2690",
+    "employeeCode": "C2690",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2690",
+    "employeeCode": "C2690",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 47418.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2697",
+    "employeeCode": "C2697",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2697",
+    "employeeCode": "C2697",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 15806.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2697",
+    "employeeCode": "C2697",
+    "code": "TRANSPORT",
+    "name": "TRANSPORT ALLOWANCE",
+    "amount": 32000,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2697",
+    "employeeCode": "C2697",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 7903.125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2698",
+    "employeeCode": "C2698",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 2000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2699",
+    "employeeCode": "C2699",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2699",
+    "employeeCode": "C2699",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 47418.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2704",
+    "employeeCode": "C2704",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2704",
+    "employeeCode": "C2704",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 31612.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2722",
+    "employeeCode": "C2722",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2722",
+    "employeeCode": "C2722",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 44381.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2724",
+    "employeeCode": "C2724",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 12000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2724",
+    "employeeCode": "C2724",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 15192.1875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2724",
+    "employeeCode": "C2724",
+    "code": "STOCK",
+    "name": "STOCK COUNT ALLOWANCE",
+    "amount": 14066,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2724",
+    "employeeCode": "C2724",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 17362.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2724",
+    "employeeCode": "C2724",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 93323.4375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2725",
+    "employeeCode": "C2725",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2725",
+    "employeeCode": "C2725",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 34725,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2728",
+    "employeeCode": "C2728",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2728",
+    "employeeCode": "C2728",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 9112.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2728",
+    "employeeCode": "C2728",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 30375,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2751",
+    "employeeCode": "C2751",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2751",
+    "employeeCode": "C2751",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 27337.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2751",
+    "employeeCode": "C2751",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 12150,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2757",
+    "employeeCode": "C2757",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 9000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2757",
+    "employeeCode": "C2757",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 47418.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2760",
+    "employeeCode": "C2760",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2760",
+    "employeeCode": "C2760",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 34593.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2760",
+    "employeeCode": "C2760",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 3843.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2776",
+    "employeeCode": "C2776",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2790",
+    "employeeCode": "C2790",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2790",
+    "employeeCode": "C2790",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 23906.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2790",
+    "employeeCode": "C2790",
+    "code": "SUNDAYEARN",
+    "name": "SUNDAY EARNING",
+    "amount": 19125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2790",
+    "employeeCode": "C2790",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 19125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2795",
+    "employeeCode": "C2795",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2795",
+    "employeeCode": "C2795",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 14906.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2795",
+    "employeeCode": "C2795",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 4968.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2805",
+    "employeeCode": "C2805",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2805",
+    "employeeCode": "C2805",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 11812.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2806",
+    "employeeCode": "C2806",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2806",
+    "employeeCode": "C2806",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 12421.875,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2808",
+    "employeeCode": "C2808",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2809",
+    "employeeCode": "C2809",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 1500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2810",
+    "employeeCode": "C2810",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2810",
+    "employeeCode": "C2810",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 31612.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2812",
+    "employeeCode": "C2812",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2812",
+    "employeeCode": "C2812",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 18225,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2813",
+    "employeeCode": "C2813",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2813",
+    "employeeCode": "C2813",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 47418.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2814",
+    "employeeCode": "C2814",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2814",
+    "employeeCode": "C2814",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 27337.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2815",
+    "employeeCode": "C2815",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 6000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2815",
+    "employeeCode": "C2815",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 9112.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2816",
+    "employeeCode": "C2816",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 11000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2817",
+    "employeeCode": "C2817",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 8500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2817",
+    "employeeCode": "C2817",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 18225,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2818",
+    "employeeCode": "C2818",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 7000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2818",
+    "employeeCode": "C2818",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 45731.25,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2818",
+    "employeeCode": "C2818",
+    "code": "WEEKDAYOVT",
+    "name": "WEEKDAY OVERTIME",
+    "amount": 12703.125,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2819",
+    "employeeCode": "C2819",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 9000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2819",
+    "employeeCode": "C2819",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 30487.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2820",
+    "employeeCode": "C2820",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 10500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2822",
+    "employeeCode": "C2822",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 6000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2822",
+    "employeeCode": "C2822",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 39065.625,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2823",
+    "employeeCode": "C2823",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 8500,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2823",
+    "employeeCode": "C2823",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 47418.75,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2824",
+    "employeeCode": "C2824",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 4000,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2824",
+    "employeeCode": "C2824",
+    "code": "NIGHT",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 8800,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C2824",
+    "employeeCode": "C2824",
+    "code": "SATEARN",
+    "name": "SATURDAY EARNING",
+    "amount": 22612.5,
+    "taxable": true,
+    "source": "Sage Dayrate Payment Schedule July 2026"
   }
 ]

@@ -164,8 +164,19 @@ export const markInactiveNonDailyContractEmployees = (employees: DleEmployeeDire
     };
   });
 
+const isExitedOrInactivePayrollStatus = (status: unknown) =>
+  /terminated|resigned|retired|inactive|deceased/i.test(String(status || '').trim());
+
+/**
+ * Employees eligible for a live payroll calculation.
+ * Excludes exited/inactive statuses and C-codes that are not on daily-rate payroll.
+ */
 export const payrollActiveEmployees = (employees: DleEmployeeDirectoryRow[]) =>
-  markInactiveNonDailyContractEmployees(employees).filter((employee) => !isInactiveNonDailyContractEmployee(employee));
+  markInactiveNonDailyContractEmployees(employees).filter((employee) => {
+    if (isExitedOrInactivePayrollStatus(employee.status)) return false;
+    if (isInactiveNonDailyContractEmployee(employee)) return false;
+    return true;
+  });
 
 export type PayrollRunExclusionEmployee = DleEmployeeDirectoryRow & { excludedFromPayrollRun?: boolean };
 

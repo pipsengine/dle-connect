@@ -748,13 +748,14 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const deductionRatio = amounts.grossPay > 0 ? roundMoney((totalDeductions / amounts.grossPay) * 100) : 0;
     const dailyRateEmployee = isDailyRatePayrollEmployee(employee, amounts.profileId);
     const stipendEmployee = amounts.profileId === 'stipend-non-taxable';
+    const nonPermanentEmployee = isNonPermanentPayrollEmployee(employee);
     const rates = dailyRateValues(employee, dailyRateEmployee);
     const timesheet = resolveTimesheetHoursForEmployee(employee, timesheetHours);
-    const pensionIssues = (!dailyRateEmployee && !stipendEmployee
+    const pensionIssues = (!dailyRateEmployee && !stipendEmployee && !nonPermanentEmployee
       ? pension.issues
       : pension.issues.filter((issue) => !/employment type is not eligible/i.test(issue))
     ).filter((issue) => issue !== 'RSA PIN is not on file' && issue !== 'PFA provider is not assigned');
-    const statutoryIssues = stipendEmployee
+    const statutoryIssues = (stipendEmployee || dailyRateEmployee || nonPermanentEmployee)
       ? funds.issues.filter((issue) => !/monthly payroll amount is missing|no statutory fund eligibility/i.test(issue))
       : funds.issues;
 

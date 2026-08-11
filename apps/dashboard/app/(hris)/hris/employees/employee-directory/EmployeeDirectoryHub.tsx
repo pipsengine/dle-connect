@@ -35,6 +35,10 @@ import {
   formatNumber,
   formatPct,
   formatRelativeTime,
+  isActiveEmploymentStatus,
+  isInactiveEmploymentStatus,
+  isProbationEmploymentStatus,
+  isWorkforceEmploymentStatus,
   normalizeDirectoryEmployee,
   resolveWorkforceCategory,
   statusTone,
@@ -299,6 +303,11 @@ export default function EmployeeDirectoryHub({ initialNow }: { initialNow: strin
     [enrichedEmployees],
   );
 
+  const workforceEmployees = useMemo(
+    () => enrichedEmployees.filter((employee) => isWorkforceEmploymentStatus(employee.status)),
+    [enrichedEmployees],
+  );
+
   const categoryCounts = useMemo(() => {
     const counts: Record<WorkforceCategory, number> = {
       Permanent: 0,
@@ -308,14 +317,15 @@ export default function EmployeeDirectoryHub({ initialNow }: { initialNow: strin
       'IT Student': 0,
       Other: 0,
     };
-    for (const employee of enrichedEmployees) counts[employee.workforceCategory] += 1;
+    // KPIs / "% of workforce" reflect active workforce only (exclude Inactive/exited).
+    for (const employee of workforceEmployees) counts[employee.workforceCategory] += 1;
     return counts;
-  }, [enrichedEmployees]);
+  }, [workforceEmployees]);
 
   const statusCounts = useMemo(() => {
-    const active = enrichedEmployees.filter((e) => String(e.status).toLowerCase().includes('active')).length;
-    const inactive = enrichedEmployees.filter((e) => String(e.status).toLowerCase().includes('inactive')).length;
-    const probation = enrichedEmployees.filter((e) => String(e.status).toLowerCase().includes('probation')).length;
+    const active = enrichedEmployees.filter((e) => isActiveEmploymentStatus(e.status)).length;
+    const inactive = enrichedEmployees.filter((e) => isInactiveEmploymentStatus(e.status)).length;
+    const probation = enrichedEmployees.filter((e) => isProbationEmploymentStatus(e.status)).length;
     return { active, inactive, probation };
   }, [enrichedEmployees]);
 
@@ -326,9 +336,9 @@ export default function EmployeeDirectoryHub({ initialNow }: { initialNow: strin
       if (locationFilter !== 'All Locations' && employee.location !== locationFilter) return false;
       if (statusFilter !== 'All Status' && employee.status !== statusFilter) return false;
 
-      if (categoryFilter === 'Active' && !String(employee.status).toLowerCase().includes('active')) return false;
-      if (categoryFilter === 'Inactive' && !String(employee.status).toLowerCase().includes('inactive')) return false;
-      if (categoryFilter === 'Probation' && !String(employee.status).toLowerCase().includes('probation')) return false;
+      if (categoryFilter === 'Active' && !isActiveEmploymentStatus(employee.status)) return false;
+      if (categoryFilter === 'Inactive' && !isInactiveEmploymentStatus(employee.status)) return false;
+      if (categoryFilter === 'Probation' && !isProbationEmploymentStatus(employee.status)) return false;
       if (categoryFilter !== 'all' && categoryFilter !== 'Active' && categoryFilter !== 'Inactive' && categoryFilter !== 'Probation') {
         if (employee.workforceCategory !== categoryFilter) return false;
       }
@@ -436,8 +446,9 @@ export default function EmployeeDirectoryHub({ initialNow }: { initialNow: strin
 
         <div className="flex gap-3 overflow-x-auto pb-1">
           {categoryKpis.map((item) => {
-            const value = item.key === 'total' ? enrichedEmployees.length : categoryCounts[item.key];
-            const pct = formatPct(value, enrichedEmployees.length || 1);
+            const workforceTotal = workforceEmployees.length || 1;
+            const value = item.key === 'total' ? workforceEmployees.length : categoryCounts[item.key];
+            const pct = formatPct(value, workforceTotal);
             return <SummaryCard key={item.key} label={item.label} value={value} pct={item.key === 'total' ? '100%' : pct} accent={item.accent} iconBg={item.iconBg} />;
           })}
         </div>

@@ -2471,8 +2471,9 @@ export async function buildTimesheetHoursMapForPayrollPeriod(period: string) {
       const updates = await readTimesheetPayrollUpdates();
       const update = updates.find((item) => item.periodId === periodId || String(item.periodName || '').includes(periodToken));
       if (update) {
+        // Payroll update is the acknowledged attendance authority for the period —
+        // overwrite synthesized hours so day counts (e.g. Sage schedule feed) drive gross.
         for (const employee of update.employeeAttendance) {
-          if (hasTimesheetHours(map, employee.employeeId, undefined, employee.employeeName)) continue;
           registerTimesheetHours(map, employee.employeeId, undefined, employee.employeeName, {
             daysWorked: Number(employee.daysWorked || 0),
             bookedHours: Number(employee.bookedHours || 0),

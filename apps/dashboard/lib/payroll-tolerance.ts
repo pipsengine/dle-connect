@@ -2,7 +2,7 @@ import type { PayrollCalculationRecord, PayrollRecordStatus } from '@/lib/payrol
 
 /** May/June cutover: defer known migration gaps so payroll workflow can be exercised. Corrections land in the next period. */
 export const payrollTolerancePeriods = () =>
-  String(process.env.HRIS_PAYROLL_TOLERANCE_PERIODS || '2026-05')
+  String(process.env.HRIS_PAYROLL_TOLERANCE_PERIODS || '2026-05,2026-06,2026-07')
     .split(',')
     .map((value) => value.trim().replace(/^per-/, ''))
     .filter(Boolean);

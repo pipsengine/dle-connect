@@ -179,10 +179,31 @@ export const initialsFor = (name: string) =>
     .join('')
     .toUpperCase();
 
+const normalizeEmploymentStatus = (status: unknown) => String(status || '').trim().toLowerCase();
+
+/** Inactive / exited — must be checked before "active" because "inactive".includes("active") is true. */
+export const isInactiveEmploymentStatus = (status: unknown) =>
+  /\b(inactive|terminated|resigned|retired|deceased)\b/.test(normalizeEmploymentStatus(status));
+
+export const isProbationEmploymentStatus = (status: unknown) =>
+  /\bprobation\b/.test(normalizeEmploymentStatus(status));
+
+/** Operational Active only (does not treat Inactive as Active). */
+export const isActiveEmploymentStatus = (status: unknown) => {
+  const normalized = normalizeEmploymentStatus(status);
+  if (!normalized) return true;
+  if (isInactiveEmploymentStatus(normalized) || isProbationEmploymentStatus(normalized)) return false;
+  if (/\b(suspended|on leave)\b/.test(normalized)) return false;
+  return /\b(active|confirmed)\b/.test(normalized);
+};
+
+/** Active workforce for KPIs: everyone except inactive/exited. */
+export const isWorkforceEmploymentStatus = (status: unknown) => !isInactiveEmploymentStatus(status);
+
 export const statusTone = (status: string) => {
-  const normalized = status.toLowerCase();
-  if (normalized.includes('active') || normalized.includes('confirmed')) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-  if (normalized.includes('probation')) return 'bg-amber-50 text-amber-700 border-amber-200';
-  if (normalized.includes('inactive') || normalized.includes('terminated') || normalized.includes('resigned')) return 'bg-slate-100 text-slate-600 border-slate-200';
+  const normalized = normalizeEmploymentStatus(status);
+  if (isInactiveEmploymentStatus(normalized)) return 'bg-slate-100 text-slate-600 border-slate-200';
+  if (isProbationEmploymentStatus(normalized)) return 'bg-amber-50 text-amber-700 border-amber-200';
+  if (/\b(active|confirmed)\b/.test(normalized)) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
   return 'bg-blue-50 text-blue-700 border-blue-200';
 };
