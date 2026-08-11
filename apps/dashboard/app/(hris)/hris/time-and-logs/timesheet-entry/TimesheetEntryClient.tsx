@@ -35,7 +35,7 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { DAILY_BREAK_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import { TimesheetEntryEnterpriseView } from './TimesheetEntryEnterpriseView';
@@ -494,7 +494,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       setLocalLines(data.lines);
       setWorkCenters(dbWorkCenters);
       if (data.matrixColumns && matrixColumns.length === 0) {
-        setMatrixColumns(data.matrixColumns);
+        setMatrixColumns(data.matrixColumns.filter((column) => !isIdleTimeProjectCode(column.code)));
       }
       if (data.header?.timesheetDate) setSelectedDate(data.header.timesheetDate);
       if (data.header?.supervisorId) setSelectedSupervisor(data.header.supervisorId);
@@ -1139,6 +1139,10 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   };
 
   const updateColumnProject = (colIdx: number, projectCode: string) => {
+    if (isIdleTimeProjectCode(projectCode)) {
+      setError(`Use the Idle Time column to book ${IDLE_TIME_PROJECT_CODE} ${IDLE_TIME_PROJECT_NAME}.`);
+      return;
+    }
     const next = [...matrixColumns];
     next[colIdx] = { ...next[colIdx], code: projectCode, label: projectCode };
     setMatrixColumns(next);
@@ -1406,6 +1410,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const reviewProjectCodes = Array.from(new Set(localLines.flatMap((line) => line.projectAllocations.map((item) => item.projectCode).filter(Boolean)))).sort();
   const canOpenSubmitReview = canEditTimesheet && reviewLineCount > 0 && reviewErrorCount === 0;
   const canManageTimesheetSetup = Boolean(payload?.permissions.canManagePeriod);
+  const canCreateProject = canManageTimesheetSetup || canEditTimesheet;
   const pageTitle = isWorkforceSupervisor ? 'Workforce Timesheet Entry' : 'Timesheet Entry';
   const pageDescription = isWorkforceSupervisor
     ? 'Record daily crew work hours for your assigned employees.'
@@ -1435,8 +1440,9 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const footerTotals = {
     duration: round1(localLines.reduce((sum, line) => sum + line.attendanceDuration, 0)),
     projectTotals: matrixColumns.map((col) => round1(localLines.reduce((sum, line) => sum + (line.projectAllocations.find((p) => p.projectCode === col.code)?.hours || 0), 0))),
-    used: round1(localLines.reduce((sum, line) => sum + line.usedHours, 0)),
+    used: round1(localLines.reduce((sum, line) => sum + productiveProjectHours(line.projectAllocations), 0)),
     idle: round1(localLines.reduce((sum, line) => sum + line.idleHours, 0)),
+    idleTime: round1(localLines.reduce((sum, line) => sum + idleTimeProjectHours(line.projectAllocations), 0)),
     total: bookedHoursTotal,
     variance: round1(localLines.reduce((sum, line) => sum + line.variance, 0)),
   };
@@ -1513,6 +1519,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           }}
           shiftHint={resolveTimesheetShift(selectedShift).description}
           canManagePeriod={canManageTimesheetSetup}
+          canCreateProject={canCreateProject}
+          onCreateProject={openCreateProjectModal}
           canEditTimesheet={canEditTimesheet}
           canBookOvertime={canBookOvertime}
           showCaptureMatrix={showCaptureMatrix}
@@ -1525,7 +1533,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           filteredLines={filteredLines}
           localLines={localLines}
           matrixColumns={matrixColumns}
-          projects={payload?.projects ?? []}
+          projects={(payload?.projects ?? []).filter((project) => !isIdleTimeProjectCode(project.code))}
           payloadProjects={payload?.projects ?? []}
           idleReasons={payload?.idleReasons ?? []}
           selectedEmployees={selectedEmployees}
@@ -1547,7 +1555,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           onSelectColumnProject={updateColumnProject}
           onAutoDistribute={handleAutoDistribute}
           onClearAllProjects={handleClearAllProjects}
-          onOpenProjectSettings={() => setShowProjectModal(true)}
+          onOpenProjectSettings={openCreateProjectModal}
           onSyncAttendance={() => handleSyncAttendance('manual')}
           onCopyPrevious={handleCopyPrevious}
           onSaveDraft={() => handleSave(false, true)}
@@ -1590,7 +1598,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       description={pageDescription}
       breadcrumbs={pageBreadcrumbs}
       primaryAction={primaryPageAction}
-      secondaryAction={canManageTimesheetSetup ? { label: 'Create Project', onClick: openCreateProjectModal, icon: Plus } : undefined}
+      secondaryAction={canCreateProject ? { label: 'Create Project', onClick: openCreateProjectModal, icon: Plus } : undefined}
     >
       <div className="space-y-8">
         {/* Header Card */}
@@ -1830,7 +1838,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             { label: 'Absent', value: summary.absentEmployees, color: 'red', pct: pctOfCrew(summary.absentEmployees) },
             { label: 'On Leave', value: summary.onLeaveEmployees, color: 'amber' },
             { label: 'Productive Hrs', value: summary.usedHours, color: 'blue', sub: `${summary.productivityPct}% Productivity` },
-            { label: 'Idle Hrs', value: summary.idleHours, color: 'slate', sub: `${round1(100 - summary.productivityPct)}% Idle Rate` },
+            { label: 'Break Hrs', value: summary.idleHours, color: 'slate', sub: 'Standard daily break' },
+            { label: 'Idle Time', value: footerTotals.idleTime, color: 'amber', sub: `${IDLE_TIME_PROJECT_CODE} downtime` },
           ].map((m, i) => (
             <div key={i} className={`rounded-2xl border p-4 shadow-sm ${metricCardTone[m.color].card}`}>
               <p className={`text-[10px] font-bold uppercase tracking-widest ${metricCardTone[m.color].label}`}>{m.label}</p>
@@ -1927,7 +1936,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
               <table className="w-full border-collapse text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 bg-white">
-                    {['Employee', 'Log', 'Duration', 'Productive Hrs', 'Idle / Break Hrs', 'Total Hrs', 'Variance', 'Status'].map((header) => (
+                    {['Employee', 'Log', 'Duration', 'Productive Hrs', 'Break Hrs', 'Idle Time', 'Total Hrs', 'Variance', 'Status'].map((header) => (
                       <th key={header} className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">{header}</th>
                     ))}
                   </tr>
@@ -1946,8 +1955,9 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                       </td>
                       <td className="px-4 py-4 text-[11px] font-black text-slate-700">{line.clockIn ? `${line.clockIn} - ${line.clockOut || '--:--'}` : 'Absent'}</td>
                       <td className="px-4 py-4 text-center text-xs font-black text-slate-700">{line.attendanceDuration}h</td>
-                      <td className="px-4 py-4 text-center text-xs font-black text-blue-700">{line.usedHours}h</td>
+                      <td className="px-4 py-4 text-center text-xs font-black text-blue-700">{productiveProjectHours(line.projectAllocations)}h</td>
                       <td className="px-4 py-4 text-center text-xs font-black text-amber-700">{line.idleHours}h</td>
+                      <td className="px-4 py-4 text-center text-xs font-black text-orange-700">{idleTimeProjectHours(line.projectAllocations)}h</td>
                       <td className="px-4 py-4 text-center text-xs font-black text-emerald-700">{line.totalHours}h</td>
                       <td className="px-4 py-4 text-center text-xs font-black text-slate-700">{line.variance > 0 ? `+${line.variance}` : line.variance}</td>
                       <td className="px-4 py-4 text-center">
@@ -1989,7 +1999,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                           <div className="flex items-center justify-between">
                             <select value={col.code} disabled={!canEditTimesheet} onChange={(e) => updateColumnProject(colIdx, e.target.value)} className="bg-transparent font-black text-indigo-600 focus:outline-none text-[11px] disabled:opacity-50">
                               <option value={col.code}>{col.label}</option>
-                              {payload?.projects.map(p => <option key={p.id} value={p.code}>{p.code}</option>)}
+                              {payload?.projects.filter((p) => !isIdleTimeProjectCode(p.code)).map(p => <option key={p.id} value={p.code}>{p.code}</option>)}
                             </select>
                             <button onClick={() => removeProjectColumn(colIdx)} disabled={!canEditTimesheet} className="text-slate-300 hover:text-red-500 disabled:opacity-40"><XCircle className="h-3.5 w-3.5" /></button>
                           </div>
@@ -2004,7 +2014,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                       </button>
                     </th>
                     <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-slate-500 text-center bg-blue-50/30 min-w-[80px]">Used</th>
-                    <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-slate-500 min-w-[220px] bg-amber-50/30">Idle Time</th>
+                    <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-slate-500 min-w-[220px] bg-amber-50/30">Break Time</th>
+                    <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-slate-500 text-center bg-orange-50/40 min-w-[100px]" title={`${IDLE_TIME_PROJECT_CODE} ${IDLE_TIME_PROJECT_NAME}`}>Idle Time</th>
                     <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-slate-500 text-center bg-indigo-50/30 min-w-[80px]">Total</th>
                     <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-slate-500 text-center min-w-[60px]">Var</th>
                     <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-slate-500 text-center min-w-[100px]">Status</th>
@@ -2052,7 +2063,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                           }} className={`w-full rounded-lg border border-slate-200 py-1.5 text-center text-xs font-black focus:border-indigo-500 ${isAbsent ? 'bg-slate-100 text-slate-400' : ''}`} /></td>
                         ))}
                         <td className="px-4 py-4 border-l border-slate-100"></td>
-                        <td className="px-4 py-4 text-center font-black text-blue-700 bg-blue-50/20">{line.usedHours}</td>
+                        <td className="px-4 py-4 text-center font-black text-blue-700 bg-blue-50/20">{productiveProjectHours(line.projectAllocations)}</td>
                         <td className="px-4 py-4 bg-amber-50/20 border-l border-slate-100"><div className="flex flex-col gap-2">{(line.idleAllocations.length === 0 ? [{ reasonId: DEFAULT_BREAK_IDLE_REASON_ID, reasonName: DEFAULT_BREAK_IDLE_REASON_NAME, hours: 0, remarks: null }] : line.idleAllocations).map((alloc, iIdx) => (
                           <div key={iIdx} className="flex items-center gap-1.5"><input type="number" step="0.5" placeholder="Hrs" disabled={!canEditTimesheet} value={alloc.hours || ''} onChange={(e) => {
                             const next = [...line.idleAllocations];
@@ -2070,6 +2081,30 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                           </select>
                           {iIdx === line.idleAllocations.length - 1 && canEditTimesheet && <button onClick={() => handleUpdateLine(originalIdx, { idleAllocations: [...line.idleAllocations, { reasonId: DEFAULT_BREAK_IDLE_REASON_ID, reasonName: DEFAULT_BREAK_IDLE_REASON_NAME, hours: 0, remarks: null }] })} className="p-1 text-slate-400 hover:text-indigo-600"><Plus className="h-3 w-3" /></button>}</div>
                         ))}</div></td>
+                        <td className="px-4 py-4 border-l border-slate-100 bg-orange-50/30">
+                          <input
+                            type="number"
+                            step="0.5"
+                            min={0}
+                            disabled={!canEditTimesheet || isAbsent}
+                            value={isAbsent ? 0 : idleTimeProjectHours(line.projectAllocations) || ''}
+                            onChange={(e) => {
+                              const idleHours = line.idleHours || DAILY_BREAK_HOURS;
+                              const maxTotal = matrixProductiveHoursCap(line, line.usedHours, standardTimesheetHours, idleHours, selectedShift);
+                              const projectAllocations = upsertMatrixProjectHours(
+                                line.projectAllocations,
+                                IDLE_TIME_PROJECT_CODE,
+                                IDLE_TIME_PROJECT_NAME,
+                                parseFloat(e.target.value) || 0,
+                                maxTotal,
+                              );
+                              handleUpdateLine(originalIdx, { projectAllocations });
+                            }}
+                            className={`w-full rounded-lg border border-orange-200 bg-orange-50/50 py-1.5 text-center text-xs font-black text-orange-800 focus:border-orange-500 ${isAbsent ? 'bg-slate-100 text-slate-400' : ''}`}
+                            title={`${IDLE_TIME_PROJECT_CODE} ${IDLE_TIME_PROJECT_NAME}`}
+                          />
+                          <p className="mt-1 text-[8px] font-black uppercase tracking-widest text-orange-500">{IDLE_TIME_PROJECT_CODE}</p>
+                        </td>
                         <td className="px-4 py-4 text-center bg-indigo-50/20"><span className={`font-black ${line.totalHours === grossTimesheetHours ? 'text-emerald-600' : 'text-indigo-600'}`}>{line.totalHours}</span></td>
                         <td className="px-4 py-4 text-center"><span className={`text-[10px] font-black ${line.variance === 0 ? 'text-emerald-600' : 'text-amber-600'}`}>{line.variance > 0 ? `+${line.variance}` : line.variance}</span></td>
                         <td className="px-4 py-4 text-center"><div className="flex flex-col items-center gap-1 group relative">
@@ -2158,7 +2193,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                       ))}
                     </div>
                     <div className="space-y-3">
-                      <p className="text-[9px] font-black uppercase text-slate-400">Idle Time</p>
+                      <p className="text-[9px] font-black uppercase text-slate-400">Break Time</p>
                       {line.idleAllocations.map((alloc, iIdx) => (
                         <div key={iIdx} className="flex items-center gap-2">
                           <select 
@@ -2193,13 +2228,37 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                           onClick={() => handleUpdateLine(originalIdx, { idleAllocations: [...line.idleAllocations, { reasonId: DEFAULT_BREAK_IDLE_REASON_ID, reasonName: DEFAULT_BREAK_IDLE_REASON_NAME, hours: 0, remarks: null }] })}
                           className="w-full rounded-lg border border-dashed border-slate-200 py-1.5 text-[10px] font-black text-slate-400 hover:border-indigo-300 hover:text-indigo-600 transition-all"
                         >
-                          + ADD IDLE REASON
+                          + ADD BREAK REASON
                         </button>
                       )}
                     </div>
+                    <div className="space-y-2">
+                      <p className="text-[9px] font-black uppercase text-slate-400">Idle Time ({IDLE_TIME_PROJECT_CODE})</p>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min={0}
+                        disabled={!canEditTimesheet || isAbsent}
+                        value={isAbsent ? 0 : idleTimeProjectHours(line.projectAllocations) || ''}
+                        onChange={(e) => {
+                          const idleHours = line.idleHours || DAILY_BREAK_HOURS;
+                          const maxTotal = matrixProductiveHoursCap(line, line.usedHours, standardTimesheetHours, idleHours, selectedShift);
+                          const projectAllocations = upsertMatrixProjectHours(
+                            line.projectAllocations,
+                            IDLE_TIME_PROJECT_CODE,
+                            IDLE_TIME_PROJECT_NAME,
+                            parseFloat(e.target.value) || 0,
+                            maxTotal,
+                          );
+                          handleUpdateLine(originalIdx, { projectAllocations });
+                        }}
+                        className={`w-full rounded-lg border border-orange-200 bg-orange-50/50 py-1.5 text-center text-xs font-black text-orange-800 ${isAbsent ? 'bg-slate-100 text-slate-400' : ''}`}
+                      />
+                    </div>
                     <div className="flex justify-between border-t border-slate-100 pt-4 text-center font-black">
-                      <div><p className="text-[8px] text-slate-400">USED</p><p className="text-blue-700">{line.usedHours}h</p></div>
-                      <div><p className="text-[8px] text-slate-400">IDLE</p><p className="text-amber-700">{line.idleHours}h</p></div>
+                      <div><p className="text-[8px] text-slate-400">USED</p><p className="text-blue-700">{productiveProjectHours(line.projectAllocations)}h</p></div>
+                      <div><p className="text-[8px] text-slate-400">BREAK</p><p className="text-amber-700">{line.idleHours}h</p></div>
+                      <div><p className="text-[8px] text-slate-400">IDLE</p><p className="text-orange-700">{idleTimeProjectHours(line.projectAllocations)}h</p></div>
                       <div><p className="text-[8px] text-slate-400">TOTAL</p><p className={line.totalHours === grossTimesheetHours ? 'text-emerald-600' : 'text-indigo-600'}>{line.totalHours}h</p></div>
                     </div>
                   </div>
@@ -2280,8 +2339,12 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                   <p className="mt-1 text-xl font-black text-blue-900">{reviewProjectHours}h</p>
                 </div>
                 <div className="rounded-xl border border-amber-100 bg-amber-50 p-4">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Idle Hours</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Break Hours</p>
                   <p className="mt-1 text-xl font-black text-amber-900">{reviewIdleHours}h</p>
+                </div>
+                <div className="rounded-xl border border-orange-100 bg-orange-50 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-orange-600">Idle Time ({IDLE_TIME_PROJECT_CODE})</p>
+                  <p className="mt-1 text-xl font-black text-orange-900">{round1(localLines.reduce((sum, line) => sum + idleTimeProjectHours(line.projectAllocations), 0))}h</p>
                 </div>
                 <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
                   <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Total Hours</p>
@@ -2300,7 +2363,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                         <th className="px-4 py-3">Employee</th>
                         <th className="px-4 py-3">Log</th>
                         <th className="px-4 py-3 text-right">Used</th>
-                        <th className="px-4 py-3 text-right">Idle</th>
+                        <th className="px-4 py-3 text-right">Break</th>
+                        <th className="px-4 py-3 text-right">Idle Time</th>
                         <th className="px-4 py-3 text-right">Total</th>
                         <th className="px-4 py-3">Status</th>
                       </tr>
@@ -2313,8 +2377,9 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                             <div className="text-xs font-bold text-slate-500">{line.employeeNo}</div>
                           </td>
                           <td className="px-4 py-3 text-xs font-bold text-slate-600">{line.clockIn ? `${line.clockIn} - ${line.clockOut || '--:--'}` : 'Absent'}</td>
-                          <td className="px-4 py-3 text-right font-black text-blue-700">{line.usedHours}</td>
+                          <td className="px-4 py-3 text-right font-black text-blue-700">{productiveProjectHours(line.projectAllocations)}</td>
                           <td className="px-4 py-3 text-right font-black text-amber-700">{line.idleHours}</td>
+                          <td className="px-4 py-3 text-right font-black text-orange-700">{idleTimeProjectHours(line.projectAllocations)}</td>
                           <td className="px-4 py-3 text-right font-black text-slate-900">{line.totalHours}</td>
                           <td className="px-4 py-3">
                             <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${line.validationStatus === 'Valid' ? 'bg-emerald-100 text-emerald-700' : line.validationStatus === 'Error' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{line.validationStatus}</span>
@@ -2340,7 +2405,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       )}
 
       {/* Project Modal */}
-      {canManageTimesheetSetup && showProjectModal && (
+      {canCreateProject && showProjectModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
           <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="mb-8 flex items-center justify-between"><div className="space-y-1"><h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight">{editingProjectId ? 'Edit Project' : 'Register Project'}</h3><p className="text-sm font-medium text-slate-500">{editingProjectId ? 'Update project details in the company registry.' : 'Add a new project code to the company registry.'}</p></div><button onClick={closeProjectModal} className="rounded-full p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors"><XCircle className="h-8 w-8" /></button></div>

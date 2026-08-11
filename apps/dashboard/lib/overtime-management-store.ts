@@ -68,6 +68,15 @@ export type OvertimeSupervisorEmployee = {
 
 export type OvertimeSupervisorOption = OvertimeAuthorizationOption & {
   employees: OvertimeSupervisorEmployee[];
+  defaultWorkCenter?: string;
+};
+
+export type OvertimeEmployeeAttendance = {
+  employeeCode: string;
+  biometricDuration: number;
+  usedHours: number;
+  clockIn: string | null;
+  clockOut: string | null;
 };
 
 export type OvertimeAuthorizationSetup = {
@@ -221,6 +230,81 @@ const employeeOption = (employee: DleEmployeeDirectoryRow): OvertimeAuthorizatio
   jobTitle: clean(employee.jobTitle),
   department: clean(employee.department),
 });
+
+const workCenterFromText = (text: string, workCenters: Array<{ name: string }>) => {
+  const haystack = clean(text).toLowerCase();
+  if (!haystack) return '';
+  const aliases: Array<[RegExp, string]> = [
+    [/\bfitter|fitting\b/i, 'Fitting'],
+    [/\bwelder|welding\b/i, 'Welding'],
+    [/\bpainter|painting|coating\b/i, 'Painting'],
+    [/\brigger|rigging\b/i, 'Rigging'],
+    [/\bscaffold/i, 'Structural Assembly'],
+    [/\bblast/i, 'Blasting'],
+    [/\bmaintain|maintenance\b/i, 'Maintenance'],
+    [/\broller|rolling|machinist|machining\b/i, 'Machining'],
+  ];
+  const alias = aliases.find(([pattern]) => pattern.test(haystack))?.[1];
+  if (alias) {
+    const match = workCenters.find((workCenter) => clean(workCenter.name).toLowerCase() === alias.toLowerCase());
+    if (match) return match.name;
+  }
+  return workCenters.find((workCenter) => haystack.includes(clean(workCenter.name).toLowerCase()))?.name || '';
+};
+
+const defaultWorkCenterForSupervisor = (
+  supervisor: OvertimeAuthorizationOption,
+  employees: OvertimeSupervisorEmployee[],
+  workCenters: Array<{ name: string }>,
+  assignmentGroups: string[],
+) => {
+  const fromTitle = workCenterFromText(`${supervisor.jobTitle} ${supervisor.department}`, workCenters);
+  if (fromTitle) return fromTitle;
+  for (const group of assignmentGroups) {
+    const match = workCenterFromText(group, workCenters);
+    if (match) return match;
+  }
+  const departmentCounts = new Map<string, number>();
+  for (const employee of employees) {
+    const department = clean(employee.department);
+    if (!department) continue;
+    departmentCounts.set(department, (departmentCounts.get(department) || 0) + 1);
+  }
+  const topDepartment = [...departmentCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+  return workCenterFromText(topDepartment, workCenters) || workCenters[0]?.name || '';
+};
+
+/** Attendance / used hours for overtime authorization validation on a work date. */
+export const readOvertimeEmployeeAttendance = async (
+  workDate: string,
+  employeeCodes: string[],
+): Promise<OvertimeEmployeeAttendance[]> => {
+  const dateKey = clean(workDate).slice(0, 10);
+  const codes = new Set(employeeCodes.map((code) => clean(code).toLowerCase()).filter(Boolean));
+  if (!dateKey || !codes.size) return [];
+  const { headers, lines } = await readTimesheetData({ softFail: true }).catch(() => ({ headers: [] as TimesheetHeader[], lines: [] as TimesheetLine[] }));
+  const headerIds = new Set(headers.filter((header) => clean(header.timesheetDate).slice(0, 10) === dateKey).map((header) => header.id));
+  const byCode = new Map<string, OvertimeEmployeeAttendance>();
+  for (const line of lines) {
+    if (!headerIds.has(line.headerId)) continue;
+    const code = clean(line.employeeNo) || clean(line.employeeId);
+    const key = code.toLowerCase();
+    if (!codes.has(key)) continue;
+    const biometricDuration = round2(normalizePaidWorkHours(Number(line.attendanceDuration || 0)));
+    const usedHours = round2(normalizePaidWorkHours(Number(line.usedHours || 0)));
+    const existing = byCode.get(key);
+    if (!existing || biometricDuration > existing.biometricDuration) {
+      byCode.set(key, {
+        employeeCode: code,
+        biometricDuration,
+        usedHours,
+        clockIn: line.clockIn || null,
+        clockOut: line.clockOut || null,
+      });
+    }
+  }
+  return Array.from(byCode.values());
+};
 
 const findEmployeeByText = (employees: DleEmployeeDirectoryRow[], value: string) => {
   const target = clean(value).toLowerCase();
@@ -669,6 +753,7 @@ export const readOvertimeManagementPayload = async (roleInput?: string | null) =
   const employeeByCode = new Map(activeEmployees.map((employee) => [clean(employee.employeeCode).toLowerCase(), employee]));
   const uniqueSupervisors = new Map<string, OvertimeAuthorizationOption>();
   const employeesBySupervisor = new Map<string, Map<string, OvertimeSupervisorEmployee>>();
+  const assignmentGroupsBySupervisor = new Map<string, Set<string>>();
   const addAssignedEmployee = (supervisorCode: string, employeeCode: string, fallbackName: string) => {
     const key = supervisorCode.toLowerCase();
     const code = clean(employeeCode);
@@ -693,6 +778,9 @@ export const readOvertimeManagementPayload = async (roleInput?: string | null) =
       name: clean(assignment.supervisorName) || code,
       department: clean(assignment.assignmentGroup),
     });
+    const groups = assignmentGroupsBySupervisor.get(code.toLowerCase()) || new Set<string>();
+    if (clean(assignment.assignmentGroup)) groups.add(clean(assignment.assignmentGroup));
+    assignmentGroupsBySupervisor.set(code.toLowerCase(), groups);
     if (clean(assignment.employeeCode)) addAssignedEmployee(code, assignment.employeeCode!, clean(assignment.employeeName) || '');
   }
   for (const employee of activeEmployees) {
@@ -747,10 +835,19 @@ export const readOvertimeManagementPayload = async (roleInput?: string | null) =
       }))
       .sort((a, b) => a.name.localeCompare(b.name)),
     supervisors: Array.from(uniqueSupervisors.entries())
-      .map(([key, option]) => ({
-        ...option,
-        employees: Array.from((employeesBySupervisor.get(key) || new Map()).values()).sort((a, b) => a.name.localeCompare(b.name)),
-      }))
+      .map(([key, option]) => {
+        const employees = Array.from((employeesBySupervisor.get(key) || new Map()).values()).sort((a, b) => a.name.localeCompare(b.name));
+        return {
+          ...option,
+          employees,
+          defaultWorkCenter: defaultWorkCenterForSupervisor(
+            option,
+            employees,
+            workCenters.filter((workCenter) => workCenter.status === 'Active'),
+            Array.from(assignmentGroupsBySupervisor.get(key) || []),
+          ),
+        };
+      })
       .sort((a, b) => a.name.localeCompare(b.name)),
     mdApprover: mdEmployee ? employeeOption(mdEmployee) : null,
     gmOperations: gmEmployee ? employeeOption(gmEmployee) : null,

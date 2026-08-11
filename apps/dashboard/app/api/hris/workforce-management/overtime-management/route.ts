@@ -5,6 +5,7 @@ import {
   createOvertimeRequest,
   normalizeOvertimeRole,
   overtimeCsv,
+  readOvertimeEmployeeAttendance,
   readOvertimeManagementPayload,
   type OvertimeAction,
 } from '@/lib/overtime-management-store';
@@ -85,6 +86,16 @@ export async function GET(request: NextRequest) {
   try {
     const livePermissions = await permissionsForRequest(request);
     const role = normalizeOvertimeRole(request.headers.get('x-hris-role') || request.nextUrl.searchParams.get('role'));
+    const attendanceDate = String(request.nextUrl.searchParams.get('attendanceDate') || '').trim();
+    const employeeCodesParam = String(request.nextUrl.searchParams.get('employeeCodes') || '').trim();
+    if (attendanceDate && employeeCodesParam) {
+      if (!hasAnyPermission(request, ['overtime.authorization.create', 'overtime.authorization.submit', 'overtime.authorization.view', 'workforce.manage', 'operations.timesheets.submit'], livePermissions)) {
+        return err(403, 'Permission denied.');
+      }
+      const employeeCodes = employeeCodesParam.split(',').map((item) => item.trim()).filter(Boolean);
+      const attendance = await readOvertimeEmployeeAttendance(attendanceDate, employeeCodes);
+      return ok({ workDate: attendanceDate, attendance });
+    }
     const [payload, authorizationRequests] = await Promise.all([
       readOvertimeManagementPayload(role),
       listOvertimeAuthorizationRequests().catch(() => []),
@@ -116,7 +127,62 @@ export async function POST(request: NextRequest) {
     const baseUrl = resolveWorkflowLinkOriginFromRequest(request);
     if (String(body.action || '').trim() === 'create-authorization') {
       if (!hasAnyPermission(request, ['overtime.authorization.create', 'overtime.authorization.submit', 'workforce.manage', 'operations.timesheets.submit'], livePermissions)) return err(403, 'Permission denied.');
-      await createOvertimeAuthorizationRequest({ ...body, portalBaseUrl: baseUrl }, body.actor ? String(body.actor) : 'Production Manager');
+      const projectEntries = Array.isArray(body.projects) && body.projects.length
+        ? body.projects.map((item: Record<string, unknown>) => ({
+            projectCode: String(item.projectCode || '').trim(),
+            projectName: String(item.projectName || '').trim(),
+            projectManagerName: String(item.projectManagerName || '').trim(),
+            projectManagerEmail: String(item.projectManagerEmail || '').trim(),
+            employees: Array.isArray(item.employees) ? item.employees : body.employees,
+          }))
+        : [{
+            projectCode: String(body.projectCode || '').trim(),
+            projectName: String(body.projectName || '').trim(),
+            projectManagerName: String(body.projectManagerName || '').trim(),
+            projectManagerEmail: String(body.projectManagerEmail || '').trim(),
+            employees: body.employees,
+          }];
+      if (!projectEntries.some((item: { projectCode: string }) => item.projectCode)) return err(400, 'Select at least one project.');
+
+      const employeeCodes = Array.from(new Set(
+        projectEntries.flatMap((entry: { employees?: unknown }) =>
+          Array.isArray(entry.employees)
+            ? entry.employees.map((line: Record<string, unknown>) => String(line.employeeCode || '').trim()).filter(Boolean)
+            : [],
+        ),
+      )) as string[];
+      const attendance = await readOvertimeEmployeeAttendance(String(body.workDate || ''), employeeCodes);
+      const attendanceByCode = new Map(attendance.map((item) => [item.employeeCode.toLowerCase(), item]));
+      const hoursByEmployee = new Map<string, number>();
+      for (const entry of projectEntries) {
+        for (const line of Array.isArray(entry.employees) ? entry.employees : []) {
+          const code = String((line as Record<string, unknown>).employeeCode || '').trim().toLowerCase();
+          const hours = Number((line as Record<string, unknown>).overtimeHours || 0);
+          if (!code || !(hours > 0)) continue;
+          hoursByEmployee.set(code, (hoursByEmployee.get(code) || 0) + hours);
+        }
+      }
+      for (const [code, totalHours] of hoursByEmployee) {
+        const row = attendanceByCode.get(code);
+        if (!row || row.biometricDuration <= 0) continue;
+        const available = Math.max(0, Math.round((row.biometricDuration - row.usedHours) * 100) / 100);
+        if (totalHours > available + 0.001) {
+          return err(400, `Overtime for ${row.employeeCode} (${totalHours}h) exceeds available biometric headroom (${available}h = ${row.biometricDuration}h biometric − ${row.usedHours}h used).`);
+        }
+      }
+
+      for (const entry of projectEntries) {
+        if (!entry.projectCode) continue;
+        await createOvertimeAuthorizationRequest({
+          ...body,
+          projectCode: entry.projectCode,
+          projectName: entry.projectName || entry.projectCode,
+          projectManagerName: entry.projectManagerName || body.projectManagerName,
+          projectManagerEmail: entry.projectManagerEmail || body.projectManagerEmail,
+          employees: entry.employees,
+          portalBaseUrl: baseUrl,
+        }, body.actor ? String(body.actor) : 'Production Manager');
+      }
       const [payload, authorizationRequests] = await Promise.all([readOvertimeManagementPayload(role), listOvertimeAuthorizationRequests()]);
       return ok(applyAccessToPayload({ ...payload, authorizationRequests }, request, livePermissions));
     }

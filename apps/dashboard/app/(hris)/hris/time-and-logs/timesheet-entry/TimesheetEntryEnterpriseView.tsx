@@ -29,7 +29,7 @@ import {
   TimesheetRowActionsMenu,
   ApprovedOvertimeBookingBar,
 } from './timesheet-entry-ui';
-import { DAILY_BREAK_HOURS, canonicalProjectCode, impliedOvertimeHoursFromClock, matrixProductiveHoursCap, projectHoursForColumn, upsertMatrixProjectHours } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, canonicalProjectCode, idleTimeProjectHours, impliedOvertimeHoursFromClock, matrixProductiveHoursCap, productiveProjectHours, projectHoursForColumn, upsertMatrixProjectHours, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME } from '@/lib/timesheet-entry-shared';
 import { overtimeProductiveHours } from '@/lib/timesheet-overtime-booking';
 
 type DisplayColumn = { code: string; label: string; kind: 'project' | 'internal' | 'idle' | 'leave' };
@@ -74,6 +74,8 @@ export type TimesheetEnterpriseViewProps = {
   onDateChange: (value: string) => void;
   onShiftChange: (value: string) => void;
   canManagePeriod: boolean;
+  canCreateProject?: boolean;
+  onCreateProject?: () => void;
   canEditTimesheet: boolean;
   canBookOvertime: boolean;
   showCaptureMatrix: boolean;
@@ -154,6 +156,7 @@ export type TimesheetEnterpriseViewProps = {
     projectTotals: number[];
     used: number;
     idle: number;
+    idleTime?: number;
     total: number;
     variance: number;
   };
@@ -359,6 +362,15 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
             </ContextField>
             <div className="flex items-end gap-2">
               <StatusBadge label={props.periodIsOpen ? 'Open' : 'Closed'} tone={props.periodIsOpen ? 'success' : 'neutral'} />
+              {props.canCreateProject && props.onCreateProject ? (
+                <button
+                  type="button"
+                  onClick={props.onCreateProject}
+                  className="h-10 rounded-xl bg-[#2563EB] px-3 text-xs font-semibold text-white hover:bg-[#1D4ED8]"
+                >
+                  Create Project
+                </button>
+              ) : null}
               {props.canManagePeriod ? (
                 <Link
                   href="/hris/time-and-logs/timesheet-period"
@@ -377,10 +389,12 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
           columns={props.matrixColumns}
           projects={props.payloadProjects}
           canEdit={props.canEditTimesheet}
+          canCreateProject={props.canCreateProject}
           onAddProject={props.onAddProjectColumn}
           onAutoDistribute={props.onAutoDistribute}
           onClearAll={props.onClearAllProjects}
           onOpenSettings={props.onOpenProjectSettings}
+          onCreateProject={props.onCreateProject}
           onMoveColumn={props.onMoveProjectColumn}
           onRemoveColumn={props.onRemoveProjectColumn}
           onSelectColumnProject={props.onSelectColumnProject}
@@ -468,7 +482,8 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                         );
                       })}
                       <th className="border-l border-[#EDF2F7] px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Used</th>
-                      <th className="px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Idle</th>
+                      <th className="px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Break Time</th>
+                      <th className="px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Idle Time</th>
                       <th className="px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Total</th>
                       <th className="px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Var</th>
                       <th className="px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Status</th>
@@ -532,7 +547,7 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                             const columnCode = canonicalProjectCode(col.code);
                             const project = props.payloadProjects.find((p) => canonicalProjectCode(p.code) === columnCode);
                             const hours = projectHoursForColumn(line.projectAllocations, columnCode);
-                            const hasOvertime = overtimeProductiveHours(line.usedHours, props.standardTimesheetHours) > 0;
+                            const hasOvertime = overtimeProductiveHours(productiveProjectHours(line.projectAllocations), props.standardTimesheetHours) > 0;
                             const cellTone =
                               hours <= 0
                                 ? 'bg-white'
@@ -574,14 +589,44 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                             );
                           })}
                           <td className="border-l border-[#EDF2F7] px-3 py-3 text-center text-xs font-bold text-[#2563EB]">
-                            <span>{line.usedHours}</span>
-                            {overtimeProductiveHours(line.usedHours, props.standardTimesheetHours) > 0 ? (
+                            <span>{productiveProjectHours(line.projectAllocations)}</span>
+                            {overtimeProductiveHours(productiveProjectHours(line.projectAllocations), props.standardTimesheetHours) > 0 ? (
                               <span className="mt-0.5 block text-[9px] font-semibold text-[#D97706]">
-                                incl. {overtimeProductiveHours(line.usedHours, props.standardTimesheetHours)}h OT
+                                incl. {overtimeProductiveHours(productiveProjectHours(line.projectAllocations), props.standardTimesheetHours)}h OT
                               </span>
                             ) : null}
                           </td>
                           <td className="px-3 py-3 text-center text-xs font-bold text-[#F97316]">{line.idleHours}</td>
+                          <td className="px-1 py-2">
+                            <input
+                              type="number"
+                              step="0.5"
+                              min={0}
+                              disabled={!props.canEditTimesheet || !props.showCaptureMatrix || isAbsent}
+                              value={isAbsent ? 0 : idleTimeProjectHours(line.projectAllocations) || ''}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                const idleHours = line.idleHours || DAILY_BREAK_HOURS;
+                                const maxTotal = matrixProductiveHoursCap(
+                                  line,
+                                  line.usedHours,
+                                  props.standardTimesheetHours,
+                                  idleHours,
+                                  props.selectedShift,
+                                );
+                                const projectAllocations = upsertMatrixProjectHours(
+                                  line.projectAllocations,
+                                  IDLE_TIME_PROJECT_CODE,
+                                  IDLE_TIME_PROJECT_NAME,
+                                  parseFloat(e.target.value) || 0,
+                                  maxTotal,
+                                );
+                                props.onUpdateLine(originalIdx, { projectAllocations });
+                              }}
+                              className="w-full rounded-lg border border-[#FDBA74] bg-[#FFF7ED] py-1.5 text-right text-xs font-bold text-[#C2410C] focus:border-[#EA580C] focus:outline-none disabled:bg-[#F1F5F9] disabled:text-[#94A3B8]"
+                              title={`${IDLE_TIME_PROJECT_CODE} ${IDLE_TIME_PROJECT_NAME}`}
+                            />
+                          </td>
                           <td className="px-3 py-3 text-center text-xs font-bold text-[#0F172A]">{line.totalHours}</td>
                           <td className="px-3 py-3 text-center text-xs font-bold text-[#475569]">
                             {line.variance > 0 ? `+${line.variance}` : line.variance}
@@ -652,6 +697,7 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                       ))}
                       <td className="border-l border-[#EDF2F7] px-3 py-3 text-center text-xs font-bold text-[#2563EB]">{props.footerTotals.used.toFixed(1)}</td>
                       <td className="px-3 py-3 text-center text-xs font-bold text-[#F97316]">{props.footerTotals.idle.toFixed(1)}</td>
+                      <td className="px-3 py-3 text-center text-xs font-bold text-[#C2410C]">{(props.footerTotals.idleTime ?? 0).toFixed(1)}</td>
                       <td className="px-3 py-3 text-center text-xs font-bold text-[#0F172A]">{props.footerTotals.total.toFixed(1)}</td>
                       <td className="px-3 py-3 text-center text-xs font-bold text-[#475569]">{props.footerTotals.variance.toFixed(1)}</td>
                       <td colSpan={2} />

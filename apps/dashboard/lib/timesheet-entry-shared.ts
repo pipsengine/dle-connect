@@ -293,6 +293,26 @@ export const capProductiveHoursToAttendance = (
 
 export const canonicalProjectCode = (value?: string | null) => String(value || '').trim().toUpperCase();
 
+/** Downtime / non-project idle booked as a project allocation (power failure, no tools, etc.). */
+export const IDLE_TIME_PROJECT_CODE = 'DL1949';
+export const IDLE_TIME_PROJECT_NAME = 'IDLE TIME';
+
+export const isIdleTimeProjectCode = (value?: string | null) =>
+  canonicalProjectCode(value) === IDLE_TIME_PROJECT_CODE;
+
+export const idleTimeProjectHours = (
+  allocations: Array<{ projectCode: string; hours: number }> | null | undefined,
+) => projectHoursForColumn(allocations, IDLE_TIME_PROJECT_CODE);
+
+export const productiveProjectHours = (
+  allocations: Array<{ projectCode: string; hours: number }> | null | undefined,
+) =>
+  round1(
+    normalizeProjectAllocations(allocations || [])
+      .filter((item) => !isIdleTimeProjectCode(item.projectCode))
+      .reduce((sum, item) => sum + Number(item.hours || 0), 0),
+  );
+
 /** One row per project code. Collapses duplicate DB/UI rows that were double-counting hours. */
 export const normalizeProjectAllocations = <
   T extends {
@@ -353,8 +373,8 @@ export const resolvePrimaryProjectCode = (
   if (preferred) return preferred;
   if (codes[0]) return codes[0];
   const normalized = normalizeProjectAllocations(allocations);
-  const booked = normalized.find((item) => Number(item.hours || 0) > 0);
-  return canonicalProjectCode(booked?.projectCode) || codes[0] || 'GENERAL';
+  const booked = normalized.find((item) => Number(item.hours || 0) > 0 && !isIdleTimeProjectCode(item.projectCode));
+  return canonicalProjectCode(booked?.projectCode) || codes.find((code) => !isIdleTimeProjectCode(code)) || codes[0] || 'GENERAL';
 };
 
 /** Read hours booked on a matrix project column. */

@@ -198,6 +198,8 @@ export function ProjectChipBar({
   onAutoDistribute,
   onClearAll,
   onOpenSettings,
+  canCreateProject = false,
+  onCreateProject,
   onMoveColumn,
   onRemoveColumn,
   onSelectColumnProject,
@@ -209,6 +211,8 @@ export function ProjectChipBar({
   onAutoDistribute: () => void;
   onClearAll: () => void;
   onOpenSettings: () => void;
+  canCreateProject?: boolean;
+  onCreateProject?: () => void;
   onMoveColumn: (index: number, direction: -1 | 1) => void;
   onRemoveColumn: (index: number) => void;
   onSelectColumnProject: (index: number, code: string) => void;
@@ -277,8 +281,9 @@ export function ProjectChipBar({
             type="button"
             onClick={onAddProject}
             className="rounded-xl border border-dashed border-[#93C5FD] px-3 py-1.5 text-xs font-semibold text-[#2563EB] hover:bg-[#EFF6FF]"
+            title="Add another project column to this timesheet"
           >
-            + Add Project
+            + Add Column
           </button>
         ) : null}
       </div>
@@ -299,13 +304,24 @@ export function ProjectChipBar({
         >
           Clear All
         </button>
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          className="h-9 rounded-xl border border-[#E5E7EB] px-3 text-xs font-semibold text-[#475569] hover:bg-[#F8FAFC]"
-        >
-          Settings
-        </button>
+        {canCreateProject && onCreateProject ? (
+          <button
+            type="button"
+            onClick={onCreateProject}
+            className="h-9 rounded-xl bg-[#2563EB] px-3 text-xs font-semibold text-white hover:bg-[#1D4ED8]"
+            title="Register a new project in the company registry"
+          >
+            Create Project
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="h-9 rounded-xl border border-[#E5E7EB] px-3 text-xs font-semibold text-[#475569] hover:bg-[#F8FAFC]"
+          >
+            Project Registry
+          </button>
+        )}
       </div>
     </div>
   );
@@ -642,7 +658,7 @@ export function TimesheetRowActionsMenu({
         {!isAbsent ? (
           <>
             <div className="mt-3 border-t border-[#EDF2F7] pt-3">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-[#F97316]">Idle / Break Reasons</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-[#F97316]">Break Time Reasons</p>
               <div className="mt-2 space-y-2">
                 {idleRows.map((alloc, idleIndex) => (
                   <div key={`${line.id}-idle-${idleIndex}`} className="flex items-center gap-1.5">
@@ -959,14 +975,14 @@ export function TimesheetAnalyticsStrip({
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
       <div className="rounded-[18px] border border-[#E5E7EB] bg-white p-5 shadow-sm">
-        <h4 className="text-sm font-semibold text-[#0F172A]">Booked vs Idle Hours</h4>
+        <h4 className="text-sm font-semibold text-[#0F172A]">Booked vs Break Hours</h4>
         <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-[#F1F5F9]">
           <div className="bg-[#2563EB]" style={{ width: `${(bookedHours / Math.max(bookedHours + idleHours, 1)) * 100}%` }} />
           <div className="bg-[#F97316]" style={{ width: `${(idleHours / Math.max(bookedHours + idleHours, 1)) * 100}%` }} />
         </div>
         <div className="mt-3 flex justify-between text-xs text-[#64748B]">
           <span>Booked {bookedHours.toFixed(1)}h</span>
-          <span>Idle {idleHours.toFixed(1)}h</span>
+          <span>Break {idleHours.toFixed(1)}h</span>
         </div>
       </div>
       <div className="rounded-[18px] border border-[#E5E7EB] bg-white p-5 shadow-sm">
