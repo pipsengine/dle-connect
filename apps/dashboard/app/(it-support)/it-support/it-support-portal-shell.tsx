@@ -324,7 +324,7 @@ export function ItSupportPortalShell({ children, employee }: Props) {
             <EnterpriseUserProfile
               context="enterprise"
               name={employee?.fullName}
-              role={employee?.jobTitle || 'IT Support'}
+              role={employee?.jobTitle}
               employeeCode={employee?.employeeCode}
               department={employee?.department}
               profileHref="/"

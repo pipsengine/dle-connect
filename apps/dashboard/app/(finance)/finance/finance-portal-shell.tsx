@@ -387,7 +387,7 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
             <EnterpriseUserProfile
               context="enterprise"
               name={employee?.fullName}
-              role={employee?.jobTitle || 'Finance User'}
+              role={employee?.jobTitle}
               employeeCode={employee?.employeeCode}
               department={employee?.department}
               profileHref="/"

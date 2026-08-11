@@ -214,7 +214,7 @@ export function FleetPortalShell({ workspace, loading, onRefresh, employee, chil
             <EnterpriseUserProfile
               context="enterprise"
               name={employee?.fullName}
-              role={employee?.jobTitle || 'Fleet User'}
+              role={employee?.jobTitle}
               employeeCode={employee?.employeeCode}
               department={employee?.department}
               profileHref="/"

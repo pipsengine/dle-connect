@@ -226,7 +226,7 @@ export function EssPortalShell({
             <EnterpriseUserProfile
               context="ess"
               name={employee?.fullName}
-              role={employee?.jobTitle || 'Employee Self-Service'}
+              role={employee?.jobTitle}
               employeeCode={employee?.employeeCode || employee?.employeeId}
               department={employee?.department}
               photoUrl={employee?.photoUrl}

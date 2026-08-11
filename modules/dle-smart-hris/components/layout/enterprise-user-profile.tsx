@@ -238,7 +238,15 @@ export function EnterpriseUserProfile({
     () => pruneEmpty({ name, role, employeeCode, department, photoUrl, profileHref, hasPhoto, teamSize, pendingApprovals }),
     [department, employeeCode, hasPhoto, name, pendingApprovals, photoUrl, profileHref, role, teamSize],
   );
-  const user = { ...defaults[context], ...currentUser, ...explicitUser } as ProfileUser;
+  // Live session/HR profile wins over portal shell props so modules cannot
+  // replace the assigned role/job title with labels like "IT Support".
+  const user = {
+    ...defaults[context],
+    ...explicitUser,
+    ...currentUser,
+    ...(compact(currentUser.rbacRole) ? { rbacRole: currentUser.rbacRole } : {}),
+    ...(compact(currentUser.role) ? { role: currentUser.role } : {}),
+  } as ProfileUser;
   user.role = displayRole(user.role) || user.role;
   const resolvedPhotoUrl = resolveProfilePhotoUrl(user);
   const useEmployeePhoto = Boolean(resolvedPhotoUrl) || !isPlaceholderEmployeeCode(user.employeeCode);

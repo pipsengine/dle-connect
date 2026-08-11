@@ -291,7 +291,7 @@ export function SecurityPortalShell({ children, employee }: Props) {
             <EnterpriseUserProfile
               context="enterprise"
               name={employee?.fullName}
-              role={employee?.jobTitle || 'Security'}
+              role={employee?.jobTitle}
               employeeCode={employee?.employeeCode}
               department={employee?.department}
               profileHref="/"
