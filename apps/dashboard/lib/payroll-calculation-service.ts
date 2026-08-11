@@ -170,19 +170,37 @@ const inputOnlyEmployee = (employee: DleEmployeeDirectoryRow): DleEmployeeDirect
   sagePayrollContributions: undefined,
 });
 
-/** Dual-currency (DLE_USD) staff: NGN local package drives the main Nigerian salaried calc. */
+/** Dual-currency staff: NGN package lives on the DLE (local) run. */
 const dualCurrencyLocalEmployee = (employee: DleEmployeeDirectoryRow): DleEmployeeDirectoryRow | null => {
   const localLines = employee.sageLocalPayrollEarnings || [];
   if (!employee.hasDualCurrencyPayroll || localLines.length === 0) return null;
   return {
     ...employee,
     payCurrency: employee.localPayCurrency || 'NGN',
-    payrollGroup: employee.localPayrollGroup || employee.payrollGroup || 'DLE',
+    payrollGroup: employee.localPayrollGroup || 'DLE',
     periodSalary: employee.localPeriodSalary ?? employee.periodSalary,
     sagePayrollEarnings: localLines,
     sagePayrollDeductions: employee.sageLocalPayrollDeductions,
   };
 };
+
+/** Dual-currency staff: USD package lives on the DLE_USD (primary) run. */
+const dualCurrencyUsdEmployee = (employee: DleEmployeeDirectoryRow): DleEmployeeDirectoryRow => ({
+  ...employee,
+  payCurrency: 'USD',
+  payrollGroup: /USD/i.test(compact(employee.payrollGroup)) ? compact(employee.payrollGroup) : 'DLE_USD',
+  periodSalary: Number(employee.periodSalary || 0) || usdPackageGrossFromEmployee(employee) || employee.periodSalary,
+});
+
+const employeeIsUsdPayrollPrimary = (employee: DleEmployeeDirectoryRow) =>
+  resolvePayCurrency({
+    payCurrency: employee.payCurrency,
+    payrollGroup: employee.payrollGroup,
+    salaryGrade: employee.salaryGrade,
+    jobGrade: employee.jobGrade,
+    businessUnit: employee.businessUnit,
+  }) === 'USD'
+  || /USD/i.test(compact(employee.payrollGroup));
 
 const usdPackageGrossFromEmployee = (employee: DleEmployeeDirectoryRow) => {
   const lines = employee.sagePayrollEarnings || [];
@@ -721,11 +739,22 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     return map;
   }, new Map<string, ReturnType<typeof loanInputsFromApplications>>());
 
-  const calculationOptionsForEmployee = (employee: DleEmployeeDirectoryRow) => {
+  const calculationOptionsForEmployee = (employee: DleEmployeeDirectoryRow, forceSageLines = false) => {
     const base = { period: requestedPeriod, includePeriodAdjustments: true as const };
-    const dualLocal = dualCurrencyLocalEmployee(employee);
-    if (dualLocal) {
-      return { ...base, useSagePayslipLines: true as const, ignoreSagePayslipLines: false as const };
+    if (
+      forceSageLines
+      || (
+        (employee.sagePayrollEarnings || []).length > 0
+        && (
+          Boolean(dualCurrencyLocalEmployee(employee))
+          || employeeIsUsdPayrollPrimary(employee)
+          || isSageSalariedScheduleFeedPeriod(requestedPeriod)
+        )
+      )
+    ) {
+      if ((employee.sagePayrollEarnings || []).length > 0) {
+        return { ...base, useSagePayslipLines: true as const, ignoreSagePayslipLines: false as const };
+      }
     }
     if (!compareWithSage && !isSageSalariedScheduleFeedPeriod(requestedPeriod)) {
       return { ...base, ignoreSagePayslipLines: true as const };
@@ -749,44 +778,114 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
 
   const payrollEmployees = employeeSource.employees.filter((employee) => !isEmployeeExcludedFromPayrollRun(employee as PayrollRunExclusionEmployee));
 
-  const records: PayrollCalculationRecord[] = payrollEmployees.map((employee, index) => {
-    const dualLocal = dualCurrencyLocalEmployee(employee);
-    const calculationOptions = calculationOptionsForEmployee(employee);
-    const keepSageLines = Boolean(dualLocal)
-      || shouldComparePayrollWithSage(requestedPeriod)
+  type PayrollRunVariant = {
+    runKey: string;
+    payrollGroup: string;
+    payCurrency: 'NGN' | 'USD';
+    calculationEmployee: DleEmployeeDirectoryRow;
+    useSageLines: boolean;
+    skipSageCompare: boolean;
+    hasDualCurrencyPayroll: boolean;
+    usdPackageGross: number | null;
+  };
+
+  const variantsForEmployee = (employee: DleEmployeeDirectoryRow): PayrollRunVariant[] => {
+    const local = dualCurrencyLocalEmployee(employee);
+    const usdPrimary = employeeIsUsdPayrollPrimary(employee);
+    if (local && usdPrimary) {
+      const usdEmployee = dualCurrencyUsdEmployee(employee);
+      return [
+        {
+          runKey: 'DLE-NGN',
+          payrollGroup: compact(local.payrollGroup) || 'DLE',
+          payCurrency: 'NGN',
+          calculationEmployee: local,
+          useSageLines: true,
+          skipSageCompare: false,
+          hasDualCurrencyPayroll: true,
+          usdPackageGross: usdPackageGrossFromEmployee(employee),
+        },
+        {
+          runKey: 'DLE_USD-USD',
+          payrollGroup: compact(usdEmployee.payrollGroup) || 'DLE_USD',
+          payCurrency: 'USD',
+          calculationEmployee: usdEmployee,
+          useSageLines: true,
+          skipSageCompare: true,
+          hasDualCurrencyPayroll: true,
+          usdPackageGross: usdPackageGrossFromEmployee(employee),
+        },
+      ];
+    }
+    if (usdPrimary) {
+      const usdEmployee = dualCurrencyUsdEmployee(employee);
+      return [{
+        runKey: 'DLE_USD-USD',
+        payrollGroup: compact(usdEmployee.payrollGroup) || 'DLE_USD',
+        payCurrency: 'USD',
+        calculationEmployee: usdEmployee,
+        useSageLines: (employee.sagePayrollEarnings || []).length > 0,
+        skipSageCompare: true,
+        hasDualCurrencyPayroll: false,
+        usdPackageGross: usdPackageGrossFromEmployee(employee),
+      }];
+    }
+    const keepSageLines = shouldComparePayrollWithSage(requestedPeriod)
       || (isSageSalariedScheduleFeedPeriod(requestedPeriod) && (employee.sagePayrollEarnings || []).length > 0);
-    const calculationEmployee = dualLocal
-      || (keepSageLines ? employee : inputOnlyEmployee(employee));
+    return [{
+      runKey: 'PRIMARY',
+      payrollGroup: compact(employee.payrollGroup) || 'Unassigned',
+      payCurrency: resolvePayCurrency({
+        payCurrency: employee.payCurrency,
+        payrollGroup: employee.payrollGroup,
+        salaryGrade: employee.salaryGrade,
+        jobGrade: employee.jobGrade,
+        businessUnit: employee.businessUnit,
+      }) as 'NGN' | 'USD',
+      calculationEmployee: keepSageLines ? employee : inputOnlyEmployee(employee),
+      useSageLines: keepSageLines && (employee.sagePayrollEarnings || []).length > 0,
+      skipSageCompare: false,
+      hasDualCurrencyPayroll: false,
+      usdPackageGross: null,
+    }];
+  };
+
+  const records: PayrollCalculationRecord[] = payrollEmployees.flatMap((employee, index) => {
+    return variantsForEmployee(employee).map((variant, variantIndex) => {
+    const calculationOptions = calculationOptionsForEmployee(variant.calculationEmployee, variant.useSageLines);
+    const calculationEmployee = variant.calculationEmployee;
     const baseAmounts = calculatePayrollEarnings(calculationEmployee, calculationOptions);
     const amounts = applyDailyRateFromTimesheets(employee, baseAmounts, timesheetHours, requestedPeriod);
     const tax = calculatePayrollTax(payrollInputFromEmployee(calculationEmployee, calculationOptions, amounts), taxVersion);
     const pension = calculatePension(pensionInputFromEmployee(calculationEmployee, calculationOptions), pensionVersion);
     const funds = calculateStatutoryFunds(statutoryFundInputFromEmployee(calculationEmployee, employeeSource.employees.length, calculationOptions), fundsVersion);
-    const loans = (loanInputs.get(employee.employeeId) || []).map((loanInput) => calculateLoanRecovery(loanInput, loansVersion));
-    const sageActual = compareWithSage
+    const loans = variant.payCurrency === 'USD'
+      ? []
+      : (loanInputs.get(employee.employeeId) || []).map((loanInput) => calculateLoanRecovery(loanInput, loansVersion));
+    const sageActual = (!variant.skipSageCompare && compareWithSage)
       ? [employee.employeeCode, employee.employeeId, employee.id, employee.fullName]
         .map(normalizePayrollMatchKey)
         .map((key) => sageByKey.get(key))
         .find(Boolean) || null
       : null;
-    const paye = tax.monthlyPaye;
-    const employeePension = pension.employeeContribution;
-    const statutoryEmployee = funds.employeeDeductions;
+    const paye = variant.payCurrency === 'USD' ? 0 : tax.monthlyPaye;
+    const employeePension = variant.payCurrency === 'USD' ? 0 : pension.employeeContribution;
+    const statutoryEmployee = variant.payCurrency === 'USD' ? 0 : funds.employeeDeductions;
     const loanRecovery = roundMoney(loans.reduce((sum, loan) => sum + loan.payrollRecovery, 0));
     const taxComponentMonthly = (componentId: string) => (tax.statutoryItems.find((item) => item.id === componentId)?.amount || 0) / 12;
-    const nhf = taxComponentMonthly('nhf');
+    const nhf = variant.payCurrency === 'USD' ? 0 : taxComponentMonthly('nhf');
     const nhfFundDeduction = roundMoney(funds.fundResults.find((item) => item.id === 'nhf')?.monthlyAmount || 0);
     const statutoryEmployeeDeductions = roundMoney(Math.max(0, statutoryEmployee - (nhf > 0 && nhfFundDeduction > 0 ? nhfFundDeduction : 0)));
-    const unionDues = taxComponentMonthly('union-dues');
-    const otherStatutory = taxComponentMonthly('other-statutory');
+    const unionDues = variant.payCurrency === 'USD' ? 0 : taxComponentMonthly('union-dues');
+    const otherStatutory = variant.payCurrency === 'USD' ? 0 : taxComponentMonthly('other-statutory');
     const otherDeductions = roundMoney(unionDues + otherStatutory);
     const totalDeductions = roundMoney(paye + employeePension + statutoryEmployeeDeductions + loanRecovery + nhf + otherDeductions);
     const netPay = roundMoney(Math.max(0, amounts.grossPay - totalDeductions));
     const grossVariance = sageActual ? moneyVariance(sageActual.grossPay, amounts.grossPay) : null;
     const netVariance = sageActual ? moneyVariance(sageActual.netPay, netPay) : null;
     const deductionVariance = sageActual ? moneyVariance(sageActual.totalDeductions, totalDeductions) : null;
-    const employerPension = pension.employerContribution;
-    const employerStatutory = funds.employerCosts;
+    const employerPension = variant.payCurrency === 'USD' ? 0 : pension.employerContribution;
+    const employerStatutory = variant.payCurrency === 'USD' ? 0 : funds.employerCosts;
     const employerCost = roundMoney(amounts.grossPay + employerPension + employerStatutory);
     const deductionRatio = amounts.grossPay > 0 ? roundMoney((totalDeductions / amounts.grossPay) * 100) : 0;
     const dailyRateEmployee = isDailyRatePayrollEmployee(employee, amounts.profileId);
@@ -794,29 +893,33 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const nonPermanentEmployee = isNonPermanentPayrollEmployee(employee);
     const rates = dailyRateValues(employee, dailyRateEmployee);
     const timesheet = resolveTimesheetHoursForEmployee(employee, timesheetHours);
-    const pensionIssues = (!dailyRateEmployee && !stipendEmployee && !nonPermanentEmployee
-      ? pension.issues
-      : pension.issues.filter((issue) => !/employment type is not eligible/i.test(issue))
+    const pensionIssues = (variant.payCurrency === 'USD'
+      ? []
+      : (!dailyRateEmployee && !stipendEmployee && !nonPermanentEmployee
+        ? pension.issues
+        : pension.issues.filter((issue) => !/employment type is not eligible/i.test(issue)))
     ).filter((issue) => issue !== 'RSA PIN is not on file' && issue !== 'PFA provider is not assigned');
-    const statutoryIssues = (stipendEmployee || dailyRateEmployee || nonPermanentEmployee)
-      ? funds.issues.filter((issue) => !/monthly payroll amount is missing|no statutory fund eligibility/i.test(issue))
-      : funds.issues;
+    const statutoryIssues = variant.payCurrency === 'USD'
+      ? []
+      : (stipendEmployee || dailyRateEmployee || nonPermanentEmployee)
+        ? funds.issues.filter((issue) => !/monthly payroll amount is missing|no statutory fund eligibility/i.test(issue))
+        : funds.issues;
 
     const issues = [
       ...amounts.grossPay <= 0 ? ['Gross pay is missing'] : [],
       ...!employee.setupAssignedToPayroll ? ['Payroll setup is not assigned'] : [],
-      ...!compact(employee.payrollGroup) ? ['Payroll group is missing'] : [],
-      ...!compact(employee.payCurrency) ? ['Pay currency is missing'] : [],
+      ...!compact(variant.payrollGroup) ? ['Payroll group is missing'] : [],
+      ...!compact(variant.payCurrency) ? ['Pay currency is missing'] : [],
       ...!activeStatus(employee.status) ? ['Employee is not payroll active'] : [],
       ...dailyRateEmployee && !timesheet && amounts.grossPay <= 0 ? ['Approved timesheet hours are not available for daily-rate payroll'] : [],
-      ...pensionIssues.map((issue) => `Pension: ${issue}`),
-      ...statutoryIssues.map((issue) => `Statutory: ${issue}`),
+      ...(variant.payCurrency === 'USD' ? [] : pensionIssues.map((issue) => `Pension: ${issue}`)),
+      ...(variant.payCurrency === 'USD' ? [] : statutoryIssues.map((issue) => `Statutory: ${issue}`)),
       ...loans.flatMap((loan) => loan.issues.filter((issue) => issue !== 'Loan is not approved for payroll recovery').map((issue) => `Loan: ${issue}`)),
-      ...deductionRatio > 45 ? ['Deduction ratio exceeds 45% control threshold'] : [],
+      ...(variant.payCurrency === 'USD' ? [] : deductionRatio > 45 ? ['Deduction ratio exceeds 45% control threshold'] : []),
       ...netPay <= 0 && amounts.grossPay > 0 ? ['Net pay is zero after deductions'] : [],
-      ...!skipSageVarianceCheck(employee, dailyRateEmployee, toleranceMode, enterpriseSourceActive) && !sageActual ? ['Sage period comparison unavailable'] : [],
-      ...!skipSageVarianceCheck(employee, dailyRateEmployee, toleranceMode, enterpriseSourceActive) && grossVariance !== null && Math.abs(grossVariance) > 1 ? [`Sage gross variance ${grossVariance}`] : [],
-      ...!skipSageVarianceCheck(employee, dailyRateEmployee, toleranceMode, enterpriseSourceActive) && netVariance !== null && Math.abs(netVariance) > 1 ? [`Sage net variance ${netVariance}`] : [],
+      ...!variant.skipSageCompare && !skipSageVarianceCheck(employee, dailyRateEmployee, toleranceMode, enterpriseSourceActive) && !sageActual ? ['Sage period comparison unavailable'] : [],
+      ...!variant.skipSageCompare && !skipSageVarianceCheck(employee, dailyRateEmployee, toleranceMode, enterpriseSourceActive) && grossVariance !== null && Math.abs(grossVariance) > 1 ? [`Sage gross variance ${grossVariance}`] : [],
+      ...!variant.skipSageCompare && !skipSageVarianceCheck(employee, dailyRateEmployee, toleranceMode, enterpriseSourceActive) && netVariance !== null && Math.abs(netVariance) > 1 ? [`Sage net variance ${netVariance}`] : [],
     ];
 
     const { blocking, deferred } = partitionPayrollIssues(issues, toleranceMode);
@@ -835,7 +938,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
         : 'Low';
 
     return {
-      recordKey: `${requestedPeriod}-${employee.employeeDbId || 'row'}-${employee.employeeId || employee.employeeCode || 'employee'}-${index}`,
+      recordKey: `${requestedPeriod}-${employee.employeeDbId || 'row'}-${employee.employeeId || employee.employeeCode || 'employee'}-${variant.runKey}-${index}-${variantIndex}`,
       employeeId: employee.employeeId,
       employeeCode: employee.employeeCode,
       fullName: employee.fullName,
@@ -845,29 +948,11 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       jobTitle: employee.jobTitle,
       employmentType: employee.employmentType,
       employmentStatus: employee.status,
-      payrollGroup: dualLocal
-        ? (employee.payrollGroup || 'DLE_USD')
-        : (employee.payrollGroup || 'Unassigned'),
+      payrollGroup: variant.payrollGroup,
       salaryGrade: dailyRateEmployee ? (rates.ratePerDay > 0 ? 'Daily Rate' : 'Zero Daily Rate') : employee.salaryGrade || employee.jobGrade || 'Unassigned',
-      payCurrency: dualLocal
-        ? (employee.localPayCurrency || 'NGN')
-        : resolvePayCurrency({
-            payCurrency: employee.payCurrency,
-            payrollGroup: employee.payrollGroup,
-            salaryGrade: employee.salaryGrade,
-            jobGrade: employee.jobGrade,
-            businessUnit: employee.businessUnit,
-          }),
-      hasDualCurrencyPayroll: Boolean(dualLocal),
-      usdPackageGross: dualLocal || resolvePayCurrency({
-        payCurrency: employee.payCurrency,
-        payrollGroup: employee.payrollGroup,
-        salaryGrade: employee.salaryGrade,
-        jobGrade: employee.jobGrade,
-        businessUnit: employee.businessUnit,
-      }) === 'USD'
-        ? usdPackageGrossFromEmployee(employee)
-        : null,
+      payCurrency: variant.payCurrency,
+      hasDualCurrencyPayroll: variant.hasDualCurrencyPayroll,
+      usdPackageGross: variant.usdPackageGross,
       paymentRun: employee.paymentRun || 'Monthly',
       basePay: amounts.basePay,
       allowances: amounts.allowances,
@@ -905,10 +990,10 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
           }
         : null,
       discrepancies: {
-        status: grossVariance === null ? 'Missing Sage' : varianceStatus(grossVariance),
-        grossVariance,
-        netVariance,
-        deductionVariance,
+        status: variant.skipSageCompare ? 'Matched' : grossVariance === null ? 'Missing Sage' : varianceStatus(grossVariance),
+        grossVariance: variant.skipSageCompare ? 0 : grossVariance,
+        netVariance: variant.skipSageCompare ? 0 : netVariance,
+        deductionVariance: variant.skipSageCompare ? 0 : deductionVariance,
       },
       status,
       readinessStatus,
@@ -957,6 +1042,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
         { code: 'OTHER', label: 'Other Deductions', amount: roundMoney(otherStatutory) },
       ].filter((line) => line.amount > 0),
     };
+    });
   });
 
   const totals = records.reduce(

@@ -155,13 +155,16 @@ type Payload = {
 type ApiResponse<T> = { status: 'success' | 'error'; data?: T; error?: string };
 
 const numberFmt = new Intl.NumberFormat('en-GB');
-const recordCurrency = (record: Pick<PayrollRecord, 'payCurrency' | 'payrollGroup' | 'salaryGrade' | 'businessUnit'>) =>
-  resolvePayCurrency({
+const recordCurrency = (record: Pick<PayrollRecord, 'payCurrency' | 'payrollGroup' | 'salaryGrade' | 'businessUnit'>) => {
+  const explicit = String(record.payCurrency || '').trim().toUpperCase();
+  if (explicit === 'USD' || explicit === 'NGN') return explicit;
+  return resolvePayCurrency({
     payCurrency: record.payCurrency,
     payrollGroup: record.payrollGroup,
     salaryGrade: record.salaryGrade,
     businessUnit: record.businessUnit,
   });
+};
 const money = (value: number | null | undefined, allowed = true, currency = 'NGN') => {
   if (!allowed || value === null || value === undefined) return 'Restricted';
   const code = currencyCode(currency);

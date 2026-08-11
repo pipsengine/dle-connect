@@ -8,6 +8,11 @@ export const resolvePayCurrency = (input: {
   businessUnit?: string | null;
 }) => {
   const explicit = compact(input.payCurrency).toUpperCase();
+  // Explicit currency on the record/setup wins so dual-currency rows stay pure
+  // (DLE + NGN must not become USD just because a sibling row uses DLE_USD).
+  if (explicit === 'USD' || explicit === 'US$' || explicit === 'NGN' || explicit === 'NAIRA') {
+    return explicit === 'US$' || explicit === 'USD' ? 'USD' : 'NGN';
+  }
   const group = compact(input.payrollGroup).toUpperCase();
   const grade = `${compact(input.salaryGrade)} ${compact(input.jobGrade)}`.toUpperCase();
   const unit = compact(input.businessUnit).toUpperCase();
@@ -15,8 +20,7 @@ export const resolvePayCurrency = (input: {
   if (group.includes('USD') || unit.includes('USD') || grade.includes('EXP_USD') || grade.includes('USD SN') || grade.includes('USD SENIOR')) {
     return 'USD';
   }
-  if (explicit === 'USD' || explicit === 'US$') return 'USD';
-  return explicit || 'NGN';
+  return 'NGN';
 };
 
 export const currencyCode = (value: unknown) => {

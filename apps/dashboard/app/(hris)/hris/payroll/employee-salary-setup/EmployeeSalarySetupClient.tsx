@@ -7,6 +7,7 @@ import {
   salarySetupCsvFromRecords,
   type SalarySetupExportRecord,
 } from '@/lib/payroll-salary-setup-export';
+import { formatPayrollMoney, currencyCode } from '@/lib/payroll-currency';
 import {
   AccordionSection,
   DonutChart,
@@ -65,6 +66,7 @@ type PayrollRecord = {
   salaryGrade: string;
   salaryStructure?: string;
   payCurrency: string;
+  recordKey?: string;
   paymentRun: string;
   paymentType: string;
   nhfApplicable: boolean;
@@ -254,7 +256,12 @@ const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: '
 const numberFmt = new Intl.NumberFormat('en-GB');
 const pctFmt = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 });
 
-const money = (value: number | null | undefined, canView = true) => (!canView || value === null || value === undefined ? 'Restricted' : moneyFmt.format(value));
+const money = (value: number | null | undefined, canView = true, currency = 'NGN') => {
+  if (!canView || value === null || value === undefined) return 'Restricted';
+  const code = currencyCode(currency);
+  return formatPayrollMoney(value, code, { maximumFractionDigits: code === 'USD' ? 2 : 0 });
+};
+const recordKeyOf = (record: PayrollRecord) => record.recordKey || `${record.employeeId}:${record.payrollGroup}:${record.payCurrency}`;
 const number = (value: number) => numberFmt.format(value);
 
 const statusTone = (status: string): SetupTone => (status === 'Ready' ? 'green' : status === 'Blocked' ? 'red' : status === 'Review' ? 'amber' : 'blue');
@@ -324,7 +331,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
       if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Employee salary setup request failed (${res.status})`);
       const data = json.data;
       setPayload(data);
-      setSelectedId((current) => current || data.records[0]?.employeeId || '');
+      setSelectedId((current) => current || (data.records[0] ? (data.records[0].recordKey || `${data.records[0].employeeId}:${data.records[0].payrollGroup}:${data.records[0].payCurrency}`) : ''));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to load employee salary setup');
     } finally {
@@ -372,7 +379,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const selected = filtered.find((record) => record.employeeId === selectedId) || pageRows[0] || null;
+  const selected = filtered.find((record) => recordKeyOf(record) === selectedId) || pageRows[0] || null;
   const salaryTableColumns = useMemo(() => buildSalaryTableColumns(records), [records]);
   const salaryTableColumnCount = salaryTableColumns.length;
 
@@ -442,12 +449,12 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
     ];
   };
 
-  const toggleRow = (employeeId: string) => {
-    setSelectedIds((current) => (current.includes(employeeId) ? current.filter((id) => id !== employeeId) : [...current, employeeId]));
+  const toggleRow = (rowKey: string) => {
+    setSelectedIds((current) => (current.includes(rowKey) ? current.filter((id) => id !== rowKey) : [...current, rowKey]));
   };
 
   const togglePage = () => {
-    const ids = pageRows.map((row) => row.employeeId);
+    const ids = pageRows.map((row) => recordKeyOf(row));
     const allSelected = ids.every((id) => selectedIds.includes(id));
     setSelectedIds((current) => (allSelected ? current.filter((id) => !ids.includes(id)) : Array.from(new Set([...current, ...ids]))));
   };
@@ -672,7 +679,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                               } ${column.kind === 'money' || column.kind === 'days' || column.kind === 'rate' ? 'text-right' : ''}`}
                             >
                               {column.kind === 'checkbox' ? (
-                                <input type="checkbox" checked={pageRows.length > 0 && pageRows.every((row) => selectedIds.includes(row.employeeId))} onChange={togglePage} className="rounded border-slate-300" />
+                                <input type="checkbox" checked={pageRows.length > 0 && pageRows.every((row) => selectedIds.includes(recordKeyOf(row)))} onChange={togglePage} className="rounded border-slate-300" />
                               ) : (
                                 column.label
                               )}
@@ -691,18 +698,20 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                           ))
                         ) : pageRows.length ? (
                           pageRows.map((record) => {
-                            const active = selected?.employeeId === record.employeeId;
+                            const rowKey = recordKeyOf(record);
+                            const active = selected ? recordKeyOf(selected) === rowKey : false;
+                            const rowCurrency = record.payCurrency || 'NGN';
                             return (
                               <tr
-                                key={record.employeeId}
-                                onClick={() => setSelectedId(record.employeeId)}
-                                className={`cursor-pointer transition-colors hover:bg-[#F1F5F9] ${active ? 'bg-blue-50/70' : indexEven(record.employeeId) ? 'bg-white' : 'bg-[#FCFDFF]'}`}
+                                key={rowKey}
+                                onClick={() => setSelectedId(rowKey)}
+                                className={`cursor-pointer transition-colors hover:bg-[#F1F5F9] ${active ? 'bg-blue-50/70' : indexEven(rowKey) ? 'bg-white' : 'bg-[#FCFDFF]'}`}
                               >
                                 {salaryTableColumns.map((column) => {
                                   if (column.kind === 'checkbox') {
                                     return (
                                       <td key={column.id} className="sticky left-0 z-10 bg-inherit px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                                        <input type="checkbox" checked={selectedIds.includes(record.employeeId)} onChange={() => toggleRow(record.employeeId)} className="rounded border-slate-300" />
+                                        <input type="checkbox" checked={selectedIds.includes(rowKey)} onChange={() => toggleRow(rowKey)} className="rounded border-slate-300" />
                                       </td>
                                     );
                                   }
@@ -713,7 +722,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                                           <EmployeeAvatar fullName={record.fullName} employeeCode={record.employeeId} tryPhoto size="sm" />
                                           <div className="min-w-0">
                                             <p className="truncate text-sm font-semibold text-[#0F172A]">{record.fullName}</p>
-                                            <p className="text-xs text-[#64748B]">{record.employeeId}</p>
+                                            <p className="text-xs text-[#64748B]">{record.employeeId} · {record.payrollGroup} · {rowCurrency}</p>
                                           </div>
                                           {record.exceptionCount > 0 ? (
                                             <span title="Validation issue">
@@ -735,7 +744,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                                     return (
                                       <td key={column.id} className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                                         <div className="flex items-center gap-1">
-                                          <button type="button" onClick={() => setSelectedId(record.employeeId)} className="rounded-lg p-2 text-[#64748B] hover:bg-blue-50 hover:text-[#2563EB]" title="View">
+                                          <button type="button" onClick={() => setSelectedId(rowKey)} className="rounded-lg p-2 text-[#64748B] hover:bg-blue-50 hover:text-[#2563EB]" title="View">
                                             <Eye className="h-4 w-4" />
                                           </button>
                                           <button type="button" className="rounded-lg p-2 text-[#64748B] hover:bg-slate-100" title="More">
@@ -750,7 +759,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                                     const isNet = column.id === 'net-pay';
                                     return (
                                       <td key={column.id} className={`px-3 py-3 text-sm font-semibold whitespace-nowrap text-right ${isNet ? 'text-emerald-700' : 'text-[#0F172A]'}`}>
-                                        {value != null && value !== 0 ? money(value, canViewMoney) : '—'}
+                                        {value != null && value !== 0 ? money(value, canViewMoney, rowCurrency) : '—'}
                                       </td>
                                     );
                                   }
@@ -758,7 +767,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                                     const value = column.getMoney?.(record) ?? null;
                                     return (
                                       <td key={column.id} className="px-3 py-3 text-sm font-semibold whitespace-nowrap text-right text-[#0F172A]">
-                                        {value != null && value > 0 ? money(value, canViewMoney) : '—'}
+                                        {value != null && value > 0 ? money(value, canViewMoney, rowCurrency) : '—'}
                                       </td>
                                     );
                                   }
@@ -828,12 +837,13 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                           ['Location', selected.location],
                           ['Grade', selected.salaryGrade],
                           ['Payroll Group', selected.payrollGroup],
+                          ['Pay Currency', selected.payCurrency],
                           ['Employment Type', selected.employmentType],
                           ...(selected.isDailyRate
                             ? [
                                 ['Days Worked', selected.timesheetDaysWorked != null ? String(selected.timesheetDaysWorked) : '—'],
                                 ['Hours Worked', selected.timesheetBookedHours != null ? String(selected.timesheetBookedHours) : '—'],
-                                ['Daily Rate', selected.ratePerDay ? money(selected.ratePerDay, canViewMoney) : '—'],
+                                ['Daily Rate', selected.ratePerDay ? money(selected.ratePerDay, canViewMoney, selected.payCurrency) : '—'],
                               ]
                             : []),
                         ].map(([label, value]) => (
@@ -846,7 +856,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
 
                       <DonutChart
                         centerLabel="Gross"
-                        centerValue={canViewMoney ? moneyFmt.format(selected.grossPay || 0).replace('NGN', '₦') : '—'}
+                        centerValue={canViewMoney ? money(selected.grossPay || 0, true, selected.payCurrency) : '—'}
                         rows={[
                           { label: 'Basic', value: selected.basePay || 0, color: '#2563EB' },
                           { label: 'Allowances', value: selected.allowances || 0, color: '#10B981' },
@@ -860,7 +870,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                           {(selected.earningLines.length ? selected.earningLines : [{ code: 'NONE', name: 'No earning lines', amount: null }]).map((line) => (
                             <div key={line.code} className="flex items-center justify-between gap-2 text-xs">
                               <span className="truncate text-[#475569]">{line.name}</span>
-                              <span className="font-semibold text-[#0F172A]">{money(line.amount, canViewMoney)}</span>
+                              <span className="font-semibold text-[#0F172A]">{money(line.amount, canViewMoney, selected.payCurrency)}</span>
                             </div>
                           ))}
                         </div>
@@ -878,7 +888,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                           ).map((line) => (
                             <div key={line.label} className="flex items-center justify-between gap-2 text-xs">
                               <span className="text-[#475569]">{line.label}</span>
-                              <span className="font-semibold text-[#0F172A]">{money(line.amount, canViewMoney)}</span>
+                              <span className="font-semibold text-[#0F172A]">{money(line.amount, canViewMoney, selected.payCurrency)}</span>
                             </div>
                           ))}
                         </div>
