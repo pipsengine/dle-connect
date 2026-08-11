@@ -7,6 +7,7 @@ import { isLeaveAllowancePaymentCode } from '@/lib/leave-allowance-policy';
 import { leaveAllowanceEventsForEmployeePeriod } from '@/lib/payroll-leave-allowance-store';
 import { isSagePayslipEarningSyncSource } from '@/lib/payroll-employee-classification';
 import { isSagePayeRefundEarning, shouldUseSagePayeRefundEarnings } from '@/lib/payroll-refund-policy';
+import { isSageDayrateScheduleFeedPeriod, isSageDayrateScheduleSource } from '@/lib/payroll-enterprise-source';
 
 export type PayrollEarningProfileId =
   | 'junior-permanent'
@@ -541,6 +542,51 @@ export const mergeDailySupplementalEarnings = (base: PayrollEarningsResult, sour
   };
 };
 
+const rebuildEarningsFromPaidLines = (
+  base: PayrollEarningsResult,
+  paidEarningLines: PayrollEarningLine[],
+  profileName = base.profileName,
+): PayrollEarningsResult => {
+  const grossPay = roundMoney(paidEarningLines.reduce((sum, line) => sum + line.amount, 0));
+  const taxablePay = roundMoney(paidEarningLines.filter((line) => line.taxable).reduce((sum, line) => sum + line.amount, 0));
+  const basicPay = roundMoney(paidEarningLines.filter(isBasicLine).reduce((sum, line) => sum + line.amount, 0));
+  const normalizedLines = paidEarningLines.map((line) => ({
+    ...line,
+    percentOfGross: grossPay > 0 ? roundMoney(line.amount / grossPay) : 0,
+  }));
+  return {
+    ...base,
+    profileName,
+    grossPay,
+    basePay: basicPay,
+    basicPay,
+    allowances: roundMoney(grossPay - basicPay),
+    taxablePay,
+    nonTaxablePay: roundMoney(grossPay - taxablePay),
+    bhtPay: basicPay,
+    earningLines: normalizedLines,
+    paidEarningLines: normalizedLines,
+  };
+};
+
+const isMealFamilyEarningCode = (code?: string | null, name?: string | null) => {
+  const upper = compact(code).toUpperCase();
+  const label = compact(name).toUpperCase();
+  return upper === 'MEAL' || upper === 'TCMMEAL' || upper.includes('MEAL') || label.includes('MEAL');
+};
+
+/** Sage TCM meal / explicit meal rows replace the auto ₦500×days meal — never stack both. */
+const stripAutoMealWhenSageMealPresent = (
+  base: PayrollEarningsResult,
+  supplemental: PayrollEarningsResult,
+): PayrollEarningsResult => {
+  const hasSageMealFamily = supplemental.paidEarningLines.some((line) => isMealFamilyEarningCode(line.code, line.name));
+  if (!hasSageMealFamily) return base;
+  const paidEarningLines = base.paidEarningLines.filter((line) => compact(line.code).toUpperCase() !== 'MEAL');
+  if (paidEarningLines.length === base.paidEarningLines.length) return base;
+  return rebuildEarningsFromPaidLines(base, paidEarningLines);
+};
+
 export const mergeTimesheetDayRateEarnings = (
   employee: DleEmployeeDirectoryRow,
   input: { ratePerDay: number; daysWorked: number; period?: string },
@@ -550,9 +596,11 @@ export const mergeTimesheetDayRateEarnings = (
     period: input.period,
     includePeriodAdjustments: true,
   });
-  const merged = supplemental.paidEarningLines.length
-    ? mergeDailySupplementalEarnings(timesheetBase, supplemental)
-    : timesheetBase;
+  // Sage meal / TCM meal rows replace auto ₦500×days meal — never stack both.
+  const base = stripAutoMealWhenSageMealPresent(timesheetBase, supplemental);
+  const merged = supplemental.paidEarningLines.some((line) => roundMoney(line.amount) !== 0)
+    ? mergeDailySupplementalEarnings(base, supplemental)
+    : base;
   return alignDayRateLinesWithSageBreakdown(merged);
 };
 
@@ -872,6 +920,9 @@ const periodAdjustmentLines = (employee: DleEmployeeDirectoryRow, options?: Payr
   const structuralFamily = sageStructuralGradeFamily(employee, period);
   const matchedRows = periodAdjustmentRowsForPeriod(period)
     .filter((row) => {
+      // After Sage dayrate license cutover, ignore schedule-imported OT/allowance rows.
+      // Timesheet OT postings and HR arrears remain active.
+      if (isSageDayrateScheduleSource(row.source) && !isSageDayrateScheduleFeedPeriod(period)) return false;
       const employeeMatched = employeeAdjustmentMatched(employee, row);
       const gradeMatched = Array.isArray(row.salaryGrades) && row.salaryGrades.map(normalizedTextKey).includes(salaryGrade);
       const profileMatched = Array.isArray(row.profileIds) && row.profileIds.includes(profileId);
@@ -892,7 +943,9 @@ const periodAdjustmentLines = (employee: DleEmployeeDirectoryRow, options?: Payr
       includeInMonthlyPayroll: true,
       amount: roundMoney(num(row.amount)),
     };
-    if (!line.code || line.amount === 0) continue;
+    if (!line.code) continue;
+    // Keep explicit zero MEAL rows so Sage "Meal Allowance = 0" can suppress auto meal.
+    if (line.amount === 0 && compact(line.code).toUpperCase() !== 'MEAL') continue;
     const codeKey = canonicalEarningCode(line.code);
     const priority = isSagePayslipEarningSyncSource(row.source) ? 2 : 1;
     const existing = byCode.get(codeKey);

@@ -2368,7 +2368,7 @@ export const aggregateEmployeeAttendanceForHeaders = (
   return totals;
 };
 
-const synthesizeTimesheetHoursForPeriod = async (periodId: string) => {
+export const synthesizeTimesheetHoursForPeriod = async (periodId: string) => {
   const { headers, lines } = await readTimesheetData();
   const periodHeaders = headers.filter((header) => header.periodId === periodId && isTimesheetCountableForPayroll(header.status));
   const totals = aggregateEmployeeAttendanceForHeaders(headers, lines, {
@@ -2471,13 +2471,23 @@ export async function buildTimesheetHoursMapForPayrollPeriod(period: string) {
       const updates = await readTimesheetPayrollUpdates();
       const update = updates.find((item) => item.periodId === periodId || String(item.periodName || '').includes(periodToken));
       if (update) {
-        // Payroll update is the acknowledged attendance authority for the period —
-        // overwrite synthesized hours so day counts (e.g. Sage schedule feed) drive gross.
-        for (const employee of update.employeeAttendance) {
-          registerTimesheetHours(map, employee.employeeId, undefined, employee.employeeName, {
-            daysWorked: Number(employee.daysWorked || 0),
-            bookedHours: Number(employee.bookedHours || 0),
-          });
+        const fromSageSchedule =
+          /sage-dayrate|sage dayrate/i.test(String(update.id || ''))
+          || /sage-dayrate|sage dayrate/i.test(String(update.acknowledgedBy || ''))
+          || /sage dayrate/i.test(String(update.periodName || ''));
+        if (fromSageSchedule) {
+          // Sage license expired — never let Sage schedule day counts overwrite booked timesheets.
+          // July 2026 historical run already snapshotted; going forward C-code pay is timesheet-driven.
+        } else {
+          // HR-acknowledged payroll update only fills employees missing timesheet bookings.
+          // Booked timesheet days always win when present.
+          for (const employee of update.employeeAttendance) {
+            if (hasTimesheetHours(map, employee.employeeId, undefined, employee.employeeName)) continue;
+            registerTimesheetHours(map, employee.employeeId, undefined, employee.employeeName, {
+              daysWorked: Number(employee.daysWorked || 0),
+              bookedHours: Number(employee.bookedHours || 0),
+            });
+          }
         }
       }
     } catch (error) {

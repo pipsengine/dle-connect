@@ -31886,6 +31886,16 @@
     "period": "2026-07",
     "employeeId": "C1924",
     "employeeCode": "C1924",
+    "code": "MEAL",
+    "name": "MEAL ALLOWANCE",
+    "amount": 0,
+    "taxable": false,
+    "source": "Sage Dayrate Payment Schedule July 2026"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "C1924",
+    "employeeCode": "C1924",
     "code": "SATEARN",
     "name": "SATURDAY EARNING",
     "amount": 51600,

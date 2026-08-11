@@ -1,9 +1,16 @@
 /**
- * Restart July 2026 payroll from Validation with Sage dayrate day counts.
+ * HISTORICAL / MIGRATION ONLY — July 2026 Sage dayrate cutover.
+ *
+ * Sage People license has expired. From August 2026 onward, C-code daily-rate
+ * salaries are computed from HRIS timesheet bookings (not Sage schedule uploads).
+ * Do not re-run this script for future periods.
+ *
+ * Restart July 2026 payroll from Validation with Sage day counts + OT/allowances.
  *
  * 1) Feed Sage Total Weekday days into TimesheetPayrollUpdates for per-2026-07
  * 2) Clear leftover daily-rate labels on Inactive off-roster C-codes
- * 3) validate-payroll → create-run for both packs
+ * 3) Import Sage OT/allowance lines as period earning adjustments (July only)
+ * 4) validate-payroll → create-run for both packs
  *
  * Usage:
  *   npx tsx --tsconfig apps/dashboard/tsconfig.json apps/dashboard/scripts/restart-july-2026-payroll.mts
@@ -96,7 +103,8 @@ for sheet, company in [('DLE','DLE'),('DLPC','DLPC')]:
             if col not in idx: continue
             try: amt = float(row[idx[col]] or 0)
             except: amt = 0
-            if abs(amt) < 0.005: continue
+            # Always keep Meal Allowance (including 0) so auto ₦500×days meal can be suppressed.
+            if abs(amt) < 0.005 and ecode != 'MEAL': continue
             earnings.append({'code': ecode, 'name': ename, 'amount': amt, 'taxable': taxable})
         seen.add(code)
         out.append({'code': code, 'name': (first + ' ' + last).strip(), 'weekdays': days, 'company': company, 'earnings': earnings})
