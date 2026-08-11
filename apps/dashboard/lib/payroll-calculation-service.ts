@@ -891,10 +891,14 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
         .map((key) => sageByKey.get(key))
         .find(Boolean) || null
       : null;
-    const localDeductions = variant.payCurrency === 'NGN' && variant.hasDualCurrencyPayroll
-      ? (employee.sageLocalPayrollDeductions || null)
+    const sageSyncedDeductions = variant.payCurrency === 'NGN'
+      ? (
+          variant.hasDualCurrencyPayroll
+            ? (employee.sageLocalPayrollDeductions || null)
+            : (variant.useSageLines ? (employee.sagePayrollDeductions || null) : null)
+        )
       : null;
-    const localDeductionLines = localDeductions?.lines || [];
+    const localDeductionLines = sageSyncedDeductions?.lines || [];
     const localPaye = localDeductionLines
       .filter((line) => /^PAYE$/i.test(String(line.code || '')))
       .reduce((sum, line) => sum + Number(line.amount || 0), 0);
@@ -907,19 +911,19 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const localOther = localDeductionLines
       .filter((line) => !/^(PAYE|NHF)$/i.test(String(line.code || '')) && !/PENSION/i.test(String(line.code || '')))
       .reduce((sum, line) => sum + Number(line.amount || 0), 0);
-    const useLocalDeductions = Boolean(localDeductions && localDeductionLines.length > 0);
+    const useLocalDeductions = Boolean(sageSyncedDeductions && localDeductionLines.length > 0);
     const usdPayeOverride = variant.payCurrency === 'USD'
       ? Number(employee.payeCalculation?.monthlyPayeOverride)
       : NaN;
     const paye = variant.payCurrency === 'USD'
       ? (Number.isFinite(usdPayeOverride) ? roundMoney(usdPayeOverride) : roundMoney(tax.monthlyPaye))
       : useLocalDeductions
-        ? roundMoney(localPaye || Number(localDeductions?.paye || 0))
+        ? roundMoney(localPaye || Number(sageSyncedDeductions?.paye || 0))
         : tax.monthlyPaye;
     const employeePension = variant.payCurrency === 'USD'
       ? 0
       : useLocalDeductions
-        ? roundMoney(localPension || Number(localDeductions?.pensionEmployee || 0))
+        ? roundMoney(localPension || Number(sageSyncedDeductions?.pensionEmployee || 0))
         : pension.employeeContribution;
     const statutoryEmployee = variant.payCurrency === 'USD' ? 0 : funds.employeeDeductions;
     const loanRecovery = roundMoney(loans.reduce((sum, loan) => sum + loan.payrollRecovery, 0));
@@ -927,7 +931,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const nhf = variant.payCurrency === 'USD'
       ? 0
       : useLocalDeductions
-        ? roundMoney(localNhf || Number(localDeductions?.nhf || 0))
+        ? roundMoney(localNhf || Number(sageSyncedDeductions?.nhf || 0))
         : taxComponentMonthly('nhf');
     const nhfFundDeduction = roundMoney(funds.fundResults.find((item) => item.id === 'nhf')?.monthlyAmount || 0);
     const statutoryEmployeeDeductions = useLocalDeductions
@@ -937,11 +941,11 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const otherStatutory = variant.payCurrency === 'USD'
       ? 0
       : useLocalDeductions
-        ? roundMoney(localOther || Number(localDeductions?.other || 0))
+        ? roundMoney(localOther || Number(sageSyncedDeductions?.other || 0))
         : taxComponentMonthly('other-statutory');
     const otherDeductions = roundMoney(unionDues + otherStatutory);
     const totalDeductions = useLocalDeductions
-      ? roundMoney(Number(localDeductions?.totalDeductions || (paye + employeePension + nhf + otherDeductions + loanRecovery)))
+      ? roundMoney(Number(sageSyncedDeductions?.totalDeductions || (paye + employeePension + nhf + otherDeductions + loanRecovery)))
       : roundMoney(paye + employeePension + statutoryEmployeeDeductions + loanRecovery + nhf + otherDeductions);
     const netPay = roundMoney(Math.max(0, amounts.grossPay - totalDeductions));
     const grossVariance = sageActual ? moneyVariance(sageActual.grossPay, amounts.grossPay) : null;
