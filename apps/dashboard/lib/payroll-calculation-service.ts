@@ -336,19 +336,20 @@ export const groupPayrollCalculationRecords = (records: PayrollCalculationRecord
     .map((item) => ({ ...item, grossPay: roundMoney(item.grossPay), netPay: roundMoney(item.netPay) }))
     .sort((a, b) => b.grossPay - a.grossPay);
 
-/** Split a full-period calculation into a salaried or daily-rate pack (cost totals follow the filtered set). */
-export const filterPayrollCalculationByPack = (
-  calculation: PayrollCalculationResult,
-  pack: import('@/lib/payroll-employee-classification').PayrollRunPack,
-): PayrollCalculationResult => {
-  const records = calculation.records.filter((record) => (pack === 'daily-rate' ? record.isDailyRate : !record.isDailyRate));
-  const ready = records.filter((record) => record.status === 'Ready');
-  const review = records.filter((record) => record.status === 'Review');
-  const blocked = records.filter((record) => record.status === 'Blocked');
-  const readiness = summarizePayrollReadiness(records);
-  const exceptionCount = records.reduce((sum, record) => sum + Number(record.exceptionCount || 0), 0);
-  const deferredExceptionCount = records.reduce((sum, record) => sum + Number(record.deferredWarnings?.length || 0), 0);
-  const totals = records.reduce(
+/** KPI / summary money must not mix USD package rows into NGN totals. */
+const isNgnPayrollRecord = (record: Pick<PayrollCalculationRecord, 'payCurrency'>) => {
+  const currency = String(record.payCurrency || 'NGN').trim().toUpperCase();
+  return currency === 'NGN' || currency === 'NAIRA' || currency === '';
+};
+
+/** Prefer NGN rows for pack summaries; fall back to all rows when the filtered set is USD-only. */
+export const summaryPayrollRecords = (records: PayrollCalculationRecord[]) => {
+  const ngn = records.filter(isNgnPayrollRecord);
+  return ngn.length > 0 ? ngn : records;
+};
+
+const sumPayrollMoneyTotals = (records: PayrollCalculationRecord[]) =>
+  records.reduce(
     (sum, record) => ({
       basePay: sum.basePay + Number(record.basePay || 0),
       allowances: sum.allowances + Number(record.allowances || 0),
@@ -382,6 +383,21 @@ export const filterPayrollCalculationByPack = (
       loanRecovery: 0,
     },
   );
+
+/** Split a full-period calculation into a salaried or daily-rate pack (cost totals follow the filtered set). */
+export const filterPayrollCalculationByPack = (
+  calculation: PayrollCalculationResult,
+  pack: import('@/lib/payroll-employee-classification').PayrollRunPack,
+): PayrollCalculationResult => {
+  const records = calculation.records.filter((record) => (pack === 'daily-rate' ? record.isDailyRate : !record.isDailyRate));
+  const summaryRecords = summaryPayrollRecords(records);
+  const ready = summaryRecords.filter((record) => record.status === 'Ready');
+  const review = summaryRecords.filter((record) => record.status === 'Review');
+  const blocked = summaryRecords.filter((record) => record.status === 'Blocked');
+  const readiness = summarizePayrollReadiness(summaryRecords);
+  const exceptionCount = summaryRecords.reduce((sum, record) => sum + Number(record.exceptionCount || 0), 0);
+  const deferredExceptionCount = summaryRecords.reduce((sum, record) => sum + Number(record.deferredWarnings?.length || 0), 0);
+  const totals = sumPayrollMoneyTotals(summaryRecords);
   const component = (componentId: string, label: string, amount: number, tone: PayrollTone, payer: 'Employee' | 'Employer' | 'Both') =>
     ({ id: componentId, label, amount: roundMoney(amount), tone, payer });
   const packLabel = pack === 'daily-rate' ? 'Contract Daily Rate' : 'Salaried / Stipend';
@@ -390,8 +406,8 @@ export const filterPayrollCalculationByPack = (
     periodLabel: `${calculation.periodLabel} · ${packLabel}`,
     summary: {
       ...calculation.summary,
-      employees: records.length,
-      payrollEligible: records.length,
+      employees: summaryRecords.length,
+      payrollEligible: summaryRecords.length,
       ready: ready.length,
       review: review.length,
       blocked: blocked.length,
@@ -416,15 +432,15 @@ export const filterPayrollCalculationByPack = (
       exceptionCount,
       deferredExceptionCount,
       averageDeductionRatio: totals.grossPay > 0 ? roundMoney(totals.deductions / totals.grossPay) : 0,
-      payrollCoveragePct: records.length
-        ? Math.round((records.filter((record) => record.setupAssignedToPayroll).length / records.length) * 1000) / 10
+      payrollCoveragePct: summaryRecords.length
+        ? Math.round((summaryRecords.filter((record) => record.setupAssignedToPayroll).length / summaryRecords.length) * 1000) / 10
         : 0,
     },
     records,
     breakdowns: {
-      byPayrollGroup: groupPayrollCalculationRecords(records, 'payrollGroup'),
-      byDepartment: groupPayrollCalculationRecords(records, 'department').slice(0, 12),
-      byEmploymentType: groupPayrollCalculationRecords(records, 'employmentType'),
+      byPayrollGroup: groupPayrollCalculationRecords(summaryRecords, 'payrollGroup'),
+      byDepartment: groupPayrollCalculationRecords(summaryRecords, 'department').slice(0, 12),
+      byEmploymentType: groupPayrollCalculationRecords(summaryRecords, 'employmentType'),
       byComponent: [
         component('paye', 'PAYE', totals.paye, 'violet', 'Employee'),
         component('pension-employee', 'Employee Pension', totals.pensionEmployee, 'blue', 'Employee'),
@@ -1055,7 +1071,8 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     });
   });
 
-  const totals = records.reduce(
+  const summaryRecords = summaryPayrollRecords(records);
+  const totals = summaryRecords.reduce(
     (sum, record) => ({
       basePay: sum.basePay + record.basePay,
       allowances: sum.allowances + record.allowances,
@@ -1100,14 +1117,14 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     },
   );
 
-  const ready = records.filter((record) => record.status === 'Ready');
-  const review = records.filter((record) => record.status === 'Review');
-  const blocked = records.filter((record) => record.status === 'Blocked');
-  const eligible = records.filter((record) => !['Terminated', 'Resigned', 'Retired', 'Inactive'].includes(record.employmentStatus));
-  const readiness = summarizePayrollReadiness(records);
+  const ready = summaryRecords.filter((record) => record.status === 'Ready');
+  const review = summaryRecords.filter((record) => record.status === 'Review');
+  const blocked = summaryRecords.filter((record) => record.status === 'Blocked');
+  const eligible = summaryRecords.filter((record) => !['Terminated', 'Resigned', 'Retired', 'Inactive'].includes(record.employmentStatus));
+  const readiness = summarizePayrollReadiness(summaryRecords);
 
   const summary: PayrollCalculationSummary = {
-    employees: records.length,
+    employees: summaryRecords.length,
     payrollEligible: eligible.length,
     ready: ready.length,
     review: review.length,
@@ -1134,8 +1151,8 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     exceptionCount: totals.exceptionCount,
     deferredExceptionCount: totals.deferredExceptionCount,
     averageDeductionRatio: totals.grossPay ? roundMoney((totals.totalDeductions / totals.grossPay) * 100) : 0,
-    payrollCoveragePct: records.length
-      ? Math.round((records.filter((record) => record.setupAssignedToPayroll).length / records.length) * 1000) / 10
+    payrollCoveragePct: summaryRecords.length
+      ? Math.round((summaryRecords.filter((record) => record.setupAssignedToPayroll).length / summaryRecords.length) * 1000) / 10
       : 0,
   };
 
@@ -1157,9 +1174,9 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     summary,
     records,
     breakdowns: {
-      byPayrollGroup: groupPayrollCalculationRecords(records, 'payrollGroup'),
-      byDepartment: groupPayrollCalculationRecords(records, 'department').slice(0, 12),
-      byEmploymentType: groupPayrollCalculationRecords(records, 'employmentType'),
+      byPayrollGroup: groupPayrollCalculationRecords(summaryRecords, 'payrollGroup'),
+      byDepartment: groupPayrollCalculationRecords(summaryRecords, 'department').slice(0, 12),
+      byEmploymentType: groupPayrollCalculationRecords(summaryRecords, 'employmentType'),
       byComponent: [
         component('paye', 'PAYE', totals.paye, 'violet', 'Employee'),
         component('pension-employee', 'Employee Pension', totals.pensionEmployee, 'blue', 'Employee'),

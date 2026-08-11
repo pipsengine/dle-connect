@@ -352,8 +352,9 @@
     "employeeId": "0413",
     "employeeCode": "P0413",
     "nhfApplicable": false,
-    "updatedAt": "2026-06-27T00:18:59.190Z",
-    "updatedBy": "Sage cutover sync"
+    "excludedFromPayrollRun": true,
+    "updatedAt": "2026-08-11T18:40:00.000Z",
+    "updatedBy": "Exclude USD-only from NGN salaried totals"
   },
   {
     "employeeId": "0415",
@@ -727,8 +728,9 @@
     "employeeId": "EX001",
     "employeeCode": "PEX001",
     "nhfApplicable": false,
-    "updatedAt": "2026-06-27T00:27:33.669Z",
-    "updatedBy": "Sage PAYE rules seed"
+    "excludedFromPayrollRun": true,
+    "updatedAt": "2026-08-11T18:40:00.000Z",
+    "updatedBy": "Exclude non-July extra from salaried run"
   },
   {
     "employeeId": "IT0106",
