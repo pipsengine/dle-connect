@@ -2,10 +2,10 @@ import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { applyPayrollEmployeeOptions } from '@/lib/payroll-employee-options-store';
 import { payrollDataSourceInfo, readDirectoryEmployees, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { mergeTimesheetDayRateEarnings, calculatePayrollEarnings, resolvePayrollEarningProfile } from '@/lib/payroll-earnings-engine';
-import { isNonPermanentPayrollEmployee, payrollActiveEmployees, permanentStyleSageEarnings } from '@/lib/payroll-employee-classification';
+import { isNonPermanentPayrollEmployee, payrollActiveEmployees } from '@/lib/payroll-employee-classification';
 import { registerPayrollAdjustmentsChangeHandler, adjustmentsFileMtime } from '@/lib/payroll-period-earning-adjustments-store';
 import { contractEmployeeCode, isDailyRatePayrollEmployee, isEmployeeExcludedFromPayrollRun, type PayrollRunExclusionEmployee } from '@/lib/payroll-employee-classification';
-import { enterprisePayrollSourceLabel, isEnterprisePayrollPeriod, isSagePayrollRuntimeEnabled, isSageSalariedScheduleFeedPeriod, shouldComparePayrollWithSage } from '@/lib/payroll-enterprise-source';
+import { enterprisePayrollSourceLabel, isEnterprisePayrollPeriod, isSagePayrollRuntimeEnabled, shouldComparePayrollWithSage } from '@/lib/payroll-enterprise-source';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
 import { activeStatutoryFundsVersion, calculateStatutoryFunds, readStatutoryFundsConfig, statutoryFundInputFromEmployee } from '@/lib/payroll-statutory-funds-engine';
@@ -163,10 +163,9 @@ const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value
 const compact = (value: unknown) => String(value || '').trim();
 const activeStatus = (value: unknown) => !compact(value).toLowerCase().match(/terminated|resigned|retired|inactive|deceased/);
 
-const inputOnlyEmployee = (employee: DleEmployeeDirectoryRow): DleEmployeeDirectoryRow => ({
+const packageSetupEmployee = (employee: DleEmployeeDirectoryRow): DleEmployeeDirectoryRow => ({
   ...employee,
-  sagePayrollEarnings: undefined,
-  sagePayrollDeductions: undefined,
+  // Keep configured package earning/deduction setup. Contributions snapshots are not formula inputs.
   sagePayrollContributions: undefined,
 });
 
@@ -192,6 +191,7 @@ const dualCurrencyLocalEmployee = (employee: DleEmployeeDirectoryRow): DleEmploy
     jobGrade: localGrade,
     payeCalculation: localPayeRules,
     sagePayrollEarnings: localLines,
+    // Package deduction setup may seed additional EE pension; never copied as computed PAYE.
     sagePayrollDeductions: employee.sageLocalPayrollDeductions,
   };
 };
@@ -762,41 +762,15 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     return map;
   }, new Map<string, ReturnType<typeof loanInputsFromApplications>>());
 
-  const calculationOptionsForEmployee = (employee: DleEmployeeDirectoryRow, forceSageLines = false) => {
+  const calculationOptionsForEmployee = (employee: DleEmployeeDirectoryRow, forcePackageLines = false) => {
     const base = { period: requestedPeriod, includePeriodAdjustments: true as const };
-    if (
-      forceSageLines
-      || (
-        (employee.sagePayrollEarnings || []).length > 0
-        && (
-          Boolean(dualCurrencyLocalEmployee(employee))
-          || employeeIsUsdPayrollPrimary(employee)
-          || isSageSalariedScheduleFeedPeriod(requestedPeriod)
-        )
-      )
-    ) {
-      if ((employee.sagePayrollEarnings || []).length > 0) {
-        return { ...base, useSagePayslipLines: true as const, ignoreSagePayslipLines: false as const };
-      }
-    }
-    if (!compareWithSage && !isSageSalariedScheduleFeedPeriod(requestedPeriod)) {
-      return { ...base, ignoreSagePayslipLines: true as const };
-    }
-    if (!isNonPermanentPayrollEmployee(employee)) {
-      const sageLines = employee.sagePayrollEarnings || [];
-      if (isSageSalariedScheduleFeedPeriod(requestedPeriod) && sageLines.length > 0) {
-        return { ...base, useSagePayslipLines: true as const, ignoreSagePayslipLines: false as const };
-      }
-      return { ...base, ignoreSagePayslipLines: true as const };
-    }
-    const sageLines = employee.sagePayrollEarnings || [];
-    if (isSageSalariedScheduleFeedPeriod(requestedPeriod) && sageLines.length > 0) {
+    const packageLines = employee.sagePayrollEarnings || [];
+    // Configured HRIS package earning lines drive gross composition when present.
+    if (forcePackageLines || packageLines.length > 0) {
       return { ...base, useSagePayslipLines: true as const, ignoreSagePayslipLines: false as const };
     }
-    const useSagePayslipLines = permanentStyleSageEarnings(sageLines) || sageLines.length === 0;
-    return useSagePayslipLines
-      ? { ...base, useSagePayslipLines: true as const, ignoreSagePayslipLines: false as const }
-      : { ...base, ignoreSagePayslipLines: true as const };
+    // Otherwise use grade/profile / period-salary formulas only.
+    return { ...base, ignoreSagePayslipLines: true as const };
   };
 
   const payrollEmployees = employeeSource.employees.filter((employee) => !isEmployeeExcludedFromPayrollRun(employee as PayrollRunExclusionEmployee));
@@ -806,7 +780,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     payrollGroup: string;
     payCurrency: 'NGN' | 'USD';
     calculationEmployee: DleEmployeeDirectoryRow;
-    useSageLines: boolean;
+    usePackageLines: boolean;
     skipSageCompare: boolean;
     hasDualCurrencyPayroll: boolean;
     usdPackageGross: number | null;
@@ -823,7 +797,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
           payrollGroup: compact(local.payrollGroup) || 'DLE',
           payCurrency: 'NGN',
           calculationEmployee: local,
-          useSageLines: true,
+          usePackageLines: (local.sagePayrollEarnings || []).length > 0,
           skipSageCompare: false,
           hasDualCurrencyPayroll: true,
           usdPackageGross: usdPackageGrossFromEmployee(employee),
@@ -833,7 +807,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
           payrollGroup: compact(usdEmployee.payrollGroup) || 'DLE_USD',
           payCurrency: 'USD',
           calculationEmployee: usdEmployee,
-          useSageLines: true,
+          usePackageLines: (usdEmployee.sagePayrollEarnings || []).length > 0,
           skipSageCompare: true,
           hasDualCurrencyPayroll: true,
           usdPackageGross: usdPackageGrossFromEmployee(employee),
@@ -847,14 +821,13 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
         payrollGroup: compact(usdEmployee.payrollGroup) || 'DLE_USD',
         payCurrency: 'USD',
         calculationEmployee: usdEmployee,
-        useSageLines: (employee.sagePayrollEarnings || []).length > 0,
+        usePackageLines: (employee.sagePayrollEarnings || []).length > 0,
         skipSageCompare: true,
         hasDualCurrencyPayroll: false,
         usdPackageGross: usdPackageGrossFromEmployee(employee),
       }];
     }
-    const keepSageLines = shouldComparePayrollWithSage(requestedPeriod)
-      || (isSageSalariedScheduleFeedPeriod(requestedPeriod) && (employee.sagePayrollEarnings || []).length > 0);
+    const packageEmployee = packageSetupEmployee(employee);
     return [{
       runKey: 'PRIMARY',
       payrollGroup: compact(employee.payrollGroup) || 'Unassigned',
@@ -865,8 +838,8 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
         jobGrade: employee.jobGrade,
         businessUnit: employee.businessUnit,
       }) as 'NGN' | 'USD',
-      calculationEmployee: keepSageLines ? employee : inputOnlyEmployee(employee),
-      useSageLines: keepSageLines && (employee.sagePayrollEarnings || []).length > 0,
+      calculationEmployee: packageEmployee,
+      usePackageLines: (packageEmployee.sagePayrollEarnings || []).length > 0,
       skipSageCompare: false,
       hasDualCurrencyPayroll: false,
       usdPackageGross: null,
@@ -875,12 +848,18 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
 
   const records: PayrollCalculationRecord[] = payrollEmployees.flatMap((employee, index) => {
     return variantsForEmployee(employee).map((variant, variantIndex) => {
-    const calculationOptions = calculationOptionsForEmployee(variant.calculationEmployee, variant.useSageLines);
+    const calculationOptions = calculationOptionsForEmployee(variant.calculationEmployee, variant.usePackageLines);
     const calculationEmployee = variant.calculationEmployee;
     const baseAmounts = calculatePayrollEarnings(calculationEmployee, calculationOptions);
     const amounts = applyDailyRateFromTimesheets(employee, baseAmounts, timesheetHours, requestedPeriod);
-    const tax = calculatePayrollTax(payrollInputFromEmployee(calculationEmployee, calculationOptions, amounts), taxVersion);
     const pension = calculatePension(pensionInputFromEmployee(calculationEmployee, calculationOptions), pensionVersion);
+    const tax = calculatePayrollTax(
+      {
+        ...payrollInputFromEmployee(calculationEmployee, calculationOptions, amounts),
+        additionalEmployeePensionMonthly: variant.payCurrency === 'USD' ? 0 : pension.voluntaryContribution,
+      },
+      taxVersion,
+    );
     const funds = calculateStatutoryFunds(statutoryFundInputFromEmployee(calculationEmployee, employeeSource.employees.length, calculationOptions), fundsVersion);
     const loans = variant.payCurrency === 'USD'
       ? []
@@ -891,62 +870,25 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
         .map((key) => sageByKey.get(key))
         .find(Boolean) || null
       : null;
-    const sageSyncedDeductions = variant.payCurrency === 'NGN'
-      ? (
-          variant.hasDualCurrencyPayroll
-            ? (employee.sageLocalPayrollDeductions || null)
-            : (variant.useSageLines ? (employee.sagePayrollDeductions || null) : null)
-        )
-      : null;
-    const localDeductionLines = sageSyncedDeductions?.lines || [];
-    const localPaye = localDeductionLines
-      .filter((line) => /^PAYE$/i.test(String(line.code || '')))
-      .reduce((sum, line) => sum + Number(line.amount || 0), 0);
-    const localPension = localDeductionLines
-      .filter((line) => /PENSION/i.test(String(line.code || '')) && !/ER$/i.test(String(line.code || '')))
-      .reduce((sum, line) => sum + Number(line.amount || 0), 0);
-    const localNhf = localDeductionLines
-      .filter((line) => /^NHF$/i.test(String(line.code || '')))
-      .reduce((sum, line) => sum + Number(line.amount || 0), 0);
-    const localOther = localDeductionLines
-      .filter((line) => !/^(PAYE|NHF)$/i.test(String(line.code || '')) && !/PENSION/i.test(String(line.code || '')))
-      .reduce((sum, line) => sum + Number(line.amount || 0), 0);
-    const useLocalDeductions = Boolean(sageSyncedDeductions && localDeductionLines.length > 0);
     const usdPayeOverride = variant.payCurrency === 'USD'
       ? Number(employee.payeCalculation?.monthlyPayeOverride)
       : NaN;
     const paye = variant.payCurrency === 'USD'
       ? (Number.isFinite(usdPayeOverride) ? roundMoney(usdPayeOverride) : roundMoney(tax.monthlyPaye))
-      : useLocalDeductions
-        ? roundMoney(localPaye || Number(sageSyncedDeductions?.paye || 0))
-        : tax.monthlyPaye;
-    const employeePension = variant.payCurrency === 'USD'
-      ? 0
-      : useLocalDeductions
-        ? roundMoney(localPension || Number(sageSyncedDeductions?.pensionEmployee || 0))
-        : pension.employeeContribution;
+      : tax.monthlyPaye;
+    const statutoryPension = variant.payCurrency === 'USD' ? 0 : roundMoney(pension.employeeContribution);
+    const additionalPension = variant.payCurrency === 'USD' ? 0 : roundMoney(pension.voluntaryContribution);
+    const employeePension = roundMoney(statutoryPension + additionalPension);
     const statutoryEmployee = variant.payCurrency === 'USD' ? 0 : funds.employeeDeductions;
     const loanRecovery = roundMoney(loans.reduce((sum, loan) => sum + loan.payrollRecovery, 0));
     const taxComponentMonthly = (componentId: string) => (tax.statutoryItems.find((item) => item.id === componentId)?.amount || 0) / 12;
-    const nhf = variant.payCurrency === 'USD'
-      ? 0
-      : useLocalDeductions
-        ? roundMoney(localNhf || Number(sageSyncedDeductions?.nhf || 0))
-        : taxComponentMonthly('nhf');
+    const nhf = variant.payCurrency === 'USD' ? 0 : taxComponentMonthly('nhf');
     const nhfFundDeduction = roundMoney(funds.fundResults.find((item) => item.id === 'nhf')?.monthlyAmount || 0);
-    const statutoryEmployeeDeductions = useLocalDeductions
-      ? 0
-      : roundMoney(Math.max(0, statutoryEmployee - (nhf > 0 && nhfFundDeduction > 0 ? nhfFundDeduction : 0)));
-    const unionDues = variant.payCurrency === 'USD' || useLocalDeductions ? 0 : taxComponentMonthly('union-dues');
-    const otherStatutory = variant.payCurrency === 'USD'
-      ? 0
-      : useLocalDeductions
-        ? roundMoney(localOther || Number(sageSyncedDeductions?.other || 0))
-        : taxComponentMonthly('other-statutory');
+    const statutoryEmployeeDeductions = roundMoney(Math.max(0, statutoryEmployee - (nhf > 0 && nhfFundDeduction > 0 ? nhfFundDeduction : 0)));
+    const unionDues = variant.payCurrency === 'USD' ? 0 : taxComponentMonthly('union-dues');
+    const otherStatutory = variant.payCurrency === 'USD' ? 0 : taxComponentMonthly('other-statutory');
     const otherDeductions = roundMoney(unionDues + otherStatutory);
-    const totalDeductions = useLocalDeductions
-      ? roundMoney(Number(sageSyncedDeductions?.totalDeductions || (paye + employeePension + nhf + otherDeductions + loanRecovery)))
-      : roundMoney(paye + employeePension + statutoryEmployeeDeductions + loanRecovery + nhf + otherDeductions);
+    const totalDeductions = roundMoney(paye + employeePension + statutoryEmployeeDeductions + loanRecovery + nhf + otherDeductions);
     const netPay = roundMoney(Math.max(0, amounts.grossPay - totalDeductions));
     const grossVariance = sageActual ? moneyVariance(sageActual.grossPay, amounts.grossPay) : null;
     const netVariance = sageActual ? moneyVariance(sageActual.netPay, netPay) : null;
@@ -1100,15 +1042,10 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       salaryStructure: dailyRateEmployee ? 'Daily Rate' : employee.salaryGrade || employee.jobGrade || 'Unassigned',
       earningLines: (amounts.paidEarningLines || amounts.earningLines).map((line) => ({ ...line, amount: roundMoney(line.amount) })),
       annualBenefitLines: amounts.annualBenefitLines.map((line) => ({ ...line, amount: roundMoney(line.amount) })),
-      deductionLines: useLocalDeductions
-        ? localDeductionLines.map((line) => ({
-            code: String(line.code || 'DED'),
-            label: String(line.name || line.code || 'Deduction'),
-            amount: roundMoney(Number(line.amount || 0)),
-          })).filter((line) => line.amount > 0)
-        : [
+      deductionLines: [
             { code: 'PAYE', label: 'PAYE', amount: roundMoney(paye) },
-            { code: 'PENSION_EE', label: 'Pension', amount: roundMoney(employeePension) },
+            { code: 'PENSION_EE', label: 'Pension', amount: roundMoney(statutoryPension) },
+            { code: 'PENSION_EE2', label: 'Additional Employee Pension', amount: roundMoney(additionalPension) },
             { code: 'NHF', label: 'NHF', amount: roundMoney(nhf) },
             { code: 'LOAN', label: 'Loan Recovery', amount: roundMoney(loanRecovery) },
             { code: 'SNR_UNION', label: 'Union Dues', amount: roundMoney(unionDues) },

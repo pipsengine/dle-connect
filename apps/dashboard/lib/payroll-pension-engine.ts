@@ -87,9 +87,24 @@ export const activePensionVersion = (config: PensionConfig, asOf = new Date().to
   );
 };
 
+export const resolveAdditionalEmployeePensionMonthly = (employee: DleEmployeeDirectoryRow) => {
+  const fromOption = Number(employee.additionalEmployeePensionMonthly);
+  if (Number.isFinite(fromOption) && fromOption > 0) return roundMoney(fromOption);
+  const packageLines = employee.sagePayrollDeductions?.lines || [];
+  const fromPackage = packageLines
+    .filter((line) => /^(PENSION_EE2|VOLPENS|PENSION_BONGA)$/i.test(String(line.code || '')))
+    .reduce((sum, line) => sum + Number(line.amount || 0), 0);
+  return fromPackage > 0 ? roundMoney(fromPackage) : 0;
+};
+
 export const pensionInputFromEmployee = (employee: DleEmployeeDirectoryRow, options?: PayrollEarningsOptions): PensionInput => {
   const earnings = pensionablePayrollInputFromEmployee(employee, options);
-  return { employee, monthlyBasePay: earnings.monthlyBasePay, monthlyAllowances: earnings.monthlyAllowances };
+  return {
+    employee,
+    monthlyBasePay: earnings.monthlyBasePay,
+    monthlyAllowances: earnings.monthlyAllowances,
+    voluntaryContributionMonthly: resolveAdditionalEmployeePensionMonthly(employee),
+  };
 };
 
 export const calculatePension = (input: PensionInput, version: PensionVersion) => {
@@ -104,7 +119,11 @@ export const calculatePension = (input: PensionInput, version: PensionVersion) =
   const eligible = configEligible;
   const employeeContribution = configEligible ? roundMoney(pensionableEmolument * Number(version.rules.employeeRate || 0)) : 0;
   const employerContribution = configEligible ? roundMoney(pensionableEmolument * Number(version.rules.employerRate || 0)) : 0;
-  const voluntaryContribution = eligible ? roundMoney(Number(input.voluntaryContributionMonthly || 0) || pensionableEmolument * Number(version.rules.voluntaryContributionRate || 0)) : 0;
+  const configuredVoluntary = Number(input.voluntaryContributionMonthly || 0);
+  const rateVoluntary = pensionableEmolument * Number(version.rules.voluntaryContributionRate || 0);
+  const voluntaryContribution = eligible
+    ? roundMoney(Number.isFinite(configuredVoluntary) && configuredVoluntary > 0 ? configuredVoluntary : rateVoluntary)
+    : 0;
   const totalContribution = roundMoney(employeeContribution + employerContribution + voluntaryContribution);
   const combinedRate = pensionableEmolument ? roundMoney((employeeContribution + employerContribution) / pensionableEmolument) : 0;
   const issues: string[] = [];

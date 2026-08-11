@@ -177,13 +177,19 @@ export const calculatePayeWithReliefs = (input: {
   nhfApplicable: boolean;
   rentRelief: number;
   includePensionRelief?: boolean;
+  /** Extra voluntary / PENSION_EE2 monthly amount included in PAYE pension relief. */
+  additionalEmployeePensionMonthly?: number;
   /** annualized: monthly × 12 → bands → ÷ 12 (fixed earnings). monthly-once: bands on this month only (variable earnings). */
   taxBasis?: 'annualized' | 'monthly-once';
 }) => {
   const annualize = input.taxBasis !== 'monthly-once';
   const annualTaxable = annualize ? input.monthlyTaxable * 12 : input.monthlyTaxable;
+  const statutoryPensionMonthly = roundMoney(input.monthlyBht * 0.08);
+  const additionalPensionMonthly = Math.max(0, Number(input.additionalEmployeePensionMonthly || 0));
   const annualPension =
-    annualize && input.includePensionRelief !== false ? roundMoney(input.monthlyBht * 0.08 * 12) : 0;
+    annualize && input.includePensionRelief !== false
+      ? roundMoney((statutoryPensionMonthly + additionalPensionMonthly) * 12)
+      : 0;
   const annualNhf = annualize && input.nhfApplicable ? roundMoney(input.monthlyBasic * 0.025 * 12) : 0;
   const rentRelief = annualize ? input.rentRelief : 0;
   let chargeable = roundMoney(Math.max(0, annualTaxable - annualPension - annualNhf - rentRelief));
@@ -225,6 +231,7 @@ const calculatePermanentSplitPaye = (input: {
   salaryGrade: string;
   effectiveRules: PayeCalculationRules | null;
   nhfApplicable: boolean;
+  additionalEmployeePensionMonthly?: number;
 }) => {
   const payeLines = input.earningLines.filter((line) => !isSagePayeRefundEarning(line.code, line.name));
   const { fixed, variable } = splitEarningLinesForPaye(payeLines);
@@ -253,6 +260,7 @@ const calculatePermanentSplitPaye = (input: {
     nhfApplicable: input.nhfApplicable,
     rentRelief,
     includePensionRelief: input.category === 'permanent' && !input.effectiveRules?.disablePensionPayeRelief,
+    additionalEmployeePensionMonthly: input.additionalEmployeePensionMonthly,
     taxBasis: 'annualized',
   });
   const variablePaye =
@@ -282,6 +290,7 @@ export const hrisPayeFromEmployee = (input: {
   employee: DleEmployeeDirectoryRow;
   earnings: Pick<PayrollEarningsResult, 'paidEarningLines' | 'earningLines' | 'profileId'>;
   nhfApplicable: boolean;
+  additionalEmployeePensionMonthly?: number;
 }) => {
   const paidLines = (input.earnings.paidEarningLines || input.earnings.earningLines || []) as PayrollEarningLine[];
   const earningLines = mapPayrollLines(paidLines);
@@ -291,6 +300,7 @@ export const hrisPayeFromEmployee = (input: {
   const payCurrency = String(input.employee.payCurrency || '').trim().toUpperCase();
   const isNgnRun = payCurrency === 'NGN' || payCurrency === 'NAIRA';
   const isUsdRun = payCurrency === 'USD' || payCurrency === 'US$';
+  const additionalPension = Math.max(0, Number(input.additionalEmployeePensionMonthly || 0));
 
   // USD monthly overrides / flat rates apply only to the USD payroll run.
   if (isUsdRun && Number.isFinite(Number(payeRules?.monthlyPayeOverride))) {
@@ -335,6 +345,7 @@ export const hrisPayeFromEmployee = (input: {
       salaryGrade: String(salaryGrade || ''),
       effectiveRules: ngnRules,
       nhfApplicable: input.nhfApplicable,
+      additionalEmployeePensionMonthly: additionalPension,
     });
   }
 
@@ -353,6 +364,7 @@ export const hrisPayeFromEmployee = (input: {
     nhfApplicable: false,
     rentRelief,
     includePensionRelief: false,
+    additionalEmployeePensionMonthly: 0,
     taxBasis: 'annualized',
   });
 

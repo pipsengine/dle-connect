@@ -8,6 +8,8 @@ export type PayrollEmployeeOption = {
   employeeCode?: string;
   nhfApplicable?: boolean;
   annualRentRelief?: number | null;
+  /** Fixed monthly additional employee pension (PENSION_EE2 / voluntary). */
+  additionalEmployeePensionMonthly?: number | null;
   payeCalculation?: {
     excludedEarningCodes?: string[];
     includeRefundInTaxable?: boolean;
@@ -166,6 +168,9 @@ export const applyPayrollEmployeeOptions = async (employees: DleEmployeeDirector
       ...employee,
       nhfApplicable: typeof option.nhfApplicable === 'boolean' ? option.nhfApplicable : employee.nhfApplicable,
       annualRentRelief: Number.isFinite(Number(option.annualRentRelief)) ? Number(option.annualRentRelief) : employee.annualRentRelief,
+      additionalEmployeePensionMonthly: Number.isFinite(Number(option.additionalEmployeePensionMonthly))
+        ? Number(option.additionalEmployeePensionMonthly)
+        : employee.additionalEmployeePensionMonthly,
       payeCalculation: option.payeCalculation || employee.payeCalculation,
       payrollGroup: option.payrollGroup || employee.payrollGroup,
       salaryGrade: option.salaryGrade || employee.salaryGrade,

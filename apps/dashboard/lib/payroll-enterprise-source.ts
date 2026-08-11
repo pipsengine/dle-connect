@@ -9,9 +9,10 @@ export const SAGE_DAYRATE_SCHEDULE_FEED_UNTIL = String(process.env.HRIS_SAGE_DAY
 
 /**
  * Last period where JULY PAYROLL / Sage salaried payslip lines may drive permanent, lumpsum, IT, NYSC packages.
- * From the next month onward, HRIS package setup is the sole authority.
+ * Empty / unset = never (HRIS package setup + formulas are the sole authority).
+ * Set explicitly (e.g. 2026-07) only for legacy cutover debugging.
  */
-export const SAGE_SALARIED_SCHEDULE_FEED_UNTIL = String(process.env.HRIS_SAGE_SALARIED_FEED_UNTIL || '2026-07').trim();
+export const SAGE_SALARIED_SCHEDULE_FEED_UNTIL = String(process.env.HRIS_SAGE_SALARIED_FEED_UNTIL || '').trim();
 
 const periodSortKey = (period: string) => {
   const normalized = String(period || '').replace(/^per-/, '').trim();
@@ -27,9 +28,11 @@ export const isEnterprisePayrollPeriod = (period: string) =>
 export const isSageDayrateScheduleFeedPeriod = (period: string) =>
   periodSortKey(period) > 0 && periodSortKey(period) <= periodSortKey(SAGE_DAYRATE_SCHEDULE_FEED_UNTIL);
 
-/** True only for frozen Sage salaried schedule migration periods (default through 2026-07). */
+/** True only when an explicit salaried Sage feed-until period is configured and the run is within it. */
 export const isSageSalariedScheduleFeedPeriod = (period: string) =>
-  periodSortKey(period) > 0 && periodSortKey(period) <= periodSortKey(SAGE_SALARIED_SCHEDULE_FEED_UNTIL);
+  Boolean(SAGE_SALARIED_SCHEDULE_FEED_UNTIL)
+  && periodSortKey(period) > 0
+  && periodSortKey(period) <= periodSortKey(SAGE_SALARIED_SCHEDULE_FEED_UNTIL);
 
 export const isSageDayrateScheduleSource = (value?: string | null) =>
   /sage dayrate payment schedule/i.test(String(value || '').trim());

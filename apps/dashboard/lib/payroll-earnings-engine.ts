@@ -687,7 +687,7 @@ const pensionablePayFromLines = (lines: PayrollEarningLine[]) => {
   };
 };
 
-const sagePayslipEarningLines = (employee: DleEmployeeDirectoryRow): PayrollEarningLine[] => {
+const configuredPackageEarningLines = (employee: DleEmployeeDirectoryRow): PayrollEarningLine[] => {
   return (employee.sagePayrollEarnings || [])
     .map((line) => {
       const amount = roundMoney(num(line.amount));
@@ -697,7 +697,7 @@ const sagePayslipEarningLines = (employee: DleEmployeeDirectoryRow): PayrollEarn
         name: compact(line.name || line.code),
         taxable: taxableAmount > 0,
         percentOfGross: 0,
-        calculation: 'Latest Sage payslip line',
+        calculation: 'HRIS salary package line',
         runFrequency: 'monthly' as const,
         includeInMonthlyPayroll: true,
         amount,
@@ -1016,7 +1016,7 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
   const profileId = resolvePayrollEarningProfile(employee);
   const gross = monthlyGrossFromEmployee(employee);
   const profile = profileId === 'fallback' || profileId === 'contract-day-rate' || profileId === 'stipend-non-taxable' ? null : PAYROLL_EARNING_PROFILES[profileId];
-  const sageLines = options?.useSagePayslipLines && !options?.ignoreSagePayslipLines ? sagePayslipEarningLines(employee) : [];
+  const sageLines = options?.useSagePayslipLines && !options?.ignoreSagePayslipLines ? configuredPackageEarningLines(employee) : [];
   if (sageLines.length > 0) {
     const fallbackProfileName = profileId === 'contract-day-rate'
       ? 'Contract Staff on Day Rate'
@@ -1038,7 +1038,7 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
     const bhtPay = pensionablePayFromLines(paidLines).total;
     return {
       profileId,
-      profileName: `${fallbackProfileName} - Sage Payslip Exact`,
+      profileName: `${fallbackProfileName} - HRIS Salary Package`,
       periodPackageGross: grossPay,
       grossPay,
       basePay: basicPay,

@@ -67,6 +67,8 @@ export type PayrollTaxInput = {
   courtGarnisheeMonthly?: number;
   taxState?: string;
   asOf?: string;
+  /** Extra voluntary / PENSION_EE2 monthly amount for PAYE pension relief. */
+  additionalEmployeePensionMonthly?: number;
 };
 
 const resolveDashboardRoot = () => {
@@ -251,6 +253,7 @@ export const calculatePayrollTax = (input: PayrollTaxInput, version: PayrollTaxV
           employee: input.employee,
           earnings: input.earnings,
           nhfApplicable: defaultNhfApplicableForEmployee(input.employee),
+          additionalEmployeePensionMonthly: input.additionalEmployeePensionMonthly,
         }).paye
       : null;
   const monthlyPaye = flatContractPaye

@@ -120,6 +120,8 @@ export type DleEmployeeDirectoryRow = {
   nhfApplicable?: boolean;
   annualRent?: number | null;
   annualRentRelief?: number | null;
+  /** HRIS setup: fixed monthly additional employee pension (PENSION_EE2). */
+  additionalEmployeePensionMonthly?: number | null;
   payeCalculation?: {
     excludedEarningCodes?: string[];
     includeRefundInTaxable?: boolean;

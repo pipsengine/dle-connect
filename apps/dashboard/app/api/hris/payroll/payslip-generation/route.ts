@@ -255,15 +255,18 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
       : null;
     const amounts = dailyTimesheetAmounts && dailyTimesheetAmounts.grossPay > 0 ? dailyTimesheetAmounts : standardAmounts;
     const calculationEmployee = dailyRateEmployee ? { ...payrollEmployee, sagePayrollEarnings: [] } : payrollEmployee;
-    const tax = calculatePayrollTax(
-      payrollInputFromEmployee(calculationEmployee, standardOptions, amounts),
-      taxVersion,
-    );
     const pension = calculatePension(dailyRateEmployee ? { employee: calculationEmployee, monthlyBasePay: amounts.basicPay, monthlyAllowances: Math.max(0, amounts.taxablePay - amounts.basicPay) } : pensionInputFromEmployee(payrollEmployee, standardOptions), pensionVersion);
     const funds = calculateStatutoryFunds(dailyRateEmployee ? { employee: calculationEmployee, monthlyBasePay: amounts.basicPay, monthlyAllowances: amounts.allowances, organizationEmployeeCount: employeeSource.employees.length } : statutoryFundInputFromEmployee(payrollEmployee, employeeSource.employees.length, standardOptions), fundsVersion);
     const loans = (loanInputs.get(employee.employeeId) || []).map((loanInput) => calculateLoanRecovery(loanInput, loansVersion));
+    const tax = calculatePayrollTax(
+      {
+        ...payrollInputFromEmployee(calculationEmployee, standardOptions, amounts),
+        additionalEmployeePensionMonthly: pension.voluntaryContribution,
+      },
+      taxVersion,
+    );
     const paye = roundMoney(tax.monthlyPaye);
-    const pensionEmployee = roundMoney(pension.employeeContribution);
+    const pensionEmployee = roundMoney(pension.employeeContribution + pension.voluntaryContribution);
     const nhf = roundMoney((tax.statutoryItems.find((item) => item.id === 'nhf')?.amount || 0) / 12);
     const loanRecovery = roundMoney(loans.reduce((sum, loan) => sum + loan.payrollRecovery, 0));
     const taxComponentMonthly = (id: string) => (tax.statutoryItems.find((item) => item.id === id)?.amount || 0) / 12;
