@@ -7,7 +7,6 @@ import {
   Banknote,
   BarChart4,
   Box,
-  Building2,
   Clock,
   FileKey,
   Files,
@@ -163,12 +162,12 @@ const workspaceModules = [
     permissions: ['it.view', 'it.*', 'infrastructure.view', 'application-support.view', 'service-desk.view', 'view_it_support', 'view_it_assets'],
   },
   {
-    title: 'ERP',
-    href: '/erp',
-    icon: Building2,
-    status: 'Ready',
-    signal: 'Core operational transactions',
-    permissions: ['erp.view', 'erp.*'],
+    title: 'Security',
+    href: '/security',
+    icon: ShieldCheck,
+    status: 'Live',
+    signal: 'Security portal for visitor management, reception, approvals, and site control',
+    permissions: [],
   },
 ];
 

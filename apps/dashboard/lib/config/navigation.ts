@@ -2,7 +2,6 @@ import {
   LayoutDashboard,
   Box,
   Users,
-  Building2,
   Banknote,
   Clock,
   Gift,
@@ -15,7 +14,6 @@ import {
   ShieldCheck,
   FileKey,
   Webhook,
-  Bot,
   HelpCircle,
   Truck,
 } from 'lucide-react';
@@ -50,15 +48,6 @@ export const navigationConfig: NavItem[] = [
     permissionKey: 'view_dashboard'
   },
   {
-    id: 'ai-copilot',
-    label: 'AI Copilot',
-    slug: 'ai-copilot',
-    icon: Bot,
-    group: 'main',
-    route: '/ai-copilot',
-    permissionKey: 'view_ai_copilot'
-  },
-  {
     id: 'hris',
     label: 'Human Resources',
     slug: 'human-resources',
@@ -72,15 +61,6 @@ export const navigationConfig: NavItem[] = [
       { title: 'Pay Setup', slug: 'pay-setup', route: '/hris/payroll-management/pay-setup', permissionKey: 'page.hris.payroll.salary-management.view' },
       { title: 'Bank & Finance', slug: 'bank-finance', route: '/hris/payroll-management/bank-finance', permissionKey: 'page.payroll.management.bank-finance.view' },
     ]
-  },
-  {
-    id: 'erp',
-    label: 'ERP',
-    slug: 'erp',
-    icon: Building2,
-    group: 'main',
-    route: '/erp',
-    permissionKey: 'view_erp'
   },
   {
     id: 'finance',
@@ -214,6 +194,15 @@ export const navigationConfig: NavItem[] = [
     group: 'main',
     route: '/it-support',
     permissionKey: 'view_it_support',
+  },
+  {
+    id: 'security',
+    label: 'Security',
+    slug: 'security',
+    icon: ShieldCheck,
+    group: 'main',
+    route: '/security',
+    permissionKey: 'view_security',
   },
   {
     id: 'administration',
