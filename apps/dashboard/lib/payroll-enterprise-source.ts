@@ -7,6 +7,12 @@ export const ENTERPRISE_PAYROLL_FROM_PERIOD = String(process.env.HRIS_PAYROLL_EN
  */
 export const SAGE_DAYRATE_SCHEDULE_FEED_UNTIL = String(process.env.HRIS_SAGE_DAYRATE_FEED_UNTIL || '2026-07').trim();
 
+/**
+ * Last period where JULY PAYROLL / Sage salaried payslip lines may drive permanent, lumpsum, IT, NYSC packages.
+ * From the next month onward, HRIS package setup is the sole authority.
+ */
+export const SAGE_SALARIED_SCHEDULE_FEED_UNTIL = String(process.env.HRIS_SAGE_SALARIED_FEED_UNTIL || '2026-07').trim();
+
 const periodSortKey = (period: string) => {
   const normalized = String(period || '').replace(/^per-/, '').trim();
   if (!/^\d{4}-\d{2}$/.test(normalized)) return 0;
@@ -20,6 +26,10 @@ export const isEnterprisePayrollPeriod = (period: string) =>
 /** True only for frozen Sage dayrate schedule migration periods (default through 2026-07). */
 export const isSageDayrateScheduleFeedPeriod = (period: string) =>
   periodSortKey(period) > 0 && periodSortKey(period) <= periodSortKey(SAGE_DAYRATE_SCHEDULE_FEED_UNTIL);
+
+/** True only for frozen Sage salaried schedule migration periods (default through 2026-07). */
+export const isSageSalariedScheduleFeedPeriod = (period: string) =>
+  periodSortKey(period) > 0 && periodSortKey(period) <= periodSortKey(SAGE_SALARIED_SCHEDULE_FEED_UNTIL);
 
 export const isSageDayrateScheduleSource = (value?: string | null) =>
   /sage dayrate payment schedule/i.test(String(value || '').trim());

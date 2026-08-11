@@ -8,7 +8,7 @@ import { activePensionVersion, calculatePension, pensionInputFromEmployee, readP
 import { activeStatutoryFundsVersion, calculateStatutoryFunds, readStatutoryFundsConfig, statutoryFundInputFromEmployee } from '@/lib/payroll-statutory-funds-engine';
 import { activeLoansVersion, calculateLoanRecovery, loanInputsFromApplications, readPayrollLoanApplications, readPayrollLoansConfig } from '@/lib/payroll-loans-engine';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
-import { enterprisePayrollSourceLabel, isEnterprisePayrollPeriod } from '@/lib/payroll-enterprise-source';
+import { enterprisePayrollSourceLabel, isEnterprisePayrollPeriod, isSageSalariedScheduleFeedPeriod } from '@/lib/payroll-enterprise-source';
 import { calculatePayrollForPeriod } from '@/lib/payroll-calculation-service';
 import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import { capturePayrollSnapshot, ensurePayrollRun, getPayrollRunForPeriod, savePayrollRun } from '@/lib/payroll-run-store';
@@ -234,9 +234,18 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
       .map(normalizePayrollMatchKey)
       .map((key) => identityByKey.get(key))
       .find(Boolean);
-    const standardOptions = { period: requestedPeriod, includePeriodAdjustments: true };
-    const payrollEmployee = enterpriseSourceActive ? { ...employee, sagePayrollEarnings: undefined, sagePayrollDeductions: undefined, sagePayrollContributions: undefined } : employee;
-    const standardAmounts = calculatePayrollEarnings(payrollEmployee, standardOptions);
+    const standardOptions = { period: requestedPeriod, includePeriodAdjustments: true as const };
+    const dualCurrency = Boolean(employee.hasDualCurrencyPayroll && (employee.sageLocalPayrollEarnings || []).length);
+    const keepSageLines = dualCurrency
+      || !enterpriseSourceActive
+      || (isSageSalariedScheduleFeedPeriod(requestedPeriod) && (employee.sagePayrollEarnings || []).length > 0);
+    const payrollEmployee = keepSageLines
+      ? employee
+      : { ...employee, sagePayrollEarnings: undefined, sagePayrollDeductions: undefined, sagePayrollContributions: undefined };
+    const dualUsdOptions = dualCurrency
+      ? { ...standardOptions, useSagePayslipLines: true as const, ignoreSagePayslipLines: false as const }
+      : standardOptions;
+    const standardAmounts = calculatePayrollEarnings(payrollEmployee, dualUsdOptions);
     const dailyRateEmployee = isDailyRateEmployee(employee, standardAmounts.profileId);
     const ratePerDay = Number(employee.ratePerDay || 0) || (Number(employee.ratePerHour || 0) > 0 ? Number(employee.ratePerHour) * Number(employee.hoursPerDay || 8) : 0) || (dailyRateEmployee ? Number(employee.periodSalary || 0) : 0);
     const ratePerHour = Number(employee.ratePerHour || 0) || (ratePerDay > 0 ? ratePerDay / Number(employee.hoursPerDay || 8) : 0);

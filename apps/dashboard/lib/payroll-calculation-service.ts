@@ -5,7 +5,7 @@ import { mergeTimesheetDayRateEarnings, calculatePayrollEarnings, resolvePayroll
 import { isNonPermanentPayrollEmployee, payrollActiveEmployees, permanentStyleSageEarnings } from '@/lib/payroll-employee-classification';
 import { registerPayrollAdjustmentsChangeHandler, adjustmentsFileMtime } from '@/lib/payroll-period-earning-adjustments-store';
 import { contractEmployeeCode, isDailyRatePayrollEmployee, isEmployeeExcludedFromPayrollRun, type PayrollRunExclusionEmployee } from '@/lib/payroll-employee-classification';
-import { enterprisePayrollSourceLabel, isEnterprisePayrollPeriod, isSagePayrollRuntimeEnabled, shouldComparePayrollWithSage } from '@/lib/payroll-enterprise-source';
+import { enterprisePayrollSourceLabel, isEnterprisePayrollPeriod, isSagePayrollRuntimeEnabled, isSageSalariedScheduleFeedPeriod, shouldComparePayrollWithSage } from '@/lib/payroll-enterprise-source';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
 import { activeStatutoryFundsVersion, calculateStatutoryFunds, readStatutoryFundsConfig, statutoryFundInputFromEmployee } from '@/lib/payroll-statutory-funds-engine';
@@ -37,6 +37,8 @@ export type PayrollCalculationRecord = {
   payrollGroup: string;
   salaryGrade: string;
   payCurrency: string;
+  hasDualCurrencyPayroll?: boolean;
+  usdPackageGross?: number | null;
   paymentRun: string;
   basePay: number;
   allowances: number;
@@ -167,6 +169,29 @@ const inputOnlyEmployee = (employee: DleEmployeeDirectoryRow): DleEmployeeDirect
   sagePayrollDeductions: undefined,
   sagePayrollContributions: undefined,
 });
+
+/** Dual-currency (DLE_USD) staff: NGN local package drives the main Nigerian salaried calc. */
+const dualCurrencyLocalEmployee = (employee: DleEmployeeDirectoryRow): DleEmployeeDirectoryRow | null => {
+  const localLines = employee.sageLocalPayrollEarnings || [];
+  if (!employee.hasDualCurrencyPayroll || localLines.length === 0) return null;
+  return {
+    ...employee,
+    payCurrency: employee.localPayCurrency || 'NGN',
+    payrollGroup: employee.localPayrollGroup || employee.payrollGroup || 'DLE',
+    periodSalary: employee.localPeriodSalary ?? employee.periodSalary,
+    sagePayrollEarnings: localLines,
+    sagePayrollDeductions: employee.sageLocalPayrollDeductions,
+  };
+};
+
+const usdPackageGrossFromEmployee = (employee: DleEmployeeDirectoryRow) => {
+  const lines = employee.sagePayrollEarnings || [];
+  if (lines.length > 0) {
+    return roundMoney(lines.reduce((sum, line) => sum + Number(line.amount || 0), 0));
+  }
+  const period = Number(employee.periodSalary || 0);
+  return period > 0 ? roundMoney(period) : null;
+};
 
 const moneyVariance = (actual: number | null | undefined, expected: number | null | undefined) =>
   roundMoney(Number(expected || 0) - Number(actual || 0));
@@ -698,11 +723,24 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
 
   const calculationOptionsForEmployee = (employee: DleEmployeeDirectoryRow) => {
     const base = { period: requestedPeriod, includePeriodAdjustments: true as const };
-    if (!compareWithSage) return { ...base, ignoreSagePayslipLines: true as const };
+    const dualLocal = dualCurrencyLocalEmployee(employee);
+    if (dualLocal) {
+      return { ...base, useSagePayslipLines: true as const, ignoreSagePayslipLines: false as const };
+    }
+    if (!compareWithSage && !isSageSalariedScheduleFeedPeriod(requestedPeriod)) {
+      return { ...base, ignoreSagePayslipLines: true as const };
+    }
     if (!isNonPermanentPayrollEmployee(employee)) {
+      const sageLines = employee.sagePayrollEarnings || [];
+      if (isSageSalariedScheduleFeedPeriod(requestedPeriod) && sageLines.length > 0) {
+        return { ...base, useSagePayslipLines: true as const, ignoreSagePayslipLines: false as const };
+      }
       return { ...base, ignoreSagePayslipLines: true as const };
     }
     const sageLines = employee.sagePayrollEarnings || [];
+    if (isSageSalariedScheduleFeedPeriod(requestedPeriod) && sageLines.length > 0) {
+      return { ...base, useSagePayslipLines: true as const, ignoreSagePayslipLines: false as const };
+    }
     const useSagePayslipLines = permanentStyleSageEarnings(sageLines) || sageLines.length === 0;
     return useSagePayslipLines
       ? { ...base, useSagePayslipLines: true as const, ignoreSagePayslipLines: false as const }
@@ -712,8 +750,13 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
   const payrollEmployees = employeeSource.employees.filter((employee) => !isEmployeeExcludedFromPayrollRun(employee as PayrollRunExclusionEmployee));
 
   const records: PayrollCalculationRecord[] = payrollEmployees.map((employee, index) => {
+    const dualLocal = dualCurrencyLocalEmployee(employee);
     const calculationOptions = calculationOptionsForEmployee(employee);
-    const calculationEmployee = shouldComparePayrollWithSage(requestedPeriod) ? employee : inputOnlyEmployee(employee);
+    const keepSageLines = Boolean(dualLocal)
+      || shouldComparePayrollWithSage(requestedPeriod)
+      || (isSageSalariedScheduleFeedPeriod(requestedPeriod) && (employee.sagePayrollEarnings || []).length > 0);
+    const calculationEmployee = dualLocal
+      || (keepSageLines ? employee : inputOnlyEmployee(employee));
     const baseAmounts = calculatePayrollEarnings(calculationEmployee, calculationOptions);
     const amounts = applyDailyRateFromTimesheets(employee, baseAmounts, timesheetHours, requestedPeriod);
     const tax = calculatePayrollTax(payrollInputFromEmployee(calculationEmployee, calculationOptions, amounts), taxVersion);
@@ -802,15 +845,29 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       jobTitle: employee.jobTitle,
       employmentType: employee.employmentType,
       employmentStatus: employee.status,
-      payrollGroup: employee.payrollGroup || 'Unassigned',
+      payrollGroup: dualLocal
+        ? (employee.payrollGroup || 'DLE_USD')
+        : (employee.payrollGroup || 'Unassigned'),
       salaryGrade: dailyRateEmployee ? (rates.ratePerDay > 0 ? 'Daily Rate' : 'Zero Daily Rate') : employee.salaryGrade || employee.jobGrade || 'Unassigned',
-      payCurrency: resolvePayCurrency({
+      payCurrency: dualLocal
+        ? (employee.localPayCurrency || 'NGN')
+        : resolvePayCurrency({
+            payCurrency: employee.payCurrency,
+            payrollGroup: employee.payrollGroup,
+            salaryGrade: employee.salaryGrade,
+            jobGrade: employee.jobGrade,
+            businessUnit: employee.businessUnit,
+          }),
+      hasDualCurrencyPayroll: Boolean(dualLocal),
+      usdPackageGross: dualLocal || resolvePayCurrency({
         payCurrency: employee.payCurrency,
         payrollGroup: employee.payrollGroup,
         salaryGrade: employee.salaryGrade,
         jobGrade: employee.jobGrade,
         businessUnit: employee.businessUnit,
-      }),
+      }) === 'USD'
+        ? usdPackageGrossFromEmployee(employee)
+        : null,
       paymentRun: employee.paymentRun || 'Monthly',
       basePay: amounts.basePay,
       allowances: amounts.allowances,

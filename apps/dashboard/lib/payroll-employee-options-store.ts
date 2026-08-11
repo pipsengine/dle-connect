@@ -119,16 +119,19 @@ export const applyPayrollEmployeeOptions = async (employees: DleEmployeeDirector
       const normalized = text.replace(/[^A-Z0-9]/g, '');
       byKey.set(keyFor(text), option);
       byKey.set(normalized, option);
-      const digits = normalized.replace(/^[PLC]/, '').match(/^(\d+)$/);
-      if (digits) {
-        byKey.set(digits[1], option);
-        byKey.set(`P${digits[1]}`, option);
-        byKey.set(`L${digits[1]}`, option);
-      }
       const prefixed = normalized.match(/^([PLC])(\d+)$/);
       if (prefixed) {
-        byKey.set(`${prefixed[1]}${prefixed[2]}`, option);
-        byKey.set(prefixed[2], option);
+        const [, prefix, digits] = prefixed;
+        byKey.set(`${prefix}${digits}`, option);
+        // Permanent P-codes may also be stored as bare digits in Sage exports.
+        // Never cross-map C↔L (C2786 must not exclude L2786).
+        if (prefix === 'P') {
+          byKey.set(digits, option);
+          byKey.set(`P${digits}`, option);
+        }
+      } else if (/^\d+$/.test(normalized)) {
+        byKey.set(normalized, option);
+        byKey.set(`P${normalized}`, option);
       }
     }
   };
@@ -138,14 +141,20 @@ export const applyPayrollEmployeeOptions = async (employees: DleEmployeeDirector
     for (const raw of [employee.employeeId, employee.employeeCode, employee.sourceEmployeeId]) {
       const text = compact(raw).toUpperCase();
       if (!text) continue;
-      keys.add(keyFor(text));
-      keys.add(text.replace(/[^A-Z0-9]/g, ''));
       const normalized = text.replace(/[^A-Z0-9]/g, '');
-      const bareDigits = normalized.replace(/^[PLC]/, '');
-      if (/^\d+$/.test(bareDigits)) {
-        keys.add(bareDigits);
-        keys.add(`P${bareDigits}`);
-        keys.add(`L${bareDigits}`);
+      keys.add(keyFor(text));
+      keys.add(normalized);
+      const prefixed = normalized.match(/^([PLC])(\d+)$/);
+      if (prefixed) {
+        const [, prefix, digits] = prefixed;
+        keys.add(`${prefix}${digits}`);
+        if (prefix === 'P') {
+          keys.add(digits);
+          keys.add(`P${digits}`);
+        }
+      } else if (/^\d+$/.test(normalized)) {
+        keys.add(normalized);
+        keys.add(`P${normalized}`);
       }
     }
     return [...keys].map((key) => byKey.get(key)).find(Boolean);
