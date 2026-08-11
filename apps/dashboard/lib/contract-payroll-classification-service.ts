@@ -18,13 +18,15 @@ export const applyContractPayrollClassification = async (input: {
   employeeId: string;
   action: ContractPayrollClassificationAction;
   reason?: string;
+  payrollGroup?: string | null;
+  ratePerDay?: number | null;
 }): Promise<{ employeeId: string; classification: ContractPayrollClassification; persisted: boolean }> => {
   const employee = await findDirectoryEmployee(input.employeeId);
   if (!employee) throw new Error('Employee not found in directory.');
   if (!employee.employeeDbId) throw new Error('Employee database record is unavailable. Classification cannot be saved.');
 
-  if (input.action === 'deactivate-non-daily' && !isInactiveNonDailyContractEmployee(employee)) {
-    throw new Error('This employee is already on daily-rate payroll or is not a C-code contract.');
+  if (input.action === 'deactivate-non-daily' && !/^[Cc]\d+/.test(employee.employeeCode || employee.employeeId)) {
+    throw new Error('Only C-code contract employees can be deactivated with this action.');
   }
   if (input.action === 'activate-daily-rate' && !/^[Cc]\d+/.test(employee.employeeCode || employee.employeeId)) {
     throw new Error('Only C-code contract employees can be set up for daily-rate payroll.');
@@ -34,6 +36,8 @@ export const applyContractPayrollClassification = async (input: {
     employeeDbId: employee.employeeDbId,
     action: input.action,
     reason: input.reason,
+    payrollGroup: input.payrollGroup,
+    ratePerDay: input.ratePerDay,
   });
   if (!persisted) throw new Error('Unable to persist classification to DLE_Enterprise.');
 

@@ -2134,11 +2134,11 @@ export const updateEmployeeDailyRatePayInDb = async (input: {
         pay_currency = COALESCE(@pay_currency, target.pay_currency),
         payment_run = COALESCE(@payment_run, target.payment_run),
         payment_type = COALESCE(@payment_type, target.payment_type),
-        period_salary = @period_salary,
-        rate_per_day = @rate_per_day,
-        rate_per_hour = @rate_per_hour,
-        hours_per_day = @hours_per_day,
-        hours_per_period = @hours_per_period,
+        period_salary = COALESCE(@period_salary, target.period_salary),
+        rate_per_day = COALESCE(@rate_per_day, target.rate_per_day),
+        rate_per_hour = COALESCE(@rate_per_hour, target.rate_per_hour),
+        hours_per_day = COALESCE(@hours_per_day, target.hours_per_day),
+        hours_per_period = COALESCE(@hours_per_period, target.hours_per_period),
         setup_assigned_to_payroll = 1
       WHEN NOT MATCHED THEN INSERT (
         employee_id, payroll_group, salary_grade, pay_currency, payment_run, payment_type,
@@ -2155,6 +2155,8 @@ export const updateEmployeeContractPayrollClassificationInDb = async (input: {
   employeeDbId: number;
   action: 'deactivate-non-daily' | 'activate-daily-rate';
   reason?: string | null;
+  payrollGroup?: string | null;
+  ratePerDay?: number | null;
 }) => {
   const p = await pool();
   if (!p) return false;
@@ -2173,13 +2175,57 @@ export const updateEmployeeContractPayrollClassificationInDb = async (input: {
       WHERE employee_id = @employee_id;
     `);
   if (input.action === 'activate-daily-rate') {
+    const ratePerDay = Number(input.ratePerDay || 0);
+    const ratePerHour = ratePerDay > 0 ? Math.round((ratePerDay / 8) * 10000) / 10000 : null;
     await updateEmployeeDailyRatePayInDb({
       employeeDbId: input.employeeDbId,
-      payrollGroup: 'DLE',
+      payrollGroup: input.payrollGroup || 'DLE',
       salaryGrade: 'Daily Rate',
       paymentRun: 'Daily Timesheet',
       paymentType: 'Timesheet Rate',
+      ratePerDay: ratePerDay > 0 ? ratePerDay : null,
+      ratePerHour,
+      hoursPerDay: 8,
     });
+  } else {
+    // Clear day/hour rates and daily-rate category labels so inactive C-codes
+    // are no longer classified as daily-rate payroll by text/rate heuristics.
+    await p.request()
+      .input('employee_id', sql.BigInt, input.employeeDbId)
+      .query(`
+        UPDATE [hris].[EmployeePayrollSetup]
+        SET rate_per_day = NULL,
+            rate_per_hour = NULL,
+            payment_type = CASE
+              WHEN payment_type IN (N'Timesheet Rate', N'Daily Rate', N'Day Rate') THEN N'Contract'
+              ELSE payment_type
+            END,
+            payment_run = CASE
+              WHEN payment_run IN (N'Daily Timesheet') THEN N'Main Payment Run'
+              ELSE payment_run
+            END,
+            salary_grade = CASE
+              WHEN salary_grade LIKE N'%DAY RATE%' OR salary_grade LIKE N'%DAILY RATE%' OR salary_grade IN (N'Daily Rate', N'Daily rate', N'Day Rate')
+                THEN N'Contract'
+              ELSE salary_grade
+            END,
+            modified_at = SYSUTCDATETIME()
+        WHERE employee_id = @employee_id;
+
+        UPDATE [hris].[EmployeeEmploymentInfo]
+        SET staff_category = CASE
+              WHEN staff_category LIKE N'%DAY RATE%' OR staff_category LIKE N'%DAILY RATE%' OR staff_category IN (N'Daily Rate', N'Day Rate')
+                THEN N'Contract'
+              ELSE staff_category
+            END,
+            employee_category = CASE
+              WHEN employee_category LIKE N'%DAY RATE%' OR employee_category LIKE N'%DAILY RATE%' OR employee_category IN (N'Daily Rate', N'Day Rate')
+                THEN N'Contract'
+              ELSE employee_category
+            END,
+            modified_at = SYSUTCDATETIME()
+        WHERE employee_id = @employee_id;
+      `);
   }
   await p.request()
     .input('employee_id', sql.BigInt, input.employeeDbId)
