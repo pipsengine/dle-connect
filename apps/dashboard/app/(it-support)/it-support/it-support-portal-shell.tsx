@@ -125,19 +125,19 @@ export function ItSupportPortalShell({ children, employee }: Props) {
   const NavBody = (
     <>
       <div className="border-b border-slate-200 px-3.5 py-4">
-        <div className={`relative ${railCollapsed ? 'mx-auto h-9 w-9' : 'h-10 w-full'}`}>
+        <div className={`relative ${railCollapsed ? 'mx-auto h-9 w-9' : 'h-[52px] w-full max-w-[220px]'}`}>
           <Image
-            src="/brand/dorman-long-logo.svg"
+            src="/brand/dorman-long-logo.png"
             alt="Dorman Long Engineering Limited"
             fill
-            sizes="240px"
+            sizes="220px"
             className="object-contain object-left"
             priority
           />
         </div>
         {!railCollapsed ? (
           <>
-            <p className="mt-3 text-[10px] font-bold uppercase tracking-[0.16em] text-teal-700/70">
+            <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-teal-700/70">
               {IT_SUPPORT_MODULE.shortName}
             </p>
             <p className="mt-1 text-[13px] font-semibold leading-snug text-slate-800">
