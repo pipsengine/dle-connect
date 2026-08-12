@@ -95,6 +95,7 @@ export const buildFinanceBadges = async (): Promise<FinanceBadgeSnapshot> => {
   const pool = await ensureFinanceDb().catch(() => null);
   if (!pool) return emptyBadges();
 
+  const pendingStatuses = `N'Pending Approval', N'Submitted', N'Finance Review'`;
   const [
     paymentApprovals,
     overdueApprovals,
@@ -103,8 +104,14 @@ export const buildFinanceBadges = async (): Promise<FinanceBadgeSnapshot> => {
     dataIntegration,
     exceptions,
   ] = await Promise.all([
-    countQuery(pool, `SELECT COUNT(1) AS count FROM [finance].[ApprovalRequests] WHERE [Status] IN (N'Pending', N'Returned')`),
-    countQuery(pool, `SELECT COUNT(1) AS count FROM [finance].[ApprovalRequests] WHERE [Status] = N'Pending' AND [DueDate] IS NOT NULL AND [DueDate] < CAST(SYSUTCDATETIME() AS DATE)`),
+    countQuery(pool, `SELECT COUNT(1) AS count FROM [finance].[PaymentRequests] WHERE [Status] IN (${pendingStatuses})`),
+    countQuery(
+      pool,
+      `SELECT COUNT(1) AS count FROM [finance].[PaymentRequests]
+       WHERE [Status] IN (${pendingStatuses})
+         AND [DueDate] IS NOT NULL
+         AND [DueDate] < CAST(SYSUTCDATETIME() AS DATE)`,
+    ),
     countQuery(pool, `SELECT COUNT(1) AS count FROM [finance].[ReportDistributions] WHERE [Status] = N'Scheduled'`),
     countQuery(pool, `SELECT COUNT(1) AS count FROM [finance].[ReportDistributions] WHERE [Status] = N'Failed'`),
     countQuery(pool, `SELECT COUNT(1) AS count FROM [finance].[IntegrationStatus] WHERE [Status] NOT IN (N'Healthy', N'Optimal', N'Connected')`),
@@ -214,11 +221,33 @@ export const listFinanceApprovalRequests = async (input?: { status?: string; min
       request.input('approver', sql.NVarChar(60), input.mineFor);
       where += ' AND [CurrentApproverCode] = @approver';
     }
+    // Live payment workflow table (legacy finance.ApprovalRequests is unused).
     const result = await request.query(`
-SELECT TOP 200 *
-FROM [finance].[ApprovalRequests]
+SELECT TOP 500
+  [RequestId],
+  [RequestNumber],
+  [PaymentType],
+  [Title],
+  [BeneficiaryName] AS [Beneficiary],
+  COALESCE([Purpose], [Description], [Title]) AS [Description],
+  COALESCE([NetAmount], [GrossAmount], 0) AS [Amount],
+  [CurrencyCode],
+  [Department],
+  [ProjectCode],
+  [CostCentre],
+  [RequesterCode],
+  [RequesterName],
+  [SubmittedAt],
+  [UpdatedAt],
+  [DueDate],
+  [CurrentStage],
+  [CurrentApproverCode],
+  [CurrentApproverName],
+  [Status],
+  [RiskFlags]
+FROM [finance].[PaymentRequests]
 WHERE ${where}
-ORDER BY [SubmittedAt] DESC
+ORDER BY COALESCE([SubmittedAt], [CreatedAt]) DESC
 `);
     return (result.recordset || []) as FinanceApprovalRequestRow[];
   } catch {
@@ -269,47 +298,27 @@ ORDER BY [UpdatedAt] DESC
     'Status',
   ];
 
-  if (!rows.length) {
-    return {
-      generatedAt: nowIso(),
-      isPreview: false,
-      integrationStatus,
-      lastRefreshAt,
-      badges: emptyBadges(),
-      queueColumns,
-      queueRows: [],
-      kpis: [
-        { id: 'pending-mine', label: 'Pending My Approval', primary: '0', secondary: money(0), tone: 'blue' },
-        { id: 'pending-value', label: 'Total Pending Value', primary: money(0), secondary: 'Across all stages', tone: 'teal' },
-        { id: 'overdue', label: 'Overdue Approvals', primary: '0', secondary: money(0), tone: 'orange' },
-        { id: 'returned', label: 'Returned Requests', primary: '0', secondary: money(0), tone: 'purple' },
-        { id: 'high-value', label: 'High-Value Requests', primary: '0', secondary: 'Above approval limit', tone: 'red' },
-        { id: 'awaiting-release', label: 'Payments Awaiting Final Release', primary: '0', secondary: money(0), tone: 'blue' },
-        { id: 'approved-today', label: 'Payments Approved Today', primary: '0', secondary: money(0), tone: 'green' },
-        { id: 'rejected-month', label: 'Rejected This Month', primary: '0', secondary: money(0), tone: 'rose' },
-      ],
-    };
-  }
-
-  const pending = rows.filter((row) => String(row.Status || '').toLowerCase() === 'pending');
+  const statusOf = (row: FinanceApprovalRequestRow) => String(row.Status || '');
+  const pending = rows.filter((row) => /pending|submitted|finance review/i.test(statusOf(row)));
   const overdue = pending.filter((row) => row.DueDate && new Date(row.DueDate) < new Date());
-  const returned = rows.filter((row) => String(row.Status || '').toLowerCase() === 'returned');
+  const returned = rows.filter((row) => /returned/i.test(statusOf(row)));
   const approvedToday = rows.filter((row) => {
-    if (String(row.Status || '').toLowerCase() !== 'approved') return false;
+    if (!/^(approved|ready for treasury)$/i.test(statusOf(row).trim())) return false;
     const updated = row.UpdatedAt ? new Date(row.UpdatedAt) : null;
     if (!updated) return false;
     const now = new Date();
     return updated.toDateString() === now.toDateString();
   });
   const rejectedMonth = rows.filter((row) => {
-    if (String(row.Status || '').toLowerCase() !== 'rejected') return false;
+    if (!/rejected|cancelled/i.test(statusOf(row))) return false;
     const updated = row.UpdatedAt ? new Date(row.UpdatedAt) : null;
     if (!updated) return false;
     const now = new Date();
     return updated.getMonth() === now.getMonth() && updated.getFullYear() === now.getFullYear();
   });
   const highValue = pending.filter((row) => Number(row.Amount || 0) >= 10_000_000);
-  const awaitingRelease = rows.filter((row) => /release|final/i.test(String(row.CurrentStage || '')));
+  const awaitingRelease = rows.filter((row) =>
+    /ready for treasury|awaiting release|final release/i.test(`${statusOf(row)} ${String(row.CurrentStage || '')}`));
   const sum = (list: typeof rows) => list.reduce((total, row) => total + Number(row.Amount || 0), 0);
 
   const badges: FinanceBadgeSnapshot = {
@@ -319,7 +328,7 @@ ORDER BY [UpdatedAt] DESC
     overdueApprovals: overdue.length,
     scheduledReports: 0,
     failedDeliveries: 0,
-    dataIntegration: integrationStatus === 'Connected' ? 0 : 1,
+    dataIntegration: /connected|healthy|optimal/i.test(integrationStatus) ? 0 : 1,
     exceptions: 0,
   };
 

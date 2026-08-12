@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ScrollTable } from '@/components/ui/responsive';
 import {
   AlertTriangle,
@@ -398,7 +398,47 @@ function AiCopilotView({ page }: { page: FinancePageMeta }) {
 }
 
 function ApprovalsDashboard({ snapshot }: { snapshot?: FinanceApprovalCentreSnapshot | null }) {
-  const kpis = snapshot?.kpis || [
+  const [live, setLive] = useState<FinanceApprovalCentreSnapshot | null | undefined>(snapshot);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    setLive(snapshot);
+  }, [snapshot]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setRefreshing(true);
+      try {
+        const res = await fetch('/api/finance/workspace?view=approval-centre', { cache: 'no-store' });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (!cancelled && json?.status === 'success' && json.data) {
+          setLive(json.data as FinanceApprovalCentreSnapshot);
+        }
+      } catch {
+        // Keep last good snapshot
+      } finally {
+        if (!cancelled) setRefreshing(false);
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => { void load(); }, 30_000);
+    const onFocus = () => { void load(); };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
+
+  const kpis = live?.kpis || [
     { id: 'pending-mine', label: 'Pending My Approval', primary: '0', secondary: '₦0.00', tone: 'blue' as const },
     { id: 'pending-value', label: 'Total Pending Value', primary: '₦0.00', secondary: 'Across all stages', tone: 'teal' as const },
     { id: 'overdue', label: 'Overdue Approvals', primary: '0', secondary: '₦0.00', tone: 'orange' as const },
@@ -422,10 +462,17 @@ function ApprovalsDashboard({ snapshot }: { snapshot?: FinanceApprovalCentreSnap
   return (
     <div className="space-y-4">
       <header className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5">
-        <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[28px]">Payment Approval Centre</h1>
-        <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-500">
-          Summary of payment approval activity. Action pending items in My Approval Inbox. Approved payments live under Payment Requests.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[28px]">Payment Approval Centre</h1>
+            <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-500">
+              Summary of payment approval activity. Action pending items in My Approval Inbox. Approved payments live under Payment Requests.
+            </p>
+          </div>
+          <p className="text-[11px] font-medium text-slate-400">
+            {refreshing ? 'Refreshing…' : live?.generatedAt ? `Updated ${new Date(live.generatedAt).toLocaleTimeString()}` : 'Live'}
+          </p>
+        </div>
       </header>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

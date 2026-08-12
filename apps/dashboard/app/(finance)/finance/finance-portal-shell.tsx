@@ -115,15 +115,20 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
 
   useEffect(() => {
     let active = true;
-    fetch('/api/finance/workspace?view=badges', { cache: 'no-store', credentials: 'same-origin' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (!active || json?.status !== 'success') return;
-        setLiveBadges(json.data as FinanceBadgeSnapshot);
-      })
-      .catch(() => undefined);
+    const loadBadges = () => {
+      fetch('/api/finance/workspace?view=badges', { cache: 'no-store', credentials: 'same-origin' })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((json) => {
+          if (!active || json?.status !== 'success') return;
+          setLiveBadges(json.data as FinanceBadgeSnapshot);
+        })
+        .catch(() => undefined);
+    };
+    loadBadges();
+    const timer = window.setInterval(loadBadges, 30_000);
     return () => {
       active = false;
+      window.clearInterval(timer);
     };
   }, [pathname]);
 
@@ -278,11 +283,17 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-[11px] font-semibold text-slate-700">Sage X3 Integration</p>
-              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-600">
-                Not connected
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                (liveBadges?.dataIntegration || 0) > 0
+                  ? 'bg-amber-100 text-amber-700'
+                  : 'bg-emerald-100 text-emerald-700'
+              }`}>
+                {(liveBadges?.dataIntegration || 0) > 0 ? 'Attention' : 'Healthy'}
               </span>
             </div>
-            <p className="mt-1.5 text-[11px] text-slate-500">Last sync: —</p>
+            <p className="mt-1.5 text-[11px] text-slate-500">
+              Payment KPIs refresh from live requests every 30s.
+            </p>
             <Link
               href="/finance/overview/data-integration"
               className="mt-2 inline-flex text-[11px] font-semibold text-[#008FD5] hover:underline"
@@ -296,7 +307,7 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
             title="Sage X3 status"
             className="mx-auto flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-500"
           >
-            <span className="h-2.5 w-2.5 rounded-full bg-slate-400" />
+            <span className={`h-2.5 w-2.5 rounded-full ${(liveBadges?.dataIntegration || 0) > 0 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
           </Link>
         )}
         <Link
