@@ -170,6 +170,69 @@ export const resolveSageAlignedAnnualRentRelief = (input: {
   return 500000;
 };
 
+type PayeBand = { amount: number | null; rate: number };
+
+const NIGERIAN_PAYE_BANDS: PayeBand[] = [
+  { amount: 800000, rate: 0 },
+  { amount: 2200000, rate: 0.15 },
+  { amount: 9000000, rate: 0.18 },
+  { amount: 13000000, rate: 0.21 },
+  { amount: 25000000, rate: 0.23 },
+  { amount: null, rate: 0.25 },
+];
+
+const clonePayeBands = () => NIGERIAN_PAYE_BANDS.map((band) => ({ ...band }));
+
+/** Apply progressive bands to a chargeable amount; mutates remaining band capacity. */
+const taxChargeableAgainstBands = (chargeable: number, bands: PayeBand[]) => {
+  let remaining = Math.max(0, Number(chargeable || 0));
+  let tax = 0;
+  for (const band of bands) {
+    if (remaining <= 0) break;
+    const slice = band.amount === null ? remaining : Math.min(remaining, Math.max(0, Number(band.amount)));
+    tax += slice * band.rate;
+    remaining = Math.max(0, remaining - slice);
+    if (band.amount !== null) band.amount = Math.max(0, Number(band.amount) - slice);
+  }
+  return tax;
+};
+
+export const annualChargeableFromMonthly = (input: {
+  monthlyTaxable: number;
+  monthlyBht: number;
+  monthlyBasic: number;
+  nhfApplicable: boolean;
+  rentRelief: number;
+  includePensionRelief?: boolean;
+  additionalEmployeePensionMonthly?: number;
+}) => {
+  const annualTaxable = Math.max(0, Number(input.monthlyTaxable || 0)) * 12;
+  const statutoryPensionMonthly = roundMoney(input.monthlyBht * 0.08);
+  const additionalPensionMonthly = Math.max(0, Number(input.additionalEmployeePensionMonthly || 0));
+  const annualPension =
+    input.includePensionRelief !== false
+      ? roundMoney((statutoryPensionMonthly + additionalPensionMonthly) * 12)
+      : 0;
+  const annualNhf = input.nhfApplicable ? roundMoney(input.monthlyBasic * 0.025 * 12) : 0;
+  const rentRelief = Math.max(0, Number(input.rentRelief || 0));
+  return roundMoney(Math.max(0, annualTaxable - annualPension - annualNhf - rentRelief));
+};
+
+/**
+ * Tax one-off / variable earnings once at the marginal rate after fixed annual chargeable
+ * has already consumed lower PAYE bands (Sage-aligned). Does not restart at the 0% band.
+ */
+export const calculateVariablePayeOnMarginalBands = (input: {
+  priorAnnualChargeable: number;
+  variableMonthlyTaxable: number;
+}) => {
+  const variable = Math.max(0, Number(input.variableMonthlyTaxable || 0));
+  if (variable <= 0) return 0;
+  const bands = clonePayeBands();
+  taxChargeableAgainstBands(Math.max(0, Number(input.priorAnnualChargeable || 0)), bands);
+  return roundMoney(taxChargeableAgainstBands(variable, bands));
+};
+
 export const calculatePayeWithReliefs = (input: {
   monthlyTaxable: number;
   monthlyBht: number;
@@ -179,36 +242,27 @@ export const calculatePayeWithReliefs = (input: {
   includePensionRelief?: boolean;
   /** Extra voluntary / PENSION_EE2 monthly amount included in PAYE pension relief. */
   additionalEmployeePensionMonthly?: number;
-  /** annualized: monthly × 12 → bands → ÷ 12 (fixed earnings). monthly-once: bands on this month only (variable earnings). */
-  taxBasis?: 'annualized' | 'monthly-once';
+  /**
+   * annualized: monthly × 12 → bands → ÷ 12 (fixed earnings).
+   * monthly-once: tax this month only starting at band 0 (legacy; permanent variable uses stacked marginal bands).
+   * monthly-once-marginal: tax this month once on remaining bands after priorAnnualChargeable.
+   */
+  taxBasis?: 'annualized' | 'monthly-once' | 'monthly-once-marginal';
+  /** Annual chargeable already taxed from fixed earnings (used with monthly-once-marginal). */
+  priorAnnualChargeable?: number;
 }) => {
-  const annualize = input.taxBasis !== 'monthly-once';
-  const annualTaxable = annualize ? input.monthlyTaxable * 12 : input.monthlyTaxable;
-  const statutoryPensionMonthly = roundMoney(input.monthlyBht * 0.08);
-  const additionalPensionMonthly = Math.max(0, Number(input.additionalEmployeePensionMonthly || 0));
-  const annualPension =
-    annualize && input.includePensionRelief !== false
-      ? roundMoney((statutoryPensionMonthly + additionalPensionMonthly) * 12)
-      : 0;
-  const annualNhf = annualize && input.nhfApplicable ? roundMoney(input.monthlyBasic * 0.025 * 12) : 0;
-  const rentRelief = annualize ? input.rentRelief : 0;
-  let chargeable = roundMoney(Math.max(0, annualTaxable - annualPension - annualNhf - rentRelief));
-  const bands = [
-    { amount: 800000, rate: 0 },
-    { amount: 2200000, rate: 0.15 },
-    { amount: 9000000, rate: 0.18 },
-    { amount: 13000000, rate: 0.21 },
-    { amount: 25000000, rate: 0.23 },
-    { amount: null as number | null, rate: 0.25 },
-  ];
-  let remaining = chargeable;
-  let annualPaye = 0;
-  for (const band of bands) {
-    const taxable = band.amount === null ? remaining : Math.min(remaining, Math.max(0, Number(band.amount)));
-    annualPaye += taxable * band.rate;
-    remaining = Math.max(0, remaining - taxable);
-    if (remaining <= 0) break;
+  if (input.taxBasis === 'monthly-once-marginal') {
+    return calculateVariablePayeOnMarginalBands({
+      priorAnnualChargeable: Number(input.priorAnnualChargeable || 0),
+      variableMonthlyTaxable: input.monthlyTaxable,
+    });
   }
+
+  const annualize = input.taxBasis !== 'monthly-once';
+  const chargeable = annualize
+    ? annualChargeableFromMonthly(input)
+    : roundMoney(Math.max(0, Number(input.monthlyTaxable || 0)));
+  const annualPaye = taxChargeableAgainstBands(chargeable, clonePayeBands());
   return annualize ? roundMoney(annualPaye / 12) : roundMoney(annualPaye);
 };
 
@@ -253,26 +307,36 @@ const calculatePermanentSplitPaye = (input: {
     monthlyTaxable: fixedTaxable,
     payeRules: input.effectiveRules,
   });
+  const includePensionRelief =
+    input.category === 'permanent' && !input.effectiveRules?.disablePensionPayeRelief;
+  const monthlyBht = bhtFromEarningLines(fixed);
+  const monthlyBasic = basicFromEarningLines(fixed);
   const fixedPaye = calculatePayeWithReliefs({
     monthlyTaxable: fixedTaxable,
-    monthlyBht: bhtFromEarningLines(fixed),
-    monthlyBasic: basicFromEarningLines(fixed),
+    monthlyBht,
+    monthlyBasic,
     nhfApplicable: input.nhfApplicable,
     rentRelief,
-    includePensionRelief: input.category === 'permanent' && !input.effectiveRules?.disablePensionPayeRelief,
+    includePensionRelief,
     additionalEmployeePensionMonthly: input.additionalEmployeePensionMonthly,
     taxBasis: 'annualized',
   });
+  // Variable (leave, overtime, etc.): tax once at marginal rate after fixed annual chargeable
+  // has consumed lower bands — do not restart at the 0% band (matches Sage).
+  const priorAnnualChargeable = annualChargeableFromMonthly({
+    monthlyTaxable: fixedTaxable,
+    monthlyBht,
+    monthlyBasic,
+    nhfApplicable: input.nhfApplicable,
+    rentRelief,
+    includePensionRelief,
+    additionalEmployeePensionMonthly: input.additionalEmployeePensionMonthly,
+  });
   const variablePaye =
     variableTaxable > 0
-      ? calculatePayeWithReliefs({
-          monthlyTaxable: variableTaxable,
-          monthlyBht: 0,
-          monthlyBasic: 0,
-          nhfApplicable: false,
-          rentRelief: 0,
-          includePensionRelief: false,
-          taxBasis: 'monthly-once',
+      ? calculateVariablePayeOnMarginalBands({
+          priorAnnualChargeable,
+          variableMonthlyTaxable: variableTaxable,
         })
       : 0;
 

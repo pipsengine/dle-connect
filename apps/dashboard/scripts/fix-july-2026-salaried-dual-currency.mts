@@ -1,8 +1,8 @@
 /**
  * Fix July 2026 salaried dual-currency (DLE_USD) + align other JULY PAYROLL packages.
  *
- * 1. DLE_USD group (exactly 4):
- *    P0442 Odulate, P0458 Mamora, P0457 Austen-Peters, P0413 Chris Ijeli
+ * 1. DLE_USD group:
+ *    P0442 Odulate, P0458 Mamora, P0457 Austen-Peters, P0413 Chris Ijeli, P0364 Mgbeoji
  *    - Primary package = USD (user-indicated dollar values)
  *    - Local package = NGN from JULY PAYROLL.xlsx (where present)
  *
@@ -68,6 +68,17 @@ const USD_GROUP = [
     grade: 'EXP_USDSNMGT - USD SENIOR MANAGEMENT',
     usdLines: [
       { code: 'BASIC_USD', name: 'BASIC SALARY', amount: 9000, taxableAmount: 9000 },
+    ],
+  },
+  {
+    code: 'P0364',
+    usdGross: 22095.84,
+    grade: 'EXP_USDSNMGT - USD SENIOR MANAGEMENT',
+    usdLines: [
+      { code: 'EXP_BASIC_TAX', name: 'EXP_ SMGT BASIC', amount: 4419.17, taxableAmount: 4419.17 },
+      { code: 'EXP_HOUSING_TAX', name: 'EXP_SMGT HOUSING', amount: 3314.38, taxableAmount: 3314.38 },
+      { code: 'EXP_OTHALL', name: 'EXP_ SMGT OTHER ALLOWANCE', amount: 12152.71, taxableAmount: 12152.71 },
+      { code: 'EXP_TRANSP', name: 'EXP_SNMG TRANSPORT', amount: 2209.58, taxableAmount: 2209.58 },
     ],
   },
 ] as const;
@@ -553,7 +564,7 @@ WHERE (
   UPPER(ISNULL(p.payroll_group, N'')) LIKE N'%USD%'
   OR UPPER(ISNULL(p.pay_currency, N'')) = N'USD'
 )
-AND e.employee_code NOT IN (N'P0442', N'P0458', N'P0457', N'P0413')
+AND e.employee_code NOT IN (N'P0442', N'P0458', N'P0457', N'P0413', N'P0364')
 `);
   for (const row of usdOthers.recordset) {
     console.log(`[USD cleanup] ${row.employee_code} ${row.full_name} was ${row.payroll_group}/${row.pay_currency} → DLE/NGN`);

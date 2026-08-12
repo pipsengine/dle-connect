@@ -275,8 +275,16 @@
     "employeeId": "0364",
     "employeeCode": "P0364",
     "nhfApplicable": true,
-    "updatedAt": "2026-06-27T00:27:33.431Z",
-    "updatedBy": "Sage PAYE rules seed"
+    "updatedAt": "2026-08-12T08:54:17.738Z",
+    "updatedBy": "P0364 dual-currency USD enablement",
+    "payeCalculation": {
+      "excludedEarningCodes": [],
+      "includeRefundInTaxable": false,
+      "disablePensionPayeRelief": false,
+      "annualRentRelief": 500000,
+      "usdFlatRate": 0.22,
+      "monthlyPayeOverride": 5101.79
+    }
   },
   {
     "employeeId": "0366",
