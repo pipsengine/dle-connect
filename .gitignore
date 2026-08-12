@@ -8,3 +8,17 @@ coverage/
 deployment/iis/site/
 deployment/iis/.runtime-data-backup/
 deployment/iis/runtime-data-backup/
+
+# Local payroll investigation artifacts (PII / bank samples / one-off diagnostics)
+backups/
+apps/dashboard/data/hris/july-2026-*-diff.json
+apps/dashboard/data/hris/july-2026-*-gaps.json
+apps/dashboard/scripts/_diagnose-*.mts
+apps/dashboard/scripts/_check-*.mts
+apps/dashboard/scripts/_peek-*.mts
+apps/dashboard/scripts/_fix-*.mts
+apps/dashboard/scripts/_verify-*.mts
+apps/dashboard/scripts/_refresh-*.mts
+scripts/list-payroll-cfo-md*.js
+scripts/lookup-*.js
+scripts/verify-payroll-cfo-md-recipients.ts
