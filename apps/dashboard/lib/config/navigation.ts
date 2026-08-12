@@ -74,8 +74,8 @@ export const navigationConfig: NavItem[] = [
       { title: 'CFO Dashboard', slug: 'command-centre', route: '/finance/overview/command-centre', permissionKey: 'finance.view' },
       { title: 'Financial Reporting', slug: 'reporting', route: '/finance/reporting', permissionKey: 'finance.view' },
       { title: 'AI Finance Copilot', slug: 'ai-copilot', route: '/finance/ai-copilot', permissionKey: 'finance.view' },
-      { title: 'Payment Approvals', slug: 'approvals', route: '/finance/approvals', permissionKey: 'finance.approve' },
-      { title: 'Finance Configuration', slug: 'configuration', route: '/finance/configuration', permissionKey: 'finance.view' },
+      { title: 'Payment Management', slug: 'approvals', route: '/finance/approvals', permissionKey: 'finance.payments.self' },
+      { title: 'Finance Configuration', slug: 'configuration', route: '/finance/configuration', permissionKey: 'finance.configure' },
     ],
   },
   {

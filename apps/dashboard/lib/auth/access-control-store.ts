@@ -212,7 +212,7 @@ export const permissionCatalog: PermissionNode[] = [
   node('Payroll', 'Payroll Management', 'Payroll Processing', 'Payroll Runs', 'Workflow', 'L3 - Payroll Approver', 'Company', 'payroll'),
   node('Finance', 'Finance Intelligence & Approvals', 'Finance Operations', 'Financial reporting, analytics, AI insights and payment approvals', 'Module', 'L3 - Finance Approver', 'Company', 'finance'),
   node('Finance', 'Finance Intelligence', 'Reporting & Analysis', 'Financial statements, analysis and packs', 'Module', 'L2 - Manager', 'Company', 'finance.reporting'),
-  node('Finance', 'Finance Intelligence', 'Payment Approvals', 'Payment and finance approval workflows', 'Workflow', 'L3 - Finance Approver', 'Company', 'finance.approvals'),
+  node('Finance', 'Finance Intelligence', 'Payment Management', 'Payment and finance approval workflows', 'Workflow', 'L3 - Finance Approver', 'Company', 'finance.approvals'),
   node('Finance', 'Finance Intelligence', 'AI Finance Copilot', 'AI-assisted finance insights', 'Module', 'L2 - Manager', 'Company', 'finance.ai'),
   node('Finance', 'Finance Intelligence', 'Sage X3 Integration', 'Read-only Sage X3 integration controls', 'API', 'L3 - Finance Approver', 'Company', 'integration.sage.erp'),
   node('Finance', 'Budget', 'Budget Control', 'Budget Workflow', 'Workflow', 'L2 - Manager', 'Company', 'budget'),

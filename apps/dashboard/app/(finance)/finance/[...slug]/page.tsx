@@ -177,7 +177,7 @@ export default async function FinanceCatchAllPage({ params, searchParams }: Prop
       ...page,
       title: 'My Payments',
       description: 'Your payment requests, cash advances, and items awaiting your approval.',
-      breadcrumbs: ['Payment Approvals', 'My Payments'],
+      breadcrumbs: ['Payment Management', 'My Payments'],
     }
     : page;
 

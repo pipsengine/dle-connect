@@ -79,7 +79,7 @@ export const canAccessFinanceSection = (
   if (sectionId === 'monitoring') {
     return fullFinance || canApproveFinance(permissions, isGlobalAdmin);
   }
-  // Self-service users only see Payment Approvals — not reporting/overview/etc.
+  // Self-service users only see Payment Management — not reporting/overview/etc.
   if (!fullFinance) return false;
   return true;
 };

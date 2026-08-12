@@ -18,6 +18,12 @@ import {
   canAccessHrManagementNav,
   canAccessPaySetupNav,
 } from '@/lib/access/route-access';
+import {
+  canAccessFinanceModule,
+  canAccessFinanceSection,
+  canAccessFullFinanceIntelligence,
+  canConfigureFinance,
+} from '@/lib/access/finance-access';
 import { canAccessItSupportPortal } from '@/lib/access/it-support-access';
 import { canAccessSecurityPortal } from '@/lib/access/security-access';
 
@@ -77,12 +83,32 @@ const requiredPermission = (route?: string) => {
 
 const canAccess = (permissions: string[], required: string) => !required || hasPermission(permissions, required);
 
-const canAccessFinanceNav = (permissions: string[]) =>
-  canAccess(permissions, 'finance.view')
-  || canAccess(permissions, 'finance.payments.self')
-  || canAccess(permissions, 'view_finance_intelligence')
-  || canAccess(permissions, 'ess.view');
-
+/** Per-leaf Finance Intelligence visibility (employees only get Payment Management). */
+const canAccessFinanceSubItem = (
+  route: string | undefined,
+  permissions: string[],
+  isGlobalAdmin: boolean,
+) => {
+  if (!route) return false;
+  if (route === '/finance/approvals' || route.startsWith('/finance/approvals/')) {
+    return canAccessFinanceSection('approvals', permissions, isGlobalAdmin);
+  }
+  if (route === '/finance/configuration' || route.startsWith('/finance/configuration/')) {
+    return canConfigureFinance(permissions, isGlobalAdmin);
+  }
+  if (
+    route === '/finance/overview/command-centre'
+    || route.startsWith('/finance/reporting')
+    || route.startsWith('/finance/ai-copilot')
+  ) {
+    return canAccessFullFinanceIntelligence(permissions, isGlobalAdmin);
+  }
+  // Parent or other finance routes: module access (self-service or full).
+  if (route === '/finance' || route.startsWith('/finance/') || route === '/finance-accounting') {
+    return canAccessFinanceModule(permissions, isGlobalAdmin);
+  }
+  return false;
+};
 export function Sidebar({
   isOpen,
   toggle,
@@ -150,7 +176,7 @@ export function Sidebar({
             return canAccessBankFinanceNav(sessionLike);
           }
           if (sub.route === '/finance' || sub.route?.startsWith('/finance/') || sub.route === '/finance-accounting') {
-            return canAccessFinanceNav(permissions);
+            return canAccessFinanceSubItem(sub.route, permissions, sessionContext.isGlobalAdmin);
           }
           if (sub.route?.startsWith('/hris/') && platformOnly && !sessionContext.isGlobalAdmin && !sessionContext.roles.includes('Super Administrator')) {
             return false;
@@ -165,7 +191,7 @@ export function Sidebar({
               : item.id === 'it-support'
                 ? canAccessItSupportPortal(permissions, sessionContext.isGlobalAdmin)
                 : (item.route === '/finance' || item.route?.startsWith('/finance')
-                  ? canAccessFinanceNav(permissions)
+                  ? canAccessFinanceModule(permissions, sessionContext.isGlobalAdmin)
                   : canAccess(permissions, requiredPermission(item.route))))
             || !!subItems?.length;
         return canSeeItem ? { ...item, subItems } : null;

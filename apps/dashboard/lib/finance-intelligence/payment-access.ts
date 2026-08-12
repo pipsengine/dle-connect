@@ -176,7 +176,7 @@ export const canDownloadPaymentDocumentPdf = (
   String(request.status || ''),
 );
 
-/** Nav leaf ids under Payment Approvals that employees may see. */
+/** Nav leaf ids under Payment Management that employees may see. */
 export const EMPLOYEE_PAYMENT_NAV_IDS = new Set([
   'approval-dashboard', // rendered as "My Payments" for self-service
   'inbox',
