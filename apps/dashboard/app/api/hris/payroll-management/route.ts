@@ -16,6 +16,8 @@ import { buildExcelHtml, buildExcelWorkbookXml, excelMimeType } from '@/lib/exce
 import { buildSageJournalCsv, buildSageJournalExportRows, savePayrollJournalMappings } from '@/lib/payroll-journal-service';
 import { buildSalarySetupExportReport } from '@/lib/payroll-salary-setup-export';
 import { buildPayrollReviewExportReport, previousPayrollPeriod } from '@/lib/payroll-review-export';
+import { buildOfficialPayrollExcelWorksheets, isOfficialPayrollExcelReport } from '@/lib/payroll-official-excel-export';
+import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { readPayrollSnapshotsByPeriods } from '@/lib/payroll-run-store';
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
@@ -82,6 +84,8 @@ const reportTitle = (report: string) => ({
   'deduction-report': 'Deduction Report',
   'bank-payment-report': 'Bank Payment Report',
   'bank-schedule': 'Bank Salary Schedule',
+  'payroll-detail': 'Official Payroll Detail',
+  'dayrate-schedule': 'Daily Rate Payment Schedule',
   'compliance-report': 'Compliance Report',
   'audit-report': 'Payroll Audit Report',
   'executive-analytics': 'Executive Payroll Analytics',
@@ -405,6 +409,39 @@ export async function GET(request: Request) {
             await buildManagementPayload(request, period, 'daily-rate'),
           ]
         : [payload];
+      const filePack = requestedPack === 'all' ? 'both-packs' : (payload.pack || 'salaried');
+
+      if (isOfficialPayrollExcelReport(report) && report !== 'payroll-review') {
+        const salariedPayload = packPayloads.find((item) => item.pack !== 'daily-rate') || payload;
+        const dayratePayload = packPayloads.find((item) => item.pack === 'daily-rate')
+          || (payload.pack === 'daily-rate' ? payload : null)
+          || (requestedPack === 'daily-rate' ? payload : await buildManagementPayload(request, period, 'daily-rate').catch(() => null));
+        const statusFilter = url.searchParams.get('status');
+        const salariedRecords = filterExportRecords(salariedPayload.records, statusFilter, 'salaried')
+          .filter((record) => !record.isDailyRate);
+        const dayrateRecords = filterExportRecords((dayratePayload || payload).records, statusFilter, 'daily-rate')
+          .filter((record) => record.isDailyRate || requestedPack === 'daily-rate');
+        const directory = await readPayrollEmployees().catch(() => ({ employees: [] as Awaited<ReturnType<typeof readPayrollEmployees>>['employees'] }));
+        const worksheets = await buildOfficialPayrollExcelWorksheets({
+          report,
+          pack: requestedPack || payload.pack || 'salaried',
+          period: payload.period,
+          periodLabel: payload.periodLabel,
+          salariedRecords,
+          dayrateRecords,
+          directoryEmployees: directory.employees,
+        });
+        if (worksheets.length) {
+          return new Response(buildExcelWorkbookXml({ worksheets }), {
+            headers: {
+              'content-type': excelMimeType,
+              'content-disposition': `attachment; filename="${report}-${payload.period}-${filePack}.xls"`,
+              'cache-control': 'no-store',
+            },
+          });
+        }
+      }
+
       const worksheets = await Promise.all(packPayloads.map(async (packPayload) => {
         const packRecords = filterExportRecords(packPayload.records, url.searchParams.get('status'), packPayload.pack);
         let packReportData = reportExport(packRecords, report);
@@ -426,7 +463,6 @@ export async function GET(request: Request) {
           rows: packReportData.rows,
         };
       }));
-      const filePack = requestedPack === 'all' ? 'both-packs' : (payload.pack || 'salaried');
       return new Response(buildExcelWorkbookXml({ worksheets }), {
         headers: {
           'content-type': excelMimeType,

@@ -207,6 +207,8 @@ const reportLabelToId: Record<string, string> = {
   'NSITF Schedule': 'compliance-report',
   'ITF Schedule': 'compliance-report',
   'Bank Schedule': 'bank-schedule',
+  'Dayrate Payment Schedule': 'dayrate-schedule',
+  'Official Payroll Detail': 'payroll-detail',
   'Journal Posting': 'compliance-report',
   'Reconciliation': 'bank-payment-report',
   'Payment Analysis': 'bank-payment-report',

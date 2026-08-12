@@ -2975,13 +2975,15 @@ function ReportsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Tab
   const records = payload?.records || [];
   const reportCatalog = [
     { id: 'payroll-summary', title: 'Payroll Summary', detail: 'Period totals, readiness, exceptions, approvals and values.', icon: FileBarChart, tone: 'blue' as Tone },
-    { id: 'payroll-register', title: 'Payroll Register', detail: 'Employee-level gross, deductions, net pay and status.', icon: ClipboardCheck, tone: 'green' as Tone },
+    { id: 'payroll-register', title: 'Payroll Register', detail: 'Official Perm.Staff / Cont. Staff / dayrate workbook matching finance Excel layout.', icon: ClipboardCheck, tone: 'green' as Tone },
+    { id: 'payroll-detail', title: 'Official Payroll Detail', detail: 'JULY PAYROLL-style permanent and contract component matrix.', icon: ClipboardCheck, tone: 'green' as Tone },
+    { id: 'dayrate-schedule', title: 'Dayrate Payment Schedule', detail: 'SUMMARY + DLE/DLPC detail + bank schedule sheets.', icon: CreditCard, tone: 'slate' as Tone },
     { id: 'payroll-review', title: 'Payroll Review', detail: 'Month-on-month salary comparison with component variances.', icon: TrendingUp, tone: 'amber' as Tone },
-    { id: 'salary-analysis', title: 'Salary Analysis', detail: 'Grade, category, department and gross pay analysis.', icon: TrendingUp, tone: 'violet' as Tone },
+    { id: 'salary-analysis', title: 'Salary Analysis', detail: 'Official workbook layout with earnings analysis by pack.', icon: TrendingUp, tone: 'violet' as Tone },
     { id: 'tax-report', title: 'PAYE Report', detail: 'PAYE schedule, tax exposure and employee tax lines.', icon: Landmark, tone: 'red' as Tone },
     { id: 'pension-report', title: 'Pension Report', detail: 'Employee and employer pension schedule analysis.', icon: ShieldCheck, tone: 'cyan' as Tone },
     { id: 'deduction-report', title: 'Deduction Report', detail: 'PAYE, pension, NHF, union, loans and other deductions.', icon: ReceiptText, tone: 'amber' as Tone },
-    { id: 'bank-payment-report', title: 'Bank Payment Report', detail: 'Net payment values, bank schedule and finance readiness.', icon: CreditCard, tone: 'slate' as Tone },
+    { id: 'bank-payment-report', title: 'Bank Payment Report', detail: 'DLE/DLPC bank schedule sheets (Employee Code, Bank, Account, Sort Code, Net, Location).', icon: CreditCard, tone: 'slate' as Tone },
     { id: 'compliance-report', title: 'Compliance Report', detail: 'PAYE, pension, NHF, NSITF, ITF and statutory readiness.', icon: ShieldCheck, tone: 'red' as Tone },
     { id: 'audit-report', title: 'Audit Report', detail: 'Actions, approvals, exports, modifications and workflow evidence.', icon: FileCheck2, tone: 'blue' as Tone },
     { id: 'executive-analytics', title: 'Executive Analytics', detail: 'Visual payroll KPIs, category trends and exception posture.', icon: BarChart3, tone: 'violet' as Tone },
@@ -2989,6 +2991,8 @@ function ReportsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Tab
   const reportPresets: Record<string, { groupBy: typeof groupBy; columns: Record<string, boolean>; status?: typeof reportStatus }> = {
     'payroll-summary': { groupBy: 'department', columns: { gross: true, deductions: true, net: true, paye: false, pension: false, status: true } },
     'payroll-register': { groupBy: 'department', columns: { gross: true, deductions: true, net: true, paye: true, pension: true, status: true } },
+    'payroll-detail': { groupBy: 'department', columns: { gross: true, deductions: true, net: true, paye: true, pension: true, status: true } },
+    'dayrate-schedule': { groupBy: 'location', columns: { gross: true, deductions: true, net: true, paye: true, pension: false, status: true } },
     'payroll-review': { groupBy: 'department', columns: { gross: true, deductions: true, net: true, paye: true, pension: true, status: true } },
     'salary-analysis': { groupBy: 'payrollGroup', columns: { gross: true, deductions: false, net: true, paye: false, pension: false, status: true } },
     'tax-report': { groupBy: 'department', columns: { gross: true, deductions: false, net: false, paye: true, pension: false, status: true } },
@@ -3031,6 +3035,15 @@ function ReportsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Tab
   ].filter((row) => row.value > 0);
   const exportReport = (format: 'csv' | 'xls') => {
     const params = new URLSearchParams({ format, report: activeReport, groupBy, status: reportStatus });
+    if (payload?.period) params.set('period', payload.period);
+    const pack = activeReport === 'dayrate-schedule'
+      ? 'daily-rate'
+      : activeReport === 'bank-payment-report'
+        ? 'all'
+        : activeReport === 'payroll-register' || activeReport === 'payroll-detail' || activeReport === 'salary-analysis'
+          ? 'all'
+          : (payload?.pack || 'salaried');
+    params.set('pack', pack);
     window.location.href = `/api/hris/payroll-management?${params.toString()}`;
   };
   const chartTooltip = (value: unknown, name: unknown) => {
@@ -3041,13 +3054,15 @@ function ReportsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Tab
   };
   const reportFocus = {
     'payroll-summary': { label: 'Report Focus', value: 'Executive totals', detail: 'Period totals, status posture, and readiness overview.' },
-    'payroll-register': { label: 'Report Focus', value: 'Employee register', detail: 'Employee-by-employee payroll values and processing status.' },
+    'payroll-register': { label: 'Report Focus', value: 'Official register', detail: 'JULY PAYROLL / dayrate schedule workbook matching finance Excel layout.' },
+    'payroll-detail': { label: 'Report Focus', value: 'Official detail', detail: 'Permanent and contract component matrix (Perm.Staff / Cont. Staff).' },
+    'dayrate-schedule': { label: 'Report Focus', value: 'Dayrate schedule', detail: 'SUMMARY + DLE/DLPC detail + bank schedule sheets.' },
     'payroll-review': { label: 'Report Focus', value: 'Month-on-month review', detail: 'Compare previous month and current month salary components with variance and percentage change.' },
-    'salary-analysis': { label: 'Report Focus', value: 'Salary exposure', detail: 'Gross pay distribution by grade, group, and employee category.' },
+    'salary-analysis': { label: 'Report Focus', value: 'Salary exposure', detail: 'Official workbook layout with earnings analysis by pack.' },
     'tax-report': { label: 'Report Focus', value: 'PAYE schedule', detail: 'Employee PAYE values for tax review and remittance.' },
     'pension-report': { label: 'Report Focus', value: 'Pension schedule', detail: 'Employee pension deductions and employer estimate.' },
     'deduction-report': { label: 'Report Focus', value: 'Deduction schedule', detail: 'PAYE, pension, NHF, union dues, loans, and other deductions.' },
-    'bank-payment-report': { label: 'Report Focus', value: 'Bank payment', detail: 'Net payment lines ready for bank schedule and payment file.' },
+    'bank-payment-report': { label: 'Report Focus', value: 'Bank payment', detail: 'DLE/DLPC bank schedule sheets ready for payment.' },
     'compliance-report': { label: 'Report Focus', value: 'Compliance evidence', detail: 'Statutory readiness, remittance values, and exception posture.' },
     'audit-report': { label: 'Report Focus', value: 'Audit trail', detail: 'Payroll status, exceptions, workflow controls, and evidence pack.' },
     'executive-analytics': { label: 'Report Focus', value: 'Executive dashboard', detail: 'High-level payroll value, risk, and category analytics.' },
