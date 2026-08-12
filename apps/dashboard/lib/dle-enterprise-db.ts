@@ -129,6 +129,7 @@ export type DleEmployeeDirectoryRow = {
     annualRentRelief?: number;
     usdFlatRate?: number;
     monthlyPayeOverride?: number;
+    ngnMonthlyPayeOverride?: number;
   };
   periodSalary: number | null;
   basicSalary: number | null;

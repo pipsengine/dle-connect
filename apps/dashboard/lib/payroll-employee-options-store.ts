@@ -17,6 +17,7 @@ export type PayrollEmployeeOption = {
     annualRentRelief?: number;
     usdFlatRate?: number;
     monthlyPayeOverride?: number;
+    ngnMonthlyPayeOverride?: number;
   };
   payrollGroup?: string;
   salaryGrade?: string;

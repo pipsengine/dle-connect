@@ -180,6 +180,7 @@ const dualCurrencyLocalEmployee = (employee: DleEmployeeDirectoryRow): DleEmploy
         // USD-only PAYE controls must not drive the Naira run.
         usdFlatRate: undefined,
         monthlyPayeOverride: undefined,
+        // ngnMonthlyPayeOverride is intentionally kept for the local NGN package.
       }
     : undefined;
   return {
@@ -889,9 +890,15 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const usdPayeOverride = variant.payCurrency === 'USD'
       ? Number(employee.payeCalculation?.monthlyPayeOverride)
       : NaN;
+    const ngnPayeOverride = variant.payCurrency === 'USD'
+      ? NaN
+      : Number(
+        calculationEmployee.payeCalculation?.ngnMonthlyPayeOverride
+          ?? employee.payeCalculation?.ngnMonthlyPayeOverride,
+      );
     const paye = variant.payCurrency === 'USD'
       ? (Number.isFinite(usdPayeOverride) ? roundMoney(usdPayeOverride) : roundMoney(tax.monthlyPaye))
-      : tax.monthlyPaye;
+      : (Number.isFinite(ngnPayeOverride) ? roundMoney(ngnPayeOverride) : tax.monthlyPaye);
     const statutoryPension = variant.payCurrency === 'USD' ? 0 : roundMoney(pension.employeeContribution);
     const additionalPension = variant.payCurrency === 'USD' ? 0 : roundMoney(pension.voluntaryContribution);
     const employeePension = roundMoney(statutoryPension + additionalPension);

@@ -9,7 +9,10 @@ export type PayeCalculationRules = {
   disablePensionPayeRelief?: boolean;
   annualRentRelief?: number;
   usdFlatRate?: number;
+  /** USD (or non-NGN) run PAYE override. */
   monthlyPayeOverride?: number;
+  /** NGN run PAYE override (dual-currency local / permanent Naira package). */
+  ngnMonthlyPayeOverride?: number;
 };
 
 export type SagePayeEarningLine = {
@@ -364,12 +367,34 @@ export const hrisPayeFromEmployee = (input: {
   const payCurrency = String(input.employee.payCurrency || '').trim().toUpperCase();
   const isNgnRun = payCurrency === 'NGN' || payCurrency === 'NAIRA';
   const isUsdRun = payCurrency === 'USD' || payCurrency === 'US$';
-  const additionalPension = Math.max(0, Number(input.additionalEmployeePensionMonthly || 0));
+  // Sage treats matching PENSION_REFUND as a wash against PENSION_EE2 for PAYE relief
+  // (refund is excluded from taxable; EE2 relief must not also reduce chargeable income).
+  const pensionRefundMonthly = roundMoney(
+    earningLines
+      .filter((line) => {
+        const code = String(line.code || '').toUpperCase().replace(/\s+/g, '_');
+        const name = String(line.name || '').toUpperCase();
+        return code === 'PENSION_REFUND' || /\bPENSION REFUND\b/.test(name);
+      })
+      .reduce((sum, line) => sum + Number(line.amount || 0), 0),
+  );
+  const additionalPension = Math.max(
+    0,
+    roundMoney(Number(input.additionalEmployeePensionMonthly || 0) - pensionRefundMonthly),
+  );
 
   // USD monthly overrides / flat rates apply only to the USD payroll run.
   if (isUsdRun && Number.isFinite(Number(payeRules?.monthlyPayeOverride))) {
     return {
       paye: roundMoney(Number(payeRules?.monthlyPayeOverride)),
+      monthlyTaxable: payeTaxableFromEarningLines(earningLines, category, salaryGrade, payeRules),
+    };
+  }
+
+  // Explicit NGN PAYE override (e.g. Sage-aligned dual-currency local package).
+  if (isNgnRun && Number.isFinite(Number(payeRules?.ngnMonthlyPayeOverride))) {
+    return {
+      paye: roundMoney(Number(payeRules?.ngnMonthlyPayeOverride)),
       monthlyTaxable: payeTaxableFromEarningLines(earningLines, category, salaryGrade, payeRules),
     };
   }
@@ -396,7 +421,7 @@ export const hrisPayeFromEmployee = (input: {
       ? { disablePensionPayeRelief: true, annualRentRelief: 400000 }
       : null);
 
-  // Strip USD-only controls when computing Nigerian PAYE.
+  // Strip USD-only controls when computing Nigerian PAYE (keep ngnMonthlyPayeOverride).
   const ngnRules = isNgnRun && effectiveRules
     ? { ...effectiveRules, usdFlatRate: undefined, monthlyPayeOverride: undefined }
     : effectiveRules;

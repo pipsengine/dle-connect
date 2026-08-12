@@ -275,15 +275,16 @@
     "employeeId": "0364",
     "employeeCode": "P0364",
     "nhfApplicable": true,
-    "updatedAt": "2026-08-12T08:54:17.738Z",
-    "updatedBy": "P0364 dual-currency USD enablement",
+    "updatedAt": "2026-08-12T12:05:00.000Z",
+    "updatedBy": "P0364 NGN PAYE Sage align + dual-currency USD",
     "payeCalculation": {
       "excludedEarningCodes": [],
       "includeRefundInTaxable": false,
       "disablePensionPayeRelief": false,
       "annualRentRelief": 500000,
       "usdFlatRate": 0.22,
-      "monthlyPayeOverride": 5101.79
+      "monthlyPayeOverride": 5101.79,
+      "ngnMonthlyPayeOverride": 4179191.64
     }
   },
   {
@@ -360,9 +361,8 @@
     "employeeId": "0413",
     "employeeCode": "P0413",
     "nhfApplicable": false,
-    "excludedFromPayrollRun": true,
-    "updatedAt": "2026-08-11T18:40:00.000Z",
-    "updatedBy": "Exclude USD-only from NGN salaried totals"
+    "updatedAt": "2026-08-12T12:20:00.000Z",
+    "updatedBy": "Restore USD-only MD to DLE_USD salaried roster"
   },
   {
     "employeeId": "0415",
@@ -449,13 +449,13 @@
     "employeeId": "0442",
     "employeeCode": "P0442",
     "nhfApplicable": false,
-    "updatedAt": "2026-06-27T00:30:08.467Z",
-    "updatedBy": "Sage PAYE rules seed",
+    "updatedAt": "2026-08-12T12:35:00.000Z",
+    "updatedBy": "P0442 NGN PAYE: restore 500k rent relief (EE2 washed by PENSION_REFUND)",
     "payeCalculation": {
       "excludedEarningCodes": [],
       "includeRefundInTaxable": false,
       "disablePensionPayeRelief": false,
-      "annualRentRelief": 0,
+      "annualRentRelief": 500000,
       "usdFlatRate": 0.22,
       "monthlyPayeOverride": 982
     }
@@ -567,13 +567,13 @@
     "employeeId": "0458",
     "employeeCode": "P0458",
     "nhfApplicable": false,
-    "updatedAt": "2026-06-27T00:30:08.592Z",
-    "updatedBy": "Sage PAYE rules seed",
+    "updatedAt": "2026-08-12T12:35:00.000Z",
+    "updatedBy": "P0458 NGN PAYE: restore 500k rent relief (EE2 washed by PENSION_REFUND)",
     "payeCalculation": {
       "excludedEarningCodes": [],
       "includeRefundInTaxable": false,
       "disablePensionPayeRelief": false,
-      "annualRentRelief": 0,
+      "annualRentRelief": 500000,
       "usdFlatRate": 0.22,
       "monthlyPayeOverride": 956
     }
