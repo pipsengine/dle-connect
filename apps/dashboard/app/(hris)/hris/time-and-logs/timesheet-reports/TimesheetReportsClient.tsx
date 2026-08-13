@@ -1411,6 +1411,7 @@ export default function TimesheetReportsClient() {
             </div>
             {projectFinanceControls ? (
               <div className={`flex flex-wrap gap-3 border-b px-4 py-2 text-[11px] font-bold ${projectFinanceControls.balanced ? 'border-emerald-100 bg-emerald-50 text-emerald-800' : 'border-amber-100 bg-amber-50 text-amber-900'}`}>
+                <span>Period {(payload?.projectFinanceCost?.payrollPeriods || []).join(', ') || 'n/a'}</span>
                 <span>{formatHours(projectFinanceControls.productiveHours || 0)} hours</span>
                 <span>{formatNumber(projectFinanceControls.cCodeEmployees)} unique daily-rate staff</span>
                 <span>Payroll gross {money(projectFinanceControls.payrollGross)}</span>

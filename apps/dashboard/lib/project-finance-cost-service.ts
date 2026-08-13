@@ -85,30 +85,64 @@ const payrollPeriodFromTimesheetPeriodId = (periodId: string) => {
   return match ? match[1] : '';
 };
 
-const payrollPeriodsFromRows = (rows: ProjectFinanceTimesheetRow[]) => {
-  const periods = new Set<string>();
-  for (const row of rows) {
-    const fromPeriodId = payrollPeriodFromTimesheetPeriodId(String(row.periodId || ''));
-    if (fromPeriodId) {
-      periods.add(fromPeriodId);
-      continue;
-    }
-    const date = compact(row.timesheetDate).slice(0, 7);
-    if (/^\d{4}-\d{2}$/.test(date)) periods.add(date);
+/** Timesheet cycle is 16th→15th; payroll label is the month of the 15th end date. */
+export const payrollPeriodFromTimesheetDate = (dateStr: string) => {
+  const d = compact(dateStr).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return '';
+  const year = Number(d.slice(0, 4));
+  const month = Number(d.slice(5, 7));
+  const day = Number(d.slice(8, 10));
+  if (!year || !month || !day) return '';
+  if (day >= 16) {
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
+    return `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
   }
-  return Array.from(periods).sort();
+  return `${year}-${String(month).padStart(2, '0')}`;
+};
+
+const rowPayrollPeriod = (row: ProjectFinanceTimesheetRow) =>
+  payrollPeriodFromTimesheetPeriodId(String(row.periodId || ''))
+  || payrollPeriodFromTimesheetDate(String(row.timesheetDate || ''));
+
+const hourValue = (row: ProjectFinanceTimesheetRow) => {
+  const allocated = Number(row.allocationHours || 0);
+  if (allocated > 0) return allocated;
+  return Math.max(0, Number(row.productiveHours || 0));
+};
+
+/**
+ * Resolve which payroll pack(s) to use.
+ * Prefer explicit periods (from UI Payroll Period filter). Otherwise use the single
+ * dominant timesheet period by hours so a one-day spill (e.g. 16th) does not pull
+ * the next month's full daily-rate pack into CONTROL TOTAL.
+ */
+const resolvePayrollPeriods = (
+  rows: ProjectFinanceTimesheetRow[],
+  explicitPeriods?: string[],
+) => {
+  const explicit = (explicitPeriods || [])
+    .map((value) => {
+      const raw = compact(value);
+      return payrollPeriodFromTimesheetPeriodId(raw) || (/^\d{4}-\d{2}$/.test(raw) ? raw : '');
+    })
+    .filter(Boolean);
+  if (explicit.length) return Array.from(new Set(explicit)).sort();
+
+  const hoursByPeriod = new Map<string, number>();
+  for (const row of rows) {
+    const period = rowPayrollPeriod(row);
+    if (!period) continue;
+    hoursByPeriod.set(period, roundHours((hoursByPeriod.get(period) || 0) + hourValue(row)));
+  }
+  const ranked = Array.from(hoursByPeriod.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  return ranked[0]?.[0] ? [ranked[0][0]] : [];
 };
 
 const projectMeta = (row: ProjectFinanceTimesheetRow) => {
   const code = compact(row.projectCode) || 'No Project';
   const name = compact(row.projectName) || (code === 'No Project' ? NO_PROJECT_META.name : code);
   return { code, name, label: `${code} - ${name}`, key: upper(code) };
-};
-
-const hourValue = (row: ProjectFinanceTimesheetRow) => {
-  const allocated = Number(row.allocationHours || 0);
-  if (allocated > 0) return allocated;
-  return Math.max(0, Number(row.productiveHours || 0));
 };
 
 const allocateAmountByShares = (
@@ -144,6 +178,7 @@ const recordIdentity = (record: PayrollCalculationRecord) =>
 
 export async function buildCCodeProjectFinanceCosts(
   rows: ProjectFinanceTimesheetRow[],
+  options?: { payrollPeriods?: string[] },
 ): Promise<ProjectFinanceCostResult> {
   const cRows = rows.filter(isCCodeTimesheetEmployee);
   const empty: ProjectFinanceCostResult = {
@@ -157,12 +192,12 @@ export async function buildCCodeProjectFinanceCosts(
       net: 0,
       balanced: true,
     },
-    basis: 'Daily-rate payroll with booked timesheet hours only · zero timesheet / zero gross excluded',
+    basis: 'Daily-rate payroll with booked timesheet hours only · one payroll period · zero timesheet / zero gross excluded',
     payrollPeriods: [],
   };
   if (!cRows.length) return empty;
 
-  const payrollPeriods = payrollPeriodsFromRows(cRows);
+  const payrollPeriods = resolvePayrollPeriods(cRows, options?.payrollPeriods);
   if (!payrollPeriods.length) return empty;
 
   const payrollByPeriod = new Map<string, PayrollCalculationRecord[]>();
@@ -219,11 +254,7 @@ export async function buildCCodeProjectFinanceCosts(
   const packEmployeeKeys = new Set<string>();
 
   for (const period of payrollPeriods) {
-    const periodRows = cRows.filter((row) => {
-      const fromId = payrollPeriodFromTimesheetPeriodId(String(row.periodId || ''));
-      if (fromId) return fromId === period;
-      return compact(row.timesheetDate).startsWith(period);
-    });
+    const periodRows = cRows.filter((row) => rowPayrollPeriod(row) === period);
 
     const payrollRecords = payrollByPeriod.get(period) || [];
 
@@ -400,7 +431,7 @@ export async function buildCCodeProjectFinanceCosts(
         Math.abs(payrollGrossTotal - allocatedLabourCost) <= 1
         && Math.abs(payrollNetTotal - allocatedNet) <= 1,
     },
-    basis: 'Daily-rate payroll with booked timesheet hours only · zero timesheet / zero gross excluded · WHT = payroll PAYE · NET = payroll net',
+    basis: `Daily-rate payroll ${payrollPeriods.join(', ')} · booked timesheet hours only · matches Contract Daily Rate pack for that period`,
     payrollPeriods,
   };
 }

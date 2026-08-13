@@ -495,13 +495,13 @@ export async function GET(request: Request) {
         net: 0,
         balanced: true,
       },
-      basis: 'Daily-rate payroll with booked timesheet hours only · zero timesheet / zero gross excluded',
+      basis: 'Daily-rate payroll · one period · booked timesheet hours only · zero timesheet / zero gross excluded',
       payrollPeriods: [],
     };
     let projectFinanceCost = emptyProjectFinanceCost;
     try {
       projectFinanceCost = await Promise.race([
-        buildCCodeProjectFinanceCosts(filteredRows),
+        buildCCodeProjectFinanceCosts(filteredRows, { payrollPeriods: periods }),
         new Promise<ProjectFinanceCostResult>((_, reject) => {
           setTimeout(() => reject(new Error('Project finance cost timed out')), 20_000);
         }),
