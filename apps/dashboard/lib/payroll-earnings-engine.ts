@@ -7,7 +7,11 @@ import { isLeaveAllowancePaymentCode } from '@/lib/leave-allowance-policy';
 import { leaveAllowanceEventsForEmployeePeriod } from '@/lib/payroll-leave-allowance-store';
 import { isSagePayslipEarningSyncSource } from '@/lib/payroll-employee-classification';
 import { isSagePayeRefundEarning, shouldUseSagePayeRefundEarnings } from '@/lib/payroll-refund-policy';
-import { isSageDayrateScheduleFeedPeriod, isSageDayrateScheduleSource } from '@/lib/payroll-enterprise-source';
+import {
+  isHrisTimesheetOvertimeSource,
+  isSageDayrateScheduleFeedPeriod,
+  isSageDayrateScheduleSource,
+} from '@/lib/payroll-enterprise-source';
 
 export type PayrollEarningProfileId =
   | 'junior-permanent'
@@ -56,6 +60,11 @@ export type PayrollEarningsOptions = {
   includePeriodAdjustments?: boolean;
   useSagePayslipLines?: boolean;
   ignoreSagePayslipLines?: boolean;
+  /**
+   * When true (timesheet-driven day-rate path), Sage Dayrate Payment Schedule rows are never applied.
+   * HRIS Timesheet Overtime and other non-Sage adjustments remain eligible.
+   */
+  excludeSageDayrateSchedule?: boolean;
 };
 
 export type PayrollSupplementalEarningDefinition = {
@@ -439,6 +448,25 @@ const finalizeContractDayRateEarnings = (lines: PayrollEarningLine[], weekdayDay
 
 const TIMESHEET_DRIVEN_EARNING_CODES = new Set(['JCWEEKDAY', 'JCWEEKDAY_NT']);
 
+/** Sage schedule components that must never stack onto timesheet weekday days. */
+const SAGE_DAYRATE_SCHEDULE_COMPONENT_CODES = new Set([
+  'JCWEEKDAY',
+  'JCWEEKDAY_NT',
+  'WEEKDAYOVT',
+  'PUBHOL',
+  'PUBLIC_OVT',
+  'SATEARN',
+  'SUNDAYEARN',
+  'SATURDAY_OVT',
+  'SUNDAY_OVT',
+  'MEAL',
+  'TCMMEAL',
+  'PER_MEAL',
+]);
+
+const isSageDayrateScheduleComponentCode = (code: string) =>
+  SAGE_DAYRATE_SCHEDULE_COMPONENT_CODES.has(compact(code).toUpperCase());
+
 export const contractDayRatePayrollResult = (input: {
   ratePerDay: number;
   daysWorked: number;
@@ -592,11 +620,16 @@ export const mergeTimesheetDayRateEarnings = (
   input: { ratePerDay: number; daysWorked: number; period?: string },
 ): PayrollEarningsResult => {
   const timesheetBase = contractDayRatePayrollResult({ ratePerDay: input.ratePerDay, daysWorked: input.daysWorked });
+  // Permanent authority rule: timesheet JCWEEKDAY (+ auto meal) is the day-rate base.
+  // Never stack Sage Dayrate Payment Schedule OT / weekend / meal on top — that inflated July re-runs.
+  // HRIS Timesheet Overtime postings are still merged via excludeSageDayrateSchedule filtering.
   const supplemental = buildDailyRateSupplementalEarnings(employee, {
     period: input.period,
     includePeriodAdjustments: true,
+    excludeSageDayrateSchedule: true,
   });
   // Sage meal / TCM meal rows replace auto ₦500×days meal — never stack both.
+  // With Sage schedule excluded, auto meal from timesheet days remains the authority.
   const base = stripAutoMealWhenSageMealPresent(timesheetBase, supplemental);
   const merged = supplemental.paidEarningLines.some((line) => roundMoney(line.amount) !== 0)
     ? mergeDailySupplementalEarnings(base, supplemental)
@@ -922,7 +955,18 @@ const periodAdjustmentLines = (employee: DleEmployeeDirectoryRow, options?: Payr
     .filter((row) => {
       // After Sage dayrate license cutover, ignore schedule-imported OT/allowance rows.
       // Timesheet OT postings and HR arrears remain active.
-      if (isSageDayrateScheduleSource(row.source) && !isSageDayrateScheduleFeedPeriod(period)) return false;
+      if (isSageDayrateScheduleSource(row.source)) {
+        if (options?.excludeSageDayrateSchedule || !isSageDayrateScheduleFeedPeriod(period)) return false;
+      }
+      // Belt-and-suspenders for timesheet-driven runs: drop Sage schedule component codes
+      // even if the source label was mangled, unless they are HRIS Timesheet Overtime.
+      if (
+        options?.excludeSageDayrateSchedule
+        && isSageDayrateScheduleComponentCode(row.code)
+        && !isHrisTimesheetOvertimeSource(row.source)
+      ) {
+        return false;
+      }
       const employeeMatched = employeeAdjustmentMatched(employee, row);
       const gradeMatched = Array.isArray(row.salaryGrades) && row.salaryGrades.map(normalizedTextKey).includes(salaryGrade);
       const profileMatched = Array.isArray(row.profileIds) && row.profileIds.includes(profileId);

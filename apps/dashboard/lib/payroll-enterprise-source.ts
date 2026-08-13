@@ -3,9 +3,13 @@ export const ENTERPRISE_PAYROLL_FROM_PERIOD = String(process.env.HRIS_PAYROLL_EN
 
 /**
  * Last period where Sage Dayrate Payment Schedule may feed days/OT into HRIS payroll.
- * From the next month onward, C-code daily-rate pay is timesheet-driven only (Sage license expired).
+ * Empty / unset = never (timesheet bookings + HRIS overtime are the sole authority).
+ * Set explicitly (e.g. "2026-06") only for legacy cutover debugging — never leave enabled in production.
+ *
+ * Permanent rule: timesheet-driven day-rate runs never stack Sage schedule OT/weekend/meal,
+ * regardless of this flag (enforced in mergeTimesheetDayRateEarnings).
  */
-export const SAGE_DAYRATE_SCHEDULE_FEED_UNTIL = String(process.env.HRIS_SAGE_DAYRATE_FEED_UNTIL || '2026-07').trim();
+export const SAGE_DAYRATE_SCHEDULE_FEED_UNTIL = String(process.env.HRIS_SAGE_DAYRATE_FEED_UNTIL || '').trim();
 
 /**
  * Last period where JULY PAYROLL / Sage salaried payslip lines may drive permanent, lumpsum, IT, NYSC packages.
@@ -24,9 +28,11 @@ const periodSortKey = (period: string) => {
 export const isEnterprisePayrollPeriod = (period: string) =>
   periodSortKey(period) >= periodSortKey(ENTERPRISE_PAYROLL_FROM_PERIOD);
 
-/** True only for frozen Sage dayrate schedule migration periods (default through 2026-07). */
+/** True only when an explicit dayrate Sage feed-until period is configured and the run is within it. */
 export const isSageDayrateScheduleFeedPeriod = (period: string) =>
-  periodSortKey(period) > 0 && periodSortKey(period) <= periodSortKey(SAGE_DAYRATE_SCHEDULE_FEED_UNTIL);
+  Boolean(SAGE_DAYRATE_SCHEDULE_FEED_UNTIL)
+  && periodSortKey(period) > 0
+  && periodSortKey(period) <= periodSortKey(SAGE_DAYRATE_SCHEDULE_FEED_UNTIL);
 
 /** True only when an explicit salaried Sage feed-until period is configured and the run is within it. */
 export const isSageSalariedScheduleFeedPeriod = (period: string) =>
@@ -36,6 +42,10 @@ export const isSageSalariedScheduleFeedPeriod = (period: string) =>
 
 export const isSageDayrateScheduleSource = (value?: string | null) =>
   /sage dayrate payment schedule/i.test(String(value || '').trim());
+
+/** HRIS Overtime Management / timesheet OT postings — allowed on top of timesheet weekday days. */
+export const isHrisTimesheetOvertimeSource = (value?: string | null) =>
+  /hris timesheet overtime/i.test(String(value || '').trim());
 
 /** Sage live comparison is only valid for pre-cutover migration periods. */
 export const shouldComparePayrollWithSage = (period: string) =>
