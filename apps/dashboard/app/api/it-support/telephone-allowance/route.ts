@@ -228,7 +228,22 @@ export async function POST(request: NextRequest) {
       }
       case 'hr-remove-employee': {
         require(caps.canHrReview);
-        const cycle = await hrRemoveEmployee(cycleId, rowVersion, body, actor);
+        const effectiveMonthRaw = body.effectiveMonth;
+        const effectiveMonth: 1 | 2 | 'BOTH' =
+          effectiveMonthRaw === 1 || effectiveMonthRaw === '1'
+            ? 1
+            : effectiveMonthRaw === 2 || effectiveMonthRaw === '2'
+              ? 2
+              : 'BOTH';
+        const cycle = await hrRemoveEmployee(
+          cycleId,
+          rowVersion,
+          String(body.employeeCode || ''),
+          String(body.reason || 'Removed from cycle'),
+          actor,
+          body.comment ?? null,
+          effectiveMonth,
+        );
         return ok({ cycle, message: 'Employee removed from cycle.' });
       }
       case 'hr-adjust-amount': {

@@ -1279,6 +1279,7 @@ export const hrRemoveEmployee = async (
   reason: string,
   actor: TelephoneActor,
   comment?: string | null,
+  effectiveMonth: 1 | 2 | 'BOTH' = 'BOTH',
 ): Promise<TelephoneCycle> => {
   const mode = await resolveMode();
   let cycle = await requireHrReviewCycle(mode, cycleId, rowVersion);
@@ -1286,28 +1287,37 @@ export const hrRemoveEmployee = async (
   const idx = cycle.employees.findIndex((e) => upperCode(e.employeeCode) === code);
   if (idx < 0) throw new Error(`Employee ${code} not found on schedule.`);
   const previous = cycle.employees[idx];
-  const removed = refreshLineBadge({
+  const clearMonth1 = effectiveMonth === 1 || effectiveMonth === 'BOTH';
+  const clearMonth2 = effectiveMonth === 2 || effectiveMonth === 'BOTH';
+  const next = {
     ...previous,
-    month1Eligible: false,
-    month2Eligible: false,
-    month1Amount: 0,
-    month2Amount: 0,
+    month1Eligible: clearMonth1 ? false : previous.month1Eligible,
+    month2Eligible: clearMonth2 ? false : previous.month2Eligible,
+    month1Amount: clearMonth1 ? 0 : previous.month1Amount,
+    month2Amount: clearMonth2 ? 0 : previous.month2Amount,
     bimonthlyTotal: 0,
-    changeBadge: 'REMOVED',
+    changeBadge: 'REMOVED' as const,
     changeReason: reason,
-    status: 'Removed',
-  }, 'REMOVED');
+    status: 'Removed' as const,
+  };
+  const removed = refreshLineBadge({
+    ...next,
+    changeBadge: (!next.month1Eligible && !next.month2Eligible)
+      ? 'REMOVED'
+      : (!next.month1Eligible ? 'MONTH2_ONLY' : !next.month2Eligible ? 'MONTH1_ONLY' : 'REMOVED'),
+    status: (!next.month1Eligible && !next.month2Eligible) ? 'Removed' : 'Changed',
+  }, (!next.month1Eligible && !next.month2Eligible) ? 'REMOVED' : (!next.month1Eligible ? 'MONTH2_ONLY' : 'MONTH1_ONLY'));
 
   const change: CycleChange = {
     id: newId(),
     employeeCode: previous.employeeCode,
     employeeName: previous.employeeName,
     changeType: 'REMOVE',
-    effectiveMonth: 'BOTH',
+    effectiveMonth,
     previousMonthlyRate: previous.monthlyRate,
     newMonthlyRate: 0,
-    month1Eligible: false,
-    month2Eligible: false,
+    month1Eligible: removed.month1Eligible,
+    month2Eligible: removed.month2Eligible,
     reason,
     comment: comment ?? null,
     actor,
