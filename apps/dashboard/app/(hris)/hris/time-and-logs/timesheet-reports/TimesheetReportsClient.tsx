@@ -905,8 +905,8 @@ export default function TimesheetReportsClient() {
               rows: rows.map((row) => columns.map((column) => cellValue(row, column.key))),
             },
             {
-              title: 'Top Projects By Labour Hours (C-code payroll)',
-              subtitle: `${from} to ${to} · ${projectFinance?.basis || 'C-code payroll gross allocated by timesheet hours'} · Periods: ${(projectFinance?.payrollPeriods || []).join(', ') || 'n/a'}`,
+              title: 'Top Projects By Labour Hours (Daily-rate payroll)',
+              subtitle: `${from} to ${to} · ${projectFinance?.basis || 'Daily-rate payroll pack allocated by timesheet hours'} · Periods: ${(projectFinance?.payrollPeriods || []).join(', ') || 'n/a'}`,
               sheetName: 'Top Projects',
               columns: ['#', 'Project Code', 'Project Name', 'Hours', 'Employees', 'Labour Cost', 'WHT', 'NET', 'Status'],
               rows: [
@@ -926,8 +926,8 @@ export default function TimesheetReportsClient() {
                       '',
                       'CONTROL TOTAL',
                       controls.balanced
-                        ? 'Balanced to C-code payroll (Employees = unique staff, not column sum)'
-                        : 'Allocation variance (Employees = unique staff, not column sum)',
+                        ? 'Balanced to daily-rate payroll (Employees = unique pack staff, not column sum)'
+                        : 'Allocation variance (Employees = unique pack staff, not column sum)',
                       Number(controls.productiveHours || 0),
                       controls.cCodeEmployees,
                       canViewCosts ? controls.allocatedLabourCost : 'Restricted',
@@ -1393,7 +1393,7 @@ export default function TimesheetReportsClient() {
               <div>
                 <h2 className="text-xs font-black uppercase tracking-widest text-slate-600">Top Projects By Labour Hours</h2>
                 <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                  C-code payroll cost only · {payload?.projectFinanceCost?.basis || 'Payroll gross allocated by timesheet hours'}
+                  Daily-rate payroll pack · {payload?.projectFinanceCost?.basis || 'Payroll gross allocated by timesheet hours'}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -1412,12 +1412,12 @@ export default function TimesheetReportsClient() {
             {projectFinanceControls ? (
               <div className={`flex flex-wrap gap-3 border-b px-4 py-2 text-[11px] font-bold ${projectFinanceControls.balanced ? 'border-emerald-100 bg-emerald-50 text-emerald-800' : 'border-amber-100 bg-amber-50 text-amber-900'}`}>
                 <span>{formatHours(projectFinanceControls.productiveHours || 0)} hours</span>
-                <span>{formatNumber(projectFinanceControls.cCodeEmployees)} unique C-code staff</span>
+                <span>{formatNumber(projectFinanceControls.cCodeEmployees)} unique daily-rate staff</span>
                 <span>Payroll gross {money(projectFinanceControls.payrollGross)}</span>
                 <span>Allocated {money(projectFinanceControls.allocatedLabourCost)}</span>
                 <span>WHT {money(projectFinanceControls.wht)}</span>
                 <span>NET {money(projectFinanceControls.net)}</span>
-                <span>{projectFinanceControls.balanced ? 'Balanced to payroll' : 'Allocation variance — check unmatched C-codes'}</span>
+                <span>{projectFinanceControls.balanced ? 'Balanced to daily-rate payroll' : 'Allocation variance — check unmatched staff'}</span>
               </div>
             ) : null}
             <div className="overflow-x-auto">

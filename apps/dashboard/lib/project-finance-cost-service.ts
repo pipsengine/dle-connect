@@ -1,7 +1,8 @@
 /**
  * Finance project labour cost for C-code (daily-rate) staff only.
- * Money comes from payroll gross / WHT; split across projects by timesheet hours
- * so project totals equal the C-code payroll pack.
+ * Money comes from the full daily-rate payroll pack (gross / PAYE / net);
+ * each employee's pay is split across projects by timesheet hours so
+ * CONTROL TOTAL matches Contract Daily Rate payroll for the period(s).
  */
 import { calculatePayrollForPeriod, type PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
 import { CONTRACT_FLAT_PAYE_RATE } from '@/lib/payroll-tax-engine';
@@ -46,7 +47,7 @@ export type ProjectFinanceCostResult = {
   controlTotals: {
     /** Sum of project productive hours (additive — each hour belongs to one project). */
     productiveHours: number;
-    /** Unique C-code staff in scope (not a sum of per-project employee counts). */
+    /** Unique daily-rate (C-code) staff in the payroll pack(s). */
     cCodeEmployees: number;
     payrollGross: number;
     allocatedLabourCost: number;
@@ -57,6 +58,13 @@ export type ProjectFinanceCostResult = {
   basis: string;
   payrollPeriods: string[];
 };
+
+const NO_PROJECT_META = {
+  code: 'No Project',
+  name: 'Unallocated (no project hours)',
+  label: 'No Project - Unallocated (no project hours)',
+  key: 'NO PROJECT',
+} as const;
 
 const isCCodeToken = (value: unknown) => /^C\d+/.test(upper(value));
 
@@ -94,7 +102,7 @@ const payrollPeriodsFromRows = (rows: ProjectFinanceTimesheetRow[]) => {
 
 const projectMeta = (row: ProjectFinanceTimesheetRow) => {
   const code = compact(row.projectCode) || 'No Project';
-  const name = compact(row.projectName) || code;
+  const name = compact(row.projectName) || (code === 'No Project' ? NO_PROJECT_META.name : code);
   return { code, name, label: `${code} - ${name}`, key: upper(code) };
 };
 
@@ -128,6 +136,13 @@ const allocateAmountByShares = (
   return map;
 };
 
+const recordIdentity = (record: PayrollCalculationRecord) =>
+  compact(record.recordKey)
+  || compact(record.employeeCode)
+  || compact(record.employeeId)
+  || normalizePayrollMatchKey(compact(record.fullName))
+  || 'UNKNOWN';
+
 export async function buildCCodeProjectFinanceCosts(
   rows: ProjectFinanceTimesheetRow[],
 ): Promise<ProjectFinanceCostResult> {
@@ -143,21 +158,21 @@ export async function buildCCodeProjectFinanceCosts(
       net: 0,
       balanced: true,
     },
-    basis: 'C-code payroll gross allocated by timesheet project hours · WHT = 5% of allocated gross',
+    basis: 'Daily-rate payroll pack gross allocated by timesheet project hours · WHT = payroll PAYE (5% flat)',
     payrollPeriods: [],
   };
   if (!cRows.length) return empty;
 
   const payrollPeriods = payrollPeriodsFromRows(cRows);
+  if (!payrollPeriods.length) return empty;
+
   const payrollByPeriod = new Map<string, PayrollCalculationRecord[]>();
   await Promise.all(
     payrollPeriods.map(async (period) => {
       try {
         const calculation = await calculatePayrollForPeriod(period, { pack: 'daily-rate' });
-        payrollByPeriod.set(
-          period,
-          calculation.records.filter((record) => isCCodeToken(record.employeeCode) || isCCodeToken(record.employeeId)),
-        );
+        // Daily-rate pack is the finance source of truth (already C-code / contract day-rate).
+        payrollByPeriod.set(period, calculation.records.slice());
       } catch (error) {
         console.warn('[ProjectFinanceCost] Payroll unavailable for', period, error instanceof Error ? error.message : error);
         payrollByPeriod.set(period, []);
@@ -178,7 +193,7 @@ export async function buildCCodeProjectFinanceCosts(
     pendingApprovals: number;
   };
   const projects = new Map<string, ProjectAgg>();
-  const ensureProject = (meta: ReturnType<typeof projectMeta>) => {
+  const ensureProject = (meta: { code: string; name: string; label: string; key: string }) => {
     const current = projects.get(meta.key);
     if (current) return current;
     const created: ProjectAgg = {
@@ -198,26 +213,20 @@ export async function buildCCodeProjectFinanceCosts(
   };
 
   let payrollGrossTotal = 0;
+  let payrollNetTotal = 0;
   let allocatedLabourCost = 0;
   let allocatedWht = 0;
+  let allocatedNet = 0;
+  const packEmployeeKeys = new Set<string>();
 
-  for (const period of payrollPeriods.length ? payrollPeriods : ['']) {
-    const periodRows = period
-      ? cRows.filter((row) => {
-          const fromId = payrollPeriodFromTimesheetPeriodId(String(row.periodId || ''));
-          if (fromId) return fromId === period;
-          return compact(row.timesheetDate).startsWith(period);
-        })
-      : cRows;
-    if (!periodRows.length) continue;
+  for (const period of payrollPeriods) {
+    const periodRows = cRows.filter((row) => {
+      const fromId = payrollPeriodFromTimesheetPeriodId(String(row.periodId || ''));
+      if (fromId) return fromId === period;
+      return compact(row.timesheetDate).startsWith(period);
+    });
 
     const payrollRecords = payrollByPeriod.get(period) || [];
-    const payrollByKey = new Map<string, PayrollCalculationRecord>();
-    for (const record of payrollRecords) {
-      for (const key of payrollMatchKeys(record)) {
-        if (!payrollByKey.has(key)) payrollByKey.set(key, record);
-      }
-    }
 
     type EmpAgg = {
       employeeKey: string;
@@ -225,8 +234,10 @@ export async function buildCCodeProjectFinanceCosts(
       hoursByProject: Map<string, { meta: ReturnType<typeof projectMeta>; hours: number }>;
       exceptionRows: number;
       pendingApprovals: number;
+      matchedPayroll: boolean;
     };
     const byEmployee = new Map<string, EmpAgg>();
+    const empByMatchKey = new Map<string, EmpAgg>();
 
     for (const row of periodRows) {
       const keys = employeeMatchKeys(row);
@@ -237,14 +248,14 @@ export async function buildCCodeProjectFinanceCosts(
         hoursByProject: new Map(),
         exceptionRows: 0,
         pendingApprovals: 0,
+        matchedPayroll: false,
       };
       for (const key of keys) {
         if (!current.matchKeys.includes(key)) current.matchKeys.push(key);
       }
       const meta = projectMeta(row);
       const hours = hourValue(row);
-      // Ignore zero-hour lines so blank "No Project" rows do not inflate headcount
-      // or steal allocation shares from real project hours.
+      // Ignore zero-hour lines so blank project rows do not steal allocation shares.
       if (hours > 0) {
         const existing = current.hoursByProject.get(meta.key) || { meta, hours: 0 };
         existing.hours = roundHours(existing.hours + hours);
@@ -258,64 +269,106 @@ export async function buildCCodeProjectFinanceCosts(
     }
 
     for (const emp of byEmployee.values()) {
-      let payroll: PayrollCalculationRecord | undefined;
       for (const key of emp.matchKeys) {
-        payroll = payrollByKey.get(key);
-        if (payroll) break;
+        if (!empByMatchKey.has(key)) empByMatchKey.set(key, emp);
       }
-      if (!payroll) {
-        for (const item of emp.hoursByProject.values()) {
-          if (item.hours <= 0) continue;
-          const project = ensureProject(item.meta);
-          project.productiveHours = roundHours(project.productiveHours + item.hours);
-          project.employeeKeys.add(emp.employeeKey);
-          project.exceptionRows += emp.exceptionRows;
-          project.pendingApprovals += emp.pendingApprovals;
-        }
-        continue;
-      }
+    }
 
-      const gross = roundMoney(Number(payroll.grossPay || 0));
-      const whtTotal = roundMoney(Number(payroll.paye || 0) || Math.max(0, gross) * CONTRACT_FLAT_PAYE_RATE);
-      payrollGrossTotal = roundMoney(payrollGrossTotal + gross);
-
-      const shares = Array.from(emp.hoursByProject.values())
-        .filter((item) => item.hours > 0)
-        .map((item) => ({
-          key: item.meta.key,
-          hours: item.hours,
-          meta: item.meta,
-        }));
-      // Payroll with no project hours → hold cost under No Project (unallocated).
-      if (!shares.length) {
-        shares.push({
-          key: 'NO PROJECT',
-          hours: 0,
-          meta: { code: 'No Project', name: 'No Project', label: 'No Project - No Project', key: 'NO PROJECT' },
-        });
-      }
-
+    const applyPayrollToShares = (
+      employeeKey: string,
+      gross: number,
+      whtTotal: number,
+      netTotal: number,
+      shares: Array<{ key: string; hours: number; meta: { code: string; name: string; label: string; key: string } }>,
+      exceptionRows: number,
+      pendingApprovals: number,
+    ) => {
       const grossByProject = allocateAmountByShares(gross, shares);
       const whtByProject = allocateAmountByShares(whtTotal, shares);
+      const netByProject = allocateAmountByShares(netTotal, shares);
 
       for (const share of shares) {
         const project = ensureProject(share.meta);
         const labourCost = roundMoney(grossByProject.get(share.key) || 0);
         const wht = roundMoney(whtByProject.get(share.key) || 0);
-        const net = roundMoney(labourCost - wht);
+        const net = roundMoney(netByProject.get(share.key) || 0);
         if (share.hours > 0) {
           project.productiveHours = roundHours(project.productiveHours + share.hours);
         }
         if (share.hours > 0 || labourCost > 0) {
-          project.employeeKeys.add(emp.employeeKey);
+          project.employeeKeys.add(employeeKey);
         }
         project.labourCost = roundMoney(project.labourCost + labourCost);
         project.wht = roundMoney(project.wht + wht);
         project.net = roundMoney(project.net + net);
-        project.exceptionRows += emp.exceptionRows;
-        project.pendingApprovals += emp.pendingApprovals;
+        project.exceptionRows += exceptionRows;
+        project.pendingApprovals += pendingApprovals;
         allocatedLabourCost = roundMoney(allocatedLabourCost + labourCost);
         allocatedWht = roundMoney(allocatedWht + wht);
+        allocatedNet = roundMoney(allocatedNet + net);
+      }
+    };
+
+    // Source of truth: every daily-rate payroll record for the period.
+    for (const record of payrollRecords) {
+      const identity = recordIdentity(record);
+      packEmployeeKeys.add(identity);
+
+      const gross = roundMoney(Number(record.grossPay || 0));
+      const whtTotal = roundMoney(Number(record.paye || 0) || Math.max(0, gross) * CONTRACT_FLAT_PAYE_RATE);
+      const netTotal = roundMoney(
+        Number(record.netPay || 0) || Math.max(0, gross - whtTotal),
+      );
+      payrollGrossTotal = roundMoney(payrollGrossTotal + gross);
+      payrollNetTotal = roundMoney(payrollNetTotal + netTotal);
+
+      let emp: EmpAgg | undefined;
+      for (const key of payrollMatchKeys(record)) {
+        emp = empByMatchKey.get(key);
+        if (emp) break;
+      }
+
+      const shares = emp
+        ? Array.from(emp.hoursByProject.values())
+          .filter((item) => item.hours > 0)
+          .map((item) => ({
+            key: item.meta.key,
+            hours: item.hours,
+            meta: item.meta,
+          }))
+        : [];
+
+      if (emp) emp.matchedPayroll = true;
+
+      if (!shares.length) {
+        shares.push({
+          key: NO_PROJECT_META.key,
+          hours: 0,
+          meta: { ...NO_PROJECT_META },
+        });
+      }
+
+      applyPayrollToShares(
+        emp?.employeeKey || identity,
+        gross,
+        whtTotal,
+        netTotal,
+        shares,
+        emp?.exceptionRows || 0,
+        emp?.pendingApprovals || 0,
+      );
+    }
+
+    // Timesheet hours for C-codes with no payroll match still show on projects (hours only).
+    for (const emp of byEmployee.values()) {
+      if (emp.matchedPayroll) continue;
+      for (const item of emp.hoursByProject.values()) {
+        if (item.hours <= 0) continue;
+        const project = ensureProject(item.meta);
+        project.productiveHours = roundHours(project.productiveHours + item.hours);
+        project.employeeKeys.add(emp.employeeKey);
+        project.exceptionRows += emp.exceptionRows;
+        project.pendingApprovals += emp.pendingApprovals;
       }
     }
   }
@@ -338,23 +391,20 @@ export async function buildCCodeProjectFinanceCosts(
     .sort((a, b) => b.productiveHours - a.productiveHours || b.labourCost - a.labourCost || a.projectCode.localeCompare(b.projectCode));
 
   const productiveHoursTotal = roundHours(projectRows.reduce((sum, row) => sum + row.productiveHours, 0));
-  const uniqueEmployees = new Set<string>();
-  for (const project of projects.values()) {
-    for (const key of project.employeeKeys) uniqueEmployees.add(key);
-  }
-  const netTotal = roundMoney(allocatedLabourCost - allocatedWht);
   return {
     projects: projectRows,
     controlTotals: {
       productiveHours: productiveHoursTotal,
-      cCodeEmployees: uniqueEmployees.size,
+      cCodeEmployees: packEmployeeKeys.size,
       payrollGross: payrollGrossTotal,
       allocatedLabourCost,
       wht: allocatedWht,
-      net: netTotal,
-      balanced: Math.abs(payrollGrossTotal - allocatedLabourCost) <= 1,
+      net: allocatedNet,
+      balanced:
+        Math.abs(payrollGrossTotal - allocatedLabourCost) <= 1
+        && Math.abs(payrollNetTotal - allocatedNet) <= 1,
     },
-    basis: 'C-code payroll gross allocated by timesheet project hours · WHT from payroll PAYE (5% flat)',
+    basis: 'Daily-rate payroll pack (full) allocated by timesheet project hours · WHT = payroll PAYE · NET = payroll net',
     payrollPeriods,
   };
 }

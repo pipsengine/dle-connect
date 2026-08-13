@@ -495,7 +495,7 @@ export async function GET(request: Request) {
         net: 0,
         balanced: true,
       },
-      basis: 'C-code payroll gross allocated by timesheet project hours · WHT from payroll PAYE (5% flat)',
+      basis: 'Daily-rate payroll pack (full) allocated by timesheet project hours · WHT = payroll PAYE · NET = payroll net',
       payrollPeriods: [],
     };
     let projectFinanceCost = emptyProjectFinanceCost;
