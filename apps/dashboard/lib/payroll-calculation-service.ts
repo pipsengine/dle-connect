@@ -305,11 +305,22 @@ const applyDailyRateFromTimesheets = (
       ? timesheet.daysWorked
       : (timesheet.bookedHours > 0 ? timesheet.bookedHours / rates.hoursPerDay : 0);
   }
+  // Daily-rate staff are timesheet-driven only — no hoursPerPeriod / package fallback.
   if (daysWorked <= 0) {
-    const hoursPerPeriod = Number(employee.hoursPerPeriod || 0);
-    if (hoursPerPeriod > 0 && rates.hoursPerDay > 0) daysWorked = hoursPerPeriod / rates.hoursPerDay;
+    return {
+      ...amounts,
+      periodPackageGross: 0,
+      grossPay: 0,
+      basePay: 0,
+      allowances: 0,
+      taxablePay: 0,
+      nonTaxablePay: 0,
+      earningLines: [],
+      paidEarningLines: [],
+      annualBenefitLines: amounts.annualBenefitLines || [],
+      profileName: 'Daily Rate (No Timesheet — Excluded)',
+    };
   }
-  if (daysWorked <= 0) return amounts;
 
   const ratePerDay = rates.ratePerDay || (rates.ratePerHour > 0 ? rates.ratePerHour * rates.hoursPerDay : 0);
   const merged = mergeTimesheetDayRateEarnings(employee, { ratePerDay, daysWorked, period });
@@ -390,7 +401,14 @@ export const filterPayrollCalculationByPack = (
   calculation: PayrollCalculationResult,
   pack: import('@/lib/payroll-employee-classification').PayrollRunPack,
 ): PayrollCalculationResult => {
-  const records = calculation.records.filter((record) => (pack === 'daily-rate' ? record.isDailyRate : !record.isDailyRate));
+  const records = calculation.records.filter((record) => {
+    if (pack === 'daily-rate') {
+      if (!record.isDailyRate) return false;
+      // Daily-rate pack never includes zero-gross rows.
+      return Number(record.grossPay || 0) > 0;
+    }
+    return !record.isDailyRate;
+  });
   const summaryRecords = summaryPayrollRecords(records);
   const ready = summaryRecords.filter((record) => record.status === 'Ready');
   const review = summaryRecords.filter((record) => record.status === 'Review');
@@ -458,7 +476,7 @@ export const filterPayrollCalculationByPack = (
         label: 'Payroll Pack',
         status: packLabel,
         detail: pack === 'daily-rate'
-          ? 'Contract daily-rate staff only. Cost driven by approved timesheet days × rate. Same approval chain as salaried pack.'
+          ? 'Contract daily-rate staff with booked timesheet hours only. Zero timesheet / zero gross excluded. Cost = approved timesheet days × rate.'
           : 'Permanent, lumpsum, NYSC/IT and other non–daily-rate staff. Timesheet PROCESS/POST feeds OT separately; this pack uses salary/stipend profiles.',
         tone: pack === 'daily-rate' ? 'amber' : 'blue',
       },
@@ -864,11 +882,20 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
   };
 
   const records: PayrollCalculationRecord[] = payrollEmployees.flatMap((employee, index) => {
-    return variantsForEmployee(employee).map((variant, variantIndex) => {
+    return variantsForEmployee(employee).flatMap((variant, variantIndex) => {
     const calculationOptions = calculationOptionsForEmployee(variant.calculationEmployee, variant.usePackageLines);
     const calculationEmployee = variant.calculationEmployee;
     const baseAmounts = calculatePayrollEarnings(calculationEmployee, calculationOptions);
     const amounts = applyDailyRateFromTimesheets(employee, baseAmounts, timesheetHours, requestedPeriod);
+    const dailyRatePreview = isDailyRatePayrollEmployee(employee, amounts.profileId);
+    const timesheetPreview = resolveTimesheetHoursForEmployee(employee, timesheetHours);
+    const hasBookedTimesheet = Boolean(
+      timesheetPreview && (Number(timesheetPreview.daysWorked || 0) > 0 || Number(timesheetPreview.bookedHours || 0) > 0),
+    );
+    // Daily-rate: no booked timesheet and/or zero gross → not computed, not included in payroll.
+    if (dailyRatePreview && (!hasBookedTimesheet || Number(amounts.grossPay || 0) <= 0)) {
+      return [];
+    }
     const pension = calculatePension(pensionInputFromEmployee(calculationEmployee, calculationOptions), pensionVersion);
     const tax = calculatePayrollTax(
       {
@@ -943,7 +970,11 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       ...!compact(variant.payrollGroup) ? ['Payroll group is missing'] : [],
       ...!compact(variant.payCurrency) ? ['Pay currency is missing'] : [],
       ...!activeStatus(employee.status) ? ['Employee is not payroll active'] : [],
-      ...dailyRateEmployee && !timesheet && amounts.grossPay <= 0 ? ['Approved timesheet hours are not available for daily-rate payroll'] : [],
+      ...dailyRateEmployee && !timesheet ? ['Approved timesheet hours are not available for daily-rate payroll'] : [],
+      ...dailyRateEmployee && timesheet && Number(timesheet.daysWorked || 0) <= 0 && Number(timesheet.bookedHours || 0) <= 0
+        ? ['Approved timesheet hours are not available for daily-rate payroll']
+        : [],
+      ...dailyRateEmployee && amounts.grossPay <= 0 ? ['Daily-rate gross is zero — excluded from payroll'] : [],
       ...(variant.payCurrency === 'USD' ? [] : pensionIssues.map((issue) => `Pension: ${issue}`)),
       ...(variant.payCurrency === 'USD' ? [] : statutoryIssues.map((issue) => `Statutory: ${issue}`)),
       ...loans.flatMap((loan) => loan.issues.filter((issue) => issue !== 'Loan is not approved for payroll recovery').map((issue) => `Loan: ${issue}`)),
@@ -1196,7 +1227,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     controls: [
       { id: 'employees', label: 'Employee Source', status: employeeSource.databaseAvailable ? 'Passed' : 'Review', detail: `${employeeSource.employees.length} employees loaded from ${employeeSource.source}`, tone: employeeSource.databaseAvailable ? 'green' : 'amber' },
       { id: 'config', label: 'Configuration Versions', status: 'Passed', detail: 'PAYE, pension, statutory funds, and loan policies resolved by active effective versions.', tone: 'blue' },
-      { id: 'timesheets', label: 'Timesheet Payroll Feed', status: timesheetHours.size > 0 ? 'Passed' : toleranceMode ? 'Deferred' : 'Review', detail: timesheetHours.size > 0 ? `${timesheetHours.size} daily-rate timesheet records loaded.` : toleranceMode ? 'Timesheet gaps deferred to June remediation. Salary fallback used where available.' : 'No approved timesheet payroll update found for this period.', tone: timesheetHours.size > 0 ? 'green' : toleranceMode ? 'blue' : 'amber' },
+      { id: 'timesheets', label: 'Timesheet Payroll Feed', status: timesheetHours.size > 0 ? 'Passed' : 'Blocked', detail: timesheetHours.size > 0 ? `${timesheetHours.size} daily-rate timesheet records loaded. Daily-rate staff without booked timesheet hours are excluded from payroll.` : 'No approved timesheet payroll feed for this period. Daily-rate staff require booked timesheet hours to be included.', tone: timesheetHours.size > 0 ? 'green' : 'red' },
       { id: 'exceptions', label: 'Exception Gate', status: summary.blocked > 0 ? 'Blocked' : summary.review > 0 ? 'Review' : 'Passed', detail: toleranceMode ? `${summary.blocked} blocked, ${summary.review} review. ${summary.deferredExceptionCount} items deferred to June.` : `${summary.blocked} blocked, ${summary.review} review, ${summary.exceptionCount} total flags.`, tone: summary.blocked > 0 ? 'red' : summary.review > 0 ? 'amber' : 'green' },
       ...(enterpriseSourceActive
         ? [{ id: 'enterprise-source', label: 'Authoritative Payroll Source', status: 'DLE_Enterprise', detail: `${employeeSource.employees.length} employees calculated from DLE_Enterprise HRIS setup, timesheets, and payroll rules. Sage is not used for this period.`, tone: 'green' as PayrollTone }]

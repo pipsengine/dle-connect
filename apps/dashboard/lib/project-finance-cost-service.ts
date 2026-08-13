@@ -1,8 +1,7 @@
 /**
- * Finance project labour cost for C-code (daily-rate) staff only.
- * Money comes from the full daily-rate payroll pack (gross / PAYE / net);
- * each employee's pay is split across projects by timesheet hours so
- * CONTROL TOTAL matches Contract Daily Rate payroll for the period(s).
+ * Finance project labour cost for daily-rate (C-code) staff only.
+ * Money comes from the daily-rate payroll pack after excluding staff with
+ * no booked timesheet hours and/or zero gross; pay is split by project hours.
  */
 import { calculatePayrollForPeriod, type PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
 import { CONTRACT_FLAT_PAYE_RATE } from '@/lib/payroll-tax-engine';
@@ -158,7 +157,7 @@ export async function buildCCodeProjectFinanceCosts(
       net: 0,
       balanced: true,
     },
-    basis: 'Daily-rate payroll pack gross allocated by timesheet project hours · WHT = payroll PAYE (5% flat)',
+    basis: 'Daily-rate payroll with booked timesheet hours only · zero timesheet / zero gross excluded',
     payrollPeriods: [],
   };
   if (!cRows.length) return empty;
@@ -309,18 +308,11 @@ export async function buildCCodeProjectFinanceCosts(
       }
     };
 
-    // Source of truth: every daily-rate payroll record for the period.
+    // Source of truth: daily-rate payroll records with positive gross AND booked project hours.
     for (const record of payrollRecords) {
-      const identity = recordIdentity(record);
-      packEmployeeKeys.add(identity);
-
       const gross = roundMoney(Number(record.grossPay || 0));
-      const whtTotal = roundMoney(Number(record.paye || 0) || Math.max(0, gross) * CONTRACT_FLAT_PAYE_RATE);
-      const netTotal = roundMoney(
-        Number(record.netPay || 0) || Math.max(0, gross - whtTotal),
-      );
-      payrollGrossTotal = roundMoney(payrollGrossTotal + gross);
-      payrollNetTotal = roundMoney(payrollNetTotal + netTotal);
+      // Zero-value payroll rows are never included.
+      if (gross <= 0) continue;
 
       let emp: EmpAgg | undefined;
       for (const key of payrollMatchKeys(record)) {
@@ -338,15 +330,19 @@ export async function buildCCodeProjectFinanceCosts(
           }))
         : [];
 
+      // No booked timesheet hours in scope → not computed/included (same rule as payroll).
+      if (!shares.length) continue;
+
+      const identity = recordIdentity(record);
+      packEmployeeKeys.add(identity);
       if (emp) emp.matchedPayroll = true;
 
-      if (!shares.length) {
-        shares.push({
-          key: NO_PROJECT_META.key,
-          hours: 0,
-          meta: { ...NO_PROJECT_META },
-        });
-      }
+      const whtTotal = roundMoney(Number(record.paye || 0) || Math.max(0, gross) * CONTRACT_FLAT_PAYE_RATE);
+      const netTotal = roundMoney(
+        Number(record.netPay || 0) || Math.max(0, gross - whtTotal),
+      );
+      payrollGrossTotal = roundMoney(payrollGrossTotal + gross);
+      payrollNetTotal = roundMoney(payrollNetTotal + netTotal);
 
       applyPayrollToShares(
         emp?.employeeKey || identity,
@@ -404,7 +400,7 @@ export async function buildCCodeProjectFinanceCosts(
         Math.abs(payrollGrossTotal - allocatedLabourCost) <= 1
         && Math.abs(payrollNetTotal - allocatedNet) <= 1,
     },
-    basis: 'Daily-rate payroll pack (full) allocated by timesheet project hours · WHT = payroll PAYE · NET = payroll net',
+    basis: 'Daily-rate payroll with booked timesheet hours only · zero timesheet / zero gross excluded · WHT = payroll PAYE · NET = payroll net',
     payrollPeriods,
   };
 }
