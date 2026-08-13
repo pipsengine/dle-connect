@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, RefreshCw, Search, Send, ShieldCheck, UserMinus, UserPlus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Plus, RefreshCw, Search, Send, ShieldCheck, Trash2, Upload, UserMinus, UserPlus } from 'lucide-react';
 import {
   badgeTone,
   moneyNgn,
@@ -79,6 +79,7 @@ export default function TelephoneAllowanceManageClient() {
   const [entitlements, setEntitlements] = useState<Entitlement[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [showChanges, setShowChanges] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [dirQuery, setDirQuery] = useState('');
   const [dirHits, setDirHits] = useState<Array<{ employeeCode: string; employeeName: string; department: string; jobTitle: string }>>([]);
   const [addForm, setAddForm] = useState({
@@ -141,11 +142,35 @@ export default function TelephoneAllowanceManageClient() {
   };
 
   const run = async (action: string, body: Record<string, unknown> = {}) => {
-    if (!cycle && action !== 'create-cycle') return;
+    if (!cycle && !['create-cycle', 'import-call-credit', 'import-historical'].includes(action)) return;
     await post(action, {
       cycleId: cycle?.id,
       rowVersion: cycle?.rowVersion,
       ...body,
+    });
+    await load();
+  };
+
+  const importCallCreditFile = async (file: File) => {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+    const workbookBase64 = btoa(binary);
+    if (!window.confirm(
+      `Import "${file.name}" as the concluded Call Credit cycle?\n\n`
+      + 'This will:\n'
+      + '• Replace an empty JUL–AUG draft if present\n'
+      + '• Save the schedule as PAID\n'
+      + '• Seed monthly entitlements\n'
+      + '• Create the next cycle (SEP–OCT)',
+    )) return;
+    await post('import-call-credit', {
+      workbookBase64,
+      replaceEmptyDraft: true,
+      seedEntitlements: true,
+      createNextCycle: true,
+      status: 'PAID',
     });
     await load();
   };
@@ -194,6 +219,27 @@ export default function TelephoneAllowanceManageClient() {
                 ) : null}
               </div>
               <div className="flex flex-wrap gap-2">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    if (file) void importCallCreditFile(file).catch(console.error);
+                  }}
+                />
+                {caps?.canImport ? (
+                  <button
+                    type="button"
+                    disabled={Boolean(busy)}
+                    onClick={() => fileRef.current?.click()}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-teal-200 bg-teal-50 px-3 text-xs font-black text-teal-900 hover:bg-teal-100 disabled:opacity-50"
+                  >
+                    <Upload className="h-4 w-4" /> Import Call Credit
+                  </button>
+                ) : null}
                 {caps?.canPrepare ? (
                   <button
                     type="button"
@@ -202,6 +248,19 @@ export default function TelephoneAllowanceManageClient() {
                     className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-teal-700 px-3 text-xs font-black text-white hover:bg-teal-800 disabled:opacity-50"
                   >
                     <Plus className="h-4 w-4" /> Create Next Cycle
+                  </button>
+                ) : null}
+                {cycle && caps?.canPrepare && cycle.status === 'DRAFT' && cycle.beneficiaryCount === 0 ? (
+                  <button
+                    type="button"
+                    disabled={Boolean(busy)}
+                    onClick={() => {
+                      if (!window.confirm('Discard this empty draft cycle?')) return;
+                      void run('discard-empty-draft');
+                    }}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-800 disabled:opacity-50"
+                  >
+                    <Trash2 className="h-4 w-4" /> Discard Empty Draft
                   </button>
                 ) : null}
                 {itEditable ? (
@@ -253,7 +312,10 @@ export default function TelephoneAllowanceManageClient() {
                 <div className="mt-4"><WorkflowStepper status={cycle.status} /></div>
               </>
             ) : (
-              <p className="mt-4 text-sm font-semibold text-slate-600">Create the next bimonthly cycle to populate beneficiaries from active entitlements.</p>
+              <p className="mt-4 text-sm font-semibold text-slate-600">
+                Import the concluded Call Credit workbook (e.g. JUL–AUG) first, or create the next bimonthly cycle.
+                During August the next open period is SEP–OCT.
+              </p>
             )}
           </section>
 

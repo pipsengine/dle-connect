@@ -1021,9 +1021,19 @@ export const createNextCycle = async (
     year = opts?.year || next.year;
     pair = pair || next.pair;
   } else {
-    const open = currentOpenPair();
-    year = opts?.year || open.year;
-    pair = pair || open.pair;
+    // No cycles yet: during month 2 of the calendar pair, prepare the *next* pair
+    // (current pair is assumed already paid outside the system unless imported).
+    const asOf = new Date();
+    const open = currentOpenPair(asOf);
+    const calendarMonth = asOf.getUTCMonth() + 1;
+    if (!opts?.pairCode && calendarMonth === open.pair.month2) {
+      const next = nextPairAfter(open.year, open.pair.month1);
+      year = opts?.year || next.year;
+      pair = next.pair;
+    } else {
+      year = opts?.year || open.year;
+      pair = pair || open.pair;
+    }
   }
 
   const duplicate = cycles.find((c) => c.year === year && c.pairCode === pair!.code);
@@ -2137,12 +2147,56 @@ const amountsFromImportRow = (
   };
 };
 
+export const discardEmptyDraftCycle = async (
+  cycleId: string,
+  actor: TelephoneActor,
+): Promise<{ discarded: true; cycleCode: string }> => {
+  const mode = await resolveMode();
+  const cycle = await loadCycle(mode, cycleId);
+  if (!cycle) throw new Error('Cycle not found.');
+  if (cycle.status !== 'DRAFT') throw new Error('Only DRAFT cycles can be discarded.');
+  if (cycle.beneficiaryCount > 0 || cycle.employees.some((e) => e.bimonthlyTotal > 0)) {
+    throw new Error('Only empty DRAFT cycles can be discarded. Import over them or clear employees first.');
+  }
+
+  if (mode.kind === 'json') {
+    const store = await readJsonStore();
+    store.cycles = store.cycles.filter((c) => c.id !== cycle.id);
+    store.payments = store.payments.filter((p) => p.cycleId !== cycle.id);
+    store.exceptions = store.exceptions.filter((e) => e.cycleId !== cycle.id);
+    await writeJsonStore(store);
+  } else {
+    await mode.pool.request().input('CycleId', sql.NVarChar(120), cycle.id).query(`
+DELETE FROM [hris].[TelephoneAllowancePayment] WHERE [CycleId] = @CycleId;
+DELETE FROM [hris].[TelephoneAllowanceException] WHERE [CycleId] = @CycleId;
+DELETE FROM [hris].[TelephoneAllowanceCycle] WHERE [Id] = @CycleId;
+`);
+  }
+
+  await appendAudit(mode, {
+    cycleId: cycle.id,
+    user: actor,
+    role: 'IT',
+    action: 'DISCARD_EMPTY_DRAFT',
+    previousValue: cycle.cycleCode,
+    workflowStage: cycle.status,
+  });
+  return { discarded: true, cycleCode: cycle.cycleCode };
+};
+
 export const importHistoricalSchedule = async (
   rows: HistoricalImportRow[],
   mode: 'monthly' | 'bimonthly' | 'explicit',
   cycleMeta: HistoricalImportMeta,
   actor: TelephoneActor,
-): Promise<TelephoneCycle> => {
+  opts?: {
+    replaceEmptyDraft?: boolean;
+    seedEntitlements?: boolean;
+    createNextCycle?: boolean;
+    recordAsPaid?: boolean;
+    paymentReference?: string | null;
+  },
+): Promise<{ cycle: TelephoneCycle; nextCycle: TelephoneCycle | null; seededEntitlements: number }> => {
   if (!rows?.length) throw new Error('No import rows provided.');
   const pair = pairForCode(cycleMeta.pairCode);
   const year = Number(cycleMeta.year);
@@ -2150,7 +2204,16 @@ export const importHistoricalSchedule = async (
 
   const existingCycles = await listCycles();
   const duplicate = existingCycles.find((c) => c.year === year && c.pairCode === pair.code);
-  if (duplicate) throw new Error(`A cycle already exists for ${year} ${pair.label} (${duplicate.cycleCode}).`);
+  if (duplicate) {
+    const emptyDraft = duplicate.status === 'DRAFT'
+      && duplicate.beneficiaryCount === 0
+      && !duplicate.employees.some((e) => e.bimonthlyTotal > 0);
+    if (opts?.replaceEmptyDraft && emptyDraft) {
+      await discardEmptyDraftCycle(duplicate.id, actor);
+    } else {
+      throw new Error(`A cycle already exists for ${year} ${pair.label} (${duplicate.cycleCode}).`);
+    }
+  }
 
   const directory = await directoryIndex();
   const employees: CycleEmployeeLine[] = [];
@@ -2182,7 +2245,8 @@ export const importHistoricalSchedule = async (
     }));
   }
 
-  const samePairCount = existingCycles.filter((c) => c.year === year && c.pairCode === pair.code).length;
+  const refreshedCycles = await listCycles();
+  const samePairCount = refreshedCycles.filter((c) => c.year === year && c.pairCode === pair.code).length;
   const status = (cycleMeta.status || 'COMPLETED') as TelephoneAllowanceStatus;
   const now = nowIso();
   let cycle: TelephoneCycle = {
@@ -2221,15 +2285,133 @@ export const importHistoricalSchedule = async (
   const storeMode = await resolveMode();
   cycle = await saveCycle(storeMode, cycle);
   await syncExceptionsForCycle(storeMode, cycle, actor);
+
+  if (opts?.recordAsPaid !== false && (status === 'PAID' || status === 'COMPLETED')) {
+    const items: PaymentItem[] = cycle.employees
+      .filter((e) => e.changeBadge !== 'REMOVED' && e.bimonthlyTotal > 0)
+      .map((e) => ({
+        id: newId(),
+        employeeCode: e.employeeCode,
+        employeeName: e.employeeName,
+        amount: roundMoney(e.bimonthlyTotal),
+        accountNoMasked: maskAccount(e.accountNo),
+        accountNoFull: e.accountNo || null,
+        bankName: compact(e.bankName) || '',
+        sortCode: compact(e.sortCode) || '',
+        status: 'Paid' as const,
+        failureReason: null,
+      }));
+    const payment: TelephonePayment = {
+      id: newId(),
+      cycleId: cycle.id,
+      cycleCode: cycle.cycleCode,
+      status: 'Completed',
+      authorizedAmount: cycle.bimonthlyTotal,
+      paidAmount: cycle.bimonthlyTotal,
+      beneficiaryCount: items.length,
+      paymentDate: `${year}-${String(pair.month1).padStart(2, '0')}-15`,
+      paymentReference: opts?.paymentReference || `CALL CREDIT ${pair.code} ${year}`,
+      bankReference: null,
+      batchReference: `HISTORICAL-${pair.code}-${year}`,
+      remarks: 'Imported from concluded Call Credit schedule.',
+      items,
+      createdAt: now,
+      updatedAt: now,
+    };
+    if (storeMode.kind === 'json') {
+      const store = await readJsonStore();
+      store.payments.unshift(payment);
+      await writeJsonStore(store);
+    } else {
+      await persistPaymentSql(storeMode.pool, payment);
+    }
+  }
+
+  let seededEntitlements = 0;
+  if (opts?.seedEntitlements !== false) {
+    const effectiveFrom = `${year}-${String(pair.month1).padStart(2, '0')}-01`;
+    for (const line of cycle.employees) {
+      if (!(line.monthlyRate > 0)) continue;
+      await upsertEntitlement({
+        employeeCode: line.employeeCode,
+        employeeName: line.employeeName,
+        department: line.department,
+        jobTitle: line.jobTitle,
+        monthlyAmount: line.monthlyRate,
+        effectiveFrom,
+        effectiveTo: null,
+        status: 'Active',
+        bankName: line.bankName,
+        accountNo: line.accountNo,
+        sortCode: line.sortCode,
+      }, actor);
+      seededEntitlements += 1;
+    }
+  }
+
   await appendAudit(storeMode, {
     cycleId: cycle.id,
     user: actor,
     role: 'IT',
     action: 'IMPORT_HISTORICAL_SCHEDULE',
-    newValue: JSON.stringify({ mode, rows: rows.length, cycleCode: cycle.cycleCode }),
+    newValue: JSON.stringify({
+      mode,
+      rows: rows.length,
+      cycleCode: cycle.cycleCode,
+      seededEntitlements,
+    }),
     workflowStage: cycle.status,
   });
-  return cycle;
+
+  let nextCycle: TelephoneCycle | null = null;
+  if (opts?.createNextCycle) {
+    nextCycle = await createNextCycle(actor);
+  }
+
+  return { cycle, nextCycle, seededEntitlements };
+};
+
+export const importCallCreditWorkbook = async (
+  workbook: Buffer,
+  actor: TelephoneActor,
+  opts?: {
+    replaceEmptyDraft?: boolean;
+    seedEntitlements?: boolean;
+    createNextCycle?: boolean;
+    status?: TelephoneAllowanceStatus;
+  },
+) => {
+  const { parseCallCreditWorkbook } = await import('@/lib/telephone-allowance-call-credit-import');
+  const parsed = parseCallCreditWorkbook(workbook);
+  const result = await importHistoricalSchedule(
+    parsed.rows,
+    'bimonthly',
+    {
+      year: parsed.year,
+      pairCode: parsed.pairCode,
+      preparedBy: actor,
+      status: opts?.status || 'PAID',
+    },
+    actor,
+    {
+      replaceEmptyDraft: opts?.replaceEmptyDraft !== false,
+      seedEntitlements: opts?.seedEntitlements !== false,
+      createNextCycle: opts?.createNextCycle !== false,
+      recordAsPaid: true,
+      paymentReference: parsed.title,
+    },
+  );
+  return {
+    ...result,
+    parsed: {
+      year: parsed.year,
+      pairCode: parsed.pairCode,
+      pairLabel: parsed.pairLabel,
+      title: parsed.title,
+      beneficiaryCount: parsed.beneficiaryCount,
+      bimonthlyTotal: parsed.bimonthlyTotal,
+    },
+  };
 };
 
 export const compareCycles = async (currentId: string, previousId: string) => {

@@ -15,12 +15,14 @@ import {
   compareCycles,
   completeHrReview,
   createNextCycle,
+  discardEmptyDraftCycle,
   generatePaymentSchedule,
   getCycle,
   getCurrentCycle,
   hrAddEmployee,
   hrAdjustAmount,
   hrRemoveEmployee,
+  importCallCreditWorkbook,
   importHistoricalSchedule,
   initiateApproval,
   listAudits,
@@ -309,6 +311,11 @@ export async function POST(request: NextRequest) {
         const exception = await resolveException(String(body.exceptionId || ''), String(body.resolution || ''), actor);
         return ok({ exception, message: 'Exception resolved.' });
       }
+      case 'discard-empty-draft': {
+        require(caps.canPrepare);
+        const result = await discardEmptyDraftCycle(cycleId, actor);
+        return ok({ ...result, message: `Discarded empty draft ${result.cycleCode}.` });
+      }
       case 'upsert-entitlement': {
         require(caps.canPrepare);
         const entitlement = await upsertEntitlement(body, actor);
@@ -321,8 +328,35 @@ export async function POST(request: NextRequest) {
           body.mode || 'bimonthly',
           body.cycleMeta || {},
           actor,
+          {
+            replaceEmptyDraft: body.replaceEmptyDraft !== false,
+            seedEntitlements: body.seedEntitlements !== false,
+            createNextCycle: Boolean(body.createNextCycle),
+            recordAsPaid: body.recordAsPaid !== false,
+            paymentReference: body.paymentReference ?? null,
+          },
         );
-        return ok({ ...result, message: 'Historical schedule imported.' });
+        return ok({
+          ...result,
+          message: `Historical schedule imported${result.nextCycle ? `; next cycle ${result.nextCycle.pairLabel} ${result.nextCycle.year} created.` : '.'}`,
+        });
+      }
+      case 'import-call-credit': {
+        require(caps.canImport);
+        const base64 = String(body.workbookBase64 || '');
+        if (!base64) return err(400, 'workbookBase64 is required.');
+        const workbook = Buffer.from(base64.replace(/^data:.*?;base64,/, ''), 'base64');
+        const result = await importCallCreditWorkbook(workbook, actor, {
+          replaceEmptyDraft: body.replaceEmptyDraft !== false,
+          seedEntitlements: body.seedEntitlements !== false,
+          createNextCycle: body.createNextCycle !== false,
+          status: body.status || 'PAID',
+        });
+        return ok({
+          ...result,
+          message: `Imported ${result.parsed.beneficiaryCount} employees for ${result.parsed.pairLabel} ${result.parsed.year}`
+            + (result.nextCycle ? `; opened ${result.nextCycle.pairLabel} ${result.nextCycle.year}.` : '.'),
+        });
       }
       default:
         return err(400, `Unknown action: ${action}`);
