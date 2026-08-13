@@ -216,6 +216,7 @@ type ReportsPayload = {
       drilldownKey: string;
     }>;
     controlTotals: {
+      productiveHours: number;
       cCodeEmployees: number;
       payrollGross: number;
       allocatedLabourCost: number;
@@ -904,13 +905,15 @@ export default function TimesheetReportsClient() {
                   ? [[
                       '',
                       'CONTROL TOTAL',
-                      controls.balanced ? 'Balanced to C-code payroll' : 'Allocation variance',
-                      '',
+                      controls.balanced
+                        ? 'Balanced to C-code payroll (Employees = unique staff, not column sum)'
+                        : 'Allocation variance (Employees = unique staff, not column sum)',
+                      Number(controls.productiveHours || 0),
                       controls.cCodeEmployees,
                       canViewCosts ? controls.allocatedLabourCost : 'Restricted',
                       canViewCosts ? controls.wht : 'Restricted',
                       canViewCosts ? controls.net : 'Restricted',
-                      canViewCosts ? `Payroll gross ${controls.payrollGross}` : 'Restricted',
+                      controls.balanced ? 'Balanced' : 'Variance',
                     ]]
                   : []),
               ],
@@ -1388,7 +1391,8 @@ export default function TimesheetReportsClient() {
             </div>
             {projectFinanceControls ? (
               <div className={`flex flex-wrap gap-3 border-b px-4 py-2 text-[11px] font-bold ${projectFinanceControls.balanced ? 'border-emerald-100 bg-emerald-50 text-emerald-800' : 'border-amber-100 bg-amber-50 text-amber-900'}`}>
-                <span>{formatNumber(projectFinanceControls.cCodeEmployees)} C-code staff</span>
+                <span>{formatHours(projectFinanceControls.productiveHours || 0)} hours</span>
+                <span>{formatNumber(projectFinanceControls.cCodeEmployees)} unique C-code staff</span>
                 <span>Payroll gross {money(projectFinanceControls.payrollGross)}</span>
                 <span>Allocated {money(projectFinanceControls.allocatedLabourCost)}</span>
                 <span>WHT {money(projectFinanceControls.wht)}</span>

@@ -44,6 +44,9 @@ export type ProjectFinanceCostRow = {
 export type ProjectFinanceCostResult = {
   projects: ProjectFinanceCostRow[];
   controlTotals: {
+    /** Sum of project productive hours (additive — each hour belongs to one project). */
+    productiveHours: number;
+    /** Unique C-code staff in scope (not a sum of per-project employee counts). */
     cCodeEmployees: number;
     payrollGross: number;
     allocatedLabourCost: number;
@@ -132,6 +135,7 @@ export async function buildCCodeProjectFinanceCosts(
   const empty: ProjectFinanceCostResult = {
     projects: [],
     controlTotals: {
+      productiveHours: 0,
       cCodeEmployees: 0,
       payrollGross: 0,
       allocatedLabourCost: 0,
@@ -196,7 +200,6 @@ export async function buildCCodeProjectFinanceCosts(
   let payrollGrossTotal = 0;
   let allocatedLabourCost = 0;
   let allocatedWht = 0;
-  const employeesSeen = new Set<string>();
 
   for (const period of payrollPeriods.length ? payrollPeriods : ['']) {
     const periodRows = period
@@ -228,7 +231,6 @@ export async function buildCCodeProjectFinanceCosts(
     for (const row of periodRows) {
       const keys = employeeMatchKeys(row);
       const employeeKey = keys[0] || upper(row.employeeNo || row.employeeId || row.employeeName || 'UNKNOWN');
-      employeesSeen.add(employeeKey);
       const current = byEmployee.get(employeeKey) || {
         employeeKey,
         matchKeys: keys,
@@ -241,9 +243,13 @@ export async function buildCCodeProjectFinanceCosts(
       }
       const meta = projectMeta(row);
       const hours = hourValue(row);
-      const existing = current.hoursByProject.get(meta.key) || { meta, hours: 0 };
-      existing.hours = roundHours(existing.hours + hours);
-      current.hoursByProject.set(meta.key, existing);
+      // Ignore zero-hour lines so blank "No Project" rows do not inflate headcount
+      // or steal allocation shares from real project hours.
+      if (hours > 0) {
+        const existing = current.hoursByProject.get(meta.key) || { meta, hours: 0 };
+        existing.hours = roundHours(existing.hours + hours);
+        current.hoursByProject.set(meta.key, existing);
+      }
       if (row.exceptionType && row.exceptionType !== 'None') current.exceptionRows += 1;
       if (/pending|submitted|supervisor|project_manager|cost_control|gm_operations/i.test(String(row.approvalStatus || row.normalizedStatus || ''))) {
         current.pendingApprovals += 1;
@@ -259,6 +265,7 @@ export async function buildCCodeProjectFinanceCosts(
       }
       if (!payroll) {
         for (const item of emp.hoursByProject.values()) {
+          if (item.hours <= 0) continue;
           const project = ensureProject(item.meta);
           project.productiveHours = roundHours(project.productiveHours + item.hours);
           project.employeeKeys.add(emp.employeeKey);
@@ -272,11 +279,14 @@ export async function buildCCodeProjectFinanceCosts(
       const whtTotal = roundMoney(Number(payroll.paye || 0) || Math.max(0, gross) * CONTRACT_FLAT_PAYE_RATE);
       payrollGrossTotal = roundMoney(payrollGrossTotal + gross);
 
-      const shares = Array.from(emp.hoursByProject.values()).map((item) => ({
-        key: item.meta.key,
-        hours: item.hours,
-        meta: item.meta,
-      }));
+      const shares = Array.from(emp.hoursByProject.values())
+        .filter((item) => item.hours > 0)
+        .map((item) => ({
+          key: item.meta.key,
+          hours: item.hours,
+          meta: item.meta,
+        }));
+      // Payroll with no project hours → hold cost under No Project (unallocated).
       if (!shares.length) {
         shares.push({
           key: 'NO PROJECT',
@@ -293,8 +303,12 @@ export async function buildCCodeProjectFinanceCosts(
         const labourCost = roundMoney(grossByProject.get(share.key) || 0);
         const wht = roundMoney(whtByProject.get(share.key) || 0);
         const net = roundMoney(labourCost - wht);
-        project.productiveHours = roundHours(project.productiveHours + share.hours);
-        project.employeeKeys.add(emp.employeeKey);
+        if (share.hours > 0) {
+          project.productiveHours = roundHours(project.productiveHours + share.hours);
+        }
+        if (share.hours > 0 || labourCost > 0) {
+          project.employeeKeys.add(emp.employeeKey);
+        }
         project.labourCost = roundMoney(project.labourCost + labourCost);
         project.wht = roundMoney(project.wht + wht);
         project.net = roundMoney(project.net + net);
@@ -307,6 +321,7 @@ export async function buildCCodeProjectFinanceCosts(
   }
 
   const projectRows = Array.from(projects.values())
+    .filter((project) => project.productiveHours > 0 || project.labourCost > 0)
     .map((project) => ({
       projectCode: project.projectCode,
       projectName: project.projectName,
@@ -322,11 +337,17 @@ export async function buildCCodeProjectFinanceCosts(
     }))
     .sort((a, b) => b.productiveHours - a.productiveHours || b.labourCost - a.labourCost || a.projectCode.localeCompare(b.projectCode));
 
+  const productiveHoursTotal = roundHours(projectRows.reduce((sum, row) => sum + row.productiveHours, 0));
+  const uniqueEmployees = new Set<string>();
+  for (const project of projects.values()) {
+    for (const key of project.employeeKeys) uniqueEmployees.add(key);
+  }
   const netTotal = roundMoney(allocatedLabourCost - allocatedWht);
   return {
     projects: projectRows,
     controlTotals: {
-      cCodeEmployees: employeesSeen.size,
+      productiveHours: productiveHoursTotal,
+      cCodeEmployees: uniqueEmployees.size,
       payrollGross: payrollGrossTotal,
       allocatedLabourCost,
       wht: allocatedWht,
