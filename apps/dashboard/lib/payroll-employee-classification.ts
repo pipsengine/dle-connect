@@ -49,6 +49,13 @@ export const isStipendPayrollEmployeeCode = (
     || /\b(INDUSTRIAL TRAINING|INDUSTRIAL TRAINEE|INTERN|NYSC|NATIONAL YOUTH SERVICE)\b/.test(text);
 };
 
+export {
+  BANK_SCHEDULE_STAFF_PACKS,
+  bankScheduleDisplayEmployeeCode,
+  resolveBankScheduleStaffPack,
+  type BankScheduleStaffPack,
+} from '@/lib/payroll-bank-schedule-packs';
+
 const positiveMoney = (value: unknown) => {
   const amount = Number(value);
   return Number.isFinite(amount) && amount > 0 ? amount : 0;

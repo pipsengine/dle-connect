@@ -2,7 +2,7 @@
 
 import PayrollPeriodContextBar from './PayrollPeriodContextBar';
 import type { ComponentType } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Banknote,
@@ -19,6 +19,12 @@ import {
   Scale,
   Users,
 } from 'lucide-react';
+import {
+  BANK_SCHEDULE_STAFF_PACKS,
+  bankScheduleDisplayEmployeeCode,
+  resolveBankScheduleStaffPack,
+  type BankScheduleStaffPack,
+} from '@/lib/payroll-bank-schedule-packs';
 
 type FinanceException = {
   id: string;
@@ -31,6 +37,7 @@ type FinanceException = {
 
 type FinanceRecord = {
   employeeId: string;
+  employeeCode?: string;
   fullName: string;
   bankName?: string;
   accountNo?: string;
@@ -41,6 +48,10 @@ type FinanceRecord = {
   grossPay?: number | null;
   deductions?: number | null;
   location?: string;
+  employmentType?: string;
+  staffCategory?: string;
+  employeeCategory?: string;
+  jobTitle?: string;
   payrollStatus: string;
   exceptionCount?: number;
   exceptions?: string[];
@@ -648,6 +659,19 @@ const bankScheduleRowsFor = (records: FinanceRecord[] = []) => {
   return ready.length ? ready : records.filter((record) => record.payrollStatus !== 'Blocked');
 };
 
+const bankSchedulePackCounts = (rows: FinanceRecord[]) => {
+  const counts: Record<BankScheduleStaffPack | 'all', number> = {
+    all: rows.length,
+    permanent: 0,
+    'contract-lumpsum': 0,
+    'it-nysc': 0,
+  };
+  for (const row of rows) {
+    counts[resolveBankScheduleStaffPack(row)] += 1;
+  }
+  return counts;
+};
+
 const bankScheduleReadyFor = (run: FinanceRun | null | undefined) =>
   Boolean(
     run?.bankScheduleGeneratedAt ||
@@ -709,12 +733,18 @@ function BankSchedulePanel({
 }) {
   const records = payload?.records || [];
   const bankRows = bankScheduleRowsFor(records);
-  const previewRows = bankRows.slice(0, 25);
+  const [staffPackFilter, setStaffPackFilter] = useState<'all' | BankScheduleStaffPack>('all');
+  const packCounts = useMemo(() => bankSchedulePackCounts(bankRows), [bankRows]);
+  const filteredBankRows = useMemo(() => {
+    if (staffPackFilter === 'all') return bankRows;
+    return bankRows.filter((row) => resolveBankScheduleStaffPack(row) === staffPackFilter);
+  }, [bankRows, staffPackFilter]);
+  const previewRows = filteredBankRows.slice(0, 25);
   const validationIssues = bankValidationIssues(records);
   const bankScheduleReady = bankScheduleReadyFor(run);
   const payrollReleased = releasedStatuses.includes(run?.status || '');
   const generating = busyAction === 'generate-bank-schedule';
-  const totals = bankRows.reduce(
+  const totals = filteredBankRows.reduce(
     (sum, record) => ({
       grossPay: sum.grossPay + Number(record.grossPay || 0),
       deductions: sum.deductions + Number(record.deductions || 0),
@@ -745,6 +775,9 @@ function BankSchedulePanel({
             <h2 className="text-2xl font-semibold">Bank Schedule</h2>
             <p className="mt-2 text-sm text-[#64748B]">
               {payload?.periodLabel || 'Current period'} · {fmtNum(bankRows.length)} employees in payment schedule
+              {payload?.pack === 'daily-rate'
+                ? ' · Dayrate pack exports as DLE / DLPC company sheets'
+                : ' · Salaried export splits Permanent / Contract Lumpsum / IT NYSC'}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -752,7 +785,7 @@ function BankSchedulePanel({
               <>
                 <button type="button" onClick={onExportExcel} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700">
                   <FileSpreadsheet className="h-4 w-4" />
-                  Export Excel (all {fmtNum(bankRows.length)})
+                  Export Excel (all packs · {fmtNum(bankRows.length)})
                 </button>
                 {onExportPdf ? (
                   <button type="button" onClick={onExportPdf} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50">
@@ -836,13 +869,35 @@ function BankSchedulePanel({
       <section id="bank-schedule-print-area" className="rounded-2xl border border-[#E5E7EB] bg-white shadow-sm">
         <div className="border-b border-[#E5E7EB] p-5">
           <h3 className="text-lg font-semibold">Employee Payment Schedule Preview</h3>
-          <p className="mt-1 text-sm text-[#64748B]">Review bank details and net salaries before export. Showing first {fmtNum(previewRows.length)} of {fmtNum(bankRows.length)} employees.</p>
+          <p className="mt-1 text-sm text-[#64748B]">
+            Review by staff pack before export. Showing first {fmtNum(previewRows.length)} of {fmtNum(filteredBankRows.length)}
+            {staffPackFilter === 'all' ? '' : ` (${BANK_SCHEDULE_STAFF_PACKS.find((p) => p.id === staffPackFilter)?.label})`} employees.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2 print:hidden">
+            <button
+              type="button"
+              onClick={() => setStaffPackFilter('all')}
+              className={`rounded-lg border px-3 py-1.5 text-xs font-bold ${staffPackFilter === 'all' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700'}`}
+            >
+              All ({fmtNum(packCounts.all)})
+            </button>
+            {BANK_SCHEDULE_STAFF_PACKS.map((pack) => (
+              <button
+                key={pack.id}
+                type="button"
+                onClick={() => setStaffPackFilter(pack.id)}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-bold ${staffPackFilter === pack.id ? 'border-teal-700 bg-teal-700 text-white' : 'border-slate-200 bg-white text-slate-700'}`}
+              >
+                {pack.label} ({fmtNum(packCounts[pack.id])})
+              </button>
+            ))}
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-[960px] w-full text-left">
             <thead className="bg-[#0F172A] text-xs font-bold uppercase text-white">
               <tr>
-                {['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location'].map((head) => (
+                {['Employee Code', 'Pack', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location'].map((head) => (
                   <th key={head} className="px-4 py-3">
                     {head}
                   </th>
@@ -850,30 +905,35 @@ function BankSchedulePanel({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {previewRows.map((record) => (
-                <tr key={record.employeeId} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 text-sm font-semibold text-[#0F172A]">{record.employeeId}</td>
-                  <td className="px-4 py-3 text-sm font-semibold text-[#0F172A]">{record.fullName}</td>
-                  <td className="px-4 py-3 text-xs text-slate-700">{record.bankName || 'Not configured'}</td>
-                  <td className="px-4 py-3 text-xs font-semibold text-slate-700">{record.accountNo || 'Not configured'}</td>
-                  <td className="px-4 py-3 text-xs text-slate-700">{record.sortCode || record.branchCode || record.bankCode || '—'}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-emerald-700">{fmtMoney(record.netPay, canViewMoney, payload?.payrollComputed !== false)}</td>
-                  <td className="px-4 py-3 text-xs text-slate-700">{record.location || '—'}</td>
-                </tr>
-              ))}
+              {previewRows.map((record) => {
+                const pack = resolveBankScheduleStaffPack(record);
+                const packLabel = BANK_SCHEDULE_STAFF_PACKS.find((item) => item.id === pack)?.label || pack;
+                return (
+                  <tr key={record.employeeId} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 text-sm font-semibold text-[#0F172A]">{bankScheduleDisplayEmployeeCode(record, pack)}</td>
+                    <td className="px-4 py-3 text-xs font-bold text-slate-600">{packLabel}</td>
+                    <td className="px-4 py-3 text-sm font-semibold text-[#0F172A]">{record.fullName}</td>
+                    <td className="px-4 py-3 text-xs text-slate-700">{record.bankName || 'Not configured'}</td>
+                    <td className="px-4 py-3 text-xs font-semibold text-slate-700">{record.accountNo || 'Not configured'}</td>
+                    <td className="px-4 py-3 text-xs text-slate-700">{record.sortCode || record.branchCode || record.bankCode || '—'}</td>
+                    <td className="px-4 py-3 text-sm font-bold text-emerald-700">{fmtMoney(record.netPay, canViewMoney, payload?.payrollComputed !== false)}</td>
+                    <td className="px-4 py-3 text-xs text-slate-700">{record.location || '—'}</td>
+                  </tr>
+                );
+              })}
               {!previewRows.length ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-sm font-semibold text-slate-600">
-                    No payment lines are ready. Process payroll and resolve blocked employees first.
+                  <td colSpan={8} className="px-4 py-8 text-center text-sm font-semibold text-slate-600">
+                    No payment lines are ready for this pack. Switch pack filter or process payroll first.
                   </td>
                 </tr>
               ) : null}
             </tbody>
           </table>
         </div>
-        {bankRows.length > previewRows.length ? (
+        {filteredBankRows.length > previewRows.length ? (
           <p className="border-t border-slate-100 px-5 py-3 text-xs font-semibold text-[#64748B] print:hidden">
-            Export Excel for the complete {fmtNum(bankRows.length)}-employee bank schedule.
+            Export Excel for the complete schedule (Permanent, Contract Lumpsum, IT NYSC sheets for salaried; DLE/DLPC for dayrate).
           </p>
         ) : null}
       </section>

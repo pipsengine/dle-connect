@@ -1,12 +1,19 @@
 /**
  * Official payroll Excel workbooks matching finance/HR sample layouts:
- * - Bank schedule: DLE/DLPC BANK SCHD (Employee Bank Details)
+ * - Salaried bank schedule: Permanent / Contract Lumpsum / IT NYSC sheets
+ * - Dayrate bank schedule: DLE/DLPC BANK SCHD (Employee Bank Details)
  * - Salaried detail: JULY PAYROLL.xlsx → Perm.Staff / Cont. Staff
  * - Dayrate schedule: DAYRATE PAYMENT SCHEDULE → SUMMARY + DLE/DLPC + bank sheets
  */
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import type { ExcelCell, ExcelWorksheetInput } from '@/lib/excel-export';
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
+import {
+  BANK_SCHEDULE_STAFF_PACKS,
+  bankScheduleDisplayEmployeeCode,
+  resolveBankScheduleStaffPack,
+  type BankScheduleStaffPack,
+} from '@/lib/payroll-bank-schedule-packs';
 import { buildPayrollAttendanceSheet, type PayrollAttendanceSheetRow } from '@/lib/timesheet-payroll-attendance-sheet';
 import { isTimesheetCountableForPayroll, readTimesheetData } from '@/lib/timesheet-entry-store';
 
@@ -177,16 +184,51 @@ type Enriched = ReturnType<typeof enrich>;
 /** —— Bank schedule —— */
 export const buildOfficialBankScheduleWorksheets = (
   records: PayrollCalculationRecord[],
-  options?: { periodLabel?: string; titlePrefix?: string },
+  options?: {
+    periodLabel?: string;
+    titlePrefix?: string;
+    /** staff-packs = Permanent / Contract Lumpsum / IT NYSC; company = DLE/DLPC */
+    mode?: 'staff-packs' | 'company';
+  },
 ): ExcelWorksheetInput[] => {
   const periodLabel = options?.periodLabel || 'Payroll Period';
-  const buckets: OfficialCompanyBucket[] = ['DLE', 'DLPC'];
-  return buckets.map((bucket) => {
+  const mode = options?.mode || 'staff-packs';
+  const payable = (record: PayrollCalculationRecord) =>
+    Number(record.netPay || 0) !== 0 || compact(record.accountNo);
+
+  if (mode === 'company') {
+    const buckets: OfficialCompanyBucket[] = ['DLE', 'DLPC'];
+    return buckets.map((bucket) => {
+      const rows = records
+        .filter((record) => resolveOfficialCompanyBucket(record) === bucket)
+        .filter(payable)
+        .map((record) => [
+          officialEmployeeCode(record),
+          compact(record.fullName),
+          compact(record.bankName),
+          compact(record.accountNo),
+          compact(record.sortCode || record.branchCode || record.bankCode),
+          roundMoney(Number(record.netPay || 0)),
+          compact(record.location),
+        ] as ExcelCell[]);
+      return {
+        title: 'Employee Bank Details',
+        subtitle: `${options?.titlePrefix || 'Bank Payment Schedule'} · ${periodLabel} · ${bucket}`,
+        sheetName: `${bucket} BANK SCHD`,
+        columns: ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location'],
+        rows,
+      };
+    });
+  }
+
+  return BANK_SCHEDULE_STAFF_PACKS.map((pack) => {
+    const packId = pack.id as BankScheduleStaffPack;
     const rows = records
-      .filter((record) => resolveOfficialCompanyBucket(record) === bucket)
-      .filter((record) => Number(record.netPay || 0) !== 0 || compact(record.accountNo))
+      .filter((record) => !record.isDailyRate)
+      .filter((record) => resolveBankScheduleStaffPack(record) === packId)
+      .filter(payable)
       .map((record) => [
-        officialEmployeeCode(record),
+        bankScheduleDisplayEmployeeCode(record, packId),
         compact(record.fullName),
         compact(record.bankName),
         compact(record.accountNo),
@@ -196,8 +238,8 @@ export const buildOfficialBankScheduleWorksheets = (
       ] as ExcelCell[]);
     return {
       title: 'Employee Bank Details',
-      subtitle: `${options?.titlePrefix || 'Bank Payment Schedule'} · ${periodLabel} · ${bucket}`,
-      sheetName: `${bucket} BANK SCHD`,
+      subtitle: `${options?.titlePrefix || 'Bank Payment Schedule'} · ${periodLabel} · ${pack.label}`,
+      sheetName: pack.sheetName,
       columns: ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location'],
       rows,
     };
@@ -807,7 +849,11 @@ export const buildOfficialDayrateScheduleWorksheets = async (
     },
     buildDayrateDetailSheet(dle, attendance, 'DLE', periodLabel),
     buildDayrateDetailSheet(dlpc, attendance, 'DLPC', periodLabel),
-    ...buildOfficialBankScheduleWorksheets(dayrate, { periodLabel, titlePrefix: 'Dayrate Bank Schedule' }),
+    ...buildOfficialBankScheduleWorksheets(dayrate, {
+      periodLabel,
+      titlePrefix: 'Dayrate Bank Schedule',
+      mode: 'company',
+    }),
   ];
 };
 
@@ -822,15 +868,34 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
 }): Promise<ExcelWorksheetInput[]> => {
   const report = compact(input.report) || 'payroll-register';
   const pack = compact(input.pack) || 'salaried';
-  const allRecords = [...input.salariedRecords, ...input.dayrateRecords];
 
   if (report === 'bank-schedule' || report === 'bank-payment-report') {
-    const source = pack === 'daily-rate'
-      ? input.dayrateRecords
-      : pack === 'salaried'
-        ? input.salariedRecords
-        : allRecords;
-    return buildOfficialBankScheduleWorksheets(source, { periodLabel: input.periodLabel });
+    if (pack === 'daily-rate') {
+      return buildOfficialBankScheduleWorksheets(input.dayrateRecords, {
+        periodLabel: input.periodLabel,
+        titlePrefix: 'Dayrate Bank Schedule',
+        mode: 'company',
+      });
+    }
+    if (pack === 'all') {
+      return [
+        ...buildOfficialBankScheduleWorksheets(input.salariedRecords, {
+          periodLabel: input.periodLabel,
+          titlePrefix: 'Salaried Bank Schedule',
+          mode: 'staff-packs',
+        }),
+        ...buildOfficialBankScheduleWorksheets(input.dayrateRecords, {
+          periodLabel: input.periodLabel,
+          titlePrefix: 'Dayrate Bank Schedule',
+          mode: 'company',
+        }),
+      ];
+    }
+    return buildOfficialBankScheduleWorksheets(input.salariedRecords, {
+      periodLabel: input.periodLabel,
+      titlePrefix: 'Salaried Bank Schedule',
+      mode: 'staff-packs',
+    });
   }
 
   if (report === 'dayrate-schedule') {

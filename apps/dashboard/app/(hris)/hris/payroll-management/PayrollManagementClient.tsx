@@ -14,6 +14,10 @@ import PayrollReportsHub, { type ReportsTabId } from './PayrollReportsHub';
 import PayrollApprovalClient from '../payroll/payroll-approval/PayrollApprovalClient';
 import { FINANCE_ONLY_PAYROLL_SECTION } from '@/lib/access/payroll-access';
 import {
+  bankScheduleDisplayEmployeeCode,
+  resolveBankScheduleStaffPack,
+} from '@/lib/payroll-bank-schedule-packs';
+import {
   Bar,
   BarChart,
   CartesianGrid,
@@ -2605,8 +2609,15 @@ function BankFinanceWorkspace({
   const readyRows = records.filter((record) => record.payrollStatus === 'Ready');
   const issueRows = records.filter((record) => record.payrollStatus !== 'Ready' || record.exceptionCount > 0 || record.exceptions.some((issue) => /bank|account|payment|finance|journal|gl|cost/i.test(issue)));
   const bankScheduleRows = readyRows.length ? readyRows : records.filter((record) => record.payrollStatus !== 'Blocked');
-  const bankSchedulePreviewRows = bankScheduleRows.slice(0, 25);
-  const bankScheduleTotals = bankScheduleRows.reduce(
+  const canGenerateBankSchedule = ['Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(currentRun?.status || '');
+  const canPostJournal = ['Released', 'Locked', 'Published'].includes(currentRun?.status || '') || Boolean(currentRun?.bankScheduleGeneratedAt);
+  const bankScheduleExportUrl = `/api/hris/payroll-management?format=xls&report=bank-schedule&pack=all`;
+  const [bankStaffPackFilter, setBankStaffPackFilter] = useState<'all' | 'permanent' | 'contract-lumpsum' | 'it-nysc'>('all');
+  const bankPackRows = bankStaffPackFilter === 'all'
+    ? bankScheduleRows
+    : bankScheduleRows.filter((record) => resolveBankScheduleStaffPack(record) === bankStaffPackFilter);
+  const bankSchedulePreviewRows = bankPackRows.slice(0, 25);
+  const bankScheduleTotals = bankPackRows.reduce(
     (sum, record) => ({
       grossPay: sum.grossPay + Number(record.grossPay || 0),
       deductions: sum.deductions + Number(record.deductions || 0),
@@ -2614,9 +2625,6 @@ function BankFinanceWorkspace({
     }),
     { grossPay: 0, deductions: 0, netPay: 0 }
   );
-  const canGenerateBankSchedule = ['Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(currentRun?.status || '');
-  const canPostJournal = ['Released', 'Locked', 'Published'].includes(currentRun?.status || '') || Boolean(currentRun?.bankScheduleGeneratedAt);
-  const bankScheduleExportUrl = `/api/hris/payroll-management?format=xls&report=bank-schedule`;
   const financeCards = [
     { id: 'payments' as const, title: 'Payment Value', value: money(netPay, canViewMoney), detail: `${number(readyRows.length)} payroll-ready employees`, icon: Banknote, tone: 'green' as Tone },
     { id: 'bank-file' as const, title: 'Bank Schedule', value: currentRun?.bankScheduleGeneratedAt ? 'Generated' : 'Pending', detail: currentRun?.bankScheduleGeneratedAt ? new Date(currentRun.bankScheduleGeneratedAt).toLocaleString('en-GB') : 'Requires released payroll', icon: CreditCard, tone: currentRun?.bankScheduleGeneratedAt ? 'green' as Tone : 'amber' as Tone },
@@ -2752,7 +2760,24 @@ function BankFinanceWorkspace({
           <div>
             <p className="text-xs font-black uppercase text-slate-500">Bank Schedule Salary Preview</p>
             <h3 className="mt-1 text-lg font-black text-slate-950">{payload?.periodLabel || 'Current period'} salary schedule</h3>
-            <p className="mt-1 text-xs font-semibold text-slate-600">{number(bankScheduleRows.length)} employees ready for bank schedule. Review salaries here before printing or exporting.</p>
+            <p className="mt-1 text-xs font-semibold text-slate-600">{number(bankPackRows.length)} employees in selected pack · Export splits Permanent / Contract Lumpsum / IT NYSC (+ DLE/DLPC for dayrate).</p>
+            <div className="mt-3 flex flex-wrap gap-2 print:hidden">
+              {([
+                ['all', 'All'],
+                ['permanent', 'Permanent'],
+                ['contract-lumpsum', 'Contract / Lumpsum'],
+                ['it-nysc', 'IT / NYSC'],
+              ] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setBankStaffPackFilter(id)}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-black ${bankStaffPackFilter === id ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-2 text-right">
             <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
@@ -2775,9 +2800,11 @@ function BankFinanceWorkspace({
               <tr>{['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location'].map((head) => <th key={head} className="px-4 py-3">{head}</th>)}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {bankSchedulePreviewRows.map((record) => (
+              {bankSchedulePreviewRows.map((record) => {
+                const pack = resolveBankScheduleStaffPack(record);
+                return (
                 <tr key={record.employeeId} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 text-sm font-black text-slate-950">{record.employeeId}</td>
+                  <td className="px-4 py-3 text-sm font-black text-slate-950">{bankScheduleDisplayEmployeeCode(record, pack)}</td>
                   <td className="px-4 py-3 text-sm font-black text-slate-950">{record.fullName}</td>
                   <td className="px-4 py-3 text-xs font-bold text-slate-700">{record.bankName || 'Not configured'}</td>
                   <td className="px-4 py-3 text-xs font-black text-slate-700">{record.accountNo || 'Not configured'}</td>
@@ -2785,8 +2812,9 @@ function BankFinanceWorkspace({
                   <td className="px-4 py-3 text-sm font-black text-emerald-700">{money(record.netPay, canViewMoney)}</td>
                   <td className="px-4 py-3 text-xs font-bold text-slate-700">{record.location || 'No location'}</td>
                 </tr>
-              ))}
-              {!bankSchedulePreviewRows.length ? <tr><td colSpan={7} className="px-4 py-6 text-sm font-black text-slate-700">No bank schedule salary lines are ready for preview.</td></tr> : null}
+                );
+              })}
+              {!bankSchedulePreviewRows.length ? <tr><td colSpan={7} className="px-4 py-6 text-sm font-black text-slate-700">No bank schedule salary lines are ready for this pack.</td></tr> : null}
             </tbody>
             {bankSchedulePreviewRows.length ? (
               <tfoot className="bg-slate-50">
@@ -2799,7 +2827,7 @@ function BankFinanceWorkspace({
             ) : null}
           </table>
         </div>
-        {bankScheduleRows.length > bankSchedulePreviewRows.length ? <p className="border-t border-slate-100 px-4 py-3 text-xs font-bold text-slate-500 print:hidden">Showing first {number(bankSchedulePreviewRows.length)} salary lines. Export formatted Excel for the full {number(bankScheduleRows.length)}-employee bank schedule.</p> : null}
+        {bankPackRows.length > bankSchedulePreviewRows.length ? <p className="border-t border-slate-100 px-4 py-3 text-xs font-bold text-slate-500 print:hidden">Showing first {number(bankSchedulePreviewRows.length)} salary lines. Export Excel for the full pack-separated bank schedule ({number(bankPackRows.length)} in filter).</p> : null}
       </section>
 
       <section className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-3">
@@ -4642,7 +4670,7 @@ export default function PayrollManagementClient({
       return;
     }
     if (actionItem.id === 'export-bank-file') {
-      exportReportExcel('bank-schedule');
+      exportBothPacksExcel('bank-schedule');
       return;
     }
     if (actionItem.id === 'export-journal-sage') {
@@ -4651,7 +4679,7 @@ export default function PayrollManagementClient({
     }
     if (actionItem.id === 'generate-bank-schedule' && payrollRunFor(payload)?.bankScheduleGeneratedAt) {
       setToast('Bank schedule is already generated. Downloading Excel export…');
-      exportReportExcel('bank-schedule');
+      exportBothPacksExcel('bank-schedule');
       return;
     }
     if (actionItem.id === 'generate-report') {
@@ -4678,7 +4706,7 @@ export default function PayrollManagementClient({
     void runAction(actionToRun.id, actionReason.trim()).then((ok) => {
       setConfirmAction(null);
       if (ok && actionToRun.id === 'generate-bank-schedule') {
-        exportReportExcel('bank-schedule');
+        exportBothPacksExcel('bank-schedule');
       }
     });
   };
@@ -4969,7 +4997,7 @@ export default function PayrollManagementClient({
           canViewMoney={canViewMoney}
           onRefresh={() => void load()}
           onExportCsv={() => exportReportCsv('bank-schedule')}
-          onExportExcel={() => exportReportExcel('bank-schedule')}
+          onExportExcel={() => exportBothPacksExcel('bank-schedule')}
           onExportPdf={() => exportReportPdf('bank-schedule')}
           onExportJournalSage={() => exportReportExcel('journal-sage')}
           onSaveJournalMapping={saveJournalMapping}
