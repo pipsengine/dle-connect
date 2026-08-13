@@ -116,6 +116,33 @@ const financeBankFinancePerms = [
   'finance.export',
 ];
 
+const telephoneAllowanceViewPerms = [
+  'telephone-allowance.view',
+  'page.it-support.telephone-allowance.view',
+];
+/** Prepare/import are Global Super Admin only — do not grant via role baselines. */
+const telephoneAllowanceHrReviewPerms = [
+  ...telephoneAllowanceViewPerms,
+  'telephone-allowance.hr-review',
+];
+const telephoneAllowanceHrApprovePerms = [
+  ...telephoneAllowanceViewPerms,
+  'telephone-allowance.hr-approve',
+];
+const telephoneAllowanceMdPerms = [
+  ...telephoneAllowanceViewPerms,
+  'telephone-allowance.md-approve',
+];
+const telephoneAllowanceCfoPerms = [
+  ...telephoneAllowanceViewPerms,
+  'telephone-allowance.cfo-authorize',
+];
+const telephoneAllowanceTreasuryPerms = [
+  ...telephoneAllowanceViewPerms,
+  'telephone-allowance.treasury',
+  'telephone-allowance.export',
+];
+
 /** Shared grants so every payroll approval-stage role can open Pay Setup / salary review. */
 const payrollSalaryReviewPerms = [
   'page.hris.payroll.salary-management.view',
@@ -184,17 +211,17 @@ export const roleDefinitions: RoleDefinition[] = [
   role('Security Administrator', 'Global / System', ['security.*', 'admin.users.view', 'admin.users.edit', 'audit.view', 'it.account-recovery.view', 'it.account-recovery.edit', 'page.it-support.account-recovery.view'], 'Identity, session, lockout, MFA, and access control operations.'),
   role('Audit Administrator', 'Global / System', ['audit.*', 'admin.roles.view', 'admin.users.view'], 'Security and compliance audit administration.'),
   role('Integration Administrator', 'Global / System', ['integration.*', 'admin.roles.view', 'audit.view'], 'ERP, AD, SSO, API, and service integration administration.'),
-  role('Executive User', 'General Enterprise', ['enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', 'hris.view', 'operations.view', 'operations.dashboard.view', 'operations.reports.view', ...payrollMdReviewPerms], 'Executive dashboard, reports, and MD/CEO payroll salary review.'),
+  role('Executive User', 'General Enterprise', ['enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', 'hris.view', 'operations.view', 'operations.dashboard.view', 'operations.reports.view', ...payrollMdReviewPerms, ...telephoneAllowanceMdPerms], 'Executive dashboard, reports, and MD/CEO payroll salary review.'),
   role('Department Head', 'General Enterprise', ['hris.view', 'employees.view', 'workflow.approve', 'reports.view', 'operations.view', 'operations.allocation.view', 'operations.dashboard.view', 'finance.payments.self'], 'Department-level visibility and approvals.'),
   role('Manager', 'General Enterprise', ['hris.view', 'employees.view', 'workflow.approve', 'leave.approve', 'timesheet.approve', 'operations.view', 'operations.timesheets.approve', 'operations.allocation.view', 'finance.payments.self'], 'Team management and approvals.'),
   role('Supervisor', 'General Enterprise', ['hris.view', 'employees.view', 'timesheet.submit', 'timesheet.approve', 'attendance.view', 'operations.view', 'operations.timesheets.submit', 'operations.timesheets.approve', 'operations.daily-reports.create', 'finance.payments.self'], 'Supervisor timesheet and attendance review.'),
   role('Employee', 'General Enterprise', ['ess.view', 'profile.view', 'leave.submit', 'timesheet.submit', 'payroll.payslip.view', 'finance.payments.self'], 'Employee self-service access including own payment requests.'),
-  role('Auditor', 'General Enterprise', ['audit.view', 'reports.view', 'reports.export'], 'Read-oriented compliance review.'),
+  role('Auditor', 'General Enterprise', ['audit.view', 'reports.view', 'reports.export', ...telephoneAllowanceViewPerms], 'Read-oriented compliance review.'),
   role('Read-Only User', 'General Enterprise', ['enterprise.view', 'hris.view', 'reports.view'], 'Read-only enterprise visibility.'),
-  role('HR Administrator', 'HRIS', ['hris.*', 'employees.*', 'leave.*', 'workflow.*', 'payroll.view', 'performance.admin', ...performanceHrPerms, ...payrollHrReviewPerms], 'Full HRIS administration including payroll salary review.'),
-  role('HR Manager', 'HRIS', ['hris.view', ...crud('employees'), ...crud('leave'), 'workflow.approve', 'reports.view', 'reports.export', 'performance.admin', ...performanceHrPerms, ...payrollHrReviewPerms], 'HR management, payroll HR approval, and salary review.'),
-  role('HR Director', 'HRIS', ['hris.view', ...crud('employees'), ...crud('leave'), 'workflow.approve', 'reports.view', 'reports.export', 'performance.admin', ...performanceHrPerms, ...payrollHrReviewPerms], 'HR director payroll approval and salary review.'),
-  role('HR Officer', 'HRIS', ['hris.view', 'employees.view', 'employees.create', 'employees.edit', 'leave.view', 'leave.edit', 'reports.view', ...performanceHrPerms], 'HR operations and records maintenance.'),
+  role('HR Administrator', 'HRIS', ['hris.*', 'employees.*', 'leave.*', 'workflow.*', 'payroll.view', 'performance.admin', ...performanceHrPerms, ...payrollHrReviewPerms, ...telephoneAllowanceHrReviewPerms, ...telephoneAllowanceHrApprovePerms], 'Full HRIS administration including payroll salary review.'),
+  role('HR Manager', 'HRIS', ['hris.view', ...crud('employees'), ...crud('leave'), 'workflow.approve', 'reports.view', 'reports.export', 'performance.admin', ...performanceHrPerms, ...payrollHrReviewPerms, ...telephoneAllowanceHrReviewPerms, ...telephoneAllowanceHrApprovePerms], 'HR management, payroll HR approval, and salary review.'),
+  role('HR Director', 'HRIS', ['hris.view', ...crud('employees'), ...crud('leave'), 'workflow.approve', 'reports.view', 'reports.export', 'performance.admin', ...performanceHrPerms, ...payrollHrReviewPerms, ...telephoneAllowanceHrReviewPerms, ...telephoneAllowanceHrApprovePerms], 'HR director payroll approval and salary review.'),
+  role('HR Officer', 'HRIS', ['hris.view', 'employees.view', 'employees.create', 'employees.edit', 'leave.view', 'leave.edit', 'reports.view', ...performanceHrPerms, ...telephoneAllowanceHrReviewPerms], 'HR operations and records maintenance.'),
   role('Recruitment Officer', 'HRIS', ['recruitment.*', 'employees.view', 'onboarding.submit', 'hris.view', ...performanceHrPerms], 'Recruitment and hiring workflows.'),
   role('Onboarding Officer', 'HRIS', ['onboarding.*', 'employees.view', 'employees.edit', 'hris.view', ...performanceHrPerms], 'Onboarding and employee setup.'),
   role('Offboarding Officer', 'HRIS', ['offboarding.*', 'employees.view', 'employees.edit', 'hris.view', ...performanceHrPerms], 'Exit management and offboarding.'),
@@ -208,14 +235,14 @@ export const roleDefinitions: RoleDefinition[] = [
   role('Finance Manager', 'Finance', [...financeBankFinancePerms, ...payrollFinanceReviewPerms, 'finance.view', 'finance.approve', 'finance.posting.operate', 'view_finance_intelligence', 'reports.view'], 'Finance Intelligence management with payroll approval and salary review access.'),
   role('Finance Controller', 'Finance', [...financeBankFinancePerms, ...payrollFinanceReviewPerms, 'finance.view', 'finance.approve', 'finance.posting.operate', 'view_finance_intelligence', 'reports.view'], 'Finance controller payroll approval and salary review.'),
   role('Finance Administrator', 'Finance', ['finance.*', 'view_finance_intelligence', 'view_finance_accounting', 'finance.posting.operate', 'finance.treasury.operate', ...financeBankFinancePerms, ...payrollFinanceReviewPerms], 'Finance Intelligence administration with payroll salary review.'),
-  role('CFO', 'Finance', [...payrollCfoReviewPerms, 'finance.view', 'finance.approve', 'view_finance_intelligence', 'reports.view', 'reports.export'], 'CFO payroll approval and salary review.'),
-  role('Executive Director', 'General Enterprise', [...payrollMdReviewPerms, 'enterprise.view', 'dashboard.view', 'reports.view', 'reports.export'], 'Executive director payroll MD/CEO approval and salary review.'),
-  role('Executive Management', 'General Enterprise', [...payrollMdReviewPerms, 'enterprise.view', 'dashboard.view', 'reports.view', 'reports.export'], 'Executive management payroll MD/CEO approval and salary review.'),
+  role('CFO', 'Finance', [...payrollCfoReviewPerms, 'finance.view', 'finance.approve', 'view_finance_intelligence', 'reports.view', 'reports.export', ...telephoneAllowanceCfoPerms], 'CFO payroll approval and salary review.'),
+  role('Executive Director', 'General Enterprise', [...payrollMdReviewPerms, 'enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', ...telephoneAllowanceMdPerms], 'Executive director payroll MD/CEO approval and salary review.'),
+  role('Executive Management', 'General Enterprise', [...payrollMdReviewPerms, 'enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', ...telephoneAllowanceMdPerms], 'Executive management payroll MD/CEO approval and salary review.'),
   role('Accountant', 'Finance', [...financeBankFinancePerms, 'finance.create', 'finance.edit', 'finance.posting.operate'], 'Accounting transactions and bank-and-finance payroll outputs.'),
   role('Accounts Payable Officer', 'Finance', ['finance.ap.view', 'finance.ap.create', 'finance.ap.edit'], 'Accounts payable operations.'),
   role('Accounts Receivable Officer', 'Finance', ['finance.ar.view', 'finance.ar.create', 'finance.ar.edit'], 'Accounts receivable operations.'),
   role('Budget Officer', 'Finance', ['budget.view', 'budget.create', 'budget.edit', 'budget.export'], 'Budget management.'),
-  role('Treasury Officer', 'Finance', [...financeBankFinancePerms, 'treasury.view', 'treasury.create', 'treasury.edit', 'finance.treasury.operate'], 'Treasury operations and bank payment outputs.'),
+  role('Treasury Officer', 'Finance', [...financeBankFinancePerms, 'treasury.view', 'treasury.create', 'treasury.edit', 'finance.treasury.operate', ...telephoneAllowanceTreasuryPerms], 'Treasury operations and bank payment outputs.'),
   role('Procurement Administrator', 'Procurement', ['procurement.*'], 'Procurement administration.'),
   role('Procurement Officer', 'Procurement', ['procurement.view', 'procurement.create', 'procurement.edit'], 'Procurement operations.'),
   role('Procurement Manager', 'Procurement', ['procurement.view', 'procurement.approve', 'procurement.export'], 'Procurement management.'),

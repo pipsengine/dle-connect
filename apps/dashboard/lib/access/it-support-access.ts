@@ -26,6 +26,9 @@ const PORTAL_ENTRY_PERMISSIONS = [
   'admin.users.view',
   'admin.users.edit',
   'security.*',
+  'telephone-allowance.view',
+  'telephone-allowance.*',
+  'page.it-support.telephone-allowance.view',
 ] as const;
 
 export const canAccessItSupportPortal = (permissions: string[], isGlobalAdmin?: boolean) =>

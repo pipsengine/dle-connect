@@ -236,6 +236,7 @@ export const permissionCatalog: PermissionNode[] = [
   node('Logistics & Fleet', 'Drivers', 'Driver Management', 'Driver Controls', 'Module', 'L2 - Supervisor', 'Company', 'driver'),
   node('IT & Support', 'Service Desk', 'ITSM', 'Service Desk Workflow', 'Workflow', 'L2 - IT Admin', 'Company', 'it'),
   node('IT & Support', 'Asset Management', 'IT Assets', 'Asset Lifecycle Operations', 'Module', 'L2 - IT Admin', 'Company', 'it.assets'),
+  node('IT & Support', 'Telephone Allowance', 'Call Credit', 'Employee Telephone Allowance Workflow', 'Module', 'L2 - IT Admin', 'Company', 'telephone-allowance'),
   node('IT & Support', 'Infrastructure', 'Infrastructure', 'Infrastructure Controls', 'Module', 'L3 - IT Admin', 'Global', 'infrastructure'),
   node('IT & Support', 'Application Support', 'Application Support', 'Application Controls', 'Module', 'L2 - IT Admin', 'Global', 'application-support'),
   node('Document Management', 'Documents', 'Documents', 'Document Workflow', 'Workflow', 'L2 - Document Controller', 'Company', 'documents'),
@@ -384,6 +385,7 @@ permissionCatalog.push(
   node('Page Access', 'IT & Support', 'Asset Management', 'IT Asset Management Page', 'Page', 'L2 - IT Admin', 'Company', 'page.it-support.asset-management'),
   node('Button Access', 'IT & Support', 'Asset Management', 'Export Asset Records', 'Button', 'L2 - IT Admin', 'Company', 'button.it-support.asset-management.export'),
   node('Page Access', 'IT & Support', 'Account Recovery', 'IT Account Recovery Page', 'Page', 'L2 - IT Support', 'Company', 'page.it-support.account-recovery'),
+  node('Page Access', 'IT & Support', 'Telephone Allowance', 'Telephone Allowance Page', 'Page', 'L2 - IT Admin', 'Company', 'page.it-support.telephone-allowance'),
   node('IT Support', 'Account Recovery', 'Clear Account Issues', 'Unlock and clear login blockers', 'Button', 'L2 - IT Support', 'Company', 'it.account-recovery'),
 
   node('Timesheet Controls', 'Searchable Selectors', 'Search Supervisor Dropdown', 'Search and Select Supervisor', 'Dropdown', 'L2 - Manager', 'Company', 'timesheet.controls.supervisor-search'),

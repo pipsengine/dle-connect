@@ -369,6 +369,21 @@ export const itSupportRoutePermissionOptions = (pathname: string): string[] | nu
       'view_it_support',
     ];
   }
+  if (path.startsWith('/it-support/telephone-allowance') || path.startsWith('/api/it-support/telephone-allowance')) {
+    return [
+      'telephone-allowance.view',
+      'telephone-allowance.hr-review',
+      'telephone-allowance.hr-approve',
+      'telephone-allowance.md-approve',
+      'telephone-allowance.cfo-authorize',
+      'telephone-allowance.treasury',
+      'telephone-allowance.export',
+      'page.it-support.telephone-allowance.view',
+      'treasury.view',
+      'finance.view',
+      'hris.view',
+    ];
+  }
   if (path.startsWith('/it-support/asset-management')) {
     return [
       'view_it_assets',

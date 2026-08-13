@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   MonitorSmartphone,
   Package,
+  Phone,
   Shield,
 } from 'lucide-react';
 
@@ -167,6 +168,74 @@ export const IT_SUPPORT_NAV_SECTIONS: ItSupportNavSection[] = [
     ],
   },
   {
+    id: 'telephone-allowance',
+    label: 'Telephone Allowance',
+    href: '/it-support/telephone-allowance',
+    icon: Phone,
+    status: 'live',
+    permissionKeys: [
+      'telephone-allowance.view',
+      'telephone-allowance.hr-review',
+      'telephone-allowance.hr-approve',
+      'telephone-allowance.md-approve',
+      'telephone-allowance.cfo-authorize',
+      'telephone-allowance.treasury',
+      'page.it-support.telephone-allowance.view',
+    ],
+    children: [
+      {
+        id: 'ta-dashboard',
+        label: 'Dashboard',
+        href: '/it-support/telephone-allowance',
+        status: 'live',
+        permissionKeys: [
+          'telephone-allowance.view',
+          'telephone-allowance.hr-review',
+          'telephone-allowance.hr-approve',
+          'telephone-allowance.md-approve',
+          'telephone-allowance.cfo-authorize',
+          'telephone-allowance.treasury',
+          'page.it-support.telephone-allowance.view',
+        ],
+      },
+      {
+        id: 'ta-manage',
+        label: 'Allowance Management',
+        href: '/it-support/telephone-allowance/manage',
+        status: 'live',
+        // Prepare is Global Super Admin only (session bypass). HR Review uses this page for review edits.
+        permissionKeys: [
+          'telephone-allowance.hr-review',
+          'page.it-support.telephone-allowance.view',
+        ],
+      },
+      {
+        id: 'ta-approvals',
+        label: 'Approvals',
+        href: '/it-support/telephone-allowance/approvals',
+        status: 'live',
+        permissionKeys: [
+          'telephone-allowance.hr-approve',
+          'telephone-allowance.md-approve',
+          'telephone-allowance.cfo-authorize',
+          'page.it-support.telephone-allowance.view',
+        ],
+      },
+      {
+        id: 'ta-payment',
+        label: 'Payment & Reporting',
+        href: '/it-support/telephone-allowance/payment-reporting',
+        status: 'live',
+        permissionKeys: [
+          'telephone-allowance.treasury',
+          'telephone-allowance.export',
+          'treasury.view',
+          'page.it-support.telephone-allowance.view',
+        ],
+      },
+    ],
+  },
+  {
     id: 'security-ops',
     label: 'Security & Operations',
     href: '/it-support/cybersecurity-center',
@@ -263,6 +332,23 @@ export const IT_SUPPORT_MODULE_CARDS = [
     status: 'ready' as const,
     permissionKeys: ['view_system_monitoring', 'infrastructure.view', 'view_it_support', 'it.view', 'it.*'],
   },
+  {
+    id: 'telephone-allowance',
+    title: 'Telephone Allowance',
+    description: 'Bimonthly call-credit entitlements, HR review, approvals, and Treasury payment.',
+    href: '/it-support/telephone-allowance',
+    icon: Phone,
+    status: 'live' as const,
+    permissionKeys: [
+      'telephone-allowance.view',
+      'telephone-allowance.hr-review',
+      'telephone-allowance.hr-approve',
+      'telephone-allowance.md-approve',
+      'telephone-allowance.cfo-authorize',
+      'telephone-allowance.treasury',
+      'page.it-support.telephone-allowance.view',
+    ],
+  },
 ] as const;
 
 export const IT_SUPPORT_ACCENT = {
@@ -274,7 +360,7 @@ export const IT_SUPPORT_ACCENT = {
 } as const;
 
 /** Used by shell header chips / footer. */
-export const IT_SUPPORT_CAPABILITY_HINT = 'it.view · service-desk · assets · recovery';
+export const IT_SUPPORT_CAPABILITY_HINT = 'it.view · service-desk · assets · recovery · telephone allowance';
 
 export type ItSupportModuleCard = (typeof IT_SUPPORT_MODULE_CARDS)[number];
 
@@ -303,6 +389,12 @@ export const resolveItSupportNavIcon = (id: string): LucideIcon => {
       return Shield;
     case 'system-monitoring':
       return Activity;
+    case 'telephone-allowance':
+    case 'ta-dashboard':
+    case 'ta-manage':
+    case 'ta-approvals':
+    case 'ta-payment':
+      return Phone;
     default:
       return LayoutDashboard;
   }
