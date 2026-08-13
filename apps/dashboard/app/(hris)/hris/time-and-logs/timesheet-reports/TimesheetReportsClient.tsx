@@ -1049,7 +1049,7 @@ export default function TimesheetReportsClient() {
       description="Project labour intelligence and timesheet analytics."
       breadcrumbs={[{ label: 'HRIS', href: '/hris' }, { label: 'Workforce Management', href: '/hris/workforce-management' }, { label: 'Timesheet Reports' }]}
       primaryAction={{ label: loading ? 'Refreshing' : 'Refresh', onClick: load, icon: RefreshCcw }}
-      secondaryAction={{ label: exporting ? 'Exporting…' : 'Export', onClick: () => { void exportRows('payroll-sheet'); }, icon: Download }}
+      secondaryAction={{ label: exporting ? 'Exporting…' : 'Export Excel', onClick: () => { void exportRows('excel'); }, icon: FileSpreadsheet }}
     >
       <div className="space-y-5">
         {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}
@@ -1108,29 +1108,29 @@ export default function TimesheetReportsClient() {
                 {showExportMenu ? (
                   <>
                     <button type="button" aria-label="Close export menu" className="fixed inset-0 z-20 cursor-default" onClick={() => setShowExportMenu(false)} />
-                    <div className="absolute right-0 z-30 mt-1 w-72 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
+                    <div className="absolute right-0 z-30 mt-1 w-80 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
                       <button
                         type="button"
                         disabled={exporting}
-                        onClick={() => void exportRows('payroll-sheet')}
+                        onClick={() => void exportRows('excel')}
                         className="flex w-full items-start gap-2 px-3 py-2.5 text-left hover:bg-slate-50 disabled:opacity-60"
                       >
-                        <FileSpreadsheet className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />
+                        <FileSpreadsheet className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
                         <span>
-                          <span className="block text-xs font-black text-slate-900">Payroll Attendance Sheet</span>
-                          <span className="mt-0.5 block text-[11px] font-semibold text-slate-500">Emp. Code · Days Worked · Weekend/PH · OT · Night · Site</span>
+                          <span className="block text-xs font-black text-slate-900">Excel · Top Projects + Capture</span>
+                          <span className="mt-0.5 block text-[11px] font-semibold text-slate-500">Includes C-code Top Projects (Labour Cost, WHT, NET)</span>
                         </span>
                       </button>
                       <button
                         type="button"
                         disabled={exporting}
-                        onClick={() => void exportRows('excel')}
+                        onClick={() => void exportRows('payroll-sheet')}
                         className="flex w-full items-start gap-2 border-t border-slate-100 px-3 py-2.5 text-left hover:bg-slate-50 disabled:opacity-60"
                       >
-                        <Download className="mt-0.5 h-4 w-4 shrink-0 text-slate-600" />
+                        <FileSpreadsheet className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />
                         <span>
-                          <span className="block text-xs font-black text-slate-900">Capture Detail (Excel)</span>
-                          <span className="mt-0.5 block text-[11px] font-semibold text-slate-500">Selected columns · line/allocation grain</span>
+                          <span className="block text-xs font-black text-slate-900">Payroll Attendance Sheet</span>
+                          <span className="mt-0.5 block text-[11px] font-semibold text-slate-500">Emp. Code · Days Worked · Weekend/PH · OT · Night · Site</span>
                         </span>
                       </button>
                       <button
@@ -1373,7 +1373,18 @@ export default function TimesheetReportsClient() {
                   C-code payroll cost only · {payload?.projectFinanceCost?.basis || 'Payroll gross allocated by timesheet hours'}
                 </p>
               </div>
-              <button type="button" onClick={() => setReportType('project')} className="text-xs font-black text-blue-700">View all projects</button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={exporting || !topProjects.length}
+                  onClick={() => void exportRows('excel')}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" />
+                  Export Excel
+                </button>
+                <button type="button" onClick={() => setReportType('project')} className="text-xs font-black text-blue-700">View all projects</button>
+              </div>
             </div>
             {projectFinanceControls ? (
               <div className={`flex flex-wrap gap-3 border-b px-4 py-2 text-[11px] font-bold ${projectFinanceControls.balanced ? 'border-emerald-100 bg-emerald-50 text-emerald-800' : 'border-amber-100 bg-amber-50 text-amber-900'}`}>
