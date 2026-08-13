@@ -777,9 +777,19 @@ export default function TimesheetReportsClient() {
     setError(null);
     try {
       const res = await fetch(requestUrl, { cache: 'no-store' });
-      const json = await res.json();
+      const raw = await res.text();
+      let json: { status?: string; data?: ReportsPayload; error?: string };
+      try {
+        json = JSON.parse(raw) as { status?: string; data?: ReportsPayload; error?: string };
+      } catch {
+        throw new Error(
+          res.status === 504 || /timeout|gateway/i.test(raw)
+            ? 'Timesheet reports timed out. Narrow the date range and refresh.'
+            : `Timesheet reports returned a non-JSON response (${res.status || 'unknown'}). Try Refresh, or sign in again.`,
+        );
+      }
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to load timesheet reports');
-      setPayload(json.data);
+      setPayload(json.data || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load timesheet reports');
     } finally {
@@ -814,10 +824,20 @@ export default function TimesheetReportsClient() {
       exportUrl.searchParams.set('exportMode', 'full');
       exportUrl.searchParams.set('format', format === 'payroll-sheet' ? 'excel' : format);
       const res = await fetch(exportUrl.toString(), { cache: 'no-store' });
-      const json = await res.json();
+      const raw = await res.text();
+      let json: { status?: string; data?: ReportsPayload; error?: string };
+      try {
+        json = JSON.parse(raw) as { status?: string; data?: ReportsPayload; error?: string };
+      } catch {
+        throw new Error(
+          res.status === 504 || /timeout|gateway/i.test(raw)
+            ? 'Export timed out. Narrow the date range and try again.'
+            : `Export returned a non-JSON response (${res.status || 'unknown'}). Try again, or sign in again.`,
+        );
+      }
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to export timesheet capture data');
-
-      const exportPayload = json.data as ReportsPayload;
+      const exportPayload = json.data as ReportsPayload | undefined;
+      if (!exportPayload) throw new Error('Unable to export timesheet capture data');
       const canViewCosts = exportPayload.permissions?.canViewCosts ?? payload?.permissions.canViewCosts ?? false;
 
       if (format === 'payroll-sheet') {

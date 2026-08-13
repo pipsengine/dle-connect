@@ -17,10 +17,12 @@ import {
   type TimesheetStatus,
 } from '@/lib/timesheet-entry-store';
 import { buildPayrollAttendanceSheet } from '@/lib/timesheet-payroll-attendance-sheet';
-import { buildCCodeProjectFinanceCosts } from '@/lib/project-finance-cost-service';
+import { buildCCodeProjectFinanceCosts, type ProjectFinanceCostResult } from '@/lib/project-finance-cost-service';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+
+export const maxDuration = 120;
 
 type ReportType =
   | 'summary'
@@ -482,7 +484,42 @@ export async function GET(request: Request) {
       holidayDates,
       canViewCosts,
     });
-    const projectFinanceCost = await buildCCodeProjectFinanceCosts(filteredRows);
+    const emptyProjectFinanceCost: ProjectFinanceCostResult = {
+      projects: [],
+      controlTotals: {
+        productiveHours: 0,
+        cCodeEmployees: 0,
+        payrollGross: 0,
+        allocatedLabourCost: 0,
+        wht: 0,
+        net: 0,
+        balanced: true,
+      },
+      basis: 'C-code payroll gross allocated by timesheet project hours · WHT from payroll PAYE (5% flat)',
+      payrollPeriods: [],
+    };
+    let projectFinanceCost = emptyProjectFinanceCost;
+    try {
+      projectFinanceCost = await Promise.race([
+        buildCCodeProjectFinanceCosts(filteredRows),
+        new Promise<ProjectFinanceCostResult>((_, reject) => {
+          setTimeout(() => reject(new Error('Project finance cost timed out')), 20_000);
+        }),
+      ]);
+    } catch (projectFinanceError) {
+      console.warn(
+        '[Timesheet Reports] project finance cost unavailable',
+        projectFinanceError instanceof Error ? projectFinanceError.message : projectFinanceError,
+      );
+      projectFinanceCost = {
+        ...emptyProjectFinanceCost,
+        basis: 'C-code project finance temporarily unavailable — refresh or narrow the date range',
+        controlTotals: {
+          ...emptyProjectFinanceCost.controlTotals,
+          balanced: false,
+        },
+      };
+    }
 
     const payload = {
       generatedAt: new Date().toISOString(),

@@ -43,6 +43,9 @@ export async function middleware(request: NextRequest) {
     if (!session) return denied(request, 401);
 
     if (!session.isGlobalAdmin && (session.firstLoginRequired || session.passwordResetRequired) && !pathname.startsWith('/change-password') && !pathname.startsWith('/api/auth/change-password')) {
+      if (pathname.startsWith('/api')) {
+        return NextResponse.json({ status: 'error', error: 'Password change required' }, { status: 401 });
+      }
       const url = request.nextUrl.clone();
       url.pathname = '/change-password';
       url.searchParams.set('next', pathname + request.nextUrl.search);
