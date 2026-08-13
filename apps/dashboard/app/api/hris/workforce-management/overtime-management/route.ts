@@ -166,9 +166,23 @@ export async function POST(request: NextRequest) {
         const row = attendanceByCode.get(code);
         if (!row || row.biometricDuration <= 0) continue;
         const available = Math.max(0, Math.round((row.biometricDuration - row.usedHours) * 100) / 100);
-        if (totalHours > available + 0.001) {
-          return err(400, `Overtime for ${row.employeeCode} (${totalHours}h) exceeds available biometric headroom (${available}h = ${row.biometricDuration}h biometric − ${row.usedHours}h used).`);
+        if (totalHours <= available + 0.001) continue;
+        // Match timesheet booking: cap to available biometric headroom instead of rejecting.
+        const scale = available <= 0 ? 0 : available / totalHours;
+        for (const entry of projectEntries) {
+          if (!Array.isArray(entry.employees)) continue;
+          entry.employees = entry.employees.map((line: Record<string, unknown>) => {
+            const lineCode = String(line.employeeCode || '').trim().toLowerCase();
+            if (lineCode !== code) return line;
+            const hours = Number(line.overtimeHours || 0);
+            if (!(hours > 0)) return line;
+            return {
+              ...line,
+              overtimeHours: Math.max(0, Math.round(hours * scale * 100) / 100),
+            };
+          });
         }
+        hoursByEmployee.set(code, available);
       }
 
       for (const entry of projectEntries) {

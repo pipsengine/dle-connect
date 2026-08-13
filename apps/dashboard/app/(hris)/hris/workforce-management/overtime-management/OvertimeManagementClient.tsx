@@ -567,6 +567,37 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
     return authorizationForm.projectCodes.reduce((sum, code) => sum + Number(line.hoursByProject[code] || 0), 0);
   };
   const availableOtHours = (line: AuthorizationBookingLine) => Math.max(0, Math.round((Number(line.biometricDuration || 0) - Number(line.usedHours || 0)) * 100) / 100);
+  const roundHours = (value: number) => Math.max(0, Math.round(Number(value || 0) * 100) / 100);
+
+  /** Cap OT to biometric headroom (same pattern as standard timesheet booking). */
+  const capLineOtToHeadroom = (line: AuthorizationBookingLine): AuthorizationBookingLine => {
+    if (!(line.biometricDuration > 0)) return line;
+    const available = availableOtHours(line);
+    const total = lineOtTotal(line);
+    if (total <= available + 0.001) return line;
+    if (available <= 0) {
+      const cleared = Object.fromEntries(Object.keys(line.hoursByProject || {}).map((code) => [code, 0]));
+      return { ...line, overtimeHours: 0, hoursByProject: cleared, selected: false };
+    }
+    if (authorizationForm.projectCodes.length <= 1) {
+      return { ...line, overtimeHours: available, selected: available > 0 };
+    }
+    const scale = available / total;
+    const hoursByProject = { ...line.hoursByProject };
+    let allocated = 0;
+    const codes = authorizationForm.projectCodes;
+    codes.forEach((code, index) => {
+      if (index === codes.length - 1) {
+        hoursByProject[code] = roundHours(available - allocated);
+      } else {
+        const next = roundHours(Number(line.hoursByProject[code] || 0) * scale);
+        hoursByProject[code] = next;
+        allocated = roundHours(allocated + next);
+      }
+    });
+    return { ...line, hoursByProject, overtimeHours: available, selected: available > 0 };
+  };
+
   const bookedLines = employeeLines.filter((line) => line.selected && lineOtTotal(line) > 0);
   const bookedHoursTotal = bookedLines.reduce((sum, line) => sum + lineOtTotal(line), 0);
 
@@ -583,19 +614,39 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
       setError('Book overtime for at least one employee assigned to the supervisor.');
       return;
     }
-    const overLimit = bookedLines.find((line) => line.biometricDuration > 0 && lineOtTotal(line) > availableOtHours(line) + 0.001);
-    if (overLimit) {
-      setError(
-        `Overtime for ${overLimit.employeeName} (${lineOtTotal(overLimit)}h) exceeds available biometric headroom (${availableOtHours(overLimit)}h = ${overLimit.biometricDuration}h biometric − ${overLimit.usedHours}h used).`,
-      );
+
+    const cappedBookedLines = bookedLines.map(capLineOtToHeadroom).filter((line) => lineOtTotal(line) > 0);
+    const cappedNotices = bookedLines
+      .map((line) => {
+        const capped = capLineOtToHeadroom(line);
+        const before = lineOtTotal(line);
+        const after = lineOtTotal(capped);
+        if (line.biometricDuration > 0 && before > after + 0.001) {
+          return `${line.employeeName} (${line.employeeCode}): ${before}h → ${after}h`;
+        }
+        return null;
+      })
+      .filter(Boolean) as string[];
+
+    if (!cappedBookedLines.length) {
+      setError('No overtime can be booked — biometric headroom is fully used for the selected employees.');
       return;
     }
+
+    // Reflect capped hours in the booking grid (like timesheet auto-cap).
+    setEmployeeLines((current) => current.map((line) => {
+      const capped = cappedBookedLines.find((item) => item.employeeCode === line.employeeCode);
+      return capped || (bookedLines.some((item) => item.employeeCode === line.employeeCode) ? capLineOtToHeadroom(line) : line);
+    }));
+
+    const cappedHoursTotal = cappedBookedLines.reduce((sum, line) => sum + lineOtTotal(line), 0);
+
     setBusy('create-authorization');
     setToast('');
     setError('');
     try {
       const projectsPayload = selectedProjects.map((project) => {
-        const employees = bookedLines
+        const employees = cappedBookedLines
           .map((line) => {
             const overtimeHours = authorizationForm.projectCodes.length <= 1
               ? Number(line.overtimeHours || 0)
@@ -643,14 +694,17 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
           hrApproverName: authorizationForm.hrApproverName,
           hrApproverEmail: authorizationForm.hrApproverEmail,
           projects: projectsPayload,
-          requestedHours: bookedHoursTotal,
-          requestedHeadcount: bookedLines.length,
+          requestedHours: cappedHoursTotal,
+          requestedHeadcount: cappedBookedLines.length,
         }),
       });
       const json = (await res.json()) as ApiResponse<Payload>;
       if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || 'Unable to submit overtime authorization.');
       setPayload(json.data);
-      setToast(`Submitted ${projectsPayload.length} overtime authorization(s) for ${bookedLines.length} employee(s).`);
+      const capNote = cappedNotices.length
+        ? ` OT capped to biometric headroom for ${cappedNotices.length} employee(s).`
+        : '';
+      setToast(`Submitted ${projectsPayload.length} overtime authorization(s) for ${cappedBookedLines.length} employee(s).${capNote}`);
       setAuthOpen(false);
       setEmployeeLines([]);
       setAuthorizationForm((current) => ({
@@ -847,12 +901,22 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
   const setEmployeeHours = (code: string, hours: number, projectCode?: string) => {
     setEmployeeLines((current) => current.map((line) => {
       if (line.employeeCode !== code) return line;
+      const available = Math.max(0, Math.round((Number(line.biometricDuration || 0) - Number(line.usedHours || 0)) * 100) / 100);
+      const hasBiometric = Number(line.biometricDuration || 0) > 0;
       if (projectCode) {
-        const hoursByProject = { ...line.hoursByProject, [projectCode]: hours };
+        const otherTotal = Object.entries(line.hoursByProject || {})
+          .filter(([key]) => key !== projectCode)
+          .reduce((sum, [, value]) => sum + Number(value || 0), 0);
+        const maxForProject = hasBiometric ? Math.max(0, Math.round((available - otherTotal) * 100) / 100) : Number(hours || 0);
+        const nextHours = hasBiometric ? Math.min(Math.max(0, Number(hours || 0)), maxForProject) : Math.max(0, Number(hours || 0));
+        const hoursByProject = { ...line.hoursByProject, [projectCode]: nextHours };
         const total = Object.values(hoursByProject).reduce((sum, value) => sum + Number(value || 0), 0);
         return { ...line, hoursByProject, overtimeHours: total, selected: total > 0 ? true : line.selected };
       }
-      return { ...line, overtimeHours: hours, selected: hours > 0 ? true : line.selected };
+      const nextHours = hasBiometric
+        ? Math.min(Math.max(0, Number(hours || 0)), available)
+        : Math.max(0, Number(hours || 0));
+      return { ...line, overtimeHours: nextHours, selected: nextHours > 0 ? true : line.selected };
     }));
   };
 
@@ -963,7 +1027,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
       </div>
       {authorizationForm.projectCodes.length > 1 ? (
         <p className="mt-2 text-xs font-medium text-[#64748B]">
-          One authorization request will be created per selected project (each routes to that project&apos;s manager). Set OT hours per project below; total OT cannot exceed biometric headroom when attendance is present.
+          One authorization request will be created per selected project (each routes to that project&apos;s manager). Set OT hours per project below; if total OT exceeds biometric headroom, hours are capped to available time (same as timesheet booking).
         </p>
       ) : null}
 
@@ -1018,7 +1082,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
                       <td className="px-4 py-2">
                         <div className="font-semibold text-[#0F172A]">{line.employeeName}</div>
                         <div className="text-xs text-[#64748B]">{line.employeeCode}</div>
-                        {overLimit ? <div className="mt-1 text-[11px] font-semibold text-[#DC2626]">Exceeds available {available}h</div> : null}
+                        {overLimit ? <div className="mt-1 text-[11px] font-semibold text-[#B45309]">Will book available {available}h (capped to biometric headroom)</div> : null}
                       </td>
                       <td className="px-4 py-2 text-xs text-[#64748B]">{[line.jobTitle, line.department].filter(Boolean).join(' · ') || '—'}</td>
                       <td className="px-4 py-2 text-sm font-semibold text-[#0F172A]">{line.biometricDuration > 0 ? `${line.biometricDuration}h` : '—'}</td>
