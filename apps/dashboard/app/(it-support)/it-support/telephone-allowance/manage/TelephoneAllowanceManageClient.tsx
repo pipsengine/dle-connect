@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, RefreshCw, Search, Send, ShieldCheck, Trash2, Upload, UserMinus, UserPlus } from 'lucide-react';
+import { Plus, RefreshCw, Search, Send, ShieldCheck, Trash2, Upload, UserMinus, UserPlus, Users } from 'lucide-react';
 import {
   badgeTone,
   moneyNgn,
@@ -80,6 +80,7 @@ export default function TelephoneAllowanceManageClient() {
   const [showAdd, setShowAdd] = useState(false);
   const [showChanges, setShowChanges] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const autoPopulateRef = useRef<string | null>(null);
   const [dirQuery, setDirQuery] = useState('');
   const [dirHits, setDirHits] = useState<Array<{ employeeCode: string; employeeName: string; department: string; jobTitle: string }>>([]);
   const [addForm, setAddForm] = useState({
@@ -109,6 +110,20 @@ export default function TelephoneAllowanceManageClient() {
   useEffect(() => {
     void load().catch(console.error);
   }, [load]);
+
+  // Empty editable draft: auto-load beneficiaries from previous cycle / entitlements.
+  useEffect(() => {
+    if (!cycle || !caps?.canPrepare) return;
+    if (!['DRAFT', 'RETURNED_TO_IT', 'RETURNED_FOR_CORRECTION', 'IT_VALIDATION'].includes(cycle.status)) return;
+    if (cycle.locked || cycle.beneficiaryCount > 0) return;
+    if (!cycles.some((row) => row.id !== cycle.id)) return;
+    if (autoPopulateRef.current === cycle.id) return;
+    autoPopulateRef.current = cycle.id;
+    void run('populate-from-previous', { replaceExisting: true }).catch(() => {
+      autoPopulateRef.current = null;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cycle?.id, cycle?.beneficiaryCount, cycle?.status, caps?.canPrepare, cycles.length]);
 
   const month1Name = cycle ? new Date(Date.UTC(cycle.year, cycle.month1 - 1, 1)).toLocaleString('en', { month: 'long' }) : 'Month 1';
   const month2Name = cycle ? new Date(Date.UTC(cycle.year, cycle.month2 - 1, 1)).toLocaleString('en', { month: 'long' }) : 'Month 2';
@@ -250,6 +265,19 @@ export default function TelephoneAllowanceManageClient() {
                     <Plus className="h-4 w-4" /> Create Next Cycle
                   </button>
                 ) : null}
+                {cycle && caps?.canPrepare && !cycle.locked && ['DRAFT', 'RETURNED_TO_IT', 'RETURNED_FOR_CORRECTION', 'IT_VALIDATION'].includes(cycle.status) ? (
+                  <button
+                    type="button"
+                    disabled={Boolean(busy)}
+                    onClick={() => {
+                      if (cycle.beneficiaryCount > 0 && !window.confirm('Replace the current schedule with beneficiaries from the previous cycle / entitlements?')) return;
+                      void run('populate-from-previous', { replaceExisting: true });
+                    }}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-black text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+                  >
+                    <Users className="h-4 w-4" /> Load from Previous Cycle
+                  </button>
+                ) : null}
                 {cycle && caps?.canPrepare && cycle.status === 'DRAFT' && cycle.beneficiaryCount === 0 ? (
                   <button
                     type="button"
@@ -313,8 +341,7 @@ export default function TelephoneAllowanceManageClient() {
               </>
             ) : (
               <p className="mt-4 text-sm font-semibold text-slate-600">
-                Import the concluded Call Credit workbook (e.g. JUL–AUG) first, or create the next bimonthly cycle.
-                During August the next open period is SEP–OCT.
+                Import a concluded Call Credit workbook, or create the next cycle. New cycles auto-load beneficiaries from the previous cycle so IT can add/remove before sending to HR.
               </p>
             )}
           </section>

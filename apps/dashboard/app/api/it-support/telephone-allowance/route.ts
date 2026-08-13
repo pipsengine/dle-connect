@@ -24,6 +24,7 @@ import {
   hrRemoveEmployee,
   importCallCreditWorkbook,
   importHistoricalSchedule,
+  populateDraftFromPrevious,
   initiateApproval,
   listAudits,
   listCycles,
@@ -211,7 +212,20 @@ export async function POST(request: NextRequest) {
           year: body.year ? Number(body.year) : undefined,
           pairCode: body.pairCode || undefined,
         });
-        return ok({ cycle, message: `Cycle ${cycle.cycleCode} created.` });
+        return ok({
+          cycle,
+          message: `Created ${cycle.pairLabel} ${cycle.year} with ${cycle.beneficiaryCount} beneficiaries.`,
+        });
+      }
+      case 'populate-from-previous': {
+        require(caps.canPrepare);
+        const cycle = await populateDraftFromPrevious(cycleId, rowVersion, actor, {
+          replaceExisting: body.replaceExisting !== false,
+        });
+        return ok({
+          cycle,
+          message: `Loaded ${cycle.beneficiaryCount} beneficiaries from previous cycle / entitlements.`,
+        });
       }
       case 'save-draft': {
         require(caps.canPrepare);

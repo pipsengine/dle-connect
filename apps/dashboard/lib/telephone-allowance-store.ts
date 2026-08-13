@@ -23,6 +23,7 @@ import {
   pairForCode,
   recalcCycleTotals,
   roundMoney,
+  type BimonthlyPair,
   type ChangeBadge,
   type CycleApproval,
   type CycleChange,
@@ -990,6 +991,93 @@ ORDER BY [Year] DESC, [Month1] DESC, [UpdatedAt] DESC
   return (rs.recordset || []).map(mapCycleRow);
 };
 
+const previousCycleBefore = (cycles: TelephoneCycle[], year: number, month1: number) => {
+  const earlier = cycles
+    .filter((c) => c.year < year || (c.year === year && c.month1 < month1))
+    .sort((a, b) => a.year - b.year || a.month1 - b.month1);
+  return earlier.at(-1) || null;
+};
+
+const isCarryForwardLine = (line: CycleEmployeeLine) => {
+  if (line.changeBadge === 'REMOVED' || line.status === 'Removed') return false;
+  if (line.monthlyRate > 0) return true;
+  if (line.month1Eligible || line.month2Eligible) return true;
+  return roundMoney(line.bimonthlyTotal) > 0;
+};
+
+type DirectoryHit = {
+  employeeCode: string;
+  employeeName: string;
+  department: string;
+  jobTitle: string;
+  bankName: string | null;
+  accountNo: string | null;
+  sortCode: string | null;
+};
+
+const buildEmployeesForNewCycle = (
+  year: number,
+  pair: BimonthlyPair,
+  entitlements: TelephoneEntitlement[],
+  directory: Map<string, DirectoryHit>,
+  previous: TelephoneCycle | null,
+): CycleEmployeeLine[] => {
+  const previousByCode = new Map(
+    (previous?.employees || [])
+      .filter(isCarryForwardLine)
+      .map((line) => [upperCode(line.employeeCode), line] as const),
+  );
+  const codes = new Set<string>();
+  for (const code of previousByCode.keys()) codes.add(code);
+  for (const ent of entitlements) {
+    if (ent.status === 'Suspended') continue;
+    codes.add(upperCode(ent.employeeCode));
+  }
+
+  const employees: CycleEmployeeLine[] = [];
+  for (const code of codes) {
+    const dir = directory.get(code);
+    const prev = previousByCode.get(code);
+    const fromEntitlement = buildLineFromEntitlements(entitlements, dir?.employeeCode || prev?.employeeCode || code, year, pair, {
+      employeeName: dir?.employeeName || prev?.employeeName,
+      department: dir?.department || prev?.department,
+      jobTitle: dir?.jobTitle || prev?.jobTitle,
+      bankName: dir?.bankName ?? prev?.bankName ?? null,
+      accountNo: dir?.accountNo ?? prev?.accountNo ?? null,
+      sortCode: dir?.sortCode ?? prev?.sortCode ?? null,
+    });
+    if (fromEntitlement) {
+      employees.push(refreshLineBadge({ ...fromEntitlement, id: newId() }, 'UNCHANGED'));
+      continue;
+    }
+    if (!prev) continue;
+    const monthlyRate = roundMoney(prev.monthlyRate || prev.month2Amount || prev.month1Amount || 0);
+    if (!(monthlyRate > 0)) continue;
+    employees.push(refreshLineBadge({
+      id: newId(),
+      employeeCode: dir?.employeeCode || prev.employeeCode,
+      employeeName: dir?.employeeName || prev.employeeName,
+      department: dir?.department || prev.department || '',
+      jobTitle: dir?.jobTitle || prev.jobTitle || '',
+      monthlyRate,
+      month1Eligible: true,
+      month1Amount: monthlyRate,
+      month2Eligible: true,
+      month2Amount: monthlyRate,
+      bimonthlyTotal: roundMoney(monthlyRate * 2),
+      changeBadge: 'UNCHANGED',
+      changeReason: previous ? `Carried forward from ${previous.cycleCode}` : null,
+      status: 'Eligible',
+      bankName: dir?.bankName ?? prev.bankName ?? null,
+      accountNo: dir?.accountNo ?? prev.accountNo ?? null,
+      sortCode: dir?.sortCode ?? prev.sortCode ?? null,
+      exceptionFlags: [],
+    }, 'UNCHANGED'));
+  }
+
+  return employees.sort((a, b) => a.employeeName.localeCompare(b.employeeName) || a.employeeCode.localeCompare(b.employeeCode));
+};
+
 export const getCycle = async (idOrCode: string): Promise<TelephoneCycle | null> => {
   const mode = await resolveMode();
   return loadCycle(mode, idOrCode);
@@ -1044,25 +1132,8 @@ export const createNextCycle = async (
   const samePairCount = cycles.filter((c) => c.year === year && c.pairCode === pair!.code).length;
   const entitlements = await listEntitlements();
   const directory = await directoryIndex();
-  const codes = new Set<string>();
-  for (const ent of entitlements) {
-    if (ent.status === 'Suspended') continue;
-    codes.add(upperCode(ent.employeeCode));
-  }
-
-  const employees: CycleEmployeeLine[] = [];
-  for (const code of codes) {
-    const dir = directory.get(code);
-    const line = buildLineFromEntitlements(entitlements, dir?.employeeCode || code, year, pair!, {
-      employeeName: dir?.employeeName,
-      department: dir?.department,
-      jobTitle: dir?.jobTitle,
-      bankName: dir?.bankName,
-      accountNo: dir?.accountNo,
-      sortCode: dir?.sortCode,
-    });
-    if (line) employees.push(refreshLineBadge({ ...line, id: newId() }, line.changeBadge));
-  }
+  const previous = previousCycleBefore(cycles, year, pair!.month1);
+  const employees = buildEmployeesForNewCycle(year, pair!, entitlements, directory, previous);
 
   const now = nowIso();
   let cycle: TelephoneCycle = {
@@ -1096,7 +1167,7 @@ export const createNextCycle = async (
   cycle = applyTotals(cycle);
   cycle.originalBeneficiaryCount = cycle.beneficiaryCount;
   cycle.originalBimonthlyTotal = cycle.bimonthlyTotal;
-  cycle.versions = [snapshotVersion(cycle, 'IT Original', actor, 1)];
+  cycle.versions = [snapshotVersion(cycle, previous ? `IT Original (from ${previous.pairLabel} ${previous.year})` : 'IT Original', actor, 1)];
 
   cycle = await saveCycle(mode, cycle);
   await syncExceptionsForCycle(mode, cycle, actor);
@@ -1105,7 +1176,79 @@ export const createNextCycle = async (
     user: actor,
     role: 'IT',
     action: 'CREATE_CYCLE',
-    newValue: cycle.cycleCode,
+    newValue: JSON.stringify({
+      cycleCode: cycle.cycleCode,
+      beneficiaries: cycle.beneficiaryCount,
+      previousCycleCode: previous?.cycleCode || null,
+    }),
+    workflowStage: cycle.status,
+  });
+  return cycle;
+};
+
+/** Fill / refresh an editable draft from previous cycle + active entitlements. */
+export const populateDraftFromPrevious = async (
+  cycleId: string,
+  rowVersion: number,
+  actor: TelephoneActor,
+  opts?: { replaceExisting?: boolean },
+): Promise<TelephoneCycle> => {
+  const mode = await resolveMode();
+  const existing = await loadCycle(mode, cycleId);
+  if (!existing) throw new Error('Cycle not found.');
+  assertRowVersion(existing, rowVersion);
+  if (!canEditSchedule(existing.status, existing.locked)) {
+    throw new Error(`Schedule cannot be repopulated in status ${existing.status}.`);
+  }
+
+  const cycles = await listCycles();
+  const previous = previousCycleBefore(cycles, existing.year, existing.month1);
+  if (!previous && !(await listEntitlements()).length) {
+    throw new Error('No previous cycle or entitlements found to load beneficiaries from.');
+  }
+
+  const entitlements = await listEntitlements();
+  const directory = await directoryIndex();
+  const pair = pairForCode(existing.pairCode);
+  const built = buildEmployeesForNewCycle(existing.year, pair, entitlements, directory, previous);
+  if (!built.length) {
+    throw new Error('No carry-forward beneficiaries found on the previous cycle or entitlements.');
+  }
+
+  const replace = opts?.replaceExisting !== false || existing.beneficiaryCount === 0;
+  let employees = built;
+  if (!replace && existing.employees.length) {
+    const existingCodes = new Set(existing.employees.map((e) => upperCode(e.employeeCode)));
+    const additions = built.filter((line) => !existingCodes.has(upperCode(line.employeeCode)));
+    employees = [...existing.employees, ...additions];
+  }
+
+  let cycle = bumpRowVersion(applyTotals({
+    ...existing,
+    employees,
+    versions: [
+      ...existing.versions,
+      snapshotVersion(
+        { ...existing, employees },
+        previous ? `Loaded from ${previous.pairLabel} ${previous.year}` : 'Loaded from entitlements',
+        actor,
+      ),
+    ],
+  }));
+  cycle.originalBeneficiaryCount = cycle.beneficiaryCount;
+  cycle.originalBimonthlyTotal = cycle.bimonthlyTotal;
+  cycle = await saveCycle(mode, cycle);
+  await syncExceptionsForCycle(mode, cycle, actor);
+  await appendAudit(mode, {
+    cycleId: cycle.id,
+    user: actor,
+    role: 'IT',
+    action: 'POPULATE_FROM_PREVIOUS',
+    newValue: JSON.stringify({
+      beneficiaries: cycle.beneficiaryCount,
+      previousCycleCode: previous?.cycleCode || null,
+      replace,
+    }),
     workflowStage: cycle.status,
   });
   return cycle;
