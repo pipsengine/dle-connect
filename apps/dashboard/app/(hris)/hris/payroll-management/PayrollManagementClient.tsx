@@ -1795,6 +1795,7 @@ function ProcessPayrollWorkspace({
   viewPack = 'salaried',
   onSelectPack,
   onExportBothExcel,
+  onExportDleUsdExcel,
 }: {
   payload: PayrollPayload | null;
   canViewMoney: boolean;
@@ -1811,6 +1812,7 @@ function ProcessPayrollWorkspace({
   viewPack?: 'salaried' | 'daily-rate';
   onSelectPack?: (pack: 'salaried' | 'daily-rate') => void;
   onExportBothExcel?: () => void;
+  onExportDleUsdExcel?: () => void;
 }) {
   const [processView, setProcessView] = useState<'ready' | 'issues' | 'outputs' | 'audit'>('ready');
   const [registerQuery, setRegisterQuery] = useState('');
@@ -2104,7 +2106,16 @@ function ProcessPayrollWorkspace({
                 className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 text-sm font-bold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <FileSpreadsheet className="h-4 w-4" />
-                Export Both Excel
+                Export NGN Excel
+              </button>
+              <button
+                type="button"
+                onClick={onExportDleUsdExcel}
+                disabled={!onExportDleUsdExcel || !payload?.permissions.canExport}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-teal-200 bg-teal-50 px-4 text-sm font-bold text-teal-900 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                Export DLE USD Excel
               </button>
               {rerunStep ? (
                 <button
@@ -2612,9 +2623,9 @@ function BankFinanceWorkspace({
   const canGenerateBankSchedule = ['Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(currentRun?.status || '');
   const canPostJournal = ['Released', 'Locked', 'Published'].includes(currentRun?.status || '') || Boolean(currentRun?.bankScheduleGeneratedAt);
   const bankScheduleExportUrl = `/api/hris/payroll-management?format=xls&report=bank-schedule&pack=all`;
-  const [bankStaffPackFilter, setBankStaffPackFilter] = useState<'all' | 'permanent' | 'contract-lumpsum' | 'it-nysc'>('all');
+  const [bankStaffPackFilter, setBankStaffPackFilter] = useState<'all' | 'permanent' | 'contract-lumpsum' | 'it-nysc' | 'dle-usd'>('all');
   const bankPackRows = bankStaffPackFilter === 'all'
-    ? bankScheduleRows
+    ? bankScheduleRows.filter((record) => resolveBankScheduleStaffPack(record) !== 'dle-usd')
     : bankScheduleRows.filter((record) => resolveBankScheduleStaffPack(record) === bankStaffPackFilter);
   const bankSchedulePreviewRows = bankPackRows.slice(0, 25);
   const bankScheduleTotals = bankPackRows.reduce(
@@ -2760,13 +2771,14 @@ function BankFinanceWorkspace({
           <div>
             <p className="text-xs font-black uppercase text-slate-500">Bank Schedule Salary Preview</p>
             <h3 className="mt-1 text-lg font-black text-slate-950">{payload?.periodLabel || 'Current period'} salary schedule</h3>
-            <p className="mt-1 text-xs font-semibold text-slate-600">{number(bankPackRows.length)} employees in selected pack · Export splits Permanent / Contract Lumpsum / IT NYSC (+ DLE/DLPC for dayrate).</p>
+            <p className="mt-1 text-xs font-semibold text-slate-600">{number(bankPackRows.length)} employees in selected pack · NGN export splits Permanent / Contract Lumpsum / IT NYSC. DLE USD is a separate export.</p>
             <div className="mt-3 flex flex-wrap gap-2 print:hidden">
               {([
-                ['all', 'All'],
+                ['all', 'NGN All'],
                 ['permanent', 'Permanent'],
                 ['contract-lumpsum', 'Contract / Lumpsum'],
                 ['it-nysc', 'IT / NYSC'],
+                ['dle-usd', 'DLE USD'],
               ] as const).map(([id, label]) => (
                 <button
                   key={id}
@@ -4716,11 +4728,13 @@ export default function PayrollManagementClient({
     report = 'payroll-register',
     status = 'All',
     pack: 'salaried' | 'daily-rate' | 'all' = viewPack,
+    currency: 'ngn' | 'usd' | 'all' = format === 'xls' ? 'ngn' : 'all',
   ) => {
     const params = new URLSearchParams({ format, report, status });
     const period = viewPeriod || payload?.period;
     if (period) params.set('period', period);
     params.set('pack', pack);
+    params.set('currency', currency);
     return `/api/hris/payroll-management?${params.toString()}`;
   };
 
@@ -4772,7 +4786,12 @@ export default function PayrollManagementClient({
 
   const exportBothPacksExcel = (report = 'payroll-register') => {
     if (!ensureCanExport()) return;
-    window.location.href = reportExportUrl('xls', report, 'All', 'all');
+    window.location.href = reportExportUrl('xls', report, 'All', 'all', 'ngn');
+  };
+
+  const exportDleUsdExcel = (report = 'payroll-register') => {
+    if (!ensureCanExport()) return;
+    window.location.href = reportExportUrl('xls', report, 'All', 'salaried', 'usd');
   };
 
   const exportReportPdf = (report = 'payroll-register') => {
@@ -4998,6 +5017,7 @@ export default function PayrollManagementClient({
           onRefresh={() => void load()}
           onExportCsv={() => exportReportCsv('bank-schedule')}
           onExportExcel={() => exportBothPacksExcel('bank-schedule')}
+          onExportDleUsdExcel={() => exportDleUsdExcel('bank-schedule')}
           onExportPdf={() => exportReportPdf('bank-schedule')}
           onExportJournalSage={() => exportReportExcel('journal-sage')}
           onSaveJournalMapping={saveJournalMapping}
@@ -5471,7 +5491,7 @@ export default function PayrollManagementClient({
                 onPeriodAction={(action, period, reason) => void runAction(action, reason, period)}
               />
             ) : activeTab.id === 'payroll-run' ? (
-              <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} registerViewRequest={registerViewRequest} onRegisterViewRequestHandled={() => setRegisterViewRequest(null)} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack); }} viewPack={viewPack} onSelectPack={(pack) => { setViewPack(pack); void load(viewPeriod, pack); }} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} />
+              <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} registerViewRequest={registerViewRequest} onRegisterViewRequestHandled={() => setRegisterViewRequest(null)} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack); }} viewPack={viewPack} onSelectPack={(pack) => { setViewPack(pack); void load(viewPeriod, pack); }} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} onExportDleUsdExcel={() => exportDleUsdExcel('payroll-register')} />
             ) : (
               <FeaturePanel tab={activeTab} section={section} payload={payload} canViewMoney={canViewMoney} />
             )}
@@ -5637,7 +5657,7 @@ export default function PayrollManagementClient({
                   onPeriodAction={(action, period, reason) => void runAction(action, reason, period)}
                 />
               ) : (
-                <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack); }} viewPack={viewPack} onSelectPack={(pack) => { setViewPack(pack); void load(viewPeriod, pack); }} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} />
+                <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack); }} viewPack={viewPack} onSelectPack={(pack) => { setViewPack(pack); void load(viewPeriod, pack); }} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} onExportDleUsdExcel={() => exportDleUsdExcel('payroll-register')} />
               )
             ) : (
               <FeaturePanel tab={activeTab} section={section} payload={payload} canViewMoney={canViewMoney} />

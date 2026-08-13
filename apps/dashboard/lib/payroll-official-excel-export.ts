@@ -1,16 +1,18 @@
 /**
  * Official payroll Excel workbooks matching finance/HR sample layouts:
- * - Salaried bank schedule: Permanent / Contract Lumpsum / IT NYSC sheets
+ * - Salaried bank schedule: Permanent / Contract Lumpsum / IT NYSC (NGN) + separate DLE USD
  * - Dayrate bank schedule: DLE/DLPC BANK SCHD (Employee Bank Details)
- * - Salaried detail: JULY PAYROLL.xlsx → Perm.Staff / Cont. Staff
+ * - Salaried detail: JULY PAYROLL.xlsx → Perm.Staff / Cont. Staff (NGN) + separate DLE USD
  * - Dayrate schedule: DAYRATE PAYMENT SCHEDULE → SUMMARY + DLE/DLPC + bank sheets
  */
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import type { ExcelCell, ExcelWorksheetInput } from '@/lib/excel-export';
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
 import {
-  BANK_SCHEDULE_STAFF_PACKS,
+  BANK_SCHEDULE_NGN_STAFF_PACKS,
+  BANK_SCHEDULE_USD_STAFF_PACK,
   bankScheduleDisplayEmployeeCode,
+  isDleUsdPayrollEmployee,
   resolveBankScheduleStaffPack,
   type BankScheduleStaffPack,
 } from '@/lib/payroll-bank-schedule-packs';
@@ -182,24 +184,46 @@ const enrich = (record: PayrollCalculationRecord, dir?: DirectoryEnrichment | nu
 type Enriched = ReturnType<typeof enrich>;
 
 /** —— Bank schedule —— */
+export type OfficialExportCurrencyScope = 'ngn' | 'usd' | 'all';
+
+const normalizeExportCurrencyScope = (value?: string | null): OfficialExportCurrencyScope => {
+  const token = compact(value).toLowerCase();
+  if (token === 'usd' || token === 'dle-usd' || token === 'dle_usd') return 'usd';
+  if (token === 'all') return 'all';
+  return 'ngn';
+};
+
+const filterRecordsByCurrencyScope = <T extends Pick<PayrollCalculationRecord, 'payCurrency' | 'payrollGroup'>>(
+  records: T[],
+  scope: OfficialExportCurrencyScope,
+) => {
+  if (scope === 'usd') return records.filter((record) => isDleUsdPayrollEmployee(record));
+  if (scope === 'ngn') return records.filter((record) => !isDleUsdPayrollEmployee(record));
+  return records;
+};
+
 export const buildOfficialBankScheduleWorksheets = (
   records: PayrollCalculationRecord[],
   options?: {
     periodLabel?: string;
     titlePrefix?: string;
-    /** staff-packs = Permanent / Contract Lumpsum / IT NYSC; company = DLE/DLPC */
+    /** staff-packs = Permanent / Contract Lumpsum / IT NYSC (+ optional DLE USD); company = DLE/DLPC */
     mode?: 'staff-packs' | 'company';
+    /** Default ngn — DLE_USD never mixes into NGN packs. Use usd for the separate DLE USD export. */
+    currencyScope?: OfficialExportCurrencyScope | string | null;
   },
 ): ExcelWorksheetInput[] => {
   const periodLabel = options?.periodLabel || 'Payroll Period';
   const mode = options?.mode || 'staff-packs';
+  const currencyScope = normalizeExportCurrencyScope(options?.currencyScope);
+  const scopedRecords = filterRecordsByCurrencyScope(records, currencyScope);
   const payable = (record: PayrollCalculationRecord) =>
     Number(record.netPay || 0) !== 0 || compact(record.accountNo);
 
   if (mode === 'company') {
     const buckets: OfficialCompanyBucket[] = ['DLE', 'DLPC'];
     return buckets.map((bucket) => {
-      const rows = records
+      const rows = scopedRecords
         .filter((record) => resolveOfficialCompanyBucket(record) === bucket)
         .filter(payable)
         .map((record) => [
@@ -221,14 +245,20 @@ export const buildOfficialBankScheduleWorksheets = (
     });
   }
 
-  return BANK_SCHEDULE_STAFF_PACKS.map((pack) => {
+  const packs = currencyScope === 'usd'
+    ? [BANK_SCHEDULE_USD_STAFF_PACK]
+    : currencyScope === 'all'
+      ? [...BANK_SCHEDULE_NGN_STAFF_PACKS, BANK_SCHEDULE_USD_STAFF_PACK]
+      : BANK_SCHEDULE_NGN_STAFF_PACKS;
+
+  return packs.map((pack) => {
     const packId = pack.id as BankScheduleStaffPack;
-    const rows = records
+    const rows = scopedRecords
       .filter((record) => !record.isDailyRate)
       .filter((record) => resolveBankScheduleStaffPack(record) === packId)
       .filter(payable)
       .map((record) => [
-        bankScheduleDisplayEmployeeCode(record, packId),
+        bankScheduleDisplayEmployeeCode(record, packId === 'dle-usd' ? 'permanent' : packId),
         compact(record.fullName),
         compact(record.bankName),
         compact(record.accountNo),
@@ -445,10 +475,11 @@ const haTailValues = (record: Enriched): ExcelCell[] => [
 
 const buildSalariedSheet = (
   records: Enriched[],
-  sheetName: 'Perm.Staff' | 'Cont. Staff',
+  sheetName: 'Perm.Staff' | 'Cont. Staff' | 'DLE USD',
   periodLabel: string,
+  layout: 'perm' | 'cont' = sheetName === 'Cont. Staff' ? 'cont' : 'perm',
 ): ExcelWorksheetInput => {
-  const isPerm = sheetName === 'Perm.Staff';
+  const isPerm = layout === 'perm';
   const baseEarnings = [...(isPerm ? PERM_EARNING_LABELS : CONT_EARNING_LABELS)];
   const extraEarnings = dynamicEarningLabels(records, baseEarnings);
   const earningLabels = [...baseEarnings, ...extraEarnings];
@@ -540,9 +571,15 @@ const buildSalariedSheet = (
     return values;
   });
 
+  const title = sheetName === 'DLE USD'
+    ? `DLE USD Payroll Detail - ${periodLabel}`
+    : isPerm
+      ? `Permanent Staff Payroll Detail - ${periodLabel}`
+      : `Contract / Stipend Staff Payroll Detail - ${periodLabel}`;
+
   return {
-    title: isPerm ? `Permanent Staff Payroll Detail - ${periodLabel}` : `Contract / Stipend Staff Payroll Detail - ${periodLabel}`,
-    subtitle: `${records.length} employees · official JULY PAYROLL layout`,
+    title,
+    subtitle: `${records.length} employees · official JULY PAYROLL layout · ${sheetName === 'DLE USD' ? 'USD only' : 'NGN only'}`,
     sheetName,
     columns,
     rows,
@@ -551,18 +588,42 @@ const buildSalariedSheet = (
 
 export const buildOfficialSalariedDetailWorksheets = (
   records: PayrollCalculationRecord[],
-  options?: { periodLabel?: string; directoryEmployees?: DirectoryEnrichment[] },
+  options?: {
+    periodLabel?: string;
+    directoryEmployees?: DirectoryEnrichment[];
+    /** Default ngn — DLE_USD never mixes into Perm/Cont sheets. Use usd for the separate DLE USD export. */
+    currencyScope?: OfficialExportCurrencyScope | string | null;
+  },
 ): ExcelWorksheetInput[] => {
+  const currencyScope = normalizeExportCurrencyScope(options?.currencyScope);
   const dirMap = directoryByKeys(options?.directoryEmployees || []);
-  const enriched = records
+  const enriched = filterRecordsByCurrencyScope(records, currencyScope)
     .filter((record) => !record.isDailyRate)
     .map((record) => enrich(record, dirMap.get(upper(record.employeeCode)) || dirMap.get(upper(record.employeeId)) || dirMap.get(upper(record.fullName))));
+  const periodLabel = options?.periodLabel || 'Payroll Period';
+
+  if (currencyScope === 'usd') {
+    const permanentUsd = enriched.filter((record) => !isContractOrStipend(record));
+    const contractUsd = enriched.filter((record) => isContractOrStipend(record));
+    const sheets: ExcelWorksheetInput[] = [];
+    if (permanentUsd.length || !contractUsd.length) {
+      sheets.push(buildSalariedSheet(permanentUsd, 'DLE USD', periodLabel, 'perm'));
+    }
+    if (contractUsd.length) {
+      sheets.push(buildSalariedSheet(contractUsd, 'DLE USD', periodLabel, 'cont'));
+    }
+    // Excel sheet names must be unique — if both exist, rename cont sheet.
+    if (sheets.length === 2) {
+      sheets[1] = { ...sheets[1], sheetName: 'DLE USD Cont' };
+    }
+    return sheets;
+  }
+
   const permanent = enriched.filter((record) => !isContractOrStipend(record));
   const contract = enriched.filter((record) => isContractOrStipend(record));
-  const periodLabel = options?.periodLabel || 'Payroll Period';
   return [
-    buildSalariedSheet(permanent, 'Perm.Staff', periodLabel),
-    buildSalariedSheet(contract, 'Cont. Staff', periodLabel),
+    buildSalariedSheet(permanent, 'Perm.Staff', periodLabel, 'perm'),
+    buildSalariedSheet(contract, 'Cont. Staff', periodLabel, 'cont'),
   ];
 };
 
@@ -865,9 +926,12 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
   salariedRecords: PayrollCalculationRecord[];
   dayrateRecords: PayrollCalculationRecord[];
   directoryEmployees?: DirectoryEnrichment[];
+  /** Default ngn for salaried/stipend. Pass usd for the dedicated DLE USD workbook. */
+  currencyScope?: OfficialExportCurrencyScope | string | null;
 }): Promise<ExcelWorksheetInput[]> => {
   const report = compact(input.report) || 'payroll-register';
   const pack = compact(input.pack) || 'salaried';
+  const currencyScope = normalizeExportCurrencyScope(input.currencyScope);
 
   if (report === 'bank-schedule' || report === 'bank-payment-report') {
     if (pack === 'daily-rate') {
@@ -877,12 +941,21 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
         mode: 'company',
       });
     }
+    if (currencyScope === 'usd') {
+      return buildOfficialBankScheduleWorksheets(input.salariedRecords, {
+        periodLabel: input.periodLabel,
+        titlePrefix: 'DLE USD Bank Schedule',
+        mode: 'staff-packs',
+        currencyScope: 'usd',
+      });
+    }
     if (pack === 'all') {
       return [
         ...buildOfficialBankScheduleWorksheets(input.salariedRecords, {
           periodLabel: input.periodLabel,
           titlePrefix: 'Salaried Bank Schedule',
           mode: 'staff-packs',
+          currencyScope: 'ngn',
         }),
         ...buildOfficialBankScheduleWorksheets(input.dayrateRecords, {
           periodLabel: input.periodLabel,
@@ -895,6 +968,7 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
       periodLabel: input.periodLabel,
       titlePrefix: 'Salaried Bank Schedule',
       mode: 'staff-packs',
+      currencyScope: 'ngn',
     });
   }
 
@@ -914,10 +988,18 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
         directoryEmployees: input.directoryEmployees,
       });
     }
+    if (currencyScope === 'usd') {
+      return buildOfficialSalariedDetailWorksheets(input.salariedRecords, {
+        periodLabel: input.periodLabel,
+        directoryEmployees: input.directoryEmployees,
+        currencyScope: 'usd',
+      });
+    }
     if (pack === 'all') {
       const salariedSheets = buildOfficialSalariedDetailWorksheets(input.salariedRecords, {
         periodLabel: input.periodLabel,
         directoryEmployees: input.directoryEmployees,
+        currencyScope: 'ngn',
       });
       const dayrateSheets = await buildOfficialDayrateScheduleWorksheets(input.dayrateRecords, {
         period: input.period,
@@ -929,6 +1011,7 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
     return buildOfficialSalariedDetailWorksheets(input.salariedRecords, {
       periodLabel: input.periodLabel,
       directoryEmployees: input.directoryEmployees,
+      currencyScope: 'ngn',
     });
   }
 

@@ -17,6 +17,7 @@ import {
   type TimesheetStatus,
 } from '@/lib/timesheet-entry-store';
 import { buildPayrollAttendanceSheet } from '@/lib/timesheet-payroll-attendance-sheet';
+import { buildCCodeProjectFinanceCosts } from '@/lib/project-finance-cost-service';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -481,6 +482,7 @@ export async function GET(request: Request) {
       holidayDates,
       canViewCosts,
     });
+    const projectFinanceCost = await buildCCodeProjectFinanceCosts(filteredRows);
 
     const payload = {
       generatedAt: new Date().toISOString(),
@@ -505,6 +507,7 @@ export async function GET(request: Request) {
       exportMode: exportMode ? 'full' : 'preview',
       payrollAttendanceSheet,
       payrollAttendanceSheetCount: payrollAttendanceSheet.length,
+      projectFinanceCost,
       drilldowns: {
         organization: buildBreakdown(filteredRows, 'businessUnit', (row) => row.businessUnit),
         departments: buildBreakdown(filteredRows, 'department', (row) => row.department),

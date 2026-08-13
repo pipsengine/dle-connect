@@ -34,7 +34,7 @@ import {
   Users,
 } from 'lucide-react';
 import { PageTemplate } from '@/components/layout/page-template';
-import { downloadExcelFile } from '@/lib/excel-export';
+import { downloadExcelFile, downloadExcelWorkbook } from '@/lib/excel-export';
 import {
   PAYROLL_ATTENDANCE_SHEET_COLUMNS,
   payrollAttendanceSheetToExcelRows,
@@ -201,6 +201,31 @@ type ReportsPayload = {
   exportMode?: 'preview' | 'full';
   payrollAttendanceSheet?: PayrollAttendanceSheetRow[];
   payrollAttendanceSheetCount?: number;
+  projectFinanceCost?: {
+    projects: Array<{
+      projectCode: string;
+      projectName: string;
+      label: string;
+      productiveHours: number;
+      employees: number;
+      labourCost: number;
+      wht: number;
+      net: number;
+      exceptionRows: number;
+      pendingApprovals: number;
+      drilldownKey: string;
+    }>;
+    controlTotals: {
+      cCodeEmployees: number;
+      payrollGross: number;
+      allocatedLabourCost: number;
+      wht: number;
+      net: number;
+      balanced: boolean;
+    };
+    basis: string;
+    payrollPeriods: string[];
+  };
   drilldowns: Record<string, GroupedRow[]>;
   breakdowns: Record<string, GroupedRow[]>;
   widgets: Array<{ id: string; title: string; value: string; detail: string }>;
@@ -239,7 +264,7 @@ const workspaceTabs: Array<{ id: string; label: string; reportType: ReportType }
   { id: 'audit', label: 'Audit', reportType: 'audit-trail' },
 ];
 
-type ExportColumnKey = keyof DetailRow | '_payrollReady';
+type ExportColumnKey = keyof DetailRow | '_payrollReady' | '_whtNgn' | '_netNgn';
 type ExportColumnDef = { key: ExportColumnKey; label: string };
 type ExportColumnGroup = { id: string; label: string; columns: ExportColumnDef[] };
 
@@ -355,6 +380,8 @@ const EXPORT_COLUMN_GROUPS: ExportColumnGroup[] = [
       { key: 'lastSyncAt', label: 'Last Sync At' },
       { key: 'labourRateNgn', label: 'Labour Rate' },
       { key: 'labourCostNgn', label: 'Labour Cost' },
+      { key: '_whtNgn', label: 'WHT' },
+      { key: '_netNgn', label: 'NET' },
       { key: 'auditTrail', label: 'Audit Trail' },
     ],
   },
@@ -386,6 +413,9 @@ const DEFAULT_EXPORT_COLUMN_KEYS: ExportColumnKey[] = [
   'approvalStatus',
   '_payrollReady',
   'exceptionType',
+  'labourCostNgn',
+  '_whtNgn',
+  '_netNgn',
 ];
 
 const loadStoredExportColumns = (): ExportColumnKey[] => {
@@ -401,6 +431,11 @@ const loadStoredExportColumns = (): ExportColumnKey[] => {
     // Days Worked is required for payroll-aligned reporting — keep it available even on older saved selections.
     if (!selected.includes('daysWorked')) selected.push('daysWorked');
     if (!selected.includes('dayWorked')) selected.push('dayWorked');
+    // Keep C-code WHT/NET beside labour cost when cost is exported.
+    if (selected.includes('labourCostNgn')) {
+      if (!selected.includes('_whtNgn')) selected.push('_whtNgn');
+      if (!selected.includes('_netNgn')) selected.push('_netNgn');
+    }
     return selected;
   } catch {
     return DEFAULT_EXPORT_COLUMN_KEYS;
@@ -417,6 +452,11 @@ const formatMoney = (value: number) => moneyFmt.format(Number(value || 0));
 const formatHours = (value: number) => `${numberFmt.format(Number(value || 0))}h`;
 const formatNumber = (value: number) => intFmt.format(Number(value || 0));
 const formatStatus = (status: string) => status.replace(/_/g, ' ');
+
+/** Same 5% WHT rule used for C-code / daily-rate contract labour (gross × 5%, net = gross − WHT). */
+const CONTRACT_LABOUR_WHT_RATE = 0.05;
+const contractLabourWht = (labourCost: number) => Math.round(Number(labourCost || 0) * CONTRACT_LABOUR_WHT_RATE);
+const contractLabourNet = (labourCost: number) => Math.round(Number(labourCost || 0) - contractLabourWht(labourCost));
 const isGroupedRow = (row: GroupedRow | DetailRow): row is GroupedRow => 'label' in row;
 const clampPct = (value: number) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
 const pctText = (value: number) => `${formatNumber(clampPct(value))}%`;
@@ -802,7 +842,11 @@ export default function TimesheetReportsClient() {
 
       const cellValue = (row: DetailRow, key: ExportColumnKey) => {
         if (key === '_payrollReady') return row.payrollReady ? 'Yes' : 'No';
-        if ((key === 'labourCostNgn' || key === 'labourRateNgn') && !canViewCosts) return 'Restricted';
+        if ((key === 'labourCostNgn' || key === 'labourRateNgn' || key === '_whtNgn' || key === '_netNgn') && !canViewCosts) {
+          return 'Restricted';
+        }
+        if (key === '_whtNgn') return contractLabourWht(Number(row.labourCostNgn || 0));
+        if (key === '_netNgn') return contractLabourNet(Number(row.labourCostNgn || 0));
         return row[key as keyof DetailRow] as string | number | null | undefined;
       };
 
@@ -811,16 +855,69 @@ export default function TimesheetReportsClient() {
         return;
       }
 
+      const projectFinance = exportPayload.projectFinanceCost;
+      const projectSummary = (projectFinance?.projects || []).map((row, index) => {
+        const status = row.exceptionRows ? 'Attention' : row.pendingApprovals ? 'Pending' : 'Approved';
+        return {
+          rank: index + 1,
+          projectCode: row.projectCode,
+          projectName: row.projectName,
+          hours: Number(row.productiveHours || 0),
+          employees: Number(row.employees || 0),
+          labourCost: Number(row.labourCost || 0),
+          wht: Number(row.wht || 0),
+          net: Number(row.net || 0),
+          status,
+        };
+      });
+      const controls = projectFinance?.controlTotals;
+
       if (format === 'excel') {
-        downloadExcelFile({
-          title: `Timesheet Capture Export`,
-          subtitle: `${from} to ${to} · ${rows.length.toLocaleString()} capture lines · ${columns.length} columns`,
-          sheetName: 'Timesheet Capture',
+        downloadExcelWorkbook({
           fileName: `timesheet-capture-${from}-to-${to}.xls`,
-          columns: columns.map((column) => column.label),
-          rows: rows.map((row) => columns.map((column) => cellValue(row, column.key))),
+          worksheets: [
+            {
+              title: 'Timesheet Capture Export',
+              subtitle: `${from} to ${to} · ${rows.length.toLocaleString()} capture lines · ${columns.length} columns`,
+              sheetName: 'Timesheet Capture',
+              columns: columns.map((column) => column.label),
+              rows: rows.map((row) => columns.map((column) => cellValue(row, column.key))),
+            },
+            {
+              title: 'Top Projects By Labour Hours (C-code payroll)',
+              subtitle: `${from} to ${to} · ${projectFinance?.basis || 'C-code payroll gross allocated by timesheet hours'} · Periods: ${(projectFinance?.payrollPeriods || []).join(', ') || 'n/a'}`,
+              sheetName: 'Top Projects',
+              columns: ['#', 'Project Code', 'Project Name', 'Hours', 'Employees', 'Labour Cost', 'WHT', 'NET', 'Status'],
+              rows: [
+                ...projectSummary.map((row) => [
+                  row.rank,
+                  row.projectCode,
+                  row.projectName,
+                  row.hours,
+                  row.employees,
+                  canViewCosts ? row.labourCost : 'Restricted',
+                  canViewCosts ? row.wht : 'Restricted',
+                  canViewCosts ? row.net : 'Restricted',
+                  row.status,
+                ]),
+                ...(controls
+                  ? [[
+                      '',
+                      'CONTROL TOTAL',
+                      controls.balanced ? 'Balanced to C-code payroll' : 'Allocation variance',
+                      '',
+                      controls.cCodeEmployees,
+                      canViewCosts ? controls.allocatedLabourCost : 'Restricted',
+                      canViewCosts ? controls.wht : 'Restricted',
+                      canViewCosts ? controls.net : 'Restricted',
+                      canViewCosts ? `Payroll gross ${controls.payrollGross}` : 'Restricted',
+                    ]]
+                  : []),
+              ],
+            },
+          ],
         });
-        setExportNotice(`Exported ${rows.length.toLocaleString()} lines · ${columns.length} columns to Excel.`);
+        setExportNotice(`Exported ${rows.length.toLocaleString()} lines · ${columns.length} columns + C-code Top Projects (payroll WHT/NET) to Excel.`);
         setShowColumnPicker(false);
         return;
       }
@@ -906,7 +1003,8 @@ export default function TimesheetReportsClient() {
   const nonProductivePct = ratioPct(summary?.nonProductiveHours || 0, totalHours);
   const allocatedCostPct = ratioPct(summary?.projectCostAllocation || 0, summary?.labourCost || 0);
   const topDepartments = payload?.breakdowns.department.slice(0, 10) || [];
-  const topProjects = payload?.breakdowns.project.slice(0, 10) || [];
+  const topProjects = (payload?.projectFinanceCost?.projects || []).slice(0, 10);
+  const projectFinanceControls = payload?.projectFinanceCost?.controlTotals;
   const approvalBreakdown = payload?.breakdowns.status.slice(0, 6) || [];
   const exceptionBreakdown = payload?.breakdowns.exception.slice(0, 5) || [];
   const activeTab = workspaceTabs.find((tab) => tab.reportType === reportType)?.id || 'overview';
@@ -1269,31 +1367,57 @@ export default function TimesheetReportsClient() {
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.2fr_0.7fr_0.5fr]">
           <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-              <h2 className="text-xs font-black uppercase tracking-widest text-slate-600">Top Projects By Labour Hours</h2>
+              <div>
+                <h2 className="text-xs font-black uppercase tracking-widest text-slate-600">Top Projects By Labour Hours</h2>
+                <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                  C-code payroll cost only · {payload?.projectFinanceCost?.basis || 'Payroll gross allocated by timesheet hours'}
+                </p>
+              </div>
               <button type="button" onClick={() => setReportType('project')} className="text-xs font-black text-blue-700">View all projects</button>
             </div>
+            {projectFinanceControls ? (
+              <div className={`flex flex-wrap gap-3 border-b px-4 py-2 text-[11px] font-bold ${projectFinanceControls.balanced ? 'border-emerald-100 bg-emerald-50 text-emerald-800' : 'border-amber-100 bg-amber-50 text-amber-900'}`}>
+                <span>{formatNumber(projectFinanceControls.cCodeEmployees)} C-code staff</span>
+                <span>Payroll gross {money(projectFinanceControls.payrollGross)}</span>
+                <span>Allocated {money(projectFinanceControls.allocatedLabourCost)}</span>
+                <span>WHT {money(projectFinanceControls.wht)}</span>
+                <span>NET {money(projectFinanceControls.net)}</span>
+                <span>{projectFinanceControls.balanced ? 'Balanced to payroll' : 'Allocation variance — check unmatched C-codes'}</span>
+              </div>
+            ) : null}
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-left text-sm">
+              <table className="w-full min-w-[920px] text-left text-sm">
                 <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  <tr><th className="px-4 py-3">#</th><th className="px-4 py-3">Project Code</th><th className="px-4 py-3">Project Name</th><th className="px-4 py-3">Hours</th><th className="px-4 py-3">Employees</th><th className="px-4 py-3">Labour Cost</th><th className="px-4 py-3">Status</th></tr>
+                  <tr>
+                    <th className="px-4 py-3">#</th>
+                    <th className="px-4 py-3">Project Code</th>
+                    <th className="px-4 py-3">Project Name</th>
+                    <th className="px-4 py-3">Hours</th>
+                    <th className="px-4 py-3">Employees</th>
+                    <th className="px-4 py-3">Labour Cost</th>
+                    <th className="px-4 py-3">WHT</th>
+                    <th className="px-4 py-3">NET</th>
+                    <th className="px-4 py-3">Status</th>
+                  </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {topProjects.map((row, index) => {
-                    const [code, ...nameParts] = row.label.split(' - ');
                     const status = row.exceptionRows ? 'Attention' : row.pendingApprovals ? 'Pending' : 'Approved';
                     return (
                       <tr key={row.label} onClick={() => setDrilldown({ groupBy: 'project', key: row.drilldownKey })} className="cursor-pointer hover:bg-slate-50">
                         <td className="px-4 py-3 text-xs font-black text-slate-500">{index + 1}</td>
-                        <td className="px-4 py-3 font-black text-blue-800 underline-offset-2 hover:underline">{code}</td>
-                        <td className="px-4 py-3 font-bold text-slate-800">{nameParts.join(' - ') || code}</td>
+                        <td className="px-4 py-3 font-black text-blue-800 underline-offset-2 hover:underline">{row.projectCode}</td>
+                        <td className="px-4 py-3 font-bold text-slate-800">{row.projectName}</td>
                         <td className="px-4 py-3 font-black">{formatHours(row.productiveHours)}</td>
                         <td className="px-4 py-3 font-bold">{formatNumber(row.employees)}</td>
                         <td className="px-4 py-3 font-bold">{money(row.labourCost)}</td>
+                        <td className="px-4 py-3 font-bold text-amber-800">{money(row.wht)}</td>
+                        <td className="px-4 py-3 font-bold text-emerald-800">{money(row.net)}</td>
                         <td className="px-4 py-3"><span className={`rounded-md px-2 py-1 text-[10px] font-black ${status === 'Approved' ? 'bg-emerald-50 text-emerald-700' : status === 'Pending' ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>{status}</span></td>
                       </tr>
                     );
                   })}
-                  {!topProjects.length ? <tr><td colSpan={7} className="px-4 py-8 text-center text-sm font-bold text-slate-400">No project data available.</td></tr> : null}
+                  {!topProjects.length ? <tr><td colSpan={9} className="px-4 py-8 text-center text-sm font-bold text-slate-400">No C-code project payroll cost in this period.</td></tr> : null}
                 </tbody>
               </table>
             </div>

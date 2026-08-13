@@ -17,6 +17,7 @@ import { buildSageJournalCsv, buildSageJournalExportRows, savePayrollJournalMapp
 import { buildSalarySetupExportReport } from '@/lib/payroll-salary-setup-export';
 import { buildPayrollReviewExportReport, previousPayrollPeriod } from '@/lib/payroll-review-export';
 import { buildOfficialPayrollExcelWorksheets, isOfficialPayrollExcelReport } from '@/lib/payroll-official-excel-export';
+import { isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { readPayrollSnapshotsByPeriods } from '@/lib/payroll-run-store';
 
@@ -125,15 +126,24 @@ const employeeWorkedInPeriod = (record: {
   return dailyRateDaysWorked(record) > 0;
 };
 
-const filterExportRecords = (records: any[], status: string | null, pack?: string | null) => {
+const filterExportRecords = (records: any[], status: string | null, pack?: string | null, currency?: string | null) => {
   // Daily Rate pack sheet: always require days worked, even if isDailyRate flag is missing.
   const worked = records.filter((record) => {
     if (pack === 'daily-rate') return dailyRateDaysWorked(record) > 0;
     return employeeWorkedInPeriod(record);
   });
-  return status && status !== 'All'
+  const byStatus = status && status !== 'All'
     ? worked.filter((record) => record.payrollStatus === status)
     : worked;
+  const currencyToken = String(currency || '').trim().toLowerCase();
+  if (!currencyToken || currencyToken === 'all') return byStatus;
+  if (currencyToken === 'usd' || currencyToken === 'dle-usd' || currencyToken === 'dle_usd') {
+    return byStatus.filter((record) => isDleUsdPayrollEmployee(record));
+  }
+  if (currencyToken === 'ngn' || currencyToken === 'naira') {
+    return byStatus.filter((record) => !isDleUsdPayrollEmployee(record));
+  }
+  return byStatus;
 };
 
 const csvFromReport = (reportData: { columns: string[]; rows: unknown[][] }) => {
@@ -320,7 +330,11 @@ export async function GET(request: Request) {
     const requestedPack = url.searchParams.get('pack') || undefined;
     const payload = await buildManagementPayload(request, period, requestedPack === 'all' ? 'salaried' : requestedPack);
     const report = compact(url.searchParams.get('report')) || 'payroll-register';
-    const exportRecords = filterExportRecords(payload.records, url.searchParams.get('status'), payload.pack);
+    const format = compact(url.searchParams.get('format')).toLowerCase();
+    const currencyParam = compact(url.searchParams.get('currency'));
+    // Excel defaults to NGN salaried/stipend only — DLE_USD is a separate export (currency=usd).
+    const currencyScope = currencyParam || ((format === 'xls' || format === 'excel') ? 'ngn' : 'all');
+    const exportRecords = filterExportRecords(payload.records, url.searchParams.get('status'), payload.pack, currencyScope);
     if (url.searchParams.get('audit') === '1') return jsonOk({ auditTrail: payload.auditTrail });
     let reportData = reportExport(exportRecords, report);
     const previousPeriod = previousPayrollPeriod(payload.period);
@@ -409,7 +423,11 @@ export async function GET(request: Request) {
             await buildManagementPayload(request, period, 'daily-rate'),
           ]
         : [payload];
-      const filePack = requestedPack === 'all' ? 'both-packs' : (payload.pack || 'salaried');
+      const filePack = currencyScope === 'usd' || currencyScope === 'dle-usd' || currencyScope === 'dle_usd'
+        ? 'dle-usd'
+        : requestedPack === 'all'
+          ? 'both-packs'
+          : (payload.pack || 'salaried');
 
       if (isOfficialPayrollExcelReport(report) && report !== 'payroll-review') {
         const salariedPayload = packPayloads.find((item) => item.pack !== 'daily-rate') || payload;
@@ -417,9 +435,9 @@ export async function GET(request: Request) {
           || (payload.pack === 'daily-rate' ? payload : null)
           || (requestedPack === 'daily-rate' ? payload : await buildManagementPayload(request, period, 'daily-rate').catch(() => null));
         const statusFilter = url.searchParams.get('status');
-        const salariedRecords = filterExportRecords(salariedPayload.records, statusFilter, 'salaried')
+        const salariedRecords = filterExportRecords(salariedPayload.records, statusFilter, 'salaried', currencyScope)
           .filter((record) => !record.isDailyRate);
-        const dayrateRecords = filterExportRecords((dayratePayload || payload).records, statusFilter, 'daily-rate')
+        const dayrateRecords = filterExportRecords((dayratePayload || payload).records, statusFilter, 'daily-rate', 'all')
           .filter((record) => record.isDailyRate || requestedPack === 'daily-rate');
         const directory = await readPayrollEmployees().catch(() => ({ employees: [] as Awaited<ReturnType<typeof readPayrollEmployees>>['employees'] }));
         const worksheets = await buildOfficialPayrollExcelWorksheets({
@@ -430,6 +448,7 @@ export async function GET(request: Request) {
           salariedRecords,
           dayrateRecords,
           directoryEmployees: directory.employees,
+          currencyScope,
         });
         if (worksheets.length) {
           return new Response(buildExcelWorkbookXml({ worksheets }), {
@@ -443,7 +462,7 @@ export async function GET(request: Request) {
       }
 
       const worksheets = await Promise.all(packPayloads.map(async (packPayload) => {
-        const packRecords = filterExportRecords(packPayload.records, url.searchParams.get('status'), packPayload.pack);
+        const packRecords = filterExportRecords(packPayload.records, url.searchParams.get('status'), packPayload.pack, packPayload.pack === 'daily-rate' ? 'all' : currencyScope);
         let packReportData = reportExport(packRecords, report);
         if (report === 'payroll-review') {
           const packPreviousPeriod = previousPayrollPeriod(packPayload.period);
@@ -455,10 +474,13 @@ export async function GET(request: Request) {
             packPreviousPeriod || 'Previous Month',
           );
         }
+        const sheetName = packPayload.pack === 'daily-rate'
+          ? 'Daily Rate'
+          : (currencyScope === 'usd' || currencyScope === 'dle-usd' || currencyScope === 'dle_usd' ? 'DLE USD' : 'Salaried Stipend');
         return {
           title: `${reportTitle(report)} - ${packPayload.periodLabel}`,
-          subtitle: `${packPayload.packLabel || 'Payroll'} pack · ${packRecords.length} records · ${packPayload.summary.exceptionCount} exceptions`,
-          sheetName: packPayload.pack === 'daily-rate' ? 'Daily Rate' : 'Salaried Stipend',
+          subtitle: `${packPayload.packLabel || 'Payroll'} pack · ${sheetName} · ${packRecords.length} records · ${packPayload.summary.exceptionCount} exceptions`,
+          sheetName,
           columns: packReportData.columns,
           rows: packReportData.rows,
         };

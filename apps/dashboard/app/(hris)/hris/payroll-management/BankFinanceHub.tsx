@@ -52,6 +52,10 @@ type FinanceRecord = {
   staffCategory?: string;
   employeeCategory?: string;
   jobTitle?: string;
+  payrollGroup?: string;
+  payCurrency?: string;
+  earningProfile?: string;
+  earningProfileId?: string;
   payrollStatus: string;
   exceptionCount?: number;
   exceptions?: string[];
@@ -187,6 +191,7 @@ type Props = {
   onRefresh: () => void;
   onExportCsv: () => void;
   onExportExcel: () => void;
+  onExportDleUsdExcel?: () => void;
   onExportPdf?: () => void;
   onExportJournalSage?: () => void;
   onSaveJournalMapping?: (mappings: Array<{ component: string; accountCode: string; accountName: string; side: 'debit' | 'credit' }>) => Promise<boolean | void> | boolean | void;
@@ -270,6 +275,7 @@ export default function BankFinanceHub({
   onRefresh,
   onExportCsv,
   onExportExcel,
+  onExportDleUsdExcel,
   onExportPdf,
   onExportJournalSage,
   onSaveJournalMapping,
@@ -622,6 +628,7 @@ export default function BankFinanceHub({
             onBack={() => onSelectTab('overview')}
             onFinanceAction={onFinanceAction}
             onExportExcel={onExportExcel}
+            onExportDleUsdExcel={onExportDleUsdExcel}
             onExportPdf={onExportPdf}
           />
         ) : activeTab === 'payment-files' ? (
@@ -661,13 +668,16 @@ const bankScheduleRowsFor = (records: FinanceRecord[] = []) => {
 
 const bankSchedulePackCounts = (rows: FinanceRecord[]) => {
   const counts: Record<BankScheduleStaffPack | 'all', number> = {
-    all: rows.length,
+    all: 0,
     permanent: 0,
     'contract-lumpsum': 0,
     'it-nysc': 0,
+    'dle-usd': 0,
   };
   for (const row of rows) {
-    counts[resolveBankScheduleStaffPack(row)] += 1;
+    const pack = resolveBankScheduleStaffPack(row);
+    counts[pack] += 1;
+    if (pack !== 'dle-usd') counts.all += 1;
   }
   return counts;
 };
@@ -720,6 +730,7 @@ function BankSchedulePanel({
   onBack,
   onFinanceAction,
   onExportExcel,
+  onExportDleUsdExcel,
   onExportPdf,
 }: {
   payload: BankFinancePayload | null;
@@ -729,6 +740,7 @@ function BankSchedulePanel({
   onBack: () => void;
   onFinanceAction: (actionId: string) => void;
   onExportExcel: () => void;
+  onExportDleUsdExcel?: () => void;
   onExportPdf?: () => void;
 }) {
   const records = payload?.records || [];
@@ -736,7 +748,7 @@ function BankSchedulePanel({
   const [staffPackFilter, setStaffPackFilter] = useState<'all' | BankScheduleStaffPack>('all');
   const packCounts = useMemo(() => bankSchedulePackCounts(bankRows), [bankRows]);
   const filteredBankRows = useMemo(() => {
-    if (staffPackFilter === 'all') return bankRows;
+    if (staffPackFilter === 'all') return bankRows.filter((row) => resolveBankScheduleStaffPack(row) !== 'dle-usd');
     return bankRows.filter((row) => resolveBankScheduleStaffPack(row) === staffPackFilter);
   }, [bankRows, staffPackFilter]);
   const previewRows = filteredBankRows.slice(0, 25);
@@ -777,7 +789,7 @@ function BankSchedulePanel({
               {payload?.periodLabel || 'Current period'} · {fmtNum(bankRows.length)} employees in payment schedule
               {payload?.pack === 'daily-rate'
                 ? ' · Dayrate pack exports as DLE / DLPC company sheets'
-                : ' · Salaried export splits Permanent / Contract Lumpsum / IT NYSC'}
+                : ' · NGN export splits Permanent / Contract Lumpsum / IT NYSC · DLE USD is a separate Excel'}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -785,8 +797,14 @@ function BankSchedulePanel({
               <>
                 <button type="button" onClick={onExportExcel} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700">
                   <FileSpreadsheet className="h-4 w-4" />
-                  Export Excel (all packs · {fmtNum(bankRows.length)})
+                  Export NGN Excel ({fmtNum(packCounts.all)})
                 </button>
+                {onExportDleUsdExcel ? (
+                  <button type="button" onClick={onExportDleUsdExcel} className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-800">
+                    <FileSpreadsheet className="h-4 w-4" />
+                    Export DLE USD Excel ({fmtNum(packCounts['dle-usd'])})
+                  </button>
+                ) : null}
                 {onExportPdf ? (
                   <button type="button" onClick={onExportPdf} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50">
                     <FileText className="h-4 w-4" />
@@ -879,7 +897,7 @@ function BankSchedulePanel({
               onClick={() => setStaffPackFilter('all')}
               className={`rounded-lg border px-3 py-1.5 text-xs font-bold ${staffPackFilter === 'all' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700'}`}
             >
-              All ({fmtNum(packCounts.all)})
+              All NGN ({fmtNum(packCounts.all)})
             </button>
             {BANK_SCHEDULE_STAFF_PACKS.map((pack) => (
               <button
@@ -933,7 +951,7 @@ function BankSchedulePanel({
         </div>
         {filteredBankRows.length > previewRows.length ? (
           <p className="border-t border-slate-100 px-5 py-3 text-xs font-semibold text-[#64748B] print:hidden">
-            Export Excel for the complete schedule (Permanent, Contract Lumpsum, IT NYSC sheets for salaried; DLE/DLPC for dayrate).
+            Export Excel for NGN packs (Permanent, Contract Lumpsum, IT NYSC) separately from DLE USD. Dayrate uses DLE/DLPC sheets.
           </p>
         ) : null}
       </section>
