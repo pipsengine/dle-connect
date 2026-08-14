@@ -42,6 +42,17 @@ const isInlineViewable = (mimeType?: string | null, fileName?: string | null) =>
   return /\.(pdf|png|jpe?g|gif|webp|txt)$/i.test(name);
 };
 
+/** Content-Disposition must be ByteString-safe; Unicode names use RFC 5987 filename*. */
+const contentDispositionHeader = (disposition: 'inline' | 'attachment', fileName: string) => {
+  const raw = String(fileName || 'attachment.bin').replace(/[\r\n"]/g, '_').trim() || 'attachment.bin';
+  const asciiFallback = raw
+    .replace(/[^\x20-\x7E]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'attachment.bin';
+  const encoded = encodeURIComponent(raw).replace(/['()]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `${disposition}; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
+};
+
 export async function GET(request: Request) {
   try {
     const actor = await resolveActor();
@@ -73,12 +84,11 @@ export async function GET(request: Request) {
       const downloadName = attachment?.originalName || storedName;
       const mimeType = attachment?.mimeType || 'application/octet-stream';
       const inline = wantInline && isInlineViewable(mimeType, downloadName);
-      const safeDownloadName = downloadName.replace(/"/g, '');
 
       return new NextResponse(new Uint8Array(bytes), {
         headers: {
           'content-type': mimeType,
-          'content-disposition': `${inline ? 'inline' : 'attachment'}; filename="${safeDownloadName}"`,
+          'content-disposition': contentDispositionHeader(inline ? 'inline' : 'attachment', downloadName),
           'cache-control': 'no-store',
           'x-content-type-options': 'nosniff',
         },
