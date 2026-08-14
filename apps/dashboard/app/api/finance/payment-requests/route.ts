@@ -39,7 +39,58 @@ const codesEqual = (left?: string | null, right?: string | null) =>
   String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase()
   && Boolean(String(left || '').trim());
 
-const resolveActor = async () => {
+const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
+const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
+const codesEqual = (left?: string | null, right?: string | null) =>
+  String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase()
+  && Boolean(String(left || '').trim());
+
+type PaymentRouteActor = {
+  actor: string;
+  actorCode: string;
+  department: string;
+  unit: string;
+  jobTitle: string;
+  roles: string[];
+  permissions: string[];
+  isGlobalAdmin: boolean;
+  authenticated: boolean;
+};
+
+/** Always scope list payloads: Finance / Global Super Admin → all; others → own (or inbox assignment). */
+const buildViewerPaymentWorkspace = async (
+  actor: PaymentRouteActor,
+  options?: { listScope?: string; paymentType?: string; mineOnly?: boolean; inboxOnly?: boolean },
+) => {
+  const viewAll = canViewAllPaymentRequests(actor);
+  const scope = String(options?.listScope || '').trim().toLowerCase();
+  const mineOnly = Boolean(options?.mineOnly) || scope === 'mine';
+  const inboxOnly = Boolean(options?.inboxOnly) || scope === 'inbox';
+  const actorCode = String(actor.actorCode || '').trim();
+  const workspace = await buildPaymentRequestsWorkspace({
+    paymentType: options?.paymentType,
+    // Finance "My Requests" or any non–view-all (non-inbox) list → requester only.
+    mineFor: (mineOnly || (!viewAll && !inboxOnly)) ? actorCode : undefined,
+    // Non-finance inbox → own + current approver + beneficiary.
+    scopedToActorCode: (!viewAll && inboxOnly && !mineOnly) ? actorCode : undefined,
+    restrictToActor: !viewAll,
+  });
+  return {
+    ...workspace,
+    viewer: {
+      actorCode: actor.actorCode,
+      canViewAll: viewAll,
+      approvableRequestIds: workspace.rows
+        .filter((row) => canActOnPaymentApproval(actor, row))
+        .map((row) => row.requestId),
+      editableReturnedRequestIds: workspace.rows
+        .filter((row) => canEditReturnedPaymentRequest(actor, row))
+        .map((row) => row.requestId),
+    },
+  };
+};
+
+const resolveActor = async (): Promise<PaymentRouteActor> => {
   const jar = await cookies();
   const token = jar.get(AUTH_COOKIE)?.value;
   const session = token ? await verifySessionToken(token) : null;
@@ -47,9 +98,16 @@ const resolveActor = async () => {
   const permissions = session?.isGlobalAdmin
     ? ['*']
     : permissionsForRoles(roles);
+  const actorCode = String(
+    session?.employeeCode
+    || session?.employeeId
+    || session?.username
+    || session?.sub
+    || '',
+  ).trim();
   return {
     actor: session?.fullName || session?.username || session?.sub || 'Finance User',
-    actorCode: session?.employeeCode || session?.username || session?.sub || '',
+    actorCode,
     department: session?.department || '',
     unit: session?.unit || '',
     jobTitle: '',
@@ -156,27 +214,13 @@ export async function GET(request: Request) {
     const paymentType = searchParams.get('paymentType') || undefined;
     const mineOnly = searchParams.get('mine') === '1';
     const inboxOnly = searchParams.get('inbox') === '1';
-    // Non-finance staff: Payment Requests hub = own raised only.
-    // Inbox keeps assigned-approver visibility via scopedToActorCode.
-    const workspace = await buildPaymentRequestsWorkspace({
-      paymentType: paymentType || undefined,
-      mineFor: !viewAll && (mineOnly || !inboxOnly) ? actor.actorCode : (mineOnly ? actor.actorCode : undefined),
-      scopedToActorCode: !viewAll && inboxOnly && !mineOnly ? actor.actorCode : undefined,
+    const workspace = await buildViewerPaymentWorkspace(actor, {
+      paymentType,
+      mineOnly,
+      inboxOnly,
+      listScope: inboxOnly && !mineOnly ? 'inbox' : (mineOnly || !viewAll ? 'mine' : undefined),
     });
-    const approvableRequestIds = workspace.rows
-      .filter((row) => canActOnPaymentApproval(actor, row))
-      .map((row) => row.requestId);
-    const editableReturnedRequestIds = workspace.rows
-      .filter((row) => canEditReturnedPaymentRequest(actor, row))
-      .map((row) => row.requestId);
-    return jsonOk({
-      ...workspace,
-      viewer: {
-        actorCode: actor.actorCode,
-        approvableRequestIds,
-        editableReturnedRequestIds,
-      },
-    });
+    return jsonOk(workspace);
   } catch (error) {
     return jsonErr(500, error instanceof Error ? error.message : 'Unable to load payment requests.');
   }
@@ -298,8 +342,11 @@ export async function POST(request: Request) {
         actor: actor.actor,
         attachmentUploads: Array.isArray(body.attachmentUploads) ? body.attachmentUploads : undefined,
       });
+      // Never return the enterprise-wide queue to non–Finance / non–Super-Admin actors.
+      const workspace = await buildViewerPaymentWorkspace(actor, { listScope: body.listScope });
       return jsonOk({
         ...result,
+        workspace,
         message: result.request?.status === 'Draft' ? 'Draft saved.' : 'Payment request submitted.',
       });
     }
@@ -391,22 +438,10 @@ export async function POST(request: Request) {
           ? body.keepAttachmentIds.map((id: unknown) => String(id || '').trim()).filter(Boolean)
           : undefined,
       });
-      const approvableRequestIds = (result.workspace?.rows || [])
-        .filter((row) => canActOnPaymentApproval(actor, row))
-        .map((row) => row.requestId);
-      const editableReturnedRequestIds = (result.workspace?.rows || [])
-        .filter((row) => canEditReturnedPaymentRequest(actor, row))
-        .map((row) => row.requestId);
+      const workspace = await buildViewerPaymentWorkspace(actor, { listScope: body.listScope });
       return jsonOk({
         ...result,
-        workspace: {
-          ...result.workspace,
-          viewer: {
-            actorCode: actor.actorCode,
-            approvableRequestIds,
-            editableReturnedRequestIds,
-          },
-        },
+        workspace,
       });
     }
 
@@ -520,28 +555,10 @@ export async function POST(request: Request) {
         ? await listPaymentRequestActions(result.request.requestId)
         : [];
       // Never return an unscoped payment list to non–Finance / non–Super-Admin actors.
-      const viewAllAfter = canViewAllPaymentRequests(actor);
-      const listScope = String(body.listScope || '').trim().toLowerCase();
-      const scopedWorkspace = await buildPaymentRequestsWorkspace({
-        mineFor: !viewAllAfter && listScope !== 'inbox' ? actor.actorCode : undefined,
-        scopedToActorCode: !viewAllAfter && listScope === 'inbox' ? actor.actorCode : undefined,
-      });
-      const workspaceForViewer = viewAllAfter ? (result.workspace || scopedWorkspace) : scopedWorkspace;
-      const approvableRequestIds = (workspaceForViewer?.rows || [])
-        .filter((row) => canActOnPaymentApproval(actor, row))
-        .map((row) => row.requestId);
+      const workspaceForViewer = await buildViewerPaymentWorkspace(actor, { listScope: body.listScope });
       return jsonOk({
         ...result,
-        workspace: {
-          ...workspaceForViewer,
-          viewer: {
-            actorCode: actor.actorCode,
-            approvableRequestIds,
-            editableReturnedRequestIds: (workspaceForViewer?.rows || [])
-              .filter((row) => canEditReturnedPaymentRequest(actor, row))
-              .map((row) => row.requestId),
-          },
-        },
+        workspace: workspaceForViewer,
         actions,
         message: 'Payment request updated.',
       });

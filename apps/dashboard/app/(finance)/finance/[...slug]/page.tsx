@@ -35,7 +35,7 @@ const resolveFinanceActor = async () => {
   const roles = session?.roles || [];
   const permissions = session?.isGlobalAdmin ? ['*'] : permissionsForRoles(roles);
   return {
-    actorCode: session?.employeeCode || session?.username || session?.sub || '',
+    actorCode: String(session?.employeeCode || session?.employeeId || session?.username || session?.sub || '').trim(),
     actorName: session?.fullName || session?.username || session?.sub || '',
     department: session?.department || '',
     unit: session?.unit || '',
@@ -116,6 +116,7 @@ export default async function FinanceCatchAllPage({ params, searchParams }: Prop
         ? (mineOnlyPage ? actor.actorCode : undefined)
         : (inboxPage ? undefined : actor.actorCode),
       scopedToActorCode: !viewAllPayments && inboxPage ? actor.actorCode : undefined,
+      restrictToActor: !viewAllPayments,
     }).catch(() => null)
     : null;
   const paymentRequests = paymentRequestsRaw
@@ -123,6 +124,7 @@ export default async function FinanceCatchAllPage({ params, searchParams }: Prop
       ...paymentRequestsRaw,
       viewer: {
         actorCode: actor.actorCode,
+        canViewAll: viewAllPayments,
         approvableRequestIds: paymentRequestsRaw.rows
           .filter((row) => canActOnPaymentApproval(actor, row))
           .map((row) => row.requestId),

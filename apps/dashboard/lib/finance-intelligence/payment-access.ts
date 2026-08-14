@@ -17,8 +17,8 @@ export const MD_CEO_EMPLOYEE_CODE = 'P0413';
 const MD_CEO_ROLE = /managing\s*director|md\s*\/?\s*ceo|chief\s*executive|\bmd\b|\bceo\b/i;
 const MD_CEO_STAGE = /md\s*\/?\s*ceo|managing\s*director|chief\s*executive/i;
 
-/** Finance department / unit labels (directory). */
-const FINANCE_DEPARTMENT_TEXT = /\bfinance\b|\btreasury\b|\baccounts?\b|\baccounting\b|accounts\s+payable|accounts\s+receivable|financial\s+control/i;
+/** Finance department / unit labels (directory). Keep strict — avoid matching "Key Account", etc. */
+const FINANCE_DEPARTMENT_TEXT = /\bfinance\b|\btreasury\b|\baccounting\b|accounts\s+payable|accounts\s+receivable|financial\s+control|finance\s+&\s+accounts|finance\s+and\s+accounts/i;
 
 /** Explicit Finance specialist roles that may see all payment requests. */
 const FINANCE_VIEW_ALL_ROLE = /^(cfo|finance manager|finance controller|finance administrator|finance payroll reviewer|accountant|accounts payable officer|accounts receivable officer|budget officer|treasury officer)$/i;
@@ -34,10 +34,9 @@ export const isMdCeoActor = (actor: PaymentAccessActor) => {
   });
 };
 
-/** Global Super Administrator (session flag, Super Administrator role, or * permission). */
+/** Global Super Administrator (session flag or Super Administrator role only). */
 export const isGlobalSuperAdminActor = (actor: PaymentAccessActor) => {
   if (actor.isGlobalAdmin) return true;
-  if (hasPermission(actor.permissions || [], '*')) return true;
   return (actor.roles || []).some((role) => /^super administrator$/i.test(String(role || '').trim()));
 };
 

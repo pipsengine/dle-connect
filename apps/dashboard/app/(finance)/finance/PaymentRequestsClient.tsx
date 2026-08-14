@@ -329,6 +329,8 @@ export default function PaymentRequestsClient({
 }: Props) {
   const router = useRouter();
   const [workspace, setWorkspace] = useState(initialWorkspace);
+  // Prefer server flag; fall back to selfServiceMode prop from SSR.
+  const restrictedToOwnPayments = selfServiceMode || workspace.viewer?.canViewAll === false;
   const [tab, setTab] = useState<TabId>(() => {
     if (listMode === 'inbox') return 'pending';
     if (listMode === 'approved') return 'approved';
@@ -500,7 +502,7 @@ export default function PaymentRequestsClient({
     setToast('');
     try {
       const params = new URLSearchParams();
-      if (selfServiceMode) {
+      if (restrictedToOwnPayments) {
         // Non-finance: Payment Requests = own raised only; Inbox = assigned scope.
         if (listMode === 'inbox') params.set('inbox', '1');
         else params.set('mine', '1');
@@ -551,7 +553,21 @@ export default function PaymentRequestsClient({
 
   const filteredRows = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const actor = String(workspace.viewer?.actorCode || '').trim().toLowerCase();
     return workspace.rows.filter((row) => {
+      // Defense in depth: non–Finance / non–Super-Admin never see other employees' raised payments
+      // (Inbox may still include items where they are current approver or beneficiary).
+      if (restrictedToOwnPayments && actor) {
+        const requester = String(row.requesterCode || '').trim().toLowerCase();
+        const approver = String(row.currentApproverCode || '').trim().toLowerCase();
+        const beneficiary = String(row.beneficiaryCode || '').trim().toLowerCase();
+        if (listMode === 'inbox') {
+          if (requester !== actor && approver !== actor && beneficiary !== actor) return false;
+        } else if (requester !== actor) {
+          return false;
+        }
+      }
+
       if (paymentTypeFilter !== 'All' && row.paymentType !== paymentTypeFilter) return false;
       if (statusFilter !== 'All' && row.status !== statusFilter) return false;
       if (departmentFilter !== 'All' && row.department !== departmentFilter) return false;
@@ -642,6 +658,7 @@ export default function PaymentRequestsClient({
     detailFocus,
     listMode,
     workspace.viewer?.actorCode,
+    restrictedToOwnPayments,
   ]);
 
   const activeFilterCount = [
@@ -965,6 +982,7 @@ export default function PaymentRequestsClient({
           purchaseOrderNo: composerType === 'Expense Payment' ? '' : form.purchaseOrderNo,
           deliveryNoteNo: composerType === 'Expense Payment' ? '' : form.deliveryNoteNo,
           submit: form.submit,
+          listScope: listMode === 'inbox' ? 'inbox' : 'mine',
           attachmentUploads,
           keepAttachmentIds: editingRequestId
             ? existingAttachments.map((file) => file.id || file.fileName).filter(Boolean)

@@ -12,10 +12,12 @@ export default async function FinanceIndexPage() {
   const roles = session?.roles || [];
   const permissions = session?.isGlobalAdmin ? ['*'] : permissionsForRoles(roles);
   const viewAll = canViewAllPaymentRequests({
-    actorCode: session?.employeeCode || session?.username || session?.sub || '',
+    actorCode: String(session?.employeeCode || session?.employeeId || session?.username || session?.sub || '').trim(),
     roles,
     permissions,
     isGlobalAdmin: Boolean(session?.isGlobalAdmin),
+    department: session?.department || '',
+    unit: session?.unit || '',
   });
   redirect(viewAll ? FINANCE_MODULE.homeHref : '/finance/approvals');
 }

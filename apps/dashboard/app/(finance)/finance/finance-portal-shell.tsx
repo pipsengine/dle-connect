@@ -152,7 +152,7 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
     if (canAccessPaymentSelfService(accessActor)) {
       return filterFinanceNavForActor(FINANCE_NAV_SECTIONS, accessActor);
     }
-    return base;
+    return [];
   }, [session, accessActor]);
 
   useEffect(() => {

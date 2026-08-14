@@ -240,6 +240,8 @@ export type PaymentRequestsWorkspace = {
   /** Present when list is loaded for a signed-in viewer. */
   viewer?: {
     actorCode: string;
+    /** True only for Finance department / Global Super Admin. */
+    canViewAll?: boolean;
     approvableRequestIds: string[];
     editableReturnedRequestIds?: string[];
   };
@@ -516,6 +518,8 @@ const listRows = async (input?: {
   mineFor?: string;
   /** When set without view-all rights, restrict to requester / approver / beneficiary. */
   scopedToActorCode?: string;
+  /** When true, never return unscoped rows (fail closed). */
+  requireActorScope?: boolean;
 }): Promise<PaymentRequestRow[]> => {
   const pool = await ensureFinanceDb().catch(() => null);
   if (!pool) return [];
@@ -530,16 +534,21 @@ const listRows = async (input?: {
       request.input('status', sql.NVarChar(40), input.status);
       where += ' AND [Status] = @status';
     }
-    if (input?.requesterCode || input?.mineFor) {
-      request.input('requester', sql.NVarChar(60), input.requesterCode || input.mineFor);
+    const mineFor = compact(input?.requesterCode || input?.mineFor);
+    const scopedActor = compact(input?.scopedToActorCode);
+    if (mineFor) {
+      request.input('requester', sql.NVarChar(60), mineFor);
       where += ' AND [RequesterCode] = @requester';
-    } else if (input?.scopedToActorCode) {
-      request.input('scopedActor', sql.NVarChar(60), compact(input.scopedToActorCode));
+    } else if (scopedActor) {
+      request.input('scopedActor', sql.NVarChar(60), scopedActor);
       where += ` AND (
   [RequesterCode] = @scopedActor
   OR [CurrentApproverCode] = @scopedActor
   OR [BeneficiaryCode] = @scopedActor
 )`;
+    } else if (input?.requireActorScope) {
+      // Fail closed: missing actor identity must never return the full payment queue.
+      return [];
     }
     const result = await request.query(`
 SELECT TOP 500 *
@@ -1259,12 +1268,17 @@ export const buildPaymentRequestsWorkspace = async (input?: {
   mineFor?: string;
   /** Non-elevated users: only own / assigned / beneficiary rows. */
   scopedToActorCode?: string;
+  /** When true, never return the unscoped enterprise queue (missing actor code → empty). */
+  restrictToActor?: boolean;
 }): Promise<PaymentRequestsWorkspace> => {
   await migrateLegacyExpensePayments();
+  const mineFor = compact(input?.mineFor);
+  const scopedToActorCode = compact(input?.scopedToActorCode);
   const rows = await listRows({
     paymentType: input?.paymentType,
-    mineFor: input?.mineFor,
-    scopedToActorCode: input?.scopedToActorCode,
+    mineFor: mineFor || undefined,
+    scopedToActorCode: scopedToActorCode || undefined,
+    requireActorScope: Boolean(input?.restrictToActor),
   });
 
   // Backfill prevailing FX metadata for foreign-currency rows missing conversion fields
@@ -1375,8 +1389,8 @@ export type EmployeePaymentDashboard = {
 export const buildEmployeePaymentDashboard = async (employeeCode: string): Promise<EmployeePaymentDashboard> => {
   const code = compact(employeeCode);
   const [mineWorkspace, scopedWorkspace, eligibility] = await Promise.all([
-    buildPaymentRequestsWorkspace({ mineFor: code || undefined }),
-    buildPaymentRequestsWorkspace({ scopedToActorCode: code || undefined }),
+    buildPaymentRequestsWorkspace({ mineFor: code || undefined, restrictToActor: true }),
+    buildPaymentRequestsWorkspace({ scopedToActorCode: code || undefined, restrictToActor: true }),
     code ? getCashAdvanceEligibility(code).catch(() => null) : Promise.resolve(null),
   ]);
 
