@@ -51,7 +51,7 @@ import {
   type SupplierInvoiceCategory,
 } from '@/lib/finance-intelligence/payment-invoice-category';
 import type { PaymentRequestLookups } from '@/lib/finance-intelligence/payment-request-lookups';
-import { preferredPaymentDepartment } from '@/lib/finance-intelligence/payment-request-lookups';
+import { preferredPaymentDepartment } from '@/lib/finance-intelligence/payment-request-departments';
 import { downloadExcelWorkbook } from '@/lib/excel-export';
 
 type Props = {
