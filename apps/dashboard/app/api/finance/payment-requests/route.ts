@@ -39,12 +39,6 @@ const codesEqual = (left?: string | null, right?: string | null) =>
   String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase()
   && Boolean(String(left || '').trim());
 
-const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
-const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
-const codesEqual = (left?: string | null, right?: string | null) =>
-  String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase()
-  && Boolean(String(left || '').trim());
-
 type PaymentRouteActor = {
   actor: string;
   actorCode: string;
