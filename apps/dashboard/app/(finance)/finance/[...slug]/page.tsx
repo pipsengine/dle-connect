@@ -37,6 +37,8 @@ const resolveFinanceActor = async () => {
   return {
     actorCode: session?.employeeCode || session?.username || session?.sub || '',
     actorName: session?.fullName || session?.username || session?.sub || '',
+    department: session?.department || '',
+    unit: session?.unit || '',
     roles,
     permissions,
     isGlobalAdmin: Boolean(session?.isGlobalAdmin),
@@ -108,8 +110,12 @@ export default async function FinanceCatchAllPage({ params, searchParams }: Prop
   const paymentRequestsRaw = page.kind === 'payment-requests'
     ? await buildPaymentRequestsWorkspace({
       paymentType: initialPaymentType === 'All' ? undefined : initialPaymentType,
-      mineFor: mineOnlyPage || (paymentSelfService && !inboxPage) ? actor.actorCode : undefined,
-      scopedToActorCode: !viewAllPayments && !mineOnlyPage ? actor.actorCode : undefined,
+      // Finance / Global Super Admin → all. Everyone else on Payment Requests / My Requests → own raised only.
+      // Inbox → own + assigned as current approver / beneficiary.
+      mineFor: viewAllPayments
+        ? (mineOnlyPage ? actor.actorCode : undefined)
+        : (inboxPage ? undefined : actor.actorCode),
+      scopedToActorCode: !viewAllPayments && inboxPage ? actor.actorCode : undefined,
     }).catch(() => null)
     : null;
   const paymentRequests = paymentRequestsRaw

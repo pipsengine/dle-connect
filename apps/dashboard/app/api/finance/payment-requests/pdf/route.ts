@@ -25,6 +25,8 @@ const resolveActor = async () => {
     roles,
     permissions,
     isGlobalAdmin: Boolean(session?.isGlobalAdmin),
+    department: session?.department || '',
+    unit: session?.unit || '',
     authenticated: Boolean(session),
   };
 };

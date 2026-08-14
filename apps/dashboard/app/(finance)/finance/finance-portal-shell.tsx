@@ -87,6 +87,8 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
     roles: [] as string[],
     isGlobalAdmin: false,
     employeeCode: employee?.employeeCode || '',
+    department: employee?.department || '',
+    unit: '',
     ready: false,
   });
   const [liveBadges, setLiveBadges] = useState<FinanceBadgeSnapshot | undefined>(badges);
@@ -102,6 +104,8 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
           roles: Array.isArray(json?.data?.roles) ? json.data.roles : [],
           isGlobalAdmin: Boolean(json?.data?.isGlobalAdmin),
           employeeCode: String(json?.data?.employeeCode || json?.data?.username || employee?.employeeCode || ''),
+          department: String(json?.data?.department || employee?.department || ''),
+          unit: String(json?.data?.unit || ''),
           ready: true,
         });
       })
@@ -111,7 +115,7 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
     return () => {
       active = false;
     };
-  }, [employee?.employeeCode, pathname]);
+  }, [employee?.employeeCode, employee?.department, pathname]);
 
   useEffect(() => {
     let active = true;
@@ -137,7 +141,9 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
     roles: session.roles,
     permissions: session.permissions,
     isGlobalAdmin: session.isGlobalAdmin,
-  }), [session]);
+    department: session.department || employee?.department || '',
+    unit: session.unit || '',
+  }), [session, employee?.department]);
 
   const visibleSections = useMemo(() => {
     const base = FINANCE_NAV_SECTIONS.filter((section) =>

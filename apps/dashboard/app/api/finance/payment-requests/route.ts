@@ -51,6 +51,7 @@ const resolveActor = async () => {
     actor: session?.fullName || session?.username || session?.sub || 'Finance User',
     actorCode: session?.employeeCode || session?.username || session?.sub || '',
     department: session?.department || '',
+    unit: session?.unit || '',
     jobTitle: '',
     roles,
     permissions,
@@ -154,13 +155,13 @@ export async function GET(request: Request) {
 
     const paymentType = searchParams.get('paymentType') || undefined;
     const mineOnly = searchParams.get('mine') === '1';
+    const inboxOnly = searchParams.get('inbox') === '1';
+    // Non-finance staff: Payment Requests hub = own raised only.
+    // Inbox keeps assigned-approver visibility via scopedToActorCode.
     const workspace = await buildPaymentRequestsWorkspace({
       paymentType: paymentType || undefined,
-      // Elevated + My Requests tab → requester only.
-      // Non-elevated default → own requests plus items assigned to them as approver/beneficiary.
-      // Non-elevated + mine=1 → requester only.
-      mineFor: mineOnly ? actor.actorCode : undefined,
-      scopedToActorCode: !viewAll && !mineOnly ? actor.actorCode : undefined,
+      mineFor: !viewAll && (mineOnly || !inboxOnly) ? actor.actorCode : (mineOnly ? actor.actorCode : undefined),
+      scopedToActorCode: !viewAll && inboxOnly && !mineOnly ? actor.actorCode : undefined,
     });
     const approvableRequestIds = workspace.rows
       .filter((row) => canActOnPaymentApproval(actor, row))
@@ -518,16 +519,27 @@ export async function POST(request: Request) {
       const actions = result.request
         ? await listPaymentRequestActions(result.request.requestId)
         : [];
-      const approvableRequestIds = (result.workspace?.rows || [])
+      // Never return an unscoped payment list to non–Finance / non–Super-Admin actors.
+      const viewAllAfter = canViewAllPaymentRequests(actor);
+      const listScope = String(body.listScope || '').trim().toLowerCase();
+      const scopedWorkspace = await buildPaymentRequestsWorkspace({
+        mineFor: !viewAllAfter && listScope !== 'inbox' ? actor.actorCode : undefined,
+        scopedToActorCode: !viewAllAfter && listScope === 'inbox' ? actor.actorCode : undefined,
+      });
+      const workspaceForViewer = viewAllAfter ? (result.workspace || scopedWorkspace) : scopedWorkspace;
+      const approvableRequestIds = (workspaceForViewer?.rows || [])
         .filter((row) => canActOnPaymentApproval(actor, row))
         .map((row) => row.requestId);
       return jsonOk({
         ...result,
         workspace: {
-          ...result.workspace,
+          ...workspaceForViewer,
           viewer: {
             actorCode: actor.actorCode,
             approvableRequestIds,
+            editableReturnedRequestIds: (workspaceForViewer?.rows || [])
+              .filter((row) => canEditReturnedPaymentRequest(actor, row))
+              .map((row) => row.requestId),
           },
         },
         actions,

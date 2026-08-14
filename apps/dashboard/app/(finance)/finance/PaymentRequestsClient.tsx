@@ -483,7 +483,19 @@ export default function PaymentRequestsClient({
     setLoading(true);
     setToast('');
     try {
-      const res = await fetch('/api/finance/payment-requests', { cache: 'no-store' });
+      const params = new URLSearchParams();
+      if (selfServiceMode) {
+        // Non-finance: Payment Requests = own raised only; Inbox = assigned scope.
+        if (listMode === 'inbox') params.set('inbox', '1');
+        else params.set('mine', '1');
+      } else if (listMode === 'inbox') {
+        params.set('inbox', '1');
+      } else if (listMode === 'mine') {
+        params.set('mine', '1');
+      }
+      // Finance / Global Super Admin on Payment Requests: no mine/inbox → full queue.
+      const query = params.toString();
+      const res = await fetch(`/api/finance/payment-requests${query ? `?${query}` : ''}`, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Refresh failed');
       setWorkspace(json.data as PaymentRequestsWorkspace);
@@ -1023,6 +1035,7 @@ export default function PaymentRequestsClient({
           transition: rowAction.action,
           reason: needsReason ? rowActionReason.trim() : undefined,
           comment: rowActionReason.trim() || undefined,
+          listScope: listMode === 'inbox' ? 'inbox' : 'mine',
         }),
       });
       const json = await res.json().catch(() => ({ status: 'error', error: `Unable to ${rowAction.action}.` }));

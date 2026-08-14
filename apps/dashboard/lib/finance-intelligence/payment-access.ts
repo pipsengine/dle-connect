@@ -7,15 +7,21 @@ export type PaymentAccessActor = {
   roles?: string[];
   permissions?: string[];
   isGlobalAdmin?: boolean;
+  department?: string;
+  unit?: string;
 };
-
-const FINANCE_ELEVATED_ROLE = /^(super administrator|admin|system administrator|application administrator|cfo|finance manager|finance controller|finance administrator|finance payroll reviewer|accountant|accounts payable officer|accounts receivable officer|budget officer|treasury officer|executive director|executive management|managing director|md\s*\/?\s*ceo|chief executive( officer)?|\bmd\b|\bceo\b)$/i;
 
 /** Directory employee code for Managing Director / MD-CEO (Mr CHRIS IJELI). */
 export const MD_CEO_EMPLOYEE_CODE = 'P0413';
 
 const MD_CEO_ROLE = /managing\s*director|md\s*\/?\s*ceo|chief\s*executive|\bmd\b|\bceo\b/i;
 const MD_CEO_STAGE = /md\s*\/?\s*ceo|managing\s*director|chief\s*executive/i;
+
+/** Finance department / unit labels (directory). */
+const FINANCE_DEPARTMENT_TEXT = /\bfinance\b|\btreasury\b|\baccounts?\b|\baccounting\b|accounts\s+payable|accounts\s+receivable|financial\s+control/i;
+
+/** Explicit Finance specialist roles that may see all payment requests. */
+const FINANCE_VIEW_ALL_ROLE = /^(cfo|finance manager|finance controller|finance administrator|finance payroll reviewer|accountant|accounts payable officer|accounts receivable officer|budget officer|treasury officer)$/i;
 
 /** True when the signed-in actor is the MD/CEO seat (by code or role). */
 export const isMdCeoActor = (actor: PaymentAccessActor) => {
@@ -28,31 +34,31 @@ export const isMdCeoActor = (actor: PaymentAccessActor) => {
   });
 };
 
+/** Global Super Administrator (session flag, Super Administrator role, or * permission). */
+export const isGlobalSuperAdminActor = (actor: PaymentAccessActor) => {
+  if (actor.isGlobalAdmin) return true;
+  if (hasPermission(actor.permissions || [], '*')) return true;
+  return (actor.roles || []).some((role) => /^super administrator$/i.test(String(role || '').trim()));
+};
+
+/** Finance department membership or core Finance specialist role. */
+export const isFinanceDepartmentActor = (actor: PaymentAccessActor) => {
+  const text = `${actor.department || ''} ${actor.unit || ''}`.trim().toLowerCase();
+  if (text && FINANCE_DEPARTMENT_TEXT.test(text)) return true;
+  return (actor.roles || []).some((role) => FINANCE_VIEW_ALL_ROLE.test(String(role || '').trim()));
+};
+
 /** Self-service permission: raise/view own payments without full Finance Intelligence. */
 export const FINANCE_PAYMENTS_SELF_PERMISSION = 'finance.payments.self';
 
-/** Finance / treasury / posting / global admin — may see all payment requests. */
+/**
+ * Who may browse all payment requests in the system.
+ * Only Global Super Admin and Finance department (or core Finance roles).
+ * Managers / other departments must only see payments they raised.
+ */
 export const canViewAllPaymentRequests = (actor: PaymentAccessActor) => {
-  if (actor.isGlobalAdmin) return true;
-  // MD/CEO must always retain document access before and after approving.
-  if (isMdCeoActor(actor)) return true;
-  const permissions = actor.permissions || [];
-  if (
-    hasPermission(permissions, '*')
-    || hasPermission(permissions, 'finance.*')
-    || hasPermission(permissions, 'finance.view')
-    || hasPermission(permissions, 'finance.approve')
-    || hasPermission(permissions, 'finance.treasury.operate')
-    || hasPermission(permissions, 'finance.posting.operate')
-    || hasPermission(permissions, 'treasury.view')
-    || hasPermission(permissions, 'treasury.edit')
-    || hasPermission(permissions, 'treasury.*')
-    || hasPermission(permissions, 'view_finance_intelligence')
-    || hasPermission(permissions, 'view_finance_accounting')
-  ) {
-    return true;
-  }
-  return (actor.roles || []).some((role) => FINANCE_ELEVATED_ROLE.test(String(role || '').trim()));
+  if (isGlobalSuperAdminActor(actor)) return true;
+  return isFinanceDepartmentActor(actor);
 };
 
 /** Raise and track own cash advances / supplier requests; open My Approval Inbox when assigned. */
