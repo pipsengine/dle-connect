@@ -51,6 +51,7 @@ import {
   type SupplierInvoiceCategory,
 } from '@/lib/finance-intelligence/payment-invoice-category';
 import type { PaymentRequestLookups } from '@/lib/finance-intelligence/payment-request-lookups';
+import { preferredPaymentDepartment } from '@/lib/finance-intelligence/payment-request-lookups';
 import { downloadExcelWorkbook } from '@/lib/excel-export';
 
 type Props = {
@@ -430,6 +431,9 @@ export default function PaymentRequestsClient({
         if (lookupsRes.ok && lookupsJson.status === 'success') {
           setLookups(lookupsJson.data as PaymentRequestLookups);
         }
+        const departmentOptions = (lookupsRes.ok && lookupsJson.status === 'success'
+          ? (lookupsJson.data as PaymentRequestLookups).departments
+          : []) as string[];
         if (userRes.ok && userJson.status === 'success') {
           const user = userJson.data as {
             name?: string;
@@ -437,12 +441,18 @@ export default function PaymentRequestsClient({
             department?: string;
             location?: string;
             role?: string;
+            jobTitle?: string;
           };
+          const resolvedDepartment = preferredPaymentDepartment({
+            department: user.department,
+            jobTitle: user.jobTitle || user.role,
+            departments: departmentOptions,
+          });
           setSignedInRequester({
             name: user.name || '',
             employeeCode: user.employeeCode || '',
-            department: user.department || '',
-            jobTitle: user.role || '',
+            department: resolvedDepartment || user.department || '',
+            jobTitle: user.jobTitle || user.role || '',
           });
           if (composerType === 'Cash Advance Payment') {
             const nextCode = user.employeeCode || '';
@@ -450,13 +460,19 @@ export default function PaymentRequestsClient({
               ...prev,
               employeeName: prev.employeeName || user.name || '',
               employeeCode: prev.employeeCode || nextCode,
-              department: prev.department || user.department || '',
+              department: prev.department || resolvedDepartment || user.department || '',
               location: prev.location || user.location || '',
               beneficiaryName: prev.beneficiaryName || user.name || '',
               beneficiaryCode: prev.beneficiaryCode || nextCode,
             }));
             setEmployeeSearch(user.name || '');
             if (nextCode) void loadEligibility(nextCode);
+          } else {
+            setForm((prev) => ({
+              ...prev,
+              department: prev.department || resolvedDepartment || user.department || '',
+              location: prev.location || user.location || '',
+            }));
           }
         }
       } catch {
@@ -807,11 +823,16 @@ export default function PaymentRequestsClient({
   }, [workspace.rows, workspace.viewer?.editableReturnedRequestIds, workspace.viewer?.actorCode]);
 
   const selectEmployee = (employee: PaymentRequestLookups['employees'][number]) => {
+    const resolvedDepartment = preferredPaymentDepartment({
+      department: employee.department,
+      jobTitle: employee.jobTitle,
+      departments: lookups?.departments,
+    });
     setForm((prev) => ({
       ...prev,
       employeeCode: employee.employeeCode,
       employeeName: employee.fullName,
-      department: employee.department || prev.department,
+      department: resolvedDepartment || employee.department || prev.department,
       location: employee.location || prev.location,
       projectCode: employee.projectCode || prev.projectCode,
       beneficiaryCode: employee.employeeCode,
@@ -2084,9 +2105,12 @@ export default function PaymentRequestsClient({
                   <div className="grid gap-3 sm:grid-cols-2">
                     <SearchableSelect
                       label="Department"
+                      required
                       value={form.department}
                       placeholder="Search department"
-                      options={(lookups?.departments || []).map((item) => ({ value: item, label: item }))}
+                      options={(lookups?.departments || []).concat(
+                        form.department && !(lookups?.departments || []).includes(form.department) ? [form.department] : [],
+                      ).map((item) => ({ value: item, label: item }))}
                       onChange={(value) => setForm((prev) => ({ ...prev, department: value }))}
                     />
                     <SearchableSelect
@@ -2101,7 +2125,9 @@ export default function PaymentRequestsClient({
                     label="Location"
                     value={form.location}
                     placeholder="Search location"
-                    options={(lookups?.locations || []).map((item) => ({ value: item, label: item }))}
+                    options={(lookups?.locations || []).concat(
+                      form.location && !(lookups?.locations || []).includes(form.location) ? [form.location] : [],
+                    ).map((item) => ({ value: item, label: item }))}
                     onChange={(value) => setForm((prev) => ({ ...prev, location: value }))}
                   />
                   <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">

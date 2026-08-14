@@ -1,6 +1,7 @@
 import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
 import { readDirectoryEmployees } from '@/lib/payroll-employee-source';
 import { readProjects } from '@/lib/timesheet-entry-store';
+import { readSystemDepartmentsFromOrganizationDb } from '@/lib/organization-departments-store';
 
 export type PaymentSite = {
   siteCode: string;
@@ -34,6 +35,34 @@ export type PaymentRequestLookups = {
 const compact = (value: unknown) => String(value ?? '').trim();
 const uniqueSorted = (values: string[]) =>
   Array.from(new Set(values.map(compact).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+
+/**
+ * Canonical departments for Cash Advance / Supplier Invoice / Expense payment forms.
+ * Always merged into the dropdown so operating units like SECURITY remain selectable
+ * even when directory headcount is currently filed under another label (e.g. ADMINSTRATION).
+ */
+export const PAYMENT_REQUEST_CANONICAL_DEPARTMENTS = [
+  'ADMINSTRATION',
+  'ADMINISTRATION',
+  'CORPORATE OFFICE',
+  'ENGINEERING',
+  'FINANCE AND ACCOUNT',
+  'HEALTH AND SAFETY',
+  'HUMAN RESOURCES',
+  'INFORMATION TECHNOLOGY',
+  'LEGAL',
+  'LOGISTICS',
+  'MAINTENANCE',
+  'MARKETING AND SALES',
+  'PLANNING',
+  'PROCUREMENT',
+  'PRODUCTION',
+  'PROJECT',
+  'PROPOSAL',
+  'QUALITY ASSURANCE CONTROL',
+  'SECURITY',
+  'STORES',
+] as const;
 
 export const FALLBACK_SITES: PaymentSite[] = [
   { siteCode: 'DLE', siteName: 'Dorman Long Engineering Limited' },
@@ -149,11 +178,14 @@ ORDER BY [SortOrder], [ExpenseCode]
 };
 
 export const buildPaymentRequestLookups = async (): Promise<PaymentRequestLookups> => {
-  const [paymentSites, expenseCodes, directory, projects] = await Promise.all([
+  const [paymentSites, expenseCodes, directory, projects, organizationDepartments] = await Promise.all([
     listPaymentSites(),
     listExpenseCodes(),
     readDirectoryEmployees().catch(() => ({ employees: [] as Awaited<ReturnType<typeof readDirectoryEmployees>>['employees'] })),
     readProjects().catch(() => []),
+    readSystemDepartmentsFromOrganizationDb()
+      .then((payload) => (payload.departments || []).map((department) => compact(department.name)).filter(Boolean))
+      .catch(() => [] as string[]),
   ]);
 
   const employees: PaymentEmployeeOption[] = (directory.employees || [])
@@ -168,10 +200,16 @@ export const buildPaymentRequestLookups = async (): Promise<PaymentRequestLookup
     .filter((employee) => employee.employeeCode && employee.fullName)
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
 
+  const departments = uniqueSorted([
+    ...PAYMENT_REQUEST_CANONICAL_DEPARTMENTS,
+    ...organizationDepartments,
+    ...employees.map((employee) => employee.department),
+  ]);
+
   return {
     paymentSites,
     expenseCodes,
-    departments: uniqueSorted(employees.map((employee) => employee.department)),
+    departments,
     locations: uniqueSorted(employees.map((employee) => employee.location)),
     projects: projects
       .filter((project) => compact(project.code))
@@ -183,4 +221,24 @@ export const buildPaymentRequestLookups = async (): Promise<PaymentRequestLookup
       .sort((a, b) => a.code.localeCompare(b.code)),
     employees,
   };
+};
+
+/** Prefer SECURITY (etc.) when job title is clear but directory department is still under ADMINSTRATION. */
+export const preferredPaymentDepartment = (input: {
+  department?: string | null;
+  jobTitle?: string | null;
+  departments?: string[];
+}) => {
+  const available = uniqueSorted([
+    ...(input.departments || []),
+    ...PAYMENT_REQUEST_CANONICAL_DEPARTMENTS,
+  ]);
+  const availableUpper = new Set(available.map((item) => item.toUpperCase()));
+  const job = compact(input.jobTitle).toUpperCase();
+  if (/\bSECURITY\b/.test(job) && availableUpper.has('SECURITY')) {
+    return available.find((item) => item.toUpperCase() === 'SECURITY') || 'SECURITY';
+  }
+  const current = compact(input.department);
+  if (current) return current;
+  return '';
 };
