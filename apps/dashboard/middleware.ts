@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { AUTH_COOKIE, clearAuthCookieOptions, isPublicPath, verifySessionToken } from '@/lib/auth/session';
 import { canAccessRoute } from '@/lib/access/route-access';
 import { deriveHrisRole } from '@/lib/hris-access';
+import { permissionsForRoles } from '@/lib/auth/rbac';
 
 const denied = (request: NextRequest, status = 403) => {
   if (request.nextUrl.pathname.startsWith('/api')) {
@@ -17,6 +18,60 @@ const denied = (request: NextRequest, status = 403) => {
   response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   if (status === 401) response.cookies.set(AUTH_COOKIE, '', clearAuthCookieOptions(request));
   return response;
+};
+
+/** Prefer loopback so public-hostname hairpin (e.g. dleconnect…:1432) does not break permission refresh. */
+const authMeCandidates = (request: NextRequest) => {
+  const path = '/api/auth/me';
+  const urls: string[] = [];
+  const push = (origin: string) => {
+    try {
+      const value = new URL(path, origin).toString();
+      if (!urls.includes(value)) urls.push(value);
+    } catch {
+      // ignore invalid origin
+    }
+  };
+
+  const port = String(process.env.PORT || process.env.HTTP_PLATFORM_PORT || '').trim();
+  if (port) {
+    push(`http://127.0.0.1:${port}`);
+    push(`http://localhost:${port}`);
+  }
+
+  // HttpPlatform often presents the public Host while Node listens on loopback.
+  try {
+    const incoming = new URL(request.url);
+    if (incoming.port) {
+      push(`http://127.0.0.1:${incoming.port}`);
+      push(`http://localhost:${incoming.port}`);
+    }
+    push(incoming.origin);
+  } catch {
+    // ignore
+  }
+
+  return urls;
+};
+
+const loadLivePermissions = async (request: NextRequest) => {
+  const cookie = request.headers.get('cookie') || '';
+  for (const meUrl of authMeCandidates(request)) {
+    try {
+      const liveSessionResponse = await fetch(meUrl, {
+        headers: { cookie },
+        cache: 'no-store',
+      });
+      if (!liveSessionResponse.ok) continue;
+      const meJson = await liveSessionResponse.json().catch(() => null);
+      if (Array.isArray(meJson?.data?.permissions) && meJson.data.permissions.length) {
+        return { permissions: meJson.data.permissions as string[], liveSessionResponse };
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+  return { permissions: null as string[] | null, liveSessionResponse: null as Response | null };
 };
 
 export async function middleware(request: NextRequest) {
@@ -73,21 +128,14 @@ export async function middleware(request: NextRequest) {
     let liveSessionResponse: Response | null = null;
 
     if (needsLivePermissions) {
-      try {
-        const meUrl = new URL('/api/auth/me', request.url);
-        liveSessionResponse = await fetch(meUrl, {
-          headers: { cookie: request.headers.get('cookie') || '' },
-          cache: 'no-store',
-        });
-        if (liveSessionResponse.ok) {
-          const meJson = await liveSessionResponse.json().catch(() => null);
-          if (Array.isArray(meJson?.data?.permissions) && meJson.data.permissions.length) {
-            permissions = meJson.data.permissions;
-          }
-        }
-      } catch {
-        liveSessionResponse = null;
-        // Fall back to JWT permissions when live resolution is unavailable.
+      const live = await loadLivePermissions(request);
+      liveSessionResponse = live.liveSessionResponse;
+      if (live.permissions?.length) {
+        permissions = live.permissions;
+      } else if (!permissions.length) {
+        // JWT intentionally omits permissions (cookie size). Never treat empty as "no access"
+        // when the live refresh fails (common via public hostname hairpin NAT).
+        permissions = permissionsForRoles(roles);
       }
     }
 

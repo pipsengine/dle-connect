@@ -1,6 +1,7 @@
-param(
+﻿param(
   [string]$RepoRoot = "",
   [switch]$InternalServer,
+  [string]$PublicAppUrl = "",
   [string[]]$TargetFiles = @()
 )
 
@@ -107,12 +108,30 @@ foreach ($key in $mailKeys) {
   }
 }
 
+# Prefer explicit public URL (param, then .env.local) so IIS external HTTPS is not overwritten by LAN defaults.
+if (-not $PublicAppUrl -and $localMap.Contains('DLE_PUBLIC_APP_URL')) {
+  $PublicAppUrl = [string]$localMap['DLE_PUBLIC_APP_URL']
+}
+if (-not $PublicAppUrl -and $env:DLE_PUBLIC_APP_URL) {
+  $PublicAppUrl = [string]$env:DLE_PUBLIC_APP_URL
+}
+if (-not $PublicAppUrl) {
+  $PublicAppUrl = 'https://dleconnect.dormanlongeng.com:1432'
+}
+
+$PublicAppUrl = $PublicAppUrl.Trim().TrimEnd('/')
+$InternalAppUrl = 'http://192.168.5.5:3020'
+if ($localMap.Contains('DLE_INTERNAL_APP_URL') -and -not [string]::IsNullOrWhiteSpace([string]$localMap['DLE_INTERNAL_APP_URL'])) {
+  $InternalAppUrl = ([string]$localMap['DLE_INTERNAL_APP_URL']).Trim().TrimEnd('/')
+}
+
 if ($InternalServer) {
-  $mailValues['APP_URL'] = 'http://192.168.5.5:3020'
-  $mailValues['NEXT_PUBLIC_APP_URL'] = 'http://192.168.5.5:3020'
-  $mailValues['DLE_INTERNAL_APP_URL'] = 'http://192.168.5.5:3020'
-  $mailValues['DLE_PUBLIC_APP_URL'] = 'http://192.168.5.5:3020'
-  Write-Host "Applied internal server URLs (192.168.5.5:3020) for workflow email links."
+  # Keep LAN URL for internal-only tooling, but publish the public HTTPS origin for browser/email links.
+  $mailValues['DLE_INTERNAL_APP_URL'] = $InternalAppUrl
+  $mailValues['APP_URL'] = $PublicAppUrl
+  $mailValues['NEXT_PUBLIC_APP_URL'] = $PublicAppUrl
+  $mailValues['DLE_PUBLIC_APP_URL'] = $PublicAppUrl
+  Write-Host "Applied public app URL ($PublicAppUrl) with internal URL ($InternalAppUrl)."
 }
 
 if (-not $mailValues.Contains('DLE_MAIL_PROVIDER')) {

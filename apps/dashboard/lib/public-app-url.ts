@@ -91,18 +91,26 @@ export const resolveWorkflowLinkOrigin = (requestOrigin?: string | null) => {
 
 export const resolvePublicAppOriginFromRequest = (request: Pick<Request, 'url' | 'headers'>) => {
   const forwardedHost = compact(request.headers.get('x-forwarded-host'));
-  const forwardedProto = compact(request.headers.get('x-forwarded-proto')) || 'http';
-  if (forwardedHost) {
-    return resolvePublicAppOrigin(`${forwardedProto}://${forwardedHost.split(',')[0].trim()}`);
+  const hostHeader = compact(request.headers.get('host'));
+  const forwardedProto = compact(request.headers.get('x-forwarded-proto'));
+  const host = (forwardedHost || hostHeader).split(',')[0].trim();
+  const hostName = host.replace(/:\d+$/, '').toLowerCase();
+  const isLoopback = hostName === 'localhost' || hostName === '127.0.0.1' || hostName === '::1';
+  const isPrivateLan = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(hostName);
+  const proto = forwardedProto
+    || ((hostName && !isLoopback && !isPrivateLan) ? 'https' : '')
+    || 'http';
+
+  if (host) {
+    return resolvePublicAppOrigin(`${proto}://${host}`);
   }
 
-  const hostHeader = compact(request.headers.get('host'));
   try {
     const url = new URL(request.url);
     const requestHostBad = isNonRoutableHost(url.hostname) || isLoopbackHost(url.hostname);
     if (hostHeader && requestHostBad) {
-      const proto = url.protocol === 'https:' ? 'https' : 'http';
-      return resolvePublicAppOrigin(`${proto}://${hostHeader}`);
+      const fallbackProto = url.protocol === 'https:' ? 'https' : 'http';
+      return resolvePublicAppOrigin(`${fallbackProto}://${hostHeader}`);
     }
     return resolvePublicAppOrigin(url.origin);
   } catch {

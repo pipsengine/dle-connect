@@ -68,6 +68,18 @@ const secret = () => process.env.AUTH_SESSION_SECRET || process.env.NEXTAUTH_SEC
 export const shouldUseSecureAuthCookie = (request?: Request) => {
   const configured = process.env.AUTH_COOKIE_SECURE;
   if (configured != null && configured !== '') return !['0', 'false', 'no', 'off'].includes(configured.toLowerCase());
+
+  // Behind IIS / reverse proxy, request.url is often http://127.0.0.1 — trust forwarded proto first.
+  const forwardedProto = request?.headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase();
+  if (forwardedProto) return forwardedProto === 'https';
+
+  const hostHeader = (request?.headers.get('host') || '').split(',')[0].trim().toLowerCase();
+  const hostName = hostHeader.replace(/:\d+$/, '');
+  const isLoopback = hostName === 'localhost' || hostName === '127.0.0.1' || hostName === '::1';
+  const isPrivateLan = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(hostName);
+  // Public HTTPS hostnames (e.g. dleconnect.dormanlongeng.com:1432) need Secure cookies.
+  if (hostName && !isLoopback && !isPrivateLan) return true;
+
   if (request?.url) {
     try {
       const protocol = new URL(request.url).protocol;
@@ -77,8 +89,6 @@ export const shouldUseSecureAuthCookie = (request?: Request) => {
       return false;
     }
   }
-  const forwardedProto = request?.headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase();
-  if (forwardedProto) return forwardedProto === 'https';
   return process.env.NODE_ENV === 'production';
 };
 
