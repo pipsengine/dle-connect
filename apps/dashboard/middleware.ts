@@ -21,6 +21,8 @@ const denied = (request: NextRequest, status = 403) => {
 };
 
 /** Prefer loopback so public-hostname hairpin (e.g. dleconnect…:1432) does not break permission refresh. */
+const AUTH_ME_TIMEOUT_MS = 2500;
+
 const authMeCandidates = (request: NextRequest) => {
   const path = '/api/auth/me';
   const urls: string[] = [];
@@ -40,32 +42,56 @@ const authMeCandidates = (request: NextRequest) => {
   }
 
   // HttpPlatform often presents the public Host while Node listens on loopback.
+  // Never use the incoming public origin here — hairpin NAT can hang forever.
   try {
     const incoming = new URL(request.url);
-    if (incoming.port) {
+    const host = incoming.hostname.toLowerCase();
+    const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
+    if (incoming.port && !isLoopback) {
       push(`http://127.0.0.1:${incoming.port}`);
       push(`http://localhost:${incoming.port}`);
+    } else if (isLoopback) {
+      push(incoming.origin);
     }
-    push(incoming.origin);
   } catch {
     // ignore
   }
 
+  // Last-resort local defaults used by IIS HttpPlatform / local dev.
+  push('http://127.0.0.1:3020');
+  push('http://localhost:3020');
+
   return urls;
+};
+
+const fetchAuthMe = async (meUrl: string, cookie: string) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AUTH_ME_TIMEOUT_MS);
+  try {
+    return await fetch(meUrl, {
+      headers: { cookie },
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 const loadLivePermissions = async (request: NextRequest) => {
   const cookie = request.headers.get('cookie') || '';
   for (const meUrl of authMeCandidates(request)) {
     try {
-      const liveSessionResponse = await fetch(meUrl, {
-        headers: { cookie },
-        cache: 'no-store',
-      });
+      const liveSessionResponse = await fetchAuthMe(meUrl, cookie);
       if (!liveSessionResponse.ok) continue;
       const meJson = await liveSessionResponse.json().catch(() => null);
       if (Array.isArray(meJson?.data?.permissions) && meJson.data.permissions.length) {
         return { permissions: meJson.data.permissions as string[], liveSessionResponse };
+      }
+      // Reachable /api/auth/me with empty permissions — stop trying further candidates
+      // (especially public hairpin) and let the caller fall back to role permissions.
+      if (meJson?.data) {
+        return { permissions: null as string[] | null, liveSessionResponse };
       }
     } catch {
       // try next candidate
@@ -128,14 +154,26 @@ export async function middleware(request: NextRequest) {
     let liveSessionResponse: Response | null = null;
 
     if (needsLivePermissions) {
-      const live = await loadLivePermissions(request);
-      liveSessionResponse = live.liveSessionResponse;
-      if (live.permissions?.length) {
-        permissions = live.permissions;
-      } else if (!permissions.length) {
-        // JWT intentionally omits permissions (cookie size). Never treat empty as "no access"
-        // when the live refresh fails (common via public hostname hairpin NAT).
-        permissions = permissionsForRoles(roles);
+      // JWT omits permissions for cookie size. Seed from roles immediately so a
+      // hung /api/auth/me (public HTTPS hairpin) cannot blank finance email links.
+      const rolePermissions = permissionsForRoles(roles);
+      if (!permissions.length) permissions = rolePermissions;
+
+      const livePromise = loadLivePermissions(request);
+      const raced = await Promise.race([
+        livePromise.then((live) => ({ live, timedOut: false as const })),
+        new Promise<{ live: null; timedOut: true }>((resolve) => {
+          setTimeout(() => resolve({ live: null, timedOut: true }), 3000);
+        }),
+      ]);
+
+      if (!raced.timedOut && raced.live) {
+        liveSessionResponse = raced.live.liveSessionResponse;
+        if (raced.live.permissions?.length) {
+          permissions = raced.live.permissions;
+        } else if (!permissions.length) {
+          permissions = rolePermissions;
+        }
       }
     }
 

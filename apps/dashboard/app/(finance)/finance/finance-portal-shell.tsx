@@ -95,7 +95,9 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
 
   useEffect(() => {
     let active = true;
-    fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 12000);
+    fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin', signal: controller.signal })
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => {
         if (!active) return;
@@ -111,9 +113,14 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
       })
       .catch(() => {
         if (active) setSession((current) => ({ ...current, ready: true }));
+      })
+      .finally(() => {
+        window.clearTimeout(timer);
       });
     return () => {
       active = false;
+      controller.abort();
+      window.clearTimeout(timer);
     };
   }, [employee?.employeeCode, employee?.department, pathname]);
 

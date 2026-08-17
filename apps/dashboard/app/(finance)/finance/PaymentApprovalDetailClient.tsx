@@ -112,9 +112,12 @@ export default function PaymentApprovalDetailClient() {
       setLoading(true);
       setError('');
     }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 20000);
     try {
       const response = await fetch(`/api/finance/payment-requests?requestId=${encodeURIComponent(requestId)}`, {
         cache: 'no-store',
+        signal: controller.signal,
       });
       const json = await response.json();
       if (!response.ok || json.status !== 'success') {
@@ -123,7 +126,9 @@ export default function PaymentApprovalDetailClient() {
       setDetail(json.data as DetailPayload);
       setError('');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to load payment request.';
+      const message = err instanceof Error
+        ? (err.name === 'AbortError' ? 'Timed out loading this payment request. Please refresh and try again.' : err.message)
+        : 'Unable to load payment request.';
       // After approve, keep the successful detail on screen — never flash a hard access error.
       if (opts?.soft) {
         setMessage((prev) => prev || message);
@@ -132,6 +137,7 @@ export default function PaymentApprovalDetailClient() {
       setError(message);
       setDetail(null);
     } finally {
+      window.clearTimeout(timer);
       if (!opts?.soft) setLoading(false);
     }
   };
