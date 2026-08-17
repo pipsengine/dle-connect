@@ -29,7 +29,7 @@ export type PaymentRequestLookups = {
   expenseCodes: ExpenseCodeOption[];
   departments: string[];
   locations: string[];
-  projects: Array<{ code: string; name: string; label: string }>;
+  projects: Array<{ code: string; name: string; label: string; projectManager: string }>;
   employees: PaymentEmployeeOption[];
 };
 
@@ -192,6 +192,7 @@ export const buildPaymentRequestLookups = async (): Promise<PaymentRequestLookup
         code: compact(project.code),
         name: compact(project.name),
         label: `${compact(project.code)} – ${compact(project.name)}`,
+        projectManager: compact(project.projectManager),
       }))
       .sort((a, b) => a.code.localeCompare(b.code)),
     employees,

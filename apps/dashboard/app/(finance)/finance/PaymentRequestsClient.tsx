@@ -222,6 +222,30 @@ function SearchableSelect({
   );
 }
 
+function ProjectManagerConfirmation({
+  projectCode,
+  projects,
+}: {
+  projectCode: string;
+  projects?: Array<{ code: string; name: string; label: string; projectManager: string }>;
+}) {
+  if (!projectCode) return null;
+  const selected = (projects || []).find((item) => item.code === projectCode);
+  const manager = String(selected?.projectManager || '').trim();
+  if (manager && !/^unassigned$/i.test(manager)) {
+    return (
+      <p className="mt-1.5 text-xs text-slate-600">
+        Project Manager: <span className="font-semibold text-slate-900">{manager}</span>
+      </p>
+    );
+  }
+  return (
+    <p className="mt-1.5 text-xs font-medium text-amber-700">
+      No Project Manager is assigned on this project. Update the project master before routing for PM approval.
+    </p>
+  );
+}
+
 
 const moneyCompact = (value: number) => {
   if (!value) return '₦0.00';
@@ -1921,13 +1945,16 @@ export default function PaymentRequestsClient({
                       ).map((item) => ({ value: item, label: item }))}
                       onChange={(value) => setForm((prev) => ({ ...prev, location: value }))}
                     />
-                    <SearchableSelect
-                      label="Project"
-                      value={form.projectCode}
-                      placeholder="Search project"
-                      options={(lookups?.projects || []).map((item) => ({ value: item.code, label: item.label }))}
-                      onChange={(value) => setForm((prev) => ({ ...prev, projectCode: value }))}
-                    />
+                    <div>
+                      <SearchableSelect
+                        label="Project"
+                        value={form.projectCode}
+                        placeholder="Search project"
+                        options={(lookups?.projects || []).map((item) => ({ value: item.code, label: item.label }))}
+                        onChange={(value) => setForm((prev) => ({ ...prev, projectCode: value }))}
+                      />
+                      <ProjectManagerConfirmation projectCode={form.projectCode} projects={lookups?.projects} />
+                    </div>
                   </div>
 
                   <SearchableSelect
@@ -2142,13 +2169,16 @@ export default function PaymentRequestsClient({
                       ).map((item) => ({ value: item, label: item }))}
                       onChange={(value) => setForm((prev) => ({ ...prev, department: value }))}
                     />
-                    <SearchableSelect
-                      label="Project"
-                      value={form.projectCode}
-                      placeholder="Search project"
-                      options={(lookups?.projects || []).map((item) => ({ value: item.code, label: item.label }))}
-                      onChange={(value) => setForm((prev) => ({ ...prev, projectCode: value }))}
-                    />
+                    <div>
+                      <SearchableSelect
+                        label="Project"
+                        value={form.projectCode}
+                        placeholder="Search project"
+                        options={(lookups?.projects || []).map((item) => ({ value: item.code, label: item.label }))}
+                        onChange={(value) => setForm((prev) => ({ ...prev, projectCode: value }))}
+                      />
+                      <ProjectManagerConfirmation projectCode={form.projectCode} projects={lookups?.projects} />
+                    </div>
                   </div>
                   <SearchableSelect
                     label="Location"

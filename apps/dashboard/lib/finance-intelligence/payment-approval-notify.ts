@@ -10,6 +10,7 @@ import {
 import { resolveLineManagerForEmployee } from '@/lib/leave-workflow-service';
 import { readDirectoryEmployees } from '@/lib/payroll-employee-source';
 import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
+import { readProjects } from '@/lib/timesheet-entry-store';
 
 export type PaymentNotifyRequest = {
   requestId: string;
@@ -78,6 +79,39 @@ const matchJobTitle = (employees: DleEmployeeDirectoryRow[], patterns: RegExp[])
   }) || null;
 };
 
+/** Match directory employee to the Project Manager text stored on the project master. */
+const findEmployeeByProjectManagerText = (
+  employees: DleEmployeeDirectoryRow[],
+  value: string,
+): DleEmployeeDirectoryRow | null => {
+  const target = compact(value).toLowerCase();
+  if (!target) return null;
+  const inactive = /inactive|terminated|resigned|retired|deceased|suspend/i;
+  const active = employees.filter((employee) => !inactive.test(compact(employee.status)));
+  const pool = active.length ? active : employees;
+
+  const exact = pool.find((employee) => {
+    const code = employeeCodeOf(employee).toLowerCase();
+    const name = compact(employee.fullName).toLowerCase();
+    return (code && code === target)
+      || (name && name === target)
+      || (code && name && `${code} - ${name}` === target)
+      || (code && name && `${code} · ${name}` === target);
+  });
+  if (exact) return exact;
+
+  return pool.find((employee) => {
+    const fields = [
+      employeeCodeOf(employee),
+      employee.employeeId,
+      employee.fullName,
+      employee.officialEmail,
+      employee.email,
+    ].map((field) => compact(field).toLowerCase()).filter(Boolean);
+    return fields.some((field) => field === target || field.includes(target) || target.includes(field));
+  }) || null;
+};
+
 const roleFallbacksForStage = (stage: string): string[] => {
   const value = compact(stage).toLowerCase();
   if (/reporting manager|line manager|supervisor|lead/.test(value)) {
@@ -131,14 +165,38 @@ export const resolvePaymentStageApprover = async (input: {
         compact(employee.fullName).toLowerCase() === compact(input.supervisorName).toLowerCase()) || null;
     }
   } else if (/project manager/.test(stageKey)) {
-    const project = compact(input.projectCode).toLowerCase();
-    matched = employees.find((employee) => {
-      const title = compact(employee.jobTitle || employee.designation);
-      if (!/project\s*manager/i.test(title)) return false;
-      if (!project) return true;
-      const site = compact(employee.projectSite || employee.department).toLowerCase();
-      return site.includes(project) || project.includes(site);
-    }) || matchJobTitle(employees, [/project\s*manager/i]);
+    // Source of truth: Project Manager assigned on the project master (TimesheetProjects).
+    const projectCode = compact(input.projectCode);
+    let assignedPm = '';
+    if (projectCode) {
+      const projects = await readProjects().catch(() => [] as Awaited<ReturnType<typeof readProjects>>);
+      const project = projects.find((item) => compact(item.code).toLowerCase() === projectCode.toLowerCase()) || null;
+      assignedPm = compact(project?.projectManager);
+      if (assignedPm && !/^unassigned$/i.test(assignedPm)) {
+        matched = findEmployeeByProjectManagerText(employees, assignedPm);
+        // Do not fall back to an unrelated directory PM when the project already has an assignee.
+        if (!matched) {
+          return {
+            code: '',
+            name: assignedPm,
+            employee: null,
+            roles,
+          };
+        }
+      }
+    }
+    // Only if the project has no PM assignment, use directory heuristics as last resort.
+    if (!matched && !assignedPm) {
+      const project = projectCode.toLowerCase();
+      matched = employees.find((employee) => {
+        if (/inactive|terminated|resigned|retired|deceased|suspend/i.test(compact(employee.status))) return false;
+        const title = compact(employee.jobTitle || employee.designation);
+        if (!/project\s*manager/i.test(title)) return false;
+        if (!project) return true;
+        const site = compact(employee.projectSite || employee.department).toLowerCase();
+        return site.includes(project) || project.includes(site);
+      }) || null;
+    }
   } else if (/cost controller/.test(stageKey)) {
     matched = matchJobTitle(employees, [/cost\s*controller/i]);
   } else if (/finance manager/.test(stageKey)) {
