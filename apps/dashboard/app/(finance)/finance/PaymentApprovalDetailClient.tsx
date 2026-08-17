@@ -285,8 +285,9 @@ export default function PaymentApprovalDetailClient() {
     : [];
   const pending = /pending|submitted|finance review/i.test(request.status);
   const returned = /^returned$/i.test(request.status);
+  const isDraft = /^draft$/i.test(request.status);
   const canApprove = Boolean(detail.viewer?.canApprove) && pending;
-  const canEditReturned = Boolean(detail.viewer?.canEditReturned) && returned;
+  const canEditOwn = Boolean(detail.viewer?.canEditReturned) && (returned || isDraft);
   const canDownloadPdf = Boolean(detail.viewer?.canDownloadPdf);
   const canSubmitRetirement = Boolean(detail.viewer?.canSubmitRetirement);
   const retirementNoteExisting = String(request.retirement?.note || '');
@@ -306,12 +307,12 @@ export default function PaymentApprovalDetailClient() {
           <ArrowLeft className="h-4 w-4" /> Payment requests
         </Link>
         <div className="flex flex-wrap items-center gap-2">
-          {canEditReturned ? (
+          {canEditOwn ? (
             <Link
               href={`/finance/approvals/payments?edit=${encodeURIComponent(request.requestId)}`}
               className="inline-flex items-center gap-1.5 rounded-xl bg-[#008FD5] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#007bb8]"
             >
-              <FileUp className="h-3.5 w-3.5" /> Edit & resend
+              <FileUp className="h-3.5 w-3.5" /> {isDraft ? 'Edit & submit' : 'Edit & resend'}
             </Link>
           ) : null}
           {canDownloadPdf ? (
@@ -328,6 +329,28 @@ export default function PaymentApprovalDetailClient() {
         </div>
       </div>
 
+      {isDraft ? (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
+            <div>
+              <p className="font-semibold">Draft payment request</p>
+              <p className="mt-1 text-sky-900">
+                This request has not been submitted yet. Edit the details and submit it for approval when ready.
+              </p>
+              {canEditOwn ? (
+                <Link
+                  href={`/finance/approvals/payments?edit=${encodeURIComponent(request.requestId)}`}
+                  className="mt-2 inline-flex text-xs font-semibold text-[#008FD5] hover:underline"
+                >
+                  Open editor to update and submit
+                </Link>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {returned ? (
         <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-950">
           <div className="flex items-start gap-2">
@@ -337,7 +360,7 @@ export default function PaymentApprovalDetailClient() {
               <p className="mt-1 text-violet-900">
                 {returnReason || 'An approver returned this request. Update the details and resend for approval.'}
               </p>
-              {canEditReturned ? (
+              {canEditOwn ? (
                 <Link
                   href={`/finance/approvals/payments?edit=${encodeURIComponent(request.requestId)}`}
                   className="mt-2 inline-flex text-xs font-semibold text-[#008FD5] hover:underline"

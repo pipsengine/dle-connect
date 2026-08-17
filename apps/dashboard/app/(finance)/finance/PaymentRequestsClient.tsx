@@ -355,6 +355,7 @@ export default function PaymentRequestsClient({
   const [composerType, setComposerType] = useState<PaymentRequestType>('Cash Advance Payment');
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
   const [editingRequestNumber, setEditingRequestNumber] = useState('');
+  const [editingIsDraft, setEditingIsDraft] = useState(false);
   const [existingAttachments, setExistingAttachments] = useState<PaymentRequestAttachment[]>([]);
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -748,6 +749,7 @@ export default function PaymentRequestsClient({
     setComposerType(type);
     setEditingRequestId(null);
     setEditingRequestNumber('');
+    setEditingIsDraft(false);
     setExistingAttachments([]);
     setTypeMenuOpen(false);
     setForm({
@@ -768,9 +770,11 @@ export default function PaymentRequestsClient({
       : /supplier/i.test(row.paymentType)
         ? 'Supplier Invoice Payment'
         : 'Cash Advance Payment') as PaymentRequestType;
+    const isDraft = /^draft$/i.test(row.status);
     setComposerType(type);
     setEditingRequestId(row.requestId);
     setEditingRequestNumber(row.requestNumber);
+    setEditingIsDraft(isDraft);
     setExistingAttachments(
       (row.attachments || []).filter((file) => file.kind !== 'payment-evidence' && file.kind !== 'retirement-evidence'),
     );
@@ -808,7 +812,7 @@ export default function PaymentRequestsClient({
     setFormErrors([]);
     setSupportingFiles([]);
     setComposerOpen(true);
-    setTab('returned');
+    setTab(isDraft ? 'drafts' : 'returned');
     if (type === 'Cash Advance Payment' && (row.beneficiaryCode || row.requesterCode)) {
       void loadEligibility(row.beneficiaryCode || row.requesterCode);
     }
@@ -821,8 +825,8 @@ export default function PaymentRequestsClient({
     if (!editId || composerOpen) return;
     const row = workspace.rows.find((item) => item.requestId === editId);
     if (!row) return;
-    if (!/^returned$/i.test(row.status)) {
-      setToast('Only returned payment requests can be edited and resent.');
+    if (!/^(draft|returned)$/i.test(row.status)) {
+      setToast('Only draft or returned payment requests can be edited.');
       return;
     }
     const canEdit = workspace.viewer?.editableReturnedRequestIds?.includes(row.requestId)
@@ -831,7 +835,7 @@ export default function PaymentRequestsClient({
         && workspace.viewer.actorCode.toLowerCase() === row.requesterCode.toLowerCase()
       );
     if (!canEdit) {
-      setToast('You can only edit your own returned payment requests.');
+      setToast('You can only edit your own draft or returned payment requests.');
       return;
     }
     openEditReturned(row);
@@ -997,6 +1001,7 @@ export default function PaymentRequestsClient({
       setComposerOpen(false);
       setEditingRequestId(null);
       setEditingRequestNumber('');
+      setEditingIsDraft(false);
       setExistingAttachments([]);
       setSupportingFiles([]);
       setFormErrors([]);
@@ -1509,7 +1514,9 @@ export default function PaymentRequestsClient({
                         <button type="button" disabled={busy || rowActionBusy} onClick={() => openRowAction(row, 'reject')} className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 disabled:opacity-50">Reject</button>
                       </>
                     ) : showEditReturned ? (
-                      <button type="button" disabled={busy} onClick={() => openEditReturned(row)} className="rounded-lg bg-[#008FD5] px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50">Edit & resend</button>
+                      <button type="button" disabled={busy} onClick={() => openEditReturned(row)} className="rounded-lg bg-[#008FD5] px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50">
+                        {/^draft$/i.test(row.status) ? 'Edit & submit' : 'Edit & resend'}
+                      </button>
                     ) : showSendReminder ? (
                       <button type="button" disabled={busy || rowActionBusy} onClick={() => void sendReminder(row)} className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800 disabled:opacity-50">
                         <Send className="h-3 w-3" /> Remind
@@ -1675,7 +1682,7 @@ export default function PaymentRequestsClient({
                             className="inline-flex items-center gap-1 rounded-lg bg-[#008FD5] px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#007bb8] disabled:opacity-50"
                           >
                             <RotateCcw className="h-3 w-3" />
-                            Edit & resend
+                            {/^draft$/i.test(row.status) ? 'Edit & submit' : 'Edit & resend'}
                           </button>
                           <Link
                             href={`/finance/approvals/request/${row.requestId}`}
@@ -1760,14 +1767,18 @@ export default function PaymentRequestsClient({
             <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#008FD5]">
-                  {editingRequestId ? 'Edit returned request' : 'New payment request'}
+                  {editingRequestId
+                    ? (editingIsDraft ? 'Edit draft request' : 'Edit returned request')
+                    : 'New payment request'}
                 </p>
                 <h2 className="mt-1 text-base font-semibold text-slate-900 sm:text-lg">
                   {editingRequestId ? `${editingRequestNumber} · ${composerType}` : composerType}
                 </h2>
                 {editingRequestId ? (
-                  <p className="mt-1 text-xs text-violet-700">
-                    Correct the details below and resend into the approval workflow.
+                  <p className={`mt-1 text-xs ${editingIsDraft ? 'text-slate-600' : 'text-violet-700'}`}>
+                    {editingIsDraft
+                      ? 'Update the details below, save as draft, or submit for approval.'
+                      : 'Correct the details below and resend into the approval workflow.'}
                   </p>
                 ) : null}
               </div>
@@ -2222,7 +2233,7 @@ export default function PaymentRequestsClient({
               )}
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4">
-              {editingRequestId ? (
+              {editingRequestId && !editingIsDraft ? (
                 <p className="text-xs text-slate-600">Changes will restart approval from the first stage.</p>
               ) : (
                 <label className="inline-flex items-center gap-2 text-xs text-slate-600">
@@ -2237,6 +2248,7 @@ export default function PaymentRequestsClient({
                     setComposerOpen(false);
                     setEditingRequestId(null);
                     setEditingRequestNumber('');
+                    setEditingIsDraft(false);
                     setExistingAttachments([]);
                   }}
                   className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700"
@@ -2252,7 +2264,9 @@ export default function PaymentRequestsClient({
                   {busy
                     ? 'Saving…'
                     : editingRequestId
-                      ? 'Resend for approval'
+                      ? (editingIsDraft
+                        ? (form.submit ? 'Submit for approval' : 'Save draft')
+                        : 'Resend for approval')
                       : form.submit
                         ? 'Submit request'
                         : 'Save draft'}

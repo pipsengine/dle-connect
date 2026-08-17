@@ -351,7 +351,7 @@ export async function POST(request: Request) {
       const existing = await getPaymentRequestById(requestId);
       if (!existing) return jsonErr(404, 'Payment request not found.');
       if (!canEditReturnedPaymentRequest(actor, existing)) {
-        return jsonErr(403, 'Only the requester can edit and resend this returned payment request.');
+        return jsonErr(403, 'Only the requester can edit this draft or returned payment request.');
       }
 
       const paymentType = existing.paymentType as PaymentRequestType;

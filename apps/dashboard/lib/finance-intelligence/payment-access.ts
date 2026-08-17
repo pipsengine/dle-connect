@@ -156,12 +156,12 @@ export const canSubmitCashAdvanceRetirement = (
   );
 };
 
-/** Requester may edit and resubmit a payment request that was returned for correction. */
+/** Requester may edit a draft or a payment returned for correction, then submit/resubmit. */
 export const canEditReturnedPaymentRequest = (
   actor: PaymentAccessActor,
   request: Pick<PaymentRequestRow, 'status' | 'requesterCode' | 'beneficiaryCode' | 'paymentType'>,
 ) => {
-  if (!/^returned$/i.test(String(request.status || ''))) return false;
+  if (!/^(draft|returned)$/i.test(String(request.status || ''))) return false;
   if (actor.isGlobalAdmin) return true;
   if (codesMatch(actor.actorCode, request.requesterCode)) return true;
   // Cash advances: beneficiary is usually the same employee who raised it.

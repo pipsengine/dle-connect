@@ -1776,15 +1776,17 @@ export type UpdateReturnedPaymentRequestInput = CreatePaymentRequestInput & {
   keepAttachmentIds?: string[];
 };
 
-/** Edit a returned payment request and optionally resubmit into the approval chain. */
+/** Edit a draft or returned payment request and optionally submit / resubmit into the approval chain. */
 export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentRequestInput) => {
   const requestId = compact(input.requestId);
   if (!requestId) throw new Error('requestId is required.');
 
   const existing = await getPaymentRequestById(requestId);
   if (!existing) throw new Error('Payment request not found.');
-  if (!/^returned$/i.test(existing.status)) {
-    throw new Error('Only returned payment requests can be edited and resent.');
+  const wasDraft = /^draft$/i.test(existing.status);
+  const wasReturned = /^returned$/i.test(existing.status);
+  if (!wasDraft && !wasReturned) {
+    throw new Error('Only draft or returned payment requests can be edited.');
   }
 
   const actorCode = compact(input.actorCode || input.requesterCode);
@@ -1797,11 +1799,11 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
       )
     );
   if (!isOwner) {
-    throw new Error('Only the requester can edit and resend this returned payment request.');
+    throw new Error('Only the requester can edit this payment request.');
   }
 
   if (existing.paymentType !== input.paymentType) {
-    throw new Error('Payment type cannot be changed when editing a returned request.');
+    throw new Error('Payment type cannot be changed when editing this request.');
   }
 
   const title = compact(input.title) || existing.title;
@@ -1901,20 +1903,35 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
       requesterCode: compact(input.requesterCode) || existing.requesterCode || beneficiaryCode,
       supervisorName: compact(input.supervisorName) || existing.supervisorName,
     })
-    : {
-      stage: 'Returned for Correction',
-      status: 'Returned' as const,
-      matrixRuleName: compact(existing.payload?.matrixRuleName) || null,
-      approvalLevel: Number(existing.payload?.approvalLevel || 0),
-      stages: Array.isArray(existing.payload?.stages)
-        ? (existing.payload.stages as unknown[]).map((item) => compact(item)).filter(Boolean)
-        : [],
-      pathType: (compact(existing.payload?.pathType) || 'Non-project') as 'Project' | 'Non-project',
-      amountNgn: Number(existing.payload?.amountNgn || netAmount),
-      fxRate: Number(existing.payload?.fxRate || 1),
-      fxRateDate: compact(existing.payload?.fxRateDate) || null,
-      fxSource: compact(existing.payload?.fxSource) || null,
-    };
+    : wasDraft
+      ? {
+        stage: 'Draft',
+        status: 'Draft' as const,
+        matrixRuleName: compact(existing.payload?.matrixRuleName) || null,
+        approvalLevel: Number(existing.payload?.approvalLevel || 0),
+        stages: Array.isArray(existing.payload?.stages)
+          ? (existing.payload.stages as unknown[]).map((item) => compact(item)).filter(Boolean)
+          : [],
+        pathType: (compact(existing.payload?.pathType) || 'Non-project') as 'Project' | 'Non-project',
+        amountNgn: Number(existing.payload?.amountNgn || netAmount),
+        fxRate: Number(existing.payload?.fxRate || 1),
+        fxRateDate: compact(existing.payload?.fxRateDate) || null,
+        fxSource: compact(existing.payload?.fxSource) || null,
+      }
+      : {
+        stage: 'Returned for Correction',
+        status: 'Returned' as const,
+        matrixRuleName: compact(existing.payload?.matrixRuleName) || null,
+        approvalLevel: Number(existing.payload?.approvalLevel || 0),
+        stages: Array.isArray(existing.payload?.stages)
+          ? (existing.payload.stages as unknown[]).map((item) => compact(item)).filter(Boolean)
+          : [],
+        pathType: (compact(existing.payload?.pathType) || 'Non-project') as 'Project' | 'Non-project',
+        amountNgn: Number(existing.payload?.amountNgn || netAmount),
+        fxRate: Number(existing.payload?.fxRate || 1),
+        fxRateDate: compact(existing.payload?.fxRateDate) || null,
+        fxSource: compact(existing.payload?.fxSource) || null,
+      };
 
   const pool = await ensureFinanceDb();
   if (!pool) throw new Error('Finance database is unavailable.');
@@ -2023,13 +2040,17 @@ WHERE [RequestId] = @RequestId
 
   await logAction({
     requestId,
-    actionType: resubmit ? 'Resubmitted' : 'Updated',
+    actionType: resubmit ? (wasDraft ? 'Submitted' : 'Resubmitted') : 'Updated',
     stage: stageInfo.stage,
     actorName: input.actor,
     actorCode,
     comment: resubmit
-      ? 'Payment request corrected and resent for approval.'
-      : 'Returned payment request updated.',
+      ? (wasDraft
+        ? 'Draft payment request submitted for approval.'
+        : 'Payment request corrected and resent for approval.')
+      : (wasDraft
+        ? 'Draft payment request updated.'
+        : 'Returned payment request updated.'),
   });
 
   if (resubmit && stageInfo.stage && stageInfo.stage !== 'Draft' && stageInfo.stage !== 'Returned for Correction') {
@@ -2069,8 +2090,8 @@ WHERE [RequestId] = @RequestId
     request,
     workspace,
     message: resubmit
-      ? 'Payment request updated and resent for approval.'
-      : 'Returned payment request saved.',
+      ? (wasDraft ? 'Payment request submitted for approval.' : 'Payment request updated and resent for approval.')
+      : (wasDraft ? 'Draft payment request saved.' : 'Returned payment request saved.'),
   };
 };
 
