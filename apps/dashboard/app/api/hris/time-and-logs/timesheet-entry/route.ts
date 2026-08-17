@@ -65,7 +65,7 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
-import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 
 const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string | null): TimesheetDayContext => ({
@@ -854,7 +854,16 @@ const todayDateInputValue = () => {
   return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
 };
 
-const buildPayload = async (request: Request, date?: string, supervisorId?: string, workCenterName?: string, locationName?: string, mode?: 'supervisor', requestedHeaderId?: string): Promise<TimesheetPayload> => {
+const buildPayload = async (
+  request: Request,
+  date?: string,
+  supervisorId?: string,
+  workCenterName?: string,
+  locationName?: string,
+  mode?: 'supervisor',
+  requestedHeaderId?: string,
+  requestedShiftLabel?: string,
+): Promise<TimesheetPayload> => {
   const access = resolveAccessContext(request);
   const uiPermissions = getUiPermissions(access);
   const session = await sessionFrom(request);
@@ -892,7 +901,8 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
 
   const requestedHeader = requestedHeaderId ? headers.find((item) => item.id === requestedHeaderId) : null;
   const targetDate = requestedHeader?.timesheetDate || date || todayDateInputValue();
-  const dayContext = dayContextFor(targetDate, holidayDates, requestedHeader?.shiftLabel);
+  const targetShiftLabel = resolveTimesheetShift(requestedHeader?.shiftLabel || requestedShiftLabel).label;
+  const dayContext = dayContextFor(targetDate, holidayDates, targetShiftLabel);
   if (supervisorMode && !session) throw new Error('Authenticated supervisor session is required.');
   let requestedSupervisor = clean(requestedHeader?.supervisorId || supervisorId);
   let targetWorkCenter = clean(requestedHeader?.workCenterName || workCenterName);
@@ -1072,8 +1082,17 @@ const buildPayload = async (request: Request, date?: string, supervisorId?: stri
   let header =
     requestedHeader ||
     (targetWorkCenter
-      ? headers.find((h) => h.timesheetDate === targetDate && canonicalSupervisorValue(h.supervisorId, supervisorIndex) === targetSupervisor && h.workCenterName === targetWorkCenter)
-      : headers.find((h) => h.timesheetDate === targetDate && canonicalSupervisorValue(h.supervisorId, supervisorIndex) === targetSupervisor)) ||
+      ? headers.find((h) => (
+        h.timesheetDate === targetDate
+        && canonicalSupervisorValue(h.supervisorId, supervisorIndex) === targetSupervisor
+        && h.workCenterName === targetWorkCenter
+        && timesheetHeaderMatchesShift(h.shiftLabel, targetShiftLabel)
+      ))
+      : headers.find((h) => (
+        h.timesheetDate === targetDate
+        && canonicalSupervisorValue(h.supervisorId, supervisorIndex) === targetSupervisor
+        && timesheetHeaderMatchesShift(h.shiftLabel, targetShiftLabel)
+      ))) ||
     null;
   const selectedEmployeeKeys = new Set(selectedSupervisorEmployees.flatMap((employee) => matchKeys(employee.employeeCode, employee.fullName)).filter(Boolean));
   const lineBelongsToSelectedCrew = (line: TimesheetLine) =>
@@ -1265,8 +1284,9 @@ export async function GET(request: Request) {
     const supervisorId = searchParams.get('supervisorId') || undefined;
     const locationName = searchParams.get('locationName') || undefined;
     const workCenterName = searchParams.get('workCenterName') || undefined;
+    const shiftLabel = searchParams.get('shiftLabel') || undefined;
     const mode = searchParams.get('mode') === 'supervisor' ? 'supervisor' : undefined;
-    return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName, mode, headerId));
+    return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName, mode, headerId, shiftLabel));
   } catch (error) {
     console.error('Timesheet entry API Error:', error);
     return err(500, error instanceof Error ? error.message : 'Unable to load timesheet entry.');
@@ -1328,15 +1348,49 @@ export async function PATCH(request: Request) {
     }
 
     if (action === 'SET_SHIFT') {
-      if (!payload.headerId) return err(400, 'Header ID is required.');
       if (!payload.shiftLabel) return err(400, 'Shift label is required.');
-      const { headers, lines } = await readTimesheetData();
-      const header = headers.find((item) => item.id === payload.headerId);
-      if (!header) return err(404, 'Timesheet header not found.');
-      requireEditableTimesheet(header);
-      header.shiftLabel = String(payload.shiftLabel);
-      await writeTimesheetHeaderLines(header, lines.filter((line) => line.headerId === header.id));
-      return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName, mode));
+      const shift = resolveTimesheetShift(payload.shiftLabel);
+      let scopedDate = date;
+      let scopedSupervisorId = supervisorId;
+      let scopedWorkCenterName = workCenterName;
+      let scopedLocationName = locationName;
+      if (payload.headerId) {
+        const { headers } = await readTimesheetData();
+        const existing = headers.find((item) => item.id === payload.headerId);
+        if (existing) {
+          scopedDate = existing.timesheetDate;
+          scopedSupervisorId = existing.supervisorId;
+          scopedWorkCenterName = existing.workCenterName;
+        }
+      }
+      if (isSupervisorMode) {
+        const scoped = await buildPayload(request, scopedDate, undefined, scopedWorkCenterName, scopedLocationName, mode, undefined, shift.label);
+        scopedDate = scoped.timesheetDate;
+        scopedSupervisorId = scopedSupervisorId || scoped.filterOptions.supervisors[0];
+        scopedLocationName = scopedLocationName || scoped.supervisorProfile?.location || scoped.filterOptions.locations[0];
+        scopedWorkCenterName = scopedWorkCenterName || scoped.header?.workCenterName || scoped.workCenters[0]?.name || '';
+      }
+      if (!scopedDate || !scopedSupervisorId || !scopedWorkCenterName) {
+        return err(400, 'Date, supervisor, and work center are required to set shift.');
+      }
+      await requireOpenPeriod(scopedDate);
+      const synced = await syncAttendanceForTimesheet(
+        scopedDate,
+        scopedSupervisorId,
+        scopedWorkCenterName,
+        scopedLocationName,
+        { shiftLabel: shift.label },
+      );
+      return ok(await buildPayload(
+        request,
+        synced.header.timesheetDate,
+        synced.header.supervisorId,
+        synced.header.workCenterName,
+        scopedLocationName,
+        mode,
+        synced.header.id,
+        shift.label,
+      ));
     }
 
     if (action === 'COPY_PREVIOUS_DAY') {
@@ -1506,8 +1560,9 @@ export async function PATCH(request: Request) {
       let scopedSupervisorId = supervisorId;
       let scopedWorkCenterName = workCenterName;
       let scopedLocationName = locationName;
+      const shiftLabel = payload.shiftLabel ? resolveTimesheetShift(payload.shiftLabel).label : undefined;
       if (isSupervisorMode) {
-        const scoped = await buildPayload(request, date, undefined, workCenterName, locationName, mode);
+        const scoped = await buildPayload(request, date, undefined, workCenterName, locationName, mode, undefined, shiftLabel);
         scopedDate = scoped.timesheetDate;
         scopedSupervisorId = supervisorId || scoped.filterOptions.supervisors[0];
         scopedLocationName = locationName || scoped.supervisorProfile?.location || scoped.filterOptions.locations[0];
@@ -1515,10 +1570,30 @@ export async function PATCH(request: Request) {
       }
       if (!scopedDate || !scopedSupervisorId || !scopedWorkCenterName) return err(400, 'Date, Supervisor ID, and Work Center Name are required.');
       await requireOpenPeriod(scopedDate);
-      const existingHeader = headers.find(h => h.timesheetDate === scopedDate && h.supervisorId === scopedSupervisorId && h.workCenterName === scopedWorkCenterName);
+      const existingHeader = headers.find((h) => (
+        h.timesheetDate === scopedDate
+        && h.supervisorId === scopedSupervisorId
+        && h.workCenterName === scopedWorkCenterName
+        && timesheetHeaderMatchesShift(h.shiftLabel, shiftLabel || h.shiftLabel || '01 (Day)')
+      ));
       if (existingHeader) requireEditableTimesheet(existingHeader);
-      await syncAttendanceForTimesheet(scopedDate, scopedSupervisorId, scopedWorkCenterName, scopedLocationName);
-      return ok(await buildPayload(request, scopedDate, scopedSupervisorId, scopedWorkCenterName, scopedLocationName, mode));
+      const synced = await syncAttendanceForTimesheet(
+        scopedDate,
+        scopedSupervisorId,
+        scopedWorkCenterName,
+        scopedLocationName,
+        { shiftLabel: shiftLabel || existingHeader?.shiftLabel || '01 (Day)' },
+      );
+      return ok(await buildPayload(
+        request,
+        synced.header.timesheetDate,
+        synced.header.supervisorId,
+        synced.header.workCenterName,
+        scopedLocationName,
+        mode,
+        synced.header.id,
+        synced.header.shiftLabel || shiftLabel,
+      ));
     }
 
     if (action === 'MATRIX_SAVE' || action === 'SAVE_DRAFT' || action === 'SUBMIT') {

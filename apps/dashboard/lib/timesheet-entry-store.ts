@@ -16,6 +16,9 @@ import {
   isTimesheetPaidLeaveLine,
   normalizeIdleAllocations,
   normalizeProjectAllocations,
+  resolveTimesheetShift,
+  timesheetHeaderMatchesShift,
+  timesheetShiftHeaderSlug,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-shared';
 
@@ -3368,11 +3371,13 @@ export async function syncAttendanceForTimesheet(
   supervisorId: string,
   workCenterName: string,
   locationName?: string,
-  options: { persist?: boolean } = {},
+  options: { persist?: boolean; shiftLabel?: string | null } = {},
 ) {
   const persist = options.persist !== false;
+  const shift = resolveTimesheetShift(options.shiftLabel);
+  const shiftSlug = timesheetShiftHeaderSlug(shift.label);
   const liveAttendancePromise = withSyncTimeout(
-    readLiveClockingActivity(date),
+    readLiveClockingActivity(date, { shiftKind: shift.kind }),
     TIMESHEET_LIVE_ATTENDANCE_TIMEOUT_MS,
     'Live biometric attendance timed out.',
   );
@@ -3486,45 +3491,78 @@ export async function syncAttendanceForTimesheet(
     candidate.payrollEmployee?.entityCode,
     candidate.payrollEmployee?.displayName,
   ].flatMap((value) => attendanceMatchKeys(value));
-  const attendanceForDay = assignedSupervisorEmployees.length
-    ? assignedSupervisorEmployees.map((employee) => {
-        const employeeKeys = attendanceMatchKeys(employee.employeeCode, employee.fullName);
-        const matched = attendanceCandidates.find((candidate) => attendanceCandidateKeys(candidate).some((key) => employeeKeys.includes(key)));
-        return matched || {
-          attendance: {
-            id: `no-att-${date}-${employee.employeeCode}`,
-            employeeId: employee.employeeCode,
-            employeeName: employee.fullName,
-            businessUnit: '',
-            department: '',
-            jobTitle: '',
-            location: locationName || '',
-            site: workCenterName,
-            shift: 'Day',
-            status: 'Absent',
-            checkInTime: null,
-            checkOutTime: null,
-            scheduledStart: '08:00',
-            scheduledEnd: '17:00',
-            minutesLate: 0,
-            overtimeHours: 0,
-            biometricSource: 'Supervisor Override',
-            supervisor: supervisorId,
-            punchCount: 0,
-          },
-          payrollEmployee: undefined,
-        };
-      })
-    : supervisorScopeResolved ? [] : attendanceCandidates;
+
+  // Night: only employees with night-window punches (do not mix full day crew).
+  // Day: keep full assigned roster; absent rows stay for booking visibility.
+  const attendanceForDay = shift.kind === 'Night'
+    ? (
+      assignedSupervisorEmployees.length
+        ? assignedSupervisorEmployees
+          .map((employee) => {
+            const employeeKeys = attendanceMatchKeys(employee.employeeCode, employee.fullName);
+            return attendanceCandidates.find((candidate) => attendanceCandidateKeys(candidate).some((key) => employeeKeys.includes(key)));
+          })
+          .filter((item): item is (typeof attendanceCandidates)[number] => Boolean(item?.attendance.checkInTime))
+        : attendanceCandidates.filter((candidate) => Boolean(candidate.attendance.checkInTime))
+    )
+    : (
+      assignedSupervisorEmployees.length
+        ? assignedSupervisorEmployees.map((employee) => {
+            const employeeKeys = attendanceMatchKeys(employee.employeeCode, employee.fullName);
+            const matched = attendanceCandidates.find((candidate) => attendanceCandidateKeys(candidate).some((key) => employeeKeys.includes(key)));
+            return matched || {
+              attendance: {
+                id: `no-att-${date}-${employee.employeeCode}`,
+                employeeId: employee.employeeCode,
+                employeeName: employee.fullName,
+                businessUnit: '',
+                department: '',
+                jobTitle: '',
+                location: locationName || '',
+                site: workCenterName,
+                shift: 'Day' as const,
+                status: 'Absent' as const,
+                checkInTime: null,
+                checkOutTime: null,
+                scheduledStart: '08:00',
+                scheduledEnd: '17:00',
+                minutesLate: 0,
+                overtimeHours: 0,
+                biometricSource: 'Supervisor Override' as const,
+                supervisor: supervisorId,
+                punchCount: 0,
+              },
+              payrollEmployee: undefined,
+            };
+          })
+        : supervisorScopeResolved ? [] : attendanceCandidates
+    );
 
   const { headers, lines } = await readTimesheetData();
   const period = calculateTimesheetPeriod(new Date(date));
 
   const workCenterId = workCenterName.toLowerCase().replace(/\s+/g, '-');
-  let header = headers.find((h) => h.timesheetDate === date && h.supervisorId === supervisorId && h.workCenterName === workCenterName);
+  const supervisorSlug = supervisorId.toLowerCase().replace(/\s+/g, '-');
+  const shiftHeaderId = `hdr-${date}-${supervisorSlug}-${workCenterId}-${shiftSlug}`;
+  let header = headers.find((h) => (
+    h.timesheetDate === date
+    && h.supervisorId === supervisorId
+    && h.workCenterName === workCenterName
+    && timesheetHeaderMatchesShift(h.shiftLabel, shift.label)
+  ));
+  // Prefer explicit night/day header id; fall back to legacy header only for Day.
+  if (!header && shift.kind === 'Day') {
+    header = headers.find((h) => (
+      h.timesheetDate === date
+      && h.supervisorId === supervisorId
+      && h.workCenterName === workCenterName
+      && !String(h.shiftLabel || '').toLowerCase().includes('night')
+      && h.id !== shiftHeaderId
+    )) || headers.find((h) => h.id === `hdr-${date}-${supervisorSlug}-${workCenterId}`);
+  }
   if (!header) {
     header = {
-      id: `hdr-${date}-${supervisorId.toLowerCase().replace(/\s+/g, '-')}-${workCenterId}`,
+      id: shiftHeaderId,
       periodId: period.id,
       timesheetDate: date,
       supervisorId,
@@ -3537,18 +3575,33 @@ export async function syncAttendanceForTimesheet(
       approvedAt: null,
       approvedBy: null,
       lastSyncAt: new Date().toISOString(),
+      shiftLabel: shift.label,
     };
     if (persist) headers.push(header);
   } else {
     header.lastSyncAt = new Date().toISOString();
+    header.shiftLabel = shift.label;
   }
 
-  // Filter out lines for this header and rebuild
-  const otherLines = lines.filter((l) => l.headerId !== header!.id);
-  const newLines: TimesheetLine[] = attendanceForDay.map(({ attendance: att, payrollEmployee }) => {
+  // Rebuild lines for this shift-scoped header.
+  const existingHeaderLines = lines.filter((l) => l.headerId === header!.id);
+  const preservedNightLines = shift.kind === 'Night'
+    ? existingHeaderLines.filter((line) => {
+        const alreadyListed = attendanceForDay.some((item) => {
+          const employeeCode = item.payrollEmployee
+            ? sageTimesheetEmployeeCode(item.payrollEmployee, item.attendance.employeeId)
+            : item.attendance.employeeId.trim().toUpperCase();
+          return employeeCode === line.employeeId;
+        });
+        if (alreadyListed) return false;
+        return Number(line.usedHours || 0) > 0.001 || Number(line.totalHours || 0) > 0.001;
+      })
+    : [];
+
+  const syncedFromAttendance: TimesheetLine[] = attendanceForDay.map(({ attendance: att, payrollEmployee }) => {
     const employeeCode = payrollEmployee ? sageTimesheetEmployeeCode(payrollEmployee, att.employeeId) : att.employeeId.trim().toUpperCase();
     const employeeName = payrollEmployee ? formatSageEmployeeFullName(payrollEmployee, att.employeeName) : att.employeeName;
-    const existingLine = lines.find((l) => l.headerId === header!.id && l.employeeId === employeeCode);
+    const existingLine = existingHeaderLines.find((l) => l.employeeId === employeeCode);
     const approvedLeave = attendanceMatchKeys(employeeCode, employeeName, att.employeeId, att.employeeName)
       .map((key) => approvedLeaveByKey.get(key))
       .find(Boolean);
@@ -3561,7 +3614,7 @@ export async function syncAttendanceForTimesheet(
         ? STANDARD_TIMESHEET_HOURS
         : 0;
     const shouldAutoBookPaidLeave = Boolean(approvedLeave && !att.checkInTime && !existingLine?.totalHours);
-    const leaveAllocation = shouldAutoBookPaidLeave ? [{
+    const leaveAllocation: TimesheetLine['projectAllocations'] | null = shouldAutoBookPaidLeave ? [{
       projectId: 'LEAVE',
       projectCode: 'LEAVE',
       projectName: 'Leave and Authorized Absence',
@@ -3570,7 +3623,7 @@ export async function syncAttendanceForTimesheet(
     }] : null;
     const bookedTotal = shouldAutoBookPaidLeave ? STANDARD_TIMESHEET_HOURS : existingLine?.totalHours || 0;
 
-    return {
+    const nextLine: TimesheetLine = {
       id: existingLine?.id || `line-${header!.id}-${employeeCode}`,
       headerId: header!.id,
       employeeId: employeeCode,
@@ -3592,7 +3645,12 @@ export async function syncAttendanceForTimesheet(
       validationStatus: shouldAutoBookPaidLeave ? 'Valid' : 'Incomplete',
       validationMessage: shouldAutoBookPaidLeave ? 'Approved paid leave. Biometric attendance is not required for this payable leave day.' : 'Awaiting time allocation.',
     };
+    return nextLine;
   });
+  const newLines: TimesheetLine[] = [
+    ...syncedFromAttendance,
+    ...preservedNightLines.map((line) => ({ ...line, headerId: header!.id })),
+  ];
 
   if (persist) {
     await writeTimesheetHeaderLines(header, newLines);

@@ -464,7 +464,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const loadRequestRef = useRef(0);
   const autoSyncKeyRef = useRef<string | null>(null);
   const hasPayloadRef = useRef(false);
-  const load = useCallback(async (date?: string, supervisor?: string, location?: string, workCenter?: string, headerId?: string) => {
+  const load = useCallback(async (date?: string, supervisor?: string, location?: string, workCenter?: string, headerId?: string, shiftLabel?: string) => {
     const requestId = loadRequestRef.current + 1;
     loadRequestRef.current = requestId;
     const initialLoad = !hasPayloadRef.current;
@@ -480,6 +480,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       if (location) url.searchParams.set('locationName', location);
       if (workCenter) url.searchParams.set('workCenterName', workCenter);
       if (headerId) url.searchParams.set('headerId', headerId);
+      if (shiftLabel) url.searchParams.set('shiftLabel', shiftLabel);
       
       const res = await fetch(url.toString(), { cache: 'no-store' });
       const json = await readApiJson(res);
@@ -570,9 +571,11 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void load(selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, requestedHeaderId || undefined);
+      void load(selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, requestedHeaderId || undefined, selectedShift);
     }, hasPayloadRef.current ? 120 : 0);
     return () => window.clearTimeout(timer);
+    // selectedShift is intentionally read for date/context reloads, but shift-only changes use SET_SHIFT.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, requestedHeaderId]);
 
   useEffect(() => {
@@ -611,19 +614,23 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           supervisorId: selectedSupervisor,
           locationName: selectedLocation,
           workCenterName: selectedWorkCenter,
+          shiftLabel: selectedShift,
         }),
       });
       const json = await readApiJson(res);
       if (!res.ok || json?.status !== 'success') throw new Error(json?.error || 'Sync failed');
       setPayload(json.data);
       setLocalLines(json.data.lines);
+      if (json.data.header?.shiftLabel) {
+        setSelectedShift(resolveTimesheetShift(json.data.header.shiftLabel).label);
+      }
     } catch (e) {
       if (source === 'manual') setError(e instanceof Error ? e.message : 'Sync failed');
       else setNotice(e instanceof Error ? `Automatic punch fetch is still pending: ${e.message}` : 'Automatic punch fetch is still pending.');
     } finally {
       setSubmitting(false);
     }
-  }, [isWorkforceSupervisor, payload?.header?.status, payload?.overtimeBooking?.retroCorrection, payload?.period.status, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter]);
+  }, [isWorkforceSupervisor, payload?.header?.status, payload?.overtimeBooking?.retroCorrection, payload?.period.status, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, selectedShift]);
 
   useEffect(() => {
     if (!payload || loading || refreshing || submitting) return;
@@ -633,11 +640,11 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     if (payload.period.status !== 'Open') return;
     if (!selectedDate || !selectedSupervisor || !selectedLocation || !selectedWorkCenter) return;
 
-    const syncKey = [selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter].join('|');
+    const syncKey = [selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, selectedShift].join('|');
     if (autoSyncKeyRef.current === syncKey) return;
     autoSyncKeyRef.current = syncKey;
     void handleSyncAttendance('auto');
-  }, [handleSyncAttendance, loading, payload, refreshing, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, submitting]);
+  }, [handleSyncAttendance, loading, payload, refreshing, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, selectedShift, submitting]);
 
   useEffect(() => {
     if (!selectedLocation || workCenters.length === 0) return;
@@ -1495,27 +1502,39 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             setSelectedShift(shift.label);
             setNotice(
               shift.kind === 'Night'
-                ? 'Night shift selected: book 8h for 18:00–02:00 as normal work. ₦1,500 inconvenience allowance posts automatically — overtime is not applicable.'
+                ? 'Night shift selected: loading employees with night punches (18:00–02:00). Book 8h as normal work — ₦1,500 inconvenience allowance posts automatically; overtime is not applicable.'
                 : 'Day shift selected: book 8h for the standard day. Hours after 17:00 until clock-out are overtime.',
             );
-            if (payload?.header?.id && canEditTimesheet) {
-              void fetch('/api/hris/time-and-logs/timesheet-entry', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  action: 'SET_SHIFT',
-                  headerId: payload.header.id,
-                  shiftLabel: shift.label,
-                  mode: isWorkforceSupervisor ? 'supervisor' : undefined,
-                }),
-              }).then(async (res) => {
-                const json = await readApiJson(res);
-                if (res.ok && json?.status === 'success' && json.data) {
-                  setPayload(json.data);
-                  setLocalLines(json.data.lines);
+            if (!canEditTimesheet) return;
+            setSubmitting(true);
+            void fetch('/api/hris/time-and-logs/timesheet-entry', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'SET_SHIFT',
+                headerId: payload?.header?.id,
+                date: selectedDate,
+                supervisorId: selectedSupervisor,
+                locationName: selectedLocation,
+                workCenterName: selectedWorkCenter,
+                shiftLabel: shift.label,
+                mode: isWorkforceSupervisor ? 'supervisor' : undefined,
+              }),
+            }).then(async (res) => {
+              const json = await readApiJson(res);
+              if (res.ok && json?.status === 'success' && json.data) {
+                setPayload(json.data);
+                setLocalLines(json.data.lines);
+                if (json.data.header?.shiftLabel) {
+                  setSelectedShift(resolveTimesheetShift(json.data.header.shiftLabel).label);
                 }
-              }).catch(() => undefined);
-            }
+                autoSyncKeyRef.current = [selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, shift.label].join('|');
+              } else {
+                setError(json?.error || 'Unable to switch shift.');
+              }
+            }).catch((error) => {
+              setError(error instanceof Error ? error.message : 'Unable to switch shift.');
+            }).finally(() => setSubmitting(false));
           }}
           shiftHint={resolveTimesheetShift(selectedShift).description}
           canManagePeriod={canManageTimesheetSetup}

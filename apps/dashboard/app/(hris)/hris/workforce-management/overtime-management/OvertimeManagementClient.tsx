@@ -391,6 +391,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
   const [authOpen, setAuthOpen] = useState(false);
   const [selectedAuthIds, setSelectedAuthIds] = useState<Set<string>>(new Set());
   const [employeeLines, setEmployeeLines] = useState<AuthorizationBookingLine[]>([]);
+  const [employeeBookSearch, setEmployeeBookSearch] = useState('');
   const [requestForm, setRequestForm] = useState({
     employeeId: '',
     date: new Date(initialNow).toISOString().slice(0, 10),
@@ -601,6 +602,56 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
   const bookedLines = employeeLines.filter((line) => line.selected && lineOtTotal(line) > 0);
   const bookedHoursTotal = bookedLines.reduce((sum, line) => sum + lineOtTotal(line), 0);
 
+  const matchesEmployeeBookSearch = (line: AuthorizationBookingLine, q: string) => {
+    if (!q) return true;
+    return [line.employeeCode, line.employeeName, line.jobTitle, line.department]
+      .some((value) => String(value || '').toLowerCase().includes(q));
+  };
+
+  const filteredEmployeeLines = useMemo(() => {
+    const q = employeeBookSearch.trim().toLowerCase();
+    if (!q) return employeeLines;
+    return employeeLines.filter((line) => matchesEmployeeBookSearch(line, q));
+  }, [employeeLines, employeeBookSearch]);
+
+  const employeeDirectoryOptions = useMemo(() => {
+    const map = new Map<string, ComboOption>();
+    for (const supervisor of setup?.supervisors || []) {
+      for (const employee of supervisor.employees || []) {
+        if (map.has(employee.code)) continue;
+        map.set(employee.code, {
+          value: employee.code,
+          label: `${employee.code} · ${employee.name}`,
+          sublabel: [employee.jobTitle, employee.department].filter(Boolean).join(' · ') || undefined,
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [setup?.supervisors]);
+
+  const runEmployeeBookSearch = () => {
+    const raw = employeeBookSearch.trim();
+    const q = raw.toLowerCase();
+    if (!q) {
+      setToast('Enter a name or employee code to search.');
+      return;
+    }
+    const matches = employeeLines.filter((line) => matchesEmployeeBookSearch(line, q));
+    if (!matches.length) {
+      setToast(`No employees match "${raw}".`);
+      return;
+    }
+    const matchCodes = new Set(matches.map((line) => line.employeeCode));
+    setEmployeeLines((current) => current.map((line) => (
+      matchCodes.has(line.employeeCode) ? { ...line, selected: true } : line
+    )));
+    setToast(
+      matches.length === 1
+        ? `Selected ${matches[0].employeeName} (${matches[0].employeeCode}).`
+        : `Selected ${matches.length} matching employee(s).`,
+    );
+  };
+
   const createAuthorization = async () => {
     if (!authorizationForm.projectCodes.length) {
       setError('Select at least one project before submitting the overtime authorization.');
@@ -707,6 +758,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
       setToast(`Submitted ${projectsPayload.length} overtime authorization(s) for ${cappedBookedLines.length} employee(s).${capNote}`);
       setAuthOpen(false);
       setEmployeeLines([]);
+      setEmployeeBookSearch('');
       setAuthorizationForm((current) => ({
         ...current,
         projectCodes: [],
@@ -877,6 +929,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
       supervisorName: supervisor?.name || '',
       workCenter: defaultWorkCenter || current.workCenter,
     }));
+    setEmployeeBookSearch('');
     setEmployeeLines(nextLines);
     void hydrateEmployeeAttendance(authorizationForm.workDate, nextLines).then(setEmployeeLines);
   };
@@ -921,7 +974,10 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
   };
 
   const toggleAllEmployeeLines = (selected: boolean) => {
-    setEmployeeLines((current) => current.map((line) => ({ ...line, selected })));
+    const visibleCodes = new Set(filteredEmployeeLines.map((line) => line.employeeCode));
+    setEmployeeLines((current) => current.map((line) => (
+      visibleCodes.has(line.employeeCode) ? { ...line, selected } : line
+    )));
   };
 
   const actOnAuthorization = async (id: string, decision: 'approve' | 'reject') => {
@@ -1050,75 +1106,118 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
             </div>
           ) : null}
         </div>
+        {employeeLines.length ? (
+          <div className="flex flex-wrap items-center gap-2 border-b border-[#EDF2F7] bg-white px-4 py-3">
+            <input
+              type="search"
+              value={employeeBookSearch}
+              onChange={(event) => setEmployeeBookSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  runEmployeeBookSearch();
+                }
+              }}
+              placeholder="Search by name, code, role, or department"
+              className="h-10 min-w-[240px] flex-1 rounded-xl border border-[#E5E7EB] bg-white px-3 text-sm font-medium text-[#0F172A] outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
+              aria-label="Search assigned employees"
+            />
+            <button
+              type="button"
+              onClick={runEmployeeBookSearch}
+              className="inline-flex h-10 items-center rounded-xl bg-[#2563EB] px-4 text-sm font-semibold text-white hover:bg-[#1D4ED8]"
+            >
+              Search
+            </button>
+            {employeeBookSearch.trim() ? (
+              <button
+                type="button"
+                onClick={() => setEmployeeBookSearch('')}
+                className="inline-flex h-10 items-center rounded-xl border border-[#E5E7EB] bg-white px-3 text-sm font-semibold text-[#64748B] hover:bg-[#F8FAFC]"
+              >
+                Clear search
+              </button>
+            ) : null}
+            <span className="text-xs font-medium text-[#64748B]">
+              Showing {filteredEmployeeLines.length} of {employeeLines.length}
+            </span>
+          </div>
+        ) : null}
         <div className="max-h-[320px] overflow-auto">
           {employeeLines.length ? (
-            <table className="w-full text-left text-sm">
-              <thead className="sticky top-0 bg-white text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">
-                <tr>
-                  <th className="px-4 py-2">Book</th>
-                  <th className="px-4 py-2">Employee</th>
-                  <th className="px-4 py-2">Role / Department</th>
-                  <th className="px-4 py-2 whitespace-nowrap">Biometric Duration</th>
-                  <th className="px-4 py-2 whitespace-nowrap">Used Time</th>
-                  {authorizationForm.projectCodes.length > 1 ? (
-                    authorizationForm.projectCodes.map((code) => (
-                      <th key={code} className="px-4 py-2 w-36 whitespace-nowrap">OT · {code}</th>
-                    ))
-                  ) : (
-                    <th className="px-4 py-2 w-40">OT Hours</th>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#EDF2F7]">
-                {employeeLines.map((line) => {
-                  const available = availableOtHours(line);
-                  const total = lineOtTotal(line);
-                  const overLimit = line.biometricDuration > 0 && total > available + 0.001;
-                  return (
-                    <tr key={line.employeeCode} className={line.selected ? 'bg-[#EFF6FF]' : ''}>
-                      <td className="px-4 py-2">
-                        <input type="checkbox" checked={line.selected} onChange={() => toggleEmployeeLine(line.employeeCode)} className="rounded border-[#CBD5E1]" />
-                      </td>
-                      <td className="px-4 py-2">
-                        <div className="font-semibold text-[#0F172A]">{line.employeeName}</div>
-                        <div className="text-xs text-[#64748B]">{line.employeeCode}</div>
-                        {overLimit ? <div className="mt-1 text-[11px] font-semibold text-[#B45309]">Will book available {available}h (capped to biometric headroom)</div> : null}
-                      </td>
-                      <td className="px-4 py-2 text-xs text-[#64748B]">{[line.jobTitle, line.department].filter(Boolean).join(' · ') || '—'}</td>
-                      <td className="px-4 py-2 text-sm font-semibold text-[#0F172A]">{line.biometricDuration > 0 ? `${line.biometricDuration}h` : '—'}</td>
-                      <td className="px-4 py-2 text-sm font-semibold text-[#0F172A]">{line.biometricDuration > 0 || line.usedHours > 0 ? `${line.usedHours}h` : '—'}</td>
-                      {authorizationForm.projectCodes.length > 1 ? (
-                        authorizationForm.projectCodes.map((code) => (
-                          <td key={code} className="px-4 py-2">
+            filteredEmployeeLines.length ? (
+              <table className="w-full text-left text-sm">
+                <thead className="sticky top-0 bg-white text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">
+                  <tr>
+                    <th className="px-4 py-2">Book</th>
+                    <th className="px-4 py-2">Employee</th>
+                    <th className="px-4 py-2">Role / Department</th>
+                    <th className="px-4 py-2 whitespace-nowrap">Biometric Duration</th>
+                    <th className="px-4 py-2 whitespace-nowrap">Used Time</th>
+                    {authorizationForm.projectCodes.length > 1 ? (
+                      authorizationForm.projectCodes.map((code) => (
+                        <th key={code} className="px-4 py-2 w-36 whitespace-nowrap">OT · {code}</th>
+                      ))
+                    ) : (
+                      <th className="px-4 py-2 w-40">OT Hours</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#EDF2F7]">
+                  {filteredEmployeeLines.map((line) => {
+                    const available = availableOtHours(line);
+                    const total = lineOtTotal(line);
+                    const overLimit = line.biometricDuration > 0 && total > available + 0.001;
+                    return (
+                      <tr key={line.employeeCode} className={line.selected ? 'bg-[#EFF6FF]' : ''}>
+                        <td className="px-4 py-2">
+                          <input type="checkbox" checked={line.selected} onChange={() => toggleEmployeeLine(line.employeeCode)} className="rounded border-[#CBD5E1]" />
+                        </td>
+                        <td className="px-4 py-2">
+                          <div className="font-semibold text-[#0F172A]">{line.employeeName}</div>
+                          <div className="text-xs text-[#64748B]">{line.employeeCode}</div>
+                          {overLimit ? <div className="mt-1 text-[11px] font-semibold text-[#B45309]">Will book available {available}h (capped to biometric headroom)</div> : null}
+                        </td>
+                        <td className="px-4 py-2 text-xs text-[#64748B]">{[line.jobTitle, line.department].filter(Boolean).join(' · ') || '—'}</td>
+                        <td className="px-4 py-2 text-sm font-semibold text-[#0F172A]">{line.biometricDuration > 0 ? `${line.biometricDuration}h` : '—'}</td>
+                        <td className="px-4 py-2 text-sm font-semibold text-[#0F172A]">{line.biometricDuration > 0 || line.usedHours > 0 ? `${line.usedHours}h` : '—'}</td>
+                        {authorizationForm.projectCodes.length > 1 ? (
+                          authorizationForm.projectCodes.map((code) => (
+                            <td key={code} className="px-4 py-2">
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.5"
+                                max={line.biometricDuration > 0 ? available : undefined}
+                                value={line.hoursByProject[code] ?? 0}
+                                onChange={(event) => setEmployeeHours(line.employeeCode, Number(event.target.value), code)}
+                                className={`h-9 w-28 rounded-lg border px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 ${overLimit ? 'border-[#FCA5A5]' : 'border-[#E5E7EB]'}`}
+                              />
+                            </td>
+                          ))
+                        ) : (
+                          <td className="px-4 py-2">
                             <input
                               type="number"
                               min="0"
                               step="0.5"
                               max={line.biometricDuration > 0 ? available : undefined}
-                              value={line.hoursByProject[code] ?? 0}
-                              onChange={(event) => setEmployeeHours(line.employeeCode, Number(event.target.value), code)}
+                              value={line.overtimeHours}
+                              onChange={(event) => setEmployeeHours(line.employeeCode, Number(event.target.value))}
                               className={`h-9 w-28 rounded-lg border px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 ${overLimit ? 'border-[#FCA5A5]' : 'border-[#E5E7EB]'}`}
                             />
                           </td>
-                        ))
-                      ) : (
-                        <td className="px-4 py-2">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            max={line.biometricDuration > 0 ? available : undefined}
-                            value={line.overtimeHours}
-                            onChange={(event) => setEmployeeHours(line.employeeCode, Number(event.target.value))}
-                            className={`h-9 w-28 rounded-lg border px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 ${overLimit ? 'border-[#FCA5A5]' : 'border-[#E5E7EB]'}`}
-                          />
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <div className="px-4 py-8 text-center text-sm font-medium text-[#64748B]">
+                No employees match &ldquo;{employeeBookSearch.trim()}&rdquo;.
+              </div>
+            )
           ) : (
             <div className="px-4 py-8 text-center text-sm font-medium text-[#64748B]">
               {authorizationForm.supervisorCode
@@ -1147,8 +1246,14 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
       <h2 className="text-lg font-semibold text-[#0F172A]">New Overtime Request</h2>
       <p className="mt-1 text-xs text-[#64748B]">Create exceptional overtime not yet captured from a payroll-ready timesheet.</p>
       <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
-        <OvertimeFormField label="Employee code">
-          <input value={requestForm.employeeId} onChange={(event) => setRequestForm((current) => ({ ...current, employeeId: event.target.value }))} placeholder="e.g. C2422" className={inputClass} />
+        <OvertimeFormField label="Employee">
+          <ComboSelect
+            options={employeeDirectoryOptions}
+            value={requestForm.employeeId}
+            onSelect={(value) => setRequestForm((current) => ({ ...current, employeeId: value }))}
+            placeholder="Search name or code…"
+            emptyText="No employees found."
+          />
         </OvertimeFormField>
         <OvertimeFormField label="Date">
           <input type="date" value={requestForm.date} onChange={(event) => setRequestForm((current) => ({ ...current, date: event.target.value }))} className={inputClass} />

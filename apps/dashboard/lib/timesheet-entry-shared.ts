@@ -62,10 +62,61 @@ export const resolveTimesheetShift = (value?: string | null): TimesheetShiftDefi
   return TIMESHEET_SHIFTS[0];
 };
 
+/** Night window start (18:00). Matches biometric night classification. */
+export const NIGHT_SHIFT_START_MINUTES = 18 * 60;
+/** Productive night end (02:00) — crosses midnight. */
+export const NIGHT_SHIFT_END_MINUTES = 2 * 60;
+/** Morning punches before this still belong to the overnight night shift. */
+export const NIGHT_MORNING_CUTOFF_MINUTES = 6 * 60;
+
 const parseClockMinutes = (value: string) => {
   const [h, m] = value.split(':').map((part) => Number(part));
   if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
   return h * 60 + m;
+};
+
+export const clockTimeToMinutes = (value?: string | null): number | null => {
+  const raw = String(value || '').trim();
+  if (!raw || raw === '--:--') return null;
+  const compact = raw.replace(':', '');
+  if (/^\d{3,4}$/.test(compact)) {
+    const padded = compact.padStart(4, '0');
+    return Number(padded.slice(0, 2)) * 60 + Number(padded.slice(2, 4));
+  }
+  return parseClockMinutes(raw);
+};
+
+/** Classify a clock-in as Day or Night from punch time (18:00–06:00 = Night). */
+export const classifyAttendanceShiftFromClockIn = (clockIn?: string | null): TimesheetShiftKind => {
+  const minutes = clockTimeToMinutes(clockIn);
+  if (minutes === null) return 'Day';
+  return minutes >= NIGHT_SHIFT_START_MINUTES || minutes < NIGHT_MORNING_CUTOFF_MINUTES ? 'Night' : 'Day';
+};
+
+export const isNightWindowClockIn = (clockIn?: string | null) => classifyAttendanceShiftFromClockIn(clockIn) === 'Night';
+
+/** Legacy headers with blank shiftLabel are treated as Day. */
+export const timesheetHeaderShiftKind = (shiftLabel?: string | null): TimesheetShiftKind => {
+  if (!String(shiftLabel || '').trim()) return 'Day';
+  return resolveTimesheetShift(shiftLabel).kind;
+};
+
+export const timesheetHeaderMatchesShift = (headerShiftLabel: string | null | undefined, targetShiftLabel?: string | null) => {
+  const target = resolveTimesheetShift(targetShiftLabel);
+  return timesheetHeaderShiftKind(headerShiftLabel) === target.kind;
+};
+
+export const timesheetShiftHeaderSlug = (shiftLabel?: string | null) => (
+  resolveTimesheetShift(shiftLabel).kind === 'Night' ? 'night' : 'day'
+);
+
+export const addCalendarDays = (isoDate: string, days: number) => {
+  const date = new Date(`${isoDate}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 /**

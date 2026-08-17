@@ -457,8 +457,199 @@ const readLiveClockingActivityRaw = async (requestedDate?: string): Promise<{ at
   }
 };
 
-export const readLiveClockingActivity = async (requestedDate?: string): Promise<{ attendanceDate: string; records: LiveClockingActivityRecord[] }> =>
-  cachedLiveRead(`clocking-activity:${requestedDate || 'today'}`, () => readLiveClockingActivityRaw(requestedDate));
+export const readLiveClockingActivity = async (
+  requestedDate?: string,
+  options?: { shiftKind?: 'Day' | 'Night' },
+): Promise<{ attendanceDate: string; records: LiveClockingActivityRecord[] }> => {
+  const shiftKind = options?.shiftKind;
+  if (shiftKind === 'Night') {
+    return cachedLiveRead(
+      `clocking-activity-night:${requestedDate || 'today'}`,
+      () => readLiveNightClockingActivityRaw(requestedDate),
+    );
+  }
+  if (shiftKind === 'Day') {
+    return cachedLiveRead(
+      `clocking-activity-day:${requestedDate || 'today'}`,
+      () => readLiveDayClockingActivityRaw(requestedDate),
+    );
+  }
+  return cachedLiveRead(`clocking-activity:${requestedDate || 'today'}`, () => readLiveClockingActivityRaw(requestedDate));
+};
+
+const addMysqlDays = (mysqlDate: string, days: number) => {
+  const iso = displayDate(mysqlDate);
+  const date = new Date(`${iso}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return formatMysqlDate(date);
+};
+
+/** Night work date D: in on D from 18:00+, out on D+1 before 06:00. */
+const readLiveNightClockingActivityRaw = async (
+  requestedDate?: string,
+): Promise<{ attendanceDate: string; records: LiveClockingActivityRecord[] }> => {
+  const workDateMysql = await resolveLiveAttendanceDate(requestedDate);
+  const nextDateMysql = addMysqlDays(workDateMysql, 1);
+  const pool = getPool();
+
+  try {
+    const [rows] = await pool.query<RawPunchRow[]>(
+      `
+      SELECT
+        e.L_UID AS uid,
+        COALESCE(NULLIF(e.C_Unique, ''), NULLIF(u.C_Unique, ''), CAST(e.L_UID AS CHAR)) AS uniqueCode,
+        COALESCE(NULLIF(e.C_Name, ''), NULLIF(u.C_Name, ''), CONCAT('Employee ', e.L_UID)) AS employeeName,
+        e.C_Date AS punchDate,
+        e.C_Time AS punchTime,
+        e.L_TID AS terminalId,
+        COALESCE(NULLIF(t.C_Name, ''), 'Biometric Terminal') AS terminalName,
+        e.L_Mode AS mode,
+        e.L_MatchingType AS matchingType,
+        e.L_Result AS result
+      FROM tenter e
+      LEFT JOIN tuser u ON u.L_ID = e.L_UID
+      LEFT JOIN tterminal t ON t.L_ID = e.L_TID
+      WHERE e.C_Date IN (?, ?)
+      ORDER BY e.L_UID, e.C_Date, e.C_Time
+      `,
+      [workDateMysql, nextDateMysql],
+    );
+
+    type Agg = {
+      uid: number;
+      uniqueCode: string;
+      employeeName: string;
+      terminalId: number | null;
+      terminalName: string;
+      nightIns: string[];
+      nightOuts: string[];
+      punchCount: number;
+    };
+    const byUid = new Map<number, Agg>();
+
+    for (const row of rows) {
+      const punchDate = String(row.punchDate || '');
+      const punchTime = String(row.punchTime || '');
+      const minutes = minutesFromTime(punchTime);
+      if (minutes === null) continue;
+
+      let agg = byUid.get(row.uid);
+      if (!agg) {
+        agg = {
+          uid: row.uid,
+          uniqueCode: (row.uniqueCode || String(row.uid)).trim(),
+          employeeName: String(row.employeeName || `Employee ${row.uid}`),
+          terminalId: row.terminalId,
+          terminalName: row.terminalName || 'Biometric Terminal',
+          nightIns: [],
+          nightOuts: [],
+          punchCount: 0,
+        };
+        byUid.set(row.uid, agg);
+      }
+      agg.punchCount += 1;
+      if (!agg.terminalId && row.terminalId) {
+        agg.terminalId = row.terminalId;
+        agg.terminalName = row.terminalName || agg.terminalName;
+      }
+
+      if (punchDate === workDateMysql && minutes >= 1080) {
+        agg.nightIns.push(punchTime);
+      } else if (punchDate === nextDateMysql && minutes < 360) {
+        agg.nightOuts.push(punchTime);
+      }
+    }
+
+    const officeByUid = new Map<number, { officeName: string | null; postName: string | null; staffName: string | null }>();
+    const uids = [...byUid.keys()];
+    if (uids.length) {
+      const [officeRows] = await pool.query<Array<RowDataPacket & {
+        uid: number;
+        officeName: string | null;
+        postName: string | null;
+        staffName: string | null;
+      }>>(
+        `
+        SELECT
+          u.L_ID AS uid,
+          COALESCE(NULLIF(o.C_Name, ''), emp.C_Office, 'Unassigned') AS officeName,
+          COALESCE(NULLIF(p.C_Name, ''), emp.C_Post, 'Unassigned') AS postName,
+          COALESCE(NULLIF(s.C_Name, ''), 'Employee') AS staffName
+        FROM tuser u
+        LEFT JOIN temploye emp ON emp.L_UID = u.L_ID
+        LEFT JOIN coffice o ON o.C_Code = emp.C_Office
+        LEFT JOIN cpost p ON p.C_Code = emp.C_Post
+        LEFT JOIN cstaff s ON s.C_Code = emp.C_Staff
+        WHERE u.L_ID IN (${uids.map(() => '?').join(',')})
+        `,
+        uids,
+      );
+      for (const row of officeRows) officeByUid.set(row.uid, row);
+    }
+
+    const records: LiveClockingActivityRecord[] = [];
+    for (const agg of byUid.values()) {
+      if (!agg.nightIns.length) continue;
+      const firstPunch = agg.nightIns.slice().sort()[0];
+      const lastPunch = agg.nightOuts.length
+        ? agg.nightOuts.slice().sort()[agg.nightOuts.length - 1]
+        : (agg.nightIns.length > 1 ? agg.nightIns.slice().sort()[agg.nightIns.length - 1] : null);
+      const schedule = scheduleForShift('Night');
+      const minutesLate = calculateMinutesLate(firstPunch, schedule.start);
+      const status = resolveStatus(firstPunch, minutesLate);
+      const office = officeByUid.get(agg.uid);
+      const officeName = office?.officeName || 'Unassigned';
+      const postName = office?.postName || 'Unassigned';
+
+      records.push({
+        id: `live-clock-night-${workDateMysql}-${agg.uid}`,
+        employeeId: agg.uniqueCode,
+        employeeName: agg.employeeName,
+        businessUnit: officeName,
+        department: postName,
+        jobTitle: office?.staffName || postName,
+        location: officeName,
+        site: agg.terminalName || officeName,
+        shift: 'Night',
+        status,
+        checkInTime: displayTime(firstPunch),
+        checkOutTime: lastPunch && lastPunch !== firstPunch ? displayTime(lastPunch) : null,
+        scheduledStart: schedule.start,
+        scheduledEnd: schedule.end,
+        minutesLate,
+        overtimeHours: 0,
+        biometricSource: 'Biometric Device',
+        supervisor: officeName,
+        punchCount: agg.punchCount,
+      });
+    }
+
+    records.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+    return { attendanceDate: displayDate(workDateMysql), records };
+  } finally {
+    await pool.end();
+  }
+};
+
+/** Day work date D: clock-in between 06:00 and 18:00; clock-out is last same-day punch after in. */
+const readLiveDayClockingActivityRaw = async (
+  requestedDate?: string,
+): Promise<{ attendanceDate: string; records: LiveClockingActivityRecord[] }> => {
+  const base = await readLiveClockingActivityRaw(requestedDate);
+  return {
+    attendanceDate: base.attendanceDate,
+    records: base.records
+      .map((record) => {
+        const inMinutes = minutesFromTime(record.checkInTime ? record.checkInTime.replace(':', '') : null);
+        // Prefer day-window presence; drop pure night punchers from the day crew list source.
+        if (inMinutes !== null && (inMinutes < 360 || inMinutes >= 1080)) {
+          return null;
+        }
+        return { ...record, shift: 'Day' as Shift };
+      })
+      .filter((record): record is LiveClockingActivityRecord => Boolean(record)),
+  };
+};
 
 const readLiveAttendancePunchesRaw = async (requestedDate?: string): Promise<{ attendanceDate: string; punches: LiveAttendancePunch[] }> => {
   const attendanceDate = await resolveLiveAttendanceDate(requestedDate);
