@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { readUsers } from '@/lib/auth/auth-store';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { resolveMailProvider, sendDleTestEmail, verifyMailConnection } from '@/lib/mail-service';
+import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 
 const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
   const recipient = await resolveRecipient(employeeCode);
   if (!recipient) return err(404, `No email address found for employee ${employeeCode}.`);
 
-  const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.DLE_PUBLIC_APP_URL || 'http://localhost:3020';
+  const appUrl = resolveWorkflowLinkOrigin();
   const base = String(appUrl).replace(/\/$/, '');
   const result = await sendDleTestEmail({
     to: recipient.email,

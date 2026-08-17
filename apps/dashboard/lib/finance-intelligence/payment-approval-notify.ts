@@ -231,6 +231,7 @@ export const notifyPaymentApprovalRequired = async (input: {
   actorName: string;
   baseUrl?: string | null;
 }) => {
+  const linkOrigin = resolveWorkflowLinkOrigin(input.baseUrl);
   const session = financeSystemSession(input.actorName);
   const resolved = await resolvePaymentStageApprover({
     stage: input.stage,
@@ -301,19 +302,23 @@ export const notifyPaymentApprovalRequired = async (input: {
         recipientEmail: mailbox,
         request: input.request,
         stage: input.stage,
-        approveUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl, 'approve'),
-        rejectUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl, 'reject'),
-        detailUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl),
-        baseUrl: input.baseUrl,
+        approveUrl: paymentRequestDetailUrl(input.request.requestId, linkOrigin, 'approve'),
+        rejectUrl: paymentRequestDetailUrl(input.request.requestId, linkOrigin, 'reject'),
+        detailUrl: paymentRequestDetailUrl(input.request.requestId, linkOrigin),
+        baseUrl: linkOrigin,
       });
       console.info('[payment-approval] approver email result', {
         to: mailbox,
         code: approver.code,
         requestNumber: input.request.requestNumber,
         stage: input.stage,
+        linkOrigin,
         sent: result.sent,
         reason: result.reason || null,
       });
+      if (!result.sent) {
+        throw new Error(result.reason || 'Payment approval email was not sent.');
+      }
     });
   } else {
     console.warn('[payment-approval] no mailbox for approver', {

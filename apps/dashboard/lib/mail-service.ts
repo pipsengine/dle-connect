@@ -139,25 +139,31 @@ export const sendTransactionalEmail = async (input: { to: string; subject: strin
     : [];
 
   if (provider === 'graph') {
-    const result = await sendGraphMail({
-      to,
-      subject: input.subject,
-      text: input.text,
-      html: input.html,
-      replyTo,
-      inlineAttachments: logoAttachment
-        ? [{
-            name: logoAttachment.filename,
-            contentType: logoAttachment.contentType,
-            contentBytes: logoAttachment.contentBytes,
-            contentId: logoAttachment.contentId,
-          }]
-        : [],
-    });
-    if (!result.sent) {
-      console.error('[mail-service] Graph send failed.', { to, subject: input.subject, reason: result.reason });
+    try {
+      const result = await sendGraphMail({
+        to,
+        subject: input.subject,
+        text: input.text,
+        html: input.html,
+        replyTo,
+        inlineAttachments: logoAttachment
+          ? [{
+              name: logoAttachment.filename,
+              contentType: logoAttachment.contentType,
+              contentBytes: logoAttachment.contentBytes,
+              contentId: logoAttachment.contentId,
+            }]
+          : [],
+      });
+      if (!result.sent) {
+        console.error('[mail-service] Graph send failed.', { to, subject: input.subject, reason: result.reason });
+      }
+      return { sent: result.sent, reason: result.reason, provider: 'graph' };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Graph send failed.';
+      console.error('[mail-service] Graph send threw.', { to, subject: input.subject, reason });
+      return { sent: false, reason, provider: 'graph' };
     }
-    return { sent: result.sent, reason: result.reason, provider: 'graph' };
   }
 
   const from = process.env.DLE_SMTP_FROM!;

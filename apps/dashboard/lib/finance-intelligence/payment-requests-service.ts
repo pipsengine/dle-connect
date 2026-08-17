@@ -14,6 +14,7 @@ import {
   readPaymentAttachmentFile as readPaymentAttachmentFileFromStore,
   savePaymentAttachmentFile as savePaymentAttachmentFileToStore,
 } from '@/lib/finance-intelligence/payment-attachment-storage';
+import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 
 export const ALLOWED_PAYMENT_CURRENCIES = ['NGN', 'USD', 'EUR', 'GBP'] as const;
 export const PAYMENT_TYPES = [
@@ -1758,6 +1759,7 @@ INSERT INTO [finance].[PaymentRequests] (
       request,
       stage: request.currentStage || stageInfo.stage,
       actorName: input.actor,
+      baseUrl: resolveWorkflowLinkOrigin(),
     }).catch((error) => console.error('[payment-requests] submit notification failed', error));
   }
 
@@ -2083,6 +2085,7 @@ WHERE [RequestId] = @RequestId
       request,
       stage: request.currentStage || stageInfo.stage,
       actorName: input.actor,
+      baseUrl: resolveWorkflowLinkOrigin(),
     }).catch((error) => console.error('[payment-requests] resubmit notification failed', error));
   }
 
@@ -2592,7 +2595,7 @@ WHERE [RequestId] = @RequestId
           ? `Payment evidence uploaded (${paymentReference}). Please submit retirement with receipts.`
           : `Payment evidence uploaded (${paymentReference}).`)
         : undefined),
-      baseUrl: input.baseUrl,
+      baseUrl: resolveWorkflowLinkOrigin(input.baseUrl),
     }).catch((error) => console.error('[payment-requests] transition notification failed', error));
   }
 
