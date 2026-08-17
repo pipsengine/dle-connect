@@ -3,7 +3,7 @@ import { approvedOvertimeStatuses } from '@/lib/timesheet-overtime-config';
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
-import { resolvePublicAppOrigin } from '@/lib/public-app-url';
+import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 import {
   sendOvertimeApprovalRequestEmail,
   sendOvertimeApprovedEmail,
@@ -270,7 +270,7 @@ const mapEmployeeRow = (row: DbAuthorizationEmployeeRow): OvertimeAuthorizationE
   dayType: clean(row.DayType) || 'Weekday',
 });
 
-const portalBase = (input?: string | null) => resolvePublicAppOrigin(input);
+const portalBase = (input?: string | null) => resolveWorkflowLinkOrigin(input);
 
 const emailForName = async (nameOrEmail: string) => {
   const value = clean(nameOrEmail);

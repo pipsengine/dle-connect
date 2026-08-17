@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Grant Rapheal (P0429) Finance Manager for payroll FM approval and
  * resend Finance Manager approval emails for runs currently at HR Approved.
  *
@@ -28,7 +28,7 @@ async function main() {
   const { permissionsForRoles } = await import('../apps/dashboard/lib/auth/rbac.ts');
   const { listPayrollRuns } = await import('../apps/dashboard/lib/payroll-run-store.ts');
   const { notifyPayrollApprovalStage, resolvePayrollApproverRecipients } = await import('../apps/dashboard/lib/payroll-approval-notification-service.ts');
-  const { resolvePublicAppOrigin } = await import('../apps/dashboard/lib/public-app-url.ts');
+  const { resolveWorkflowLinkOrigin } = await import('../apps/dashboard/lib/public-app-url.ts');
 
   const users = await readUsers();
   const rapheal = users.find((user) =>
@@ -87,7 +87,7 @@ async function main() {
   const pendingFm = runs.filter((run) => run.status === 'HR Approved');
   console.log(`HR Approved runs awaiting FM: ${pendingFm.length}`);
 
-  const baseUrl = resolvePublicAppOrigin() || process.env.DLE_PUBLIC_APP_URL || 'http://192.168.5.5:3020';
+  const baseUrl = resolveWorkflowLinkOrigin();
   const results = [];
   for (const run of pendingFm) {
     const result = await notifyPayrollApprovalStage({

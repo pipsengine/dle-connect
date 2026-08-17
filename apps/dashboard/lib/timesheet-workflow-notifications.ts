@@ -1,6 +1,7 @@
 import type { SessionPayload } from '@/lib/auth/session';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import { sendTransactionalEmail } from '@/lib/mail-service';
+import { toAbsoluteWorkflowHref } from '@/lib/public-app-url';
 import type { TimesheetHeader, TimesheetWorkflowStage } from '@/lib/timesheet-entry-store';
 
 type NotifyInput = {
@@ -60,13 +61,14 @@ export const notifyTimesheetWorkflow = async (input: NotifyInput) => {
   }
 
   const recipients = uniqueEmails(Array.isArray(input.emailTo) ? input.emailTo : [input.emailTo]);
+  const absoluteApprovalHref = toAbsoluteWorkflowHref(approvalHref);
   for (const to of recipients) {
     try {
       await sendTransactionalEmail({
         to,
         subject: input.title,
-        text: `${input.body}\n\nOpen approval workspace: ${approvalHref}`,
-        html: `<p>${input.body}</p><p><a href="${approvalHref}">Open timesheet approval workspace</a></p>`,
+        text: `${input.body}\n\nOpen approval workspace: ${absoluteApprovalHref}`,
+        html: `<p>${input.body}</p><p><a href="${absoluteApprovalHref}">Open timesheet approval workspace</a></p>`,
       });
     } catch (error) {
       console.warn('[Timesheet notify] Email failed:', error instanceof Error ? error.message : error);

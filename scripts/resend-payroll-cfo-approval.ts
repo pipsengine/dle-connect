@@ -1,11 +1,11 @@
-/**
+﻿/**
  * Resend CFO payroll approval emails for Finance Approved runs.
  * Run from apps/dashboard so @/ path aliases resolve:
  *   cd apps/dashboard && npx tsx ../../scripts/resend-payroll-cfo-approval.ts
  */
 import { listPayrollRuns } from '@/lib/payroll-run-store';
 import { notifyPayrollApprovalStage, resolvePayrollApproverRecipients } from '@/lib/payroll-approval-notification-service';
-import { resolvePublicAppOrigin } from '@/lib/public-app-url';
+import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 
 async function main() {
   const recipients = await resolvePayrollApproverRecipients('cfo');
@@ -26,9 +26,7 @@ async function main() {
 
   const runs = (await listPayrollRuns()).filter((run) => run.status === 'Finance Approved');
   console.log(`Finance Approved runs: ${runs.length}`);
-  const baseUrl = resolvePublicAppOrigin()
-    || process.env.DLE_PUBLIC_APP_URL
-    || 'http://192.168.5.5:3020';
+  const baseUrl = resolveWorkflowLinkOrigin();
 
   const results = [];
   for (const run of runs) {

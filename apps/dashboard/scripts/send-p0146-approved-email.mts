@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+﻿import fs from 'node:fs';
 import path from 'node:path';
 import { sendLeaveWorkflowEmail } from '../lib/mail-service';
 
@@ -35,7 +35,7 @@ const requester = {
 const request = {
   id: 'ess-smoke-p0146-1783668308560',
   category: 'Leave Application',
-  title: 'Mr CHRISTIAN ONUWABHAGBE OGBAISI — Compassionate Leave',
+  title: 'Mr CHRISTIAN ONUWABHAGBE OGBAISI â€” Compassionate Leave',
   leaveType: 'Compassionate Leave',
   startDate: '2027-01-15',
   endDate: '2027-01-19',
@@ -46,7 +46,7 @@ const request = {
   employeeId: 'P0146',
 } as any;
 
-const baseUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://192.168.5.5:3020';
+const baseUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://dleconnect.dormanlongeng.com:1432';
 
 const result = await sendLeaveWorkflowEmail({
   event: 'approved',

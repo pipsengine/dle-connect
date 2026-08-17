@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
-import { resolvePublicAppOrigin } from '@/lib/public-app-url';
+import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 
+export const portalBaseUrl = (input?: string | null) => resolveWorkflowLinkOrigin(input);
 export type LeaveEmailDecision = 'approve' | 'reject';
 export type LeaveEmailApproverKind = 'line-manager' | 'hr';
 
@@ -56,8 +57,6 @@ export const verifyLeaveEmailActionToken = (token: string) => {
   if (!['line-manager', 'hr'].includes(payload.approverKind)) throw new Error('Approval link is invalid.');
   return payload;
 };
-
-export const portalBaseUrl = (input?: string | null) => resolvePublicAppOrigin(input);
 
 /** @deprecated Use leaveAuthorizePageUrl for authenticated approval flow */
 export const leaveEmailActionUrl = (token: string, baseUrl?: string | null) =>

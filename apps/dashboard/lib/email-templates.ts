@@ -1,4 +1,4 @@
-import { resolvePublicAppOrigin } from '@/lib/public-app-url';
+import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 import {
   emailBrandLogoCidUrl,
   resolveEmailLogoPublicUrl,
@@ -51,7 +51,7 @@ export const resolveEmailLogoUrl = (baseUrl?: string | null) => {
   if (shouldEmbedEmailBrandLogo()) return emailBrandLogoCidUrl();
   const configured = compact(process.env.DLE_EMAIL_LOGO_URL);
   if (configured) return configured;
-  return resolveEmailLogoPublicUrl(baseUrl || resolvePublicAppOrigin(baseUrl));
+  return resolveEmailLogoPublicUrl(baseUrl || resolveWorkflowLinkOrigin(baseUrl));
 };
 
 export const formatEmailDate = (value?: string | null) => {

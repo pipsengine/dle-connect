@@ -1,4 +1,4 @@
-import { cookies, headers } from 'next/headers';
+import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { AUTH_COOKIE, hasPermission, verifySessionToken } from '@/lib/auth/session';
 import { permissionsForRoles } from '@/lib/auth/rbac';
@@ -11,7 +11,7 @@ import {
   canViewAllPaymentRequests,
   isPaymentRequesterOnly,
 } from '@/lib/finance-intelligence/payment-access';
-import { resolvePublicAppOrigin } from '@/lib/public-app-url';
+import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 import {
   ALLOWED_PAYMENT_CURRENCIES,
   buildCashAdvanceControlsWorkspace,
@@ -482,8 +482,7 @@ export async function POST(request: Request) {
       if (!isRequester && !canViewAllPaymentRequests(actor)) {
         return jsonErr(403, 'Only the requester can send a reminder for this payment request.');
       }
-      const hdrs = await headers();
-      const origin = resolvePublicAppOrigin(hdrs.get('origin') || hdrs.get('x-forwarded-host') || undefined);
+      const origin = resolveWorkflowLinkOrigin();
       const result = await sendPaymentApprovalReminder({
         requestId,
         actor: actor.actor,
@@ -523,8 +522,7 @@ export async function POST(request: Request) {
           return jsonErr(403, 'Only the requester (or beneficiary) can submit retirement for this cash advance.');
         }
       }
-      const hdrs = await headers();
-      const origin = resolvePublicAppOrigin(hdrs.get('origin') || hdrs.get('x-forwarded-host') || undefined);
+      const origin = resolveWorkflowLinkOrigin();
       const result = await transitionPaymentRequest({
         requestId,
         action: body.transition,

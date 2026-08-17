@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+﻿import fs from 'node:fs';
 import path from 'node:path';
 import { buildLeaveWorkflowEmail } from '../lib/workflow-email-builders';
 import { leavePortalUrl } from '../lib/leave-email-action-token';
@@ -6,7 +6,7 @@ import { leavePortalUrl } from '../lib/leave-email-action-token';
 const request = {
   id: 'ess-smoke-p0146-preview',
   category: 'Leave Application',
-  title: 'Mr CHRISTIAN ONUWABHAGBE OGBAISI — Compassionate Leave',
+  title: 'Mr CHRISTIAN ONUWABHAGBE OGBAISI â€” Compassionate Leave',
   leaveType: 'Compassionate Leave',
   startDate: '2027-05-04',
   endDate: '2027-05-06',
@@ -22,8 +22,8 @@ const email = buildLeaveWorkflowEmail({
   request: request as any,
   recipientName: 'Mr CHRISTIAN ONUWABHAGBE OGBAISI',
   actorName: 'HR Manager',
-  portalLink: leavePortalUrl('http://192.168.5.5:3020'),
-  baseUrl: 'http://192.168.5.5:3020',
+  portalLink: leavePortalUrl(),
+  baseUrl: undefined,
 });
 
 const out = path.join(process.cwd(), 'apps', 'dashboard', 'data', 'hris', 'preview-leave-approved-email.html');

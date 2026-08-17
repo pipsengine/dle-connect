@@ -9,7 +9,7 @@ import {
 } from '@/lib/mail-service';
 import { resolveLineManagerForEmployee } from '@/lib/leave-workflow-service';
 import { readDirectoryEmployees } from '@/lib/payroll-employee-source';
-import { resolvePublicAppOrigin } from '@/lib/public-app-url';
+import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 
 export type PaymentNotifyRequest = {
   requestId: string;
@@ -96,7 +96,7 @@ export const paymentRequestDetailPath = (requestId: string) =>
   `/finance/approvals/request/${encodeURIComponent(requestId)}`;
 
 export const paymentRequestDetailUrl = (requestId: string, baseUrl?: string | null, action?: 'approve' | 'reject') => {
-  const origin = resolvePublicAppOrigin(baseUrl);
+  const origin = resolveWorkflowLinkOrigin(baseUrl);
   const path = paymentRequestDetailPath(requestId);
   if (!action) return `${origin}${path}`;
   return `${origin}${path}?action=${action}`;

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
-import { resolvePublicAppOrigin } from '@/lib/public-app-url';
+import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 
 export type PayrollEmailDecision = 'approve' | 'reject';
 
@@ -58,7 +58,7 @@ export const verifyPayrollEmailActionToken = (token: string) => {
   return payload;
 };
 
-export const portalBaseUrl = (input?: string | null) => resolvePublicAppOrigin(input);
+export const portalBaseUrl = (input?: string | null) => resolveWorkflowLinkOrigin(input);
 
 export const payrollAuthorizePageUrl = (token: string, baseUrl?: string | null) =>
   `${portalBaseUrl(baseUrl)}/hris/payroll/payroll-approval/authorize?token=${encodeURIComponent(token)}`;
