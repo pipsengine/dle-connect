@@ -13,7 +13,7 @@ export function Header({
   toggleDesktopSidebar?: () => void;
 }) {
   return (
-    <header className="h-16 bg-white border-b border-slate-100 flex items-center justify-between px-3 sm:px-6 sticky top-0 z-30">
+    <header className="h-16 bg-white border-b border-slate-100 flex items-center justify-between gap-2 px-3 sm:px-6 sticky top-0 z-30">
       <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
         <button onClick={toggleSidebar} className="p-2 -ml-2 text-slate-500 hover:text-slate-900 lg:hidden" aria-label="Open navigation">
           <Menu className="w-5 h-5" />
@@ -24,7 +24,7 @@ export function Header({
           </button>
         )}
         
-        <div className="relative max-w-md w-full hidden md:block">
+        <div className="relative hidden w-full max-w-md min-[1920px]:block">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input 
             type="text" 
@@ -37,7 +37,7 @@ export function Header({
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-3 lg:gap-4">
         <EnterpriseHomeButton />
 
-        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-dle-green/10 text-dle-green rounded-full text-xs font-medium">
+        <div className="hidden items-center gap-2 rounded-full bg-dle-green/10 px-3 py-1.5 text-xs font-medium text-dle-green 2xl:flex">
           <div className="w-2 h-2 rounded-full bg-dle-green animate-pulse"></div>
           Systems Optimal
         </div>

@@ -278,7 +278,7 @@ export function WorkflowTimeline({
 
 export function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[] }) {
   return (
-    <label className="block min-w-[140px] flex-1">
+    <label className="block min-w-0">
       <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">{label}</span>
       <select
         value={value}

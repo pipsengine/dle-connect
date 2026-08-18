@@ -226,7 +226,7 @@ function MetricCard({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-xs font-black uppercase tracking-normal text-slate-600">{label}</p>
-          <p className="mt-2 truncate text-2xl font-black text-slate-950">{value}</p>
+          <p className="mt-2 text-xl font-black text-slate-950 sm:text-2xl">{value}</p>
           <p className="mt-1 line-clamp-2 text-xs font-semibold text-slate-600">{detail}</p>
           <p className="mt-2 text-[10px] font-black uppercase tracking-wide text-slate-500">Click for details</p>
         </div>
@@ -498,12 +498,12 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
               key={item.pack}
               type="button"
               onClick={() => selectPack(item.pack)}
-              className={`rounded-xl border px-4 py-2 text-left text-xs font-extrabold transition ${
+              className={`min-w-0 w-full flex-1 rounded-xl border px-4 py-2 text-left text-xs font-extrabold transition sm:min-w-[16rem] ${
                 pack === item.pack ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300'
               }`}
             >
-              <div>{item.packLabel}</div>
-              <div className={`mt-1 ${pack === item.pack ? 'text-blue-100' : 'text-slate-500'}`}>
+              <div className="truncate">{item.packLabel}</div>
+              <div className={`mt-1 break-words ${pack === item.pack ? 'text-blue-100' : 'text-slate-500'}`}>
                 {item.run?.status || 'Draft'} · {money(item.run?.netPay ?? item.summary?.netPay, canViewMoney)} · {number(item.run ? item.run.employeeCount : item.summary?.employees)} staff
               </div>
             </button>
@@ -603,7 +603,7 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
             </div>
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="dle-scroll-x overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-wide text-slate-500">
               <tr>

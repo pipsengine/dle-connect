@@ -73,7 +73,7 @@ export function ApprovalPipeline({
 }) {
   return (
     <div className="rounded-[18px] border border-[#E5E7EB] bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-center gap-2 overflow-x-auto pb-2">
+      <div className="dle-scroll-x flex flex-wrap items-center gap-2 overflow-x-auto pb-2">
         {stages.map((stage, index) => (
           <div key={stage.id} className="flex min-w-[120px] flex-1 items-center gap-2">
             <button

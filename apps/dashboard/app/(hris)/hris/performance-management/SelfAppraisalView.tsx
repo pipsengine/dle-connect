@@ -509,7 +509,7 @@ export default function SelfAppraisalView({ payload, onAction, busy }: Props) {
             ))}
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="grid gap-4 wide:grid-cols-[minmax(0,1fr)_300px]">
             <div className="space-y-4">
               <section className="overflow-hidden rounded-xl border border-[#eaecf0] bg-white shadow-sm">
                 <div className="border-b border-[#eaecf0] px-4 py-3">

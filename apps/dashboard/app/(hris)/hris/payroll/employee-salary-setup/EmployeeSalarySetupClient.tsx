@@ -650,7 +650,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px]">
+              <div className="grid grid-cols-1 wide:grid-cols-[minmax(0,1fr)_420px]">
                 <div className="min-w-0 border-r border-[#E5E7EB]">
                   <div className="max-h-[620px] overflow-auto">
                     <table className="min-w-[2400px] w-full text-left">

@@ -287,7 +287,7 @@ export default function WorkforceOperationsCommandCenter({ role = 'HR Manager' }
           <KpiCard label="Productivity" value={`${payload?.kpis.productivityPct || 0}%`} trend={`${payload?.summary.missingDays || 0} missing days`} tone="red" icon={TrendingUp} />
         </section>
 
-        <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="mt-5 grid grid-cols-1 gap-5 wide:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-5">
             <section className="rounded-[20px] border border-[#E2E8F0] bg-white p-5 shadow-[0_6px_18px_rgba(15,23,42,0.05)]">
               <div className="mb-4 flex flex-wrap gap-2">

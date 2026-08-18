@@ -459,7 +459,7 @@ export default function EmployeeProfileManagementHub({ activeTab, onSelectTab }:
           </div>
         </nav>
 
-        <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="mt-5 grid grid-cols-1 gap-5 wide:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-5">
             {activeTab === 'personal-information' ? (
               <section>

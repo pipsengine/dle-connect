@@ -485,7 +485,7 @@ export default function CompetencyFrameworkView({ payload, onAction, busy }: Pro
             ))}
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="grid gap-4 wide:grid-cols-[minmax(0,1fr)_280px]">
             <div className="space-y-4">
               <RegisterTable title="Competency Framework Register" />
 

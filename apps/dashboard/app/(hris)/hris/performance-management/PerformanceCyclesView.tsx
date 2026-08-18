@@ -481,7 +481,7 @@ export default function PerformanceCyclesView({ payload, onAction, busy }: Props
 
       {activeTab === 'Overview' ? (
         <>
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_239px]">
+          <div className="grid gap-4 wide:grid-cols-[minmax(0,1fr)_239px]">
             <div className="space-y-3">
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <KpiCard icon={CalendarDays} title="Active cycles" value={data.summary.activeCycles} link="View active cycle" tone="blue" />

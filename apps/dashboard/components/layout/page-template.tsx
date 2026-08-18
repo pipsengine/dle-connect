@@ -20,7 +20,7 @@ export function PageTemplate({ title, description, breadcrumbs = [], children, p
   return (
     <div className="space-y-6">
       {/* Breadcrumbs */}
-      <nav className="flex text-[13px] text-slate-500 font-medium items-center gap-2">
+      <nav className="flex flex-wrap items-center gap-2 text-[13px] font-medium text-slate-500">
         {breadcrumbs.map((bc, idx) => (
           <div key={idx} className="flex items-center gap-2">
             {bc.href ? (
@@ -34,16 +34,16 @@ export function PageTemplate({ title, description, breadcrumbs = [], children, p
       </nav>
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden">
+      <div className="relative flex flex-col justify-between gap-4 overflow-hidden rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-6 lg:flex-row lg:items-center">
         {/* Subtle decorative background block */}
         <div className="absolute right-0 top-0 w-64 h-full bg-gradient-to-l from-dle-blue/[0.03] to-transparent pointer-events-none"></div>
         
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">{title}</h1>
-          <p className="text-sm text-slate-500 mt-1.5">{description}</p>
+          <p className="mt-1.5 text-sm text-slate-500">{description}</p>
         </div>
         
-        <div className="flex items-center gap-3 relative z-10 shrink-0">
+        <div className="relative z-10 flex flex-wrap items-center gap-3 shrink-0">
           {secondaryAction && (
             <button 
               onClick={secondaryAction.onClick}

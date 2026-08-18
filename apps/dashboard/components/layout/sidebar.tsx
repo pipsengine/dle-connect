@@ -337,7 +337,7 @@ export function Sidebar({
   return (
     <motion.aside 
       initial={false}
-      animate={{ width: variant === 'mobile' ? 280 : isOpen ? 280 : 80 }}
+      animate={{ width: variant === 'mobile' ? 280 : isOpen ? 240 : 80 }}
       className={`bg-white border-r border-slate-100 flex flex-col shadow-sm shrink-0 ${
         variant === 'mobile' ? 'absolute inset-y-0 left-0 z-10 max-w-[86vw]' : 'relative z-20 hidden lg:flex'
       }`}
@@ -352,7 +352,7 @@ export function Sidebar({
 
       <button 
         onClick={toggle}
-        className="absolute -right-3 top-20 w-6 h-6 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-400 hover:text-dle-blue hover:border-dle-blue transition-colors shadow-sm z-30"
+        className="absolute right-1 top-20 w-6 h-6 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-400 hover:text-dle-blue hover:border-dle-blue transition-colors shadow-sm z-30"
         aria-label={variant === 'mobile' ? 'Close navigation' : 'Toggle navigation'}
       >
         {isOpen || variant === 'mobile' ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}

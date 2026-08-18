@@ -434,7 +434,7 @@ export default function CompanyStructureClient() {
         </nav>
 
         {activeTab === 'overview' ? (
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="grid grid-cols-1 gap-5 wide:grid-cols-[minmax(0,1fr)_360px]">
             <div className="space-y-4">
               <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">

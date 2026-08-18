@@ -877,7 +877,7 @@ export default function ManagerAssessmentsView({ payload, onAction, busy }: Prop
             ))}
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="grid gap-4 wide:grid-cols-[minmax(0,1fr)_280px]">
             <div className="space-y-4">
               <QueueTable title="Team Assessment Queue" />
               <div className="grid gap-4 lg:grid-cols-2">

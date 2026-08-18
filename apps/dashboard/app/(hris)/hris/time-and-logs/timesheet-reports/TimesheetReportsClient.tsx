@@ -1089,7 +1089,7 @@ export default function TimesheetReportsClient() {
 
         <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4">
-            <div className="flex min-h-14 gap-1 overflow-x-auto">
+            <div className="dle-scroll-x flex min-h-14 gap-1 overflow-x-auto">
               {workspaceTabs.map((tab) => {
                 const active = activeTab === tab.id;
                 return (
@@ -1361,7 +1361,7 @@ export default function TimesheetReportsClient() {
               </div>
               <button type="button" onClick={() => setKpiDetail(null)} className="rounded-md border border-blue-200 bg-white px-3 py-1.5 text-xs font-black text-blue-700">Close</button>
             </div>
-            <div className="overflow-x-auto">
+            <div className="dle-scroll-x overflow-x-auto">
               <table className="w-full min-w-[980px] text-left text-sm">
                 <thead className="bg-white/70 text-[10px] font-black uppercase tracking-widest text-slate-500">
                   <tr><th className="px-4 py-3">Employee</th><th className="px-4 py-3">Date</th><th className="px-4 py-3">Department</th><th className="px-4 py-3">Project</th><th className="px-4 py-3 text-right">Hours</th><th className="px-4 py-3 text-right">OT</th><th className="px-4 py-3 text-right">Cost</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Exception</th></tr>
@@ -1421,7 +1421,7 @@ export default function TimesheetReportsClient() {
                 <span>{projectFinanceControls.balanced ? 'Balanced to daily-rate payroll' : 'Allocation variance — check unmatched staff'}</span>
               </div>
             ) : null}
-            <div className="overflow-x-auto">
+            <div className="dle-scroll-x overflow-x-auto">
               <table className="w-full min-w-[920px] text-left text-sm">
                 <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
                   <tr>
@@ -1501,7 +1501,7 @@ export default function TimesheetReportsClient() {
               <h2 className="text-xs font-black uppercase tracking-widest text-slate-600">Pending Approvals By Stage</h2>
               <button type="button" onClick={() => setReportType('approval-status')} className="text-xs font-black text-blue-700">View approval inbox</button>
             </div>
-            <div className="overflow-x-auto">
+            <div className="dle-scroll-x overflow-x-auto">
               <table className="w-full min-w-[520px] text-left text-sm">
                 <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400"><tr><th className="px-4 py-3">Stage</th><th className="px-4 py-3 text-right">Count</th><th className="px-4 py-3 text-right">Hours</th><th className="px-4 py-3 text-right">Labour Cost</th></tr></thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1528,7 +1528,7 @@ export default function TimesheetReportsClient() {
             <h2 className="text-xs font-black uppercase tracking-widest text-slate-600">Recent Timesheet Entries</h2>
             <button type="button" onClick={() => setReportType('employee-detail')} className="text-xs font-black text-blue-700">View all timesheet entries</button>
           </div>
-          <div className="overflow-x-auto">
+          <div className="dle-scroll-x overflow-x-auto">
             <table className="w-full min-w-[1180px] text-left text-sm">
               <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
                 <tr><th className="px-4 py-3">Employee</th><th className="px-4 py-3">Date</th><th className="px-4 py-3">Project</th><th className="px-4 py-3">Activity</th><th className="px-4 py-3 text-right">Hours</th><th className="px-4 py-3 text-right">OT</th><th className="px-4 py-3 text-right">Total</th><th className="px-4 py-3 text-center">Supervisor</th><th className="px-4 py-3 text-center">Project Manager</th><th className="px-4 py-3 text-center">Cost Control</th><th className="px-4 py-3 text-center">GM Ops</th><th className="px-4 py-3 text-center">HR</th><th className="px-4 py-3 text-center">Payroll</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-center">Actions</th></tr>
@@ -1629,7 +1629,7 @@ export default function TimesheetReportsClient() {
               <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Approval Control Table</p>
               <h2 className="mt-1 text-sm font-black text-slate-950">Workflow Status Summary</h2>
             </div>
-            <div className="overflow-x-auto">
+            <div className="dle-scroll-x overflow-x-auto">
               <table className="w-full min-w-[620px] text-left text-sm">
                 <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
                   <tr>
@@ -1661,7 +1661,7 @@ export default function TimesheetReportsClient() {
               <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Exception Control Table</p>
               <h2 className="mt-1 text-sm font-black text-slate-950">Risk Categories Requiring Action</h2>
             </div>
-            <div className="overflow-x-auto">
+            <div className="dle-scroll-x overflow-x-auto">
               <table className="w-full min-w-[620px] text-left text-sm">
                 <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
                   <tr>
@@ -1698,7 +1698,7 @@ export default function TimesheetReportsClient() {
               </div>
               <Filter className="h-4 w-4 text-slate-400" />
             </div>
-            <div className="overflow-x-auto">
+            <div className="dle-scroll-x overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-100 text-left text-sm">
                 <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
                   <tr>
@@ -1769,7 +1769,7 @@ export default function TimesheetReportsClient() {
               </div>
               <button type="button" onClick={() => setDrilldown(null)} className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-black text-blue-700">Close</button>
             </div>
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+            <div className="dle-scroll-x overflow-x-auto rounded-xl border border-slate-200 bg-white">
               <table className="min-w-full text-left text-sm">
                 <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
                   <tr>{['Date', 'Employee', 'Department', 'Project', 'PM', 'Productive', 'Cost', 'Status', 'Exception'].map((header) => <th key={header} className="px-4 py-3">{header}</th>)}</tr>
@@ -1831,7 +1831,7 @@ export default function TimesheetReportsClient() {
             </div>
             <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-600">{formatNumber(payload?.detailRows.length || 0)} rows</span>
           </div>
-          <div className="overflow-x-auto">
+          <div className="dle-scroll-x overflow-x-auto">
             <table className="min-w-[1500px] divide-y divide-slate-100 text-left text-sm">
               <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
                 <tr>{['Employee', 'Date / Period', 'Org', 'Project / Activity', 'Approval', 'Payroll', 'Days Worked', 'Hours', 'Cost', 'Exception', 'Audit'].map((header) => <th key={header} className="px-4 py-3">{header}</th>)}</tr>

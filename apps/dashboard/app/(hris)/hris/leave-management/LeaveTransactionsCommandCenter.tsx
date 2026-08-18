@@ -183,7 +183,7 @@ export default function LeaveTransactionsCommandCenter({
       </div>
 
       <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_auto_auto_auto] xl:grid-cols-[1.2fr_repeat(4,minmax(0,160px))]">
+        <div className="dle-filter-grid">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -206,7 +206,7 @@ export default function LeaveTransactionsCommandCenter({
         <OverviewCard label="Exceptions" value={number(exceptions)} tone="red" trend={[4, 6, 5, exceptions || 3, 7, exceptions || 4]} />
       </div>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-1 gap-5 wide:grid-cols-[minmax(0,1fr)_340px]">
         <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
           <div className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">
             <h2 className="text-lg font-semibold">Recent Transactions</h2>

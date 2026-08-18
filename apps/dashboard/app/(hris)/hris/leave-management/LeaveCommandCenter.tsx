@@ -254,7 +254,7 @@ export default function LeaveCommandCenter({
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,360px)]">
+      <div className="grid grid-cols-1 gap-5 wide:grid-cols-[minmax(0,1.2fr)_minmax(0,360px)]">
         <div className="space-y-4">
           <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
             <h3 className="text-sm font-semibold">Workforce Availability</h3>

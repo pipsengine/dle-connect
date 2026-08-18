@@ -278,7 +278,7 @@ export function EnterpriseUserProfile({
           />
           <span aria-label={user.onlineStatus || 'Offline'} className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border border-white ${user.onlineStatus === 'Online' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
         </span>
-        <span className="hidden min-w-0 flex-col leading-tight lg:flex">
+        <span className="hidden min-w-0 flex-col leading-tight min-[1920px]:flex">
           <span className="flex min-w-0 items-center gap-1.5">
             <span className="truncate text-sm font-black">{user.name}</span>
             <span className="shrink-0 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-600">

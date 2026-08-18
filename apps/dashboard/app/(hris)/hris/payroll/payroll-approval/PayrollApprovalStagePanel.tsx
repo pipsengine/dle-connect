@@ -87,7 +87,7 @@ export default function PayrollApprovalStagePanel({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         {stages.map((stage) => (
           <button
             key={stage.id}

@@ -1996,7 +1996,7 @@ function ProcessPayrollWorkspace({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid grid-cols-1 gap-4 wide:grid-cols-[minmax(0,1fr)_300px]">
         <section className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
@@ -2148,7 +2148,7 @@ function ProcessPayrollWorkspace({
 
       <aside className="xl:hidden">{outputChecklistPanel}</aside>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid grid-cols-1 gap-4 wide:grid-cols-[minmax(0,1fr)_300px]">
         <section className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
           <article className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
             <h3 className="text-sm font-bold text-[#0F172A]">Payroll Readiness</h3>

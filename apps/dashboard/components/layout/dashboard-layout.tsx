@@ -4,9 +4,10 @@ import { useState } from 'react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
 import { SessionPermissionRefresh } from '@/components/auth/session-permission-refresh';
+import { useViewportSidebarOpen } from '@/lib/use-viewport-sidebar';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useViewportSidebarOpen();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   return (
@@ -29,16 +30,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           />
         </div>
       )}
-      
+
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <Header 
+        <Header
           toggleSidebar={() => setMobileSidebarOpen(true)}
           toggleDesktopSidebar={() => setSidebarOpen(!sidebarOpen)}
         />
-        
+
         <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="min-w-0 flex-1 overflow-x-clip overflow-y-auto px-2.5 pb-24 pt-0 sm:px-6 sm:pb-32">
-            {children}
+          <div className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-2.5 pb-24 pt-0 sm:px-6 sm:pb-32">
+            <div className="dle-page">{children}</div>
           </div>
         </main>
       </div>

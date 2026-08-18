@@ -862,7 +862,7 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
   if (loading && !payload) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] pb-10">
-        <div className="mx-auto max-w-[1680px] space-y-6 px-6 pt-2">
+        <div className="mx-auto max-w-[1680px] space-y-6 pt-2">
           <header className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="flex items-start gap-4">
@@ -891,7 +891,7 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
 
   return (
     <div className={`min-h-screen bg-[#F8FAFC] pb-10 ${loading && payload ? 'opacity-80' : ''}`}>
-      <div className="mx-auto max-w-[1680px] space-y-6 px-6 pt-2">
+      <div className="mx-auto max-w-[1680px] space-y-6 pt-2">
         <header className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="flex items-start gap-4">
@@ -1077,8 +1077,8 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
           {workspaceTab === 'timesheets' || workspaceTab === 'exceptions' || workspaceTab === 'payroll' ? (
             <>
               <div className="border-b border-[#E5E7EB] p-4">
-                <div className="flex flex-wrap items-end gap-3">
-                  <label className="min-w-[240px] flex-[2]">
+                <div className="dle-filter-grid">
+                  <label className="min-w-0">
                     <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">Search</span>
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
@@ -1092,7 +1092,7 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
                   </label>
                   {showFilters ? (
                     <>
-                      <label className="min-w-[180px]">
+                      <label className="min-w-0">
                         <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">Payroll Period</span>
                         <select
                           value={periodFilter}
@@ -1117,9 +1117,9 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px]">
-                <div className="min-w-0 border-r border-[#E5E7EB]">
-                  <div className="max-h-[640px] overflow-auto">
+              <div className="dle-split-laptop">
+                <div className="min-w-0 min-[1920px]:border-r min-[1920px]:border-[#E5E7EB]">
+                  <div className="dle-scroll-x max-h-[640px] overflow-auto">
                     <table className="min-w-[1380px] w-full text-left">
                       <thead className="sticky top-0 z-10 bg-[#F8FAFC] text-[11px] font-semibold uppercase tracking-wide text-[#64748B]">
                         <tr>
@@ -1269,7 +1269,7 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
                   </div>
                 </div>
 
-                <aside className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto p-4">
+                <aside className="min-w-0 overflow-y-auto p-4 min-[1920px]:sticky min-[1920px]:top-24 min-[1920px]:max-h-[calc(100vh-7rem)]">
                   {focusedRow ? (
                     <div className="space-y-4">
                       <div className="flex items-start gap-3">

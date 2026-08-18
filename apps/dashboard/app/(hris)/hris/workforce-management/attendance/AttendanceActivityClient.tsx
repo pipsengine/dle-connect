@@ -266,7 +266,7 @@ export default function AttendanceActivityClient({ initialNow }: { initialNow: s
         </div>
       </div>
 
-      <div className="mt-5 grid grid-cols-1 gap-5 2xl:grid-cols-[1fr_390px]">
+      <div className="mt-5 grid grid-cols-1 gap-5 wide:grid-cols-[1fr_390px]">
         <section className="flex min-h-0 min-w-0 flex-col rounded-lg border border-slate-200 bg-white shadow-sm 2xl:max-h-[calc(100vh-360px)]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
             <div>

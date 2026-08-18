@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
+import { useViewportRailCollapsed } from '@/lib/use-viewport-sidebar';
 import {
   ChevronDown,
   ChevronLeft,
@@ -36,7 +37,7 @@ export function SecurityPortalShell({ children, employee }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [railCollapsed, setRailCollapsed] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useViewportRailCollapsed();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [session, setSession] = useState({
     permissions: [] as string[],
@@ -299,8 +300,8 @@ export function SecurityPortalShell({ children, employee }: Props) {
           </div>
         </header>
 
-        <main className="min-h-0 min-w-0 flex-1 overflow-x-clip overflow-y-auto px-5 py-6 lg:px-8 xl:px-10">
-          {children}
+        <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-6 lg:px-8 xl:px-10">
+          <div className="dle-page">{children}</div>
         </main>
 
         <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-5 py-4 text-xs text-slate-500 sm:px-8">

@@ -173,7 +173,7 @@ function AuthorizationStageTrack({ status }: { status: string }) {
   const currentIndex = AUTHORIZATION_STAGES.indexOf(status as (typeof AUTHORIZATION_STAGES)[number]);
   const legacyDone = status === 'MD Approved';
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex flex-wrap items-center gap-1">
       {AUTHORIZATION_STAGES.map((stage, index) => {
         const done = legacyDone || (currentIndex >= 0 && index <= currentIndex);
         const isCurrent = currentIndex >= 0 && index === currentIndex;
@@ -247,8 +247,8 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
   ];
 
   return (
-    <div className="min-h-full bg-[#F8FAFC] pb-8">
-      <div className="mx-auto max-w-[1680px] px-6 pt-6">
+    <div className="min-w-0 bg-[#F8FAFC] pb-8">
+      <div className="mx-auto max-w-[1680px] pt-2">
         {/* Page header */}
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
@@ -373,7 +373,7 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
                 </div>
               </div>
             ) : null}
-            <div className="overflow-x-auto rounded-[16px] border border-[#EDF2F7]">
+            <div className="dle-scroll-x min-w-0 overflow-x-auto rounded-[16px] border border-[#EDF2F7]">
               <table className="min-w-[1040px] w-full text-left">
                 <thead className="sticky top-0 bg-[#F8FAFC] text-[13px] font-semibold uppercase tracking-wide text-[#64748B]">
                   <tr>
@@ -477,7 +477,7 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
 
         {/* Search & filter toolbar */}
         <section className="mt-6 rounded-[18px] border border-[#E5E7EB] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_repeat(4,minmax(140px,180px))]">
+          <div className="dle-filter-grid">
             <label className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
               <input
@@ -555,13 +555,13 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
         </section>
 
         {/* Main grid: register + sidebar */}
-        <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[1fr_420px]">
-          <section className="overflow-hidden rounded-[18px] border border-[#E5E7EB] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+        <div className="mt-6 dle-split-laptop">
+          <section className="min-w-0 overflow-hidden rounded-[18px] border border-[#E5E7EB] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
             <div className="border-b border-[#EDF2F7] px-5 py-4">
               <h2 className="text-xl font-semibold text-[#0F172A]">Overtime Register</h2>
               <p className="mt-1 text-xs font-medium text-[#64748B]">Timesheet overtime lines with workflow status, owner, pay impact, and exception posture.</p>
             </div>
-            <div className="max-h-[640px] overflow-auto">
+            <div className="dle-scroll-x max-h-[640px] overflow-auto">
               <table className="min-w-[1200px] w-full text-left">
                 <thead className="sticky top-0 z-10 bg-[#F8FAFC] text-[13px] font-semibold uppercase tracking-wide text-[#64748B]">
                   <tr>

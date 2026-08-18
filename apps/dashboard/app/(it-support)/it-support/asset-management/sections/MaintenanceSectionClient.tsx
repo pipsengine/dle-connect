@@ -339,7 +339,7 @@ export function MaintenanceSectionClient() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="grid grid-cols-1 gap-4 wide:grid-cols-[minmax(0,1fr)_280px]">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <select value={departmentFilter} onChange={(e) => { setDepartmentFilter(e.target.value); setPage(1); }} className={filterSelectClass}>

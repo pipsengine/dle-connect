@@ -24,7 +24,7 @@ export function ContextField({
   children: ReactNode;
 }) {
   return (
-    <div className="min-w-0 flex-1">
+    <div className="min-w-0">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">{label}</p>
       <div className="mt-1">{children}</div>
     </div>
@@ -107,7 +107,7 @@ export function SearchableContextPicker({
         }}
         className="flex min-h-[38px] w-full items-center justify-between gap-2 rounded-xl border border-[#E5E7EB] bg-white px-3 py-2 text-left text-sm font-semibold text-[#0F172A] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 disabled:cursor-not-allowed disabled:bg-[#F8FAFC] disabled:text-[#94A3B8]"
       >
-        <span className="truncate">{selected?.label || value || placeholder}</span>
+        <span className="min-w-0 truncate" title={selected?.label || value || placeholder}>{selected?.label || value || placeholder}</span>
         <ChevronRight className={`h-4 w-4 shrink-0 text-[#94A3B8] transition-transform ${open ? 'rotate-90' : ''}`} />
       </button>
       {open ? (
@@ -182,7 +182,7 @@ export function TimesheetKpiStrip({
   }>;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-3 xl:grid-cols-3 2xl:grid-cols-6">
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
       {items.map((item) => (
         <PremiumKpiCard key={item.label} {...item} />
       ))}
@@ -218,7 +218,7 @@ export function ProjectChipBar({
   onSelectColumnProject: (index: number, code: string) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-[16px] border border-[#E5E7EB] bg-white px-4 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+    <div className="flex flex-col gap-3 rounded-[16px] border border-[#E5E7EB] bg-white px-4 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)] lg:flex-row lg:items-start lg:justify-between">
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
         {columns.map((col, index) => {
           const project = projects.find((item) => item.code === col.code);
@@ -232,7 +232,7 @@ export function ProjectChipBar({
                 value={col.code}
                 disabled={!canEdit}
                 onChange={(e) => onSelectColumnProject(index, e.target.value)}
-                className="max-w-[110px] bg-transparent text-xs font-bold text-[#2563EB] focus:outline-none disabled:opacity-60"
+                className="max-w-[9rem] min-w-0 bg-transparent text-xs font-bold text-[#2563EB] focus:outline-none disabled:opacity-60"
               >
                 <option value={col.code}>{col.code}</option>
                 {projects.map((p) => (
@@ -400,7 +400,7 @@ export function EmployeeDetailsPanel({
 
   if (!line) {
     return (
-      <aside className="flex h-full w-[420px] shrink-0 flex-col rounded-[18px] border border-[#E5E7EB] bg-white p-6 shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
+      <aside className="flex h-full min-w-0 w-full flex-col rounded-[18px] border border-[#E5E7EB] bg-white p-6 shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
         <p className="text-sm text-[#94A3B8]">Select an employee row to view details.</p>
       </aside>
     );
@@ -414,7 +414,7 @@ export function EmployeeDetailsPanel({
   const statusLabel = line.validationStatus === 'Valid' ? 'Complete' : line.validationStatus === 'Error' ? 'Incomplete' : 'Review';
 
   return (
-    <aside className="sticky top-4 flex h-[calc(100vh-8rem)] w-[420px] shrink-0 flex-col overflow-hidden rounded-[18px] border border-[#E5E7EB] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
+    <aside className="flex max-h-[min(70vh,40rem)] min-w-0 w-full flex-col overflow-hidden rounded-[18px] border border-[#E5E7EB] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.08)] min-[1920px]:sticky min-[1920px]:top-4 min-[1920px]:max-h-[calc(100vh-8rem)]">
       <div className="flex border-b border-[#EDF2F7]">
         {tabs.map((item) => (
           <button
@@ -891,7 +891,7 @@ export function ApprovedOvertimeBookingBar({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="dle-scroll-x overflow-x-auto">
         <table className="min-w-[920px] w-full text-left text-sm">
           <thead className="bg-white text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">
             <tr className="border-b border-[#EDF2F7]">
@@ -973,7 +973,7 @@ export function TimesheetAnalyticsStrip({
 }) {
   const maxProject = Math.max(...projectTotals.map((item) => item.value), 1);
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 min-[1920px]:grid-cols-3">
       <div className="rounded-[18px] border border-[#E5E7EB] bg-white p-5 shadow-sm">
         <h4 className="text-sm font-semibold text-[#0F172A]">Booked vs Break Hours</h4>
         <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-[#F1F5F9]">

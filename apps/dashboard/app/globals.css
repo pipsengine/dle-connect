@@ -15,6 +15,8 @@
   --color-dle-slate: #64748B;
   --color-background: #ffffff;
   --color-surface-dim: #f8fafc;
+  /* Typical Windows laptops at 125% scaling are 1536px CSS — keep side-by-side layouts for 1920px+ only. */
+  --breakpoint-wide: 120rem;
 }
 
 @layer base {
@@ -33,6 +35,12 @@
   main,
   [data-dle-shell] {
     min-width: 0;
+  }
+
+  img,
+  video,
+  canvas {
+    max-width: 100%;
   }
 }
 
@@ -67,5 +75,31 @@
 
   .dle-page {
     @apply min-w-0 w-full max-w-full;
+  }
+
+  .dle-page > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* Filter / picker toolbars: wrap into readable columns on laptops instead of shrinking to "O...". */
+  .dle-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 17.5rem), 1fr));
+    align-items: end;
+    gap: 1rem 1.25rem;
+  }
+
+  /* Main + details: stack on laptops; sit side-by-side only on 1920px+ monitors. */
+  .dle-split-laptop {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+    min-width: 0;
+  }
+  @media (min-width: 1920px) {
+    .dle-split-laptop {
+      grid-template-columns: minmax(0, 1fr) 24rem;
+    }
   }
 }

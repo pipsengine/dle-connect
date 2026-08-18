@@ -231,11 +231,11 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
   ];
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] px-6 py-6">
+    <div className="min-w-0 bg-[#F8FAFC] py-2">
       <div className="mx-auto max-w-[1680px] space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-[32px] font-bold leading-tight text-[#0F172A]">Timesheet Entry</h1>
+            <h1 className="text-2xl font-bold leading-tight text-[#0F172A] sm:text-[32px]">Timesheet Entry</h1>
             <p className="mt-1 text-[15px] text-[#475569]">
               Record and allocate daily work hours to projects and cost centres.
             </p>
@@ -306,7 +306,7 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
         ) : null}
 
         <div className="rounded-[18px] border border-[#E5E7EB] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
-          <div className="flex flex-wrap items-end gap-4">
+          <div className="dle-filter-grid">
             <ContextField label="Payroll Period">
               <p className="text-sm font-semibold text-[#0F172A]">{props.periodLabel}</p>
             </ContextField>
@@ -315,7 +315,7 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                 type="date"
                 value={props.selectedDate}
                 onChange={(e) => props.onDateChange(e.target.value)}
-                className="w-full rounded-xl border border-[#E5E7EB] px-3 py-2 text-sm font-semibold text-[#0F172A] focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20"
+                className="w-full min-w-0 rounded-xl border border-[#E5E7EB] px-3 py-2 text-sm font-semibold text-[#0F172A] focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20"
               />
               <p className="mt-1 text-xs text-[#94A3B8]">{formatWorkingDate(props.selectedDate)}</p>
             </ContextField>
@@ -360,7 +360,7 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                 <p className="mt-1 text-[10px] font-medium leading-snug text-[#64748B]">{props.shiftHint}</p>
               ) : null}
             </ContextField>
-            <div className="flex items-end gap-2">
+            <div className="col-span-full flex flex-wrap items-center gap-2">
               <StatusBadge label={props.periodIsOpen ? 'Open' : 'Closed'} tone={props.periodIsOpen ? 'success' : 'neutral'} />
               {props.canCreateProject && props.onCreateProject ? (
                 <button
@@ -450,10 +450,10 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
           </div>
         </div>
 
-        <div className="flex gap-4">
+        <div className="dle-split-laptop">
           <div className="min-w-0 flex-1">
             <div className="overflow-hidden rounded-[16px] border border-[#E5E7EB] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
-              <div className="max-h-[58vh] overflow-auto">
+              <div className="dle-scroll-x max-h-[58vh] overflow-auto">
                 <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
                   <thead className="sticky top-0 z-20 bg-[#F8FAFC]">
                     <tr className="border-b border-[#E5E7EB]">

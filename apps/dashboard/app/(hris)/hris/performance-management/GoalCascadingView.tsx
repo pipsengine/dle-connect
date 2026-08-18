@@ -515,7 +515,7 @@ export default function GoalCascadingView({ payload, onAction, busy }: Props) {
             ))}
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="grid gap-4 wide:grid-cols-[minmax(0,1fr)_280px]">
             <div className="space-y-4">
               <section className="overflow-hidden rounded-xl border border-[#eaecf0] bg-white shadow-sm">
                 <div className="flex flex-col gap-2 border-b border-[#eaecf0] p-3 lg:flex-row lg:items-center">
