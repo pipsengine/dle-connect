@@ -88,8 +88,14 @@ export function AuthSessionGuard() {
 
     const verifySession = async (options?: { refresh?: boolean }) => {
       if (isPublicPath(window.location.pathname)) return false;
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 12000);
       try {
-        const response = await fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' });
+        const response = await fetch('/api/auth/me', {
+          cache: 'no-store',
+          credentials: 'same-origin',
+          signal: controller.signal,
+        });
         if (response.status === 401) {
           clearStoredSessionActivity();
           redirectToLogin();
@@ -102,8 +108,10 @@ export function AuthSessionGuard() {
         }
         return true;
       } catch {
-        // Network errors should not force logout; middleware protects server routes.
+        // Network / timeout errors should not force logout; middleware protects server routes.
         return sessionReadyRef.current;
+      } finally {
+        window.clearTimeout(timer);
       }
     };
 

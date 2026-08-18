@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import { FinancePortalShell } from './finance-portal-shell';
-import { buildFinanceBadges } from '@/lib/finance-intelligence/store';
 
 export const metadata = {
   title: 'Finance Intelligence & Approvals',
@@ -8,7 +7,10 @@ export const metadata = {
     'Financial reporting, analytics, AI-assisted decision support and controlled payment approvals integrated with Sage X3 Enterprise.',
 };
 
-export default async function FinancePortalLayout({ children }: { children: ReactNode }) {
-  const badges = await buildFinanceBadges().catch(() => undefined);
-  return <FinancePortalShell badges={badges}>{children}</FinancePortalShell>;
+/**
+ * Do not await finance badge DB work on the layout — email deep-links must paint immediately.
+ * FinancePortalShell loads badges client-side after mount.
+ */
+export default function FinancePortalLayout({ children }: { children: ReactNode }) {
+  return <FinancePortalShell>{children}</FinancePortalShell>;
 }

@@ -20,84 +20,16 @@ const denied = (request: NextRequest, status = 403) => {
   return response;
 };
 
-/** Prefer loopback so public-hostname hairpin (e.g. dleconnect…:1432) does not break permission refresh. */
-const AUTH_ME_TIMEOUT_MS = 2500;
-
-const authMeCandidates = (request: NextRequest) => {
-  const path = '/api/auth/me';
-  const urls: string[] = [];
-  const push = (origin: string) => {
-    try {
-      const value = new URL(path, origin).toString();
-      if (!urls.includes(value)) urls.push(value);
-    } catch {
-      // ignore invalid origin
-    }
-  };
-
-  const port = String(process.env.PORT || process.env.HTTP_PLATFORM_PORT || '').trim();
-  if (port) {
-    push(`http://127.0.0.1:${port}`);
-    push(`http://localhost:${port}`);
-  }
-
-  // HttpPlatform often presents the public Host while Node listens on loopback.
-  // Never use the incoming public origin here — hairpin NAT can hang forever.
-  try {
-    const incoming = new URL(request.url);
-    const host = incoming.hostname.toLowerCase();
-    const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
-    if (incoming.port && !isLoopback) {
-      push(`http://127.0.0.1:${incoming.port}`);
-      push(`http://localhost:${incoming.port}`);
-    } else if (isLoopback) {
-      push(incoming.origin);
-    }
-  } catch {
-    // ignore
-  }
-
-  // Last-resort local defaults used by IIS HttpPlatform / local dev.
-  push('http://127.0.0.1:3020');
-  push('http://localhost:3020');
-
-  return urls;
-};
-
-const fetchAuthMe = async (meUrl: string, cookie: string) => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), AUTH_ME_TIMEOUT_MS);
-  try {
-    return await fetch(meUrl, {
-      headers: { cookie },
-      cache: 'no-store',
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-};
-
-const loadLivePermissions = async (request: NextRequest) => {
-  const cookie = request.headers.get('cookie') || '';
-  for (const meUrl of authMeCandidates(request)) {
-    try {
-      const liveSessionResponse = await fetchAuthMe(meUrl, cookie);
-      if (!liveSessionResponse.ok) continue;
-      const meJson = await liveSessionResponse.json().catch(() => null);
-      if (Array.isArray(meJson?.data?.permissions) && meJson.data.permissions.length) {
-        return { permissions: meJson.data.permissions as string[], liveSessionResponse };
-      }
-      // Reachable /api/auth/me with empty permissions — stop trying further candidates
-      // (especially public hairpin) and let the caller fall back to role permissions.
-      if (meJson?.data) {
-        return { permissions: null as string[] | null, liveSessionResponse };
-      }
-    } catch {
-      // try next candidate
-    }
-  }
-  return { permissions: null as string[] | null, liveSessionResponse: null as Response | null };
+/**
+ * Resolve route permissions without HTTP self-fetch.
+ * JWT omits permissions for cookie size — seed from roles in-process.
+ * Live Access Control Centre grants are applied by /api/auth/me on the client.
+ */
+const resolveMiddlewarePermissions = (session: Awaited<ReturnType<typeof verifySessionToken>>) => {
+  if (!session) return [] as string[];
+  if (session.isGlobalAdmin) return ['*'];
+  if (Array.isArray(session.permissions) && session.permissions.length) return session.permissions;
+  return permissionsForRoles(session.roles || []);
 };
 
 export async function middleware(request: NextRequest) {
@@ -134,48 +66,7 @@ export async function middleware(request: NextRequest) {
     }
 
     const roles = session.roles;
-    let permissions = session.isGlobalAdmin ? ['*'] : session.permissions;
-
-    const needsLivePermissions =
-      !session.isGlobalAdmin &&
-      (
-        !permissions.length
-        || !pathname.startsWith('/api')
-        || pathname.startsWith('/api/hris')
-        || pathname.startsWith('/api/it-support')
-        || pathname.startsWith('/api/finance')
-        || pathname.startsWith('/administration')
-        || pathname.startsWith('/it-support')
-        || pathname.startsWith('/security')
-        || pathname.startsWith('/finance')
-        || pathname.startsWith('/hris')
-      );
-
-    let liveSessionResponse: Response | null = null;
-
-    if (needsLivePermissions) {
-      // JWT omits permissions for cookie size. Seed from roles immediately so a
-      // hung /api/auth/me (public HTTPS hairpin) cannot blank finance email links.
-      const rolePermissions = permissionsForRoles(roles);
-      if (!permissions.length) permissions = rolePermissions;
-
-      const livePromise = loadLivePermissions(request);
-      const raced = await Promise.race([
-        livePromise.then((live) => ({ live, timedOut: false as const })),
-        new Promise<{ live: null; timedOut: true }>((resolve) => {
-          setTimeout(() => resolve({ live: null, timedOut: true }), 3000);
-        }),
-      ]);
-
-      if (!raced.timedOut && raced.live) {
-        liveSessionResponse = raced.live.liveSessionResponse;
-        if (raced.live.permissions?.length) {
-          permissions = raced.live.permissions;
-        } else if (!permissions.length) {
-          permissions = rolePermissions;
-        }
-      }
-    }
+    const permissions = resolveMiddlewarePermissions(session);
 
     if ((!pathname.startsWith('/api') || pathname.startsWith('/api/hris') || pathname.startsWith('/api/it-support')) && !canAccessRoute({ ...session, permissions }, pathname)) {
       return denied(request, 403);
@@ -192,8 +83,6 @@ export async function middleware(request: NextRequest) {
     }
 
     const response = NextResponse.next({ request: { headers: requestHeaders } });
-    const setCookie = liveSessionResponse?.headers.get('set-cookie');
-    if (setCookie) response.headers.append('set-cookie', setCookie);
     response.headers.set('x-auth-user', session.username || '');
     response.headers.set('x-auth-roles', roles.join(','));
     response.headers.set('x-auth-global-admin', session.isGlobalAdmin ? '1' : '0');

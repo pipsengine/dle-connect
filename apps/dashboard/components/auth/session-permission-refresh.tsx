@@ -8,7 +8,15 @@ export function SessionPermissionRefresh() {
   const pathname = usePathname();
 
   useEffect(() => {
-    void fetch('/api/auth/me', { cache: 'no-store' }).catch(() => undefined);
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 12000);
+    void fetch('/api/auth/me', { cache: 'no-store', signal: controller.signal })
+      .catch(() => undefined)
+      .finally(() => window.clearTimeout(timer));
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
   }, [pathname]);
 
   return null;

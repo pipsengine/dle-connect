@@ -75,3 +75,21 @@ If the local service port changes, update both:
 
 - `deployment\iis\web.config`
 - the service command, for example `.\Start-DleDashboard.ps1 -Port 3020`
+
+## Email notification links (public HTTPS)
+
+Workflow emails always open:
+
+```text
+https://dleconnect.dormanlongeng.com:1432/...
+```
+
+If links spin forever and end with “This page cannot be displayed”, the clicker’s network cannot reach that binding.
+
+Checklist:
+
+1. Confirm IIS has an HTTPS binding on **1432** (or move public HTTPS to **443** and update `DLE_PUBLIC_APP_URL`).
+2. Allow inbound TCP **1432** (or 443) on the server firewall / perimeter.
+3. For office LAN users, configure **split-DNS** so `dleconnect.dormanlongeng.com` resolves to the internal server (e.g. `192.168.5.5`), not a public IP that hairpins.
+4. From a failing PC, test `https://dleconnect.dormanlongeng.com:1432/login` — if that hangs, fix network/DNS before blaming the app.
+5. After publish, ensure site `web.config` includes `DLE_PUBLIC_APP_URL` / `APP_URL` (shipped in `web.httpplatform.config` and `web.config`).
