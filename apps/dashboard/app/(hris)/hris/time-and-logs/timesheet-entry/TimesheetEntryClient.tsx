@@ -35,7 +35,7 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { DAILY_BREAK_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetLineMatchesShift, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import { TimesheetEntryEnterpriseView } from './TimesheetEntryEnterpriseView';
@@ -570,18 +570,20 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   }, [headerIdParam, dateParam, supervisorParam, workCenterParam]);
 
   useEffect(() => {
+    if (submitting) return;
     const timer = window.setTimeout(() => {
       void load(selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, requestedHeaderId || undefined, selectedShift);
     }, hasPayloadRef.current ? 120 : 0);
     return () => window.clearTimeout(timer);
-    // selectedShift is intentionally read for date/context reloads, but shift-only changes use SET_SHIFT.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, requestedHeaderId]);
+  }, [load, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, requestedHeaderId, selectedShift, submitting]);
 
   useEffect(() => {
     const saved = payload?.header?.shiftLabel;
-    if (saved) setSelectedShift(resolveTimesheetShift(saved).label);
-  }, [payload?.header?.id, payload?.header?.shiftLabel]);
+    if (!saved) return;
+    const savedShift = resolveTimesheetShift(saved);
+    if (savedShift.kind !== resolveTimesheetShift(selectedShift).kind) return;
+    setSelectedShift(savedShift.label);
+  }, [payload?.header?.id, payload?.header?.shiftLabel, selectedShift]);
 
   const handleSyncAttendance = useCallback(async (source: 'manual' | 'auto' = 'manual') => {
     const headerStatus = payload?.header?.status ?? 'Draft';
@@ -978,7 +980,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           mode: isWorkforceSupervisor ? 'supervisor' : undefined,
           locationName: selectedLocation,
           headerId: payload?.header?.id,
-          lines: localLines.map(reconcileTimesheetLineHours),
+          lines: shiftLines.map(reconcileTimesheetLineHours),
         }),
       });
       const json = await readApiJson(res);
@@ -1248,7 +1250,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     setLocalLines(nextLines);
   };
 
-  const filteredLines = localLines.filter(l => 
+  const shiftLines = localLines.filter((line) => timesheetLineMatchesShift(line.clockIn, selectedShift));
+  const filteredLines = shiftLines.filter((l) =>
     l.employeeName.toLowerCase().includes(query.toLowerCase()) ||
     l.employeeNo.toLowerCase().includes(query.toLowerCase())
   );
@@ -1263,16 +1266,16 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
 
   useEffect(() => {
     setEmployeeCardPage(1);
-  }, [query, viewMode, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter]);
+  }, [query, viewMode, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, selectedShift]);
 
   useEffect(() => {
     if (employeeCardPage > totalEmployeeCardPages) setEmployeeCardPage(totalEmployeeCardPages);
   }, [employeeCardPage, totalEmployeeCardPages]);
 
   useEffect(() => {
-    if (!isEnterprise || localLines.length === 0) return;
-    setSelectedLineId((current) => current && localLines.some((line) => line.id === current) ? current : localLines[0]?.id || null);
-  }, [isEnterprise, localLines]);
+    if (!isEnterprise || shiftLines.length === 0) return;
+    setSelectedLineId((current) => current && shiftLines.some((line) => line.id === current) ? current : shiftLines[0]?.id || null);
+  }, [isEnterprise, shiftLines]);
 
   const isSuperAdministrator = isSuperAdministratorRole(payload?.permissions.role ?? '');
 
@@ -1406,15 +1409,15 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const supervisorJobTitle = supervisorProfile?.jobTitle || supervisorDirectoryItem?.jobTitle || '';
   const supervisorDepartment = supervisorProfile?.department || supervisorDirectoryItem?.department || '';
   const supervisorEmployees = payload?.supervisorEmployees ?? [];
-  const reviewLineCount = localLines.length;
-  const reviewValidCount = localLines.filter((line) => line.validationStatus === 'Valid').length;
-  const reviewWarningCount = localLines.filter((line) => line.validationStatus === 'Warning' || line.validationStatus === 'Incomplete').length;
-  const reviewErrorCount = localLines.filter((line) => line.validationStatus === 'Error').length;
-  const reviewAbsentCount = localLines.filter((line) => !line.clockIn).length;
-  const reviewProjectHours = round1(localLines.reduce((sum, line) => sum + line.usedHours, 0));
-  const reviewIdleHours = round1(localLines.reduce((sum, line) => sum + line.idleHours, 0));
-  const reviewTotalHours = round1(localLines.reduce((sum, line) => sum + line.totalHours, 0));
-  const reviewProjectCodes = Array.from(new Set(localLines.flatMap((line) => line.projectAllocations.map((item) => item.projectCode).filter(Boolean)))).sort();
+  const reviewLineCount = shiftLines.length;
+  const reviewValidCount = shiftLines.filter((line) => line.validationStatus === 'Valid').length;
+  const reviewWarningCount = shiftLines.filter((line) => line.validationStatus === 'Warning' || line.validationStatus === 'Incomplete').length;
+  const reviewErrorCount = shiftLines.filter((line) => line.validationStatus === 'Error').length;
+  const reviewAbsentCount = shiftLines.filter((line) => !line.clockIn).length;
+  const reviewProjectHours = round1(shiftLines.reduce((sum, line) => sum + line.usedHours, 0));
+  const reviewIdleHours = round1(shiftLines.reduce((sum, line) => sum + line.idleHours, 0));
+  const reviewTotalHours = round1(shiftLines.reduce((sum, line) => sum + line.totalHours, 0));
+  const reviewProjectCodes = Array.from(new Set(shiftLines.flatMap((line) => line.projectAllocations.map((item) => item.projectCode).filter(Boolean)))).sort();
   const canOpenSubmitReview = canEditTimesheet && reviewLineCount > 0 && reviewErrorCount === 0;
   const canManageTimesheetSetup = Boolean(payload?.permissions.canManagePeriod);
   const canCreateProject = canManageTimesheetSetup || canEditTimesheet;
@@ -1439,21 +1442,24 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       ? 'Biometric Attention'
       : 'No Site Device';
 
-  const bookedHoursTotal = round1(localLines.reduce((sum, line) => sum + line.totalHours, 0));
-  const capacityHours = round1(summary.presentEmployees * grossTimesheetHours);
+  const bookedHoursTotal = round1(shiftLines.reduce((sum, line) => sum + line.totalHours, 0));
+  const presentEmployees = shiftLines.filter((line) => Boolean(line.clockIn)).length;
+  const usedHoursTotal = round1(shiftLines.reduce((sum, line) => sum + line.usedHours, 0));
+  const idleHoursTotal = round1(shiftLines.reduce((sum, line) => sum + line.idleHours, 0));
+  const capacityHours = round1(presentEmployees * grossTimesheetHours);
   const remainingHours = round1(Math.max(0, capacityHours - bookedHoursTotal));
-  const exceptionCount = localLines.filter((line) => line.validationStatus === 'Error' || line.validationStatus === 'Warning').length;
-  const submittedCount = localLines.filter((line) => line.validationStatus === 'Valid').length;
+  const exceptionCount = shiftLines.filter((line) => line.validationStatus === 'Error' || line.validationStatus === 'Warning').length;
+  const submittedCount = shiftLines.filter((line) => line.validationStatus === 'Valid').length;
   const footerTotals = {
-    duration: round1(localLines.reduce((sum, line) => sum + line.attendanceDuration, 0)),
-    projectTotals: matrixColumns.map((col) => round1(localLines.reduce((sum, line) => sum + (line.projectAllocations.find((p) => p.projectCode === col.code)?.hours || 0), 0))),
-    used: round1(localLines.reduce((sum, line) => sum + productiveProjectHours(line.projectAllocations), 0)),
-    idle: round1(localLines.reduce((sum, line) => sum + line.idleHours, 0)),
-    idleTime: round1(localLines.reduce((sum, line) => sum + idleTimeProjectHours(line.projectAllocations), 0)),
+    duration: round1(shiftLines.reduce((sum, line) => sum + line.attendanceDuration, 0)),
+    projectTotals: matrixColumns.map((col) => round1(shiftLines.reduce((sum, line) => sum + (line.projectAllocations.find((p) => p.projectCode === col.code)?.hours || 0), 0))),
+    used: round1(shiftLines.reduce((sum, line) => sum + productiveProjectHours(line.projectAllocations), 0)),
+    idle: idleHoursTotal,
+    idleTime: round1(shiftLines.reduce((sum, line) => sum + idleTimeProjectHours(line.projectAllocations), 0)),
     total: bookedHoursTotal,
-    variance: round1(localLines.reduce((sum, line) => sum + line.variance, 0)),
+    variance: round1(shiftLines.reduce((sum, line) => sum + line.variance, 0)),
   };
-  const readinessScore = summary.totalEmployees > 0 ? Math.round((submittedCount / summary.totalEmployees) * 100) : 0;
+  const readinessScore = shiftLines.length > 0 ? Math.round((submittedCount / shiftLines.length) * 100) : 0;
 
   return (
     <>
@@ -1502,8 +1508,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             setSelectedShift(shift.label);
             setNotice(
               shift.kind === 'Night'
-                ? 'Night shift selected: loading employees with night punches (18:00–02:00). Book 8h as normal work — ₦1,500 inconvenience allowance posts automatically; overtime is not applicable.'
-                : 'Day shift selected: book 8h for the standard day. Hours after 17:00 until clock-out are overtime.',
+                ? 'Night shift selected: showing only employees who clocked in from 18:00 to 06:00. Book 8h as normal work — ₦1,500 inconvenience allowance posts automatically; overtime is not applicable.'
+                : 'Day shift selected: showing day-shift clock-ins (and absentees). Hours after 17:00 until clock-out are overtime.',
             );
             if (!canEditTimesheet) return;
             setSubmitting(true);
@@ -1585,11 +1591,11 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           approvedOvertimeAuthorizations={approvedOvertimeAuthorizations}
           onBookApprovedOvertime={handleBookApprovedOvertime}
           summary={{
-            totalEmployees: summary.totalEmployees,
+            totalEmployees: shiftLines.length,
             bookedHours: bookedHoursTotal,
-            usedHours: summary.usedHours,
-            idleHours: summary.idleHours,
-            productivityPct: summary.productivityPct,
+            usedHours: usedHoursTotal,
+            idleHours: idleHoursTotal,
+            productivityPct: bookedHoursTotal > 0 ? round1((usedHoursTotal / bookedHoursTotal) * 100) : 0,
           }}
           exceptionCount={exceptionCount}
           submittedCount={submittedCount}
@@ -2389,7 +2395,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {localLines.map((line) => (
+                      {shiftLines.map((line) => (
                         <tr key={line.id} className="hover:bg-slate-50">
                           <td className="px-4 py-3">
                             <div className="font-black text-slate-900">{line.employeeName}</div>

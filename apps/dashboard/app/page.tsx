@@ -22,6 +22,7 @@ import {
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import { WORKFORCE_PORTAL_ENABLED } from '@/lib/workforce-portal-availability';
 
 const can = (permissions: string[], required: string) => {
   if (!required) return true;
@@ -173,7 +174,10 @@ const workspaceModules = [
 
 export default async function Home() {
   const { permissions, name } = await getSessionPermissions();
-  const visibleModules = workspaceModules.filter((module) => canAny(permissions, module.permissions));
+  const visibleModules = workspaceModules.filter((module) => {
+    if (module.href === '/workforce-portal' && !WORKFORCE_PORTAL_ENABLED) return false;
+    return canAny(permissions, module.permissions);
+  });
   const primaryModule = visibleModules[0];
 
   const enterpriseKpis = [

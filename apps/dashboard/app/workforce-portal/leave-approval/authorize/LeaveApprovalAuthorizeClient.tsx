@@ -4,6 +4,11 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { CheckCircle2, Lock, ShieldCheck, XCircle } from 'lucide-react';
+import { WORKFORCE_PORTAL_ENABLED } from '@/lib/workforce-portal-availability';
+
+const leaveWorkspaceHref = WORKFORCE_PORTAL_ENABLED
+  ? '/workforce-portal?tab=leave'
+  : '/hris/leave-management/applications';
 
 type PreviewPayload = {
   authenticated: boolean;
@@ -102,7 +107,7 @@ export default function LeaveApprovalAuthorizeClient() {
           <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
             {done}
             <div className="mt-3">
-              <Link href="/workforce-portal?tab=leave" className="font-extrabold text-emerald-900 underline">
+              <Link href={leaveWorkspaceHref} className="font-extrabold text-emerald-900 underline">
                 Open Leave Workspace
               </Link>
             </div>
@@ -144,7 +149,7 @@ export default function LeaveApprovalAuthorizeClient() {
                 {preview.decision === 'approve' ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
                 {posting ? 'Processing…' : preview.decision === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'}
               </button>
-              <Link href="/workforce-portal?tab=leave" className="inline-flex h-11 items-center rounded-xl border border-slate-200 px-4 text-sm font-extrabold text-slate-700 hover:bg-slate-50">
+              <Link href={leaveWorkspaceHref} className="inline-flex h-11 items-center rounded-xl border border-slate-200 px-4 text-sm font-extrabold text-slate-700 hover:bg-slate-50">
                 Open Leave Workspace
               </Link>
             </div>

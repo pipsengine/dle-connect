@@ -7,6 +7,7 @@ import {
   findPerformanceMenuItem,
   resolvePerformanceRoute,
 } from '@/lib/performance-management-menu-config';
+import { WORKFORCE_PORTAL_ENABLED } from '@/lib/workforce-portal-availability';
 import type { PerformanceWorkspacePayload } from '@/lib/performance-domain-types';
 import PerformanceCommandCenter from './PerformanceCommandCenter';
 import PerformanceDomainWorkspace from './PerformanceDomainWorkspace';
@@ -212,14 +213,24 @@ export default function PerformanceManagementClient({
               <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#2563EB]">Access restricted</p>
               <h2 className="mt-2 text-2xl font-black text-[#0F172A]">Performance administration is HR-only</h2>
               <p className="mt-3 max-w-2xl text-sm text-[#64748B]">
-                Line managers and employees should manage goals, appraisals, and team reviews from the Employee Self-Service portal.
+                Line managers and employees should manage goals, appraisals, and team reviews from the Employee Self-Service portal
+                {WORKFORCE_PORTAL_ENABLED ? '.' : ', once Workforce Portal is published.'}
               </p>
-              <Link
-                href="/workforce-portal?tab=performance"
-                className="mt-6 inline-flex h-11 items-center rounded-xl bg-[#2563EB] px-5 text-sm font-bold text-white hover:bg-[#1D4ED8]"
-              >
-                Open Performance in ESS
-              </Link>
+              {WORKFORCE_PORTAL_ENABLED ? (
+                <Link
+                  href="/workforce-portal?tab=performance"
+                  className="mt-6 inline-flex h-11 items-center rounded-xl bg-[#2563EB] px-5 text-sm font-bold text-white hover:bg-[#1D4ED8]"
+                >
+                  Open Performance in ESS
+                </Link>
+              ) : (
+                <Link
+                  href="/"
+                  className="mt-6 inline-flex h-11 items-center rounded-xl bg-[#2563EB] px-5 text-sm font-bold text-white hover:bg-[#1D4ED8]"
+                >
+                  Back to Enterprise Home
+                </Link>
+              )}
             </div>
           ) : null}
           {!accessDenied && error ? (

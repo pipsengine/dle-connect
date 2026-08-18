@@ -95,6 +95,14 @@ export const classifyAttendanceShiftFromClockIn = (clockIn?: string | null): Tim
 
 export const isNightWindowClockIn = (clockIn?: string | null) => classifyAttendanceShiftFromClockIn(clockIn) === 'Night';
 
+/** Night view: only employees who actually punched in the night window. Day view: hide those night punchers. */
+export const timesheetLineMatchesShift = (clockIn?: string | null, shiftLabel?: string | null) => {
+  const kind = resolveTimesheetShift(shiftLabel).kind;
+  if (kind === 'Night') return Boolean(String(clockIn || '').trim()) && isNightWindowClockIn(clockIn);
+  if (!String(clockIn || '').trim()) return true;
+  return classifyAttendanceShiftFromClockIn(clockIn) === 'Day';
+};
+
 /** Legacy headers with blank shiftLabel are treated as Day. */
 export const timesheetHeaderShiftKind = (shiftLabel?: string | null): TimesheetShiftKind => {
   if (!String(shiftLabel || '').trim()) return 'Day';

@@ -65,7 +65,7 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
-import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 
 const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string | null): TimesheetDayContext => ({
@@ -901,7 +901,7 @@ const buildPayload = async (
 
   const requestedHeader = requestedHeaderId ? headers.find((item) => item.id === requestedHeaderId) : null;
   const targetDate = requestedHeader?.timesheetDate || date || todayDateInputValue();
-  const targetShiftLabel = resolveTimesheetShift(requestedHeader?.shiftLabel || requestedShiftLabel).label;
+  const targetShiftLabel = resolveTimesheetShift(requestedShiftLabel || requestedHeader?.shiftLabel).label;
   const dayContext = dayContextFor(targetDate, holidayDates, targetShiftLabel);
   if (supervisorMode && !session) throw new Error('Authenticated supervisor session is required.');
   let requestedSupervisor = clean(requestedHeader?.supervisorId || supervisorId);
@@ -1080,7 +1080,7 @@ const buildPayload = async (
   }));
 
   let header =
-    requestedHeader ||
+    (requestedHeader && timesheetHeaderMatchesShift(requestedHeader.shiftLabel, targetShiftLabel) ? requestedHeader : null) ||
     (targetWorkCenter
       ? headers.find((h) => (
         h.timesheetDate === targetDate
@@ -1119,7 +1119,8 @@ const buildPayload = async (
         activeProjects.map((project) => project.code),
       ),
     )
-    .filter(lineBelongsToSelectedCrew);
+    .filter(lineBelongsToSelectedCrew)
+    .filter((line) => timesheetLineMatchesShift(line.clockIn, targetShiftLabel));
 
   // Keep the initial page load lightweight. Attendance sync can involve biometric
   // and Sage enrichment calls, so it is only run from the explicit Fetch Punches action.

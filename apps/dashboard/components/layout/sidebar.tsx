@@ -26,6 +26,7 @@ import {
 } from '@/lib/access/finance-access';
 import { canAccessItSupportPortal } from '@/lib/access/it-support-access';
 import { canAccessSecurityPortal } from '@/lib/access/security-access';
+import { WORKFORCE_PORTAL_ENABLED } from '@/lib/workforce-portal-availability';
 
 const requiredPermission = (route?: string) => {
   if (!route || route === '/') return 'enterprise.view';
@@ -167,7 +168,7 @@ export function Sidebar({
         if (item.id === 'administration' && !canSeeAdministration) return null;
         const subItems = item.subItems?.filter((sub) => {
           if (sub.route === '/hris') return canAccessHrManagementNav(sessionLike);
-          if (sub.route === '/workforce-portal') return true;
+          if (sub.route === '/workforce-portal') return WORKFORCE_PORTAL_ENABLED;
           if (sub.route === '/hris/payroll-management/pay-setup') return canAccessPaySetupNav(sessionLike);
           if (
             sub.route === '/hris/payroll-management/bank-finance'

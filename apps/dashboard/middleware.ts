@@ -3,6 +3,11 @@ import { AUTH_COOKIE, clearAuthCookieOptions, isPublicPath, verifySessionToken }
 import { canAccessRoute } from '@/lib/access/route-access';
 import { deriveHrisRole } from '@/lib/hris-access';
 import { permissionsForRoles } from '@/lib/auth/rbac';
+import {
+  isWorkforcePortalExceptionPath,
+  isWorkforcePortalPath,
+  WORKFORCE_PORTAL_ENABLED,
+} from '@/lib/workforce-portal-availability';
 
 const denied = (request: NextRequest, status = 403) => {
   if (request.nextUrl.pathname.startsWith('/api')) {
@@ -67,6 +72,21 @@ export async function middleware(request: NextRequest) {
 
     const roles = session.roles;
     const permissions = resolveMiddlewarePermissions(session);
+
+    if (!WORKFORCE_PORTAL_ENABLED && isWorkforcePortalPath(pathname) && !isWorkforcePortalExceptionPath(pathname)) {
+      if (pathname.startsWith('/api')) {
+        return NextResponse.json(
+          { status: 'error', error: 'Workforce Portal is temporarily unavailable.' },
+          { status: 503 },
+        );
+      }
+      if (pathname !== '/workforce-portal') {
+        const url = request.nextUrl.clone();
+        url.pathname = '/workforce-portal';
+        url.search = '';
+        return NextResponse.redirect(url);
+      }
+    }
 
     if ((!pathname.startsWith('/api') || pathname.startsWith('/api/hris') || pathname.startsWith('/api/it-support')) && !canAccessRoute({ ...session, permissions }, pathname)) {
       return denied(request, 403);

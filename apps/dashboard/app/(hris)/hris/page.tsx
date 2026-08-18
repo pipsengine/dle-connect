@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import { WORKFORCE_PORTAL_ENABLED } from '@/lib/workforce-portal-availability';
 
 const quickLinks = [
   { title: 'Executive HR Dashboard', href: '/hris/dashboard/executive-hr-dashboard', icon: BarChart3, detail: 'Strategic workforce metrics and HR risk signals', permissions: ['dashboard.view', 'hris.view'], tone: 'blue' },
@@ -93,7 +94,10 @@ function HeroVisual() {
 
 export default async function HRISHomePage() {
   const permissions = await getPermissions();
-  const visibleQuickLinks = quickLinks.filter((item) => item.permissions.some((permission) => can(permissions, permission)));
+  const visibleQuickLinks = quickLinks.filter((item) => {
+    if (item.href === '/workforce-portal' && !WORKFORCE_PORTAL_ENABLED) return false;
+    return item.permissions.some((permission) => can(permissions, permission));
+  });
 
   return (
     <main className="min-h-screen bg-[#F8FAFC] px-1 pb-8 text-[#0F172A]">

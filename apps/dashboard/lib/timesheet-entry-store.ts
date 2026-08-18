@@ -16,8 +16,10 @@ import {
   isTimesheetPaidLeaveLine,
   normalizeIdleAllocations,
   normalizeProjectAllocations,
+  isNightWindowClockIn,
   resolveTimesheetShift,
   timesheetHeaderMatchesShift,
+  timesheetLineMatchesShift,
   timesheetShiftHeaderSlug,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-shared';
@@ -3494,6 +3496,8 @@ export async function syncAttendanceForTimesheet(
 
   // Night: only employees with night-window punches (do not mix full day crew).
   // Day: keep full assigned roster; absent rows stay for booking visibility.
+  const isNightAttendance = (candidate: (typeof attendanceCandidates)[number]) =>
+    isNightWindowClockIn(candidate.attendance.checkInTime) || candidate.attendance.shift === 'Night';
   const attendanceForDay = shift.kind === 'Night'
     ? (
       assignedSupervisorEmployees.length
@@ -3502,8 +3506,8 @@ export async function syncAttendanceForTimesheet(
             const employeeKeys = attendanceMatchKeys(employee.employeeCode, employee.fullName);
             return attendanceCandidates.find((candidate) => attendanceCandidateKeys(candidate).some((key) => employeeKeys.includes(key)));
           })
-          .filter((item): item is (typeof attendanceCandidates)[number] => Boolean(item?.attendance.checkInTime))
-        : attendanceCandidates.filter((candidate) => Boolean(candidate.attendance.checkInTime))
+          .filter((item): item is (typeof attendanceCandidates)[number] => Boolean(item && isNightAttendance(item)))
+        : attendanceCandidates.filter((candidate) => isNightAttendance(candidate))
     )
     : (
       assignedSupervisorEmployees.length
@@ -3594,6 +3598,7 @@ export async function syncAttendanceForTimesheet(
           return employeeCode === line.employeeId;
         });
         if (alreadyListed) return false;
+        if (!timesheetLineMatchesShift(line.clockIn, shift.label)) return false;
         return Number(line.usedHours || 0) > 0.001 || Number(line.totalHours || 0) > 0.001;
       })
     : [];
