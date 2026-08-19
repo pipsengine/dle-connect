@@ -109,7 +109,7 @@ export const mobilizationCoversDate = (item: TimesheetMobilization, date: string
   if (item.status === 'Demobilized' && item.endDate && date > item.endDate) return false;
   if (date < item.startDate) return false;
   if (item.endDate && date > item.endDate) return false;
-  return item.status !== 'Cancelled';
+  return true;
 };
 
 export const mobilizationMatchesSupervisor = (item: TimesheetMobilization, supervisorId: string) => {
