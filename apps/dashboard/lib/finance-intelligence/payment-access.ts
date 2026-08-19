@@ -104,6 +104,24 @@ const codesMatch = (left?: string | null, right?: string | null) => {
   return Boolean(a && b && a === b);
 };
 
+/**
+ * True when this actor is the person who should action the current approval stage.
+ * Does not include Finance "view all" or Super Admin bypass — those belong on Payment Requests, not Inbox.
+ */
+export const isAssignedPaymentApprover = (
+  actor: PaymentAccessActor,
+  request: Pick<PaymentRequestRow, 'currentApproverCode' | 'currentStage' | 'status'>,
+) => {
+  if (!/pending|submitted|finance review/i.test(String(request.status || ''))) return false;
+  if (codesMatch(actor.actorCode, request.currentApproverCode)) return true;
+  if (isMdCeoActor(actor)) {
+    const assigned = String(request.currentApproverCode || '').trim().toUpperCase();
+    if (assigned === MD_CEO_EMPLOYEE_CODE) return true;
+    if (MD_CEO_STAGE.test(String(request.currentStage || ''))) return true;
+  }
+  return false;
+};
+
 /** Requester viewing their own request (not also the assigned approver). */
 export const isPaymentRequesterOnly = (
   actor: PaymentAccessActor,
@@ -129,12 +147,7 @@ export const canActOnPaymentApproval = (
   request: Pick<PaymentRequestRow, 'requesterCode' | 'currentApproverCode' | 'currentStage' | 'status'>,
 ) => {
   if (!/pending|submitted|finance review/i.test(String(request.status || ''))) return false;
-  if (codesMatch(actor.actorCode, request.currentApproverCode)) return true;
-  if (isMdCeoActor(actor)) {
-    const assigned = String(request.currentApproverCode || '').trim().toUpperCase();
-    if (assigned === MD_CEO_EMPLOYEE_CODE) return true;
-    if (MD_CEO_STAGE.test(String(request.currentStage || ''))) return true;
-  }
+  if (isAssignedPaymentApprover(actor, request)) return true;
   if (actor.isGlobalAdmin) return true;
   return (actor.roles || []).some((role) =>
     /^(super administrator|system administrator|application administrator)$/i.test(String(role || '').trim()));

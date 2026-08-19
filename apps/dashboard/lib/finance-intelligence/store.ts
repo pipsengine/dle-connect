@@ -91,11 +91,24 @@ const countQuery = async (pool: sql.ConnectionPool, query: string) => {
   }
 };
 
-export const buildFinanceBadges = async (): Promise<FinanceBadgeSnapshot> => {
+export const buildFinanceBadges = async (input?: {
+  actorCode?: string;
+  includeMdCeoStage?: boolean;
+}): Promise<FinanceBadgeSnapshot> => {
   const pool = await ensureFinanceDb().catch(() => null);
   if (!pool) return emptyBadges();
 
   const pendingStatuses = `N'Pending Approval', N'Submitted', N'Finance Review'`;
+  const actorCode = String(input?.actorCode || '').trim();
+  const inboxWhere = actorCode
+    ? `[Status] IN (${pendingStatuses}) AND (
+        [CurrentApproverCode] = @actorCode
+        ${input?.includeMdCeoStage ? `OR [CurrentApproverCode] = N'P0413' OR LOWER(ISNULL([CurrentStage], N'')) LIKE N'%md%' OR LOWER(ISNULL([CurrentStage], N'')) LIKE N'%managing director%'` : ''}
+      )`
+    : `[Status] IN (${pendingStatuses})`;
+  const requestForInbox = pool.request();
+  if (actorCode) requestForInbox.input('actorCode', sql.NVarChar(60), actorCode);
+
   const [
     paymentApprovals,
     overdueApprovals,
@@ -104,7 +117,9 @@ export const buildFinanceBadges = async (): Promise<FinanceBadgeSnapshot> => {
     dataIntegration,
     exceptions,
   ] = await Promise.all([
-    countQuery(pool, `SELECT COUNT(1) AS count FROM [finance].[PaymentRequests] WHERE [Status] IN (${pendingStatuses})`),
+    actorCode
+      ? requestForInbox.query(`SELECT COUNT(1) AS count FROM [finance].[PaymentRequests] WHERE ${inboxWhere}`).then((result) => Number(result.recordset?.[0]?.count || 0))
+      : countQuery(pool, `SELECT COUNT(1) AS count FROM [finance].[PaymentRequests] WHERE [Status] IN (${pendingStatuses})`),
     countQuery(
       pool,
       `SELECT COUNT(1) AS count FROM [finance].[PaymentRequests]

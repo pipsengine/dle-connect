@@ -230,10 +230,10 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
                   href={section.href}
                   title={railCollapsed ? section.label : undefined}
                   onClick={() => setMobileOpen(false)}
-                  className={`flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition ${
+                  className={`flex h-11 min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition ${
                     sectionActive
                       ? 'border-l-[3px] border-[#008FD5] bg-[#EAF6FF] font-semibold text-[#008FD5]'
-                      : 'border-l-[3px] border-transparent font-medium text-[#475569] hover:bg-[#F6F9FC] hover:text-[#0F172A]'
+                      : 'border-l-[3px] border-transparent font-medium text-[#475569] hover:bg-[#EAF6FF] hover:text-[#0F172A]'
                   }`}
                 >
                   <section.icon className="h-[18px] w-[18px] shrink-0" strokeWidth={2} />
@@ -270,10 +270,10 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
                         key={child.id}
                         href={child.href}
                         onClick={() => setMobileOpen(false)}
-                        className={`flex h-[38px] items-center gap-2 rounded-lg px-2.5 text-[12.5px] transition ${
+                        className={`flex h-[38px] cursor-pointer items-center gap-2 rounded-lg px-2.5 text-[12.5px] transition ${
                           active
                             ? 'bg-[#EAF6FF] font-semibold text-[#008FD5]'
-                            : 'font-medium text-[#64748B] hover:bg-[#F6F9FC] hover:text-[#0F172A]'
+                            : 'font-medium text-[#64748B] hover:bg-[#EAF6FF] hover:text-[#0F172A]'
                         }`}
                       >
                         <span className="min-w-0 flex-1 truncate">{child.label}</span>
@@ -336,7 +336,7 @@ export function FinancePortalShell({ children, badges, employee }: Props) {
   );
 
   return (
-    <div className="flex min-h-dvh min-w-0 overflow-x-clip bg-[#F5F7FB] text-slate-900" data-dle-shell>
+    <div className="finance-clickable flex min-h-dvh min-w-0 overflow-x-clip bg-[#F5F7FB] text-slate-900" data-dle-shell>
       <aside
         className={`fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-slate-200 bg-white transition-[width] duration-200 lg:flex ${widthClass}`}
       >

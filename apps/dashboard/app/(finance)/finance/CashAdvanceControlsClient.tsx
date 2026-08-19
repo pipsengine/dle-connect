@@ -165,10 +165,10 @@ export default function CashAdvanceControlsClient({ initialWorkspace }: Props) {
   };
 
   const kpis = [
-    { label: 'Outstanding advances', value: workspace.summary.outstandingCount, icon: Clock3, wrap: 'bg-orange-50', color: 'text-orange-600' },
-    { label: 'Awaiting retirement', value: workspace.summary.awaitingRetirement, icon: AlertTriangle, wrap: 'bg-amber-50', color: 'text-amber-700' },
-    { label: 'Blocked employees', value: workspace.summary.blockedEmployees, icon: Users, wrap: 'bg-rose-50', color: 'text-rose-600' },
-    { label: 'Active CFO waivers', value: workspace.summary.activeWaivers, icon: ShieldCheck, wrap: 'bg-emerald-50', color: 'text-emerald-600' },
+    { label: 'Outstanding advances', value: workspace.summary.outstandingCount, icon: Clock3, wrap: 'bg-orange-50', color: 'text-orange-600', target: 'cash-advance-list' },
+    { label: 'Awaiting retirement', value: workspace.summary.awaitingRetirement, icon: AlertTriangle, wrap: 'bg-amber-50', color: 'text-amber-700', target: 'cash-advance-list' },
+    { label: 'Blocked employees', value: workspace.summary.blockedEmployees, icon: Users, wrap: 'bg-rose-50', color: 'text-rose-600', target: 'cash-advance-list' },
+    { label: 'Active CFO waivers', value: workspace.summary.activeWaivers, icon: ShieldCheck, wrap: 'bg-emerald-50', color: 'text-emerald-600', target: 'cash-advance-waivers' },
   ];
 
   return (
@@ -195,7 +195,12 @@ export default function CashAdvanceControlsClient({ initialWorkspace }: Props) {
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((card) => (
-          <article key={card.label} className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+          <button
+            key={card.label}
+            type="button"
+            onClick={() => document.getElementById(card.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            className="cursor-pointer rounded-2xl border border-slate-200/80 bg-white p-4 text-left shadow-sm transition hover:border-[#008FD5] hover:bg-[#EAF6FF] hover:shadow-md"
+          >
             <div className="flex items-start justify-between gap-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{card.label}</p>
               <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl ${card.wrap}`}>
@@ -203,12 +208,12 @@ export default function CashAdvanceControlsClient({ initialWorkspace }: Props) {
               </span>
             </div>
             <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{card.value}</p>
-          </article>
+          </button>
         ))}
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
-        <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+        <section id="cash-advance-list" className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-sm font-semibold text-slate-900">Outstanding cash advances</h2>
             <FinanceListSearch
@@ -335,7 +340,7 @@ export default function CashAdvanceControlsClient({ initialWorkspace }: Props) {
             </button>
           </section>
 
-          <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+          <section id="cash-advance-waivers" className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
             <h2 className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
               <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Active waivers
             </h2>

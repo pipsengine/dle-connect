@@ -82,6 +82,19 @@
     max-width: 100%;
   }
 
+  /* Payment Management: hand cursor + hover on clickable controls. */
+  .finance-clickable :is(a, button, [role="button"], summary):not(:disabled) {
+    cursor: pointer;
+  }
+  .finance-clickable :is(button, [role="button"]):disabled {
+    cursor: not-allowed;
+  }
+  .finance-clickable select,
+  .finance-clickable label,
+  .finance-clickable [data-clickable] {
+    cursor: pointer;
+  }
+
   /* Filter / picker toolbars: wrap into readable columns on laptops instead of shrinking to "O...". */
   .dle-filter-grid {
     display: grid;

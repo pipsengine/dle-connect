@@ -57,12 +57,12 @@ export default function EmployeePaymentsDashboardClient({ dashboard, employeeNam
   const greeting = givenName ? `Welcome, ${givenName}` : 'My Payments';
 
   const kpis = [
-    { label: 'My requests', value: String(dashboard.summary.myRequests), detail: 'All statuses', icon: FileText, wrap: 'bg-slate-100', color: 'text-slate-600' },
-    { label: 'Pending approval', value: String(dashboard.summary.pendingApproval), detail: 'Awaiting decision', icon: Clock3, wrap: 'bg-blue-50', color: 'text-[#008FD5]' },
-    { label: 'Returned', value: String(dashboard.summary.returned), detail: 'Needs your update', icon: RotateCcw, wrap: 'bg-violet-50', color: 'text-violet-600' },
-    { label: 'Awaiting my approval', value: String(dashboard.summary.awaitingMyApproval), detail: 'In your inbox', icon: Inbox, wrap: 'bg-amber-50', color: 'text-amber-600' },
-    { label: 'Paid this month', value: String(dashboard.summary.paidThisMonth), detail: 'Completed', icon: CheckCircle2, wrap: 'bg-emerald-50', color: 'text-emerald-600' },
-    { label: 'Outstanding advances', value: String(dashboard.summary.outstandingAdvances), detail: dashboard.eligibility?.blocked ? 'New advance blocked' : 'Retirement open', icon: Wallet, wrap: 'bg-rose-50', color: 'text-rose-600' },
+    { label: 'My requests', value: String(dashboard.summary.myRequests), detail: 'All statuses', icon: FileText, wrap: 'bg-slate-100', color: 'text-slate-600', href: '/finance/approvals/my-requests' },
+    { label: 'Pending approval', value: String(dashboard.summary.pendingApproval), detail: 'Awaiting decision', icon: Clock3, wrap: 'bg-blue-50', color: 'text-[#008FD5]', href: '/finance/approvals/my-requests?tab=pending' },
+    { label: 'Returned', value: String(dashboard.summary.returned), detail: 'Needs your update', icon: RotateCcw, wrap: 'bg-violet-50', color: 'text-violet-600', href: '/finance/approvals/my-requests?tab=returned' },
+    { label: 'Awaiting my approval', value: String(dashboard.summary.awaitingMyApproval), detail: 'In your inbox', icon: Inbox, wrap: 'bg-amber-50', color: 'text-amber-600', href: '/finance/approvals/inbox' },
+    { label: 'Paid this month', value: String(dashboard.summary.paidThisMonth), detail: 'Completed', icon: CheckCircle2, wrap: 'bg-emerald-50', color: 'text-emerald-600', href: '/finance/approvals/my-requests?tab=paid' },
+    { label: 'Outstanding advances', value: String(dashboard.summary.outstandingAdvances), detail: dashboard.eligibility?.blocked ? 'New advance blocked' : 'Retirement open', icon: Wallet, wrap: 'bg-rose-50', color: 'text-rose-600', href: '/finance/approvals/my-requests?tab=retirement' },
   ];
 
   return (
@@ -71,7 +71,7 @@ export default function EmployeePaymentsDashboardClient({ dashboard, employeeNam
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#008FD5]">Employee payments</p>
         <h1 className="mt-1 text-[28px] font-semibold tracking-tight text-slate-900">{greeting}</h1>
         <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-500">
-          Raise cash advances and supplier payment requests, track your submissions, and action items waiting in your approval inbox.
+          Raise cash advances and supplier payment requests. Your approval dashboard shows only items waiting for you.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
@@ -114,7 +114,11 @@ export default function EmployeePaymentsDashboardClient({ dashboard, employeeNam
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {kpis.map((card) => (
-          <article key={card.label} className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+          <Link
+            key={card.label}
+            href={card.href}
+            className="cursor-pointer rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition hover:border-[#008FD5] hover:bg-[#EAF6FF] hover:shadow-md"
+          >
             <div className="flex items-start justify-between gap-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{card.label}</p>
               <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl ${card.wrap}`}>
@@ -123,7 +127,7 @@ export default function EmployeePaymentsDashboardClient({ dashboard, employeeNam
             </div>
             <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{card.value}</p>
             <p className="mt-1 text-xs text-slate-500">{card.detail}</p>
-          </article>
+          </Link>
         ))}
       </div>
 
@@ -140,7 +144,7 @@ export default function EmployeePaymentsDashboardClient({ dashboard, employeeNam
               <Link
                 key={row.requestId}
                 href={`/finance/approvals/request/${encodeURIComponent(row.requestId)}`}
-                className="flex items-start justify-between gap-3 px-4 py-3 hover:bg-slate-50"
+                className="flex cursor-pointer items-start justify-between gap-3 px-4 py-3 hover:bg-[#EAF6FF]"
               >
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-slate-800">{row.requestNumber}</p>
@@ -169,7 +173,7 @@ export default function EmployeePaymentsDashboardClient({ dashboard, employeeNam
               <Link
                 key={row.requestId}
                 href={`/finance/approvals/request/${encodeURIComponent(row.requestId)}`}
-                className="flex items-start justify-between gap-3 px-4 py-3 hover:bg-slate-50"
+                className="flex cursor-pointer items-start justify-between gap-3 px-4 py-3 hover:bg-[#EAF6FF]"
               >
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-slate-800">{row.requestNumber}</p>

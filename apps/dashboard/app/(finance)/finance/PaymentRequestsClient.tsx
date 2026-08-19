@@ -382,6 +382,12 @@ export default function PaymentRequestsClient({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(FINANCE_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fromQuery = String(new URLSearchParams(window.location.search).get('tab') || '').trim().toLowerCase();
+    const allowed: TabId[] = ['all', 'mine', 'drafts', 'pending', 'returned', 'approved', 'ready', 'paid', 'rejected', 'retirement'];
+    if (allowed.includes(fromQuery as TabId)) setTab(fromQuery as TabId);
+  }, []);
   const [toast, setToast] = useState('');
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerType, setComposerType] = useState<PaymentRequestType>('Cash Advance Payment');
@@ -589,15 +595,12 @@ export default function PaymentRequestsClient({
     return workspace.rows.filter((row) => {
       // Defense in depth: non–Finance / non–Super-Admin never see other employees' raised payments
       // (Inbox may still include items where they are current approver or beneficiary).
-      if (restrictedToOwnPayments && actor) {
+      if (restrictedToOwnPayments && actor && listMode !== 'inbox') {
         const requester = String(row.requesterCode || '').trim().toLowerCase();
-        const approver = String(row.currentApproverCode || '').trim().toLowerCase();
-        const beneficiary = String(row.beneficiaryCode || '').trim().toLowerCase();
-        if (listMode === 'inbox') {
-          if (requester !== actor && approver !== actor && beneficiary !== actor) return false;
-        } else if (requester !== actor) {
-          return false;
-        }
+        if (requester !== actor) return false;
+      }
+      if (listMode === 'inbox' && !(workspace.viewer?.approvableRequestIds || []).includes(row.requestId)) {
+        return false;
       }
 
       if (paymentTypeFilter !== 'All' && row.paymentType !== paymentTypeFilter) return false;
@@ -679,6 +682,7 @@ export default function PaymentRequestsClient({
     detailFocus,
     listMode,
     workspace.viewer?.actorCode,
+    workspace.viewer?.approvableRequestIds,
     restrictedToOwnPayments,
   ]);
 
@@ -1161,7 +1165,7 @@ export default function PaymentRequestsClient({
     color: string;
   }> = [
     { id: 'total', label: 'Total Requests', count: workspace.summary.totalRequests, value: workspace.summary.totalValue, icon: FileText, wrap: 'bg-slate-100', color: 'text-slate-600' },
-    { id: 'pending', label: 'Pending Approval', count: workspace.summary.pendingApproval, value: workspace.summary.pendingValue, icon: Clock3, wrap: 'bg-orange-50', color: 'text-orange-500' },
+    { id: 'pending', label: listMode === 'inbox' ? 'Awaiting my approval' : 'Pending Approval', count: workspace.summary.pendingApproval, value: workspace.summary.pendingValue, icon: Clock3, wrap: 'bg-orange-50', color: 'text-orange-500' },
     { id: 'returned', label: 'Returned', count: workspace.summary.returned, value: workspace.summary.returnedValue, icon: RotateCcw, wrap: 'bg-violet-50', color: 'text-violet-600' },
     { id: 'approved', label: 'Approved', count: workspace.summary.approved, value: workspace.summary.approvedValue, icon: CheckCircle2, wrap: 'bg-emerald-50', color: 'text-emerald-600' },
     { id: 'ready', label: 'Ready for Treasury', count: workspace.summary.readyForTreasury, value: workspace.summary.readyValue, icon: Building2, wrap: 'bg-teal-50', color: 'text-teal-600' },
@@ -1204,9 +1208,11 @@ export default function PaymentRequestsClient({
       { id: 'rejected' as TabId, label: 'Rejected', count: workspace.tabCounts.rejected },
     ] as Array<{ id: TabId; label: string; count?: number }>
   ).filter((item) => {
-    if (listMode === 'inbox') return item.id === 'pending' || item.id === 'all' || item.id === 'returned';
+    if (listMode === 'inbox') return item.id === 'pending';
     return true;
   });
+
+  const visibleKpis = listMode === 'inbox' ? kpis.filter((kpi) => kpi.id === 'pending') : kpis;
 
   return (
     <PageFrame>
@@ -1223,7 +1229,7 @@ export default function PaymentRequestsClient({
           </h1>
           <p className="mt-1 max-w-3xl text-sm text-slate-500">
             {listMode === 'inbox'
-              ? 'Requests awaiting your approval decision. Approved items move to Payment Requests.'
+              ? 'Only payments waiting for your approval. Click a card or row to open the request.'
               : listMode === 'mine'
                 ? 'Payment requests you raised — drafts, pending, returned, approved and completed.'
                 : listMode === 'approved'
@@ -1310,14 +1316,14 @@ export default function PaymentRequestsClient({
       {toast ? <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">{toast}</div> : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {kpis.map((kpi) => {
+        {visibleKpis.map((kpi) => {
           const active = detailFocus === kpi.id;
           return (
             <button
               key={kpi.id}
               type="button"
               onClick={() => selectKpi(kpi.id)}
-              className={`rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:border-[#93C5FD] hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#008FD5]/40 ${
+              className={`cursor-pointer rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:border-[#008FD5] hover:bg-[#EAF6FF] hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#008FD5]/40 ${
                 active ? 'border-[#008FD5] ring-2 ring-[#008FD5]/20' : 'border-slate-200/80'
               }`}
             >
@@ -1531,7 +1537,14 @@ export default function PaymentRequestsClient({
             const showEditReturned = canEditReturnedRow(row.requestId);
             const showSendReminder = canRemindRow(row);
             return (
-              <article key={`card-${row.requestId}`} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+              <article
+                key={`card-${row.requestId}`}
+                className="cursor-pointer rounded-xl border border-slate-200 bg-white p-3 shadow-sm hover:border-[#008FD5] hover:bg-[#EAF6FF]"
+                onClick={(event) => {
+                  if ((event.target as HTMLElement).closest('a, button')) return;
+                  router.push(`/finance/approvals/request/${row.requestId}`);
+                }}
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <Link href={`/finance/approvals/request/${row.requestId}`} className="text-sm font-semibold text-[#008FD5] hover:underline">
@@ -1620,7 +1633,14 @@ export default function PaymentRequestsClient({
                 const showEditReturned = canEditReturnedRow(row.requestId);
                 const showSendReminder = canRemindRow(row);
                 return (
-                  <tr key={row.requestId} className="border-t border-slate-100 hover:bg-slate-50/70">
+                  <tr
+                    key={row.requestId}
+                    className="cursor-pointer border-t border-slate-100 hover:bg-[#EAF6FF]"
+                    onClick={(event) => {
+                      if ((event.target as HTMLElement).closest('a, button, input')) return;
+                      router.push(`/finance/approvals/request/${row.requestId}`);
+                    }}
+                  >
                     <td className="px-3 py-2.5">
                       <div className="flex flex-col gap-1">
                         <Link href={`/finance/approvals/request/${row.requestId}`} className="font-semibold text-[#008FD5] hover:underline">

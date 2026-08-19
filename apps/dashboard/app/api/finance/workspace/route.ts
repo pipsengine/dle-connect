@@ -1,4 +1,7 @@
+import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import { isMdCeoActor } from '@/lib/finance-intelligence/payment-access';
 import {
   buildFinanceApprovalCentre,
   buildFinanceBadges,
@@ -9,13 +12,30 @@ import {
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 
+const resolveBadgeActor = async () => {
+  const jar = await cookies();
+  const token = jar.get(AUTH_COOKIE)?.value;
+  const session = token ? await verifySessionToken(token) : null;
+  const actorCode = String(session?.employeeCode || session?.employeeId || session?.username || session?.sub || '').trim();
+  const actor = {
+    actorCode,
+    roles: session?.roles || [],
+    isGlobalAdmin: Boolean(session?.isGlobalAdmin),
+  };
+  return {
+    actorCode,
+    includeMdCeoStage: isMdCeoActor(actor),
+  };
+};
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const view = String(searchParams.get('view') || 'command-centre');
 
     if (view === 'badges') {
-      return jsonOk(await buildFinanceBadges());
+      const actor = await resolveBadgeActor();
+      return jsonOk(await buildFinanceBadges(actor));
     }
     if (view === 'approval-centre') {
       return jsonOk(await buildFinanceApprovalCentre());

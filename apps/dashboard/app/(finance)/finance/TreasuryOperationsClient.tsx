@@ -166,10 +166,10 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
   }, [page, totalPages]);
 
   const kpis = [
-    { label: 'Ready to pay', value: String(workspace.summary.readyToPay), detail: money(workspace.summary.readyValue), icon: Wallet, wrap: 'bg-teal-50', color: 'text-teal-600' },
-    { label: 'Paid today', value: String(workspace.summary.paidToday), detail: money(workspace.summary.paidTodayValue), icon: Banknote, wrap: 'bg-emerald-50', color: 'text-emerald-600' },
-    { label: 'Awaiting retirement', value: String(workspace.summary.awaitingRetirement), detail: 'Cash advances', icon: Clock3, wrap: 'bg-amber-50', color: 'text-amber-600' },
-    { label: 'Retirement to verify', value: String(workspace.summary.retirementToVerify), detail: 'Acknowledge / return', icon: ShieldCheck, wrap: 'bg-violet-50', color: 'text-violet-600' },
+    { id: 'ready' as TabId, label: 'Ready to pay', value: String(workspace.summary.readyToPay), detail: money(workspace.summary.readyValue), icon: Wallet, wrap: 'bg-teal-50', color: 'text-teal-600' },
+    { id: 'paidToday' as TabId, label: 'Paid today', value: String(workspace.summary.paidToday), detail: money(workspace.summary.paidTodayValue), icon: Banknote, wrap: 'bg-emerald-50', color: 'text-emerald-600' },
+    { id: 'awaiting' as TabId, label: 'Awaiting retirement', value: String(workspace.summary.awaitingRetirement), detail: 'Cash advances', icon: Clock3, wrap: 'bg-amber-50', color: 'text-amber-600' },
+    { id: 'verify' as TabId, label: 'Retirement to verify', value: String(workspace.summary.retirementToVerify), detail: 'Acknowledge / return', icon: ShieldCheck, wrap: 'bg-violet-50', color: 'text-violet-600' },
   ];
 
   return (
@@ -190,7 +190,17 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((card) => (
-          <article key={card.label} className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+          <button
+            key={card.label}
+            type="button"
+            onClick={() => {
+              setTab(card.id);
+              document.getElementById('treasury-payments-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
+            className={`cursor-pointer rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:border-[#008FD5] hover:bg-[#EAF6FF] hover:shadow-md ${
+              tab === card.id ? 'border-[#008FD5] ring-2 ring-[#008FD5]/20' : 'border-slate-200/80'
+            }`}
+          >
             <div className="flex items-start justify-between gap-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{card.label}</p>
               <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl ${card.wrap}`}>
@@ -199,11 +209,11 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
             </div>
             <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{card.value}</p>
             <p className="mt-1 text-xs text-slate-500">{card.detail}</p>
-          </article>
+          </button>
         ))}
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+      <section id="treasury-payments-list" className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3">
           <div className="flex flex-wrap gap-2">
           {([
@@ -235,7 +245,14 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
             </thead>
             <tbody>
               {filteredRows.length ? pageRows.map((row) => (
-                <tr key={row.requestId} className="border-t border-slate-100">
+                <tr
+                  key={row.requestId}
+                  className="cursor-pointer border-t border-slate-100 hover:bg-[#EAF6FF]"
+                  onClick={(event) => {
+                    if ((event.target as HTMLElement).closest('button')) return;
+                    void openDetail(row);
+                  }}
+                >
                   <td className="px-3 py-2.5 font-semibold text-slate-800">{row.requestNumber}</td>
                   <td className="px-3 py-2.5">{row.paymentType.replace(' Payment', '')}</td>
                   <td className="px-3 py-2.5">{row.beneficiaryName}</td>

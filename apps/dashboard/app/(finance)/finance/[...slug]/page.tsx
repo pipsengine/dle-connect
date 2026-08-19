@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { FINANCE_PAGES, resolveFinancePage } from '@/lib/finance-intelligence/nav';
-import { buildFinanceApprovalCentre, buildFinanceCommandCentre } from '@/lib/finance-intelligence/store';
+import { buildFinanceCommandCentre } from '@/lib/finance-intelligence/store';
 import {
   buildCashAdvanceControlsWorkspace,
   buildEmployeePaymentDashboard,
@@ -13,9 +13,10 @@ import { buildApprovalMatrixWorkspace } from '@/lib/finance-intelligence/approva
 import { buildApprovalDelegationWorkspace } from '@/lib/finance-intelligence/approval-delegation-service';
 import {
   canAccessFinancePaymentPage,
-  canActOnPaymentApproval,
   canEditReturnedPaymentRequest,
   canViewAllPaymentRequests,
+  isAssignedPaymentApprover,
+  isMdCeoActor,
 } from '@/lib/finance-intelligence/payment-access';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { permissionsForRoles } from '@/lib/auth/rbac';
@@ -100,23 +101,19 @@ export default async function FinanceCatchAllPage({ params, searchParams }: Prop
   const commandCentre = page.kind === 'command-centre' && viewAllPayments
     ? await buildFinanceCommandCentre().catch(() => null)
     : null;
-  const approvalCentre = page.kind === 'approvals-dashboard' && viewAllPayments
-    ? await buildFinanceApprovalCentre().catch(() => null)
-    : null;
-  const employeePaymentDashboard = page.kind === 'approvals-dashboard' && paymentSelfService
+  const approvalCentre = null;
+  const employeePaymentDashboard = page.kind === 'approvals-dashboard'
     ? await buildEmployeePaymentDashboard(actor.actorCode).catch(() => null)
     : null;
 
   const paymentRequestsRaw = page.kind === 'payment-requests'
     ? await buildPaymentRequestsWorkspace({
       paymentType: initialPaymentType === 'All' ? undefined : initialPaymentType,
-      // Finance / Global Super Admin → all. Everyone else on Payment Requests / My Requests → own raised only.
-      // Inbox → own + assigned as current approver / beneficiary.
-      mineFor: viewAllPayments
-        ? (mineOnlyPage ? actor.actorCode : undefined)
-        : (inboxPage ? undefined : actor.actorCode),
-      scopedToActorCode: !viewAllPayments && inboxPage ? actor.actorCode : undefined,
-      restrictToActor: !viewAllPayments,
+      // Finance / Global Super Admin → all except Inbox. Inbox is always "awaiting me".
+      mineFor: inboxPage ? undefined : (viewAllPayments ? (mineOnlyPage ? actor.actorCode : undefined) : actor.actorCode),
+      awaitingApproverCode: inboxPage ? actor.actorCode : undefined,
+      includeMdCeoStage: inboxPage && isMdCeoActor(actor),
+      restrictToActor: inboxPage || !viewAllPayments,
     }).catch(() => null)
     : null;
   const paymentRequests = paymentRequestsRaw
@@ -126,7 +123,7 @@ export default async function FinanceCatchAllPage({ params, searchParams }: Prop
         actorCode: actor.actorCode,
         canViewAll: viewAllPayments,
         approvableRequestIds: paymentRequestsRaw.rows
-          .filter((row) => canActOnPaymentApproval(actor, row))
+          .filter((row) => isAssignedPaymentApprover(actor, row))
           .map((row) => row.requestId),
         editableReturnedRequestIds: paymentRequestsRaw.rows
           .filter((row) => canEditReturnedPaymentRequest(actor, row))
@@ -180,12 +177,12 @@ export default async function FinanceCatchAllPage({ params, searchParams }: Prop
     })
     .filter((item): item is { href: string; title: string; description: string } => Boolean(item));
 
-  const pageForClient = paymentSelfService && page.kind === 'approvals-dashboard'
+  const pageForClient = page.kind === 'approvals-dashboard'
     ? {
       ...page,
-      title: 'My Payments',
-      description: 'Your payment requests, cash advances, and items awaiting your approval.',
-      breadcrumbs: ['Payment Management', 'My Payments'],
+      title: paymentSelfService ? 'My Payments' : 'My Approval Dashboard',
+      description: 'Payments waiting for your approval, plus requests you raised.',
+      breadcrumbs: ['Payment Management', paymentSelfService ? 'My Payments' : 'My Approval Dashboard'],
     }
     : page;
 

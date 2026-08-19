@@ -9,6 +9,8 @@ import {
   canEditReturnedPaymentRequest,
   canSubmitCashAdvanceRetirement,
   canViewAllPaymentRequests,
+  isAssignedPaymentApprover,
+  isMdCeoActor,
   isPaymentRequesterOnly,
 } from '@/lib/finance-intelligence/payment-access';
 import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
@@ -63,11 +65,10 @@ const buildViewerPaymentWorkspace = async (
   const actorCode = String(actor.actorCode || '').trim();
   const workspace = await buildPaymentRequestsWorkspace({
     paymentType: options?.paymentType,
-    // Finance "My Requests" or any non–view-all (non-inbox) list → requester only.
     mineFor: (mineOnly || (!viewAll && !inboxOnly)) ? actorCode : undefined,
-    // Non-finance inbox → own + current approver + beneficiary.
-    scopedToActorCode: (!viewAll && inboxOnly && !mineOnly) ? actorCode : undefined,
-    restrictToActor: !viewAll,
+    awaitingApproverCode: inboxOnly && !mineOnly ? actorCode : undefined,
+    includeMdCeoStage: inboxOnly && !mineOnly && isMdCeoActor(actor),
+    restrictToActor: inboxOnly || !viewAll,
   });
   return {
     ...workspace,
@@ -75,7 +76,7 @@ const buildViewerPaymentWorkspace = async (
       actorCode: actor.actorCode,
       canViewAll: viewAll,
       approvableRequestIds: workspace.rows
-        .filter((row) => canActOnPaymentApproval(actor, row))
+        .filter((row) => isAssignedPaymentApprover(actor, row))
         .map((row) => row.requestId),
       editableReturnedRequestIds: workspace.rows
         .filter((row) => canEditReturnedPaymentRequest(actor, row))

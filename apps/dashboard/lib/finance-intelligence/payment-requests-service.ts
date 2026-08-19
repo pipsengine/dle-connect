@@ -522,6 +522,10 @@ const listRows = async (input?: {
   mineFor?: string;
   /** When set without view-all rights, restrict to requester / approver / beneficiary. */
   scopedToActorCode?: string;
+  /** Inbox: only pending items assigned to this approver. */
+  awaitingApproverCode?: string;
+  /** Inbox for MD/CEO: also include the MD/CEO stage even if the seat code differs. */
+  includeMdCeoStage?: boolean;
   /** When true, never return unscoped rows (fail closed). */
   requireActorScope?: boolean;
 }): Promise<PaymentRequestRow[]> => {
@@ -538,9 +542,16 @@ const listRows = async (input?: {
       request.input('status', sql.NVarChar(40), input.status);
       where += ' AND [Status] = @status';
     }
+    const awaitingApprover = compact(input?.awaitingApproverCode);
     const mineFor = compact(input?.requesterCode || input?.mineFor);
     const scopedActor = compact(input?.scopedToActorCode);
-    if (mineFor) {
+    if (awaitingApprover) {
+      request.input('approver', sql.NVarChar(60), awaitingApprover);
+      where += ` AND [Status] IN (N'Pending Approval', N'Submitted', N'Finance Review') AND (
+  [CurrentApproverCode] = @approver
+  ${input?.includeMdCeoStage ? `OR [CurrentApproverCode] = N'P0413' OR LOWER(ISNULL([CurrentStage], N'')) LIKE N'%md%' OR LOWER(ISNULL([CurrentStage], N'')) LIKE N'%managing director%'` : ''}
+)`;
+    } else if (mineFor) {
       request.input('requester', sql.NVarChar(60), mineFor);
       where += ' AND [RequesterCode] = @requester';
     } else if (scopedActor) {
@@ -1272,16 +1283,21 @@ export const buildPaymentRequestsWorkspace = async (input?: {
   mineFor?: string;
   /** Non-elevated users: only own / assigned / beneficiary rows. */
   scopedToActorCode?: string;
+  awaitingApproverCode?: string;
+  includeMdCeoStage?: boolean;
   /** When true, never return the unscoped enterprise queue (missing actor code → empty). */
   restrictToActor?: boolean;
 }): Promise<PaymentRequestsWorkspace> => {
   await migrateLegacyExpensePayments();
   const mineFor = compact(input?.mineFor);
   const scopedToActorCode = compact(input?.scopedToActorCode);
+  const awaitingApproverCode = compact(input?.awaitingApproverCode);
   const rows = await listRows({
     paymentType: input?.paymentType,
     mineFor: mineFor || undefined,
     scopedToActorCode: scopedToActorCode || undefined,
+    awaitingApproverCode: awaitingApproverCode || undefined,
+    includeMdCeoStage: Boolean(input?.includeMdCeoStage),
     requireActorScope: Boolean(input?.restrictToActor),
   });
 

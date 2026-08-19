@@ -137,8 +137,8 @@ export function FinanceListPagination({
             key={item}
             type="button"
             onClick={() => onPageChange(item)}
-            className={`inline-flex h-8 min-w-[32px] items-center justify-center rounded-lg px-2 text-xs font-semibold ${
-              item === safePage ? 'bg-[#008FD5] text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+            className={`inline-flex h-8 min-w-[32px] cursor-pointer items-center justify-center rounded-lg px-2 text-xs font-semibold ${
+              item === safePage ? 'bg-[#008FD5] text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-[#EAF6FF]'
             }`}
           >
             {item}

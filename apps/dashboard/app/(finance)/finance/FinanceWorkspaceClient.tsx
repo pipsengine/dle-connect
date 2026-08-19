@@ -480,7 +480,11 @@ function ApprovalsDashboard({ snapshot }: { snapshot?: FinanceApprovalCentreSnap
           const meta = kpiIcons[kpi.id] || { icon: Inbox, wrap: 'bg-slate-50', color: 'text-slate-500' };
           const Icon = meta.icon;
           return (
-            <article key={kpi.id} className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+            <Link
+              key={kpi.id}
+              href={kpi.id === 'pending-mine' || kpi.id === 'overdue' || kpi.id === 'high-value' ? '/finance/approvals/inbox' : kpi.id === 'returned' ? '/finance/approvals/my-requests?tab=returned' : kpi.id === 'awaiting-release' ? '/finance/approvals/payments?tab=ready' : kpi.id === 'approved-today' ? '/finance/approvals/payments?tab=approved' : kpi.id === 'rejected-month' ? '/finance/approvals/payments?tab=rejected' : '/finance/approvals/inbox'}
+              className="cursor-pointer rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition hover:border-[#008FD5] hover:bg-[#EAF6FF] hover:shadow-md"
+            >
               <div className="flex items-start justify-between gap-2">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">{kpi.label}</p>
                 <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl ${meta.wrap}`}>
@@ -491,7 +495,7 @@ function ApprovalsDashboard({ snapshot }: { snapshot?: FinanceApprovalCentreSnap
                 {kpi.primary}
               </p>
               <p className="mt-2 text-xs font-medium text-slate-500">{kpi.secondary}</p>
-            </article>
+            </Link>
           );
         })}
       </div>
