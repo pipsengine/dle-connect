@@ -65,7 +65,7 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
-import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, timesheetShiftHeaderSlug, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, buildManualOffshoreLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, hasDayShiftDuration, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetShiftHeaderSlug, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { mobilizationCoversDate, mobilizationMatchesSupervisor, readTimesheetMobilizations, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
 
@@ -1204,22 +1204,47 @@ const buildPayload = async (
   if (!requestedHeader || !isOffshoreSheet) {
     lines = lines.filter(lineBelongsToSelectedCrew);
   }
-  if (!requestedHeader && !isOffshoreSheet) {
-    const shiftKind = resolveTimesheetShift(targetShiftForSheet).kind;
-    if (shiftKind === 'Night') {
-      const dayDurationKeys = new Set<string>();
-      for (const other of headers) {
-        if (other.timesheetDate !== targetDate) continue;
-        if (resolveTimesheetShift(other.shiftLabel).kind === 'Night') continue;
-        for (const line of allLines) {
-          if (line.headerId !== other.id) continue;
-          if (!hasDayShiftDuration(line.clockIn, line.clockOut)) continue;
-          matchKeys(line.employeeNo, line.employeeId, line.employeeName).forEach((key) => dayDurationKeys.add(key));
-        }
-      }
-      lines = lines.filter((line) => !matchKeys(line.employeeNo, line.employeeId, line.employeeName).some((key) => dayDurationKeys.has(key)));
+
+  if (!isOffshoreSheet && targetWorkCenter && targetSupervisor) {
+    const workCenterId = targetWorkCenter.toLowerCase().replace(/\s+/g, '-');
+    const supervisorSlug = targetSupervisor.toLowerCase().replace(/\s+/g, '-');
+    const shiftSlug = timesheetShiftHeaderSlug(targetShiftForSheet);
+    let persistRoster = false;
+    if (!header) {
+      header = {
+        id: `hdr-${targetDate}-${supervisorSlug}-${workCenterId}-${shiftSlug}`,
+        periodId: period.id,
+        timesheetDate: targetDate,
+        supervisorId: targetSupervisor,
+        supervisorName: selectedSupervisorProfile ? supervisorDisplay(selectedSupervisorProfile) : targetSupervisor,
+        workCenterId,
+        workCenterName: targetWorkCenter,
+        status: 'Draft',
+        submittedAt: null,
+        submittedBy: null,
+        approvedAt: null,
+        approvedBy: null,
+        lastSyncAt: null,
+        shiftLabel: targetShiftForSheet,
+      };
+      persistRoster = true;
     }
-    lines = lines.filter((line) => timesheetLineMatchesShift(line.clockIn, targetShiftForSheet, line.clockOut));
+    const existingKeys = new Set(lines.flatMap((line) => matchKeys(line.employeeNo, line.employeeId, line.employeeName)));
+    for (const employee of selectedSupervisorEmployees) {
+      const keys = matchKeys(employee.employeeCode, employee.fullName);
+      if (keys.some((key) => existingKeys.has(key))) continue;
+      persistRoster = true;
+      lines.push(buildRosterTimesheetLine({
+        headerId: header.id,
+        employeeId: employee.employeeId || employee.employeeCode,
+        employeeNo: employee.employeeCode,
+        employeeName: employee.fullName,
+      }));
+      keys.forEach((key) => existingKeys.add(key));
+    }
+    if (persistRoster && period.status === 'Open' && isTimesheetEditableStatus(header.status)) {
+      await writeTimesheetHeaderLines(header, lines);
+    }
   }
 
   if (isOffshoreSheet) {
@@ -1524,7 +1549,7 @@ export async function PATCH(request: Request) {
       if (payload.headerId) {
         const { headers } = await readTimesheetData();
         const existing = headers.find((item) => item.id === payload.headerId);
-        if (existing) {
+        if (existing && (!date || existing.timesheetDate === date)) {
           scopedDate = existing.timesheetDate;
           scopedSupervisorId = existing.supervisorId;
           scopedWorkCenterName = existing.workCenterName;

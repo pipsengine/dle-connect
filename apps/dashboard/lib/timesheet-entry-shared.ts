@@ -865,6 +865,33 @@ export const isTimesheetAbsentLine = (line: {
 }) =>
   !String(line.clockIn || '').trim() && !isManualOffshoreLine(line);
 
+export const buildRosterTimesheetLine = (input: {
+  headerId: string;
+  employeeId: string;
+  employeeNo: string;
+  employeeName: string;
+}): TimesheetLine => ({
+  id: `line-${input.headerId}-${String(input.employeeNo || input.employeeId).replace(/[^A-Za-z0-9]/g, '')}`,
+  headerId: input.headerId,
+  employeeId: input.employeeId,
+  employeeNo: input.employeeNo,
+  employeeName: input.employeeName,
+  biometricId: '',
+  attendanceId: null,
+  clockIn: null,
+  clockOut: null,
+  attendanceDuration: 0,
+  projectAllocations: [],
+  idleAllocations: [],
+  usedHours: 0,
+  idleHours: 0,
+  totalHours: 0,
+  variance: 0,
+  remarks: null,
+  validationStatus: 'Incomplete',
+  validationMessage: 'Awaiting time allocation.',
+});
+
 export const buildManualOffshoreLine = (input: {
   headerId: string;
   employeeId: string;

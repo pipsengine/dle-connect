@@ -35,7 +35,7 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetLineMatchesShift, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import { TimesheetEntryEnterpriseView } from './TimesheetEntryEnterpriseView';
@@ -1300,7 +1300,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     setLocalLines(nextLines);
   };
 
-  const shiftLines = requestedHeaderId
+  const shiftLines = payload?.header && timesheetHeaderMatchesShift(payload.header.shiftLabel, selectedShift)
     ? localLines
     : localLines.filter((line) => timesheetLineMatchesShift(line.clockIn, selectedShift, line.clockOut));
   const filteredLines = shiftLines.filter((l) =>
@@ -1573,6 +1573,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
               return;
             }
             const shift = resolveTimesheetShift(value);
+            setRequestedHeaderId('');
             setSelectedShift(shift.label);
             setNotice(
               shift.kind === 'Night'
@@ -1586,7 +1587,6 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 action: 'SET_SHIFT',
-                headerId: payload?.header?.id,
                 date: selectedDate,
                 supervisorId: selectedSupervisor,
                 locationName: selectedLocation,
@@ -1599,6 +1599,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
               if (res.ok && json?.status === 'success' && json.data) {
                 setPayload(json.data);
                 setLocalLines(json.data.lines);
+                if (json.data.header?.id) setRequestedHeaderId(json.data.header.id);
                 if (json.data.header?.shiftLabel) {
                   setSelectedShift(resolveTimesheetShift(json.data.header.shiftLabel).label);
                 }
