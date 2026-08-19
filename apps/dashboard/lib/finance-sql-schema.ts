@@ -371,6 +371,25 @@ WHEN NOT MATCHED THEN INSERT (
   source.[MinAmount], source.[MaxAmount], source.[ApprovalLevel], source.[ApproverRoles], source.[StagesJson],
   N''NGN'', 0, N''Active'', 1, N''System Seed'', N''System Seed''
 );
+
+-- MERGE is insert-only; restore MD/CEO on existing high-band rows seeded without it.
+UPDATE [finance].[ApprovalMatrix]
+SET [ApprovalLevel] = 4,
+    [ApproverRoles] = N''Reporting Manager → Finance Manager → CFO → MD/CEO'',
+    [StagesJson] = N''["Reporting Manager","Finance Manager","CFO","MD/CEO"]'',
+    [UpdatedBy] = N''System Seed'',
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [MatrixId] = N''LIM-NONPROJ-OPEN''
+  AND CHARINDEX(N''MD/CEO'', ISNULL([StagesJson], N'''')) = 0;
+
+UPDATE [finance].[ApprovalMatrix]
+SET [ApprovalLevel] = 6,
+    [ApproverRoles] = N''Project Manager → Cost Controller → Finance Manager → GM → CFO → MD/CEO'',
+    [StagesJson] = N''["Project Manager","Cost Controller","Finance Manager","GM","CFO","MD/CEO"]'',
+    [UpdatedBy] = N''System Seed'',
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [MatrixId] = N''LIM-PROJ-OPEN''
+  AND CHARINDEX(N''MD/CEO'', ISNULL([StagesJson], N'''')) = 0;
 ');
 END
 

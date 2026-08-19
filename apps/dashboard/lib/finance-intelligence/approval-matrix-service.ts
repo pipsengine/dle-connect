@@ -276,9 +276,9 @@ export const DEFAULT_APPROVAL_LIMIT_RULES: Array<Omit<UpsertApprovalRuleInput, '
     pathType: 'Non-project',
     minAmount: 1000000.01,
     maxAmount: null,
-    approvalLevel: 3,
-    stages: ['Reporting Manager', 'Finance Manager', 'CFO'],
-    approverRoles: 'Reporting Manager → Finance Manager → CFO',
+    approvalLevel: 4,
+    stages: ['Reporting Manager', 'Finance Manager', 'CFO', 'MD/CEO'],
+    approverRoles: 'Reporting Manager → Finance Manager → CFO → MD/CEO',
     status: 'Active',
   },
   {
@@ -309,9 +309,9 @@ export const DEFAULT_APPROVAL_LIMIT_RULES: Array<Omit<UpsertApprovalRuleInput, '
     pathType: 'Project',
     minAmount: 5000000.01,
     maxAmount: null,
-    approvalLevel: 5,
-    stages: ['Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO'],
-    approverRoles: 'Project Manager → Cost Controller → Finance Manager → GM → CFO',
+    approvalLevel: 6,
+    stages: ['Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO', 'MD/CEO'],
+    approverRoles: 'Project Manager → Cost Controller → Finance Manager → GM → CFO → MD/CEO',
     status: 'Active',
   },
 ];
@@ -348,7 +348,9 @@ export const isProjectPaymentPath = (input: {
 }) => {
   if (input.projectDepartment) return true;
   if (compact(input.projectCode)) return true;
-  if (/project/i.test(compact(input.department))) return true;
+  const department = compact(input.department);
+  if (/non[-\s]?project/i.test(department)) return false;
+  if (/project/i.test(department)) return true;
   return false;
 };
 
@@ -520,18 +522,18 @@ USING (VALUES
   (N'LIM-NONPROJ-1M', N'NONPROJ_LE_1M', N'Employee Payment', N'Non-project', CAST(200000.01 AS DECIMAL(19,4)), CAST(1000000 AS DECIMAL(19,4)), 3,
    N'Reporting Manager → Finance Manager → CFO',
    N'["Reporting Manager","Finance Manager","CFO"]'),
-  (N'LIM-NONPROJ-OPEN', N'NONPROJ_GT_1M', N'Employee Payment', N'Non-project', CAST(1000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 3,
-   N'Reporting Manager → Finance Manager → CFO',
-   N'["Reporting Manager","Finance Manager","CFO"]'),
+  (N'LIM-NONPROJ-OPEN', N'NONPROJ_GT_1M', N'Employee Payment', N'Non-project', CAST(1000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 4,
+   N'Reporting Manager → Finance Manager → CFO → MD/CEO',
+   N'["Reporting Manager","Finance Manager","CFO","MD/CEO"]'),
   (N'LIM-PROJ-200K', N'PROJ_LE_200K', N'Employee Payment', N'Project', CAST(0 AS DECIMAL(19,4)), CAST(200000 AS DECIMAL(19,4)), 3,
    N'Project Manager → Cost Controller → Finance Manager',
    N'["Project Manager","Cost Controller","Finance Manager"]'),
   (N'LIM-PROJ-5M', N'PROJ_LE_5M', N'Employee Payment', N'Project', CAST(200000.01 AS DECIMAL(19,4)), CAST(5000000 AS DECIMAL(19,4)), 5,
    N'Project Manager → Cost Controller → Finance Manager → GM → CFO',
    N'["Project Manager","Cost Controller","Finance Manager","GM","CFO"]'),
-  (N'LIM-PROJ-OPEN', N'PROJ_GT_5M', N'Employee Payment', N'Project', CAST(5000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 5,
-   N'Project Manager → Cost Controller → Finance Manager → GM → CFO',
-   N'["Project Manager","Cost Controller","Finance Manager","GM","CFO"]')
+  (N'LIM-PROJ-OPEN', N'PROJ_GT_5M', N'Employee Payment', N'Project', CAST(5000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 6,
+   N'Project Manager → Cost Controller → Finance Manager → GM → CFO → MD/CEO',
+   N'["Project Manager","Cost Controller","Finance Manager","GM","CFO","MD/CEO"]')
 ) AS source (
   [MatrixId], [RuleName], [PaymentType], [PathType], [MinAmount], [MaxAmount], [ApprovalLevel], [ApproverRoles], [StagesJson]
 )
@@ -821,21 +823,32 @@ export const isMdCeoEmployee = (employee?: {
 const stripAutomaticMdStages = (stages: string[]) =>
   stages.filter((stage) => !/md\s*\/?\s*ceo|managing\s*director/i.test(compact(stage)));
 
+const isLineManagerStage = (stage: string) =>
+  /reporting manager|line manager|^supervisor$|supervisor\b/i.test(compact(stage));
+
+/** Project over ₦5m and non-project over ₦1m always require MD/CEO after CFO. */
+export const bandRequiresMdCeo = (pathType: ApprovalPathType | string | null | undefined, amountNgn: number) => {
+  const amount = moneyRound2(amountNgn);
+  return normalizePathType(pathType) === 'Project' ? amount > 5000000 : amount > 1000000;
+};
+
 /**
- * MD/CEO is not in default amount bands.
- * Only when MD is the requester's line manager AND amount > 200,000 NGN:
- * - MD must approve last (MD/CEO stage appended)
- * - MD must not approve first as Reporting Manager
+ * High bands always keep MD/CEO last (never stripped).
+ * Lower bands: MD/CEO is added only when MD is the requester's line/reporting manager,
+ * including ≤ ₦200k — skip Reporting Manager and put MD/CEO last (never first).
  */
 export const applyMdLineManagerLastApproverRule = async (input: {
   stages: string[];
   amountNgn: number;
+  pathType?: ApprovalPathType | string | null;
   requesterCode?: string | null;
   supervisorName?: string | null;
 }): Promise<string[]> => {
-  let stages = stripAutomaticMdStages([...(input.stages || [])].map((stage) => compact(stage)).filter(Boolean));
-  if (moneyRound2(input.amountNgn) <= 200000) return stages;
+  let stages = [...(input.stages || [])].map((stage) => compact(stage)).filter(Boolean);
+  const pathType = normalizePathType(input.pathType);
+  const mdRequiredByBand = bandRequiresMdCeo(pathType, input.amountNgn);
 
+  let mdIsLineManager = false;
   try {
     const { readDirectoryEmployees } = await import('@/lib/payroll-employee-source');
     const { resolveLineManagerForEmployee } = await import('@/lib/leave-workflow-service');
@@ -857,17 +870,21 @@ export const applyMdLineManagerLastApproverRule = async (input: {
       lineManagerEmployee = employees.find((employee) =>
         compact(employee.fullName).toLowerCase() === supervisor) || null;
     }
-    if (!isMdCeoEmployee(lineManagerEmployee)) return stages;
-
-    stages = stages.filter((stage) => !/reporting manager|line manager|supervisor|lead/i.test(stage));
-    if (!stages.some((stage) => /md\s*\/?\s*ceo/i.test(stage))) {
-      stages.push('MD/CEO');
-    }
-    return stages;
+    mdIsLineManager = isMdCeoEmployee(lineManagerEmployee);
   } catch (error) {
     console.error('[approval-limits] MD line-manager rule failed', error);
+  }
+
+  if (mdIsLineManager) {
+    stages = stages.filter((stage) => !isLineManagerStage(stage));
+  }
+  if (mdRequiredByBand || mdIsLineManager) {
+    stages = stripAutomaticMdStages(stages);
+    if (!stages.length) stages.push('Finance Manager');
+    stages.push('MD/CEO');
     return stages;
   }
+  return stripAutomaticMdStages(stages);
 };
 
 /** Resolve full sequential approval chain for an employee payment (advance or supplier). */
@@ -906,6 +923,7 @@ export const resolveApprovalChain = async (input: {
   const stages = await applyMdLineManagerLastApproverRule({
     stages: match.stages,
     amountNgn: converted.amountNgn,
+    pathType,
     requesterCode: input.requesterCode,
     supervisorName: input.supervisorName,
   });

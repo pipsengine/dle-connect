@@ -1,7 +1,7 @@
 import sql from 'mssql';
 import path from 'node:path';
 import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
-import { convertAmountToNgn, resolveApprovalChain, applyMdLineManagerLastApproverRule } from '@/lib/finance-intelligence/approval-matrix-service';
+import { convertAmountToNgn, resolveApprovalChain, applyMdLineManagerLastApproverRule, bandRequiresMdCeo, isProjectPaymentPath } from '@/lib/finance-intelligence/approval-matrix-service';
 import {
   notifyPaymentApprovalRequired,
   notifyPaymentDecision,
@@ -345,14 +345,16 @@ const resolveInitialStage = async (
   }
 
   // Safe fallback if matrix unavailable — still convert for consistent NGN routing metadata.
-  // MD/CEO is not in default bands; applied only when MD is line manager and amount > 200k.
   const converted = await convertAmountToNgn(amount, context?.currencyCode || 'NGN').catch(() => ({
     amountNgn: amount,
     fxRate: 1,
     fxRateDate: new Date().toISOString().slice(0, 10),
     fxSource: 'Fallback',
   }));
-  const isProject = Boolean(context?.projectCode) || /project/i.test(context?.department || '');
+  const isProject = isProjectPaymentPath({
+    department: context?.department,
+    projectCode: context?.projectCode,
+  });
   const amountNgn = Number(converted.amountNgn || amount || 0);
   let fallbackStages: string[];
   let matrixRuleName: string | null = null;
@@ -364,7 +366,7 @@ const resolveInitialStage = async (
       fallbackStages = ['Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO'];
       matrixRuleName = 'PROJ_LE_5M';
     } else {
-      fallbackStages = ['Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO'];
+      fallbackStages = ['Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO', 'MD/CEO'];
       matrixRuleName = 'PROJ_GT_5M';
     }
   } else if (amountNgn <= 200000) {
@@ -374,12 +376,13 @@ const resolveInitialStage = async (
     fallbackStages = ['Reporting Manager', 'Finance Manager', 'CFO'];
     matrixRuleName = 'NONPROJ_LE_1M';
   } else {
-    fallbackStages = ['Reporting Manager', 'Finance Manager', 'CFO'];
+    fallbackStages = ['Reporting Manager', 'Finance Manager', 'CFO', 'MD/CEO'];
     matrixRuleName = 'NONPROJ_GT_1M';
   }
   fallbackStages = await applyMdLineManagerLastApproverRule({
     stages: fallbackStages,
     amountNgn,
+    pathType: isProject ? 'Project' : 'Non-project',
     requesterCode: context?.requesterCode,
     supervisorName: context?.supervisorName,
   });
@@ -1281,6 +1284,36 @@ export const buildPaymentRequestsWorkspace = async (input?: {
     scopedToActorCode: scopedToActorCode || undefined,
     requireActorScope: Boolean(input?.restrictToActor),
   });
+
+  // Repair stored chains so Project > ₦5m / Non-project > ₦1m (and CFO > ₦5m) cannot skip MD/CEO.
+  for (const row of rows) {
+    if (!['Pending Approval', 'Submitted', 'Finance Review'].includes(row.status)) continue;
+    const stages = stagesFromPayload(row.payload);
+    const hasMd = stages.some((stage) => /md\s*\/?\s*ceo|managing director/i.test(stage));
+    if (hasMd) continue;
+    let amountNgn = Number(row.payload?.amountNgn || 0);
+    if (!(amountNgn > 0)) {
+      const currency = compact(row.currencyCode).toUpperCase() || 'NGN';
+      if (currency !== 'NGN') {
+        try {
+          const converted = await convertAmountToNgn(row.netAmount, currency);
+          amountNgn = Number(converted.amountNgn || 0);
+        } catch {
+          amountNgn = Number(row.netAmount || 0);
+        }
+      } else {
+        amountNgn = Number(row.netAmount || 0);
+      }
+    }
+    const pathType = compact(row.payload?.pathType) || (compact(row.projectCode) ? 'Project' : 'Non-project');
+    const atCfoOver5m = /cfo/i.test(row.currentStage) && amountNgn > 5000000;
+    if (!bandRequiresMdCeo(pathType, amountNgn) && !atCfoOver5m) continue;
+    try {
+      await ensureApprovalStages(row);
+    } catch (error) {
+      console.error('[payment-requests] MD/CEO chain repair failed', row.requestNumber, error);
+    }
+  }
 
   // Backfill prevailing FX metadata for foreign-currency rows missing conversion fields
   // (or still on obsolete system seed rates).
