@@ -3514,51 +3514,46 @@ export async function syncAttendanceForTimesheet(
     candidate.payrollEmployee?.displayName,
   ].flatMap((value) => attendanceMatchKeys(value));
 
-  // Night: only sequentially paired overnight sessions (evening in, morning out).
-  // Day: keep full assigned roster; absent rows stay for booking visibility.
+  const rosterPlaceholder = (employee: { employeeCode: string; fullName: string }) => ({
+    attendance: {
+      id: `no-att-${shift.kind.toLowerCase()}-${date}-${employee.employeeCode}`,
+      employeeId: employee.employeeCode,
+      employeeName: employee.fullName,
+      businessUnit: '',
+      department: '',
+      jobTitle: '',
+      location: locationName || '',
+      site: workCenterName,
+      shift: shift.kind,
+      status: 'Absent' as const,
+      checkInTime: null,
+      checkOutTime: null,
+      scheduledStart: shift.start,
+      scheduledEnd: shift.end,
+      minutesLate: 0,
+      overtimeHours: 0,
+      biometricSource: 'Supervisor Override' as const,
+      supervisor: supervisorId,
+      punchCount: 0,
+    },
+    payrollEmployee: undefined,
+  });
   const isNightAttendance = (candidate: (typeof attendanceCandidates)[number]) =>
     isNightShiftEligibleAttendance(candidate.attendance.checkInTime, candidate.attendance.checkOutTime);
-  let attendanceForDay = shift.kind === 'Night'
-    ? (
-      assignedSupervisorEmployees.length
-        ? assignedSupervisorEmployees
-          .map((employee) => {
-            const employeeKeys = attendanceMatchKeys(employee.employeeCode, employee.fullName);
-            return attendanceCandidates.find((candidate) => attendanceCandidateKeys(candidate).some((key) => employeeKeys.includes(key)));
-          })
-          .filter((item): item is (typeof attendanceCandidates)[number] => Boolean(item && isNightAttendance(item)))
-        : attendanceCandidates.filter((candidate) => isNightAttendance(candidate))
-    )
+  // Night and Day both show the assigned roster so paper N/M marks can be booked.
+  // Night clocks only come from overnight pairs — day punches are not copied onto the night sheet.
+  const attendanceForDay = assignedSupervisorEmployees.length
+    ? assignedSupervisorEmployees.map((employee) => {
+        const employeeKeys = attendanceMatchKeys(employee.employeeCode, employee.fullName);
+        const matched = attendanceCandidates.find((candidate) => attendanceCandidateKeys(candidate).some((key) => employeeKeys.includes(key)));
+        if (shift.kind === 'Night') {
+          return matched && isNightAttendance(matched) ? matched : rosterPlaceholder(employee);
+        }
+        return matched || rosterPlaceholder(employee);
+      })
     : (
-      assignedSupervisorEmployees.length
-        ? assignedSupervisorEmployees.map((employee) => {
-            const employeeKeys = attendanceMatchKeys(employee.employeeCode, employee.fullName);
-            const matched = attendanceCandidates.find((candidate) => attendanceCandidateKeys(candidate).some((key) => employeeKeys.includes(key)));
-            return matched || {
-              attendance: {
-                id: `no-att-${date}-${employee.employeeCode}`,
-                employeeId: employee.employeeCode,
-                employeeName: employee.fullName,
-                businessUnit: '',
-                department: '',
-                jobTitle: '',
-                location: locationName || '',
-                site: workCenterName,
-                shift: 'Day' as const,
-                status: 'Absent' as const,
-                checkInTime: null,
-                checkOutTime: null,
-                scheduledStart: '08:00',
-                scheduledEnd: '17:00',
-                minutesLate: 0,
-                overtimeHours: 0,
-                biometricSource: 'Supervisor Override' as const,
-                supervisor: supervisorId,
-                punchCount: 0,
-              },
-              payrollEmployee: undefined,
-            };
-          })
+      shift.kind === 'Night'
+        ? attendanceCandidates.filter((candidate) => isNightAttendance(candidate))
         : supervisorScopeResolved ? [] : attendanceCandidates
     );
 
@@ -3572,11 +3567,6 @@ export async function syncAttendanceForTimesheet(
       if (!hasDayShiftDuration(line.clockIn, line.clockOut)) continue;
       attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName).forEach((key) => dayDurationKeys.add(key));
     }
-  }
-  if (shift.kind === 'Night') {
-    attendanceForDay = attendanceForDay.filter(
-      (candidate) => !attendanceCandidateKeys(candidate).some((key) => dayDurationKeys.has(key)),
-    );
   }
   const period = calculateTimesheetPeriod(new Date(date));
 
@@ -3648,10 +3638,12 @@ export async function syncAttendanceForTimesheet(
       .find(Boolean);
     
     // Attendance duration in hours (overnight-safe for night shift 18:00→02:00+). Always >= 0.
-    const fromClock = attendanceDurationFromClock(att.checkInTime, att.checkOutTime);
+    const clockIn = att.checkInTime || existingLine?.clockIn || null;
+    const clockOut = att.checkOutTime || existingLine?.clockOut || null;
+    const fromClock = attendanceDurationFromClock(clockIn, clockOut);
     const duration = fromClock !== null && fromClock > 0
       ? Math.round(Math.max(0, fromClock) * 10) / 10
-      : att.checkInTime
+      : clockIn
         ? STANDARD_TIMESHEET_HOURS
         : 0;
     const shouldAutoBookPaidLeave = Boolean(approvedLeave && !att.checkInTime && !existingLine?.totalHours);
@@ -3672,8 +3664,8 @@ export async function syncAttendanceForTimesheet(
       employeeName,
       biometricId: att.id,
       attendanceId: att.id,
-      clockIn: att.checkInTime,
-      clockOut: att.checkOutTime,
+      clockIn,
+      clockOut,
       attendanceDuration: duration,
       projectAllocations: leaveAllocation || existingLine?.projectAllocations || [],
       idleAllocations: (existingLine?.idleAllocations || []).map(withDefaultIdleReason),
@@ -3685,6 +3677,7 @@ export async function syncAttendanceForTimesheet(
       remarks: shouldAutoBookPaidLeave ? `Approved paid leave: ${approvedLeave!.startDate} to ${approvedLeave!.endDate}` : existingLine?.remarks || null,
       validationStatus: shouldAutoBookPaidLeave ? 'Valid' : 'Incomplete',
       validationMessage: shouldAutoBookPaidLeave ? 'Approved paid leave. Biometric attendance is not required for this payable leave day.' : 'Awaiting time allocation.',
+      attendanceMode: existingLine?.attendanceMode || (att.checkInTime ? 'Biometric' : undefined),
     };
     return nextLine;
   });

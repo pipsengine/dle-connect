@@ -29,7 +29,7 @@ import {
   TimesheetRowActionsMenu,
   ApprovedOvertimeBookingBar,
 } from './timesheet-entry-ui';
-import { DAILY_BREAK_HOURS, canonicalProjectCode, idleTimeProjectHours, impliedOvertimeHoursFromClock, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, matrixProductiveHoursCap, productiveProjectHours, projectHoursForColumn, upsertMatrixProjectHours, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, OFFSHORE_ALLOWANCE_HOURS } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, canonicalProjectCode, idleTimeProjectHours, impliedOvertimeHoursFromClock, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, matrixProductiveHoursCap, productiveProjectHours, projectHoursForColumn, resolveTimesheetShift, upsertMatrixProjectHours, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, OFFSHORE_ALLOWANCE_HOURS } from '@/lib/timesheet-entry-shared';
 import { overtimeProductiveHours } from '@/lib/timesheet-overtime-booking';
 
 type DisplayColumn = { code: string; label: string; kind: 'project' | 'internal' | 'idle' | 'leave' };
@@ -365,16 +365,16 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                 options={props.workCenterOptions.map((item) => ({ value: item, label: item }))}
               />
             </ContextField>
-            <ContextField label="Shift">
+            <ContextField label="Shift (Day and Night are separate sheets)">
               <ContextSelect
                 value={props.selectedShift}
                 onChange={props.onShiftChange}
                 options={(props.shiftOptions.length ? props.shiftOptions : ['01 (Day)', '02 (Night)']).map((item) => ({
                   value: item,
                   label: item.includes('Night')
-                    ? `${item} · 18:00–02:00`
+                    ? `${item} · paper N · 18:00–02:00`
                     : item.includes('Day')
-                      ? `${item} · 08:00–17:00`
+                      ? `${item} · paper M · 08:00–17:00`
                       : item,
                 }))}
               />
@@ -529,6 +529,8 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                   <tbody>
                     {props.filteredLines.length ? props.filteredLines.map((line, rowIndex) => {
                       const isAbsent = isTimesheetAbsentLine(line);
+                      const isNightSheet = resolveTimesheetShift(props.selectedShift).kind === 'Night';
+                      const canBookHours = props.canEditTimesheet && props.showCaptureMatrix && (!isAbsent || isNightSheet);
                       const isManual = isManualOffshoreLine(line);
                       const originalIdx = props.localLines.findIndex((item) => item.id === line.id);
                       const isSelected = props.selectedLineId === line.id;
@@ -571,7 +573,14 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                           </td>
                           <td className="px-3 py-3 text-xs font-semibold">
                             {isAbsent ? (
-                              <span className="text-[#EF4444]">ABSENT</span>
+                              isNightSheet ? (
+                                <div className="text-[#B45309]">
+                                  <div>NO NIGHT CLOCK</div>
+                                  <div className="text-[10px] font-medium text-[#64748B]">Type 8h to book from roster</div>
+                                </div>
+                              ) : (
+                                <span className="text-[#EF4444]">ABSENT</span>
+                              )
                             ) : isManual ? (
                               <div className="text-[#0369A1]">
                                 <div>MANUAL · OFFSHORE</div>
@@ -604,8 +613,8 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                                   type="number"
                                   step="0.5"
                                   min={0}
-                                  disabled={!props.canEditTimesheet || !props.showCaptureMatrix || isAbsent}
-                                  value={isAbsent ? 0 : hours || ''}
+                                  disabled={!canBookHours}
+                                  value={isAbsent && !isNightSheet ? 0 : hours || ''}
                                   onClick={(e) => e.stopPropagation()}
                                   onChange={(e) => {
                                     const idleHours = line.idleHours || DAILY_BREAK_HOURS;

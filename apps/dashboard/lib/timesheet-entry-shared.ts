@@ -77,7 +77,7 @@ export const TIMESHEET_SHIFTS: TimesheetShiftDefinition[] = [
     end: '02:00',
     standardProductiveHours: STANDARD_TIMESHEET_HOURS,
     crossesMidnight: true,
-    description: 'Night shift · 18:00–02:00 (8h normal) · ₦1,500 inconvenience allowance · no overtime',
+    description: 'Separate night timesheet · 18:00–02:00 (8h normal) · ₦1,500 inconvenience allowance · no overtime',
   },
 ];
 
@@ -303,14 +303,17 @@ export const isNightShiftEligibleAttendance = (clockIn?: string | null, clockOut
   return inMinutes >= NIGHT_SHIFT_START_MINUTES;
 };
 
-/** Night view: only true night starters. Day view: hide night pairs; keep absentees and day/early-bird clock-ins. */
+/** Night view: night pairs, plus roster rows with no clock yet. Day view: hide night pairs; keep absentees. */
 export const timesheetLineMatchesShift = (
   clockIn?: string | null,
   shiftLabel?: string | null,
   clockOut?: string | null,
 ) => {
   const kind = resolveTimesheetShift(shiftLabel).kind;
-  if (kind === 'Night') return isNightShiftEligibleAttendance(clockIn, clockOut);
+  if (kind === 'Night') {
+    if (!String(clockIn || '').trim()) return true;
+    return isNightShiftEligibleAttendance(clockIn, clockOut);
+  }
   if (!String(clockIn || '').trim()) return true;
   return !isNightShiftEligibleAttendance(clockIn, clockOut);
 };

@@ -27,6 +27,7 @@ assert(!dayWorker.some((session) => session.kind === 'Night'), 'Day evening punc
 assert(!isNightShiftEligibleAttendance('06:44', '18:56'), 'Day pair is not night-eligible');
 assert(timesheetLineMatchesShift('06:44', '01 (Day)', '18:56'), 'Day sheet keeps day pair');
 assert(!timesheetLineMatchesShift('06:44', '02 (Night)', '18:56'), 'Night sheet hides day pair');
+assert(timesheetLineMatchesShift('', '02 (Night)', null), 'Night sheet keeps roster rows with no clock yet');
 
 const lateNightOut = pairBiometricPunchesIntoShifts([
   { date: '2026-07-16', time: '18:20' },

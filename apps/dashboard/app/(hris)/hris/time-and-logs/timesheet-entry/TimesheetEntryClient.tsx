@@ -35,7 +35,7 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { DAILY_BREAK_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetLineMatchesShift, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetLineMatchesShift, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import { TimesheetEntryEnterpriseView } from './TimesheetEntryEnterpriseView';
@@ -775,6 +775,13 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const handleUpdateLine = (index: number, updates: Partial<TimesheetLine>) => {
     const next = [...localLines];
     const line = { ...next[index], ...updates };
+    const nightShift = resolveTimesheetShift(selectedShift);
+    const bookedProjectHours = (line.projectAllocations || []).reduce((sum, item) => sum + Number(item.hours || 0), 0);
+    if (nightShift.kind === 'Night' && !String(line.clockIn || '').trim() && bookedProjectHours > 0.001) {
+      line.clockIn = nightShift.start;
+      line.clockOut = nightShift.end;
+      line.attendanceDuration = STANDARD_TIMESHEET_HOURS;
+    }
     const isAbsentLine = isTimesheetAbsentLine(line);
     if (isAbsentLine) {
       line.projectAllocations = line.projectAllocations.map((allocation) => ({ ...allocation, hours: 0 }));
@@ -1569,8 +1576,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             setSelectedShift(shift.label);
             setNotice(
               shift.kind === 'Night'
-                ? 'Night shift selected: first punch from 18:00 is clock-in; the morning punch (even if the device called it clock-in) is the previous night’s clock-out. Consecutive nights stay on the evening they started. Book 8h as normal work — ₦1,500 inconvenience allowance posts automatically; overtime is not applicable.'
-                : 'Day shift selected: showing day-shift clock-ins (and absentees). Hours after 17:00 until clock-out are overtime.',
+                ? 'This is the Night timesheet for this date (separate from Day). Your assigned crew is listed — paper “N” people can be booked here even without a night clock. Type 8h on the project column. ₦1,500 inconvenience allowance posts automatically; overtime is not applicable.'
+                : 'This is the Day timesheet. Night marks (N) are booked by changing Shift to 02 (Night). Hours after 17:00 until clock-out are overtime.',
             );
             if (!canEditTimesheet) return;
             setSubmitting(true);
@@ -2129,6 +2136,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                 <tbody className="divide-y divide-slate-100">
                   {filteredLines.map((line, rowIndex) => {
                     const isAbsent = isTimesheetAbsentLine(line);
+                    const isNightSheet = resolveTimesheetShift(selectedShift).kind === 'Night';
+                    const canBookHours = canEditTimesheet && (!isAbsent || isNightSheet);
                     const isManual = isManualOffshoreLine(line);
                     const originalIdx = localLines.findIndex(l => l.id === line.id);
                     return (
@@ -2152,10 +2161,10 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-4 whitespace-nowrap">{isAbsent ? <span className="text-[10px] font-black text-red-600">ABSENT</span> : isManual ? <div className="flex flex-col gap-0.5"><span className="text-[10px] font-black text-sky-700">MANUAL · OFFSHORE</span><span className="text-[9px] font-bold text-slate-500">{OFFSHORE_ALLOWANCE_HOURS}h allowance outside payroll</span></div> : <div className="flex flex-col gap-0.5 text-[10px] font-black text-slate-700"><span>IN: {line.clockIn}</span><span>OUT: {line.clockOut || '--:--'}</span></div>}</td>
+                        <td className="px-4 py-4 whitespace-nowrap">{isAbsent ? (isNightSheet ? <div className="flex flex-col gap-0.5"><span className="text-[10px] font-black text-amber-700">NO NIGHT CLOCK</span><span className="text-[9px] font-bold text-slate-500">Type 8h to book from roster</span></div> : <span className="text-[10px] font-black text-red-600">ABSENT</span>) : isManual ? <div className="flex flex-col gap-0.5"><span className="text-[10px] font-black text-sky-700">MANUAL · OFFSHORE</span><span className="text-[9px] font-bold text-slate-500">{OFFSHORE_ALLOWANCE_HOURS}h allowance outside payroll</span></div> : <div className="flex flex-col gap-0.5 text-[10px] font-black text-slate-700"><span>IN: {line.clockIn}</span><span>OUT: {line.clockOut || '--:--'}</span></div>}</td>
                         <td className="px-4 py-4 text-center text-[11px] font-black text-slate-600 tabular-nums">{line.attendanceDuration}h</td>
                         {matrixColumns.map((col) => (
-                          <td key={col.code} className="px-4 py-4 border-l border-slate-100"><input type="number" step="0.5" disabled={!canEditTimesheet || isAbsent} value={isAbsent ? 0 : line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
+                          <td key={col.code} className="px-4 py-4 border-l border-slate-100"><input type="number" step="0.5" disabled={!canBookHours} value={isAbsent && !isNightSheet ? 0 : line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
                             const idleHours = line.idleHours || DAILY_BREAK_HOURS;
                             const maxTotal = matrixProductiveHoursCap(line, line.usedHours, standardTimesheetHours, idleHours, selectedShift);
                             const projectAllocations = upsertMatrixProjectHours(
@@ -2192,8 +2201,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                             type="number"
                             step="0.5"
                             min={0}
-                            disabled={!canEditTimesheet || isAbsent}
-                            value={isAbsent ? 0 : idleTimeProjectHours(line.projectAllocations) || ''}
+                            disabled={!canBookHours}
+                            value={isAbsent && !isNightSheet ? 0 : idleTimeProjectHours(line.projectAllocations) || ''}
                             onChange={(e) => {
                               const idleHours = line.idleHours || DAILY_BREAK_HOURS;
                               const maxTotal = matrixProductiveHoursCap(line, line.usedHours, standardTimesheetHours, idleHours, selectedShift);
@@ -2260,6 +2269,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             {paginatedCardLines.map((line, rowIndex) => {
               const originalIdx = localLines.findIndex(l => l.id === line.id);
               const isAbsent = isTimesheetAbsentLine(line);
+              const isNightSheet = resolveTimesheetShift(selectedShift).kind === 'Night';
+              const canBookHours = canEditTimesheet && (!isAbsent || isNightSheet);
               const isManual = isManualOffshoreLine(line);
               const displayNumber = employeeCardStart + rowIndex;
               return (
@@ -2279,16 +2290,16 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                       {!isAbsent && <ShieldCheck className="h-4 w-4 text-emerald-600" />}
                       <div><p className="text-[10px] font-black text-indigo-600 leading-none">{line.employeeNo}</p><h3 className="text-sm font-black text-slate-900 mt-1">{line.employeeName}</h3></div>
                     </div>
-                    <div className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${employeeStatusBadgeTone(line)}`}>{isAbsent ? 'ABSENT' : isManual ? 'OFFSHORE' : line.validationStatus === 'Valid' ? 'COMPLETE' : line.validationStatus}</div>
+                    <div className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${employeeStatusBadgeTone(line)}`}>{isAbsent ? (isNightSheet ? 'BOOK NIGHT' : 'ABSENT') : isManual ? 'OFFSHORE' : line.validationStatus === 'Valid' ? 'COMPLETE' : line.validationStatus}</div>
                   </div>
                   <div className="space-y-4">
-                    <div className="flex justify-between text-[11px] font-bold text-slate-500"><span>Attendance:</span><span>{isAbsent ? 'Absent' : isManual ? `Manual · ${OFFSHORE_ALLOWANCE_HOURS}h allowance outside payroll` : `${line.clockIn}-${line.clockOut || '--'} (${line.attendanceDuration}h)`}</span></div>
+                    <div className="flex justify-between text-[11px] font-bold text-slate-500"><span>Attendance:</span><span>{isAbsent ? (isNightSheet ? 'No night clock — type 8h to book' : 'Absent') : isManual ? `Manual · ${OFFSHORE_ALLOWANCE_HOURS}h allowance outside payroll` : `${line.clockIn}-${line.clockOut || '--'} (${line.attendanceDuration}h)`}</span></div>
                     <div className="space-y-2">
                       <p className="text-[9px] font-black uppercase text-slate-400">Projects</p>
                       {matrixColumns.map(col => (
                         <div key={col.code} className="flex items-center justify-between gap-3">
                           <span className="text-xs font-bold text-slate-600 truncate flex-1">{col.label}</span>
-                          <input type="number" step="0.5" disabled={!canEditTimesheet || isAbsent} value={isAbsent ? 0 : line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
+                          <input type="number" step="0.5" disabled={!canBookHours} value={isAbsent && !isNightSheet ? 0 : line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
                             const val = parseFloat(e.target.value) || 0;
                             const next = [...line.projectAllocations];
                             const pIdx = next.findIndex(p => p.projectCode === col.code);
@@ -2345,8 +2356,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                         type="number"
                         step="0.5"
                         min={0}
-                        disabled={!canEditTimesheet || isAbsent}
-                        value={isAbsent ? 0 : idleTimeProjectHours(line.projectAllocations) || ''}
+                        disabled={!canBookHours}
+                        value={isAbsent && !isNightSheet ? 0 : idleTimeProjectHours(line.projectAllocations) || ''}
                         onChange={(e) => {
                           const idleHours = line.idleHours || DAILY_BREAK_HOURS;
                           const maxTotal = matrixProductiveHoursCap(line, line.usedHours, standardTimesheetHours, idleHours, selectedShift);
