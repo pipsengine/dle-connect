@@ -144,25 +144,166 @@ export const hasDayShiftDuration = (clockIn?: string | null, clockOut?: string |
   return durationMinutes > 0.06;
 };
 
+export type BiometricPunchPoint = {
+  date: string;
+  time: string;
+};
+
+export type PairedAttendanceShift = {
+  kind: TimesheetShiftKind;
+  workDate: string;
+  clockIn: string | null;
+  clockOut: string | null;
+  clockInDate: string | null;
+  clockOutDate: string | null;
+  punchCount: number;
+};
+
+const PUNCH_DEBOUNCE_SECONDS = 120;
+
+export const normalizeAttendanceDate = (value: string) => {
+  const digits = String(value || '').replace(/-/g, '').trim();
+  if (/^\d{8}$/.test(digits)) {
+    return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+  }
+  return String(value || '').slice(0, 10);
+};
+
+export const formatClockMinutes = (minutes: number) => {
+  const normalized = ((Math.round(minutes) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(normalized / 60)).padStart(2, '0')}:${String(normalized % 60).padStart(2, '0')}`;
+};
+
+export const addIsoDateDays = (isoDate: string, days: number) => {
+  const date = new Date(`${normalizeAttendanceDate(isoDate)}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+type NormalizedPunch = {
+  date: string;
+  minutes: number;
+  clock: string;
+  epoch: number;
+};
+
+const punchEpochSeconds = (date: string, minutes: number) =>
+  Date.parse(`${date}T${formatClockMinutes(minutes)}:00Z`) / 1000;
+
+const toNormalizedPunches = (punches: BiometricPunchPoint[]): NormalizedPunch[] => {
+  const mapped: NormalizedPunch[] = [];
+  for (const punch of punches) {
+    const date = normalizeAttendanceDate(punch.date);
+    const minutes = clockTimeToMinutes(punch.time);
+    if (!date || minutes === null) continue;
+    mapped.push({
+      date,
+      minutes,
+      clock: formatClockMinutes(minutes),
+      epoch: punchEpochSeconds(date, minutes),
+    });
+  }
+  mapped.sort((a, b) => a.epoch - b.epoch);
+  const unique: NormalizedPunch[] = [];
+  for (const punch of mapped) {
+    const prev = unique[unique.length - 1];
+    if (prev && punch.epoch - prev.epoch <= PUNCH_DEBOUNCE_SECONDS) continue;
+    unique.push(punch);
+  }
+  return unique;
+};
+
 /**
- * Night crew only: first punch from 18:00, and no duration already recorded that calendar day.
- * An evening clock-out from a morning clock-in is not a night start.
+ * Pair raw biometric punches into Day/Night sessions.
+ * Night is not calendar min/max: work date D runs from 18:00 on D until 18:00 on D+1.
+ * First punch in that window is clock-in; last punch before the next evening start is clock-out.
+ * A day-window punch (06:00–18:00) on D means the evening punch is that day's clock-out, not a night in.
+ */
+export const pairBiometricPunchesIntoShifts = (punches: BiometricPunchPoint[]): PairedAttendanceShift[] => {
+  const unique = toNormalizedPunches(punches);
+  if (!unique.length) return [];
+  const used = new Set<number>();
+  const sessions: PairedAttendanceShift[] = [];
+
+  const hasDayWindowPunch = (date: string) => unique.some((punch) => (
+    punch.date === date
+    && punch.minutes >= NIGHT_MORNING_CUTOFF_MINUTES
+    && punch.minutes < NIGHT_SHIFT_START_MINUTES
+  ));
+
+  for (let i = 0; i < unique.length; i += 1) {
+    if (used.has(i)) continue;
+    const punch = unique[i];
+    if (punch.minutes < NIGHT_SHIFT_START_MINUTES) continue;
+    if (hasDayWindowPunch(punch.date)) continue;
+
+    const windowEnd = punchEpochSeconds(addIsoDateDays(punch.date, 1), NIGHT_SHIFT_START_MINUTES);
+    const windowIndexes: number[] = [];
+    for (let j = i; j < unique.length; j += 1) {
+      if (unique[j].epoch >= windowEnd) break;
+      windowIndexes.push(j);
+    }
+    windowIndexes.forEach((index) => used.add(index));
+    const clockIn = unique[windowIndexes[0]];
+    const clockOut = windowIndexes.length > 1 ? unique[windowIndexes[windowIndexes.length - 1]] : null;
+    sessions.push({
+      kind: 'Night',
+      workDate: punch.date,
+      clockIn: clockIn.clock,
+      clockOut: clockOut?.clock ?? null,
+      clockInDate: clockIn.date,
+      clockOutDate: clockOut?.date ?? null,
+      punchCount: windowIndexes.length,
+    });
+  }
+
+  const dates = [...new Set(unique.map((punch) => punch.date))];
+  for (const date of dates) {
+    const remaining = unique
+      .map((punch, index) => ({ punch, index }))
+      .filter(({ punch, index }) => punch.date === date && !used.has(index));
+    if (!remaining.length) continue;
+    const inEntry = remaining.find(({ punch }) => punch.minutes < NIGHT_SHIFT_START_MINUTES);
+    if (!inEntry) continue;
+    const last = remaining[remaining.length - 1];
+    const clockOut = last.index !== inEntry.index ? last.punch : null;
+    remaining.forEach(({ index }) => used.add(index));
+    sessions.push({
+      kind: 'Day',
+      workDate: date,
+      clockIn: inEntry.punch.clock,
+      clockOut: clockOut?.clock ?? null,
+      clockInDate: date,
+      clockOutDate: clockOut ? date : null,
+      punchCount: remaining.length,
+    });
+  }
+
+  return sessions.sort((a, b) => a.workDate.localeCompare(b.workDate) || a.kind.localeCompare(b.kind));
+};
+
+export const pairedShiftForWorkDate = (
+  punches: BiometricPunchPoint[],
+  workDate: string,
+  kind: TimesheetShiftKind,
+): PairedAttendanceShift | null => {
+  const date = normalizeAttendanceDate(workDate);
+  return pairBiometricPunchesIntoShifts(punches).find((session) => session.workDate === date && session.kind === kind) ?? null;
+};
+
+/**
+ * Night crew: clock-in from 18:00. Overnight clock-out (02:00 / 05:45 / 07:30) is valid duration.
+ * An evening clock-out from a morning/day clock-in is not a night start.
  */
 export const isNightShiftEligibleAttendance = (clockIn?: string | null, clockOut?: string | null) => {
   const inMinutes = clockTimeToMinutes(clockIn);
-  const outMinutes = clockTimeToMinutes(clockOut);
   if (inMinutes === null) return false;
-  if (outMinutes !== null) {
-    let durationMinutes = outMinutes - inMinutes;
-    if (durationMinutes < 0) durationMinutes += 24 * 60;
-    if (durationMinutes > 0.06) return false;
-  }
   if (hasDayShiftDuration(clockIn, clockOut)) return false;
   if (inMinutes >= NIGHT_MORNING_CUTOFF_MINUTES && inMinutes < NIGHT_SHIFT_START_MINUTES) return false;
   return inMinutes >= NIGHT_SHIFT_START_MINUTES;
 };
 
-/** Night view: only true night starters. Day view: hide those night punchers; keep absentees. */
+/** Night view: only true night starters. Day view: hide night pairs; keep absentees and day/early-bird clock-ins. */
 export const timesheetLineMatchesShift = (
   clockIn?: string | null,
   shiftLabel?: string | null,
@@ -171,7 +312,7 @@ export const timesheetLineMatchesShift = (
   const kind = resolveTimesheetShift(shiftLabel).kind;
   if (kind === 'Night') return isNightShiftEligibleAttendance(clockIn, clockOut);
   if (!String(clockIn || '').trim()) return true;
-  return classifyAttendanceShiftFromClockIn(clockIn) === 'Day';
+  return !isNightShiftEligibleAttendance(clockIn, clockOut);
 };
 
 /** Legacy headers with blank shiftLabel are treated as Day. */

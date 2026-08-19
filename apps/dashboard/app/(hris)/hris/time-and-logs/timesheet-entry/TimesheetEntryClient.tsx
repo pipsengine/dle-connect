@@ -1569,7 +1569,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             setSelectedShift(shift.label);
             setNotice(
               shift.kind === 'Night'
-                ? 'Night shift selected: showing only employees with no day duration who clocked in from 18:00. Book 8h as normal work — ₦1,500 inconvenience allowance posts automatically; overtime is not applicable.'
+                ? 'Night shift selected: first punch from 18:00 is clock-in; the morning punch (even if the device called it clock-in) is the previous night’s clock-out. Consecutive nights stay on the evening they started. Book 8h as normal work — ₦1,500 inconvenience allowance posts automatically; overtime is not applicable.'
                 : 'Day shift selected: showing day-shift clock-ins (and absentees). Hours after 17:00 until clock-out are overtime.',
             );
             if (!canEditTimesheet) return;

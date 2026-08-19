@@ -3514,7 +3514,7 @@ export async function syncAttendanceForTimesheet(
     candidate.payrollEmployee?.displayName,
   ].flatMap((value) => attendanceMatchKeys(value));
 
-  // Night: only employees with a night start and zero day duration (do not reuse day clock-out as night in).
+  // Night: only sequentially paired overnight sessions (evening in, morning out).
   // Day: keep full assigned roster; absent rows stay for booking visibility.
   const isNightAttendance = (candidate: (typeof attendanceCandidates)[number]) =>
     isNightShiftEligibleAttendance(candidate.attendance.checkInTime, candidate.attendance.checkOutTime);

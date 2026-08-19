@@ -4,6 +4,7 @@ import mysql from 'mysql2/promise';
 import type { RowDataPacket } from 'mysql2';
 import type { AttendanceStatus, BiometricSource, Shift } from '@/lib/attendance-data';
 import { loadWorkspaceEnv } from '@/lib/dle-enterprise-db';
+import { pairedShiftForWorkDate, type BiometricPunchPoint } from '@/lib/timesheet-entry-shared';
 
 export type LiveAttendanceRecord = {
   id: string;
@@ -464,14 +465,14 @@ export const readLiveClockingActivity = async (
   const shiftKind = options?.shiftKind;
   if (shiftKind === 'Night') {
     return cachedLiveRead(
-      `clocking-activity-night:${requestedDate || 'today'}`,
-      () => readLiveNightClockingActivityRaw(requestedDate),
+      `clocking-activity-night-seq:${requestedDate || 'today'}`,
+      () => readPairedShiftClockingActivityRaw(requestedDate, 'Night'),
     );
   }
   if (shiftKind === 'Day') {
     return cachedLiveRead(
-      `clocking-activity-day:${requestedDate || 'today'}`,
-      () => readLiveDayClockingActivityRaw(requestedDate),
+      `clocking-activity-day-seq:${requestedDate || 'today'}`,
+      () => readPairedShiftClockingActivityRaw(requestedDate, 'Day'),
     );
   }
   return cachedLiveRead(`clocking-activity:${requestedDate || 'today'}`, () => readLiveClockingActivityRaw(requestedDate));
@@ -484,12 +485,26 @@ const addMysqlDays = (mysqlDate: string, days: number) => {
   return formatMysqlDate(date);
 };
 
-/** Night work date D: in on D from 18:00+, out on D+1 before 06:00. */
-const readLiveNightClockingActivityRaw = async (
-  requestedDate?: string,
+const compactClock = (clock: string | null) => (clock ? `${clock.replace(':', '')}00` : null);
+
+type EmployeePunchAgg = {
+  uid: number;
+  uniqueCode: string;
+  employeeName: string;
+  terminalId: number | null;
+  terminalName: string;
+  punches: BiometricPunchPoint[];
+};
+
+/** Night/Day from sequential pairing over D-1, D, D+1. Night cycle is 18:00→next 18:00, not calendar min/max. */
+const readPairedShiftClockingActivityRaw = async (
+  requestedDate: string | undefined,
+  kind: 'Day' | 'Night',
 ): Promise<{ attendanceDate: string; records: LiveClockingActivityRecord[] }> => {
   const workDateMysql = await resolveLiveAttendanceDate(requestedDate);
+  const prevDateMysql = addMysqlDays(workDateMysql, -1);
   const nextDateMysql = addMysqlDays(workDateMysql, 1);
+  const workDate = displayDate(workDateMysql);
   const pool = getPool();
 
   try {
@@ -509,30 +524,17 @@ const readLiveNightClockingActivityRaw = async (
       FROM tenter e
       LEFT JOIN tuser u ON u.L_ID = e.L_UID
       LEFT JOIN tterminal t ON t.L_ID = e.L_TID
-      WHERE e.C_Date IN (?, ?)
+      WHERE e.C_Date IN (?, ?, ?)
       ORDER BY e.L_UID, e.C_Date, e.C_Time
       `,
-      [workDateMysql, nextDateMysql],
+      [prevDateMysql, workDateMysql, nextDateMysql],
     );
 
-    type Agg = {
-      uid: number;
-      uniqueCode: string;
-      employeeName: string;
-      terminalId: number | null;
-      terminalName: string;
-      dayPunches: string[];
-      nightIns: string[];
-      nightOuts: string[];
-      punchCount: number;
-    };
-    const byUid = new Map<number, Agg>();
-
+    const byUid = new Map<number, EmployeePunchAgg>();
     for (const row of rows) {
       const punchDate = String(row.punchDate || '');
       const punchTime = String(row.punchTime || '');
-      const minutes = minutesFromTime(punchTime);
-      if (minutes === null) continue;
+      if (!punchDate || !punchTime || minutesFromTime(punchTime) === null) continue;
 
       let agg = byUid.get(row.uid);
       if (!agg) {
@@ -542,26 +544,18 @@ const readLiveNightClockingActivityRaw = async (
           employeeName: String(row.employeeName || `Employee ${row.uid}`),
           terminalId: row.terminalId,
           terminalName: row.terminalName || 'Biometric Terminal',
-          dayPunches: [],
-          nightIns: [],
-          nightOuts: [],
-          punchCount: 0,
+          punches: [],
         };
         byUid.set(row.uid, agg);
       }
-      agg.punchCount += 1;
       if (!agg.terminalId && row.terminalId) {
         agg.terminalId = row.terminalId;
         agg.terminalName = row.terminalName || agg.terminalName;
       }
-
-      if (punchDate === workDateMysql && minutes >= 360 && minutes < 1080) {
-        agg.dayPunches.push(punchTime);
-      } else if (punchDate === workDateMysql && minutes >= 1080) {
-        agg.nightIns.push(punchTime);
-      } else if (punchDate === nextDateMysql && minutes < 360) {
-        agg.nightOuts.push(punchTime);
-      }
+      agg.punches.push({
+        date: displayDate(punchDate),
+        time: displayTime(punchTime) || '00:00',
+      });
     }
 
     const officeByUid = new Map<number, { officeName: string | null; postName: string | null; staffName: string | null }>();
@@ -593,14 +587,11 @@ const readLiveNightClockingActivityRaw = async (
 
     const records: LiveClockingActivityRecord[] = [];
     for (const agg of byUid.values()) {
-      // Already clocked in during the day (duration that day is not zero) — evening punch is clock-out, not night in.
-      if (agg.dayPunches.length) continue;
-      if (!agg.nightIns.length) continue;
-      const firstPunch = agg.nightIns.slice().sort()[0];
-      const lastPunch = agg.nightOuts.length
-        ? agg.nightOuts.slice().sort()[agg.nightOuts.length - 1]
-        : (agg.nightIns.length > 1 ? agg.nightIns.slice().sort()[agg.nightIns.length - 1] : null);
-      const schedule = scheduleForShift('Night');
+      const session = pairedShiftForWorkDate(agg.punches, workDate, kind);
+      if (!session?.clockIn) continue;
+      const schedule = scheduleForShift(kind);
+      const firstPunch = compactClock(session.clockIn);
+      const lastPunch = compactClock(session.clockOut);
       const minutesLate = calculateMinutesLate(firstPunch, schedule.start);
       const status = resolveStatus(firstPunch, minutesLate);
       const office = officeByUid.get(agg.uid);
@@ -608,7 +599,7 @@ const readLiveNightClockingActivityRaw = async (
       const postName = office?.postName || 'Unassigned';
 
       records.push({
-        id: `live-clock-night-${workDateMysql}-${agg.uid}`,
+        id: `live-clock-${kind.toLowerCase()}-${workDateMysql}-${agg.uid}`,
         employeeId: agg.uniqueCode,
         employeeName: agg.employeeName,
         businessUnit: officeName,
@@ -616,45 +607,25 @@ const readLiveNightClockingActivityRaw = async (
         jobTitle: office?.staffName || postName,
         location: officeName,
         site: agg.terminalName || officeName,
-        shift: 'Night',
+        shift: kind,
         status,
-        checkInTime: displayTime(firstPunch),
-        checkOutTime: lastPunch && lastPunch !== firstPunch ? displayTime(lastPunch) : null,
+        checkInTime: session.clockIn,
+        checkOutTime: session.clockOut,
         scheduledStart: schedule.start,
         scheduledEnd: schedule.end,
         minutesLate,
-        overtimeHours: 0,
+        overtimeHours: kind === 'Night' ? 0 : calculateOvertime(firstPunch, lastPunch),
         biometricSource: 'Biometric Device',
         supervisor: officeName,
-        punchCount: agg.punchCount,
+        punchCount: session.punchCount,
       });
     }
 
     records.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
-    return { attendanceDate: displayDate(workDateMysql), records };
+    return { attendanceDate: workDate, records };
   } finally {
     await pool.end();
   }
-};
-
-/** Day work date D: clock-in between 06:00 and 18:00; clock-out is last same-day punch after in. */
-const readLiveDayClockingActivityRaw = async (
-  requestedDate?: string,
-): Promise<{ attendanceDate: string; records: LiveClockingActivityRecord[] }> => {
-  const base = await readLiveClockingActivityRaw(requestedDate);
-  return {
-    attendanceDate: base.attendanceDate,
-    records: base.records
-      .map((record) => {
-        const inMinutes = minutesFromTime(record.checkInTime ? record.checkInTime.replace(':', '') : null);
-        // Prefer day-window presence; drop pure night punchers from the day crew list source.
-        if (inMinutes !== null && (inMinutes < 360 || inMinutes >= 1080)) {
-          return null;
-        }
-        return { ...record, shift: 'Day' as Shift };
-      })
-      .filter((record): record is LiveClockingActivityRecord => Boolean(record)),
-  };
 };
 
 const readLiveAttendancePunchesRaw = async (requestedDate?: string): Promise<{ attendanceDate: string; punches: LiveAttendancePunch[] }> => {
