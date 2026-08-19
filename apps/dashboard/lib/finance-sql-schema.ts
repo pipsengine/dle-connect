@@ -637,4 +637,17 @@ CREATE TABLE [finance].[PaymentRequestActions] (
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinancePayReqActions_Request' AND object_id = OBJECT_ID(N'[finance].[PaymentRequestActions]'))
   CREATE INDEX [IX_FinancePayReqActions_Request] ON [finance].[PaymentRequestActions] ([RequestId], [CreatedAt] DESC);
+
+IF OBJECT_ID(N'[finance].[PaymentRequestComments]', N'U') IS NULL
+CREATE TABLE [finance].[PaymentRequestComments] (
+  [CommentId] NVARCHAR(60) NOT NULL CONSTRAINT [PK_FinancePaymentRequestComments] PRIMARY KEY,
+  [RequestId] NVARCHAR(60) NOT NULL,
+  [ActorCode] NVARCHAR(60) NULL,
+  [ActorName] NVARCHAR(200) NULL,
+  [Body] NVARCHAR(MAX) NOT NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_FinancePayReqComments_CreatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinancePayReqComments_Request' AND object_id = OBJECT_ID(N'[finance].[PaymentRequestComments]'))
+  CREATE INDEX [IX_FinancePayReqComments_Request] ON [finance].[PaymentRequestComments] ([RequestId], [CreatedAt] ASC);
 `;

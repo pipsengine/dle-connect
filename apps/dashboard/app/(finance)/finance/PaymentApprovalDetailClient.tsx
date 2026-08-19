@@ -15,13 +15,14 @@ import {
   Paperclip,
   XCircle,
 } from 'lucide-react';
-import type { PaymentRequestActionRow, PaymentRequestAttachment, PaymentRequestRow } from '@/lib/finance-intelligence/payment-requests-service';
+import type { PaymentRequestActionRow, PaymentRequestAttachment, PaymentRequestCommentRow, PaymentRequestRow } from '@/lib/finance-intelligence/payment-requests-service';
 import {
   isExpenseNoPoPayment,
   supplierInvoiceCategoryLabel,
 } from '@/lib/finance-intelligence/payment-invoice-category';
 import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-action-visibility';
 import PaymentAttachmentLinks from '@/app/(finance)/finance/PaymentAttachmentLinks';
+import PaymentRequestCommentsThread from '@/app/(finance)/finance/PaymentRequestCommentsThread';
 
 const money = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 2 });
 
@@ -70,9 +71,11 @@ const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
 type DetailPayload = {
   request: PaymentRequestRow;
   actions: PaymentRequestActionRow[];
+  comments?: PaymentRequestCommentRow[];
   viewer?: {
     actorCode?: string;
     canApprove?: boolean;
+    canComment?: boolean;
     canEditReturned?: boolean;
     isRequesterOnly?: boolean;
     canDownloadPdf?: boolean;
@@ -185,9 +188,11 @@ export default function PaymentApprovalDetailClient() {
         setDetail((prev) => ({
           request: json.data.request as PaymentRequestRow,
           actions: (json.data.actions as PaymentRequestActionRow[]) || prev?.actions || [],
+          comments: prev?.comments || [],
           viewer: {
             ...(prev?.viewer || {}),
             canApprove: false,
+            canComment: false,
             canDownloadPdf: /ready for treasury|approved|payment scheduled|payment processing|paid|awaiting retirement|retirement submitted|treasury verification|retired|completed|closed|posted/i.test(
               String(json.data.request.status || ''),
             ),
@@ -246,6 +251,7 @@ export default function PaymentApprovalDetailClient() {
         setDetail((prev) => ({
           request: json.data.request as PaymentRequestRow,
           actions: (json.data.actions as PaymentRequestActionRow[]) || prev?.actions || [],
+          comments: prev?.comments || [],
           viewer: {
             ...(prev?.viewer || {}),
             canSubmitRetirement: false,
@@ -517,6 +523,14 @@ export default function PaymentApprovalDetailClient() {
         </section>
       </div>
 
+      <PaymentRequestCommentsThread
+        requestId={request.requestId}
+        comments={detail.comments || []}
+        canComment={Boolean(detail.viewer?.canComment)}
+        actorCode={detail.viewer?.actorCode}
+        onCommentsChange={(comments) => setDetail((prev) => (prev ? { ...prev, comments } : prev))}
+      />
+
       <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-900">Action history</h2>
         <div className="mt-3 space-y-2">
@@ -547,11 +561,18 @@ export default function PaymentApprovalDetailClient() {
           <input
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="Reason required for reject / return / clarification"
+            placeholder="Reason required for reject / return"
             className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE] sm:max-w-md"
           />
           <div className="flex flex-wrap gap-2">
             {message ? <p className="mr-2 self-center text-xs text-slate-600">{message}</p> : null}
+            <button
+              type="button"
+              onClick={() => document.getElementById('payment-comments')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800"
+            >
+              Comment
+            </button>
             <button
               type="button"
               disabled={busy || !pending}

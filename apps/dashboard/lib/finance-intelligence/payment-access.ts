@@ -122,6 +122,21 @@ export const isAssignedPaymentApprover = (
   return false;
 };
 
+/** Requester or cash-advance beneficiary (the person who raised / owns the request). */
+export const isPaymentRequestInitiator = (
+  actor: PaymentAccessActor,
+  request: Pick<PaymentRequestRow, 'requesterCode' | 'beneficiaryCode' | 'paymentType'>,
+) => {
+  if (codesMatch(actor.actorCode, request.requesterCode)) return true;
+  if (
+    request.paymentType === 'Cash Advance Payment'
+    && codesMatch(actor.actorCode, request.beneficiaryCode)
+  ) {
+    return true;
+  }
+  return false;
+};
+
 /** Requester viewing their own request (not also the assigned approver). */
 export const isPaymentRequesterOnly = (
   actor: PaymentAccessActor,
@@ -151,6 +166,15 @@ export const canActOnPaymentApproval = (
   if (actor.isGlobalAdmin) return true;
   return (actor.roles || []).some((role) =>
     /^(super administrator|system administrator|application administrator)$/i.test(String(role || '').trim()));
+};
+
+/** Approver and initiator may exchange clarification comments while the request is still pending. */
+export const canCommentOnPaymentRequest = (
+  actor: PaymentAccessActor,
+  request: Pick<PaymentRequestRow, 'requesterCode' | 'beneficiaryCode' | 'currentApproverCode' | 'currentStage' | 'status' | 'paymentType'>,
+) => {
+  if (!/pending|submitted|finance review/i.test(String(request.status || ''))) return false;
+  return isPaymentRequestInitiator(actor, request) || canActOnPaymentApproval(actor, request);
 };
 
 /** Requester/beneficiary may submit retirement for their paid cash advance. */

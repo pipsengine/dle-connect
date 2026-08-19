@@ -16,6 +16,7 @@ import {
   FileText,
   Filter,
   Inbox,
+  MessageSquare,
   Paperclip,
   Plus,
   RefreshCcw,
@@ -1570,6 +1571,7 @@ export default function PaymentRequestsClient({
                   <div className="flex flex-wrap justify-end gap-1.5">
                     {showApproveActions ? (
                       <>
+                        <Link href={`/finance/approvals/request/${row.requestId}#payment-comments`} className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800">Comment</Link>
                         <button type="button" disabled={busy || rowActionBusy} onClick={() => openRowAction(row, 'approve')} className="rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50">Approve</button>
                         <button type="button" disabled={busy || rowActionBusy} onClick={() => openRowAction(row, 'return')} className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 disabled:opacity-50">Return</button>
                         <button type="button" disabled={busy || rowActionBusy} onClick={() => openRowAction(row, 'reject')} className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 disabled:opacity-50">Reject</button>
@@ -1579,9 +1581,12 @@ export default function PaymentRequestsClient({
                         {/^draft$/i.test(row.status) ? 'Edit & submit' : 'Edit & resend'}
                       </button>
                     ) : showSendReminder ? (
-                      <button type="button" disabled={busy || rowActionBusy} onClick={() => void sendReminder(row)} className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800 disabled:opacity-50">
-                        <Send className="h-3 w-3" /> Remind
-                      </button>
+                      <>
+                        <Link href={`/finance/approvals/request/${row.requestId}#payment-comments`} className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800">Comment</Link>
+                        <button type="button" disabled={busy || rowActionBusy} onClick={() => void sendReminder(row)} className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800 disabled:opacity-50">
+                          <Send className="h-3 w-3" /> Remind
+                        </button>
+                      </>
                     ) : (
                       <Link href={`/finance/approvals/request/${row.requestId}`} className="text-[11px] font-semibold text-[#008FD5] hover:underline">View</Link>
                     )}
@@ -1713,6 +1718,13 @@ export default function PaymentRequestsClient({
                     <td className="px-3 py-2.5">
                       {showApproveActions ? (
                         <div className="flex flex-wrap items-center gap-1.5">
+                          <Link
+                            href={`/finance/approvals/request/${row.requestId}#payment-comments`}
+                            className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800 hover:bg-sky-100"
+                          >
+                            <MessageSquare className="h-3 w-3" />
+                            Comment
+                          </Link>
                           <button
                             type="button"
                             disabled={busy || rowActionBusy}
@@ -1761,6 +1773,13 @@ export default function PaymentRequestsClient({
                         </div>
                       ) : showSendReminder ? (
                         <div className="flex flex-wrap items-center gap-1.5">
+                          <Link
+                            href={`/finance/approvals/request/${row.requestId}#payment-comments`}
+                            className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800 hover:bg-sky-100"
+                          >
+                            <MessageSquare className="h-3 w-3" />
+                            Comment
+                          </Link>
                           <button
                             type="button"
                             disabled={busy || rowActionBusy}
@@ -2385,10 +2404,12 @@ export default function PaymentRequestsClient({
               {rowAction.action === 'approve' ? (
                 <p className="text-sm text-slate-600">
                   Confirm approval for this stage. You can add an optional comment below.
+                  Need a question answered first? Use Comment on the request instead of returning it.
                 </p>
               ) : (
                 <p className="text-sm text-slate-600">
                   A reason is required to {rowAction.action} this payment request.
+                  If you only need clarification, use Comment instead of returning or rejecting.
                 </p>
               )}
               <label className="block text-sm">

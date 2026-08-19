@@ -5,6 +5,7 @@ import {
   sendPaymentApprovalRequestEmail,
   sendPaymentDecisionEmail,
   sendTreasuryPaymentReadyEmail,
+  sendTransactionalEmail,
   resolveEmployeeMailbox,
 } from '@/lib/mail-service';
 import { resolveLineManagerForEmployee } from '@/lib/leave-workflow-service';
@@ -435,6 +436,87 @@ export const notifyTreasuryReadyForPayment = async (input: {
         baseUrl: input.baseUrl,
       }));
   }
+};
+
+export const notifyPaymentClarificationComment = async (input: {
+  request: PaymentNotifyRequest;
+  actorName: string;
+  actorCode: string;
+  comment: string;
+  recipientCode: string;
+  recipientName?: string;
+  baseUrl?: string | null;
+}) => {
+  const recipientCode = compact(input.recipientCode);
+  const actorCode = compact(input.actorCode);
+  if (!recipientCode) return;
+  if (actorCode && recipientCode.toUpperCase() === actorCode.toUpperCase()) return;
+
+  const session = financeSystemSession(input.actorName);
+  const href = `${paymentRequestDetailPath(input.request.requestId)}#payment-comments`;
+  const preview = compact(input.comment).slice(0, 280);
+  const title = `Clarification on ${input.request.requestNumber}`;
+  const body = `${input.actorName} commented on ${input.request.requestNumber}: ${preview}`;
+
+  await safeNotify('clarification in-app', async () => {
+    await createEnterpriseNotification(session, {
+      kind: 'Message',
+      module: 'Finance Approvals',
+      title,
+      body,
+      severity: 'info',
+      recipientEmployeeCode: recipientCode,
+      href,
+      channels: ['In-App', 'Email'],
+      metadata: {
+        requestId: input.request.requestId,
+        requestNumber: input.request.requestNumber,
+        event: 'clarification-comment',
+      },
+      actor: input.actorName,
+    });
+  });
+
+  const directory = await readDirectoryEmployees().catch(() => ({ employees: [] as DleEmployeeDirectoryRow[] }));
+  const recipientTarget = recipientCode.toUpperCase();
+  const recipient = (directory.employees || []).find((employee) => {
+    const code = employeeCodeOf(employee).toUpperCase();
+    return code === recipientTarget || compact(employee.employeeId).toUpperCase() === recipientTarget;
+  }) || null;
+  let mailbox = recipient ? await resolveEmployeeMailbox(recipient) : '';
+  if (!mailbox) {
+    mailbox = await resolveEmployeeMailbox({
+      employeeCode: recipientCode,
+      employeeId: recipientCode,
+      sourceEmployeeId: recipientCode,
+      fullName: input.recipientName || recipientCode,
+    } as DleEmployeeDirectoryRow);
+  }
+  if (!mailbox) return;
+
+  const detailUrl = `${resolveWorkflowLinkOrigin(input.baseUrl)}${href}`;
+  const recipientName = compact(input.recipientName) || compact(recipient?.fullName) || recipientCode;
+  await safeNotify('clarification email', () => sendTransactionalEmail({
+    to: mailbox,
+    subject: `${input.request.requestNumber}: clarification from ${input.actorName}`,
+    text: [
+      `Hello ${recipientName},`,
+      '',
+      `${input.actorName} posted a clarification comment on ${input.request.paymentType} ${input.request.requestNumber}.`,
+      '',
+      input.comment,
+      '',
+      `The payment remains at ${input.request.currentStage || 'the current approval stage'} until it is approved, returned, or rejected.`,
+      `Open the request: ${detailUrl}`,
+    ].join('\n'),
+    html: `
+      <p>Hello ${recipientName},</p>
+      <p><strong>${input.actorName}</strong> posted a clarification comment on ${input.request.paymentType} <strong>${input.request.requestNumber}</strong>.</p>
+      <blockquote style="margin:16px 0;padding:12px 16px;border-left:4px solid #008FD5;background:#F8FAFC;white-space:pre-wrap;">${input.comment.replace(/</g, '&lt;')}</blockquote>
+      <p>The payment remains at ${input.request.currentStage || 'the current approval stage'} until it is approved, returned, or rejected.</p>
+      <p><a href="${detailUrl}">Open the request and reply</a></p>
+    `,
+  }));
 };
 
 export const notifyPaymentDecision = async (input: {

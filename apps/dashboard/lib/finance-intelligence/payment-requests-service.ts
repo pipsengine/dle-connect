@@ -4,6 +4,7 @@ import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
 import { convertAmountToNgn, resolveApprovalChain, applyMdLineManagerLastApproverRule, bandRequiresMdCeo, isProjectPaymentPath } from '@/lib/finance-intelligence/approval-matrix-service';
 import {
   notifyPaymentApprovalRequired,
+  notifyPaymentClarificationComment,
   notifyPaymentDecision,
   resolvePaymentStageApprover,
 } from '@/lib/finance-intelligence/payment-approval-notify';
@@ -609,6 +610,15 @@ export type PaymentRequestActionRow = {
   createdAt: string;
 };
 
+export type PaymentRequestCommentRow = {
+  commentId: string;
+  requestId: string;
+  actorCode: string;
+  actorName: string;
+  body: string;
+  createdAt: string;
+};
+
 /** Document / PDF action history shows only submission and approvals. */
 export {
   filterDocumentPaymentActions,
@@ -641,6 +651,94 @@ ORDER BY [CreatedAt] DESC
   } catch {
     return [];
   }
+};
+
+export const listPaymentRequestComments = async (requestId: string): Promise<PaymentRequestCommentRow[]> => {
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) return [];
+  try {
+    const result = await pool.request()
+      .input('RequestId', sql.NVarChar(60), requestId)
+      .query(`
+SELECT TOP 200 [CommentId], [RequestId], [ActorCode], [ActorName], [Body], [CreatedAt]
+FROM [finance].[PaymentRequestComments]
+WHERE [RequestId] = @RequestId
+ORDER BY [CreatedAt] ASC
+`);
+    return (result.recordset || []).map((row: Record<string, unknown>) => ({
+      commentId: compact(row.CommentId),
+      requestId: compact(row.RequestId),
+      actorCode: compact(row.ActorCode),
+      actorName: compact(row.ActorName),
+      body: compact(row.Body),
+      createdAt: row.CreatedAt ? new Date(String(row.CreatedAt)).toISOString() : nowIso(),
+    }));
+  } catch {
+    return [];
+  }
+};
+
+export const addPaymentRequestComment = async (input: {
+  requestId: string;
+  actor: string;
+  actorCode: string;
+  body: string;
+  baseUrl?: string | null;
+}) => {
+  const request = await getPaymentRequestById(input.requestId);
+  if (!request) throw new Error('Payment request not found.');
+  const body = compact(input.body);
+  if (body.length < 2) throw new Error('Enter a comment before sending.');
+  if (body.length > 4000) throw new Error('Comment must be 4,000 characters or fewer.');
+
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) throw new Error('Finance database is not available.');
+  const commentId = `PRC-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  await pool.request()
+    .input('CommentId', sql.NVarChar(60), commentId)
+    .input('RequestId', sql.NVarChar(60), request.requestId)
+    .input('ActorCode', sql.NVarChar(60), compact(input.actorCode) || null)
+    .input('ActorName', sql.NVarChar(200), compact(input.actor) || 'Finance User')
+    .input('Body', sql.NVarChar(sql.MAX), body)
+    .query(`
+INSERT INTO [finance].[PaymentRequestComments]
+  ([CommentId], [RequestId], [ActorCode], [ActorName], [Body])
+VALUES
+  (@CommentId, @RequestId, @ActorCode, @ActorName, @Body)
+`);
+
+  const actorCode = compact(input.actorCode).toLowerCase();
+  const isInitiator = actorCode
+    && (
+      compact(request.requesterCode).toLowerCase() === actorCode
+      || (request.paymentType === 'Cash Advance Payment' && compact(request.beneficiaryCode).toLowerCase() === actorCode)
+    );
+  const recipientCode = isInitiator ? compact(request.currentApproverCode) : compact(request.requesterCode);
+  const recipientName = isInitiator
+    ? compact(request.currentApproverName).replace(/\s*\(Delegated.*$/i, '')
+    : compact(request.requesterName);
+  await notifyPaymentClarificationComment({
+    request,
+    actorName: compact(input.actor) || 'Finance User',
+    actorCode: compact(input.actorCode),
+    comment: body,
+    recipientCode,
+    recipientName,
+    baseUrl: input.baseUrl,
+  }).catch((error) => console.error('[payment-requests] comment notification failed', error));
+
+  return {
+    comment: {
+      commentId,
+      requestId: request.requestId,
+      actorCode: compact(input.actorCode),
+      actorName: compact(input.actor) || 'Finance User',
+      body,
+      createdAt: nowIso(),
+    } satisfies PaymentRequestCommentRow,
+    comments: await listPaymentRequestComments(request.requestId),
+    request,
+  };
 };
 
 const assignCurrentApprover = async (input: {

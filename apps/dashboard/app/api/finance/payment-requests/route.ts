@@ -5,6 +5,7 @@ import { permissionsForRoles } from '@/lib/auth/rbac';
 import {
   canAccessPaymentRequest,
   canActOnPaymentApproval,
+  canCommentOnPaymentRequest,
   canDownloadPaymentDocumentPdf,
   canEditReturnedPaymentRequest,
   canSubmitCashAdvanceRetirement,
@@ -25,7 +26,9 @@ import {
   getCashAdvanceEligibility,
   getPaymentRequestById,
   grantCashAdvanceWaiver,
+  addPaymentRequestComment,
   listPaymentRequestActions,
+  listPaymentRequestComments,
   PAYMENT_TYPES,
   repairPrematureTreasuryHandoff,
   transitionPaymentRequest,
@@ -159,6 +162,7 @@ export async function GET(request: Request) {
       if (!paymentRequest) return jsonErr(404, 'Payment request not found.');
       paymentRequest = await repairPrematureTreasuryHandoff(paymentRequest);
       const actions = await listPaymentRequestActions(paymentRequest.requestId);
+      const comments = await listPaymentRequestComments(paymentRequest.requestId);
       if (!canAccessPaymentRequest(actor, paymentRequest, {
         priorActorCodes: actions.map((item) => item.actorCode),
       })) {
@@ -167,9 +171,11 @@ export async function GET(request: Request) {
       return jsonOk({
         request: paymentRequest,
         actions,
+        comments,
         viewer: {
           actorCode: actor.actorCode,
           canApprove: canActOnPaymentApproval(actor, paymentRequest),
+          canComment: canCommentOnPaymentRequest(actor, paymentRequest),
           canEditReturned: canEditReturnedPaymentRequest(actor, paymentRequest),
           isRequesterOnly: isPaymentRequesterOnly(actor, paymentRequest),
           canDownloadPdf: canDownloadPaymentDocumentPdf(paymentRequest),
@@ -493,6 +499,39 @@ export async function POST(request: Request) {
       return jsonOk({
         ...result,
         message: `Reminder sent to ${paymentRequest.currentApproverName || paymentRequest.currentApproverCode || 'current approver'}.`,
+      });
+    }
+
+    if (action === 'add-comment') {
+      const requestId = String(body.requestId || '').trim();
+      if (!requestId) return jsonErr(400, 'requestId is required.');
+      const paymentRequest = await getPaymentRequestById(requestId);
+      if (!paymentRequest) return jsonErr(404, 'Payment request not found.');
+      const priorActions = await listPaymentRequestActions(paymentRequest.requestId);
+      if (!canAccessPaymentRequest(actor, paymentRequest, {
+        priorActorCodes: priorActions.map((item) => item.actorCode),
+      })) {
+        return jsonErr(403, 'You do not have access to this payment request.');
+      }
+      if (!canCommentOnPaymentRequest(actor, paymentRequest)) {
+        return jsonErr(403, 'Only the initiator and the current approver can comment while this request is pending.');
+      }
+      const origin = resolveWorkflowLinkOrigin();
+      const result = await addPaymentRequestComment({
+        requestId: paymentRequest.requestId,
+        actor: actor.actor,
+        actorCode: actor.actorCode,
+        body: String(body.comment || body.body || ''),
+        baseUrl: origin,
+      });
+      return jsonOk({
+        ...result,
+        viewer: {
+          actorCode: actor.actorCode,
+          canApprove: canActOnPaymentApproval(actor, result.request),
+          canComment: canCommentOnPaymentRequest(actor, result.request),
+        },
+        message: 'Comment posted.',
       });
     }
 

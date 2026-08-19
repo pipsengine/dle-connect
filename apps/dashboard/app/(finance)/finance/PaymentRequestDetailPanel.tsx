@@ -1,13 +1,14 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import type { PaymentRequestActionRow, PaymentRequestRow } from '@/lib/finance-intelligence/payment-requests-service';
+import type { PaymentRequestActionRow, PaymentRequestCommentRow, PaymentRequestRow } from '@/lib/finance-intelligence/payment-requests-service';
 import {
   isExpenseNoPoPayment,
   supplierInvoiceCategoryLabel,
 } from '@/lib/finance-intelligence/payment-invoice-category';
 import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-action-visibility';
 import PaymentAttachmentLinks from '@/app/(finance)/finance/PaymentAttachmentLinks';
+import PaymentRequestCommentsThread from '@/app/(finance)/finance/PaymentRequestCommentsThread';
 
 const money = (amount: number, currency = 'NGN') =>
   new Intl.NumberFormat('en-NG', {
@@ -32,10 +33,20 @@ const fmtDate = (value?: string | null) => {
 type Props = {
   request: PaymentRequestRow;
   actions?: PaymentRequestActionRow[];
+  comments?: PaymentRequestCommentRow[];
+  canComment?: boolean;
+  actorCode?: string;
   footer?: ReactNode;
 };
 
-export default function PaymentRequestDetailPanel({ request, actions = [], footer }: Props) {
+export default function PaymentRequestDetailPanel({
+  request,
+  actions = [],
+  comments,
+  canComment = false,
+  actorCode,
+  footer,
+}: Props) {
   const supportingDocs = (request.attachments || []).filter((file) =>
     file.kind !== 'payment-evidence' && file.kind !== 'retirement-evidence');
   const paymentEvidence = (request.attachments || []).filter((file) => file.kind === 'payment-evidence');
@@ -123,6 +134,13 @@ export default function PaymentRequestDetailPanel({ request, actions = [], foote
           tone="border-slate-200"
         />
       </section>
+
+      <PaymentRequestCommentsThread
+        requestId={request.requestId}
+        comments={comments}
+        canComment={canComment}
+        actorCode={actorCode}
+      />
 
       <section>
         <h4 className="mb-2 text-sm font-semibold text-slate-900">Action history</h4>
