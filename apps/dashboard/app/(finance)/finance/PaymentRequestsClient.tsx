@@ -37,6 +37,12 @@ import {
   PageFrame,
   ScrollTable,
 } from '@/components/ui/responsive';
+import {
+  FINANCE_PAGE_SIZE,
+  FinanceListPagination,
+  matchesPaymentSearch,
+  paginateRows,
+} from './finance-list-controls';
 import type {
   CashAdvanceEligibility,
   PaymentRequestAttachment,
@@ -373,6 +379,8 @@ export default function PaymentRequestsClient({
   const [submittedFrom, setSubmittedFrom] = useState('');
   const [submittedTo, setSubmittedTo] = useState('');
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(FINANCE_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState('');
   const [composerOpen, setComposerOpen] = useState(false);
@@ -577,7 +585,6 @@ export default function PaymentRequestsClient({
   }, [workspace.rows]);
 
   const filteredRows = useMemo(() => {
-    const q = query.trim().toLowerCase();
     const actor = String(workspace.viewer?.actorCode || '').trim().toLowerCase();
     return workspace.rows.filter((row) => {
       // Defense in depth: non–Finance / non–Super-Admin never see other employees' raised payments
@@ -654,18 +661,7 @@ export default function PaymentRequestsClient({
           if (actor && String(row.requesterCode || '').trim().toLowerCase() !== actor) return false;
         }
       }
-      if (!q) return true;
-      return (
-        row.requestNumber.toLowerCase().includes(q)
-        || row.beneficiaryName.toLowerCase().includes(q)
-        || row.description.toLowerCase().includes(q)
-        || row.paymentType.toLowerCase().includes(q)
-        || row.projectCode.toLowerCase().includes(q)
-        || row.department.toLowerCase().includes(q)
-        || row.title.toLowerCase().includes(q)
-        || row.status.toLowerCase().includes(q)
-        || String(row.currentApproverName || '').toLowerCase().includes(q)
-      );
+      return matchesPaymentSearch(row, query);
     });
   }, [
     workspace.rows,
@@ -685,6 +681,34 @@ export default function PaymentRequestsClient({
     workspace.viewer?.actorCode,
     restrictedToOwnPayments,
   ]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [
+    query,
+    tab,
+    paymentTypeFilter,
+    statusFilter,
+    departmentFilter,
+    projectFilter,
+    currencyFilter,
+    approverFilter,
+    locationFilter,
+    submittedFrom,
+    submittedTo,
+    detailFocus,
+    listMode,
+    pageSize,
+  ]);
+
+  const { pageRows, totalPages } = useMemo(
+    () => paginateRows(filteredRows, page, pageSize),
+    [filteredRows, page, pageSize],
+  );
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const activeFilterCount = [
     paymentTypeFilter !== 'All',
@@ -1403,7 +1427,7 @@ export default function PaymentRequestsClient({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search requests..."
+              placeholder="Search request no., vendor, description…"
               className="h-9 w-full min-w-0 rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-8 pr-3 text-xs outline-none focus:bg-white focus:ring-2 focus:ring-[#DBEAFE]"
             />
           </div>
@@ -1502,7 +1526,7 @@ export default function PaymentRequestsClient({
         ) : null}
 
         <MobileCardList>
-          {filteredRows.length ? filteredRows.map((row) => {
+          {filteredRows.length ? pageRows.map((row) => {
             const showApproveActions = canApproveRow(row.requestId);
             const showEditReturned = canEditReturnedRow(row.requestId);
             const showSendReminder = canRemindRow(row);
@@ -1587,7 +1611,7 @@ export default function PaymentRequestsClient({
               </tr>
             </thead>
             <tbody>
-              {filteredRows.length ? filteredRows.map((row) => {
+              {filteredRows.length ? pageRows.map((row) => {
                 const TypeIcon = typeIcon(row.paymentType);
                 const foreign = isForeignCurrency(row.currencyCode);
                 const fxRate = rowFxRate(row);
@@ -1766,6 +1790,13 @@ export default function PaymentRequestsClient({
           </table>
           </ScrollTable>
         </DesktopOnlyTable>
+        <FinanceListPagination
+          page={page}
+          pageSize={pageSize}
+          total={filteredRows.length}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       </section>
 
       <div className="flex flex-wrap gap-2 text-xs">

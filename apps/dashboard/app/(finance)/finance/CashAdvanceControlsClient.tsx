@@ -12,6 +12,13 @@ import {
   Users,
 } from 'lucide-react';
 import type { CashAdvanceControlsWorkspace } from '@/lib/finance-intelligence/payment-requests-service';
+import {
+  FINANCE_PAGE_SIZE,
+  FinanceListPagination,
+  FinanceListSearch,
+  matchesPaymentSearch,
+  paginateRows,
+} from './finance-list-controls';
 
 type Props = {
   initialWorkspace: CashAdvanceControlsWorkspace;
@@ -48,6 +55,9 @@ export default function CashAdvanceControlsClient({ initialWorkspace }: Props) {
   const [waiverReason, setWaiverReason] = useState('');
   const [cancelReason, setCancelReason] = useState('');
   const [selectedRequestId, setSelectedRequestId] = useState('');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(FINANCE_PAGE_SIZE);
 
   const refresh = async () => {
     setLoading(true);
@@ -75,6 +85,24 @@ export default function CashAdvanceControlsClient({ initialWorkspace }: Props) {
     () => workspace.outstanding.find((row) => row.requestId === selectedRequestId) || null,
     [workspace.outstanding, selectedRequestId],
   );
+
+  const filteredOutstanding = useMemo(
+    () => workspace.outstanding.filter((row) => matchesPaymentSearch(row, query)),
+    [workspace.outstanding, query],
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, pageSize]);
+
+  const { pageRows, totalPages } = useMemo(
+    () => paginateRows(filteredOutstanding, page, pageSize),
+    [filteredOutstanding, page, pageSize],
+  );
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const grantWaiver = async () => {
     setBusy(true);
@@ -181,8 +209,13 @@ export default function CashAdvanceControlsClient({ initialWorkspace }: Props) {
 
       <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
         <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
-          <div className="border-b border-slate-100 px-4 py-3">
+          <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-sm font-semibold text-slate-900">Outstanding cash advances</h2>
+            <FinanceListSearch
+              value={query}
+              onChange={setQuery}
+              placeholder="Search request no., employee, description…"
+            />
           </div>
           <ScrollTable minWidth={960}><table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-500">
@@ -193,7 +226,7 @@ export default function CashAdvanceControlsClient({ initialWorkspace }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {workspace.outstanding.length ? workspace.outstanding.map((row) => (
+                {filteredOutstanding.length ? pageRows.map((row) => (
                   <tr key={row.requestId} className={`border-t border-slate-100 ${selectedRequestId === row.requestId ? 'bg-[#F0F9FF]' : ''}`}>
                     <td className="px-3 py-2.5">
                       <input
@@ -221,12 +254,22 @@ export default function CashAdvanceControlsClient({ initialWorkspace }: Props) {
                 )) : (
                   <tr>
                     <td colSpan={8} className="px-3 py-12 text-center text-slate-500">
-                      No outstanding cash advances. Requesters can raise new advances without a waiver.
+                      {query.trim()
+                        ? 'No outstanding cash advances match that search.'
+                        : 'No outstanding cash advances. Requesters can raise new advances without a waiver.'}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table></ScrollTable>
+          <FinanceListPagination
+            page={page}
+            pageSize={pageSize}
+            total={filteredOutstanding.length}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            noun="advances"
+          />
         </section>
 
         <div className="space-y-4">

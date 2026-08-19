@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ScrollTable } from '@/components/ui/responsive';
 import {
   CheckCircle2,
@@ -16,6 +16,13 @@ import type {
   PaymentRequestRow,
 } from '@/lib/finance-intelligence/payment-requests-service';
 import PaymentRequestDetailPanel from './PaymentRequestDetailPanel';
+import {
+  FINANCE_PAGE_SIZE,
+  FinanceListPagination,
+  FinanceListSearch,
+  matchesPaymentSearch,
+  paginateRows,
+} from './finance-list-controls';
 
 type Props = { initialWorkspace: FinancePostingWorkspace };
 type TabId = 'ready' | 'notReady' | 'all';
@@ -33,6 +40,9 @@ export default function FinancePostingClient({ initialWorkspace }: Props) {
   const [actions, setActions] = useState<PaymentRequestActionRow[]>([]);
   const [sageReference, setSageReference] = useState('');
   const [comment, setComment] = useState('');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(FINANCE_PAGE_SIZE);
 
   const refresh = async () => {
     setLoading(true);
@@ -107,6 +117,24 @@ export default function FinancePostingClient({ initialWorkspace }: Props) {
     return workspace.rows;
   }, [tab, workspace]);
 
+  const filteredRows = useMemo(
+    () => rows.filter((row) => matchesPaymentSearch(row, query)),
+    [rows, query],
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, tab, pageSize]);
+
+  const { pageRows, totalPages } = useMemo(
+    () => paginateRows(filteredRows, page, pageSize),
+    [filteredRows, page, pageSize],
+  );
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
   const kpis = [
     { label: 'Ready to mark posted', value: String(workspace.summary.readyToPost), detail: money(workspace.summary.readyValue), icon: Wallet, wrap: 'bg-sky-50', color: 'text-sky-600' },
     { label: 'Open on desk', value: String(workspace.rows.length), detail: 'Not yet marked posted', icon: Clock3, wrap: 'bg-amber-50', color: 'text-amber-600' },
@@ -146,7 +174,8 @@ export default function FinancePostingClient({ initialWorkspace }: Props) {
       </div>
 
       <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
-        <div className="flex flex-wrap gap-2 border-b border-slate-100 px-4 py-3">
+        <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3">
+          <div className="flex flex-wrap gap-2">
           {([
             ['ready', 'Ready to mark posted', workspace.summary.readyToPost],
             ['notReady', 'Needs review', workspace.summary.notReady],
@@ -161,6 +190,8 @@ export default function FinancePostingClient({ initialWorkspace }: Props) {
               {label} ({count})
             </button>
           ))}
+          </div>
+          <FinanceListSearch value={query} onChange={setQuery} />
         </div>
         <ScrollTable minWidth={960}><table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500">
@@ -171,7 +202,7 @@ export default function FinancePostingClient({ initialWorkspace }: Props) {
               </tr>
             </thead>
             <tbody>
-              {rows.length ? rows.map((row) => (
+              {filteredRows.length ? pageRows.map((row) => (
                 <tr key={row.requestId} className="border-t border-slate-100">
                   <td className="px-3 py-2.5 font-semibold text-slate-800">{row.requestNumber}</td>
                   <td className="px-3 py-2.5">{row.paymentType.replace(' Payment', '')}</td>
@@ -186,11 +217,22 @@ export default function FinancePostingClient({ initialWorkspace }: Props) {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={8} className="px-3 py-12 text-center text-sm text-slate-500">No open payments on this desk. Marked posted items are cleared automatically.</td>
+                  <td colSpan={8} className="px-3 py-12 text-center text-sm text-slate-500">
+                    {query.trim()
+                      ? 'No payments match that search.'
+                      : 'No open payments on this desk. Marked posted items are cleared automatically.'}
+                  </td>
                 </tr>
               )}
             </tbody>
           </table></ScrollTable>
+        <FinanceListPagination
+          page={page}
+          pageSize={pageSize}
+          total={filteredRows.length}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       </section>
 
       {selected ? (

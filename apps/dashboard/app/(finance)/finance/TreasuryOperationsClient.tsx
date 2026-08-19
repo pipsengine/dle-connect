@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ScrollTable } from '@/components/ui/responsive';
 import {
   Banknote,
@@ -18,6 +18,13 @@ import type {
   TreasuryWorkspace,
 } from '@/lib/finance-intelligence/payment-requests-service';
 import PaymentRequestDetailPanel from './PaymentRequestDetailPanel';
+import {
+  FINANCE_PAGE_SIZE,
+  FinanceListPagination,
+  FinanceListSearch,
+  matchesPaymentSearch,
+  paginateRows,
+} from './finance-list-controls';
 
 type Props = { initialWorkspace: TreasuryWorkspace };
 type TabId = 'ready' | 'paidToday' | 'awaiting' | 'verify' | 'history';
@@ -47,6 +54,9 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
   const [actions, setActions] = useState<PaymentRequestActionRow[]>([]);
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [comment, setComment] = useState('');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(FINANCE_PAGE_SIZE);
 
   const refresh = async () => {
     setLoading(true);
@@ -137,6 +147,24 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
     return workspace.history;
   }, [tab, workspace]);
 
+  const filteredRows = useMemo(
+    () => rows.filter((row) => matchesPaymentSearch(row, query)),
+    [rows, query],
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, tab, pageSize]);
+
+  const { pageRows, totalPages } = useMemo(
+    () => paginateRows(filteredRows, page, pageSize),
+    [filteredRows, page, pageSize],
+  );
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
   const kpis = [
     { label: 'Ready to pay', value: String(workspace.summary.readyToPay), detail: money(workspace.summary.readyValue), icon: Wallet, wrap: 'bg-teal-50', color: 'text-teal-600' },
     { label: 'Paid today', value: String(workspace.summary.paidToday), detail: money(workspace.summary.paidTodayValue), icon: Banknote, wrap: 'bg-emerald-50', color: 'text-emerald-600' },
@@ -176,7 +204,8 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
       </div>
 
       <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
-        <div className="flex flex-wrap gap-2 border-b border-slate-100 px-4 py-3">
+        <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3">
+          <div className="flex flex-wrap gap-2">
           {([
             ['ready', 'Ready to pay', workspace.summary.readyToPay],
             ['paidToday', 'Paid today', workspace.summary.paidToday],
@@ -193,6 +222,8 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
               {label} ({count})
             </button>
           ))}
+          </div>
+          <FinanceListSearch value={query} onChange={setQuery} />
         </div>
         <ScrollTable minWidth={960}><table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500">
@@ -203,7 +234,7 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
               </tr>
             </thead>
             <tbody>
-              {rows.length ? rows.map((row) => (
+              {filteredRows.length ? pageRows.map((row) => (
                 <tr key={row.requestId} className="border-t border-slate-100">
                   <td className="px-3 py-2.5 font-semibold text-slate-800">{row.requestNumber}</td>
                   <td className="px-3 py-2.5">{row.paymentType.replace(' Payment', '')}</td>
@@ -217,11 +248,20 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={7} className="px-3 py-12 text-center text-sm text-slate-500">No payments in this queue.</td>
+                  <td colSpan={7} className="px-3 py-12 text-center text-sm text-slate-500">
+                    {query.trim() ? 'No payments match that search.' : 'No payments in this queue.'}
+                  </td>
                 </tr>
               )}
             </tbody>
           </table></ScrollTable>
+        <FinanceListPagination
+          page={page}
+          pageSize={pageSize}
+          total={filteredRows.length}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       </section>
 
       {selected ? (
