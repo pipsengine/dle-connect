@@ -20,6 +20,24 @@ type Props = {
   employeeName?: string;
 };
 
+const NAME_HONORIFICS = new Set([
+  'mr', 'mrs', 'ms', 'miss', 'dr', 'prof', 'professor', 'engr', 'eng', 'chief',
+  'alhaji', 'alhaja', 'hajia', 'mallam', 'pastor', 'rev', 'reverend', 'hon', 'honourable',
+  'barr', 'barrister', 'arc', 'architect', 'pharm', 'sir', 'dame', 'lady',
+]);
+
+const greetingGivenName = (fullName?: string) => {
+  const parts = String(fullName || '')
+    .trim()
+    .split(/[\s,]+/)
+    .map((part) => part.replace(/\.+$/g, ''))
+    .filter(Boolean);
+  while (parts.length && NAME_HONORIFICS.has(parts[0].toLowerCase())) {
+    parts.shift();
+  }
+  return parts[0] || '';
+};
+
 const money = (amount: number, currency = 'NGN') =>
   new Intl.NumberFormat('en-NG', {
     style: 'currency',
@@ -35,7 +53,8 @@ const fmtDate = (value?: string | null) => {
 };
 
 export default function EmployeePaymentsDashboardClient({ dashboard, employeeName }: Props) {
-  const greeting = employeeName ? `Welcome, ${employeeName.split(' ')[0]}` : 'My Payments';
+  const givenName = greetingGivenName(employeeName);
+  const greeting = givenName ? `Welcome, ${givenName}` : 'My Payments';
 
   const kpis = [
     { label: 'My requests', value: String(dashboard.summary.myRequests), detail: 'All statuses', icon: FileText, wrap: 'bg-slate-100', color: 'text-slate-600' },
