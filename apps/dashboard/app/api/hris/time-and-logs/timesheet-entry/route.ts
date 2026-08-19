@@ -65,7 +65,7 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
-import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, timesheetShiftHeaderSlug, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, buildManualOffshoreLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, timesheetShiftHeaderSlug, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, buildManualOffshoreLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, hasDayShiftDuration, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { mobilizationCoversDate, mobilizationMatchesSupervisor, readTimesheetMobilizations, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
 
@@ -1205,7 +1205,21 @@ const buildPayload = async (
     lines = lines.filter(lineBelongsToSelectedCrew);
   }
   if (!requestedHeader && !isOffshoreSheet) {
-    lines = lines.filter((line) => timesheetLineMatchesShift(line.clockIn, targetShiftForSheet));
+    const shiftKind = resolveTimesheetShift(targetShiftForSheet).kind;
+    if (shiftKind === 'Night') {
+      const dayDurationKeys = new Set<string>();
+      for (const other of headers) {
+        if (other.timesheetDate !== targetDate) continue;
+        if (resolveTimesheetShift(other.shiftLabel).kind === 'Night') continue;
+        for (const line of allLines) {
+          if (line.headerId !== other.id) continue;
+          if (!hasDayShiftDuration(line.clockIn, line.clockOut)) continue;
+          matchKeys(line.employeeNo, line.employeeId, line.employeeName).forEach((key) => dayDurationKeys.add(key));
+        }
+      }
+      lines = lines.filter((line) => !matchKeys(line.employeeNo, line.employeeId, line.employeeName).some((key) => dayDurationKeys.has(key)));
+    }
+    lines = lines.filter((line) => timesheetLineMatchesShift(line.clockIn, targetShiftForSheet, line.clockOut));
   }
 
   if (isOffshoreSheet) {
@@ -1845,8 +1859,8 @@ export async function PATCH(request: Request) {
             comment: payload.reviewerNote?.trim() || `Submitted for supervisor review before release to ${projectManagerAssignment.projectManager} on ${projectManagerAssignment.projectCode} - ${projectManagerAssignment.projectName}.`,
           },
         ];
-      } else if (action === 'SAVE_DRAFT' || (action === 'MATRIX_SAVE' && previousStatus === 'Submitted')) {
-        if (previousStatus === 'Submitted') {
+      } else if (action === 'SAVE_DRAFT' || (action === 'MATRIX_SAVE' && isTimesheetInApprovalCapture(previousStatus))) {
+        if (isTimesheetInApprovalCapture(previousStatus)) {
           header.workflowHistory = [
             ...(header.workflowHistory || []),
             {
@@ -1854,7 +1868,7 @@ export async function PATCH(request: Request) {
               decision: 'Returned',
               by: actor,
               actedAt: new Date().toISOString(),
-              comment: 'Recalled for correction before supervisor approval.',
+              comment: 'Recalled for correction before payroll acknowledgement.',
             },
           ];
         }

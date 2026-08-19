@@ -22,8 +22,7 @@ export const TIMESHEET_RECAPTURE_GUIDE = {
     },
   ],
   rules: [
-    'Draft / Returned / Rejected / Submitted (not yet approved) sheets can be edited directly while the timesheet period is Open.',
-    'Once a supervisor (or later stage) has approved, the sheet must be returned or recaptured before capture changes.',
+    'Open-period sheets can be edited until HR acknowledges them for payroll. Saving a submitted or in-review sheet recalls it to Draft so approvals restart.',
     'HR payroll-ready (HR_Acknowledged) sheets need HR/Payroll recapture unlock, and only before payroll submit.',
     'Locked timesheets and Closed/Locked periods cannot be recaptured here.',
     'Never silent-edit an approved sheet — always reopen so approvals restart.',

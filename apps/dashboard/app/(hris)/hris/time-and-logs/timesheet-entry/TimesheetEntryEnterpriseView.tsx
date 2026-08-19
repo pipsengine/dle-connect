@@ -29,7 +29,7 @@ import {
   TimesheetRowActionsMenu,
   ApprovedOvertimeBookingBar,
 } from './timesheet-entry-ui';
-import { DAILY_BREAK_HOURS, canonicalProjectCode, idleTimeProjectHours, impliedOvertimeHoursFromClock, isManualOffshoreLine, isTimesheetAbsentLine, matrixProductiveHoursCap, productiveProjectHours, projectHoursForColumn, upsertMatrixProjectHours, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, OFFSHORE_ALLOWANCE_HOURS } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, canonicalProjectCode, idleTimeProjectHours, impliedOvertimeHoursFromClock, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, matrixProductiveHoursCap, productiveProjectHours, projectHoursForColumn, upsertMatrixProjectHours, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, OFFSHORE_ALLOWANCE_HOURS } from '@/lib/timesheet-entry-shared';
 import { overtimeProductiveHours } from '@/lib/timesheet-overtime-booking';
 
 type DisplayColumn = { code: string; label: string; kind: 'project' | 'internal' | 'idle' | 'leave' };
@@ -60,6 +60,7 @@ type Project = { id: string; code: string; name: string };
 export type TimesheetEnterpriseViewProps = {
   periodLabel: string;
   periodIsOpen: boolean;
+  headerStatus?: string | null;
   selectedDate: string;
   selectedShift: string;
   shiftOptions: string[];
@@ -274,6 +275,12 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
           </div>
         </div>
 
+        {isTimesheetInApprovalCapture(props.headerStatus) && props.canEditTimesheet ? (
+          <div className="rounded-xl border border-[#FCD34D] bg-[#FFFBEB] px-4 py-3 text-sm font-semibold text-[#B45309]">
+            This timesheet is not payroll-approved yet. You can still book hours. Saving recalls it to Draft — use Review &amp; Submit when it is complete.
+          </div>
+        ) : null}
+
         {(props.error || props.notice || props.offshoreNotice) && (
           <div className="space-y-2">
             {(props.error || props.notice) && (
@@ -377,6 +384,18 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
             </ContextField>
             <div className="col-span-full flex flex-wrap items-center gap-2">
               <StatusBadge label={props.periodIsOpen ? 'Open' : 'Closed'} tone={props.periodIsOpen ? 'success' : 'neutral'} />
+              {props.headerStatus ? (
+                <StatusBadge
+                  label={String(props.headerStatus).replace(/_/g, ' ')}
+                  tone={
+                    !props.canEditTimesheet
+                      ? 'danger'
+                      : isTimesheetInApprovalCapture(props.headerStatus)
+                        ? 'warning'
+                        : 'success'
+                  }
+                />
+              ) : null}
               {props.canCreateProject && props.onCreateProject ? (
                 <button
                   type="button"

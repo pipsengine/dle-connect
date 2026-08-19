@@ -6,11 +6,41 @@ export const GROSS_TIMESHEET_HOURS = STANDARD_TIMESHEET_HOURS + DAILY_BREAK_HOUR
 export const DEFAULT_BREAK_IDLE_REASON_ID = 'idl-009';
 export const DEFAULT_BREAK_IDLE_REASON_NAME = 'Break Time';
 
-/** Capture stays open until the first approval. Supervisor_Reviewed and later stay locked unless returned. */
-export const EDITABLE_TIMESHEET_STATUSES = ['Draft', 'Submitted', 'Returned', 'Rejected'] as const;
+/** Capture stays open until payroll acknowledgement. HR_Acknowledged / Locked stay locked unless returned. */
+export const EDITABLE_TIMESHEET_STATUSES = [
+  'Draft',
+  'Submitted',
+  'Returned',
+  'Rejected',
+  'Supervisor_Reviewed',
+  'Project_Manager_Reviewed',
+  'Cost_Control_Reviewed',
+  'GM_Operations_Reviewed',
+] as const;
 export type EditableTimesheetStatus = (typeof EDITABLE_TIMESHEET_STATUSES)[number];
-export const isEditableTimesheetStatus = (status?: string | null) =>
-  EDITABLE_TIMESHEET_STATUSES.includes(String(status || 'Draft').trim().replace(/\s+/g, '_') as EditableTimesheetStatus);
+export const TIMESHEET_CAPTURE_LOCKED_STATUSES = ['HR_Acknowledged', 'Locked', 'Approved'] as const;
+
+export const normalizeTimesheetStatusKey = (status?: string | null) =>
+  String(status || 'Draft').trim().replace(/[\s-]+/g, '_').toLowerCase();
+
+export const isTimesheetInApprovalCapture = (status?: string | null) => {
+  const key = normalizeTimesheetStatusKey(status);
+  return [
+    'submitted',
+    'supervisor_reviewed',
+    'project_manager_reviewed',
+    'cost_control_reviewed',
+    'gm_operations_reviewed',
+  ].includes(key);
+};
+
+/** Capture stays editable until HR acknowledges the sheet for payroll. */
+export const isEditableTimesheetStatus = (status?: string | null) => {
+  const key = normalizeTimesheetStatusKey(status);
+  return !TIMESHEET_CAPTURE_LOCKED_STATUSES.some(
+    (locked) => normalizeTimesheetStatusKey(locked) === key,
+  );
+};
 
 export type TimesheetShiftKind = 'Day' | 'Night';
 
@@ -101,10 +131,45 @@ export const classifyAttendanceShiftFromClockIn = (clockIn?: string | null): Tim
 
 export const isNightWindowClockIn = (clockIn?: string | null) => classifyAttendanceShiftFromClockIn(clockIn) === 'Night';
 
-/** Night view: only employees who actually punched in the night window. Day view: hide those night punchers. */
-export const timesheetLineMatchesShift = (clockIn?: string | null, shiftLabel?: string | null) => {
+/** True when the employee already started a day pair (clock-in 06:00–18:00) and has duration that day. */
+export const hasDayShiftDuration = (clockIn?: string | null, clockOut?: string | null) => {
+  const inMinutes = clockTimeToMinutes(clockIn);
+  const outMinutes = clockTimeToMinutes(clockOut);
+  if (inMinutes === null || outMinutes === null) return false;
+  const startedInDayWindow =
+    inMinutes >= NIGHT_MORNING_CUTOFF_MINUTES && inMinutes < NIGHT_SHIFT_START_MINUTES;
+  if (!startedInDayWindow) return false;
+  let durationMinutes = outMinutes - inMinutes;
+  if (durationMinutes < 0) durationMinutes += 24 * 60;
+  return durationMinutes > 0.06;
+};
+
+/**
+ * Night crew only: first punch from 18:00, and no duration already recorded that calendar day.
+ * An evening clock-out from a morning clock-in is not a night start.
+ */
+export const isNightShiftEligibleAttendance = (clockIn?: string | null, clockOut?: string | null) => {
+  const inMinutes = clockTimeToMinutes(clockIn);
+  const outMinutes = clockTimeToMinutes(clockOut);
+  if (inMinutes === null) return false;
+  if (outMinutes !== null) {
+    let durationMinutes = outMinutes - inMinutes;
+    if (durationMinutes < 0) durationMinutes += 24 * 60;
+    if (durationMinutes > 0.06) return false;
+  }
+  if (hasDayShiftDuration(clockIn, clockOut)) return false;
+  if (inMinutes >= NIGHT_MORNING_CUTOFF_MINUTES && inMinutes < NIGHT_SHIFT_START_MINUTES) return false;
+  return inMinutes >= NIGHT_SHIFT_START_MINUTES;
+};
+
+/** Night view: only true night starters. Day view: hide those night punchers; keep absentees. */
+export const timesheetLineMatchesShift = (
+  clockIn?: string | null,
+  shiftLabel?: string | null,
+  clockOut?: string | null,
+) => {
   const kind = resolveTimesheetShift(shiftLabel).kind;
-  if (kind === 'Night') return Boolean(String(clockIn || '').trim()) && isNightWindowClockIn(clockIn);
+  if (kind === 'Night') return isNightShiftEligibleAttendance(clockIn, clockOut);
   if (!String(clockIn || '').trim()) return true;
   return classifyAttendanceShiftFromClockIn(clockIn) === 'Day';
 };
@@ -643,10 +708,17 @@ export const projectCodeFromOffshoreWorkCenter = (name?: string | null) => {
   return match ? match[1].trim().toUpperCase() : '';
 };
 
-export const isManualOffshoreLine = (line: Pick<TimesheetLine, 'attendanceMode' | 'remarks'>) =>
+export const isManualOffshoreLine = (line: {
+  attendanceMode?: 'Biometric' | 'Manual' | null;
+  remarks?: string | null;
+}) =>
   line.attendanceMode === 'Manual' || String(line.remarks || '').includes(OFFSHORE_REMARKS_MARKER);
 
-export const isTimesheetAbsentLine = (line: Pick<TimesheetLine, 'clockIn' | 'attendanceMode' | 'remarks'>) =>
+export const isTimesheetAbsentLine = (line: {
+  clockIn?: string | null;
+  attendanceMode?: 'Biometric' | 'Manual' | null;
+  remarks?: string | null;
+}) =>
   !String(line.clockIn || '').trim() && !isManualOffshoreLine(line);
 
 export const buildManualOffshoreLine = (input: {

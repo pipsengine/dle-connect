@@ -35,7 +35,7 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { DAILY_BREAK_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetLineMatchesShift, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetLineMatchesShift, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import { TimesheetEntryEnterpriseView } from './TimesheetEntryEnterpriseView';
@@ -1028,16 +1028,16 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
         setQuery('');
         setBulkProject('');
         setBulkHours(resolveTimesheetHours({ date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift }).standardProductiveHours);
-        setNotice('Timesheet submitted for supervisor review. You can still edit hours and resubmit until the first approval is given.');
+        setNotice('Timesheet submitted for supervisor review. You can still book hours until HR acknowledges it for payroll. Saving recalls it to Draft.');
       } else if (saveAsDraft) {
         setNotice(
-          payload?.header?.status === 'Submitted'
+          isTimesheetInApprovalCapture(payload?.header?.status)
             ? 'Timesheet recalled to Draft so missing hours can be booked. Use Review & Submit when it is complete.'
             : 'Draft saved. You can continue editing this timesheet before submission.',
         );
       } else {
         setNotice(
-          payload?.header?.status === 'Submitted'
+          isTimesheetInApprovalCapture(payload?.header?.status)
             ? 'Timesheet recalled to Draft so missing hours can be booked. Use Review & Submit when it is complete.'
             : 'Changes saved.',
         );
@@ -1295,7 +1295,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
 
   const shiftLines = requestedHeaderId
     ? localLines
-    : localLines.filter((line) => timesheetLineMatchesShift(line.clockIn, selectedShift));
+    : localLines.filter((line) => timesheetLineMatchesShift(line.clockIn, selectedShift, line.clockOut));
   const filteredLines = shiftLines.filter((l) =>
     l.employeeName.toLowerCase().includes(query.toLowerCase()) ||
     l.employeeNo.toLowerCase().includes(query.toLowerCase())
@@ -1432,8 +1432,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const displayError = error && canBookOvertime && payrollLockMessage.test(error) ? null : error;
   const displayNotice =
     notice ||
-    (headerStatus === 'Submitted' && canEditTimesheet
-      ? 'Awaiting first approval. You can still book missing hours and Review & Submit again. Editing locks after a supervisor (or later stage) approves.'
+    (isTimesheetInApprovalCapture(headerStatus) && canEditTimesheet
+      ? 'This timesheet is not payroll-approved yet. You can still book hours. Saving recalls it to Draft — use Review & Submit when it is complete.'
       : error && canBookOvertime && payrollLockMessage.test(error)
         ? 'Timesheet is posted to payroll. Use the overtime booking bar below to add 1h, 2h, 3h corrections, then re-run payroll.'
         : null);
@@ -1517,6 +1517,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
         <TimesheetEntryEnterpriseView
           periodLabel={periodLabel}
           periodIsOpen={periodIsOpen}
+          headerStatus={payload?.header?.status || 'Draft'}
           selectedDate={selectedDate}
           selectedShift={selectedShift}
           shiftOptions={payload?.filterOptions.shifts ?? []}
@@ -1568,7 +1569,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             setSelectedShift(shift.label);
             setNotice(
               shift.kind === 'Night'
-                ? 'Night shift selected: showing only employees who clocked in from 18:00 to 06:00. Book 8h as normal work — ₦1,500 inconvenience allowance posts automatically; overtime is not applicable.'
+                ? 'Night shift selected: showing only employees with no day duration who clocked in from 18:00. Book 8h as normal work — ₦1,500 inconvenience allowance posts automatically; overtime is not applicable.'
                 : 'Day shift selected: showing day-shift clock-ins (and absentees). Hours after 17:00 until clock-out are overtime.',
             );
             if (!canEditTimesheet) return;
@@ -1612,7 +1613,11 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           submitting={submitting}
           refreshing={refreshing}
           error={displayError}
-          notice={displayNotice}
+          notice={
+            isTimesheetInApprovalCapture(headerStatus) && canEditTimesheet && !notice
+              ? null
+              : displayNotice
+          }
           isOffshoreSheet={isOffshoreSheet}
           offshoreNotice={payload?.mobilizedCrew?.message || null}
           query={query}
@@ -1813,6 +1818,12 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           </div>
         )}
 
+        {periodIsOpen && canEditTimesheet && isTimesheetInApprovalCapture(headerStatus) ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+            This timesheet is not payroll-approved yet. You can still book hours. Saving recalls it to Draft — use Review & Submit when it is complete.
+          </div>
+        ) : null}
+
         {!periodIsOpen && (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
             <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1858,7 +1869,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                   <p className={`mt-1 text-xs font-semibold ${isPayrollReady ? 'text-emerald-700' : 'text-indigo-700'}`}>
                     {isPayrollReady
                       ? 'HR has acknowledged this timesheet for payroll. Editing is locked and any correction must follow a formal return/reversal process.'
-                      : 'This timesheet has been submitted for approval. Capture fields are locked and can only be edited again if it is returned or rejected.'}
+                      : 'This timesheet is locked. Capture fields can only be edited again if it is returned or rejected.'}
                   </p>
                 </div>
               </div>

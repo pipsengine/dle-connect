@@ -17,7 +17,8 @@ import {
   isTimesheetPaidLeaveLine,
   normalizeIdleAllocations,
   normalizeProjectAllocations,
-  isNightWindowClockIn,
+  isNightShiftEligibleAttendance,
+  hasDayShiftDuration,
   isOffshoreWorkCenterName,
   resolveTimesheetShift,
   timesheetHeaderMatchesShift,
@@ -3513,11 +3514,11 @@ export async function syncAttendanceForTimesheet(
     candidate.payrollEmployee?.displayName,
   ].flatMap((value) => attendanceMatchKeys(value));
 
-  // Night: only employees with night-window punches (do not mix full day crew).
+  // Night: only employees with a night start and zero day duration (do not reuse day clock-out as night in).
   // Day: keep full assigned roster; absent rows stay for booking visibility.
   const isNightAttendance = (candidate: (typeof attendanceCandidates)[number]) =>
-    isNightWindowClockIn(candidate.attendance.checkInTime) || candidate.attendance.shift === 'Night';
-  const attendanceForDay = shift.kind === 'Night'
+    isNightShiftEligibleAttendance(candidate.attendance.checkInTime, candidate.attendance.checkOutTime);
+  let attendanceForDay = shift.kind === 'Night'
     ? (
       assignedSupervisorEmployees.length
         ? assignedSupervisorEmployees
@@ -3562,6 +3563,21 @@ export async function syncAttendanceForTimesheet(
     );
 
   const { headers, lines } = await readTimesheetData();
+  const dayDurationKeys = new Set<string>();
+  for (const existingHeader of headers) {
+    if (existingHeader.timesheetDate !== date) continue;
+    if (resolveTimesheetShift(existingHeader.shiftLabel).kind === 'Night') continue;
+    for (const line of lines) {
+      if (line.headerId !== existingHeader.id) continue;
+      if (!hasDayShiftDuration(line.clockIn, line.clockOut)) continue;
+      attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName).forEach((key) => dayDurationKeys.add(key));
+    }
+  }
+  if (shift.kind === 'Night') {
+    attendanceForDay = attendanceForDay.filter(
+      (candidate) => !attendanceCandidateKeys(candidate).some((key) => dayDurationKeys.has(key)),
+    );
+  }
   const period = calculateTimesheetPeriod(new Date(date));
 
   const workCenterId = workCenterName.toLowerCase().replace(/\s+/g, '-');
@@ -3617,7 +3633,8 @@ export async function syncAttendanceForTimesheet(
           return employeeCode === line.employeeId;
         });
         if (alreadyListed) return false;
-        if (!timesheetLineMatchesShift(line.clockIn, shift.label)) return false;
+        if (attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName).some((key) => dayDurationKeys.has(key))) return false;
+        if (!timesheetLineMatchesShift(line.clockIn, shift.label, line.clockOut)) return false;
         return Number(line.usedHours || 0) > 0.001 || Number(line.totalHours || 0) > 0.001;
       })
     : [];

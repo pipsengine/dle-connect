@@ -521,6 +521,7 @@ const readLiveNightClockingActivityRaw = async (
       employeeName: string;
       terminalId: number | null;
       terminalName: string;
+      dayPunches: string[];
       nightIns: string[];
       nightOuts: string[];
       punchCount: number;
@@ -541,6 +542,7 @@ const readLiveNightClockingActivityRaw = async (
           employeeName: String(row.employeeName || `Employee ${row.uid}`),
           terminalId: row.terminalId,
           terminalName: row.terminalName || 'Biometric Terminal',
+          dayPunches: [],
           nightIns: [],
           nightOuts: [],
           punchCount: 0,
@@ -553,7 +555,9 @@ const readLiveNightClockingActivityRaw = async (
         agg.terminalName = row.terminalName || agg.terminalName;
       }
 
-      if (punchDate === workDateMysql && minutes >= 1080) {
+      if (punchDate === workDateMysql && minutes >= 360 && minutes < 1080) {
+        agg.dayPunches.push(punchTime);
+      } else if (punchDate === workDateMysql && minutes >= 1080) {
         agg.nightIns.push(punchTime);
       } else if (punchDate === nextDateMysql && minutes < 360) {
         agg.nightOuts.push(punchTime);
@@ -589,6 +593,8 @@ const readLiveNightClockingActivityRaw = async (
 
     const records: LiveClockingActivityRecord[] = [];
     for (const agg of byUid.values()) {
+      // Already clocked in during the day (duration that day is not zero) — evening punch is clock-out, not night in.
+      if (agg.dayPunches.length) continue;
       if (!agg.nightIns.length) continue;
       const firstPunch = agg.nightIns.slice().sort()[0];
       const lastPunch = agg.nightOuts.length
