@@ -13,6 +13,7 @@ import {
   sumProjectAllocationHours,
   attendanceDurationFromClock,
   repairStackedOvertimeProductiveHours,
+  isTimesheetAbsentLine,
 } from '@/lib/timesheet-entry-shared';
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
@@ -23,7 +24,7 @@ export const applyTimesheetLineDefaults = (
   dayContext: TimesheetDayContext,
   _projectCodes: string[] = [],
 ): TimesheetLine => {
-  if (!line.clockIn) {
+  if (isTimesheetAbsentLine(line)) {
     return {
       ...line,
       projectAllocations: normalizeProjectAllocations(line.projectAllocations),

@@ -256,6 +256,14 @@ export const hrisRoutePermissionOptions = (pathname: string): string[] | null =>
       'timesheet.approve',
     ];
   }
+  if (path === '/hris/workforce-management/crew-mobilization' || path === '/hris/time-and-logs/crew-mobilization') {
+    return [
+      'page.hris.time-and-logs.crew-mobilization.view',
+      'timesheet.hr.approve',
+      'workforce.manage',
+      'hris.view',
+    ];
+  }
   if (path === '/hris/workforce-management/reports-and-analytics' || path.startsWith('/hris/workforce-management/reports-and-analytics/')) {
     return ['operations.timesheets.view', 'operations.timesheets.export', 'timesheet.view', 'timesheet.export', 'payroll.view'];
   }
@@ -318,6 +326,10 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
   }
   if (path.startsWith('/hris/performance-management')) {
     return canAccessHrisPerformanceManagement(session);
+  }
+
+  if (path === '/hris/workforce-management/crew-mobilization' || path === '/hris/time-and-logs/crew-mobilization') {
+    return isHrPortalUser(session);
   }
 
   const explicitOptions = hrisRoutePermissionOptions(path);

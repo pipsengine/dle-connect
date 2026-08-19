@@ -68,6 +68,7 @@ const timesheetQuickLinks = [
   { label: 'Timesheet Period', href: '/hris/workforce-management/timesheet-period' },
   { label: 'Timesheet Approval', href: '/hris/workforce-management/timesheet-approval' },
   { label: 'Timesheet Reports', href: '/hris/workforce-management/timesheet-reports' },
+  { label: 'Crew Mobilization', href: '/hris/workforce-management/crew-mobilization' },
 ];
 
 const sumRows = (rows: RecordRow[], getter: (row: RecordRow) => number) => rows.reduce((total, row) => total + getter(row), 0);

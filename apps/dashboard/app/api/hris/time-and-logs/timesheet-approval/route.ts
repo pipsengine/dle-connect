@@ -367,6 +367,7 @@ const buildTimesheetSummary = (
     supervisorId: header.supervisorId,
     supervisorName: header.supervisorName,
     workCenterName: header.workCenterName,
+    shiftLabel: header.shiftLabel || null,
     status,
     statusLabel: statusLabel(status),
     currentStage: currentStageForStatus(status),

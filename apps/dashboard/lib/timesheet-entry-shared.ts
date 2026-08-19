@@ -6,6 +6,12 @@ export const GROSS_TIMESHEET_HOURS = STANDARD_TIMESHEET_HOURS + DAILY_BREAK_HOUR
 export const DEFAULT_BREAK_IDLE_REASON_ID = 'idl-009';
 export const DEFAULT_BREAK_IDLE_REASON_NAME = 'Break Time';
 
+/** Capture stays open until the first approval. Supervisor_Reviewed and later stay locked unless returned. */
+export const EDITABLE_TIMESHEET_STATUSES = ['Draft', 'Submitted', 'Returned', 'Rejected'] as const;
+export type EditableTimesheetStatus = (typeof EDITABLE_TIMESHEET_STATUSES)[number];
+export const isEditableTimesheetStatus = (status?: string | null) =>
+  EDITABLE_TIMESHEET_STATUSES.includes(String(status || 'Draft').trim().replace(/\s+/g, '_') as EditableTimesheetStatus);
+
 export type TimesheetShiftKind = 'Day' | 'Night';
 
 export type TimesheetShiftDefinition = {
@@ -613,6 +619,80 @@ export type TimesheetLine = {
   remarks: string | null;
   validationStatus: TimesheetLineValidationStatus;
   validationMessage: string | null;
+  /** Biometric (default) or Manual for offshore/no-device booking. */
+  attendanceMode?: 'Biometric' | 'Manual' | null;
+  /** Hours recorded as offshore allowance. Not payroll OT. */
+  offshoreAllowanceHours?: number;
+};
+
+export const OFFSHORE_LOCATION_NAME = 'OFFSHORE';
+export const OFFSHORE_WORK_CENTER_PREFIX = 'OFFSHORE · ';
+export const OFFSHORE_PAYROLL_HOURS = STANDARD_TIMESHEET_HOURS;
+export const OFFSHORE_ALLOWANCE_HOURS = 4;
+export const OFFSHORE_BREAK_HOURS = DAILY_BREAK_HOURS;
+export const OFFSHORE_REMARKS_MARKER = 'OFFSHORE_MANUAL';
+
+export const offshoreWorkCenterName = (projectCode: string) =>
+  `${OFFSHORE_WORK_CENTER_PREFIX}${String(projectCode || '').trim().toUpperCase()}`;
+
+export const isOffshoreWorkCenterName = (name?: string | null) =>
+  /^OFFSHORE(\s|$|[·\-–])/i.test(String(name || '').trim());
+
+export const projectCodeFromOffshoreWorkCenter = (name?: string | null) => {
+  const match = String(name || '').trim().match(/^OFFSHORE\s*[·\-–]\s*(.+)$/i);
+  return match ? match[1].trim().toUpperCase() : '';
+};
+
+export const isManualOffshoreLine = (line: Pick<TimesheetLine, 'attendanceMode' | 'remarks'>) =>
+  line.attendanceMode === 'Manual' || String(line.remarks || '').includes(OFFSHORE_REMARKS_MARKER);
+
+export const isTimesheetAbsentLine = (line: Pick<TimesheetLine, 'clockIn' | 'attendanceMode' | 'remarks'>) =>
+  !String(line.clockIn || '').trim() && !isManualOffshoreLine(line);
+
+export const buildManualOffshoreLine = (input: {
+  headerId: string;
+  employeeId: string;
+  employeeNo: string;
+  employeeName: string;
+  projectCode: string;
+  projectName: string;
+}): TimesheetLine => {
+  const projectCode = String(input.projectCode || '').trim().toUpperCase();
+  const projectName = String(input.projectName || projectCode).trim();
+  return {
+    id: `ts-off-${input.headerId}-${String(input.employeeNo || input.employeeId).replace(/[^A-Za-z0-9]/g, '')}`,
+    headerId: input.headerId,
+    employeeId: input.employeeId,
+    employeeNo: input.employeeNo,
+    employeeName: input.employeeName,
+    biometricId: '',
+    attendanceId: null,
+    clockIn: null,
+    clockOut: null,
+    attendanceDuration: 0,
+    projectAllocations: [{
+      projectId: projectCode,
+      projectCode,
+      projectName,
+      hours: OFFSHORE_PAYROLL_HOURS,
+      remarks: 'Offshore payroll hours (8h). 4h allowance is outside payroll.',
+    }],
+    idleAllocations: [{
+      reasonId: DEFAULT_BREAK_IDLE_REASON_ID,
+      reasonName: DEFAULT_BREAK_IDLE_REASON_NAME,
+      hours: OFFSHORE_BREAK_HOURS,
+      remarks: 'Offshore break',
+    }],
+    usedHours: OFFSHORE_PAYROLL_HOURS,
+    idleHours: OFFSHORE_BREAK_HOURS,
+    totalHours: OFFSHORE_PAYROLL_HOURS + OFFSHORE_BREAK_HOURS,
+    variance: 0,
+    remarks: OFFSHORE_REMARKS_MARKER,
+    validationStatus: 'Valid',
+    validationMessage: 'Offshore: 8h payroll + 1h break. 4h allowance is outside payroll.',
+    attendanceMode: 'Manual',
+    offshoreAllowanceHours: OFFSHORE_ALLOWANCE_HOURS,
+  };
 };
 
 const linePersistenceScore = (line: TimesheetLine) =>

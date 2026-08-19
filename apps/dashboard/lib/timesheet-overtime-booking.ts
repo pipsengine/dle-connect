@@ -18,6 +18,9 @@ import {
   maxBookableProductiveHours,
   maxProductiveHoursFromBiometric,
   formatProductiveHoursDenial,
+  isManualOffshoreLine,
+  OFFSHORE_PAYROLL_HOURS,
+  OFFSHORE_BREAK_HOURS,
   capProductiveHoursToAttendance,
 } from '@/lib/timesheet-entry-shared';
 import { resolveOvertimeBookingOptions } from '@/lib/timesheet-overtime-config';
@@ -188,7 +191,8 @@ export type OvertimeValidation = {
 
 export const validateStrictStandardDay = (line: TimesheetLine, dayContext?: TimesheetDayContext): OvertimeValidation => {
   const { standardProductiveHours, grossHours } = resolveTimesheetHours(dayContext);
-  const isAbsentLine = !line.clockIn;
+  const isManualOffshore = isManualOffshoreLine(line);
+  const isAbsentLine = !line.clockIn && !isManualOffshore;
   const projectAllocations = normalizeProjectAllocations(line.projectAllocations || []);
   const usedHours = sumProjectAllocationHours(projectAllocations);
   const idleHours = round1((line.idleAllocations || []).reduce((sum, item) => sum + Number(item.hours || 0), 0));
@@ -297,7 +301,7 @@ export const validateTimesheetLine = (
     return validateStrictStandardDay(line, dayContext);
   }
 
-  const isAbsentLine = !line.clockIn;
+  const isAbsentLine = !line.clockIn && !isManualOffshoreLine(line);
   const projectAllocations = normalizeProjectAllocations(line.projectAllocations || []);
   const usedHours = sumProjectAllocationHours(projectAllocations);
   const idleHours = round1((line.idleAllocations || []).reduce((sum, item) => sum + Number(item.hours || 0), 0));

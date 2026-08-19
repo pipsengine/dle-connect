@@ -65,8 +65,9 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
-import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, timesheetShiftHeaderSlug, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, buildManualOffshoreLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
+import { mobilizationCoversDate, mobilizationMatchesSupervisor, readTimesheetMobilizations, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
 
 const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string | null): TimesheetDayContext => ({
   date,
@@ -175,6 +176,12 @@ type TimesheetPayload = {
   matrixColumns: DisplayColumn[];
   projectCatalog: any[];
   aiInsights: StructureInsight[];
+  mobilizedCrew: {
+    count: number;
+    projectCode: string;
+    workCenterName: string;
+    message: string;
+  } | null;
 };
 
 type UpdatePayload = {
@@ -880,6 +887,7 @@ const buildPayload = async (
     payrollEmployeeSource,
     assignmentRows,
     holidayDates,
+    allMobilizations,
   ] = await Promise.all([
     readTimesheetData(),
     readSystemTimesheetDepartments(),
@@ -892,6 +900,7 @@ const buildPayload = async (
     readPayrollEmployees(),
     readSupervisorAssignments().catch(() => []),
     readPublicHolidayDates(),
+    readTimesheetMobilizations().catch(() => [] as TimesheetMobilization[]),
   ]);
   const { headers, lines: allLines } = timesheetData;
   const employees = payrollEmployeeSource.employees;
@@ -899,14 +908,20 @@ const buildPayload = async (
   const supervisorIndex = buildSupervisorIndex(activeEmployees);
   const projectManagers = await buildProjectManagerOptions(activeEmployees);
 
-  const requestedHeader = requestedHeaderId ? headers.find((item) => item.id === requestedHeaderId) : null;
+  const requestedHeader = requestedHeaderId
+    ? headers.find((item) => String(item.id) === String(requestedHeaderId))
+    : null;
+  if (requestedHeaderId && !requestedHeader) {
+    throw new Error('That timesheet draft could not be opened. It may have been submitted or removed. Return to Timesheet Approval and click the draft again.');
+  }
   const targetDate = requestedHeader?.timesheetDate || date || todayDateInputValue();
-  const targetShiftLabel = resolveTimesheetShift(requestedShiftLabel || requestedHeader?.shiftLabel).label;
+  const targetShiftLabel = resolveTimesheetShift(requestedHeader?.shiftLabel || requestedShiftLabel).label;
   const dayContext = dayContextFor(targetDate, holidayDates, targetShiftLabel);
   if (supervisorMode && !session) throw new Error('Authenticated supervisor session is required.');
   let requestedSupervisor = clean(requestedHeader?.supervisorId || supervisorId);
   let targetWorkCenter = clean(requestedHeader?.workCenterName || workCenterName);
   let targetLocation = clean(locationName);
+  const pinnedWorkCenter = Boolean(targetWorkCenter);
   const period = await readTimesheetPeriod(new Date(targetDate));
   const recordSupervisors = Array.from(new Set(timesheetRecords.map((record) => record.supervisor).map(clean).filter(Boolean)));
   const employeesBySupervisor = new Map<string, typeof activeEmployees>();
@@ -980,6 +995,35 @@ const buildPayload = async (
   const targetSupervisor = canonicalSupervisorValue(requestedSupervisor || supervisorDirectory[0]?.value || recordSupervisors[0] || access.actor, supervisorIndex);
   const selectedSupervisorProfile = findSupervisorEmployee(targetSupervisor, supervisorIndex) || activeEmployees.find((employee) => supervisorMatchesSelection(employee, targetSupervisor));
   const targetSupervisorCode = clean(targetSupervisor).split(' - ')[0]?.trim().toLowerCase();
+  const dateMobilizations = allMobilizations.filter((item) => mobilizationCoversDate(item, targetDate));
+  const hostMobilizations = dateMobilizations.filter((item) => mobilizationMatchesSupervisor(item, targetSupervisor));
+  const scopedWorkCenters = [...workCenters];
+  const scopedLocations = [...locations];
+  for (const item of hostMobilizations) {
+    if (!scopedWorkCenters.some((workCenter) => clean(workCenter.name) === item.workCenterName)) {
+      scopedWorkCenters.push({
+        id: `wc-${item.workCenterName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+        code: item.workCenterName,
+        name: item.workCenterName,
+        location: OFFSHORE_LOCATION_NAME,
+        site: OFFSHORE_LOCATION_NAME,
+        status: 'Active',
+        sourceSystem: 'HRIS',
+      });
+    }
+  }
+  if (hostMobilizations.length && !scopedLocations.some((location) => clean(location.name) === OFFSHORE_LOCATION_NAME)) {
+    scopedLocations.push({
+      id: 'loc-offshore',
+      code: 'OFFSHORE',
+      name: OFFSHORE_LOCATION_NAME,
+      site: OFFSHORE_LOCATION_NAME,
+      sourceSystem: 'HRIS',
+    });
+  }
+  if (isOffshoreWorkCenterName(targetWorkCenter)) {
+    targetLocation = OFFSHORE_LOCATION_NAME;
+  }
   const employeesByCode = new Map(activeEmployees.map((employee) => [clean(employee.employeeCode).toLowerCase(), employee]));
   const assignedSupervisorEmployees = assignmentRows
     .filter((assignment) => clean(assignment.supervisorEmployeeCode).toLowerCase() === targetSupervisorCode && assignment.employeeCode && assignment.matchedStatus !== 'Unresolved')
@@ -1008,38 +1052,48 @@ const buildPayload = async (
     return canonicalManager === targetSupervisor || managerMatches({ managerName: canonicalManager || employee.managerName }, targetSupervisor);
   });
   const selectedSupervisorAllDirectReports = assignedSupervisorEmployees.length ? assignedSupervisorEmployees : reportingManagerEmployees;
-  // Always resolve location / work centre from the selected supervisor when not explicitly provided.
   {
     const supervisorRecordsForDefault = timesheetRecords.filter((record) => managerMatches({ managerName: record.supervisor }, targetSupervisor));
-    targetLocation = targetLocation ||
-      preferredLocationFromDirectory(selectedSupervisorAllDirectReports, locations, workCenters) ||
-      clean(selectedSupervisorProfile ? employeeLocation(selectedSupervisorProfile) : '') ||
-      mostCommon(supervisorRecordsForDefault.flatMap((record) => [record.location, record.site]));
-    targetWorkCenter = targetWorkCenter ||
-      workCenterFromSupervisorProfile(selectedSupervisorProfile, workCenters) ||
-      defaultWorkCenterForEmployees(selectedSupervisorAllDirectReports, workCenters, targetLocation) ||
-      mostCommon(supervisorRecordsForDefault.flatMap((record) => [record.department, record.businessUnit, record.site, record.location]));
-    targetLocation =
-      targetLocation ||
-      preferredLocationFromDirectory([], locations, workCenters) ||
-      clean(workCenters.find((workCenter) => workCenter.name === targetWorkCenter)?.site || workCenters.find((workCenter) => workCenter.name === targetWorkCenter)?.location) ||
-      mostCommon(locations.flatMap((location) => [location.name, location.site]));
-    if (targetLocation && targetWorkCenter) {
-      const workCentersForLocation = workCenters.filter((workCenter) => {
-        const selected = clean(targetLocation).toLowerCase();
-        if (!selected) return true;
-        return [workCenter.location, workCenter.site, workCenter.name]
-          .map((value) => clean(value).toLowerCase())
-          .filter(Boolean)
-          .some((value) => value === selected || value.includes(selected) || selected.includes(value));
-      });
-      if (workCentersForLocation.length && !workCentersForLocation.some((workCenter) => clean(workCenter.name) === targetWorkCenter)) {
-        targetWorkCenter =
-          defaultWorkCenterForEmployees(selectedSupervisorAllDirectReports, workCentersForLocation, targetLocation)
-          || workCentersForLocation[0]?.name
-          || targetWorkCenter;
+    if (pinnedWorkCenter) {
+      const workCenterRow = scopedWorkCenters.find((workCenter) => clean(workCenter.name) === targetWorkCenter);
+      targetLocation =
+        targetLocation ||
+        clean(workCenterRow?.location || workCenterRow?.site) ||
+        preferredLocationFromDirectory(selectedSupervisorAllDirectReports, scopedLocations, scopedWorkCenters) ||
+        clean(selectedSupervisorProfile ? employeeLocation(selectedSupervisorProfile) : '') ||
+        mostCommon(supervisorRecordsForDefault.flatMap((record) => [record.location, record.site]));
+    } else {
+      targetLocation = targetLocation ||
+        preferredLocationFromDirectory(selectedSupervisorAllDirectReports, scopedLocations, scopedWorkCenters) ||
+        clean(selectedSupervisorProfile ? employeeLocation(selectedSupervisorProfile) : '') ||
+        mostCommon(supervisorRecordsForDefault.flatMap((record) => [record.location, record.site]));
+      targetWorkCenter = targetWorkCenter ||
+        workCenterFromSupervisorProfile(selectedSupervisorProfile, scopedWorkCenters) ||
+        defaultWorkCenterForEmployees(selectedSupervisorAllDirectReports, scopedWorkCenters, targetLocation) ||
+        mostCommon(supervisorRecordsForDefault.flatMap((record) => [record.department, record.businessUnit, record.site, record.location]));
+      targetLocation =
+        targetLocation ||
+        preferredLocationFromDirectory([], scopedLocations, scopedWorkCenters) ||
+        clean(scopedWorkCenters.find((workCenter) => workCenter.name === targetWorkCenter)?.site || scopedWorkCenters.find((workCenter) => workCenter.name === targetWorkCenter)?.location) ||
+        mostCommon(scopedLocations.flatMap((location) => [location.name, location.site]));
+      if (targetLocation && targetWorkCenter && !isOffshoreWorkCenterName(targetWorkCenter)) {
+        const workCentersForLocation = scopedWorkCenters.filter((workCenter) => {
+          const selected = clean(targetLocation).toLowerCase();
+          if (!selected) return true;
+          return [workCenter.location, workCenter.site, workCenter.name]
+            .map((value) => clean(value).toLowerCase())
+            .filter(Boolean)
+            .some((value) => value === selected || value.includes(selected) || selected.includes(value));
+        });
+        if (workCentersForLocation.length && !workCentersForLocation.some((workCenter) => clean(workCenter.name) === targetWorkCenter)) {
+          targetWorkCenter =
+            defaultWorkCenterForEmployees(selectedSupervisorAllDirectReports, workCentersForLocation, targetLocation)
+            || workCentersForLocation[0]?.name
+            || targetWorkCenter;
+        }
       }
     }
+    if (isOffshoreWorkCenterName(targetWorkCenter)) targetLocation = OFFSHORE_LOCATION_NAME;
   }
   const selectedSupervisorDirectReports = targetLocation
     ? selectedSupervisorAllDirectReports.filter((employee) => employeeMatchesLocation(employee, targetLocation))
@@ -1069,29 +1123,57 @@ const buildPayload = async (
     })
     .map(timesheetRecordEmployeeSummary)
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
-  const selectedSupervisorEmployees = selectedSupervisorEmployeesFromDirectory.length ? selectedSupervisorEmployeesFromDirectory : selectedSupervisorEmployeesFromRecords;
+  const isOffshoreSheet = isOffshoreWorkCenterName(targetWorkCenter);
+  const offshoreProjectCode = projectCodeFromOffshoreWorkCenter(targetWorkCenter);
+  const sheetMobilizations = isOffshoreSheet
+    ? hostMobilizations.filter((item) => !offshoreProjectCode || item.projectCode === offshoreProjectCode || item.workCenterName === targetWorkCenter)
+    : [];
+  const awayEmployeeCodes = new Set(
+    dateMobilizations
+      .filter((item) => !sheetMobilizations.some((sheet) => sheet.id === item.id))
+      .map((item) => item.employeeCode.toUpperCase()),
+  );
+  const offshoreRosterEmployees = sheetMobilizations.map((item) => {
+    const employee = employeesByCode.get(item.employeeCode.toLowerCase());
+    return {
+      employeeId: clean(employee?.employeeId) || item.employeeCode,
+      employeeCode: item.employeeCode,
+      fullName: clean(employee?.fullName) || item.employeeName || item.employeeCode,
+      jobTitle: clean(employee?.jobTitle) || 'Offshore crew',
+      department: clean(employee?.department) || item.projectCode,
+      location: OFFSHORE_LOCATION_NAME,
+      managerEmployeeCode: null,
+      managerName: targetSupervisor,
+      status: clean(employee?.status) || 'Active',
+    };
+  }).sort((a, b) => a.fullName.localeCompare(b.fullName));
+  const homeSupervisorEmployees = (selectedSupervisorEmployeesFromDirectory.length ? selectedSupervisorEmployeesFromDirectory : selectedSupervisorEmployeesFromRecords)
+    .filter((employee) => !awayEmployeeCodes.has(employee.employeeCode.toUpperCase()));
+  const selectedSupervisorEmployees = isOffshoreSheet ? offshoreRosterEmployees : homeSupervisorEmployees;
+  let targetShiftForSheet = targetShiftLabel;
+  if (isOffshoreSheet) targetShiftForSheet = DEFAULT_TIMESHEET_SHIFT_LABEL;
   const overtimeBooking = resolveOvertimeBookingOptions();
   const activeProjects = projects.filter((project) => ['Active', 'Approved', 'Open'].includes(project.status));
   let approvedOvertimeAuthorizations: OvertimeAuthorizationRequest[] = [];
-  const attendanceWorkCenters = workCenters.map((workCenter) => ({
+  const attendanceWorkCenters = scopedWorkCenters.map((workCenter) => ({
     location: workCenter.location || workCenter.name,
     site: workCenter.site || workCenter.location || workCenter.name,
     deviceName: workCenter.name,
   }));
 
   let header =
-    (requestedHeader && timesheetHeaderMatchesShift(requestedHeader.shiftLabel, targetShiftLabel) ? requestedHeader : null) ||
+    requestedHeader ||
     (targetWorkCenter
       ? headers.find((h) => (
         h.timesheetDate === targetDate
         && canonicalSupervisorValue(h.supervisorId, supervisorIndex) === targetSupervisor
         && h.workCenterName === targetWorkCenter
-        && timesheetHeaderMatchesShift(h.shiftLabel, targetShiftLabel)
+        && timesheetHeaderMatchesShift(h.shiftLabel, targetShiftForSheet)
       ))
       : headers.find((h) => (
         h.timesheetDate === targetDate
         && canonicalSupervisorValue(h.supervisorId, supervisorIndex) === targetSupervisor
-        && timesheetHeaderMatchesShift(h.shiftLabel, targetShiftLabel)
+        && timesheetHeaderMatchesShift(h.shiftLabel, targetShiftForSheet)
       ))) ||
     null;
   const selectedEmployeeKeys = new Set(selectedSupervisorEmployees.flatMap((employee) => matchKeys(employee.employeeCode, employee.fullName)).filter(Boolean));
@@ -1099,8 +1181,8 @@ const buildPayload = async (
     selectedEmployeeKeys.size > 0
       ? matchKeys(line.employeeNo, line.employeeId, line.employeeName).some((key) => selectedEmployeeKeys.has(key))
       : !supervisorMode;
-  const selectedHeaderId = header?.id;
-  const headerLines = selectedHeaderId ? allLines.filter((line) => line.headerId === selectedHeaderId) : [];
+  const selectedHeaderId = header?.id ? String(header.id) : '';
+  const headerLines = selectedHeaderId ? allLines.filter((line) => String(line.headerId) === selectedHeaderId) : [];
   approvedOvertimeAuthorizations = (await loadOvertimeAuthorizationsForBooking(
     header,
     headerLines,
@@ -1118,9 +1200,57 @@ const buildPayload = async (
         dayContext,
         activeProjects.map((project) => project.code),
       ),
-    )
-    .filter(lineBelongsToSelectedCrew)
-    .filter((line) => timesheetLineMatchesShift(line.clockIn, targetShiftLabel));
+    );
+  if (!requestedHeader || !isOffshoreSheet) {
+    lines = lines.filter(lineBelongsToSelectedCrew);
+  }
+  if (!requestedHeader && !isOffshoreSheet) {
+    lines = lines.filter((line) => timesheetLineMatchesShift(line.clockIn, targetShiftForSheet));
+  }
+
+  if (isOffshoreSheet) {
+    const workCenterId = targetWorkCenter.toLowerCase().replace(/\s+/g, '-');
+    const supervisorSlug = targetSupervisor.toLowerCase().replace(/\s+/g, '-');
+    const shiftSlug = timesheetShiftHeaderSlug(targetShiftForSheet);
+    let persistOffshore = false;
+    if (!header) {
+      header = {
+        id: `hdr-${targetDate}-${supervisorSlug}-${workCenterId}-${shiftSlug}`,
+        periodId: period.id,
+        timesheetDate: targetDate,
+        supervisorId: targetSupervisor,
+        supervisorName: selectedSupervisorProfile ? supervisorDisplay(selectedSupervisorProfile) : targetSupervisor,
+        workCenterId,
+        workCenterName: targetWorkCenter,
+        status: 'Draft',
+        submittedAt: null,
+        submittedBy: null,
+        approvedAt: null,
+        approvedBy: null,
+        lastSyncAt: null,
+        shiftLabel: targetShiftForSheet,
+      };
+      persistOffshore = true;
+    }
+    const existingKeys = new Set(lines.flatMap((line) => matchKeys(line.employeeNo, line.employeeId, line.employeeName)));
+    const projectName = sheetMobilizations[0]?.projectName || offshoreProjectCode || targetWorkCenter;
+    for (const employee of selectedSupervisorEmployees) {
+      const keys = matchKeys(employee.employeeCode, employee.fullName);
+      if (keys.some((key) => existingKeys.has(key))) continue;
+      persistOffshore = true;
+      lines.push(buildManualOffshoreLine({
+        headerId: header.id,
+        employeeId: employee.employeeId || employee.employeeCode,
+        employeeNo: employee.employeeCode,
+        employeeName: employee.fullName,
+        projectCode: offshoreProjectCode || sheetMobilizations[0]?.projectCode || '',
+        projectName,
+      }));
+    }
+    if (persistOffshore && period.status === 'Open' && isTimesheetEditableStatus(header.status)) {
+      await writeTimesheetHeaderLines(header, lines);
+    }
+  }
 
   // Keep the initial page load lightweight. Attendance sync can involve biometric
   // and Sage enrichment calls, so it is only run from the explicit Fetch Punches action.
@@ -1139,13 +1269,15 @@ const buildPayload = async (
         ...timesheetRecords.flatMap((record) => [record.location, record.site]),
         ...activeEmployees.map(employeeLocation),
         ...locations.flatMap((location) => [location.name, location.site]),
+        ...scopedLocations.flatMap((location) => [location.name, location.site]),
+        ...(hostMobilizations.length ? [OFFSHORE_LOCATION_NAME] : []),
       ].map(clean).filter(Boolean),
     ),
   ).sort((a, b) => a.localeCompare(b));
   const summary = {
     totalEmployees: lines.length,
-    presentEmployees: lines.filter((l) => l.clockIn).length,
-    absentEmployees: lines.filter((l) => !l.clockIn).length,
+    presentEmployees: lines.filter((l) => l.clockIn || isManualOffshoreLine(l)).length,
+    absentEmployees: lines.filter((l) => isTimesheetAbsentLine(l)).length,
     onLeaveEmployees: lines.filter((l) =>
       l.idleAllocations.some((item) => item.reasonName.toLowerCase().includes('leave')) ||
       l.projectAllocations.some((item) => item.projectCode.toUpperCase() === 'LEAVE' && Number(item.hours || 0) > 0),
@@ -1174,9 +1306,9 @@ const buildPayload = async (
     workflowStages,
     biometricDevices,
     attendanceWorkCenters,
-    workCenters,
+    workCenters: scopedWorkCenters,
     departments,
-    locations,
+    locations: scopedLocations,
     projectManagers,
     supervisorEmployees: selectedSupervisorEmployees,
     supervisorProfile: selectedSupervisorProfile ? employeeSummary(selectedSupervisorProfile) : null,
@@ -1214,8 +1346,28 @@ const buildPayload = async (
       statuses: ['Draft', 'Submitted', 'Supervisor_Reviewed', 'Project_Manager_Reviewed', 'Cost_Control_Reviewed', 'GM_Operations_Reviewed', 'HR_Acknowledged', 'Rejected', 'Returned', 'Locked'],
       supervisorDirectory,
     },
-    matrixColumns: activeProjects.slice(0, 4).map(p => ({ code: p.code, label: p.code, kind: 'project' })),
+    matrixColumns: (isOffshoreSheet && offshoreProjectCode
+      ? [
+        { code: offshoreProjectCode, label: offshoreProjectCode, kind: 'project' as const },
+        ...activeProjects.filter((project) => project.code !== offshoreProjectCode).slice(0, 3).map((p) => ({ code: p.code, label: p.code, kind: 'project' as const })),
+      ]
+      : activeProjects.slice(0, 4).map((p) => ({ code: p.code, label: p.code, kind: 'project' as const }))),
     projectCatalog: activeProjects,
+    mobilizedCrew: isOffshoreSheet
+      ? {
+        count: selectedSupervisorEmployees.length,
+        projectCode: offshoreProjectCode,
+        workCenterName: targetWorkCenter,
+        message: `${selectedSupervisorEmployees.length} mobilized crew — manual booking, no clock. Payroll 8h + 1h break. 4h offshore allowance is outside payroll.`,
+      }
+      : hostMobilizations.length
+        ? {
+          count: hostMobilizations.length,
+          projectCode: hostMobilizations[0]?.projectCode || '',
+          workCenterName: hostMobilizations[0]?.workCenterName || '',
+          message: `${hostMobilizations.length} crew are mobilized offshore today. Open location OFFSHORE to book them.`,
+        }
+        : null,
     aiInsights: [
       {
         id: 'ts-ins-1',
@@ -1570,6 +1722,9 @@ export async function PATCH(request: Request) {
         scopedWorkCenterName = workCenterName || scoped.header?.workCenterName || scoped.workCenters[0]?.name || '';
       }
       if (!scopedDate || !scopedSupervisorId || !scopedWorkCenterName) return err(400, 'Date, Supervisor ID, and Work Center Name are required.');
+      if (isOffshoreWorkCenterName(scopedWorkCenterName)) {
+        return err(400, 'Offshore timesheets are booked from the HR mobilization roster. There is no clocking machine — attendance sync is not used.');
+      }
       await requireOpenPeriod(scopedDate);
       const existingHeader = headers.find((h) => (
         h.timesheetDate === scopedDate
@@ -1604,6 +1759,7 @@ export async function PATCH(request: Request) {
       if (!header) return err(404, 'Timesheet header not found.');
       await requireOpenPeriod(header.timesheetDate);
       requireEditableTimesheet(header);
+      const previousStatus = normalizeTimesheetStatus(header.status);
 
       // Validate gross day separately from payroll/productive hours.
       const overtimeBooking = resolveOvertimeBookingOptions();
@@ -1622,7 +1778,7 @@ export async function PATCH(request: Request) {
       const reconciledLines = updatedLines.map(reconcileTimesheetLineHours);
       for (const line of reconciledLines) {
         const projectHours = (line.projectAllocations || []).reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
-        if (!line.clockIn && projectHours > 0.001) {
+        if (!line.clockIn && !isManualOffshoreLine(line) && projectHours > 0.001) {
           return err(400, `Absent employee ${line.employeeName} cannot receive project/productive hours.`);
         }
         const validated = validateTimesheetLine(
@@ -1638,6 +1794,24 @@ export async function PATCH(request: Request) {
         }
         if (Math.abs(line.usedHours + line.idleHours - line.totalHours) > 0.01) {
           return err(400, `Hours mismatch for ${line.employeeName}: Used + Idle must equal Total.`);
+        }
+      }
+
+      const otherDateLines = allLines.filter((line) => {
+        const otherHeader = headers.find((item) => item.id === line.headerId);
+        return Boolean(otherHeader && otherHeader.timesheetDate === header.timesheetDate && otherHeader.id !== header.id);
+      });
+      for (const line of reconciledLines) {
+        const bookedHours = Number(line.usedHours || 0) + (line.projectAllocations || []).reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
+        if (bookedHours <= 0.001) continue;
+        const keys = matchKeys(line.employeeNo, line.employeeId, line.employeeName);
+        const clash = otherDateLines.find((other) => {
+          if (Number(other.usedHours || 0) <= 0.001) return false;
+          return matchKeys(other.employeeNo, other.employeeId, other.employeeName).some((key) => keys.includes(key));
+        });
+        if (clash) {
+          const otherHeader = headers.find((item) => item.id === clash.headerId);
+          return err(400, `${line.employeeName} is already booked on ${otherHeader?.workCenterName || 'another timesheet'} for this date.`);
         }
       }
 
@@ -1671,12 +1845,24 @@ export async function PATCH(request: Request) {
             comment: payload.reviewerNote?.trim() || `Submitted for supervisor review before release to ${projectManagerAssignment.projectManager} on ${projectManagerAssignment.projectCode} - ${projectManagerAssignment.projectName}.`,
           },
         ];
-      } else if (action === 'SAVE_DRAFT') {
+      } else if (action === 'SAVE_DRAFT' || (action === 'MATRIX_SAVE' && previousStatus === 'Submitted')) {
+        if (previousStatus === 'Submitted') {
+          header.workflowHistory = [
+            ...(header.workflowHistory || []),
+            {
+              stage: 'Supervisor',
+              decision: 'Returned',
+              by: actor,
+              actedAt: new Date().toISOString(),
+              comment: 'Recalled for correction before supervisor approval.',
+            },
+          ];
+        }
         header.status = 'Draft';
         header.currentApprovalStage = null;
         header.currentApprover = null;
       } else {
-        header.status = normalizeTimesheetStatus(header.status);
+        header.status = previousStatus;
       }
 
       const persistCheck = validateTimesheetLinesForPersist(normalizedLines);

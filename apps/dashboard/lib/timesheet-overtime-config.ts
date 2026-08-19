@@ -1,4 +1,4 @@
-import type { OvertimeAuthorization, OvertimeBookingOptions } from '@/lib/timesheet-entry-shared';
+import { isEditableTimesheetStatus, type OvertimeAuthorization, type OvertimeBookingOptions } from '@/lib/timesheet-entry-shared';
 
 export type { OvertimeAuthorization, OvertimeBookingOptions } from '@/lib/timesheet-entry-shared';
 
@@ -57,8 +57,6 @@ export const approvedOvertimeStatuses = (_devRelaxed = false): string[] =>
 
 const normalizeStatus = (status: string) => status.trim().replace(/\s+/g, '_');
 
-const editableTimesheetStatuses = new Set(['Draft', 'Returned', 'Rejected']);
-
 const retroOvertimeTimesheetStatuses = new Set([
   'Submitted',
   'Supervisor_Reviewed',
@@ -83,7 +81,7 @@ export const canBookOvertimeOnTimesheet = (
   if (!options.enabled || !header) return false;
   const status = normalizeStatus(header.status || 'Draft');
   const periodOpen = period?.status === 'Open';
-  if (periodOpen && editableTimesheetStatuses.has(status)) return true;
+  if (periodOpen && isEditableTimesheetStatus(status)) return true;
   if (!options.retroCorrection) return false;
   return isRetroOvertimeTimesheetStatus(status);
 };

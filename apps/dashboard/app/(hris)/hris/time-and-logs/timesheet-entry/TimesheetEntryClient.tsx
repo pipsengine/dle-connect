@@ -35,14 +35,13 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { DAILY_BREAK_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetLineMatchesShift, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetLineMatchesShift, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import { TimesheetEntryEnterpriseView } from './TimesheetEntryEnterpriseView';
 
 type TimesheetStatus = 'Draft' | 'Submitted' | 'Supervisor_Reviewed' | 'Project_Manager_Reviewed' | 'Cost_Control_Reviewed' | 'GM_Operations_Reviewed' | 'HR_Acknowledged' | 'HR_Reviewed' | 'Project_Control_Reviewed' | 'Approved' | 'Locked' | 'Rejected' | 'Returned';
 type TimesheetWorkflowStage = 'Supervisor' | 'Project Manager' | 'Cost Control' | 'HR';
-const editableTimesheetStatuses: TimesheetStatus[] = ['Draft', 'Returned', 'Rejected'];
 const payrollReadyStatuses: TimesheetStatus[] = ['HR_Acknowledged', 'Approved', 'Locked'];
 const EMPLOYEE_CARD_PAGE_SIZE = 12;
 type TimesheetEntryMode = 'Supervisor Entry';
@@ -140,6 +139,8 @@ type TimesheetLine = {
   remarks: string | null;
   validationStatus: 'Valid' | 'Error' | 'Warning' | 'Incomplete';
   validationMessage: string | null;
+  attendanceMode?: 'Biometric' | 'Manual' | null;
+  offshoreAllowanceHours?: number;
 };
 
 type DisplayColumn = {
@@ -295,6 +296,12 @@ type Payload = {
   matrixColumns: DisplayColumn[];
   projectCatalog: any[];
   aiInsights: StructureInsight[];
+  mobilizedCrew?: {
+    count: number;
+    projectCode: string;
+    workCenterName: string;
+    message: string;
+  } | null;
 };
 
 type SearchableOption = {
@@ -367,7 +374,8 @@ const metricCardTone: Record<string, { card: string; label: string; value: strin
 };
 
 const employeeCardTone = (line: TimesheetLine) => {
-  if (!line.clockIn) return 'border-slate-200 bg-slate-100';
+  if (isTimesheetAbsentLine(line)) return 'border-slate-200 bg-slate-100';
+  if (isManualOffshoreLine(line)) return 'border-sky-200 bg-sky-50';
   if (line.validationStatus === 'Valid') return 'border-emerald-100 bg-emerald-50';
   if (line.validationStatus === 'Error') return 'border-red-100 bg-red-50';
   if (line.validationStatus === 'Warning') return 'border-amber-100 bg-amber-50';
@@ -375,7 +383,8 @@ const employeeCardTone = (line: TimesheetLine) => {
 };
 
 const employeeStatusBadgeTone = (line: TimesheetLine) => {
-  if (!line.clockIn) return 'border-slate-200 bg-white/70 text-slate-700';
+  if (isTimesheetAbsentLine(line)) return 'border-slate-200 bg-white/70 text-slate-700';
+  if (isManualOffshoreLine(line)) return 'border-sky-200 bg-white/70 text-sky-800';
   if (line.validationStatus === 'Valid') return 'border-emerald-200 bg-white/70 text-emerald-800';
   if (line.validationStatus === 'Error') return 'border-red-200 bg-white/70 text-red-800';
   if (line.validationStatus === 'Warning') return 'border-amber-200 bg-white/70 text-amber-800';
@@ -417,6 +426,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const supervisorParam = searchParams.get('supervisorId');
   const workCenterParam = searchParams.get('workCenterName');
   const headerIdParam = searchParams.get('headerId');
+  const shiftParam = searchParams.get('shiftLabel');
 
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -458,7 +468,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const [workCenterDraft, setWorkCenterDraft] = useState('');
   const [editingWorkCenter, setEditingWorkCenter] = useState<Payload['workCenters'][number] | null>(null);
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
-  const [selectedShift, setSelectedShift] = useState(DEFAULT_TIMESHEET_SHIFT_LABEL);
+  const [selectedShift, setSelectedShift] = useState(shiftParam ? resolveTimesheetShift(shiftParam).label : DEFAULT_TIMESHEET_SHIFT_LABEL);
   const [rightPanelTab, setRightPanelTab] = useState<'details' | 'history' | 'alerts'>('details');
   const [dailyPayPanel, setDailyPayPanel] = useState<DailyRatePanelRow | null>(null);
   const loadRequestRef = useRef(0);
@@ -500,9 +510,14 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       if (data.header?.timesheetDate) setSelectedDate(data.header.timesheetDate);
       if (data.header?.supervisorId) setSelectedSupervisor(data.header.supervisorId);
       else if (!selectedSupervisor) setSelectedSupervisor(data.filterOptions.supervisors[0] || data.permissions.actor);
+      if (headerId && data.header?.shiftLabel) setSelectedShift(resolveTimesheetShift(data.header.shiftLabel).label);
       const suggestedLocation = String(data.suggestedContext?.location || data.supervisorProfile?.location || '').trim();
       const suggestedWorkCenter = String(data.suggestedContext?.workCenter || data.header?.workCenterName || '').trim();
       setSelectedLocation((current) => {
+        if (headerId) {
+          if (suggestedLocation && dbLocationNames.includes(suggestedLocation)) return suggestedLocation;
+          return current && dbLocationNames.includes(current) ? current : (dbLocationNames[0] || '');
+        }
         // Empty location arg means supervisor just changed (or first load) — prefer supervisor defaults.
         if (!location) {
           if (suggestedLocation && dbLocationNames.includes(suggestedLocation)) return suggestedLocation;
@@ -515,6 +530,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       setSelectedWorkCenter((current) => {
         const locationName = location || suggestedLocation || selectedLocation || dbLocationNames[0] || '';
         const dbWorkCenterNames = workCenterNamesForLocation(dbWorkCenters, locationName);
+        if (headerId && data.header?.workCenterName) return data.header.workCenterName;
         if (!workCenter) {
           if (suggestedWorkCenter && dbWorkCenterNames.includes(suggestedWorkCenter)) return suggestedWorkCenter;
           if (data.header?.workCenterName && dbWorkCenterNames.includes(data.header.workCenterName)) return data.header.workCenterName;
@@ -525,7 +541,14 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
         if (suggestedWorkCenter && dbWorkCenterNames.includes(suggestedWorkCenter)) return suggestedWorkCenter;
         return dbWorkCenterNames[0] || '';
       });
-      if (headerId) setRequestedHeaderId('');
+      if (headerId && data.header) {
+        const periodClosed = data.period?.status !== 'Open';
+        setNotice(
+          periodClosed
+            ? `Opened draft for ${data.header.timesheetDate} · ${data.header.workCenterName}, but this payroll period is ${data.period.status}. Reopen the period before Review & Submit.`
+            : `Opened draft timesheet for ${data.header.timesheetDate} · ${data.header.workCenterName}. Confirm the hours, then use Review & Submit to start approval.`,
+        );
+      }
     } catch (e) {
       if (loadRequestRef.current !== requestId) return;
       setError(e instanceof Error ? e.message : 'Unable to load timesheet entry');
@@ -566,8 +589,9 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       if (dateParam) setSelectedDate(dateParam);
       if (supervisorParam) setSelectedSupervisor(supervisorParam);
       if (workCenterParam) setSelectedWorkCenter(workCenterParam);
+      if (shiftParam) setSelectedShift(resolveTimesheetShift(shiftParam).label);
     }
-  }, [headerIdParam, dateParam, supervisorParam, workCenterParam]);
+  }, [headerIdParam, dateParam, supervisorParam, workCenterParam, shiftParam]);
 
   useEffect(() => {
     if (submitting) return;
@@ -581,14 +605,14 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     const saved = payload?.header?.shiftLabel;
     if (!saved) return;
     const savedShift = resolveTimesheetShift(saved);
-    if (savedShift.kind !== resolveTimesheetShift(selectedShift).kind) return;
+    if (savedShift.label === selectedShift) return;
     setSelectedShift(savedShift.label);
-  }, [payload?.header?.id, payload?.header?.shiftLabel, selectedShift]);
+  }, [payload?.header?.id, payload?.header?.shiftLabel]);
 
   const handleSyncAttendance = useCallback(async (source: 'manual' | 'auto' = 'manual') => {
     const headerStatus = payload?.header?.status ?? 'Draft';
     const retroBooking = payload?.overtimeBooking?.retroCorrection;
-    const postedTimesheet = !editableTimesheetStatuses.includes(headerStatus);
+      const postedTimesheet = !isEditableTimesheetStatus(headerStatus);
     if (retroBooking && postedTimesheet) {
       if (source === 'manual') {
         setError(null);
@@ -598,6 +622,13 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     }
     if (payload?.period.status !== 'Open') {
       if (source === 'manual') setError('This timesheet period is closed. Reopen it before syncing attendance.');
+      return;
+    }
+    if (isOffshoreWorkCenterName(selectedWorkCenter) || isOffshoreWorkCenterName(payload?.header?.workCenterName)) {
+      if (source === 'manual') {
+        setError(null);
+        setNotice('Offshore sheets use the HR mobilization roster. There is no clocking machine, so attendance sync is not used.');
+      }
       return;
     }
     if (!selectedWorkCenter) {
@@ -637,13 +668,17 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   useEffect(() => {
     if (!payload || loading || refreshing || submitting) return;
     const headerStatus = payload.header?.status ?? 'Draft';
-    const postedTimesheet = !editableTimesheetStatuses.includes(headerStatus);
+      const postedTimesheet = !isEditableTimesheetStatus(headerStatus);
     if (payload.overtimeBooking?.retroCorrection && postedTimesheet) return;
     if (payload.period.status !== 'Open') return;
     if (!selectedDate || !selectedSupervisor || !selectedLocation || !selectedWorkCenter) return;
 
     const syncKey = [selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, selectedShift].join('|');
     if (autoSyncKeyRef.current === syncKey) return;
+    if (isOffshoreWorkCenterName(selectedWorkCenter) || isOffshoreWorkCenterName(payload.header?.workCenterName)) {
+      autoSyncKeyRef.current = syncKey;
+      return;
+    }
     autoSyncKeyRef.current = syncKey;
     void handleSyncAttendance('auto');
   }, [handleSyncAttendance, loading, payload, refreshing, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, selectedShift, submitting]);
@@ -740,7 +775,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const handleUpdateLine = (index: number, updates: Partial<TimesheetLine>) => {
     const next = [...localLines];
     const line = { ...next[index], ...updates };
-    const isAbsentLine = !line.clockIn;
+    const isAbsentLine = isTimesheetAbsentLine(line);
     if (isAbsentLine) {
       line.projectAllocations = line.projectAllocations.map((allocation) => ({ ...allocation, hours: 0 }));
     }
@@ -796,7 +831,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     const retro = booking.retroCorrection;
     const headerStatus = header?.status ?? 'Draft';
     const periodIsOpen = payload?.period.status === 'Open';
-    const timesheetEditable = periodIsOpen && editableTimesheetStatuses.includes(headerStatus);
+    const timesheetEditable = periodIsOpen && isEditableTimesheetStatus(headerStatus);
     const payrollReady = payrollReadyStatuses.includes(headerStatus);
     const canBook =
       booking.enabled &&
@@ -993,11 +1028,19 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
         setQuery('');
         setBulkProject('');
         setBulkHours(resolveTimesheetHours({ date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift }).standardProductiveHours);
-        setNotice('Timesheet submitted for supervisor review. Capture fields are now locked until the sheet is returned or rejected.');
+        setNotice('Timesheet submitted for supervisor review. You can still edit hours and resubmit until the first approval is given.');
       } else if (saveAsDraft) {
-        setNotice('Draft saved. You can continue editing this timesheet before submission.');
+        setNotice(
+          payload?.header?.status === 'Submitted'
+            ? 'Timesheet recalled to Draft so missing hours can be booked. Use Review & Submit when it is complete.'
+            : 'Draft saved. You can continue editing this timesheet before submission.',
+        );
       } else {
-        setNotice('Changes saved.');
+        setNotice(
+          payload?.header?.status === 'Submitted'
+            ? 'Timesheet recalled to Draft so missing hours can be booked. Use Review & Submit when it is complete.'
+            : 'Changes saved.',
+        );
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
@@ -1167,12 +1210,12 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   };
 
   const handleAutoDistribute = () => {
-    if (!payload || payload.period.status !== 'Open' || !editableTimesheetStatuses.includes(payload.header?.status ?? 'Draft') || matrixColumns.length === 0) return;
+    if (!payload || payload.period.status !== 'Open' || !isEditableTimesheetStatus(payload.header?.status ?? 'Draft') || matrixColumns.length === 0) return;
     const dayContext = { date: selectedDate, holidayDates: payload.holidayDates ?? [], shiftLabel: selectedShift };
     const dayRules = resolveTimesheetHours(dayContext);
     const isNight = resolveTimesheetShift(selectedShift).kind === 'Night';
     const next = localLines.map((line) => {
-      if (!line.clockIn) return line;
+      if (isTimesheetAbsentLine(line)) return line;
       const projectAllocations = matrixColumns.map((col, index) => ({
         projectId: col.code,
         projectCode: col.code,
@@ -1208,7 +1251,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   };
 
   const handleClearAllProjects = () => {
-    if (!payload || payload.period.status !== 'Open' || !editableTimesheetStatuses.includes(payload.header?.status ?? 'Draft')) return;
+    if (!payload || payload.period.status !== 'Open' || !isEditableTimesheetStatus(payload.header?.status ?? 'Draft')) return;
     const dayRules = resolveTimesheetHours({ date: selectedDate, holidayDates: payload.holidayDates ?? [], shiftLabel: selectedShift });
     const next = localLines.map((line) => {
       const projectAllocations = line.projectAllocations.map((item) => ({ ...item, hours: 0 }));
@@ -1250,7 +1293,9 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     setLocalLines(nextLines);
   };
 
-  const shiftLines = localLines.filter((line) => timesheetLineMatchesShift(line.clockIn, selectedShift));
+  const shiftLines = requestedHeaderId
+    ? localLines
+    : localLines.filter((line) => timesheetLineMatchesShift(line.clockIn, selectedShift));
   const filteredLines = shiftLines.filter((l) =>
     l.employeeName.toLowerCase().includes(query.toLowerCase()) ||
     l.employeeNo.toLowerCase().includes(query.toLowerCase())
@@ -1378,7 +1423,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const isPayrollReady = payrollReadyStatuses.includes(headerStatus);
   const overtimeBooking = payload?.overtimeBooking ?? { enabled: false, devRelaxed: false, retroCorrection: false, openBooking: false };
   const approvedOvertimeAuthorizations = overtimeBooking.enabled ? (payload?.approvedOvertimeAuthorizations ?? []) : [];
-  const canEditTimesheet = periodIsOpen && editableTimesheetStatuses.includes(headerStatus);
+  const canEditTimesheet = periodIsOpen && isEditableTimesheetStatus(headerStatus);
   const canBookOvertime =
     payload?.canBookOvertime ??
     canBookOvertimeOnTimesheet(payload?.header, payload?.period, overtimeBooking);
@@ -1387,9 +1432,11 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const displayError = error && canBookOvertime && payrollLockMessage.test(error) ? null : error;
   const displayNotice =
     notice ||
-    (error && canBookOvertime && payrollLockMessage.test(error)
-      ? 'Timesheet is posted to payroll. Use the overtime booking bar below to add 1h, 2h, 3h corrections, then re-run payroll.'
-      : null);
+    (headerStatus === 'Submitted' && canEditTimesheet
+      ? 'Awaiting first approval. You can still book missing hours and Review & Submit again. Editing locks after a supervisor (or later stage) approves.'
+      : error && canBookOvertime && payrollLockMessage.test(error)
+        ? 'Timesheet is posted to payroll. Use the overtime booking bar below to add 1h, 2h, 3h corrections, then re-run payroll.'
+        : null);
   const activeSiteDevices = payload?.attendanceWorkCenters.filter((workCenter) => workCenter.location === selectedLocation || workCenter.site === selectedLocation) ?? [];
   const onlineSiteDevices = activeSiteDevices;
   const primarySiteDevice = [...activeSiteDevices].sort((a, b) => {
@@ -1413,7 +1460,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const reviewValidCount = shiftLines.filter((line) => line.validationStatus === 'Valid').length;
   const reviewWarningCount = shiftLines.filter((line) => line.validationStatus === 'Warning' || line.validationStatus === 'Incomplete').length;
   const reviewErrorCount = shiftLines.filter((line) => line.validationStatus === 'Error').length;
-  const reviewAbsentCount = shiftLines.filter((line) => !line.clockIn).length;
+  const reviewAbsentCount = shiftLines.filter((line) => isTimesheetAbsentLine(line)).length;
   const reviewProjectHours = round1(shiftLines.reduce((sum, line) => sum + line.usedHours, 0));
   const reviewIdleHours = round1(shiftLines.reduce((sum, line) => sum + line.idleHours, 0));
   const reviewTotalHours = round1(shiftLines.reduce((sum, line) => sum + line.totalHours, 0));
@@ -1428,7 +1475,10 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const pageBreadcrumbs = isWorkforceSupervisor
     ? [{ label: 'HRIS', href: '/hris' }, { label: 'Workforce Management', href: '/hris/workforce-management' }, { label: 'Timesheet Entry' }]
     : [{ label: 'HRIS', href: '/hris' }, { label: 'Time & Logs', href: '/hris/time-and-logs' }, { label: 'Timesheet Entry' }];
-  const primaryPageAction = isWorkforceSupervisor
+  const isOffshoreSheet = isOffshoreWorkCenterName(selectedWorkCenter) || isOffshoreWorkCenterName(payload?.header?.workCenterName);
+  const primaryPageAction = isOffshoreSheet
+    ? undefined
+    : isWorkforceSupervisor
     ? (canEditTimesheet ? { label: 'Sync Attendance', onClick: () => handleSyncAttendance('manual'), icon: RefreshCcw } : undefined)
     : { label: canEditTimesheet ? 'Sync Attendance' : periodIsOpen ? 'Read Only' : 'Period Closed', onClick: canEditTimesheet ? () => handleSyncAttendance('manual') : () => undefined, icon: RefreshCcw };
   const biometricTone = onlineSiteDevices.length > 0
@@ -1443,7 +1493,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       : 'No Site Device';
 
   const bookedHoursTotal = round1(shiftLines.reduce((sum, line) => sum + line.totalHours, 0));
-  const presentEmployees = shiftLines.filter((line) => Boolean(line.clockIn)).length;
+  const presentEmployees = shiftLines.filter((line) => Boolean(line.clockIn) || isManualOffshoreLine(line)).length;
   const usedHoursTotal = round1(shiftLines.reduce((sum, line) => sum + line.usedHours, 0));
   const idleHoursTotal = round1(shiftLines.reduce((sum, line) => sum + line.idleHours, 0));
   const capacityHours = round1(presentEmployees * grossTimesheetHours);
@@ -1485,6 +1535,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           selectedLocation={selectedLocation}
           selectedWorkCenter={selectedWorkCenter}
           onSupervisorChange={(value) => {
+            setRequestedHeaderId('');
             setSelectedSupervisor(value);
             setSelectedLocation('');
             setSelectedWorkCenter('');
@@ -1492,18 +1543,27 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             setQuery('');
           }}
           onLocationChange={(value) => {
+            setRequestedHeaderId('');
             setSelectedLocation(value);
             setSelectedWorkCenter('');
             setSelectedEmployees([]);
             setQuery('');
           }}
           onWorkCenterChange={(value) => {
+            setRequestedHeaderId('');
             setSelectedWorkCenter(value);
             setSelectedEmployees([]);
             setQuery('');
           }}
-          onDateChange={setSelectedDate}
+          onDateChange={(value) => {
+            setRequestedHeaderId('');
+            setSelectedDate(value);
+          }}
           onShiftChange={(value) => {
+            if (isOffshoreSheet) {
+              setNotice('Offshore sheets are Day only: 8h payroll + 1h break. 4h offshore allowance is recorded but paid outside payroll.');
+              return;
+            }
             const shift = resolveTimesheetShift(value);
             setSelectedShift(shift.label);
             setNotice(
@@ -1553,6 +1613,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           refreshing={refreshing}
           error={displayError}
           notice={displayNotice}
+          isOffshoreSheet={isOffshoreSheet}
+          offshoreNotice={payload?.mobilizedCrew?.message || null}
           query={query}
           onQueryChange={setQuery}
           filteredLines={filteredLines}
@@ -1582,6 +1644,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           onClearAllProjects={handleClearAllProjects}
           onOpenProjectSettings={openCreateProjectModal}
           onSyncAttendance={() => handleSyncAttendance('manual')}
+          hideAttendanceSync={isOffshoreSheet}
           onCopyPrevious={handleCopyPrevious}
           onSaveDraft={() => handleSave(false, true)}
           onOpenSubmitReview={() => setShowSubmitReview(true)}
@@ -1626,6 +1689,9 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       secondaryAction={canCreateProject ? { label: 'Create Project', onClick: openCreateProjectModal, icon: Plus } : undefined}
     >
       <div className="space-y-8">
+        {payload?.mobilizedCrew?.message ? (
+          <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-bold text-sky-950">{payload.mobilizedCrew.message}</div>
+        ) : null}
         {/* Header Card */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-6 border-b border-slate-100 pb-6">
@@ -1660,6 +1726,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                   placeholder="Search supervisor"
                   className="max-w-[280px]"
                   onChange={(value) => {
+                    setRequestedHeaderId('');
                     setSelectedSupervisor(value);
                     setSelectedLocation('');
                     setSelectedWorkCenter('');
@@ -1676,6 +1743,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                   placeholder={locationOptions.length === 0 ? 'No location' : 'Search location'}
                   className="max-w-[220px]"
                   onChange={(value) => {
+                    setRequestedHeaderId('');
                     setSelectedLocation(value);
                     setSelectedWorkCenter('');
                     setSelectedEmployees([]);
@@ -1693,6 +1761,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                       placeholder="Search work center"
                       className="max-w-[220px]"
                       onChange={(value) => {
+                        setRequestedHeaderId('');
                         setSelectedWorkCenter(value);
                         setSelectedEmployees([]);
                         setQuery('');
@@ -1717,7 +1786,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
               </div>
               <div className="text-right">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Working Date</p>
-                <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="bg-transparent text-sm font-black text-slate-900 focus:outline-none" />
+                <input type="date" value={selectedDate} onChange={(e) => { setRequestedHeaderId(''); setSelectedDate(e.target.value); }} className="bg-transparent text-sm font-black text-slate-900 focus:outline-none" />
               </div>
             </div>
           </div>
@@ -1912,8 +1981,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
               <p className="text-[9px] font-bold uppercase text-white/45">Last Handshake</p>
               <p className="font-black text-indigo-200">{payload?.header?.lastSyncAt ? formatHandshake(payload.header.lastSyncAt) : formatHandshake(lastHandshakeAt)}</p>
             </div>
-            <button onClick={() => handleSyncAttendance('manual')} disabled={submitting || !canEditTimesheet} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">
-              {submitting ? 'Fetching...' : 'Fetch Punches'}
+            <button onClick={() => handleSyncAttendance('manual')} disabled={submitting || !canEditTimesheet || isOffshoreSheet} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">
+              {isOffshoreSheet ? 'No Clock' : submitting ? 'Fetching...' : 'Fetch Punches'}
             </button>
           </div>
         </div>
@@ -2048,7 +2117,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredLines.map((line, rowIndex) => {
-                    const isAbsent = !line.clockIn;
+                    const isAbsent = isTimesheetAbsentLine(line);
+                    const isManual = isManualOffshoreLine(line);
                     const originalIdx = localLines.findIndex(l => l.id === line.id);
                     return (
                       <tr key={line.id} className={`hover:bg-slate-50/80 transition-colors ${isAbsent ? 'bg-slate-50/30' : line.validationStatus === 'Valid' ? 'bg-emerald-50/30' : line.validationStatus === 'Error' ? 'bg-red-50/30' : 'bg-white'}`}>
@@ -2071,7 +2141,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-4 whitespace-nowrap">{isAbsent ? <span className="text-[10px] font-black text-red-600">ABSENT</span> : <div className="flex flex-col gap-0.5 text-[10px] font-black text-slate-700"><span>IN: {line.clockIn}</span><span>OUT: {line.clockOut || '--:--'}</span></div>}</td>
+                        <td className="px-4 py-4 whitespace-nowrap">{isAbsent ? <span className="text-[10px] font-black text-red-600">ABSENT</span> : isManual ? <div className="flex flex-col gap-0.5"><span className="text-[10px] font-black text-sky-700">MANUAL · OFFSHORE</span><span className="text-[9px] font-bold text-slate-500">{OFFSHORE_ALLOWANCE_HOURS}h allowance outside payroll</span></div> : <div className="flex flex-col gap-0.5 text-[10px] font-black text-slate-700"><span>IN: {line.clockIn}</span><span>OUT: {line.clockOut || '--:--'}</span></div>}</td>
                         <td className="px-4 py-4 text-center text-[11px] font-black text-slate-600 tabular-nums">{line.attendanceDuration}h</td>
                         {matrixColumns.map((col) => (
                           <td key={col.code} className="px-4 py-4 border-l border-slate-100"><input type="number" step="0.5" disabled={!canEditTimesheet || isAbsent} value={isAbsent ? 0 : line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
@@ -2178,7 +2248,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {paginatedCardLines.map((line, rowIndex) => {
               const originalIdx = localLines.findIndex(l => l.id === line.id);
-              const isAbsent = !line.clockIn;
+              const isAbsent = isTimesheetAbsentLine(line);
+              const isManual = isManualOffshoreLine(line);
               const displayNumber = employeeCardStart + rowIndex;
               return (
                 <div key={line.id} className={`rounded-2xl border p-5 shadow-sm ${employeeCardTone(line)}`}>
@@ -2197,10 +2268,10 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                       {!isAbsent && <ShieldCheck className="h-4 w-4 text-emerald-600" />}
                       <div><p className="text-[10px] font-black text-indigo-600 leading-none">{line.employeeNo}</p><h3 className="text-sm font-black text-slate-900 mt-1">{line.employeeName}</h3></div>
                     </div>
-                    <div className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${employeeStatusBadgeTone(line)}`}>{isAbsent ? 'ABSENT' : line.validationStatus === 'Valid' ? 'COMPLETE' : line.validationStatus}</div>
+                    <div className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${employeeStatusBadgeTone(line)}`}>{isAbsent ? 'ABSENT' : isManual ? 'OFFSHORE' : line.validationStatus === 'Valid' ? 'COMPLETE' : line.validationStatus}</div>
                   </div>
                   <div className="space-y-4">
-                    <div className="flex justify-between text-[11px] font-bold text-slate-500"><span>Attendance:</span><span>{isAbsent ? 'Absent' : `${line.clockIn}-${line.clockOut || '--'} (${line.attendanceDuration}h)`}</span></div>
+                    <div className="flex justify-between text-[11px] font-bold text-slate-500"><span>Attendance:</span><span>{isAbsent ? 'Absent' : isManual ? `Manual · ${OFFSHORE_ALLOWANCE_HOURS}h allowance outside payroll` : `${line.clockIn}-${line.clockOut || '--'} (${line.attendanceDuration}h)`}</span></div>
                     <div className="space-y-2">
                       <p className="text-[9px] font-black uppercase text-slate-400">Projects</p>
                       {matrixColumns.map(col => (

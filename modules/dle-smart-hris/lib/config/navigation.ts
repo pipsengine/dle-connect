@@ -140,6 +140,7 @@ export const navigationConfig: NavItem[] = [
       'Timesheet Approval',
       'Timesheet Reports',
       'Timesheet Recapture',
+      'Crew Mobilization',
       'Shift & Scheduling',
       'Overtime Management',
       'Reviews & Approvals',

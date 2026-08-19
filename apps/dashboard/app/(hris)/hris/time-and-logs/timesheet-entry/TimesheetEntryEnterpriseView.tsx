@@ -29,7 +29,7 @@ import {
   TimesheetRowActionsMenu,
   ApprovedOvertimeBookingBar,
 } from './timesheet-entry-ui';
-import { DAILY_BREAK_HOURS, canonicalProjectCode, idleTimeProjectHours, impliedOvertimeHoursFromClock, matrixProductiveHoursCap, productiveProjectHours, projectHoursForColumn, upsertMatrixProjectHours, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, canonicalProjectCode, idleTimeProjectHours, impliedOvertimeHoursFromClock, isManualOffshoreLine, isTimesheetAbsentLine, matrixProductiveHoursCap, productiveProjectHours, projectHoursForColumn, upsertMatrixProjectHours, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, OFFSHORE_ALLOWANCE_HOURS } from '@/lib/timesheet-entry-shared';
 import { overtimeProductiveHours } from '@/lib/timesheet-overtime-booking';
 
 type DisplayColumn = { code: string; label: string; kind: 'project' | 'internal' | 'idle' | 'leave' };
@@ -50,6 +50,9 @@ type TimesheetLine = {
   variance: number;
   validationStatus: 'Valid' | 'Error' | 'Warning' | 'Incomplete';
   validationMessage: string | null;
+  attendanceMode?: 'Biometric' | 'Manual' | null;
+  remarks?: string | null;
+  offshoreAllowanceHours?: number;
 };
 
 type Project = { id: string; code: string; name: string };
@@ -83,6 +86,9 @@ export type TimesheetEnterpriseViewProps = {
   refreshing: boolean;
   error: string | null;
   notice: string | null;
+  isOffshoreSheet?: boolean;
+  offshoreNotice?: string | null;
+  hideAttendanceSync?: boolean;
   query: string;
   onQueryChange: (value: string) => void;
   filteredLines: TimesheetLine[];
@@ -268,13 +274,22 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
           </div>
         </div>
 
-        {(props.error || props.notice) && (
+        {(props.error || props.notice || props.offshoreNotice) && (
+          <div className="space-y-2">
+            {(props.error || props.notice) && (
           <div
             className={`rounded-xl border px-4 py-3 text-sm font-semibold ${
               props.error ? 'border-[#FECACA] bg-[#FEF2F2] text-[#B91C1C]' : 'border-[#A7F3D0] bg-[#ECFDF5] text-[#047857]'
             }`}
           >
             {props.error || props.notice}
+          </div>
+            )}
+            {props.offshoreNotice ? (
+              <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-950">
+                {props.offshoreNotice}
+              </div>
+            ) : null}
           </div>
         )}
 
@@ -283,7 +298,7 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
             authorizations={props.approvedOvertimeAuthorizations}
             lines={props.localLines}
             selectedEmployeeCount={props.selectedEmployees.length}
-            presentEmployeeCount={props.localLines.filter((line) => line.clockIn).length}
+            presentEmployeeCount={props.localLines.filter((line) => line.clockIn || isManualOffshoreLine(line)).length}
             canEdit={props.canEditTimesheet}
             canBookOvertime={props.canBookOvertime}
             submitting={props.submitting}
@@ -420,6 +435,7 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                 Bulk Update ({props.selectedEmployees.length})
               </button>
             ) : null}
+            {!props.hideAttendanceSync ? (
             <button
               type="button"
               onClick={props.onSyncAttendance}
@@ -429,6 +445,7 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
               <RefreshCcw className={`h-3.5 w-3.5 ${props.refreshing ? 'animate-spin' : ''}`} />
               Sync Attendance
             </button>
+            ) : null}
             <button
               type="button"
               onClick={props.onCopyPrevious}
@@ -491,8 +508,9 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                     </tr>
                   </thead>
                   <tbody>
-                    {props.filteredLines.map((line, rowIndex) => {
-                      const isAbsent = !line.clockIn;
+                    {props.filteredLines.length ? props.filteredLines.map((line, rowIndex) => {
+                      const isAbsent = isTimesheetAbsentLine(line);
+                      const isManual = isManualOffshoreLine(line);
                       const originalIdx = props.localLines.findIndex((item) => item.id === line.id);
                       const isSelected = props.selectedLineId === line.id;
                       const rowBg = isSelected
@@ -535,6 +553,11 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                           <td className="px-3 py-3 text-xs font-semibold">
                             {isAbsent ? (
                               <span className="text-[#EF4444]">ABSENT</span>
+                            ) : isManual ? (
+                              <div className="text-[#0369A1]">
+                                <div>MANUAL · OFFSHORE</div>
+                                <div className="text-[10px] font-medium text-[#64748B]">{OFFSHORE_ALLOWANCE_HOURS}h allowance outside payroll</div>
+                              </div>
                             ) : (
                               <div className="text-[#475569]">
                                 <div>{line.clockIn}</div>
@@ -681,7 +704,13 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                           </td>
                         </tr>
                       );
-                    })}
+                    }) : (
+                      <tr>
+                        <td colSpan={11 + props.matrixColumns.length} className="px-4 py-10 text-center text-sm font-medium text-[#64748B]">
+                          No employees on this timesheet for the selected shift. Switch Day/Night, or open the draft date and work centre from Timesheet Approval.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                   <tfoot className="sticky bottom-0 z-20 bg-[#F8FAFC]">
                     <tr className="border-t border-[#E5E7EB]">
