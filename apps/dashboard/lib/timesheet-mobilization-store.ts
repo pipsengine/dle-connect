@@ -30,7 +30,7 @@ export type TimesheetMobilization = {
 
 export type CreateMobilizationInput = {
   employeeCodes: string[];
-  employees?: Array<{ employeeCode: string; employeeName: string; homeWorkCenterName?: string | null }>;
+  employees?: Array<{ employeeCode: string; employeeName?: string; homeWorkCenterName?: string | null }>;
   supervisorId: string;
   supervisorName: string;
   projectCode: string;
