@@ -56,10 +56,10 @@ const USD_GROUP = [
   },
   {
     code: 'P0457',
-    usdGross: 1220,
+    usdGross: 1000,
     grade: 'EXP_USDSNMGT - USD SENIOR MANAGEMENT',
     usdLines: [
-      { code: 'BASIC_USD', name: 'BASIC SALARY', amount: 1220, taxableAmount: 1220 },
+      { code: 'BASIC', name: 'BASIC SALARY', amount: 1000, taxableAmount: 1000 },
     ],
   },
   {

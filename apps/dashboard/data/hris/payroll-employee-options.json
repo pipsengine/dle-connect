@@ -560,8 +560,15 @@
     "employeeId": "0457",
     "employeeCode": "P0457",
     "nhfApplicable": false,
-    "updatedAt": "2026-06-27T00:27:33.540Z",
-    "updatedBy": "Sage PAYE rules seed"
+    "updatedAt": "2026-08-19T09:20:00.000Z",
+    "updatedBy": "HR: P0457 USD package is $1,000 gross and net (Sage PAYE_EXP 0)",
+    "payeCalculation": {
+      "excludedEarningCodes": [],
+      "includeRefundInTaxable": false,
+      "disablePensionPayeRelief": false,
+      "usdFlatRate": 0,
+      "monthlyPayeOverride": 0
+    }
   },
   {
     "employeeId": "0458",
