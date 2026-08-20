@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { PaymentRequestActionRow, PaymentRequestCommentRow, PaymentRequestRow } from '@/lib/finance-intelligence/payment-requests-service';
 import {
   isExpenseNoPoPayment,
@@ -9,6 +9,7 @@ import {
 import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-action-visibility';
 import PaymentAttachmentLinks from '@/app/(finance)/finance/PaymentAttachmentLinks';
 import PaymentRequestCommentsThread from '@/app/(finance)/finance/PaymentRequestCommentsThread';
+import { MessageSquare } from 'lucide-react';
 
 const money = (amount: number, currency = 'NGN') =>
   new Intl.NumberFormat('en-NG', {
@@ -47,6 +48,7 @@ export default function PaymentRequestDetailPanel({
   actorCode,
   footer,
 }: Props) {
+  const [chatOpen, setChatOpen] = useState(false);
   const supportingDocs = (request.attachments || []).filter((file) =>
     file.kind !== 'payment-evidence' && file.kind !== 'retirement-evidence');
   const paymentEvidence = (request.attachments || []).filter((file) => file.kind === 'payment-evidence');
@@ -85,9 +87,19 @@ export default function PaymentRequestDetailPanel({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-base font-semibold text-slate-900">{request.title || request.requestNumber}</h3>
-        <p className="mt-1 text-sm text-slate-500">{request.purpose || request.description || 'No purpose captured.'}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold text-slate-900">{request.title || request.requestNumber}</h3>
+          <p className="mt-1 text-sm text-slate-500">{request.purpose || request.description || 'No purpose captured.'}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setChatOpen(true)}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
+        >
+          <MessageSquare className="h-3.5 w-3.5" />
+          Chat
+        </button>
       </div>
 
       <dl className="grid gap-2 sm:grid-cols-2">
@@ -135,13 +147,6 @@ export default function PaymentRequestDetailPanel({
         />
       </section>
 
-      <PaymentRequestCommentsThread
-        requestId={request.requestId}
-        comments={comments}
-        canComment={canComment}
-        actorCode={actorCode}
-      />
-
       <section>
         <h4 className="mb-2 text-sm font-semibold text-slate-900">Action history</h4>
         {visibleActions.length ? (
@@ -160,6 +165,16 @@ export default function PaymentRequestDetailPanel({
       </section>
 
       {footer ? <div className="border-t border-slate-100 pt-3">{footer}</div> : null}
+
+      <PaymentRequestCommentsThread
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        requestId={request.requestId}
+        requestNumber={request.requestNumber}
+        comments={comments}
+        canComment={canComment}
+        actorCode={actorCode}
+      />
     </div>
   );
 }

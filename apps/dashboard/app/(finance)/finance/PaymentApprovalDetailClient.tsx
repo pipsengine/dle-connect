@@ -12,6 +12,7 @@ import {
   FileText,
   FileUp,
   Loader2,
+  MessageSquare,
   Paperclip,
   XCircle,
 } from 'lucide-react';
@@ -100,9 +101,11 @@ export default function PaymentApprovalDetailClient() {
   const [message, setMessage] = useState('');
   const [retirementNote, setRetirementNote] = useState('');
   const [retirementFiles, setRetirementFiles] = useState<File[]>([]);
+  const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
     setActionHint(new URLSearchParams(window.location.search).get('action') || '');
+    if (window.location.hash === '#payment-comments') setChatOpen(true);
   }, [pathname]);
 
   const load = async (opts?: { soft?: boolean }) => {
@@ -335,6 +338,19 @@ export default function PaymentApprovalDetailClient() {
               <Download className="h-3.5 w-3.5" /> Download PDF
             </a>
           ) : null}
+          <button
+            type="button"
+            onClick={() => setChatOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            Comment
+            {(detail.comments || []).length ? (
+              <span className="rounded-full bg-sky-700 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                {(detail.comments || []).length}
+              </span>
+            ) : null}
+          </button>
           <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone(request.status)}`}>
             {request.status}
           </span>
@@ -523,14 +539,6 @@ export default function PaymentApprovalDetailClient() {
         </section>
       </div>
 
-      <PaymentRequestCommentsThread
-        requestId={request.requestId}
-        comments={detail.comments || []}
-        canComment={Boolean(detail.viewer?.canComment)}
-        actorCode={detail.viewer?.actorCode}
-        onCommentsChange={(comments) => setDetail((prev) => (prev ? { ...prev, comments } : prev))}
-      />
-
       <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-900">Action history</h2>
         <div className="mt-3 space-y-2">
@@ -568,10 +576,16 @@ export default function PaymentApprovalDetailClient() {
             {message ? <p className="mr-2 self-center text-xs text-slate-600">{message}</p> : null}
             <button
               type="button"
-              onClick={() => document.getElementById('payment-comments')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-              className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800"
+              onClick={() => setChatOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800"
             >
+              <MessageSquare className="h-3.5 w-3.5" />
               Comment
+              {(detail.comments || []).length ? (
+                <span className="rounded-full bg-sky-700 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  {(detail.comments || []).length}
+                </span>
+              ) : null}
             </button>
             <button
               type="button"
@@ -640,6 +654,17 @@ export default function PaymentApprovalDetailClient() {
       ) : message ? (
         <p className="text-xs text-slate-600">{message}</p>
       ) : null}
+
+      <PaymentRequestCommentsThread
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        requestId={request.requestId}
+        requestNumber={request.requestNumber}
+        comments={detail.comments || []}
+        canComment={Boolean(detail.viewer?.canComment)}
+        actorCode={detail.viewer?.actorCode}
+        onCommentsChange={(comments) => setDetail((prev) => (prev ? { ...prev, comments } : prev))}
+      />
     </div>
   );
 }

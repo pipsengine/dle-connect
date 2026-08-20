@@ -1,17 +1,16 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, MessageSquare, Send } from 'lucide-react';
+import { Loader2, MessageSquare, Send, X } from 'lucide-react';
 import type { PaymentRequestCommentRow } from '@/lib/finance-intelligence/payment-requests-service';
 
-const fmtDate = (value?: string | null) => {
-  if (!value) return '—';
+const fmtTime = (value?: string | null) => {
+  if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString('en-GB', {
     day: '2-digit',
     month: 'short',
-    year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -22,7 +21,10 @@ const codesEqual = (left?: string | null, right?: string | null) =>
   && Boolean(String(left || '').trim());
 
 type Props = {
+  open: boolean;
+  onClose: () => void;
   requestId: string;
+  requestNumber?: string;
   comments?: PaymentRequestCommentRow[];
   canComment?: boolean;
   actorCode?: string;
@@ -30,7 +32,10 @@ type Props = {
 };
 
 export default function PaymentRequestCommentsThread({
+  open,
+  onClose,
   requestId,
+  requestNumber,
   comments: commentsProp,
   canComment = false,
   actorCode,
@@ -40,29 +45,42 @@ export default function PaymentRequestCommentsThread({
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const [loading, setLoading] = useState(commentsProp === undefined);
+  const [loading, setLoading] = useState(false);
+  const [canType, setCanType] = useState(canComment);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const onCommentsChangeRef = useRef(onCommentsChange);
+  onCommentsChangeRef.current = onCommentsChange;
 
   useEffect(() => {
-    if (commentsProp !== undefined) {
-      setComments(commentsProp);
-      setLoading(false);
-    }
+    setCanType(canComment);
+  }, [canComment]);
+
+  useEffect(() => {
+    if (commentsProp !== undefined) setComments(commentsProp);
   }, [commentsProp]);
 
   useEffect(() => {
-    if (commentsProp !== undefined || !requestId) return;
+    if (!open || !requestId) return;
     let cancelled = false;
+    setMessage('');
+    setLoading(true);
     void (async () => {
-      setLoading(true);
       try {
         const response = await fetch(`/api/finance/payment-requests?requestId=${encodeURIComponent(requestId)}`, {
           cache: 'no-store',
         });
         const json = await response.json().catch(() => ({}));
         if (cancelled) return;
-        if (response.ok && json.status === 'success' && Array.isArray(json.data?.comments)) {
-          setComments(json.data.comments as PaymentRequestCommentRow[]);
+        if (response.ok && json.status === 'success') {
+          if (Array.isArray(json.data?.comments)) {
+            const next = json.data.comments as PaymentRequestCommentRow[];
+            setComments(next);
+            onCommentsChangeRef.current?.(next);
+          }
+          if (typeof json.data?.viewer?.canComment === 'boolean') {
+            setCanType(Boolean(json.data.viewer.canComment));
+          }
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -71,19 +89,25 @@ export default function PaymentRequestCommentsThread({
     return () => {
       cancelled = true;
     };
-  }, [commentsProp, requestId]);
+  }, [open, requestId]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (window.location.hash !== '#payment-comments') return;
-    window.setTimeout(() => {
-      document.getElementById('payment-comments')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 200);
-  }, [requestId]);
+    if (!open) return;
+    const timer = window.setTimeout(() => inputRef.current?.focus(), 80);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose]);
 
   useEffect(() => {
-    if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
-  }, [comments.length]);
+    if (!open || !listRef.current) return;
+    listRef.current.scrollTop = listRef.current.scrollHeight;
+  }, [open, comments.length, loading]);
 
   const sorted = useMemo(
     () => [...comments].sort((left, right) => String(left.createdAt).localeCompare(String(right.createdAt))),
@@ -92,10 +116,7 @@ export default function PaymentRequestCommentsThread({
 
   const post = async () => {
     const body = draft.trim();
-    if (!body) {
-      setMessage('Enter a comment before sending.');
-      return;
-    }
+    if (!body) return;
     setBusy(true);
     setMessage('');
     try {
@@ -108,9 +129,9 @@ export default function PaymentRequestCommentsThread({
           comment: body,
         }),
       });
-      const json = await response.json().catch(() => ({ status: 'error', error: 'Unable to post comment.' }));
+      const json = await response.json().catch(() => ({ status: 'error', error: 'Unable to send.' }));
       if (!response.ok || json.status !== 'success') {
-        throw new Error(json.error || 'Unable to post comment.');
+        throw new Error(json.error || 'Unable to send.');
       }
       const next = Array.isArray(json.data?.comments)
         ? (json.data.comments as PaymentRequestCommentRow[])
@@ -118,94 +139,115 @@ export default function PaymentRequestCommentsThread({
       setComments(next);
       onCommentsChange?.(next);
       setDraft('');
-      setMessage('Comment sent. The other party is notified.');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to post comment.');
+      setMessage(error instanceof Error ? error.message : 'Unable to send.');
     } finally {
       setBusy(false);
+      inputRef.current?.focus();
     }
   };
 
-  return (
-    <section id="payment-comments" className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-            <MessageSquare className="h-4 w-4 text-[#008FD5]" />
-            Clarification comments
-          </h2>
-          <p className="mt-1 text-xs text-slate-500">
-            The current approver and the initiator can chat here without returning or rejecting the request.
-          </p>
-        </div>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-          {sorted.length}
-        </span>
-      </div>
+  if (!open) return null;
 
-      <div ref={listRef} className="mt-3 max-h-72 space-y-2 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/70 p-3">
-        {loading ? (
-          <div className="flex items-center justify-center py-6 text-slate-400">
-            <Loader2 className="h-5 w-5 animate-spin" />
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-end justify-end bg-slate-950/40 p-0 sm:p-5"
+      onClick={onClose}
+    >
+      <div
+        id="payment-comments"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Clarification chat"
+        onClick={(event) => event.stopPropagation()}
+        className="flex h-[min(100dvh,100%)] w-full flex-col bg-white shadow-2xl sm:h-[540px] sm:w-[400px] sm:rounded-2xl sm:border sm:border-slate-200"
+      >
+        <header className="flex items-center gap-3 bg-[#008FD5] px-4 py-3 text-white sm:rounded-t-2xl">
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
+            <MessageSquare className="h-4 w-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold">{requestNumber || 'Payment request'}</p>
+            <p className="truncate text-[11px] text-white/80">Clarification chat · does not change approval</p>
           </div>
-        ) : sorted.length ? (
-          sorted.map((item) => {
-            const mine = codesEqual(item.actorCode, actorCode);
-            return (
-              <div key={item.commentId} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] rounded-2xl px-3 py-2 ${
-                  mine ? 'bg-[#008FD5] text-white' : 'bg-white text-slate-800 shadow-sm'
-                }`}>
-                  <p className={`text-[11px] font-semibold ${mine ? 'text-white/80' : 'text-slate-500'}`}>
-                    {mine ? 'You' : (item.actorName || 'Unknown')} · {fmtDate(item.createdAt)}
-                  </p>
-                  <p className="mt-1 whitespace-pre-wrap text-sm leading-5">{item.body}</p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-white/90 hover:bg-white/15"
+            aria-label="Close chat"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
+
+        <div ref={listRef} className="flex-1 space-y-2 overflow-y-auto bg-[#E8EEF4] px-3 py-3">
+          {loading && !sorted.length ? (
+            <div className="flex h-full items-center justify-center text-slate-400">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          ) : sorted.length ? (
+            sorted.map((item) => {
+              const mine = codesEqual(item.actorCode, actorCode);
+              return (
+                <div key={item.commentId} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[82%] rounded-2xl px-3 py-2 shadow-sm ${
+                    mine ? 'rounded-br-md bg-[#008FD5] text-white' : 'rounded-bl-md bg-white text-slate-800'
+                  }`}>
+                    <p className={`text-[10px] font-semibold ${mine ? 'text-white/80' : 'text-slate-500'}`}>
+                      {mine ? 'You' : (item.actorName || 'Unknown')}
+                    </p>
+                    <p className="mt-0.5 whitespace-pre-wrap text-sm leading-5">{item.body}</p>
+                    <p className={`mt-1 text-right text-[10px] ${mine ? 'text-white/70' : 'text-slate-400'}`}>
+                      {fmtTime(item.createdAt)}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            );
-          })
+              );
+            })
+          ) : (
+            <div className="flex h-full items-center justify-center px-6 text-center text-sm text-slate-500">
+              No messages yet. Ask a question here if you need clarification before approving.
+            </div>
+          )}
+        </div>
+
+        {canType ? (
+          <div className="border-t border-slate-200 bg-white px-3 py-2 sm:rounded-b-2xl">
+            {message ? <p className="mb-1 text-[11px] text-rose-600">{message}</p> : null}
+            <div className="flex items-end gap-2">
+              <textarea
+                ref={inputRef}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                rows={1}
+                maxLength={4000}
+                placeholder="Type a message"
+                className="max-h-28 min-h-[40px] flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-[#008FD5] focus:bg-white focus:ring-2 focus:ring-[#DBEAFE]"
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    void post();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                disabled={busy || !draft.trim()}
+                onClick={() => void post()}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#008FD5] text-white disabled:opacity-40"
+                aria-label="Send"
+              >
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              </button>
+            </div>
+            <p className="mt-1 text-[10px] text-slate-400">Enter to send · Shift+Enter for a new line</p>
+          </div>
         ) : (
-          <p className="px-2 py-4 text-center text-sm text-slate-500">
-            No comments yet. Ask a question here if you need clarification before approving.
+          <p className="border-t border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 sm:rounded-b-2xl">
+            This chat is read-only. Only the initiator and current approver can send messages while the request is pending.
           </p>
         )}
       </div>
-
-      {canComment ? (
-        <div className="mt-3 space-y-2">
-          <textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            rows={3}
-            maxLength={4000}
-            placeholder="Write a question or reply. This does not change the approval stage."
-            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]"
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-                event.preventDefault();
-                void post();
-              }
-            }}
-          />
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-[11px] text-slate-500">Ctrl+Enter to send. The other party is notified in-app and by email.</p>
-            <button
-              type="button"
-              disabled={busy || !draft.trim()}
-              onClick={() => void post()}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-[#008FD5] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
-            >
-              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-              Send comment
-            </button>
-          </div>
-          {message ? <p className="text-xs text-slate-600">{message}</p> : null}
-        </div>
-      ) : (
-        <p className="mt-3 text-xs text-slate-500">
-          Comments are read-only unless you are the initiator or the current approver on a pending request.
-        </p>
-      )}
-    </section>
+    </div>
   );
 }

@@ -60,6 +60,7 @@ import {
 import type { PaymentRequestLookups } from '@/lib/finance-intelligence/payment-request-lookups';
 import { preferredPaymentDepartment } from '@/lib/finance-intelligence/payment-request-departments';
 import { downloadExcelWorkbook } from '@/lib/excel-export';
+import PaymentRequestCommentsThread from './PaymentRequestCommentsThread';
 
 type Props = {
   initialWorkspace: PaymentRequestsWorkspace;
@@ -413,6 +414,11 @@ export default function PaymentRequestsClient({
   } | null>(null);
   const [rowActionReason, setRowActionReason] = useState('');
   const [rowActionBusy, setRowActionBusy] = useState(false);
+  const [chatTarget, setChatTarget] = useState<{
+    requestId: string;
+    requestNumber: string;
+    canComment: boolean;
+  } | null>(null);
 
   const fileToBase64 = (file: File) =>
     new Promise<string>((resolve, reject) => {
@@ -1081,6 +1087,14 @@ export default function PaymentRequestsClient({
     return actorCode === String(row.requesterCode || '').trim().toLowerCase()
       || actorCode === String(row.beneficiaryCode || '').trim().toLowerCase();
   };
+  const canCommentOnRow = (row: PaymentRequestRow) => canApproveRow(row.requestId) || canRemindRow(row);
+  const openChat = (row: PaymentRequestRow) => {
+    setChatTarget({
+      requestId: row.requestId,
+      requestNumber: row.requestNumber,
+      canComment: canCommentOnRow(row),
+    });
+  };
 
   const sendReminder = async (row: PaymentRequestRow) => {
     setRowActionBusy(true);
@@ -1571,7 +1585,7 @@ export default function PaymentRequestsClient({
                   <div className="flex flex-wrap justify-end gap-1.5">
                     {showApproveActions ? (
                       <>
-                        <Link href={`/finance/approvals/request/${row.requestId}#payment-comments`} className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800">Comment</Link>
+                        <button type="button" onClick={() => openChat(row)} className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800">Comment</button>
                         <button type="button" disabled={busy || rowActionBusy} onClick={() => openRowAction(row, 'approve')} className="rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50">Approve</button>
                         <button type="button" disabled={busy || rowActionBusy} onClick={() => openRowAction(row, 'return')} className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 disabled:opacity-50">Return</button>
                         <button type="button" disabled={busy || rowActionBusy} onClick={() => openRowAction(row, 'reject')} className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 disabled:opacity-50">Reject</button>
@@ -1582,7 +1596,7 @@ export default function PaymentRequestsClient({
                       </button>
                     ) : showSendReminder ? (
                       <>
-                        <Link href={`/finance/approvals/request/${row.requestId}#payment-comments`} className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800">Comment</Link>
+                        <button type="button" onClick={() => openChat(row)} className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800">Comment</button>
                         <button type="button" disabled={busy || rowActionBusy} onClick={() => void sendReminder(row)} className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800 disabled:opacity-50">
                           <Send className="h-3 w-3" /> Remind
                         </button>
@@ -1718,13 +1732,14 @@ export default function PaymentRequestsClient({
                     <td className="px-3 py-2.5">
                       {showApproveActions ? (
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <Link
-                            href={`/finance/approvals/request/${row.requestId}#payment-comments`}
+                          <button
+                            type="button"
+                            onClick={() => openChat(row)}
                             className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800 hover:bg-sky-100"
                           >
                             <MessageSquare className="h-3 w-3" />
                             Comment
-                          </Link>
+                          </button>
                           <button
                             type="button"
                             disabled={busy || rowActionBusy}
@@ -1773,13 +1788,14 @@ export default function PaymentRequestsClient({
                         </div>
                       ) : showSendReminder ? (
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <Link
-                            href={`/finance/approvals/request/${row.requestId}#payment-comments`}
+                          <button
+                            type="button"
+                            onClick={() => openChat(row)}
                             className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800 hover:bg-sky-100"
                           >
                             <MessageSquare className="h-3 w-3" />
                             Comment
-                          </Link>
+                          </button>
                           <button
                             type="button"
                             disabled={busy || rowActionBusy}
@@ -2462,6 +2478,15 @@ export default function PaymentRequestsClient({
           </div>
         </div>
       ) : null}
+
+      <PaymentRequestCommentsThread
+        open={Boolean(chatTarget)}
+        onClose={() => setChatTarget(null)}
+        requestId={chatTarget?.requestId || ''}
+        requestNumber={chatTarget?.requestNumber}
+        canComment={Boolean(chatTarget?.canComment)}
+        actorCode={workspace.viewer?.actorCode}
+      />
     </PageFrame>
   );
 }
