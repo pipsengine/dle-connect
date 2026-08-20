@@ -865,6 +865,37 @@ export const isTimesheetAbsentLine = (line: {
 }) =>
   !String(line.clockIn || '').trim() && !isManualOffshoreLine(line);
 
+export const timesheetLineHasBookedHours = (line: {
+  usedHours?: number | null;
+  totalHours?: number | null;
+  projectAllocations?: Array<{ hours?: number | null }> | null;
+}) =>
+  Number(line.usedHours || 0) > 0.001
+  || Number(line.totalHours || 0) > 0.001
+  || (line.projectAllocations || []).some((item) => Number(item.hours || 0) > 0.001);
+
+/** Paper N: booking hours on the night sheet without a biometric pair uses the night window. */
+export const applyNightPaperClock = <T extends {
+  clockIn?: string | null;
+  clockOut?: string | null;
+  attendanceDuration?: number;
+  attendanceMode?: 'Biometric' | 'Manual' | null;
+}>(line: T, shiftLabel?: string | null): T => {
+  if (resolveTimesheetShift(shiftLabel).kind !== 'Night') return line;
+  if (String(line.clockIn || '').trim()) return line;
+  if (!timesheetLineHasBookedHours(line as { usedHours?: number; totalHours?: number; projectAllocations?: Array<{ hours?: number }> })) {
+    return line;
+  }
+  const shift = resolveTimesheetShift(shiftLabel);
+  return {
+    ...line,
+    clockIn: shift.start,
+    clockOut: shift.end,
+    attendanceDuration: STANDARD_TIMESHEET_HOURS,
+    attendanceMode: line.attendanceMode || 'Manual',
+  };
+};
+
 export const buildRosterTimesheetLine = (input: {
   headerId: string;
   employeeId: string;

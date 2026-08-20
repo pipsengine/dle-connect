@@ -190,7 +190,7 @@ export type OvertimeValidation = {
 };
 
 export const validateStrictStandardDay = (line: TimesheetLine, dayContext?: TimesheetDayContext): OvertimeValidation => {
-  const { standardProductiveHours, grossHours } = resolveTimesheetHours(dayContext);
+  const { standardProductiveHours, grossHours, shiftKind } = resolveTimesheetHours(dayContext);
   const isManualOffshore = isManualOffshoreLine(line);
   const isAbsentLine = !line.clockIn && !isManualOffshore;
   const projectAllocations = normalizeProjectAllocations(line.projectAllocations || []);
@@ -200,7 +200,7 @@ export const validateStrictStandardDay = (line: TimesheetLine, dayContext?: Time
   const variance = round1(totalHours - grossHours);
   const attendanceDuration = resolveLineAttendanceDuration(line);
 
-  if (isAbsentLine && usedHours > 0.001) {
+  if (isAbsentLine && usedHours > 0.001 && shiftKind !== 'Night') {
     return {
       usedHours,
       idleHours,
@@ -296,7 +296,7 @@ export const validateTimesheetLine = (
   dayContext?: TimesheetDayContext,
 ): OvertimeValidation => {
   const booking = resolveOvertimeBookingOptions(options);
-  const { standardProductiveHours, grossHours } = resolveTimesheetHours(dayContext);
+  const { standardProductiveHours, grossHours, shiftKind } = resolveTimesheetHours(dayContext);
   if (!booking.enabled) {
     return validateStrictStandardDay(line, dayContext);
   }
@@ -316,7 +316,7 @@ export const validateTimesheetLine = (
   const lineOt = overtimeProductiveHours(usedHours, standardProductiveHours);
   const attendanceDuration = resolveLineAttendanceDuration(line);
 
-  if (isAbsentLine && usedHours > 0.001) {
+  if (isAbsentLine && usedHours > 0.001 && shiftKind !== 'Night') {
     return {
       usedHours,
       idleHours,

@@ -35,7 +35,7 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, applyNightPaperClock, buildRosterTimesheetLine, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import { TimesheetEntryEnterpriseView } from './TimesheetEntryEnterpriseView';
@@ -777,13 +777,11 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     const line = { ...next[index], ...updates };
     const nightShift = resolveTimesheetShift(selectedShift);
     const bookedProjectHours = (line.projectAllocations || []).reduce((sum, item) => sum + Number(item.hours || 0), 0);
-    if (nightShift.kind === 'Night' && !String(line.clockIn || '').trim() && bookedProjectHours > 0.001) {
-      line.clockIn = nightShift.start;
-      line.clockOut = nightShift.end;
-      line.attendanceDuration = STANDARD_TIMESHEET_HOURS;
+    if (nightShift.kind === 'Night' && bookedProjectHours > 0.001) {
+      Object.assign(line, applyNightPaperClock(line, selectedShift));
     }
     const isAbsentLine = isTimesheetAbsentLine(line);
-    if (isAbsentLine) {
+    if (isAbsentLine && nightShift.kind !== 'Night') {
       line.projectAllocations = line.projectAllocations.map((allocation) => ({ ...allocation, hours: 0 }));
     }
     line.projectAllocations = normalizeProjectAllocations(line.projectAllocations || []);
@@ -1022,7 +1020,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           mode: isWorkforceSupervisor ? 'supervisor' : undefined,
           locationName: selectedLocation,
           headerId: payload?.header?.id,
-          lines: shiftLines.map(reconcileTimesheetLineHours),
+          lines: shiftLines.map((line) => applyNightPaperClock(reconcileTimesheetLineHours(line), selectedShift)),
         }),
       });
       const json = await readApiJson(res);
@@ -1222,7 +1220,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     const dayRules = resolveTimesheetHours(dayContext);
     const isNight = resolveTimesheetShift(selectedShift).kind === 'Night';
     const next = localLines.map((line) => {
-      if (isTimesheetAbsentLine(line)) return line;
+      if (isTimesheetAbsentLine(line) && !isNight) return line;
       const projectAllocations = matrixColumns.map((col, index) => ({
         projectId: col.code,
         projectCode: col.code,
@@ -1236,18 +1234,19 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
         : [{ reasonId: DEFAULT_BREAK_IDLE_REASON_ID, reasonName: DEFAULT_BREAK_IDLE_REASON_NAME, hours: DAILY_BREAK_HOURS, remarks: null }];
       const idleHours = isNight ? 0 : DAILY_BREAK_HOURS;
       const totalHours = round1(usedHours + idleHours);
+      const withHours = {
+        ...line,
+        projectAllocations,
+        idleAllocations,
+        usedHours,
+        idleHours,
+        totalHours,
+        variance: round1(totalHours - dayRules.grossHours),
+        validationStatus: 'Incomplete' as const,
+        validationMessage: null,
+      } as TimesheetLine;
       const draft = applyTimesheetLineDefaults(
-        {
-          ...line,
-          projectAllocations,
-          idleAllocations,
-          usedHours,
-          idleHours,
-          totalHours,
-          variance: round1(totalHours - dayRules.grossHours),
-          validationStatus: 'Incomplete',
-          validationMessage: null,
-        } as TimesheetLine,
+        isNight ? applyNightPaperClock(withHours, selectedShift) : withHours,
         dayContext,
         matrixColumns.map((col) => col.code),
       );
@@ -1255,6 +1254,32 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     });
     setLocalLines(next);
     setNotice(`Standard ${dayRules.standardProductiveHours}h booked on the first project column. Split hours across columns manually as needed.`);
+  };
+
+  const handleAddNightCrew = (employeeCode: string) => {
+    const code = String(employeeCode || '').trim();
+    if (!code || !payload?.header?.id) return;
+    const crew = (payload.supervisorEmployees || []).find((employee) =>
+      String(employee.employeeCode || '').trim().toUpperCase() === code.toUpperCase()
+      || String(employee.employeeId || '').trim().toUpperCase() === code.toUpperCase(),
+    );
+    if (!crew) return;
+    const already = localLines.some((line) =>
+      String(line.employeeNo || line.employeeId || '').trim().toUpperCase() === code.toUpperCase()
+      || String(line.employeeName || '').trim().toLowerCase() === String(crew.fullName || '').trim().toLowerCase(),
+    );
+    if (already) {
+      setNotice(`${crew.fullName} is already on this night timesheet.`);
+      return;
+    }
+    const nextLine = buildRosterTimesheetLine({
+      headerId: payload.header.id,
+      employeeId: crew.employeeId || crew.employeeCode,
+      employeeNo: crew.employeeCode,
+      employeeName: crew.fullName,
+    });
+    setLocalLines((current) => [...current, nextLine]);
+    setNotice(`${crew.fullName} added. Type 8h on the project column and save.`);
   };
 
   const handleClearAllProjects = () => {
@@ -1577,7 +1602,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             setSelectedShift(shift.label);
             setNotice(
               shift.kind === 'Night'
-                ? 'This is the Night timesheet for this date (separate from Day). Your assigned crew is listed — paper “N” people can be booked here even without a night clock. Type 8h on the project column. ₦1,500 inconvenience allowance posts automatically; overtime is not applicable.'
+                ? 'This is the Night timesheet for this date (separate from Day). Only people who clocked night, or who you add and book here, appear. Type 8h on the project column. ₦1,500 inconvenience allowance posts automatically; overtime is not applicable.'
                 : 'This is the Day timesheet. Night marks (N) are booked by changing Shift to 02 (Night). Hours after 17:00 until clock-out are overtime.',
             );
             if (!canEditTimesheet) return;
@@ -1654,6 +1679,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           onRemoveProjectColumn={removeProjectColumn}
           onSelectColumnProject={updateColumnProject}
           onAutoDistribute={handleAutoDistribute}
+          onAddNightCrew={handleAddNightCrew}
+          supervisorEmployees={payload?.supervisorEmployees ?? []}
           onClearAllProjects={handleClearAllProjects}
           onOpenProjectSettings={openCreateProjectModal}
           onSyncAttendance={() => handleSyncAttendance('manual')}
@@ -2028,6 +2055,30 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {resolveTimesheetShift(selectedShift).kind === 'Night' && canEditTimesheet ? (
+              <select
+                defaultValue=""
+                onChange={(event) => {
+                  const code = event.target.value;
+                  if (!code) return;
+                  handleAddNightCrew(code);
+                  event.target.value = '';
+                }}
+                className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-xs font-black text-sky-900"
+              >
+                <option value="">ADD NIGHT CREW</option>
+                {(payload?.supervisorEmployees || [])
+                  .filter((employee) => !localLines.some((line) =>
+                    String(line.employeeNo || line.employeeId || '').trim().toUpperCase()
+                    === String(employee.employeeCode || '').trim().toUpperCase()
+                  ))
+                  .map((employee) => (
+                    <option key={employee.employeeCode} value={employee.employeeCode}>
+                      {employee.fullName}
+                    </option>
+                  ))}
+              </select>
+            ) : null}
             <Link href="/hris/time-and-logs/timesheet-approval" className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50">SUBMITTED STATUS</Link>
             <Link href="/hris/time-and-logs/timesheet-reports" className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50">REPORTS</Link>
             <button onClick={handleCopyPrevious} disabled={submitting || !canEditTimesheet} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Copy className="h-3.5 w-3.5" />COPY PREVIOUS</button>

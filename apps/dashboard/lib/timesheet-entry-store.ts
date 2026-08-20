@@ -23,6 +23,7 @@ import {
   resolveTimesheetShift,
   timesheetHeaderMatchesShift,
   timesheetLineMatchesShift,
+  timesheetLineHasBookedHours,
   timesheetShiftHeaderSlug,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-shared';
@@ -3540,16 +3541,16 @@ export async function syncAttendanceForTimesheet(
   });
   const isNightAttendance = (candidate: (typeof attendanceCandidates)[number]) =>
     isNightShiftEligibleAttendance(candidate.attendance.checkInTime, candidate.attendance.checkOutTime);
-  // Night and Day both show the assigned roster so paper N/M marks can be booked.
-  // Night clocks only come from overnight pairs — day punches are not copied onto the night sheet.
+  // Night lists people who actually worked night (biometric pair). Paper N is added only when booked.
+  // Day still shows the assigned roster so absentees can be reviewed.
   const attendanceForDay = assignedSupervisorEmployees.length
-    ? assignedSupervisorEmployees.map((employee) => {
+    ? assignedSupervisorEmployees.flatMap((employee) => {
         const employeeKeys = attendanceMatchKeys(employee.employeeCode, employee.fullName);
         const matched = attendanceCandidates.find((candidate) => attendanceCandidateKeys(candidate).some((key) => employeeKeys.includes(key)));
         if (shift.kind === 'Night') {
-          return matched && isNightAttendance(matched) ? matched : rosterPlaceholder(employee);
+          return matched && isNightAttendance(matched) ? [matched] : [];
         }
-        return matched || rosterPlaceholder(employee);
+        return [matched || rosterPlaceholder(employee)];
       })
     : (
       shift.kind === 'Night'
@@ -3623,9 +3624,10 @@ export async function syncAttendanceForTimesheet(
           return employeeCode === line.employeeId;
         });
         if (alreadyListed) return false;
+        if (timesheetLineHasBookedHours(line)) return true;
         if (attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName).some((key) => dayDurationKeys.has(key))) return false;
         if (!timesheetLineMatchesShift(line.clockIn, shift.label, line.clockOut)) return false;
-        return Number(line.usedHours || 0) > 0.001 || Number(line.totalHours || 0) > 0.001;
+        return false;
       })
     : [];
 

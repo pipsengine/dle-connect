@@ -1,4 +1,4 @@
-import { pairBiometricPunchesIntoShifts, isNightShiftEligibleAttendance, timesheetLineMatchesShift } from './timesheet-entry-shared';
+import { pairBiometricPunchesIntoShifts, isNightShiftEligibleAttendance, timesheetLineMatchesShift, applyNightPaperClock, timesheetLineHasBookedHours } from './timesheet-entry-shared';
 
 const assert = (condition: unknown, message: string) => {
   if (!condition) throw new Error(message);
@@ -28,6 +28,28 @@ assert(!isNightShiftEligibleAttendance('06:44', '18:56'), 'Day pair is not night
 assert(timesheetLineMatchesShift('06:44', '01 (Day)', '18:56'), 'Day sheet keeps day pair');
 assert(!timesheetLineMatchesShift('06:44', '02 (Night)', '18:56'), 'Night sheet hides day pair');
 assert(timesheetLineMatchesShift('', '02 (Night)', null), 'Night sheet keeps roster rows with no clock yet');
+
+const paperNight = applyNightPaperClock({
+  clockIn: null,
+  clockOut: null,
+  attendanceDuration: 0,
+  attendanceMode: null,
+  usedHours: 0,
+  totalHours: 0,
+  projectAllocations: [{ hours: 8 }],
+}, '02 (Night) - paper N - 18:00-02:00');
+assert(paperNight.clockIn === '18:00' && paperNight.clockOut === '02:00', 'Paper N booking stamps 18:00–02:00');
+assert(paperNight.attendanceDuration === 8, 'Paper N booking uses the 8h night window');
+assert(timesheetLineHasBookedHours({ projectAllocations: [{ hours: 8 }] }), 'Project hours count as booked on night');
+assert(!timesheetLineHasBookedHours({ usedHours: 0, totalHours: 0, projectAllocations: [] }), 'Empty night roster rows are not booked');
+
+const unbookedNight = applyNightPaperClock({
+  clockIn: null,
+  clockOut: null,
+  attendanceDuration: 0,
+  projectAllocations: [],
+}, '02 (Night)');
+assert(!unbookedNight.clockIn, 'Unbooked night roster rows stay without a clock');
 
 const lateNightOut = pairBiometricPunchesIntoShifts([
   { date: '2026-07-16', time: '18:20' },

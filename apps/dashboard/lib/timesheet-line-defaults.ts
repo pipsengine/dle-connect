@@ -14,6 +14,7 @@ import {
   attendanceDurationFromClock,
   repairStackedOvertimeProductiveHours,
   isTimesheetAbsentLine,
+  applyNightPaperClock,
 } from '@/lib/timesheet-entry-shared';
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
@@ -24,17 +25,18 @@ export const applyTimesheetLineDefaults = (
   dayContext: TimesheetDayContext,
   _projectCodes: string[] = [],
 ): TimesheetLine => {
-  if (isTimesheetAbsentLine(line)) {
+  const working = applyNightPaperClock(line, dayContext.shiftLabel);
+  if (isTimesheetAbsentLine(working)) {
     return {
-      ...line,
-      projectAllocations: normalizeProjectAllocations(line.projectAllocations),
-      idleAllocations: normalizeIdleAllocations(line.idleAllocations || []),
+      ...working,
+      projectAllocations: normalizeProjectAllocations(working.projectAllocations),
+      idleAllocations: normalizeIdleAllocations(working.idleAllocations || []),
     };
   }
 
   const hours = resolveTimesheetHours(dayContext);
   const shift = resolveTimesheetShift(dayContext.shiftLabel);
-  const projectAllocations = normalizeProjectAllocations(line.projectAllocations).map((item) => ({
+  const projectAllocations = normalizeProjectAllocations(working.projectAllocations).map((item) => ({
     ...item,
     hours: repairStackedOvertimeProductiveHours(
       Number(item.hours || 0),
@@ -43,7 +45,7 @@ export const applyTimesheetLineDefaults = (
     ),
   }));
 
-  let idleAllocations = normalizeIdleAllocations(line.idleAllocations || []);
+  let idleAllocations = normalizeIdleAllocations(working.idleAllocations || []);
 
   // Day shift requires 1h break idle. Night 18:00–02:00 is already net 8h — do not force break.
   if (shift.kind !== 'Night') {
@@ -58,16 +60,16 @@ export const applyTimesheetLineDefaults = (
   const usedHours = sumProjectAllocationHours(projectAllocations);
   const idleHours = round1(idleAllocations.reduce((sum, item) => sum + Number(item.hours || 0), 0));
   const totalHours = round1(usedHours + idleHours);
-  const clockDuration = attendanceDurationFromClock(line.clockIn, line.clockOut);
+  const clockDuration = attendanceDurationFromClock(working.clockIn, working.clockOut);
   const attendanceDuration =
     clockDuration !== null && clockDuration > 0
       ? clockDuration
-      : line.clockIn && !line.clockOut
-        ? round1(Math.min(Math.max(0, line.attendanceDuration || 0), hours.grossHours))
-        : round1(Math.max(0, line.attendanceDuration || 0));
+      : working.clockIn && !working.clockOut
+        ? round1(Math.min(Math.max(0, working.attendanceDuration || 0), hours.grossHours))
+        : round1(Math.max(0, working.attendanceDuration || 0));
 
   return {
-    ...line,
+    ...working,
     projectAllocations,
     idleAllocations,
     attendanceDuration,

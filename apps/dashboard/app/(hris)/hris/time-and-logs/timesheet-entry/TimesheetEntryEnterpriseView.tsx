@@ -110,6 +110,8 @@ export type TimesheetEnterpriseViewProps = {
   onRemoveProjectColumn: (index: number) => void;
   onSelectColumnProject: (index: number, code: string) => void;
   onAutoDistribute: () => void;
+  onAddNightCrew?: (employeeCode: string) => void;
+  supervisorEmployees?: Array<{ employeeId: string; employeeCode: string; fullName: string }>;
   onClearAllProjects: () => void;
   onOpenProjectSettings: () => void;
   onSyncAttendance: () => void;
@@ -434,6 +436,34 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
           onSelectColumnProject={props.onSelectColumnProject}
         />
 
+        {resolveTimesheetShift(props.selectedShift).kind === 'Night' && props.canEditTimesheet && props.onAddNightCrew ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-[16px] border border-sky-100 bg-sky-50 px-4 py-3">
+            <p className="text-xs font-semibold text-sky-950">Paper N — add someone who worked night without a clock:</p>
+            <select
+              defaultValue=""
+              onChange={(event) => {
+                const code = event.target.value;
+                if (!code) return;
+                props.onAddNightCrew?.(code);
+                event.target.value = '';
+              }}
+              className="h-9 min-w-[220px] rounded-xl border border-sky-200 bg-white px-3 text-xs font-semibold text-slate-700"
+            >
+              <option value="">Select assigned employee</option>
+              {(props.supervisorEmployees || [])
+                .filter((employee) => !props.localLines.some((line) =>
+                  String(line.employeeNo || line.employeeId || '').trim().toUpperCase()
+                  === String(employee.employeeCode || '').trim().toUpperCase()
+                ))
+                .map((employee) => (
+                  <option key={employee.employeeCode} value={employee.employeeCode}>
+                    {employee.fullName} ({employee.employeeCode})
+                  </option>
+                ))}
+            </select>
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[#E5E7EB] bg-white px-4 py-3">
           <div className="relative min-w-[240px] flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
@@ -735,7 +765,9 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                     }) : (
                       <tr>
                         <td colSpan={11 + props.matrixColumns.length} className="px-4 py-10 text-center text-sm font-medium text-[#64748B]">
-                          No employees on this timesheet for the selected shift. Switch Day/Night, or open the draft date and work centre from Timesheet Approval.
+                          {resolveTimesheetShift(props.selectedShift).kind === 'Night'
+                            ? 'Night only lists people who clocked 18:00–02:00, or who you add here. Use Paper N above to add the person who worked night, type 8h, then Save Draft.'
+                            : 'No employees on this timesheet for the selected shift. Switch Day/Night, or open the draft date and work centre from Timesheet Approval.'}
                         </td>
                       </tr>
                     )}

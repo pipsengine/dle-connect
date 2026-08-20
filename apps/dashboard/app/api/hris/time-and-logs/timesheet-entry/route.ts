@@ -65,7 +65,7 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
-import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetShiftHeaderSlug, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetHeaderShiftKind, timesheetShiftHeaderSlug, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { mobilizationCoversDate, mobilizationMatchesSupervisor, readTimesheetMobilizations, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
 
@@ -1230,17 +1230,29 @@ const buildPayload = async (
       persistRoster = true;
     }
     const existingKeys = new Set(lines.flatMap((line) => matchKeys(line.employeeNo, line.employeeId, line.employeeName)));
-    for (const employee of selectedSupervisorEmployees) {
-      const keys = matchKeys(employee.employeeCode, employee.fullName);
-      if (keys.some((key) => existingKeys.has(key))) continue;
-      persistRoster = true;
-      lines.push(buildRosterTimesheetLine({
-        headerId: header.id,
-        employeeId: employee.employeeId || employee.employeeCode,
-        employeeNo: employee.employeeCode,
-        employeeName: employee.fullName,
-      }));
-      keys.forEach((key) => existingKeys.add(key));
+    const isNightSheet = resolveTimesheetShift(targetShiftForSheet).kind === 'Night';
+    if (isNightSheet) {
+      const kept = lines.filter((line) =>
+        Boolean(String(line.clockIn || '').trim())
+        || timesheetLineHasBookedHours(line),
+      );
+      if (kept.length !== lines.length) {
+        lines = kept;
+        persistRoster = true;
+      }
+    } else {
+      for (const employee of selectedSupervisorEmployees) {
+        const keys = matchKeys(employee.employeeCode, employee.fullName);
+        if (keys.some((key) => existingKeys.has(key))) continue;
+        persistRoster = true;
+        lines.push(buildRosterTimesheetLine({
+          headerId: header.id,
+          employeeId: employee.employeeId || employee.employeeCode,
+          employeeNo: employee.employeeCode,
+          employeeName: employee.fullName,
+        }));
+        keys.forEach((key) => existingKeys.add(key));
+      }
     }
     if (persistRoster && period.status === 'Open' && isTimesheetEditableStatus(header.status)) {
       await writeTimesheetHeaderLines(header, lines);
@@ -1814,10 +1826,11 @@ export async function PATCH(request: Request) {
       const holidayDates = await readPublicHolidayDates();
       const dayContext = dayContextFor(header.timesheetDate, holidayDates, header.shiftLabel || payload.shiftLabel);
       if (payload.shiftLabel) header.shiftLabel = String(payload.shiftLabel);
-      const reconciledLines = updatedLines.map(reconcileTimesheetLineHours);
+      const isNightHeader = resolveTimesheetShift(header.shiftLabel).kind === 'Night';
+      const reconciledLines = updatedLines.map((line) => applyNightPaperClock(reconcileTimesheetLineHours(line), header.shiftLabel));
       for (const line of reconciledLines) {
         const projectHours = (line.projectAllocations || []).reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
-        if (!line.clockIn && !isManualOffshoreLine(line) && projectHours > 0.001) {
+        if (!isNightHeader && !line.clockIn && !isManualOffshoreLine(line) && projectHours > 0.001) {
           return err(400, `Absent employee ${line.employeeName} cannot receive project/productive hours.`);
         }
         const validated = validateTimesheetLine(
@@ -1840,12 +1853,15 @@ export async function PATCH(request: Request) {
         const otherHeader = headers.find((item) => item.id === line.headerId);
         return Boolean(otherHeader && otherHeader.timesheetDate === header.timesheetDate && otherHeader.id !== header.id);
       });
+      const headerKind = timesheetHeaderShiftKind(header.shiftLabel);
       for (const line of reconciledLines) {
         const bookedHours = Number(line.usedHours || 0) + (line.projectAllocations || []).reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
         if (bookedHours <= 0.001) continue;
         const keys = matchKeys(line.employeeNo, line.employeeId, line.employeeName);
         const clash = otherDateLines.find((other) => {
           if (Number(other.usedHours || 0) <= 0.001) return false;
+          const otherHeader = headers.find((item) => item.id === other.headerId);
+          if (timesheetHeaderShiftKind(otherHeader?.shiftLabel) !== headerKind) return false;
           return matchKeys(other.employeeNo, other.employeeId, other.employeeName).some((key) => keys.includes(key));
         });
         if (clash) {
@@ -1904,7 +1920,13 @@ export async function PATCH(request: Request) {
         header.status = previousStatus;
       }
 
-      const persistCheck = validateTimesheetLinesForPersist(normalizedLines);
+      const persistLines = isNightHeader
+        ? normalizedLines.filter((line) =>
+          Boolean(String(line.clockIn || '').trim())
+          || timesheetLineHasBookedHours(line),
+        )
+        : normalizedLines;
+      const persistCheck = validateTimesheetLinesForPersist(persistLines);
       if (persistCheck.issues.some((issue) => /duplicate project code/i.test(issue))) {
         return err(400, persistCheck.issues.join(' '));
       }
