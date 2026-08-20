@@ -1031,7 +1031,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
           detail: `${emailMatch.reason}. Open that employee profile instead of creating a new record.`,
           tone: 'err',
         });
-        setDuplicate({ status: 'ready', data: duplicateCheck });
+        if (duplicateCheck) setDuplicate({ status: 'ready', data: duplicateCheck });
         setSubmitting(false);
         return;
       }
