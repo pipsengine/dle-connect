@@ -140,13 +140,23 @@ export const navigationConfig: NavItem[] = [
       'Timesheet Approval',
       'Timesheet Reports',
       'Timesheet Recapture',
+      'Dayrate Payment Schedule',
       'Crew Mobilization',
       'Shift & Scheduling',
       'Overtime Management',
       'Reviews & Approvals',
       'Time Corrections',
       'Reports & Analytics',
-    ], 'hris.workforce-management'),
+    ], 'hris.workforce-management').map((item) => {
+      if (item.slug === 'dayrate-payment-schedule') {
+        return {
+          ...item,
+          route: '/workforce-management/dayrate-schedule-reconcile',
+          permissionKey: 'page.hris.time-and-logs.dayrate-schedule-reconcile.view',
+        };
+      }
+      return item;
+    }),
   },
   {
     id: 'leave-management',

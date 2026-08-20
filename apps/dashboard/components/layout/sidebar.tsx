@@ -46,7 +46,7 @@ const requiredPermission = (route?: string) => {
   if (route.startsWith('/hris/workforce-management/timesheet-approval') || route.startsWith('/hris/time-and-logs/timesheet-approval')) return 'operations.timesheets.approve';
   if (route.startsWith('/hris/workforce-management/timesheet-reports') || route.startsWith('/hris/time-and-logs/timesheet-reports')) return 'operations.timesheets.view';
   if (route.startsWith('/hris/workforce-management/timesheet-recapture') || route.startsWith('/hris/time-and-logs/timesheet-recapture')) return 'operations.timesheets.view';
-  if (route.startsWith('/hris/workforce-management/dayrate-schedule-reconcile') || route.startsWith('/hris/time-and-logs/dayrate-schedule-reconcile')) return 'operations.timesheets.view';
+  if (route.startsWith('/hris/workforce-management/dayrate-schedule-reconcile') || route.startsWith('/hris/workforce-management/dayrate-payment-schedule') || route.startsWith('/hris/time-and-logs/dayrate-schedule-reconcile')) return 'operations.timesheets.view';
   if (route.startsWith('/hris/workforce-management/timesheet-period') || route.startsWith('/hris/time-and-logs/timesheet-period')) return 'timesheet.period.manage';
   if (route.startsWith('/hris/workforce-management/crew-mobilization') || route.startsWith('/hris/time-and-logs/crew-mobilization')) return 'page.hris.time-and-logs.crew-mobilization.view';
   if (route.startsWith('/hris/payroll-management/bank-finance') || route.startsWith('/hris/payroll-management/bank-and-finance')) {

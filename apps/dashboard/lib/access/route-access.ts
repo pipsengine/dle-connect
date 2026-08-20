@@ -256,7 +256,11 @@ export const hrisRoutePermissionOptions = (pathname: string): string[] | null =>
       'timesheet.approve',
     ];
   }
-  if (path === '/hris/workforce-management/dayrate-schedule-reconcile' || path === '/hris/time-and-logs/dayrate-schedule-reconcile') {
+  if (
+    path === '/hris/workforce-management/dayrate-schedule-reconcile'
+    || path === '/hris/workforce-management/dayrate-payment-schedule'
+    || path === '/hris/time-and-logs/dayrate-schedule-reconcile'
+  ) {
     return [
       'page.hris.time-and-logs.dayrate-schedule-reconcile.view',
       'page.hris.time-and-logs.timesheet-reports.view',
