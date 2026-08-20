@@ -31,6 +31,7 @@ import {
   listPaymentRequestComments,
   PAYMENT_TYPES,
   repairPrematureTreasuryHandoff,
+  repairMissingProjectLineManager,
   transitionPaymentRequest,
   updateReturnedPaymentRequest,
   type PaymentRequestType,
@@ -161,6 +162,7 @@ export async function GET(request: Request) {
       let paymentRequest = await getPaymentRequestById(requestId);
       if (!paymentRequest) return jsonErr(404, 'Payment request not found.');
       paymentRequest = await repairPrematureTreasuryHandoff(paymentRequest);
+      paymentRequest = await repairMissingProjectLineManager(paymentRequest);
       const actions = await listPaymentRequestActions(paymentRequest.requestId);
       const comments = await listPaymentRequestComments(paymentRequest.requestId);
       if (!canAccessPaymentRequest(actor, paymentRequest, {

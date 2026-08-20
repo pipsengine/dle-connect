@@ -143,6 +143,8 @@ export const resolvePaymentStageApprover = async (input: {
   projectCode?: string | null;
   supervisorName?: string | null;
   paymentType?: string | null;
+  /** When true, return the directory principal and skip active delegation. */
+  principalOnly?: boolean;
 }): Promise<ResolvedPaymentApprover & { delegatedFrom?: { code: string; name: string; delegationId: string } }> => {
   const stage = compact(input.stage) || 'Finance Manager';
   const roles = roleFallbacksForStage(stage);
@@ -240,6 +242,7 @@ export const resolvePaymentStageApprover = async (input: {
     };
 
   if (!principal.code && !principal.name) return principal;
+  if (input.principalOnly) return principal;
 
   try {
     const { resolveActiveDelegation } = await import('@/lib/finance-intelligence/approval-delegation-service');

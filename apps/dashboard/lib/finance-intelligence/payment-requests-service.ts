@@ -847,6 +847,14 @@ WHERE [RequestId] = @RequestId
   return nextPayload;
 };
 
+/** True when a project request is still sitting with the PM and nobody has approved yet. */
+const canInsertProjectReportingManager = async (row: PaymentRequestRow) => {
+  if (!/pending|submitted|finance review/i.test(compact(row.status))) return false;
+  if (!/project manager/i.test(compact(row.currentStage))) return false;
+  const actions = await listPaymentRequestActions(row.requestId);
+  return !actions.some((action) => /approve/i.test(action.actionType));
+};
+
 /** Re-resolve Approval Limits when payload.stages is missing/incomplete or amount band changed. */
 const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> => {
   const existing = stagesFromPayload(row.payload);
@@ -909,7 +917,8 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
   const inFlightProjectWithoutRm = Boolean(
     existing.length
     && !/draft/i.test(compact(row.status))
-    && isProjectChainWithoutReportingManager(existing),
+    && isProjectChainWithoutReportingManager(existing)
+    && !(await canInsertProjectReportingManager(row)),
   );
   const matchedForRow = inFlightProjectWithoutRm && matchedStages
     ? (() => {
@@ -1018,6 +1027,137 @@ WHERE [RequestId] = @RequestId
   }
 
   return (await getPaymentRequestById(row.requestId)) || row;
+};
+
+/**
+ * Project payments that nobody has approved yet must start with the requester's
+ * line manager. In-flight items already past PM (or with an Approve action) stay as-is.
+ */
+export const repairMissingProjectLineManager = async (row: PaymentRequestRow): Promise<PaymentRequestRow> => {
+  if (!(await canInsertProjectReportingManager(row))) return row;
+
+  let nextStages: string[] = [];
+  let matchedMeta: {
+    matrixRuleName: string;
+    approvalLevel: number;
+    pathType: string;
+    amountNgn: number;
+    fxRate: number;
+    fxRateDate: string;
+    fxSource: string;
+  } | null = null;
+  try {
+    const matched = await resolveApprovalChain({
+      amount: row.netAmount,
+      currencyCode: row.currencyCode || 'NGN',
+      department: row.department,
+      projectCode: row.projectCode,
+      requesterCode: row.requesterCode,
+      supervisorName: row.supervisorName,
+    });
+    if (matched?.stages?.length) {
+      nextStages = matched.stages;
+      matchedMeta = {
+        matrixRuleName: matched.ruleName,
+        approvalLevel: matched.approvalLevel,
+        pathType: matched.pathType,
+        amountNgn: matched.amountNgn,
+        fxRate: matched.fxRate,
+        fxRateDate: matched.fxRateDate,
+        fxSource: matched.fxSource,
+      };
+    }
+  } catch (error) {
+    console.error('[payment-requests] project line-manager chain resolve failed', error);
+  }
+  if (!nextStages.length) {
+    const pathType = compact(row.projectCode) || /project/i.test(compact(row.department)) ? 'Project' : 'Non-project';
+    nextStages = applyProjectReportingManagerFirst(
+      defaultStagesForPayment(row.paymentType, row.projectCode, row.department),
+      pathType,
+    );
+    nextStages = await applyMdLineManagerLastApproverRule({
+      stages: nextStages,
+      amountNgn: Number(row.payload?.amountNgn || row.netAmount || 0),
+      pathType,
+      requesterCode: row.requesterCode,
+      supervisorName: row.supervisorName,
+    });
+    nextStages = await skipProjectReportingManagerWhenSameAsPm({
+      stages: nextStages,
+      requesterCode: row.requesterCode,
+      supervisorName: row.supervisorName,
+      projectCode: row.projectCode,
+      paymentType: row.paymentType,
+    });
+  }
+
+  const nextFirst = nextStages[0] || '';
+  if (!/reporting manager|line manager/i.test(nextFirst)) return row;
+
+  const existing = stagesFromPayload(row.payload);
+  const stagesAlreadyOk = existing.length === nextStages.length
+    && existing.every((stage, index) => stage.toLowerCase() === nextStages[index].toLowerCase());
+  const alreadyAtLineManager = /reporting manager|line manager/i.test(compact(row.currentStage));
+  if (stagesAlreadyOk && alreadyAtLineManager) return row;
+
+  row.payload = await persistPayloadStages(row.requestId, row.payload, nextStages, {
+    matrixRuleName: matchedMeta?.matrixRuleName || row.payload.matrixRuleName || null,
+    approvalLevel: matchedMeta?.approvalLevel || row.payload.approvalLevel || nextStages.length,
+    pathType: matchedMeta?.pathType || row.payload.pathType || 'Project',
+    amountNgn: matchedMeta?.amountNgn || row.payload.amountNgn || row.netAmount,
+    fxRate: matchedMeta?.fxRate || row.payload.fxRate || 1,
+    fxRateDate: matchedMeta?.fxRateDate || row.payload.fxRateDate || null,
+    fxSource: matchedMeta?.fxSource || row.payload.fxSource || null,
+    repairedStages: true,
+  });
+
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) return row;
+  try {
+    await pool.request()
+      .input('RequestId', sql.NVarChar(60), row.requestId)
+      .input('CurrentStage', sql.NVarChar(80), nextFirst)
+      .query(`
+UPDATE [finance].[PaymentRequests]
+SET [CurrentStage] = @CurrentStage,
+    [Status] = N'Pending Approval',
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+    await assignCurrentApprover({
+      requestId: row.requestId,
+      stage: nextFirst,
+      requesterCode: row.requesterCode,
+      projectCode: row.projectCode,
+      supervisorName: row.supervisorName,
+      paymentType: row.paymentType,
+    });
+    await logAction({
+      requestId: row.requestId,
+      actionType: 'repair-stages',
+      stage: nextFirst,
+      actorName: 'System',
+      actorCode: 'system',
+      comment: 'Inserted Reporting Manager as first project approval step before Project Manager.',
+    });
+  } catch (error) {
+    console.error('[payment-requests] repairMissingProjectLineManager failed', error);
+    return row;
+  }
+
+  const repaired = (await getPaymentRequestById(row.requestId)) || {
+    ...row,
+    currentStage: nextFirst,
+    status: 'Pending Approval',
+  };
+  await notifyPaymentApprovalRequired({
+    request: repaired,
+    stage: nextFirst,
+    actorName: 'System',
+    baseUrl: resolveWorkflowLinkOrigin(),
+  }).catch((error) => console.error('[payment-requests] line-manager repair notification failed', error));
+  return repaired;
 };
 
 const countOutstandingCashAdvances = async (employeeCode: string) => {
@@ -1424,6 +1564,17 @@ export const buildPaymentRequestsWorkspace = async (input?: {
     includeMdCeoStage: Boolean(input?.includeMdCeoStage),
     requireActorScope: Boolean(input?.restrictToActor),
   });
+
+  // New project submissions still sitting with the PM (no approval yet) get line manager first.
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (!/project manager/i.test(compact(row.currentStage))) continue;
+    try {
+      rows[index] = await repairMissingProjectLineManager(row);
+    } catch (error) {
+      console.error('[payment-requests] project line-manager repair failed', row.requestNumber, error);
+    }
+  }
 
   // Repair stored chains so Project > ₦5m / Non-project > ₦1m (and CFO > ₦5m) cannot skip MD/CEO.
   for (const row of rows) {
@@ -2424,7 +2575,14 @@ export const transitionPaymentRequest = async (input: {
   const existingRaw = (await listRows()).find((row) => row.requestId === input.requestId)
     || await getPaymentRequestById(input.requestId);
   if (!existingRaw) throw new Error('Payment request not found.');
-  const existing = await repairPrematureTreasuryHandoff(existingRaw);
+  const existing = await repairMissingProjectLineManager(await repairPrematureTreasuryHandoff(existingRaw));
+  if (['approve', 'reject', 'return', 'clarify', 'delegate', 'escalate'].includes(input.action)) {
+    const actorCode = compact(input.actorCode).toLowerCase();
+    const assigned = compact(existing.currentApproverCode).toLowerCase();
+    if (actorCode && assigned && actorCode !== assigned) {
+      throw new Error('This request was routed to the requester\'s line manager first. Only the assigned approver can action it.');
+    }
+  }
 
   const requiresReason = ['reject', 'return', 'delegate', 'escalate', 'clarify', 'return-retirement'].includes(input.action);
   if (requiresReason && !compact(input.reason || input.comment)) {

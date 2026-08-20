@@ -828,15 +828,6 @@ const isLineManagerStage = (stage: string) =>
 
 const isProjectManagerStage = (stage: string) => /project manager/i.test(compact(stage));
 
-const approverKeysMatch = (left?: { code?: string | null; name?: string | null }, right?: { code?: string | null; name?: string | null }) => {
-  const leftCode = compact(left?.code).toUpperCase();
-  const rightCode = compact(right?.code).toUpperCase();
-  if (leftCode && rightCode && leftCode === rightCode) return true;
-  const leftName = compact(left?.name).toLowerCase();
-  const rightName = compact(right?.name).toLowerCase();
-  return Boolean(leftName && rightName && leftName === rightName);
-};
-
 /** Project path always starts with the requester's line manager unless that stage is already present. */
 export const applyProjectReportingManagerFirst = (stages: string[], pathType?: ApprovalPathType | string | null) => {
   const next = [...(stages || [])].map((stage) => compact(stage)).filter(Boolean);
@@ -847,6 +838,7 @@ export const applyProjectReportingManagerFirst = (stages: string[], pathType?: A
 
 /**
  * If the requester's line manager is also the project manager, do not make them approve twice.
+ * Compare directory principals by employee code only — never delegates or display names.
  */
 export const skipProjectReportingManagerWhenSameAsPm = async (input: {
   stages: string[];
@@ -865,6 +857,7 @@ export const skipProjectReportingManagerWhenSameAsPm = async (input: {
       supervisorName: input.supervisorName,
       projectCode: input.projectCode,
       paymentType: input.paymentType,
+      principalOnly: true,
     });
     const projectManager = await resolvePaymentStageApprover({
       stage: 'Project Manager',
@@ -872,8 +865,11 @@ export const skipProjectReportingManagerWhenSameAsPm = async (input: {
       supervisorName: input.supervisorName,
       projectCode: input.projectCode,
       paymentType: input.paymentType,
+      principalOnly: true,
     });
-    if (approverKeysMatch(lineManager, projectManager)) {
+    const lineManagerCode = compact(lineManager.code).toUpperCase();
+    const projectManagerCode = compact(projectManager.code).toUpperCase();
+    if (lineManagerCode && projectManagerCode && lineManagerCode === projectManagerCode) {
       return stages.filter((stage) => !isLineManagerStage(stage));
     }
   } catch (error) {
