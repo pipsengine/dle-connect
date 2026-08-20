@@ -1,5 +1,6 @@
 'use client';
 
+import PayrollPeriodContextBar from '../../payroll-management/PayrollPeriodContextBar';
 import { PayrollCommentsControl } from '../../payroll-management/PayrollCommentsThread';
 import {
   AlertTriangle,
