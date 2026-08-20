@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import {
   createEmployeeFromDraftInDb,
+  findEmployeeByOfficialEmailInDb,
   getEmployeeDraftFromDb,
+  humanizeEmployeeCreateDbError,
   nextEmployeeCodeFromDb,
+  officialEmailAlreadyUsedMessage,
   saveEmployeeDraftToDb,
 } from '@/lib/dle-enterprise-db';
 import { payrollDataSourceInfo, readDirectoryEmployees } from '@/lib/payroll-employee-source';
@@ -337,6 +340,12 @@ export async function POST(request: Request) {
     return jsonErr(400, `Cannot create employee from draft status "${draftRec.status}".`);
   }
 
+  const officialEmail = String(draftRec.draft?.contact?.officialEmail || '').trim();
+  if (officialEmail) {
+    const owner = await findEmployeeByOfficialEmailInDb(officialEmail);
+    if (owner) return jsonErr(409, officialEmailAlreadyUsedMessage(owner, officialEmail.toLowerCase()));
+  }
+
   let employeeId = '';
   try {
     employeeId = await finalizeEmployeeId(draftRec.draft);
@@ -355,7 +364,8 @@ export async function POST(request: Request) {
       updatedBy: role,
     });
   } catch (error) {
-    return jsonErr(409, error instanceof Error ? error.message : 'Unable to create employee in DLE_Enterprise');
+    const friendly = await humanizeEmployeeCreateDbError(error);
+    return jsonErr(409, friendly instanceof Error ? friendly.message : 'Unable to create employee in DLE_Enterprise');
   }
   storeOverrides.set(employeeId, override);
 

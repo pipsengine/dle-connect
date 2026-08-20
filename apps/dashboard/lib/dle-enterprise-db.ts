@@ -31,7 +31,10 @@ type DraftRecordLike = {
   audit?: { at?: string; action: string; performedBy: string; reason?: string; oldValue?: string; newValue?: string }[];
 };
 
-type DuplicateMatch = { employeeId?: string; draftId?: string; reason: string };
+type DuplicateMatch = { employeeId?: string; draftId?: string; reason: string; fullName?: string };
+
+const normalizeOfficialEmail = (value: unknown) =>
+  str(value).replace(/^[^a-zA-Z0-9]+/, '').toLowerCase();
 
 export type DleEmployeeDirectoryRow = {
   id: string;
@@ -897,9 +900,10 @@ export const findEmployeeDuplicatesInDb = async (payload: any): Promise<Duplicat
     .input('date_of_birth', sql.Date, dob)
     .query(`
       SELECT TOP (12) e.employee_code AS employeeId,
+        e.full_name AS fullName,
         CASE
-          WHEN @official_email IS NOT NULL AND LOWER(c.official_email) = @official_email THEN 'Same official email'
-          WHEN @personal_email IS NOT NULL AND LOWER(c.personal_email) = @personal_email THEN 'Same personal email'
+          WHEN @official_email IS NOT NULL AND LOWER(LTRIM(RTRIM(c.official_email))) = @official_email THEN 'Same official email'
+          WHEN @personal_email IS NOT NULL AND LOWER(LTRIM(RTRIM(c.personal_email))) = @personal_email THEN 'Same personal email'
           WHEN @primary_phone IS NOT NULL AND REPLACE(c.primary_phone, ' ', '') = @primary_phone THEN 'Same phone number'
           ELSE 'Same name and date of birth'
         END AS reason
@@ -907,32 +911,76 @@ export const findEmployeeDuplicatesInDb = async (payload: any): Promise<Duplicat
       LEFT JOIN [hris].[EmployeeContactInfo] c ON c.employee_id = e.employee_id
       LEFT JOIN [hris].[EmployeePersonalInfo] pinfo ON pinfo.employee_id = e.employee_id
       WHERE (
-        (@official_email IS NOT NULL AND LOWER(c.official_email) = @official_email)
-        OR (@personal_email IS NOT NULL AND LOWER(c.personal_email) = @personal_email)
+        (@official_email IS NOT NULL AND LOWER(LTRIM(RTRIM(c.official_email))) = @official_email)
+        OR (@personal_email IS NOT NULL AND LOWER(LTRIM(RTRIM(c.personal_email))) = @personal_email)
         OR (@primary_phone IS NOT NULL AND REPLACE(c.primary_phone, ' ', '') = @primary_phone)
         OR (@full_name IS NOT NULL AND LOWER(e.full_name) = @full_name AND @date_of_birth IS NOT NULL AND pinfo.date_of_birth = @date_of_birth)
       );
 
       SELECT TOP (12) draft_id AS draftId,
         CASE
-          WHEN @official_email IS NOT NULL AND LOWER(official_email) = @official_email THEN 'Draft with same official email'
-          WHEN @personal_email IS NOT NULL AND LOWER(personal_email) = @personal_email THEN 'Draft with same personal email'
+          WHEN @official_email IS NOT NULL AND LOWER(LTRIM(RTRIM(official_email))) = @official_email THEN 'Draft with same official email'
+          WHEN @personal_email IS NOT NULL AND LOWER(LTRIM(RTRIM(personal_email))) = @personal_email THEN 'Draft with same personal email'
           WHEN @primary_phone IS NOT NULL AND REPLACE(primary_phone, ' ', '') = @primary_phone THEN 'Draft with same phone number'
           ELSE 'Draft with same name and date of birth'
         END AS reason
       FROM [hris].[EmployeeDrafts]
       WHERE draft_status IN ('draft', 'submitted', 'approved') AND (
-        (@official_email IS NOT NULL AND LOWER(official_email) = @official_email)
-        OR (@personal_email IS NOT NULL AND LOWER(personal_email) = @personal_email)
+        (@official_email IS NOT NULL AND LOWER(LTRIM(RTRIM(official_email))) = @official_email)
+        OR (@personal_email IS NOT NULL AND LOWER(LTRIM(RTRIM(personal_email))) = @personal_email)
         OR (@primary_phone IS NOT NULL AND REPLACE(primary_phone, ' ', '') = @primary_phone)
         OR (@full_name IS NOT NULL AND LOWER(full_name) = @full_name AND @date_of_birth IS NOT NULL AND date_of_birth = @date_of_birth)
       );
     `);
   const recordsets = rs.recordsets as sql.IRecordSet<any>[];
   return [
-    ...(recordsets[0] || []).map((x: any) => ({ employeeId: x.employeeId, reason: x.reason })),
+    ...(recordsets[0] || []).map((x: any) => ({
+      employeeId: x.employeeId,
+      fullName: str(x.fullName) || undefined,
+      reason: x.fullName ? `${x.reason} (${x.employeeId} — ${x.fullName})` : x.reason,
+    })),
     ...(recordsets[1] || []).map((x: any) => ({ draftId: x.draftId, reason: x.reason })),
   ];
+};
+
+export const findEmployeeByOfficialEmailInDb = async (officialEmail: string) => {
+  const email = normalizeOfficialEmail(officialEmail);
+  if (!email) return null;
+  const p = await pool();
+  if (!p) return null;
+  const rs = await p
+    .request()
+    .input('official_email', sql.NVarChar(320), email)
+    .query(`
+      SELECT TOP (1) e.employee_code AS employeeCode, e.full_name AS fullName
+      FROM [hris].[EmployeeContactInfo] c
+      INNER JOIN [hris].[Employees] e ON e.employee_id = c.employee_id
+      WHERE LOWER(LTRIM(RTRIM(c.official_email))) = @official_email
+    `);
+  const row = rs.recordset?.[0];
+  if (!row?.employeeCode) return null;
+  return { employeeCode: str(row.employeeCode), fullName: str(row.fullName) };
+};
+
+export const officialEmailAlreadyUsedMessage = (
+  owner: { employeeCode: string; fullName?: string },
+  email: string,
+) =>
+  `Official email ${email} is already used by ${owner.employeeCode}${owner.fullName ? ` (${owner.fullName})` : ''}. Open that employee profile instead of creating a new record.`;
+
+export const humanizeEmployeeCreateDbError = async (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error || '');
+  const emailMatch = message.match(/duplicate key value is \(([^)]+)\)/i);
+  if (/UX_EmployeeContactInfo_official_email|EmployeeContactInfo/i.test(message) && emailMatch) {
+    const email = normalizeOfficialEmail(emailMatch[1]);
+    const owner = email ? await findEmployeeByOfficialEmailInDb(email).catch(() => null) : null;
+    if (owner) return new Error(officialEmailAlreadyUsedMessage(owner, email));
+    return new Error(`Official email ${email || 'entered'} is already assigned to another employee. Use a unique company email.`);
+  }
+  if (/UX_Employees_employee_code|duplicate key.*\[hris\]\.\[Employees\]/i.test(message)) {
+    return new Error('That employee code already exists. Refresh the form to generate a new code.');
+  }
+  return error instanceof Error ? error : new Error(message);
 };
 
 const DIRECTORY_EMPLOYEE_FROM_SQL = `
@@ -2358,6 +2406,11 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
   const employment = draft.employment || {};
   const job = draft.job || {};
   const payroll = draft.payroll || {};
+  const officialEmail = normalizeOfficialEmail(contact.officialEmail);
+  if (officialEmail) {
+    const owner = await findEmployeeByOfficialEmailInDb(officialEmail);
+    if (owner) throw new Error(officialEmailAlreadyUsedMessage(owner, officialEmail));
+  }
   const fullName = `${str(personal.firstName)} ${str(personal.lastName)}`.trim() || employeeCode;
   const isStipendEmployee = isStipendEmployeeDraft(employeeCode, employment, job);
   const defaultStipendSalary = Number(process.env.HRIS_DEFAULT_IT_NYSC_STIPEND_NGN || 100000);
@@ -2438,7 +2491,7 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
 
     await new sql.Request(tx)
       .input('employee_id', sql.BigInt, employeeId)
-      .input('official_email', sql.NVarChar(320), nullable(contact.officialEmail))
+      .input('official_email', sql.NVarChar(320), officialEmail || null)
       .input('personal_email', sql.NVarChar(320), nullable(contact.personalEmail))
       .input('primary_phone', sql.NVarChar(50), nullable(contact.primaryPhone))
       .input('alternate_phone', sql.NVarChar(50), nullable(contact.alternatePhone))

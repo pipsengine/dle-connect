@@ -1012,6 +1012,30 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
       }
       setDraftId(did);
 
+      const duplicateCheck = await apiCall<DuplicateResult>('/api/hris/employees/duplicate-check', {
+        method: 'POST',
+        role,
+        body: JSON.stringify({
+          fullName: `${draft.personal.firstName} ${draft.personal.lastName}`.trim(),
+          officialEmail: draft.contact.officialEmail,
+          personalEmail: draft.contact.personalEmail,
+          primaryPhone: draft.contact.primaryPhone,
+          dateOfBirth: draft.personal.dateOfBirth,
+        }),
+      }).catch(() => null);
+      const emailMatch = duplicateCheck?.matches.find((match) =>
+        /same official email/i.test(match.reason) && Boolean(match.employeeId));
+      if (emailMatch?.employeeId) {
+        setToast({
+          title: 'Submit failed',
+          detail: `${emailMatch.reason}. Open that employee profile instead of creating a new record.`,
+          tone: 'err',
+        });
+        setDuplicate({ status: 'ready', data: duplicateCheck });
+        setSubmitting(false);
+        return;
+      }
+
       const res = await apiCall<CreateEmployeeResponse>('/api/hris/employees', {
         method: 'POST',
         role,
