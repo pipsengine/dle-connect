@@ -12,6 +12,7 @@ import {
   BriefcaseBusiness,
   Calendar,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   CircleAlert,
   ClipboardList,
@@ -494,12 +495,14 @@ const EditField = ({
   onChange,
   disabled,
   placeholder,
+  type,
 }: {
   label: string;
   value: string;
   onChange: (next: string) => void;
   disabled?: boolean;
   placeholder?: string;
+  type?: 'text' | 'date' | 'email' | 'tel';
 }) => (
   <div className={`rounded-xl border p-2.5 ${disabled ? 'border-slate-100 bg-slate-50' : 'border-slate-200 bg-white'}`}>
     <div className="text-[11px] font-extrabold text-slate-600">{label}</div>
@@ -507,9 +510,200 @@ const EditField = ({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
-      placeholder={placeholder}
-      className={`mt-1 w-full text-sm font-semibold focus:outline-none ${disabled ? 'bg-transparent text-slate-400' : 'bg-white text-slate-900'}`}
+      placeholder={placeholder || 'Enter value'}
+      type={type || 'text'}
+      className={`mt-1.5 w-full rounded-lg border px-2.5 py-2 text-sm font-semibold focus:border-dle-blue focus:outline-none focus:ring-2 focus:ring-dle-blue/20 ${
+        disabled ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400' : 'border-slate-200 bg-white text-slate-900'
+      }`}
     />
+  </div>
+);
+
+const EditTextArea = ({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  placeholder?: string;
+}) => (
+  <div className="rounded-xl border border-slate-200 bg-white p-2.5 sm:col-span-2 lg:col-span-3">
+    <div className="text-[11px] font-extrabold text-slate-600">{label}</div>
+    <textarea
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder || 'Enter details'}
+      rows={3}
+      className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:border-dle-blue focus:outline-none focus:ring-2 focus:ring-dle-blue/20"
+    />
+  </div>
+);
+
+type ProfileFormOptions = {
+  departments: string[];
+  divisions: string[];
+  businessUnits: string[];
+  locations: string[];
+  jobTitles: string[];
+  jobGrades: string[];
+  costCenters: string[];
+  projectSites: string[];
+  roleProfiles: string[];
+  employees?: Array<{ employeeId: string; fullName: string; department?: string; jobTitle?: string; location?: string; manager?: string }>;
+};
+
+type ProfileEmployeeOption = NonNullable<ProfileFormOptions['employees']>[number];
+
+const withCurrentOption = (options: string[], current: string) => {
+  const value = String(current || '').trim();
+  if (!value) return options;
+  if (options.some((item) => item.toLowerCase() === value.toLowerCase())) return options;
+  return [value, ...options];
+};
+
+const SearchableSelectField = ({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  options: string[];
+  placeholder?: string;
+}) => {
+  const listId = useMemo(() => `profile-select-${label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`, [label]);
+  const choices = useMemo(() => withCurrentOption(options, value), [options, value]);
+  const filtered = useMemo(() => {
+    const q = value.trim().toLowerCase();
+    if (!q) return choices.slice(0, 120);
+    return choices.filter((item) => item.toLowerCase().includes(q)).slice(0, 120);
+  }, [choices, value]);
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+      <div className="text-[11px] font-extrabold text-slate-600">{label}</div>
+      <div className="relative mt-1.5">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+        <input
+          value={value}
+          list={listId}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder || 'Search or select…'}
+          className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-8 text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:border-dle-blue focus:outline-none focus:ring-2 focus:ring-dle-blue/20"
+        />
+        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+        <datalist id={listId}>
+          {filtered.map((item) => (
+            <option key={item} value={item} />
+          ))}
+        </datalist>
+      </div>
+    </div>
+  );
+};
+
+const employeeDirectoryValue = (employee: ProfileEmployeeOption) => `${employee.employeeId} - ${employee.fullName}`;
+
+const matchesEmployeeDirectoryQuery = (employee: ProfileEmployeeOption, query: string) => {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const blob = `${employee.employeeId} ${employee.fullName} ${employee.department || ''} ${employee.jobTitle || ''} ${employee.location || ''}`.toLowerCase();
+  return blob.includes(q);
+};
+
+const resolveEmployeeDirectoryValue = (input: string, employees: ProfileEmployeeOption[]) => {
+  const trimmed = input.trim();
+  if (!trimmed) return '';
+  const match = employees.find((employee) => {
+    const canonical = employeeDirectoryValue(employee);
+    return (
+      canonical.toLowerCase() === trimmed.toLowerCase()
+      || employee.fullName.toLowerCase() === trimmed.toLowerCase()
+      || employee.employeeId.toLowerCase() === trimmed.toLowerCase()
+      || `${employee.fullName} [${employee.employeeId}]`.toLowerCase() === trimmed.toLowerCase()
+    );
+  });
+  return match ? employeeDirectoryValue(match) : trimmed;
+};
+
+const EmployeeDirectoryField = ({
+  label,
+  value,
+  onChange,
+  employees,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  employees: ProfileEmployeeOption[];
+  placeholder?: string;
+}) => {
+  const listId = useMemo(() => `profile-employee-${label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`, [label]);
+  const filteredEmployees = useMemo(
+    () => employees.filter((employee) => matchesEmployeeDirectoryQuery(employee, value)).slice(0, 80),
+    [employees, value],
+  );
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+      <div className="text-[11px] font-extrabold text-slate-600">{label}</div>
+      <div className="relative mt-1.5">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+        <input
+          value={value}
+          list={listId}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={() => onChange(resolveEmployeeDirectoryValue(value, employees))}
+          placeholder={placeholder || 'Search employee by name or ID'}
+          className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-2.5 text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:border-dle-blue focus:outline-none focus:ring-2 focus:ring-dle-blue/20"
+        />
+        <datalist id={listId}>
+          {filteredEmployees.map((employee) => (
+            <option key={employee.employeeId} value={employeeDirectoryValue(employee)}>
+              {employee.jobTitle || 'Employee'} · {employee.department || 'Unassigned'}
+            </option>
+          ))}
+        </datalist>
+      </div>
+    </div>
+  );
+};
+
+const FixedSelectField = ({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  options: string[];
+}) => (
+  <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+    <div className="text-[11px] font-extrabold text-slate-600">{label}</div>
+    <div className="relative mt-1.5">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-2.5 pr-8 text-sm font-semibold text-slate-900 focus:border-dle-blue focus:outline-none focus:ring-2 focus:ring-dle-blue/20"
+      >
+        <option value="">Select…</option>
+        {withCurrentOption(options, value).map((item) => (
+          <option key={item} value={item}>
+            {item}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+    </div>
   </div>
 );
 
@@ -1069,6 +1263,8 @@ export default function EmployeeProfileClient({
   const [employmentDraft, setEmploymentDraft] = useState<EmploymentDetails | null>(null);
   const [jobEdit, setJobEdit] = useState(false);
   const [jobDraft, setJobDraft] = useState<JobDetails | null>(null);
+  const [jobFormOptions, setJobFormOptions] = useState<ProfileFormOptions | null>(null);
+  const [jobFormOptionsLoading, setJobFormOptionsLoading] = useState(false);
   const [contactsEdit, setContactsEdit] = useState(false);
   const [contactsDraft, setContactsDraft] = useState<ContactDetails | null>(null);
   const [payrollEdit, setPayrollEdit] = useState(false);
@@ -1222,6 +1418,44 @@ export default function EmployeeProfileClient({
     setPendingEditTab(null);
   }, [pendingEditTab, profile]);
 
+  useEffect(() => {
+    if (!jobEdit) return;
+    if (jobFormOptions) return;
+    let cancelled = false;
+    const load = async () => {
+      setJobFormOptionsLoading(true);
+      try {
+        const res = await fetch('/api/hris/employees/form-options?includeEmployees=1', {
+          cache: 'no-store',
+          headers: { 'x-hris-role': role },
+        });
+        const json = (await res.json()) as { status: string; data?: ProfileFormOptions; error?: string };
+        if (!res.ok || (json.status !== 'success' && json.status !== 'ok') || !json.data) {
+          throw new Error(json.error || 'Unable to load job form options');
+        }
+        if (!cancelled) setJobFormOptions(json.data);
+      } catch (e) {
+        if (!cancelled) {
+          setToast({
+            title: 'Options load failed',
+            detail: e instanceof Error ? e.message : 'Unable to load searchable job options',
+            tone: 'err',
+          });
+        }
+      } finally {
+        if (!cancelled) setJobFormOptionsLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [jobEdit, jobFormOptions, role]);
+
+  const setJobField = (key: string, next: string) => {
+    setJobDraft((prev) => ({ ...(prev || {}), [key]: next || null }));
+  };
+
   const pushAudit = (evt: AuditLog) => {
     setAudit((prev) => {
       if (prev.status !== 'ready' || !prev.data) return prev;
@@ -1271,6 +1505,12 @@ export default function EmployeeProfileClient({
   const v = (x: unknown) => (typeof x === 'string' && x.trim() ? x.trim() : '-');
   // Never put the display dash into editable inputs — it was being saved into emails (e.g. "-name@domain").
   const editValue = (x: unknown) => (typeof x === 'string' ? x : x == null ? '' : String(x));
+  const editDateValue = (x: unknown) => {
+    const raw = editValue(x);
+    if (!raw) return '';
+    const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    return match ? match[1] : raw;
+  };
   const naira = (n: number | null) => (typeof n === 'number' ? `NGN ${formatNumber(Math.round(n))}` : '-');
 
   const breadcrumb = (
@@ -1786,19 +2026,179 @@ export default function EmployeeProfileClient({
                         </div>
                       }
                     >
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {Object.entries(profileData.jobDetails).map(([k, val]) => {
-                          if (!jobEdit) return <Field key={k} label={jobLabel(k)} value={v(val)} />;
-                          return (
-                            <EditField
-                              key={k}
-                              label={jobLabel(k)}
-                              value={editValue(jobDraft?.[k] ?? val)}
-                              onChange={(next) => setJobDraft((prev) => ({ ...(prev || {}), [k]: next }))}
+                      {!jobEdit ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {Object.entries(profileData.jobDetails).map(([k, val]) => (
+                            <Field key={k} label={jobLabel(k)} value={v(val)} />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {jobFormOptionsLoading && !jobFormOptions ? (
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                              Loading searchable job and department options…
+                            </div>
+                          ) : null}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            <SearchableSelectField
+                              label="Job Title"
+                              value={editValue(jobDraft?.jobTitle)}
+                              onChange={(next) => setJobField('jobTitle', next)}
+                              options={jobFormOptions?.jobTitles || []}
                             />
-                          );
-                        })}
-                      </div>
+                            <SearchableSelectField
+                              label="Designation"
+                              value={editValue(jobDraft?.designation)}
+                              onChange={(next) => setJobField('designation', next)}
+                              options={jobFormOptions?.jobTitles || []}
+                            />
+                            <SearchableSelectField
+                              label="Job Grade"
+                              value={editValue(jobDraft?.jobGrade)}
+                              onChange={(next) => setJobField('jobGrade', next)}
+                              options={jobFormOptions?.jobGrades || []}
+                            />
+                            <SearchableSelectField
+                              label="Department"
+                              value={editValue(jobDraft?.department)}
+                              onChange={(next) => setJobField('department', next)}
+                              options={jobFormOptions?.departments || []}
+                            />
+                            <SearchableSelectField
+                              label="Division"
+                              value={editValue(jobDraft?.division)}
+                              onChange={(next) => setJobField('division', next)}
+                              options={jobFormOptions?.divisions || []}
+                            />
+                            <SearchableSelectField
+                              label="Unit"
+                              value={editValue(jobDraft?.unit)}
+                              onChange={(next) => setJobField('unit', next)}
+                              options={jobFormOptions?.departments || jobFormOptions?.divisions || []}
+                            />
+                            <SearchableSelectField
+                              label="Business Unit"
+                              value={editValue(jobDraft?.businessUnit)}
+                              onChange={(next) => setJobField('businessUnit', next)}
+                              options={jobFormOptions?.businessUnits || []}
+                            />
+                            <SearchableSelectField
+                              label="Cost Center"
+                              value={editValue(jobDraft?.costCenter)}
+                              onChange={(next) => setJobField('costCenter', next)}
+                              options={jobFormOptions?.costCenters || []}
+                            />
+                            <SearchableSelectField
+                              label="Location"
+                              value={editValue(jobDraft?.location)}
+                              onChange={(next) => setJobField('location', next)}
+                              options={jobFormOptions?.locations || []}
+                            />
+                            <SearchableSelectField
+                              label="Office / Site"
+                              value={editValue(jobDraft?.officeSite)}
+                              onChange={(next) => setJobField('officeSite', next)}
+                              options={jobFormOptions?.locations || []}
+                            />
+                            <SearchableSelectField
+                              label="Project Site"
+                              value={editValue(jobDraft?.projectSite)}
+                              onChange={(next) => setJobField('projectSite', next)}
+                              options={jobFormOptions?.projectSites || []}
+                            />
+                            <SearchableSelectField
+                              label="Current Project"
+                              value={editValue(jobDraft?.currentProject)}
+                              onChange={(next) => setJobField('currentProject', next)}
+                              options={jobFormOptions?.projectSites || []}
+                            />
+                            <SearchableSelectField
+                              label="Project Name"
+                              value={editValue(jobDraft?.projectName)}
+                              onChange={(next) => setJobField('projectName', next)}
+                              options={jobFormOptions?.projectSites || []}
+                            />
+                            <SearchableSelectField
+                              label="Site Location"
+                              value={editValue(jobDraft?.siteLocation)}
+                              onChange={(next) => setJobField('siteLocation', next)}
+                              options={jobFormOptions?.locations || []}
+                            />
+                            <EmployeeDirectoryField
+                              label="Reporting Manager"
+                              value={editValue(jobDraft?.reportingManager)}
+                              onChange={(next) => setJobField('reportingManager', next)}
+                              employees={jobFormOptions?.employees || []}
+                            />
+                            <EmployeeDirectoryField
+                              label="Functional Manager"
+                              value={editValue(jobDraft?.functionalManager)}
+                              onChange={(next) => setJobField('functionalManager', next)}
+                              employees={jobFormOptions?.employees || []}
+                            />
+                            <EmployeeDirectoryField
+                              label="Department Head"
+                              value={editValue(jobDraft?.departmentHead)}
+                              onChange={(next) => setJobField('departmentHead', next)}
+                              employees={jobFormOptions?.employees || []}
+                            />
+                            <EmployeeDirectoryField
+                              label="HR Business Partner"
+                              value={editValue(jobDraft?.hrBusinessPartner)}
+                              onChange={(next) => setJobField('hrBusinessPartner', next)}
+                              employees={jobFormOptions?.employees || []}
+                            />
+                            <FixedSelectField
+                              label="Assignment Type"
+                              value={editValue(jobDraft?.assignmentType)}
+                              onChange={(next) => setJobField('assignmentType', next)}
+                              options={['Permanent', 'Contract', 'Temporary', 'Secondment', 'Acting', 'Project']}
+                            />
+                            <FixedSelectField
+                              label="Assignment Status"
+                              value={editValue(jobDraft?.assignmentStatus)}
+                              onChange={(next) => setJobField('assignmentStatus', next)}
+                              options={['Active', 'Inactive', 'Pending', 'Ended']}
+                            />
+                            <EditField
+                              label="Assignment Effective Date"
+                              type="date"
+                              value={editDateValue(jobDraft?.assignmentEffectiveDate)}
+                              onChange={(next) => setJobField('assignmentEffectiveDate', next)}
+                            />
+                            <EditField
+                              label="Assignment Start"
+                              type="date"
+                              value={editDateValue(jobDraft?.assignmentStartDate)}
+                              onChange={(next) => setJobField('assignmentStartDate', next)}
+                            />
+                            <EditField
+                              label="Assignment End"
+                              type="date"
+                              value={editDateValue(jobDraft?.assignmentEndDate)}
+                              onChange={(next) => setJobField('assignmentEndDate', next)}
+                            />
+                            <SearchableSelectField
+                              label="Role Profile"
+                              value={editValue(jobDraft?.roleProfile)}
+                              onChange={(next) => setJobField('roleProfile', next)}
+                              options={jobFormOptions?.roleProfiles || []}
+                            />
+                            <EditTextArea
+                              label="Job Description"
+                              value={editValue(jobDraft?.jobDescription)}
+                              onChange={(next) => setJobField('jobDescription', next)}
+                              placeholder="Role description"
+                            />
+                            <EditTextArea
+                              label="Key Responsibilities"
+                              value={editValue(jobDraft?.keyResponsibilities)}
+                              onChange={(next) => setJobField('keyResponsibilities', next)}
+                              placeholder="Key responsibilities"
+                            />
+                          </div>
+                        </div>
+                      )}
                     </Section>
                   )}
 
