@@ -5,6 +5,7 @@ import { permissionsForRoles } from '@/lib/auth/rbac';
 import {
   canAccessPaymentRequest,
   canActOnPaymentApproval,
+  canCancelOwnPaymentRequest,
   canCommentOnPaymentRequest,
   canDownloadPaymentDocumentPdf,
   canEditReturnedPaymentRequest,
@@ -13,6 +14,7 @@ import {
   isAssignedPaymentApprover,
   isMdCeoActor,
   isPaymentRequesterOnly,
+  isPendingPaymentApprovalStatus,
 } from '@/lib/finance-intelligence/payment-access';
 import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 import {
@@ -22,6 +24,7 @@ import {
   buildPaymentRequestsWorkspace,
   buildTreasuryWorkspace,
   cancelOutstandingCashAdvance,
+  cancelOwnPaymentRequest,
   createPaymentRequest,
   getCashAdvanceEligibility,
   getPaymentRequestById,
@@ -29,7 +32,9 @@ import {
   addPaymentRequestComment,
   listPaymentRequestActions,
   listPaymentRequestComments,
+  listRequestIdsWithApprovalActions,
   PAYMENT_TYPES,
+  paymentRequestHasApprovalAction,
   repairPrematureTreasuryHandoff,
   repairMissingProjectLineManager,
   transitionPaymentRequest,
@@ -74,6 +79,12 @@ const buildViewerPaymentWorkspace = async (
     includeMdCeoStage: inboxOnly && !mineOnly && isMdCeoActor(actor),
     restrictToActor: inboxOnly || !viewAll,
   });
+  const pendingOwnedIds = workspace.rows
+    .filter((row) => isPendingPaymentApprovalStatus(row.status)
+      && (canEditReturnedPaymentRequest(actor, row, { hasApprovalAction: false })
+        || canCancelOwnPaymentRequest(actor, row, { hasApprovalAction: false })))
+    .map((row) => row.requestId);
+  const approvedIds = await listRequestIdsWithApprovalActions(pendingOwnedIds);
   return {
     ...workspace,
     viewer: {
@@ -83,7 +94,14 @@ const buildViewerPaymentWorkspace = async (
         .filter((row) => isAssignedPaymentApprover(actor, row))
         .map((row) => row.requestId),
       editableReturnedRequestIds: workspace.rows
-        .filter((row) => canEditReturnedPaymentRequest(actor, row))
+        .filter((row) => canEditReturnedPaymentRequest(actor, row, {
+          hasApprovalAction: approvedIds.has(row.requestId),
+        }))
+        .map((row) => row.requestId),
+      cancellableRequestIds: workspace.rows
+        .filter((row) => canCancelOwnPaymentRequest(actor, row, {
+          hasApprovalAction: approvedIds.has(row.requestId),
+        }))
         .map((row) => row.requestId),
     },
   };
@@ -170,6 +188,7 @@ export async function GET(request: Request) {
       })) {
         return jsonErr(403, 'You do not have access to this payment request.');
       }
+      const hasApprovalAction = actions.some((item) => /approve/i.test(item.actionType));
       return jsonOk({
         request: paymentRequest,
         actions,
@@ -178,7 +197,8 @@ export async function GET(request: Request) {
           actorCode: actor.actorCode,
           canApprove: canActOnPaymentApproval(actor, paymentRequest),
           canComment: canCommentOnPaymentRequest(actor, paymentRequest),
-          canEditReturned: canEditReturnedPaymentRequest(actor, paymentRequest),
+          canEditReturned: canEditReturnedPaymentRequest(actor, paymentRequest, { hasApprovalAction }),
+          canCancelOwn: canCancelOwnPaymentRequest(actor, paymentRequest, { hasApprovalAction }),
           isRequesterOnly: isPaymentRequesterOnly(actor, paymentRequest),
           canDownloadPdf: canDownloadPaymentDocumentPdf(paymentRequest),
           canSubmitRetirement: canSubmitCashAdvanceRetirement(actor, paymentRequest),
@@ -359,8 +379,9 @@ export async function POST(request: Request) {
       if (!requestId) return jsonErr(400, 'requestId is required.');
       const existing = await getPaymentRequestById(requestId);
       if (!existing) return jsonErr(404, 'Payment request not found.');
-      if (!canEditReturnedPaymentRequest(actor, existing)) {
-        return jsonErr(403, 'Only the requester can edit this draft or returned payment request.');
+      const hasApprovalAction = await paymentRequestHasApprovalAction(requestId);
+      if (!canEditReturnedPaymentRequest(actor, existing, { hasApprovalAction })) {
+        return jsonErr(403, 'Only the requester can edit this request before approval begins (or when it is draft/returned).');
       }
 
       const paymentType = existing.paymentType as PaymentRequestType;
@@ -465,6 +486,29 @@ export async function POST(request: Request) {
         message: result.alreadyActive
           ? 'An active waiver already exists for this employee.'
           : 'Outstanding cash advance waiver granted.',
+      });
+    }
+
+    if (action === 'cancel-own') {
+      const requestId = String(body.requestId || '').trim();
+      if (!requestId) return jsonErr(400, 'requestId is required.');
+      const existing = await getPaymentRequestById(requestId);
+      if (!existing) return jsonErr(404, 'Payment request not found.');
+      const hasApprovalAction = await paymentRequestHasApprovalAction(requestId);
+      if (!canCancelOwnPaymentRequest(actor, existing, { hasApprovalAction })) {
+        return jsonErr(403, 'Only the requester can cancel this request before approval begins.');
+      }
+      const result = await cancelOwnPaymentRequest({
+        requestId,
+        actor: actor.actor,
+        actorCode: actor.actorCode,
+        reason: String(body.reason || '').trim() || undefined,
+      });
+      const workspace = await buildViewerPaymentWorkspace(actor, { listScope: body.listScope });
+      return jsonOk({
+        ...result,
+        workspace,
+        message: result.message || 'Payment request cancelled.',
       });
     }
 

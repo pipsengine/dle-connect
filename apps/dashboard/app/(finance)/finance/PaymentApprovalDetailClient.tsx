@@ -78,6 +78,7 @@ type DetailPayload = {
     canApprove?: boolean;
     canComment?: boolean;
     canEditReturned?: boolean;
+    canCancelOwn?: boolean;
     isRequesterOnly?: boolean;
     canDownloadPdf?: boolean;
     canSubmitRetirement?: boolean;
@@ -213,6 +214,36 @@ export default function PaymentApprovalDetailClient() {
     }
   };
 
+  const cancelOwn = async () => {
+    if (!detail?.request) return;
+    const confirmed = window.confirm(
+      `Cancel ${detail.request.requestNumber}? This withdraws it from the approval queue.`,
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      const response = await fetch('/api/finance/payment-requests', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'cancel-own',
+          requestId: detail.request.requestId,
+        }),
+      });
+      const json = await response.json().catch(() => ({ status: 'error', error: 'Unable to cancel request.' }));
+      if (!response.ok || json.status !== 'success') {
+        throw new Error(json.error || 'Unable to cancel request.');
+      }
+      setMessage(json.data?.message || 'Payment request cancelled.');
+      await load({ soft: true });
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to cancel request.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submitRetirement = async () => {
     if (!detail?.request) return;
     if (retirementNote.trim().length < 10) {
@@ -302,7 +333,8 @@ export default function PaymentApprovalDetailClient() {
   const returned = /^returned$/i.test(request.status);
   const isDraft = /^draft$/i.test(request.status);
   const canApprove = Boolean(detail.viewer?.canApprove) && pending;
-  const canEditOwn = Boolean(detail.viewer?.canEditReturned) && (returned || isDraft);
+  const canEditOwn = Boolean(detail.viewer?.canEditReturned) && (returned || isDraft || pending);
+  const canCancelOwn = Boolean(detail.viewer?.canCancelOwn) && (isDraft || pending);
   const canDownloadPdf = Boolean(detail.viewer?.canDownloadPdf);
   const canSubmitRetirement = Boolean(detail.viewer?.canSubmitRetirement);
   const retirementNoteExisting = String(request.retirement?.note || '');
@@ -327,8 +359,18 @@ export default function PaymentApprovalDetailClient() {
               href={`/finance/approvals/payments?edit=${encodeURIComponent(request.requestId)}`}
               className="inline-flex items-center gap-1.5 rounded-xl bg-[#008FD5] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#007bb8]"
             >
-              <FileUp className="h-3.5 w-3.5" /> {isDraft ? 'Edit & submit' : 'Edit & resend'}
+              <FileUp className="h-3.5 w-3.5" /> {isDraft ? 'Edit & submit' : pending ? 'Edit' : 'Edit & resend'}
             </Link>
+          ) : null}
+          {canCancelOwn ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void cancelOwn()}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+            >
+              <XCircle className="h-3.5 w-3.5" /> Cancel request
+            </button>
           ) : null}
           {canDownloadPdf ? (
             <a
@@ -364,7 +406,7 @@ export default function PaymentApprovalDetailClient() {
             <div>
               <p className="font-semibold">Draft payment request</p>
               <p className="mt-1 text-sky-900">
-                This request has not been submitted yet. Edit the details and submit it for approval when ready.
+                This request has not been submitted yet. Edit the details and submit it for approval when ready, or cancel it.
               </p>
               {canEditOwn ? (
                 <Link
@@ -374,6 +416,20 @@ export default function PaymentApprovalDetailClient() {
                   Open editor to update and submit
                 </Link>
               ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {pending && canEditOwn ? (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
+            <div>
+              <p className="font-semibold">Awaiting first approval</p>
+              <p className="mt-1 text-sky-900">
+                No approver has acted yet. You can edit this request or cancel it to withdraw it from the queue.
+              </p>
             </div>
           </div>
         </div>

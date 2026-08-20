@@ -8,15 +8,18 @@ import {
   buildFinancePostingWorkspace,
   buildPaymentRequestsWorkspace,
   buildTreasuryWorkspace,
+  listRequestIdsWithApprovalActions,
 } from '@/lib/finance-intelligence/payment-requests-service';
 import { buildApprovalMatrixWorkspace } from '@/lib/finance-intelligence/approval-matrix-service';
 import { buildApprovalDelegationWorkspace } from '@/lib/finance-intelligence/approval-delegation-service';
 import {
   canAccessFinancePaymentPage,
+  canCancelOwnPaymentRequest,
   canEditReturnedPaymentRequest,
   canViewAllPaymentRequests,
   isAssignedPaymentApprover,
   isMdCeoActor,
+  isPendingPaymentApprovalStatus,
 } from '@/lib/finance-intelligence/payment-access';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { permissionsForRoles } from '@/lib/auth/rbac';
@@ -117,19 +120,34 @@ export default async function FinanceCatchAllPage({ params, searchParams }: Prop
     }).catch(() => null)
     : null;
   const paymentRequests = paymentRequestsRaw
-    ? {
-      ...paymentRequestsRaw,
-      viewer: {
-        actorCode: actor.actorCode,
-        canViewAll: viewAllPayments,
-        approvableRequestIds: paymentRequestsRaw.rows
-          .filter((row) => isAssignedPaymentApprover(actor, row))
-          .map((row) => row.requestId),
-        editableReturnedRequestIds: paymentRequestsRaw.rows
-          .filter((row) => canEditReturnedPaymentRequest(actor, row))
-          .map((row) => row.requestId),
-      },
-    }
+    ? await (async () => {
+      const pendingOwnedIds = paymentRequestsRaw.rows
+        .filter((row) => isPendingPaymentApprovalStatus(row.status)
+          && (canEditReturnedPaymentRequest(actor, row, { hasApprovalAction: false })
+            || canCancelOwnPaymentRequest(actor, row, { hasApprovalAction: false })))
+        .map((row) => row.requestId);
+      const approvedIds = await listRequestIdsWithApprovalActions(pendingOwnedIds);
+      return {
+        ...paymentRequestsRaw,
+        viewer: {
+          actorCode: actor.actorCode,
+          canViewAll: viewAllPayments,
+          approvableRequestIds: paymentRequestsRaw.rows
+            .filter((row) => isAssignedPaymentApprover(actor, row))
+            .map((row) => row.requestId),
+          editableReturnedRequestIds: paymentRequestsRaw.rows
+            .filter((row) => canEditReturnedPaymentRequest(actor, row, {
+              hasApprovalAction: approvedIds.has(row.requestId),
+            }))
+            .map((row) => row.requestId),
+          cancellableRequestIds: paymentRequestsRaw.rows
+            .filter((row) => canCancelOwnPaymentRequest(actor, row, {
+              hasApprovalAction: approvedIds.has(row.requestId),
+            }))
+            .map((row) => row.requestId),
+        },
+      };
+    })()
     : null;
 
   const paymentListMode = inboxPage

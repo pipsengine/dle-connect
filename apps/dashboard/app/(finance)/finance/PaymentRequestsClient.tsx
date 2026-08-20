@@ -396,6 +396,7 @@ export default function PaymentRequestsClient({
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
   const [editingRequestNumber, setEditingRequestNumber] = useState('');
   const [editingIsDraft, setEditingIsDraft] = useState(false);
+  const [editingIsPending, setEditingIsPending] = useState(false);
   const [existingAttachments, setExistingAttachments] = useState<PaymentRequestAttachment[]>([]);
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -809,6 +810,7 @@ export default function PaymentRequestsClient({
     setEditingRequestId(null);
     setEditingRequestNumber('');
     setEditingIsDraft(false);
+    setEditingIsPending(false);
     setExistingAttachments([]);
     setTypeMenuOpen(false);
     setForm({
@@ -830,10 +832,12 @@ export default function PaymentRequestsClient({
         ? 'Supplier Invoice Payment'
         : 'Cash Advance Payment') as PaymentRequestType;
     const isDraft = /^draft$/i.test(row.status);
+    const isPending = /pending|submitted|finance review/i.test(row.status);
     setComposerType(type);
     setEditingRequestId(row.requestId);
     setEditingRequestNumber(row.requestNumber);
     setEditingIsDraft(isDraft);
+    setEditingIsPending(isPending);
     setExistingAttachments(
       (row.attachments || []).filter((file) => file.kind !== 'payment-evidence' && file.kind !== 'retirement-evidence'),
     );
@@ -871,7 +875,7 @@ export default function PaymentRequestsClient({
     setFormErrors([]);
     setSupportingFiles([]);
     setComposerOpen(true);
-    setTab(isDraft ? 'drafts' : 'returned');
+    setTab(isDraft ? 'drafts' : isPending ? 'pending' : 'returned');
     if (type === 'Cash Advance Payment' && (row.beneficiaryCode || row.requesterCode)) {
       void loadEligibility(row.beneficiaryCode || row.requesterCode);
     }
@@ -884,23 +888,53 @@ export default function PaymentRequestsClient({
     if (!editId || composerOpen) return;
     const row = workspace.rows.find((item) => item.requestId === editId);
     if (!row) return;
-    if (!/^(draft|returned)$/i.test(row.status)) {
-      setToast('Only draft or returned payment requests can be edited.');
+    if (workspace.viewer?.editableReturnedRequestIds?.includes(row.requestId)) {
+      openEditReturned(row);
+      router.replace('/finance/approvals/payments');
       return;
     }
-    const canEdit = workspace.viewer?.editableReturnedRequestIds?.includes(row.requestId)
-      || (
-        workspace.viewer?.actorCode
-        && workspace.viewer.actorCode.toLowerCase() === row.requesterCode.toLowerCase()
-      );
-    if (!canEdit) {
-      setToast('You can only edit your own draft or returned payment requests.');
+    const ownsRequest = Boolean(
+      workspace.viewer?.actorCode
+      && workspace.viewer.actorCode.toLowerCase() === String(row.requesterCode || '').toLowerCase(),
+    );
+    if (ownsRequest && /pending|submitted|finance review/i.test(row.status)) {
+      setToast('This payment request can no longer be edited because an approver has already acted.');
       return;
     }
-    openEditReturned(row);
-    router.replace('/finance/approvals/payments');
+    setToast('You can only edit your own draft, returned, or not-yet-approved payment requests.');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspace.rows, workspace.viewer?.editableReturnedRequestIds, workspace.viewer?.actorCode]);
+
+  const cancelOwnRequest = async (row: PaymentRequestRow) => {
+    const confirmed = window.confirm(
+      `Cancel ${row.requestNumber}? This withdraws it from the approval queue. You can raise a new request later if needed.`,
+    );
+    if (!confirmed) return;
+    setRowActionBusy(true);
+    setToast('');
+    try {
+      const res = await fetch('/api/finance/payment-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'cancel-own',
+          requestId: row.requestId,
+          listScope: listMode === 'inbox' ? 'inbox' : 'mine',
+        }),
+      });
+      const json = await res.json().catch(() => ({ status: 'error', error: 'Unable to cancel request.' }));
+      if (!res.ok || json.status !== 'success') {
+        throw new Error(json.error || 'Unable to cancel request.');
+      }
+      if (json.data?.workspace) setWorkspace(json.data.workspace as PaymentRequestsWorkspace);
+      setToast(json.data?.message || `${row.requestNumber} cancelled.`);
+      await refresh();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'Unable to cancel request.');
+    } finally {
+      setRowActionBusy(false);
+    }
+  };
 
   const selectEmployee = (employee: PaymentRequestLookups['employees'][number]) => {
     const resolvedDepartment = preferredPaymentDepartment({
@@ -1079,6 +1113,13 @@ export default function PaymentRequestsClient({
     Boolean(workspace.viewer?.approvableRequestIds?.includes(requestId));
   const canEditReturnedRow = (requestId: string) =>
     Boolean(workspace.viewer?.editableReturnedRequestIds?.includes(requestId));
+  const canCancelOwnRow = (requestId: string) =>
+    Boolean(workspace.viewer?.cancellableRequestIds?.includes(requestId));
+  const editActionLabel = (status: string) => {
+    if (/^draft$/i.test(status)) return 'Edit & submit';
+    if (/pending|submitted|finance review/i.test(status)) return 'Edit';
+    return 'Edit & resend';
+  };
   const canRemindRow = (row: PaymentRequestRow) => {
     if (!/pending approval|submitted|finance review/i.test(row.status)) return false;
     if (!row.currentApproverCode && !row.currentApproverName) return false;
@@ -1550,6 +1591,7 @@ export default function PaymentRequestsClient({
           {filteredRows.length ? pageRows.map((row) => {
             const showApproveActions = canApproveRow(row.requestId);
             const showEditReturned = canEditReturnedRow(row.requestId);
+            const showCancelOwn = canCancelOwnRow(row.requestId);
             const showSendReminder = canRemindRow(row);
             return (
               <article
@@ -1590,10 +1632,19 @@ export default function PaymentRequestsClient({
                         <button type="button" disabled={busy || rowActionBusy} onClick={() => openRowAction(row, 'return')} className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 disabled:opacity-50">Return</button>
                         <button type="button" disabled={busy || rowActionBusy} onClick={() => openRowAction(row, 'reject')} className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 disabled:opacity-50">Reject</button>
                       </>
-                    ) : showEditReturned ? (
-                      <button type="button" disabled={busy} onClick={() => openEditReturned(row)} className="rounded-lg bg-[#008FD5] px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50">
-                        {/^draft$/i.test(row.status) ? 'Edit & submit' : 'Edit & resend'}
-                      </button>
+                    ) : showEditReturned || showCancelOwn ? (
+                      <>
+                        {showEditReturned ? (
+                          <button type="button" disabled={busy} onClick={() => openEditReturned(row)} className="rounded-lg bg-[#008FD5] px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50">
+                            {editActionLabel(row.status)}
+                          </button>
+                        ) : null}
+                        {showCancelOwn ? (
+                          <button type="button" disabled={busy || rowActionBusy} onClick={() => void cancelOwnRequest(row)} className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 disabled:opacity-50">
+                            Cancel
+                          </button>
+                        ) : null}
+                      </>
                     ) : showSendReminder ? (
                       <>
                         <button type="button" onClick={() => openChat(row)} className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800">Comment</button>
@@ -1650,6 +1701,7 @@ export default function PaymentRequestsClient({
                 const fxDate = rowFxRateDate(row);
                 const showApproveActions = canApproveRow(row.requestId);
                 const showEditReturned = canEditReturnedRow(row.requestId);
+                const showCancelOwn = canCancelOwnRow(row.requestId);
                 const showSendReminder = canRemindRow(row);
                 return (
                   <tr
@@ -1768,17 +1820,30 @@ export default function PaymentRequestsClient({
                             Reject
                           </button>
                         </div>
-                      ) : showEditReturned ? (
+                      ) : showEditReturned || showCancelOwn ? (
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => openEditReturned(row)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-[#008FD5] px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#007bb8] disabled:opacity-50"
-                          >
-                            <RotateCcw className="h-3 w-3" />
-                            {/^draft$/i.test(row.status) ? 'Edit & submit' : 'Edit & resend'}
-                          </button>
+                          {showEditReturned ? (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => openEditReturned(row)}
+                              className="inline-flex items-center gap-1 rounded-lg bg-[#008FD5] px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#007bb8] disabled:opacity-50"
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                              {editActionLabel(row.status)}
+                            </button>
+                          ) : null}
+                          {showCancelOwn ? (
+                            <button
+                              type="button"
+                              disabled={busy || rowActionBusy}
+                              onClick={() => void cancelOwnRequest(row)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                            >
+                              <XCircle className="h-3 w-3" />
+                              Cancel
+                            </button>
+                          ) : null}
                           <Link
                             href={`/finance/approvals/request/${row.requestId}`}
                             className="text-[11px] font-semibold text-[#008FD5] hover:underline"
@@ -1878,17 +1943,23 @@ export default function PaymentRequestsClient({
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#008FD5]">
                   {editingRequestId
-                    ? (editingIsDraft ? 'Edit draft request' : 'Edit returned request')
+                    ? (editingIsDraft
+                      ? 'Edit draft request'
+                      : editingIsPending
+                        ? 'Edit pending request'
+                        : 'Edit returned request')
                     : 'New payment request'}
                 </p>
                 <h2 className="mt-1 text-base font-semibold text-slate-900 sm:text-lg">
                   {editingRequestId ? `${editingRequestNumber} · ${composerType}` : composerType}
                 </h2>
                 {editingRequestId ? (
-                  <p className={`mt-1 text-xs ${editingIsDraft ? 'text-slate-600' : 'text-violet-700'}`}>
+                  <p className={`mt-1 text-xs ${editingIsDraft ? 'text-slate-600' : editingIsPending ? 'text-sky-700' : 'text-violet-700'}`}>
                     {editingIsDraft
                       ? 'Update the details below, save as draft, or submit for approval.'
-                      : 'Correct the details below and resend into the approval workflow.'}
+                      : editingIsPending
+                        ? 'No approver has acted yet. Update the details and keep this request in the approval queue from stage 1.'
+                        : 'Correct the details below and resend into the approval workflow.'}
                   </p>
                 ) : null}
               </div>
@@ -1898,6 +1969,8 @@ export default function PaymentRequestsClient({
                   setComposerOpen(false);
                   setEditingRequestId(null);
                   setEditingRequestNumber('');
+                  setEditingIsDraft(false);
+                  setEditingIsPending(false);
                   setExistingAttachments([]);
                 }}
                 className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
@@ -2350,7 +2423,11 @@ export default function PaymentRequestsClient({
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4">
               {editingRequestId && !editingIsDraft ? (
-                <p className="text-xs text-slate-600">Changes will restart approval from the first stage.</p>
+                <p className="text-xs text-slate-600">
+                  {editingIsPending
+                    ? 'Changes will keep this request pending and restart approval from the first stage.'
+                    : 'Changes will restart approval from the first stage.'}
+                </p>
               ) : (
                 <label className="inline-flex items-center gap-2 text-xs text-slate-600">
                   <input type="checkbox" checked={form.submit} onChange={(e) => setForm((prev) => ({ ...prev, submit: e.target.checked }))} className="rounded border-slate-300 text-[#008FD5]" />
@@ -2365,6 +2442,7 @@ export default function PaymentRequestsClient({
                     setEditingRequestId(null);
                     setEditingRequestNumber('');
                     setEditingIsDraft(false);
+                    setEditingIsPending(false);
                     setExistingAttachments([]);
                   }}
                   className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700"
@@ -2382,7 +2460,9 @@ export default function PaymentRequestsClient({
                     : editingRequestId
                       ? (editingIsDraft
                         ? (form.submit ? 'Submit for approval' : 'Save draft')
-                        : 'Resend for approval')
+                        : editingIsPending
+                          ? 'Save changes'
+                          : 'Resend for approval')
                       : form.submit
                         ? 'Submit request'
                         : 'Save draft'}

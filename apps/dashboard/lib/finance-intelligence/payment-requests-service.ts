@@ -246,6 +246,7 @@ export type PaymentRequestsWorkspace = {
     canViewAll?: boolean;
     approvableRequestIds: string[];
     editableReturnedRequestIds?: string[];
+    cancellableRequestIds?: string[];
   };
 };
 
@@ -658,6 +659,45 @@ ORDER BY [CreatedAt] DESC
   } catch {
     return [];
   }
+};
+
+/** True when any Approve action has been recorded for this request. */
+export const paymentRequestHasApprovalAction = async (requestId: string) => {
+  const actions = await listPaymentRequestActions(requestId);
+  return actions.some((action) => /approve/i.test(action.actionType));
+};
+
+/** Request ids that already have at least one Approve action (for requester edit/cancel gates). */
+export const listRequestIdsWithApprovalActions = async (requestIds: string[]): Promise<Set<string>> => {
+  const ids = [...new Set(requestIds.map((id) => compact(id)).filter(Boolean))];
+  const approved = new Set<string>();
+  if (!ids.length) return approved;
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) return approved;
+  try {
+    // Keep batches small for SQL parameter limits.
+    for (let offset = 0; offset < ids.length; offset += 40) {
+      const chunk = ids.slice(offset, offset + 40);
+      const request = pool.request();
+      chunk.forEach((id, index) => {
+        request.input(`id${index}`, sql.NVarChar(60), id);
+      });
+      const inList = chunk.map((_, index) => `@id${index}`).join(', ');
+      const result = await request.query(`
+SELECT DISTINCT [RequestId]
+FROM [finance].[PaymentRequestActions]
+WHERE [RequestId] IN (${inList})
+  AND LOWER([ActionType]) LIKE N'%approve%'
+`);
+      for (const row of result.recordset || []) {
+        const id = compact(row.RequestId);
+        if (id) approved.add(id);
+      }
+    }
+  } catch {
+    // Fall back to empty — callers treat unknown as "not approved yet" only when status allows.
+  }
+  return approved;
 };
 
 export const listPaymentRequestComments = async (requestId: string): Promise<PaymentRequestCommentRow[]> => {
@@ -2102,7 +2142,7 @@ export type UpdateReturnedPaymentRequestInput = CreatePaymentRequestInput & {
   keepAttachmentIds?: string[];
 };
 
-/** Edit a draft or returned payment request and optionally submit / resubmit into the approval chain. */
+/** Edit a draft, returned, or not-yet-approved pending payment request; optionally submit / resubmit. */
 export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentRequestInput) => {
   const requestId = compact(input.requestId);
   if (!requestId) throw new Error('requestId is required.');
@@ -2111,8 +2151,15 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
   if (!existing) throw new Error('Payment request not found.');
   const wasDraft = /^draft$/i.test(existing.status);
   const wasReturned = /^returned$/i.test(existing.status);
-  if (!wasDraft && !wasReturned) {
-    throw new Error('Only draft or returned payment requests can be edited.');
+  const wasPending = /pending|submitted|finance review/i.test(existing.status);
+  if (!wasDraft && !wasReturned && !wasPending) {
+    throw new Error('Only draft, returned, or not-yet-approved payment requests can be edited.');
+  }
+  if (wasPending) {
+    const hasApproval = await paymentRequestHasApprovalAction(requestId);
+    if (hasApproval) {
+      throw new Error('This payment request can no longer be edited because an approver has already acted.');
+    }
   }
 
   const actorCode = compact(input.actorCode || input.requesterCode);
@@ -2141,7 +2188,8 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
   const expenseCode = compact(input.expenseCode) || existing.expenseCode;
   const department = compact(input.department) || existing.department;
   const location = compact(input.location) || existing.location;
-  const resubmit = input.resubmit !== false;
+  // Pending (not-yet-approved) edits always stay in the approval queue from stage 1.
+  const resubmit = wasPending ? true : input.resubmit !== false;
 
   if (!title) throw new Error('Request title is required.');
   if (!beneficiaryName) throw new Error('Employee / beneficiary is required.');
@@ -2373,7 +2421,9 @@ WHERE [RequestId] = @RequestId
     comment: resubmit
       ? (wasDraft
         ? 'Draft payment request submitted for approval.'
-        : 'Payment request corrected and resent for approval.')
+        : wasPending
+          ? 'Payment request updated before approval and re-queued from the first stage.'
+          : 'Payment request corrected and resent for approval.')
       : (wasDraft
         ? 'Draft payment request updated.'
         : 'Returned payment request updated.'),
@@ -2417,8 +2467,123 @@ WHERE [RequestId] = @RequestId
     request,
     workspace,
     message: resubmit
-      ? (wasDraft ? 'Payment request submitted for approval.' : 'Payment request updated and resent for approval.')
+      ? (wasDraft
+        ? 'Payment request submitted for approval.'
+        : wasPending
+          ? 'Payment request updated and re-queued for approval.'
+          : 'Payment request updated and resent for approval.')
       : (wasDraft ? 'Draft payment request saved.' : 'Returned payment request saved.'),
+  };
+};
+
+/** Requester cancels a draft or not-yet-approved pending payment request. */
+export const cancelOwnPaymentRequest = async (input: {
+  requestId: string;
+  actor: string;
+  actorCode?: string;
+  reason?: string;
+}) => {
+  const requestId = compact(input.requestId);
+  if (!requestId) throw new Error('requestId is required.');
+
+  const existing = await getPaymentRequestById(requestId);
+  if (!existing) throw new Error('Payment request not found.');
+
+  const actorCode = compact(input.actorCode);
+  const isOwner = actorCode
+    && (
+      actorCode.toLowerCase() === compact(existing.requesterCode).toLowerCase()
+      || (
+        existing.paymentType === 'Cash Advance Payment'
+        && actorCode.toLowerCase() === compact(existing.beneficiaryCode).toLowerCase()
+      )
+    );
+  if (!isOwner) {
+    throw new Error('Only the requester can cancel this payment request.');
+  }
+
+  const wasDraft = /^draft$/i.test(existing.status);
+  const wasPending = /pending|submitted|finance review/i.test(existing.status);
+  if (!wasDraft && !wasPending) {
+    throw new Error('Only draft or not-yet-approved payment requests can be cancelled.');
+  }
+  if (wasPending) {
+    const hasApproval = await paymentRequestHasApprovalAction(requestId);
+    if (hasApproval) {
+      throw new Error('This payment request can no longer be cancelled because an approver has already acted.');
+    }
+  }
+
+  const pool = await ensureFinanceDb();
+  if (!pool) throw new Error('Finance database is unavailable.');
+
+  const reason = compact(input.reason) || 'Cancelled by requester before approval.';
+
+  await pool.request()
+    .input('RequestId', sql.NVarChar(60), requestId)
+    .input('Status', sql.NVarChar(40), 'Cancelled')
+    .input('CurrentStage', sql.NVarChar(80), 'Cancelled by Requester')
+    .query(`
+UPDATE [finance].[PaymentRequests]
+SET [Status] = @Status,
+    [CurrentStage] = @CurrentStage,
+    [CurrentApproverCode] = NULL,
+    [CurrentApproverName] = NULL,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+
+  await logAction({
+    requestId,
+    actionType: 'Cancelled',
+    stage: 'Cancelled by Requester',
+    actorName: input.actor,
+    actorCode,
+    comment: 'Payment request cancelled by requester before approval began.',
+    reason,
+  });
+
+  const request = await getPaymentRequestById(requestId);
+  const workspace = await buildPaymentRequestsWorkspace();
+
+  // Notify the assigned approver (if any) that the item left their inbox.
+  const approverCode = compact(existing.currentApproverCode);
+  if (approverCode && wasPending) {
+    try {
+      const { createEnterpriseNotification } = await import('@/lib/enterprise-notifications-store');
+      const session = {
+        sub: 'system-finance-workflow',
+        username: 'system-finance-workflow',
+        fullName: input.actor || 'Finance Workflow',
+        roles: ['System'],
+        permissions: ['*'],
+        status: 'Active' as const,
+        firstLoginRequired: false,
+        passwordResetRequired: false,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      };
+      await createEnterpriseNotification(session, {
+        kind: 'Approval',
+        module: 'Finance Approvals',
+        title: 'Payment request cancelled',
+        body: `${existing.requestNumber} was cancelled by the requester before approval. It is no longer in your inbox.`,
+        severity: 'info',
+        recipientEmployeeCode: approverCode,
+        href: `/finance/approvals/request/${requestId}`,
+        channels: ['In-App'],
+        metadata: { requestId, event: 'cancelled' },
+        actor: input.actor,
+      });
+    } catch (error) {
+      console.error('[payment-requests] cancel approver notify failed', error);
+    }
+  }
+
+  return {
+    request,
+    workspace,
+    message: `${existing.requestNumber} cancelled.`,
   };
 };
 

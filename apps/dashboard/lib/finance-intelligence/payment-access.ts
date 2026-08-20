@@ -193,12 +193,10 @@ export const canSubmitCashAdvanceRetirement = (
   );
 };
 
-/** Requester may edit a draft or a payment returned for correction, then submit/resubmit. */
-export const canEditReturnedPaymentRequest = (
+const isPaymentRequestOwner = (
   actor: PaymentAccessActor,
-  request: Pick<PaymentRequestRow, 'status' | 'requesterCode' | 'beneficiaryCode' | 'paymentType'>,
+  request: Pick<PaymentRequestRow, 'requesterCode' | 'beneficiaryCode' | 'paymentType'>,
 ) => {
-  if (!/^(draft|returned)$/i.test(String(request.status || ''))) return false;
   if (actor.isGlobalAdmin) return true;
   if (codesMatch(actor.actorCode, request.requesterCode)) return true;
   // Cash advances: beneficiary is usually the same employee who raised it.
@@ -209,6 +207,41 @@ export const canEditReturnedPaymentRequest = (
     return true;
   }
   return false;
+};
+
+/** Pending / submitted / finance review — approval chain has started but may not have an Approve yet. */
+export const isPendingPaymentApprovalStatus = (status?: string | null) =>
+  /pending|submitted|finance review/i.test(String(status || ''));
+
+/**
+ * Requester may edit when:
+ * - Draft or Returned (always), or
+ * - Pending / Submitted / Finance Review and no Approve action has been recorded yet.
+ */
+export const canEditReturnedPaymentRequest = (
+  actor: PaymentAccessActor,
+  request: Pick<PaymentRequestRow, 'status' | 'requesterCode' | 'beneficiaryCode' | 'paymentType'>,
+  options?: { hasApprovalAction?: boolean },
+) => {
+  if (!isPaymentRequestOwner(actor, request)) return false;
+  if (/^(draft|returned)$/i.test(String(request.status || ''))) return true;
+  if (!isPendingPaymentApprovalStatus(request.status)) return false;
+  return options?.hasApprovalAction !== true;
+};
+
+/**
+ * Requester may cancel a pending request only before the first Approve.
+ * Drafts can also be cancelled (withdrawn without submitting).
+ */
+export const canCancelOwnPaymentRequest = (
+  actor: PaymentAccessActor,
+  request: Pick<PaymentRequestRow, 'status' | 'requesterCode' | 'beneficiaryCode' | 'paymentType'>,
+  options?: { hasApprovalAction?: boolean },
+) => {
+  if (!isPaymentRequestOwner(actor, request)) return false;
+  if (/^draft$/i.test(String(request.status || ''))) return true;
+  if (!isPendingPaymentApprovalStatus(request.status)) return false;
+  return options?.hasApprovalAction !== true;
 };
 
 /** Fully approved (or later) payment document may be downloaded as PDF. */
