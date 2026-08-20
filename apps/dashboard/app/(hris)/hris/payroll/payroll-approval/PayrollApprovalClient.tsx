@@ -570,6 +570,8 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
           lastReminderAt={run?.lastReminderAt || null}
           note={note}
           onNoteChange={setNote}
+          period={payload?.period || period}
+          periodLabel={payload?.periodLabel}
         />
       </section>
 

@@ -12,6 +12,7 @@ import StatutoryComplianceHub, { type StatutoryTabId } from './StatutoryComplian
 import BankFinanceHub, { type BankFinanceTabId } from './BankFinanceHub';
 import PayrollReportsHub, { type ReportsTabId } from './PayrollReportsHub';
 import PayrollApprovalClient from '../payroll/payroll-approval/PayrollApprovalClient';
+import { PayrollCommentsControl } from './PayrollCommentsThread';
 import { FINANCE_ONLY_PAYROLL_SECTION } from '@/lib/access/payroll-access';
 import {
   bankScheduleDisplayEmployeeCode,
@@ -2106,6 +2107,7 @@ function ProcessPayrollWorkspace({
               })}
             </div>
             <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+              <PayrollCommentsControl period={payload?.period} periodLabel={payload?.periodLabel} />
               <button
                 type="button"
                 onClick={onExportBothExcel}
@@ -3621,6 +3623,7 @@ function PayrollComputationWorkflowPage({ payload, canViewMoney, role, runAction
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">Current owner: {payload?.workflow?.nextOwner || 'Payroll Officer'}</span>
           <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-black text-blue-800">Updated: {payload?.generatedAt ? new Date(payload.generatedAt).toLocaleString('en-GB') : 'Loading'}</span>
           <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">Auto refresh: 30s</span>
+          <PayrollCommentsControl period={payload?.period} periodLabel={payload?.periodLabel} />
         </div>
         <WorkflowSummaryTracker stages={workflowSummary} onSelect={jumpToStage} />
       </section>

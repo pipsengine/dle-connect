@@ -2,6 +2,7 @@
 
 import { BellRing, CheckCircle2, Circle, Clock3, UserCheck } from 'lucide-react';
 import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
+import { PayrollCommentsControl } from '../../payroll-management/PayrollCommentsThread';
 
 type StageState = {
   id: PayrollApprovalStageId;
@@ -34,6 +35,8 @@ type PayrollApprovalStagePanelProps = {
   lastReminderAt?: string | null;
   note: string;
   onNoteChange: (value: string) => void;
+  period?: string | null;
+  periodLabel?: string;
 };
 
 const stageTone: Record<PayrollApprovalStageId, string> = {
@@ -63,6 +66,8 @@ export default function PayrollApprovalStagePanel({
   lastReminderAt = null,
   note,
   onNoteChange,
+  period,
+  periodLabel,
 }: PayrollApprovalStagePanelProps) {
   const active = stages.find((stage) => stage.id === activeStageId) || stages.find((stage) => stage.current) || stages[0];
   const pendingApproverStage = stages.find((stage) => stage.current && stage.id !== 'payroll-officer') || null;
@@ -146,6 +151,11 @@ export default function PayrollApprovalStagePanel({
               </p>
             </div>
             <div className="w-full max-w-md shrink-0 space-y-3">
+              <PayrollCommentsControl
+                period={period}
+                periodLabel={periodLabel}
+                className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 text-xs font-extrabold text-sky-900 hover:bg-sky-100"
+              />
               <textarea
                 value={note}
                 onChange={(event) => onNoteChange(event.target.value)}

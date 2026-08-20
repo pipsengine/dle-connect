@@ -7,6 +7,8 @@ import { getActivePayrollPeriod, closePayrollPeriodRecord } from '@/lib/payroll-
 import { runPayrollCutoverBackup } from '@/lib/payroll-cutover-backup-service';
 import { buildManagementPayload } from '@/lib/payroll-payload-service';
 import { appendPayrollAudit, capturePayrollSnapshot, getPayrollRunForPeriod, listPayrollAudit, savePayrollRun, type UnifiedPayrollRun } from '@/lib/payroll-run-store';
+import { addPayrollRunComment, listPayrollRunComments, payrollCommentAccessForPeriod } from '@/lib/payroll-run-comments-store';
+import { normalizePayrollCommentPeriod } from '@/lib/payroll-run-comments';
 import { normalizePayrollApprovalAction } from '@/lib/payroll-approval-workflow';
 import { managementPermissions, payrollSessionContext, processingPermissions } from '@/lib/payroll-session';
 import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
@@ -326,6 +328,26 @@ const workflowActions = new Set([
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
+    if (url.searchParams.get('comments') === '1') {
+      try {
+        const { role, actor, isGlobalAdmin, session } = await payrollSessionContext(request);
+        const periodCode = normalizePayrollCommentPeriod(url.searchParams.get('period') || (await getActivePayrollPeriod()));
+        if (!periodCode) return jsonErr(400, 'Payroll period is required.');
+        const access = await payrollCommentAccessForPeriod({ period: periodCode, role, isGlobalAdmin });
+        if (!access.canView) return jsonErr(403, 'Permission denied');
+        const comments = await listPayrollRunComments(periodCode);
+        return jsonOk({
+          comments,
+          viewer: {
+            canComment: access.canComment,
+            actorCode: compact(session?.employeeCode || session?.username),
+            actorName: actor,
+          },
+        });
+      } catch (error) {
+        return jsonErr(500, error instanceof Error ? error.message : 'Unable to load comments.');
+      }
+    }
     const period = url.searchParams.get('period') || undefined;
     const requestedPack = url.searchParams.get('pack') || undefined;
     const payload = await buildManagementPayload(request, period, requestedPack === 'all' ? 'salaried' : requestedPack);
@@ -541,6 +563,33 @@ export async function POST(request: Request) {
     && !FINANCE_ONLY_PAYROLL_ACTIONS.has(action)
   ) {
     return jsonErr(403, 'Finance users are restricted to Bank & Finance payroll actions only.');
+  }
+
+  if (action === 'add-comment') {
+    const periodCode = normalizePayrollCommentPeriod(period);
+    if (!periodCode) return jsonErr(400, 'Payroll period is required.');
+    const access = await payrollCommentAccessForPeriod({ period: periodCode, role, isGlobalAdmin });
+    if (!access.canView) return jsonErr(403, 'Permission denied');
+    if (!access.canComment) return jsonErr(403, 'This payroll chat is read-only.');
+    try {
+      const result = await addPayrollRunComment({
+        period: periodCode,
+        actor,
+        actorCode: compact(session?.employeeCode || session?.username),
+        body: comment,
+        baseUrl: resolveWorkflowLinkOriginFromRequest(request),
+      });
+      return jsonOk({
+        ...result,
+        viewer: {
+          canComment: access.canComment,
+          actorCode: compact(session?.employeeCode || session?.username),
+          actorName: actor,
+        },
+      });
+    } catch (error) {
+      return jsonErr(400, error instanceof Error ? error.message : 'Unable to send comment.');
+    }
   }
 
   if (action === 'set-nhf-applicability') {

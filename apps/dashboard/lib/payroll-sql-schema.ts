@@ -62,6 +62,18 @@ CREATE TABLE [hris].[PayrollRunSnapshots] (
   [action] NVARCHAR(80) NOT NULL,
   [snapshot_json] NVARCHAR(MAX) NOT NULL
 );
+IF OBJECT_ID(N'[hris].[PayrollRunComments]', N'U') IS NULL
+CREATE TABLE [hris].[PayrollRunComments] (
+  [comment_id] NVARCHAR(80) NOT NULL PRIMARY KEY,
+  [period_code] CHAR(7) NOT NULL,
+  [pack] NVARCHAR(20) NULL,
+  [actor_code] NVARCHAR(80) NULL,
+  [actor_name] NVARCHAR(200) NOT NULL,
+  [body] NVARCHAR(MAX) NOT NULL,
+  [created_at] DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME()
+);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_PayrollRunComments_Period' AND object_id = OBJECT_ID(N'[hris].[PayrollRunComments]'))
+  CREATE INDEX [IX_PayrollRunComments_Period] ON [hris].[PayrollRunComments] ([period_code], [created_at] ASC);
 `;
 
 let schemaReady = false;

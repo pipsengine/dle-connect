@@ -1,6 +1,6 @@
 'use client';
 
-import PayrollPeriodContextBar from '../../payroll-management/PayrollPeriodContextBar';
+import { PayrollCommentsControl } from '../../payroll-management/PayrollCommentsThread';
 import {
   AlertTriangle,
   ArrowRight,
@@ -652,6 +652,7 @@ export default function PayrollWorkflowClient() {
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
+            <PayrollCommentsControl period={viewPeriod || payload?.period} periodLabel={payload?.periodLabel} />
             {payload?.permissions.canExport ? (
               <>
                 <a href={exportUrl('csv')} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#E2E8F0] bg-white px-3.5 text-[13px] font-bold text-[#334155] transition hover:-translate-y-0.5 hover:bg-slate-50">

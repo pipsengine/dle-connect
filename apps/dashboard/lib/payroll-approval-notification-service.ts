@@ -490,3 +490,62 @@ export const notifyPayrollReleased = async (input: {
   }
   return { emailed };
 };
+
+export const notifyPayrollClarificationComment = async (input: {
+  period: string;
+  periodLabel?: string;
+  actorName: string;
+  actorCode: string;
+  comment: string;
+  run?: UnifiedPayrollRun | null;
+  baseUrl?: string | null;
+}) => {
+  const run = input.run || null;
+  const stage = getCurrentPayrollApprovalStage(run);
+  const actorKey = lower(input.actorCode || input.actorName);
+  const officerRecipients = run ? await resolvePayrollOfficerRecipients(run) : [];
+  const stageRecipients = stage && stage.id !== 'payroll-officer'
+    ? await resolvePayrollApproverRecipients(stage.id)
+    : [];
+  const actorIsOfficer = officerRecipients.some((recipient) =>
+    lower(recipient.username) === actorKey || lower(recipient.fullName) === actorKey
+  );
+  const targets = actorIsOfficer && stageRecipients.length
+    ? stageRecipients
+    : [...officerRecipients, ...stageRecipients];
+  const seen = new Set<string>();
+  const unique = targets.filter((recipient) => {
+    const key = lower(recipient.email || recipient.username || recipient.id);
+    if (!key || seen.has(key)) return false;
+    if (actorKey && (lower(recipient.username) === actorKey || lower(recipient.fullName) === actorKey)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (!unique.length) return { notified: 0 };
+
+  const periodLabel = compact(input.periodLabel) || compact(run?.periodLabel) || input.period;
+  const href = `${payrollApprovalWorkspaceUrl(input.period, input.baseUrl)}#payroll-comments`;
+  const preview = compact(input.comment).slice(0, 280);
+  let notified = 0;
+  for (const recipient of unique) {
+    await createEnterpriseNotification(systemSessionFor(recipient), {
+      kind: 'Message',
+      module: 'Payroll Management',
+      title: `Payroll comment — ${periodLabel}`,
+      body: `${input.actorName} commented on ${periodLabel}: ${preview}`,
+      severity: 'info',
+      href,
+      actor: input.actorName,
+      channels: ['In-App'],
+      recipientRoles: recipient.roles,
+      recipientEmployeeCode: recipient.username,
+      metadata: {
+        period: input.period,
+        event: 'clarification-comment',
+        runId: run?.id || '',
+      },
+    });
+    notified += 1;
+  }
+  return { notified };
+};

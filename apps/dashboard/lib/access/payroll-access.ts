@@ -253,6 +253,7 @@ export const FINANCE_ONLY_PAYROLL_ACTIONS = new Set([
   'save-journal-mapping',
   'reverse-journal-posting',
   'finance-manager-approve',
+  'add-comment',
   'generate-report',
   'export-pdf',
   'export-csv',
