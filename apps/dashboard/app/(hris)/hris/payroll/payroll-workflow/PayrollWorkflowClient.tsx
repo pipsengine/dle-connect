@@ -592,7 +592,8 @@ export default function PayrollWorkflowClient() {
     if (RELEASED.includes(runStatus) && run?.bankScheduleGeneratedAt && !run?.payslipsGeneratedAt) {
       list.push({ id: 'generate-payslips', label: 'Generate Payslips', icon: ReceiptText, variant: 'primary', allowed: canManage, reason: canManage ? '' : 'You are not permitted to generate payslips.' });
     }
-    if (runStatus === 'Posted') {
+    const outputsReady = Boolean(run?.payslipsGeneratedAt && run?.bankScheduleGeneratedAt && run?.statutorySchedulesGeneratedAt);
+    if (RELEASED.includes(runStatus) && outputsReady) {
       list.push({ id: 'close-period', label: 'Close Period', icon: Lock, variant: 'primary', allowed: canManage || canApprove, reason: canManage || canApprove ? '' : 'You are not permitted to close the period.' });
     }
     return list;

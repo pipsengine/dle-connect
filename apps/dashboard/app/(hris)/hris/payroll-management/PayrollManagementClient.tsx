@@ -877,7 +877,12 @@ const canRunAction = (actionItem: PayrollAction, role: Role, payload: PayrollPay
   if (['generate-payslips', 'generate-bank-schedule', 'generate-statutory-schedules', 'export-bank-file', 'post-run'].includes(actionItem.id) && !releasedStatuses.includes(status)) return { allowed: false, reason: 'Release payroll first. Output actions activate after release.' };
   if (actionItem.id === 'generate-payslips' && !run?.bankScheduleGeneratedAt) return { allowed: false, reason: 'Generate the bank schedule before publishing payslips.' };
   if (actionItem.id === 'post-run' && (!run?.bankScheduleGeneratedAt || !run?.statutorySchedulesGeneratedAt)) return { allowed: false, reason: 'Generate bank and statutory schedules before posting.' };
-  if (actionItem.id === 'close-period' && status !== 'Posted') return { allowed: false, reason: 'Close is blocked until payslips, bank schedule, journal, and statutory schedules are complete.' };
+  if (actionItem.id === 'close-period') {
+    const outputsReady = Boolean(run?.payslipsGeneratedAt && run?.bankScheduleGeneratedAt && run?.statutorySchedulesGeneratedAt);
+    if (!releasedStatuses.includes(status) || !outputsReady) {
+      return { allowed: false, reason: 'Close is blocked until payslips, bank schedule, and statutory schedules are complete. Journal posting can follow later.' };
+    }
+  }
   if (status === 'Closed' && !['approve-entire-workflow', 'reopen-period', 'view-audit', 'generate-report', 'export-csv', 'export-excel', 'export-pdf'].includes(actionItem.id)) return { allowed: false, reason: 'Closed periods are locked until approved reopening.' };
   return { allowed: true, reason: '' };
 };
@@ -1861,7 +1866,7 @@ function ProcessPayrollWorkspace({
       { id: 'generate-bank-schedule', label: 'Bank Schedule', detail: 'Generate bank payment file', done: Boolean(currentRun?.bankScheduleGeneratedAt), phase: 'output' as const },
       { id: 'generate-payslips', label: 'Payslips', detail: 'Publish employee payslips to ESS', done: Boolean(currentRun?.payslipsGeneratedAt), phase: 'output' as const },
       { id: 'generate-statutory-schedules', label: 'Statutory Schedules', detail: 'PAYE, pension, NHF, NSITF, ITF', done: Boolean(currentRun?.statutorySchedulesGeneratedAt), phase: 'output' as const },
-      { id: 'post-run', label: 'Post Journal', detail: 'Post payroll journal to finance', done: Boolean(currentRun?.postedAt) || ['Posted', 'Closed'].includes(status), phase: 'output' as const },
+      { id: 'post-run', label: 'Post Journal', detail: 'Optional — post payroll journal to finance when GL mapping is ready', done: Boolean(currentRun?.postedAt) || ['Posted', 'Closed'].includes(status), phase: 'output' as const },
       { id: 'close-period', label: 'Close Period', detail: `Lock ${payload?.periodLabel || 'this period'} and complete payroll`, done: status === 'Closed', phase: 'close' as const },
     ];
     return steps.map((step) => {
@@ -1889,6 +1894,8 @@ function ProcessPayrollWorkspace({
       const submitStep = workflowSteps.find((step) => step.id === 'submit-run' && step.enabled);
       if (submitStep) return submitStep;
     }
+    const closeStep = workflowSteps.find((step) => step.id === 'close-period' && step.enabled);
+    if (closeStep) return closeStep;
     return workflowSteps.find((step) => step.enabled && !step.repeatable) || workflowSteps.find((step) => step.enabled) || null;
   }, [workflowSteps, status, computedStatuses, submittedStatuses]);
   const createRunAuth = canRunAction(resolveProcessingAction('create-run'), role, payload);

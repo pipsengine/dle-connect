@@ -586,8 +586,8 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
                 ? 'MD / CEO'
                 : !currentRun?.releasedAt
                     ? 'Payroll Supervisor'
-                    : !currentRun?.postedAt
-                      ? 'Finance Manager'
+                    : !currentRun?.payslipsGeneratedAt || !currentRun?.bankScheduleGeneratedAt || !currentRun?.statutorySchedulesGeneratedAt
+                      ? 'Payroll Officer'
                       : 'Payroll Officer',
       blockedActions: [
         ...(blocked ? ['Approval is blocked until validation exceptions are resolved.'] : []),
