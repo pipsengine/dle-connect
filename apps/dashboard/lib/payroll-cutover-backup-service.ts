@@ -67,7 +67,7 @@ export const runPayrollCutoverBackup = async (payrollPeriod: string, actor: stri
   const state = await readBackupDisasterRecoveryState();
   const target = resolvePrimaryBackupTarget(state);
   if (!target?.location.trim()) {
-    throw new Error('Configure a primary backup location in Backup & Disaster Recovery before closing payroll. Payroll cutover requires a verified full database backup.');
+    return { skipped: true as const, payrollPeriod, reason: 'Primary backup location is not configured in Backup & Disaster Recovery.' };
   }
 
   const filePath = payrollCutoverBackupFilePath(target.location, payrollPeriod);

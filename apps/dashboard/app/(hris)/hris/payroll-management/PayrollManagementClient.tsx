@@ -1251,7 +1251,7 @@ function EarningsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Ta
 
       <section className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-4">
         <ChartShell title="Earnings Mix" detail="Base pay versus allowances" onClick={() => undefined}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
             <PieChart>
               <Pie data={componentData} dataKey="value" nameKey="name" innerRadius={48} outerRadius={72} paddingAngle={2}>
                 {componentData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
@@ -1263,7 +1263,7 @@ function EarningsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Ta
         </ChartShell>
 
         <ChartShell title="Category Earnings" detail="Gross payroll by employee category" onClick={() => undefined}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
             <BarChart data={categoryData} margin={{ top: 10, right: 8, left: -24, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
               <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 700 }} interval={0} height={42} />
@@ -1277,7 +1277,7 @@ function EarningsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Ta
         </ChartShell>
 
         <ChartShell title="Department Earnings" detail="Top gross exposure by department" onClick={() => undefined}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
             <BarChart data={departmentData} layout="vertical" margin={{ top: 6, right: 8, left: 10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
               <XAxis type="number" hide />
@@ -1291,7 +1291,7 @@ function EarningsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Ta
         <ChartShell title="Earning Exceptions" detail="Issues affecting earning accuracy" onClick={() => undefined}>
           {exceptionData.length ? (
             <>
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
                 <PieChart>
                   <Pie data={exceptionData} dataKey="value" nameKey="name" outerRadius={74}>
                     {exceptionData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
@@ -1468,7 +1468,7 @@ function DeductionsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: 
         <ChartShell title="Deduction Mix" detail="PAYE, pension, and other deductions" active={deductionView !== 'all'} onClick={() => setDeductionView('all')}>
           {deductionMix.length ? (
             <>
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
                 <PieChart>
                   <Pie data={deductionMix} dataKey="value" nameKey="name" innerRadius={48} outerRadius={72} paddingAngle={2}>
                     {deductionMix.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
@@ -1484,7 +1484,7 @@ function DeductionsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: 
         </ChartShell>
 
         <ChartShell title="Category Liability" detail="Deductions by employment type" onClick={() => setDeductionView('all')}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
             <BarChart data={categoryData} margin={{ top: 10, right: 8, left: -24, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
               <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 700 }} interval={0} height={42} />
@@ -1498,7 +1498,7 @@ function DeductionsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: 
         </ChartShell>
 
         <ChartShell title="Department Liability" detail="Highest deduction exposure" onClick={() => setDeductionView('all')}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
             <BarChart data={departmentData} layout="vertical" margin={{ top: 6, right: 8, left: 10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
               <XAxis type="number" hide />
@@ -1512,7 +1512,7 @@ function DeductionsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: 
         <ChartShell title="Deduction Issues" detail="Exception severity" active={deductionView === 'issues'} onClick={() => setDeductionView('issues')}>
           {issueData.length ? (
             <>
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
                 <PieChart>
                   <Pie data={issueData} dataKey="value" nameKey="name" outerRadius={74}>
                     {issueData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
@@ -1659,7 +1659,7 @@ function PaySetupCharts({
   return (
     <section className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-4">
       <ChartShell title="Setup Coverage" detail="Ready, review, and blocked employee setup" onClick={() => undefined}>
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
           <PieChart>
             <Pie data={coverageData} dataKey="value" nameKey="name" innerRadius={48} outerRadius={72} paddingAngle={2}>
               {coverageData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
@@ -1671,7 +1671,7 @@ function PaySetupCharts({
       </ChartShell>
 
       <ChartShell title="Employee Categories" detail="Setup population by payroll category" onClick={() => undefined}>
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
           <BarChart data={categoryData} margin={{ top: 10, right: 8, left: -24, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
             <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 700 }} interval={0} height={42} />
@@ -1685,7 +1685,7 @@ function PaySetupCharts({
       </ChartShell>
 
       <ChartShell title="Grade Pay Exposure" detail="Top salary grades by gross payroll" onClick={() => undefined}>
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
           <BarChart data={gradeData} layout="vertical" margin={{ top: 6, right: 8, left: 10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
             <XAxis type="number" hide />
@@ -1699,7 +1699,7 @@ function PaySetupCharts({
       <ChartShell title="Setup Exceptions" detail="Exception severity from payroll setup checks" onClick={() => undefined}>
         {exceptionData.length ? (
           <>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
               <PieChart>
                 <Pie data={exceptionData} dataKey="value" nameKey="name" outerRadius={74}>
                   {exceptionData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
@@ -2164,7 +2164,7 @@ function ProcessPayrollWorkspace({
             <div className="mt-3 h-52">
               {readinessData.length ? (
                 <>
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
                     <PieChart>
                       <Pie data={readinessData} dataKey="value" nameKey="name" innerRadius={52} outerRadius={76} paddingAngle={2}>
                         {readinessData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
@@ -2184,7 +2184,7 @@ function ProcessPayrollWorkspace({
             <h3 className="text-sm font-bold text-[#0F172A]">Payroll Value</h3>
             <p className="text-[11px] font-semibold text-slate-500">{payload?.periodLabel || 'Current period'}</p>
             <div className="mt-2 h-52">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
                 <BarChart data={valueData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                   <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 600 }} />
@@ -2201,7 +2201,7 @@ function ProcessPayrollWorkspace({
           <article className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
             <h3 className="text-sm font-bold text-[#0F172A]">Category Processing</h3>
             <div className="mt-3 h-52">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
                 <BarChart data={categoryData} layout="vertical" margin={{ top: 4, right: 8, left: 4, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
                   <XAxis type="number" hide />
@@ -2458,7 +2458,7 @@ function StatutoryWorkspace({
         <ChartShell title="Statutory Mix" detail="PAYE, pension, NHF/other, NSITF and ITF" active={statutoryView === 'overview'} onClick={() => setStatutoryView('overview')}>
           {statutoryMix.length ? (
             <>
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
                 <PieChart>
                   <Pie data={statutoryMix} dataKey="value" nameKey="name" innerRadius={48} outerRadius={72} paddingAngle={2}>
                     {statutoryMix.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
@@ -2474,7 +2474,7 @@ function StatutoryWorkspace({
         </ChartShell>
 
         <ChartShell title="Department Statutory Exposure" detail="PAYE and pension by department" onClick={() => setStatutoryView('overview')}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
             <BarChart data={departmentData} layout="vertical" margin={{ top: 6, right: 8, left: 10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
               <XAxis type="number" hide />
@@ -2489,7 +2489,7 @@ function StatutoryWorkspace({
         <ChartShell title="Compliance Issues" detail="Statutory exception severity" active={statutoryView === 'issues'} onClick={() => setStatutoryView('issues')}>
           {severityData.length ? (
             <>
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
                 <PieChart>
                   <Pie data={severityData} dataKey="value" nameKey="name" outerRadius={74}>
                     {severityData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
@@ -2853,7 +2853,7 @@ function BankFinanceWorkspace({
 
       <section className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-3">
         <ChartShell title="Payroll Value Flow" detail="Gross to deductions to net payment" active={financeView === 'payments'} onClick={() => setFinanceView('payments')}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
             <BarChart data={valueData} margin={{ top: 10, right: 8, left: -24, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
               <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 700 }} />
@@ -2867,7 +2867,7 @@ function BankFinanceWorkspace({
         </ChartShell>
 
         <ChartShell title="Department Payment Exposure" detail="Net payroll by department" onClick={() => setFinanceView('payments')}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
             <BarChart data={departmentData} layout="vertical" margin={{ top: 6, right: 8, left: 10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
               <XAxis type="number" hide />
@@ -2881,7 +2881,7 @@ function BankFinanceWorkspace({
         <ChartShell title="Location Payment Exposure" detail="Bank payment value by site" onClick={() => setFinanceView('payments')}>
           <div className="grid h-full min-h-0 grid-rows-[1fr_auto] gap-2 overflow-hidden">
             <div className="min-h-0">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
                 <PieChart>
                   <Pie data={locationData} dataKey="netPay" nameKey="name" innerRadius={44} outerRadius={66} paddingAngle={2}>
                     {locationData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
@@ -3221,7 +3221,7 @@ function ReportsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Tab
 
       <section className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-3">
         <ChartShell title={`${activeMeta.title} Value Summary`} detail="Report-specific payroll values" onClick={() => undefined}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
             <BarChart data={reportValueData} margin={{ top: 10, right: 8, left: -24, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
               <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 700 }} />
@@ -3235,7 +3235,7 @@ function ReportsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Tab
         </ChartShell>
 
         <ChartShell title={`${activeMeta.title} Grouping`} detail={`Grouped by ${groupBy}`} onClick={() => undefined}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
             <BarChart data={groupedRows} layout="vertical" margin={{ top: 6, right: 8, left: 10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
               <XAxis type="number" hide />
@@ -3248,7 +3248,7 @@ function ReportsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Tab
 
         <ChartShell title={`${activeMeta.title} Mix`} detail="Report-ready visual split" onClick={() => undefined}>
           <div className="grid h-full min-h-0 grid-cols-2 gap-2">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
               <PieChart>
                 <Pie data={deductionData} dataKey="value" nameKey="name" innerRadius={32} outerRadius={54} paddingAngle={2}>
                   {deductionData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
@@ -3256,7 +3256,7 @@ function ReportsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Tab
                 <Tooltip formatter={chartTooltip} />
               </PieChart>
             </ResponsiveContainer>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
               <PieChart>
                 <Pie data={statusData} dataKey="value" nameKey="name" innerRadius={32} outerRadius={54} paddingAngle={2}>
                   {statusData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
@@ -6156,7 +6156,7 @@ function PayrollDashboardCharts({
   return (
     <section className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-4">
       <ChartShell title="Payroll Readiness" detail="Ready, review, and blocked records" active={['ready', 'issues'].includes(activePanel)} onClick={() => setActivePanel('ready')}>
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
           <PieChart>
             <Pie data={readinessData} dataKey="value" nameKey="name" innerRadius={48} outerRadius={72} paddingAngle={2} onClick={(entry) => {
               const row = entry as unknown as { panel?: DashboardPanelId; status?: string };
@@ -6172,7 +6172,7 @@ function PayrollDashboardCharts({
       </ChartShell>
 
       <ChartShell title="Employee Categories" detail="Headcount by payroll type" active={activePanel === 'ready'} onClick={() => setActivePanel('ready')}>
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
           <BarChart data={employmentData} margin={{ top: 10, right: 6, left: -24, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
             <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 700 }} interval={0} height={42} />
@@ -6186,7 +6186,7 @@ function PayrollDashboardCharts({
       </ChartShell>
 
       <ChartShell title="Department Payroll" detail="Top gross payroll exposure" active={activePanel === 'gross'} onClick={() => setActivePanel('gross')}>
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
           <BarChart data={departmentData} layout="vertical" margin={{ top: 6, right: 8, left: 10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
             <XAxis type="number" hide />
@@ -6198,7 +6198,7 @@ function PayrollDashboardCharts({
       </ChartShell>
 
       <ChartShell title="Deduction Mix" detail="PAYE, pension, and other deductions" active={activePanel === 'deductions'} onClick={() => setActivePanel('deductions')}>
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
           <PieChart>
             <Pie data={deductionData} dataKey="value" nameKey="name" outerRadius={74} onClick={() => setActivePanel('deductions')}>
               {deductionData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}

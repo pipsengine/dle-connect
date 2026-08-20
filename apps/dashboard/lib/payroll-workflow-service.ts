@@ -85,6 +85,20 @@ const payrollRunReadyToClose = (run: Pick<UnifiedPayrollRun, 'status' | 'release
     && run.status !== 'Closed';
 };
 
+/** Unused pack (typically Daily Rate never started) must not block closing a completed salaried period. */
+const payrollRunIdleForPeriodClose = (run: Pick<UnifiedPayrollRun, 'status' | 'releasedAt' | 'submittedAt' | 'payslipsGeneratedAt' | 'bankScheduleGeneratedAt' | 'statutorySchedulesGeneratedAt' | 'employeeCount'>) => {
+  const status = String(run.status || '');
+  if (status === 'Closed') return true;
+  if (run.releasedAt || run.submittedAt || run.payslipsGeneratedAt || run.bankScheduleGeneratedAt || run.statutorySchedulesGeneratedAt) return false;
+  if (['Submitted', 'Under Review', 'HR Approved', 'Finance Approved', 'CFO Approved', 'Approved', 'Released', 'Published', 'Posted', 'Locked', 'Revision Requested'].includes(status)) {
+    return false;
+  }
+  return Number(run.employeeCount || 0) === 0;
+};
+
+const payrollRunSatisfiesPeriodClose = (run: Parameters<typeof payrollRunReadyToClose>[0] & Parameters<typeof payrollRunIdleForPeriodClose>[0]) =>
+  String(run.status || '') === 'Closed' || payrollRunReadyToClose(run) || payrollRunIdleForPeriodClose(run);
+
 const syncRunTotals = (run: UnifiedPayrollRun, summary: Awaited<ReturnType<typeof calculatePayrollForPeriod>>['summary']) => {
   run.employeeCount = summary.payrollEligible || summary.employees || 0;
   run.grossPay = summary.grossPay;
@@ -389,11 +403,15 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     const periodRuns = await listPayrollRunsForPeriod(period);
     const targets = periodRuns.length ? periodRuns : await ensurePayrollRunsForPeriod(period, periodLabel, actor);
     for (const item of targets) {
-      if (!payrollRunReadyToClose(item)) {
+      if (!payrollRunSatisfiesPeriodClose(item)) {
         throw new Error(`Complete payslips, bank schedule, and statutory schedules for ${payrollRunPackShortLabel(resolvePayrollRunPack(item))} before closing (status: ${item.status}). Journal posting can follow later.`);
       }
     }
     for (const item of targets) {
+      if (item.status === 'Closed') {
+        run = item;
+        continue;
+      }
       const before = item.status;
       item.status = 'Closed';
       item.closedAt = nowIso();
@@ -418,17 +436,26 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     if (periodRecord.status !== 'Closed') {
       throw new Error('Payroll runs closed but period record could not be persisted to DLE_Enterprise.');
     }
-    const backup = await runPayrollCutoverBackup(period, actor);
-    await appendPayrollAudit({
-      user: actor,
-      role,
-      action: 'payroll-cutover-backup',
-      record: run.id,
-      oldValue: backup.skipped ? 'Skipped' : 'Started',
-      newValue: backup.skipped ? (backup.reason || 'Skipped') : (backup.record?.backupFilePath || period),
-      reason: reason || null,
-      comment: comment || null,
-      ip,
+    const backup = {
+      skipped: true as const,
+      queued: true as const,
+      payrollPeriod: period,
+      reason: 'Period closed. Database backup will run in the background — confirm it in Backup & Disaster Recovery before opening the next period.',
+    };
+    void runPayrollCutoverBackup(period, actor).then(async (result) => {
+      await appendPayrollAudit({
+        user: actor,
+        role,
+        action: 'payroll-cutover-backup',
+        record: run.id,
+        oldValue: result.skipped ? 'Skipped' : 'Started',
+        newValue: result.skipped ? (result.reason || 'Skipped') : (result.record?.backupFilePath || period),
+        reason: reason || null,
+        comment: comment || null,
+        ip,
+      });
+    }).catch((error) => {
+      console.error('[payroll] cutover backup after close failed', error);
     });
     return { run, runs: await listPayrollRunsForPeriod(period), calculation, periodRecord, payrollCutoverBackup: backup };
   }
@@ -683,7 +710,11 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
   }
 
   if (action === 'close-period') {
-    if (!payrollRunReadyToClose(run)) {
+    if (run.status === 'Closed') {
+      const periodRecord = await closePayrollPeriodRecord(period, actor, reason);
+      return { run, calculation, periodRecord, payrollCutoverBackup: { skipped: true, payrollPeriod: period, reason: 'Period already closed.' } };
+    }
+    if (!payrollRunSatisfiesPeriodClose(run)) {
       throw new Error('Publish payslips and generate bank/statutory schedules before closing the payroll period. Journal posting is optional until accounts mapping is ready.');
     }
     const before = run.status;
@@ -697,13 +728,26 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
       throw new Error('Payroll run closed but period record could not be persisted to DLE_Enterprise.');
     }
     await audit('close-period', before, run.status);
-    const backup = await runPayrollCutoverBackup(period, actor);
-    await audit(
-      'payroll-cutover-backup',
-      backup.skipped ? 'Skipped' : 'Started',
-      backup.skipped ? (backup.reason || 'Skipped') : (backup.record?.backupFilePath || period),
-    );
-    return { run, calculation, periodRecord, payrollCutoverBackup: backup };
+    void runPayrollCutoverBackup(period, actor).then(async (backup) => {
+      await audit(
+        'payroll-cutover-backup',
+        backup.skipped ? 'Skipped' : 'Started',
+        backup.skipped ? (backup.reason || 'Skipped') : (backup.record?.backupFilePath || period),
+      );
+    }).catch((error) => {
+      console.error('[payroll] cutover backup after close failed', error);
+    });
+    return {
+      run,
+      calculation,
+      periodRecord,
+      payrollCutoverBackup: {
+        skipped: true,
+        queued: true,
+        payrollPeriod: period,
+        reason: 'Period closed. Database backup will run in the background — confirm it in Backup & Disaster Recovery before opening the next period.',
+      },
+    };
   }
 
   if (action === 'reopen-period' || action === 'reopen') {

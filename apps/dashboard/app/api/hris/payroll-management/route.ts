@@ -310,8 +310,11 @@ const applySuperAdminEndToEndApproval = async (
   run.lockedAt = run.lockedAt || stamp;
   await setStatus('close-period', 'Closed', 'Payroll period closed through Global Super Administrator end-to-end approval.');
   await closePayrollPeriodRecord(run.period, actor, reason || 'Super Administrator end-to-end payroll close');
-  const payrollCutoverBackup = await runPayrollCutoverBackup(run.period, actor);
-  await auditStep('payroll-cutover-backup', 'Closed', payrollCutoverBackup.skipped ? 'Skipped' : 'Completed', payrollCutoverBackup.skipped ? payrollCutoverBackup.reason : payrollCutoverBackup.record?.backupFilePath);
+  void runPayrollCutoverBackup(run.period, actor).then(async (payrollCutoverBackup) => {
+    await auditStep('payroll-cutover-backup', 'Closed', payrollCutoverBackup.skipped ? 'Skipped' : 'Completed', payrollCutoverBackup.skipped ? payrollCutoverBackup.reason : payrollCutoverBackup.record?.backupFilePath);
+  }).catch((error) => {
+    console.error('[payroll] cutover backup after end-to-end close failed', error);
+  });
   const calculation = await calculatePayrollForPeriod(run.period);
   await capturePayrollSnapshot(run.id, 'approve-entire-workflow', actor, calculation.summary as unknown as Record<string, unknown>, calculation.records);
   invalidateHrisEmployeeCaches();
@@ -797,7 +800,9 @@ export async function POST(request: Request) {
       });
       return jsonOk({ run: result.run, runs: (result as { runs?: typeof result.run[] }).runs });
     } catch (error) {
-      return jsonErr(/permission|cannot|blocked|requires|not found|unsupported/i.test(error instanceof Error ? error.message : '') ? 409 : 500, error instanceof Error ? error.message : 'Unable to complete payroll action.');
+      const message = error instanceof Error ? error.message : 'Unable to complete payroll action.';
+      const clientError = /permission|cannot|blocked|requires|not found|unsupported|before closing|already closed|journal posting/i.test(message);
+      return jsonErr(clientError ? 409 : 500, message);
     }
   }
 
