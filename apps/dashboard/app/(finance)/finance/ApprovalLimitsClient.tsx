@@ -55,7 +55,7 @@ const pathTone = (pathType: string) =>
 
 const defaultStagesForPath = (pathType: ApprovalPathType) =>
   (pathType === 'Project'
-    ? ['Project Manager', 'Cost Controller', 'Finance Manager']
+    ? ['Reporting Manager', 'Project Manager', 'Cost Controller', 'Finance Manager']
     : ['Reporting Manager', 'Finance Manager']);
 
 export default function ApprovalLimitsClient({ initialWorkspace }: Props) {
@@ -518,7 +518,7 @@ export default function ApprovalLimitsClient({ initialWorkspace }: Props) {
                   value={form.stagesText}
                   onChange={(e) => setForm((p) => ({ ...p, stagesText: e.target.value }))}
                   rows={3}
-                  placeholder="Project Manager → Cost Controller → Finance Manager"
+                  placeholder="Reporting Manager → Project Manager → Cost Controller → Finance Manager"
                   className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
                 />
                 <span className="mt-1 block text-[11px] text-slate-500">Separate stages with → or commas. Order is the approval sequence.</span>

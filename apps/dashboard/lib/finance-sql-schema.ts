@@ -350,15 +350,15 @@ USING (VALUES
   (N''LIM-NONPROJ-OPEN'', N''NONPROJ_GT_1M'', N''Employee Payment'', N''Non-project'', CAST(1000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 4,
    N''Reporting Manager → Finance Manager → CFO → MD/CEO'',
    N''["Reporting Manager","Finance Manager","CFO","MD/CEO"]''),
-  (N''LIM-PROJ-200K'', N''PROJ_LE_200K'', N''Employee Payment'', N''Project'', CAST(0 AS DECIMAL(19,4)), CAST(200000 AS DECIMAL(19,4)), 3,
-   N''Project Manager → Cost Controller → Finance Manager'',
-   N''["Project Manager","Cost Controller","Finance Manager"]''),
-  (N''LIM-PROJ-5M'', N''PROJ_LE_5M'', N''Employee Payment'', N''Project'', CAST(200000.01 AS DECIMAL(19,4)), CAST(5000000 AS DECIMAL(19,4)), 5,
-   N''Project Manager → Cost Controller → Finance Manager → GM → CFO'',
-   N''["Project Manager","Cost Controller","Finance Manager","GM","CFO"]''),
-  (N''LIM-PROJ-OPEN'', N''PROJ_GT_5M'', N''Employee Payment'', N''Project'', CAST(5000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 6,
-   N''Project Manager → Cost Controller → Finance Manager → GM → CFO → MD/CEO'',
-   N''["Project Manager","Cost Controller","Finance Manager","GM","CFO","MD/CEO"]'')
+  (N''LIM-PROJ-200K'', N''PROJ_LE_200K'', N''Employee Payment'', N''Project'', CAST(0 AS DECIMAL(19,4)), CAST(200000 AS DECIMAL(19,4)), 4,
+   N''Reporting Manager → Project Manager → Cost Controller → Finance Manager'',
+   N''["Reporting Manager","Project Manager","Cost Controller","Finance Manager"]''),
+  (N''LIM-PROJ-5M'', N''PROJ_LE_5M'', N''Employee Payment'', N''Project'', CAST(200000.01 AS DECIMAL(19,4)), CAST(5000000 AS DECIMAL(19,4)), 6,
+   N''Reporting Manager → Project Manager → Cost Controller → Finance Manager → GM → CFO'',
+   N''["Reporting Manager","Project Manager","Cost Controller","Finance Manager","GM","CFO"]''),
+  (N''LIM-PROJ-OPEN'', N''PROJ_GT_5M'', N''Employee Payment'', N''Project'', CAST(5000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 7,
+   N''Reporting Manager → Project Manager → Cost Controller → Finance Manager → GM → CFO → MD/CEO'',
+   N''["Reporting Manager","Project Manager","Cost Controller","Finance Manager","GM","CFO","MD/CEO"]'')
 ) AS source (
   [MatrixId], [RuleName], [PaymentType], [PathType], [MinAmount], [MaxAmount], [ApprovalLevel], [ApproverRoles], [StagesJson]
 )
@@ -390,6 +390,34 @@ SET [ApprovalLevel] = 6,
     [UpdatedAt] = SYSUTCDATETIME()
 WHERE [MatrixId] = N''LIM-PROJ-OPEN''
   AND CHARINDEX(N''MD/CEO'', ISNULL([StagesJson], N'''')) = 0;
+
+-- Project path: requester line/reporting manager before Project Manager (new requests).
+UPDATE [finance].[ApprovalMatrix]
+SET [ApprovalLevel] = 4,
+    [ApproverRoles] = N''Reporting Manager → Project Manager → Cost Controller → Finance Manager'',
+    [StagesJson] = N''["Reporting Manager","Project Manager","Cost Controller","Finance Manager"]'',
+    [UpdatedBy] = N''System Seed'',
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [MatrixId] = N''LIM-PROJ-200K''
+  AND CHARINDEX(N''Reporting Manager'', ISNULL([StagesJson], N'''')) = 0;
+
+UPDATE [finance].[ApprovalMatrix]
+SET [ApprovalLevel] = 6,
+    [ApproverRoles] = N''Reporting Manager → Project Manager → Cost Controller → Finance Manager → GM → CFO'',
+    [StagesJson] = N''["Reporting Manager","Project Manager","Cost Controller","Finance Manager","GM","CFO"]'',
+    [UpdatedBy] = N''System Seed'',
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [MatrixId] = N''LIM-PROJ-5M''
+  AND CHARINDEX(N''Reporting Manager'', ISNULL([StagesJson], N'''')) = 0;
+
+UPDATE [finance].[ApprovalMatrix]
+SET [ApprovalLevel] = 7,
+    [ApproverRoles] = N''Reporting Manager → Project Manager → Cost Controller → Finance Manager → GM → CFO → MD/CEO'',
+    [StagesJson] = N''["Reporting Manager","Project Manager","Cost Controller","Finance Manager","GM","CFO","MD/CEO"]'',
+    [UpdatedBy] = N''System Seed'',
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [MatrixId] = N''LIM-PROJ-OPEN''
+  AND CHARINDEX(N''Reporting Manager'', ISNULL([StagesJson], N'''')) = 0;
 ');
 END
 

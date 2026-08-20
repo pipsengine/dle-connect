@@ -287,9 +287,9 @@ export const DEFAULT_APPROVAL_LIMIT_RULES: Array<Omit<UpsertApprovalRuleInput, '
     pathType: 'Project',
     minAmount: 0,
     maxAmount: 200000,
-    approvalLevel: 3,
-    stages: ['Project Manager', 'Cost Controller', 'Finance Manager'],
-    approverRoles: 'Project Manager → Cost Controller → Finance Manager',
+    approvalLevel: 4,
+    stages: ['Reporting Manager', 'Project Manager', 'Cost Controller', 'Finance Manager'],
+    approverRoles: 'Reporting Manager → Project Manager → Cost Controller → Finance Manager',
     status: 'Active',
   },
   {
@@ -298,9 +298,9 @@ export const DEFAULT_APPROVAL_LIMIT_RULES: Array<Omit<UpsertApprovalRuleInput, '
     pathType: 'Project',
     minAmount: 200000.01,
     maxAmount: 5000000,
-    approvalLevel: 5,
-    stages: ['Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO'],
-    approverRoles: 'Project Manager → Cost Controller → Finance Manager → GM → CFO',
+    approvalLevel: 6,
+    stages: ['Reporting Manager', 'Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO'],
+    approverRoles: 'Reporting Manager → Project Manager → Cost Controller → Finance Manager → GM → CFO',
     status: 'Active',
   },
   {
@@ -309,9 +309,9 @@ export const DEFAULT_APPROVAL_LIMIT_RULES: Array<Omit<UpsertApprovalRuleInput, '
     pathType: 'Project',
     minAmount: 5000000.01,
     maxAmount: null,
-    approvalLevel: 6,
-    stages: ['Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO', 'MD/CEO'],
-    approverRoles: 'Project Manager → Cost Controller → Finance Manager → GM → CFO → MD/CEO',
+    approvalLevel: 7,
+    stages: ['Reporting Manager', 'Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO', 'MD/CEO'],
+    approverRoles: 'Reporting Manager → Project Manager → Cost Controller → Finance Manager → GM → CFO → MD/CEO',
     status: 'Active',
   },
 ];
@@ -525,15 +525,15 @@ USING (VALUES
   (N'LIM-NONPROJ-OPEN', N'NONPROJ_GT_1M', N'Employee Payment', N'Non-project', CAST(1000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 4,
    N'Reporting Manager → Finance Manager → CFO → MD/CEO',
    N'["Reporting Manager","Finance Manager","CFO","MD/CEO"]'),
-  (N'LIM-PROJ-200K', N'PROJ_LE_200K', N'Employee Payment', N'Project', CAST(0 AS DECIMAL(19,4)), CAST(200000 AS DECIMAL(19,4)), 3,
-   N'Project Manager → Cost Controller → Finance Manager',
-   N'["Project Manager","Cost Controller","Finance Manager"]'),
-  (N'LIM-PROJ-5M', N'PROJ_LE_5M', N'Employee Payment', N'Project', CAST(200000.01 AS DECIMAL(19,4)), CAST(5000000 AS DECIMAL(19,4)), 5,
-   N'Project Manager → Cost Controller → Finance Manager → GM → CFO',
-   N'["Project Manager","Cost Controller","Finance Manager","GM","CFO"]'),
-  (N'LIM-PROJ-OPEN', N'PROJ_GT_5M', N'Employee Payment', N'Project', CAST(5000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 6,
-   N'Project Manager → Cost Controller → Finance Manager → GM → CFO → MD/CEO',
-   N'["Project Manager","Cost Controller","Finance Manager","GM","CFO","MD/CEO"]')
+  (N'LIM-PROJ-200K', N'PROJ_LE_200K', N'Employee Payment', N'Project', CAST(0 AS DECIMAL(19,4)), CAST(200000 AS DECIMAL(19,4)), 4,
+   N'Reporting Manager → Project Manager → Cost Controller → Finance Manager',
+   N'["Reporting Manager","Project Manager","Cost Controller","Finance Manager"]'),
+  (N'LIM-PROJ-5M', N'PROJ_LE_5M', N'Employee Payment', N'Project', CAST(200000.01 AS DECIMAL(19,4)), CAST(5000000 AS DECIMAL(19,4)), 6,
+   N'Reporting Manager → Project Manager → Cost Controller → Finance Manager → GM → CFO',
+   N'["Reporting Manager","Project Manager","Cost Controller","Finance Manager","GM","CFO"]'),
+  (N'LIM-PROJ-OPEN', N'PROJ_GT_5M', N'Employee Payment', N'Project', CAST(5000000.01 AS DECIMAL(19,4)), CAST(NULL AS DECIMAL(19,4)), 7,
+   N'Reporting Manager → Project Manager → Cost Controller → Finance Manager → GM → CFO → MD/CEO',
+   N'["Reporting Manager","Project Manager","Cost Controller","Finance Manager","GM","CFO","MD/CEO"]')
 ) AS source (
   [MatrixId], [RuleName], [PaymentType], [PathType], [MinAmount], [MaxAmount], [ApprovalLevel], [ApproverRoles], [StagesJson]
 )
@@ -826,6 +826,82 @@ const stripAutomaticMdStages = (stages: string[]) =>
 const isLineManagerStage = (stage: string) =>
   /reporting manager|line manager|^supervisor$|supervisor\b/i.test(compact(stage));
 
+const isProjectManagerStage = (stage: string) => /project manager/i.test(compact(stage));
+
+const approverKeysMatch = (left?: { code?: string | null; name?: string | null }, right?: { code?: string | null; name?: string | null }) => {
+  const leftCode = compact(left?.code).toUpperCase();
+  const rightCode = compact(right?.code).toUpperCase();
+  if (leftCode && rightCode && leftCode === rightCode) return true;
+  const leftName = compact(left?.name).toLowerCase();
+  const rightName = compact(right?.name).toLowerCase();
+  return Boolean(leftName && rightName && leftName === rightName);
+};
+
+/** Project path always starts with the requester's line manager unless that stage is already present. */
+export const applyProjectReportingManagerFirst = (stages: string[], pathType?: ApprovalPathType | string | null) => {
+  const next = [...(stages || [])].map((stage) => compact(stage)).filter(Boolean);
+  if (normalizePathType(pathType) !== 'Project') return next;
+  if (next.some(isLineManagerStage)) return next;
+  return ['Reporting Manager', ...next];
+};
+
+/**
+ * If the requester's line manager is also the project manager, do not make them approve twice.
+ */
+export const skipProjectReportingManagerWhenSameAsPm = async (input: {
+  stages: string[];
+  requesterCode?: string | null;
+  supervisorName?: string | null;
+  projectCode?: string | null;
+  paymentType?: string | null;
+}): Promise<string[]> => {
+  const stages = [...(input.stages || [])].map((stage) => compact(stage)).filter(Boolean);
+  if (!stages.some(isLineManagerStage) || !stages.some(isProjectManagerStage)) return stages;
+  try {
+    const { resolvePaymentStageApprover } = await import('@/lib/finance-intelligence/payment-approval-notify');
+    const lineManager = await resolvePaymentStageApprover({
+      stage: 'Reporting Manager',
+      requesterCode: input.requesterCode,
+      supervisorName: input.supervisorName,
+      projectCode: input.projectCode,
+      paymentType: input.paymentType,
+    });
+    const projectManager = await resolvePaymentStageApprover({
+      stage: 'Project Manager',
+      requesterCode: input.requesterCode,
+      supervisorName: input.supervisorName,
+      projectCode: input.projectCode,
+      paymentType: input.paymentType,
+    });
+    if (approverKeysMatch(lineManager, projectManager)) {
+      return stages.filter((stage) => !isLineManagerStage(stage));
+    }
+  } catch (error) {
+    console.error('[approval-limits] project line-manager/PM dedupe failed', error);
+  }
+  return stages;
+};
+
+/** True when `next` is `existing` with Reporting Manager prepended — used to leave in-flight project requests alone. */
+export const onlyPrependsReportingManager = (existing: string[], next: string[]) => {
+  const current = (existing || []).map((stage) => compact(stage)).filter(Boolean);
+  const matched = (next || []).map((stage) => compact(stage)).filter(Boolean);
+  if (!current.length || matched.length !== current.length + 1) return false;
+  if (!isLineManagerStage(matched[0]) || current.some(isLineManagerStage)) return false;
+  return current.every((stage, index) => stage.toLowerCase() === matched[index + 1].toLowerCase());
+};
+
+export const stripLeadingReportingManager = (stages: string[]) => {
+  const next = (stages || []).map((stage) => compact(stage)).filter(Boolean);
+  if (next.length && isLineManagerStage(next[0])) return next.slice(1);
+  return next;
+};
+
+export const isProjectChainWithoutReportingManager = (stages: string[]) => {
+  const next = (stages || []).map((stage) => compact(stage)).filter(Boolean);
+  return next.some(isProjectManagerStage) && !next.some(isLineManagerStage);
+};
+
 /** Project over ₦5m and non-project over ₦1m always require MD/CEO after CFO. */
 export const bandRequiresMdCeo = (pathType: ApprovalPathType | string | null | undefined, amountNgn: number) => {
   const amount = moneyRound2(amountNgn);
@@ -920,12 +996,19 @@ export const resolveApprovalChain = async (input: {
   const match = rules.find((rule) => amountInBand(converted.amountNgn, rule.minAmount, rule.maxAmount));
   if (!match || !match.stages.length) return null;
 
-  const stages = await applyMdLineManagerLastApproverRule({
-    stages: match.stages,
+  let stages = applyProjectReportingManagerFirst(match.stages, pathType);
+  stages = await applyMdLineManagerLastApproverRule({
+    stages,
     amountNgn: converted.amountNgn,
     pathType,
     requesterCode: input.requesterCode,
     supervisorName: input.supervisorName,
+  });
+  stages = await skipProjectReportingManagerWhenSameAsPm({
+    stages,
+    requesterCode: input.requesterCode,
+    supervisorName: input.supervisorName,
+    projectCode: input.projectCode,
   });
 
   return {

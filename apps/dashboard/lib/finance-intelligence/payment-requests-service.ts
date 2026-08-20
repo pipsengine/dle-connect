@@ -1,7 +1,7 @@
 import sql from 'mssql';
 import path from 'node:path';
 import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
-import { convertAmountToNgn, resolveApprovalChain, applyMdLineManagerLastApproverRule, bandRequiresMdCeo, isProjectPaymentPath } from '@/lib/finance-intelligence/approval-matrix-service';
+import { convertAmountToNgn, resolveApprovalChain, applyMdLineManagerLastApproverRule, applyProjectReportingManagerFirst, skipProjectReportingManagerWhenSameAsPm, stripLeadingReportingManager, isProjectChainWithoutReportingManager, bandRequiresMdCeo, isProjectPaymentPath } from '@/lib/finance-intelligence/approval-matrix-service';
 import {
   notifyPaymentApprovalRequired,
   notifyPaymentClarificationComment,
@@ -361,13 +361,13 @@ const resolveInitialStage = async (
   let matrixRuleName: string | null = null;
   if (isProject) {
     if (amountNgn <= 200000) {
-      fallbackStages = ['Project Manager', 'Cost Controller', 'Finance Manager'];
+      fallbackStages = ['Reporting Manager', 'Project Manager', 'Cost Controller', 'Finance Manager'];
       matrixRuleName = 'PROJ_LE_200K';
     } else if (amountNgn <= 5000000) {
-      fallbackStages = ['Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO'];
+      fallbackStages = ['Reporting Manager', 'Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO'];
       matrixRuleName = 'PROJ_LE_5M';
     } else {
-      fallbackStages = ['Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO', 'MD/CEO'];
+      fallbackStages = ['Reporting Manager', 'Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO', 'MD/CEO'];
       matrixRuleName = 'PROJ_GT_5M';
     }
   } else if (amountNgn <= 200000) {
@@ -380,12 +380,19 @@ const resolveInitialStage = async (
     fallbackStages = ['Reporting Manager', 'Finance Manager', 'CFO', 'MD/CEO'];
     matrixRuleName = 'NONPROJ_GT_1M';
   }
+  fallbackStages = applyProjectReportingManagerFirst(fallbackStages, isProject ? 'Project' : 'Non-project');
   fallbackStages = await applyMdLineManagerLastApproverRule({
     stages: fallbackStages,
     amountNgn,
     pathType: isProject ? 'Project' : 'Non-project',
     requesterCode: context?.requesterCode,
     supervisorName: context?.supervisorName,
+  });
+  fallbackStages = await skipProjectReportingManagerWhenSameAsPm({
+    stages: fallbackStages,
+    requesterCode: context?.requesterCode,
+    supervisorName: context?.supervisorName,
+    projectCode: context?.projectCode,
   });
   return {
     stage: fallbackStages[0],
@@ -807,11 +814,11 @@ const defaultStagesForPayment = (paymentType: string, projectCode?: string | nul
   const isProject = Boolean(compact(projectCode)) || /project/i.test(compact(department));
   if (isVendorPaymentType(paymentType)) {
     return isProject
-      ? ['Project Manager', 'Cost Controller', 'Finance Manager']
+      ? ['Reporting Manager', 'Project Manager', 'Cost Controller', 'Finance Manager']
       : ['Finance Manager'];
   }
   return isProject
-    ? ['Project Manager', 'Cost Controller', 'Finance Manager']
+    ? ['Reporting Manager', 'Project Manager', 'Cost Controller', 'Finance Manager']
     : ['Reporting Manager', 'Finance Manager'];
 };
 
@@ -899,15 +906,34 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
     || /seed|fallback/i.test(storedFxSource)
   );
 
+  const inFlightProjectWithoutRm = Boolean(
+    existing.length
+    && !/draft/i.test(compact(row.status))
+    && isProjectChainWithoutReportingManager(existing),
+  );
+  const matchedForRow = inFlightProjectWithoutRm && matchedStages
+    ? (() => {
+      const withoutRm = stripLeadingReportingManager(matchedStages);
+      const prefixMatches = existing.every((stage, index) =>
+        compact(stage).toLowerCase() === compact(withoutRm[index] || '').toLowerCase());
+      if (prefixMatches && withoutRm.length >= existing.length) {
+        return [...existing, ...withoutRm.slice(existing.length)];
+      }
+      return existing;
+    })()
+    : matchedStages;
+
+  const stageMismatch = matchedForRow != null && !stagesEqual(existing, matchedForRow);
+
   const needsRepair = existing.length === 0
     || onlyReportingManager
     || (row.paymentType === 'Cash Advance Payment' && existing.length > 0 && !hasFinanceManager)
-    || (matchedStages != null && !stagesEqual(existing, matchedStages))
+    || stageMismatch
     || needsFxRepair;
 
   if (!needsRepair) return existing;
 
-  let stages = matchedStages || existing;
+  let stages = matchedForRow || existing;
   if (!matchedStages) {
     stages = defaultStagesForPayment(row.paymentType, row.projectCode, row.department);
     if (existing[0] && !stages.some((stage) => stage.toLowerCase() === existing[0].toLowerCase())) {
