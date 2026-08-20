@@ -480,7 +480,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
 
   const exportExcel = () => {
     if (!payload?.permissions.canExport) return;
-    // Match Process Payroll: one workbook with Salaried Stipend + Daily Rate sheets.
+    // Match Process Payroll: one workbook with Salaries + Wages sheets.
     const params = new URLSearchParams({
       format: 'xls',
       report: 'salary-setup',

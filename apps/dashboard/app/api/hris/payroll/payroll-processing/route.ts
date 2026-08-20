@@ -133,7 +133,7 @@ export async function GET(request: Request) {
         worksheets: [{
           title: `Payroll Approval — ${payload.periodLabel || period}`,
           subtitle: `${payload.packLabel || payload.pack || 'Payroll'} · ${payload.records.length} employees`,
-          sheetName: payload.pack === 'daily-rate' ? 'Daily Rate' : 'Salaried Stipend',
+          sheetName: payload.pack === 'daily-rate' ? 'Wages' : 'Salaries',
           columns: headers,
           rows: exportRows(payload.records, extras),
         }],

@@ -491,8 +491,8 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
         ) : null}
         <div className="mt-3 flex flex-wrap gap-2">
           {(packSummaries.length ? packSummaries : [
-            { pack: 'salaried' as PayrollPack, packLabel: 'Salaried / Stipend', run: null, summary: payload?.summary, records: [], approvalWorkflow: undefined },
-            { pack: 'daily-rate' as PayrollPack, packLabel: 'Daily Rate', run: null, summary: payload?.summary, records: [], approvalWorkflow: undefined },
+            { pack: 'salaried' as PayrollPack, packLabel: 'Salaries', run: null, summary: payload?.summary, records: [], approvalWorkflow: undefined },
+            { pack: 'daily-rate' as PayrollPack, packLabel: 'Wages', run: null, summary: payload?.summary, records: [], approvalWorkflow: undefined },
           ]).map((item) => (
             <button
               key={item.pack}

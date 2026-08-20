@@ -277,7 +277,7 @@ export const notifyPayrollApprovalStage = async (input: {
       kind: 'Approval',
       module: 'Payroll Management',
       title: `Payroll approval required — ${input.run.periodLabel}`,
-      body: `${stage.title} review is required for ${input.run.periodLabel}. Gross ₦${input.run.grossPay.toLocaleString('en-NG')}, Net ₦${input.run.netPay.toLocaleString('en-NG')}, ${input.run.employeeCount} employees. Approvals are pack-specific (salaried vs daily-rate).`,
+      body: `${stage.title} review is required for ${input.run.periodLabel}. Gross ₦${input.run.grossPay.toLocaleString('en-NG')}, Net ₦${input.run.netPay.toLocaleString('en-NG')}, ${input.run.employeeCount} employees. Approvals are pack-specific (Salaries vs Wages).`,
       severity: 'warning',
       href: authorizeApproveUrl,
       actor: input.actor || 'Payroll Workflow',

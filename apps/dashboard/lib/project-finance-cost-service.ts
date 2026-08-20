@@ -431,7 +431,7 @@ export async function buildCCodeProjectFinanceCosts(
         Math.abs(payrollGrossTotal - allocatedLabourCost) <= 1
         && Math.abs(payrollNetTotal - allocatedNet) <= 1,
     },
-    basis: `Daily-rate payroll ${payrollPeriods.join(', ')} · booked timesheet hours only · matches Contract Daily Rate pack for that period`,
+    basis: `Daily-rate payroll ${payrollPeriods.join(', ')} · booked timesheet hours only · matches the Wages pack for that period`,
     payrollPeriods,
   };
 }

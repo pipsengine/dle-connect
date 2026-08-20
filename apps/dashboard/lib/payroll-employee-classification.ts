@@ -194,11 +194,10 @@ export type PayrollRunPack = 'salaried' | 'daily-rate';
 
 export const PAYROLL_RUN_PACKS: PayrollRunPack[] = ['salaried', 'daily-rate'];
 
-export const payrollRunPackLabel = (pack: PayrollRunPack) =>
-  pack === 'daily-rate' ? 'Contract Daily Rate' : 'Salaried / Stipend (Permanent, Lumpsum, NYSC/IT)';
-
 export const payrollRunPackShortLabel = (pack: PayrollRunPack) =>
-  pack === 'daily-rate' ? 'Daily Rate' : 'Salaried / Stipend';
+  pack === 'daily-rate' ? 'Wages' : 'Salaries';
+
+export const payrollRunPackLabel = payrollRunPackShortLabel;
 
 /** Daily-rate contracts → daily-rate pack; everyone else eligible for payroll → salaried pack. */
 export const resolvePayrollRunPackForEmployee = (

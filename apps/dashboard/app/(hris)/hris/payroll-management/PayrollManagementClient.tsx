@@ -1906,8 +1906,8 @@ function ProcessPayrollWorkspace({
   const rerunLabel = computedStatuses.includes(status) ? 'Re-run Payroll' : 'Run Payroll';
   const completedCount = workflowSteps.filter((step) => step.done).length;
   const packCards = ([
-    { pack: 'salaried' as const, packLabel: 'Salaried / Stipend' },
-    { pack: 'daily-rate' as const, packLabel: 'Daily Rate' },
+    { pack: 'salaried' as const, packLabel: 'Salaries' },
+    { pack: 'daily-rate' as const, packLabel: 'Wages' },
   ]).map((item) => {
     const run = (payload?.packRuns || []).find((row) => (row.pack || 'salaried') === item.pack && row.period === payload?.period)
       || (viewPack === item.pack ? currentRun : null);

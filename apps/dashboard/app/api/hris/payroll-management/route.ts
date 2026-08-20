@@ -384,7 +384,7 @@ export async function GET(request: Request) {
         batchId: `DRAFT-${payload.period}-${payload.pack || 'salaried'}`,
         period: payload.period,
         pack: payload.pack || 'salaried',
-        packLabel: payload.packLabel || 'Salaried / Stipend',
+        packLabel: payload.packLabel || 'Salaries',
         lines: journal.draft.lines,
         postedAt: null,
         postedBy: null,
@@ -500,8 +500,8 @@ export async function GET(request: Request) {
           );
         }
         const sheetName = packPayload.pack === 'daily-rate'
-          ? 'Daily Rate'
-          : (currencyScope === 'usd' || currencyScope === 'dle-usd' || currencyScope === 'dle_usd' ? 'DLE USD' : 'Salaried Stipend');
+          ? 'Wages'
+          : (currencyScope === 'usd' || currencyScope === 'dle-usd' || currencyScope === 'dle_usd' ? 'DLE USD' : 'Salaries');
         return {
           title: `${reportTitle(report)} - ${packPayload.periodLabel}`,
           subtitle: `${packPayload.packLabel || 'Payroll'} pack · ${sheetName} · ${packRecords.length} records · ${packPayload.summary.exceptionCount} exceptions`,

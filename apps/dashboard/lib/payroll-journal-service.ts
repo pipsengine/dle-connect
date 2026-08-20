@@ -483,7 +483,7 @@ const buildLinesFromTotals = (input: {
   const otherDeductions = roundMoney(loan + other + statutoryEe);
   const statutoryEr = sum(records, (row) => row.statutoryEmployer);
   const net = sum(records, (row) => row.netPay);
-  const department = input.pack === 'daily-rate' ? 'Contract Daily Rate' : 'Salaried / Stipend';
+  const department = payrollRunPackShortLabel(input.pack);
   const costCentre = 'PAYROLL';
 
   const pushLine = (
