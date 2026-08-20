@@ -1802,6 +1802,7 @@ function ProcessPayrollWorkspace({
   onSelectPack,
   onExportBothExcel,
   onExportDleUsdExcel,
+  notice,
 }: {
   payload: PayrollPayload | null;
   canViewMoney: boolean;
@@ -1819,6 +1820,7 @@ function ProcessPayrollWorkspace({
   onSelectPack?: (pack: 'salaried' | 'daily-rate') => void;
   onExportBothExcel?: () => void;
   onExportDleUsdExcel?: () => void;
+  notice?: string;
 }) {
   const [processView, setProcessView] = useState<'ready' | 'issues' | 'outputs' | 'audit'>('ready');
   const [registerQuery, setRegisterQuery] = useState('');
@@ -2149,6 +2151,9 @@ function ProcessPayrollWorkspace({
                 </button>
               ) : null}
             </div>
+            {notice ? (
+              <p className={`mt-3 text-sm font-bold ${/cannot|failed|complete|denied|required/i.test(notice) ? 'text-rose-700' : 'text-emerald-700'}`}>{notice}</p>
+            ) : null}
           </div>
         </section>
 
@@ -5501,7 +5506,7 @@ export default function PayrollManagementClient({
                 onPeriodAction={(action, period, reason) => void runAction(action, reason, period)}
               />
             ) : activeTab.id === 'payroll-run' ? (
-              <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} registerViewRequest={registerViewRequest} onRegisterViewRequestHandled={() => setRegisterViewRequest(null)} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack); }} viewPack={viewPack} onSelectPack={(pack) => { setViewPack(pack); void load(viewPeriod, pack); }} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} onExportDleUsdExcel={() => exportDleUsdExcel('payroll-register')} />
+              <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} registerViewRequest={registerViewRequest} onRegisterViewRequestHandled={() => setRegisterViewRequest(null)} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack); }} viewPack={viewPack} onSelectPack={(pack) => { setViewPack(pack); void load(viewPeriod, pack); }} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} onExportDleUsdExcel={() => exportDleUsdExcel('payroll-register')} notice={toast} />
             ) : (
               <FeaturePanel tab={activeTab} section={section} payload={payload} canViewMoney={canViewMoney} />
             )}
@@ -5667,7 +5672,7 @@ export default function PayrollManagementClient({
                   onPeriodAction={(action, period, reason) => void runAction(action, reason, period)}
                 />
               ) : (
-                <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack); }} viewPack={viewPack} onSelectPack={(pack) => { setViewPack(pack); void load(viewPeriod, pack); }} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} onExportDleUsdExcel={() => exportDleUsdExcel('payroll-register')} />
+                <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack); }} viewPack={viewPack} onSelectPack={(pack) => { setViewPack(pack); void load(viewPeriod, pack); }} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} onExportDleUsdExcel={() => exportDleUsdExcel('payroll-register')} notice={toast} />
               )
             ) : (
               <FeaturePanel tab={activeTab} section={section} payload={payload} canViewMoney={canViewMoney} />

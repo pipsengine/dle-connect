@@ -85,7 +85,7 @@ const payrollRunReadyToClose = (run: Pick<UnifiedPayrollRun, 'status' | 'release
     && run.status !== 'Closed';
 };
 
-/** Unused pack (typically Daily Rate never started) must not block closing a completed salaried period. */
+/** A pack that was never submitted/released does not block period close (e.g. Daily Rate computed but not processed). */
 const payrollRunIdleForPeriodClose = (run: Pick<UnifiedPayrollRun, 'status' | 'releasedAt' | 'submittedAt' | 'payslipsGeneratedAt' | 'bankScheduleGeneratedAt' | 'statutorySchedulesGeneratedAt' | 'employeeCount'>) => {
   const status = String(run.status || '');
   if (status === 'Closed') return true;
@@ -93,7 +93,7 @@ const payrollRunIdleForPeriodClose = (run: Pick<UnifiedPayrollRun, 'status' | 'r
   if (['Submitted', 'Under Review', 'HR Approved', 'Finance Approved', 'CFO Approved', 'Approved', 'Released', 'Published', 'Posted', 'Locked', 'Revision Requested'].includes(status)) {
     return false;
   }
-  return Number(run.employeeCount || 0) === 0;
+  return true;
 };
 
 const payrollRunSatisfiesPeriodClose = (run: Parameters<typeof payrollRunReadyToClose>[0] & Parameters<typeof payrollRunIdleForPeriodClose>[0]) =>
@@ -402,10 +402,11 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
   if (action === 'close-period' && packsToProcess.length > 1) {
     const periodRuns = await listPayrollRunsForPeriod(period);
     const targets = periodRuns.length ? periodRuns : await ensurePayrollRunsForPeriod(period, periodLabel, actor);
-    for (const item of targets) {
-      if (!payrollRunSatisfiesPeriodClose(item)) {
-        throw new Error(`Complete payslips, bank schedule, and statutory schedules for ${payrollRunPackShortLabel(resolvePayrollRunPack(item))} before closing (status: ${item.status}). Journal posting can follow later.`);
-      }
+    const blockers = targets.filter((item) => !payrollRunSatisfiesPeriodClose(item));
+    if (blockers.length) {
+      throw new Error(
+        `Cannot close ${period}. Finish payslips, bank schedule, and statutory schedules for ${blockers.map((item) => `${payrollRunPackShortLabel(resolvePayrollRunPack(item))} (${item.status})`).join(', ')}. Journal posting can follow later.`,
+      );
     }
     for (const item of targets) {
       if (item.status === 'Closed') {
