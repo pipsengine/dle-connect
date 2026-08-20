@@ -2468,15 +2468,20 @@ export const invalidateTimesheetHoursCacheForPeriod = (period?: string) => {
     .catch(() => undefined);
 };
 
-export async function buildTimesheetHoursMapForPayrollPeriod(period: string) {
+export async function buildTimesheetHoursMapForPayrollPeriod(
+  period: string,
+  options?: { ignoreDayrateScheduleOverride?: boolean },
+) {
   const periodId = period.startsWith('per-') ? period : `per-${period}`;
+  const periodToken = period.replace(/^per-/, '');
   const cached = timesheetHoursCache.get(periodId);
-  if (cached?.map && cached.expiresAt > Date.now()) return cached.map;
-  if (cached?.inFlight) return cached.inFlight;
 
-  const inFlight = (async () => {
-    const map = new Map<string, { daysWorked: number; bookedHours: number }>();
-    const periodToken = period.replace(/^per-/, '');
+  const loadRaw = async () => {
+    if (cached?.map && cached.expiresAt > Date.now()) return cached.map;
+    if (cached?.inFlight) return cached.inFlight;
+
+    const inFlight = (async () => {
+      const map = new Map<string, { daysWorked: number; bookedHours: number }>();
 
     try {
       const synthesized = await synthesizeTimesheetHoursForPeriod(periodId);
@@ -2517,16 +2522,28 @@ export async function buildTimesheetHoursMapForPayrollPeriod(period: string) {
       console.warn('[Timesheet] Payroll update feed unavailable:', error instanceof Error ? error.message : error);
     }
 
-    timesheetHoursCache.set(periodId, { expiresAt: Date.now() + TIMESHEET_HOURS_CACHE_MS, map });
-    return map;
-  })();
+      timesheetHoursCache.set(periodId, { expiresAt: Date.now() + TIMESHEET_HOURS_CACHE_MS, map });
+      return map;
+    })();
 
-  timesheetHoursCache.set(periodId, {
-    expiresAt: 0,
-    map: cached?.map ?? new Map(),
-    inFlight,
-  });
-  return inFlight;
+    timesheetHoursCache.set(periodId, {
+      expiresAt: 0,
+      map: cached?.map ?? new Map(),
+      inFlight,
+    });
+    return inFlight;
+  };
+
+  const raw = await loadRaw();
+  const copy = new Map(raw);
+  if (options?.ignoreDayrateScheduleOverride) return copy;
+  try {
+    const { applyDayrateScheduleOverrideToHoursMap } = await import('@/lib/dayrate-schedule-override-read');
+    applyDayrateScheduleOverrideToHoursMap(periodToken, copy);
+  } catch (error) {
+    console.warn('[Timesheet] Dayrate schedule override was not applied:', error instanceof Error ? error.message : error);
+  }
+  return copy;
 }
 
 export async function writeTimesheetPayrollUpdates(updates: TimesheetPayrollUpdate[]) {

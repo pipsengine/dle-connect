@@ -1111,6 +1111,14 @@ export default function TimesheetReportsClient() {
               </button>
               <button
                 type="button"
+                onClick={() => { window.location.href = '/hris/workforce-management/dayrate-schedule-reconcile'; }}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 text-xs font-black text-blue-800 hover:bg-blue-100"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                Dayrate Schedule
+              </button>
+              <button
+                type="button"
                 onClick={() => setShowColumnPicker((value) => !value)}
                 className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-black hover:bg-slate-50 ${showColumnPicker ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-700'}`}
               >

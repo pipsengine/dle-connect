@@ -13,6 +13,8 @@ import { activeLoansVersion, calculateLoanRecovery, loanInputsFromApplications, 
 import { syncLeaveAllowanceEventsForPayroll } from '@/lib/payroll-leave-allowance-store';
 import { normalizePayrollMatchKey, readSagePayrollPeriodTotals } from '@/lib/sage-people-payroll-store';
 import { buildTimesheetHoursMapForPayrollPeriod } from '@/lib/timesheet-entry-store';
+import { dayrateBookedHours } from '@/lib/dayrate-schedule-xlsx';
+import { findDayrateScheduleOverrideRow } from '@/lib/dayrate-schedule-override-read';
 import { normalizeBankSortCode, withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { payrollPeriodLabel } from '@/lib/payroll-period-store';
@@ -299,14 +301,18 @@ const applyDailyRateFromTimesheets = (
   if (!isDailyRatePayrollEmployee(employee, profileId) && !contractDayRateEmployee) return amounts;
 
   const timesheet = resolveTimesheetHoursForEmployee(employee, timesheetHours);
+  const excel = findDayrateScheduleOverrideRow(period, employee);
   let daysWorked = 0;
-  if (timesheet) {
+  if (excel) {
+    daysWorked = excel.weekdayDays > 0 ? excel.weekdayDays : 0;
+  } else if (timesheet) {
     daysWorked = timesheet.daysWorked > 0
       ? timesheet.daysWorked
       : (timesheet.bookedHours > 0 ? timesheet.bookedHours / rates.hoursPerDay : 0);
   }
   // Daily-rate staff are timesheet-driven only — no hoursPerPeriod / package fallback.
-  if (daysWorked <= 0) {
+  // An HR Excel overlay can still pay OT/weekend hours when weekday days are zero.
+  if (daysWorked <= 0 && !(excel && dayrateBookedHours(excel) > 0)) {
     return {
       ...amounts,
       periodPackageGross: 0,
@@ -326,9 +332,11 @@ const applyDailyRateFromTimesheets = (
   const merged = mergeTimesheetDayRateEarnings(employee, { ratePerDay, daysWorked, period });
   return {
     ...merged,
-    profileName: merged.profileName.includes('Sage Aligned')
-      ? 'Daily Rate (Timesheet Driven, Sage Aligned)'
-      : 'Daily Rate (Timesheet Driven)',
+    profileName: excel
+      ? 'Daily Rate (HR Dayrate Schedule Override)'
+      : merged.profileName.includes('Sage Aligned')
+        ? 'Daily Rate (Timesheet Driven, Sage Aligned)'
+        : 'Daily Rate (Timesheet Driven)',
   };
 };
 

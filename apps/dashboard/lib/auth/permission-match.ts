@@ -32,6 +32,7 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
   'operations.timesheets.view': [
     'page.hris.time-and-logs.timesheet-reports.view',
     'page.hris.time-and-logs.timesheet-recapture.view',
+    'page.hris.time-and-logs.dayrate-schedule-reconcile.view',
     'timesheet.view',
     'timesheet.export',
   ],

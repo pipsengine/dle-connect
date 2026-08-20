@@ -21,6 +21,8 @@ const titleOverrides: Record<string, string> = {
   '/hris/time-and-logs/timesheet-entry': 'Timesheet Entry',
   '/hris/time-and-logs/timesheet-review': 'Timesheet Review',
   '/hris/time-and-logs/timesheet-period': 'Timesheet Period',
+  '/hris/time-and-logs/dayrate-schedule-reconcile': 'Dayrate Payment Schedule',
+  '/hris/workforce-management/dayrate-schedule-reconcile': 'Dayrate Payment Schedule',
   '/hris/workforce-management/attendance': 'Attendance',
   '/hris/workforce-management/shift-and-scheduling': 'Shift & Scheduling',
   '/hris/workforce-management/time-tracking': 'Time Tracking',

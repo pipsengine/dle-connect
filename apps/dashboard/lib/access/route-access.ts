@@ -256,6 +256,17 @@ export const hrisRoutePermissionOptions = (pathname: string): string[] | null =>
       'timesheet.approve',
     ];
   }
+  if (path === '/hris/workforce-management/dayrate-schedule-reconcile' || path === '/hris/time-and-logs/dayrate-schedule-reconcile') {
+    return [
+      'page.hris.time-and-logs.dayrate-schedule-reconcile.view',
+      'page.hris.time-and-logs.timesheet-reports.view',
+      'operations.timesheets.view',
+      'timesheet.view',
+      'timesheet.hr.approve',
+      'timesheet.payroll.approve',
+      'payroll.view',
+    ];
+  }
   if (path === '/hris/workforce-management/crew-mobilization' || path === '/hris/time-and-logs/crew-mobilization') {
     return [
       'page.hris.time-and-logs.crew-mobilization.view',

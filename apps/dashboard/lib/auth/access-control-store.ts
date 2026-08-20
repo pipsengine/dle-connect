@@ -295,6 +295,7 @@ permissionCatalog.push(
   node('Page Access', 'Time & Logs', 'Timesheet Approval', 'Timesheet Approval Page', 'Page', 'L2 - Manager', 'Team', 'page.hris.time-and-logs.timesheet-approval'),
   node('Page Access', 'Time & Logs', 'Timesheet Reports', 'Timesheet Reports Page', 'Page', 'L2 - Manager', 'Company', 'page.hris.time-and-logs.timesheet-reports'),
   node('Page Access', 'Time & Logs', 'Timesheet Recapture', 'Timesheet Recapture Page', 'Page', 'L2 - Supervisor', 'Team', 'page.hris.time-and-logs.timesheet-recapture'),
+  node('Page Access', 'Time & Logs', 'Dayrate Payment Schedule', 'Dayrate Payment Schedule Page', 'Page', 'L2 - HR Admin', 'Company', 'page.hris.time-and-logs.dayrate-schedule-reconcile'),
   node('Page Access', 'Time & Logs', 'Crew Mobilization', 'Crew Mobilization Page', 'Page', 'L2 - HR Admin', 'Company', 'page.hris.time-and-logs.crew-mobilization'),
   node('Page Access', 'Time & Logs', 'Timesheet Period', 'Timesheet Period Page', 'Page', 'L2 - HR Admin', 'Company', 'page.hris.time-and-logs.timesheet-period'),
   node('Timesheet', 'Period Control', 'Timesheet Period Management', 'Open, Close, and Lock Timesheet Periods', 'Workflow', 'L2 - HR Admin', 'Company', 'timesheet.period'),

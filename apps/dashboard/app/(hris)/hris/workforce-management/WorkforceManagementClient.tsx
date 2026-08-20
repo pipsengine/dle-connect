@@ -68,6 +68,8 @@ const timesheetQuickLinks = [
   { label: 'Timesheet Period', href: '/hris/workforce-management/timesheet-period' },
   { label: 'Timesheet Approval', href: '/hris/workforce-management/timesheet-approval' },
   { label: 'Timesheet Reports', href: '/hris/workforce-management/timesheet-reports' },
+  { label: 'Timesheet Recapture', href: '/hris/workforce-management/timesheet-recapture' },
+  { label: 'Dayrate Payment Schedule', href: '/hris/workforce-management/dayrate-schedule-reconcile' },
   { label: 'Crew Mobilization', href: '/hris/workforce-management/crew-mobilization' },
 ];
 
@@ -859,6 +861,9 @@ function TimesheetAccess() {
     ['Timesheet Approval', 'Supervisor, project manager, HR, and payroll approval workflow.'],
     ['Timesheet Period', 'Open the current month period from the 16th of the previous month to the 15th of the current month.'],
     ['Timesheet Reports', 'Summary, employee, project, payroll hours, and reconciliation reports.'],
+    ['Timesheet Recapture', 'Find omitted days and reopen timesheets before payroll is submitted.'],
+    ['Dayrate Payment Schedule', 'Upload HR Excel and apply it as the C-code payroll overlay for the period.'],
+    ['Crew Mobilization', 'Mobilize day and night crews onto timesheets by supervisor and site.'],
   ]);
   return (
     <section className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
