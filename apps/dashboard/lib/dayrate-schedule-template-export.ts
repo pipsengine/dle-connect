@@ -1,9 +1,10 @@
 /**
  * Fill the official Dayrate Payment Schedule .xlsx template for payroll export.
+ * Uses Node zlib/ZIP only (no exceljs) so deploy:server -SkipInstall keeps working.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import ExcelJS from 'exceljs';
+import { deflateRawSync, inflateRawSync } from 'node:zlib';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
 import { loadDayrateAttendanceByEmpCode, resolveOfficialCompanyBucket } from '@/lib/payroll-official-excel-export';
@@ -77,10 +78,164 @@ export const resolveDayratePaymentScheduleTemplatePath = () => {
   return candidates.find((candidate) => existsSync(candidate)) || '';
 };
 
+const u16 = (buf: Buffer, offset: number) => buf.readUInt16LE(offset);
+const u32 = (buf: Buffer, offset: number) => buf.readUInt32LE(offset);
+
+const inflateEntry = (data: Buffer, compression: number, size: number) => {
+  if (compression === 0) return data.subarray(0, size);
+  if (compression === 8) return inflateRawSync(data);
+  throw new Error(`Unsupported ZIP compression method ${compression}.`);
+};
+
+const readZipEntries = (buffer: Buffer) => {
+  const out = new Map<string, Buffer>();
+  let eocd = -1;
+  for (let i = Math.max(0, buffer.length - 22 - 65535); i <= buffer.length - 22; i += 1) {
+    if (u32(buffer, i) === 0x06054b50) eocd = i;
+  }
+  if (eocd < 0) throw new Error('Dayrate template is not a valid .xlsx workbook.');
+  const cdOffset = u32(buffer, eocd + 16);
+  const cdEntries = u16(buffer, eocd + 10);
+  let offset = cdOffset;
+  for (let i = 0; i < cdEntries; i += 1) {
+    if (u32(buffer, offset) !== 0x02014b50) break;
+    const compression = u16(buffer, offset + 10);
+    const compSize = u32(buffer, offset + 20);
+    const uncompSize = u32(buffer, offset + 24);
+    const nameLen = u16(buffer, offset + 28);
+    const extraLen = u16(buffer, offset + 30);
+    const commentLen = u16(buffer, offset + 32);
+    const localOffset = u32(buffer, offset + 42);
+    const name = buffer.subarray(offset + 46, offset + 46 + nameLen).toString('utf8');
+    const localNameLen = u16(buffer, localOffset + 26);
+    const localExtraLen = u16(buffer, localOffset + 28);
+    const dataStart = localOffset + 30 + localNameLen + localExtraLen;
+    out.set(name.replace(/\\/g, '/'), inflateEntry(buffer.subarray(dataStart, dataStart + compSize), compression, uncompSize));
+    offset += 46 + nameLen + extraLen + commentLen;
+  }
+  return out;
+};
+
+const crc32Table = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let c = i;
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[i] = c >>> 0;
+  }
+  return table;
+})();
+
+const crc32 = (buf: Buffer) => {
+  let crc = 0xffffffff;
+  for (let i = 0; i < buf.length; i += 1) crc = crc32Table[(crc ^ buf[i]) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+};
+
+const writeZipStore = (files: Map<string, Buffer>) => {
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+  for (const [name, content] of files.entries()) {
+    const nameBuf = Buffer.from(name, 'utf8');
+    const compressed = deflateRawSync(content);
+    const useStore = compressed.length >= content.length;
+    const payload = useStore ? content : compressed;
+    const method = useStore ? 0 : 8;
+    const checksum = crc32(content);
+    const local = Buffer.alloc(30 + nameBuf.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0, 6);
+    local.writeUInt16LE(method, 8);
+    local.writeUInt16LE(0, 10);
+    local.writeUInt16LE(0, 12);
+    local.writeUInt32LE(checksum, 14);
+    local.writeUInt32LE(payload.length, 18);
+    local.writeUInt32LE(content.length, 22);
+    local.writeUInt16LE(nameBuf.length, 26);
+    local.writeUInt16LE(0, 28);
+    nameBuf.copy(local, 30);
+    const central = Buffer.alloc(46 + nameBuf.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0, 8);
+    central.writeUInt16LE(method, 10);
+    central.writeUInt16LE(0, 12);
+    central.writeUInt16LE(0, 14);
+    central.writeUInt32LE(checksum, 16);
+    central.writeUInt32LE(payload.length, 20);
+    central.writeUInt32LE(content.length, 24);
+    central.writeUInt16LE(nameBuf.length, 28);
+    central.writeUInt16LE(0, 30);
+    central.writeUInt16LE(0, 32);
+    central.writeUInt16LE(0, 34);
+    central.writeUInt16LE(0, 36);
+    central.writeUInt32LE(0, 38);
+    central.writeUInt32LE(offset, 42);
+    nameBuf.copy(central, 46);
+    locals.push(local, payload);
+    centrals.push(central);
+    offset += local.length + payload.length;
+  }
+  const centralDir = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(0, 4);
+  end.writeUInt16LE(0, 6);
+  end.writeUInt16LE(centrals.length, 8);
+  end.writeUInt16LE(centrals.length, 10);
+  end.writeUInt32LE(centralDir.length, 12);
+  end.writeUInt32LE(offset, 16);
+  end.writeUInt16LE(0, 20);
+  return Buffer.concat([...locals, centralDir, end]);
+};
+
 const officialEmployeeCode = (record: Pick<PayrollCalculationRecord, 'employeeCode' | 'employeeId'>) => {
   const code = compact(record.employeeCode || record.employeeId).toUpperCase();
   const match = code.match(/\b(C\d{3,})\b/);
   return match?.[1] || code;
+};
+
+const escapeXml = (value: unknown) =>
+  String(value ?? '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+const colLetter = (index: number) => {
+  let n = index;
+  let out = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+};
+
+const cellXml = (ref: string, value: string | number | null | undefined) => {
+  if (value == null || value === '') return `<c r="${ref}"/>`;
+  if (typeof value === 'number' && Number.isFinite(value)) return `<c r="${ref}"><v>${value}</v></c>`;
+  return `<c r="${ref}" t="inlineStr"><is><t>${escapeXml(value)}</t></is></c>`;
+};
+
+const rowXml = (rowNumber: number, values: Array<string | number | null | undefined>) => {
+  const cells = values.map((value, index) => cellXml(`${colLetter(index + 1)}${rowNumber}`, value)).join('');
+  return `<row r="${rowNumber}">${cells}</row>`;
+};
+
+const replaceSheetData = (sheetXml: string, sheetDataInner: string, dimension: string) => {
+  let next = sheetXml.replace(/<dimension\b[^>]*\/>/i, `<dimension ref="${dimension}"/>`);
+  if (/<sheetData\b[^>]*>[\s\S]*?<\/sheetData>/i.test(next)) {
+    next = next.replace(/<sheetData\b[^>]*>[\s\S]*?<\/sheetData>/i, `<sheetData>${sheetDataInner}</sheetData>`);
+  } else {
+    next = next.replace(/<sheetData\b[^>]*\/>/i, `<sheetData>${sheetDataInner}</sheetData>`);
+  }
+  return next;
 };
 
 const splitName = (fullName: string, firstName?: string | null, lastName?: string | null) => {
@@ -234,18 +389,20 @@ const buildDetailRows = async (
   };
 };
 
-const clearSheetFromRow = (sheet: ExcelJS.Worksheet, startRow: number) => {
-  if (sheet.rowCount < startRow) return;
-  sheet.spliceRows(startRow, sheet.rowCount - startRow + 1);
-};
+const DLE_HEADERS = [
+  'Emp. Code', 'First Name', 'Last Name', 'Job Title', 'Location', 'Daily Rate', 'AGE', 'Gender',
+  'Total Weekday', 'Weekday OVT', 'Total Saturday', 'Total Sunday', 'Night Worked',
+  'Wkd Earning', 'Wkd Ovt Amt', 'Sat Ovt Amt', 'Sun Ovt Amt', 'Night Amt',
+  'Meal Allowance', 'Transport', 'Site Allowance', 'TCM Meal', 'TCM TRANSPORT', 'Arrears',
+  'Total Earnings', 'WHT', 'Gross Salary', 'Net Pay',
+];
 
-const writeRow = (sheet: ExcelJS.Worksheet, rowNumber: number, values: Array<string | number | null | undefined>) => {
-  const row = sheet.getRow(rowNumber);
-  values.forEach((value, index) => {
-    row.getCell(index + 1).value = value == null || value === '' ? null : value;
-  });
-  row.commit();
-};
+const DLPC_HEADERS = [
+  'Emp. Code', 'First Name', 'Last Name', 'Job Title', 'Daily Rate', 'Age', 'Gender',
+  'Total Weekday', 'Weekday OVT', 'Total Saturday', 'Total Sunday', 'Public Holiday', 'Night Worked',
+  'Wkd Earning', 'Wkd Ovt Amt', 'Sat Ovt Amt', 'Sun Ovt Amt', 'PH Amt', 'Night Amt',
+  'Meal Allowance', 'Transport', 'Total Earnings', 'WHT', 'Gross Salary', 'Net Pay',
+];
 
 export const buildDayratePaymentScheduleXlsx = async (input: {
   period: string;
@@ -255,89 +412,80 @@ export const buildDayratePaymentScheduleXlsx = async (input: {
 }) => {
   const templatePath = resolveDayratePaymentScheduleTemplatePath();
   if (!templatePath) throw new Error('Dayrate Payment Schedule template was not found.');
-
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(readFileSync(templatePath));
+  const entries = readZipEntries(readFileSync(templatePath));
   const { dle, dlpc } = await buildDetailRows(input.records, input.period, input.directoryEmployees || []);
   const title = scheduleTitleForSheet(input.period, input.periodLabel);
 
-  const summary = workbook.getWorksheet('SUMMARY') || workbook.worksheets[0];
-  const dleSheet = workbook.getWorksheet('DLE') || workbook.worksheets[1];
-  const dlpcSheet = workbook.getWorksheet('DLPC') || workbook.worksheets[2];
-  const dleBank = workbook.getWorksheet('DLE BANK SCHD') || workbook.worksheets[3];
-  const dlpcBank = workbook.getWorksheet('DLPC.BANK.SCHD') || workbook.worksheets[4];
-
-  if (summary) {
-    summary.getCell('A1').value = title;
-    clearSheetFromRow(summary, 4);
-    writeRow(summary, 4, ['DLE', dle.length, roundMoney(dle.reduce((s, r) => s + r.totalEarnings, 0)), roundMoney(dle.reduce((s, r) => s + r.netPay, 0))]);
-    writeRow(summary, 5, ['DLPC', dlpc.length, roundMoney(dlpc.reduce((s, r) => s + r.totalEarnings, 0)), roundMoney(dlpc.reduce((s, r) => s + r.netPay, 0))]);
-    writeRow(summary, 6, [
+  const summaryInner = [
+    rowXml(1, [title]),
+    rowXml(3, ['COMPANY', 'HEADCOUNT', 'GROSS PAY', 'NET PAY']),
+    rowXml(4, ['DLE', dle.length, roundMoney(dle.reduce((s, r) => s + r.totalEarnings, 0)), roundMoney(dle.reduce((s, r) => s + r.netPay, 0))]),
+    rowXml(5, ['DLPC', dlpc.length, roundMoney(dlpc.reduce((s, r) => s + r.totalEarnings, 0)), roundMoney(dlpc.reduce((s, r) => s + r.netPay, 0))]),
+    rowXml(6, [
       'Total',
       dle.length + dlpc.length,
       roundMoney([...dle, ...dlpc].reduce((s, r) => s + r.totalEarnings, 0)),
       roundMoney([...dle, ...dlpc].reduce((s, r) => s + r.netPay, 0)),
-    ]);
+    ]),
+  ].join('');
+
+  const dleInner = [
+    rowXml(1, DLE_HEADERS),
+    ...dle.map((row, index) => rowXml(index + 2, [
+      row.code, row.firstName, row.lastName, row.jobTitle, row.location, row.dailyRate, row.age, row.gender,
+      row.weekDays, row.weekdayOvtHrs, row.satHrs, row.sunHrs, row.nightDays,
+      row.wkdEarning, row.wkdOvtAmt, row.satAmt, row.sunAmt, row.nightAmt,
+      row.meal, row.transport || '', row.site || '', row.tcmMeal || '', row.tcmTransport || '', row.arrears || '',
+      row.totalEarnings, row.wht, row.totalEarnings, row.netPay,
+    ])),
+  ].join('');
+
+  const dlpcInner = [
+    rowXml(1, DLPC_HEADERS),
+    ...dlpc.map((row, index) => rowXml(index + 2, [
+      row.code, row.firstName, row.lastName, row.jobTitle, row.dailyRate, row.age, row.gender,
+      row.weekDays, row.weekdayOvtHrs, row.satHrs, row.sunHrs, row.phHrs, row.nightDays,
+      row.wkdEarning, row.wkdOvtAmt, row.satAmt, row.sunAmt, row.phAmt, row.nightAmt,
+      row.meal, row.transport, row.totalEarnings, row.wht, row.totalEarnings, row.netPay,
+    ])),
+  ].join('');
+
+  const dleBankInner = [
+    rowXml(1, ['Employee Bank Details']),
+    rowXml(2, ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary']),
+    ...dle.filter((row) => row.netPay !== 0 || row.accountNo).map((row, index) => rowXml(index + 3, [
+      row.code, `${row.lastName} ${row.firstName}`.trim(), row.bankName, row.accountNo, row.sortCode, row.netPay,
+    ])),
+  ].join('');
+
+  const dlpcBankInner = [
+    rowXml(1, ['Employee Bank Details']),
+    rowXml(2, ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location']),
+    ...dlpc.filter((row) => row.netPay !== 0 || row.accountNo).map((row, index) => rowXml(index + 3, [
+      row.code, `${row.lastName} ${row.firstName}`.trim(), row.bankName, row.accountNo, row.sortCode, row.netPay, row.location,
+    ])),
+  ].join('');
+
+  const sheetMap = [
+    { path: 'xl/worksheets/sheet1.xml', inner: summaryInner, dimension: 'A1:D6' },
+    { path: 'xl/worksheets/sheet2.xml', inner: dleInner, dimension: `A1:AB${Math.max(2, dle.length + 1)}` },
+    { path: 'xl/worksheets/sheet3.xml', inner: dlpcInner, dimension: `A1:Y${Math.max(2, dlpc.length + 1)}` },
+    { path: 'xl/worksheets/sheet4.xml', inner: dleBankInner, dimension: `A1:F${Math.max(3, dle.length + 2)}` },
+    { path: 'xl/worksheets/sheet5.xml', inner: dlpcBankInner, dimension: `A1:G${Math.max(3, dlpc.length + 2)}` },
+  ];
+
+  for (const sheet of sheetMap) {
+    const current = entries.get(sheet.path);
+    if (!current) continue;
+    entries.set(sheet.path, Buffer.from(replaceSheetData(current.toString('utf8'), sheet.inner, sheet.dimension), 'utf8'));
   }
 
-  if (dleSheet) {
-    clearSheetFromRow(dleSheet, 2);
-    dle.forEach((row, index) => {
-      writeRow(dleSheet, index + 2, [
-        row.code, row.firstName, row.lastName, row.jobTitle, row.location, row.dailyRate, row.age, row.gender,
-        row.weekDays, row.weekdayOvtHrs, row.satHrs, row.sunHrs, row.nightDays,
-        row.wkdEarning, row.wkdOvtAmt, row.satAmt, row.sunAmt, row.nightAmt,
-        row.meal, row.transport || null, row.site || null, row.tcmMeal || null, row.tcmTransport || null, row.arrears || null,
-        row.totalEarnings, row.wht, row.totalEarnings, row.netPay,
-      ]);
-    });
-  }
+  // Drop cached formula chain so Excel recalculates cleanly after data rewrite.
+  entries.delete('xl/calcChain.xml');
 
-  if (dlpcSheet) {
-    clearSheetFromRow(dlpcSheet, 2);
-    dlpc.forEach((row, index) => {
-      writeRow(dlpcSheet, index + 2, [
-        row.code, row.firstName, row.lastName, row.jobTitle, row.dailyRate, row.age, row.gender,
-        row.weekDays, row.weekdayOvtHrs, row.satHrs, row.sunHrs, row.phHrs, row.nightDays,
-        row.wkdEarning, row.wkdOvtAmt, row.satAmt, row.sunAmt, row.phAmt, row.nightAmt,
-        row.meal, row.transport, row.totalEarnings, row.wht, row.totalEarnings, row.netPay,
-      ]);
-    });
-  }
-
-  if (dleBank) {
-    clearSheetFromRow(dleBank, 3);
-    dle.filter((row) => row.netPay !== 0 || row.accountNo).forEach((row, index) => {
-      writeRow(dleBank, index + 3, [
-        row.code,
-        `${row.lastName} ${row.firstName}`.trim(),
-        row.bankName,
-        row.accountNo,
-        row.sortCode,
-        row.netPay,
-      ]);
-    });
-  }
-
-  if (dlpcBank) {
-    clearSheetFromRow(dlpcBank, 3);
-    dlpc.filter((row) => row.netPay !== 0 || row.accountNo).forEach((row, index) => {
-      writeRow(dlpcBank, index + 3, [
-        row.code,
-        `${row.lastName} ${row.firstName}`.trim(),
-        row.bankName,
-        row.accountNo,
-        row.sortCode,
-        row.netPay,
-        row.location,
-      ]);
-    });
-  }
-
-  const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
   return {
     fileName: dayratePaymentScheduleFileName(input.period, input.periodLabel),
-    buffer,
+    buffer: writeZipStore(entries),
     templatePath,
     counts: { dle: dle.length, dlpc: dlpc.length },
   };
