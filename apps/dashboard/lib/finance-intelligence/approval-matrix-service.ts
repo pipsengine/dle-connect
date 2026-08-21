@@ -813,8 +813,17 @@ export const isMdCeoEmployee = (employee?: {
 } | null) => {
   if (!employee) return false;
   const code = compact(employee.employeeCode || employee.employeeId).toUpperCase();
-  if (code === 'P0413') return true;
+  if (code === 'P0413' || code === '0413') return true;
   const title = compact(employee.jobTitle || employee.designation);
+  if (!title) return false;
+  // EAs / PAs / secretaries "to MD/CEO" must never be treated as the MD seat.
+  if (/\b(to|for)\s+(the\s+)?(md|managing\s*director|ceo)\b/i.test(title)) return false;
+  if (
+    /\b(pa|ea|p\.?a\.?|e\.?a\.?|personal\s+assistant|executive\s+assistant|secretary)\b/i.test(title)
+    && /\b(md|managing\s*director|ceo)\b/i.test(title)
+  ) {
+    return false;
+  }
   return /managing\s*director/i.test(title)
     || /\bmd\s*\/?\s*ceo\b/i.test(title)
     || /^md$/i.test(title);
