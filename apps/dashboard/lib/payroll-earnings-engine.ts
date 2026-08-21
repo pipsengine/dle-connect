@@ -1,5 +1,4 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import path from 'node:path';
 import { payeTaxableFromPayrollEarnings } from '@/lib/payroll-sage-pay-rules';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { contractEmployeeCode, isDailyRatePayrollEmployee, isContractStyleEarningLine, isPermanentPayrollEmployee } from '@/lib/payroll-employee-classification';
@@ -17,6 +16,11 @@ import {
   findDayrateScheduleOverrideRow,
   isHrDayrateScheduleOverrideSource,
 } from '@/lib/dayrate-schedule-override-read';
+import {
+  hrisDataFileCandidates,
+  hrisDataFileMtime,
+  resolvePreferredHrisDataFile,
+} from '@/lib/hris-data-paths';
 
 export type PayrollEarningProfileId =
   | 'junior-permanent'
@@ -151,15 +155,8 @@ const effectivePayrollGrade = (employee: Pick<DleEmployeeDirectoryRow, 'salaryGr
 };
 
 const titleCase = (value: string) => value.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
-const resolveDashboardRoot = () => {
-  const cwd = process.cwd();
-  const dashboardSuffix = path.join('apps', 'dashboard');
-  return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
-};
-const PERIOD_ADJUSTMENTS_PATH = process.env.DLE_PAYROLL_EARNING_ADJUSTMENTS_PATH
-  || (process.env.DLE_HRIS_DATA_DIR ? path.join(process.env.DLE_HRIS_DATA_DIR, 'payroll-period-earning-adjustments.json') : '')
-  || path.join(resolveDashboardRoot(), 'data', 'hris', 'payroll-period-earning-adjustments.json');
-let periodAdjustmentCache: { mtime: number; rows: PayrollPeriodEarningAdjustment[] } | null = null;
+const PERIOD_ADJUSTMENTS_FILE = 'payroll-period-earning-adjustments.json';
+let periodAdjustmentCache: { mtime: number; rows: PayrollPeriodEarningAdjustment[]; path: string } | null = null;
 const normalizedPeriod = (period?: string) => compact(period).replace(/\//g, '-').slice(0, 7);
 const normalizedEmployeeKey = (value: unknown) => compact(value).toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^P(?=\d+$)/, '');
 
@@ -217,14 +214,28 @@ const STANDARD_PROFILE_EARNING_CODES = new Set([
 ]);
 const readPeriodEarningAdjustmentsSync = () => {
   try {
-    if (!existsSync(PERIOD_ADJUSTMENTS_PATH)) return [];
-    const stat = statSync(PERIOD_ADJUSTMENTS_PATH) as { mtimeMs: number };
-    if (periodAdjustmentCache && periodAdjustmentCache.mtime === stat.mtimeMs) return periodAdjustmentCache.rows;
-    const parsed = JSON.parse(readFileSync(PERIOD_ADJUSTMENTS_PATH, 'utf8'));
-    const rows = Array.isArray(parsed) ? parsed as PayrollPeriodEarningAdjustment[] : [];
-    periodAdjustmentCache = { mtime: stat.mtimeMs, rows };
+    const mtime = hrisDataFileMtime(PERIOD_ADJUSTMENTS_FILE, process.env.DLE_PAYROLL_EARNING_ADJUSTMENTS_PATH);
+    if (periodAdjustmentCache && periodAdjustmentCache.mtime === mtime && mtime > 0) {
+      return periodAdjustmentCache.rows;
+    }
+    let best: { mtime: number; rows: PayrollPeriodEarningAdjustment[]; path: string } | null = null;
+    const candidates = Array.from(new Set([
+      resolvePreferredHrisDataFile(PERIOD_ADJUSTMENTS_FILE, process.env.DLE_PAYROLL_EARNING_ADJUSTMENTS_PATH),
+      ...hrisDataFileCandidates(PERIOD_ADJUSTMENTS_FILE),
+    ].filter(Boolean)));
+    for (const candidate of candidates) {
+      if (!existsSync(candidate)) continue;
+      const stat = statSync(candidate) as { mtimeMs: number };
+      const parsed = JSON.parse(readFileSync(candidate, 'utf8'));
+      const rows = Array.isArray(parsed) ? parsed as PayrollPeriodEarningAdjustment[] : [];
+      if (!best || stat.mtimeMs >= best.mtime) {
+        best = { mtime: stat.mtimeMs, rows, path: candidate };
+      }
+    }
+    if (!best) return [];
+    periodAdjustmentCache = best;
     periodRowsByPeriodCache = null;
-    return rows;
+    return best.rows;
   } catch {
     return [];
   }

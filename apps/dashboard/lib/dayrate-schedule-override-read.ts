@@ -3,8 +3,11 @@
  * payroll earnings engine can look up an override without circular imports.
  */
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import path from 'node:path';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import {
+  hrisDataFileCandidates,
+  resolvePreferredHrisDataFile,
+} from '@/lib/hris-data-paths';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import {
   canonicalContractEmployeeCode,
@@ -32,31 +35,39 @@ const compact = (value: unknown) => String(value || '').trim();
 const round1 = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 10) / 10;
 const normalizePeriod = (value?: string | null) => compact(value).replace(/\//g, '-').replace(/^per-/i, '').slice(0, 7);
 
-const resolveDashboardRoot = () => {
-  const cwd = process.cwd();
-  const dashboardSuffix = path.join('apps', 'dashboard');
-  return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
-};
+const OVERRIDE_FILE = 'dayrate-schedule-overrides.json';
 
-const OVERRIDE_PATH = process.env.DLE_DAYRATE_SCHEDULE_OVERRIDE_PATH
-  || (process.env.DLE_HRIS_DATA_DIR ? path.join(process.env.DLE_HRIS_DATA_DIR, 'dayrate-schedule-overrides.json') : '')
-  || path.join(resolveDashboardRoot(), 'data', 'hris', 'dayrate-schedule-overrides.json');
-
-let overrideCache: { mtime: number; file: OverrideFile } | null = null;
+let overrideCache: { mtime: number; file: OverrideFile; path: string } | null = null;
 
 const emptyFile = (): OverrideFile => ({ overrides: [] });
 
-export const dayrateScheduleOverridePath = () => OVERRIDE_PATH;
+const overrideCandidates = () =>
+  Array.from(new Set([
+    resolvePreferredHrisDataFile(OVERRIDE_FILE, process.env.DLE_DAYRATE_SCHEDULE_OVERRIDE_PATH),
+    ...hrisDataFileCandidates(OVERRIDE_FILE),
+  ].filter(Boolean)));
+
+export const dayrateScheduleOverridePath = () =>
+  resolvePreferredHrisDataFile(OVERRIDE_FILE, process.env.DLE_DAYRATE_SCHEDULE_OVERRIDE_PATH);
 
 export const readDayrateScheduleOverrideFileSync = (): OverrideFile => {
   try {
-    if (!existsSync(OVERRIDE_PATH)) return emptyFile();
-    const stat = statSync(OVERRIDE_PATH) as { mtimeMs: number };
-    if (overrideCache && overrideCache.mtime === stat.mtimeMs) return overrideCache.file;
-    const parsed = JSON.parse(readFileSync(OVERRIDE_PATH, 'utf8')) as OverrideFile;
-    const file = Array.isArray(parsed?.overrides) ? parsed : emptyFile();
-    overrideCache = { mtime: stat.mtimeMs, file };
-    return file;
+    let best: { mtime: number; file: OverrideFile; path: string } | null = null;
+    for (const candidate of overrideCandidates()) {
+      if (!existsSync(candidate)) continue;
+      const stat = statSync(candidate) as { mtimeMs: number };
+      if (overrideCache && overrideCache.path === candidate && overrideCache.mtime === stat.mtimeMs) {
+        return overrideCache.file;
+      }
+      const parsed = JSON.parse(readFileSync(candidate, 'utf8')) as OverrideFile;
+      const file = Array.isArray(parsed?.overrides) ? parsed : emptyFile();
+      if (!best || stat.mtimeMs >= best.mtime) {
+        best = { mtime: stat.mtimeMs, file, path: candidate };
+      }
+    }
+    if (!best) return emptyFile();
+    overrideCache = best;
+    return best.file;
   } catch {
     return emptyFile();
   }

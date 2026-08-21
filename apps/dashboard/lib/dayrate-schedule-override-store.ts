@@ -1,5 +1,3 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { isDailyRatePayrollEmployee } from '@/lib/payroll-employee-classification';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
@@ -10,8 +8,9 @@ import {
 } from '@/lib/payroll-timesheet-night-allowance-posting';
 import {
   removePayrollPeriodEarningAdjustments,
-  upsertPayrollPeriodEarningAdjustment,
+  replacePayrollPeriodEarningAdjustmentsForSource,
 } from '@/lib/payroll-period-earning-adjustments-store';
+import { writeHrisDataFile } from '@/lib/hris-data-paths';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import {
   canonicalContractEmployeeCode,
@@ -21,9 +20,7 @@ import {
 } from '@/lib/dayrate-schedule-xlsx';
 import {
   clearDayrateScheduleOverrideReadCache,
-  dayrateScheduleOverridePath,
   HR_DAYRATE_SCHEDULE_OVERRIDE_SOURCE,
-  readAppliedDayrateScheduleOverride,
   readDayrateScheduleOverrideFileSync,
   type DayrateScheduleOverrideRecord,
 } from '@/lib/dayrate-schedule-override-read';
@@ -78,9 +75,11 @@ const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value
 const compact = (value: unknown) => String(value || '').trim();
 
 const writeOverrideFile = async (file: { overrides: DayrateScheduleOverrideRecord[] }) => {
-  const filePath = dayrateScheduleOverridePath();
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${JSON.stringify(file, null, 2)}\n`, 'utf8');
+  await writeHrisDataFile(
+    'dayrate-schedule-overrides.json',
+    `${JSON.stringify(file, null, 2)}\n`,
+    process.env.DLE_DAYRATE_SCHEDULE_OVERRIDE_PATH,
+  );
   clearDayrateScheduleOverrideReadCache();
 };
 
@@ -225,28 +224,6 @@ export const buildDayrateScheduleReconcile = (
   };
 };
 
-const upsertAdjustment = async (input: {
-  period: string;
-  employeeCode: string;
-  employeeName: string;
-  code: string;
-  name: string;
-  amount: number;
-  taxable: boolean;
-}) => {
-  if (roundMoney(input.amount) <= 0) return;
-  await upsertPayrollPeriodEarningAdjustment({
-    period: input.period,
-    employeeCode: input.employeeCode,
-    employeeId: input.employeeCode,
-    code: input.code,
-    name: input.name,
-    amount: roundMoney(input.amount),
-    taxable: input.taxable,
-    source: HR_DAYRATE_SCHEDULE_OVERRIDE_SOURCE,
-  });
-};
-
 export const previewDayrateScheduleWorkbook = async (input: {
   period: string;
   workbook: Buffer;
@@ -277,63 +254,86 @@ export const applyDayrateScheduleOverride = async (input: {
   });
   if (!payableRows.length) throw new Error('No payable daily-rate C-codes in this workbook.');
 
-  await removePayrollPeriodEarningAdjustments({ period, source: HR_DAYRATE_SCHEDULE_OVERRIDE_SOURCE });
-  for (const row of payableRows) {
-    await upsertAdjustment({
+  const adjustmentRows: Array<{
+    period: string;
+    employeeCode: string;
+    employeeId: string;
+    code: string;
+    name: string;
+    amount: number;
+    taxable: boolean;
+    source: string;
+  }> = [];
+  const pushAdjustment = (row: {
+    employeeCode: string;
+    code: string;
+    name: string;
+    amount: number;
+    taxable: boolean;
+  }) => {
+    if (roundMoney(row.amount) <= 0) return;
+    adjustmentRows.push({
       period,
       employeeCode: row.employeeCode,
-      employeeName: row.employeeName,
+      employeeId: row.employeeCode,
+      code: row.code,
+      name: row.name,
+      amount: roundMoney(row.amount),
+      taxable: row.taxable,
+      source: HR_DAYRATE_SCHEDULE_OVERRIDE_SOURCE,
+    });
+  };
+
+  for (const row of payableRows) {
+    pushAdjustment({
+      employeeCode: row.employeeCode,
       code: NIGHT_ALLOWANCE_CODE,
       name: NIGHT_ALLOWANCE_NAME,
       amount: row.nightAmt,
       taxable: true,
     });
-    await upsertAdjustment({
-      period,
+    pushAdjustment({
       employeeCode: row.employeeCode,
-      employeeName: row.employeeName,
       code: 'SITE_ALLOW',
       name: 'SITE ALLOWANCE',
       amount: row.siteAllowance,
       taxable: true,
     });
-    await upsertAdjustment({
-      period,
+    pushAdjustment({
       employeeCode: row.employeeCode,
-      employeeName: row.employeeName,
       code: 'TCMMEAL',
       name: 'TCM MEAL',
       amount: row.tcmMeal,
       taxable: true,
     });
-    await upsertAdjustment({
-      period,
+    pushAdjustment({
       employeeCode: row.employeeCode,
-      employeeName: row.employeeName,
       code: 'TCMTRANS',
       name: 'TCM TRANSPORT',
       amount: row.tcmTransport,
       taxable: true,
     });
-    await upsertAdjustment({
-      period,
+    pushAdjustment({
       employeeCode: row.employeeCode,
-      employeeName: row.employeeName,
       code: 'TRANSPORT',
       name: 'TRANSPORT',
       amount: row.transport,
       taxable: true,
     });
-    await upsertAdjustment({
-      period,
+    pushAdjustment({
       employeeCode: row.employeeCode,
-      employeeName: row.employeeName,
       code: 'ARREARS',
       name: 'ARREARS',
       amount: row.arrears,
       taxable: true,
     });
   }
+
+  await replacePayrollPeriodEarningAdjustmentsForSource({
+    period,
+    source: HR_DAYRATE_SCHEDULE_OVERRIDE_SOURCE,
+    rows: adjustmentRows,
+  });
 
   const next: DayrateScheduleOverrideRecord = {
     period,

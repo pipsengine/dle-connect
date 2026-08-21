@@ -1,12 +1,15 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
 import { isLeaveAllowancePaymentCode } from '@/lib/leave-allowance-policy';
 import { normalizePayrollPeriod } from '@/lib/payroll-leave-allowance-store';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
 import { isEnterprisePayrollPeriod, isSagePayrollRuntimeEnabled } from '@/lib/payroll-enterprise-source';
 import { isSagePayeRefundEarning, shouldUseSagePayeRefundEarnings } from '@/lib/payroll-refund-policy';
 import { invalidateEssPortalCache } from '@/lib/ess-portal-cache';
+import {
+  hrisDataFileMtime,
+  readHrisDataFile,
+  resolvePreferredHrisDataFile,
+  writeHrisDataFile,
+} from '@/lib/hris-data-paths';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { isContractStyleEarningLine, isPermanentPayrollEmployee, permanentStyleSageEarnings } from '@/lib/payroll-employee-classification';
 import {
@@ -49,15 +52,11 @@ const STANDARD_PROFILE_EARNING_CODES = new Set([
   'STIPEND_NT', 'BASIC', 'ALLOWANCE', 'ARREARS', 'LTI', 'LT',
 ]);
 
-const resolveDashboardRoot = () => {
-  const cwd = process.cwd();
-  const dashboardSuffix = path.join('apps', 'dashboard');
-  return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
-};
+const ADJUSTMENTS_FILE = 'payroll-period-earning-adjustments.json';
+const preferredAdjustmentsPath = () =>
+  resolvePreferredHrisDataFile(ADJUSTMENTS_FILE, process.env.DLE_PAYROLL_EARNING_ADJUSTMENTS_PATH);
 
-const ADJUSTMENTS_PATH = process.env.DLE_PAYROLL_EARNING_ADJUSTMENTS_PATH
-  || (process.env.DLE_HRIS_DATA_DIR ? path.join(process.env.DLE_HRIS_DATA_DIR, 'payroll-period-earning-adjustments.json') : '')
-  || path.join(resolveDashboardRoot(), 'data', 'hris', 'payroll-period-earning-adjustments.json');
+let onAdjustmentsChanged: ((period: string) => void) | null = null;
 
 export const isSupplementalSageEarningCode = (code?: string | null) => {
   const normalized = compact(code).toUpperCase();
@@ -132,17 +131,51 @@ export const periodEarningAdjustmentsForPeriod = async (period?: string, source?
 
 export const readPayrollPeriodEarningAdjustments = async (): Promise<PayrollPeriodEarningAdjustment[]> => {
   try {
-    const parsed = JSON.parse(await readFile(ADJUSTMENTS_PATH, 'utf8'));
+    const found = await readHrisDataFile(ADJUSTMENTS_FILE, process.env.DLE_PAYROLL_EARNING_ADJUSTMENTS_PATH);
+    if (!found) return [];
+    const parsed = JSON.parse(found.text);
     return Array.isArray(parsed) ? parsed as PayrollPeriodEarningAdjustment[] : [];
   } catch {
     return [];
   }
 };
 export const writePayrollPeriodEarningAdjustments = async (rows: PayrollPeriodEarningAdjustment[]) => {
-  await mkdir(path.dirname(ADJUSTMENTS_PATH), { recursive: true });
   const sorted = [...rows].sort((left, right) =>
     `${left.period}-${left.employeeCode || left.employeeId}-${left.code}`.localeCompare(`${right.period}-${right.employeeCode || right.employeeId}-${right.code}`));
-  await writeFile(ADJUSTMENTS_PATH, JSON.stringify(sorted, null, 2), 'utf8');
+  await writeHrisDataFile(
+    ADJUSTMENTS_FILE,
+    `${JSON.stringify(sorted, null, 2)}\n`,
+    process.env.DLE_PAYROLL_EARNING_ADJUSTMENTS_PATH,
+  );
+};
+
+/** Replace all rows for a period+source in one durable write (avoids hundreds of IIS EPERM races). */
+export const replacePayrollPeriodEarningAdjustmentsForSource = async (input: {
+  period: string;
+  source: string;
+  rows: PayrollPeriodEarningAdjustment[];
+}) => {
+  const period = normalizePayrollPeriod(input.period);
+  const source = compact(input.source);
+  if (!period || !source) throw new Error('Period and source are required.');
+  const current = await readPayrollPeriodEarningAdjustments();
+  const retained = current.filter((row) =>
+    !(normalizePayrollPeriod(row.period) === period && compact(row.source) === source));
+  const incoming = input.rows.map((row) => ({
+    ...row,
+    period,
+    employeeCode: compact(row.employeeCode || row.employeeId),
+    employeeId: compact(row.employeeId || row.employeeCode),
+    code: compact(row.code).toUpperCase(),
+    name: compact(row.name || row.code),
+    amount: roundMoney(Number(row.amount || 0)),
+    taxable: row.taxable !== false,
+    source,
+  })).filter((row) => row.code && row.amount > 0);
+  await writePayrollPeriodEarningAdjustments([...retained, ...incoming]);
+  invalidateEssPortalCache();
+  onAdjustmentsChanged?.(period);
+  return { period, written: incoming.length, retained: retained.length };
 };
 
 const adjustmentKey = (row: Pick<PayrollPeriodEarningAdjustment, 'period' | 'employeeCode' | 'employeeId' | 'code'>) =>
@@ -285,8 +318,6 @@ export const syncSagePeriodEarningAdjustments = async (
 
 const periodSyncInFlight = new Map<string, Promise<{ period: string; synced: number; changed: boolean; employees: number }>>();
 
-let onAdjustmentsChanged: ((period: string) => void) | null = null;
-
 /** Lets payroll calculation invalidate its cache when period adjustments are rewritten. */
 export const registerPayrollAdjustmentsChangeHandler = (handler: (period: string) => void) => {
   onAdjustmentsChanged = handler;
@@ -323,12 +354,6 @@ export const syncSageSupplementalEarningAdjustments = async (period?: string, op
   return merged.filter((row) => normalizePayrollPeriod(row.period) === normalizedPeriod && isSupplementalSageEarningCode(row.code));
 };
 
-export const adjustmentsPathForDiagnostics = () => ADJUSTMENTS_PATH;
-export const adjustmentsFileMtime = () => {
-  try {
-    if (!existsSync(ADJUSTMENTS_PATH)) return 0;
-    return (statSync(ADJUSTMENTS_PATH) as { mtimeMs: number }).mtimeMs;
-  } catch {
-    return 0;
-  }
-};
+export const adjustmentsPathForDiagnostics = () => preferredAdjustmentsPath();
+export const adjustmentsFileMtime = () =>
+  hrisDataFileMtime(ADJUSTMENTS_FILE, process.env.DLE_PAYROLL_EARNING_ADJUSTMENTS_PATH);

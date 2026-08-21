@@ -439,20 +439,22 @@ function Copy-IisEnvironmentFile {
   # Durable finance attachments live OUTSIDE the IIS package so publish cannot wipe them.
   # Live server path: F:\Dorman-Long\dle-connect\data\finance\payment-attachments
   $FinanceDataDir = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot "data\finance"))
+  $HrisDataDir = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot "data\hris"))
 
   $DestinationEnv = Join-Path $DestinationRoot ".env"
   Copy-Item -LiteralPath $EnvSource -Destination $DestinationEnv -Force
-  Ensure-InternalDeployEnvDefaults -EnvFilePath $DestinationEnv -FinanceDataDir $FinanceDataDir
+  Ensure-InternalDeployEnvDefaults -EnvFilePath $DestinationEnv -FinanceDataDir $FinanceDataDir -HrisDataDir $HrisDataDir
 
   $DashboardEnvTargetDirectory = Join-Path $DestinationRoot "apps\dashboard"
   if (Test-Path -LiteralPath $DashboardEnvTargetDirectory) {
     $DashboardEnv = Join-Path $DashboardEnvTargetDirectory ".env"
     Copy-Item -LiteralPath $EnvSource -Destination $DashboardEnv -Force
-    Ensure-InternalDeployEnvDefaults -EnvFilePath $DashboardEnv -FinanceDataDir $FinanceDataDir
+    Ensure-InternalDeployEnvDefaults -EnvFilePath $DashboardEnv -FinanceDataDir $FinanceDataDir -HrisDataDir $HrisDataDir
   }
 
   Write-Host "Copied IIS runtime environment from $EnvSource"
   Write-Host "DLE_FINANCE_DATA_DIR => $FinanceDataDir"
+  Write-Host "DLE_HRIS_DATA_DIR => $HrisDataDir"
 
   $SyncMailScript = Join-Path $RepoRoot "scripts\Sync-MailEnvironment.ps1"
   if (Test-Path -LiteralPath $SyncMailScript) {
@@ -467,10 +469,12 @@ function Copy-IisEnvironmentFile {
     }
   }
 
-  # Re-assert after mail sync so attachment path cannot be dropped.
+  # Re-assert after mail sync so attachment / HRIS paths cannot be dropped.
   Set-Or-AppendEnvValue -EnvFilePath $DestinationEnv -Key "DLE_FINANCE_DATA_DIR" -Value $FinanceDataDir
+  Set-Or-AppendEnvValue -EnvFilePath $DestinationEnv -Key "DLE_HRIS_DATA_DIR" -Value $HrisDataDir
   if (Test-Path -LiteralPath $DashboardEnvTargetDirectory) {
     Set-Or-AppendEnvValue -EnvFilePath (Join-Path $DashboardEnvTargetDirectory ".env") -Key "DLE_FINANCE_DATA_DIR" -Value $FinanceDataDir
+    Set-Or-AppendEnvValue -EnvFilePath (Join-Path $DashboardEnvTargetDirectory ".env") -Key "DLE_HRIS_DATA_DIR" -Value $HrisDataDir
   }
 }
 
@@ -506,7 +510,8 @@ function Set-Or-AppendEnvValue {
 function Ensure-InternalDeployEnvDefaults {
   param(
     [Parameter(Mandatory = $true)][string]$EnvFilePath,
-    [string]$FinanceDataDir = ""
+    [string]$FinanceDataDir = "",
+    [string]$HrisDataDir = ""
   )
 
   if (-not (Test-Path -LiteralPath $EnvFilePath)) { return }
@@ -542,6 +547,9 @@ function Ensure-InternalDeployEnvDefaults {
 
   if ($FinanceDataDir) {
     Set-Or-AppendEnvValue -EnvFilePath $EnvFilePath -Key "DLE_FINANCE_DATA_DIR" -Value $FinanceDataDir
+  }
+  if ($HrisDataDir) {
+    Set-Or-AppendEnvValue -EnvFilePath $EnvFilePath -Key "DLE_HRIS_DATA_DIR" -Value $HrisDataDir
   }
 }
 
@@ -656,12 +664,18 @@ try {
 
   # Seed / ensure durable finance attachment store at REPO ROOT (not under IIS site package).
   $RepoFinanceData = Join-Path $RepoRoot "data\finance"
+  $RepoHrisData = Join-Path $RepoRoot "data\hris"
   $DurableAttachments = Join-Path $RepoFinanceData "payment-attachments"
   $NestedAttachments = Join-Path $ResolvedOutputPath "apps\dashboard\data\finance\payment-attachments"
   $SitePackageAttachments = Join-Path $ResolvedOutputPath "data\finance\payment-attachments"
+  $NestedHrisData = Join-Path $ResolvedOutputPath "apps\dashboard\data\hris"
+  $SitePackageHrisData = Join-Path $ResolvedOutputPath "data\hris"
   New-Item -ItemType Directory -Path $DurableAttachments -Force | Out-Null
   New-Item -ItemType Directory -Path $NestedAttachments -Force | Out-Null
   New-Item -ItemType Directory -Path $SitePackageAttachments -Force | Out-Null
+  New-Item -ItemType Directory -Path $RepoHrisData -Force | Out-Null
+  New-Item -ItemType Directory -Path $NestedHrisData -Force | Out-Null
+  New-Item -ItemType Directory -Path $SitePackageHrisData -Force | Out-Null
 
   # Migrate any attachments previously written into the IIS package into the durable repo store.
   foreach ($LegacyRoot in @($SitePackageAttachments, $NestedAttachments)) {
@@ -681,6 +695,23 @@ try {
     Copy-DirectoryContents -SourcePath $DurableAttachments -DestinationPath $NestedAttachments
   }
   Write-Host "Ensured durable payment attachments folder: $DurableAttachments"
+
+  # Migrate HRIS JSON stores (dayrate overlay, earning adjustments, etc.) out of the IIS package.
+  foreach ($LegacyHrisRoot in @($SitePackageHrisData, $NestedHrisData)) {
+    if (Test-Path -LiteralPath $LegacyHrisRoot) {
+      $legacyHrisFiles = @(Get-ChildItem -LiteralPath $LegacyHrisRoot -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ne '.gitkeep' -and $_.Name -ne 'README.md' })
+      if ($legacyHrisFiles.Count -gt 0) {
+        Write-Host "Migrating $($legacyHrisFiles.Count) HRIS data file(s) from $LegacyHrisRoot -> $RepoHrisData"
+        Copy-DirectoryContents -SourcePath $LegacyHrisRoot -DestinationPath $RepoHrisData
+      }
+    }
+  }
+  if (Test-Path -LiteralPath $RepoHrisData) {
+    Copy-DirectoryContents -SourcePath $RepoHrisData -DestinationPath $SitePackageHrisData
+    Copy-DirectoryContents -SourcePath $RepoHrisData -DestinationPath $NestedHrisData
+  }
+  Write-Host "Ensured durable HRIS data folder: $RepoHrisData"
 
   $WebConfigSource = if ($HostingMode -eq "HttpPlatform") {
     Join-Path $RepoRoot "deployment\iis\web.httpplatform.config"
