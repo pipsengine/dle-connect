@@ -719,6 +719,27 @@ try {
     Join-Path $RepoRoot "deployment\iis\web.config"
   }
   Copy-Item -LiteralPath $WebConfigSource -Destination (Join-Path $ResolvedOutputPath "web.config") -Force
+  # HttpPlatform injects web.config env vars first; dotenv will not override them.
+  # Rewrite to absolute durable repo paths so Apply/payroll never write under the site package.
+  $PublishedWebConfig = Join-Path $ResolvedOutputPath "web.config"
+  $RepoFinanceData = Join-Path $RepoRoot "data\finance"
+  $RepoHrisData = Join-Path $RepoRoot "data\hris"
+  if (Test-Path -LiteralPath $PublishedWebConfig) {
+    $WebConfigText = Get-Content -LiteralPath $PublishedWebConfig -Raw
+    $WebConfigText = [regex]::Replace(
+      $WebConfigText,
+      'name="DLE_FINANCE_DATA_DIR"\s+value="[^"]*"',
+      ('name="DLE_FINANCE_DATA_DIR" value="{0}"' -f $RepoFinanceData)
+    )
+    $WebConfigText = [regex]::Replace(
+      $WebConfigText,
+      'name="DLE_HRIS_DATA_DIR"\s+value="[^"]*"',
+      ('name="DLE_HRIS_DATA_DIR" value="{0}"' -f $RepoHrisData)
+    )
+    Set-Content -LiteralPath $PublishedWebConfig -Value $WebConfigText -NoNewline
+    Write-Host "Pinned web.config DLE_FINANCE_DATA_DIR => $RepoFinanceData"
+    Write-Host "Pinned web.config DLE_HRIS_DATA_DIR => $RepoHrisData"
+  }
   Copy-Item -LiteralPath (Join-Path $RepoRoot "deployment\iis\Start-DleDashboard.ps1") -Destination (Join-Path $ResolvedOutputPath "Start-DleDashboard.ps1") -Force
   Copy-IisEnvironmentFile -DestinationRoot $ResolvedOutputPath
 
