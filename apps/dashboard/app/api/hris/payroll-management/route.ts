@@ -19,6 +19,10 @@ import { buildSageJournalCsv, buildSageJournalExportRows, savePayrollJournalMapp
 import { buildSalarySetupExportReport } from '@/lib/payroll-salary-setup-export';
 import { buildPayrollReviewExportReport, previousPayrollPeriod } from '@/lib/payroll-review-export';
 import { buildOfficialPayrollExcelWorksheets, isOfficialPayrollExcelReport } from '@/lib/payroll-official-excel-export';
+import {
+  buildDayratePaymentScheduleXlsx,
+  dayrateScheduleXlsxMimeType,
+} from '@/lib/dayrate-schedule-template-export';
 import { isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { readPayrollSnapshotsByPeriods } from '@/lib/payroll-run-store';
@@ -465,6 +469,27 @@ export async function GET(request: Request) {
         const dayrateRecords = filterExportRecords((dayratePayload || payload).records, statusFilter, 'daily-rate', 'all')
           .filter((record) => record.isDailyRate || requestedPack === 'daily-rate');
         const directory = await readPayrollEmployees().catch(() => ({ employees: [] as Awaited<ReturnType<typeof readPayrollEmployees>>['employees'] }));
+
+        if (report === 'dayrate-schedule') {
+          try {
+            const workbook = await buildDayratePaymentScheduleXlsx({
+              period: payload.period,
+              periodLabel: payload.periodLabel,
+              records: dayrateRecords,
+              directoryEmployees: directory.employees,
+            });
+            return new Response(new Uint8Array(workbook.buffer), {
+              headers: {
+                'content-type': dayrateScheduleXlsxMimeType,
+                'content-disposition': `attachment; filename="${workbook.fileName}"`,
+                'cache-control': 'no-store',
+              },
+            });
+          } catch (error) {
+            console.error('[payroll-management] dayrate template export failed; falling back to SpreadsheetML', error);
+          }
+        }
+
         const worksheets = await buildOfficialPayrollExcelWorksheets({
           report,
           pack: requestedPack || payload.pack || 'salaried',
@@ -476,10 +501,13 @@ export async function GET(request: Request) {
           currencyScope,
         });
         if (worksheets.length) {
+          const fallbackName = report === 'dayrate-schedule'
+            ? `${payload.periodLabel?.toUpperCase().replace(/\s+/g, ' ') || payload.period}DAYRATE PAYMENT SCHEDULE .xls`
+            : `${report}-${payload.period}-${filePack}.xls`;
           return new Response(buildExcelWorkbookXml({ worksheets }), {
             headers: {
               'content-type': excelMimeType,
-              'content-disposition': `attachment; filename="${report}-${payload.period}-${filePack}.xls"`,
+              'content-disposition': `attachment; filename="${fallbackName}"`,
               'cache-control': 'no-store',
             },
           });
