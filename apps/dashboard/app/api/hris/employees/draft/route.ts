@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import {
   deleteEmployeeDraftFromDb,
   getEmployeeDraftFromDb,
@@ -41,10 +42,55 @@ const storeDrafts = (() => {
   return g.__dleHrisEmployeeDrafts;
 })();
 
-const getRole = (request: Request): Role => {
+const ROLE_BY_CANONICAL: Record<string, Role> = {
+  SUPERADMIN: 'Super Admin',
+  HRDIRECTOR: 'HR Director',
+  HRMANAGER: 'HR Manager',
+  HROFFICER: 'HR Officer',
+  ADMINOFFICER: 'Admin Officer',
+  PAYROLLOFFICER: 'Payroll Officer',
+  DEPARTMENTHEAD: 'Department Head',
+  LINEMANAGER: 'Line Manager',
+  ITADMINISTRATOR: 'IT Administrator',
+  HSEOFFICER: 'HSE Officer',
+  AUDITOR: 'Auditor',
+  MANAGER: 'Manager',
+  EMPLOYEE: 'Employee',
+};
+
+const normalizeRole = (roles: string[] | undefined | null, headerRole: string): Role => {
+  const fromSession = (roles || [])
+    .map((role) => String(role || '').toUpperCase().replace(/[^A-Z]/g, ''))
+    .filter(Boolean)
+    .map((canonical) => ROLE_BY_CANONICAL[canonical])
+    .find(Boolean);
+  if (fromSession) return fromSession;
+  const fromHeader = String(headerRole || '').trim();
+  if (fromHeader) {
+    const key = fromHeader.toUpperCase().replace(/[^A-Z]/g, '');
+    if (ROLE_BY_CANONICAL[key]) return ROLE_BY_CANONICAL[key];
+  }
+  return 'Employee';
+};
+
+const readAuthCookie = (request: Request) => {
+  const cookieHeader = request.headers.get('cookie') || '';
+  const pair = cookieHeader
+    .split(';')
+    .map((chunk) => chunk.trim())
+    .find((chunk) => chunk.startsWith(`${AUTH_COOKIE}=`));
+  if (!pair) return '';
+  return decodeURIComponent(pair.split('=').slice(1).join('='));
+};
+
+const getRole = async (request: Request): Promise<Role> => {
+  const session = await verifySessionToken(readAuthCookie(request)).catch(() => null);
   const header = String(request.headers.get('x-hris-role') || '').trim();
-  if (header) return header as Role;
-  return 'HR Officer';
+  if (!session) {
+    const key = header.toUpperCase().replace(/[^A-Z]/g, '');
+    return ROLE_BY_CANONICAL[key] || 'Employee';
+  }
+  return normalizeRole(session.roles, header);
 };
 
 const permissions = (role: Role) => {
@@ -69,7 +115,7 @@ const audit = (rec: DraftRecord, role: Role, action: string) => {
 
 /** POST /api/hris/employees/draft — create draft (static path beats [id]/[...resource]). */
 export async function POST(request: Request) {
-  const role = getRole(request);
+  const role = await getRole(request);
   const perms = permissions(role);
   if (!perms.canCreate) return jsonErr(403, 'Permission denied');
   const body = (await request.json().catch(() => null)) as { draft?: Record<string, unknown> } | null;

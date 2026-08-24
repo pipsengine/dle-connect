@@ -983,6 +983,75 @@ export const humanizeEmployeeCreateDbError = async (error: unknown) => {
   return error instanceof Error ? error : new Error(message);
 };
 
+export type DuplicateEmployeeMatch = {
+  employeeCode: string;
+  fullName: string;
+  dateOfBirth: string | null;
+  gender: string | null;
+  dateJoined: string | null;
+  employmentType: string | null;
+};
+
+const upperTrim = (value: unknown) => String(value || '').trim().toUpperCase();
+
+export const findDuplicateEmployeesInDb = async (input: {
+  firstName?: string | null;
+  lastName?: string | null;
+  dateOfBirth?: string | null;
+  gender?: string | null;
+}): Promise<DuplicateEmployeeMatch[]> => {
+  const firstName = upperTrim(input.firstName);
+  const lastName = upperTrim(input.lastName);
+  const dob = input.dateOfBirth ? String(input.dateOfBirth).slice(0, 10) : '';
+  const gender = upperTrim(input.gender);
+  if (!firstName || !lastName) return [];
+  const p = await pool();
+  if (!p) return [];
+  const r = await p.request()
+    .input('first_name', sql.NVarChar(100), firstName)
+    .input('last_name', sql.NVarChar(100), lastName)
+    .input('date_of_birth', sql.Date, dob || null)
+    .input('gender', sql.NVarChar(20), gender || null)
+    .query(`
+      SELECT DISTINCT TOP (10)
+        v.employee_code AS employeeCode,
+        v.full_name AS fullName,
+        CONVERT(varchar(10), pinfo.date_of_birth, 120) AS dateOfBirth,
+        pinfo.gender AS gender,
+        CONVERT(varchar(10), v.date_joined, 120) AS dateJoined,
+        v.employment_type AS employmentType
+      FROM [hris].[Employees] v
+      INNER JOIN [hris].[EmployeePersonalInfo] pinfo ON pinfo.employee_id = v.employee_id
+      WHERE UPPER(LTRIM(RTRIM(pinfo.first_name))) = @first_name
+        AND UPPER(LTRIM(RTRIM(pinfo.last_name))) = @last_name
+        AND (
+          (@date_of_birth IS NULL OR CONVERT(date, pinfo.date_of_birth) = @date_of_birth)
+          OR
+          (@gender IS NULL OR UPPER(LTRIM(RTRIM(pinfo.gender))) = @gender)
+        )
+      ORDER BY CONVERT(date, pinfo.date_of_birth) DESC, v.employee_code ASC;
+    `);
+  return (r.recordset || []).map((row) => ({
+    employeeCode: str(row.employeeCode),
+    fullName: str(row.fullName),
+    dateOfBirth: str(row.dateOfBirth) || null,
+    gender: str(row.gender) || null,
+    dateJoined: str(row.dateJoined) || null,
+    employmentType: str(row.employmentType) || null,
+  }));
+};
+
+export const isEmployeeCodeAlreadyIssuedInDb = async (employeeCode: string): Promise<boolean> => {
+  const code = upperTrim(employeeCode);
+  if (!code) return true;
+  const p = await pool();
+  if (!p) return false;
+  const r = await p.request()
+    .input('employee_code', sql.NVarChar(50), code)
+    .query(`SELECT TOP (1) 1 AS issued FROM [hris].[Employees] WHERE UPPER(LTRIM(RTRIM(employee_code))) = @employee_code;`);
+  return Boolean(r.recordset?.[0]?.issued);
+};
+
 const DIRECTORY_EMPLOYEE_FROM_SQL = `
     FROM [hris].[EmployeeMasterView] v
     LEFT JOIN [hris].[EmployeeJobInfo] j ON j.employee_id = v.employee_id
@@ -2398,7 +2467,17 @@ export const repairStipendPayrollSetupInDb = async (input: {
   return true;
 };
 
-export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode: string, draft: any, role: string, startOnboarding: boolean) => {
+export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode: string, draft: any, role: string, startOnboarding: boolean, payrollOverrides?: {
+  sageEarningLinesJson?: string | null;
+  sageDeductionLinesJson?: string | null;
+  ratePerDay?: number | null;
+  ratePerHour?: number | null;
+  hoursPerDay?: number | null;
+  paymentRun?: string | null;
+  paymentType?: string | null;
+  healthInsurancePlan?: string | null;
+  nhfNumber?: string | null;
+}) => {
   const p = await pool();
   if (!p) return false;
   const personal = draft.personal || {};
@@ -2626,6 +2705,11 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
       .input('pay_currency', sql.NVarChar(10), nullable(payroll.payCurrency) || (isStipendEmployee ? 'NGN' : null))
       .input('period_salary', sql.Decimal(19, 4), stipendPeriodSalary)
       .input('annual_salary', sql.Decimal(19, 4), stipendAnnualSalary)
+      .input('rate_per_day', sql.Decimal(19, 4), numOrNull(payrollOverrides?.ratePerDay) ?? numOrNull(payroll.ratePerDay) ?? numOrNull(payroll.dailyRate))
+      .input('rate_per_hour', sql.Decimal(19, 4), numOrNull(payrollOverrides?.ratePerHour) ?? numOrNull(payroll.ratePerHour))
+      .input('hours_per_day', sql.Decimal(8, 2), numOrNull(payrollOverrides?.hoursPerDay) ?? numOrNull(payroll.hoursPerDay))
+      .input('payment_run', sql.NVarChar(80), nullable(payrollOverrides?.paymentRun) ?? nullable(payroll.paymentRun))
+      .input('payment_type', sql.NVarChar(80), nullable(payrollOverrides?.paymentType) ?? nullable(payroll.paymentType))
       .input('bank_name', sql.NVarChar(150), nullable(payroll.bankName))
       .input('account_number', sql.NVarChar(50), nullable(payroll.accountNumber))
       .input('account_name', sql.NVarChar(250), nullable(payroll.accountName))
@@ -2633,16 +2717,22 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
       .input('pension_pin', sql.NVarChar(80), nullable(payroll.pensionPin))
       .input('tax_identification_number', sql.NVarChar(80), nullable(payroll.taxIdentificationNumber))
       .input('benefit_group', sql.NVarChar(120), nullable(payroll.benefitGroup))
-      .input('setup_assigned_to_payroll', sql.Bit, boolVal(payroll.setupAssignedToPayroll ?? (isStipendEmployee ? true : false)))
+      .input('sage_earning_lines_json', sql.NVarChar(sql.MAX), nullable(payrollOverrides?.sageEarningLinesJson))
+      .input('sage_deduction_lines_json', sql.NVarChar(sql.MAX), nullable(payrollOverrides?.sageDeductionLinesJson))
+      .input('setup_assigned_to_payroll', sql.Bit, boolVal(payroll.setupAssignedToPayroll ?? (isStipendEmployee ? true : true)))
       .query(`
         INSERT [hris].[EmployeePayrollSetup](
           employee_id, payroll_group, salary_grade, basic_salary, pay_frequency, pay_currency, period_salary, annual_salary,
+          rate_per_day, rate_per_hour, hours_per_day, payment_run, payment_type,
           bank_name, account_number, account_name,
-          pension_provider, pension_pin, tax_identification_number, benefit_group, setup_assigned_to_payroll
+          pension_provider, pension_pin, tax_identification_number,
+          benefit_group, sage_earning_lines_json, sage_deduction_lines_json, setup_assigned_to_payroll
         ) VALUES (
           @employee_id, @payroll_group, @salary_grade, @basic_salary, @pay_frequency, @pay_currency, @period_salary, @annual_salary,
+          @rate_per_day, @rate_per_hour, @hours_per_day, @payment_run, @payment_type,
           @bank_name, @account_number, @account_name,
-          @pension_provider, @pension_pin, @tax_identification_number, @benefit_group, @setup_assigned_to_payroll
+          @pension_provider, @pension_pin, @tax_identification_number,
+          @benefit_group, @sage_earning_lines_json, @sage_deduction_lines_json, @setup_assigned_to_payroll
         );
       `);
 

@@ -7,6 +7,7 @@ export type PayrollEmployeeOption = {
   employeeId: string;
   employeeCode?: string;
   nhfApplicable?: boolean;
+  nhfNumber?: string | null;
   annualRentRelief?: number | null;
   /** Fixed monthly additional employee pension (PENSION_EE2 / voluntary). */
   additionalEmployeePensionMonthly?: number | null;
@@ -22,6 +23,8 @@ export type PayrollEmployeeOption = {
   payrollGroup?: string;
   salaryGrade?: string;
   jobGrade?: string;
+  healthInsurancePlan?: string | null;
+  benefitGroup?: string | null;
   setupAssignedToPayroll?: boolean;
   excludedFromPayrollRun?: boolean;
   ratePerDay?: number | null;
@@ -176,6 +179,8 @@ export const applyPayrollEmployeeOptions = async (employees: DleEmployeeDirector
       payrollGroup: option.payrollGroup || employee.payrollGroup,
       salaryGrade: option.salaryGrade || employee.salaryGrade,
       jobGrade: option.jobGrade || employee.jobGrade,
+      benefitGroup: option.benefitGroup || employee.benefitGroup,
+      healthInsurancePlan: option.healthInsurancePlan || (employee as DleEmployeeDirectoryRow & { healthInsurancePlan?: string | null }).healthInsurancePlan,
       setupAssignedToPayroll: typeof option.setupAssignedToPayroll === 'boolean' ? option.setupAssignedToPayroll : employee.setupAssignedToPayroll,
       excludedFromPayrollRun: typeof option.excludedFromPayrollRun === 'boolean' ? option.excludedFromPayrollRun : (employee as DleEmployeeDirectoryRow & { excludedFromPayrollRun?: boolean }).excludedFromPayrollRun,
       ratePerDay: option.ratePerDay !== undefined && option.ratePerDay !== null && Number.isFinite(Number(option.ratePerDay)) ? Number(option.ratePerDay) : employee.ratePerDay,
