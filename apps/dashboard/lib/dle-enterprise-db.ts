@@ -2231,6 +2231,19 @@ export const nextEmployeeCodeFromDb = async (employeeType: string) => {
   return preview;
 };
 
+const COUNTER_PREFIX_TYPE_NAME_FALLBACK: Record<string, string> = {
+  L: 'Lumpsum',
+  P: 'Permanent',
+  N: 'National Youth Service',
+  I: 'Industrial Training (IT)',
+  C: 'Contract/Casual',
+};
+
+function counterPrefixTypeName(prefix: string): string {
+  return COUNTER_PREFIX_TYPE_NAME_FALLBACK[prefix.toUpperCase()]
+    || `${prefix.toUpperCase()} (auto-created by rename counter fallback)`;
+}
+
 export const renameEmployeeCodeInDb = async (input: {
   fromCode: string;
   toCode: string;
@@ -2332,22 +2345,26 @@ export const renameEmployeeCodeInDb = async (input: {
     if (counterPrefix && sequencePart > 0 && counterPrefix.length <= 4) {
       const prefixRow = await tx.request()
         .input('typeCode', sql.NVarChar(10), counterPrefix)
-        .query<{ last_sequence: number }>(`
-          SELECT ISNULL(last_sequence, 0) AS last_sequence
+        .query<{ last_sequence: number; employee_type_name: string | null }>(`
+          SELECT ISNULL(last_sequence, 0) AS last_sequence, employee_type_name
           FROM [hris].[EmployeeCodeCounters] WHERE employee_type_code = @typeCode;
         `);
       oldLMax = prefixRow.recordset[0]?.last_sequence ?? 0;
+      const existingTypeName = prefixRow.recordset[0]?.employee_type_name || counterPrefixTypeName(counterPrefix);
       const targetSequence = sequencePart;
       if (!oldLMax || oldLMax < targetSequence || oldLMax > targetSequence + 5) {
         await tx.request()
           .input('typeCode', sql.NVarChar(10), counterPrefix)
+          .input('typeName', sql.NVarChar(40), existingTypeName)
           .input('targetSequence', sql.Int, targetSequence)
+          .input('performer', sql.NVarChar(128), input.role || 'System')
           .query(`
             MERGE [hris].[EmployeeCodeCounters] AS target
-            USING (SELECT @typeCode AS employee_type_code, @targetSequence AS last_sequence) AS source
+            USING (SELECT @typeCode AS employee_type_code, @typeName AS employee_type_name, @targetSequence AS last_sequence, @performer AS modified_by) AS source
             ON target.employee_type_code = source.employee_type_code
-            WHEN MATCHED THEN UPDATE SET last_sequence = source.last_sequence
-            WHEN NOT MATCHED THEN INSERT (employee_type_code, last_sequence) VALUES (source.employee_type_code, source.last_sequence);
+            WHEN MATCHED THEN UPDATE SET last_sequence = source.last_sequence, modified_at = SYSUTCDATETIME(), modified_by = source.modified_by
+            WHEN NOT MATCHED THEN INSERT (employee_type_code, employee_type_name, last_sequence, modified_at, modified_by)
+              VALUES (source.employee_type_code, source.employee_type_name, source.last_sequence, SYSUTCDATETIME(), source.modified_by);
           `);
         newLMax = targetSequence;
       } else {
@@ -2358,12 +2375,14 @@ export const renameEmployeeCodeInDb = async (input: {
     try {
       await tx.request()
         .input('employeeId', sql.BigInt, employee_id)
-        .input('action', sql.NVarChar(200), 'Manual employee_code rename')
-        .input('performer', sql.NVarChar(200), input.role || 'system')
-        .input('notes', sql.NVarChar(500), `${fromCodeSan} -> ${toCodeSan} · ${full_name} · counter ${counterPrefix || 'n/a'}: ${oldLMax ?? 'NULL'} -> ${newLMax ?? 'no change'}`)
+        .input('action', sql.NVarChar(150), 'Manual employee_code rename')
+        .input('performer', sql.NVarChar(128), input.role || 'System')
+        .input('reason', sql.NVarChar(1000), `${fromCodeSan} -> ${toCodeSan} · ${full_name} · counter ${counterPrefix || 'n/a'}: ${oldLMax ?? 'NULL'} -> ${newLMax ?? 'no change'}`)
+        .input('oldVal', sql.NVarChar(sql.MAX), JSON.stringify({ from_code: fromCodeSan, counter_before: oldLMax ?? null }))
+        .input('newVal', sql.NVarChar(sql.MAX), JSON.stringify({ to_code: toCodeSan, counter_after: newLMax ?? null }))
         .query(`
-          INSERT [hris].[EmployeeAuditLog](employee_id, audit_action, performed_by, notes)
-          VALUES (@employeeId, @action, COALESCE(@performer, CURRENT_USER), @notes);
+          INSERT [hris].[EmployeeAuditLog](employee_id, audit_action, performed_by, reason, old_value, new_value, audit_at)
+          VALUES (@employeeId, @action, @performer, @reason, @oldVal, @newVal, SYSUTCDATETIME());
         `);
     } catch {
       // audit log is nice-to-have; don't fail rename on it
