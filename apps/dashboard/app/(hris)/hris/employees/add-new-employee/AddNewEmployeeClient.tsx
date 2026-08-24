@@ -1,5 +1,8 @@
 'use client';
 
+import PayrollSetupStep, { type PayrollSetupDraft } from './PayrollSetupStep';
+import type { FlexiblePayrollLineDraft } from '@/lib/payroll-package-lines';
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -216,35 +219,7 @@ type DocumentDraft = {
   status: 'Pending' | 'Uploaded' | 'Rejected';
 };
 
-type PayrollDraft = {
-  payrollGroup: string;
-  salaryGrade: string;
-  basicSalary: string;
-  periodSalary: string;
-  annualSalary: string;
-  dailyRate: string;
-  ratePerDay: string;
-  ratePerHour: string;
-  hoursPerDay: string;
-  additionalEmployeePensionMonthly: string;
-  annualRentRelief: string;
-  paymentRun: string;
-  paymentType: string;
-  allowancesTemplate: string;
-  deductionTemplate: string;
-  bankName: string;
-  accountNumber: string;
-  accountName: string;
-  pensionProvider: string;
-  pensionPin: string;
-  taxId: string;
-  nhfApplicable: boolean;
-  nhfNumber: string;
-  healthInsurancePlan: string;
-  benefitGroup: string;
-  setupAssignedToPayroll: boolean;
-  contractAmount?: string;
-};
+type PayrollDraft = PayrollSetupDraft;
 
 type ChecklistItem = {
   id: string;
@@ -705,6 +680,8 @@ const makeEmptyDraft = (countryDefault: string): EmployeeDraftPayload => ({
     paymentType: 'Bank Transfer',
     allowancesTemplate: '',
     deductionTemplate: '',
+    earningLines: [] as FlexiblePayrollLineDraft[],
+    deductionLines: [] as FlexiblePayrollLineDraft[],
     bankName: '',
     accountNumber: '',
     accountName: '',
@@ -719,6 +696,13 @@ const makeEmptyDraft = (countryDefault: string): EmployeeDraftPayload => ({
     contractAmount: '',
   },
   onboardingChecklist: [],
+});
+
+const normalizeLoadedPayrollDraft = (payroll: Partial<PayrollDraft> | undefined): PayrollDraft => ({
+  ...makeEmptyDraft('Nigeria').payroll,
+  ...(payroll || {}),
+  earningLines: Array.isArray(payroll?.earningLines) ? payroll!.earningLines : [],
+  deductionLines: Array.isArray(payroll?.deductionLines) ? payroll!.deductionLines : [],
 });
 
 export default function AddNewEmployeeClient({ initialNow, initialDraftId, initialEmployeeCode }: { initialNow: string; initialDraftId?: string; initialEmployeeCode?: string }) {
@@ -842,7 +826,10 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
           { method: 'GET', role }
         );
         if (cancelled) return;
-        setDraft(res.draft);
+        setDraft({
+          ...res.draft,
+          payroll: normalizeLoadedPayrollDraft(res.draft?.payroll),
+        });
         setDraftId(res.meta.draftId);
         setDraftStatus(res.meta.status);
         if (res.draft?.employment?.employmentType && res.draft?.employment?.employeeId) {
@@ -971,7 +958,14 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
   const readinessItems = useMemo(() => {
     const personalReady = !requiredErrors['personal.firstName'] && !requiredErrors['personal.lastName'] && !requiredErrors['personal.gender'] && !requiredErrors['personal.dateOfBirth'];
     const employmentReady = !requiredErrors['employment.employmentType'] && !requiredErrors['employment.dateJoined'];
-    const payrollReady = Boolean(draft.payroll.payrollGroup.trim());
+    const payrollReady = Boolean(
+      draft.payroll.setupAssignedToPayroll
+      && (
+        draft.payroll.earningLines.some((line) => Number(line.amount) > 0)
+        || (draft.employment.employmentType === 'Daily Rate' && Number(draft.payroll.ratePerDay || draft.payroll.dailyRate) > 0)
+        || draft.payroll.bankName.trim()
+      ),
+    );
     const documentsReady = draft.documents.length > 0;
     const workflowReady = Boolean(draft.job.reportingManager.trim());
     const complianceBlocked = validation.status === 'ready' && validation.data ? validation.data.errors.length > 0 : Object.keys(requiredErrors).length > 3;
@@ -1968,42 +1962,18 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
   const payrollStep = stepCard(
     'Step 7 — Payroll & Benefits Setup',
     BadgeCheck,
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-700 font-semibold">
-        Payroll detail (bank, salary, grade, pension, TIN, NHF, allowances) is NOT required when adding a new employee.
-        Save the employee first here, then open their <strong>Edit Profile → Payroll Setup</strong> screen later to fill in those fields.
-      </div>
-      <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="space-y-1">
-          <div className="text-sm font-extrabold text-emerald-900">Automatically assigned to Payroll Officer workflow</div>
-          <div className="text-xs font-semibold text-emerald-800">
-            Payroll Officer will configure bank account, salary, grade, pension, and benefits after the employee record is created.
-          </div>
-        </div>
-        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-emerald-300 text-xs font-extrabold text-emerald-900 whitespace-nowrap">
-          <BadgeCheck className="w-4 h-4" />
-          Payroll setup deferral enabled
-        </div>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="text-[11px] font-extrabold text-slate-500">Bank details</div>
-          <div className="mt-1 text-sm font-extrabold text-slate-400">Completed later — Edit Profile</div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="text-[11px] font-extrabold text-slate-500">Salary / Grade / Daily Rate</div>
-          <div className="mt-1 text-sm font-extrabold text-slate-400">Completed later — Edit Profile</div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="text-[11px] font-extrabold text-slate-500">Pension / TIN / NHF</div>
-          <div className="mt-1 text-sm font-extrabold text-slate-400">Completed later — Edit Profile</div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="text-[11px] font-extrabold text-slate-500">Benefits / Allowances / Deductions</div>
-          <div className="mt-1 text-sm font-extrabold text-slate-400">Completed later — Edit Profile</div>
-        </div>
-      </div>
-    </div>,
+    <PayrollSetupStep
+      payroll={draft.payroll}
+      onChange={(payroll) => setDraft((d) => ({ ...d, payroll }))}
+      options={{
+        payrollGroups: options.data?.payrollGroups || [],
+        banks: options.data?.banks || [],
+        pensionProviders: options.data?.pensionProviders || [],
+        benefitGroups: options.data?.benefitGroups || [],
+      }}
+      canViewPayroll={perms.canViewPayroll}
+      employmentType={draft.employment.employmentType}
+    />,
   );
 
   const onboardingStep = stepCard(

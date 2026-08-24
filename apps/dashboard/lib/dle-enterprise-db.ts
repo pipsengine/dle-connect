@@ -3279,6 +3279,9 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
     const payrollPeriodSalary = numOrNull(payroll.periodSalary);
     const payrollAnnualSalary = numOrNull(payroll.annualSalary);
     const payrollBasicSalary = numOrNull(payroll.basicSalary);
+    const payrollRatePerDay = numOrNull(payroll.ratePerDay);
+    const payrollRatePerHour = numOrNull(payroll.ratePerHour);
+    const payrollHoursPerDay = numOrNull(payroll.hoursPerDay);
     const hasPayrollUpdate =
       nullable(payroll.payrollGroup) ||
       nullable(payroll.salaryGrade) ||
@@ -3286,13 +3289,20 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
       payrollPeriodSalary !== null ||
       payrollAnnualSalary !== null ||
       payrollBasicSalary !== null ||
+      payrollRatePerDay !== null ||
+      payrollRatePerHour !== null ||
+      payrollHoursPerDay !== null ||
       nullable(payroll.bankName) ||
       nullable(payroll.accountNumber) ||
       nullable(payroll.accountName) ||
       nullable(payroll.branchName) ||
       nullable(payroll.pensionProvider) ||
       nullable(payroll.pensionPin) ||
-      nullable(payroll.taxIdentificationNumber);
+      nullable(payroll.taxIdentificationNumber) ||
+      nullable(payroll.benefitGroup) ||
+      nullable(payroll.sageEarningLinesJson) ||
+      nullable(payroll.sageDeductionLinesJson) ||
+      payroll.setupAssignedToPayroll !== undefined && payroll.setupAssignedToPayroll !== null;
 
     if (hasPayrollUpdate) {
       await new sql.Request(tx)
@@ -3303,6 +3313,9 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
         .input('period_salary', sql.Decimal(19, 4), payrollPeriodSalary)
         .input('annual_salary', sql.Decimal(19, 4), payrollAnnualSalary)
         .input('basic_salary', sql.Decimal(19, 4), payrollBasicSalary)
+        .input('rate_per_day', sql.Decimal(19, 4), payrollRatePerDay)
+        .input('rate_per_hour', sql.Decimal(19, 4), payrollRatePerHour)
+        .input('hours_per_day', sql.Decimal(8, 2), payrollHoursPerDay)
         .input('bank_name', sql.NVarChar(150), nullable(payroll.bankName))
         .input('branch_name', sql.NVarChar(150), nullable(payroll.branchName))
         .input('account_number', sql.NVarChar(50), nullable(payroll.accountNumber))
@@ -3310,6 +3323,10 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
         .input('pension_provider', sql.NVarChar(150), nullable(payroll.pensionProvider))
         .input('pension_pin', sql.NVarChar(80), nullable(payroll.pensionPin))
         .input('tax_identification_number', sql.NVarChar(80), nullable(payroll.taxIdentificationNumber))
+        .input('benefit_group', sql.NVarChar(120), nullable(payroll.benefitGroup))
+        .input('sage_earning_lines_json', sql.NVarChar(sql.MAX), nullable(payroll.sageEarningLinesJson))
+        .input('sage_deduction_lines_json', sql.NVarChar(sql.MAX), nullable(payroll.sageDeductionLinesJson))
+        .input('setup_assigned_to_payroll', sql.Bit, payroll.setupAssignedToPayroll == null ? null : (payroll.setupAssignedToPayroll === 0 || payroll.setupAssignedToPayroll === '0' ? 0 : 1))
         .query(`
           MERGE [hris].[EmployeePayrollSetup] AS target
           USING (SELECT @employee_id AS employee_id) AS source
@@ -3321,6 +3338,9 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
             period_salary = COALESCE(@period_salary, target.period_salary),
             annual_salary = COALESCE(@annual_salary, target.annual_salary),
             basic_salary = COALESCE(@basic_salary, target.basic_salary),
+            rate_per_day = COALESCE(@rate_per_day, target.rate_per_day),
+            rate_per_hour = COALESCE(@rate_per_hour, target.rate_per_hour),
+            hours_per_day = COALESCE(@hours_per_day, target.hours_per_day),
             bank_name = COALESCE(@bank_name, target.bank_name),
             branch_name = COALESCE(@branch_name, target.branch_name),
             account_number = COALESCE(@account_number, target.account_number),
@@ -3328,16 +3348,21 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
             pension_provider = COALESCE(@pension_provider, target.pension_provider),
             pension_pin = COALESCE(@pension_pin, target.pension_pin),
             tax_identification_number = COALESCE(@tax_identification_number, target.tax_identification_number),
-            setup_assigned_to_payroll = 1,
+            benefit_group = COALESCE(@benefit_group, target.benefit_group),
+            sage_earning_lines_json = COALESCE(@sage_earning_lines_json, target.sage_earning_lines_json),
+            sage_deduction_lines_json = COALESCE(@sage_deduction_lines_json, target.sage_deduction_lines_json),
+            setup_assigned_to_payroll = COALESCE(@setup_assigned_to_payroll, target.setup_assigned_to_payroll),
             modified_at = SYSUTCDATETIME()
           WHEN NOT MATCHED THEN INSERT (
             employee_id, payroll_group, salary_grade, pay_currency, period_salary, annual_salary, basic_salary,
+            rate_per_day, rate_per_hour, hours_per_day,
             bank_name, branch_name, account_number, account_name, pension_provider, pension_pin, tax_identification_number,
-            setup_assigned_to_payroll
+            benefit_group, sage_earning_lines_json, sage_deduction_lines_json, setup_assigned_to_payroll
           ) VALUES (
             @employee_id, @payroll_group, @salary_grade, @pay_currency, @period_salary, @annual_salary, @basic_salary,
+            @rate_per_day, @rate_per_hour, @hours_per_day,
             @bank_name, @branch_name, @account_number, @account_name, @pension_provider, @pension_pin, @tax_identification_number,
-            1
+            @benefit_group, @sage_earning_lines_json, @sage_deduction_lines_json, @setup_assigned_to_payroll
           );
         `);
     }

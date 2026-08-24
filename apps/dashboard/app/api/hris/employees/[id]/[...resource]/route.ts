@@ -12,6 +12,15 @@ import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import { ensureEmployeeLeaveFromHris } from '@/lib/hris-leave-read';
 import { contractPayrollClassification, type ContractPayrollClassification } from '@/lib/payroll-employee-classification';
 import { readEmployeeProfileExtensions } from '@/lib/employee-profile-extensions-store';
+import {
+  buildStoredPayrollLinesFromDrafts,
+  enrichPayrollSummaryFromRow,
+  type ProfilePayrollSummary,
+} from '@/lib/payroll-profile-setup';
+import type { FlexiblePayrollLineDraft } from '@/lib/payroll-package-lines';
+import { sumMonthlyPackageGross } from '@/lib/payroll-package-lines';
+import { invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
+import { invalidatePayrollEmployeeOptionsCache } from '@/lib/payroll-employee-options-store';
 
 type Role =
   | 'Super Admin'
@@ -227,19 +236,7 @@ type AttendanceSummary = {
   biometricLogs: { id: string; at: string; source: string; status: string }[];
 };
 
-type PayrollSummary = {
-  payrollStatus: 'Verified' | 'Pending Validation' | 'Masked';
-  salaryGrade: string;
-  basicSalary: number | null;
-  allowances: number | null;
-  deductions: number | null;
-  bankName: string | null;
-  accountNumberMasked: string | null;
-  pensionProvider: string | null;
-  taxId: string | null;
-  payrollGroup: string | null;
-  lastPayrollProcessed: string | null;
-};
+type PayrollSummary = ProfilePayrollSummary;
 
 type PerformanceSummary = {
   currentRating: 'A' | 'B' | 'C' | 'D' | '-';
@@ -2601,7 +2598,7 @@ const buildDbProfileRecord = (row: DleEmployeeDirectoryRow): EmployeeRecord => {
     ],
   };
 
-  rec.payrollSummary = {
+  rec.payrollSummary = enrichPayrollSummaryFromRow({
     payrollStatus,
     salaryGrade: row.salaryGrade || row.employmentType || row.jobGrade || 'Not assigned',
     basicSalary: payrollBasicAmount(row),
@@ -2613,7 +2610,9 @@ const buildDbProfileRecord = (row: DleEmployeeDirectoryRow): EmployeeRecord => {
     taxId: valueOrNull(row.taxIdentificationNumber),
     payrollGroup: [row.payrollGroup, row.payCurrency, row.paymentRun].filter(Boolean).join(' / ') || null,
     lastPayrollProcessed: row.modifiedAt || row.createdAt || null,
-  };
+    earningLines: [],
+    deductionLines: [],
+  }, row);
 
   rec.emergencyContacts = [];
   rec.documents = row.documentCount > 0 ? rec.documents.slice(0, row.documentCount) : [];
@@ -2827,6 +2826,8 @@ const sanitizePayrollForRole = (payroll: PayrollSummary, perms: ReturnType<typeo
     taxId: null,
     payrollGroup: null,
     lastPayrollProcessed: null,
+    earningLines: [],
+    deductionLines: [],
   };
 };
 
@@ -5418,8 +5419,14 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     if (body.salaryGrade !== undefined) next.salaryGrade = normalizeStr(body.salaryGrade, 120) || next.salaryGrade;
     if (body.payrollGroup !== undefined) next.payrollGroup = normalizeStr(body.payrollGroup, 200);
     if (body.bankName !== undefined) next.bankName = normalizeStr(body.bankName, 150);
+    if (body.accountName !== undefined) next.accountName = normalizeStr(body.accountName, 250);
     if (body.pensionProvider !== undefined) next.pensionProvider = normalizeStr(body.pensionProvider, 150);
+    if (body.pensionPin !== undefined) next.pensionPin = normalizeStr(body.pensionPin, 80);
     if (body.taxId !== undefined) next.taxId = normalizeStr(body.taxId, 80);
+    if (body.nhfNumber !== undefined) next.nhfNumber = normalizeStr(body.nhfNumber, 80);
+    if (body.benefitGroup !== undefined) next.benefitGroup = normalizeStr(body.benefitGroup, 120);
+    if (body.nhfApplicable !== undefined) next.nhfApplicable = Boolean(body.nhfApplicable);
+    if (body.setupAssignedToPayroll !== undefined) next.setupAssignedToPayroll = Boolean(body.setupAssignedToPayroll);
     if (body.basicSalary !== undefined) {
       const amount = Number(body.basicSalary);
       next.basicSalary = Number.isFinite(amount) ? amount : null;
@@ -5432,9 +5439,35 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       const amount = Number(body.deductions);
       next.deductions = Number.isFinite(amount) ? amount : null;
     }
+    if (body.monthlyPackageGross !== undefined) {
+      const amount = Number(body.monthlyPackageGross);
+      next.monthlyPackageGross = Number.isFinite(amount) ? amount : null;
+    }
+    if (body.ratePerDay !== undefined) {
+      const amount = Number(body.ratePerDay);
+      next.ratePerDay = Number.isFinite(amount) ? amount : null;
+    }
+    if (body.ratePerHour !== undefined) {
+      const amount = Number(body.ratePerHour);
+      next.ratePerHour = Number.isFinite(amount) ? amount : null;
+    }
+    if (body.hoursPerDay !== undefined) {
+      const amount = Number(body.hoursPerDay);
+      next.hoursPerDay = Number.isFinite(amount) ? amount : null;
+    }
+    if (Array.isArray(body.earningLines)) next.earningLines = body.earningLines as FlexiblePayrollLineDraft[];
+    if (Array.isArray(body.deductionLines)) next.deductionLines = body.deductionLines as FlexiblePayrollLineDraft[];
     if (body.accountNumber !== undefined) {
       const account = normalizeStr(body.accountNumber, 50);
+      next.accountNumber = account || next.accountNumber || null;
       next.accountNumberMasked = account ? `****${account.slice(-4)}` : next.accountNumberMasked;
+    }
+    const storedEarnings = buildStoredPayrollLinesFromDrafts(next.earningLines || [], true);
+    const storedDeductions = buildStoredPayrollLinesFromDrafts(next.deductionLines || [], false);
+    if (storedEarnings.length) {
+      const monthlyGross = sumMonthlyPackageGross(storedEarnings);
+      next.monthlyPackageGross = monthlyGross;
+      if (!next.basicSalary) next.basicSalary = monthlyGross;
     }
     rec.payrollSummary = next;
     rec.audit.unshift(auditEntry('Updated payroll summary', role));
@@ -5443,15 +5476,29 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       payrollSetup: {
         payrollGroup: next.payrollGroup,
         salaryGrade: next.salaryGrade,
-        periodSalary: next.basicSalary,
-        annualSalary: next.basicSalary ? Number(next.basicSalary) * 12 : null,
+        periodSalary: next.monthlyPackageGross ?? next.basicSalary,
+        annualSalary: next.monthlyPackageGross ? Number(next.monthlyPackageGross) * 12 : (next.basicSalary ? Number(next.basicSalary) * 12 : null),
+        basicSalary: next.basicSalary,
         bankName: next.bankName,
-        accountNumber: normalizeStr(body.accountNumber, 50),
+        accountNumber: normalizeStr(body.accountNumber, 50) || next.accountNumber,
+        accountName: next.accountName,
         pensionProvider: next.pensionProvider,
+        pensionPin: next.pensionPin,
         taxIdentificationNumber: next.taxId,
+        benefitGroup: next.benefitGroup,
+        ratePerDay: next.ratePerDay,
+        ratePerHour: next.ratePerHour,
+        hoursPerDay: next.hoursPerDay,
+        sageEarningLinesJson: storedEarnings.length ? JSON.stringify(storedEarnings) : undefined,
+        sageDeductionLinesJson: storedDeductions.length ? JSON.stringify(storedDeductions) : undefined,
+        setupAssignedToPayroll: next.setupAssignedToPayroll === false ? 0 : 1,
       },
     }).then((synced) => {
-      if (synced) invalidateHrisEmployeeCaches();
+      if (synced) {
+        invalidateHrisEmployeeCaches();
+        invalidatePayrollEmployeeCache();
+        invalidatePayrollEmployeeOptionsCache();
+      }
     });
     return jsonOk(sanitizePayrollForRole(rec.payrollSummary, perms));
   }

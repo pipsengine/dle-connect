@@ -1,9 +1,14 @@
+import type { PayrollLineFrequency } from '@/lib/payroll-package-lines';
+
 export type SagePayrollLineItem = {
   code: string;
   name: string;
   amount: number;
   taxableAmount?: number | null;
   ytdTotal?: number | null;
+  runFrequency?: PayrollLineFrequency;
+  sourceAmount?: number;
+  includeInMonthlyPayroll?: boolean;
 };
 
 export const parseSagePayrollLineItems = (raw: unknown): SagePayrollLineItem[] => {
@@ -22,6 +27,15 @@ export const parseSagePayrollLineItems = (raw: unknown): SagePayrollLineItem[] =
         ytdTotal: line?.ytdTotal === null || line?.ytdTotal === undefined
           ? null
           : Math.round(Number(line.ytdTotal) * 100) / 100,
+        runFrequency: ['weekly', 'monthly', 'one-off'].includes(String(line?.runFrequency || ''))
+          ? (String(line.runFrequency) as PayrollLineFrequency)
+          : undefined,
+        sourceAmount: line?.sourceAmount === null || line?.sourceAmount === undefined
+          ? undefined
+          : Math.round(Number(line.sourceAmount) * 100) / 100,
+        includeInMonthlyPayroll: typeof line?.includeInMonthlyPayroll === 'boolean'
+          ? line.includeInMonthlyPayroll
+          : undefined,
       }))
       .filter((line) => line.code && Number.isFinite(line.amount) && line.amount !== 0);
   } catch {

@@ -21,6 +21,8 @@ import {
   hrisDataFileMtime,
   resolvePreferredHrisDataFile,
 } from '@/lib/hris-data-paths';
+import { payrollLineMonthlyAmount } from '@/lib/payroll-package-lines';
+import type { StoredPayrollPackageLine } from '@/lib/payroll-package-lines';
 
 export type PayrollEarningProfileId =
   | 'junior-permanent'
@@ -766,22 +768,29 @@ const pensionablePayFromLines = (lines: PayrollEarningLine[]) => {
 };
 
 const configuredPackageEarningLines = (employee: DleEmployeeDirectoryRow): PayrollEarningLine[] => {
-  return (employee.sagePayrollEarnings || [])
-    .map((line) => {
-      const amount = roundMoney(num(line.amount));
-      const taxableAmount = line.taxableAmount === null || line.taxableAmount === undefined ? amount : roundMoney(num(line.taxableAmount));
-      return {
-        code: compact(line.code),
-        name: compact(line.name || line.code),
-        taxable: taxableAmount > 0,
-        percentOfGross: 0,
-        calculation: 'HRIS salary package line',
-        runFrequency: 'monthly' as const,
-        includeInMonthlyPayroll: true,
-        amount,
-      };
-    })
-    .filter((line) => line.code && line.amount !== 0);
+  const lines: PayrollEarningLine[] = [];
+  for (const line of employee.sagePayrollEarnings || []) {
+    const stored = line as StoredPayrollPackageLine;
+    const includeInMonthly = stored.includeInMonthlyPayroll ?? (stored.runFrequency !== 'one-off');
+    if (!includeInMonthly) continue;
+    const amount = payrollLineMonthlyAmount(stored);
+    if (amount === 0) continue;
+    const taxableAmount = line.taxableAmount === null || line.taxableAmount === undefined ? amount : roundMoney(num(line.taxableAmount));
+    const frequency = stored.runFrequency || 'monthly';
+    lines.push({
+      code: compact(line.code),
+      name: compact(line.name || line.code),
+      taxable: taxableAmount > 0,
+      percentOfGross: 0,
+      calculation: frequency === 'weekly'
+        ? `Weekly earning (${roundMoney(stored.sourceAmount ?? amount)} × 52/12)`
+        : 'HRIS salary package line',
+      runFrequency: 'monthly',
+      includeInMonthlyPayroll: true,
+      amount,
+    });
+  }
+  return lines;
 };
 
 const isLeaveAllowanceLine = (line: Pick<PayrollEarningLine, 'code' | 'name'>) =>

@@ -4,6 +4,13 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
 import { useRouter } from 'next/navigation';
+import PayrollSetupStep from '../add-new-employee/PayrollSetupStep';
+import PayrollLinesEditor, { EARNING_LINE_PRESETS, DEDUCTION_LINE_PRESETS } from '@/components/payroll/PayrollLinesEditor';
+import {
+  profileSummaryToSetupDraft,
+  setupDraftToProfileSummary,
+  type ProfilePayrollSummary,
+} from '@/lib/payroll-profile-setup';
 import { ContractPayrollClassificationPanel, type ContractPayrollClassificationView } from '../components/ContractPayrollClassificationUi';
 import { AnimatePresence, motion } from 'motion/react';
 import {
@@ -154,19 +161,7 @@ type AttendanceSummary = {
   biometricLogs: { id: string; at: string; source: string; status: string }[];
 };
 
-type PayrollSummary = {
-  payrollStatus: 'Verified' | 'Pending Validation' | 'Masked';
-  salaryGrade: string;
-  basicSalary: number | null;
-  allowances: number | null;
-  deductions: number | null;
-  bankName: string | null;
-  accountNumberMasked: string | null;
-  pensionProvider: string | null;
-  taxId: string | null;
-  payrollGroup: string | null;
-  lastPayrollProcessed: string | null;
-};
+type PayrollSummary = ProfilePayrollSummary;
 
 type PerformanceSummary = {
   currentRating: 'A' | 'B' | 'C' | 'D' | '-';
@@ -552,6 +547,10 @@ type ProfileFormOptions = {
   costCenters: string[];
   projectSites: string[];
   roleProfiles: string[];
+  payrollGroups?: string[];
+  banks?: string[];
+  pensionProviders?: string[];
+  benefitGroups?: string[];
   employees?: Array<{ employeeId: string; fullName: string; department?: string; jobTitle?: string; location?: string; manager?: string }>;
 };
 
@@ -1269,6 +1268,8 @@ export default function EmployeeProfileClient({
   const [contactsDraft, setContactsDraft] = useState<ContactDetails | null>(null);
   const [payrollEdit, setPayrollEdit] = useState(false);
   const [payrollDraft, setPayrollDraft] = useState<PayrollSummary | null>(null);
+  const [payrollFormOptions, setPayrollFormOptions] = useState<ProfileFormOptions | null>(null);
+  const [payrollFormOptionsLoading, setPayrollFormOptionsLoading] = useState(false);
   const [medicalEdit, setMedicalEdit] = useState(false);
   const [medicalDraft, setMedicalDraft] = useState<MedicalHSE | null>(null);
   const [performanceEdit, setPerformanceEdit] = useState(false);
@@ -1417,6 +1418,40 @@ export default function EmployeeProfileClient({
     }
     setPendingEditTab(null);
   }, [pendingEditTab, profile]);
+
+  useEffect(() => {
+    if (!payrollEdit) return;
+    if (payrollFormOptions?.payrollGroups?.length) return;
+    let cancelled = false;
+    const load = async () => {
+      setPayrollFormOptionsLoading(true);
+      try {
+        const res = await fetch('/api/hris/employees/form-options', {
+          cache: 'no-store',
+          headers: { 'x-hris-role': role },
+        });
+        const json = (await res.json()) as { status: string; data?: ProfileFormOptions; error?: string };
+        if (!res.ok || (json.status !== 'success' && json.status !== 'ok') || !json.data) {
+          throw new Error(json.error || 'Unable to load payroll form options');
+        }
+        if (!cancelled) setPayrollFormOptions(json.data);
+      } catch (e) {
+        if (!cancelled) {
+          setToast({
+            title: 'Payroll options load failed',
+            detail: e instanceof Error ? e.message : 'Unable to load payroll dropdown options',
+            tone: 'err',
+          });
+        }
+      } finally {
+        if (!cancelled) setPayrollFormOptionsLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [payrollEdit, payrollFormOptions, role]);
 
   useEffect(() => {
     if (!jobEdit) return;
@@ -2698,10 +2733,11 @@ export default function EmployeeProfileClient({
                         </div>
                       }
                     >
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {!payrollEdit ? (
-                          <>
+                      {!payrollEdit ? (
+                        <div className="space-y-5">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                             <Field label="Salary Grade" value={v(profileData.payrollSummary.salaryGrade)} />
+                            <Field label="Monthly Package Gross" value={naira(profileData.payrollSummary.monthlyPackageGross ?? profileData.payrollSummary.basicSalary)} masked={!perms.canViewPayroll} />
                             <Field label="Basic Salary" value={naira(profileData.payrollSummary.basicSalary)} masked={!perms.canViewPayroll} />
                             <Field label="Allowances" value={naira(profileData.payrollSummary.allowances)} masked={!perms.canViewPayroll} />
                             <Field label="Deductions" value={naira(profileData.payrollSummary.deductions)} masked={!perms.canViewPayroll} />
@@ -2710,22 +2746,50 @@ export default function EmployeeProfileClient({
                             <Field label="Pension Provider" value={v(profileData.payrollSummary.pensionProvider)} masked={!perms.canViewPayroll} />
                             <Field label="Tax ID" value={v(profileData.payrollSummary.taxId)} masked={!perms.canViewPayroll} />
                             <Field label="Payroll Group" value={v(profileData.payrollSummary.payrollGroup)} masked={!perms.canViewPayroll} />
-                          </>
+                            <Field label="Last Payroll Processed" value={profileData.payrollSummary.lastPayrollProcessed ? formatDateUtc(profileData.payrollSummary.lastPayrollProcessed) : '—'} />
+                          </div>
+                          {perms.canViewPayroll && (profileData.payrollSummary.earningLines?.length || profileData.payrollSummary.deductionLines?.length) ? (
+                            <div className="space-y-4">
+                              <PayrollLinesEditor
+                                title="Earning Lines"
+                                description="Configured earning package for this employee."
+                                lines={profileData.payrollSummary.earningLines || []}
+                                presets={EARNING_LINE_PRESETS}
+                                onChange={() => undefined}
+                                lineKind="earning"
+                                readOnly
+                              />
+                              <PayrollLinesEditor
+                                title="Deduction Lines"
+                                description="Configured deductions for this employee."
+                                lines={profileData.payrollSummary.deductionLines || []}
+                                presets={DEDUCTION_LINE_PRESETS}
+                                onChange={() => undefined}
+                                lineKind="deduction"
+                                readOnly
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : payrollDraft ? (
+                        payrollFormOptionsLoading && !payrollFormOptions ? (
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm font-semibold text-slate-600">Loading payroll setup options…</div>
                         ) : (
-                          <>
-                            <EditField label="Salary Grade" value={editValue(payrollDraft?.salaryGrade)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), salaryGrade: next }))} />
-                            <EditField label="Basic Salary (NGN)" value={payrollDraft?.basicSalary != null ? String(payrollDraft.basicSalary) : ''} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), basicSalary: next ? Number(next) : null }))} />
-                            <EditField label="Allowances (NGN)" value={payrollDraft?.allowances != null ? String(payrollDraft.allowances) : ''} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), allowances: next ? Number(next) : null }))} />
-                            <EditField label="Deductions (NGN)" value={payrollDraft?.deductions != null ? String(payrollDraft.deductions) : ''} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), deductions: next ? Number(next) : null }))} />
-                            <EditField label="Bank Name" value={editValue(payrollDraft?.bankName)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), bankName: next }))} />
-                            <EditField label="Account Number" value={editValue(payrollDraft?.accountNumberMasked)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), accountNumberMasked: next }))} />
-                            <EditField label="Pension Provider" value={editValue(payrollDraft?.pensionProvider)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), pensionProvider: next }))} />
-                            <EditField label="Tax ID" value={editValue(payrollDraft?.taxId)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), taxId: next }))} />
-                            <EditField label="Payroll Group" value={editValue(payrollDraft?.payrollGroup)} onChange={(next) => setPayrollDraft((prev) => ({ ...(prev || profileData.payrollSummary), payrollGroup: next }))} />
-                          </>
-                        )}
-                        <Field label="Last Payroll Processed" value={profileData.payrollSummary.lastPayrollProcessed ? formatDateUtc(profileData.payrollSummary.lastPayrollProcessed) : '—'} />
-                      </div>
+                          <PayrollSetupStep
+                            payroll={profileSummaryToSetupDraft(payrollDraft, profileData.employmentType || '')}
+                            onChange={(draft) => setPayrollDraft(setupDraftToProfileSummary(draft, payrollDraft))}
+                            options={{
+                              payrollGroups: payrollFormOptions?.payrollGroups || [],
+                              banks: payrollFormOptions?.banks || [],
+                              pensionProviders: payrollFormOptions?.pensionProviders || [],
+                              benefitGroups: payrollFormOptions?.benefitGroups || [],
+                            }}
+                            canViewPayroll={perms.canViewPayroll}
+                            employmentType={profileData.employmentType || ''}
+                            assignLabel="Employee assigned to payroll run"
+                          />
+                        )
+                      ) : null}
                       {!perms.canViewPayroll && (
                         <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 font-semibold">
                           Payroll amounts are masked. Only Payroll Officer, HR leadership, and authorized executives can view salary and bank details.

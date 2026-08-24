@@ -14,6 +14,13 @@ import {
 import { payrollDataSourceInfo, readDirectoryEmployees, invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
 import { writePayrollEmployeeOption, invalidatePayrollEmployeeOptionsCache } from '@/lib/payroll-employee-options-store';
 import type { SagePayrollLineItem } from '@/lib/sage-payroll-line-parser';
+import {
+  draftPayrollLineToStored,
+  payrollLineMonthlyAmount,
+  sumMonthlyPackageGross,
+  type FlexiblePayrollLineDraft,
+  type StoredPayrollPackageLine,
+} from '@/lib/payroll-package-lines';
 
 type Role =
   | 'Super Admin'
@@ -314,6 +321,20 @@ const normalizePayrollPayloadBeforeCreate = (payload: EmployeeDraftPayload) => {
   if (payload.payroll.nhfNumber && payload.payroll.nhfApplicable !== false && !payload.payroll.nhfApplicable) {
     payload.payroll.nhfApplicable = true;
   }
+  if (!Array.isArray(payload.payroll.earningLines)) payload.payroll.earningLines = [];
+  if (!Array.isArray(payload.payroll.deductionLines)) payload.payroll.deductionLines = [];
+  const earningLines = (payload.payroll.earningLines as FlexiblePayrollLineDraft[])
+    .map((line) => draftPayrollLineToStored(line, true))
+    .filter(Boolean) as StoredPayrollPackageLine[];
+  const monthlyGross = sumMonthlyPackageGross(earningLines);
+  if (monthlyGross > 0) {
+    if (!parseMoney(payload.payroll.periodSalary)) payload.payroll.periodSalary = String(monthlyGross);
+    if (!parseMoney(payload.payroll.annualSalary)) payload.payroll.annualSalary = String(roundMoney(monthlyGross * 12));
+    const basicLine = earningLines.find((line) => /BASIC/i.test(line.code) || /BASIC/i.test(line.name));
+    if (basicLine && !parseMoney(payload.payroll.basicSalary)) {
+      payload.payroll.basicSalary = String(payrollLineMonthlyAmount(basicLine));
+    }
+  }
 };
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
@@ -539,14 +560,33 @@ const buildDefaultDeductionLines = (draft: EmployeeDraftPayload, _employeeCode: 
   return lines;
 };
 
-const buildSageJsonLinesForCreate = (draft: EmployeeDraftPayload, employeeCode: string) => {
-  const gradeLines = expandGradeEarningLines(draft, employeeCode);
-  const manualAllowanceLines = parseTemplateLines(draft.payroll?.allowancesTemplate, true);
-  const manualDeductionLines = parseTemplateLines(draft.payroll?.deductionTemplate, false);
-  const earningLines = mergeEarningLines([gradeLines, manualAllowanceLines]);
-  const periodGross = earningLines.reduce((sum, line) => sum + line.amount, 0);
-  const statutoryDeductions = buildDefaultDeductionLines(draft, employeeCode, periodGross);
-  const deductionLines = mergeEarningLines([statutoryDeductions, manualDeductionLines]);
+const buildSageJsonLinesForCreate = (draft: EmployeeDraftPayload, _employeeCode: string) => {
+  const structuredEarnings = ((draft.payroll?.earningLines || []) as FlexiblePayrollLineDraft[])
+    .map((line) => draftPayrollLineToStored(line, true))
+    .filter(Boolean) as StoredPayrollPackageLine[];
+  const templateEarnings = structuredEarnings.length ? [] : parseTemplateLines(draft.payroll?.allowancesTemplate, true).map((line) => ({
+    ...line,
+    runFrequency: 'monthly' as const,
+    sourceAmount: line.amount,
+    includeInMonthlyPayroll: true,
+  }));
+  const earningLines = mergeEarningLines([structuredEarnings.length ? structuredEarnings : templateEarnings]);
+
+  const structuredDeductions = ((draft.payroll?.deductionLines || []) as FlexiblePayrollLineDraft[])
+    .map((line) => draftPayrollLineToStored(line, false))
+    .filter(Boolean) as StoredPayrollPackageLine[];
+  const templateDeductions = structuredDeductions.length ? [] : parseTemplateLines(draft.payroll?.deductionTemplate, false).map((line) => ({
+    ...line,
+    runFrequency: 'monthly' as const,
+    sourceAmount: line.amount,
+    includeInMonthlyPayroll: true,
+  }));
+  const periodGross = sumMonthlyPackageGross(earningLines as StoredPayrollPackageLine[]);
+  const hasManualNhf = [...structuredDeductions, ...templateDeductions].some((line) => /^NHF$/i.test(line.code));
+  const statutoryDeductions = hasManualNhf || draft.payroll?.nhfApplicable === false
+    ? []
+    : buildDefaultDeductionLines(draft, _employeeCode, periodGross);
+  const deductionLines = mergeEarningLines([statutoryDeductions, structuredDeductions.length ? structuredDeductions : templateDeductions]);
   return {
     earningLines,
     deductionLines,
@@ -710,15 +750,7 @@ export async function POST(request: Request) {
     return jsonErr(409, `Duplicate employee profile detected: ${matches}. Confirm the employee does not already exist in HRIS before creating.`, { duplicateMatches: top });
   }
 
-  const isDayRate = employeeTypePrefix(draftRec.draft.employment?.employmentType) === 'C';
-  const isLumpsum = employeeTypePrefix(draftRec.draft.employment?.employmentType) === 'L';
-  const isStipend = isStipendEmploymentType(draftRec.draft.employment?.employmentType);
-  const isSalaried = !isStipend && !isDayRate && !isLumpsum; // Permanent / anything not the three above
-  // ----- IMPORTANT: Add-Employee wizard does NOT require payroll-detail fields at create time -----
-  // They are filled in later from Edit Profile / Payroll Setup. HR only needs minimal biographical data.
-  // ALL validation gates are removed: no bank, no PFA, no salary, no grade, no daily-rate required.
-  void isSalaried; void isDayRate; void isLumpsum; void isStipend;
-  const setupAssignedToPayroll = true;
+  const setupAssignedToPayroll = draftRec.draft.payroll?.setupAssignedToPayroll !== false;
   const basicSalary = parseMoney(draftRec.draft.payroll?.basicSalary);
   const periodSalary = parseMoney(draftRec.draft.payroll?.periodSalary);
   const annualSalary = parseMoney(draftRec.draft.payroll?.annualSalary);
@@ -769,7 +801,7 @@ export async function POST(request: Request) {
       jobGrade: String(draftRec.draft.job?.jobGrade || '').trim() || undefined,
       healthInsurancePlan: String(draftRec.draft.payroll?.healthInsurancePlan || '').trim() || undefined,
       benefitGroup: String(draftRec.draft.payroll?.benefitGroup || '').trim() || undefined,
-      setupAssignedToPayroll: true,
+      setupAssignedToPayroll,
       excludedFromPayrollRun: false,
       ratePerDay: finalRatePerDay && finalRatePerDay > 0 ? finalRatePerDay : undefined,
       ratePerHour: finalRatePerHour && finalRatePerHour > 0 ? finalRatePerHour : undefined,
