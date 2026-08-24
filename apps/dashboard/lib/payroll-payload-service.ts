@@ -39,16 +39,6 @@ import {
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 
 const FINALIZED_RUN_STATUSES = new Set([
-  'Computed',
-  'Calculated',
-  'Ready for Approval',
-  'Submitted',
-  'Under Review',
-  'Finance Approved',
-  'HR Approved',
-  'Approved',
-  'Released',
-  'Locked',
   'Posted',
   'Published',
   'Closed',
@@ -92,7 +82,8 @@ const shouldUseSnapshot = (
   snapshot: PayrollRunSnapshot | null,
 ) => {
   if (!run || !snapshot?.records?.length) return false;
-  if (periodRecord?.status === 'Closed' || run.status === 'Closed') return true;
+  if (periodRecord?.status === 'Closed' || periodRecord?.status === 'Posted' || periodRecord?.status === 'Locked') return true;
+  if (run.status === 'Closed' || run.status === 'Posted' || run.status === 'Published') return true;
   return FINALIZED_RUN_STATUSES.has(run.status);
 };
 
@@ -149,28 +140,7 @@ const resolvePeriodCalculation = async (
     return { calculation: stripPendingPayrollAmounts(normalizedLive), dataMode: 'pending' as const, payrollComputed: false };
   }
 
-  if (!run) return { calculation: normalizedLive, dataMode: 'live' as const, payrollComputed: true };
-
-  if (run.grossPay > 0) {
-    return {
-      calculation: {
-        ...normalizedLive,
-        summary: {
-          ...normalizedLive.summary,
-          grossPay: roundMoney(run.grossPay),
-          deductions: roundMoney(run.deductions),
-          totalDeductions: roundMoney(run.deductions),
-          netPay: roundMoney(run.netPay),
-          employerCost: roundMoney(run.employerCost),
-          payrollEligible: run.employeeCount || live.summary.payrollEligible,
-          employees: run.employeeCount || live.summary.employees,
-        },
-      },
-      dataMode: 'run-header' as const,
-      payrollComputed: true,
-    };
-  }
-
+  // Always return LIVE records for any Open / mutable period status. Only snapshot for Closed/Posted/Locked/Published.
   return { calculation: normalizedLive, dataMode: 'live' as const, payrollComputed: true };
 };
 
