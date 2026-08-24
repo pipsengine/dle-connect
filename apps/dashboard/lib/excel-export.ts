@@ -47,7 +47,9 @@ export const buildExcelHtml = ({ title, sheetName, columns, rows, generatedAt, s
         const raw = row[cellIndex];
         const numeric = typeof raw === 'number' && Number.isFinite(raw);
         const value = cellText(raw);
-        return `<td class="${numeric ? 'number' : 'text'}">${escapeHtml(value)}</td>`;
+        const hasValue = numeric || value !== '';
+        const cls = numeric ? 'number' : (hasValue ? 'text' : 'blank');
+        return `<td class="${cls}">${escapeHtml(String(value))}</td>`;
       });
       return `<tr class="${index % 2 ? 'alt' : ''}">${cells.join('')}</tr>`;
     })
@@ -62,8 +64,10 @@ export const buildExcelHtml = ({ title, sheetName, columns, rows, generatedAt, s
     body { font-family: Arial, sans-serif; color: #0f172a; }
     table { border-collapse: collapse; width: 100%; }
     th { background: #0f4c81; color: #ffffff; font-weight: 700; border: 1px solid #0b3a63; padding: 8px; text-align: left; white-space: nowrap; }
-    td { border: 1px solid #cbd5e1; padding: 7px; vertical-align: top; mso-number-format:"\\@"; }
+    td { border: 1px solid #cbd5e1; padding: 7px; vertical-align: top; }
+    td.text { mso-number-format:"\\@"; }
     td.number { text-align: right; mso-number-format:"#,##0.00"; }
+    td.blank { }
     tr.alt td { background: #f8fafc; }
     .report-title { background: #082f49; color: #ffffff; font-size: 18px; font-weight: 800; padding: 12px; border: 1px solid #082f49; }
     .report-subtitle { background: #e0f2fe; color: #075985; font-weight: 700; padding: 8px 12px; border: 1px solid #bae6fd; }
@@ -94,10 +98,12 @@ const escapeXml = (value: unknown) =>
 
 const spreadsheetCell = (value: ExcelCell, style: 'Odd' | 'Even') => {
   const numeric = typeof value === 'number' && Number.isFinite(value);
-  const normalized = cellText(value);
-  const dataType = numeric ? 'Number' : 'String';
+  const normalized = numeric ? String(value) : String(cellText(value));
+  const emptyString = !numeric && normalized === '';
+  const dataType = numeric ? 'Number' : (emptyString ? '' : 'String');
   const styleId = numeric ? `${style}Number` : style;
-  return `<Cell ss:StyleID="${styleId}"><Data ss:Type="${dataType}">${escapeXml(normalized)}</Data></Cell>`;
+  const dataAttr = dataType ? ` ss:Type="${dataType}"` : '';
+  return `<Cell ss:StyleID="${styleId}">${emptyString ? '' : `<Data${dataAttr}>${escapeXml(normalized)}</Data>`}</Cell>`;
 };
 
 /**
