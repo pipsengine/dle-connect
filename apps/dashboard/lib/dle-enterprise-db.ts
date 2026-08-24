@@ -2788,8 +2788,8 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
     await new sql.Request(tx)
       .input('employee_id', sql.BigInt, employeeId)
       .input('payroll_group', sql.NVarChar(100), nullable(payroll.payrollGroup) || (isStipendEmployee ? 'DLE' : null))
-      .input('salary_grade', sql.NVarChar(80), nullable(payroll.salaryGrade) || (isStipendEmployee ? stipendGrade : null))
       .input('basic_salary', sql.Decimal(19, 4), numOrNull(payroll.basicSalary))
+
       .input('pay_frequency', sql.NVarChar(50), nullable(payroll.payFrequency) || (isStipendEmployee ? 'Monthly' : null))
       .input('pay_currency', sql.NVarChar(10), nullable(payroll.payCurrency) || (isStipendEmployee ? 'NGN' : null))
       .input('period_salary', sql.Decimal(19, 4), stipendPeriodSalary)
@@ -2811,13 +2811,13 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
       .input('setup_assigned_to_payroll', sql.Bit, boolVal(payroll.setupAssignedToPayroll ?? (isStipendEmployee ? true : true)))
       .query(`
         INSERT [hris].[EmployeePayrollSetup](
-          employee_id, payroll_group, salary_grade, basic_salary, pay_frequency, pay_currency, period_salary, annual_salary,
+          employee_id, payroll_group, basic_salary, pay_frequency, pay_currency, period_salary, annual_salary,
           rate_per_day, rate_per_hour, hours_per_day, payment_run, payment_type,
           bank_name, account_number, account_name,
           pension_provider, pension_pin, tax_identification_number,
           benefit_group, sage_earning_lines_json, sage_deduction_lines_json, setup_assigned_to_payroll
         ) VALUES (
-          @employee_id, @payroll_group, @salary_grade, @basic_salary, @pay_frequency, @pay_currency, @period_salary, @annual_salary,
+          @employee_id, @payroll_group, @basic_salary, @pay_frequency, @pay_currency, @period_salary, @annual_salary,
           @rate_per_day, @rate_per_hour, @hours_per_day, @payment_run, @payment_type,
           @bank_name, @account_number, @account_name,
           @pension_provider, @pension_pin, @tax_identification_number,
