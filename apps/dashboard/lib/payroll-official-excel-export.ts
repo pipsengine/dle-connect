@@ -213,8 +213,15 @@ export const buildOfficialBankScheduleWorksheets = (
     mode?: 'staff-packs' | 'company';
     /** Default ngn — DLE_USD never mixes into NGN packs. Use usd for the separate DLE USD export. */
     currencyScope?: OfficialExportCurrencyScope | string | null;
-    /** Append trailing aggregate row with employee code = 7 (NET-only total), AUGUST sample format. */
+    /** Append trailing aggregate row with employee code = headcount, AUGUST sample format. */
     appendCompanyTotalRow?: boolean;
+    /**
+     * In company-mode, overrides any bucket-filtering and uses THESE EXACT RECORD LISTS per bucket.
+     * Use this when the detail sheet and bank sheet MUST have exactly the same set of employees,
+     * in exactly the same order, with exactly the same headcount — so detail-headcount, bank-headcount,
+     * and SUMMARY.headcount all agree to the same integer (no payable() exclusion drift).
+     */
+    enforceCompanyBucketsFrom?: Array<{ bucket: OfficialCompanyBucket; records: PayrollCalculationRecord[] }>;
   },
 ): ExcelWorksheetInput[] => {
   const periodLabel = options?.periodLabel || 'Payroll Period';
@@ -225,46 +232,63 @@ export const buildOfficialBankScheduleWorksheets = (
     Number(record.netPay || 0) !== 0 || compact(record.accountNo);
 
   if (mode === 'company') {
-    const configs: Array<{ bucket: OfficialCompanyBucket; sheetName: string; includeLocation: boolean }> = [
-      { bucket: 'DLE', sheetName: 'DLE BANK SCHD', includeLocation: false },
-      { bucket: 'DLPC', sheetName: 'DLPC.BANK.SCHD', includeLocation: true },
-    ];
+    const configs: Array<{
+      bucket: OfficialCompanyBucket;
+      sheetName: string;
+      includeLocation: boolean;
+      records: PayrollCalculationRecord[];
+    }> = (() => {
+      if (options?.enforceCompanyBucketsFrom?.length) {
+        const byBucket = new Map<OfficialCompanyBucket, PayrollCalculationRecord[]>();
+        for (const entry of options.enforceCompanyBucketsFrom) byBucket.set(entry.bucket, entry.records);
+        return [
+          { bucket: 'DLE' as OfficialCompanyBucket, sheetName: 'DLE BANK SCHD', includeLocation: false, records: byBucket.get('DLE') || [] },
+          { bucket: 'DLPC' as OfficialCompanyBucket, sheetName: 'DLPC.BANK.SCHD', includeLocation: true, records: byBucket.get('DLPC') || [] },
+        ];
+      }
+      const dle = scopedRecords.filter((r) => resolveOfficialCompanyBucket(r) === 'DLE').filter(payable);
+      const dlpc = scopedRecords.filter((r) => resolveOfficialCompanyBucket(r) === 'DLPC').filter(payable);
+      return [
+        { bucket: 'DLE' as OfficialCompanyBucket, sheetName: 'DLE BANK SCHD', includeLocation: false, records: dle },
+        { bucket: 'DLPC' as OfficialCompanyBucket, sheetName: 'DLPC.BANK.SCHD', includeLocation: true, records: dlpc },
+      ];
+    })();
+
     return configs.map((config) => {
-      const rows = scopedRecords
-        .filter((record) => resolveOfficialCompanyBucket(record) === config.bucket)
-        .filter(payable)
-        .map((record) => {
-          const base = [
-            officialEmployeeCode(record),
-            compact(record.fullName),
-            compact(record.bankName),
-            compact(record.accountNo),
-            compact(record.sortCode || record.branchCode || record.bankCode),
-            roundMoney(Number(record.netPay || 0)),
-          ] as ExcelCell[];
-          if (config.includeLocation) base.push(compact(record.location));
-          return base;
-        });
+      const headcount = config.records.length;
+      const rows = config.records.map((record) => {
+        const base: ExcelCell[] = [
+          officialEmployeeCode(record),
+          compact(record.fullName),
+          compact(record.bankName),
+          compact(record.accountNo),
+          compact(record.sortCode || record.branchCode || record.bankCode),
+          roundMoney(Number(record.netPay || 0)),
+        ];
+        if (config.includeLocation) base.push(compact(record.location));
+        return base;
+      });
 
       if (options?.appendCompanyTotalRow) {
-        const bucketRecords = scopedRecords.filter(
-          (record) => resolveOfficialCompanyBucket(record) === config.bucket,
-        );
-        const totalNet = roundMoney(bucketRecords.reduce((sum, r) => sum + Number(r.netPay || 0), 0));
+        const totalNet = roundMoney(config.records.reduce((sum, r) => sum + Number(r.netPay || 0), 0));
         const totalRow: ExcelCell[] = config.includeLocation
-          ? [7, '', '', '', '', totalNet, '']
-          : [7, '', '', '', '', totalNet];
+          ? [headcount, '', '', '', '', totalNet, '']
+          : [headcount, '', '', '', '', totalNet];
         rows.push(totalRow);
       }
 
+      const titleRow: ExcelCell[] = config.includeLocation
+        ? ['Employee Bank Details', '', '', '', '', '', '']
+        : ['Employee Bank Details', '', '', '', '', ''];
+      const headerRow: string[] = config.includeLocation
+        ? ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location']
+        : ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary'];
       return {
         title: 'Employee Bank Details',
         subtitle: `${options?.titlePrefix || 'Bank Payment Schedule'} · ${periodLabel} · ${config.bucket}`,
         sheetName: config.sheetName,
-        columns: config.includeLocation
-          ? ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location']
-          : ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary'],
-        rows,
+        columns: headerRow,
+        rows: [titleRow, headerRow as unknown as ExcelCell[], ...rows],
       };
     });
   }
@@ -290,12 +314,15 @@ export const buildOfficialBankScheduleWorksheets = (
         roundMoney(Number(record.netPay || 0)),
         compact(record.location),
       ] as ExcelCell[]);
+    const columns: string[] = ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location'];
+    const titleRow: ExcelCell[] = ['Employee Bank Details', '', '', '', '', '', ''];
+    const headerRow = columns.slice();
     return {
       title: 'Employee Bank Details',
       subtitle: `${options?.titlePrefix || 'Bank Payment Schedule'} · ${periodLabel} · ${pack.label}`,
       sheetName: pack.sheetName,
-      columns: ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location'],
-      rows,
+      columns,
+      rows: [titleRow, headerRow as unknown as ExcelCell[], ...rows],
     };
   });
 };
@@ -719,9 +746,10 @@ const buildDayrateDetailSheet = (
   attendance: Map<string, PayrollAttendanceSheetRow>,
   sheetName: 'DLE' | 'DLPC',
   periodLabel: string,
-  options?: { appendDlpcTotalRow?: boolean },
+  options?: { appendTotalRow?: boolean },
 ): ExcelWorksheetInput => {
   const columns = sheetName === 'DLE' ? [...DAYRATE_DLE_COLUMNS] : [...DAYRATE_DLPC_COLUMNS];
+  const headcount = records.length;
   const blankOr = (value: number | null | undefined) => {
     const num = Number(value || 0);
     return num === 0 ? '' : roundMoney(num);
@@ -833,53 +861,197 @@ const buildDayrateDetailSheet = (
     ] as ExcelCell[];
   });
 
-  if (options?.appendDlpcTotalRow) {
-    const totals = records.reduce(
-      (acc, record) => {
-        const totalEarnings = Number(record.grossPay || 0);
-        const wht = Number(record.paye || 0) || totalEarnings * 0.05;
-        const netPay = Number(record.netPay || 0) || totalEarnings - wht;
-        return {
-          dailyRate: acc.dailyRate + Number(record.ratePerDay || 0),
-          weekDays: acc.weekDays + Number(record.timesheetDaysWorked ?? 0),
-          meal: acc.meal + (lineAmount(record.earningLines, /^MEAL$|MEAL ALLOW|PER_MEAL/i) || 0),
-          totalEarnings: acc.totalEarnings + totalEarnings,
-          wht: acc.wht + wht,
-          netPay: acc.netPay + netPay,
-        };
-      },
-      { dailyRate: 0, weekDays: 0, meal: 0, totalEarnings: 0, wht: 0, netPay: 0 },
-    );
+  if (options?.appendTotalRow) {
+    const empty = (_idx: number) => '';
     if (sheetName === 'DLE') {
-      rows.push([
-        7, '', '', '', '',
+      const totals = records.reduce(
+        (acc, record) => {
+          const code = officialEmployeeCode(record);
+          const att = attendance.get(upper(code))
+            || attendance.get(upper(employeeCodeOf(record)))
+            || attendance.get(upper(record.fullName))
+            || attendance.get(upper(`${record._firstName} ${record._lastName}`));
+          const dailyRate = Number(record.ratePerDay || 0)
+            || (att && att.weekDaysWorked > 0 ? roundMoney(Number(att.weekDayTotal || 0) / att.weekDaysWorked) : 0);
+          const weekDays = Number(att?.weekDaysWorked ?? record.timesheetDaysWorked ?? 0);
+          const weekdayOvtHrs = Number(att?.weekdayOvertimeHours ?? 0);
+          const satHrs = Number(att?.saturdayHours ?? 0);
+          const sunHrs = Number(att?.sundayHours ?? 0);
+          const nightDays = Number(att?.nightWorkedDays ?? 0);
+          const wkdEarning = lineAmount(record.earningLines, /JCWEEKDAY(?!_NT)/i) + lineAmount(record.earningLines, /JCWEEKDAY_NT/i)
+            || Number(att?.weekDayTotal || 0)
+            || roundMoney(weekDays * dailyRate);
+          const wkdOvtAmt = lineAmount(record.earningLines, /WEEKDAYOVT/i)
+            || Number(att?.weekdayOvertimeTotal || 0)
+            || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 1.5 * weekdayOvtHrs) : 0);
+          const satAmt = lineAmount(record.earningLines, /SATEARN/i)
+            || Number(att?.saturdayTotal || 0)
+            || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 1.5 * satHrs) : 0);
+          const sunAmt = lineAmount(record.earningLines, /SUNDAYEARN/i)
+            || Number(att?.sundayTotal || 0)
+            || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 2 * sunHrs) : 0);
+          const nightAmt = lineAmount(record.earningLines, /NIGHT/i)
+            || Number(att?.nightWorkedTotal || 0)
+            || roundMoney(1100 * nightDays);
+          const meal = lineAmount(record.earningLines, /^MEAL$|MEAL ALLOW|PER_MEAL/i)
+            || roundMoney(500 * weekDays);
+          const transport = lineAmount(record.earningLines, /TRANSPORT ALLOW|EXP_TRANS|^TRANSPORT$/i);
+          const site = lineAmount(record.earningLines, /SITE ALLOW/i) || Number(att?.siteAllowanceTotal || 0);
+          const tcmMeal = lineAmount(record.earningLines, /TCMMEAL/i);
+          const tcmTransport = lineAmount(record.earningLines, /TCM.?TRANS/i);
+          const arrears = lineAmount(record.earningLines, /ARREARS/i);
+          const totalEarnings = Number(record.grossPay || 0)
+            || wkdEarning + wkdOvtAmt + satAmt + sunAmt + nightAmt + meal + transport + site + tcmMeal + tcmTransport + arrears;
+          const wht = Number(record.paye || 0) || totalEarnings * 0.05;
+          const netPay = Number(record.netPay || 0) || totalEarnings - wht;
+          return {
+            dailyRate: acc.dailyRate + dailyRate,
+            weekDays: acc.weekDays + weekDays,
+            weekdayOvtHrs: acc.weekdayOvtHrs + weekdayOvtHrs,
+            satHrs: acc.satHrs + satHrs,
+            sunHrs: acc.sunHrs + sunHrs,
+            nightDays: acc.nightDays + nightDays,
+            wkdEarning: acc.wkdEarning + wkdEarning,
+            wkdOvtAmt: acc.wkdOvtAmt + wkdOvtAmt,
+            satAmt: acc.satAmt + satAmt,
+            sunAmt: acc.sunAmt + sunAmt,
+            nightAmt: acc.nightAmt + nightAmt,
+            meal: acc.meal + meal,
+            transport: acc.transport + transport,
+            site: acc.site + site,
+            tcmMeal: acc.tcmMeal + tcmMeal,
+            tcmTransport: acc.tcmTransport + tcmTransport,
+            arrears: acc.arrears + arrears,
+            totalEarnings: acc.totalEarnings + totalEarnings,
+            wht: acc.wht + wht,
+            netPay: acc.netPay + netPay,
+          };
+        },
+        {
+          dailyRate: 0, weekDays: 0, weekdayOvtHrs: 0, satHrs: 0, sunHrs: 0, nightDays: 0,
+          wkdEarning: 0, wkdOvtAmt: 0, satAmt: 0, sunAmt: 0, nightAmt: 0, meal: 0,
+          transport: 0, site: 0, tcmMeal: 0, tcmTransport: 0, arrears: 0,
+          totalEarnings: 0, wht: 0, netPay: 0,
+        },
+      );
+      const row: ExcelCell[] = [
+        headcount, empty(1), empty(2), empty(3), empty(4),
         roundMoney(totals.dailyRate),
-        '', '',
+        empty(6), empty(7),
         roundMoney(totals.weekDays),
-        0, 0, 0, 0,
-        0, '', '', '', '',
+        roundMoney(totals.weekdayOvtHrs),
+        roundMoney(totals.satHrs),
+        roundMoney(totals.sunHrs),
+        roundMoney(totals.nightDays),
+        roundMoney(totals.wkdEarning),
+        blankOr(totals.wkdOvtAmt),
+        blankOr(totals.satAmt),
+        blankOr(totals.sunAmt),
+        blankOr(totals.nightAmt),
         roundMoney(totals.meal),
-        '', '', '', '', '',
+        blankOr(totals.transport),
+        blankOr(totals.site),
+        blankOr(totals.tcmMeal),
+        blankOr(totals.tcmTransport),
+        blankOr(totals.arrears),
         roundMoney(totals.totalEarnings),
         roundMoney(totals.wht),
         roundMoney(totals.totalEarnings),
         roundMoney(totals.netPay),
-      ] as ExcelCell[]);
+      ];
+      rows.push(row);
     } else {
-      rows.push([
-        7, '', '', '',
+      const totals = records.reduce(
+        (acc, record) => {
+          const code = officialEmployeeCode(record);
+          const att = attendance.get(upper(code))
+            || attendance.get(upper(employeeCodeOf(record)))
+            || attendance.get(upper(record.fullName))
+            || attendance.get(upper(`${record._firstName} ${record._lastName}`));
+          const dailyRate = Number(record.ratePerDay || 0)
+            || (att && att.weekDaysWorked > 0 ? roundMoney(Number(att.weekDayTotal || 0) / att.weekDaysWorked) : 0);
+          const weekDays = Number(att?.weekDaysWorked ?? record.timesheetDaysWorked ?? 0);
+          const weekdayOvtHrs = Number(att?.weekdayOvertimeHours ?? 0);
+          const satHrs = Number(att?.saturdayHours ?? 0);
+          const sunHrs = Number(att?.sundayHours ?? 0);
+          const phHrs = Number(att?.publicHolidayHours ?? 0);
+          const nightDays = Number(att?.nightWorkedDays ?? 0);
+          const wkdEarning = lineAmount(record.earningLines, /JCWEEKDAY(?!_NT)/i) + lineAmount(record.earningLines, /JCWEEKDAY_NT/i)
+            || Number(att?.weekDayTotal || 0)
+            || roundMoney(weekDays * dailyRate);
+          const wkdOvtAmt = lineAmount(record.earningLines, /WEEKDAYOVT/i)
+            || Number(att?.weekdayOvertimeTotal || 0)
+            || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 1.5 * weekdayOvtHrs) : 0);
+          const satAmt = lineAmount(record.earningLines, /SATEARN/i)
+            || Number(att?.saturdayTotal || 0)
+            || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 1.5 * satHrs) : 0);
+          const sunAmt = lineAmount(record.earningLines, /SUNDAYEARN/i)
+            || Number(att?.sundayTotal || 0)
+            || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 2 * sunHrs) : 0);
+          const phAmt = lineAmount(record.earningLines, /PUBHOL/i)
+            || Number(att?.publicHolidayTotal || 0)
+            || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 2 * phHrs) : 0);
+          const nightAmt = lineAmount(record.earningLines, /NIGHT/i)
+            || Number(att?.nightWorkedTotal || 0)
+            || roundMoney(1100 * nightDays);
+          const meal = lineAmount(record.earningLines, /^MEAL$|MEAL ALLOW|PER_MEAL/i)
+            || roundMoney(500 * weekDays);
+          const transport = lineAmount(record.earningLines, /TRANSPORT ALLOW|EXP_TRANS|^TRANSPORT$/i);
+          const totalEarnings = Number(record.grossPay || 0)
+            || wkdEarning + wkdOvtAmt + satAmt + sunAmt + phAmt + nightAmt + meal + transport;
+          const wht = Number(record.paye || 0) || totalEarnings * 0.05;
+          const netPay = Number(record.netPay || 0) || totalEarnings - wht;
+          return {
+            dailyRate: acc.dailyRate + dailyRate,
+            weekDays: acc.weekDays + weekDays,
+            weekdayOvtHrs: acc.weekdayOvtHrs + weekdayOvtHrs,
+            satHrs: acc.satHrs + satHrs,
+            sunHrs: acc.sunHrs + sunHrs,
+            phHrs: acc.phHrs + phHrs,
+            nightDays: acc.nightDays + nightDays,
+            wkdEarning: acc.wkdEarning + wkdEarning,
+            wkdOvtAmt: acc.wkdOvtAmt + wkdOvtAmt,
+            satAmt: acc.satAmt + satAmt,
+            sunAmt: acc.sunAmt + sunAmt,
+            phAmt: acc.phAmt + phAmt,
+            nightAmt: acc.nightAmt + nightAmt,
+            meal: acc.meal + meal,
+            transport: acc.transport + transport,
+            totalEarnings: acc.totalEarnings + totalEarnings,
+            wht: acc.wht + wht,
+            netPay: acc.netPay + netPay,
+          };
+        },
+        {
+          dailyRate: 0, weekDays: 0, weekdayOvtHrs: 0, satHrs: 0, sunHrs: 0, phHrs: 0, nightDays: 0,
+          wkdEarning: 0, wkdOvtAmt: 0, satAmt: 0, sunAmt: 0, phAmt: 0, nightAmt: 0, meal: 0,
+          transport: 0, totalEarnings: 0, wht: 0, netPay: 0,
+        },
+      );
+      const row: ExcelCell[] = [
+        headcount, empty(1), empty(2), empty(3),
         roundMoney(totals.dailyRate),
-        '', '',
+        empty(5), empty(6),
         roundMoney(totals.weekDays),
-        0, 0, 0, 0, 0,
-        0, '', '', '', '', '',
+        roundMoney(totals.weekdayOvtHrs),
+        roundMoney(totals.satHrs),
+        roundMoney(totals.sunHrs),
+        roundMoney(totals.phHrs),
+        roundMoney(totals.nightDays),
+        roundMoney(totals.wkdEarning),
+        blankOr(totals.wkdOvtAmt),
+        blankOr(totals.satAmt),
+        blankOr(totals.sunAmt),
+        blankOr(totals.phAmt),
+        blankOr(totals.nightAmt),
         roundMoney(totals.meal),
-        '',
+        blankOr(totals.transport),
         roundMoney(totals.totalEarnings),
         roundMoney(totals.wht),
         roundMoney(totals.totalEarnings),
         roundMoney(totals.netPay),
-      ] as ExcelCell[]);
+      ];
+      rows.push(row);
     }
   }
 
@@ -958,11 +1130,26 @@ export const buildOfficialDayrateScheduleWorksheets = async (
   const dle = dayrate.filter((record) => record._companyBucket === 'DLE');
   const dlpc = dayrate.filter((record) => record._companyBucket === 'DLPC');
 
-  const totalGross = (rows: Enriched[]) => roundMoney(rows.reduce((sum, row) => sum + Number(row.grossPay || 0), 0));
-  const totalNet = (rows: Enriched[]) => roundMoney(rows.reduce((sum, row) => sum + Number(row.netPay || 0), 0));
+  const summaryPeriodLabel = /^([A-Z]+)\s+(\d{4})$/i.test(periodLabel.trim())
+    ? periodLabel.trim()
+    : /^([A-Z]+)\s+(\d{4})/i.exec(periodLabel)?.[0] || periodLabel.trim();
+
+  const summaryTitleRow = [
+    `${summaryPeriodLabel.toUpperCase()} DAYRATE PAYMENT SCHEDULE`,
+    '',
+    '',
+    '',
+  ] as ExcelCell[];
+  const summaryHeaderRow: ExcelCell[] = ['COMPANY', 'HEADCOUNT', 'GROSS PAY', 'NET PAY'];
+  const grossDle = roundMoney(dle.reduce((sum, row) => sum + Number(row.grossPay || 0), 0));
+  const netDle = roundMoney(dle.reduce((sum, row) => sum + Number(row.netPay || 0), 0));
+  const grossDlpc = roundMoney(dlpc.reduce((sum, row) => sum + Number(row.grossPay || 0), 0));
+  const netDlpc = roundMoney(dlpc.reduce((sum, row) => sum + Number(row.netPay || 0), 0));
   const summaryRows: ExcelCell[][] = [
-    ['DLE', dle.length, totalGross(dle), totalNet(dle)],
-    ['DLPC', dlpc.length, totalGross(dlpc), totalNet(dlpc)],
+    summaryTitleRow,
+    summaryHeaderRow,
+    ['DLE', dle.length, grossDle, netDle],
+    ['DLPC', dlpc.length, grossDlpc, netDlpc],
     [
       'Total',
       dle.length + dlpc.length,
@@ -970,6 +1157,21 @@ export const buildOfficialDayrateScheduleWorksheets = async (
       roundMoney(dayrate.reduce((sum, row) => sum + Number(row.netPay || 0), 0)),
     ],
   ];
+
+  const dleDetail = buildDayrateDetailSheet(dle, attendance, 'DLE', periodLabel, { appendTotalRow: true });
+  const dlpcDetail = buildDayrateDetailSheet(dlpc, attendance, 'DLPC', periodLabel, { appendTotalRow: true });
+  const bankSheets = buildOfficialBankScheduleWorksheets(dayrate, {
+    periodLabel,
+    titlePrefix: 'Dayrate Bank Schedule',
+    mode: 'company',
+    appendCompanyTotalRow: true,
+    // Population parity: use exactly the employees in each detail tab (DLE/DLPC), in the same stable order as detail tabs.
+    // This ensures headcount + the set of employees match 1:1 between the detail sheet and the bank sheet for the same company.
+    enforceCompanyBucketsFrom: [
+      { bucket: 'DLE', records: dle },
+      { bucket: 'DLPC', records: dlpc },
+    ],
+  });
 
   return [
     {
@@ -979,14 +1181,9 @@ export const buildOfficialDayrateScheduleWorksheets = async (
       columns: ['COMPANY', 'HEADCOUNT', 'GROSS PAY', 'NET PAY'],
       rows: summaryRows,
     },
-    buildDayrateDetailSheet(dle, attendance, 'DLE', periodLabel, { appendDlpcTotalRow: true }),
-    buildDayrateDetailSheet(dlpc, attendance, 'DLPC', periodLabel, { appendDlpcTotalRow: true }),
-    ...buildOfficialBankScheduleWorksheets(dayrate, {
-      periodLabel,
-      titlePrefix: 'Dayrate Bank Schedule',
-      mode: 'company',
-      appendCompanyTotalRow: true,
-    }),
+    dleDetail,
+    dlpcDetail,
+    ...bankSheets,
   ];
 };
 
