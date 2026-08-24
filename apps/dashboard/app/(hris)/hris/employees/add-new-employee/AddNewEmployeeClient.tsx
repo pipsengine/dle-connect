@@ -378,6 +378,7 @@ const Field = ({
   error,
   disabled,
   type,
+  hint,
 }: {
   label: string;
   value: string;
@@ -387,6 +388,7 @@ const Field = ({
   error?: string;
   disabled?: boolean;
   type?: 'text' | 'email' | 'tel' | 'date' | 'number';
+  hint?: string;
 }) => (
   <div className={`rounded-2xl border p-3 ${error ? 'border-red-200 bg-red-50/40' : disabled ? 'border-slate-100 bg-slate-50' : 'border-slate-200 bg-white'}`}>
     <div className="flex items-center justify-between gap-2">
@@ -408,6 +410,7 @@ const Field = ({
       type={type || 'text'}
       className={`mt-1 w-full text-sm font-semibold focus:outline-none ${disabled ? 'bg-transparent text-slate-400' : 'bg-white text-slate-900'}`}
     />
+    {hint ? <div className="mt-1 text-[10px] font-semibold text-slate-500 leading-snug">{hint}</div> : null}
   </div>
 );
 
