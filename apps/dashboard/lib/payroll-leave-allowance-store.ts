@@ -342,32 +342,12 @@ export const syncSageLeaveAllowanceEvents = async (
   options?: { persist?: boolean },
 ) => {
   const resolvedApplications = applications ?? await loadLeaveApplicationsForReconciliation();
-  const persist = options?.persist !== false;
-  try {
-    const [current, sageEvents] = await Promise.all([readPayrollLeaveAllowanceEvents(), readSageLeaveAllowanceEvents()]);
-    const byId = new Map(current.map((event) => [event.id, event]));
-    for (const sageEvent of sageEvents) {
-      const existing = byId.get(sageEvent.id);
-      byId.set(sageEvent.id, existing ? { ...existing, ...sageEvent, createdAt: existing.createdAt, audit: existing.audit?.length ? existing.audit : sageEvent.audit } : sageEvent);
-    }
-    if (persist) await writePayrollLeaveAllowanceEvents(Array.from(byId.values()));
-    return reconcilePayrollLeaveAllowanceEvents(resolvedApplications, { persist });
-  } catch {
-    return reconcilePayrollLeaveAllowanceEvents(resolvedApplications, { persist });
-  }
+  return reconcilePayrollLeaveAllowanceEvents(resolvedApplications, { persist: options?.persist !== false });
 };
 
-export const syncLeaveAllowanceEventsForPayroll = async (period?: string) => {
+export const syncLeaveAllowanceEventsForPayroll = async (_period?: string) => {
   const applications = await loadLeaveApplicationsForReconciliation();
-  try {
-    await syncSageSupplementalEarningAdjustments(period);
-  } catch (error) {
-    console.warn('[Payroll] Sage supplemental earning sync skipped:', error instanceof Error ? error.message : error);
-  }
-  if (period && isEnterprisePayrollPeriod(period)) {
-    return reconcilePayrollLeaveAllowanceEvents(applications);
-  }
-  return syncSageLeaveAllowanceEvents(applications);
+  return reconcilePayrollLeaveAllowanceEvents(applications);
 };
 
 export type PostLeaveAllowanceResult = {

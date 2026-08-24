@@ -83,3 +83,37 @@ export const mergeSagePayrollLineItems = (...groups: SagePayrollLineItem[][]) =>
   }
   return [...byCode.values()];
 };
+
+const canonicalPayrollLineCode = (code: string) =>
+  String(code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+/** Lines saved from Edit Profile / Add Employee payroll editors carry frequency metadata. */
+export const isHrisConfiguredPayrollLine = (line: SagePayrollLineItem): boolean =>
+  line.runFrequency !== undefined
+  || line.sourceAmount !== undefined
+  || line.includeInMonthlyPayroll !== undefined;
+
+/**
+ * Keep Sage payslip structural lines as the base package, but append HRIS profile supplements
+ * (overtime, weekly transport, one-offs, etc.) that Sage live payslips do not carry.
+ */
+export const mergeSageLiveAndHrisProfileEarningLines = (
+  sageLiveLines: SagePayrollLineItem[],
+  hrisProfileLines: SagePayrollLineItem[],
+): SagePayrollLineItem[] => {
+  if (!hrisProfileLines.length) return sageLiveLines;
+  if (!sageLiveLines.length) return hrisProfileLines;
+
+  const liveCodes = new Set(sageLiveLines.map((line) => canonicalPayrollLineCode(line.code)));
+  const supplements = hrisProfileLines.filter((line) => {
+    if (!line.code || !Number.isFinite(line.amount) || line.amount === 0) return false;
+    const code = canonicalPayrollLineCode(line.code);
+    if (isHrisConfiguredPayrollLine(line)) {
+      if (line.runFrequency === 'one-off') return true;
+      return !liveCodes.has(code);
+    }
+    return !liveCodes.has(code);
+  });
+
+  return supplements.length ? [...sageLiveLines, ...supplements] : sageLiveLines;
+};

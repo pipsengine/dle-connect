@@ -8,7 +8,6 @@ import { isSagePayslipEarningSyncSource } from '@/lib/payroll-employee-classific
 import { isSagePayeRefundEarning, shouldUseSagePayeRefundEarnings } from '@/lib/payroll-refund-policy';
 import {
   isHrisTimesheetOvertimeSource,
-  isSageDayrateScheduleFeedPeriod,
   isSageDayrateScheduleSource,
 } from '@/lib/payroll-enterprise-source';
 import {
@@ -69,13 +68,11 @@ export type PayrollEarningsResult = {
 export type PayrollEarningsOptions = {
   period?: string;
   includePeriodAdjustments?: boolean;
-  useSagePayslipLines?: boolean;
-  ignoreSagePayslipLines?: boolean;
-  /**
-   * When true (timesheet-driven day-rate path), Sage Dayrate Payment Schedule rows are never applied.
-   * HRIS Timesheet Overtime and other non-Sage adjustments remain eligible.
-   */
-  excludeSageDayrateSchedule?: boolean;
+  /** Use earning lines configured in HRIS payroll setup (Edit Profile / Add Employee). */
+  useHrisPackageLines?: boolean;
+  ignoreHrisPackageLines?: boolean;
+  /** When true, legacy dayrate schedule imports are never applied. */
+  excludeLegacyDayrateSchedule?: boolean;
   /** Excel dayrate overlay is the authority — skip timesheet OT/night for this employee. */
   excelDayrateOverride?: boolean;
 };
@@ -636,7 +633,7 @@ const isMealFamilyEarningCode = (code?: string | null, name?: string | null) => 
 };
 
 /** Sage TCM meal / explicit meal rows replace the auto ₦500×days meal — never stack both. */
-const stripAutoMealWhenSageMealPresent = (
+const stripAutoMealWhenLegacyMealPresent = (
   base: PayrollEarningsResult,
   supplemental: PayrollEarningsResult,
 ): PayrollEarningsResult => {
@@ -669,61 +666,19 @@ export const mergeTimesheetDayRateEarnings = (
   const supplemental = buildDailyRateSupplementalEarnings(employee, {
     period: input.period,
     includePeriodAdjustments: true,
-    excludeSageDayrateSchedule: true,
+    excludeLegacyDayrateSchedule: true,
     excelDayrateOverride: Boolean(excel),
   });
-  // Sage meal / TCM meal rows replace auto ₦500×days meal — never stack both.
-  // Excel TCM meal is additional to auto weekday meal, so do not strip auto meal on overlay.
-  const base = excel ? timesheetBase : stripAutoMealWhenSageMealPresent(timesheetBase, supplemental);
+  const base = excel ? timesheetBase : stripAutoMealWhenLegacyMealPresent(timesheetBase, supplemental);
   const merged = supplemental.paidEarningLines.some((line) => roundMoney(line.amount) !== 0)
     ? mergeDailySupplementalEarnings(base, supplemental)
     : base;
-  const aligned = alignDayRateLinesWithSageBreakdown(merged);
-  if (!excel) return aligned;
+  if (!excel) return merged;
   return {
-    ...aligned,
-    profileName: aligned.profileName.includes('Dayrate Schedule')
-      ? aligned.profileName
-      : `${aligned.profileName} (HR Dayrate Schedule Override)`,
-  };
-};
-
-const alignDayRateLinesWithSageBreakdown = (earnings: PayrollEarningsResult): PayrollEarningsResult => {
-  const weekday = earnings.paidEarningLines.find((line) => compact(line.code).toUpperCase() === 'JCWEEKDAY');
-  const weekdayNt = earnings.paidEarningLines.find((line) => compact(line.code).toUpperCase() === 'JCWEEKDAY_NT');
-  if (!weekday || !weekdayNt) return earnings;
-
-  const collapsedWeekday: PayrollEarningLine = {
-    ...weekday,
-    code: 'JCWEEKDAY',
-    name: 'WEEKDAY EARNING',
-    taxable: true,
-    amount: roundMoney(weekday.amount + weekdayNt.amount),
-    calculation: weekday.calculation || 'No of days worked * Day rate',
-  };
-  const paidEarningLines = [
-    collapsedWeekday,
-    ...earnings.paidEarningLines.filter((line) => !TIMESHEET_DRIVEN_EARNING_CODES.has(compact(line.code).toUpperCase())),
-  ];
-  const grossPay = roundMoney(paidEarningLines.reduce((sum, line) => sum + line.amount, 0));
-  const taxablePay = roundMoney(paidEarningLines.filter((line) => line.taxable).reduce((sum, line) => sum + line.amount, 0));
-  const basicPay = roundMoney(collapsedWeekday.amount);
-  const normalizedLines = paidEarningLines.map((line) => ({
-    ...line,
-    percentOfGross: grossPay > 0 ? roundMoney(line.amount / grossPay) : 0,
-  }));
-  return {
-    ...earnings,
-    profileName: earnings.profileName.includes('Timesheet') ? earnings.profileName : `${earnings.profileName} (Sage Aligned)`,
-    grossPay,
-    basePay: basicPay,
-    basicPay,
-    allowances: roundMoney(grossPay - basicPay),
-    taxablePay,
-    nonTaxablePay: roundMoney(grossPay - taxablePay),
-    bhtPay: basicPay,
-    earningLines: normalizedLines,
-    paidEarningLines: normalizedLines,
+    ...merged,
+    profileName: merged.profileName.includes('Dayrate Schedule')
+      ? merged.profileName
+      : `${merged.profileName} (HR Dayrate Schedule Override)`,
   };
 };
 
@@ -1041,21 +996,14 @@ const periodAdjustmentLines = (employee: DleEmployeeDirectoryRow, options?: Payr
   const excelOverride = Boolean(options?.excelDayrateOverride) || employeeHasAppliedDayrateScheduleOverride(period, employee);
   const matchedRows = periodAdjustmentRowsForPeriod(period)
     .filter((row) => {
+      if (isSageDayrateScheduleSource(row.source)) return false;
+      if (isSagePayslipEarningSyncSource(row.source)) return false;
       if (excelOverride) {
-        if (isSageDayrateScheduleSource(row.source)) return false;
         if (isTimesheetOtAdjustmentSource(row.source)) return false;
         if (isTimesheetNightAllowanceSource(row.source)) return false;
       }
-      // After Sage dayrate license cutover, ignore schedule-imported OT/allowance rows.
-      // Timesheet OT postings and HR arrears remain active.
-      if (isSageDayrateScheduleSource(row.source)) {
-        if (options?.excludeSageDayrateSchedule || !isSageDayrateScheduleFeedPeriod(period)) return false;
-      }
-      // Belt-and-suspenders for timesheet-driven runs: drop Sage schedule component codes
-      // even if the source label was mangled, unless they are HRIS Timesheet Overtime
-      // or the HR Excel dayrate overlay (TCM meal / night / site).
       if (
-        options?.excludeSageDayrateSchedule
+        options?.excludeLegacyDayrateSchedule
         && isSageDayrateScheduleComponentCode(row.code)
         && !isHrisTimesheetOvertimeSource(row.source)
         && !isHrDayrateScheduleOverrideSource(row.source)
@@ -1155,11 +1103,11 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
   const profileId = resolvePayrollEarningProfile(employee);
   const gross = monthlyGrossFromEmployee(employee);
   const profile = profileId === 'fallback' || profileId === 'contract-day-rate' || profileId === 'stipend-non-taxable' ? null : PAYROLL_EARNING_PROFILES[profileId];
-  const sageLines = options?.useSagePayslipLines && !options?.ignoreSagePayslipLines
+  const packageLines = options?.useHrisPackageLines && !options?.ignoreHrisPackageLines
     ? configuredPackageEarningLines(employee, { includeOneOff: true })
     : [];
-  if (sageLines.length > 0) {
-    const hasPackageBase = sageLines.some((line) =>
+  if (packageLines.length > 0) {
+    const hasPackageBase = packageLines.some((line) =>
       isBasicLine(line) || /^(LUMPSUMTAX|BASIC1_LUMPSUM)$/i.test(compact(line.code)));
     const paidPackageLines = (!hasPackageBase && profileId === 'contract-lumpsum' && gross > 0)
       ? [{
@@ -1171,8 +1119,8 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
           runFrequency: 'monthly' as const,
           includeInMonthlyPayroll: true,
           amount: roundMoney(gross),
-        }, ...sageLines]
-      : sageLines;
+        }, ...packageLines]
+      : packageLines;
     const fallbackProfileName = profileId === 'contract-day-rate'
       ? 'Contract Staff on Day Rate'
       : profileId === 'stipend-non-taxable'

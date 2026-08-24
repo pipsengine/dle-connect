@@ -1,22 +1,5 @@
-/** First payroll period where DLE_Enterprise is the sole runtime payroll authority. Sage is migration-only before this. */
+/** First payroll period where DLE_Enterprise is the sole runtime payroll authority. */
 export const ENTERPRISE_PAYROLL_FROM_PERIOD = String(process.env.HRIS_PAYROLL_ENTERPRISE_FROM || '2026-06').trim();
-
-/**
- * Last period where Sage Dayrate Payment Schedule may feed days/OT into HRIS payroll.
- * Empty / unset = never (timesheet bookings + HRIS overtime are the sole authority).
- * Set explicitly (e.g. "2026-06") only for legacy cutover debugging — never leave enabled in production.
- *
- * Permanent rule: timesheet-driven day-rate runs never stack Sage schedule OT/weekend/meal,
- * regardless of this flag (enforced in mergeTimesheetDayRateEarnings).
- */
-export const SAGE_DAYRATE_SCHEDULE_FEED_UNTIL = String(process.env.HRIS_SAGE_DAYRATE_FEED_UNTIL || '').trim();
-
-/**
- * Last period where JULY PAYROLL / Sage salaried payslip lines may drive permanent, lumpsum, IT, NYSC packages.
- * Empty / unset = never (HRIS package setup + formulas are the sole authority).
- * Set explicitly (e.g. 2026-07) only for legacy cutover debugging.
- */
-export const SAGE_SALARIED_SCHEDULE_FEED_UNTIL = String(process.env.HRIS_SAGE_SALARIED_FEED_UNTIL || '').trim();
 
 const periodSortKey = (period: string) => {
   const normalized = String(period || '').replace(/^per-/, '').trim();
@@ -28,17 +11,11 @@ const periodSortKey = (period: string) => {
 export const isEnterprisePayrollPeriod = (period: string) =>
   periodSortKey(period) >= periodSortKey(ENTERPRISE_PAYROLL_FROM_PERIOD);
 
-/** True only when an explicit dayrate Sage feed-until period is configured and the run is within it. */
-export const isSageDayrateScheduleFeedPeriod = (period: string) =>
-  Boolean(SAGE_DAYRATE_SCHEDULE_FEED_UNTIL)
-  && periodSortKey(period) > 0
-  && periodSortKey(period) <= periodSortKey(SAGE_DAYRATE_SCHEDULE_FEED_UNTIL);
+/** Legacy Sage dayrate schedule feed — permanently disabled; HRIS timesheets are the sole authority. */
+export const isSageDayrateScheduleFeedPeriod = (_period: string) => false;
 
-/** True only when an explicit salaried Sage feed-until period is configured and the run is within it. */
-export const isSageSalariedScheduleFeedPeriod = (period: string) =>
-  Boolean(SAGE_SALARIED_SCHEDULE_FEED_UNTIL)
-  && periodSortKey(period) > 0
-  && periodSortKey(period) <= periodSortKey(SAGE_SALARIED_SCHEDULE_FEED_UNTIL);
+/** Legacy Sage salaried payslip feed — permanently disabled; HRIS package setup is the sole authority. */
+export const isSageSalariedScheduleFeedPeriod = (_period: string) => false;
 
 export const isSageDayrateScheduleSource = (value?: string | null) =>
   /sage dayrate payment schedule/i.test(String(value || '').trim());
@@ -47,20 +24,10 @@ export const isSageDayrateScheduleSource = (value?: string | null) =>
 export const isHrisTimesheetOvertimeSource = (value?: string | null) =>
   /hris timesheet overtime/i.test(String(value || '').trim());
 
-/** Sage live comparison is only valid for pre-cutover migration periods. */
-export const shouldComparePayrollWithSage = (period: string) =>
-  isSagePayrollRuntimeEnabled(period) && !isEnterprisePayrollPeriod(period);
+/** Sage live comparison permanently disabled — HRIS payroll engine is authoritative for all periods. */
+export const shouldComparePayrollWithSage = (_period: string) => false;
 
-/**
- * Sage payroll DB access is migration-only by default.
- * Set HRIS_SAGE_PAYROLL_RUNTIME=true only for legacy cutover debugging — never in production load paths.
- */
-export const isSagePayrollRuntimeEnabled = (period?: string) => {
-  const runtimeFlag = String(process.env.HRIS_SAGE_PAYROLL_RUNTIME ?? 'false').trim().toLowerCase();
-  if (['0', 'false', 'no', 'off', ''].includes(runtimeFlag)) return false;
-  if (period && isEnterprisePayrollPeriod(period)) return false;
-  return true;
-};
+/** Sage payroll DB/runtime permanently disabled — all payroll data comes from HRIS. */
+export const isSagePayrollRuntimeEnabled = (_period?: string) => false;
 
-export const enterprisePayrollSourceLabel = (period: string) =>
-  isEnterprisePayrollPeriod(period) ? 'DLE_Enterprise payroll engine' : 'DLE unified payroll calculation engine';
+export const enterprisePayrollSourceLabel = (_period: string) => 'DLE_Enterprise payroll engine';

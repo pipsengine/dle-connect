@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { importSagePayrollEmployeesToDb, loadWorkspaceEnv, readEmployeeDirectoryFromDb, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import { loadWorkspaceEnv, readEmployeeDirectoryFromDb, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import {
   DEFAULT_IT_NYSC_STIPEND_GRADE,
   isDailyRatePayrollEmployee,
@@ -13,15 +13,8 @@ import {
 import { applyPayrollEmployeeOptions } from '@/lib/payroll-employee-options-store';
 import { employeeReportsToManager } from '@/lib/reporting-manager-match';
 import { isGenericPayrollGrade } from '@/lib/payroll-earnings-engine';
-import { withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 import { payslipIdentityMap } from '@/lib/payroll-payslip-identity-store';
-import { isSagePayrollRuntimeEnabled } from '@/lib/payroll-enterprise-source';
-import { resolvePayCurrency } from '@/lib/payroll-currency';
-import { normalizePayrollMatchKey, readActiveSagePayrollEmployeesWithLatestPayslipLines, readSagePayrollEmployeeBankDetails } from '@/lib/sage-people-payroll-store';
-import {
-  buildSagePayrollContributionsFromLines,
-  buildSagePayrollDeductionsFromLines,
-} from '@/lib/sage-payroll-line-parser';
+import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 
 export type PayrollEmployeeSource = {
   employees: DleEmployeeDirectoryRow[];
@@ -59,24 +52,8 @@ const isExcludedFromHrisPayroll = (employee: Pick<DleEmployeeDirectoryRow, 'empl
   [employee.employeeId, employee.employeeCode, employee.sourceEmployeeId].some((value) => EXCLUDED_PAYROLL_EMPLOYEE_KEYS.has(employeeKey(value)))
   || employeeKey(employee.employeeCode).startsWith('PF');
 const moneyFromRate = (rate: number) => (Number.isFinite(rate) && rate > 0 ? rate * 22 : 0);
-const moneyOrNull = (value: unknown) => {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-};
-const moneyFrom = (...values: unknown[]) => {
-  for (const value of values) {
-    const n = Number(value);
-    if (Number.isFinite(n) && n > 0) return n;
-  }
-  return null;
-};
 const dailyRateCode = (value: unknown) => /^C\d+/i.test(str(value));
-const dailyWorkingDays = (hoursPerDay: number, hoursPerPeriod: unknown) => {
-  const periodHours = Number(hoursPerPeriod || 0);
-  return Number.isFinite(periodHours) && periodHours > 0 && hoursPerDay > 0 ? periodHours / hoursPerDay : 22;
-};
 loadWorkspaceEnv();
-const SAGE_PAYROLL_ENRICH_ENABLED = !['0', 'false', 'no', 'off'].includes(String(process.env.HRIS_SAGE_PAYROLL_ENRICH ?? 'false').toLowerCase());
 const EMPLOYEE_SOURCE_CACHE_MS = Number(process.env.HRIS_EMPLOYEE_SOURCE_CACHE_MS || 300000);
 const DIRECTORY_SOURCE_CACHE_MS = Number(process.env.HRIS_DIRECTORY_CACHE_MS || 600000);
 const EMPLOYEE_SOURCE_STALE_MS = Number(process.env.HRIS_EMPLOYEE_SOURCE_STALE_MS || 1800000);
@@ -262,147 +239,6 @@ const withTimeout = async <T,>(promise: Promise<T>, ms: number, message: string)
   }
 };
 
-const jsonValue = (raw: string | null | undefined, keys: string[]) => {
-  if (!raw) return '';
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const found = keys.map((key) => parsed[key]).find((value) => String(value || '').trim());
-    return String(found || '').trim();
-  } catch {
-    return '';
-  }
-};
-
-const sageLineItems = (raw: string | null | undefined) => {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw) as Array<Record<string, unknown>>;
-    return parsed
-      .map((line) => ({
-        code: str(line.code),
-        name: str(line.name) || str(line.code),
-        amount: Number(line.amount || 0),
-        taxableAmount: moneyOrNull(line.taxableAmount),
-        ytdTotal: moneyOrNull(line.ytdTotal),
-      }))
-      .filter((line) => line.code && Number.isFinite(line.amount) && line.amount !== 0);
-  } catch {
-    return [];
-  }
-};
-
-const sageStoredLineItems = (lines: Array<{ code: string; name: string; amount: number; ytdTotal?: number | null; taxableAmount?: number | null }>) =>
-  lines.map((line) => ({
-    code: line.code,
-    name: line.name,
-    amount: line.amount,
-    ytdTotal: line.ytdTotal ?? null,
-  }));
-
-const maybeEnrichEmployeesFromSagePayroll = async (employees: DleEmployeeDirectoryRow[]) => {
-  if (!SAGE_PAYROLL_ENRICH_ENABLED || !isSagePayrollRuntimeEnabled()) return employees;
-  return enrichEmployeesFromSagePayroll(employees);
-};
-
-const enrichEmployeesFromSagePayroll = async (employees: DleEmployeeDirectoryRow[]) => {
-  try {
-    const [sageEmployees, sageBankDetails] = await withTimeout(
-      Promise.all([
-        readActiveSagePayrollEmployeesWithLatestPayslipLines(),
-        readSagePayrollEmployeeBankDetails().catch(() => []),
-      ]),
-      Number(process.env.SAGE_PAYROLL_ENRICH_TIMEOUT_MS || 20000),
-      'Sage payroll enrichment timed out.'
-    );
-    void importSagePayrollEmployeesToDb(sageEmployees).catch(() => undefined);
-    const bankByEmployeeId = new Map(sageBankDetails.map((detail) => [Number(detail.employeeId), detail]));
-    const sageByKey = new Map(sageEmployees.flatMap((employee) => {
-      const keys = [employee.directoryEmployeeCode, employee.employeeCode, employee.employeeCodeDisplay].map(normalizePayrollMatchKey).filter(Boolean);
-      return keys.map((key) => [key, employee] as const);
-    }));
-    return employees.map((employee) => {
-      const sage = sageByKey.get(normalizePayrollMatchKey(employee.employeeCode)) || sageByKey.get(normalizePayrollMatchKey(employee.employeeId));
-      if (!sage) return employee;
-      const bankDetail = bankByEmployeeId.get(Number(sage.employeeId));
-      const pensionProvider = str(sage.pensionProvider) || jsonValue(sage.sageEmployeeDetailJson, ['PensionFundAdministrator', 'PensionFundAdmin', 'PensionProvider', 'PFA', 'PFADescription', 'RetirementFundName']);
-      const pensionPin = str(sage.pensionPin) || jsonValue(sage.sageEmployeeDetailJson, ['PensionNo', 'PensionNumber', 'PensionPIN', 'PFANumber', 'RSAPIN', 'RsaPin']);
-      const liveEarningLines = sageLineItems(sage.latestEarningLinesJson);
-      const liveDeductionLines = sageLineItems(sage.latestDeductionLinesJson);
-      const liveContributionLines = sageLineItems(sage.latestContributionLinesJson);
-      const earningLines = liveEarningLines.length ? liveEarningLines : (employee.sagePayrollEarnings || []);
-      const deductionLines = liveDeductionLines.length ? liveDeductionLines : (employee.sagePayrollDeductions?.lines || []);
-      const contributionLines = liveContributionLines.length ? liveContributionLines : (employee.sagePayrollContributions?.lines || []);
-      const persistedDeductions = buildSagePayrollDeductionsFromLines(sageStoredLineItems(deductionLines));
-      const hoursPerDay = moneyFrom(employee.hoursPerDay, sage.hoursPerDay, 8) || 8;
-      const hoursPerPeriod = moneyFrom(employee.hoursPerPeriod, sage.hoursPerPeriod) || hoursPerDay * 22;
-      const isDailyRate = isDailyRatePayrollEmployee(employee);
-      const sageRatePerDay = moneyFrom(sage.ratePerDay);
-      const sageRatePerHour = moneyFrom(sage.ratePerHour);
-      const ratePerDay = moneyFrom(employee.ratePerDay, sageRatePerDay, sageRatePerHour ? sageRatePerHour * hoursPerDay : null);
-      const ratePerHour = moneyFrom(employee.ratePerHour, sageRatePerHour, ratePerDay ? ratePerDay / hoursPerDay : null);
-      const workingDays = dailyWorkingDays(hoursPerDay, hoursPerPeriod);
-      const periodSalary = isDailyRate && ratePerDay
-        ? Math.round(ratePerDay * workingDays * 100) / 100
-        : moneyFrom(employee.periodSalary, sage.periodSalary, ratePerDay ? ratePerDay * workingDays : null);
-      const sageGrade = str(sage.jobGradeCode) || str(sage.jobGrade);
-      const salaryGrade = !isGenericPayrollGrade(employee.salaryGrade) ? employee.salaryGrade : sageGrade || employee.salaryGrade;
-      const bankFields = withNormalizedBankCodes({
-        bankName: employee.bankName || bankDetail?.bankName || sage.bankName || '',
-        bankCode: employee.bankCode || bankDetail?.bankCode || sage.bankCode || '',
-        branchCode: employee.branchCode || bankDetail?.branchCode || sage.branchCode || '',
-      });
-      return {
-        ...employee,
-        jobGrade: employee.jobGrade || str(sage.jobGrade) || sageGrade || '',
-        salaryGrade,
-        bankName: bankFields.bankName || employee.bankName || bankDetail?.bankName || sage.bankName || '',
-        bankCode: bankFields.bankCode,
-        branchName: employee.branchName || bankDetail?.branchName || sage.branchName || '',
-        branchCode: bankFields.branchCode,
-        accountNo: employee.accountNo || bankDetail?.accountNo || sage.accountNo || '',
-        accountName: employee.accountName || bankDetail?.accountName || sage.accountName || '',
-        pensionProvider: employee.pensionProvider || pensionProvider,
-        pensionPin: employee.pensionPin || pensionPin,
-        taxIdentificationNumber: employee.taxIdentificationNumber || sage.taxNo || '',
-        payCurrency: resolvePayCurrency({
-          payCurrency: employee.payCurrency || sage.companyCurrency,
-          payrollGroup: employee.payrollGroup || sage.companyCode,
-          salaryGrade: salaryGrade,
-          jobGrade: employee.jobGrade || str(sage.jobGrade) || sageGrade || '',
-          businessUnit: employee.businessUnit,
-        }),
-        paymentRun: employee.paymentRun || sage.paymentRunLong || sage.paymentRunShort || '',
-        paymentType: employee.paymentType || sage.paymentType || '',
-        periodSalary,
-        annualSalary: moneyFrom(employee.annualSalary, sage.annualSalary, periodSalary ? periodSalary * 12 : null),
-        ratePerDay,
-        ratePerHour,
-        hoursPerDay,
-        hoursPerPeriod,
-        sagePayrollEarnings: earningLines,
-        sagePayrollDeductions: liveDeductionLines.length ? {
-          paye: moneyOrNull(sage.latestPaye),
-          pensionEmployee: moneyOrNull(sage.latestPensionEmployee),
-          nhf: moneyOrNull(sage.latestNhf),
-          other: moneyOrNull(sage.latestOtherDeductions),
-          totalDeductions: moneyOrNull(sage.latestTotalDeductions),
-          netPay: moneyOrNull(sage.latestNetPay),
-          lines: sageStoredLineItems(deductionLines),
-        } : persistedDeductions,
-        sagePayrollContributions: liveContributionLines.length ? {
-          pensionEmployer: moneyOrNull(sage.latestPensionEmployer),
-          nsitf: moneyOrNull(sage.latestNsitf),
-          itf: moneyOrNull(sage.latestItf),
-          totalEmployerContributions: moneyOrNull(sage.latestTotalEmployerContributions),
-          lines: sageStoredLineItems(contributionLines),
-        } : buildSagePayrollContributionsFromLines(sageStoredLineItems(contributionLines)),
-      };
-    });
-  } catch {
-    return employees;
-  }
-};
-
 const enrichEmployeesFromPayslipIdentities = async (
   employees: DleEmployeeDirectoryRow[],
   identities?: Awaited<ReturnType<typeof payslipIdentityMap>>,
@@ -455,11 +291,8 @@ const enrichStipendPayrollDefaults = (employees: DleEmployeeDirectoryRow[]) => {
 };
 
 const enrichPayrollEmployeeMaster = async (employees: DleEmployeeDirectoryRow[]) => {
-  const [sageEnriched, identities] = await Promise.all([
-    maybeEnrichEmployeesFromSagePayroll(employees),
-    payslipIdentityMap().catch(() => new Map()),
-  ]);
-  return enrichStipendPayrollDefaults(await enrichEmployeesFromPayslipIdentities(sageEnriched, identities));
+  const identities = await payslipIdentityMap().catch(() => new Map());
+  return enrichStipendPayrollDefaults(await enrichEmployeesFromPayslipIdentities(employees, identities));
 };
 
 const emptyEmployee = (employeeId: string, fullName: string): DleEmployeeDirectoryRow => ({

@@ -209,19 +209,10 @@ export const payslipIdentityMap = async () => {
   return map;
 };
 
-export const syncPayslipIdentitiesFromSage = async (options?: { force?: boolean; migratedBy?: string }) => {
-  const current = await readPayslipEmployeeIdentities();
-  if (!options?.force && current.some(hasPayslipBankIdentity) && current.some(hasPayslipStatutoryIdentity)) return { synced: 0, skipped: true };
-  const [sageEmployees, sageBankDetails] = await Promise.all([
-    readActiveSagePayrollEmployees(),
-    readSagePayrollEmployeeBankDetails().catch(() => [] as SagePayrollBankDetail[]),
-  ]);
-  const bankByEmployeeId = new Map(sageBankDetails.map((detail) => [Number(detail.employeeId), detail]));
-  const identities = sageEmployees.map((employee) => payslipIdentityFromSage(employee, { migratedBy: options?.migratedBy || 'Payslip identity sync', bankDetail: bankByEmployeeId.get(Number(employee.employeeId)) }));
-  const bankIdentities = identities.filter(hasPayslipBankIdentity);
-  await writePayslipEmployeeIdentities(identities);
-  return { synced: identities.length, bankIdentities: bankIdentities.length, skipped: false };
-};
+export const syncPayslipIdentitiesFromSage = async (_options?: { force?: boolean; migratedBy?: string }) => ({
+  synced: 0,
+  skipped: true,
+});
 
 export const writePayslipEmployeeIdentities = async (records: PayslipEmployeeIdentity[]) => {
   const current = await readPayslipEmployeeIdentities();

@@ -8,7 +8,7 @@ import { activePensionVersion, calculatePension, pensionInputFromEmployee, readP
 import { activeStatutoryFundsVersion, calculateStatutoryFunds, readStatutoryFundsConfig, statutoryFundInputFromEmployee } from '@/lib/payroll-statutory-funds-engine';
 import { activeLoansVersion, calculateLoanRecovery, loanInputsFromApplications, readPayrollLoanApplications, readPayrollLoansConfig } from '@/lib/payroll-loans-engine';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
-import { enterprisePayrollSourceLabel, isEnterprisePayrollPeriod, isSageSalariedScheduleFeedPeriod } from '@/lib/payroll-enterprise-source';
+import { enterprisePayrollSourceLabel, isEnterprisePayrollPeriod } from '@/lib/payroll-enterprise-source';
 import { calculatePayrollForPeriod } from '@/lib/payroll-calculation-service';
 import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import { capturePayrollSnapshot, ensurePayrollRun, getPayrollRunForPeriod, savePayrollRun } from '@/lib/payroll-run-store';
@@ -16,7 +16,7 @@ import { syncLeaveAllowanceEventsForPayroll } from '@/lib/payroll-leave-allowanc
 import { activePayrollPeriod } from '@/lib/payroll-periods';
 import { calculateTimesheetPeriod, buildTimesheetHoursMapForPayrollPeriod, readTimesheetPeriods } from '@/lib/timesheet-entry-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
-import { payslipIdentityMap, syncPayslipIdentitiesFromSage, type PayslipEmployeeIdentity } from '@/lib/payroll-payslip-identity-store';
+import { payslipIdentityMap, type PayslipEmployeeIdentity } from '@/lib/payroll-payslip-identity-store';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { buildExcelHtml, excelMimeType } from '@/lib/excel-export';
 
@@ -199,9 +199,6 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
   const role = getRole(request);
   const perms = permissions(role);
   const enterpriseSourceActive = isEnterprisePayrollPeriod(requestedPeriod);
-  if (!enterpriseSourceActive) {
-    await syncPayslipIdentitiesFromSage({ migratedBy: 'Payslip Generation' }).catch(() => undefined);
-  }
   const [employeeSource, taxConfig, pensionConfig, fundsConfig, loansConfig, loanApplications, batches, dailyAttendanceByKey, identityByKey] = await Promise.all([
     readPayrollEmployees(),
     readPayrollTaxConfig(),
@@ -235,17 +232,12 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
       .map((key) => identityByKey.get(key))
       .find(Boolean);
     const standardOptions = { period: requestedPeriod, includePeriodAdjustments: true as const };
-    const dualCurrency = Boolean(employee.hasDualCurrencyPayroll && (employee.sageLocalPayrollEarnings || []).length);
-    const keepSageLines = dualCurrency
-      || !enterpriseSourceActive
-      || (isSageSalariedScheduleFeedPeriod(requestedPeriod) && (employee.sagePayrollEarnings || []).length > 0);
-    const payrollEmployee = keepSageLines
-      ? employee
-      : { ...employee, sagePayrollEarnings: undefined, sagePayrollDeductions: undefined, sagePayrollContributions: undefined };
-    const dualUsdOptions = dualCurrency
-      ? { ...standardOptions, useSagePayslipLines: true as const, ignoreSagePayslipLines: false as const }
-      : standardOptions;
-    const standardAmounts = calculatePayrollEarnings(payrollEmployee, dualUsdOptions);
+    const payrollEmployee = employee;
+    const hrisPackageLines = payrollEmployee.sagePayrollEarnings || [];
+    const earningsOptions = hrisPackageLines.length > 0
+      ? { ...standardOptions, useHrisPackageLines: true as const, ignoreHrisPackageLines: false as const }
+      : { ...standardOptions, ignoreHrisPackageLines: true as const };
+    const standardAmounts = calculatePayrollEarnings(payrollEmployee, earningsOptions);
     const dailyRateEmployee = isDailyRateEmployee(employee, standardAmounts.profileId);
     const ratePerDay = Number(employee.ratePerDay || 0) || (Number(employee.ratePerHour || 0) > 0 ? Number(employee.ratePerHour) * Number(employee.hoursPerDay || 8) : 0) || (dailyRateEmployee ? Number(employee.periodSalary || 0) : 0);
     const ratePerHour = Number(employee.ratePerHour || 0) || (ratePerDay > 0 ? ratePerDay / Number(employee.hoursPerDay || 8) : 0);
