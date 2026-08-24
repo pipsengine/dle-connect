@@ -93,7 +93,15 @@ const getRole = async (request: Request): Promise<Role> => {
 };
 
 const permissions = (role: Role) => {
-  const canCreate = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'HR Officer' || role === 'Admin Officer';
+  const canCreate = [
+    'Super Admin',
+    'HR Director',
+    'HR Manager',
+    'HR Officer',
+    'Admin Officer',
+    'Payroll Officer',
+    'IT Administrator',
+  ].includes(role);
   return { canCreate };
 };
 
@@ -131,7 +139,7 @@ export async function GET(request: Request, ctx: Ctx) {
 export async function PATCH(request: Request, ctx: Ctx) {
   const role = await getRole(request);
   const perms = permissions(role);
-  if (!perms.canCreate) return jsonErr(403, 'Permission denied');
+  if (!perms.canCreate) return jsonErr(403, `Permission denied for role "${role}". HR/Admin/Payroll/IT access is required to update employee drafts.`);
   const { draftId: rawId } = await ctx.params;
   const draftId = String(rawId || '').trim();
   if (!draftId) return jsonErr(404, 'Draft not found');
@@ -145,21 +153,39 @@ export async function PATCH(request: Request, ctx: Ctx) {
   rec.draft = draft;
   rec.updatedAt = nowIso();
   audit(rec, role, 'Draft updated', { oldValue: prev, newValue: rec.updatedAt });
-  await saveEmployeeDraftToDb(rec);
-  return jsonOk({ draftId: rec.draftId, status: rec.status, updatedAt: rec.updatedAt });
+  storeDrafts.set(draftId, rec);
+  let dbError: string | null = null;
+  try {
+    await saveEmployeeDraftToDb(rec);
+  } catch (error) {
+    dbError = error instanceof Error ? error.message : String(error);
+    console.warn('[draft] PATCH saveEmployeeDraftToDb failed (in-memory retained):', dbError);
+  }
+  return jsonOk({
+    draftId: rec.draftId,
+    status: rec.status,
+    updatedAt: rec.updatedAt,
+    serverNote: dbError ? `Draft updated in memory only (DB save skipped): ${dbError.slice(0, 200)}` : undefined,
+  });
 }
 
 /** DELETE /api/hris/employees/draft/[draftId] */
 export async function DELETE(request: Request, ctx: Ctx) {
   const role = await getRole(request);
   const perms = permissions(role);
-  if (!perms.canCreate) return jsonErr(403, 'Permission denied');
+  if (!perms.canCreate) return jsonErr(403, `Permission denied for role "${role}". HR/Admin/Payroll/IT access is required to delete employee drafts.`);
   const { draftId: rawId } = await ctx.params;
   const draftId = String(rawId || '').trim();
   if (!draftId) return jsonErr(404, 'Draft not found');
   const rec = await loadDraftRecord(draftId);
-  if (!rec) return jsonErr(404, 'Draft not found');
+  if (!rec) return jsonOk({ deleted: true, serverNote: 'Draft not found (already removed).' });
   storeDrafts.delete(draftId);
-  await deleteEmployeeDraftFromDb(draftId);
+  try {
+    await deleteEmployeeDraftFromDb(draftId);
+  } catch (error) {
+    const dbError = error instanceof Error ? error.message : String(error);
+    console.warn('[draft] deleteEmployeeDraftFromDb failed (memory-only):', dbError);
+    return jsonOk({ deleted: true, serverNote: `Draft deleted from memory only (DB delete skipped): ${dbError.slice(0, 200)}` });
+  }
   return jsonOk({ deleted: true });
 }

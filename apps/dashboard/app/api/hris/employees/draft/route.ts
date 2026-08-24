@@ -94,7 +94,15 @@ const getRole = async (request: Request): Promise<Role> => {
 };
 
 const permissions = (role: Role) => {
-  const canCreate = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'HR Officer' || role === 'Admin Officer';
+  const canCreate = [
+    'Super Admin',
+    'HR Director',
+    'HR Manager',
+    'HR Officer',
+    'Admin Officer',
+    'Payroll Officer',
+    'IT Administrator',
+  ].includes(role);
   return { canCreate };
 };
 
@@ -117,7 +125,7 @@ const audit = (rec: DraftRecord, role: Role, action: string) => {
 export async function POST(request: Request) {
   const role = await getRole(request);
   const perms = permissions(role);
-  if (!perms.canCreate) return jsonErr(403, 'Permission denied');
+  if (!perms.canCreate) return jsonErr(403, `Permission denied for role "${role}". HR/Admin/Payroll/IT access is required to create new employee drafts.`);
   const body = (await request.json().catch(() => null)) as { draft?: Record<string, unknown> } | null;
   if (!body || typeof body !== 'object') return jsonErr(400, 'Invalid JSON body');
   const draft = body.draft;
@@ -133,6 +141,12 @@ export async function POST(request: Request) {
   };
   audit(rec, role, 'Draft created');
   storeDrafts.set(draftId, rec);
-  await saveEmployeeDraftToDb(rec);
-  return jsonOk({ draftId, status: rec.status, updatedAt: rec.updatedAt });
+  let dbError: string | null = null;
+  try {
+    await saveEmployeeDraftToDb(rec);
+  } catch (error) {
+    dbError = error instanceof Error ? error.message : String(error);
+    console.warn('[draft] saveEmployeeDraftToDb failed (in-memory retained):', dbError);
+  }
+  return jsonOk({ draftId, status: rec.status, updatedAt: rec.updatedAt, serverNote: dbError ? `Draft saved in memory only (DB save skipped): ${dbError.slice(0, 200)}` : undefined });
 }

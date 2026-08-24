@@ -140,8 +140,15 @@ const getRole = async (request: Request): Promise<Role> => {
 };
 
 const permissions = (role: Role) => {
-  const canCreate =
-    role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'HR Officer' || role === 'Admin Officer';
+  const canCreate = [
+    'Super Admin',
+    'HR Director',
+    'HR Manager',
+    'HR Officer',
+    'Admin Officer',
+    'Payroll Officer',
+    'IT Administrator',
+  ].includes(role);
   const canCreateWithoutApproval = role === 'Super Admin' || role === 'HR Director';
   return { canCreate, canCreateWithoutApproval };
 };
@@ -630,7 +637,7 @@ const toProfileOverride = (employeeId: string, draft: EmployeeDraftPayload) => {
 
 export async function POST(request: Request) {
   const role = await getRole(request);
-  if (!permissions(role).canCreate) return jsonErr(403, 'Permission denied');
+  if (!permissions(role).canCreate) return jsonErr(403, `Permission denied for role "${role}". HR / Admin / Payroll / IT administrator access is required to create new employees.`);
   const body = (await request.json().catch(() => null)) as any;
   if (!body || typeof body !== 'object') return jsonErr(400, 'Invalid JSON body');
   const draftId = typeof body.draftId === 'string' ? body.draftId.trim() : '';
