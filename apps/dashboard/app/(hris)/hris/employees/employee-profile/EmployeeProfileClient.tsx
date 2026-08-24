@@ -2806,7 +2806,6 @@ export default function EmployeeProfileClient({
                             canViewPayroll={perms.canViewPayroll}
                             employmentType={profileData.employmentType || ''}
                             assignLabel="Employee assigned to payroll run"
-                            currency={payrollDraft.payCurrency || payrollCurrency}
                           />
                         )
                       ) : null}

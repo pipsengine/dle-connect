@@ -5419,6 +5419,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     const next = { ...rec.payrollSummary };
     if (body.salaryGrade !== undefined) next.salaryGrade = normalizeStr(body.salaryGrade, 120) || next.salaryGrade;
     if (body.payrollGroup !== undefined) next.payrollGroup = normalizeStr(body.payrollGroup, 200);
+    if (body.payCurrency !== undefined) next.payCurrency = normalizeStr(body.payCurrency, 10) || next.payCurrency || 'NGN';
     if (body.bankName !== undefined) next.bankName = normalizeStr(body.bankName, 150);
     if (body.accountName !== undefined) next.accountName = normalizeStr(body.accountName, 250);
     if (body.pensionProvider !== undefined) next.pensionProvider = normalizeStr(body.pensionProvider, 150);
@@ -5484,6 +5485,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       payrollSetup: {
         payrollGroup: next.payrollGroup,
         salaryGrade: next.salaryGrade,
+        payCurrency: next.payCurrency || 'NGN',
         periodSalary: preservedPackageGross,
         annualSalary: preservedPackageGross ? Number(preservedPackageGross) * 12 : (next.basicSalary ? Number(next.basicSalary) * 12 : null),
         basicSalary: next.basicSalary,

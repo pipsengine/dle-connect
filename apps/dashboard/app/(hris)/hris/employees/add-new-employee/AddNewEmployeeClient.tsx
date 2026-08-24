@@ -2,6 +2,7 @@
 
 import PayrollSetupStep, { type PayrollSetupDraft } from './PayrollSetupStep';
 import type { FlexiblePayrollLineDraft } from '@/lib/payroll-package-lines';
+import { normalizePayrollDraftBeforeSave } from '@/lib/payroll-draft-normalize';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -667,6 +668,7 @@ const makeEmptyDraft = (countryDefault: string): EmployeeDraftPayload => ({
   payroll: {
     payrollGroup: '',
     salaryGrade: '',
+    payCurrency: 'NGN',
     basicSalary: '',
     periodSalary: '',
     annualSalary: '',
@@ -701,9 +703,20 @@ const makeEmptyDraft = (countryDefault: string): EmployeeDraftPayload => ({
 const normalizeLoadedPayrollDraft = (payroll: Partial<PayrollDraft> | undefined): PayrollDraft => ({
   ...makeEmptyDraft('Nigeria').payroll,
   ...(payroll || {}),
+  payCurrency: payroll?.payCurrency || 'NGN',
   earningLines: Array.isArray(payroll?.earningLines) ? payroll!.earningLines : [],
   deductionLines: Array.isArray(payroll?.deductionLines) ? payroll!.deductionLines : [],
 });
+
+const syncPayrollWithEmployment = (
+  payroll: PayrollDraft,
+  employment: EmployeeDraftPayload['employment'],
+): PayrollDraft =>
+  normalizePayrollDraftBeforeSave(payroll, {
+    employmentType: employment.employmentType,
+    contractStartDate: employment.contractStartDate,
+    contractEndDate: employment.contractEndDate,
+  });
 
 export default function AddNewEmployeeClient({ initialNow, initialDraftId, initialEmployeeCode }: { initialNow: string; initialDraftId?: string; initialEmployeeCode?: string }) {
   const router = useRouter();
@@ -962,6 +975,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
       draft.payroll.setupAssignedToPayroll
       && (
         draft.payroll.earningLines.some((line) => Number(line.amount) > 0)
+        || Number(draft.payroll.periodSalary) > 0
         || (draft.employment.employmentType === 'Daily Rate' && Number(draft.payroll.ratePerDay || draft.payroll.dailyRate) > 0)
         || draft.payroll.bankName.trim()
       ),
@@ -1020,35 +1034,36 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
     }
   };
 
-  const saveDraft = async (quiet = false) => {
+  const saveDraft = async (quiet = false, draftOverride?: EmployeeDraftPayload) => {
     if (!perms.canCreate) {
       if (!quiet) setToast({ title: 'Permission denied', detail: 'You do not have permission to create employee records.', tone: 'err' });
       return null;
     }
+    const payload = draftOverride || draft;
     setSaving(true);
     try {
       let meta: DraftResponse;
       if (!draftId) {
-        meta = await apiCall<DraftResponse>('/api/hris/employees/draft', { method: 'POST', role, body: JSON.stringify({ draft }) });
+        meta = await apiCall<DraftResponse>('/api/hris/employees/draft', { method: 'POST', role, body: JSON.stringify({ draft: payload }) });
         setDraftId(meta.draftId);
       } else {
         try {
           meta = await apiCall<DraftResponse>(`/api/hris/employees/draft/${encodeURIComponent(draftId)}`, {
             method: 'PATCH',
             role,
-            body: JSON.stringify({ draft }),
+            body: JSON.stringify({ draft: payload }),
           });
         } catch (patchErr) {
           const msg = patchErr instanceof Error ? patchErr.message : '';
-          // Stale draft id or prior route conflict — create a fresh draft instead of failing hard.
           if (/not found/i.test(msg)) {
-            meta = await apiCall<DraftResponse>('/api/hris/employees/draft', { method: 'POST', role, body: JSON.stringify({ draft }) });
+            meta = await apiCall<DraftResponse>('/api/hris/employees/draft', { method: 'POST', role, body: JSON.stringify({ draft: payload }) });
             setDraftId(meta.draftId);
           } else {
             throw patchErr;
           }
         }
       }
+      if (draftOverride) setDraft(draftOverride);
       setDraftStatus(meta.status === 'created' ? 'created' : 'draft');
       setLastSavedAt(meta.updatedAt);
       if (!quiet) setToast({ title: 'Draft saved', detail: `Draft ${meta.draftId} updated at ${formatDateTimeUtc(meta.updatedAt)}`, tone: 'ok' });
@@ -1075,7 +1090,11 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
         return;
       }
 
-      const meta = await saveDraft(true);
+      const draftForCreate = {
+        ...draft,
+        payroll: syncPayrollWithEmployment(draft.payroll, draft.employment),
+      };
+      const meta = await saveDraft(true, draftForCreate);
       const did = meta?.draftId || draftId;
       if (!did) {
         setToast({ title: 'Submit failed', detail: 'Unable to save employee details before create.', tone: 'err' });
@@ -1665,12 +1684,12 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <div className="text-xs font-extrabold text-slate-700">Project-based employee setup</div>
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <Field label="Engagement Start Date" required type="date" value={draft.employment.contractStartDate} onChange={(v) => setDraft((d) => ({ ...d, employment: { ...d.employment, contractStartDate: v } }))} error={requiredErrors['employment.contractStartDate']} />
-            <Field label="Engagement End Date" required type="date" value={draft.employment.contractEndDate} onChange={(v) => setDraft((d) => ({ ...d, employment: { ...d.employment, contractEndDate: v } }))} error={requiredErrors['employment.contractEndDate']} />
+            <Field label="Engagement Start Date" required type="date" value={draft.employment.contractStartDate} onChange={(v) => setDraft((d) => ({ ...d, employment: { ...d.employment, contractStartDate: v }, payroll: syncPayrollWithEmployment(d.payroll, { ...d.employment, contractStartDate: v }) }))} error={requiredErrors['employment.contractStartDate']} />
+            <Field label="Engagement End Date" required type="date" value={draft.employment.contractEndDate} onChange={(v) => setDraft((d) => ({ ...d, employment: { ...d.employment, contractEndDate: v }, payroll: syncPayrollWithEmployment(d.payroll, { ...d.employment, contractEndDate: v }) }))} error={requiredErrors['employment.contractEndDate']} />
             {draft.employment.employmentType === 'Lumpsum' ? (
-              <Field label="Contract Value (₦)" type="number" value={draft.payroll.contractAmount || ''} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, contractAmount: v } }))} hint="Total lumpsum amount for the contract duration" />
+              <Field label={`Contract Value (${draft.payroll.payCurrency === 'USD' ? '$' : '₦'})`} type="number" value={draft.payroll.contractAmount || ''} onChange={(v) => setDraft((d) => ({ ...d, payroll: syncPayrollWithEmployment({ ...d.payroll, contractAmount: v }, d.employment) }))} hint="Total lumpsum amount for the contract duration — monthly pay is derived on the Payroll step" />
             ) : (
-              <Field label="Daily Rate (₦ / day)" type="number" value={draft.payroll.dailyRate} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, dailyRate: v, ratePerDay: v } }))} hint="Required for Day Rate (casual) employees" />
+              <Field label={`Daily Rate (${draft.payroll.payCurrency === 'USD' ? '$' : '₦'} / day)`} type="number" value={draft.payroll.dailyRate} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, dailyRate: v, ratePerDay: v } }))} hint="Required for Day Rate (casual) employees" />
             )}
             {draft.employment.employmentType === 'Lumpsum' && (
               <Field label="Payment Schedule" value={draft.payroll.paymentRun} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, paymentRun: v } }))} hint="e.g. Final on handover, Monthly progress-based, Milestone" />
@@ -1964,7 +1983,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
     BadgeCheck,
     <PayrollSetupStep
       payroll={draft.payroll}
-      onChange={(payroll) => setDraft((d) => ({ ...d, payroll }))}
+      onChange={(payroll) => setDraft((d) => ({ ...d, payroll: syncPayrollWithEmployment(payroll, d.employment) }))}
       options={{
         payrollGroups: options.data?.payrollGroups || [],
         banks: options.data?.banks || [],
@@ -1973,6 +1992,8 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
       }}
       canViewPayroll={perms.canViewPayroll}
       employmentType={draft.employment.employmentType}
+      contractStartDate={draft.employment.contractStartDate}
+      contractEndDate={draft.employment.contractEndDate}
     />,
   );
 

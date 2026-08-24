@@ -16,11 +16,12 @@ import { writePayrollEmployeeOption, invalidatePayrollEmployeeOptionsCache } fro
 import type { SagePayrollLineItem } from '@/lib/sage-payroll-line-parser';
 import {
   draftPayrollLineToStored,
-  payrollLineMonthlyAmount,
   sumMonthlyPackageGross,
   type FlexiblePayrollLineDraft,
   type StoredPayrollPackageLine,
 } from '@/lib/payroll-package-lines';
+import type { PayrollSetupDraft } from '@/app/(hris)/hris/employees/add-new-employee/PayrollSetupStep';
+import { normalizePayrollDraftBeforeSave, type PayrollEmploymentContext } from '@/lib/payroll-draft-normalize';
 
 type Role =
   | 'Super Admin'
@@ -323,18 +324,13 @@ const normalizePayrollPayloadBeforeCreate = (payload: EmployeeDraftPayload) => {
   }
   if (!Array.isArray(payload.payroll.earningLines)) payload.payroll.earningLines = [];
   if (!Array.isArray(payload.payroll.deductionLines)) payload.payroll.deductionLines = [];
-  const earningLines = (payload.payroll.earningLines as FlexiblePayrollLineDraft[])
-    .map((line) => draftPayrollLineToStored(line, true))
-    .filter(Boolean) as StoredPayrollPackageLine[];
-  const monthlyGross = sumMonthlyPackageGross(earningLines);
-  if (monthlyGross > 0) {
-    if (!parseMoney(payload.payroll.periodSalary)) payload.payroll.periodSalary = String(monthlyGross);
-    if (!parseMoney(payload.payroll.annualSalary)) payload.payroll.annualSalary = String(roundMoney(monthlyGross * 12));
-    const basicLine = earningLines.find((line) => /BASIC/i.test(line.code) || /BASIC/i.test(line.name));
-    if (basicLine && !parseMoney(payload.payroll.basicSalary)) {
-      payload.payroll.basicSalary = String(payrollLineMonthlyAmount(basicLine));
-    }
-  }
+  if (!payload.payroll.payCurrency) payload.payroll.payCurrency = 'NGN';
+  const employment: PayrollEmploymentContext = {
+    employmentType: payload.employment?.employmentType,
+    contractStartDate: payload.employment?.contractStartDate,
+    contractEndDate: payload.employment?.contractEndDate,
+  };
+  payload.payroll = normalizePayrollDraftBeforeSave(payload.payroll as PayrollSetupDraft, employment);
 };
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;

@@ -13,6 +13,7 @@ import { isHrisConfiguredPayrollLine } from '@/lib/sage-payroll-line-parser';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import type { PayrollSetupDraft } from '@/app/(hris)/hris/employees/add-new-employee/PayrollSetupStep';
+import { normalizePayrollDraftBeforeSave } from '@/lib/payroll-draft-normalize';
 
 export type ProfilePayrollSummary = {
   payrollStatus: 'Verified' | 'Pending Validation' | 'Masked';
@@ -101,6 +102,7 @@ export const enrichPayrollSummaryFromRow = (summary: ProfilePayrollSummary, row:
 export const profileSummaryToSetupDraft = (summary: ProfilePayrollSummary, employmentType = ''): PayrollSetupDraft => ({
   payrollGroup: summary.payrollGroup || '',
   salaryGrade: summary.salaryGrade || '',
+  payCurrency: summary.payCurrency || 'NGN',
   basicSalary: summary.basicSalary != null ? String(summary.basicSalary) : '',
   periodSalary: summary.monthlyPackageGross != null ? String(summary.monthlyPackageGross) : summary.basicSalary != null ? String(summary.basicSalary) : '',
   annualSalary: summary.monthlyPackageGross != null ? String(Number(summary.monthlyPackageGross) * 12) : '',
@@ -131,39 +133,46 @@ export const profileSummaryToSetupDraft = (summary: ProfilePayrollSummary, emplo
 });
 
 export const setupDraftToProfileSummary = (draft: PayrollSetupDraft, previous: ProfilePayrollSummary): ProfilePayrollSummary => {
-  const storedEarnings = buildStoredPayrollLinesFromDrafts(draft.earningLines, true);
-  const storedDeductions = buildStoredPayrollLinesFromDrafts(draft.deductionLines, false);
-  const monthlyPackageGross = sumMonthlyPackageGross(storedEarnings);
+  const normalized = normalizePayrollDraftBeforeSave(draft);
+  const storedEarnings = buildStoredPayrollLinesFromDrafts(normalized.earningLines, true);
+  const storedDeductions = buildStoredPayrollLinesFromDrafts(normalized.deductionLines, false);
+  const monthlyFromLines = sumMonthlyPackageGross(storedEarnings);
+  const monthlyPackageGross = monthlyFromLines > 0
+    ? monthlyFromLines
+    : (Number(normalized.periodSalary) || previous.monthlyPackageGross || null);
   const basicLine = storedEarnings.find((line) => /BASIC/i.test(line.code) || /BASIC/i.test(line.name));
-  const basicSalary = basicLine ? payrollLineMonthlyAmount(basicLine) : (monthlyPackageGross > 0 ? monthlyPackageGross : previous.basicSalary);
-  const allowances = monthlyPackageGross > 0 && basicSalary != null ? Math.max(0, monthlyPackageGross - basicSalary) : previous.allowances;
+  const basicSalary = basicLine
+    ? payrollLineMonthlyAmount(basicLine)
+    : (monthlyPackageGross != null && monthlyPackageGross > 0 ? monthlyPackageGross : previous.basicSalary);
+  const allowances = (monthlyPackageGross ?? 0) > 0 && basicSalary != null ? Math.max(0, (monthlyPackageGross ?? 0) - basicSalary) : previous.allowances;
   const deductionsTotal = storedDeductions.reduce((sum, line) => sum + payrollLineMonthlyAmount(line), 0);
-  const accountNumber = draft.accountNumber.trim() || previous.accountNumber || '';
+  const accountNumber = normalized.accountNumber.trim() || previous.accountNumber || '';
   return {
     ...previous,
-    payrollGroup: draft.payrollGroup.trim() || previous.payrollGroup,
-    salaryGrade: draft.salaryGrade.trim() || previous.salaryGrade,
+    payrollGroup: normalized.payrollGroup.trim() || previous.payrollGroup,
+    salaryGrade: normalized.salaryGrade.trim() || previous.salaryGrade,
+    payCurrency: normalized.payCurrency || previous.payCurrency || 'NGN',
     basicSalary: basicSalary ?? null,
     allowances: allowances ?? null,
     deductions: deductionsTotal > 0 ? deductionsTotal : previous.deductions,
-    bankName: draft.bankName.trim() || previous.bankName,
+    bankName: normalized.bankName.trim() || previous.bankName,
     accountNumber: accountNumber || null,
     accountNumberMasked: accountNumber ? `••••••${accountNumber.replace(/\D/g, '').slice(-4)}` : previous.accountNumberMasked,
-    accountName: draft.accountName.trim() || previous.accountName || null,
-    pensionProvider: draft.pensionProvider.trim() || previous.pensionProvider,
-    pensionPin: draft.pensionPin.trim() || previous.pensionPin || null,
-    taxId: draft.taxId.trim() || previous.taxId,
-    earningLines: draft.earningLines,
-    deductionLines: draft.deductionLines,
-    nhfApplicable: draft.nhfApplicable,
-    nhfNumber: draft.nhfNumber.trim() || previous.nhfNumber || null,
-    benefitGroup: draft.benefitGroup.trim() || previous.benefitGroup || null,
-    ratePerDay: Number(draft.ratePerDay || draft.dailyRate) || previous.ratePerDay || null,
-    ratePerHour: Number(draft.ratePerHour) || previous.ratePerHour || null,
-    hoursPerDay: Number(draft.hoursPerDay) || previous.hoursPerDay || null,
-    setupAssignedToPayroll: draft.setupAssignedToPayroll,
-    monthlyPackageGross: monthlyPackageGross || null,
-    additionalEmployeePensionMonthly: Number(draft.additionalEmployeePensionMonthly) || previous.additionalEmployeePensionMonthly || null,
-    annualRentRelief: Number(draft.annualRentRelief) || previous.annualRentRelief || null,
+    accountName: normalized.accountName.trim() || previous.accountName || null,
+    pensionProvider: normalized.pensionProvider.trim() || previous.pensionProvider,
+    pensionPin: normalized.pensionPin.trim() || previous.pensionPin || null,
+    taxId: normalized.taxId.trim() || previous.taxId,
+    earningLines: normalized.earningLines,
+    deductionLines: normalized.deductionLines,
+    nhfApplicable: normalized.nhfApplicable,
+    nhfNumber: normalized.nhfNumber.trim() || previous.nhfNumber || null,
+    benefitGroup: normalized.benefitGroup.trim() || previous.benefitGroup || null,
+    ratePerDay: Number(normalized.ratePerDay || normalized.dailyRate) || previous.ratePerDay || null,
+    ratePerHour: Number(normalized.ratePerHour) || previous.ratePerHour || null,
+    hoursPerDay: Number(normalized.hoursPerDay) || previous.hoursPerDay || null,
+    setupAssignedToPayroll: normalized.setupAssignedToPayroll,
+    monthlyPackageGross: monthlyPackageGross ?? null,
+    additionalEmployeePensionMonthly: Number(normalized.additionalEmployeePensionMonthly) || previous.additionalEmployeePensionMonthly || null,
+    annualRentRelief: Number(normalized.annualRentRelief) || previous.annualRentRelief || null,
   };
 };

@@ -4,13 +4,21 @@ import PayrollLinesEditor, { DEDUCTION_LINE_PRESETS, EARNING_LINE_PRESETS } from
 import {
   sumMonthlyPackageGross,
   draftPayrollLineToStored,
+  newDraftPayrollLineId,
   type FlexiblePayrollLineDraft,
 } from '@/lib/payroll-package-lines';
 import { formatPayrollMoney } from '@/lib/payroll-currency';
+import {
+  contractMonthsInclusive,
+  isLumpsumBaseDraftLine,
+  monthlyLumpsumFromContract,
+  resolvePayrollDraftCurrency,
+} from '@/lib/payroll-draft-normalize';
 
 export type PayrollSetupDraft = {
   payrollGroup: string;
   salaryGrade: string;
+  payCurrency: string;
   basicSalary: string;
   periodSalary: string;
   annualSalary: string;
@@ -116,7 +124,8 @@ export default function PayrollSetupStep({
   canViewPayroll,
   employmentType,
   assignLabel = 'Assign employee to payroll run on create',
-  currency = 'NGN',
+  contractStartDate = '',
+  contractEndDate = '',
 }: {
   payroll: PayrollSetupDraft;
   onChange: (next: PayrollSetupDraft) => void;
@@ -124,8 +133,10 @@ export default function PayrollSetupStep({
   canViewPayroll: boolean;
   employmentType: string;
   assignLabel?: string;
-  currency?: string;
+  contractStartDate?: string;
+  contractEndDate?: string;
 }) {
+  const currency = resolvePayrollDraftCurrency(payroll);
   const patch = (partial: Partial<PayrollSetupDraft>) => onChange({ ...payroll, ...partial });
   const formatMoney = (value: number) => formatPayrollMoney(value, currency);
   const currencySymbol = currency.toUpperCase() === 'USD' ? '$' : '₦';
@@ -134,7 +145,33 @@ export default function PayrollSetupStep({
     .map((line) => draftPayrollLineToStored(line, true))
     .filter((line): line is NonNullable<ReturnType<typeof draftPayrollLineToStored>> => line !== null);
   const monthlyGross = sumMonthlyPackageGross(storedEarnings);
+  const monthlyFromPeriodSalary = Number(payroll.periodSalary || 0);
+  const displayMonthlyGross = monthlyGross > 0 ? monthlyGross : monthlyFromPeriodSalary;
   const isDailyRate = employmentType === 'Daily Rate';
+  const isLumpsum = employmentType === 'Lumpsum';
+  const showMonthlyPackageField = !isDailyRate;
+
+  const syncPeriodSalary = (raw: string) => {
+    const amount = Number(raw || 0);
+    const earningLines = amount > 0 && isLumpsum
+      ? (payroll.earningLines.some(isLumpsumBaseDraftLine)
+        ? payroll.earningLines.map((line) => (isLumpsumBaseDraftLine(line) ? { ...line, amount: raw } : line))
+        : [...payroll.earningLines, {
+          id: newDraftPayrollLineId(),
+          code: 'LUMPSUMTAX',
+          name: 'LUMPSUM ALLOWANCE',
+          amount: raw,
+          taxable: true,
+          frequency: 'monthly' as const,
+        }])
+      : payroll.earningLines;
+    patch({
+      periodSalary: raw,
+      basicSalary: payroll.basicSalary || raw,
+      annualSalary: amount > 0 ? String(Math.round(amount * 12 * 100) / 100) : payroll.annualSalary,
+      earningLines,
+    });
+  };
 
   if (!canViewPayroll) {
     return (
@@ -151,16 +188,37 @@ export default function PayrollSetupStep({
         <div className="mt-1 text-xs font-semibold text-blue-800">
           Add earning and deduction lines with weekly, monthly, or one-off frequency. No fixed salary grade is required — each employee gets a custom package.
         </div>
-        {monthlyGross > 0 ? (
+        {displayMonthlyGross > 0 ? (
           <div className="mt-3 inline-flex rounded-xl bg-white px-3 py-2 text-xs font-extrabold text-slate-800 border border-blue-200">
-            Estimated monthly package gross: {formatMoney(monthlyGross)}
+            Estimated monthly package gross: {formatMoney(displayMonthlyGross)}
+          </div>
+        ) : null}
+        {isLumpsum && Number(payroll.contractAmount || 0) > 0 && contractStartDate && contractEndDate ? (
+          <div className="mt-2 text-[11px] font-semibold text-blue-800">
+            Contract {formatMoney(Number(payroll.contractAmount))} over {contractMonthsInclusive(contractStartDate, contractEndDate)} month(s) ≈ {formatMoney(monthlyLumpsumFromContract(Number(payroll.contractAmount), contractStartDate, contractEndDate))} / month
           </div>
         ) : null}
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <SelectField
+          label="Pay Currency"
+          value={payroll.payCurrency || 'NGN'}
+          onChange={(v) => patch({ payCurrency: v })}
+          options={['NGN', 'USD']}
+          placeholder="Select currency"
+        />
         <SelectField label="Payroll Group" value={payroll.payrollGroup} onChange={(v) => patch({ payrollGroup: v })} options={options.payrollGroups} placeholder="e.g. DLE / Daily Rate" />
         <Field label="Salary Grade (optional label)" value={payroll.salaryGrade} onChange={(v) => patch({ salaryGrade: v })} hint="Descriptive only — not used to auto-split pay" />
+        {showMonthlyPackageField ? (
+          <Field
+            label={`Monthly Package Gross (${currencySymbol})`}
+            type="number"
+            value={payroll.periodSalary}
+            onChange={syncPeriodSalary}
+            hint={isLumpsum ? 'Auto-filled from contract value ÷ contract months when dates are set on Employment step' : 'Total monthly pay before one-off supplements'}
+          />
+        ) : null}
         <SelectField label="Bank Name" value={payroll.bankName} onChange={(v) => patch({ bankName: v })} options={options.banks} />
         <Field label="Account Number" value={payroll.accountNumber} onChange={(v) => patch({ accountNumber: v })} />
         <Field label="Account Name" value={payroll.accountName} onChange={(v) => patch({ accountName: v })} />
