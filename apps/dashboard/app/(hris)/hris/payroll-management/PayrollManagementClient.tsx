@@ -4766,7 +4766,9 @@ export default function PayrollManagementClient({
 
   const exportReportExcel = (report = 'payroll-register') => {
     if (!ensureCanExport()) return;
-    window.location.href = reportExportUrl('xls', report);
+    const wagesPack = viewPack === 'daily-rate';
+    const resolvedReport = wagesPack && report === 'payroll-register' ? 'dayrate-schedule' : report;
+    window.location.href = reportExportUrl('xls', resolvedReport, 'All', wagesPack ? 'daily-rate' : viewPack, 'ngn');
   };
 
   const saveJournalMapping = async (
@@ -4801,7 +4803,11 @@ export default function PayrollManagementClient({
 
   const exportBothPacksExcel = (report = 'payroll-register') => {
     if (!ensureCanExport()) return;
-    window.location.href = reportExportUrl('xls', report, 'All', 'all', 'ngn');
+    const wagesPack = viewPack === 'daily-rate';
+    const resolvedReport = wagesPack && (report === 'payroll-register' || report === 'bank-schedule')
+      ? 'dayrate-schedule'
+      : report;
+    window.location.href = reportExportUrl('xls', resolvedReport, 'All', wagesPack ? 'daily-rate' : 'all', 'ngn');
   };
 
   const exportDleUsdExcel = (report = 'payroll-register') => {

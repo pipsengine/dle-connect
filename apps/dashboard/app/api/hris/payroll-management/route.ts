@@ -23,6 +23,7 @@ import {
   buildDayratePaymentScheduleXlsx,
   dayrateScheduleXlsxMimeType,
 } from '@/lib/dayrate-schedule-template-export';
+import { readAppliedDayrateScheduleOverride } from '@/lib/dayrate-schedule-override-read';
 import { isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { readPayrollSnapshotsByPeriods } from '@/lib/payroll-run-store';
@@ -477,15 +478,27 @@ export async function GET(request: Request) {
 
         const salariedRecords = filterExportRecords(salariedLiveRecords, statusFilter, 'salaried', currencyScope)
           .filter((record) => !record.isDailyRate);
-        const dayrateRecords = filterExportRecords(dayrateLiveRecords, statusFilter, 'daily-rate', 'all')
-          .filter((record) => record.isDailyRate || requestedPack === 'daily-rate');
+        const dayrateExportReport = report === 'dayrate-schedule'
+          || (report === 'payroll-register' && (requestedPack === 'daily-rate' || payload.pack === 'daily-rate'));
+        const dayrateRecordsForTemplate = dayrateExportReport
+          ? (() => {
+            const applied = readAppliedDayrateScheduleOverride(livePeriod);
+            const statusFiltered = statusFilter && statusFilter !== 'All'
+              ? dayrateLiveRecords.filter((record) => record.payrollStatus === statusFilter)
+              : dayrateLiveRecords;
+            if (applied?.rows?.length) return statusFiltered;
+            return filterExportRecords(dayrateLiveRecords, statusFilter, 'daily-rate', 'all')
+              .filter((record) => record.isDailyRate || requestedPack === 'daily-rate');
+          })()
+          : filterExportRecords(dayrateLiveRecords, statusFilter, 'daily-rate', 'all')
+            .filter((record) => record.isDailyRate || requestedPack === 'daily-rate');
 
-        if (report === 'dayrate-schedule') {
+        if (dayrateExportReport) {
           try {
             const workbook = await buildDayratePaymentScheduleXlsx({
               period: payload.period,
               periodLabel: payload.periodLabel,
-              records: dayrateRecords,
+              records: dayrateRecordsForTemplate,
               directoryEmployees: directory.employees,
             });
             return new Response(new Uint8Array(workbook.buffer), {
@@ -496,9 +509,15 @@ export async function GET(request: Request) {
               },
             });
           } catch (error) {
-            console.error('[payroll-management] dayrate template export failed; falling back to SpreadsheetML', error);
+            console.error('[payroll-management] dayrate template export failed', error);
+            return jsonErr(
+              500,
+              error instanceof Error ? error.message : 'Dayrate Payment Schedule export failed. Check template file and try again.',
+            );
           }
         }
+
+        const dayrateRecords = dayrateRecordsForTemplate;
 
         const worksheets = await buildOfficialPayrollExcelWorksheets({
           report,
@@ -511,9 +530,7 @@ export async function GET(request: Request) {
           currencyScope,
         });
         if (worksheets.length) {
-          const fallbackName = report === 'dayrate-schedule'
-            ? `${payload.periodLabel?.toUpperCase().replace(/\s+/g, ' ') || payload.period}DAYRATE PAYMENT SCHEDULE .xls`
-            : `${report}-${payload.period}-${filePack}.xls`;
+          const fallbackName = `${report}-${payload.period}-${filePack}.xls`;
           return new Response(buildExcelWorkbookXml({ worksheets }), {
             headers: {
               'content-type': excelMimeType,
