@@ -44,9 +44,10 @@ export const buildExcelHtml = ({ title, sheetName, columns, rows, generatedAt, s
   const body = rows
     .map((row, index) => {
       const cells = columns.map((_, cellIndex) => {
-        const value = cellText(row[cellIndex]);
-        const type = typeof value === 'number' ? 'number' : 'text';
-        return `<td class="${type}">${escapeHtml(value)}</td>`;
+        const raw = row[cellIndex];
+        const numeric = typeof raw === 'number' && Number.isFinite(raw);
+        const value = cellText(raw);
+        return `<td class="${numeric ? 'number' : 'text'}">${escapeHtml(value)}</td>`;
       });
       return `<tr class="${index % 2 ? 'alt' : ''}">${cells.join('')}</tr>`;
     })
@@ -92,9 +93,11 @@ const escapeXml = (value: unknown) =>
     .replace(/"/g, '&quot;');
 
 const spreadsheetCell = (value: ExcelCell, style: 'Odd' | 'Even') => {
+  const numeric = typeof value === 'number' && Number.isFinite(value);
   const normalized = cellText(value);
-  const numeric = typeof normalized === 'number' && Number.isFinite(normalized);
-  return `<Cell ss:StyleID="${numeric ? `${style}Number` : style}"><Data ss:Type="${numeric ? 'Number' : 'String'}">${escapeXml(normalized)}</Data></Cell>`;
+  const dataType = numeric ? 'Number' : 'String';
+  const styleId = numeric ? `${style}Number` : style;
+  return `<Cell ss:StyleID="${styleId}"><Data ss:Type="${dataType}">${escapeXml(normalized)}</Data></Cell>`;
 };
 
 /**

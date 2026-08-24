@@ -157,6 +157,8 @@ const enrich = (record: PayrollCalculationRecord, dir?: DirectoryEnrichment | nu
     location: record.location || dir?.location,
     companyCode: dir?.companyCode,
   });
+  const computedAge = ageFromDob(dir?.dateOfBirth);
+  const ageValue = Number(dir?.age || 0) || (typeof computedAge === 'number' ? computedAge : Number(computedAge) || 0);
   return {
     ...record,
     _firstName: names.firstName,
@@ -164,7 +166,7 @@ const enrich = (record: PayrollCalculationRecord, dir?: DirectoryEnrichment | nu
     _gender: compact(dir?.gender),
     _dob: compact(dir?.dateOfBirth).slice(0, 10),
     _dateJoined: compact(dir?.dateJoined).slice(0, 10),
-    _age: Number(dir?.age || 0) || ageFromDob(dir?.dateOfBirth) || dir?.yearsOfService || '',
+    _age: ageValue > 0 ? ageValue : '',
     _companyBucket: companyBucket,
     _companyHa: haLabel(
       companyBucket === 'DLPC' ? 'DLPCG' : 'DLENG',
@@ -211,6 +213,8 @@ export const buildOfficialBankScheduleWorksheets = (
     mode?: 'staff-packs' | 'company';
     /** Default ngn — DLE_USD never mixes into NGN packs. Use usd for the separate DLE USD export. */
     currencyScope?: OfficialExportCurrencyScope | string | null;
+    /** Append trailing aggregate row with employee code = 7 (NET-only total), AUGUST sample format. */
+    appendCompanyTotalRow?: boolean;
   },
 ): ExcelWorksheetInput[] => {
   const periodLabel = options?.periodLabel || 'Payroll Period';
@@ -241,6 +245,18 @@ export const buildOfficialBankScheduleWorksheets = (
           if (config.includeLocation) base.push(compact(record.location));
           return base;
         });
+
+      if (options?.appendCompanyTotalRow) {
+        const bucketRecords = scopedRecords.filter(
+          (record) => resolveOfficialCompanyBucket(record) === config.bucket,
+        );
+        const totalNet = roundMoney(bucketRecords.reduce((sum, r) => sum + Number(r.netPay || 0), 0));
+        const totalRow: ExcelCell[] = config.includeLocation
+          ? [7, '', '', '', '', totalNet, '']
+          : [7, '', '', '', '', totalNet];
+        rows.push(totalRow);
+      }
+
       return {
         title: 'Employee Bank Details',
         subtitle: `${options?.titlePrefix || 'Bank Payment Schedule'} · ${periodLabel} · ${config.bucket}`,
@@ -510,7 +526,8 @@ const buildSalariedSheet = (
     const pensionEr = roundMoney(Number(record.pensionEmployer || 0));
     const usdEr = record.payCurrency === 'USD' ? pensionEr : 0;
     const companyTotal = roundMoney(itf + nsitf + pensionEr);
-    const rentProvision = 208333.33;
+    const rentProvision = 0;
+    const lifeAssuranceProvision = 0;
     const periodSalary = roundMoney(Number(record.periodPackageGross || record.grossPay || 0));
     const values: ExcelCell[] = isPerm
       ? [
@@ -543,6 +560,7 @@ const buildSalariedSheet = (
     }
 
     if (isPerm) {
+      const provisionsTotal = roundMoney(lifeAssuranceProvision + rentProvision);
       values.push(
         earningTotal,
         deductionTotal,
@@ -551,9 +569,9 @@ const buildSalariedSheet = (
         record.payCurrency === 'USD' ? 0 : pensionEr,
         usdEr,
         companyTotal,
-        0,
+        lifeAssuranceProvision,
         rentProvision,
-        rentProvision,
+        provisionsTotal,
         periodSalary,
         roundMoney(periodSalary * 12),
         roundMoney(Number(record.grossPay || 0)),
@@ -562,11 +580,12 @@ const buildSalariedSheet = (
         ...haTailValues(record),
       );
     } else {
+      const provisionsTotal = rentProvision;
       values.push(
         earningTotal,
         deductionTotal,
         rentProvision,
-        rentProvision,
+        provisionsTotal,
         periodSalary,
         roundMoney(periodSalary * 12),
         roundMoney(Number(record.grossPay || 0)),
@@ -700,8 +719,13 @@ const buildDayrateDetailSheet = (
   attendance: Map<string, PayrollAttendanceSheetRow>,
   sheetName: 'DLE' | 'DLPC',
   periodLabel: string,
+  options?: { appendDlpcTotalRow?: boolean },
 ): ExcelWorksheetInput => {
   const columns = sheetName === 'DLE' ? [...DAYRATE_DLE_COLUMNS] : [...DAYRATE_DLPC_COLUMNS];
+  const blankOr = (value: number | null | undefined) => {
+    const num = Number(value || 0);
+    return num === 0 ? '' : roundMoney(num);
+  };
   const rows = records.map((record) => {
     const code = officialEmployeeCode(record);
     const att = attendance.get(upper(code))
@@ -762,21 +786,21 @@ const buildDayrateDetailSheet = (
         satHrs,
         sunHrs,
         nightDays,
-        wkdEarning,
-        wkdOvtAmt,
-        satAmt,
-        sunAmt,
-        nightAmt,
-        meal,
-        transport || '',
-        site || '',
-        tcmMeal || '',
-        tcmTransport || '',
-        arrears || '',
-        totalEarnings,
-        wht,
-        totalEarnings,
-        netPay,
+        roundMoney(wkdEarning),
+        blankOr(wkdOvtAmt),
+        blankOr(satAmt),
+        blankOr(sunAmt),
+        blankOr(nightAmt),
+        roundMoney(meal),
+        blankOr(transport),
+        blankOr(site),
+        blankOr(tcmMeal),
+        blankOr(tcmTransport),
+        blankOr(arrears),
+        roundMoney(totalEarnings),
+        roundMoney(wht),
+        roundMoney(totalEarnings),
+        roundMoney(netPay),
       ] as ExcelCell[];
     }
 
@@ -794,20 +818,70 @@ const buildDayrateDetailSheet = (
       sunHrs,
       phHrs,
       nightDays,
-      wkdEarning,
-      wkdOvtAmt,
-      satAmt,
-      sunAmt,
-      phAmt,
-      nightAmt,
-      meal,
-      transport,
-      totalEarnings,
-      wht,
-      totalEarnings,
-      netPay,
+      roundMoney(wkdEarning),
+      blankOr(wkdOvtAmt),
+      blankOr(satAmt),
+      blankOr(sunAmt),
+      blankOr(phAmt),
+      blankOr(nightAmt),
+      roundMoney(meal),
+      blankOr(transport),
+      roundMoney(totalEarnings),
+      roundMoney(wht),
+      roundMoney(totalEarnings),
+      roundMoney(netPay),
     ] as ExcelCell[];
   });
+
+  if (options?.appendDlpcTotalRow) {
+    const totals = records.reduce(
+      (acc, record) => {
+        const totalEarnings = Number(record.grossPay || 0);
+        const wht = Number(record.paye || 0) || totalEarnings * 0.05;
+        const netPay = Number(record.netPay || 0) || totalEarnings - wht;
+        return {
+          dailyRate: acc.dailyRate + Number(record.ratePerDay || 0),
+          weekDays: acc.weekDays + Number(record.timesheetDaysWorked ?? 0),
+          meal: acc.meal + (lineAmount(record.earningLines, /^MEAL$|MEAL ALLOW|PER_MEAL/i) || 0),
+          totalEarnings: acc.totalEarnings + totalEarnings,
+          wht: acc.wht + wht,
+          netPay: acc.netPay + netPay,
+        };
+      },
+      { dailyRate: 0, weekDays: 0, meal: 0, totalEarnings: 0, wht: 0, netPay: 0 },
+    );
+    if (sheetName === 'DLE') {
+      rows.push([
+        7, '', '', '', '',
+        roundMoney(totals.dailyRate),
+        '', '',
+        roundMoney(totals.weekDays),
+        0, 0, 0, 0,
+        0, '', '', '', '',
+        roundMoney(totals.meal),
+        '', '', '', '', '',
+        roundMoney(totals.totalEarnings),
+        roundMoney(totals.wht),
+        roundMoney(totals.totalEarnings),
+        roundMoney(totals.netPay),
+      ] as ExcelCell[]);
+    } else {
+      rows.push([
+        7, '', '', '',
+        roundMoney(totals.dailyRate),
+        '', '',
+        roundMoney(totals.weekDays),
+        0, 0, 0, 0, 0,
+        0, '', '', '', '', '',
+        roundMoney(totals.meal),
+        '',
+        roundMoney(totals.totalEarnings),
+        roundMoney(totals.wht),
+        roundMoney(totals.totalEarnings),
+        roundMoney(totals.netPay),
+      ] as ExcelCell[]);
+    }
+  }
 
   return {
     title: `Daily Rate Payment Detail (${sheetName}) - ${periodLabel}`,
@@ -884,9 +958,11 @@ export const buildOfficialDayrateScheduleWorksheets = async (
   const dle = dayrate.filter((record) => record._companyBucket === 'DLE');
   const dlpc = dayrate.filter((record) => record._companyBucket === 'DLPC');
 
+  const totalGross = (rows: Enriched[]) => roundMoney(rows.reduce((sum, row) => sum + Number(row.grossPay || 0), 0));
+  const totalNet = (rows: Enriched[]) => roundMoney(rows.reduce((sum, row) => sum + Number(row.netPay || 0), 0));
   const summaryRows: ExcelCell[][] = [
-    ['DLE', dle.length, roundMoney(dle.reduce((sum, row) => sum + Number(row.grossPay || 0), 0)), roundMoney(dle.reduce((sum, row) => sum + Number(row.netPay || 0), 0))],
-    ['DLPC', dlpc.length, roundMoney(dlpc.reduce((sum, row) => sum + Number(row.grossPay || 0), 0)), roundMoney(dlpc.reduce((sum, row) => sum + Number(row.netPay || 0), 0))],
+    ['DLE', dle.length, totalGross(dle), totalNet(dle)],
+    ['DLPC', dlpc.length, totalGross(dlpc), totalNet(dlpc)],
     [
       'Total',
       dle.length + dlpc.length,
@@ -903,12 +979,13 @@ export const buildOfficialDayrateScheduleWorksheets = async (
       columns: ['COMPANY', 'HEADCOUNT', 'GROSS PAY', 'NET PAY'],
       rows: summaryRows,
     },
-    buildDayrateDetailSheet(dle, attendance, 'DLE', periodLabel),
-    buildDayrateDetailSheet(dlpc, attendance, 'DLPC', periodLabel),
+    buildDayrateDetailSheet(dle, attendance, 'DLE', periodLabel, { appendDlpcTotalRow: true }),
+    buildDayrateDetailSheet(dlpc, attendance, 'DLPC', periodLabel, { appendDlpcTotalRow: true }),
     ...buildOfficialBankScheduleWorksheets(dayrate, {
       periodLabel,
       titlePrefix: 'Dayrate Bank Schedule',
       mode: 'company',
+      appendCompanyTotalRow: true,
     }),
   ];
 };
