@@ -23,6 +23,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Download,
+  FileClock,
   FileText,
   Fingerprint,
   HeartPulse,
@@ -280,6 +281,24 @@ type DuplicateResult = {
 };
 
 type DraftResponse = { draftId: string; status: 'draft' | 'submitted' | 'approved' | 'created'; updatedAt: string };
+
+type DraftListRow = {
+  draftId: string;
+  status: 'draft' | 'submitted' | 'approved' | 'created' | 'cancelled';
+  createdAt: string;
+  updatedAt: string;
+  employeeCode: string | null;
+  employmentType: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  fullName: string | null;
+  jobTitle: string | null;
+  department: string | null;
+  officialEmail: string | null;
+  primaryPhone: string | null;
+  editUrl: string;
+};
+type DraftListResponse = { total: number; count: number; drafts: DraftListRow[] };
 
 type CreateEmployeeResponse = { employeeId: string; startedOnboarding: boolean };
 type EmployeeCodePreviewResponse = { employeeCode: string; prefix: string; employeeType: string };
@@ -702,7 +721,7 @@ const makeEmptyDraft = (countryDefault: string): EmployeeDraftPayload => ({
   onboardingChecklist: [],
 });
 
-export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { initialNow: string; initialDraftId?: string }) {
+export default function AddNewEmployeeClient({ initialNow, initialDraftId, initialEmployeeCode }: { initialNow: string; initialDraftId?: string; initialEmployeeCode?: string }) {
   const router = useRouter();
   const [role, setRole] = useState<Role>('HR Officer');
   const perms = useMemo(() => rolePermissions(role), [role]);
@@ -710,7 +729,14 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
   const [options, setOptions] = useState<ApiState<FormOptions>>({ status: 'idle' });
   const [draftId, setDraftId] = useState<string | null>(initialDraftId || null);
   const [draftStatus, setDraftStatus] = useState<'draft' | 'submitted' | 'approved' | 'created'>('draft');
-  const [draft, setDraft] = useState<EmployeeDraftPayload>(() => makeEmptyDraft('Nigeria'));
+  const [draft, setDraft] = useState<EmployeeDraftPayload>(() => {
+    const base = makeEmptyDraft('Nigeria');
+    const code = (initialEmployeeCode || '').trim().toUpperCase();
+    if (code && !initialDraftId) {
+      base.employment.employeeId = code;
+    }
+    return base;
+  });
   const [step, setStep] = useState<StepKey>('personal');
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -721,6 +747,30 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
   const [validation, setValidation] = useState<ApiState<ValidationResult>>({ status: 'idle' });
   const [duplicate, setDuplicate] = useState<ApiState<DuplicateResult>>({ status: 'idle' });
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [draftsSearch, setDraftsSearch] = useState('');
+  const [draftsState, setDraftsState] = useState<{ status: 'idle' | 'loading' | 'error'; error?: string; data: DraftListRow[]; total: number }>({
+    status: 'idle',
+    data: [],
+    total: 0,
+  });
+  const loadDrafts = async (search = '') => {
+    setDraftsState((p) => ({ ...p, status: 'loading' }));
+    try {
+      const q = new URLSearchParams();
+      if (search.trim()) q.set('search', search.trim());
+      const res = await apiCall<DraftListResponse>(`/api/hris/employees/draft${q.toString() ? `?${q.toString()}` : ''}`, { method: 'GET', role });
+      setDraftsState({ status: 'idle', data: res.drafts || [], total: res.total || 0 });
+    } catch (e) {
+      setDraftsState({ status: 'error', data: [], total: 0, error: e instanceof Error ? e.message : 'Unable to load drafts' });
+    }
+  };
+  useEffect(() => {
+    if (!draftsOpen) return;
+    void loadDrafts(draftsSearch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftsOpen]);
 
   const stepIndex = useMemo(() => STEP_ORDER.findIndex((s) => s.key === step), [step]);
   const nowStamp = useMemo(() => formatDateTimeUtc(initialNow), [initialNow]);
@@ -1131,6 +1181,10 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => setDraftsOpen((v) => !v)} className="inline-flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <FileClock className="h-4 w-4" />
+            Recent Drafts
+          </button>
           <button type="button" onClick={() => void saveDraft()} disabled={!perms.canCreate || saving} className="inline-flex items-center gap-2 rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
             <Save className="h-4 w-4" />
             Save Draft
@@ -2335,6 +2389,120 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId }: { i
           {rightPanel}
         </div>
       </div>
+
+      {draftsOpen ? (
+        <div className="fixed inset-0 z-40">
+          <div className="absolute inset-0 bg-slate-900/30" onClick={() => setDraftsOpen(false)} />
+          <div className="absolute right-0 top-0 bottom-0 w-full max-w-3xl bg-[#F8FAFC] border-l border-[#E5E7EB] shadow-xl flex flex-col">
+            <div className="px-6 py-5 border-b border-[#E5E7EB] bg-white flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="text-xs font-extrabold tracking-wider text-slate-500">HRIS · Employee Drafts</div>
+                <h2 className="mt-1 text-2xl font-bold text-[#0F172A]">Browse saved drafts</h2>
+                <p className="mt-1 text-sm text-slate-600 font-semibold">
+                  {draftsState.total > 0 ? `${draftsState.total} draft${draftsState.total === 1 ? '' : 's'} found.` : 'No saved drafts.'}
+                  &nbsp;Click a row to open and resume editing.
+                </p>
+              </div>
+              <button type="button" onClick={() => setDraftsOpen(false)} className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50">
+                <X className="w-4 h-4 text-slate-600" />
+              </button>
+            </div>
+            <div className="px-6 py-4 border-b border-[#E5E7EB] bg-white">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  autoFocus
+                  value={draftsSearch}
+                  onChange={(e) => setDraftsSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void loadDrafts(draftsSearch);
+                  }}
+                  placeholder="Search by C2827, name, email, job, department, or draft id"
+                  className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 py-2.5 text-sm font-semibold focus:outline-none focus:border-[#2563EB]"
+                />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button type="button" onClick={() => void loadDrafts(draftsSearch)} className="inline-flex items-center gap-2 rounded-lg bg-[#2563EB] px-3 py-2 text-xs font-extrabold text-white hover:bg-blue-700">
+                  <Search className="w-3.5 h-3.5" />
+                  Search
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraftsSearch('C2827');
+                    void loadDrafts('C2827');
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
+                >
+                  <IdCard className="w-3.5 h-3.5 text-[#2563EB]" />
+                  Quick lookup: C2827
+                </button>
+                <span className="text-xs font-semibold text-slate-500">Tip: click any row below to open the draft in the wizard.</span>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto px-6 py-5 space-y-3">
+              {draftsState.status === 'loading' ? (
+                <div className="text-sm font-semibold text-slate-600 py-8 text-center">Loading drafts…</div>
+              ) : draftsState.status === 'error' ? (
+                <div className="text-sm font-semibold text-red-700 py-8 text-center">{draftsState.error}</div>
+              ) : draftsState.data.length === 0 ? (
+                <div className="rounded-2xl border border-[#E5E7EB] bg-white p-8 text-center">
+                  <div className="mx-auto w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600">
+                    <FileClock className="w-6 h-6" />
+                  </div>
+                  <div className="mt-4 text-lg font-extrabold text-slate-900">No drafts matched</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-600">
+                    If C2827 was saved but is not here, it was stored in memory only and was wiped during the last deploy (IIS recycle).
+                    Re-create it with the same C2827 code via the URL shortcut: add <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded">?employeeCode=C2827</span>.
+                  </div>
+                </div>
+              ) : (
+                draftsState.data.map((row) => (
+                  <Link
+                    key={row.draftId}
+                    href={row.editUrl}
+                    prefetch={false}
+                    className="block rounded-2xl border border-[#E5E7EB] bg-white p-4 hover:border-[#2563EB] hover:bg-blue-50/40 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-extrabold text-slate-700">
+                            <IdCard className="w-3.5 h-3.5 text-[#2563EB]" />
+                            {row.employeeCode || 'No code yet'}
+                          </span>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-[#2563EB]/10 px-2.5 py-1 text-[11px] font-extrabold text-[#2563EB]">
+                            {row.employmentType || 'Unclassified'}
+                          </span>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-white border border-slate-200 px-2.5 py-1 text-[11px] font-extrabold text-slate-700 capitalize">
+                            {row.status}
+                          </span>
+                        </div>
+                        <div className="text-base font-extrabold text-[#0F172A] truncate">
+                          {row.fullName || <span className="italic text-slate-400 font-semibold">Unnamed draft</span>}
+                        </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold text-slate-600">
+                          {row.jobTitle ? <span>{row.jobTitle}</span> : null}
+                          {row.department ? <span>· {row.department}</span> : null}
+                          {row.officialEmail ? <span>· {row.officialEmail}</span> : null}
+                          {row.primaryPhone ? <span>· {row.primaryPhone}</span> : null}
+                        </div>
+                        <div className="text-[11px] font-semibold text-slate-500">
+                          Updated {formatDateTimeUtc(row.updatedAt)} · Draft {row.draftId}
+                        </div>
+                      </div>
+                      <div className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-700">
+                        Resume
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </div>
+                    </div>
+                  </Link>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <AnimatePresence>
         {toast && (

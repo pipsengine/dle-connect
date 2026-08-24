@@ -8,6 +8,8 @@ export default async function AddNewEmployeePage({
   const sp = (await searchParams) || {};
   const raw = sp.draftId;
   const draftId = typeof raw === 'string' && raw.trim() ? raw.trim() : undefined;
-  return <AddNewEmployeeClient initialNow={new Date().toISOString()} initialDraftId={draftId} />;
+  const rawCode = sp.employeeCode;
+  const employeeCode = typeof rawCode === 'string' && rawCode.trim() ? rawCode.trim() : undefined;
+  return <AddNewEmployeeClient initialNow={new Date().toISOString()} initialDraftId={draftId} initialEmployeeCode={employeeCode} />;
 }
 

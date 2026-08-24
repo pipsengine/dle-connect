@@ -259,6 +259,16 @@ const finalizeEmployeeId = async (draft: EmployeeDraftPayload) => {
   const employeeType = draft.employment?.employmentType;
   const prefix = employeeTypePrefix(employeeType);
   if (!prefix) throw new Error('Employee Type must be Permanent, Lumpsum, Daily Rate, NYSC, IT, Intern, or Industrial Trainee');
+
+  // If the draft already carries a valid employeeId (matching the expected prefix, not empty, and globally
+  // unique across Employees + non-cancelled Drafts), RESPECT IT (used by ?employeeCode=C2827 shortcut and
+  // by resume-edit flows that need to keep an already-reserved code).
+  const existingCode = normalizeEmployeeId(draft.employment?.employeeId);
+  if (existingCode && existingCode.startsWith(prefix)) {
+    const unique = await isUniqueEmployeeId(existingCode);
+    if (unique) return existingCode;
+  }
+
   const dbEmployeeCode = await nextEmployeeCodeFromDb(employeeType);
   if (dbEmployeeCode) {
     const normalized = normalizeEmployeeCodeForPrefix(dbEmployeeCode, prefix);

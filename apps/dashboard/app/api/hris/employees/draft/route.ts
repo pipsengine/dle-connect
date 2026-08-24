@@ -3,6 +3,7 @@ import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import {
   deleteEmployeeDraftFromDb,
   getEmployeeDraftFromDb,
+  listEmployeeDraftsByStatusFromDb,
   saveEmployeeDraftToDb,
 } from '@/lib/dle-enterprise-db';
 
@@ -120,6 +121,103 @@ const audit = (rec: DraftRecord, role: Role, action: string) => {
     performedBy: role,
   });
 };
+
+const stripDraftForList = (rec: DraftRecord) => {
+  const draft = (rec.draft || {}) as Record<string, any>;
+  const personal = draft.personal || {};
+  const employment = draft.employment || {};
+  const job = draft.job || {};
+  const contact = draft.contact || {};
+  return {
+    draftId: rec.draftId,
+    status: rec.status,
+    createdAt: rec.createdAt,
+    updatedAt: rec.updatedAt,
+    employeeCode: employment?.employeeId || null,
+    employmentType: employment?.employmentType || null,
+    firstName: personal?.firstName || null,
+    lastName: personal?.lastName || null,
+    fullName: [personal?.firstName || '', personal?.lastName || ''].join(' ').trim() || null,
+    jobTitle: job?.jobTitle || null,
+    department: job?.department || null,
+    officialEmail: contact?.officialEmail || null,
+    primaryPhone: contact?.primaryPhone || null,
+    editUrl: `/hris/employees/add-new-employee?draftId=${encodeURIComponent(rec.draftId)}`,
+  };
+};
+
+/**
+ * GET /api/hris/employees/draft
+ *   ?search=  — fuzzy search over employee code, name, email, job title, department
+ *   ?status=  — comma-separated: draft,submitted,approved,created,cancelled (default: draft,submitted,approved)
+ *   ?employeeCode= — exact match (e.g. C2827)
+ * Returns up to 200 drafts.
+ */
+export async function GET(request: Request) {
+  const role = await getRole(request);
+  const perms = permissions(role);
+  if (!perms.canCreate) {
+    return jsonErr(403, `Permission denied for role "${role}". HR/Admin/Payroll/IT access is required to list employee drafts.`);
+  }
+  const url = new URL(request.url);
+  const searchRaw = (url.searchParams.get('search') || '').trim().toLowerCase();
+  const statusesRaw = (url.searchParams.get('status') || 'draft,submitted,approved')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean) as Array<'draft' | 'submitted' | 'approved' | 'created' | 'cancelled'>;
+  const employeeCodeRaw = (url.searchParams.get('employeeCode') || '').trim().toUpperCase();
+
+  const fromDb: DraftRecord[] = (await listEmployeeDraftsByStatusFromDb(statusesRaw as unknown as string[])).map(
+    (r) => r as DraftRecord,
+  );
+  const dbMap = new Map<string, DraftRecord>();
+  for (const r of fromDb) dbMap.set(r.draftId, r);
+  for (const r of storeDrafts.values()) {
+    if (!statusesRaw.includes(r.status.toLowerCase())) continue;
+    dbMap.set(r.draftId, r);
+  }
+  let results: DraftRecord[] = Array.from(dbMap.values());
+
+  if (employeeCodeRaw) {
+    results = results.filter((r) => {
+      const code = String(((r.draft || {} as any).employment || {} as any).employeeId || '').trim().toUpperCase();
+      return code === employeeCodeRaw;
+    });
+  }
+  if (searchRaw) {
+    results = results.filter((r) => {
+      const d = (r.draft || {}) as Record<string, any>;
+      const p = d.personal || {};
+      const e = d.employment || {};
+      const j = d.job || {};
+      const c = d.contact || {};
+      const hay = [
+        e.employeeId,
+        p.firstName,
+        p.lastName,
+        p.middleName,
+        j.jobTitle,
+        j.department,
+        c.officialEmail,
+        c.personalEmail,
+        c.primaryPhone,
+        r.draftId,
+      ]
+        .map((x) => String(x || '').toLowerCase())
+        .join(' | ');
+      return hay.includes(searchRaw);
+    });
+  }
+
+  results.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  const trimmed = results.slice(0, 200);
+
+  return jsonOk({
+    total: results.length,
+    count: trimmed.length,
+    drafts: trimmed.map(stripDraftForList),
+  });
+}
 
 /** POST /api/hris/employees/draft — create draft (static path beats [id]/[...resource]). */
 export async function POST(request: Request) {
