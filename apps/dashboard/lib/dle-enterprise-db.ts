@@ -1046,10 +1046,21 @@ export const isEmployeeCodeAlreadyIssuedInDb = async (employeeCode: string): Pro
   if (!code) return true;
   const p = await pool();
   if (!p) return false;
-  const r = await p.request()
+  const r = await p
+    .request()
     .input('employee_code', sql.NVarChar(50), code)
-    .query(`SELECT TOP (1) 1 AS issued FROM [hris].[Employees] WHERE UPPER(LTRIM(RTRIM(employee_code))) = @employee_code;`);
-  return Boolean(r.recordset?.[0]?.issued);
+    .query(`
+      SELECT TOP (1) 1 AS issued
+      FROM [hris].[Employees]
+      WHERE UPPER(LTRIM(RTRIM(employee_code))) = @employee_code
+      UNION ALL
+      SELECT TOP (1) 1 AS issued
+      FROM [hris].[EmployeeDrafts]
+      WHERE UPPER(LTRIM(RTRIM(employee_code))) = @employee_code
+        AND draft_status <> 'cancelled'
+        AND draft_status <> 'created';
+    `);
+  return Boolean(r.recordset?.length && r.recordset[0]);
 };
 
 const DIRECTORY_EMPLOYEE_FROM_SQL = `
@@ -2164,6 +2175,15 @@ export const nextEmployeeCodeFromDb = async (employeeType: string) => {
   const p = await pool();
   if (!p) return null;
   const typeCode = employeeTypeCode(employeeType);
+  if (!typeCode) return null;
+
+  const formatNext = (prefix: string, latest: number) => {
+    const next = Math.max(0, latest) + 1;
+    const width = Math.max(4, String(next).length);
+    return `${prefix}${String(next).padStart(width, '0')}`;
+  };
+
+  // NYSC / IT/Intern path — prefix-based, dedicated prefix column in EmployeeCodeCounters.
   if (typeCode === 'N' || typeCode === 'I') {
     const employeeCodePrefix = employeeCodePrefixForTypeCode(typeCode);
     const tx = new sql.Transaction(p);
@@ -2175,15 +2195,38 @@ export const nextEmployeeCodeFromDb = async (employeeType: string) => {
         .query(`
           SELECT
             ISNULL((
-              SELECT MAX(TRY_CONVERT(int,
-                CASE
-                  WHEN employee_code LIKE 'P' + @employee_code_prefix + '[0-9]%' THEN SUBSTRING(employee_code, LEN(@employee_code_prefix) + 2, 20)
-                  WHEN employee_code LIKE @employee_code_prefix + '[0-9]%' THEN SUBSTRING(employee_code, LEN(@employee_code_prefix) + 1, 20)
-                END
-              ))
-              FROM [hris].[Employees]
-              WHERE employee_code LIKE @employee_code_prefix + '[0-9]%'
-                OR employee_code LIKE 'P' + @employee_code_prefix + '[0-9]%'
+              SELECT MAX(seq_no) FROM (
+                SELECT TRY_CONVERT(int,
+                  CASE
+                    WHEN UPPER(LTRIM(RTRIM(employee_code))) LIKE 'P' + @employee_code_prefix + '[0-9]%'
+                      THEN SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), LEN(@employee_code_prefix) + 2, 20)
+                    WHEN UPPER(LTRIM(RTRIM(employee_code))) LIKE @employee_code_prefix + '[0-9]%'
+                      THEN SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), LEN(@employee_code_prefix) + 1, 20)
+                  END
+                ) AS seq_no
+                FROM [hris].[Employees]
+                WHERE UPPER(LTRIM(RTRIM(employee_code))) LIKE @employee_code_prefix + '[0-9]%'
+                   OR UPPER(LTRIM(RTRIM(employee_code))) LIKE 'P' + @employee_code_prefix + '[0-9]%'
+
+                UNION ALL
+
+                SELECT TRY_CONVERT(int,
+                  CASE
+                    WHEN UPPER(LTRIM(RTRIM(employee_code))) LIKE 'P' + @employee_code_prefix + '[0-9]%'
+                      THEN SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), LEN(@employee_code_prefix) + 2, 20)
+                    WHEN UPPER(LTRIM(RTRIM(employee_code))) LIKE @employee_code_prefix + '[0-9]%'
+                      THEN SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), LEN(@employee_code_prefix) + 1, 20)
+                  END
+                )
+                FROM [hris].[EmployeeDrafts]
+                WHERE employee_code IS NOT NULL
+                  AND draft_status <> 'cancelled'
+                  AND draft_status <> 'created'
+                  AND (
+                    UPPER(LTRIM(RTRIM(employee_code))) LIKE @employee_code_prefix + '[0-9]%'
+                    OR UPPER(LTRIM(RTRIM(employee_code))) LIKE 'P' + @employee_code_prefix + '[0-9]%'
+                  )
+              ) codes
             ), 0) AS latest_employee,
             ISNULL((
               SELECT last_sequence
@@ -2210,11 +2253,57 @@ export const nextEmployeeCodeFromDb = async (employeeType: string) => {
       throw error;
     }
   }
-  const request = p.request();
-  request.input('EmployeeTypeName', sql.NVarChar(40), employeeType);
-  request.output('EmployeeCode', sql.NVarChar(50));
-  const rs = await request.execute('[hris].[usp_AllocateEmployeeCode]');
-  return normalizeEmployeeCodeForType(String(rs.output.EmployeeCode || ''), typeCode);
+
+  // Permanent / Lumpsum / Daily Rate + other single-letter prefixes (P / L / C etc).
+  const tx2 = new sql.Transaction(p);
+  await tx2.begin();
+  try {
+    const rs = await new sql.Request(tx2)
+      .input('type_code', sql.Char(1), typeCode)
+      .query(`
+        SELECT
+          ISNULL((
+            SELECT MAX(seq_no) FROM (
+              SELECT TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20)) AS seq_no
+              FROM [hris].[Employees]
+              WHERE UPPER(LTRIM(RTRIM(employee_code))) LIKE @type_code + '[0-9]%'
+                AND TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20)) IS NOT NULL
+
+              UNION ALL
+
+              SELECT TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20))
+              FROM [hris].[EmployeeDrafts]
+              WHERE employee_code IS NOT NULL
+                AND draft_status <> 'cancelled'
+                AND draft_status <> 'created'
+                AND UPPER(LTRIM(RTRIM(employee_code))) LIKE @type_code + '[0-9]%'
+                AND TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20)) IS NOT NULL
+            ) codes
+          ), 0) AS latest_employee,
+          ISNULL((
+            SELECT last_sequence
+            FROM [hris].[EmployeeCodeCounters] WITH (UPDLOCK, HOLDLOCK)
+            WHERE employee_type_code = @type_code
+          ), 0) AS latest_counter;
+      `);
+    const row = rs.recordset[0];
+    const next = Math.max(Number(row?.latest_employee || 0), Number(row?.latest_counter || 0)) + 1;
+    await new sql.Request(tx2)
+      .input('type_code', sql.Char(1), typeCode)
+      .input('last_sequence', sql.Int, next)
+      .query(`
+        MERGE [hris].[EmployeeCodeCounters] AS target
+        USING (SELECT @type_code AS employee_type_code, @last_sequence AS last_sequence) AS source
+        ON target.employee_type_code = source.employee_type_code
+        WHEN MATCHED THEN UPDATE SET last_sequence = source.last_sequence
+        WHEN NOT MATCHED THEN INSERT (employee_type_code, last_sequence) VALUES (source.employee_type_code, source.last_sequence);
+      `);
+    await tx2.commit();
+    return formatNext(typeCode, next - 1);
+  } catch (error) {
+    await tx2.rollback().catch(() => undefined);
+    throw error;
+  }
 };
 
 export const updateEmployeeDailyRatePayInDb = async (input: {

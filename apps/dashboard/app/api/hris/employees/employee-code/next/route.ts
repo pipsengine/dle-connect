@@ -5,18 +5,27 @@ const jsonOk = (data: any) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 
 const employeeTypePrefix = (employeeType: unknown) => {
-  const normalized = String(employeeType || '').trim().toLowerCase();
-  if (normalized === 'permanent') return 'P';
-  if (normalized === 'lumpsum') return 'L';
-  if (normalized === 'daily rate') return 'C';
-  if (normalized === 'nysc' || normalized.includes('nysc')) return 'N';
+  const normalized = typeof employeeType === 'string'
+    ? employeeType.trim().toLowerCase().replace(/[-_\s]+/g, '')
+    : '';
+  if (!normalized) return '';
+  if (normalized.includes('permanent')) return 'P';
+  if (normalized.includes('lumpsum') || normalized.includes('lumpsumcontract') || normalized.includes('contractlumpsum')) return 'L';
+  if (
+    normalized.includes('daily') ||
+    normalized.includes('dayrate') ||
+    normalized.includes('casual') ||
+    normalized === 'contract' ||
+    normalized.includes('contractstaff')
+  ) return 'C';
+  if (normalized.includes('nysc') || normalized.includes('corper')) return 'N';
   if (
     normalized === 'it' ||
-    normalized === 'intern' ||
-    normalized.includes('industrial trainee') ||
-    normalized.includes('industrial training') ||
-    normalized.includes('industrial attachment') ||
-    normalized.includes('intern')
+    normalized.includes('intern') ||
+    normalized.includes('industrialtrainee') ||
+    normalized.includes('industrialtraining') ||
+    normalized.includes('industrialattachment') ||
+    normalized.includes('siwes')
   ) return 'I';
   return '';
 };
