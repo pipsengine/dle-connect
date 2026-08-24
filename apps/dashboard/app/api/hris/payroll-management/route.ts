@@ -459,16 +459,26 @@ export async function GET(request: Request) {
           : (payload.pack || 'salaried');
 
       if (isOfficialPayrollExcelReport(report) && report !== 'payroll-review') {
-        const salariedPayload = packPayloads.find((item) => item.pack !== 'daily-rate') || payload;
-        const dayratePayload = packPayloads.find((item) => item.pack === 'daily-rate')
-          || (payload.pack === 'daily-rate' ? payload : null)
-          || (requestedPack === 'daily-rate' ? payload : await buildManagementPayload(request, period, 'daily-rate').catch(() => null));
+        // Official workbooks (payroll-register / payroll-detail / salary-analysis / bank-schedule / dayrate-schedule)
+        // must ALWAYS export 100% current data regardless of any session mask flags.
+        // Rebuild LIVE unmasked records via calculatePayrollForPeriod for each needed pack,
+        // so any "Computed / pending" summary pending state or role mask on UI does not
+        // accidentally leak into the generated file. Permission gate (canExport) already checked above.
+        const livePeriod = String(payload.period || '').trim() || (await getActivePayrollPeriod().catch(() => ''));
+        const salariedRawCalc = livePeriod ? await calculatePayrollForPeriod(livePeriod, { pack: 'salaried' }).catch(() => null) : null;
+        const dailyRateRawCalc = livePeriod ? await calculatePayrollForPeriod(livePeriod, { pack: 'daily-rate' }).catch(() => null) : null;
         const statusFilter = url.searchParams.get('status');
-        const salariedRecords = filterExportRecords(salariedPayload.records, statusFilter, 'salaried', currencyScope)
-          .filter((record) => !record.isDailyRate);
-        const dayrateRecords = filterExportRecords((dayratePayload || payload).records, statusFilter, 'daily-rate', 'all')
-          .filter((record) => record.isDailyRate || requestedPack === 'daily-rate');
         const directory = await readPayrollEmployees().catch(() => ({ employees: [] as Awaited<ReturnType<typeof readPayrollEmployees>>['employees'] }));
+
+        const salariedLiveRecords = salariedRawCalc?.records ?? packPayloads.find((item) => item.pack !== 'daily-rate')?.records ?? [];
+        const dayrateLiveRecords = dailyRateRawCalc?.records
+          ?? packPayloads.find((item) => item.pack === 'daily-rate')?.records
+          ?? (payload.pack === 'daily-rate' ? payload.records : []);
+
+        const salariedRecords = filterExportRecords(salariedLiveRecords, statusFilter, 'salaried', currencyScope)
+          .filter((record) => !record.isDailyRate);
+        const dayrateRecords = filterExportRecords(dayrateLiveRecords, statusFilter, 'daily-rate', 'all')
+          .filter((record) => record.isDailyRate || requestedPack === 'daily-rate');
 
         if (report === 'dayrate-schedule') {
           try {

@@ -44,11 +44,29 @@ const FINALIZED_RUN_STATUSES = new Set([
   'Closed',
 ]);
 
+const COMPUTED_RUN_STATUSES = new Set([
+  'Calculated',
+  'Computed',
+  'Validated',
+  'Ready for Approval',
+  'Submitted',
+  'Under Review',
+  'Finance Approved',
+  'CFO Approved',
+  'HR Approved',
+  'Approved',
+  'Released',
+  'Locked',
+  'Posted',
+  'Published',
+  'Closed',
+]);
+
 const isPayrollComputed = (run: UnifiedPayrollRun | null, periodRecord: { status: string } | null) => {
-  if (periodRecord?.status === 'Closed') return true;
+  if (periodRecord?.status === 'Closed' || periodRecord?.status === 'Posted' || periodRecord?.status === 'Locked') return true;
   if (!run) return false;
-  if (run.status === 'Closed') return true;
-  return FINALIZED_RUN_STATUSES.has(run.status);
+  if (run.status === 'Closed' || run.status === 'Posted' || run.status === 'Published' || run.status === 'Locked') return true;
+  return COMPUTED_RUN_STATUSES.has(run.status);
 };
 
 const stripPendingPayrollAmounts = (calculation: Awaited<ReturnType<typeof calculatePayrollForPeriod>>) => ({
