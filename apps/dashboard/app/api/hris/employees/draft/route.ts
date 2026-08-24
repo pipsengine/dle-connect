@@ -173,7 +173,8 @@ export async function GET(request: Request) {
   const dbMap = new Map<string, DraftRecord>();
   for (const r of fromDb) dbMap.set(r.draftId, r);
   for (const r of storeDrafts.values()) {
-    if (!statusesRaw.includes(r.status.toLowerCase())) continue;
+    const statusLower = r.status.toLowerCase() as 'draft' | 'submitted' | 'approved' | 'created' | 'cancelled';
+    if (!statusesRaw.includes(statusLower)) continue;
     dbMap.set(r.draftId, r);
   }
   let results: DraftRecord[] = Array.from(dbMap.values());
