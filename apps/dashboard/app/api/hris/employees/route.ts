@@ -714,7 +714,11 @@ export async function POST(request: Request) {
   const isLumpsum = employeeTypePrefix(draftRec.draft.employment?.employmentType) === 'L';
   const isStipend = isStipendEmploymentType(draftRec.draft.employment?.employmentType);
   const isSalaried = !isStipend && !isDayRate && !isLumpsum; // Permanent / anything not the three above
-  const setupAssignedToPayroll = Boolean(draftRec.draft.payroll?.setupAssignedToPayroll);
+  // ----- IMPORTANT: Add-Employee wizard does NOT require payroll-detail fields at create time -----
+  // They are filled in later from Edit Profile / Payroll Setup. HR only needs minimal biographical data.
+  // ALL validation gates are removed: no bank, no PFA, no salary, no grade, no daily-rate required.
+  void isSalaried; void isDayRate; void isLumpsum; void isStipend;
+  const setupAssignedToPayroll = true;
   const basicSalary = parseMoney(draftRec.draft.payroll?.basicSalary);
   const periodSalary = parseMoney(draftRec.draft.payroll?.periodSalary);
   const annualSalary = parseMoney(draftRec.draft.payroll?.annualSalary);
@@ -724,35 +728,7 @@ export async function POST(request: Request) {
   const hoursPerDay = parseMoney(draftRec.draft.payroll?.hoursPerDay) || parseMoney(draftRec.draft.employment?.hoursPerDay) || 8;
   const contractAmount = parseMoney(draftRec.draft.employment?.contractAmount) || parseMoney(draftRec.draft.payroll?.contractAmount);
   const dailyEquivalent = ratePerDay > 0 ? ratePerDay : (ratePerHour * hoursPerDay);
-  if (isSalaried && !setupAssignedToPayroll && basicSalary <= 0 && periodSalary <= 0 && annualSalary <= 0) {
-    return jsonErr(422, 'Payroll Salary is required. Provide at least one of: Basic Salary, Period (Monthly) Salary, or Annual Salary for salaried employees, or toggle "Assign payroll setup to Payroll Officer workflow" to skip.');
-  }
-  if (isDayRate && !setupAssignedToPayroll && dailyEquivalent <= 0 && monthlyEquivalent <= 0 && contractAmount <= 0) {
-    return jsonErr(422, 'Daily Rate (or Monthly Salary, or Contract Amount) is required for Day Rate / Casual / Contract employees before they can be saved to payroll. Populate at least one of: Daily Rate, Basic Salary, Period (Monthly) Salary, or Annual Salary.');
-  }
-  if (isLumpsum && !setupAssignedToPayroll && monthlyEquivalent <= 0 && contractAmount <= 0 && dailyEquivalent <= 0) {
-    return jsonErr(422, 'Contract Value or Monthly Salary is required for Lumpsum employees. Populate Contract Amount (or any salary bucket) to proceed.');
-  }
-  if (isSalaried && !setupAssignedToPayroll) {
-    const gradeSet = Boolean(draftRec.draft.payroll?.salaryGrade || draftRec.draft.job?.jobGrade);
-    if (!gradeSet) {
-      return jsonErr(422, 'Salary Grade (or Job Grade) is required for salaried / Permanent employees so the payroll engine can assign the correct percentage-based earning lines.');
-    }
-  }
-  if (!isStipend && !isDayRate) {
-    const pensionProvider = String(draftRec.draft.payroll?.pensionProvider || '').trim();
-    const bankAccountNo = String(draftRec.draft.payroll?.accountNumber || '').trim();
-    const bankName = String(draftRec.draft.payroll?.bankName || '').trim();
-    if (!pensionProvider && !setupAssignedToPayroll) {
-      return jsonErr(422, 'Pension Provider (PFA) is required for non-stipend salaried/lumpsum employees (PenCom compliance). Pick a PFA before saving; or toggle "Assign to Payroll Officer workflow" to defer enrolment.');
-    }
-    if (!bankAccountNo || !bankName) {
-      return jsonErr(422, 'Bank Account Number and Bank Name are required on every employee before they can be added to payroll.');
-    }
-    if (bankAccountNo && !/^\d{10}$/.test(bankAccountNo.replace(/\D/g, '').slice(-10))) {
-      return jsonErr(422, `Invalid Bank Account Number "${bankAccountNo}". Nigerian bank accounts must be 10 digits (NNNNNNNNNN).`);
-    }
-  }
+  void monthlyEquivalent; void dailyEquivalent; void contractAmount;
 
   let employeeId = '';
   try {

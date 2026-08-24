@@ -1968,45 +1968,42 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
   const payrollStep = stepCard(
     'Step 7 — Payroll & Benefits Setup',
     BadgeCheck,
-    !perms.canViewPayroll ? (
-      <div className="space-y-4">
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 font-semibold">Payroll setup is restricted. You can save the draft and assign payroll setup to Payroll Officer workflow.</div>
-        <Toggle label="Assign payroll setup to Payroll Officer" value={draft.payroll.setupAssignedToPayroll} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, setupAssignedToPayroll: v } }))} />
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-700 font-semibold">
+        Payroll detail (bank, salary, grade, pension, TIN, NHF, allowances) is NOT required when adding a new employee.
+        Save the employee first here, then open their <strong>Edit Profile → Payroll Setup</strong> screen later to fill in those fields.
       </div>
-    ) : (
-      <div className="space-y-5">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Toggle label="Assign payroll setup to Payroll Officer workflow" value={draft.payroll.setupAssignedToPayroll} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, setupAssignedToPayroll: v } }))} />
-          <span className="text-xs text-slate-500 font-semibold">Bank and salary data must be protected and audited.</span>
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="space-y-1">
+          <div className="text-sm font-extrabold text-emerald-900">Automatically assigned to Payroll Officer workflow</div>
+          <div className="text-xs font-semibold text-emerald-800">
+            Payroll Officer will configure bank account, salary, grade, pension, and benefits after the employee record is created.
+          </div>
         </div>
-        <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 ${draft.payroll.setupAssignedToPayroll ? 'opacity-60 pointer-events-none' : ''}`}>
-          <SelectField label="Payroll Group" value={draft.payroll.payrollGroup} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, payrollGroup: v } }))} options={options.data?.payrollGroups || []} />
-          <SelectField label="Salary Grade" value={draft.payroll.salaryGrade} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, salaryGrade: v } }))} options={options.data?.salaryGrades || []} />
-          <Field label="Basic Salary (₦)" type="number" value={draft.payroll.basicSalary} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, basicSalary: v } }))} />
-          <Field label="Period Salary / Monthly (₦)" type="number" value={draft.payroll.periodSalary} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, periodSalary: v } }))} />
-          <Field label="Annual Salary (₦)" type="number" value={draft.payroll.annualSalary} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, annualSalary: v } }))} />
-          <Field label="Daily Rate (₦ / day)" type="number" value={draft.payroll.dailyRate} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, dailyRate: v, ratePerDay: v } }))} />
-          <Field label="Hourly Rate (₦ / hour)" type="number" value={draft.payroll.ratePerHour} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, ratePerHour: v } }))} />
-          <Field label="Hours Per Day" type="number" value={draft.payroll.hoursPerDay} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, hoursPerDay: v } }))} />
-          <Field label="Additional Voluntary Pension (₦/month)" type="number" value={draft.payroll.additionalEmployeePensionMonthly} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, additionalEmployeePensionMonthly: v } }))} />
-          <Field label="Annual Rent Relief (₦/year)" type="number" value={draft.payroll.annualRentRelief} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, annualRentRelief: v } }))} />
-          <SelectField label="Payment Run" value={draft.payroll.paymentRun} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, paymentRun: v } }))} options={options.data?.payrollGroups?.length ? options.data.payrollGroups : ['MAIN', 'DLPC', 'DLE', 'CASUAL', 'LUMPSUM']} />
-          <SelectField label="Payment Type" value={draft.payroll.paymentType} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, paymentType: v } }))} options={['Bank Transfer', 'Cheque', 'Cash']} />
-          <Field label="Allowances Template" value={draft.payroll.allowancesTemplate} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, allowancesTemplate: v } }))} hint="Semicolon list: HOUSING=250000;TRANSPORT=80000;MEAL=taxable=5000" />
-          <Field label="Deduction Template" value={draft.payroll.deductionTemplate} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, deductionTemplate: v } }))} hint="Semicolon list: UNION_DUES=2000;COOP_LOAN=25000" />
-          <SelectField label="Bank Name" value={draft.payroll.bankName} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, bankName: v } }))} options={options.data?.banks || []} />
-          <Field label="Account Number" value={draft.payroll.accountNumber} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, accountNumber: v } }))} />
-          <Field label="Account Name" value={draft.payroll.accountName} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, accountName: v } }))} />
-          <SelectField label="Pension Provider" value={draft.payroll.pensionProvider} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, pensionProvider: v } }))} options={options.data?.pensionProviders || []} />
-          <Field label="Pension PIN" value={draft.payroll.pensionPin} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, pensionPin: v } }))} />
-          <Field label="Tax ID" value={draft.payroll.taxId} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, taxId: v } }))} />
-          <Toggle label="Apply NHF deduction" value={draft.payroll.nhfApplicable} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, nhfApplicable: v } }))} />
-          <Field label="NHF Number" value={draft.payroll.nhfNumber} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, nhfNumber: v } }))} />
-          <Field label="Health Insurance Plan" value={draft.payroll.healthInsurancePlan} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, healthInsurancePlan: v } }))} />
-          <SelectField label="Benefit Group" value={draft.payroll.benefitGroup} onChange={(v) => setDraft((d) => ({ ...d, payroll: { ...d.payroll, benefitGroup: v } }))} options={options.data?.benefitGroups || []} />
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-emerald-300 text-xs font-extrabold text-emerald-900 whitespace-nowrap">
+          <BadgeCheck className="w-4 h-4" />
+          Payroll setup deferral enabled
         </div>
       </div>
-    )
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="text-[11px] font-extrabold text-slate-500">Bank details</div>
+          <div className="mt-1 text-sm font-extrabold text-slate-400">Completed later — Edit Profile</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="text-[11px] font-extrabold text-slate-500">Salary / Grade / Daily Rate</div>
+          <div className="mt-1 text-sm font-extrabold text-slate-400">Completed later — Edit Profile</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="text-[11px] font-extrabold text-slate-500">Pension / TIN / NHF</div>
+          <div className="mt-1 text-sm font-extrabold text-slate-400">Completed later — Edit Profile</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="text-[11px] font-extrabold text-slate-500">Benefits / Allowances / Deductions</div>
+          <div className="mt-1 text-sm font-extrabold text-slate-400">Completed later — Edit Profile</div>
+        </div>
+      </div>
+    </div>,
   );
 
   const onboardingStep = stepCard(
