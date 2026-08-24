@@ -217,18 +217,23 @@ const normalizeEmployeeId = (v: unknown) => {
 };
 
 const employeeTypePrefix = (employeeType: unknown) => {
-  const normalized = typeof employeeType === 'string' ? employeeType.trim().toLowerCase() : '';
-  if (normalized === 'permanent') return 'P';
-  if (normalized === 'lumpsum') return 'L';
-  if (normalized === 'daily rate') return 'C';
+  const normalized = typeof employeeType === 'string' ? employeeType.trim().toLowerCase().replace(/[-_\s]+/g, ' ') : '';
+  if (!normalized) return '';
+  if (normalized.includes('permanent') || normalized.startsWith('perm')) return 'P';
+  if (normalized.includes('lumpsum') || normalized.includes('lump sum')) return 'L';
+  if (
+    normalized.includes('daily') ||
+    normalized.includes('day rate') ||
+    normalized.includes('dayrate') ||
+    normalized.includes('casual')
+  ) return 'C';
   if (normalized === 'nysc' || normalized.includes('nysc')) return 'N';
   if (
     normalized === 'it' ||
-    normalized === 'intern' ||
+    normalized.includes('intern') ||
     normalized.includes('industrial trainee') ||
     normalized.includes('industrial training') ||
-    normalized.includes('industrial attachment') ||
-    normalized.includes('intern')
+    normalized.includes('industrial attachment')
   ) return 'I';
   return '';
 };
@@ -271,8 +276,24 @@ const finalizeEmployeeId = async (draft: EmployeeDraftPayload) => {
 };
 
 const isStipendEmploymentType = (employeeType: unknown) => {
-  const type = typeof employeeType === 'string' ? employeeType.trim().toUpperCase() : '';
+  const type = typeof employeeType === 'string' ? employeeType.trim().toUpperCase().replace(/[-_\s]+/g, ' ') : '';
   return type === 'NYSC' || type === 'IT' || type === 'INTERN' || type.includes('INDUSTRIAL TRAINEE') || type.includes('INDUSTRIAL TRAINING') || type.includes('INDUSTRIAL ATTACHMENT') || type.includes('INTERN');
+};
+
+const parseMoney = (value: unknown): number => {
+  if (value == null) return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'bigint') return Number(value);
+  let raw = String(value).trim();
+  if (!raw) return 0;
+  raw = raw
+    .replace(/₦|N|NGN|USD|€|£|\$/g, '')
+    .replace(/[,_\s]/g, '')
+    .replace(/\((-?\d+(?:\.\d+)?)\)/, '-$1')
+    .trim();
+  if (!raw) return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
 };
 
 const normalizePayrollPayloadBeforeCreate = (payload: EmployeeDraftPayload) => {
@@ -680,29 +701,40 @@ export async function POST(request: Request) {
   }
 
   const isDayRate = employeeTypePrefix(draftRec.draft.employment?.employmentType) === 'C';
+  const isLumpsum = employeeTypePrefix(draftRec.draft.employment?.employmentType) === 'L';
   const isStipend = isStipendEmploymentType(draftRec.draft.employment?.employmentType);
-  const basicSalary = Number(draftRec.draft.payroll?.basicSalary || 0);
-  const periodSalary = Number(draftRec.draft.payroll?.periodSalary || 0);
-  const annualSalary = Number(draftRec.draft.payroll?.annualSalary || 0);
-  const ratePerDay = Number(draftRec.draft.payroll?.ratePerDay || 0) || Number(draftRec.draft.payroll?.dailyRate || 0);
-  if (!isStipend && !isDayRate && basicSalary <= 0 && periodSalary <= 0 && annualSalary <= 0) {
-    return jsonErr(422, 'Payroll Salary is required. Provide at least one of: Basic Salary, Period (Monthly) Salary, or Annual Salary for non-stipend employees.');
+  const isSalaried = !isStipend && !isDayRate && !isLumpsum; // Permanent / anything not the three above
+  const setupAssignedToPayroll = Boolean(draftRec.draft.payroll?.setupAssignedToPayroll);
+  const basicSalary = parseMoney(draftRec.draft.payroll?.basicSalary);
+  const periodSalary = parseMoney(draftRec.draft.payroll?.periodSalary);
+  const annualSalary = parseMoney(draftRec.draft.payroll?.annualSalary);
+  const monthlyEquivalent = periodSalary > 0 ? periodSalary : (annualSalary > 0 ? annualSalary / 12 : basicSalary);
+  const ratePerDay = parseMoney(draftRec.draft.payroll?.ratePerDay) || parseMoney(draftRec.draft.payroll?.dailyRate) || parseMoney(draftRec.draft.employment?.dailyRate);
+  const ratePerHour = parseMoney(draftRec.draft.payroll?.ratePerHour) || parseMoney(draftRec.draft.employment?.ratePerHour);
+  const hoursPerDay = parseMoney(draftRec.draft.payroll?.hoursPerDay) || parseMoney(draftRec.draft.employment?.hoursPerDay) || 8;
+  const contractAmount = parseMoney(draftRec.draft.employment?.contractAmount) || parseMoney(draftRec.draft.payroll?.contractAmount);
+  const dailyEquivalent = ratePerDay > 0 ? ratePerDay : (ratePerHour * hoursPerDay);
+  if (isSalaried && !setupAssignedToPayroll && basicSalary <= 0 && periodSalary <= 0 && annualSalary <= 0) {
+    return jsonErr(422, 'Payroll Salary is required. Provide at least one of: Basic Salary, Period (Monthly) Salary, or Annual Salary for salaried employees, or toggle "Assign payroll setup to Payroll Officer workflow" to skip.');
   }
-  if (isDayRate && ratePerDay <= 0 && basicSalary <= 0 && periodSalary <= 0) {
-    return jsonErr(422, 'Daily Rate is required for Day Rate (casual) employees before they can be saved to payroll.');
+  if (isDayRate && !setupAssignedToPayroll && dailyEquivalent <= 0 && monthlyEquivalent <= 0 && contractAmount <= 0) {
+    return jsonErr(422, 'Daily Rate (or Monthly Salary, or Contract Amount) is required for Day Rate / Casual / Contract employees before they can be saved to payroll. Populate at least one of: Daily Rate, Basic Salary, Period (Monthly) Salary, or Annual Salary.');
   }
-  if (!isStipend && !isDayRate) {
+  if (isLumpsum && !setupAssignedToPayroll && monthlyEquivalent <= 0 && contractAmount <= 0 && dailyEquivalent <= 0) {
+    return jsonErr(422, 'Contract Value or Monthly Salary is required for Lumpsum employees. Populate Contract Amount (or any salary bucket) to proceed.');
+  }
+  if (isSalaried && !setupAssignedToPayroll) {
     const gradeSet = Boolean(draftRec.draft.payroll?.salaryGrade || draftRec.draft.job?.jobGrade);
     if (!gradeSet) {
-      return jsonErr(422, 'Salary Grade (or Job Grade) is required for Permanent / Contract / Lumpsum employees so the payroll engine can assign the correct earning lines.');
+      return jsonErr(422, 'Salary Grade (or Job Grade) is required for salaried / Permanent employees so the payroll engine can assign the correct percentage-based earning lines.');
     }
   }
-  if (!isStipend) {
+  if (!isStipend && !isDayRate) {
     const pensionProvider = String(draftRec.draft.payroll?.pensionProvider || '').trim();
     const bankAccountNo = String(draftRec.draft.payroll?.accountNumber || '').trim();
     const bankName = String(draftRec.draft.payroll?.bankName || '').trim();
-    if (!pensionProvider && String(draftRec.draft.employment?.employmentType || '').trim().toUpperCase() !== 'DAILY RATE') {
-      return jsonErr(422, 'Pension Provider (PFA) is required for salaried employees (PenCom compliance). Pick a PFA before saving; RSA PIN can be updated later after enrolment.');
+    if (!pensionProvider && !setupAssignedToPayroll) {
+      return jsonErr(422, 'Pension Provider (PFA) is required for non-stipend salaried/lumpsum employees (PenCom compliance). Pick a PFA before saving; or toggle "Assign to Payroll Officer workflow" to defer enrolment.');
     }
     if (!bankAccountNo || !bankName) {
       return jsonErr(422, 'Bank Account Number and Bank Name are required on every employee before they can be added to payroll.');
@@ -724,9 +756,9 @@ export async function POST(request: Request) {
   const { earningLines, deductionLines } = buildSageJsonLinesForCreate(draftRec.draft, employeeId);
   const sageEarningLinesJson = earningLines.length ? JSON.stringify(earningLines) : null;
   const sageDeductionLinesJson = deductionLines.length ? JSON.stringify(deductionLines) : null;
-  const finalRatePerDay = Number(draftRec.draft.payroll?.ratePerDay || 0) || Number(draftRec.draft.payroll?.dailyRate || 0) || null;
-  const finalRatePerHour = Number(draftRec.draft.payroll?.ratePerHour || 0) || null;
-  const finalHoursPerDay = Number(draftRec.draft.payroll?.hoursPerDay || 0) || null;
+  const finalRatePerDay = dailyEquivalent > 0 ? roundMoney(dailyEquivalent) : null;
+  const finalRatePerHour = ratePerHour > 0 ? roundMoney(ratePerHour) : null;
+  const finalHoursPerDay = hoursPerDay > 0 ? roundMoney(hoursPerDay) : null;
   try {
     await createEmployeeFromDraftInDb(draftId, employeeId, draftRec.draft, role, startOnboarding, {
       sageEarningLinesJson,
@@ -737,8 +769,8 @@ export async function POST(request: Request) {
       paymentRun: String(draftRec.draft.payroll?.paymentRun || draftRec.draft.payroll?.payrollGroup || 'MAIN').trim() || null,
       paymentType: String(draftRec.draft.payroll?.paymentType || 'Bank Transfer').trim() || null,
     });
-    const additionalPensionMonthly = Number(draftRec.draft.payroll?.additionalEmployeePensionMonthly || 0) || null;
-    const annualRentRelief = Number(draftRec.draft.payroll?.annualRentRelief || 0) || null;
+    const additionalPensionMonthly = parseMoney(draftRec.draft.payroll?.additionalEmployeePensionMonthly) || parseMoney(draftRec.draft.payroll?.additionalVoluntaryPension) || null;
+    const annualRentRelief = parseMoney(draftRec.draft.payroll?.annualRentRelief) || null;
     await writePayrollEmployeeOption({
       employeeId,
       employeeCode: employeeId,
