@@ -2231,6 +2231,158 @@ export const nextEmployeeCodeFromDb = async (employeeType: string) => {
   return preview;
 };
 
+export const renameEmployeeCodeInDb = async (input: {
+  fromCode: string;
+  toCode: string;
+  role: string;
+  strictNameMatchRegex?: RegExp;
+}): Promise<{
+  ok: boolean;
+  error?: string;
+  employeeId?: number;
+  fullName?: string;
+  oldLMax?: number;
+  newLMax?: number;
+}> => {
+  const p = await pool();
+  if (!p) return { ok: false, error: 'DLE Enterprise DB connection unavailable' };
+  const fromCodeSan = str(input.fromCode).toUpperCase();
+  const toCodeSan = str(input.toCode).toUpperCase();
+  if (!fromCodeSan || !toCodeSan) return { ok: false, error: 'Both fromCode and toCode are required' };
+  if (fromCodeSan === toCodeSan) return { ok: false, error: 'fromCode and toCode are identical' };
+
+  const tx = p.transaction();
+  try {
+    await tx.begin();
+
+    const employeeRow = await tx.request()
+      .input('fromCode', sql.NVarChar(50), fromCodeSan)
+      .query<{ employee_id: number; full_name: string; employment_status: string; employment_type: string }>(`
+        SELECT employee_id, full_name, employment_status, employment_type
+        FROM [hris].[Employees] WITH (UPDLOCK, HOLDLOCK)
+        WHERE employee_code = @fromCode;
+      `);
+
+    if (!employeeRow.recordset.length) {
+      await tx.rollback();
+      return { ok: false, error: `No employee found with employee_code = ${fromCodeSan}` };
+    }
+    const { employee_id, full_name } = employeeRow.recordset[0];
+
+    if (input.strictNameMatchRegex && !input.strictNameMatchRegex.test(full_name || '')) {
+      await tx.rollback();
+      return {
+        ok: false,
+        error: `Employee on ${fromCodeSan} is "${full_name}", which does not match the expected name guard. No changes made.`,
+      };
+    }
+
+    const toTakenEmployees = await tx.request()
+      .input('toCode', sql.NVarChar(50), toCodeSan)
+      .query<{ cnt: number }>(`SELECT COUNT(*) AS cnt FROM [hris].[Employees] WHERE employee_code = @toCode;`);
+    if ((toTakenEmployees.recordset[0]?.cnt ?? 0) > 0) {
+      await tx.rollback();
+      return { ok: false, error: `toCode ${toCodeSan} is already taken by another employee.` };
+    }
+
+    const toTakenDrafts = await tx.request()
+      .input('toCode', sql.NVarChar(50), toCodeSan)
+      .query<{ cnt: number }>(`
+        SELECT COUNT(*) AS cnt FROM [hris].[EmployeeDrafts]
+        WHERE employee_code = @toCode AND draft_status NOT IN ('cancelled', 'created');
+      `);
+    if ((toTakenDrafts.recordset[0]?.cnt ?? 0) > 0) {
+      await tx.rollback();
+      return { ok: false, error: `toCode ${toCodeSan} is reserved by a non-cancelled draft.` };
+    }
+
+    await tx.request()
+      .input('employeeId', sql.BigInt, employee_id)
+      .input('fromCode', sql.NVarChar(50), fromCodeSan)
+      .input('toCode', sql.NVarChar(50), toCodeSan)
+      .query(`
+        UPDATE [hris].[Employees]
+        SET employee_code = @toCode, modified_at = SYSUTCDATETIME()
+        WHERE employee_id = @employeeId AND employee_code = @fromCode;
+
+        IF EXISTS (SELECT * FROM [hris].[EmployeeSourceRecords] WHERE employee_id = @employeeId)
+          UPDATE [hris].[EmployeeSourceRecords]
+          SET raw_payload_json = JSON_MODIFY(
+            JSON_MODIFY(
+              ISNULL(raw_payload_json, '{}'),
+              CASE WHEN JSON_VALUE(ISNULL(raw_payload_json, '{}'), '$.employeeCode') IS NOT NULL THEN '$.employeeCode' ELSE NULL END,
+              @toCode
+            ),
+            '$.source_employee_code',
+            @toCode
+          )
+          WHERE employee_id = @employeeId;
+
+        IF EXISTS (SELECT * FROM [hris].[EmployeeDrafts] WHERE created_employee_code = @fromCode)
+          UPDATE [hris].[EmployeeDrafts]
+          SET created_employee_code = @toCode, modified_at = SYSUTCDATETIME()
+          WHERE created_employee_code = @fromCode;
+      `);
+
+    const counterPrefix = toCodeSan.replace(/[0-9-].*$/, '').toUpperCase();
+    const sequencePart = Number((toCodeSan.match(/[0-9]+$/) || [])[0] || 0);
+    let oldLMax: number | undefined;
+    let newLMax: number | undefined;
+
+    if (counterPrefix && sequencePart > 0 && counterPrefix.length <= 4) {
+      const prefixRow = await tx.request()
+        .input('typeCode', sql.NVarChar(10), counterPrefix)
+        .query<{ last_sequence: number }>(`
+          SELECT ISNULL(last_sequence, 0) AS last_sequence
+          FROM [hris].[EmployeeCodeCounters] WHERE employee_type_code = @typeCode;
+        `);
+      oldLMax = prefixRow.recordset[0]?.last_sequence ?? 0;
+      const targetSequence = sequencePart;
+      if (!oldLMax || oldLMax < targetSequence || oldLMax > targetSequence + 5) {
+        await tx.request()
+          .input('typeCode', sql.NVarChar(10), counterPrefix)
+          .input('targetSequence', sql.Int, targetSequence)
+          .query(`
+            MERGE [hris].[EmployeeCodeCounters] AS target
+            USING (SELECT @typeCode AS employee_type_code, @targetSequence AS last_sequence) AS source
+            ON target.employee_type_code = source.employee_type_code
+            WHEN MATCHED THEN UPDATE SET last_sequence = source.last_sequence
+            WHEN NOT MATCHED THEN INSERT (employee_type_code, last_sequence) VALUES (source.employee_type_code, source.last_sequence);
+          `);
+        newLMax = targetSequence;
+      } else {
+        newLMax = oldLMax;
+      }
+    }
+
+    try {
+      await tx.request()
+        .input('employeeId', sql.BigInt, employee_id)
+        .input('action', sql.NVarChar(200), 'Manual employee_code rename')
+        .input('performer', sql.NVarChar(200), input.role || 'system')
+        .input('notes', sql.NVarChar(500), `${fromCodeSan} -> ${toCodeSan} · ${full_name} · counter ${counterPrefix || 'n/a'}: ${oldLMax ?? 'NULL'} -> ${newLMax ?? 'no change'}`)
+        .query(`
+          INSERT [hris].[EmployeeAuditLog](employee_id, audit_action, performed_by, notes)
+          VALUES (@employeeId, @action, COALESCE(@performer, CURRENT_USER), @notes);
+        `);
+    } catch {
+      // audit log is nice-to-have; don't fail rename on it
+    }
+
+    await tx.commit();
+    return {
+      ok: true,
+      employeeId: employee_id,
+      fullName: full_name,
+      oldLMax,
+      newLMax,
+    };
+  } catch (error) {
+    try { await tx.rollback(); } catch { /* noop */ }
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+};
+
 export const updateEmployeeDailyRatePayInDb = async (input: {
   employeeDbId: number;
   payrollGroup?: string | null;

@@ -6,6 +6,7 @@ import {
   importSagePayrollEmployeesToDb,
   listEmployeeDraftsByStatusFromDb,
   previewNextEmployeeCodeFromDb,
+  renameEmployeeCodeInDb,
   saveEmployeeDraftToDb,
 } from '@/lib/dle-enterprise-db';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
@@ -690,7 +691,43 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ action: s
   const perms = permissions(role);
   const { action } = await ctx.params;
   const seg0 = action[0] || '';
-  const draftId = action[1] || '';
+  const seg1 = action[1] || '';
+
+  // PATCH /api/hris/employees/employee-code/rename
+  // Body: { fromCode: 'L2792', toCode: 'L2791', strictNameContains?: 'BLESSED OKPARA' }
+  // Allowed: Super Admin / HR Director / HR Manager
+  if (seg0 === 'employee-code' && seg1 === 'rename') {
+    if (!perms.canApproveEmployee) return jsonErr(403, 'Permission denied — only Super Admin, HR Director, or HR Manager can rename employee codes.');
+    const body = (await request.json().catch(() => null)) as any;
+    if (!body || typeof body !== 'object') return jsonErr(400, 'Invalid JSON body');
+    const fromCode = String(body.fromCode || '').trim().toUpperCase();
+    const toCode = String(body.toCode || '').trim().toUpperCase();
+    const strictNameContains = typeof body.strictNameContains === 'string' ? body.strictNameContains.trim() : '';
+    if (!fromCode || !toCode) return jsonErr(400, 'fromCode and toCode are both required');
+    if (fromCode === toCode) return jsonErr(400, 'fromCode and toCode are identical — no change needed');
+    const strictRegex = strictNameContains
+      ? new RegExp(strictNameContains.split(/\s+/).filter(Boolean).map(escapeRegex).join('.*\\s*.*'), 'i')
+      : undefined;
+    const result = await renameEmployeeCodeInDb({
+      fromCode,
+      toCode,
+      role: role,
+      strictNameMatchRegex: strictRegex,
+    });
+    if (!result.ok) return jsonErr(400, String(result.error || 'Unknown rename error'));
+    return jsonOk({
+      renamed: true,
+      fromCode,
+      toCode,
+      employeeId: result.employeeId,
+      fullName: result.fullName,
+      counterBefore: result.oldLMax,
+      counterAfter: result.newLMax,
+      nextAutoAllocateNote: result.newLMax != null ? `Next ${toCode.replace(/[0-9].*$/, '')}* employee will be allocated ${toCode.replace(/[0-9].*$/, '')}${result.newLMax + 1} (no skips).` : undefined,
+    });
+  }
+
+  const draftId = seg1;
   if (seg0 !== 'draft' || !draftId) return jsonErr(404, 'Not found');
   if (!perms.canCreate) return jsonErr(403, 'Permission denied');
   const body = (await request.json().catch(() => null)) as any;
@@ -705,6 +742,10 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ action: s
   audit(rec, role, 'Draft updated', { oldValue: prev, newValue: rec.updatedAt });
   await saveEmployeeDraftToDb(rec);
   return jsonOk({ draftId: rec.draftId, status: rec.status, updatedAt: rec.updatedAt });
+}
+
+function escapeRegex(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 export async function DELETE(request: Request, ctx: { params: Promise<{ action: string[] }> }) {
