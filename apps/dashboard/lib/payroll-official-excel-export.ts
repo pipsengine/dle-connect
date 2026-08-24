@@ -30,9 +30,18 @@ export const resolveOfficialCompanyBucket = (record: {
   businessUnit?: string | null;
   location?: string | null;
   companyCode?: string | null;
+  companyName?: string | null;
+  department?: string | null;
 }): OfficialCompanyBucket => {
-  const blob = `${record.companyCode || ''} ${record.payrollGroup || ''} ${record.businessUnit || ''} ${record.location || ''}`.toUpperCase();
-  if (/\bDLPCG\b|\bDLPC\b|AGEGE/.test(blob)) return 'DLPC';
+  const blob = [
+    record.companyCode || '',
+    record.companyName || '',
+    record.payrollGroup || '',
+    record.businessUnit || '',
+    record.department || '',
+    record.location || '',
+  ].join(' ').toUpperCase();
+  if (/\bDLPCG\b|\bDLPC\b|AGEGE|DORMAN\s*LONG\s*PRODUCTS|PRODUCTS\s*CO|LIMITED\s*PRODUCTS|DLPC\s*LTD/.test(blob)) return 'DLPC';
   return 'DLE';
 };
 
@@ -156,6 +165,8 @@ const enrich = (record: PayrollCalculationRecord, dir?: DirectoryEnrichment | nu
     businessUnit: record.businessUnit || dir?.businessUnit,
     location: record.location || dir?.location,
     companyCode: dir?.companyCode,
+    companyName: dir?.companyName,
+    department: record.department || dir?.department,
   });
   const computedAge = ageFromDob(dir?.dateOfBirth);
   const ageValue = Number(dir?.age || 0) || (typeof computedAge === 'number' ? computedAge : Number(computedAge) || 0);
