@@ -11,8 +11,8 @@ import {
   officialEmailAlreadyUsedMessage,
   saveEmployeeDraftToDb,
 } from '@/lib/dle-enterprise-db';
-import { payrollDataSourceInfo, readDirectoryEmployees } from '@/lib/payroll-employee-source';
-import { writePayrollEmployeeOption } from '@/lib/payroll-employee-options-store';
+import { payrollDataSourceInfo, readDirectoryEmployees, invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
+import { writePayrollEmployeeOption, invalidatePayrollEmployeeOptionsCache } from '@/lib/payroll-employee-options-store';
 import type { SagePayrollLineItem } from '@/lib/sage-payroll-line-parser';
 
 type Role =
@@ -756,6 +756,8 @@ export async function POST(request: Request) {
     return jsonErr(409, friendly instanceof Error ? friendly.message : 'Unable to create employee in DLE_Enterprise');
   }
   storeOverrides.set(employeeId, override);
+  invalidatePayrollEmployeeCache();
+  invalidatePayrollEmployeeOptionsCache();
 
   draftRec.status = 'created';
   draftRec.updatedAt = nowIso();
@@ -773,11 +775,118 @@ export async function POST(request: Request) {
 export async function GET() {
   try {
     const employeeSource = await readDirectoryEmployees();
+    const directoryRows = employeeSource.employees.map(toDirectoryEmployee);
+    const existingKeys = new Set(directoryRows.map((row) => normalizeEmployeeId(row.employeeId || row.employeeCode || '')));
+    for (const [overrideId, override] of storeOverrides.entries()) {
+      const key = normalizeEmployeeId(overrideId);
+      if (existingKeys.has(key)) continue;
+      const p = override?.profile || {};
+      directoryRows.unshift({
+        employeeId: p.employeeId || overrideId,
+        employeeCode: p.employeeId || overrideId,
+        employeeDbId: 0,
+        id: p.employeeId || overrideId,
+        fullName: p.fullName || overrideId,
+        preferredName: p.preferredName || null,
+        title: p.personalInfo?.title || '',
+        firstName: p.personalInfo?.firstName || '',
+        middleName: p.personalInfo?.middleName || '',
+        lastName: p.personalInfo?.lastName || '',
+        gender: p.personalInfo?.gender || '',
+        dateOfBirth: p.personalInfo?.dateOfBirth ? p.personalInfo.dateOfBirth.slice(0, 10) : '',
+        maritalStatus: p.personalInfo?.maritalStatus || '',
+        email: p.contacts?.officialEmail || p.contacts?.personalEmail || '',
+        officialEmail: p.contacts?.officialEmail || '',
+        personalEmail: p.contacts?.personalEmail || '',
+        phone: p.contacts?.primaryPhone || p.contacts?.officeExtension || '',
+        primaryPhone: p.contacts?.primaryPhone || '',
+        alternatePhone: p.contacts?.alternativePhone || p.contacts?.alternatePhone || '',
+        officeExtension: p.contacts?.officeExtension || '',
+        residentialAddress: p.contacts?.residentialAddress || '',
+        permanentAddress: p.contacts?.permanentAddress || '',
+        city: p.contacts?.city || '',
+        state: p.contacts?.state || '',
+        country: p.contacts?.country || '',
+        postalCode: p.contacts?.postalCode || '',
+        nearestBusStop: p.contacts?.nearestBusStop || '',
+        nationality: p.personalInfo?.nationality || '',
+        stateOfOrigin: p.personalInfo?.stateOfOrigin || '',
+        localGovernmentArea: p.personalInfo?.localGovernmentArea || '',
+        religion: p.personalInfo?.religion || '',
+        languagesSpoken: p.personalInfo?.languagesSpoken || '',
+        jobTitle: p.jobTitle || '',
+        designation: p.jobDetails?.designation || '',
+        jobGrade: p.jobDetails?.jobGrade || p.employmentDetails?.jobGrade || '',
+        department: p.department || '',
+        division: p.jobDetails?.division || '',
+        businessUnit: p.businessUnit || '',
+        costCenter: p.jobDetails?.costCenter || '',
+        managerName: p.reportingManager || '',
+        functionalManager: p.jobDetails?.functionalManager || '',
+        departmentHead: p.jobDetails?.departmentHead || '',
+        hrBusinessPartner: p.jobDetails?.hrBusinessPartner || '',
+        location: p.location || '',
+        workLocation: p.employmentDetails?.workLocation || '',
+        officeLocation: p.jobDetails?.officeLocation || '',
+        projectSite: p.jobDetails?.projectSite || '',
+        staffCategory: p.employmentDetails?.staffCategory || '',
+        employeeCategory: p.employmentDetails?.employeeCategory || '',
+        employmentType: p.employmentType || '',
+        status: p.employmentStatus || '',
+        expatriate: false,
+        fieldWorker: false,
+        remoteWorker: false,
+        dateJoined: p.dateJoined ? p.dateJoined.slice(0, 10) : '',
+        probationStartDate: p.employmentDetails?.probationStartDate || '',
+        probationEndDate: p.employmentDetails?.probationEndDate || '',
+        confirmationDueDate: p.employmentDetails?.confirmationDate || '',
+        contractStartDate: p.employmentDetails?.contractStartDate || '',
+        yearsOfService: 0,
+        emergencyContactsComplete: false,
+        emergencyContactCount: 0,
+        documentCount: 0,
+        hasManagerAssigned: Boolean(p.reportingManager),
+        hasPhoto: false,
+        payrollSource: 'DLE_Enterprise HRIS (just-created)',
+        payrollGroup: p.payroll?.payrollGroup || p.employmentDetails?.employeeCategory || '',
+        salaryGrade: p.payroll?.salaryGrade || p.jobDetails?.jobGrade || '',
+        benefitGroup: p.payroll?.benefitGroup || '',
+        payCurrency: p.payroll?.payCurrency || 'NGN',
+        paymentRun: p.payroll?.paymentRun || '',
+        paymentType: p.payroll?.paymentType || 'Bank Transfer',
+        accountNo: p.payroll?.accountNumber || '',
+        accountName: p.payroll?.accountName || '',
+        bankName: p.payroll?.bankName || '',
+        pensionProvider: p.payroll?.pensionProvider || '',
+        pensionPin: p.payroll?.pensionPin || '',
+        taxIdentificationNumber: p.payroll?.taxIdentificationNumber || '',
+        periodSalary: Number(p.payroll?.periodSalary || p.payroll?.basicSalary || 0) || null,
+        basicSalary: Number(p.payroll?.basicSalary || 0) || null,
+        annualSalary: Number(p.payroll?.annualSalary || 0) || null,
+        ratePerDay: Number(p.payroll?.ratePerDay || p.payroll?.dailyRate || 0) || null,
+        ratePerHour: Number(p.payroll?.ratePerHour || 0) || null,
+        hoursPerDay: Number(p.payroll?.hoursPerDay || 0) || null,
+        hoursPerPeriod: Number(p.payroll?.hoursPerPeriod || 0) || null,
+        nhfApplicable: p.payroll?.nhfApplicable !== false,
+        annualRentRelief: Number(p.payroll?.annualRentRelief || 0) || null,
+        additionalEmployeePensionMonthly: Number(p.payroll?.additionalEmployeePensionMonthly || 0) || null,
+        setupAssignedToPayroll: true,
+        sagePayrollEarnings: [],
+        sagePayrollDeductions: { paye: null, pensionEmployee: null, nhf: null, other: null, totalDeductions: null, lines: [] },
+        sagePayrollContributions: { pensionEmployer: null, nsitf: null, itf: null, lines: [] },
+        sourceSystem: 'DLE_Enterprise HRIS (override)',
+        sourceEmployeeId: '',
+        createdAt: nowIso(),
+        modifiedAt: nowIso(),
+        aiRiskScore: 30,
+        trainingCompliance: 'Compliant',
+      } as any);
+    }
     return jsonOk({
       source: employeeSource.source,
       dataSource: payrollDataSourceInfo(employeeSource),
       syncedAt: nowIso(),
-      employees: employeeSource.employees.map(toDirectoryEmployee),
+      employees: directoryRows,
     });
   } catch (error) {
     return jsonErr(502, error instanceof Error ? `Unable to read DLE_Enterprise HRIS employees: ${error.message}` : 'Unable to read DLE_Enterprise HRIS employees');
