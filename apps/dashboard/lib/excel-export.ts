@@ -7,6 +7,7 @@ export type ExcelWorksheetInput = {
   rows: ExcelCell[][];
   generatedAt?: string;
   subtitle?: string;
+  exactReferenceDayrateMode?: boolean;
 };
 
 export type ExcelWorkbookInput = {
@@ -30,15 +31,17 @@ const cellText = (value: ExcelCell) => {
   return value ?? '';
 };
 
-export const buildExcelHtml = ({ title, sheetName, columns, rows, generatedAt, subtitle }: ExcelWorksheetInput) => {
+export const buildExcelHtml = ({ title, sheetName, columns, rows, generatedAt, subtitle, exactReferenceDayrateMode }: ExcelWorksheetInput) => {
   const columnCount = Math.max(columns.length, 1);
   const generated = generatedAt || new Date().toISOString();
-  const metadataRows = [
-    `<tr><td colspan="${columnCount}" class="report-title">${escapeHtml(title)}</td></tr>`,
-    subtitle ? `<tr><td colspan="${columnCount}" class="report-subtitle">${escapeHtml(subtitle)}</td></tr>` : '',
-    `<tr><td colspan="${columnCount}" class="report-meta">Generated: ${escapeHtml(new Date(generated).toLocaleString('en-GB'))}</td></tr>`,
-    `<tr><td colspan="${columnCount}" class="blank"></td></tr>`,
-  ].join('');
+  const metadataRows = exactReferenceDayrateMode
+    ? ''
+    : [
+        `<tr><td colspan="${columnCount}" class="report-title">${escapeHtml(title)}</td></tr>`,
+        subtitle ? `<tr><td colspan="${columnCount}" class="report-subtitle">${escapeHtml(subtitle)}</td></tr>` : '',
+        `<tr><td colspan="${columnCount}" class="report-meta">Generated: ${escapeHtml(new Date(generated).toLocaleString('en-GB'))}</td></tr>`,
+        `<tr><td colspan="${columnCount}" class="blank"></td></tr>`,
+      ].join('');
 
   const header = columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('');
   const body = rows
@@ -54,6 +57,7 @@ export const buildExcelHtml = ({ title, sheetName, columns, rows, generatedAt, s
       return `<tr class="${index % 2 ? 'alt' : ''}">${cells.join('')}</tr>`;
     })
     .join('');
+
 
   return `<!doctype html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
@@ -128,7 +132,7 @@ export const buildExcelWorkbookXml = ({ worksheets, generatedAt }: ExcelWorkbook
     const columns = worksheet.columns.length ? worksheet.columns : ['Result'];
     const rows = worksheet.rows.length ? worksheet.rows : [columns.map((_, index) => index === 0 ? 'No records' : '')];
     const columnCount = columns.length;
-    const headerRow = 4;
+    const headerRow = worksheet.exactReferenceDayrateMode ? 1 : 4;
     const lastRow = headerRow + rows.length;
     const filterRange = `R${headerRow}C1:R${lastRow}C${columnCount}`;
     const columnDefs = columns.map((column) => {
@@ -144,14 +148,23 @@ export const buildExcelWorkbookXml = ({ worksheets, generatedAt }: ExcelWorkbook
     }).join('');
     const selected = sheetIndex === 0 ? '<Selected/>' : '';
 
+    const prefixRows = worksheet.exactReferenceDayrateMode
+      ? ''
+      : [
+          `<Row ss:Height="24"><Cell ss:StyleID="Title" ss:MergeAcross="${Math.max(0, columnCount - 1)}"><Data ss:Type="String">${escapeXml(worksheet.title)}</Data></Cell></Row>`,
+          `<Row><Cell ss:StyleID="Meta" ss:MergeAcross="${Math.max(0, columnCount - 1)}"><Data ss:Type="String">${escapeXml(worksheet.subtitle || '')} · Generated ${escapeXml(worksheet.generatedAt || created)}</Data></Cell></Row>`,
+          `<Row></Row>`,
+        ].join('');
+    const headerRowXml = worksheet.exactReferenceDayrateMode
+      ? `<Row ss:Height="22">${headerCells}</Row>`
+      : `<Row ss:Height="22">${headerCells}</Row>`;
+
     return `<Worksheet ss:Name="${escapeXml(sheetName)}">
  <Names><NamedRange ss:Name="_FilterDatabase" ss:RefersTo="='${escapeXml(sheetName.replace(/'/g, "''"))}'!${filterRange}" ss:Hidden="1"/></Names>
  <Table ss:ExpandedColumnCount="${columnCount}" ss:ExpandedRowCount="${lastRow}" x:FullColumns="1" x:FullRows="1">
   ${columnDefs}
-  <Row ss:Height="24"><Cell ss:StyleID="Title" ss:MergeAcross="${Math.max(0, columnCount - 1)}"><Data ss:Type="String">${escapeXml(worksheet.title)}</Data></Cell></Row>
-  <Row><Cell ss:StyleID="Meta" ss:MergeAcross="${Math.max(0, columnCount - 1)}"><Data ss:Type="String">${escapeXml(worksheet.subtitle || '')} · Generated ${escapeXml(worksheet.generatedAt || created)}</Data></Cell></Row>
-  <Row></Row>
-  <Row ss:Height="22">${headerCells}</Row>
+  ${prefixRows}
+  ${headerRowXml}
   ${dataRows}
  </Table>
  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">

@@ -41,7 +41,7 @@ export const resolveOfficialCompanyBucket = (record: {
     record.department || '',
     record.location || '',
   ].join(' ').toUpperCase();
-  if (/\bDLPCG\b|\bDLPC\b|AGEGE|DORMAN\s*LONG\s*PRODUCTS|PRODUCTS\s*CO|LIMITED\s*PRODUCTS|DLPC\s*LTD/.test(blob)) return 'DLPC';
+  if (/\bDLPCG\b|\bDLPC\b|DORMAN\s*LONG\s*PRODUCTS|PRODUCTS\s*CO|LIMITED\s*PRODUCTS|DLPC\s*LTD|DLPC\s*AGEGE/.test(blob)) return 'DLPC';
   return 'DLE';
 };
 
@@ -295,11 +295,11 @@ export const buildOfficialBankScheduleWorksheets = (
         ? ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location']
         : ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary'];
       return {
-        title: 'Employee Bank Details',
-        subtitle: `${options?.titlePrefix || 'Bank Payment Schedule'} · ${periodLabel} · ${config.bucket}`,
+        title: config.sheetName || 'Employee Bank Details',
         sheetName: config.sheetName,
         columns: headerRow,
         rows: [titleRow, headerRow as unknown as ExcelCell[], ...rows],
+        exactReferenceDayrateMode: true,
       };
     });
   }
@@ -1067,11 +1067,11 @@ const buildDayrateDetailSheet = (
   }
 
   return {
-    title: `Daily Rate Payment Detail (${sheetName}) - ${periodLabel}`,
-    subtitle: `${records.length} employees · official dayrate schedule layout`,
+    title: sheetName,
     sheetName,
     columns,
     rows,
+    exactReferenceDayrateMode: true,
   };
 };
 
@@ -1186,11 +1186,11 @@ export const buildOfficialDayrateScheduleWorksheets = async (
 
   return [
     {
-      title: `DAYRATE PAYMENT SCHEDULE SUMMARY (${periodLabel})`,
-      subtitle: 'Official dayrate company summary',
+      title: 'SUMMARY',
       sheetName: 'SUMMARY',
       columns: ['COMPANY', 'HEADCOUNT', 'GROSS PAY', 'NET PAY'],
       rows: summaryRows,
+      exactReferenceDayrateMode: true,
     },
     dleDetail,
     dlpcDetail,
