@@ -1,4 +1,4 @@
-import type { SagePayrollLineItem } from '@/lib/sage-payroll-line-parser';
+import { isHrisConfiguredPayrollLine, type SagePayrollLineItem } from '@/lib/sage-payroll-line-parser';
 
 export type PayrollLineFrequency = 'weekly' | 'monthly' | 'one-off';
 
@@ -112,3 +112,58 @@ export const buildStoredPayrollLinesFromDrafts = (
   lines
     .map((line) => draftPayrollLineToStored(line, taxableDefault))
     .filter((line): line is StoredPayrollPackageLine => line !== null);
+
+export const hrisConfiguredPayrollLines = (lines: SagePayrollLineItem[] | null | undefined) =>
+  (lines || []).filter(isHrisConfiguredPayrollLine);
+
+/** Structural base lines saved from Edit Profile — not legacy imported payslip snapshots. */
+export const isStructuralPayrollPackageCode = (code: string) =>
+  /^(LUMPSUMTAX|BASIC1_LUMPSUM|STIPEND|BASIC|JNR_|SNR_|MGT_|SNM_|EXP_)/i.test(String(code || '').trim());
+
+const inferredFrequencyForLegacyLine = (line: SagePayrollLineItem): PayrollLineFrequency => {
+  const code = String(line.code || '').toUpperCase();
+  if (/WEEKDAYOVT|OVERTIME|\bOT\b/.test(code)) return 'one-off';
+  if (/TRANSPORT|WEEKLY/.test(code)) return 'weekly';
+  return 'monthly';
+};
+
+export const promoteLegacySupplementLine = (line: SagePayrollLineItem): StoredPayrollPackageLine => {
+  const frequency = inferredFrequencyForLegacyLine(line);
+  const sourceAmount = roundMoney(Number(line.sourceAmount ?? line.amount ?? 0));
+  return {
+    ...line,
+    sourceAmount,
+    runFrequency: frequency,
+    includeInMonthlyPayroll: frequency !== 'one-off',
+    amount: frequency === 'one-off' ? sourceAmount : roundMoney(Number(line.amount || sourceAmount)),
+  };
+};
+
+export const isLegacySupplementLine = (line: SagePayrollLineItem) =>
+  !isHrisConfiguredPayrollLine(line)
+  && !isStructuralPayrollPackageCode(line.code)
+  && Number(line.amount || 0) !== 0;
+
+/** HRIS-configured lines plus promotable legacy supplements (overtime, transport, etc.). */
+export const effectiveHrisPayrollLines = (lines: SagePayrollLineItem[] | null | undefined): StoredPayrollPackageLine[] => {
+  const all = lines || [];
+  const configured = hrisConfiguredPayrollLines(all) as StoredPayrollPackageLine[];
+  const configuredCodes = new Set(configured.map((line) => String(line.code || '').toUpperCase()));
+  const promoted = all
+    .filter(isLegacySupplementLine)
+    .filter((line) => !configuredCodes.has(String(line.code || '').toUpperCase()))
+    .map(promoteLegacySupplementLine);
+  return [...configured, ...promoted];
+};
+
+export const hasHrisPayrollSupplements = (lines: SagePayrollLineItem[] | null | undefined) =>
+  effectiveHrisPayrollLines(lines).some((line) => !isStructuralPayrollPackageCode(line.code));
+
+export const hasFullHrisPackageSetup = (
+  employee: { sagePayrollEarnings?: SagePayrollLineItem[] | null },
+  profileId?: string,
+) => {
+  if (profileId === 'stipend-non-taxable') return false;
+  const hrisLines = hrisConfiguredPayrollLines(employee.sagePayrollEarnings);
+  return hrisLines.some((line) => isStructuralPayrollPackageCode(line.code));
+};

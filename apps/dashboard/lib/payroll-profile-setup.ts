@@ -1,12 +1,16 @@
 import {
   buildStoredPayrollLinesFromDrafts,
   draftPayrollLineToStored,
+  effectiveHrisPayrollLines,
+  isLegacySupplementLine,
   payrollLineMonthlyAmount,
   storedLinesToDraft,
   sumMonthlyPackageGross,
   type FlexiblePayrollLineDraft,
   type StoredPayrollPackageLine,
 } from '@/lib/payroll-package-lines';
+import { isHrisConfiguredPayrollLine } from '@/lib/sage-payroll-line-parser';
+import { resolvePayCurrency } from '@/lib/payroll-currency';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import type { PayrollSetupDraft } from '@/app/(hris)/hris/employees/add-new-employee/PayrollSetupStep';
 
@@ -26,7 +30,9 @@ export type ProfilePayrollSummary = {
   payrollGroup: string | null;
   lastPayrollProcessed: string | null;
   earningLines?: FlexiblePayrollLineDraft[];
+  legacyEarningLines?: FlexiblePayrollLineDraft[];
   deductionLines?: FlexiblePayrollLineDraft[];
+  payCurrency?: string | null;
   nhfApplicable?: boolean;
   nhfNumber?: string | null;
   benefitGroup?: string | null;
@@ -41,22 +47,43 @@ export type ProfilePayrollSummary = {
 
 export { buildStoredPayrollLinesFromDrafts };
 
-export const earningLinesFromEmployeeRow = (row: DleEmployeeDirectoryRow): FlexiblePayrollLineDraft[] =>
-  storedLinesToDraft((row.sagePayrollEarnings || []) as StoredPayrollPackageLine[]);
+export const payrollDisplayCurrencyFromRow = (row: DleEmployeeDirectoryRow) =>
+  resolvePayCurrency({
+    payCurrency: row.payCurrency,
+    payrollGroup: row.payrollGroup,
+    salaryGrade: row.salaryGrade,
+    jobGrade: row.jobGrade,
+    businessUnit: row.businessUnit,
+  });
+
+export const hrisEarningLinesFromEmployeeRow = (row: DleEmployeeDirectoryRow): FlexiblePayrollLineDraft[] =>
+  storedLinesToDraft(effectiveHrisPayrollLines(row.sagePayrollEarnings));
+
+export const legacyEarningLinesFromEmployeeRow = (row: DleEmployeeDirectoryRow): FlexiblePayrollLineDraft[] => {
+  const all = (row.sagePayrollEarnings || []) as StoredPayrollPackageLine[];
+  const legacy = all.filter((line) => !isHrisConfiguredPayrollLine(line) && !isLegacySupplementLine(line));
+  return storedLinesToDraft(legacy);
+};
+
+export const earningLinesFromEmployeeRow = hrisEarningLinesFromEmployeeRow;
 
 export const deductionLinesFromEmployeeRow = (row: DleEmployeeDirectoryRow): FlexiblePayrollLineDraft[] =>
   storedLinesToDraft((row.sagePayrollDeductions?.lines || []) as StoredPayrollPackageLine[]);
 
 export const enrichPayrollSummaryFromRow = (summary: ProfilePayrollSummary, row: DleEmployeeDirectoryRow): ProfilePayrollSummary => {
-  const earningLines = earningLinesFromEmployeeRow(row);
+  const earningLines = hrisEarningLinesFromEmployeeRow(row);
+  const legacyEarningLines = legacyEarningLinesFromEmployeeRow(row);
   const deductionLines = deductionLinesFromEmployeeRow(row);
-  const storedEarnings = earningLines
-    .map((line) => draftPayrollLineToStored(line, true))
-    .filter((line): line is StoredPayrollPackageLine => line !== null);
-  const monthlyPackageGross = sumMonthlyPackageGross(storedEarnings);
+  const storedEarnings = buildStoredPayrollLinesFromDrafts(earningLines, true);
+  const monthlyFromLines = sumMonthlyPackageGross(storedEarnings);
+  const monthlyPackageGross = monthlyFromLines > 0
+    ? monthlyFromLines
+    : (row.periodSalary ?? row.basicSalary ?? summary.monthlyPackageGross ?? summary.basicSalary ?? null);
   return {
     ...summary,
     earningLines,
+    legacyEarningLines: legacyEarningLines.length ? legacyEarningLines : undefined,
+    payCurrency: payrollDisplayCurrencyFromRow(row),
     deductionLines,
     accountNumber: row.accountNo || summary.accountNumber || null,
     accountName: row.accountName || summary.accountName || null,
@@ -67,7 +94,7 @@ export const enrichPayrollSummaryFromRow = (summary: ProfilePayrollSummary, row:
     ratePerHour: row.ratePerHour ?? summary.ratePerHour ?? null,
     hoursPerDay: row.hoursPerDay ?? summary.hoursPerDay ?? null,
     setupAssignedToPayroll: row.setupAssignedToPayroll ?? summary.setupAssignedToPayroll ?? true,
-    monthlyPackageGross: monthlyPackageGross || summary.monthlyPackageGross || null,
+    monthlyPackageGross: monthlyPackageGross ?? null,
   };
 };
 

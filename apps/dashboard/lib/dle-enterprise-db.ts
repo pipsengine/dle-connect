@@ -3282,6 +3282,8 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
     const payrollRatePerDay = numOrNull(payroll.ratePerDay);
     const payrollRatePerHour = numOrNull(payroll.ratePerHour);
     const payrollHoursPerDay = numOrNull(payroll.hoursPerDay);
+    const replaceSageEarningLines = payroll.replaceSageEarningLinesJson === 1 || payroll.replaceSageEarningLinesJson === '1';
+    const replaceSageDeductionLines = payroll.replaceSageDeductionLinesJson === 1 || payroll.replaceSageDeductionLinesJson === '1';
     const hasPayrollUpdate =
       nullable(payroll.payrollGroup) ||
       nullable(payroll.salaryGrade) ||
@@ -3302,6 +3304,8 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
       nullable(payroll.benefitGroup) ||
       nullable(payroll.sageEarningLinesJson) ||
       nullable(payroll.sageDeductionLinesJson) ||
+      replaceSageEarningLines ||
+      replaceSageDeductionLines ||
       payroll.setupAssignedToPayroll !== undefined && payroll.setupAssignedToPayroll !== null;
 
     if (hasPayrollUpdate) {
@@ -3326,6 +3330,8 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
         .input('benefit_group', sql.NVarChar(120), nullable(payroll.benefitGroup))
         .input('sage_earning_lines_json', sql.NVarChar(sql.MAX), nullable(payroll.sageEarningLinesJson))
         .input('sage_deduction_lines_json', sql.NVarChar(sql.MAX), nullable(payroll.sageDeductionLinesJson))
+        .input('replace_sage_earning_lines', sql.Bit, replaceSageEarningLines ? 1 : 0)
+        .input('replace_sage_deduction_lines', sql.Bit, replaceSageDeductionLines ? 1 : 0)
         .input('setup_assigned_to_payroll', sql.Bit, payroll.setupAssignedToPayroll == null ? null : (payroll.setupAssignedToPayroll === 0 || payroll.setupAssignedToPayroll === '0' ? 0 : 1))
         .query(`
           MERGE [hris].[EmployeePayrollSetup] AS target
@@ -3349,8 +3355,8 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
             pension_pin = COALESCE(@pension_pin, target.pension_pin),
             tax_identification_number = COALESCE(@tax_identification_number, target.tax_identification_number),
             benefit_group = COALESCE(@benefit_group, target.benefit_group),
-            sage_earning_lines_json = COALESCE(@sage_earning_lines_json, target.sage_earning_lines_json),
-            sage_deduction_lines_json = COALESCE(@sage_deduction_lines_json, target.sage_deduction_lines_json),
+            sage_earning_lines_json = CASE WHEN @replace_sage_earning_lines = 1 THEN @sage_earning_lines_json ELSE COALESCE(@sage_earning_lines_json, target.sage_earning_lines_json) END,
+            sage_deduction_lines_json = CASE WHEN @replace_sage_deduction_lines = 1 THEN @sage_deduction_lines_json ELSE COALESCE(@sage_deduction_lines_json, target.sage_deduction_lines_json) END,
             setup_assigned_to_payroll = COALESCE(@setup_assigned_to_payroll, target.setup_assigned_to_payroll),
             modified_at = SYSUTCDATETIME()
           WHEN NOT MATCHED THEN INSERT (

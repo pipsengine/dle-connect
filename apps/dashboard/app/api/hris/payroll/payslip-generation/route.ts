@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { mergeTimesheetDayRateEarnings, calculatePayrollEarnings, calculatePermanentUnionDues } from '@/lib/payroll-earnings-engine';
+import { mergeTimesheetDayRateEarnings, calculatePayrollEarnings, calculatePermanentUnionDues, resolvePayrollEarningProfile } from '@/lib/payroll-earnings-engine';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
 import { activeStatutoryFundsVersion, calculateStatutoryFunds, readStatutoryFundsConfig, statutoryFundInputFromEmployee } from '@/lib/payroll-statutory-funds-engine';
@@ -18,6 +18,7 @@ import { calculateTimesheetPeriod, buildTimesheetHoursMapForPayrollPeriod, readT
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { payslipIdentityMap, type PayslipEmployeeIdentity } from '@/lib/payroll-payslip-identity-store';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
+import { hasFullHrisPackageSetup } from '@/lib/payroll-package-lines';
 import { buildExcelHtml, excelMimeType } from '@/lib/excel-export';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Payroll Officer' | 'Finance Controller' | 'Executive Management' | 'Auditor' | 'Employee';
@@ -233,8 +234,8 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
       .find(Boolean);
     const standardOptions = { period: requestedPeriod, includePeriodAdjustments: true as const };
     const payrollEmployee = employee;
-    const hrisPackageLines = payrollEmployee.sagePayrollEarnings || [];
-    const earningsOptions = hrisPackageLines.length > 0
+    const profileId = resolvePayrollEarningProfile(payrollEmployee, requestedPeriod);
+    const earningsOptions = hasFullHrisPackageSetup(payrollEmployee, profileId)
       ? { ...standardOptions, useHrisPackageLines: true as const, ignoreHrisPackageLines: false as const }
       : { ...standardOptions, ignoreHrisPackageLines: true as const };
     const standardAmounts = calculatePayrollEarnings(payrollEmployee, earningsOptions);

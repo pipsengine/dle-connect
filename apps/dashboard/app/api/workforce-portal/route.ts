@@ -4,7 +4,8 @@ import { employeeReportsToManager, resolveReportingManagerDisplay } from '@/lib/
 import { explicitDepartmentSupervisorCode } from '@/lib/department-reporting-manager-sync';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { AUTH_COOKIE, verifySessionToken, type SessionPayload } from '@/lib/auth/session';
-import { calculatePayrollEarnings, calculatePermanentUnionDues, isGenericPayrollGrade } from '@/lib/payroll-earnings-engine';
+import { calculatePayrollEarnings, calculatePermanentUnionDues, isGenericPayrollGrade, resolvePayrollEarningProfile } from '@/lib/payroll-earnings-engine';
+import { hasFullHrisPackageSetup } from '@/lib/payroll-package-lines';
 import { isNonPermanentPayrollEmployee, permanentStyleSageEarnings, sagePayslipAcceptableForEmployee, sanitizePermanentPayslipEarnings } from '@/lib/payroll-employee-classification';
 import { activeLoansVersion, readPayrollLoanApplications, readPayrollLoansConfig } from '@/lib/payroll-loans-engine';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
@@ -764,8 +765,8 @@ export async function GET(request: Request) {
         }
       }
 
-      const hrisPackageLines = payrollEmployee.sagePayrollEarnings || [];
-      const useHrisPackageLines = hrisPackageLines.length > 0;
+      const essProfileId = resolvePayrollEarningProfile(payrollEmployee, period);
+      const useHrisPackageLines = hasFullHrisPackageSetup(payrollEmployee, essProfileId);
       const earnings = calculatePayrollEarnings(payrollEmployee, {
         period,
         includePeriodAdjustments: includeAdjustments,

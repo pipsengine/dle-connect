@@ -5463,14 +5463,19 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       next.accountNumber = account || next.accountNumber || null;
       next.accountNumberMasked = account ? `****${account.slice(-4)}` : next.accountNumberMasked;
     }
+    const earningLinesProvided = Array.isArray(body.earningLines);
+    const deductionLinesProvided = Array.isArray(body.deductionLines);
     const storedEarnings = buildStoredPayrollLinesFromDrafts(next.earningLines || [], true);
     const storedDeductions = buildStoredPayrollLinesFromDrafts(next.deductionLines || [], false);
-    if (storedEarnings.length) {
-      const monthlyGross = sumMonthlyPackageGross(storedEarnings);
-      if (monthlyGross > 0) {
-        next.monthlyPackageGross = monthlyGross;
-        if (!next.basicSalary) next.basicSalary = monthlyGross;
-      }
+    const monthlyGross = sumMonthlyPackageGross(storedEarnings);
+    const preservedPackageGross = monthlyGross > 0
+      ? monthlyGross
+      : (next.monthlyPackageGross ?? next.basicSalary ?? rec.payrollSummary?.monthlyPackageGross ?? rec.payrollSummary?.basicSalary ?? null);
+    if (monthlyGross > 0) {
+      next.monthlyPackageGross = monthlyGross;
+      if (!next.basicSalary) next.basicSalary = monthlyGross;
+    } else if (preservedPackageGross != null) {
+      next.monthlyPackageGross = preservedPackageGross;
     }
     rec.payrollSummary = next;
     rec.audit.unshift(auditEntry('Updated payroll summary', role));
@@ -5479,8 +5484,8 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       payrollSetup: {
         payrollGroup: next.payrollGroup,
         salaryGrade: next.salaryGrade,
-        periodSalary: next.monthlyPackageGross ?? next.basicSalary,
-        annualSalary: next.monthlyPackageGross ? Number(next.monthlyPackageGross) * 12 : (next.basicSalary ? Number(next.basicSalary) * 12 : null),
+        periodSalary: preservedPackageGross,
+        annualSalary: preservedPackageGross ? Number(preservedPackageGross) * 12 : (next.basicSalary ? Number(next.basicSalary) * 12 : null),
         basicSalary: next.basicSalary,
         bankName: next.bankName,
         accountNumber: normalizeStr(body.accountNumber, 50) || next.accountNumber,
@@ -5492,8 +5497,14 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         ratePerDay: next.ratePerDay,
         ratePerHour: next.ratePerHour,
         hoursPerDay: next.hoursPerDay,
-        sageEarningLinesJson: storedEarnings.length ? JSON.stringify(storedEarnings) : undefined,
-        sageDeductionLinesJson: storedDeductions.length ? JSON.stringify(storedDeductions) : undefined,
+        ...(earningLinesProvided ? {
+          sageEarningLinesJson: JSON.stringify(storedEarnings),
+          replaceSageEarningLinesJson: 1,
+        } : {}),
+        ...(deductionLinesProvided ? {
+          sageDeductionLinesJson: JSON.stringify(storedDeductions),
+          replaceSageDeductionLinesJson: 1,
+        } : {}),
         setupAssignedToPayroll: next.setupAssignedToPayroll === false ? 0 : 1,
       },
     }).then((synced) => {

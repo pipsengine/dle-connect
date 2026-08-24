@@ -9,6 +9,7 @@ import {
   type FlexiblePayrollLineDraft,
   type PayrollLineFrequency,
 } from '@/lib/payroll-package-lines';
+import { formatPayrollMoney } from '@/lib/payroll-currency';
 
 export { EARNING_LINE_PRESETS, DEDUCTION_LINE_PRESETS };
 
@@ -18,9 +19,6 @@ const frequencyLabel = (frequency: PayrollLineFrequency) => {
   return 'Monthly';
 };
 
-const formatMoney = (value: number) =>
-  new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(value);
-
 export default function PayrollLinesEditor({
   title,
   description,
@@ -29,6 +27,7 @@ export default function PayrollLinesEditor({
   onChange,
   lineKind,
   readOnly = false,
+  currency = 'NGN',
 }: {
   title: string;
   description: string;
@@ -37,7 +36,9 @@ export default function PayrollLinesEditor({
   onChange: (lines: FlexiblePayrollLineDraft[]) => void;
   lineKind: 'earning' | 'deduction';
   readOnly?: boolean;
+  currency?: string;
 }) {
+  const formatMoney = (value: number) => formatPayrollMoney(value, currency);
   const updateLine = (id: string, patch: Partial<FlexiblePayrollLineDraft>) => {
     onChange(lines.map((line) => (line.id === id ? { ...line, ...patch } : line)));
   };
@@ -173,7 +174,7 @@ export default function PayrollLinesEditor({
                     <td className="px-3 py-2 text-xs font-extrabold text-slate-700">
                       {line.frequency === 'one-off' ? '—' : formatMoney(monthlyEq)}
                       {line.frequency === 'weekly' && amount > 0 ? (
-                        <div className="text-[10px] font-semibold text-slate-500">{frequencyLabel(line.frequency)} ₦{amount.toLocaleString()}</div>
+                        <div className="text-[10px] font-semibold text-slate-500">{frequencyLabel(line.frequency)} {formatMoney(amount)}</div>
                       ) : null}
                     </td>
                     {!readOnly ? (

@@ -6,6 +6,7 @@ import {
   draftPayrollLineToStored,
   type FlexiblePayrollLineDraft,
 } from '@/lib/payroll-package-lines';
+import { formatPayrollMoney } from '@/lib/payroll-currency';
 
 export type PayrollSetupDraft = {
   payrollGroup: string;
@@ -108,9 +109,6 @@ const SelectField = ({
   </div>
 );
 
-const formatMoney = (value: number) =>
-  new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(value);
-
 export default function PayrollSetupStep({
   payroll,
   onChange,
@@ -118,6 +116,7 @@ export default function PayrollSetupStep({
   canViewPayroll,
   employmentType,
   assignLabel = 'Assign employee to payroll run on create',
+  currency = 'NGN',
 }: {
   payroll: PayrollSetupDraft;
   onChange: (next: PayrollSetupDraft) => void;
@@ -125,8 +124,11 @@ export default function PayrollSetupStep({
   canViewPayroll: boolean;
   employmentType: string;
   assignLabel?: string;
+  currency?: string;
 }) {
   const patch = (partial: Partial<PayrollSetupDraft>) => onChange({ ...payroll, ...partial });
+  const formatMoney = (value: number) => formatPayrollMoney(value, currency);
+  const currencySymbol = currency.toUpperCase() === 'USD' ? '$' : '₦';
 
   const storedEarnings = payroll.earningLines
     .map((line) => draftPayrollLineToStored(line, true))
@@ -167,8 +169,8 @@ export default function PayrollSetupStep({
         <Field label="Tax ID (TIN)" value={payroll.taxId} onChange={(v) => patch({ taxId: v })} />
         <Field label="NHF Number" value={payroll.nhfNumber} onChange={(v) => patch({ nhfNumber: v })} />
         <SelectField label="Benefit Group" value={payroll.benefitGroup} onChange={(v) => patch({ benefitGroup: v })} options={options.benefitGroups} />
-        <Field label="Additional Voluntary Pension (₦ / month)" type="number" value={payroll.additionalEmployeePensionMonthly} onChange={(v) => patch({ additionalEmployeePensionMonthly: v })} />
-        <Field label="Annual Rent Relief (₦)" type="number" value={payroll.annualRentRelief} onChange={(v) => patch({ annualRentRelief: v })} />
+        <Field label={`Additional Voluntary Pension (${currencySymbol} / month)`} type="number" value={payroll.additionalEmployeePensionMonthly} onChange={(v) => patch({ additionalEmployeePensionMonthly: v })} />
+        <Field label={`Annual Rent Relief (${currencySymbol})`} type="number" value={payroll.annualRentRelief} onChange={(v) => patch({ annualRentRelief: v })} />
       </div>
 
       <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800">
@@ -183,8 +185,8 @@ export default function PayrollSetupStep({
 
       {isDailyRate ? (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <Field label="Daily Rate (₦ / day)" type="number" value={payroll.ratePerDay || payroll.dailyRate} onChange={(v) => patch({ ratePerDay: v, dailyRate: v })} hint="Timesheet-driven wages in addition to fixed lines below" />
-          <Field label="Rate Per Hour (₦)" type="number" value={payroll.ratePerHour} onChange={(v) => patch({ ratePerHour: v })} />
+          <Field label={`Daily Rate (${currencySymbol} / day)`} type="number" value={payroll.ratePerDay || payroll.dailyRate} onChange={(v) => patch({ ratePerDay: v, dailyRate: v })} hint="Timesheet-driven wages in addition to fixed lines below" />
+          <Field label={`Rate Per Hour (${currencySymbol})`} type="number" value={payroll.ratePerHour} onChange={(v) => patch({ ratePerHour: v })} />
           <Field label="Hours Per Day" type="number" value={payroll.hoursPerDay} onChange={(v) => patch({ hoursPerDay: v })} />
         </div>
       ) : null}
@@ -196,6 +198,7 @@ export default function PayrollSetupStep({
         presets={EARNING_LINE_PRESETS}
         onChange={(earningLines) => patch({ earningLines })}
         lineKind="earning"
+        currency={currency}
       />
 
       <PayrollLinesEditor
@@ -205,6 +208,7 @@ export default function PayrollSetupStep({
         presets={DEDUCTION_LINE_PRESETS}
         onChange={(deductionLines) => patch({ deductionLines })}
         lineKind="deduction"
+        currency={currency}
       />
     </div>
   );

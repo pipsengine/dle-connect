@@ -11,6 +11,7 @@ import {
   setupDraftToProfileSummary,
   type ProfilePayrollSummary,
 } from '@/lib/payroll-profile-setup';
+import { formatPayrollMoney } from '@/lib/payroll-currency';
 import { ContractPayrollClassificationPanel, type ContractPayrollClassificationView } from '../components/ContractPayrollClassificationUi';
 import { AnimatePresence, motion } from 'motion/react';
 import {
@@ -1663,6 +1664,9 @@ export default function EmployeeProfileClient({
   const overviewData = overview.data;
   const insightsData = insights.data;
   const auditData = audit.data;
+  const payrollCurrency = profileData?.payrollSummary?.payCurrency || 'NGN';
+  const payrollMoney = (n: number | null, currency = payrollCurrency) =>
+    typeof n === 'number' ? formatPayrollMoney(n, currency) : '-';
 
   if (loading && (profile.status !== 'ready' || !profileData)) {
     return (
@@ -2737,10 +2741,11 @@ export default function EmployeeProfileClient({
                         <div className="space-y-5">
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                             <Field label="Salary Grade" value={v(profileData.payrollSummary.salaryGrade)} />
-                            <Field label="Monthly Package Gross" value={naira(profileData.payrollSummary.monthlyPackageGross ?? profileData.payrollSummary.basicSalary)} masked={!perms.canViewPayroll} />
-                            <Field label="Basic Salary" value={naira(profileData.payrollSummary.basicSalary)} masked={!perms.canViewPayroll} />
-                            <Field label="Allowances" value={naira(profileData.payrollSummary.allowances)} masked={!perms.canViewPayroll} />
-                            <Field label="Deductions" value={naira(profileData.payrollSummary.deductions)} masked={!perms.canViewPayroll} />
+                            <Field label="Monthly Package Gross" value={payrollMoney(profileData.payrollSummary.monthlyPackageGross ?? profileData.payrollSummary.basicSalary, payrollCurrency)} masked={!perms.canViewPayroll} />
+                            <Field label="Basic Salary" value={payrollMoney(profileData.payrollSummary.basicSalary, payrollCurrency)} masked={!perms.canViewPayroll} />
+                            <Field label="Allowances" value={payrollMoney(profileData.payrollSummary.allowances, payrollCurrency)} masked={!perms.canViewPayroll} />
+                            <Field label="Deductions" value={payrollMoney(profileData.payrollSummary.deductions, payrollCurrency)} masked={!perms.canViewPayroll} />
+                            <Field label="Pay Currency" value={payrollCurrency} masked={!perms.canViewPayroll} />
                             <Field label="Bank Name" value={v(profileData.payrollSummary.bankName)} masked={!perms.canViewPayroll} />
                             <Field label="Account Number" value={v(profileData.payrollSummary.accountNumberMasked)} />
                             <Field label="Pension Provider" value={v(profileData.payrollSummary.pensionProvider)} masked={!perms.canViewPayroll} />
@@ -2752,13 +2757,26 @@ export default function EmployeeProfileClient({
                             <div className="space-y-4">
                               <PayrollLinesEditor
                                 title="Earning Lines"
-                                description="Configured earning package for this employee."
+                                description="HRIS payroll package — edits here drive payroll calculation."
                                 lines={profileData.payrollSummary.earningLines || []}
                                 presets={EARNING_LINE_PRESETS}
                                 onChange={() => undefined}
                                 lineKind="earning"
                                 readOnly
+                                currency={payrollCurrency}
                               />
+                              {profileData.payrollSummary.legacyEarningLines?.length ? (
+                                <PayrollLinesEditor
+                                  title="Legacy Imported Lines (not used for payroll)"
+                                  description="Historical Sage payslip snapshot — kept for reference only."
+                                  lines={profileData.payrollSummary.legacyEarningLines}
+                                  presets={EARNING_LINE_PRESETS}
+                                  onChange={() => undefined}
+                                  lineKind="earning"
+                                  readOnly
+                                  currency={payrollCurrency}
+                                />
+                              ) : null}
                               <PayrollLinesEditor
                                 title="Deduction Lines"
                                 description="Configured deductions for this employee."
@@ -2767,6 +2785,7 @@ export default function EmployeeProfileClient({
                                 onChange={() => undefined}
                                 lineKind="deduction"
                                 readOnly
+                                currency={payrollCurrency}
                               />
                             </div>
                           ) : null}
@@ -2787,6 +2806,7 @@ export default function EmployeeProfileClient({
                             canViewPayroll={perms.canViewPayroll}
                             employmentType={profileData.employmentType || ''}
                             assignLabel="Employee assigned to payroll run"
+                            currency={payrollDraft.payCurrency || payrollCurrency}
                           />
                         )
                       ) : null}

@@ -3,6 +3,7 @@ import { applyPayrollEmployeeOptions } from '@/lib/payroll-employee-options-stor
 import { payrollDataSourceInfo, readDirectoryEmployees, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { mergeTimesheetDayRateEarnings, calculatePayrollEarnings, resolvePayrollEarningProfile } from '@/lib/payroll-earnings-engine';
 import { isNonPermanentPayrollEmployee, payrollActiveEmployees } from '@/lib/payroll-employee-classification';
+import { hasFullHrisPackageSetup } from '@/lib/payroll-package-lines';
 import { registerPayrollAdjustmentsChangeHandler, adjustmentsFileMtime } from '@/lib/payroll-period-earning-adjustments-store';
 import { contractEmployeeCode, isDailyRatePayrollEmployee, isEmployeeExcludedFromPayrollRun, payrollRunPackShortLabel, type PayrollRunExclusionEmployee } from '@/lib/payroll-employee-classification';
 import { enterprisePayrollSourceLabel, isEnterprisePayrollPeriod } from '@/lib/payroll-enterprise-source';
@@ -796,9 +797,9 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
 
   const calculationOptionsForEmployee = (employee: DleEmployeeDirectoryRow, forcePackageLines = false) => {
     const base = { period: requestedPeriod, includePeriodAdjustments: true as const };
-    const packageLines = employee.sagePayrollEarnings || [];
-    // Configured HRIS package earning lines drive gross composition when present.
-    if (forcePackageLines || packageLines.length > 0) {
+    const profileId = resolvePayrollEarningProfile(employee, requestedPeriod);
+    const useFullPackage = hasFullHrisPackageSetup(employee, profileId);
+    if (useFullPackage || (forcePackageLines && useFullPackage)) {
       return { ...base, useHrisPackageLines: true as const, ignoreHrisPackageLines: false as const };
     }
     return { ...base, ignoreHrisPackageLines: true as const };
@@ -818,6 +819,8 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
   };
 
   const variantsForEmployee = (employee: DleEmployeeDirectoryRow): PayrollRunVariant[] => {
+    const profileId = resolvePayrollEarningProfile(employee, requestedPeriod);
+    const useFullPackage = hasFullHrisPackageSetup(employee, profileId);
     const local = dualCurrencyLocalEmployee(employee);
     const usdPrimary = employeeIsUsdPayrollPrimary(employee);
     if (local && usdPrimary) {
@@ -828,7 +831,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
           payrollGroup: compact(local.payrollGroup) || 'DLE',
           payCurrency: 'NGN',
           calculationEmployee: local,
-          usePackageLines: (local.sagePayrollEarnings || []).length > 0,
+          usePackageLines: hasFullHrisPackageSetup(local, profileId),
           skipSageCompare: false,
           hasDualCurrencyPayroll: true,
           usdPackageGross: usdPackageGrossFromEmployee(employee),
@@ -838,7 +841,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
           payrollGroup: compact(usdEmployee.payrollGroup) || 'DLE_USD',
           payCurrency: 'USD',
           calculationEmployee: usdEmployee,
-          usePackageLines: (usdEmployee.sagePayrollEarnings || []).length > 0,
+          usePackageLines: hasFullHrisPackageSetup(usdEmployee, profileId),
           skipSageCompare: true,
           hasDualCurrencyPayroll: true,
           usdPackageGross: usdPackageGrossFromEmployee(employee),
@@ -852,7 +855,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
         payrollGroup: compact(usdEmployee.payrollGroup) || 'DLE_USD',
         payCurrency: 'USD',
         calculationEmployee: usdEmployee,
-        usePackageLines: (employee.sagePayrollEarnings || []).length > 0,
+        usePackageLines: useFullPackage,
         skipSageCompare: true,
         hasDualCurrencyPayroll: false,
         usdPackageGross: usdPackageGrossFromEmployee(employee),
@@ -870,7 +873,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
         businessUnit: employee.businessUnit,
       }) as 'NGN' | 'USD',
       calculationEmployee: packageEmployee,
-      usePackageLines: (packageEmployee.sagePayrollEarnings || []).length > 0,
+      usePackageLines: hasFullHrisPackageSetup(packageEmployee, profileId),
       skipSageCompare: false,
       hasDualCurrencyPayroll: false,
       usdPackageGross: null,

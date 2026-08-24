@@ -20,8 +20,7 @@ import {
   hrisDataFileMtime,
   resolvePreferredHrisDataFile,
 } from '@/lib/hris-data-paths';
-import { payrollLineMonthlyAmount } from '@/lib/payroll-package-lines';
-import type { StoredPayrollPackageLine } from '@/lib/payroll-package-lines';
+import { effectiveHrisPayrollLines, hasFullHrisPackageSetup, payrollLineMonthlyAmount, type StoredPayrollPackageLine } from '@/lib/payroll-package-lines';
 
 export type PayrollEarningProfileId =
   | 'junior-permanent'
@@ -732,8 +731,8 @@ const configuredPackageEarningLines = (
 ): PayrollEarningLine[] => {
   const includeOneOff = options?.includeOneOff !== false;
   const lines: PayrollEarningLine[] = [];
-  for (const line of employee.sagePayrollEarnings || []) {
-    const stored = line as StoredPayrollPackageLine;
+  for (const line of effectiveHrisPayrollLines(employee.sagePayrollEarnings)) {
+    const stored = line;
     const frequency = stored.runFrequency || 'monthly';
     const includeInMonthly = stored.includeInMonthlyPayroll ?? (frequency !== 'one-off');
     let amount = 0;
@@ -762,6 +761,47 @@ const configuredPackageEarningLines = (
   return lines;
 };
 
+const dedupeEarningLinesByCanonicalCode = (lines: PayrollEarningLine[]) => {
+  const byCode = new Map<string, PayrollEarningLine>();
+  for (const line of lines) {
+    const code = canonicalEarningCode(line.code);
+    if (!code) continue;
+    byCode.set(code, line);
+  }
+  return [...byCode.values()];
+};
+
+const summarizeEarningsFromLines = (
+  profileId: PayrollEarningProfileId,
+  profileName: string,
+  periodPackageGross: number,
+  paidLines: PayrollEarningLine[],
+): PayrollEarningsResult => {
+  const monthlyLines = dedupeEarningLinesByCanonicalCode(paidLines);
+  const grossPay = roundMoney(monthlyLines.reduce((sum, line) => sum + line.amount, 0));
+  const taxablePay = roundMoney(monthlyLines.filter((line) => line.taxable !== false).reduce((sum, line) => sum + line.amount, 0));
+  const basicPay = roundMoney(monthlyLines.filter(isBasicLine).reduce((sum, line) => sum + line.amount, 0));
+  const normalizedLines = monthlyLines.map((line) => ({
+    ...line,
+    percentOfGross: grossPay ? roundMoney(line.amount / grossPay) : 0,
+  }));
+  return {
+    profileId,
+    profileName,
+    periodPackageGross,
+    grossPay,
+    basePay: basicPay,
+    basicPay,
+    allowances: roundMoney(grossPay - basicPay),
+    taxablePay,
+    nonTaxablePay: roundMoney(grossPay - taxablePay),
+    bhtPay: pensionablePayFromLines(normalizedLines).total,
+    earningLines: normalizedLines,
+    annualBenefitLines: [],
+    paidEarningLines: normalizedLines,
+  };
+};
+
 const mergeConfiguredPackageSupplements = (
   employee: DleEmployeeDirectoryRow,
   baseLines: PayrollEarningLine[],
@@ -771,8 +811,8 @@ const mergeConfiguredPackageSupplements = (
   if (!packageLines.length) return baseLines;
   const existing = new Set(baseLines.map((line) => canonicalEarningCode(line.code)));
   const supplements = packageLines.filter((line) => !existing.has(canonicalEarningCode(line.code)));
-  if (!supplements.length) return baseLines;
-  return [...baseLines, ...supplements];
+  if (!supplements.length) return dedupeEarningLinesByCanonicalCode(baseLines);
+  return dedupeEarningLinesByCanonicalCode([...baseLines, ...supplements]);
 };
 
 const isLeaveAllowanceLine = (line: Pick<PayrollEarningLine, 'code' | 'name'>) =>
@@ -1106,7 +1146,7 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
   const packageLines = options?.useHrisPackageLines && !options?.ignoreHrisPackageLines
     ? configuredPackageEarningLines(employee, { includeOneOff: true })
     : [];
-  if (packageLines.length > 0) {
+  if (packageLines.length > 0 && hasFullHrisPackageSetup(employee, profileId)) {
     const hasPackageBase = packageLines.some((line) =>
       isBasicLine(line) || /^(LUMPSUMTAX|BASIC1_LUMPSUM)$/i.test(compact(line.code)));
     const paidPackageLines = (!hasPackageBase && profileId === 'contract-lumpsum' && gross > 0)
@@ -1123,37 +1163,16 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
       : packageLines;
     const fallbackProfileName = profileId === 'contract-day-rate'
       ? 'Contract Staff on Day Rate'
-      : profileId === 'stipend-non-taxable'
-        ? 'NYSC / IT Non-Taxable Stipend'
-        : profileId === 'fallback'
-          ? 'Payroll Setup Fallback'
-          : profile?.name || 'Payroll Profile';
+      : profileId === 'fallback'
+        ? 'Payroll Setup Fallback'
+        : profile?.name || 'Payroll Profile';
     const leaveEventLines = leavePayrollEventLines(employee, 0, paidPackageLines, options);
-    const paidLines = [...paidPackageLines, ...leaveEventLines];
-    const grossPay = roundMoney(paidLines.reduce((sum, line) => sum + line.amount, 0));
-    const sageTaxablePay = roundMoney((employee.sagePayrollEarnings || []).reduce((sum, line) => {
-      const amount = num(line.amount);
-      const taxableAmount = line.taxableAmount === null || line.taxableAmount === undefined ? amount : num(line.taxableAmount);
-      return sum + taxableAmount;
-    }, 0));
-    const taxablePay = roundMoney(sageTaxablePay + leaveEventLines.filter((line) => line.taxable).reduce((sum, line) => sum + line.amount, 0));
-    const basicPay = roundMoney(paidLines.filter(isBasicLine).reduce((sum, line) => sum + line.amount, 0));
-    const bhtPay = pensionablePayFromLines(paidLines).total;
-    return {
+    return summarizeEarningsFromLines(
       profileId,
-      profileName: `${fallbackProfileName} - HRIS Salary Package`,
-      periodPackageGross: grossPay,
-      grossPay,
-      basePay: basicPay,
-      basicPay,
-      allowances: roundMoney(grossPay - basicPay),
-      taxablePay,
-      nonTaxablePay: roundMoney(grossPay - taxablePay),
-      bhtPay,
-      earningLines: paidLines.map((line) => ({ ...line, percentOfGross: grossPay ? line.amount / grossPay : 0 })),
-      annualBenefitLines: [],
-      paidEarningLines: paidLines.map((line) => ({ ...line, percentOfGross: grossPay ? line.amount / grossPay : 0 })),
-    };
+      `${fallbackProfileName} - HRIS Salary Package`,
+      gross,
+      [...paidPackageLines, ...leaveEventLines],
+    );
   }
   if (profileId === 'stipend-non-taxable') {
     const lines = [
@@ -1210,24 +1229,12 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
       [...coreLines, ...supplementalAdjustments],
       { includeOneOff: true },
     );
-    const taxablePay = roundMoney(monthlyLines.filter((line) => line.taxable !== false).reduce((sum, line) => sum + line.amount, 0));
-    const grossPay = roundMoney(monthlyLines.reduce((sum, line) => sum + line.amount, 0));
-    const basicPay = roundMoney(coreLines.reduce((sum, line) => sum + line.amount, 0));
-    return {
+    return summarizeEarningsFromLines(
       profileId,
-      profileName: 'Contract Staff on Lumpsum',
-      periodPackageGross: gross,
-      grossPay,
-      basePay: basicPay,
-      basicPay,
-      allowances: roundMoney(grossPay - basicPay),
-      taxablePay,
-      nonTaxablePay: roundMoney(grossPay - taxablePay),
-      bhtPay: basicPay,
-      earningLines: monthlyLines,
-      annualBenefitLines: [],
-      paidEarningLines: monthlyLines,
-    };
+      'Contract Staff on Lumpsum',
+      gross,
+      monthlyLines,
+    );
   }
   if (!profile) {
     const periodAdjustments = [
@@ -1286,77 +1293,21 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
     ...periodAdjustmentLines(employee, options),
     ...leavePayrollEventLines(employee, gross, [], options),
   ];
-  const sageSyncedAdjustments = periodAdjustments.filter((line) => isSagePayslipEarningSyncSource(line.calculation));
-  const sageStructuralAdjustments = sageSyncedStructuralAdjustments(periodAdjustments);
-  const useSageAdjustmentsPrimary = sageStructuralAdjustments.length > 0
-    || sageSyncedAdjustments.some((line) => /BASIC|SALARY|LUMPSUM/i.test(String(line.code || '')));
-  if (useSageAdjustmentsPrimary) {
-    const fixedMonthlyLines = [...seniorFixedMonthlyEarningLines(profileId, periodAdjustments), ...juniorFixedMonthlyEarningLines(profileId)];
-    const profilePackageLines = profile.definitions.map((definition) => ({
-      ...definition,
-      amount: roundMoney(gross * definition.percentOfGross),
-    }));
-    const mergedBase = mergeProfileLinesWithAdjustments(fixedMonthlyLines, periodAdjustments);
-    const presentCodes = new Set(mergedBase.map((line) => canonicalEarningCode(line.code)));
-    const missingProfileLines = sageStructuralAdjustments.length > 0
-      ? []
-      : profilePackageLines.filter(
-          (line) => line.runFrequency !== 'leave-period'
-            && line.includeInMonthlyPayroll !== false
-            && !presentCodes.has(canonicalEarningCode(line.code)),
-        );
-    const monthlyLines = [...mergedBase, ...missingProfileLines.filter((line) => line.amount > 0)];
-    const mergedCodes = new Set(monthlyLines.map((line) => canonicalEarningCode(line.code)));
-    for (const line of periodAdjustments) {
-      const codeKey = canonicalEarningCode(line.code);
-      if (!line.amount || mergedCodes.has(codeKey)) continue;
-      monthlyLines.push(line);
-      mergedCodes.add(codeKey);
-    }
-    const taxablePay = roundMoney(monthlyLines.filter((line) => line.taxable !== false).reduce((sum, line) => sum + line.amount, 0));
-    const grossPay = roundMoney(monthlyLines.reduce((sum, line) => sum + line.amount, 0));
-    const basicPay = roundMoney(monthlyLines.filter(isBasicLine).reduce((sum, line) => sum + line.amount, 0));
-    return {
-      profileId,
-      profileName: `${profile.name} - Sage Synced Adjustments`,
-      periodPackageGross: gross,
-      grossPay,
-      basePay: basicPay,
-      basicPay,
-      allowances: roundMoney(grossPay - basicPay),
-      taxablePay,
-      nonTaxablePay: roundMoney(grossPay - taxablePay),
-      bhtPay: pensionablePayFromLines(monthlyLines).total,
-      earningLines: monthlyLines,
-      annualBenefitLines: [],
-      paidEarningLines: monthlyLines,
-    };
-  }
   const regularLines = profile.definitions.map((definition) => ({
     ...definition,
     amount: roundMoney(gross * definition.percentOfGross),
   }));
   const fixedMonthlyLines = [...seniorFixedMonthlyEarningLines(profileId, periodAdjustments), ...juniorFixedMonthlyEarningLines(profileId)];
   const lines = withCategoryFormulaLines(profileId, [...regularLines, ...fixedMonthlyLines]);
-  const monthlyLines = mergeProfileLinesWithAdjustments(monthlyPayrollLines(lines), periodAdjustments);
+  const profileLines = mergeProfileLinesWithAdjustments(monthlyPayrollLines(lines), periodAdjustments);
+  const monthlyLines = mergeConfiguredPackageSupplements(employee, profileLines, { includeOneOff: true });
   const basicPay = lines.find((line) => line.code.endsWith('_BASIC'))?.amount || 0;
-  const bhtPay = pensionablePayFromLines(monthlyLines).total;
-  const taxablePay = roundMoney(monthlyLines.filter((line) => line.taxable !== false).reduce((sum, line) => sum + line.amount, 0));
-  const nonTaxablePay = roundMoney(monthlyLines.filter((line) => line.taxable === false).reduce((sum, line) => sum + line.amount, 0));
+  const summarized = summarizeEarningsFromLines(profileId, profile.name, gross, monthlyLines);
   return {
-    profileId,
-    profileName: profile.name,
-    periodPackageGross: gross,
-    grossPay: roundMoney(monthlyLines.reduce((sum, line) => sum + line.amount, 0)),
-    basePay: roundMoney(basicPay),
-    basicPay: roundMoney(basicPay),
-    allowances: roundMoney(monthlyLines.filter((line) => !line.code.endsWith('_BASIC')).reduce((sum, line) => sum + line.amount, 0)),
-    taxablePay,
-    nonTaxablePay,
-    bhtPay,
+    ...summarized,
     earningLines: visibleEarningLines(lines, periodAdjustments, options?.period),
     annualBenefitLines: annualLeaveAllowanceLines(lines),
-    paidEarningLines: monthlyLines,
+    paidEarningLines: summarized.paidEarningLines,
   };
 };
 
