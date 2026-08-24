@@ -20,6 +20,7 @@ import {
 import type { FlexiblePayrollLineDraft } from '@/lib/payroll-package-lines';
 import { sumMonthlyPackageGross } from '@/lib/payroll-package-lines';
 import { invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
+import { invalidatePayrollCalculationCache } from '@/lib/payroll-calculation-service';
 import { invalidatePayrollEmployeeOptionsCache } from '@/lib/payroll-employee-options-store';
 
 type Role =
@@ -5466,8 +5467,10 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     const storedDeductions = buildStoredPayrollLinesFromDrafts(next.deductionLines || [], false);
     if (storedEarnings.length) {
       const monthlyGross = sumMonthlyPackageGross(storedEarnings);
-      next.monthlyPackageGross = monthlyGross;
-      if (!next.basicSalary) next.basicSalary = monthlyGross;
+      if (monthlyGross > 0) {
+        next.monthlyPackageGross = monthlyGross;
+        if (!next.basicSalary) next.basicSalary = monthlyGross;
+      }
     }
     rec.payrollSummary = next;
     rec.audit.unshift(auditEntry('Updated payroll summary', role));
@@ -5498,6 +5501,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         invalidateHrisEmployeeCaches();
         invalidatePayrollEmployeeCache();
         invalidatePayrollEmployeeOptionsCache();
+        invalidatePayrollCalculationCache();
       }
     });
     return jsonOk(sanitizePayrollForRole(rec.payrollSummary, perms));

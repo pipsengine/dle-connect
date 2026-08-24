@@ -208,26 +208,259 @@ const escapeXml = (value: unknown) =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
-const colLetter = (index: number) => {
-  let n = index;
-  let out = '';
-  while (n > 0) {
-    const rem = (n - 1) % 26;
-    out = String.fromCharCode(65 + rem) + out;
-    n = Math.floor((n - 1) / 26);
-  }
-  return out;
+const cellXml = (ref: string, value: string | number | null | undefined, style?: string) => {
+  const styleAttr = style ? ` s="${style}"` : '';
+  if (value == null || value === '') return `<c r="${ref}"${styleAttr}/>`;
+  if (typeof value === 'number' && Number.isFinite(value)) return `<c r="${ref}"${styleAttr}><v>${value}</v></c>`;
+  return `<c r="${ref}"${styleAttr} t="inlineStr"><is><t>${escapeXml(value)}</t></is></c>`;
 };
 
-const cellXml = (ref: string, value: string | number | null | undefined) => {
-  if (value == null || value === '') return `<c r="${ref}"/>`;
-  if (typeof value === 'number' && Number.isFinite(value)) return `<c r="${ref}"><v>${value}</v></c>`;
-  return `<c r="${ref}" t="inlineStr"><is><t>${escapeXml(value)}</t></is></c>`;
+const cellXmlFormula = (ref: string, formula: string, value?: number, style?: string) => {
+  const styleAttr = style ? ` s="${style}"` : '';
+  const valXml = value !== undefined && Number.isFinite(value) ? `<v>${value}</v>` : '';
+  return `<c r="${ref}"${styleAttr}><f>${escapeXml(formula)}</f>${valXml}</c>`;
 };
 
-const rowXml = (rowNumber: number, values: Array<string | number | null | undefined>) => {
-  const cells = values.map((value, index) => cellXml(`${colLetter(index + 1)}${rowNumber}`, value)).join('');
-  return `<row r="${rowNumber}">${cells}</row>`;
+const MONEY_STYLE = '1';
+
+const extractSheetRow = (sheetXml: string, rowNumber: number) => {
+  const match = sheetXml.match(new RegExp(`<row r="${rowNumber}"[\\s\\S]*?</row>`, 'i'));
+  return match?.[0] || '';
+};
+
+const patchTableXml = (tableXml: string, ref: string, autoFilterRef: string) =>
+  tableXml
+    .replace(/(<table\b[^>]*\bref=")[^"]+(")/, `$1${ref}$2`)
+    .replace(/(<autoFilter ref=")[^"]+(")/, `$1${autoFilterRef}$2`);
+
+const sumDetailRows = (rows: DetailRow[]) => ({
+  count: rows.length,
+  dailyRate: roundMoney(rows.reduce((s, r) => s + r.dailyRate, 0)),
+  weekDays: roundMoney(rows.reduce((s, r) => s + r.weekDays, 0)),
+  weekdayOvtHrs: roundMoney(rows.reduce((s, r) => s + r.weekdayOvtHrs, 0)),
+  satHrs: roundMoney(rows.reduce((s, r) => s + r.satHrs, 0)),
+  sunHrs: roundMoney(rows.reduce((s, r) => s + r.sunHrs, 0)),
+  phHrs: roundMoney(rows.reduce((s, r) => s + r.phHrs, 0)),
+  nightDays: roundMoney(rows.reduce((s, r) => s + r.nightDays, 0)),
+  wkdEarning: roundMoney(rows.reduce((s, r) => s + r.wkdEarning, 0)),
+  wkdOvtAmt: roundMoney(rows.reduce((s, r) => s + r.wkdOvtAmt, 0)),
+  satAmt: roundMoney(rows.reduce((s, r) => s + r.satAmt, 0)),
+  sunAmt: roundMoney(rows.reduce((s, r) => s + r.sunAmt, 0)),
+  phAmt: roundMoney(rows.reduce((s, r) => s + r.phAmt, 0)),
+  nightAmt: roundMoney(rows.reduce((s, r) => s + r.nightAmt, 0)),
+  meal: roundMoney(rows.reduce((s, r) => s + r.meal, 0)),
+  transport: roundMoney(rows.reduce((s, r) => s + r.transport, 0)),
+  site: roundMoney(rows.reduce((s, r) => s + r.site, 0)),
+  tcmMeal: roundMoney(rows.reduce((s, r) => s + r.tcmMeal, 0)),
+  tcmTransport: roundMoney(rows.reduce((s, r) => s + r.tcmTransport, 0)),
+  arrears: roundMoney(rows.reduce((s, r) => s + r.arrears, 0)),
+  totalEarnings: roundMoney(rows.reduce((s, r) => s + r.totalEarnings, 0)),
+  wht: roundMoney(rows.reduce((s, r) => s + r.wht, 0)),
+  netPay: roundMoney(rows.reduce((s, r) => s + r.netPay, 0)),
+});
+
+const buildDleDataRow = (rowNum: number, row: DetailRow) =>
+  `<row r="${rowNum}" spans="1:28" x14ac:dyDescent="0.25">${
+    [
+      cellXml(`A${rowNum}`, row.code),
+      cellXml(`B${rowNum}`, row.firstName),
+      cellXml(`C${rowNum}`, row.lastName),
+      cellXml(`D${rowNum}`, row.jobTitle),
+      cellXml(`E${rowNum}`, row.location),
+      cellXml(`F${rowNum}`, row.dailyRate || null, row.dailyRate ? MONEY_STYLE : undefined),
+      cellXml(`G${rowNum}`, row.age || null),
+      cellXml(`H${rowNum}`, row.gender || null),
+      cellXml(`I${rowNum}`, row.weekDays || null),
+      cellXml(`J${rowNum}`, row.weekdayOvtHrs || null),
+      cellXml(`K${rowNum}`, row.satHrs || null),
+      cellXml(`L${rowNum}`, row.sunHrs || null),
+      cellXml(`M${rowNum}`, row.nightDays || null),
+      cellXml(`N${rowNum}`, row.wkdEarning || null, row.wkdEarning ? MONEY_STYLE : undefined),
+      cellXml(`O${rowNum}`, row.wkdOvtAmt || null, row.wkdOvtAmt ? MONEY_STYLE : undefined),
+      cellXml(`P${rowNum}`, row.satAmt || null, row.satAmt ? MONEY_STYLE : undefined),
+      cellXml(`Q${rowNum}`, row.sunAmt || null, row.sunAmt ? MONEY_STYLE : undefined),
+      cellXml(`R${rowNum}`, row.nightAmt || null, row.nightAmt ? MONEY_STYLE : undefined),
+      cellXml(`S${rowNum}`, row.meal || null, row.meal ? MONEY_STYLE : undefined),
+      cellXml(`T${rowNum}`, row.transport || null, row.transport ? MONEY_STYLE : undefined),
+      cellXml(`U${rowNum}`, row.site || null, row.site ? MONEY_STYLE : undefined),
+      cellXml(`V${rowNum}`, row.tcmMeal || null, row.tcmMeal ? MONEY_STYLE : undefined),
+      cellXml(`W${rowNum}`, row.tcmTransport || null, row.tcmTransport ? MONEY_STYLE : undefined),
+      cellXml(`X${rowNum}`, row.arrears || null, row.arrears ? MONEY_STYLE : undefined),
+      cellXml(`Y${rowNum}`, row.totalEarnings || null, row.totalEarnings ? MONEY_STYLE : undefined),
+      cellXml(`Z${rowNum}`, row.wht || null, row.wht ? MONEY_STYLE : undefined),
+      cellXml(`AA${rowNum}`, row.totalEarnings || null, row.totalEarnings ? MONEY_STYLE : undefined),
+      cellXml(`AB${rowNum}`, row.netPay || null, row.netPay ? MONEY_STYLE : undefined),
+    ].join('')
+  }</row>`;
+
+const buildDleTotalsRow = (rowNum: number, totals: ReturnType<typeof sumDetailRows>) => {
+  const table = 'Table4';
+  const f = (col: string, formula: string, value: number, style?: string) =>
+    cellXmlFormula(`${col}${rowNum}`, formula, value, style);
+  return `<row r="${rowNum}" spans="1:28" x14ac:dyDescent="0.25">${
+    f('A', `SUBTOTAL(103,${table}[Emp. Code])`, totals.count)
+    + f('I', `SUBTOTAL(109,${table}[Total Weekday])`, totals.weekDays)
+    + f('J', `SUBTOTAL(109,${table}[Weekday OVT])`, totals.weekdayOvtHrs)
+    + f('K', `SUBTOTAL(109,${table}[Total Saturday])`, totals.satHrs)
+    + f('L', `SUBTOTAL(109,${table}[Total Sunday])`, totals.sunHrs)
+    + f('M', `SUBTOTAL(109,${table}[Night Worked])`, totals.nightDays)
+    + f('N', `SUBTOTAL(109,${table}[Wkd Earning])`, totals.wkdEarning, MONEY_STYLE)
+    + f('O', `SUBTOTAL(109,${table}[Wkd Ovt Amt])`, totals.wkdOvtAmt, MONEY_STYLE)
+    + f('P', `SUBTOTAL(109,${table}[Sat Ovt Amt])`, totals.satAmt, MONEY_STYLE)
+    + f('Q', `SUBTOTAL(109,${table}[Sun Ovt Amt])`, totals.sunAmt, MONEY_STYLE)
+    + f('R', `SUBTOTAL(109,${table}[Night Amt])`, totals.nightAmt, MONEY_STYLE)
+    + f('S', `SUBTOTAL(109,${table}[Meal Allowance])`, totals.meal, MONEY_STYLE)
+    + f('T', `SUBTOTAL(109,${table}[Transport])`, totals.transport, MONEY_STYLE)
+    + f('U', `SUBTOTAL(109,${table}[Site Allowance])`, totals.site, MONEY_STYLE)
+    + f('V', `SUBTOTAL(109,${table}[TCM Meal])`, totals.tcmMeal, MONEY_STYLE)
+    + f('W', `SUBTOTAL(109,${table}[TCM TRANSPORT])`, totals.tcmTransport, MONEY_STYLE)
+    + `<c r="X${rowNum}" s="${MONEY_STYLE}"/>`
+    + f('Y', `SUBTOTAL(109,${table}[Total Earnings])`, totals.totalEarnings, MONEY_STYLE)
+    + f('Z', `SUBTOTAL(109,${table}[WHT])`, totals.wht, MONEY_STYLE)
+    + f('AA', `SUBTOTAL(109,${table}[Gross Salary])`, totals.totalEarnings, MONEY_STYLE)
+    + f('AB', `SUBTOTAL(109,${table}[Net Pay])`, totals.netPay, MONEY_STYLE)
+  }</row>`;
+};
+
+const buildDlpcDataRow = (rowNum: number, row: DetailRow) =>
+  `<row r="${rowNum}" spans="1:25" x14ac:dyDescent="0.25">${
+    [
+      cellXml(`A${rowNum}`, row.code),
+      cellXml(`B${rowNum}`, row.firstName),
+      cellXml(`C${rowNum}`, row.lastName),
+      cellXml(`D${rowNum}`, row.jobTitle),
+      cellXml(`E${rowNum}`, row.dailyRate || null, row.dailyRate ? MONEY_STYLE : undefined),
+      cellXml(`F${rowNum}`, row.age || null),
+      cellXml(`G${rowNum}`, row.gender || null),
+      cellXml(`H${rowNum}`, row.weekDays || null),
+      cellXml(`I${rowNum}`, row.weekdayOvtHrs || null),
+      cellXml(`J${rowNum}`, row.satHrs || null),
+      cellXml(`K${rowNum}`, row.sunHrs || null),
+      cellXml(`L${rowNum}`, row.phHrs || null),
+      cellXml(`M${rowNum}`, row.nightDays || null),
+      cellXml(`N${rowNum}`, row.wkdEarning || null, row.wkdEarning ? MONEY_STYLE : undefined),
+      cellXml(`O${rowNum}`, row.wkdOvtAmt || null, row.wkdOvtAmt ? MONEY_STYLE : undefined),
+      cellXml(`P${rowNum}`, row.satAmt || null, row.satAmt ? MONEY_STYLE : undefined),
+      cellXml(`Q${rowNum}`, row.sunAmt || null, row.sunAmt ? MONEY_STYLE : undefined),
+      cellXml(`R${rowNum}`, row.phAmt || null, row.phAmt ? MONEY_STYLE : undefined),
+      cellXml(`S${rowNum}`, row.nightAmt || null, row.nightAmt ? MONEY_STYLE : undefined),
+      cellXml(`T${rowNum}`, row.meal || null, row.meal ? MONEY_STYLE : undefined),
+      cellXml(`U${rowNum}`, row.transport || null, row.transport ? MONEY_STYLE : undefined),
+      cellXml(`V${rowNum}`, row.totalEarnings || null, row.totalEarnings ? MONEY_STYLE : undefined),
+      cellXml(`W${rowNum}`, row.wht || null, row.wht ? MONEY_STYLE : undefined),
+      cellXml(`X${rowNum}`, row.totalEarnings || null, row.totalEarnings ? MONEY_STYLE : undefined),
+      cellXml(`Y${rowNum}`, row.netPay || null, row.netPay ? MONEY_STYLE : undefined),
+    ].join('')
+  }</row>`;
+
+const buildDlpcTotalsRow = (rowNum: number, totals: ReturnType<typeof sumDetailRows>) => {
+  const table = 'Table52';
+  const f = (col: string, formula: string, value: number, style?: string) =>
+    cellXmlFormula(`${col}${rowNum}`, formula, value, style);
+  return `<row r="${rowNum}" spans="1:25" x14ac:dyDescent="0.25">${
+    f('A', `SUBTOTAL(103,${table}[Emp. Code])`, totals.count)
+    + f('E', `SUBTOTAL(109,${table}[Daily Rate])`, totals.dailyRate, MONEY_STYLE)
+    + f('H', `SUBTOTAL(109,${table}[Total Weekday])`, totals.weekDays)
+    + f('I', `SUBTOTAL(109,${table}[Weekday OVT])`, totals.weekdayOvtHrs)
+    + f('J', `SUBTOTAL(109,${table}[Total Saturday])`, totals.satHrs)
+    + f('N', `SUBTOTAL(109,${table}[Wkd Earning])`, totals.wkdEarning, MONEY_STYLE)
+    + f('O', `SUBTOTAL(109,${table}[Wkd Ovt Amt])`, totals.wkdOvtAmt, MONEY_STYLE)
+    + f('P', `SUBTOTAL(109,${table}[Sat Ovt Amt])`, totals.satAmt, MONEY_STYLE)
+    + f('Q', `SUBTOTAL(109,${table}[Sun Ovt Amt])`, totals.sunAmt, MONEY_STYLE)
+    + f('R', `SUBTOTAL(109,${table}[PH Amt])`, totals.phAmt, MONEY_STYLE)
+    + f('S', `SUBTOTAL(109,${table}[Night Amt])`, totals.nightAmt, MONEY_STYLE)
+    + f('T', `SUBTOTAL(109,${table}[Meal Allowance])`, totals.meal, MONEY_STYLE)
+    + f('U', `SUBTOTAL(109,${table}[Transport])`, totals.transport, MONEY_STYLE)
+    + f('V', `SUBTOTAL(109,${table}[Total Earnings])`, totals.totalEarnings, MONEY_STYLE)
+    + f('W', `SUBTOTAL(109,${table}[WHT])`, totals.wht, MONEY_STYLE)
+    + f('X', `SUBTOTAL(109,${table}[Gross Salary])`, totals.totalEarnings, MONEY_STYLE)
+    + f('Y', `SUBTOTAL(109,${table}[Net Pay])`, totals.netPay, MONEY_STYLE)
+  }</row>`;
+};
+
+const buildDleBankDataRow = (rowNum: number, row: DetailRow) =>
+  `<row r="${rowNum}" spans="1:6" ht="13.5" customHeight="1" x14ac:dyDescent="0.25">${
+    cellXml(`A${rowNum}`, row.code, '15')
+    + cellXml(`B${rowNum}`, `${row.lastName} ${row.firstName}`.trim(), '15')
+    + cellXml(`C${rowNum}`, row.bankName, '15')
+    + cellXml(`D${rowNum}`, row.accountNo, '15')
+    + cellXml(`E${rowNum}`, row.sortCode, '15')
+    + cellXmlFormula(
+      `F${rowNum}`,
+      '_xlfn.XLOOKUP(Table13[[#This Row],[Employee Code]],DLE!A:A,DLE!AB:AB)',
+      row.netPay,
+      '16',
+    )
+  }</row>`;
+
+const buildDlpcBankDataRow = (rowNum: number, row: DetailRow) =>
+  `<row r="${rowNum}" spans="1:7" ht="12.75" customHeight="1" x14ac:dyDescent="0.25">${
+    cellXml(`A${rowNum}`, row.code, '4')
+    + cellXml(`B${rowNum}`, `${row.lastName} ${row.firstName}`.trim(), '4')
+    + cellXml(`C${rowNum}`, row.bankName, '4')
+    + cellXml(`D${rowNum}`, row.accountNo, '4')
+    + cellXml(`E${rowNum}`, row.sortCode, '4')
+    + cellXmlFormula(
+      `F${rowNum}`,
+      '_xlfn.XLOOKUP(Table146[[#This Row],[Employee Code]],Table52[Emp. Code],Table52[Net Pay])',
+      row.netPay,
+      '5',
+    )
+    + cellXml(`G${rowNum}`, row.location, '4')
+  }</row>`;
+
+const buildBankTotalsRow = (
+  rowNum: number,
+  tableName: string,
+  totals: { count: number; netPay: number },
+  netStyle = '5',
+) =>
+  `<row r="${rowNum}" spans="1:7" ht="15.6" customHeight="1" x14ac:dyDescent="0.25">${
+    cellXmlFormula(`A${rowNum}`, `SUBTOTAL(103,${tableName}[Employee Code])`, totals.count, '6')
+    + `<c r="B${rowNum}" s="6"/><c r="C${rowNum}" s="6"/><c r="D${rowNum}" s="6"/><c r="E${rowNum}" s="6"/>`
+    + cellXmlFormula(`F${rowNum}`, `SUBTOTAL(109,${tableName}[NET Salary])`, totals.netPay, netStyle)
+  }</row>`;
+
+const fillDetailTableSheet = (
+  templateSheetXml: string,
+  rows: DetailRow[],
+  lastCol: string,
+  buildDataRow: (rowNum: number, row: DetailRow) => string,
+  buildTotalsRow: (rowNum: number, totals: ReturnType<typeof sumDetailRows>) => string,
+) => {
+  const headerRow = extractSheetRow(templateSheetXml, 1);
+  const dataStart = 2;
+  const totals = sumDetailRows(rows);
+  const dataInner = rows.map((row, index) => buildDataRow(dataStart + index, row)).join('');
+  const totalRowNum = Math.max(dataStart, dataStart + rows.length);
+  const totalsRow = buildTotalsRow(totalRowNum, totals);
+  const inner = `${headerRow}${dataInner}${totalsRow}`;
+  const dimension = `A1:${lastCol}${totalRowNum}`;
+  return { sheetXml: replaceSheetData(templateSheetXml, inner, dimension), totalRowNum, totals };
+};
+
+const fillBankTableSheet = (
+  templateSheetXml: string,
+  rows: DetailRow[],
+  tableName: string,
+  buildDataRow: (rowNum: number, row: DetailRow) => string,
+  lastCol: string,
+) => {
+  const preserved = [1, 2].map((rowNum) => extractSheetRow(templateSheetXml, rowNum)).join('');
+  const dataStart = 3;
+  const netTotal = roundMoney(rows.reduce((sum, row) => sum + row.netPay, 0));
+  const dataInner = rows.map((row, index) => buildDataRow(dataStart + index, row)).join('');
+  const totalRowNum = Math.max(dataStart, dataStart + rows.length);
+  const totalsRow = buildBankTotalsRow(totalRowNum, tableName, { count: rows.length, netPay: netTotal });
+  const inner = `${preserved}${dataInner}${totalsRow}`;
+  const dimension = `A1:${lastCol}${totalRowNum}`;
+  return { sheetXml: replaceSheetData(templateSheetXml, inner, dimension), totalRowNum, netTotal };
+};
+
+const fillSummarySheet = (templateSheetXml: string, title: string) => {
+  const titleRow = `<row r="1" spans="1:4" x14ac:dyDescent="0.25"><c r="A1" s="18" t="inlineStr"><is><t>${escapeXml(title)}</t></is></c></row>`;
+  const body = [3, 4, 5, 6].map((rowNum) => extractSheetRow(templateSheetXml, rowNum)).join('');
+  return replaceSheetData(templateSheetXml, `${titleRow}${body}`, 'A1:D6');
 };
 
 const replaceSheetData = (sheetXml: string, sheetDataInner: string, dimension: string) => {
@@ -410,21 +643,6 @@ const buildDetailRows = async (
   return { dle, dlpc };
 };
 
-const DLE_HEADERS = [
-  'Emp. Code', 'First Name', 'Last Name', 'Job Title', 'Location', 'Daily Rate', 'AGE', 'Gender',
-  'Total Weekday', 'Weekday OVT', 'Total Saturday', 'Total Sunday', 'Night Worked',
-  'Wkd Earning', 'Wkd Ovt Amt', 'Sat Ovt Amt', 'Sun Ovt Amt', 'Night Amt',
-  'Meal Allowance', 'Transport', 'Site Allowance', 'TCM Meal', 'TCM TRANSPORT', 'Arrears',
-  'Total Earnings', 'WHT', 'Gross Salary', 'Net Pay',
-];
-
-const DLPC_HEADERS = [
-  'Emp. Code', 'First Name', 'Last Name', 'Job Title', 'Daily Rate', 'Age', 'Gender',
-  'Total Weekday', 'Weekday OVT', 'Total Saturday', 'Total Sunday', 'Public Holiday', 'Night Worked',
-  'Wkd Earning', 'Wkd Ovt Amt', 'Sat Ovt Amt', 'Sun Ovt Amt', 'PH Amt', 'Night Amt',
-  'Meal Allowance', 'Transport', 'Total Earnings', 'WHT', 'Gross Salary', 'Net Pay',
-];
-
 export const buildDayratePaymentScheduleXlsx = async (input: {
   period: string;
   periodLabel?: string;
@@ -437,68 +655,70 @@ export const buildDayratePaymentScheduleXlsx = async (input: {
   const { dle, dlpc } = await buildDetailRows(input.records, input.period, input.directoryEmployees || []);
   const title = scheduleTitleForSheet(input.period, input.periodLabel);
 
-  const summaryInner = [
-    rowXml(1, [title]),
-    rowXml(3, ['COMPANY', 'HEADCOUNT', 'GROSS PAY', 'NET PAY']),
-    rowXml(4, ['DLE', dle.length, roundMoney(dle.reduce((s, r) => s + r.totalEarnings, 0)), roundMoney(dle.reduce((s, r) => s + r.netPay, 0))]),
-    rowXml(5, ['DLPC', dlpc.length, roundMoney(dlpc.reduce((s, r) => s + r.totalEarnings, 0)), roundMoney(dlpc.reduce((s, r) => s + r.netPay, 0))]),
-    rowXml(6, [
-      'Total',
-      dle.length + dlpc.length,
-      roundMoney([...dle, ...dlpc].reduce((s, r) => s + r.totalEarnings, 0)),
-      roundMoney([...dle, ...dlpc].reduce((s, r) => s + r.netPay, 0)),
-    ]),
-  ].join('');
+  const sheet1Template = entries.get('xl/worksheets/sheet1.xml')?.toString('utf8') || '';
+  const sheet2Template = entries.get('xl/worksheets/sheet2.xml')?.toString('utf8') || '';
+  const sheet3Template = entries.get('xl/worksheets/sheet3.xml')?.toString('utf8') || '';
+  const sheet4Template = entries.get('xl/worksheets/sheet4.xml')?.toString('utf8') || '';
+  const sheet5Template = entries.get('xl/worksheets/sheet5.xml')?.toString('utf8') || '';
 
-  const dleInner = [
-    rowXml(1, DLE_HEADERS),
-    ...dle.map((row, index) => rowXml(index + 2, [
-      row.code, row.firstName, row.lastName, row.jobTitle, row.location, row.dailyRate, row.age, row.gender,
-      row.weekDays, row.weekdayOvtHrs, row.satHrs, row.sunHrs, row.nightDays,
-      row.wkdEarning, row.wkdOvtAmt, row.satAmt, row.sunAmt, row.nightAmt,
-      row.meal, row.transport || '', row.site || '', row.tcmMeal || '', row.tcmTransport || '', row.arrears || '',
-      row.totalEarnings, row.wht, row.totalEarnings, row.netPay,
-    ])),
-  ].join('');
+  if (sheet1Template) {
+    entries.set('xl/worksheets/sheet1.xml', Buffer.from(fillSummarySheet(sheet1Template, title), 'utf8'));
+  }
 
-  const dlpcInner = [
-    rowXml(1, DLPC_HEADERS),
-    ...dlpc.map((row, index) => rowXml(index + 2, [
-      row.code, row.firstName, row.lastName, row.jobTitle, row.dailyRate, row.age, row.gender,
-      row.weekDays, row.weekdayOvtHrs, row.satHrs, row.sunHrs, row.phHrs, row.nightDays,
-      row.wkdEarning, row.wkdOvtAmt, row.satAmt, row.sunAmt, row.phAmt, row.nightAmt,
-      row.meal, row.transport, row.totalEarnings, row.wht, row.totalEarnings, row.netPay,
-    ])),
-  ].join('');
+  const dleFilled = sheet2Template
+    ? fillDetailTableSheet(sheet2Template, dle, 'AB', buildDleDataRow, buildDleTotalsRow)
+    : null;
+  if (dleFilled) {
+    entries.set('xl/worksheets/sheet2.xml', Buffer.from(dleFilled.sheetXml, 'utf8'));
+    const table2 = entries.get('xl/tables/table2.xml')?.toString('utf8');
+    if (table2) {
+      entries.set(
+        'xl/tables/table2.xml',
+        Buffer.from(patchTableXml(table2, `A1:AB${dleFilled.totalRowNum}`, `A1:AB${Math.max(1, dleFilled.totalRowNum - 1)}`), 'utf8'),
+      );
+    }
+  }
 
-  const dleBankInner = [
-    rowXml(1, ['Employee Bank Details']),
-    rowXml(2, ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary']),
-    ...dle.map((row, index) => rowXml(index + 3, [
-      row.code, `${row.lastName} ${row.firstName}`.trim(), row.bankName, row.accountNo, row.sortCode, row.netPay,
-    ])),
-  ].join('');
+  const dlpcFilled = sheet3Template
+    ? fillDetailTableSheet(sheet3Template, dlpc, 'Y', buildDlpcDataRow, buildDlpcTotalsRow)
+    : null;
+  if (dlpcFilled) {
+    entries.set('xl/worksheets/sheet3.xml', Buffer.from(dlpcFilled.sheetXml, 'utf8'));
+    const table3 = entries.get('xl/tables/table3.xml')?.toString('utf8');
+    if (table3) {
+      entries.set(
+        'xl/tables/table3.xml',
+        Buffer.from(patchTableXml(table3, `A1:Y${dlpcFilled.totalRowNum}`, `A1:Y${Math.max(1, dlpcFilled.totalRowNum - 1)}`), 'utf8'),
+      );
+    }
+  }
 
-  const dlpcBankInner = [
-    rowXml(1, ['Employee Bank Details']),
-    rowXml(2, ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location']),
-    ...dlpc.map((row, index) => rowXml(index + 3, [
-      row.code, `${row.lastName} ${row.firstName}`.trim(), row.bankName, row.accountNo, row.sortCode, row.netPay, row.location,
-    ])),
-  ].join('');
+  const dleBankFilled = sheet4Template
+    ? fillBankTableSheet(sheet4Template, dle, 'Table13', buildDleBankDataRow, 'F')
+    : null;
+  if (dleBankFilled) {
+    entries.set('xl/worksheets/sheet4.xml', Buffer.from(dleBankFilled.sheetXml, 'utf8'));
+    const table4 = entries.get('xl/tables/table4.xml')?.toString('utf8');
+    if (table4) {
+      entries.set(
+        'xl/tables/table4.xml',
+        Buffer.from(patchTableXml(table4, `A2:F${dleBankFilled.totalRowNum}`, `A2:F${Math.max(2, dleBankFilled.totalRowNum - 1)}`), 'utf8'),
+      );
+    }
+  }
 
-  const sheetMap = [
-    { path: 'xl/worksheets/sheet1.xml', inner: summaryInner, dimension: 'A1:D6' },
-    { path: 'xl/worksheets/sheet2.xml', inner: dleInner, dimension: `A1:AB${Math.max(2, dle.length + 1)}` },
-    { path: 'xl/worksheets/sheet3.xml', inner: dlpcInner, dimension: `A1:Y${Math.max(2, dlpc.length + 1)}` },
-    { path: 'xl/worksheets/sheet4.xml', inner: dleBankInner, dimension: `A1:F${Math.max(3, dle.length + 2)}` },
-    { path: 'xl/worksheets/sheet5.xml', inner: dlpcBankInner, dimension: `A1:G${Math.max(3, dlpc.length + 2)}` },
-  ];
-
-  for (const sheet of sheetMap) {
-    const current = entries.get(sheet.path);
-    if (!current) continue;
-    entries.set(sheet.path, Buffer.from(replaceSheetData(current.toString('utf8'), sheet.inner, sheet.dimension), 'utf8'));
+  const dlpcBankFilled = sheet5Template
+    ? fillBankTableSheet(sheet5Template, dlpc, 'Table146', buildDlpcBankDataRow, 'G')
+    : null;
+  if (dlpcBankFilled) {
+    entries.set('xl/worksheets/sheet5.xml', Buffer.from(dlpcBankFilled.sheetXml, 'utf8'));
+    const table5 = entries.get('xl/tables/table5.xml')?.toString('utf8');
+    if (table5) {
+      entries.set(
+        'xl/tables/table5.xml',
+        Buffer.from(patchTableXml(table5, `A2:G${dlpcBankFilled.totalRowNum}`, `A2:G${Math.max(2, dlpcBankFilled.totalRowNum - 1)}`), 'utf8'),
+      );
+    }
   }
 
   // Drop cached formula chain so Excel recalculates cleanly after data rewrite.
