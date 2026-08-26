@@ -281,7 +281,8 @@ const mapPayrollLines = (lines: PayrollEarningLine[]): SagePayeEarningLine[] =>
     taxable: line.taxable,
   }));
 
-const calculatePermanentSplitPaye = (input: {
+/** Fixed + variable PAYE split (permanent and lumpsum). */
+const calculateFixedVariableSplitPaye = (input: {
   earningLines: SagePayeEarningLine[];
   employee: DleEmployeeDirectoryRow;
   category: string;
@@ -291,7 +292,7 @@ const calculatePermanentSplitPaye = (input: {
   additionalEmployeePensionMonthly?: number;
 }) => {
   const payeLines = input.earningLines.filter((line) => !isSagePayeRefundEarning(line.code, line.name));
-  const { fixed, variable } = splitEarningLinesForPaye(payeLines);
+  const { fixed, variable } = splitEarningLinesForPaye(payeLines, { category: input.category });
   const fixedTaxable = payeTaxableFromEarningLines(
     fixed,
     input.category,
@@ -324,8 +325,8 @@ const calculatePermanentSplitPaye = (input: {
     additionalEmployeePensionMonthly: input.additionalEmployeePensionMonthly,
     taxBasis: 'annualized',
   });
-  // Variable (leave, overtime, etc.): tax once at marginal rate after fixed annual chargeable
-  // has consumed lower bands — do not restart at the 0% band (matches Sage).
+  // Variable (leave, overtime, other added earnings): tax once at marginal rate after fixed
+  // annual chargeable has consumed lower bands — do not annualize these lines.
   const priorAnnualChargeable = annualChargeableFromMonthly({
     monthlyTaxable: fixedTaxable,
     monthlyBht,
@@ -426,15 +427,15 @@ export const hrisPayeFromEmployee = (input: {
     ? { ...effectiveRules, usdFlatRate: undefined, monthlyPayeOverride: undefined }
     : effectiveRules;
 
-  if (category === 'permanent') {
-    return calculatePermanentSplitPaye({
+  if (category === 'permanent' || category === 'lumpsum') {
+    return calculateFixedVariableSplitPaye({
       earningLines,
       employee: input.employee,
       category,
       salaryGrade: String(salaryGrade || ''),
       effectiveRules: ngnRules,
-      nhfApplicable: input.nhfApplicable,
-      additionalEmployeePensionMonthly: additionalPension,
+      nhfApplicable: category === 'permanent' ? input.nhfApplicable : false,
+      additionalEmployeePensionMonthly: category === 'permanent' ? additionalPension : 0,
     });
   }
 
