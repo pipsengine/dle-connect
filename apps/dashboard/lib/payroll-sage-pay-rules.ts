@@ -281,7 +281,10 @@ const mapPayrollLines = (lines: PayrollEarningLine[]): SagePayeEarningLine[] =>
     taxable: line.taxable,
   }));
 
-/** Fixed + variable PAYE split (permanent and lumpsum). */
+/** Fixed + variable PAYE split (permanent and lumpsum).
+ * Fixed package is annualized (×12). Variable earnings (OT, etc.) are added once
+ * to that annual taxable amount, then bands apply and the result is ÷12 for monthly PAYE.
+ */
 const calculateFixedVariableSplitPaye = (input: {
   earningLines: SagePayeEarningLine[];
   employee: DleEmployeeDirectoryRow;
@@ -315,7 +318,21 @@ const calculateFixedVariableSplitPaye = (input: {
     input.category === 'permanent' && !input.effectiveRules?.disablePensionPayeRelief;
   const monthlyBht = bhtFromEarningLines(fixed);
   const monthlyBasic = basicFromEarningLines(fixed);
-  const fixedPaye = calculatePayeWithReliefs({
+  const statutoryPensionMonthly = roundMoney(monthlyBht * 0.08);
+  const additionalPensionMonthly = Math.max(0, Number(input.additionalEmployeePensionMonthly || 0));
+  const annualPension = includePensionRelief
+    ? roundMoney((statutoryPensionMonthly + additionalPensionMonthly) * 12)
+    : 0;
+  const annualNhf = input.nhfApplicable ? roundMoney(monthlyBasic * 0.025 * 12) : 0;
+
+  // Annualize fixed package only; add variable earnings once (do not ×12 OT / other adds).
+  const annualTaxable = roundMoney(Math.max(0, fixedTaxable) * 12 + Math.max(0, variableTaxable));
+  const chargeable = roundMoney(Math.max(0, annualTaxable - annualPension - annualNhf - Math.max(0, rentRelief)));
+  const annualPaye = taxChargeableAgainstBands(chargeable, clonePayeBands());
+  const paye = roundMoney(annualPaye / 12);
+
+  // Reporting split: fixed-only annualized PAYE vs remainder attributable to variable adds.
+  const fixedOnlyChargeable = annualChargeableFromMonthly({
     monthlyTaxable: fixedTaxable,
     monthlyBht,
     monthlyBasic,
@@ -323,29 +340,12 @@ const calculateFixedVariableSplitPaye = (input: {
     rentRelief,
     includePensionRelief,
     additionalEmployeePensionMonthly: input.additionalEmployeePensionMonthly,
-    taxBasis: 'annualized',
   });
-  // Variable (leave, overtime, other added earnings): tax once at marginal rate after fixed
-  // annual chargeable has consumed lower bands — do not annualize these lines.
-  const priorAnnualChargeable = annualChargeableFromMonthly({
-    monthlyTaxable: fixedTaxable,
-    monthlyBht,
-    monthlyBasic,
-    nhfApplicable: input.nhfApplicable,
-    rentRelief,
-    includePensionRelief,
-    additionalEmployeePensionMonthly: input.additionalEmployeePensionMonthly,
-  });
-  const variablePaye =
-    variableTaxable > 0
-      ? calculateVariablePayeOnMarginalBands({
-          priorAnnualChargeable,
-          variableMonthlyTaxable: variableTaxable,
-        })
-      : 0;
+  const fixedPaye = roundMoney(taxChargeableAgainstBands(fixedOnlyChargeable, clonePayeBands()) / 12);
+  const variablePaye = roundMoney(Math.max(0, paye - fixedPaye));
 
   return {
-    paye: roundMoney(fixedPaye + variablePaye),
+    paye,
     monthlyTaxable: roundMoney(fixedTaxable + variableTaxable),
     fixedTaxable,
     variableTaxable,
