@@ -253,43 +253,44 @@ const normalizeEmployeeCodeForPrefix = (employeeCode: string, prefix: string) =>
   return code;
 };
 
-const isUniqueEmployeeId = async (employeeId: string) => {
+const isUniqueEmployeeId = async (employeeId: string, excludeDraftId?: string | null) => {
   if (!employeeId) return true;
   if (storeOverrides.has(employeeId)) return false;
   for (const d of storeDrafts.values()) {
+    if (excludeDraftId && d.draftId === excludeDraftId) continue;
     const e = normalizeEmployeeId(d.draft?.employment?.employeeId);
     if (e && e === employeeId) return false;
   }
-  const issuedInDb = await isEmployeeCodeAlreadyIssuedInDb(employeeId).catch(() => false);
+  const issuedInDb = await isEmployeeCodeAlreadyIssuedInDb(employeeId, { excludeDraftId }).catch(() => false);
   return !issuedInDb;
 };
 
-const finalizeEmployeeId = async (draft: EmployeeDraftPayload) => {
+const finalizeEmployeeId = async (draft: EmployeeDraftPayload, draftId?: string | null) => {
   const employeeType = draft.employment?.employmentType;
   const prefix = employeeTypePrefix(employeeType);
   if (!prefix) throw new Error('Employee Type must be Permanent, Lumpsum, Daily Rate, NYSC, IT, Intern, or Industrial Trainee');
 
   // If the draft already carries a valid employeeId (matching the expected prefix, not empty, and globally
-  // unique across Employees + non-cancelled Drafts), RESPECT IT (used by ?employeeCode=C2827 shortcut and
-  // by resume-edit flows that need to keep an already-reserved code).
+  // unique across Employees + other non-cancelled Drafts), RESPECT IT. Exclude this draft so its own
+  // reserved preview code is not treated as a collision.
   const existingCode = normalizeEmployeeId(draft.employment?.employeeId);
   if (existingCode && existingCode.startsWith(prefix)) {
-    const unique = await isUniqueEmployeeId(existingCode);
+    const unique = await isUniqueEmployeeId(existingCode, draftId);
     if (unique) return existingCode;
   }
 
-  const dbEmployeeCode = await nextEmployeeCodeFromDb(employeeType);
+  const dbEmployeeCode = await nextEmployeeCodeFromDb(employeeType, { excludeDraftId: draftId });
   if (dbEmployeeCode) {
     const normalized = normalizeEmployeeCodeForPrefix(dbEmployeeCode, prefix);
     if (normalized.startsWith(prefix)) {
-      const unique = await isUniqueEmployeeId(normalized);
+      const unique = await isUniqueEmployeeId(normalized, draftId);
       if (unique) return normalized;
     }
   }
   for (let i = 0; i < 1000; i++) {
     const n = nextSeq();
     const gen = `${prefix}${String(n).padStart(4, '0')}`;
-    if (await isUniqueEmployeeId(gen)) return gen;
+    if (await isUniqueEmployeeId(gen, draftId)) return gen;
   }
   throw new Error('Unable to allocate employee ID');
 };
@@ -761,7 +762,7 @@ export async function POST(request: Request) {
 
   let employeeId = '';
   try {
-    employeeId = await finalizeEmployeeId(draftRec.draft);
+    employeeId = await finalizeEmployeeId(draftRec.draft, draftId);
   } catch (error) {
     return jsonErr(409, error instanceof Error ? error.message : 'Unable to allocate employee code');
   }

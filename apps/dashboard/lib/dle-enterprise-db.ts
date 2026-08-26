@@ -1041,14 +1041,19 @@ export const findDuplicateEmployeesInDb = async (input: {
   }));
 };
 
-export const isEmployeeCodeAlreadyIssuedInDb = async (employeeCode: string): Promise<boolean> => {
+export const isEmployeeCodeAlreadyIssuedInDb = async (
+  employeeCode: string,
+  options?: { excludeDraftId?: string | null },
+): Promise<boolean> => {
   const code = upperTrim(employeeCode);
   if (!code) return true;
   const p = await pool();
   if (!p) return false;
+  const excludeDraftId = str(options?.excludeDraftId);
   const r = await p
     .request()
     .input('employee_code', sql.NVarChar(50), code)
+    .input('exclude_draft_id', sql.NVarChar(40), excludeDraftId || null)
     .query(`
       SELECT TOP (1) 1 AS issued
       FROM [hris].[Employees]
@@ -1058,7 +1063,8 @@ export const isEmployeeCodeAlreadyIssuedInDb = async (employeeCode: string): Pro
       FROM [hris].[EmployeeDrafts]
       WHERE UPPER(LTRIM(RTRIM(employee_code))) = @employee_code
         AND draft_status <> 'cancelled'
-        AND draft_status <> 'created';
+        AND draft_status <> 'created'
+        AND (@exclude_draft_id IS NULL OR draft_id <> @exclude_draft_id)
     `);
   return Boolean(r.recordset?.length && r.recordset[0]);
 };
@@ -2076,11 +2082,15 @@ export const importSagePayrollEmployeesToDb = async (employees: SagePayrollEmplo
   };
 };
 
-export const previewNextEmployeeCodeFromDb = async (employeeType: string) => {
+export const previewNextEmployeeCodeFromDb = async (
+  employeeType: string,
+  options?: { excludeDraftId?: string | null },
+) => {
   const code = employeeTypeCode(employeeType);
   if (!code) return null;
   const p = await pool();
   if (!p) return null;
+  const excludeDraftId = str(options?.excludeDraftId);
 
   const formatNext = (prefix: string, latest: number) => {
     const next = Math.max(0, latest) + 1;
@@ -2094,6 +2104,7 @@ export const previewNextEmployeeCodeFromDb = async (employeeType: string) => {
       .request()
       .input('type_code', sql.Char(1), code)
       .input('employee_code_prefix', sql.NVarChar(10), employeeCodePrefix)
+      .input('exclude_draft_id', sql.NVarChar(40), excludeDraftId || null)
       .query(`
         SELECT
           ISNULL((
@@ -2124,6 +2135,7 @@ export const previewNextEmployeeCodeFromDb = async (employeeType: string) => {
                 WHERE employee_code IS NOT NULL
                   AND draft_status <> 'cancelled'
                   AND draft_status <> 'created'
+                  AND (@exclude_draft_id IS NULL OR draft_id <> @exclude_draft_id)
                   AND (
                     UPPER(LTRIM(RTRIM(employee_code))) LIKE @employee_code_prefix + '[0-9]%'
                     OR UPPER(LTRIM(RTRIM(employee_code))) LIKE 'P' + @employee_code_prefix + '[0-9]%'
@@ -2139,13 +2151,14 @@ export const previewNextEmployeeCodeFromDb = async (employeeType: string) => {
     const row = rs.recordset[0];
     const latestEmployee = Number(row?.latest_employee || 0);
     const latestCounter = Number(row?.latest_counter || 0);
-    const latest = latestCounter > latestEmployee ? latestEmployee : Math.max(latestEmployee, latestCounter);
+    const latest = Math.max(latestEmployee, latestCounter);
     return formatNext(employeeCodePrefix, latest);
   }
 
   const rs = await p
     .request()
     .input('type_code', sql.Char(1), code)
+    .input('exclude_draft_id', sql.NVarChar(40), excludeDraftId || null)
     .query(`
       SELECT
         ISNULL((
@@ -2162,6 +2175,7 @@ export const previewNextEmployeeCodeFromDb = async (employeeType: string) => {
             WHERE employee_code IS NOT NULL
               AND draft_status <> 'cancelled'
               AND draft_status <> 'created'
+              AND (@exclude_draft_id IS NULL OR draft_id <> @exclude_draft_id)
               AND UPPER(LTRIM(RTRIM(employee_code))) LIKE @type_code + '[0-9]%'
               AND TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20)) IS NOT NULL
           ) codes
@@ -2175,12 +2189,15 @@ export const previewNextEmployeeCodeFromDb = async (employeeType: string) => {
   const row = rs.recordset[0];
   const latestEmployee = Number(row?.latest_employee || 0);
   const latestCounter = Number(row?.latest_counter || 0);
-  const latest = latestCounter > latestEmployee ? latestEmployee : Math.max(latestEmployee, latestCounter);
+  const latest = Math.max(latestEmployee, latestCounter);
   return formatNext(code, latest);
 };
 
-export const nextEmployeeCodeFromDb = async (employeeType: string) => {
-  const preview = await previewNextEmployeeCodeFromDb(employeeType);
+export const nextEmployeeCodeFromDb = async (
+  employeeType: string,
+  options?: { excludeDraftId?: string | null },
+) => {
+  const preview = await previewNextEmployeeCodeFromDb(employeeType, options);
   if (!preview) return null;
   const typeCode = employeeTypeCode(employeeType);
   if (!typeCode) return preview;
@@ -2331,10 +2348,12 @@ export const renameEmployeeCodeInDb = async (input: {
           )
           WHERE employee_id = @employeeId;
 
-        IF EXISTS (SELECT * FROM [hris].[EmployeeDrafts] WHERE created_employee_code = @fromCode)
-          UPDATE [hris].[EmployeeDrafts]
-          SET created_employee_code = @toCode, modified_at = SYSUTCDATETIME()
-          WHERE created_employee_code = @fromCode;
+        UPDATE [hris].[EmployeeDrafts]
+        SET created_employee_code = CASE WHEN created_employee_code = @fromCode THEN @toCode ELSE created_employee_code END,
+            employee_code = CASE WHEN employee_code = @fromCode THEN @toCode ELSE employee_code END,
+            modified_at = SYSUTCDATETIME()
+        WHERE created_employee_code = @fromCode
+           OR employee_code = @fromCode;
       `);
 
     const counterPrefix = toCodeSan.replace(/[0-9-].*$/, '').toUpperCase();
@@ -2351,25 +2370,28 @@ export const renameEmployeeCodeInDb = async (input: {
         `);
       oldLMax = prefixRow.recordset[0]?.last_sequence ?? 0;
       const existingTypeName = prefixRow.recordset[0]?.employee_type_name || counterPrefixTypeName(counterPrefix);
-      const targetSequence = sequencePart;
-      if (!oldLMax || oldLMax < targetSequence || oldLMax > targetSequence + 5) {
-        await tx.request()
-          .input('typeCode', sql.NVarChar(10), counterPrefix)
-          .input('typeName', sql.NVarChar(40), existingTypeName)
-          .input('targetSequence', sql.Int, targetSequence)
-          .input('performer', sql.NVarChar(128), input.role || 'System')
-          .query(`
-            MERGE [hris].[EmployeeCodeCounters] AS target
-            USING (SELECT @typeCode AS employee_type_code, @typeName AS employee_type_name, @targetSequence AS last_sequence, @performer AS modified_by) AS source
-            ON target.employee_type_code = source.employee_type_code
-            WHEN MATCHED THEN UPDATE SET last_sequence = source.last_sequence, modified_at = SYSUTCDATETIME(), modified_by = source.modified_by
-            WHEN NOT MATCHED THEN INSERT (employee_type_code, employee_type_name, last_sequence, modified_at, modified_by)
-              VALUES (source.employee_type_code, source.employee_type_name, source.last_sequence, SYSUTCDATETIME(), source.modified_by);
-          `);
-        newLMax = targetSequence;
-      } else {
-        newLMax = oldLMax;
-      }
+      const maxLive = await tx.request()
+        .input('typeCode', sql.NVarChar(10), counterPrefix)
+        .query<{ max_seq: number }>(`
+          SELECT ISNULL(MAX(TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), LEN(@typeCode) + 1, 20))), 0) AS max_seq
+          FROM [hris].[Employees]
+          WHERE UPPER(LTRIM(RTRIM(employee_code))) LIKE @typeCode + '[0-9]%';
+        `);
+      const targetSequence = Math.max(sequencePart, Number(maxLive.recordset[0]?.max_seq || 0));
+      await tx.request()
+        .input('typeCode', sql.NVarChar(10), counterPrefix)
+        .input('typeName', sql.NVarChar(40), existingTypeName)
+        .input('targetSequence', sql.Int, targetSequence)
+        .input('performer', sql.NVarChar(128), input.role || 'System')
+        .query(`
+          MERGE [hris].[EmployeeCodeCounters] AS target
+          USING (SELECT @typeCode AS employee_type_code, @typeName AS employee_type_name, @targetSequence AS last_sequence, @performer AS modified_by) AS source
+          ON target.employee_type_code = source.employee_type_code
+          WHEN MATCHED THEN UPDATE SET last_sequence = source.last_sequence, modified_at = SYSUTCDATETIME(), modified_by = source.modified_by
+          WHEN NOT MATCHED THEN INSERT (employee_type_code, employee_type_name, last_sequence, modified_at, modified_by)
+            VALUES (source.employee_type_code, source.employee_type_name, source.last_sequence, SYSUTCDATETIME(), source.modified_by);
+        `);
+      newLMax = targetSequence;
     }
 
     try {
