@@ -54,17 +54,30 @@ const storedMonthlyGross = (lines: FlexiblePayrollLineDraft[]) =>
       .filter(Boolean) as StoredPayrollPackageLine[],
   );
 
+/** Strip display decorations like "DLE / NGN / MAIN" back to the payroll group code. */
+export const cleanPayrollGroupValue = (value: unknown) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return raw.split('/')[0].trim();
+};
+
 /** Align period salary, annual salary, and lumpsum earning lines before create or profile save. */
 export const normalizePayrollDraftBeforeSave = (
   payroll: PayrollSetupDraft,
   employment: PayrollEmploymentContext = {},
 ): PayrollSetupDraft => {
   const payCurrency = resolvePayrollDraftCurrency(payroll);
-  let next: PayrollSetupDraft = { ...payroll, payCurrency };
+  let next: PayrollSetupDraft = {
+    ...payroll,
+    payCurrency,
+    payrollGroup: cleanPayrollGroupValue(payroll.payrollGroup) || payroll.payrollGroup,
+  };
   let monthlyFromLines = storedMonthlyGross(next.earningLines || []);
   let periodSalary = Number(next.periodSalary || 0);
+  const employmentType = String(employment.employmentType || '').trim();
+  const isLumpsum = /lumpsum|lump\s*sum/i.test(employmentType);
 
-  if (employment.employmentType === 'Lumpsum') {
+  if (isLumpsum) {
     const contractTotal = Number(next.contractAmount || 0);
     if (!periodSalary && contractTotal > 0) {
       periodSalary = monthlyLumpsumFromContract(contractTotal, employment.contractStartDate, employment.contractEndDate);

@@ -13,6 +13,7 @@ import {
 } from '@/lib/dle-enterprise-db';
 import { payrollDataSourceInfo, readDirectoryEmployees, invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
 import { writePayrollEmployeeOption, invalidatePayrollEmployeeOptionsCache } from '@/lib/payroll-employee-options-store';
+import { invalidatePayrollCalculationCache } from '@/lib/payroll-calculation-service';
 import type { SagePayrollLineItem } from '@/lib/sage-payroll-line-parser';
 import {
   draftPayrollLineToStored,
@@ -774,7 +775,14 @@ export async function POST(request: Request) {
   const finalRatePerHour = ratePerHour > 0 ? roundMoney(ratePerHour) : null;
   const finalHoursPerDay = hoursPerDay > 0 ? roundMoney(hoursPerDay) : null;
   try {
-    await createEmployeeFromDraftInDb(draftId, employeeId, draftRec.draft, role, startOnboarding, {
+    await createEmployeeFromDraftInDb(draftId, employeeId, {
+      ...draftRec.draft,
+      payroll: {
+        ...draftRec.draft.payroll,
+        payrollGroup: String(draftRec.draft.payroll?.payrollGroup || '').split('/')[0].trim() || draftRec.draft.payroll?.payrollGroup,
+        payCurrency: String(draftRec.draft.payroll?.payCurrency || 'NGN').trim() || 'NGN',
+      },
+    }, role, startOnboarding, {
       sageEarningLinesJson,
       sageDeductionLinesJson,
       ratePerDay: finalRatePerDay,
@@ -792,7 +800,7 @@ export async function POST(request: Request) {
       nhfNumber: String(draftRec.draft.payroll?.nhfNumber || '').trim() || undefined,
       additionalEmployeePensionMonthly: additionalPensionMonthly && additionalPensionMonthly > 0 ? additionalPensionMonthly : undefined,
       annualRentRelief: annualRentRelief && annualRentRelief > 0 ? annualRentRelief : undefined,
-      payrollGroup: String(draftRec.draft.payroll?.payrollGroup || '').trim() || undefined,
+      payrollGroup: String(draftRec.draft.payroll?.payrollGroup || '').split('/')[0].trim() || undefined,
       salaryGrade: String(draftRec.draft.payroll?.salaryGrade || '').trim() || undefined,
       jobGrade: String(draftRec.draft.job?.jobGrade || '').trim() || undefined,
       healthInsurancePlan: String(draftRec.draft.payroll?.healthInsurancePlan || '').trim() || undefined,
@@ -804,6 +812,9 @@ export async function POST(request: Request) {
       hoursPerDay: finalHoursPerDay && finalHoursPerDay > 0 ? finalHoursPerDay : undefined,
       updatedBy: role,
     });
+    invalidatePayrollEmployeeCache();
+    invalidatePayrollEmployeeOptionsCache();
+    invalidatePayrollCalculationCache();
   } catch (error) {
     const friendly = await humanizeEmployeeCreateDbError(error);
     return jsonErr(409, friendly instanceof Error ? friendly.message : 'Unable to create employee in DLE_Enterprise');

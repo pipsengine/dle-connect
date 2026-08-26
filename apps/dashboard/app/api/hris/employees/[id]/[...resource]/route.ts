@@ -7,7 +7,7 @@ import {
   syncHrisEmployeeProfileToDb,
 } from '@/lib/dle-enterprise-db';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
-import { readDirectoryEmployees } from '@/lib/payroll-employee-source';
+import { readDirectoryEmployees, invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
 import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import { ensureEmployeeLeaveFromHris } from '@/lib/hris-leave-read';
 import { contractPayrollClassification, type ContractPayrollClassification } from '@/lib/payroll-employee-classification';
@@ -15,11 +15,13 @@ import { readEmployeeProfileExtensions } from '@/lib/employee-profile-extensions
 import {
   buildStoredPayrollLinesFromDrafts,
   enrichPayrollSummaryFromRow,
+  profileSummaryToSetupDraft,
+  setupDraftToProfileSummary,
   type ProfilePayrollSummary,
 } from '@/lib/payroll-profile-setup';
 import type { FlexiblePayrollLineDraft } from '@/lib/payroll-package-lines';
-import { sumMonthlyPackageGross } from '@/lib/payroll-package-lines';
-import { invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
+import { mergePayrollEarningLinesForSave, sumMonthlyPackageGross } from '@/lib/payroll-package-lines';
+import { cleanPayrollGroupValue } from '@/lib/payroll-draft-normalize';
 import { invalidatePayrollCalculationCache } from '@/lib/payroll-calculation-service';
 import { invalidatePayrollEmployeeOptionsCache } from '@/lib/payroll-employee-options-store';
 
@@ -2609,7 +2611,7 @@ const buildDbProfileRecord = (row: DleEmployeeDirectoryRow): EmployeeRecord => {
     accountNumberMasked: maskAccountNumber(row.accountNo),
     pensionProvider: valueOrNull(row.pensionProvider),
     taxId: valueOrNull(row.taxIdentificationNumber),
-    payrollGroup: [row.payrollGroup, row.payCurrency, row.paymentRun].filter(Boolean).join(' / ') || null,
+    payrollGroup: [row.payrollGroup].filter(Boolean).join(' / ') || null,
     lastPayrollProcessed: row.modifiedAt || row.createdAt || null,
     earningLines: [],
     deductionLines: [],
@@ -5466,24 +5468,44 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     }
     const earningLinesProvided = Array.isArray(body.earningLines);
     const deductionLinesProvided = Array.isArray(body.deductionLines);
-    const storedEarnings = buildStoredPayrollLinesFromDrafts(next.earningLines || [], true);
+    const employmentType = rec.profile.employmentType || rec.profile.employmentDetails?.employmentType || '';
+    const normalizedSummary = setupDraftToProfileSummary(
+      profileSummaryToSetupDraft(next, employmentType),
+      next,
+      employmentType,
+    );
+    Object.assign(next, normalizedSummary);
+    next.payrollGroup = cleanPayrollGroupValue(next.payrollGroup) || next.payrollGroup;
+    const editorEarnings = buildStoredPayrollLinesFromDrafts(next.earningLines || [], true);
+    const directory = await readDirectoryEmployees().catch(() => null);
+    const directoryRow = directory?.employees.find(
+      (row) => row.employeeCode.toLowerCase() === String(rec.profile.employeeId || '').toLowerCase()
+        || row.employeeId.toLowerCase() === String(rec.profile.employeeId || '').toLowerCase(),
+    );
+    const storedEarnings = (earningLinesProvided || editorEarnings.length)
+      ? mergePayrollEarningLinesForSave(directoryRow?.sagePayrollEarnings, editorEarnings)
+      : editorEarnings;
     const storedDeductions = buildStoredPayrollLinesFromDrafts(next.deductionLines || [], false);
     const monthlyGross = sumMonthlyPackageGross(storedEarnings);
+    const previousGross = Number(rec.payrollSummary?.monthlyPackageGross || rec.payrollSummary?.basicSalary || 0);
     const preservedPackageGross = monthlyGross > 0
       ? monthlyGross
-      : (next.monthlyPackageGross ?? next.basicSalary ?? rec.payrollSummary?.monthlyPackageGross ?? rec.payrollSummary?.basicSalary ?? null);
+      : (Number(next.monthlyPackageGross) > 0
+        ? Number(next.monthlyPackageGross)
+        : (Number(next.basicSalary) > 0 ? Number(next.basicSalary) : (previousGross > 0 ? previousGross : null)));
     if (monthlyGross > 0) {
       next.monthlyPackageGross = monthlyGross;
       if (!next.basicSalary) next.basicSalary = monthlyGross;
     } else if (preservedPackageGross != null) {
       next.monthlyPackageGross = preservedPackageGross;
     }
+    next.earningLines = next.earningLines || [];
     rec.payrollSummary = next;
     rec.audit.unshift(auditEntry('Updated payroll summary', role));
-    await syncHrisEmployeeProfileToDb({
+    const synced = await syncHrisEmployeeProfileToDb({
       employeeCode: rec.profile.employeeId,
       payrollSetup: {
-        payrollGroup: next.payrollGroup,
+        payrollGroup: cleanPayrollGroupValue(next.payrollGroup) || next.payrollGroup,
         salaryGrade: next.salaryGrade,
         payCurrency: next.payCurrency || 'NGN',
         periodSalary: preservedPackageGross,
@@ -5499,7 +5521,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         ratePerDay: next.ratePerDay,
         ratePerHour: next.ratePerHour,
         hoursPerDay: next.hoursPerDay,
-        ...(earningLinesProvided ? {
+        ...(earningLinesProvided || storedEarnings.length ? {
           sageEarningLinesJson: JSON.stringify(storedEarnings),
           replaceSageEarningLinesJson: 1,
         } : {}),
@@ -5509,14 +5531,14 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         } : {}),
         setupAssignedToPayroll: next.setupAssignedToPayroll === false ? 0 : 1,
       },
-    }).then((synced) => {
-      if (synced) {
-        invalidateHrisEmployeeCaches();
-        invalidatePayrollEmployeeCache();
-        invalidatePayrollEmployeeOptionsCache();
-        invalidatePayrollCalculationCache();
-      }
     });
+    if (!synced) {
+      return jsonErr(503, 'Payroll details could not be saved to the HRIS database. Check database connectivity and try again.');
+    }
+    invalidateHrisEmployeeCaches();
+    invalidatePayrollEmployeeCache();
+    invalidatePayrollEmployeeOptionsCache();
+    invalidatePayrollCalculationCache();
     return jsonOk(sanitizePayrollForRole(rec.payrollSummary, perms));
   }
 

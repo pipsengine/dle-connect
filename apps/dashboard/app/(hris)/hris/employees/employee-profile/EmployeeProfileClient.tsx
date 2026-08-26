@@ -2796,7 +2796,7 @@ export default function EmployeeProfileClient({
                         ) : (
                           <PayrollSetupStep
                             payroll={profileSummaryToSetupDraft(payrollDraft, profileData.employmentType || '')}
-                            onChange={(draft) => setPayrollDraft(setupDraftToProfileSummary(draft, payrollDraft))}
+                            onChange={(draft) => setPayrollDraft(setupDraftToProfileSummary(draft, payrollDraft, profileData.employmentType || ''))}
                             options={{
                               payrollGroups: payrollFormOptions?.payrollGroups || [],
                               banks: payrollFormOptions?.banks || [],

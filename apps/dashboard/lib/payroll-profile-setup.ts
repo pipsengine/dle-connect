@@ -132,8 +132,12 @@ export const profileSummaryToSetupDraft = (summary: ProfilePayrollSummary, emplo
   contractAmount: '',
 });
 
-export const setupDraftToProfileSummary = (draft: PayrollSetupDraft, previous: ProfilePayrollSummary): ProfilePayrollSummary => {
-  const normalized = normalizePayrollDraftBeforeSave(draft);
+export const setupDraftToProfileSummary = (
+  draft: PayrollSetupDraft,
+  previous: ProfilePayrollSummary,
+  employmentType = '',
+): ProfilePayrollSummary => {
+  const normalized = normalizePayrollDraftBeforeSave(draft, { employmentType });
   const storedEarnings = buildStoredPayrollLinesFromDrafts(normalized.earningLines, true);
   const storedDeductions = buildStoredPayrollLinesFromDrafts(normalized.deductionLines, false);
   const monthlyFromLines = sumMonthlyPackageGross(storedEarnings);

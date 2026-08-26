@@ -167,3 +167,41 @@ export const hasFullHrisPackageSetup = (
   const hrisLines = hrisConfiguredPayrollLines(employee.sagePayrollEarnings);
   return hrisLines.some((line) => isStructuralPayrollPackageCode(line.code));
 };
+
+export const hasLegacyStructuralPackageLines = (
+  employee: { sagePayrollEarnings?: SagePayrollLineItem[] | null },
+) =>
+  (employee.sagePayrollEarnings || []).some(
+    (line) => isStructuralPayrollPackageCode(line.code) && !isHrisConfiguredPayrollLine(line),
+  );
+
+/**
+ * Merge editor/HRIS lines onto existing DB lines without wiping legacy structural package lines.
+ * Incoming codes replace existing codes; HRIS supplements not re-submitted are removed;
+ * legacy structural snapshot lines are kept unless the editor supplies a full structural package.
+ */
+export const mergePayrollEarningLinesForSave = (
+  existing: SagePayrollLineItem[] | null | undefined,
+  incoming: StoredPayrollPackageLine[],
+): StoredPayrollPackageLine[] => {
+  const next = [...incoming];
+  const incomingCodes = new Set(next.map((line) => String(line.code || '').toUpperCase()).filter(Boolean));
+  const editorHasStructural = next.some((line) => isStructuralPayrollPackageCode(line.code));
+  for (const line of existing || []) {
+    const code = String(line.code || '').trim().toUpperCase();
+    if (!code || incomingCodes.has(code)) continue;
+    if (isHrisConfiguredPayrollLine(line)) {
+      // Drop prior HRIS supplements/package lines not present in this save (editor is authority for HRIS lines).
+      continue;
+    }
+    if (isStructuralPayrollPackageCode(line.code) && editorHasStructural) continue;
+    next.push({
+      code: line.code,
+      name: line.name,
+      amount: Number(line.amount || 0),
+      taxableAmount: line.taxableAmount,
+      ytdTotal: line.ytdTotal,
+    });
+  }
+  return next;
+};
