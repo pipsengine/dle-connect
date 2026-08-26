@@ -40,7 +40,21 @@ export default function PayrollLinesEditor({
 }) {
   const formatMoney = (value: number) => formatPayrollMoney(value, currency);
   const updateLine = (id: string, patch: Partial<FlexiblePayrollLineDraft>) => {
-    onChange(lines.map((line) => (line.id === id ? { ...line, ...patch } : line)));
+    onChange(lines.map((line) => {
+      if (line.id !== id) return line;
+      const next = { ...line, ...patch };
+      const codeOrName = `${next.code || ''} ${next.name || ''}`;
+      // When naming a line as overtime, default to one-off unless frequency was just set explicitly.
+      if (
+        !('frequency' in patch)
+        && next.frequency === 'monthly'
+        && /OVERTIME|\bOVT\b|\bOT\b|WEEKDAYOVT/i.test(codeOrName)
+        && !/LUMPSUM/i.test(codeOrName)
+      ) {
+        next.frequency = 'one-off';
+      }
+      return next;
+    }));
   };
 
   const removeLine = (id: string) => onChange(lines.filter((line) => line.id !== id));

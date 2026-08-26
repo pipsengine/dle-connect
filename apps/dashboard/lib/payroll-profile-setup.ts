@@ -13,7 +13,7 @@ import { isHrisConfiguredPayrollLine } from '@/lib/sage-payroll-line-parser';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import type { PayrollSetupDraft } from '@/app/(hris)/hris/employees/add-new-employee/PayrollSetupStep';
-import { normalizePayrollDraftBeforeSave } from '@/lib/payroll-draft-normalize';
+import { normalizePayrollDraftBeforeSave, lumpsumBaseAmountFromDraftLines } from '@/lib/payroll-draft-normalize';
 
 export type ProfilePayrollSummary = {
   payrollStatus: 'Verified' | 'Pending Validation' | 'Masked';
@@ -77,9 +77,16 @@ export const enrichPayrollSummaryFromRow = (summary: ProfilePayrollSummary, row:
   const deductionLines = deductionLinesFromEmployeeRow(row);
   const storedEarnings = buildStoredPayrollLinesFromDrafts(earningLines, true);
   const monthlyFromLines = sumMonthlyPackageGross(storedEarnings);
-  const monthlyPackageGross = monthlyFromLines > 0
-    ? monthlyFromLines
-    : (row.periodSalary ?? row.basicSalary ?? summary.monthlyPackageGross ?? summary.basicSalary ?? null);
+  const isLumpsum = /lumpsum|lump\s*sum/i.test(String(row.employmentType || ''))
+    || /^L\d+/i.test(String(row.employeeCode || ''));
+  const lumpsumBase = lumpsumBaseAmountFromDraftLines(earningLines);
+  const monthlyPackageGross = isLumpsum
+    ? (lumpsumBase > 0
+      ? lumpsumBase
+      : (row.periodSalary ?? row.basicSalary ?? summary.monthlyPackageGross ?? summary.basicSalary ?? null))
+    : (monthlyFromLines > 0
+      ? monthlyFromLines
+      : (row.periodSalary ?? row.basicSalary ?? summary.monthlyPackageGross ?? summary.basicSalary ?? null));
   return {
     ...summary,
     earningLines,
@@ -96,6 +103,7 @@ export const enrichPayrollSummaryFromRow = (summary: ProfilePayrollSummary, row:
     hoursPerDay: row.hoursPerDay ?? summary.hoursPerDay ?? null,
     setupAssignedToPayroll: row.setupAssignedToPayroll ?? summary.setupAssignedToPayroll ?? true,
     monthlyPackageGross: monthlyPackageGross ?? null,
+    basicSalary: isLumpsum && monthlyPackageGross != null ? monthlyPackageGross : summary.basicSalary,
   };
 };
 
@@ -141,13 +149,22 @@ export const setupDraftToProfileSummary = (
   const storedEarnings = buildStoredPayrollLinesFromDrafts(normalized.earningLines, true);
   const storedDeductions = buildStoredPayrollLinesFromDrafts(normalized.deductionLines, false);
   const monthlyFromLines = sumMonthlyPackageGross(storedEarnings);
-  const monthlyPackageGross = monthlyFromLines > 0
-    ? monthlyFromLines
-    : (Number(normalized.periodSalary) || previous.monthlyPackageGross || null);
+  const isLumpsum = /lumpsum|lump\s*sum/i.test(employmentType);
+  const lumpsumBase = lumpsumBaseAmountFromDraftLines(normalized.earningLines);
+  // Lumpsum: package gross is the base LUMPSUM line only — OT/supplements stay on earning lines.
+  const monthlyPackageGross = isLumpsum
+    ? (lumpsumBase > 0
+      ? lumpsumBase
+      : (Number(normalized.periodSalary) || previous.monthlyPackageGross || null))
+    : (monthlyFromLines > 0
+      ? monthlyFromLines
+      : (Number(normalized.periodSalary) || previous.monthlyPackageGross || null));
   const basicLine = storedEarnings.find((line) => /BASIC/i.test(line.code) || /BASIC/i.test(line.name));
-  const basicSalary = basicLine
-    ? payrollLineMonthlyAmount(basicLine)
-    : (monthlyPackageGross != null && monthlyPackageGross > 0 ? monthlyPackageGross : previous.basicSalary);
+  const basicSalary = isLumpsum
+    ? (monthlyPackageGross != null && monthlyPackageGross > 0 ? monthlyPackageGross : previous.basicSalary)
+    : (basicLine
+      ? payrollLineMonthlyAmount(basicLine)
+      : (monthlyPackageGross != null && monthlyPackageGross > 0 ? monthlyPackageGross : previous.basicSalary));
   const allowances = (monthlyPackageGross ?? 0) > 0 && basicSalary != null ? Math.max(0, (monthlyPackageGross ?? 0) - basicSalary) : previous.allowances;
   const deductionsTotal = storedDeductions.reduce((sum, line) => sum + payrollLineMonthlyAmount(line), 0);
   const accountNumber = normalized.accountNumber.trim() || previous.accountNumber || '';

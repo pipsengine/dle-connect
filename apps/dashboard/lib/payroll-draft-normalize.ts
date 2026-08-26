@@ -3,6 +3,7 @@ import { resolvePayCurrency } from '@/lib/payroll-currency';
 import {
   draftPayrollLineToStored,
   newDraftPayrollLineId,
+  payrollLineMonthlyAmount,
   roundMoney,
   sumMonthlyPackageGross,
   type FlexiblePayrollLineDraft,
@@ -30,6 +31,29 @@ export const monthlyLumpsumFromContract = (contractAmount: number, start?: strin
 export const isLumpsumBaseDraftLine = (line: FlexiblePayrollLineDraft) =>
   /^(LUMPSUMTAX|BASIC1_LUMPSUM)$/i.test(String(line.code || '').trim())
   || /LUMPSUM ALLOWANCE/i.test(String(line.name || ''));
+
+export const isLumpsumBaseStoredLine = (line: Pick<StoredPayrollPackageLine, 'code' | 'name'>) =>
+  /^(LUMPSUMTAX|BASIC1_LUMPSUM)$/i.test(String(line.code || '').trim())
+  || /LUMPSUM ALLOWANCE/i.test(String(line.name || ''));
+
+/** Base lumpsum package only — never includes overtime or other supplements. */
+export const lumpsumBaseAmountFromDraftLines = (lines: FlexiblePayrollLineDraft[] | null | undefined) => {
+  for (const line of lines || []) {
+    if (!isLumpsumBaseDraftLine(line)) continue;
+    const amount = Number(line.amount || 0);
+    if (amount > 0) return roundMoney(amount);
+  }
+  return 0;
+};
+
+export const lumpsumBaseAmountFromStoredLines = (lines: StoredPayrollPackageLine[] | null | undefined) => {
+  for (const line of lines || []) {
+    if (!isLumpsumBaseStoredLine(line)) continue;
+    const amount = payrollLineMonthlyAmount(line);
+    if (amount > 0) return amount;
+  }
+  return 0;
+};
 
 export const defaultLumpsumEarningLine = (monthlyAmount: number): FlexiblePayrollLineDraft => ({
   id: newDraftPayrollLineId(),
@@ -61,7 +85,11 @@ export const cleanPayrollGroupValue = (value: unknown) => {
   return raw.split('/')[0].trim();
 };
 
-/** Align period salary, annual salary, and lumpsum earning lines before create or profile save. */
+/**
+ * Align period salary, annual salary, and lumpsum earning lines before create or profile save.
+ * For lumpsum staff the LUMPSUMTAX line is the base authority — supplements (OT, etc.) must never
+ * rewrite that amount or inflate periodSalary / monthly package gross.
+ */
 export const normalizePayrollDraftBeforeSave = (
   payroll: PayrollSetupDraft,
   employment: PayrollEmploymentContext = {},
@@ -72,28 +100,29 @@ export const normalizePayrollDraftBeforeSave = (
     payCurrency,
     payrollGroup: cleanPayrollGroupValue(payroll.payrollGroup) || payroll.payrollGroup,
   };
-  let monthlyFromLines = storedMonthlyGross(next.earningLines || []);
+  const monthlyFromLines = storedMonthlyGross(next.earningLines || []);
   let periodSalary = Number(next.periodSalary || 0);
   const employmentType = String(employment.employmentType || '').trim();
   const isLumpsum = /lumpsum|lump\s*sum/i.test(employmentType);
 
   if (isLumpsum) {
     const contractTotal = Number(next.contractAmount || 0);
-    if (!periodSalary && contractTotal > 0) {
+    const baseFromLines = lumpsumBaseAmountFromDraftLines(next.earningLines);
+    const hasBaseLine = (next.earningLines || []).some(isLumpsumBaseDraftLine);
+
+    // Existing LUMPSUM row wins — never overwrite it from periodSalary or line totals.
+    if (baseFromLines > 0) {
+      periodSalary = baseFromLines;
+    } else if (!periodSalary && contractTotal > 0) {
       periodSalary = monthlyLumpsumFromContract(contractTotal, employment.contractStartDate, employment.contractEndDate);
     }
+
     if (periodSalary > 0) {
       next.periodSalary = String(periodSalary);
-      if (!Number(next.basicSalary)) next.basicSalary = String(periodSalary);
-      if (!Number(next.annualSalary)) next.annualSalary = String(roundMoney(periodSalary * 12));
-      if (monthlyFromLines <= 0 && !next.earningLines.some(isLumpsumBaseDraftLine)) {
-        next.earningLines = [...next.earningLines, defaultLumpsumEarningLine(periodSalary)];
-        monthlyFromLines = periodSalary;
-      } else if (next.earningLines.some(isLumpsumBaseDraftLine)) {
-        next.earningLines = next.earningLines.map((line) =>
-          isLumpsumBaseDraftLine(line) ? { ...line, amount: String(periodSalary) } : line,
-        );
-        monthlyFromLines = Math.max(monthlyFromLines, periodSalary);
+      next.basicSalary = String(periodSalary);
+      next.annualSalary = String(roundMoney(periodSalary * 12));
+      if (!hasBaseLine) {
+        next.earningLines = [...(next.earningLines || []), defaultLumpsumEarningLine(periodSalary)];
       }
     }
   } else if (monthlyFromLines > 0) {

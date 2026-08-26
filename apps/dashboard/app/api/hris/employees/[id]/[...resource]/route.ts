@@ -21,7 +21,7 @@ import {
 } from '@/lib/payroll-profile-setup';
 import type { FlexiblePayrollLineDraft } from '@/lib/payroll-package-lines';
 import { mergePayrollEarningLinesForSave, sumMonthlyPackageGross } from '@/lib/payroll-package-lines';
-import { cleanPayrollGroupValue } from '@/lib/payroll-draft-normalize';
+import { cleanPayrollGroupValue, lumpsumBaseAmountFromStoredLines } from '@/lib/payroll-draft-normalize';
 import { invalidatePayrollCalculationCache } from '@/lib/payroll-calculation-service';
 import { invalidatePayrollEmployeeOptionsCache } from '@/lib/payroll-employee-options-store';
 
@@ -5487,15 +5487,19 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       : editorEarnings;
     const storedDeductions = buildStoredPayrollLinesFromDrafts(next.deductionLines || [], false);
     const monthlyGross = sumMonthlyPackageGross(storedEarnings);
+    const isLumpsumEmployee = /lumpsum|lump\s*sum/i.test(String(employmentType || ''))
+      || /^L\d+/i.test(String(rec.profile.employeeId || ''));
+    const lumpsumBaseGross = lumpsumBaseAmountFromStoredLines(storedEarnings);
+    const packageBaseGross = isLumpsumEmployee && lumpsumBaseGross > 0 ? lumpsumBaseGross : monthlyGross;
     const previousGross = Number(rec.payrollSummary?.monthlyPackageGross || rec.payrollSummary?.basicSalary || 0);
-    const preservedPackageGross = monthlyGross > 0
-      ? monthlyGross
+    const preservedPackageGross = packageBaseGross > 0
+      ? packageBaseGross
       : (Number(next.monthlyPackageGross) > 0
         ? Number(next.monthlyPackageGross)
         : (Number(next.basicSalary) > 0 ? Number(next.basicSalary) : (previousGross > 0 ? previousGross : null)));
-    if (monthlyGross > 0) {
-      next.monthlyPackageGross = monthlyGross;
-      if (!next.basicSalary) next.basicSalary = monthlyGross;
+    if (packageBaseGross > 0) {
+      next.monthlyPackageGross = packageBaseGross;
+      next.basicSalary = packageBaseGross;
     } else if (preservedPackageGross != null) {
       next.monthlyPackageGross = preservedPackageGross;
     }

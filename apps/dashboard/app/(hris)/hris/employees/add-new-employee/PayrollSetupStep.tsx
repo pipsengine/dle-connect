@@ -216,7 +216,7 @@ export default function PayrollSetupStep({
             type="number"
             value={payroll.periodSalary}
             onChange={syncPeriodSalary}
-            hint={isLumpsum ? 'Auto-filled from contract value ÷ contract months when dates are set on Employment step' : 'Total monthly pay before one-off supplements'}
+            hint={isLumpsum ? 'Base lumpsum package only — overtime and other supplements stay on earning lines below' : 'Total monthly pay before one-off supplements'}
           />
         ) : null}
         <SelectField label="Bank Name" value={payroll.bankName} onChange={(v) => patch({ bankName: v })} options={options.banks} />
