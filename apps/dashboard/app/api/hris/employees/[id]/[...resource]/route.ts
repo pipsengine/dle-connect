@@ -5504,6 +5504,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     rec.audit.unshift(auditEntry('Updated payroll summary', role));
     const synced = await syncHrisEmployeeProfileToDb({
       employeeCode: rec.profile.employeeId,
+      payrollOnly: true,
       payrollSetup: {
         payrollGroup: cleanPayrollGroupValue(next.payrollGroup) || next.payrollGroup,
         salaryGrade: next.salaryGrade,
@@ -5533,7 +5534,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       },
     });
     if (!synced) {
-      return jsonErr(503, 'Payroll details could not be saved to the HRIS database. Check database connectivity and try again.');
+      return jsonErr(503, 'Payroll details could not be saved to the HRIS database. The employee record may be missing or the database is unavailable. Try again, or contact support if it persists.');
     }
     invalidateHrisEmployeeCaches();
     invalidatePayrollEmployeeCache();

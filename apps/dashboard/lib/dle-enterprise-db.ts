@@ -3028,6 +3028,8 @@ export type HrisEmployeeProfileSyncInput = {
   employmentDetails?: Record<string, string | null | undefined>;
   jobDetails?: Record<string, string | null | undefined>;
   payrollSetup?: Record<string, string | number | null | undefined>;
+  /** Only update EmployeePayrollSetup — used by Profile / Add Employee payroll saves. */
+  payrollOnly?: boolean;
   emergencyContacts?: Array<{
     id?: string;
     fullName: string;
@@ -3043,12 +3045,34 @@ export type HrisEmployeeProfileSyncInput = {
   replaceEmergencyContacts?: boolean;
 };
 
+const syncInputIsPayrollOnly = (input: HrisEmployeeProfileSyncInput) => {
+  if (input.payrollOnly) return true;
+  if (!input.payrollSetup || Object.keys(input.payrollSetup).length === 0) return false;
+  return (
+    input.personalInfo == null
+    && input.contacts == null
+    && input.employmentDetails == null
+    && input.jobDetails == null
+    && input.fullName == null
+    && input.preferredName == null
+    && input.jobTitle == null
+    && input.department == null
+    && input.businessUnit == null
+    && input.reportingManager == null
+    && input.employmentStatus == null
+    && input.employmentType == null
+    && !(input.emergencyContacts && input.emergencyContacts.length)
+    && !input.replaceEmergencyContacts
+  );
+};
+
 export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSyncInput): Promise<boolean> => {
   const employeeCode = str(input.employeeCode);
   if (!employeeCode) return false;
   const p = await pool();
   if (!p) return false;
 
+  const payrollOnly = syncInputIsPayrollOnly(input);
   const personal = input.personalInfo || {};
   const contacts = input.contacts || {};
   const employment = input.employmentDetails || {};
@@ -3061,6 +3085,10 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
   const preferredName = nullable(personal.preferredName ?? input.preferredName);
   const employmentStatus = nullable(employment.employmentStatus ?? input.employmentStatus) || 'Active';
   const employmentType = nullable(employment.employmentType ?? input.employmentType) || 'Permanent';
+  // first_name / last_name are NOT NULL — never overwrite existing rows with blanks.
+  const personalFirstName = nullable(personal.firstName) || (str(fullName).split(/\s+/)[0] || employeeCode);
+  const personalLastName = nullable(personal.lastName)
+    || (str(fullName).split(/\s+/).slice(1).join(' ').trim() || personalFirstName);
 
   const tx = new sql.Transaction(p);
   await tx.begin();
@@ -3074,6 +3102,7 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
       return false;
     }
 
+    if (!payrollOnly) {
     await new sql.Request(tx)
       .input('employee_id', sql.BigInt, employeeId)
       .input('full_name', sql.NVarChar(250), fullName)
@@ -3094,9 +3123,9 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
     await new sql.Request(tx)
       .input('employee_id', sql.BigInt, employeeId)
       .input('title', sql.NVarChar(30), nullable(personal.title))
-      .input('first_name', sql.NVarChar(100), nullable(personal.firstName))
+      .input('first_name', sql.NVarChar(100), personalFirstName)
       .input('middle_name', sql.NVarChar(100), nullable(personal.middleName))
-      .input('last_name', sql.NVarChar(100), nullable(personal.lastName))
+      .input('last_name', sql.NVarChar(100), personalLastName)
       .input('preferred_name', sql.NVarChar(150), preferredName)
       .input('gender', sql.NVarChar(40), nullable(personal.gender))
       .input('date_of_birth', sql.Date, dateOrNull(personal.dateOfBirth))
@@ -3111,19 +3140,19 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
         USING (SELECT @employee_id AS employee_id) AS source
         ON target.employee_id = source.employee_id
         WHEN MATCHED THEN UPDATE SET
-          title = @title,
-          first_name = @first_name,
-          middle_name = @middle_name,
-          last_name = @last_name,
-          preferred_name = @preferred_name,
-          gender = @gender,
-          date_of_birth = @date_of_birth,
-          marital_status = @marital_status,
-          nationality = @nationality,
-          state_of_origin = @state_of_origin,
-          local_government_area = @local_government_area,
-          religion = @religion,
-          languages_spoken = @languages_spoken,
+          title = COALESCE(@title, target.title),
+          first_name = COALESCE(NULLIF(@first_name, N''), target.first_name),
+          middle_name = COALESCE(@middle_name, target.middle_name),
+          last_name = COALESCE(NULLIF(@last_name, N''), target.last_name),
+          preferred_name = COALESCE(@preferred_name, target.preferred_name),
+          gender = COALESCE(@gender, target.gender),
+          date_of_birth = COALESCE(@date_of_birth, target.date_of_birth),
+          marital_status = COALESCE(@marital_status, target.marital_status),
+          nationality = COALESCE(@nationality, target.nationality),
+          state_of_origin = COALESCE(@state_of_origin, target.state_of_origin),
+          local_government_area = COALESCE(@local_government_area, target.local_government_area),
+          religion = COALESCE(@religion, target.religion),
+          languages_spoken = COALESCE(@languages_spoken, target.languages_spoken),
           modified_at = SYSUTCDATETIME()
         WHEN NOT MATCHED THEN INSERT (
           employee_id, title, first_name, middle_name, last_name, preferred_name, gender, date_of_birth,
@@ -3159,19 +3188,19 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
               SELECT 1 FROM [hris].[EmployeeContactInfo] c
               WHERE c.official_email = @official_email AND c.employee_id <> @employee_id
             ) THEN target.official_email
-            ELSE @official_email
+            ELSE COALESCE(@official_email, target.official_email)
           END,
-          personal_email = @personal_email,
-          primary_phone = @primary_phone,
-          alternate_phone = @alternate_phone,
-          office_extension = @office_extension,
-          residential_address = @residential_address,
-          permanent_address = @permanent_address,
-          nearest_bus_stop = @nearest_bus_stop,
-          city = @city,
-          state = @state,
-          country = @country,
-          postal_code = @postal_code,
+          personal_email = COALESCE(@personal_email, target.personal_email),
+          primary_phone = COALESCE(@primary_phone, target.primary_phone),
+          alternate_phone = COALESCE(@alternate_phone, target.alternate_phone),
+          office_extension = COALESCE(@office_extension, target.office_extension),
+          residential_address = COALESCE(@residential_address, target.residential_address),
+          permanent_address = COALESCE(@permanent_address, target.permanent_address),
+          nearest_bus_stop = COALESCE(@nearest_bus_stop, target.nearest_bus_stop),
+          city = COALESCE(@city, target.city),
+          state = COALESCE(@state, target.state),
+          country = COALESCE(@country, target.country),
+          postal_code = COALESCE(@postal_code, target.postal_code),
           modified_at = SYSUTCDATETIME()
         WHEN NOT MATCHED THEN INSERT (
           employee_id, official_email, personal_email, primary_phone, alternate_phone, office_extension,
@@ -3203,18 +3232,18 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
         USING (SELECT @employee_id AS employee_id) AS source
         ON target.employee_id = source.employee_id
         WHEN MATCHED THEN UPDATE SET
-          staff_category = @staff_category,
-          employee_category = @employee_category,
-          date_joined = @date_joined,
-          probation_start_date = @probation_start_date,
-          probation_end_date = @probation_end_date,
-          confirmation_due_date = @confirmation_due_date,
-          contract_start_date = @contract_start_date,
-          contract_end_date = @contract_end_date,
-          work_mode = @work_mode,
-          work_location = @work_location,
-          shift_pattern = @shift_pattern,
-          union_status = @union_status,
+          staff_category = COALESCE(@staff_category, target.staff_category),
+          employee_category = COALESCE(@employee_category, target.employee_category),
+          date_joined = COALESCE(@date_joined, target.date_joined),
+          probation_start_date = COALESCE(@probation_start_date, target.probation_start_date),
+          probation_end_date = COALESCE(@probation_end_date, target.probation_end_date),
+          confirmation_due_date = COALESCE(@confirmation_due_date, target.confirmation_due_date),
+          contract_start_date = COALESCE(@contract_start_date, target.contract_start_date),
+          contract_end_date = COALESCE(@contract_end_date, target.contract_end_date),
+          work_mode = COALESCE(@work_mode, target.work_mode),
+          work_location = COALESCE(@work_location, target.work_location),
+          shift_pattern = COALESCE(@shift_pattern, target.shift_pattern),
+          union_status = COALESCE(@union_status, target.union_status),
           modified_at = SYSUTCDATETIME()
         WHEN NOT MATCHED THEN INSERT (
           employee_id, staff_category, employee_category, date_joined, probation_start_date, probation_end_date,
@@ -3248,22 +3277,22 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
         USING (SELECT @employee_id AS employee_id) AS source
         ON target.employee_id = source.employee_id
         WHEN MATCHED THEN UPDATE SET
-          job_title = @job_title,
-          designation = @designation,
-          job_grade = @job_grade,
-          department = @department,
-          division = @division,
-          business_unit = @business_unit,
-          cost_center = @cost_center,
-          project_site = @project_site,
-          office_location = @office_location,
-          reporting_manager = @reporting_manager,
-          functional_manager = @functional_manager,
-          department_head = @department_head,
-          hr_business_partner = @hr_business_partner,
-          role_profile = @role_profile,
-          job_description = @job_description,
-          key_responsibilities = @key_responsibilities,
+          job_title = COALESCE(@job_title, target.job_title),
+          designation = COALESCE(@designation, target.designation),
+          job_grade = COALESCE(@job_grade, target.job_grade),
+          department = COALESCE(@department, target.department),
+          division = COALESCE(@division, target.division),
+          business_unit = COALESCE(@business_unit, target.business_unit),
+          cost_center = COALESCE(@cost_center, target.cost_center),
+          project_site = COALESCE(@project_site, target.project_site),
+          office_location = COALESCE(@office_location, target.office_location),
+          reporting_manager = COALESCE(@reporting_manager, target.reporting_manager),
+          functional_manager = COALESCE(@functional_manager, target.functional_manager),
+          department_head = COALESCE(@department_head, target.department_head),
+          hr_business_partner = COALESCE(@hr_business_partner, target.hr_business_partner),
+          role_profile = COALESCE(@role_profile, target.role_profile),
+          job_description = COALESCE(@job_description, target.job_description),
+          key_responsibilities = COALESCE(@key_responsibilities, target.key_responsibilities),
           modified_at = SYSUTCDATETIME()
         WHEN NOT MATCHED THEN INSERT (
           employee_id, job_title, designation, job_grade, department, division, business_unit, cost_center,
@@ -3275,6 +3304,7 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
           @role_profile, @job_description, @key_responsibilities
         );
       `);
+    }
 
     const payrollPeriodSalary = numOrNull(payroll.periodSalary);
     const payrollAnnualSalary = numOrNull(payroll.annualSalary);
@@ -3426,7 +3456,13 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
     return true;
   } catch (error) {
     await tx.rollback().catch(() => undefined);
-    console.error('syncHrisEmployeeProfileToDb failed', error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('syncHrisEmployeeProfileToDb failed', {
+      employeeCode,
+      payrollOnly,
+      message,
+      error,
+    });
     return false;
   }
 };
