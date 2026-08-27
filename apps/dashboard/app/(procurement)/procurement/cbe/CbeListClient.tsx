@@ -1,9 +1,35 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
-import { Loader2, Plus, RefreshCw, Scale } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  CheckCircle2,
+  Eye,
+  Loader2,
+  MoreHorizontal,
+  Plus,
+  RefreshCw,
+  Scale,
+} from 'lucide-react';
 import { procurementGet, procurementPost } from '../lib/procurement-api';
+import { DepartmentLookup, EmployeeLookup, SearchableSelect } from '../_components/proc-lookups';
+import {
+  FilterBar,
+  KpiCard,
+  PaginationFooter,
+  PersonCell,
+  ProcModal,
+  RegisterTable,
+  StatusBadge,
+  exportCsv,
+  formatWhen,
+  inputClass,
+  labelClass,
+  primaryBtnClass,
+  secondaryBtnClass,
+  selectClass,
+} from '../_components/proc-ui';
+import type { RfqRow } from '../_components/RfqsClient';
 
 type CbeListRow = {
   cbeId: string;
@@ -15,9 +41,8 @@ type CbeListRow = {
   department: string | null;
   currency: string;
   evaluationMethod: string | null;
+  createdAt?: string;
   updatedAt: string;
-  bidderCount?: number;
-  itemCount?: number;
 };
 
 const EVALUATION_METHODS = [
@@ -26,57 +51,80 @@ const EVALUATION_METHODS = [
   'Pass / Fail + Commercial Rank',
 ];
 
-const emptyForm = {
+const CBE_STATUSES = [
+  'Draft',
+  'Bid Comparison',
+  'Technical Evaluation',
+  'Commercial Evaluation',
+  'Negotiation',
+  'In Evaluation',
+  'Recommendation & Approval',
+  'Completed',
+  'Approved',
+  'Awarded',
+  'Cancelled',
+] as const;
+
+type CbeForm = {
+  title: string;
+  rfqNumber: string;
+  project: string;
+  department: string;
+  buyerName: string;
+  currency: string;
+  evaluationMethod: string;
+  status: string;
+};
+
+const emptyForm = (): CbeForm => ({
   title: '',
   rfqNumber: '',
   project: '',
   department: '',
   buyerName: '',
   currency: 'NGN',
-  evaluationMethod: EVALUATION_METHODS[0],
+  evaluationMethod: EVALUATION_METHODS[0]!,
   status: 'Draft',
-};
+});
 
-function formatWhen(iso: string | null | undefined) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+function statusNorm(s: string) {
+  return s.trim().toLowerCase();
 }
 
-function statusBadgeClass(status: string) {
-  const s = status.toLowerCase();
-  const base = 'inline-block rounded px-2 py-1 text-[11px] font-bold whitespace-nowrap';
-  if (s.includes('award') || s.includes('approved') || s === 'draft') {
-    return `${base} bg-emerald-50 text-emerald-800`;
-  }
-  if (s.includes('cancel') || s.includes('reject')) {
-    return `${base} bg-red-50 text-red-700`;
-  }
-  if (s.includes('approval') || s.includes('negotiation')) {
-    return `${base} bg-amber-50 text-amber-800`;
-  }
-  return `${base} bg-slate-100 text-slate-700`;
+function isInEvaluation(s: string) {
+  const n = statusNorm(s);
+  return (
+    n === 'technical evaluation'
+    || n === 'commercial evaluation'
+    || n === 'negotiation'
+    || n === 'in evaluation'
+    || n.includes('recommendation')
+  );
 }
 
 export default function CbeListClient() {
   const [rows, setRows] = useState<CbeListRow[]>([]);
+  const [rfqs, setRfqs] = useState<RfqRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ ...emptyForm });
+  const [modalOpen, setModalOpen] = useState(false);
+  const [form, setForm] = useState<CbeForm>(emptyForm());
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      setRows(await procurementGet<CbeListRow[]>('cbes'));
+      const [cbes, rfqList] = await Promise.all([
+        procurementGet<CbeListRow[]>('cbes'),
+        procurementGet<RfqRow[]>('rfqs'),
+      ]);
+      setRows(cbes);
+      setRfqs(rfqList);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load CBEs');
     } finally {
@@ -88,8 +136,54 @@ export default function CbeListClient() {
     void load();
   }, [load]);
 
-  const create = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const kpis = useMemo(() => {
+    const count = (pred: (s: string) => boolean) => rows.filter((r) => pred(r.status)).length;
+    return {
+      total: rows.length,
+      draft: count((s) => statusNorm(s) === 'draft'),
+      bidComparison: count((s) => statusNorm(s) === 'bid comparison'),
+      inEvaluation: count(isInEvaluation),
+      completed: count((s) => {
+        const n = statusNorm(s);
+        return n === 'completed' || n === 'approved' || n === 'awarded';
+      }),
+    };
+  }, [rows]);
+
+  const rfqOptions = useMemo(
+    () =>
+      rfqs.map((r) => ({
+        value: r.rfqId,
+        label: `${r.rfqId} — ${r.title}`,
+        sub: r.status,
+      })),
+    [rfqs],
+  );
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (statusFilter && statusNorm(r.status) !== statusNorm(statusFilter)) return false;
+      if (!q) return true;
+      return [r.cbeId, r.title, r.rfqNumber, r.project, r.department, r.buyerName, r.status]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q));
+    });
+  }, [rows, search, statusFilter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, pageSize]);
+
+  const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
+
+  const openCreate = () => {
+    setForm(emptyForm());
+    setError('');
+    setModalOpen(true);
+  };
+
+  const save = async () => {
     if (!form.title.trim()) {
       setError('Title is required');
       return;
@@ -100,6 +194,7 @@ export default function CbeListClient() {
       await procurementPost('create-cbe', {
         payload: {
           title: form.title.trim(),
+          rfqId: form.rfqNumber.trim() || null,
           rfqNumber: form.rfqNumber.trim() || null,
           project: form.project.trim() || null,
           department: form.department.trim() || null,
@@ -109,17 +204,17 @@ export default function CbeListClient() {
           status: form.status || 'Draft',
         },
       });
-      setForm({ ...emptyForm });
+      setModalOpen(false);
       await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create CBE');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to create CBE');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="space-y-5 p-5">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -130,154 +225,194 @@ export default function CbeListClient() {
             Create and manage CBEs linked to RFQs across the procurement lifecycle.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="inline-flex h-10 items-center gap-2 rounded-md border bg-white px-3 text-sm font-semibold"
-        >
-          <RefreshCw className="h-4 w-4" /> Refresh
-        </button>
-      </div>
-
-      {error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
-      ) : null}
-
-      <form onSubmit={(e) => void create(e)} className="rounded-lg border border-slate-200 bg-white p-4">
-        <div className="mb-3 flex items-center gap-2">
-          <Plus className="h-4 w-4 text-blue-700" />
-          <h2 className="text-sm font-black text-slate-900">Create CBE</h2>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <input
-            className="h-10 rounded-md border px-3 text-sm"
-            placeholder="Title *"
-            value={form.title}
-            onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-            required
-          />
-          <input
-            className="h-10 rounded-md border px-3 text-sm"
-            placeholder="RFQ Number"
-            value={form.rfqNumber}
-            onChange={(e) => setForm((f) => ({ ...f, rfqNumber: e.target.value }))}
-          />
-          <input
-            className="h-10 rounded-md border px-3 text-sm"
-            placeholder="Project"
-            value={form.project}
-            onChange={(e) => setForm((f) => ({ ...f, project: e.target.value }))}
-          />
-          <input
-            className="h-10 rounded-md border px-3 text-sm"
-            placeholder="Department"
-            value={form.department}
-            onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))}
-          />
-          <input
-            className="h-10 rounded-md border px-3 text-sm"
-            placeholder="Buyer Name"
-            value={form.buyerName}
-            onChange={(e) => setForm((f) => ({ ...f, buyerName: e.target.value }))}
-          />
-          <select
-            className="h-10 rounded-md border px-3 text-sm"
-            value={form.currency}
-            onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
-          >
-            <option value="NGN">NGN</option>
-            <option value="USD">USD</option>
-            <option value="EUR">EUR</option>
-            <option value="GBP">GBP</option>
-          </select>
-          <select
-            className="h-10 rounded-md border px-3 text-sm"
-            value={form.evaluationMethod}
-            onChange={(e) => setForm((f) => ({ ...f, evaluationMethod: e.target.value }))}
-          >
-            {EVALUATION_METHODS.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-          <select
-            className="h-10 rounded-md border px-3 text-sm"
-            value={form.status}
-            onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-          >
-            <option value="Draft">Draft</option>
-            <option value="Bid Comparison">Bid Comparison</option>
-            <option value="Technical Evaluation">Technical Evaluation</option>
-            <option value="Commercial Evaluation">Commercial Evaluation</option>
-            <option value="Negotiation">Negotiation</option>
-            <option value="Recommendation & Approval">Recommendation & Approval</option>
-          </select>
-        </div>
-        <div className="mt-3">
-          <button
-            type="submit"
-            disabled={saving}
-            className="inline-flex h-10 items-center gap-2 rounded-md bg-blue-700 px-4 text-sm font-semibold text-white disabled:opacity-60"
-          >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            Create CBE
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => void load()} className={secondaryBtnClass}>
+            <RefreshCw className="h-4 w-4" /> Refresh Data
+          </button>
+          <button type="button" onClick={openCreate} className={primaryBtnClass}>
+            <Plus className="h-4 w-4" /> New CBE
           </button>
         </div>
-      </form>
+      </div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      {error && !modalOpen ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+      ) : null}
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <KpiCard label="Total" value={kpis.total} icon={<Scale className="h-4 w-4" />} />
+        <KpiCard label="Draft" value={kpis.draft} icon={<Scale className="h-4 w-4" />} tint="bg-slate-100 text-slate-700" />
+        <KpiCard label="Bid Comparison" value={kpis.bidComparison} icon={<Scale className="h-4 w-4" />} tint="bg-blue-50 text-blue-700" />
+        <KpiCard label="In Evaluation" value={kpis.inEvaluation} icon={<Scale className="h-4 w-4" />} tint="bg-amber-50 text-amber-700" />
+        <KpiCard label="Completed" value={kpis.completed} icon={<CheckCircle2 className="h-4 w-4" />} tint="bg-emerald-50 text-emerald-700" />
+      </div>
+
+      <FilterBar>
+        <div className="min-w-[200px] flex-1">
+          <label className={labelClass}>Search</label>
+          <input className={inputClass} placeholder="CBE ID, title, RFQ, buyer…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+        <div className="w-52">
+          <label className={labelClass}>Status</label>
+          <select className={selectClass} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="">All</option>
+            {CBE_STATUSES.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+      </FilterBar>
+
+      <RegisterTable
+        title="CBE Register"
+        count={filtered.length}
+        onExport={() =>
+          exportCsv(
+            'cbes.csv',
+            ['CBE ID', 'Title', 'RFQ', 'Project', 'Department', 'Buyer', 'Status', 'Created', 'Updated'],
+            filtered.map((r) => [
+              r.cbeId,
+              r.title,
+              r.rfqNumber,
+              r.project,
+              r.department,
+              r.buyerName,
+              r.status,
+              formatWhen(r.createdAt),
+              formatWhen(r.updatedAt),
+            ]),
+          )
+        }
+      >
         {loading ? (
-          <div className="flex items-center gap-2 px-4 py-10 text-sm text-slate-600">
+          <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading CBEs…
           </div>
-        ) : rows.length === 0 ? (
-          <div className="px-4 py-10 text-sm text-slate-600">No CBEs yet. Create one above to get started.</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-sm">
-              <thead>
-                <tr className="border-b bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-600">
-                  <th className="px-3 py-3">CBE ID</th>
-                  <th className="px-3 py-3">Title</th>
-                  <th className="px-3 py-3">RFQ Number</th>
-                  <th className="px-3 py-3">Status</th>
-                  <th className="px-3 py-3">Buyer</th>
-                  <th className="px-3 py-3">Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.cbeId} className="border-b last:border-0 hover:bg-slate-50">
-                    <td className="px-3 py-3 font-semibold">
-                      <Link
-                        href={`/procurement/cbe/${encodeURIComponent(row.cbeId)}`}
-                        className="text-blue-700 hover:underline"
-                      >
-                        {row.cbeId}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-3">
-                      <Link
-                        href={`/procurement/cbe/${encodeURIComponent(row.cbeId)}`}
-                        className="font-medium text-slate-900 hover:underline"
-                      >
-                        {row.title}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-3 text-slate-700">{row.rfqNumber || '—'}</td>
-                    <td className="px-3 py-3">
-                      <span className={statusBadgeClass(row.status)}>{row.status}</span>
-                    </td>
-                    <td className="px-3 py-3 text-slate-700">{row.buyerName || '—'}</td>
-                    <td className="px-3 py-3 text-slate-600">{formatWhen(row.updatedAt)}</td>
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-3 py-3 text-left">CBE ID</th>
+                    <th className="px-3 py-3 text-left">Title</th>
+                    <th className="px-3 py-3 text-left">RFQ</th>
+                    <th className="px-3 py-3 text-left">Project</th>
+                    <th className="px-3 py-3 text-left">Department</th>
+                    <th className="px-3 py-3 text-left">Buyer</th>
+                    <th className="px-3 py-3 text-left">Status</th>
+                    <th className="px-3 py-3 text-left">Created</th>
+                    <th className="px-3 py-3 text-left">Updated</th>
+                    <th className="px-3 py-3 text-left">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {pageRows.map((row) => (
+                    <tr key={row.cbeId} className="border-t border-slate-100 hover:bg-slate-50/80">
+                      <td className="px-3 py-3">
+                        <Link href={`/procurement/cbe/${encodeURIComponent(row.cbeId)}`} className="font-semibold text-blue-600 hover:underline">
+                          {row.cbeId}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-3 font-semibold text-slate-900">{row.title}</td>
+                      <td className="px-3 py-3 text-slate-700">{row.rfqNumber || '—'}</td>
+                      <td className="px-3 py-3 text-slate-700">{row.project || '—'}</td>
+                      <td className="px-3 py-3 text-slate-700">{row.department || '—'}</td>
+                      <td className="px-3 py-3"><PersonCell name={row.buyerName} /></td>
+                      <td className="px-3 py-3"><StatusBadge status={row.status} /></td>
+                      <td className="px-3 py-3 text-slate-600">{formatWhen(row.createdAt)}</td>
+                      <td className="px-3 py-3 text-slate-600">{formatWhen(row.updatedAt)}</td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-1">
+                          <Link
+                            href={`/procurement/cbe/${encodeURIComponent(row.cbeId)}`}
+                            className="rounded-md border border-slate-200 p-1.5 hover:bg-white"
+                            title="Open workspace"
+                          >
+                            <Eye className="h-3.5 w-3.5 text-slate-600" />
+                          </Link>
+                          <button type="button" className="rounded-md border border-slate-200 p-1.5" title="More">
+                            <MoreHorizontal className="h-3.5 w-3.5 text-slate-600" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!pageRows.length ? <div className="py-12 text-center text-sm text-slate-500">No CBEs yet. Create one to get started.</div> : null}
+            <PaginationFooter page={page} pageSize={pageSize} total={filtered.length} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          </>
         )}
-      </div>
+      </RegisterTable>
+
+      <ProcModal
+        open={modalOpen}
+        title="New Competitive Bid Evaluation"
+        onClose={() => setModalOpen(false)}
+        wide
+        footer={
+          <>
+            <button type="button" className={secondaryBtnClass} onClick={() => setModalOpen(false)}>Cancel</button>
+            <button type="button" className={primaryBtnClass} disabled={saving} onClick={() => void save()}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              {saving ? 'Creating…' : 'Create CBE'}
+            </button>
+          </>
+        }
+      >
+        {error && modalOpen ? (
+          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+        ) : null}
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="md:col-span-2">
+            <label className={labelClass}>Title *</label>
+            <input className={inputClass} value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
+          </div>
+          <SearchableSelect
+            label="RFQ Number"
+            value={form.rfqNumber}
+            options={rfqOptions}
+            placeholder="Select RFQ…"
+            onChange={(v) => setForm((f) => ({ ...f, rfqNumber: v }))}
+          />
+          <div>
+            <label className={labelClass}>Project</label>
+            <input className={inputClass} value={form.project} onChange={(e) => setForm((f) => ({ ...f, project: e.target.value }))} />
+          </div>
+          <DepartmentLookup value={form.department} onChange={(name) => setForm((f) => ({ ...f, department: name }))} />
+          <EmployeeLookup
+            label="Buyer"
+            value={form.buyerName}
+            onChange={(name) => setForm((f) => ({ ...f, buyerName: name }))}
+          />
+          <div>
+            <label className={labelClass}>Currency</label>
+            <select className={selectClass} value={form.currency} onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}>
+              {['NGN', 'USD', 'EUR', 'GBP'].map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelClass}>Evaluation method</label>
+            <select className={selectClass} value={form.evaluationMethod} onChange={(e) => setForm((f) => ({ ...f, evaluationMethod: e.target.value }))}>
+              {EVALUATION_METHODS.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelClass}>Status</label>
+            <select className={selectClass} value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
+              {CBE_STATUSES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </ProcModal>
     </div>
   );
 }

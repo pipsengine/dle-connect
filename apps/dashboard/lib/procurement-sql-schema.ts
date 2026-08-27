@@ -16,11 +16,15 @@ CREATE TABLE [procurement].[Suppliers] (
   [Phone] NVARCHAR(80) NULL,
   [Notes] NVARCHAR(MAX) NULL,
   [IsActive] BIT NOT NULL CONSTRAINT [DF_ProcSuppliers_IsActive] DEFAULT 1,
+  [IsBlacklisted] BIT NOT NULL CONSTRAINT [DF_ProcSuppliers_IsBlacklisted] DEFAULT 0,
   [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_ProcSuppliers_CreatedAt] DEFAULT SYSUTCDATETIME(),
   [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_ProcSuppliers_UpdatedAt] DEFAULT SYSUTCDATETIME(),
   [CreatedBy] NVARCHAR(120) NULL,
   [UpdatedBy] NVARCHAR(120) NULL
 );
+
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'IsBlacklisted') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [IsBlacklisted] BIT NOT NULL CONSTRAINT [DF_ProcSuppliers_IsBlacklisted] DEFAULT 0;
 
 IF OBJECT_ID(N'[procurement].[PurchaseRequisitions]', N'U') IS NULL
 CREATE TABLE [procurement].[PurchaseRequisitions] (
@@ -33,11 +37,18 @@ CREATE TABLE [procurement].[PurchaseRequisitions] (
   [Status] NVARCHAR(40) NOT NULL,
   [Currency] NVARCHAR(10) NULL,
   [EstimatedAmount] DECIMAL(19,2) NULL,
+  [RequiredDate] DATE NULL,
+  [CurrentWith] NVARCHAR(120) NULL,
   [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_ProcPRs_CreatedAt] DEFAULT SYSUTCDATETIME(),
   [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_ProcPRs_UpdatedAt] DEFAULT SYSUTCDATETIME(),
   [CreatedBy] NVARCHAR(120) NULL,
   [UpdatedBy] NVARCHAR(120) NULL
 );
+
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'RequiredDate') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [RequiredDate] DATE NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'CurrentWith') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [CurrentWith] NVARCHAR(120) NULL;
 
 IF OBJECT_ID(N'[procurement].[PurchaseRequisitionLines]', N'U') IS NULL
 CREATE TABLE [procurement].[PurchaseRequisitionLines] (

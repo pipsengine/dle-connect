@@ -17,6 +17,9 @@ import {
   getCbeDetail,
   listCbes,
   listContracts,
+  listProcurementLookupDepartments,
+  listProcurementLookupEmployees,
+  listProcurementLookupLocations,
   listPurchaseOrders,
   listPurchaseRequisitions,
   listRfqs,
@@ -84,6 +87,17 @@ export async function GET(request: NextRequest) {
       }
       case 'reports':
         return ok(await buildProcurementReports());
+      case 'lookups': {
+        const kind = searchParams.get('kind') || 'employees';
+        if (kind === 'departments') return ok(await listProcurementLookupDepartments());
+        if (kind === 'locations') return ok(await listProcurementLookupLocations());
+        return ok(
+          await listProcurementLookupEmployees(
+            searchParams.get('q') || '',
+            Number(searchParams.get('limit') || 20),
+          ),
+        );
+      }
       default:
         return err(400, `Unknown resource: ${resource}`);
     }

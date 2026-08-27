@@ -42,7 +42,7 @@ export const PROCUREMENT_NAV: ProcurementNavItem[] = [
   },
   {
     id: 'cbe',
-    label: 'Competitive Bid Evaluation',
+    label: 'Competitive Bid Evaluations',
     href: '/procurement/cbe',
     icon: Scale,
     permissionKeys: ['view_procurement', 'procurement.view', 'procurement.*'],

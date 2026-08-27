@@ -201,6 +201,7 @@ const mapSupplier = (row: Record<string, unknown>) => ({
   phone: row.Phone == null ? null : String(row.Phone),
   notes: row.Notes == null ? null : String(row.Notes),
   isActive: toBool(row.IsActive),
+  isBlacklisted: row.IsBlacklisted == null ? false : toBool(row.IsBlacklisted),
   createdAt: toIso(row.CreatedAt) || nowProcIso(),
   updatedAt: toIso(row.UpdatedAt) || nowProcIso(),
   createdBy: row.CreatedBy == null ? null : String(row.CreatedBy),
@@ -217,6 +218,8 @@ const mapPr = (row: Record<string, unknown>) => ({
   status: String(row.Status),
   currency: row.Currency == null ? null : String(row.Currency),
   estimatedAmount: row.EstimatedAmount == null ? null : toNum(row.EstimatedAmount),
+  requiredDate: toIso(row.RequiredDate),
+  currentWith: row.CurrentWith == null ? null : String(row.CurrentWith),
   createdAt: toIso(row.CreatedAt) || nowProcIso(),
   updatedAt: toIso(row.UpdatedAt) || nowProcIso(),
   createdBy: row.CreatedBy == null ? null : String(row.CreatedBy),
@@ -371,6 +374,7 @@ export const upsertSupplier = async (input: Record<string, unknown>, actor = 'sy
     .input('Phone', sql.NVarChar(80), cleanNullable(input.phone, 80))
     .input('Notes', sql.NVarChar(sql.MAX), cleanNullable(input.notes, 8000))
     .input('IsActive', sql.Bit, input.isActive == null ? 1 : toBool(input.isActive) ? 1 : 0)
+    .input('IsBlacklisted', sql.Bit, input.isBlacklisted == null ? 0 : toBool(input.isBlacklisted) ? 1 : 0)
     .input('CreatedBy', sql.NVarChar(120), clean(actor, 120))
     .input('UpdatedBy', sql.NVarChar(120), clean(actor, 120))
     .query(`
@@ -379,15 +383,16 @@ export const upsertSupplier = async (input: Record<string, unknown>, actor = 'sy
           [Name]=@Name, [Code]=@Code, [IsApproved]=@IsApproved, [Currency]=@Currency,
           [PaymentTerms]=@PaymentTerms, [DeliveryPeriod]=@DeliveryPeriod, [DeliveryLocation]=@DeliveryLocation,
           [Outstanding]=@Outstanding, [Email]=@Email, [Phone]=@Phone, [Notes]=@Notes, [IsActive]=@IsActive,
+          [IsBlacklisted]=@IsBlacklisted,
           [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@UpdatedBy
         WHERE [SupplierId]=@SupplierId
       ELSE
         INSERT INTO [procurement].[Suppliers] (
           [SupplierId], [Name], [Code], [IsApproved], [Currency], [PaymentTerms], [DeliveryPeriod],
-          [DeliveryLocation], [Outstanding], [Email], [Phone], [Notes], [IsActive], [CreatedBy], [UpdatedBy]
+          [DeliveryLocation], [Outstanding], [Email], [Phone], [Notes], [IsActive], [IsBlacklisted], [CreatedBy], [UpdatedBy]
         ) VALUES (
           @SupplierId, @Name, @Code, @IsApproved, @Currency, @PaymentTerms, @DeliveryPeriod,
-          @DeliveryLocation, @Outstanding, @Email, @Phone, @Notes, @IsActive, @CreatedBy, @UpdatedBy
+          @DeliveryLocation, @Outstanding, @Email, @Phone, @Notes, @IsActive, @IsBlacklisted, @CreatedBy, @UpdatedBy
         )
     `);
   return (await listSuppliers()).find((s) => s.supplierId === supplierId) || null;
@@ -427,6 +432,8 @@ export const upsertPurchaseRequisition = async (input: Record<string, unknown>, 
     .input('Status', sql.NVarChar(40), clean(input.status || 'Draft', 40))
     .input('Currency', sql.NVarChar(10), cleanNullable(input.currency, 10) || 'NGN')
     .input('EstimatedAmount', sql.Decimal(19, 2), input.estimatedAmount == null ? null : toNum(input.estimatedAmount))
+    .input('RequiredDate', sql.Date, toDateOnly(input.requiredDate))
+    .input('CurrentWith', sql.NVarChar(120), cleanNullable(input.currentWith, 120))
     .input('CreatedBy', sql.NVarChar(120), clean(actor, 120))
     .input('UpdatedBy', sql.NVarChar(120), clean(actor, 120))
     .query(`
@@ -434,15 +441,16 @@ export const upsertPurchaseRequisition = async (input: Record<string, unknown>, 
         UPDATE [procurement].[PurchaseRequisitions] SET
           [Title]=@Title, [Description]=@Description, [Department]=@Department, [Project]=@Project,
           [RequesterName]=@RequesterName, [Status]=@Status, [Currency]=@Currency,
-          [EstimatedAmount]=@EstimatedAmount, [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@UpdatedBy
+          [EstimatedAmount]=@EstimatedAmount, [RequiredDate]=@RequiredDate, [CurrentWith]=@CurrentWith,
+          [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@UpdatedBy
         WHERE [PrId]=@PrId
       ELSE
         INSERT INTO [procurement].[PurchaseRequisitions] (
           [PrId], [Title], [Description], [Department], [Project], [RequesterName], [Status],
-          [Currency], [EstimatedAmount], [CreatedBy], [UpdatedBy]
+          [Currency], [EstimatedAmount], [RequiredDate], [CurrentWith], [CreatedBy], [UpdatedBy]
         ) VALUES (
           @PrId, @Title, @Description, @Department, @Project, @RequesterName, @Status,
-          @Currency, @EstimatedAmount, @CreatedBy, @UpdatedBy
+          @Currency, @EstimatedAmount, @RequiredDate, @CurrentWith, @CreatedBy, @UpdatedBy
         )
     `);
 
@@ -1404,18 +1412,50 @@ export const buildProcurementDashboard = async () => {
   const result = await pool.request().query(`
     SELECT
       (SELECT COUNT(1) FROM [procurement].[PurchaseRequisitions]) AS PrCount,
-      (SELECT COUNT(1) FROM [procurement].[PurchaseRequisitions] WHERE [Status] NOT IN (N'Closed', N'Cancelled', N'Rejected')) AS OpenPrCount,
+      (SELECT COUNT(1) FROM [procurement].[PurchaseRequisitions] WHERE [Status] NOT IN (N'Closed', N'Cancelled', N'Rejected', N'Approved')) AS OpenPrCount,
       (SELECT COUNT(1) FROM [procurement].[Rfqs]) AS RfqCount,
       (SELECT COUNT(1) FROM [procurement].[Rfqs] WHERE [Status] NOT IN (N'Closed', N'Cancelled', N'Awarded')) AS OpenRfqCount,
       (SELECT COUNT(1) FROM [procurement].[CbeEvaluations]) AS CbeCount,
-      (SELECT COUNT(1) FROM [procurement].[CbeEvaluations] WHERE [Status] NOT IN (N'Approved', N'Awarded', N'Cancelled')) AS OpenCbeCount,
+      (SELECT COUNT(1) FROM [procurement].[CbeEvaluations] WHERE [Status] NOT IN (N'Approved', N'Awarded', N'Cancelled', N'Completed')) AS OpenCbeCount,
       (SELECT COUNT(1) FROM [procurement].[PurchaseOrders]) AS PoCount,
       (SELECT COUNT(1) FROM [procurement].[PurchaseOrders] WHERE [Status] NOT IN (N'Completed', N'Cancelled', N'Closed')) AS OpenPoCount,
       (SELECT COUNT(1) FROM [procurement].[Suppliers] WHERE [IsActive]=1) AS SupplierCount,
       (SELECT COUNT(1) FROM [procurement].[Contracts] WHERE [Status] NOT IN (N'Expired', N'Cancelled', N'Closed')) AS ActiveContractCount,
-      (SELECT COUNT(1) FROM [procurement].[CbeApprovals] WHERE [Status] IN (N'Pending', N'In Progress')) AS PendingApprovalCount
+      (SELECT COUNT(1) FROM [procurement].[CbeApprovals] WHERE [Status] IN (N'Pending', N'In Progress')) AS PendingApprovalCount,
+      (SELECT ISNULL(SUM([Amount]), 0) FROM [procurement].[PurchaseOrders] WHERE YEAR([OrderDate]) = YEAR(SYSUTCDATETIME()) OR [OrderDate] IS NULL) AS YearSpend
   `);
   const row = result.recordset[0] || {};
+  const [recentCbes, tasks, spendByDept] = await Promise.all([
+    listCbes().then((rows) => rows.slice(0, 5)),
+    pool.request().query(`
+      SELECT TOP 8
+        a.[CbeId] AS RefId,
+        e.[Title] AS Title,
+        a.[RoleName] AS Stage,
+        ISNULL(e.[BuyerName], a.[ActorName]) AS Requester,
+        a.[Status] AS Status,
+        e.[UpdatedAt] AS DueAt,
+        CASE WHEN a.[Status] = N'Pending' THEN N'High' ELSE N'Medium' END AS Priority
+      FROM [procurement].[CbeApprovals] a
+      INNER JOIN [procurement].[CbeEvaluations] e ON e.[CbeId] = a.[CbeId]
+      WHERE a.[Status] IN (N'Pending', N'In Progress')
+      ORDER BY e.[UpdatedAt] DESC
+    `).catch(() => ({ recordset: [] as Record<string, unknown>[] })),
+    pool.request().query(`
+      SELECT TOP 6
+        ISNULL(NULLIF(LTRIM(RTRIM(p.[Department])), N''), N'Others') AS Department,
+        COUNT(1) AS Cnt,
+        ISNULL(SUM(ISNULL(p.[EstimatedAmount], 0)), 0) AS Spend
+      FROM [procurement].[PurchaseRequisitions] p
+      GROUP BY ISNULL(NULLIF(LTRIM(RTRIM(p.[Department])), N''), N'Others')
+      ORDER BY Spend DESC
+    `).catch(() => ({ recordset: [] as Record<string, unknown>[] })),
+  ]);
+
+  const spendRows = spendByDept.recordset as Array<Record<string, unknown>>;
+  const spendTotal = spendRows.reduce((sum, r) => sum + toNum(r.Spend), 0) || toNum(row.YearSpend);
+  const colors = ['#1458d8', '#22c55e', '#f97316', '#8b5cf6', '#64748b', '#06b6d4'];
+
   return {
     prCount: toNum(row.PrCount),
     openPrCount: toNum(row.OpenPrCount),
@@ -1428,7 +1468,67 @@ export const buildProcurementDashboard = async () => {
     supplierCount: toNum(row.SupplierCount),
     activeContractCount: toNum(row.ActiveContractCount),
     pendingApprovalCount: toNum(row.PendingApprovalCount),
+    yearSpend: toNum(row.YearSpend) || spendTotal,
+    recentCbes,
+    tasks: (tasks.recordset as Array<Record<string, unknown>>).map((t) => ({
+      refId: String(t.RefId),
+      title: String(t.Title || ''),
+      stage: String(t.Stage || ''),
+      requester: t.Requester == null ? null : String(t.Requester),
+      status: String(t.Status || ''),
+      dueAt: toIso(t.DueAt),
+      priority: String(t.Priority || 'Medium'),
+    })),
+    spendByDepartment: spendRows.map((r, i) => ({
+      name: String(r.Department),
+      value: toNum(r.Spend),
+      count: toNum(r.Cnt),
+      color: colors[i % colors.length],
+    })),
   };
+};
+
+export const listProcurementLookupEmployees = async (q = '', limit = 20) => {
+  const { readEmployeeDirectoryFromDb } = await import('@/lib/dle-enterprise-db');
+  const rows = (await readEmployeeDirectoryFromDb()) || [];
+  const needle = q.trim().toLowerCase();
+  const filtered = needle
+    ? rows.filter((e) =>
+        [e.fullName, e.employeeCode, e.employeeId, e.department, e.email]
+          .filter(Boolean)
+          .some((v) => String(v).toLowerCase().includes(needle)),
+      )
+    : rows;
+  return filtered.slice(0, Math.max(1, Math.min(limit, 50))).map((e) => ({
+    employeeCode: e.employeeCode || e.employeeId || '',
+    fullName: e.fullName || e.employeeCode || 'Unknown',
+    department: e.department || '',
+    location: e.officeLocation || e.workLocation || '',
+    email: e.email || '',
+  }));
+};
+
+export const listProcurementLookupDepartments = async () => {
+  const { readSystemDepartmentsFromOrganizationDb } = await import('@/lib/organization-departments-store');
+  const payload = await readSystemDepartmentsFromOrganizationDb();
+  return (payload.departments || []).map((d) => ({
+    id: d.id,
+    name: d.name,
+    code: d.code || '',
+    location: d.location || '',
+  }));
+};
+
+export const listProcurementLookupLocations = async () => {
+  const { syncSageLocationsToOrganizationDb } = await import('@/lib/organization-locations-store');
+  const payload = await syncSageLocationsToOrganizationDb();
+  return (payload.records || []).map((r) => ({
+    id: r.id,
+    name: r.name,
+    code: r.costCenter || '',
+    region: r.region || '',
+    recordType: r.recordType || 'Location',
+  }));
 };
 
 export const buildProcurementReports = async () => {
