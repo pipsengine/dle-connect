@@ -59,14 +59,14 @@ export const IT_SUPPORT_NAV_SECTIONS: ItSupportNavSection[] = [
     label: 'Service Operations',
     href: '/it-support/service-desk-itsm',
     icon: Headphones,
-    status: 'ready',
+    status: 'live',
     permissionKeys: ['view_itsm', 'service-desk.view', 'view_it_support', 'it.view', 'it.*'],
     children: [
       {
         id: 'service-desk',
         label: 'Service Desk (ITSM)',
-        href: '/it-support/service-desk-itsm',
-        status: 'ready',
+        href: '/it-support/service-desk-itsm/dashboard',
+        status: 'live',
         permissionKeys: ['view_itsm', 'service-desk.view', 'view_it_support', 'it.view', 'it.*'],
       },
       {
@@ -266,9 +266,9 @@ export const IT_SUPPORT_MODULE_CARDS = [
     id: 'service-desk',
     title: 'Service Desk (ITSM)',
     description: 'Incident, request, and change workflows with SLA tracking.',
-    href: '/it-support/service-desk-itsm',
+    href: '/it-support/service-desk-itsm/dashboard',
     icon: Headphones,
-    status: 'ready' as const,
+    status: 'live' as const,
     permissionKeys: ['view_itsm', 'service-desk.view', 'view_it_support', 'it.view', 'it.*'],
   },
   {
