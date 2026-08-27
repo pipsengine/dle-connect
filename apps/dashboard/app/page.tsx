@@ -94,9 +94,9 @@ const workspaceModules = [
     title: 'Procurement',
     href: '/procurement',
     icon: Webhook,
-    status: 'Ready',
-    signal: 'Vendor, sourcing, procurement requests, and approvals',
-    permissions: ['procurement.view', 'procurement.*', 'vendor.view'],
+    status: 'Live',
+    signal: 'Vendor, sourcing, CBE, procurement requests, and approvals',
+    permissions: ['procurement.view', 'procurement.*', 'view_procurement', 'vendor.view'],
   },
   {
     title: 'Projects & Engineering',
