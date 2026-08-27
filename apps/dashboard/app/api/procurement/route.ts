@@ -179,8 +179,8 @@ export async function POST(request: NextRequest) {
           await addCbeAudit(
             id,
             String(body.actionLabel || body.auditAction || 'Update'),
-            body.section ? String(body.section) : undefined,
-            body.details ? String(body.details) : undefined,
+            body.section ? String(body.section) : null,
+            body.details ? String(body.details) : null,
             actor,
             body.role ? String(body.role) : undefined,
           ),
