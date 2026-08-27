@@ -187,6 +187,7 @@ const resolveSlaDueAt = async (pool: sql.ConnectionPool, priority: string) => {
 
 export const ensureItServiceDeskDb = async () => {
   const pool = await getDleEnterpriseDbPool();
+  if (!pool) throw new Error('DLE_Enterprise database is not configured. Service Desk ITSM requires SQL persistence.');
   if (!dbReady.value) {
     await pool.request().query(ensureItServiceDeskSchemaSql);
     await seedDefaults(pool);
