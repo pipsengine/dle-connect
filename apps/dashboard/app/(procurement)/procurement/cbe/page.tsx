@@ -1,4 +1,4 @@
-import { CbeListClient } from './CbeListClient';
+import CbeListClient from './CbeListClient';
 
 export const metadata = { title: 'Competitive Bid Evaluation' };
 
