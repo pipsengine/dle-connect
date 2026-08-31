@@ -580,6 +580,50 @@ const employeeTypeCode = (employeeType: string) => {
 
 const employeeCodePrefixForTypeCode = (typeCode: string | null) => (typeCode === 'N' ? 'NYSC' : typeCode === 'I' ? 'IT' : typeCode || '');
 
+/** Values permitted by CK_Employees_type on [hris].[Employees]. */
+export const EMPLOYMENT_TYPES = [
+  'Permanent',
+  'Lumpsum',
+  'Daily Rate',
+  'Contract',
+  'Temporary',
+  'Intern',
+  'Consultant',
+  'Expatriate',
+  'Industrial Trainee',
+  'NYSC',
+  'Outsourced Staff',
+] as const;
+
+/**
+ * Maps the labels used across HRIS screens and imports onto the exact values allowed by
+ * CK_Employees_type, so a mismatch surfaces as a readable message instead of a raw SQL
+ * constraint error. "IT" is the employee-code prefix for industrial trainees, not a
+ * separate employment type.
+ */
+export const canonicalEmploymentType = (value: unknown): (typeof EMPLOYMENT_TYPES)[number] => {
+  const raw = str(value).trim();
+  if (!raw) return 'Permanent';
+
+  const exact = EMPLOYMENT_TYPES.find((type) => type.toLowerCase() === raw.toLowerCase());
+  if (exact) return exact;
+
+  const normalized = raw.toLowerCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ');
+  if (normalized === 'it' || /industrial (trainee|training|attachment)|trainee/.test(normalized)) return 'Industrial Trainee';
+  if (/nysc|youth service/.test(normalized)) return 'NYSC';
+  if (/intern/.test(normalized)) return 'Intern';
+  if (/day rate|daily|casual/.test(normalized)) return 'Daily Rate';
+  if (/lump ?sum/.test(normalized)) return 'Lumpsum';
+  if (/expat/.test(normalized)) return 'Expatriate';
+  if (/outsourc/.test(normalized)) return 'Outsourced Staff';
+  if (/consultan/.test(normalized)) return 'Consultant';
+  if (/temp/.test(normalized)) return 'Temporary';
+  if (/contract/.test(normalized)) return 'Contract';
+  if (/permanent|full ?time|confirmed/.test(normalized)) return 'Permanent';
+
+  throw new Error(`"${raw}" is not a valid employee type. Choose one of: ${EMPLOYMENT_TYPES.join(', ')}.`);
+};
+
 const inferEmployeeTypeCode = (...values: unknown[]) => employeeTypeCode(values.map((value) => str(value)).filter(Boolean).join(' '));
 
 const employeeTypeCodeFromRawCode = (employeeCode: string) => {
@@ -2713,12 +2757,11 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
       .input('preferred_name', sql.NVarChar(150), nullable(personal.preferredName))
       .input('employment_status', sql.VarChar(40), (() => {
         const requested = nullable(employment.employmentStatus);
-        const employmentType = nullable(employment.employmentType) || 'Permanent';
         if (requested && requested !== 'Active' && requested !== 'Confirmed') return requested;
-        if (employmentType === 'Permanent') return 'Probation';
+        if (canonicalEmploymentType(employment.employmentType) === 'Permanent') return 'Probation';
         return requested || 'Active';
       })())
-      .input('employment_type', sql.VarChar(40), nullable(employment.employmentType) || 'Permanent')
+      .input('employment_type', sql.VarChar(40), canonicalEmploymentType(employment.employmentType))
       .query(`
         INSERT [hris].[Employees](employee_code, full_name, preferred_name, employment_status, employment_type)
         OUTPUT INSERTED.employee_id
@@ -3106,7 +3149,7 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
     employeeCode;
   const preferredName = nullable(personal.preferredName ?? input.preferredName);
   const employmentStatus = nullable(employment.employmentStatus ?? input.employmentStatus) || 'Active';
-  const employmentType = nullable(employment.employmentType ?? input.employmentType) || 'Permanent';
+  const employmentType = canonicalEmploymentType(employment.employmentType ?? input.employmentType);
   // first_name / last_name are NOT NULL — never overwrite existing rows with blanks.
   const personalFirstName = nullable(personal.firstName) || (str(fullName).split(/\s+/)[0] || employeeCode);
   const personalLastName = nullable(personal.lastName)

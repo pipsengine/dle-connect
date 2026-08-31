@@ -67,7 +67,6 @@ type EmploymentType =
   | 'Lumpsum'
   | 'Daily Rate'
   | 'NYSC'
-  | 'IT'
   | 'Intern'
   | 'Industrial Trainee';
 
@@ -1596,7 +1595,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
             { type: 'Lumpsum' as EmploymentType, label: 'Lumpsum' },
             { type: 'Daily Rate' as EmploymentType, label: 'Contract' },
             { type: 'NYSC' as EmploymentType, label: 'NYSC' },
-            { type: 'IT' as EmploymentType, label: 'IT' },
+            { type: 'Industrial Trainee' as EmploymentType, label: 'IT' },
             { type: 'Intern' as EmploymentType, label: 'Intern' },
           ]).map(({ type, label }) => (
             <button
@@ -1626,7 +1625,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
           onChange={(v) => {
             void requestNextEmployeeCode((v || '') as EmploymentType | '');
           }}
-          options={['Permanent', 'Lumpsum', 'Daily Rate', 'NYSC', 'IT', 'Intern', 'Industrial Trainee']}
+          options={['Permanent', 'Lumpsum', 'Daily Rate', 'NYSC', 'Industrial Trainee', 'Intern']}
           error={requiredErrors['employment.employmentType']}
         />
         <Field
