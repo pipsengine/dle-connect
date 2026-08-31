@@ -162,6 +162,57 @@ const resolvePeriodCalculation = async (
   return { calculation: normalizedLive, dataMode: 'live' as const, payrollComputed: true };
 };
 
+/**
+ * Live totals for every pack in the period, not the amounts persisted on the run header.
+ * Run headers are only rewritten by calculate/create-run/validate/submit, so reading them
+ * makes the unselected pack show whatever the last compute happened to write, while the
+ * selected pack shows today's figures. The period total is what the NGN Excel export
+ * covers, so the cards can be reconciled against the workbook.
+ */
+const buildPackTotals = async (
+  period: string,
+  packRunsSource: UnifiedPayrollRun[],
+  periodRecord: { status: string } | null,
+  selected: { pack: PayrollRunPack; calculation: Awaited<ReturnType<typeof calculatePayrollForPeriod>>; payrollComputed: boolean },
+) => {
+  const totals = await Promise.all(PAYROLL_RUN_PACKS.map(async (pack) => {
+    const run = packRunsSource.find((item) => resolvePayrollRunPack(item) === pack) || null;
+    const resolved = pack === selected.pack
+      ? { calculation: selected.calculation, payrollComputed: selected.payrollComputed }
+      : await resolvePeriodCalculation(period, run, periodRecord, pack).catch(() => null);
+    const summary = resolved?.calculation.summary;
+    return {
+      pack,
+      packLabel: payrollRunPackShortLabel(pack),
+      runId: run?.id || null,
+      status: run?.status || 'Draft',
+      computed: Boolean(resolved?.payrollComputed),
+      employeeCount: Number(summary?.payrollEligible || 0),
+      readyEmployees: Number(summary?.readyEmployees || 0),
+      grossPay: roundMoney(Number(summary?.grossPay || 0)),
+      deductions: roundMoney(Number(summary?.deductions || 0)),
+      netPay: roundMoney(Number(summary?.netPay || 0)),
+    };
+  }));
+
+  const periodTotals = totals.reduce(
+    (acc, item) => ({
+      employeeCount: acc.employeeCount + item.employeeCount,
+      readyEmployees: acc.readyEmployees + item.readyEmployees,
+      grossPay: roundMoney(acc.grossPay + item.grossPay),
+      deductions: roundMoney(acc.deductions + item.deductions),
+      netPay: roundMoney(acc.netPay + item.netPay),
+      computedPacks: acc.computedPacks + (item.computed ? 1 : 0),
+    }),
+    { employeeCount: 0, readyEmployees: 0, grossPay: 0, deductions: 0, netPay: 0, computedPacks: 0 },
+  );
+
+  return {
+    packTotals: totals,
+    periodTotals: { ...periodTotals, allPacksComputed: periodTotals.computedPacks === PAYROLL_RUN_PACKS.length },
+  };
+};
+
 const mapRunForProcessing = (run: Awaited<ReturnType<typeof getPayrollRunForPeriod>>) =>
   run
     ? {
@@ -437,6 +488,11 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
       : packRunsSource.find((item) => resolvePayrollRunPack(item) === 'daily-rate'))
     || null;
   const { calculation, dataMode, payrollComputed } = await resolvePeriodCalculation(period, selectedRun, periodRecord, pack);
+  const { packTotals, periodTotals } = await buildPackTotals(period, packRunsSource, periodRecord, {
+    pack,
+    calculation,
+    payrollComputed,
+  });
   const currentRun = selectedRun && selectedRun.period === period ? mapManagementRun(selectedRun) : null;
   const mappedRuns = runs.map(mapManagementRun);
   const packRuns = packRunsSource.map(mapManagementRun);
@@ -535,6 +591,8 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
       exceptionCount: calculation.summary.exceptionCount,
       deferredExceptionCount: calculation.summary.deferredExceptionCount,
     },
+    packTotals,
+    periodTotals,
     toleranceMode: calculation.toleranceMode,
     enterpriseSourceActive: calculation.enterpriseSourceActive,
     currentRun,

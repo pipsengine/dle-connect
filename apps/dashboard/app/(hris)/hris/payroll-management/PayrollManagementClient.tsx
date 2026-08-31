@@ -209,6 +209,27 @@ type PayrollPayload = {
   };
   runs: PayrollRun[];
   packRuns?: PayrollRun[];
+  packTotals?: {
+    pack: 'salaried' | 'daily-rate';
+    packLabel: string;
+    runId: string | null;
+    status: string;
+    computed: boolean;
+    employeeCount: number;
+    readyEmployees: number;
+    grossPay: number;
+    deductions: number;
+    netPay: number;
+  }[];
+  periodTotals?: {
+    employeeCount: number;
+    readyEmployees: number;
+    grossPay: number;
+    deductions: number;
+    netPay: number;
+    computedPacks: number;
+    allPacksComputed: boolean;
+  };
   records: PayrollRecord[];
   exceptions: { id: string; employeeId: string; employeeName: string; issue: string; severity: 'Low' | 'Medium' | 'High'; owner: string }[];
   toleranceMode?: boolean;
@@ -1727,7 +1748,7 @@ const resolveProcessingAction = (id: string): PayrollAction => {
   return pool.find((item) => item.id === id) || action(id, id.replace(/-/g, ' '), 'workflow', payrollMakerRoles);
 };
 
-function ProcessingKpiCard({ title, value, subtitle, icon: Icon, tone, onClick, active = false }: { title: string; value: string; subtitle: string; icon: any; tone: 'blue' | 'green' | 'purple' | 'red'; onClick?: () => void; active?: boolean }) {
+function ProcessingKpiCard({ title, value, subtitle, footnote, icon: Icon, tone, onClick, active = false }: { title: string; value: string; subtitle: string; footnote?: string; icon: any; tone: 'blue' | 'green' | 'purple' | 'red'; onClick?: () => void; active?: boolean }) {
   const tones = {
     blue: 'border-blue-200 bg-gradient-to-br from-blue-50 to-white',
     green: 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-white',
@@ -1752,6 +1773,7 @@ function ProcessingKpiCard({ title, value, subtitle, icon: Icon, tone, onClick, 
           <p className="text-xs font-bold uppercase tracking-wide text-slate-600">{title}</p>
           <p className="mt-2 text-2xl font-black tracking-tight text-slate-950">{value}</p>
           <p className="mt-1 text-xs font-semibold text-slate-600">{subtitle}</p>
+          {footnote ? <p className="mt-0.5 text-[11px] font-semibold text-slate-500">{footnote}</p> : null}
         </div>
         <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconTone[tone]}`}>
           <Icon className="h-5 w-5" />
@@ -1905,17 +1927,22 @@ function ProcessPayrollWorkspace({
   const rerunStep = createRunAuth.allowed && status !== 'Closed' ? workflowSteps.find((step) => step.id === 'create-run') || { id: 'create-run', label: 'Run Payroll' } : null;
   const rerunLabel = computedStatuses.includes(status) ? 'Re-run Payroll' : 'Run Payroll';
   const completedCount = workflowSteps.filter((step) => step.done).length;
+  // Live per-pack totals from the payload, so both chips report the same measure from the
+  // same source. Reading netPay off the run header showed the unselected pack whatever the
+  // last compute persisted, which is why the figures appeared not to update.
   const packCards = ([
     { pack: 'salaried' as const, packLabel: 'Salaries' },
     { pack: 'daily-rate' as const, packLabel: 'Wages' },
   ]).map((item) => {
+    const totals = (payload?.packTotals || []).find((row) => row.pack === item.pack) || null;
     const run = (payload?.packRuns || []).find((row) => (row.pack || 'salaried') === item.pack && row.period === payload?.period)
       || (viewPack === item.pack ? currentRun : null);
     return {
       ...item,
-      status: run?.status || 'Draft',
-      netPay: run?.netPay ?? (viewPack === item.pack ? payload?.summary.netPay : null) ?? 0,
-      employeeCount: run?.employeeCount ?? (viewPack === item.pack ? payload?.summary.payrollEligible : 0) ?? 0,
+      status: totals?.status || run?.status || 'Draft',
+      grossPay: totals?.grossPay ?? 0,
+      netPay: totals?.netPay ?? 0,
+      employeeCount: totals?.employeeCount ?? 0,
     };
   });
 
@@ -2102,7 +2129,10 @@ function ProcessPayrollWorkspace({
                   >
                     <div className="text-xs font-extrabold">{item.packLabel}</div>
                     <div className={`mt-1 text-[11px] font-semibold ${active ? 'text-blue-100' : 'text-slate-500'}`}>
-                      {item.status} · {money(item.netPay, canViewMoney)} · {number(item.employeeCount)} staff
+                      {item.status} · gross {money(item.grossPay, canViewMoney)} · {number(item.employeeCount)} staff
+                    </div>
+                    <div className={`text-[11px] font-semibold ${active ? 'text-blue-100' : 'text-slate-500'}`}>
+                      net {money(item.netPay, canViewMoney)}
                     </div>
                   </button>
                 );
@@ -5351,6 +5381,20 @@ export default function PayrollManagementClient({
     const readyPct = totalEmployees ? Math.round((readyEmployees / totalEmployees) * 100) : 0;
     const deductionPct = payload?.summary.grossPay ? Math.round(((payload.summary.deductions || 0) / payload.summary.grossPay) * 1000) / 10 : 0;
     const runStatus = currentRun?.status || payload?.workflow?.currentStatus || 'Draft';
+    // The Excel export covers every pack in the period, so the period total is shown
+    // alongside the selected pack's figure to keep the two reconcilable.
+    const periodTotals = payload?.periodTotals || null;
+    const packLabel = payload?.packLabel || 'selected run';
+    const showPeriodTotal = Boolean(periodTotals && (payload?.packTotals?.length || 0) > 1);
+    const periodGrossFootnote = showPeriodTotal && canViewMoney
+      ? `${packLabel} shown • period total ${money(periodTotals?.grossPay, canViewMoney)} gross / ${money(periodTotals?.netPay, canViewMoney)} net`
+      : undefined;
+    const periodDeductionFootnote = showPeriodTotal && canViewMoney
+      ? `${packLabel} shown • period total ${money(periodTotals?.deductions, canViewMoney)}`
+      : undefined;
+    const periodReadyFootnote = showPeriodTotal
+      ? `${packLabel} shown • period total ${number(periodTotals?.employeeCount)} staff`
+      : undefined;
 
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A]">
@@ -5419,9 +5463,9 @@ export default function PayrollManagementClient({
 
           {payrollRunView ? (
             <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <ProcessingKpiCard title="Ready Employees" value={number(readyEmployees)} subtitle={`${readyPct}% of total employees`} icon={Users} tone="blue" active={processingKpiPanel === 'ready'} onClick={() => toggleProcessingKpiPanel('ready')} />
-              <ProcessingKpiCard title="Gross Pay" value={money(payload?.summary.grossPay, canViewMoney)} subtitle={`Net Pay: ${money(payload?.summary.netPay, canViewMoney)}`} icon={Banknote} tone="green" active={processingKpiPanel === 'gross'} onClick={() => toggleProcessingKpiPanel('gross')} />
-              <ProcessingKpiCard title="Deductions" value={money(payload?.summary.deductions, canViewMoney)} subtitle={`${deductionPct}% of gross pay`} icon={ReceiptText} tone="purple" active={processingKpiPanel === 'deductions'} onClick={() => toggleProcessingKpiPanel('deductions')} />
+              <ProcessingKpiCard title="Ready Employees" value={number(readyEmployees)} subtitle={`${readyPct}% of total employees`} footnote={periodReadyFootnote} icon={Users} tone="blue" active={processingKpiPanel === 'ready'} onClick={() => toggleProcessingKpiPanel('ready')} />
+              <ProcessingKpiCard title="Gross Pay" value={money(payload?.summary.grossPay, canViewMoney)} subtitle={`Net Pay: ${money(payload?.summary.netPay, canViewMoney)}`} footnote={periodGrossFootnote} icon={Banknote} tone="green" active={processingKpiPanel === 'gross'} onClick={() => toggleProcessingKpiPanel('gross')} />
+              <ProcessingKpiCard title="Deductions" value={money(payload?.summary.deductions, canViewMoney)} subtitle={`${deductionPct}% of gross pay`} footnote={periodDeductionFootnote} icon={ReceiptText} tone="purple" active={processingKpiPanel === 'deductions'} onClick={() => toggleProcessingKpiPanel('deductions')} />
               <ProcessingKpiCard title="Issues" value={number(payload?.summary.exceptionCount)} subtitle={`${number(payload?.summary.blockedEmployees)} blocked • ${number(payload?.summary.reviewEmployees)} review`} icon={AlertTriangle} tone="red" active={processingKpiPanel === 'issues'} onClick={() => toggleProcessingKpiPanel('issues')} />
             </div>
           ) : null}
