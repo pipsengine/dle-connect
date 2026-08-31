@@ -992,12 +992,6 @@ const mergeProfileLinesWithAdjustments = (profileLines: PayrollEarningLine[], ad
   return [...merged, ...extras];
 };
 
-const isTimesheetOtAdjustmentSource = (value?: string | null) =>
-  isHrisTimesheetOvertimeSource(value) || /timesheet ot posting/i.test(compact(value));
-
-const isTimesheetNightAllowanceSource = (value?: string | null) =>
-  /timesheet night allowance posting/i.test(compact(value));
-
 const periodAdjustmentLines = (employee: DleEmployeeDirectoryRow, options?: PayrollEarningsOptions): PayrollEarningLine[] => {
   if (!options?.includePeriodAdjustments) return [];
   const period = normalizedPeriod(options.period);
@@ -1009,10 +1003,11 @@ const periodAdjustmentLines = (employee: DleEmployeeDirectoryRow, options?: Payr
     .filter((row) => {
       if (isSageDayrateScheduleSource(row.source)) return false;
       if (isSagePayslipEarningSyncSource(row.source)) return false;
-      if (excelOverride) {
-        if (isTimesheetOtAdjustmentSource(row.source)) return false;
-        if (isTimesheetNightAllowanceSource(row.source)) return false;
-      }
+      // An applied HR dayrate schedule is the sole earnings authority for that
+      // employee. Anything the sheet does not carry (timesheet OT/night postings,
+      // refunds, stock count, other pay, duplicate weekend/holiday overtime codes)
+      // must not stack on top, or payroll stops matching the schedule HR signed.
+      if (excelOverride && !isHrDayrateScheduleOverrideSource(row.source)) return false;
       if (
         options?.excludeLegacyDayrateSchedule
         && isSageDayrateScheduleComponentCode(row.code)

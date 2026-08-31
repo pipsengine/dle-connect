@@ -14,7 +14,7 @@ import { syncLeaveAllowanceEventsForPayroll } from '@/lib/payroll-leave-allowanc
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { buildTimesheetHoursMapForPayrollPeriod } from '@/lib/timesheet-entry-store';
 import { dayrateBookedHours } from '@/lib/dayrate-schedule-xlsx';
-import { findDayrateScheduleOverrideRow } from '@/lib/dayrate-schedule-override-read';
+import { findDayrateScheduleOverrideRow, readAppliedDayrateScheduleOverride } from '@/lib/dayrate-schedule-override-read';
 import { normalizeBankSortCode, withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { payrollPeriodLabel } from '@/lib/payroll-period-store';
@@ -302,6 +302,25 @@ const applyDailyRateFromTimesheets = (
 
   const timesheet = resolveTimesheetHoursForEmployee(employee, timesheetHours);
   const excel = findDayrateScheduleOverrideRow(period, employee);
+  const appliedSchedule = readAppliedDayrateScheduleOverride(period);
+  // Once HR applies a dayrate schedule it defines the payable roster as well as the
+  // amounts, so anyone absent from the sheet is out of this run. The Excel export
+  // already builds its roster from the sheet; the run has to agree with it.
+  if (appliedSchedule?.rows?.length && !excel) {
+    return {
+      ...amounts,
+      periodPackageGross: 0,
+      grossPay: 0,
+      basePay: 0,
+      allowances: 0,
+      taxablePay: 0,
+      nonTaxablePay: 0,
+      earningLines: [],
+      paidEarningLines: [],
+      annualBenefitLines: amounts.annualBenefitLines || [],
+      profileName: 'Daily Rate (Not In HR Dayrate Schedule — Excluded)',
+    };
+  }
   let daysWorked = 0;
   if (excel) {
     daysWorked = excel.weekdayDays > 0 ? excel.weekdayDays : 0;
