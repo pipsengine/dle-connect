@@ -424,23 +424,29 @@ const withCategoryFormulaLines = (profileId: PayrollEarningProfileId, lines: Pay
 
 const CONTRACT_MEAL_RATE = 500;
 
-const contractMealAllowanceLine = (daysWorked: number): PayrollEarningLine | null => {
-  const amount = roundMoney(Math.max(0, daysWorked) * CONTRACT_MEAL_RATE);
+const contractMealAllowanceLine = (daysWorked: number, mealAmount?: number | null): PayrollEarningLine | null => {
+  const scheduleDriven = mealAmount !== null && mealAmount !== undefined;
+  const amount = roundMoney(scheduleDriven ? Math.max(0, num(mealAmount)) : Math.max(0, daysWorked) * CONTRACT_MEAL_RATE);
   if (amount <= 0) return null;
   return {
     code: 'MEAL',
     name: 'MEAL ALLOWANCE',
     taxable: false,
     percentOfGross: 0,
-    calculation: 'NGN 500 * number of days worked',
+    calculation: scheduleDriven ? 'HR dayrate schedule meal allowance' : 'NGN 500 * number of days worked',
     runFrequency: 'formula',
     includeInMonthlyPayroll: true,
     amount,
   };
 };
 
-const finalizeContractDayRateEarnings = (lines: PayrollEarningLine[], weekdayDays: number, ratePerDay: number) => {
-  const mealLine = contractMealAllowanceLine(weekdayDays);
+const finalizeContractDayRateEarnings = (
+  lines: PayrollEarningLine[],
+  weekdayDays: number,
+  ratePerDay: number,
+  mealAmount?: number | null,
+) => {
+  const mealLine = contractMealAllowanceLine(weekdayDays, mealAmount);
   const paidLines = mealLine ? [...lines, mealLine] : lines;
   const grossPay = roundMoney(paidLines.reduce((sum, line) => sum + line.amount, 0));
   const basicPay = roundMoney(lines.filter(isBasicLine).reduce((sum, line) => sum + line.amount, 0));
@@ -490,6 +496,7 @@ export const contractDayRatePayrollResult = (input: {
   publicHolidayHours?: number;
   saturdayHours?: number;
   sundayHours?: number;
+  mealAmount?: number | null;
 }): PayrollEarningsResult => {
   const result = calculateContractDayRateEarnings({
     ratePerDay: input.ratePerDay,
@@ -498,6 +505,7 @@ export const contractDayRatePayrollResult = (input: {
     publicHolidayHours: input.publicHolidayHours,
     saturdayHours: input.saturdayHours,
     sundayHours: input.sundayHours,
+    mealAmount: input.mealAmount,
   });
   const lines = result.earningLines.map((line) => ({
     ...line,
@@ -648,14 +656,18 @@ export const mergeTimesheetDayRateEarnings = (
   input: { ratePerDay: number; daysWorked: number; period?: string },
 ): PayrollEarningsResult => {
   const excel = findDayrateScheduleOverrideRow(input.period, employee);
+  // When HR has applied a dayrate schedule, the sheet is the authority for the
+  // day rate and meal allowance too — not just the hours. Otherwise payroll
+  // totals drift away from the signed schedule that HR pays from.
   const timesheetBase = excel
     ? contractDayRatePayrollResult({
-        ratePerDay: input.ratePerDay,
+        ratePerDay: num(excel.excelDailyRate) > 0 ? num(excel.excelDailyRate) : input.ratePerDay,
         daysWorked: excel.weekdayDays,
         weekdayOvertimeHours: excel.weekdayOvtHours,
         saturdayHours: excel.saturdayHours,
         sundayHours: excel.sundayHours,
         publicHolidayHours: excel.publicHolidayHours,
+        mealAmount: num(excel.mealAllowance),
       })
     : contractDayRatePayrollResult({ ratePerDay: input.ratePerDay, daysWorked: input.daysWorked });
   // Permanent authority rule: timesheet JCWEEKDAY (+ auto meal) is the day-rate base.
@@ -1363,6 +1375,7 @@ export const calculateContractDayRateEarnings = (input: {
   publicHolidayHours?: number;
   saturdayHours?: number;
   sundayHours?: number;
+  mealAmount?: number | null;
 }) => {
   const ratePerDay = Math.max(0, num(input.ratePerDay));
   const ratePerHour = ratePerDay / 8;
@@ -1381,7 +1394,7 @@ export const calculateContractDayRateEarnings = (input: {
     profileName: 'Contract Staff on Day Rate',
     ratePerDay: roundMoney(ratePerDay),
     ratePerHour: roundMoney(ratePerHour),
-    ...finalizeContractDayRateEarnings(lines, weekdayDays, ratePerDay),
+    ...finalizeContractDayRateEarnings(lines, weekdayDays, ratePerDay, input.mealAmount),
   };
 };
 
