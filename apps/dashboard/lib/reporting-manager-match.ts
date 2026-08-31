@@ -42,10 +42,14 @@ const findEmployeeByCode = (employees: DleEmployeeDirectoryRow[], code: string) 
   return employees.find((employee) => normalizePayrollMatchKey(employee.employeeCode || employee.employeeId) === target) || null;
 };
 
+/**
+ * Displays only the HRIS reporting manager, matching approval routing exactly.
+ * Functional manager, department head and department overrides are not substituted,
+ * so the profile never shows an approver who would not actually receive the request.
+ */
 export const resolveReportingManagerDisplay = (
-  employee: Pick<DleEmployeeDirectoryRow, 'managerName' | 'functionalManager' | 'departmentHead' | 'department'> | null | undefined,
+  employee: Pick<DleEmployeeDirectoryRow, 'managerName' | 'department'> | null | undefined,
   employees: DleEmployeeDirectoryRow[] = [],
-  departmentSupervisorCode?: string | null,
 ): string => {
   if (!employee) return 'Not assigned';
 
@@ -54,27 +58,18 @@ export const resolveReportingManagerDisplay = (
     return code ? `${code} - ${manager.fullName}` : manager.fullName;
   };
 
-  const references = [employee.managerName, employee.functionalManager, employee.departmentHead].map(clean).filter(Boolean);
-  for (const reference of references) {
-    const code = employeeCodeFromReference(reference);
-    if (code && employees.length) {
-      const manager = findEmployeeByCode(employees, code);
-      if (manager) return formatManager(manager);
-    }
-    if (reference.includes(' - ')) return reference;
-    if (employees.length) {
-      const manager = employees.find((item) => nameTokensMatch(item.fullName, reference));
-      if (manager) return formatManager(manager);
-    }
-    if (reference) return reference;
-  }
+  const reference = clean(employee.managerName);
+  if (!reference) return 'Not assigned';
 
-  const fallbackCode = clean(departmentSupervisorCode);
-  if (fallbackCode && employees.length) {
-    const manager = findEmployeeByCode(employees, fallbackCode);
+  const code = employeeCodeFromReference(reference);
+  if (code && employees.length) {
+    const manager = findEmployeeByCode(employees, code);
     if (manager) return formatManager(manager);
-    return fallbackCode;
   }
-
-  return 'Not assigned';
+  if (reference.includes(' - ')) return reference;
+  if (employees.length) {
+    const manager = employees.find((item) => nameTokensMatch(item.fullName, reference));
+    if (manager) return formatManager(manager);
+  }
+  return reference;
 };

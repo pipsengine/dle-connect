@@ -31,7 +31,6 @@ import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { HRIS_LEAVE_SOURCE, isLegacySageLeaveImport, normalizeLeaveTypeName } from '@/lib/hris-leave-read';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import { invalidateEssPortalCache } from '@/lib/ess-portal-cache';
-import { explicitDepartmentSupervisorCode } from '@/lib/department-reporting-manager-sync';
 import {
   calculateLeaveDays,
   decodeLeaveExceptionsPayload,
@@ -1117,54 +1116,56 @@ const resolveLineManagerRecipient = (requester: DleEmployeeDirectoryRow, employe
 export type ResolvedLineManager = {
   employee: DleEmployeeDirectoryRow;
   label: string;
-  source: 'reporting-manager' | 'functional-manager' | 'department-head';
+  source: 'reporting-manager';
 };
 
+/**
+ * Approval routing must never guess an approver. Only the HRIS reporting manager
+ * (job information `reporting_manager`) is accepted; functional manager, department
+ * head, departmental inference and hardcoded department overrides are deliberately
+ * not used as fallbacks. Callers must surface an error when this returns null.
+ */
 export const resolveLineManagerForEmployee = (
   requester: DleEmployeeDirectoryRow,
   employees: DleEmployeeDirectoryRow[],
 ): ResolvedLineManager | null => {
+  const reference = compact(requester.managerName);
+  if (!reference) return null;
+
   const inactive = /inactive|terminated|resigned|retired|deceased|suspend/i;
-  const activeEmployees = employees.filter((employee) => !inactive.test(compact(employee.status)));
   const isSelf = (candidate: DleEmployeeDirectoryRow) =>
     employeeRequestMatches(candidate, requester.employeeId)
     || (requester.employeeCode && employeeRequestMatches(candidate, requester.employeeCode));
 
-  const matchReference = (reference: string, source: ResolvedLineManager['source']) => {
-    if (!reference) return null;
-    const found = activeEmployees.find((employee) => !isSelf(employee) && referenceMatchesEmployee(employee, reference));
-    return found ? { employee: found, label: found.fullName, source } : null;
-  };
+  const found = employees.find((employee) =>
+    !inactive.test(compact(employee.status))
+    && !isSelf(employee)
+    && referenceMatchesEmployee(employee, reference));
 
-  const reportingManager = matchReference(compact(requester.managerName), 'reporting-manager');
-  if (reportingManager) return reportingManager;
+  return found ? { employee: found, label: found.fullName, source: 'reporting-manager' } : null;
+};
 
-  const functionalManager = matchReference(compact(requester.functionalManager), 'functional-manager');
-  if (functionalManager) return functionalManager;
+/** Consistent, actionable message when an employee has no usable reporting manager. */
+export const missingReportingManagerMessage = (requester: Pick<DleEmployeeDirectoryRow, 'fullName' | 'employeeCode' | 'employeeId' | 'managerName'>) => {
+  const who = compact(requester.fullName)
+    || compact(requester.employeeCode)
+    || compact(requester.employeeId)
+    || 'this employee';
+  const code = compact(requester.employeeCode) || compact(requester.employeeId);
+  const label = code ? `${who} (${code})` : who;
+  return compact(requester.managerName)
+    ? `The reporting manager recorded for ${label} ("${compact(requester.managerName)}") does not match an active employee in HRIS. Ask HR to correct the reporting manager before submitting.`
+    : `No reporting manager is configured for ${label}. Ask HR to set the reporting manager in HRIS before submitting.`;
+};
 
-  const departmentHead = matchReference(compact(requester.departmentHead), 'department-head');
-  if (departmentHead) return departmentHead;
-
-  const department = compact(requester.department).toLowerCase();
-  if (!department) return null;
-
-  const departmentHeadName = activeEmployees
-    .filter((employee) => compact(employee.department).toLowerCase() === department && compact(employee.departmentHead))
-    .map((employee) => compact(employee.departmentHead))[0];
-  if (departmentHeadName) {
-    const inferredHead = activeEmployees.find((employee) => !isSelf(employee) && namesMatch(employee.fullName, departmentHeadName));
-    if (inferredHead) return { employee: inferredHead, label: inferredHead.fullName, source: 'department-head' };
-  }
-
-  const departmentSupervisorCode = explicitDepartmentSupervisorCode(requester.department || '');
-  if (departmentSupervisorCode) {
-    const departmentSupervisor = activeEmployees.find((employee) => !isSelf(employee) && employeeRequestMatches(employee, departmentSupervisorCode));
-    if (departmentSupervisor) {
-      return { employee: departmentSupervisor, label: departmentSupervisor.fullName, source: 'reporting-manager' };
-    }
-  }
-
-  return null;
+/** Strict resolver for workflows that must not route to a guessed approver. */
+export const resolveLineManagerOrThrow = (
+  requester: DleEmployeeDirectoryRow,
+  employees: DleEmployeeDirectoryRow[],
+): ResolvedLineManager => {
+  const resolved = resolveLineManagerForEmployee(requester, employees);
+  if (!resolved) throw new Error(missingReportingManagerMessage(requester));
+  return resolved;
 };
 
 export const notifyLineManagerLeaveSubmitted = async (input: {

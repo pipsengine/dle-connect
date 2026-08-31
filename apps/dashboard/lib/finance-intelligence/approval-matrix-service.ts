@@ -943,14 +943,9 @@ export const applyMdLineManagerLastApproverRule = async (input: {
       }) || null
       : null;
 
-    let lineManagerEmployee = requester
+    const lineManagerEmployee = requester
       ? resolveLineManagerForEmployee(requester, employees)?.employee || null
       : null;
-    if (!lineManagerEmployee && compact(input.supervisorName)) {
-      const supervisor = compact(input.supervisorName).toLowerCase();
-      lineManagerEmployee = employees.find((employee) =>
-        compact(employee.fullName).toLowerCase() === supervisor) || null;
-    }
     mdIsLineManager = isMdCeoEmployee(lineManagerEmployee);
   } catch (error) {
     console.error('[approval-limits] MD line-manager rule failed', error);

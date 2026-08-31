@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { countDirectReportsFromEmployees, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { employeeReportsToManager, resolveReportingManagerDisplay } from '@/lib/reporting-manager-match';
-import { explicitDepartmentSupervisorCode } from '@/lib/department-reporting-manager-sync';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { AUTH_COOKIE, verifySessionToken, type SessionPayload } from '@/lib/auth/session';
 import { calculatePayrollEarnings, calculatePermanentUnionDues, isGenericPayrollGrade } from '@/lib/payroll-earnings-engine';
@@ -67,6 +66,7 @@ import {
   repairPendingLeaveManagerNotifications,
   pendingLeaveApprovalsForActor,
   readAllEssRequests,
+  missingReportingManagerMessage,
   resolveLineManagerForEmployee,
   transitionEssLeaveRequest,
   validateEssLeaveApplication,
@@ -272,7 +272,7 @@ const buildEssProfileSections = (
         { label: 'Staff category', value: configured(employee.staffCategory) },
         { label: 'Work location', value: configured(employee.workLocation || employee.location) },
         { label: 'Cost centre', value: configured(employee.costCenter) },
-        { label: 'Reporting manager', value: configured(resolveReportingManagerDisplay(employee, employees, explicitDepartmentSupervisorCode(employee.department || ''))) },
+        { label: 'Reporting manager', value: configured(resolveReportingManagerDisplay(employee, employees)) },
         { label: 'Date joined', value: dateOnly(employee.dateJoined || employee.contractStartDate) },
         { label: 'Confirmation date', value: dateOnly(employee.confirmationDueDate) },
         { label: 'Shift pattern', value: configured(employee.shift) },
@@ -1823,13 +1823,10 @@ export async function POST(request: Request) {
         : 'Submitted';
     const relieverName = reliever ? reliever.fullName : relieverNameInput;
     const lineManager = isLeaveRequest ? resolveLineManagerForEmployee(employee, employeeSource.employees) : null;
-    const fallbackSupervisorCode = isLeaveRequest && !lineManager ? explicitDepartmentSupervisorCode(employee.department || '') : null;
-    const fallbackSupervisor = fallbackSupervisorCode
-      ? employeeSource.employees.find((item) => employeeRequestMatches(item, fallbackSupervisorCode))
-      : null;
-    const resolvedManager = lineManager || (fallbackSupervisor
-      ? { employee: fallbackSupervisor, label: fallbackSupervisor.fullName, source: 'reporting-manager' as const }
-      : null);
+    if (isLeaveRequest && !lineManager) {
+      return err(409, missingReportingManagerMessage(employee));
+    }
+    const resolvedManager = lineManager;
     const lineManagerLabel = resolvedManager?.label || managerOwnerFor(employee);
     const requestId = compact(body.requestId) || `ess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const serviceWorkflow = isLeaveRequest

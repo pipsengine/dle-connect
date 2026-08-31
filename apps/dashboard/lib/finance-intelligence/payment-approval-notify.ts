@@ -8,7 +8,7 @@ import {
   sendTransactionalEmail,
   resolveEmployeeMailbox,
 } from '@/lib/mail-service';
-import { resolveLineManagerForEmployee } from '@/lib/leave-workflow-service';
+import { resolveLineManagerForEmployee, resolveLineManagerOrThrow } from '@/lib/leave-workflow-service';
 import { readDirectoryEmployees } from '@/lib/payroll-employee-source';
 import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 import { readProjects } from '@/lib/timesheet-entry-store';
@@ -160,12 +160,10 @@ export const resolvePaymentStageApprover = async (input: {
   const stageKey = stage.toLowerCase();
 
   if (/reporting manager|line manager|supervisor|lead/.test(stageKey)) {
+    // Strictly the HRIS reporting manager. No supervisor-name or department-head guessing:
+    // an unresolved line manager must fail loudly rather than route to the wrong approver.
     if (requester) {
       matched = resolveLineManagerForEmployee(requester, employees)?.employee || null;
-    }
-    if (!matched && compact(input.supervisorName)) {
-      matched = employees.find((employee) =>
-        compact(employee.fullName).toLowerCase() === compact(input.supervisorName).toLowerCase()) || null;
     }
   } else if (/project manager/.test(stageKey)) {
     // Source of truth: Project Manager assigned on the project master (TimesheetProjects).
@@ -277,6 +275,38 @@ export const resolvePaymentStageApprover = async (input: {
     console.error('[payment-approval] delegation lookup failed', error);
     return principal;
   }
+};
+
+export const isReportingManagerStage = (stage: string) =>
+  /reporting manager|line manager|supervisor|lead/i.test(compact(stage));
+
+/**
+ * Guard for Reporting Manager stages: throws unless the requester has a real HRIS
+ * reporting manager to route to. Call this before persisting or advancing a request
+ * so it can never sit with a guessed or missing approver.
+ */
+export const assertReportingManagerRoutable = async (input: {
+  stage: string;
+  requesterCode?: string | null;
+  requesterName?: string | null;
+}) => {
+  if (!isReportingManagerStage(input.stage)) return;
+
+  const directory = await readDirectoryEmployees().catch(() => ({ employees: [] as DleEmployeeDirectoryRow[] }));
+  const employees = directory.employees || [];
+  const target = compact(input.requesterCode).toUpperCase();
+  const requester = employees.find((employee) => {
+    if (!target) return false;
+    return employeeCodeOf(employee).toUpperCase() === target
+      || compact(employee.employeeId).toUpperCase() === target;
+  }) || null;
+
+  if (!requester) {
+    const label = compact(input.requesterName) || compact(input.requesterCode) || 'the requester';
+    throw new Error(`${label} was not found in the HRIS employee directory, so the Reporting Manager approval cannot be routed. Ask HR to confirm the employee record.`);
+  }
+
+  resolveLineManagerOrThrow(requester, employees);
 };
 
 const safeNotify = async (label: string, task: () => Promise<unknown>) => {

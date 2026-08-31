@@ -3,6 +3,8 @@ import path from 'node:path';
 import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
 import { convertAmountToNgn, resolveApprovalChain, applyMdLineManagerLastApproverRule, applyProjectReportingManagerFirst, skipProjectReportingManagerWhenSameAsPm, stripLeadingReportingManager, isProjectChainWithoutReportingManager, bandRequiresMdCeo, isProjectPaymentPath } from '@/lib/finance-intelligence/approval-matrix-service';
 import {
+  assertReportingManagerRoutable,
+  isReportingManagerStage,
   notifyPaymentApprovalRequired,
   notifyPaymentClarificationComment,
   notifyPaymentDecision,
@@ -803,6 +805,15 @@ const assignCurrentApprover = async (input: {
     supervisorName: input.supervisorName,
     paymentType: input.paymentType,
   });
+  if (!approver.code && isReportingManagerStage(input.stage)) {
+    await assertReportingManagerRoutable({
+      stage: input.stage,
+      requesterCode: input.requesterCode,
+    });
+    // assertReportingManagerRoutable throws when unroutable; reaching here means the
+    // directory resolved a manager but the stage lookup did not, which is still unsafe.
+    throw new Error(`The ${input.stage} approver could not be resolved for this request. Ask HR to confirm the requester's reporting manager in HRIS.`);
+  }
   const displayName = approver.delegatedFrom
     ? `${approver.name} (Delegated from ${approver.delegatedFrom.name || approver.delegatedFrom.code})`
     : (approver.name || input.stage);
@@ -2005,6 +2016,15 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
       amountNgn: netAmount,
       fxRate: 1,
     };
+
+  // Refuse to create a submitted request that has nowhere valid to route.
+  if (submit) {
+    await assertReportingManagerRoutable({
+      stage: stageInfo.stage,
+      requesterCode: compact(input.requesterCode) || beneficiaryCode,
+      requesterName: compact(input.requesterName) || beneficiaryName,
+    });
+  }
 
   await pool.request()
     .input('RequestId', sql.NVarChar(60), requestId)

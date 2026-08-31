@@ -10,7 +10,6 @@ import { resolveActivePayrollPeriod } from '@/lib/payroll-periods';
 import type { EmployeeLeaveSummary } from '@/lib/hris-leave-read';
 import { ensureEmployeeLeaveFromHris } from '@/lib/hris-leave-read';
 import type { PayslipEmployeeIdentity } from '@/lib/payroll-payslip-identity-store';
-import { explicitDepartmentSupervisorCode } from '@/lib/department-reporting-manager-sync';
 import { resolveReportingManagerDisplay } from '@/lib/reporting-manager-match';
 
 const compact = (value: unknown) => String(value || '').trim();
@@ -534,11 +533,7 @@ export async function buildEssDashboardContext(input: {
     },
     employeeSummary: {
       yearsOfService: yearsOfService(employee),
-      manager: resolveReportingManagerDisplay(
-        employee,
-        employees,
-        explicitDepartmentSupervisorCode(employee.department || ''),
-      ),
+      manager: resolveReportingManagerDisplay(employee, employees),
       location: compact(employee.workLocation) || compact(employee.location) || compact(employee.officeLocation) || compact(employee.projectSite) || compact(payslipIdentity?.location) || '—',
       salaryGrade: compact(employee.salaryGrade) || compact(employee.jobGrade) || compact(payslipIdentity?.salaryGrade) || '—',
       payrollGroup: compact(employee.payrollGroup) || compact(payslipIdentity?.payrollGroup) || '—',
