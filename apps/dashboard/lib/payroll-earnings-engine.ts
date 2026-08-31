@@ -535,16 +535,21 @@ export const buildDailyRateSupplementalEarnings = (
   employee: DleEmployeeDirectoryRow,
   options?: PayrollEarningsOptions,
 ): PayrollEarningsResult => {
-  const paidEarningLines = mergeConfiguredPackageSupplements(
-    employee,
-    periodAdjustmentLines(employee, options).map((line) => ({
-      ...line,
-      runFrequency: line.runFrequency || ('formula' as const),
-      includeInMonthlyPayroll: line.includeInMonthlyPayroll !== false,
-      amount: roundMoney(line.amount),
-    })),
-    { includeOneOff: true },
-  );
+  const adjustmentLines = periodAdjustmentLines(employee, options).map((line) => ({
+    ...line,
+    runFrequency: line.runFrequency || ('formula' as const),
+    includeInMonthlyPayroll: line.includeInMonthlyPayroll !== false,
+    amount: roundMoney(line.amount),
+  }));
+  // An applied HR dayrate schedule carries the employee's whole earnings set, so
+  // the HRIS salary package must not add to it. Codes such as SATURDAY_OVT or
+  // NNDMEAL do not canonicalise onto the schedule's SATEARN / MEAL, so leaving
+  // them in paid the same weekend, holiday and allowance amounts twice.
+  const scheduleIsAuthority = Boolean(options?.excelDayrateOverride)
+    || employeeHasAppliedDayrateScheduleOverride(normalizedPeriod(options?.period), employee);
+  const paidEarningLines = scheduleIsAuthority
+    ? adjustmentLines
+    : mergeConfiguredPackageSupplements(employee, adjustmentLines, { includeOneOff: true });
   const grossPay = roundMoney(paidEarningLines.reduce((sum, line) => sum + line.amount, 0));
   const taxablePay = roundMoney(paidEarningLines.filter((line) => line.taxable).reduce((sum, line) => sum + line.amount, 0));
   return {
