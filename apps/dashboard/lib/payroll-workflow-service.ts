@@ -8,6 +8,7 @@ import {
   reopenPayrollPeriodRecord,
 } from '@/lib/payroll-period-store';
 import { calculatePayrollForPeriod } from '@/lib/payroll-calculation-service';
+import { assertStoredDayrateScheduleVisible } from '@/lib/dayrate-schedule-upload-sql';
 import {
   appendPayrollArtifact,
   appendPayrollAudit,
@@ -289,6 +290,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
           pack: resolvePayrollRunPack(run),
         },
       );
+      await assertStoredDayrateScheduleVisible(period);
     }
     return calculation;
   };

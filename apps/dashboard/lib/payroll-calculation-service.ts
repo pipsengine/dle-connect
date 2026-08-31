@@ -10,7 +10,8 @@ import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPa
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
 import { activeStatutoryFundsVersion, calculateStatutoryFunds, readStatutoryFundsConfig, statutoryFundInputFromEmployee } from '@/lib/payroll-statutory-funds-engine';
 import { activeLoansVersion, calculateLoanRecovery, loanInputsFromApplications, readPayrollLoanApplications, readPayrollLoansConfig } from '@/lib/payroll-loans-engine';
-import { syncLeaveAllowanceEventsForPayroll } from '@/lib/payroll-leave-allowance-store';
+import { normalizePayrollPeriod, syncLeaveAllowanceEventsForPayroll } from '@/lib/payroll-leave-allowance-store';
+import { ensureDayrateScheduleOverrideLoaded } from '@/lib/dayrate-schedule-upload-sql';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { buildTimesheetHoursMapForPayrollPeriod } from '@/lib/timesheet-entry-store';
 import { dayrateBookedHours } from '@/lib/dayrate-schedule-xlsx';
@@ -780,6 +781,9 @@ registerPayrollAdjustmentsChangeHandler((period) => invalidatePayrollCalculation
 const computePayrollForPeriod = async (requestedPeriod: string): Promise<PayrollCalculationResult> => {
   const toleranceMode = payrollToleranceActive(requestedPeriod);
   const enterpriseSourceActive = isEnterprisePayrollPeriod(requestedPeriod);
+  // The applied dayrate upload decides the month's wages, so it is loaded from SQL
+  // before any employee is costed or any timesheet hours are resolved.
+  await ensureDayrateScheduleOverrideLoaded(normalizePayrollPeriod(requestedPeriod) || requestedPeriod);
   const [
     employeeSource,
     { taxConfig, pensionConfig, fundsConfig, loansConfig, loanApplications },

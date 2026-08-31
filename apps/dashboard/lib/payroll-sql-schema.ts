@@ -74,6 +74,59 @@ CREATE TABLE [hris].[PayrollRunComments] (
 );
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_PayrollRunComments_Period' AND object_id = OBJECT_ID(N'[hris].[PayrollRunComments]'))
   CREATE INDEX [IX_PayrollRunComments_Period] ON [hris].[PayrollRunComments] ([period_code], [created_at] ASC);
+IF OBJECT_ID(N'[hris].[DayrateScheduleUploads]', N'U') IS NULL
+CREATE TABLE [hris].[DayrateScheduleUploads] (
+  [upload_id] NVARCHAR(80) NOT NULL PRIMARY KEY,
+  [period_code] CHAR(7) NOT NULL,
+  [file_name] NVARCHAR(400) NOT NULL,
+  [title] NVARCHAR(400) NULL,
+  [applied_at] DATETIME2(3) NOT NULL,
+  [applied_by] NVARCHAR(128) NOT NULL,
+  [is_active] BIT NOT NULL DEFAULT (1),
+  [superseded_at] DATETIME2(3) NULL,
+  [superseded_by_upload_id] NVARCHAR(80) NULL,
+  [row_count] INT NOT NULL DEFAULT (0),
+  [gross_pay] DECIMAL(19, 4) NOT NULL DEFAULT (0),
+  [net_pay] DECIMAL(19, 4) NOT NULL DEFAULT (0),
+  [sheets_json] NVARCHAR(MAX) NULL,
+  [skipped_json] NVARCHAR(MAX) NULL,
+  [workbook] VARBINARY(MAX) NULL,
+  [created_at] DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME()
+);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_DayrateScheduleUploads_Period' AND object_id = OBJECT_ID(N'[hris].[DayrateScheduleUploads]'))
+  CREATE INDEX [IX_DayrateScheduleUploads_Period] ON [hris].[DayrateScheduleUploads] ([period_code], [is_active], [applied_at] DESC);
+IF OBJECT_ID(N'[hris].[DayrateScheduleUploadRows]', N'U') IS NULL
+CREATE TABLE [hris].[DayrateScheduleUploadRows] (
+  [upload_id] NVARCHAR(80) NOT NULL,
+  [row_no] INT NOT NULL,
+  [period_code] CHAR(7) NOT NULL,
+  [employee_code] NVARCHAR(80) NOT NULL,
+  [employee_name] NVARCHAR(200) NULL,
+  [first_name] NVARCHAR(120) NULL,
+  [last_name] NVARCHAR(120) NULL,
+  [job_title] NVARCHAR(200) NULL,
+  [location] NVARCHAR(200) NULL,
+  [company] NVARCHAR(20) NULL,
+  [excel_daily_rate] DECIMAL(19, 4) NOT NULL DEFAULT (0),
+  [weekday_days] DECIMAL(9, 2) NOT NULL DEFAULT (0),
+  [weekday_ovt_hours] DECIMAL(9, 2) NOT NULL DEFAULT (0),
+  [saturday_hours] DECIMAL(9, 2) NOT NULL DEFAULT (0),
+  [sunday_hours] DECIMAL(9, 2) NOT NULL DEFAULT (0),
+  [public_holiday_hours] DECIMAL(9, 2) NOT NULL DEFAULT (0),
+  [night_days] DECIMAL(9, 2) NOT NULL DEFAULT (0),
+  [night_amt] DECIMAL(19, 4) NOT NULL DEFAULT (0),
+  [meal_allowance] DECIMAL(19, 4) NOT NULL DEFAULT (0),
+  [transport] DECIMAL(19, 4) NOT NULL DEFAULT (0),
+  [site_allowance] DECIMAL(19, 4) NOT NULL DEFAULT (0),
+  [tcm_meal] DECIMAL(19, 4) NOT NULL DEFAULT (0),
+  [tcm_transport] DECIMAL(19, 4) NOT NULL DEFAULT (0),
+  [arrears] DECIMAL(19, 4) NOT NULL DEFAULT (0),
+  [excel_gross] DECIMAL(19, 4) NOT NULL DEFAULT (0),
+  [excel_net] DECIMAL(19, 4) NOT NULL DEFAULT (0),
+  CONSTRAINT [PK_DayrateScheduleUploadRows] PRIMARY KEY ([upload_id], [row_no])
+);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_DayrateScheduleUploadRows_Upload' AND object_id = OBJECT_ID(N'[hris].[DayrateScheduleUploadRows]'))
+  CREATE INDEX [IX_DayrateScheduleUploadRows_Upload] ON [hris].[DayrateScheduleUploadRows] ([upload_id], [employee_code]);
 `;
 
 let schemaReady = false;

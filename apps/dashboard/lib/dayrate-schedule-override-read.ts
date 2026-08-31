@@ -75,6 +75,37 @@ export const readDayrateScheduleOverrideFileSync = (): OverrideFile => {
 
 export const clearDayrateScheduleOverrideReadCache = () => {
   overrideCache = null;
+  sqlOverrideCache.clear();
+};
+
+/**
+ * DLE_Enterprise holds the applied upload, but the payroll engine looks it up
+ * synchronously while costing each employee. The calculation primes this cache
+ * once per period so those lookups stay sync without re-reading SQL per employee.
+ */
+const sqlOverrideCache = new Map<string, DayrateScheduleOverrideRecord | null>();
+
+export const primeDayrateScheduleOverrideCache = (
+  period: string | undefined,
+  record: DayrateScheduleOverrideRecord | null,
+) => {
+  const normalized = normalizePeriod(period);
+  if (!normalized) return;
+  // A missing SQL upload must not mask a legacy JSON one, so only a real record primes.
+  if (!record) {
+    sqlOverrideCache.delete(normalized);
+    return;
+  }
+  sqlOverrideCache.set(normalized, record);
+};
+
+export const clearPrimedDayrateScheduleOverrideCache = (period?: string) => {
+  const normalized = normalizePeriod(period);
+  if (!normalized) {
+    sqlOverrideCache.clear();
+    return;
+  }
+  sqlOverrideCache.delete(normalized);
 };
 
 export const isHrDayrateScheduleOverrideSource = (value?: string | null) =>
@@ -83,6 +114,8 @@ export const isHrDayrateScheduleOverrideSource = (value?: string | null) =>
 export const readAppliedDayrateScheduleOverride = (period?: string) => {
   const normalized = normalizePeriod(period);
   if (!normalized) return null;
+  if (sqlOverrideCache.has(normalized)) return sqlOverrideCache.get(normalized) || null;
+  // Legacy fallback for periods applied before uploads were stored in SQL.
   return readDayrateScheduleOverrideFileSync().overrides.find((item) => item.period === normalized) || null;
 };
 

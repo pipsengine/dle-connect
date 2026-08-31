@@ -10,6 +10,7 @@ import {
   isHrisTimesheetOvertimeSource,
   isSageDayrateScheduleSource,
 } from '@/lib/payroll-enterprise-source';
+import type { DayrateScheduleRow } from '@/lib/dayrate-schedule-xlsx';
 import {
   employeeHasAppliedDayrateScheduleOverride,
   findDayrateScheduleOverrideRow,
@@ -656,6 +657,32 @@ const stripAutoMealWhenLegacyMealPresent = (
   return rebuildEarningsFromPaidLines(base, paidEarningLines);
 };
 
+/**
+ * Allowance columns carried by the uploaded schedule. They are read from the stored
+ * upload rather than posted as period adjustments, so they cannot drift apart from
+ * the sheet or vanish with a data file.
+ */
+const scheduleAllowanceLines = (row: DayrateScheduleRow): PayrollEarningLine[] =>
+  ([
+    { code: 'NIGHT_ALLOW', name: 'NIGHT ALLOWANCE', amount: num(row.nightAmt) },
+    { code: 'SITE_ALLOW', name: 'SITE ALLOWANCE', amount: num(row.siteAllowance) },
+    { code: 'TCMMEAL', name: 'TCM MEAL', amount: num(row.tcmMeal) },
+    { code: 'TCMTRANS', name: 'TCM TRANSPORT', amount: num(row.tcmTransport) },
+    { code: 'TRANSPORT', name: 'TRANSPORT', amount: num(row.transport) },
+    { code: 'ARREARS', name: 'ARREARS', amount: num(row.arrears) },
+  ] as Array<{ code: string; name: string; amount: number }>)
+    .filter((line) => roundMoney(line.amount) > 0)
+    .map((line) => ({
+      code: line.code,
+      name: line.name,
+      taxable: true,
+      percentOfGross: 0,
+      calculation: 'HR dayrate schedule allowance',
+      runFrequency: 'formula' as const,
+      includeInMonthlyPayroll: true,
+      amount: roundMoney(line.amount),
+    }));
+
 export const mergeTimesheetDayRateEarnings = (
   employee: DleEmployeeDirectoryRow,
   input: { ratePerDay: number; daysWorked: number; period?: string },
@@ -690,8 +717,12 @@ export const mergeTimesheetDayRateEarnings = (
     ? mergeDailySupplementalEarnings(base, supplemental)
     : base;
   if (!excel) return merged;
-  return {
+  const withScheduleAllowances = mergeDailySupplementalEarnings(merged, {
     ...merged,
+    paidEarningLines: scheduleAllowanceLines(excel),
+  });
+  return {
+    ...withScheduleAllowances,
     profileName: merged.profileName.includes('Dayrate Schedule')
       ? merged.profileName
       : `${merged.profileName} (HR Dayrate Schedule Override)`,

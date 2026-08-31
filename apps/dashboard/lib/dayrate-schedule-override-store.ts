@@ -3,10 +3,6 @@ import { isDailyRatePayrollEmployee } from '@/lib/payroll-employee-classificatio
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { normalizePayrollPeriod } from '@/lib/payroll-leave-allowance-store';
 import {
-  NIGHT_ALLOWANCE_CODE,
-  NIGHT_ALLOWANCE_NAME,
-} from '@/lib/payroll-timesheet-night-allowance-posting';
-import {
   removePayrollPeriodEarningAdjustments,
   replacePayrollPeriodEarningAdjustmentsForSource,
 } from '@/lib/payroll-period-earning-adjustments-store';
@@ -20,10 +16,16 @@ import {
 } from '@/lib/dayrate-schedule-xlsx';
 import {
   clearDayrateScheduleOverrideReadCache,
+  clearPrimedDayrateScheduleOverrideCache,
   HR_DAYRATE_SCHEDULE_OVERRIDE_SOURCE,
+  primeDayrateScheduleOverrideCache,
   readDayrateScheduleOverrideFileSync,
   type DayrateScheduleOverrideRecord,
 } from '@/lib/dayrate-schedule-override-read';
+import {
+  deactivateDayrateScheduleUploadsInSql,
+  saveDayrateScheduleUploadToSql,
+} from '@/lib/dayrate-schedule-upload-sql';
 
 export {
   applyDayrateScheduleOverrideToHoursMap,
@@ -254,85 +256,13 @@ export const applyDayrateScheduleOverride = async (input: {
   });
   if (!payableRows.length) throw new Error('No payable daily-rate C-codes in this workbook.');
 
-  const adjustmentRows: Array<{
-    period: string;
-    employeeCode: string;
-    employeeId: string;
-    code: string;
-    name: string;
-    amount: number;
-    taxable: boolean;
-    source: string;
-  }> = [];
-  const pushAdjustment = (row: {
-    employeeCode: string;
-    code: string;
-    name: string;
-    amount: number;
-    taxable: boolean;
-  }) => {
-    if (roundMoney(row.amount) <= 0) return;
-    adjustmentRows.push({
-      period,
-      employeeCode: row.employeeCode,
-      employeeId: row.employeeCode,
-      code: row.code,
-      name: row.name,
-      amount: roundMoney(row.amount),
-      taxable: row.taxable,
-      source: HR_DAYRATE_SCHEDULE_OVERRIDE_SOURCE,
-    });
-  };
-
-  for (const row of payableRows) {
-    pushAdjustment({
-      employeeCode: row.employeeCode,
-      code: NIGHT_ALLOWANCE_CODE,
-      name: NIGHT_ALLOWANCE_NAME,
-      amount: row.nightAmt,
-      taxable: true,
-    });
-    pushAdjustment({
-      employeeCode: row.employeeCode,
-      code: 'SITE_ALLOW',
-      name: 'SITE ALLOWANCE',
-      amount: row.siteAllowance,
-      taxable: true,
-    });
-    pushAdjustment({
-      employeeCode: row.employeeCode,
-      code: 'TCMMEAL',
-      name: 'TCM MEAL',
-      amount: row.tcmMeal,
-      taxable: true,
-    });
-    pushAdjustment({
-      employeeCode: row.employeeCode,
-      code: 'TCMTRANS',
-      name: 'TCM TRANSPORT',
-      amount: row.tcmTransport,
-      taxable: true,
-    });
-    pushAdjustment({
-      employeeCode: row.employeeCode,
-      code: 'TRANSPORT',
-      name: 'TRANSPORT',
-      amount: row.transport,
-      taxable: true,
-    });
-    pushAdjustment({
-      employeeCode: row.employeeCode,
-      code: 'ARREARS',
-      name: 'ARREARS',
-      amount: row.arrears,
-      taxable: true,
-    });
-  }
-
+  // The schedule's own allowance columns are read straight off the stored upload by
+  // the earnings engine, so no separate adjustment rows are posted for them. Clear
+  // anything a previous apply left behind so those amounts cannot be counted twice.
   await replacePayrollPeriodEarningAdjustmentsForSource({
     period,
     source: HR_DAYRATE_SCHEDULE_OVERRIDE_SOURCE,
-    rows: adjustmentRows,
+    rows: [],
   });
 
   const next: DayrateScheduleOverrideRecord = {
@@ -345,10 +275,31 @@ export const applyDayrateScheduleOverride = async (input: {
     skipped: parsed.skipped,
     sheets: parsed.sheets,
   };
-  const file = readDayrateScheduleOverrideFileSync();
-  await writeOverrideFile({
-    overrides: [...file.overrides.filter((item) => item.period !== period), next],
+
+  // DLE_Enterprise is the system of record — this is what makes the upload survive
+  // a reload, restart or deploy. It must succeed before anything else is updated.
+  await saveDayrateScheduleUploadToSql({
+    period,
+    fileName: next.fileName,
+    title: next.title,
+    appliedAt: next.appliedAt,
+    appliedBy: next.appliedBy,
+    rows: parsed.rows,
+    skipped: parsed.skipped,
+    sheets: parsed.sheets,
+    workbook: input.workbook,
   });
+  primeDayrateScheduleOverrideCache(period, next);
+
+  try {
+    const file = readDayrateScheduleOverrideFileSync();
+    await writeOverrideFile({
+      overrides: [...file.overrides.filter((item) => item.period !== period), next],
+    });
+  } catch (error) {
+    // The JSON copy is only a convenience mirror now; SQL already holds the upload.
+    console.warn('[dayrate-schedule] stored in SQL but the JSON mirror could not be written', error);
+  }
 
   const { invalidateTimesheetHoursCacheForPeriod } = await import('@/lib/timesheet-entry-store');
   invalidateTimesheetHoursCacheForPeriod(period);
@@ -360,6 +311,8 @@ export const clearDayrateScheduleOverride = async (period: string) => {
   const normalized = normalizePayrollPeriod(period);
   if (!normalized) throw new Error('Payroll period is required.');
   await removePayrollPeriodEarningAdjustments({ period: normalized, source: HR_DAYRATE_SCHEDULE_OVERRIDE_SOURCE });
+  await deactivateDayrateScheduleUploadsInSql(normalized);
+  clearPrimedDayrateScheduleOverrideCache(normalized);
   const file = readDayrateScheduleOverrideFileSync();
   await writeOverrideFile({
     overrides: file.overrides.filter((item) => item.period !== normalized),
