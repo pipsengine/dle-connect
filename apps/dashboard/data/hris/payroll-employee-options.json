@@ -274,17 +274,16 @@
   {
     "employeeId": "0364",
     "employeeCode": "P0364",
-    "nhfApplicable": true,
-    "updatedAt": "2026-08-12T12:05:00.000Z",
-    "updatedBy": "P0364 NGN PAYE Sage align + dual-currency USD",
+    "nhfApplicable": false,
+    "updatedAt": "2026-08-31T17:58:17.418Z",
+    "updatedBy": "P0364 salary replicated from P0458",
     "payeCalculation": {
       "excludedEarningCodes": [],
       "includeRefundInTaxable": false,
       "disablePensionPayeRelief": false,
       "annualRentRelief": 500000,
       "usdFlatRate": 0.22,
-      "monthlyPayeOverride": 5101.79,
-      "ngnMonthlyPayeOverride": 4179191.64
+      "monthlyPayeOverride": 956
     }
   },
   {
