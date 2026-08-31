@@ -580,6 +580,16 @@ const employeeTypeCode = (employeeType: string) => {
 
 const employeeCodePrefixForTypeCode = (typeCode: string | null) => (typeCode === 'N' ? 'NYSC' : typeCode === 'I' ? 'IT' : typeCode || '');
 
+/** employee_type_name is NOT NULL on [hris].[EmployeeCodeCounters]. */
+const employeeTypeNameForTypeCode = (typeCode: string | null) => {
+  if (typeCode === 'P') return 'Permanent';
+  if (typeCode === 'L') return 'Lumpsum';
+  if (typeCode === 'C') return 'Daily Rate';
+  if (typeCode === 'N') return 'NYSC';
+  if (typeCode === 'I') return 'Industrial Trainee';
+  return 'Permanent';
+};
+
 /** Values permitted by CK_Employees_type on [hris].[Employees]. */
 export const EMPLOYMENT_TYPES = [
   'Permanent',
@@ -2264,25 +2274,27 @@ export const nextEmployeeCodeFromDb = async (
       const prefix = employeeCodePrefixForTypeCode(typeCode);
       await new sql.Request(tx)
         .input('type_code', sql.Char(1), typeCode)
+        .input('type_name', sql.NVarChar(40), employeeTypeNameForTypeCode(typeCode))
         .input('employee_code_prefix', sql.NVarChar(10), prefix)
         .input('last_sequence', sql.Int, seq)
         .query(`
           MERGE [hris].[EmployeeCodeCounters] AS target
-          USING (SELECT @type_code AS employee_type_code, @employee_code_prefix AS employee_code_prefix, @last_sequence AS last_sequence) AS source
+          USING (SELECT @type_code AS employee_type_code, @type_name AS employee_type_name, @employee_code_prefix AS employee_code_prefix, @last_sequence AS last_sequence) AS source
           ON target.employee_type_code = source.employee_type_code
           WHEN MATCHED AND ISNULL(target.last_sequence, 0) < source.last_sequence THEN UPDATE SET last_sequence = source.last_sequence, employee_code_prefix = source.employee_code_prefix
-          WHEN NOT MATCHED THEN INSERT (employee_type_code, employee_code_prefix, last_sequence) VALUES (source.employee_type_code, source.employee_code_prefix, source.last_sequence);
+          WHEN NOT MATCHED THEN INSERT (employee_type_code, employee_type_name, employee_code_prefix, last_sequence) VALUES (source.employee_type_code, source.employee_type_name, source.employee_code_prefix, source.last_sequence);
         `);
     } else {
       await new sql.Request(tx)
         .input('type_code', sql.Char(1), typeCode)
+        .input('type_name', sql.NVarChar(40), employeeTypeNameForTypeCode(typeCode))
         .input('last_sequence', sql.Int, seq)
         .query(`
           MERGE [hris].[EmployeeCodeCounters] AS target
-          USING (SELECT @type_code AS employee_type_code, @last_sequence AS last_sequence) AS source
+          USING (SELECT @type_code AS employee_type_code, @type_name AS employee_type_name, @last_sequence AS last_sequence) AS source
           ON target.employee_type_code = source.employee_type_code
           WHEN MATCHED AND ISNULL(target.last_sequence, 0) < source.last_sequence THEN UPDATE SET last_sequence = source.last_sequence
-          WHEN NOT MATCHED THEN INSERT (employee_type_code, last_sequence) VALUES (source.employee_type_code, source.last_sequence);
+          WHEN NOT MATCHED THEN INSERT (employee_type_code, employee_type_name, last_sequence) VALUES (source.employee_type_code, source.employee_type_name, source.last_sequence);
         `);
     }
     await tx.commit();
@@ -2789,25 +2801,27 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
         if (typeCode === 'N' || typeCode === 'I') {
           await new sql.Request(tx)
             .input('type_code', sql.Char(1), typeCode)
+            .input('type_name', sql.NVarChar(40), employeeTypeNameForTypeCode(typeCode))
             .input('employee_code_prefix', sql.NVarChar(10), prefix || null)
             .input('last_sequence', sql.Int, sequence)
             .query(`
               MERGE [hris].[EmployeeCodeCounters] AS target
-              USING (SELECT @type_code AS employee_type_code, @employee_code_prefix AS employee_code_prefix, @last_sequence AS last_sequence) AS source
+              USING (SELECT @type_code AS employee_type_code, @type_name AS employee_type_name, @employee_code_prefix AS employee_code_prefix, @last_sequence AS last_sequence) AS source
               ON target.employee_type_code = source.employee_type_code
               WHEN MATCHED AND ISNULL(target.last_sequence, 0) < source.last_sequence THEN UPDATE SET last_sequence = source.last_sequence, employee_code_prefix = source.employee_code_prefix
-              WHEN NOT MATCHED THEN INSERT (employee_type_code, employee_code_prefix, last_sequence) VALUES (source.employee_type_code, source.employee_code_prefix, source.last_sequence);
+              WHEN NOT MATCHED THEN INSERT (employee_type_code, employee_type_name, employee_code_prefix, last_sequence) VALUES (source.employee_type_code, source.employee_type_name, source.employee_code_prefix, source.last_sequence);
             `);
         } else {
           await new sql.Request(tx)
             .input('type_code', sql.Char(1), typeCode)
+            .input('type_name', sql.NVarChar(40), employeeTypeNameForTypeCode(typeCode))
             .input('last_sequence', sql.Int, sequence)
             .query(`
               MERGE [hris].[EmployeeCodeCounters] AS target
-              USING (SELECT @type_code AS employee_type_code, @last_sequence AS last_sequence) AS source
+              USING (SELECT @type_code AS employee_type_code, @type_name AS employee_type_name, @last_sequence AS last_sequence) AS source
               ON target.employee_type_code = source.employee_type_code
               WHEN MATCHED AND ISNULL(target.last_sequence, 0) < source.last_sequence THEN UPDATE SET last_sequence = source.last_sequence
-              WHEN NOT MATCHED THEN INSERT (employee_type_code, last_sequence) VALUES (source.employee_type_code, source.last_sequence);
+              WHEN NOT MATCHED THEN INSERT (employee_type_code, employee_type_name, last_sequence) VALUES (source.employee_type_code, source.employee_type_name, source.last_sequence);
             `);
         }
       }

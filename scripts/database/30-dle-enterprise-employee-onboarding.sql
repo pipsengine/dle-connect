@@ -20,27 +20,49 @@ BEGIN
   CREATE TABLE [hris].[EmployeeCodeCounters] (
     employee_type_code char(1) NOT NULL,
     employee_type_name nvarchar(40) NOT NULL,
+    employee_code_prefix nvarchar(10) NULL,
     last_sequence int NOT NULL CONSTRAINT DF_EmployeeCodeCounters_last_sequence DEFAULT (0),
     modified_at datetime2(0) NOT NULL CONSTRAINT DF_EmployeeCodeCounters_modified_at DEFAULT SYSUTCDATETIME(),
     modified_by sysname NOT NULL CONSTRAINT DF_EmployeeCodeCounters_modified_by DEFAULT SUSER_SNAME(),
     row_version rowversion NOT NULL,
     CONSTRAINT PK_EmployeeCodeCounters PRIMARY KEY CLUSTERED (employee_type_code),
     CONSTRAINT UQ_EmployeeCodeCounters_type_name UNIQUE (employee_type_name),
-    CONSTRAINT CK_EmployeeCodeCounters_type_code CHECK (employee_type_code IN ('P', 'L', 'C')),
+    CONSTRAINT CK_EmployeeCodeCounters_type_code CHECK (employee_type_code IN ('P', 'L', 'C', 'N', 'I')),
     CONSTRAINT CK_EmployeeCodeCounters_last_sequence CHECK (last_sequence >= 0)
   );
 END;
 GO
 
+-- NYSC and industrial-trainee codes use a multi-character prefix (NYSC…, IT…) rather
+-- than the single type-code letter, so the prefix is stored alongside the counter.
+IF COL_LENGTH(N'[hris].[EmployeeCodeCounters]', N'employee_code_prefix') IS NULL
+  ALTER TABLE [hris].[EmployeeCodeCounters] ADD employee_code_prefix nvarchar(10) NULL;
+GO
+
+IF EXISTS (
+  SELECT 1
+  FROM sys.check_constraints
+  WHERE parent_object_id = OBJECT_ID(N'[hris].[EmployeeCodeCounters]')
+    AND name = N'CK_EmployeeCodeCounters_type_code'
+    AND definition NOT LIKE N'%''N''%'
+)
+BEGIN
+  ALTER TABLE [hris].[EmployeeCodeCounters] DROP CONSTRAINT CK_EmployeeCodeCounters_type_code;
+  ALTER TABLE [hris].[EmployeeCodeCounters] WITH CHECK ADD CONSTRAINT CK_EmployeeCodeCounters_type_code CHECK (employee_type_code IN ('P', 'L', 'C', 'N', 'I'));
+END;
+GO
+
 MERGE [hris].[EmployeeCodeCounters] AS target
 USING (VALUES
-  ('P', N'Permanent'),
-  ('L', N'Lumpsum'),
-  ('C', N'Daily Rate')
-) AS source(employee_type_code, employee_type_name)
+  ('P', N'Permanent', N'P'),
+  ('L', N'Lumpsum', N'L'),
+  ('C', N'Daily Rate', N'C'),
+  ('N', N'NYSC', N'NYSC'),
+  ('I', N'Industrial Trainee', N'IT')
+) AS source(employee_type_code, employee_type_name, employee_code_prefix)
 ON target.employee_type_code = source.employee_type_code
-WHEN MATCHED THEN UPDATE SET employee_type_name = source.employee_type_name
-WHEN NOT MATCHED THEN INSERT (employee_type_code, employee_type_name) VALUES (source.employee_type_code, source.employee_type_name);
+WHEN MATCHED THEN UPDATE SET employee_type_name = source.employee_type_name, employee_code_prefix = source.employee_code_prefix
+WHEN NOT MATCHED THEN INSERT (employee_type_code, employee_type_name, employee_code_prefix) VALUES (source.employee_type_code, source.employee_type_name, source.employee_code_prefix);
 GO
 
 IF OBJECT_ID(N'[hris].[EmployeeDrafts]', N'U') IS NULL
