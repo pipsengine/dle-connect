@@ -1748,7 +1748,7 @@ const resolveProcessingAction = (id: string): PayrollAction => {
   return pool.find((item) => item.id === id) || action(id, id.replace(/-/g, ' '), 'workflow', payrollMakerRoles);
 };
 
-function ProcessingKpiCard({ title, value, subtitle, footnote, icon: Icon, tone, onClick, active = false }: { title: string; value: string; subtitle: string; footnote?: string; icon: any; tone: 'blue' | 'green' | 'purple' | 'red'; onClick?: () => void; active?: boolean }) {
+function ProcessingKpiCard({ title, value, subtitle, icon: Icon, tone, onClick, active = false }: { title: string; value: string; subtitle: string; icon: any; tone: 'blue' | 'green' | 'purple' | 'red'; onClick?: () => void; active?: boolean }) {
   const tones = {
     blue: 'border-blue-200 bg-gradient-to-br from-blue-50 to-white',
     green: 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-white',
@@ -1773,7 +1773,6 @@ function ProcessingKpiCard({ title, value, subtitle, footnote, icon: Icon, tone,
           <p className="text-xs font-bold uppercase tracking-wide text-slate-600">{title}</p>
           <p className="mt-2 text-2xl font-black tracking-tight text-slate-950">{value}</p>
           <p className="mt-1 text-xs font-semibold text-slate-600">{subtitle}</p>
-          {footnote ? <p className="mt-0.5 text-[11px] font-semibold text-slate-500">{footnote}</p> : null}
         </div>
         <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconTone[tone]}`}>
           <Icon className="h-5 w-5" />
@@ -5381,21 +5380,6 @@ export default function PayrollManagementClient({
     const readyPct = totalEmployees ? Math.round((readyEmployees / totalEmployees) * 100) : 0;
     const deductionPct = payload?.summary.grossPay ? Math.round(((payload.summary.deductions || 0) / payload.summary.grossPay) * 1000) / 10 : 0;
     const runStatus = currentRun?.status || payload?.workflow?.currentStatus || 'Draft';
-    // The Excel export covers every pack in the period, so the period total is shown
-    // alongside the selected pack's figure to keep the two reconcilable.
-    const periodTotals = payload?.periodTotals || null;
-    const packLabel = payload?.packLabel || 'selected run';
-    const showPeriodTotal = Boolean(periodTotals && (payload?.packTotals?.length || 0) > 1);
-    const periodGrossFootnote = showPeriodTotal && canViewMoney
-      ? `${packLabel} shown • period total ${money(periodTotals?.grossPay, canViewMoney)} gross / ${money(periodTotals?.netPay, canViewMoney)} net`
-      : undefined;
-    const periodDeductionFootnote = showPeriodTotal && canViewMoney
-      ? `${packLabel} shown • period total ${money(periodTotals?.deductions, canViewMoney)}`
-      : undefined;
-    const periodReadyFootnote = showPeriodTotal
-      ? `${packLabel} shown • period total ${number(periodTotals?.employeeCount)} staff`
-      : undefined;
-
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A]">
         <div className="border-b border-[#E5E7EB] bg-white px-4 py-5 sm:px-6">
@@ -5463,9 +5447,9 @@ export default function PayrollManagementClient({
 
           {payrollRunView ? (
             <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <ProcessingKpiCard title="Ready Employees" value={number(readyEmployees)} subtitle={`${readyPct}% of total employees`} footnote={periodReadyFootnote} icon={Users} tone="blue" active={processingKpiPanel === 'ready'} onClick={() => toggleProcessingKpiPanel('ready')} />
-              <ProcessingKpiCard title="Gross Pay" value={money(payload?.summary.grossPay, canViewMoney)} subtitle={`Net Pay: ${money(payload?.summary.netPay, canViewMoney)}`} footnote={periodGrossFootnote} icon={Banknote} tone="green" active={processingKpiPanel === 'gross'} onClick={() => toggleProcessingKpiPanel('gross')} />
-              <ProcessingKpiCard title="Deductions" value={money(payload?.summary.deductions, canViewMoney)} subtitle={`${deductionPct}% of gross pay`} footnote={periodDeductionFootnote} icon={ReceiptText} tone="purple" active={processingKpiPanel === 'deductions'} onClick={() => toggleProcessingKpiPanel('deductions')} />
+              <ProcessingKpiCard title="Ready Employees" value={number(readyEmployees)} subtitle={`${readyPct}% of total employees`} icon={Users} tone="blue" active={processingKpiPanel === 'ready'} onClick={() => toggleProcessingKpiPanel('ready')} />
+              <ProcessingKpiCard title="Gross Pay" value={money(payload?.summary.grossPay, canViewMoney)} subtitle={`Net Pay: ${money(payload?.summary.netPay, canViewMoney)}`} icon={Banknote} tone="green" active={processingKpiPanel === 'gross'} onClick={() => toggleProcessingKpiPanel('gross')} />
+              <ProcessingKpiCard title="Deductions" value={money(payload?.summary.deductions, canViewMoney)} subtitle={`${deductionPct}% of gross pay`} icon={ReceiptText} tone="purple" active={processingKpiPanel === 'deductions'} onClick={() => toggleProcessingKpiPanel('deductions')} />
               <ProcessingKpiCard title="Issues" value={number(payload?.summary.exceptionCount)} subtitle={`${number(payload?.summary.blockedEmployees)} blocked • ${number(payload?.summary.reviewEmployees)} review`} icon={AlertTriangle} tone="red" active={processingKpiPanel === 'issues'} onClick={() => toggleProcessingKpiPanel('issues')} />
             </div>
           ) : null}
