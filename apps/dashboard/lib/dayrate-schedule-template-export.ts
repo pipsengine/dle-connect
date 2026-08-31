@@ -488,6 +488,53 @@ const lineAmount = (lines: PayrollCalculationRecord['earningLines'] | undefined,
     .filter((line) => pattern.test(`${line.code || ''} ${line.name || ''}`))
     .reduce((sum, line) => sum + Number(line.amount || 0), 0));
 
+/**
+ * Rates the HR schedule itself applies, confirmed against the signed August 2026 workbook:
+ * weekday pay is days x daily rate, overtime is hours x hourly rate x multiplier, and
+ * meal and night pay are flat per-day amounts.
+ */
+const HOURS_PER_DAY = 8;
+const WEEKDAY_OVT_MULTIPLIER = 1.5;
+const SATURDAY_MULTIPLIER = 1.5;
+const SUNDAY_MULTIPLIER = 2;
+const PUBLIC_HOLIDAY_MULTIPLIER = 2;
+const MEAL_PER_WEEKDAY = 500;
+const NIGHT_PER_NIGHT_DAY = 2500;
+const WHT_RATE = 0.05;
+
+/** Treats an absent value as missing but keeps a deliberate zero from HR. */
+const scheduleAmount = (value: number | null | undefined) =>
+  (value === null || value === undefined ? null : roundMoney(Number(value) || 0));
+
+const firstAmount = (...values: Array<number | null | undefined>) => {
+  for (const value of values) {
+    if (value === null || value === undefined) continue;
+    const amount = roundMoney(Number(value) || 0);
+    if (amount !== 0) return amount;
+  }
+  return 0;
+};
+
+const ageFromDateOfBirth = (dateOfBirth: unknown, asOf: Date) => {
+  const raw = compact(dateOfBirth).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '';
+  const dob = new Date(`${raw}T00:00:00.000Z`);
+  if (Number.isNaN(dob.getTime())) return '';
+  let age = asOf.getUTCFullYear() - dob.getUTCFullYear();
+  const beforeBirthday =
+    asOf.getUTCMonth() < dob.getUTCMonth()
+    || (asOf.getUTCMonth() === dob.getUTCMonth() && asOf.getUTCDate() < dob.getUTCDate());
+  if (beforeBirthday) age -= 1;
+  return age > 0 && age < 120 ? age : '';
+};
+
+/** End of the payroll period, so ages match the month the schedule covers. */
+const periodAsOfDate = (period: string) => {
+  const match = /^(\d{4})-(\d{2})$/.exec(compact(period).replace(/^per-/i, ''));
+  if (!match) return new Date();
+  return new Date(Date.UTC(Number(match[1]), Number(match[2]), 0));
+};
+
 type DetailRow = {
   code: string;
   firstName: string;
@@ -521,12 +568,38 @@ type DetailRow = {
   bankName: string;
   accountNo: string;
   sortCode: string;
+  scheduleDriven: boolean;
+};
+
+const EARNING_COMPONENTS: Array<keyof DetailRow> = [
+  'wkdEarning', 'wkdOvtAmt', 'satAmt', 'sunAmt', 'phAmt', 'nightAmt',
+  'meal', 'transport', 'site', 'tcmMeal', 'tcmTransport', 'arrears',
+];
+
+/**
+ * Every printed row must equal the sum of its own printed components, otherwise the
+ * bank schedule pays an amount the sheet cannot explain.
+ */
+const assertRowsFoot = (sheet: string, rows: DetailRow[]) => {
+  const broken = rows
+    .filter((row) => row.scheduleDriven)
+    .map((row) => {
+      const components = roundMoney(EARNING_COMPONENTS.reduce((sum, key) => sum + Number(row[key] || 0), 0));
+      return { code: row.code, components, total: row.totalEarnings, gap: roundMoney(row.totalEarnings - components) };
+    })
+    .filter((row) => Math.abs(row.gap) > 0.02);
+  if (!broken.length) return;
+  const detail = broken.slice(0, 5).map((row) => `${row.code} (components ${row.components}, total ${row.total})`).join('; ');
+  throw new Error(
+    `Dayrate schedule ${sheet}: ${broken.length} row(s) do not reconcile against their own earning columns — ${detail}.`,
+  );
 };
 
 const detailRowFromEntry = (
   entry: DayrateExportRosterEntry,
   dirMap: Map<string, DleEmployeeDirectoryRow>,
   attendance: Awaited<ReturnType<typeof loadDayrateAttendanceByEmpCode>>,
+  asOf: Date,
 ): DetailRow => {
   const schedule = entry.scheduleRow;
   const record = entry.record;
@@ -552,45 +625,76 @@ const detailRowFromEntry = (
   const sunHrs = Number(schedule?.sundayHours ?? att?.sundayHours ?? 0);
   const phHrs = Number(schedule?.publicHolidayHours ?? att?.publicHolidayHours ?? 0);
   const nightDays = Number(schedule?.nightDays ?? att?.nightWorkedDays ?? 0);
-  const wkdEarning = lineAmount(record?.earningLines, /JCWEEKDAY(?!_NT)/i) + lineAmount(record?.earningLines, /JCWEEKDAY_NT/i)
-    || Number(att?.weekDayTotal || 0)
-    || (dailyRate > 0 && weekDays > 0 ? roundMoney(weekDays * dailyRate) : 0);
-  const wkdOvtAmt = lineAmount(record?.earningLines, /WEEKDAYOVT/i)
-    || Number(att?.weekdayOvertimeTotal || 0)
-    || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 1.5 * weekdayOvtHrs) : 0);
-  const satAmt = lineAmount(record?.earningLines, /SATEARN/i)
-    || Number(att?.saturdayTotal || 0)
-    || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 1.5 * satHrs) : 0);
-  const sunAmt = lineAmount(record?.earningLines, /SUNDAYEARN/i)
-    || Number(att?.sundayTotal || 0)
-    || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 2 * sunHrs) : 0);
-  const phAmt = lineAmount(record?.earningLines, /PUBHOL/i)
-    || Number(att?.publicHolidayTotal || 0)
-    || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 2 * phHrs) : 0);
-  const nightAmt = roundMoney(Number(schedule?.nightAmt || 0))
-    || lineAmount(record?.earningLines, /NIGHT/i)
-    || Number(att?.nightWorkedTotal || 0)
-    || roundMoney(1100 * nightDays);
-  const meal = roundMoney(Number(schedule?.mealAllowance || 0))
-    || lineAmount(record?.earningLines, /^MEAL$|MEAL ALLOW|PER_MEAL/i)
-    || roundMoney(500 * weekDays);
-  const transport = roundMoney(Number(schedule?.transport || 0))
-    || lineAmount(record?.earningLines, /TRANSPORT ALLOW|EXP_TRANS|^TRANSPORT$/i);
-  const site = roundMoney(Number(schedule?.siteAllowance || 0))
-    || lineAmount(record?.earningLines, /SITE ALLOW/i)
-    || Number(att?.siteAllowanceTotal || 0);
-  const tcmMeal = roundMoney(Number(schedule?.tcmMeal || 0)) || lineAmount(record?.earningLines, /TCMMEAL/i);
-  const tcmTransport = roundMoney(Number(schedule?.tcmTransport || 0)) || lineAmount(record?.earningLines, /TCM.?TRANS/i);
-  const arrears = roundMoney(Number(schedule?.arrears || 0)) || lineAmount(record?.earningLines, /ARREARS/i);
-  const totalEarnings = roundMoney(Number(record?.grossPay || 0))
-    || roundMoney(Number(schedule?.excelGross || 0))
-    || roundMoney(wkdEarning + wkdOvtAmt + satAmt + sunAmt + phAmt + nightAmt + meal + transport + site + tcmMeal + tcmTransport + arrears);
-  const wht = roundMoney(Number(record?.paye || 0))
-    || (schedule?.excelGross && schedule?.excelNet ? roundMoney(schedule.excelGross - schedule.excelNet) : 0)
-    || roundMoney(totalEarnings * 0.05);
-  const netPay = roundMoney(Number(record?.netPay || 0))
-    || roundMoney(Number(schedule?.excelNet || 0))
-    || roundMoney(totalEarnings - wht);
+  // With an HR schedule row the sheet must reproduce HR's own arithmetic: the printed
+  // hours and the printed amounts have to describe each other, and the row has to foot.
+  // Payroll earning lines are only consulted for employees the schedule does not cover.
+  const hourlyRate = dailyRate / HOURS_PER_DAY;
+  const wkdEarning = schedule
+    ? roundMoney(weekDays * dailyRate)
+    : firstAmount(
+      lineAmount(record?.earningLines, /JCWEEKDAY(?!_NT)/i) + lineAmount(record?.earningLines, /JCWEEKDAY_NT/i),
+      att?.weekDayTotal,
+      dailyRate > 0 && weekDays > 0 ? weekDays * dailyRate : 0,
+    );
+  const wkdOvtAmt = schedule
+    ? roundMoney(hourlyRate * WEEKDAY_OVT_MULTIPLIER * weekdayOvtHrs)
+    : firstAmount(
+      lineAmount(record?.earningLines, /WEEKDAYOVT/i),
+      att?.weekdayOvertimeTotal,
+      hourlyRate * WEEKDAY_OVT_MULTIPLIER * weekdayOvtHrs,
+    );
+  const satAmt = schedule
+    ? roundMoney(hourlyRate * SATURDAY_MULTIPLIER * satHrs)
+    : firstAmount(
+      lineAmount(record?.earningLines, /SATEARN/i),
+      att?.saturdayTotal,
+      hourlyRate * SATURDAY_MULTIPLIER * satHrs,
+    );
+  const sunAmt = schedule
+    ? roundMoney(hourlyRate * SUNDAY_MULTIPLIER * sunHrs)
+    : firstAmount(
+      lineAmount(record?.earningLines, /SUNDAYEARN/i),
+      att?.sundayTotal,
+      hourlyRate * SUNDAY_MULTIPLIER * sunHrs,
+    );
+  const phAmt = schedule
+    ? roundMoney(hourlyRate * PUBLIC_HOLIDAY_MULTIPLIER * phHrs)
+    : firstAmount(
+      lineAmount(record?.earningLines, /PUBHOL/i),
+      att?.publicHolidayTotal,
+      hourlyRate * PUBLIC_HOLIDAY_MULTIPLIER * phHrs,
+    );
+  const nightAmt = scheduleAmount(schedule?.nightAmt)
+    ?? firstAmount(
+      lineAmount(record?.earningLines, /NIGHT/i),
+      att?.nightWorkedTotal,
+      NIGHT_PER_NIGHT_DAY * nightDays,
+    );
+  const meal = scheduleAmount(schedule?.mealAllowance)
+    ?? firstAmount(
+      lineAmount(record?.earningLines, /^MEAL$|MEAL ALLOW|PER_MEAL/i),
+      MEAL_PER_WEEKDAY * weekDays,
+    );
+  const transport = scheduleAmount(schedule?.transport)
+    ?? lineAmount(record?.earningLines, /TRANSPORT ALLOW|EXP_TRANS|^TRANSPORT$/i);
+  const site = scheduleAmount(schedule?.siteAllowance)
+    ?? firstAmount(lineAmount(record?.earningLines, /SITE ALLOW/i), att?.siteAllowanceTotal);
+  const tcmMeal = scheduleAmount(schedule?.tcmMeal) ?? lineAmount(record?.earningLines, /TCMMEAL/i);
+  const tcmTransport = scheduleAmount(schedule?.tcmTransport) ?? lineAmount(record?.earningLines, /TCM.?TRANS/i);
+  const arrears = scheduleAmount(schedule?.arrears) ?? lineAmount(record?.earningLines, /ARREARS/i);
+  const componentTotal = roundMoney(
+    wkdEarning + wkdOvtAmt + satAmt + sunAmt + phAmt + nightAmt
+    + meal + transport + site + tcmMeal + tcmTransport + arrears,
+  );
+  const totalEarnings = schedule
+    ? componentTotal
+    : firstAmount(record?.grossPay, componentTotal);
+  const wht = schedule
+    ? roundMoney(totalEarnings * WHT_RATE)
+    : firstAmount(record?.paye, roundMoney(totalEarnings * WHT_RATE));
+  const netPay = schedule
+    ? roundMoney(totalEarnings - wht)
+    : firstAmount(record?.netPay, roundMoney(totalEarnings - wht));
   return {
     code,
     firstName: names.firstName || att?.firstName || compact(schedule?.firstName) || '',
@@ -598,7 +702,7 @@ const detailRowFromEntry = (
     jobTitle: compact(schedule?.jobTitle || record?.jobTitle || dir?.jobTitle || att?.jobTitle),
     location: compact(schedule?.location || record?.location || dir?.location || att?.location),
     dailyRate,
-    age: '',
+    age: ageFromDateOfBirth(dir?.dateOfBirth, asOf),
     gender: compact(dir?.gender).slice(0, 1).toUpperCase(),
     weekDays,
     weekdayOvtHrs,
@@ -624,6 +728,7 @@ const detailRowFromEntry = (
     bankName: compact(record?.bankName || dir?.bankName),
     accountNo: compact(record?.accountNo || dir?.accountNo),
     sortCode: compact(record?.sortCode || record?.branchCode || record?.bankCode || dir?.bankCode),
+    scheduleDriven: Boolean(schedule),
   };
 };
 
@@ -638,8 +743,9 @@ const buildDetailRows = async (
   }
   const attendance = period ? await loadDayrateAttendanceByEmpCode(period) : new Map();
   const roster = buildDayrateExportRoster({ period, calculatedRecords: records, directoryEmployees });
-  const dle = roster.filter((entry) => entry.company === 'DLE').map((entry) => detailRowFromEntry(entry, dirMap, attendance));
-  const dlpc = roster.filter((entry) => entry.company === 'DLPC').map((entry) => detailRowFromEntry(entry, dirMap, attendance));
+  const asOf = periodAsOfDate(period);
+  const dle = roster.filter((entry) => entry.company === 'DLE').map((entry) => detailRowFromEntry(entry, dirMap, attendance, asOf));
+  const dlpc = roster.filter((entry) => entry.company === 'DLPC').map((entry) => detailRowFromEntry(entry, dirMap, attendance, asOf));
   return { dle, dlpc };
 };
 
@@ -653,6 +759,8 @@ export const buildDayratePaymentScheduleXlsx = async (input: {
   if (!templatePath) throw new Error('Dayrate Payment Schedule template was not found.');
   const entries = readZipEntries(readFileSync(templatePath));
   const { dle, dlpc } = await buildDetailRows(input.records, input.period, input.directoryEmployees || []);
+  assertRowsFoot('DLE', dle);
+  assertRowsFoot('DLPC', dlpc);
   const title = scheduleTitleForSheet(input.period, input.periodLabel);
 
   const sheet1Template = entries.get('xl/worksheets/sheet1.xml')?.toString('utf8') || '';
