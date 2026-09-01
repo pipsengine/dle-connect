@@ -12,6 +12,8 @@ import { activeStatutoryFundsVersion, calculateStatutoryFunds, readStatutoryFund
 import { activeLoansVersion, calculateLoanRecovery, loanInputsFromApplications, readPayrollLoanApplications, readPayrollLoansConfig } from '@/lib/payroll-loans-engine';
 import { normalizePayrollPeriod, syncLeaveAllowanceEventsForPayroll } from '@/lib/payroll-leave-allowance-store';
 import { ensureDayrateScheduleOverrideLoaded } from '@/lib/dayrate-schedule-upload-sql';
+import { ensureSalaryScheduleOverrideLoaded } from '@/lib/salary-schedule-upload-sql';
+import { applySalaryScheduleOverrideToRecords } from '@/lib/salary-schedule-overlay';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { buildTimesheetHoursMapForPayrollPeriod } from '@/lib/timesheet-entry-store';
 import { dayrateBookedHours } from '@/lib/dayrate-schedule-xlsx';
@@ -784,6 +786,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
   // The applied dayrate upload decides the month's wages, so it is loaded from SQL
   // before any employee is costed or any timesheet hours are resolved.
   await ensureDayrateScheduleOverrideLoaded(normalizePayrollPeriod(requestedPeriod) || requestedPeriod);
+  await ensureSalaryScheduleOverrideLoaded(normalizePayrollPeriod(requestedPeriod) || requestedPeriod);
   const [
     employeeSource,
     { taxConfig, pensionConfig, fundsConfig, loansConfig, loanApplications },
@@ -899,7 +902,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     }];
   };
 
-  const records: PayrollCalculationRecord[] = payrollEmployees.flatMap((employee, index) => {
+  const builtRecords: PayrollCalculationRecord[] = payrollEmployees.flatMap((employee, index) => {
     return variantsForEmployee(employee).flatMap((variant, variantIndex) => {
     const calculationOptions = calculationOptionsForEmployee(variant.calculationEmployee, variant.usePackageLines);
     const calculationEmployee = variant.calculationEmployee;
@@ -1101,6 +1104,8 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     };
     });
   });
+
+  const records = applySalaryScheduleOverrideToRecords(builtRecords, requestedPeriod);
 
   const summaryRecords = summaryPayrollRecords(records);
   const totals = summaryRecords.reduce(

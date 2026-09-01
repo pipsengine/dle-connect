@@ -127,6 +127,30 @@ CREATE TABLE [hris].[DayrateScheduleUploadRows] (
 );
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_DayrateScheduleUploadRows_Upload' AND object_id = OBJECT_ID(N'[hris].[DayrateScheduleUploadRows]'))
   CREATE INDEX [IX_DayrateScheduleUploadRows_Upload] ON [hris].[DayrateScheduleUploadRows] ([upload_id], [employee_code]);
+IF OBJECT_ID(N'[hris].[SalaryScheduleUploads]', N'U') IS NULL
+CREATE TABLE [hris].[SalaryScheduleUploads] (
+  [upload_id] NVARCHAR(80) NOT NULL PRIMARY KEY,
+  [period_code] CHAR(7) NOT NULL,
+  [file_name] NVARCHAR(400) NOT NULL,
+  [title] NVARCHAR(400) NULL,
+  [applied_at] DATETIME2(3) NOT NULL,
+  [applied_by] NVARCHAR(128) NOT NULL,
+  [is_active] BIT NOT NULL DEFAULT (1),
+  [superseded_at] DATETIME2(3) NULL,
+  [superseded_by_upload_id] NVARCHAR(80) NULL,
+  [perm_count] INT NOT NULL DEFAULT (0),
+  [cont_count] INT NOT NULL DEFAULT (0),
+  [usd_count] INT NOT NULL DEFAULT (0),
+  [ngn_gross] DECIMAL(19, 4) NOT NULL DEFAULT (0),
+  [ngn_net] DECIMAL(19, 4) NOT NULL DEFAULT (0),
+  [usd_gross] DECIMAL(19, 4) NOT NULL DEFAULT (0),
+  [usd_net] DECIMAL(19, 4) NOT NULL DEFAULT (0),
+  [payload_json] NVARCHAR(MAX) NOT NULL,
+  [workbook] VARBINARY(MAX) NULL,
+  [created_at] DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME()
+);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_SalaryScheduleUploads_Period' AND object_id = OBJECT_ID(N'[hris].[SalaryScheduleUploads]'))
+  CREATE INDEX [IX_SalaryScheduleUploads_Period] ON [hris].[SalaryScheduleUploads] ([period_code], [is_active], [applied_at] DESC);
 `;
 
 let schemaReady = false;

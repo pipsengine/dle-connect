@@ -37,6 +37,8 @@
     "audit:missing-reporting-managers": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/audit-missing-reporting-managers.mts",
     "diagnose:wages-engine-total": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/diagnose-wages-engine-total.mts",
     "diagnose:wages-card-vs-excel": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/diagnose-wages-card-vs-excel.mts",
+    "diagnose:salary-schedule-vs-hris": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/diagnose-salary-schedule-vs-hris.mts",
+    "import:salary-schedule": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/import-salary-schedule-upload.mts",
     "smoke:p0146-leave": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/smoke-test-p0146-leave.mts",
     "verify:performance-calculation": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/verify-performance-calculation.mts",
     "verify:performance-sql-cutover": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/verify-performance-sql-cutover.mts",
