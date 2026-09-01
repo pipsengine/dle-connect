@@ -17,7 +17,7 @@ const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value
 const compact = (value: unknown) => String(value || '').trim();
 const upper = (value: unknown) => compact(value).toUpperCase();
 
-const matchKeys = (...values: unknown[]) =>
+const matchKeys = (...values: Array<string | number | null | undefined>) =>
   values
     .flatMap((value) => [compact(value), normalizePayrollMatchKey(value), canonicalContractEmployeeCode(value)])
     .map((value) => upper(value))
