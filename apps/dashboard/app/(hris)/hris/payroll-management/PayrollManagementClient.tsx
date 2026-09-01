@@ -398,7 +398,7 @@ const money = (value: number | null | undefined, canView = true, currency = 'NGN
   return currencyFormatters.get(code)!.format(value);
 };
 const sumRecordPay = (records: { grossPay?: number | null; deductions?: number | null; netPay?: number | null }[] | undefined) =>
-  (records || []).reduce(
+  (records || []).reduce<{ grossPay: number; deductions: number; netPay: number }>(
     (acc, record) => ({
       grossPay: acc.grossPay + Number(record.grossPay || 0),
       deductions: acc.deductions + Number(record.deductions || 0),
