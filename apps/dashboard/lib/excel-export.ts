@@ -8,6 +8,8 @@ export type ExcelWorksheetInput = {
   generatedAt?: string;
   subtitle?: string;
   exactReferenceDayrateMode?: boolean;
+  /** Optional row-1 title used with exactReferenceDayrateMode (e.g. Employee Bank Details). */
+  banner?: string;
 };
 
 export type ExcelWorkbookInput = {
@@ -31,11 +33,11 @@ const cellText = (value: ExcelCell) => {
   return value ?? '';
 };
 
-export const buildExcelHtml = ({ title, sheetName, columns, rows, generatedAt, subtitle, exactReferenceDayrateMode }: ExcelWorksheetInput) => {
+export const buildExcelHtml = ({ title, sheetName, columns, rows, generatedAt, subtitle, exactReferenceDayrateMode, banner }: ExcelWorksheetInput) => {
   const columnCount = Math.max(columns.length, 1);
   const generated = generatedAt || new Date().toISOString();
   const metadataRows = exactReferenceDayrateMode
-    ? ''
+    ? (banner ? `<tr><td colspan="${columnCount}" class="report-title">${escapeHtml(banner)}</td></tr>` : '')
     : [
         `<tr><td colspan="${columnCount}" class="report-title">${escapeHtml(title)}</td></tr>`,
         subtitle ? `<tr><td colspan="${columnCount}" class="report-subtitle">${escapeHtml(subtitle)}</td></tr>` : '',
@@ -132,7 +134,8 @@ export const buildExcelWorkbookXml = ({ worksheets, generatedAt }: ExcelWorkbook
     const columns = worksheet.columns.length ? worksheet.columns : ['Result'];
     const rows = worksheet.rows.length ? worksheet.rows : [columns.map((_, index) => index === 0 ? 'No records' : '')];
     const columnCount = columns.length;
-    const headerRow = worksheet.exactReferenceDayrateMode ? 1 : 4;
+    const hasBanner = Boolean(worksheet.exactReferenceDayrateMode && worksheet.banner);
+    const headerRow = worksheet.exactReferenceDayrateMode ? (hasBanner ? 2 : 1) : 4;
     const lastRow = headerRow + rows.length;
     const filterRange = `R${headerRow}C1:R${lastRow}C${columnCount}`;
     const columnDefs = columns.map((column) => {
@@ -149,7 +152,9 @@ export const buildExcelWorkbookXml = ({ worksheets, generatedAt }: ExcelWorkbook
     const selected = sheetIndex === 0 ? '<Selected/>' : '';
 
     const prefixRows = worksheet.exactReferenceDayrateMode
-      ? ''
+      ? (hasBanner
+        ? `<Row ss:Height="24"><Cell ss:StyleID="Title" ss:MergeAcross="${Math.max(0, columnCount - 1)}"><Data ss:Type="String">${escapeXml(worksheet.banner)}</Data></Cell></Row>`
+        : '')
       : [
           `<Row ss:Height="24"><Cell ss:StyleID="Title" ss:MergeAcross="${Math.max(0, columnCount - 1)}"><Data ss:Type="String">${escapeXml(worksheet.title)}</Data></Cell></Row>`,
           `<Row><Cell ss:StyleID="Meta" ss:MergeAcross="${Math.max(0, columnCount - 1)}"><Data ss:Type="String">${escapeXml(worksheet.subtitle || '')} · Generated ${escapeXml(worksheet.generatedAt || created)}</Data></Cell></Row>`,

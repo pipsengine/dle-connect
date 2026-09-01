@@ -7,6 +7,7 @@ import {
 } from '@/lib/payroll-approval-workflow';
 import { notifyPayrollApprovalStage } from '@/lib/payroll-approval-notification-service';
 import { normalizePayrollRunPack } from '@/lib/payroll-employee-classification';
+import { normalizePayrollCompany } from '@/lib/payroll-schedule-scope';
 import {
   appendPayrollAudit,
   getPayrollRun,
@@ -68,6 +69,7 @@ export const sendPayrollApprovalReminder = async (input: {
   runId?: string | null;
   period?: string | null;
   pack?: string | null;
+  company?: string | null;
   actor: string;
   role?: string;
   baseUrl?: string | null;
@@ -79,7 +81,8 @@ export const sendPayrollApprovalReminder = async (input: {
   }
   if (!run && input.period) {
     const pack = normalizePayrollRunPack(input.pack) || 'salaried';
-    run = await getPayrollRunForPeriod(input.period, pack);
+    const company = normalizePayrollCompany(input.company) || 'DLE';
+    run = await getPayrollRunForPeriod(input.period, pack, company);
   }
   if (!run) throw new Error('Payroll run not found.');
   if (!isPayrollRunAwaitingApproval(run)) {

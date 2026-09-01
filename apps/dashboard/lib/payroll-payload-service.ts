@@ -14,6 +14,7 @@ import {
   listPayrollRunsForPeriod,
   readPayrollSnapshot,
   payrollRunPeriodLabelForPack,
+  resolvePayrollRunCompany,
   resolvePayrollRunPack,
   type PayrollRunPack,
   type PayrollRunSnapshot,
@@ -24,6 +25,12 @@ import {
   normalizePayrollRunPack,
   payrollRunPackShortLabel,
 } from '@/lib/payroll-employee-classification';
+import {
+  PAYROLL_SCHEDULE_SCOPES,
+  findPayrollScheduleScope,
+  normalizePayrollCompany,
+  type PayrollCompany,
+} from '@/lib/payroll-schedule-scope';
 import {
   summarizePayrollReadiness,
 } from '@/lib/payroll-readiness';
@@ -139,9 +146,11 @@ const resolvePeriodCalculation = async (
   run: UnifiedPayrollRun | null,
   periodRecord: { status: string } | null,
   packOverride?: PayrollRunPack | null,
+  companyOverride?: PayrollCompany | null,
 ) => {
   const payrollComputed = isPayrollComputed(run, periodRecord);
   const pack = packOverride || (run ? resolvePayrollRunPack(run) : undefined);
+  const company = companyOverride || (run ? resolvePayrollRunCompany(run) : null);
 
   if (payrollComputed && run) {
     const snapshot = await readPayrollSnapshot(run.id);
@@ -151,7 +160,7 @@ const resolvePeriodCalculation = async (
     }
   }
 
-  const live = await calculatePayrollForPeriod(period, pack ? { pack } : undefined);
+  const live = await calculatePayrollForPeriod(period, pack ? { pack, company } : undefined);
   const normalizedLive = refreshCalculationFromRecords(live, reapplyPayrollValidationPolicy(live.records, live.toleranceMode));
 
   if (!payrollComputed) {
@@ -169,21 +178,27 @@ const resolvePeriodCalculation = async (
  * selected pack shows today's figures. The period total is what the NGN Excel export
  * covers, so the cards can be reconciled against the workbook.
  */
+const runMatchesScope = (run: UnifiedPayrollRun, pack: PayrollRunPack, company: PayrollCompany) =>
+  resolvePayrollRunPack(run) === pack && resolvePayrollRunCompany(run) === company;
+
 const buildPackTotals = async (
   period: string,
   packRunsSource: UnifiedPayrollRun[],
   periodRecord: { status: string } | null,
-  selected: { pack: PayrollRunPack; calculation: Awaited<ReturnType<typeof calculatePayrollForPeriod>>; payrollComputed: boolean },
+  selected: { pack: PayrollRunPack; company: PayrollCompany; calculation: Awaited<ReturnType<typeof calculatePayrollForPeriod>>; payrollComputed: boolean },
 ) => {
-  const totals = await Promise.all(PAYROLL_RUN_PACKS.map(async (pack) => {
-    const run = packRunsSource.find((item) => resolvePayrollRunPack(item) === pack) || null;
-    const resolved = pack === selected.pack
+  const scheduleTotals = await Promise.all(PAYROLL_SCHEDULE_SCOPES.map(async (scope) => {
+    const run = packRunsSource.find((item) => runMatchesScope(item, scope.pack, scope.company)) || null;
+    const resolved = scope.pack === selected.pack && scope.company === selected.company
       ? { calculation: selected.calculation, payrollComputed: selected.payrollComputed }
-      : await resolvePeriodCalculation(period, run, periodRecord, pack).catch(() => null);
+      : await resolvePeriodCalculation(period, run, periodRecord, scope.pack, scope.company).catch(() => null);
     const summary = resolved?.calculation.summary;
     return {
-      pack,
-      packLabel: payrollRunPackShortLabel(pack),
+      id: scope.id,
+      pack: scope.pack,
+      company: scope.company,
+      packLabel: scope.label,
+      href: scope.href,
       runId: run?.id || null,
       status: run?.status || 'Draft',
       computed: Boolean(resolved?.payrollComputed),
@@ -194,8 +209,23 @@ const buildPackTotals = async (
       netPay: roundMoney(Number(summary?.netPay || 0)),
     };
   }));
+  const totals = PAYROLL_RUN_PACKS.map((pack) => {
+    const items = scheduleTotals.filter((item) => item.pack === pack);
+    return {
+      pack,
+      packLabel: payrollRunPackShortLabel(pack),
+      runId: items.find((item) => item.company === selected.company)?.runId || items[0]?.runId || null,
+      status: items.find((item) => item.company === selected.company)?.status || items[0]?.status || 'Draft',
+      computed: items.some((item) => item.computed),
+      employeeCount: items.reduce((sum, item) => sum + item.employeeCount, 0),
+      readyEmployees: items.reduce((sum, item) => sum + item.readyEmployees, 0),
+      grossPay: roundMoney(items.reduce((sum, item) => sum + item.grossPay, 0)),
+      deductions: roundMoney(items.reduce((sum, item) => sum + item.deductions, 0)),
+      netPay: roundMoney(items.reduce((sum, item) => sum + item.netPay, 0)),
+    };
+  });
 
-  const periodTotals = totals.reduce(
+  const periodTotals = scheduleTotals.reduce(
     (acc, item) => ({
       employeeCount: acc.employeeCount + item.employeeCount,
       readyEmployees: acc.readyEmployees + item.readyEmployees,
@@ -209,18 +239,23 @@ const buildPackTotals = async (
 
   return {
     packTotals: totals,
-    periodTotals: { ...periodTotals, allPacksComputed: periodTotals.computedPacks === PAYROLL_RUN_PACKS.length },
+    scheduleTotals,
+    periodTotals: { ...periodTotals, allPacksComputed: periodTotals.computedPacks === PAYROLL_SCHEDULE_SCOPES.length },
   };
 };
 
-const mapRunForProcessing = (run: Awaited<ReturnType<typeof getPayrollRunForPeriod>>) =>
-  run
-    ? {
+const mapRunForProcessing = (run: Awaited<ReturnType<typeof getPayrollRunForPeriod>>) => {
+  if (!run) return null;
+  const pack = resolvePayrollRunPack(run);
+  const company = resolvePayrollRunCompany(run);
+  const scope = company ? findPayrollScheduleScope(pack, company) : null;
+  return {
         id: run.id,
         period: run.period,
-        periodLabel: payrollRunPeriodLabelForPack(payrollPeriodLabel(run.period), resolvePayrollRunPack(run)),
-        pack: resolvePayrollRunPack(run),
-        packLabel: payrollRunPackShortLabel(resolvePayrollRunPack(run)),
+        periodLabel: payrollRunPeriodLabelForPack(payrollPeriodLabel(run.period), pack, company),
+        pack,
+        company,
+        packLabel: scope?.label || payrollRunPackShortLabel(pack),
         status: run.status,
         employeeCount: run.employeeCount,
         grossPay: run.grossPay,
@@ -253,7 +288,8 @@ const mapRunForProcessing = (run: Awaited<ReturnType<typeof getPayrollRunForPeri
           note: entry.comment || entry.reason || undefined,
         })),
       }
-    : null;
+  };
+};
 
 const knownPayrollPeriods = async (runs: Awaited<ReturnType<typeof listPayrollRuns>>, currentPeriod: string) => {
   const periodState = await listPayrollPeriods();
@@ -273,6 +309,7 @@ const knownPayrollPeriods = async (runs: Awaited<ReturnType<typeof listPayrollRu
         netPay: periodRuns.reduce((sum, item) => sum + Number(item.netPay || 0), 0),
         packs: periodRuns.map((item) => ({
           pack: resolvePayrollRunPack(item),
+          company: resolvePayrollRunCompany(item),
           status: item.status,
           netPay: item.netPay,
           employeeCount: item.employeeCount,
@@ -287,9 +324,11 @@ const buildPackPayload = async (
   run: UnifiedPayrollRun | null,
   periodRecord: { status: string } | null,
   canViewMoney: boolean,
+  company: PayrollCompany = 'DLE',
 ) => {
-  const scopedRun = run ? { ...run, pack: resolvePayrollRunPack(run) || pack } : null;
-  const { calculation, dataMode, payrollComputed } = await resolvePeriodCalculation(period, scopedRun, periodRecord, pack);
+  const scopedRun = run ? { ...run, pack: resolvePayrollRunPack(run) || pack, company: resolvePayrollRunCompany(run) || company } : null;
+  const { calculation, dataMode, payrollComputed } = await resolvePeriodCalculation(period, scopedRun, periodRecord, pack, company);
+  const scope = findPayrollScheduleScope(pack, company);
 
   const summary = canViewMoney
     ? calculation.summary
@@ -311,7 +350,9 @@ const buildPackPayload = async (
 
   return {
     pack,
-    packLabel: payrollRunPackShortLabel(pack),
+    company,
+    packLabel: scope.label,
+    scheduleId: scope.id,
     run: mapRunForProcessing(scopedRun),
     dataMode,
     payrollComputed,
@@ -337,11 +378,14 @@ export const buildProcessingPayload = async (
   request: Request,
   requestedPeriod?: string,
   requestedPack?: string | null,
+  requestedCompany?: string | null,
 ) => {
   const { role, processingPerms } = await payrollSessionContext(request);
   const perms = processingPerms;
   const period = requestedPeriod || (await getActivePayrollPeriod());
   const pack = normalizePayrollRunPack(requestedPack) || 'salaried';
+  const company = normalizePayrollCompany(requestedCompany) || 'DLE';
+  const scope = findPayrollScheduleScope(pack, company);
   const periodState = await listPayrollPeriods();
   const periodRecord = periodState.periods.find((item) => item.period === period) || null;
 
@@ -352,21 +396,20 @@ export const buildProcessingPayload = async (
   ]);
 
   let packRuns = periodPackRuns;
-  // Always ensure both salaried + daily-rate runs exist (legacy periods often only have one).
-  const missingPack = PAYROLL_RUN_PACKS.some(
-    (itemPack) => !packRuns.some((item) => resolvePayrollRunPack(item) === itemPack),
+  const missingScope = PAYROLL_SCHEDULE_SCOPES.some(
+    (item) => !packRuns.some((run) => runMatchesScope(run, item.pack, item.company)),
   );
-  if (!packRuns.length || missingPack) {
+  if (!packRuns.length || missingScope) {
     packRuns = await ensurePayrollRunsForPeriod(period, payrollPeriodLabel(period), 'System');
   }
 
   const packPayloads = await Promise.all(
-    PAYROLL_RUN_PACKS.map(async (itemPack) => {
-      const packRun = packRuns.find((item) => resolvePayrollRunPack(item) === itemPack) || null;
-      return buildPackPayload(period, itemPack, packRun, periodRecord, perms.canViewMoney);
+    PAYROLL_SCHEDULE_SCOPES.map(async (item) => {
+      const packRun = packRuns.find((run) => runMatchesScope(run, item.pack, item.company)) || null;
+      return buildPackPayload(period, item.pack, packRun, periodRecord, perms.canViewMoney, item.company);
     }),
   );
-  const activePack = packPayloads.find((item) => item.pack === pack) || packPayloads[0];
+  const activePack = packPayloads.find((item) => item.pack === pack && item.company === company) || packPayloads[0];
 
   return {
     generatedAt: fullCalculation.generatedAt,
@@ -374,9 +417,11 @@ export const buildProcessingPayload = async (
     dataSource: fullCalculation.dataSource,
     enterpriseSourceActive: fullCalculation.enterpriseSourceActive,
     period,
-    periodLabel: payrollPeriodLabel(period),
+    periodLabel: payrollRunPeriodLabelForPack(payrollPeriodLabel(period), pack, company),
     pack: activePack.pack,
+    company,
     packLabel: activePack.packLabel,
+    scheduleId: scope.id,
     role,
     permissions: perms,
     run: activePack.run,
@@ -394,14 +439,14 @@ export const buildProcessingPayload = async (
         id: 'approval',
         label: 'Segregated Approval',
         status: activePack.run?.status || 'Draft',
-        detail: `HR Manager → Finance Manager → CFO → MD/CEO for ${activePack.packLabel}. Timesheet HR ack feeds OT/daily-rate; this run approval is the executive pack sign-off.`,
+        detail: `HR Manager → Finance Manager → CFO → MD/CEO for ${activePack.packLabel}. Timesheet HR ack feeds OT/daily-rate; this run approval is the executive schedule sign-off.`,
         tone: activePack.run?.status === 'Posted' || activePack.run?.status === 'Locked' || activePack.run?.status === 'Approved' ? 'green' : 'violet',
       },
       {
-        id: 'dual-pack',
-        label: 'Dual payroll packs',
+        id: 'schedule-split',
+        label: 'Four payroll schedules',
         status: 'Split cost',
-        detail: 'Salaries and Wages are separate runs with the same approval chain and independent cost totals.',
+        detail: 'DLE Salaries, DLPC Salaries, DLE Day-rate, and DLPC Day-rate are independent runs with the same approval chain.',
         tone: 'cyan',
       },
     ],
@@ -409,11 +454,16 @@ export const buildProcessingPayload = async (
   };
 };
 
-const mapManagementRun = (item: Awaited<ReturnType<typeof listPayrollRuns>>[number]) => ({
+const mapManagementRun = (item: Awaited<ReturnType<typeof listPayrollRuns>>[number]) => {
+  const pack = resolvePayrollRunPack(item);
+  const company = resolvePayrollRunCompany(item);
+  const scope = company ? findPayrollScheduleScope(pack, company) : null;
+  return {
   id: item.id,
   period: item.period,
-  pack: resolvePayrollRunPack(item),
-  packLabel: payrollRunPackShortLabel(resolvePayrollRunPack(item)),
+  pack,
+  company,
+  packLabel: scope?.label || payrollRunPackShortLabel(pack),
   status: item.status,
   employeeCount: item.employeeCount,
   grossPay: item.grossPay,
@@ -449,9 +499,15 @@ const mapManagementRun = (item: Awaited<ReturnType<typeof listPayrollRuns>>[numb
   reopenedBy: item.reopenedBy || null,
   reopenReason: item.reopenReason || null,
   artifacts: item.artifacts || [],
-});
+  };
+};
 
-export const buildManagementPayload = async (request: Request, requestedPeriod?: string, requestedPack?: string | null) => {
+export const buildManagementPayload = async (
+  request: Request,
+  requestedPeriod?: string,
+  requestedPack?: string | null,
+  requestedCompany?: string | null,
+) => {
   const { role, permissions, isGlobalAdmin, session } = await payrollSessionContext(request);
   const perms = managementPermissions(role);
   const identity = {
@@ -469,6 +525,8 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
   const periodState = await listPayrollPeriods();
   const period = requestedPeriod || periodState.activePeriod || (await getActivePayrollPeriod());
   const pack = normalizePayrollRunPack(requestedPack) || 'salaried';
+  const company = normalizePayrollCompany(requestedCompany) || 'DLE';
+  const scope = findPayrollScheduleScope(pack, company);
   const [runs, periodPackRuns, auditTrail] = await Promise.all([
     listPayrollRuns(),
     listPayrollRunsForPeriod(period),
@@ -476,20 +534,19 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
   ]);
   const periodRecord = periodState.periods.find((item) => item.period === period) || null;
   let packRunsSource = periodPackRuns;
-  const missingPack = PAYROLL_RUN_PACKS.some(
-    (itemPack) => !packRunsSource.some((item) => resolvePayrollRunPack(item) === itemPack),
+  const missingScope = PAYROLL_SCHEDULE_SCOPES.some(
+    (item) => !packRunsSource.some((run) => runMatchesScope(run, item.pack, item.company)),
   );
-  if (!packRunsSource.length || missingPack) {
+  if (!packRunsSource.length || missingScope) {
     packRunsSource = await ensurePayrollRunsForPeriod(period, payrollPeriodLabel(period), 'System');
   }
-  const selectedRun = packRunsSource.find((item) => resolvePayrollRunPack(item) === pack)
-    || (pack === 'salaried'
-      ? packRunsSource.find((item) => resolvePayrollRunPack(item) === 'salaried')
-      : packRunsSource.find((item) => resolvePayrollRunPack(item) === 'daily-rate'))
+  const selectedRun = packRunsSource.find((item) => runMatchesScope(item, pack, company))
+    || (await getPayrollRunForPeriod(period, pack, company))
     || null;
-  const { calculation, dataMode, payrollComputed } = await resolvePeriodCalculation(period, selectedRun, periodRecord, pack);
-  const { packTotals, periodTotals } = await buildPackTotals(period, packRunsSource, periodRecord, {
+  const { calculation, dataMode, payrollComputed } = await resolvePeriodCalculation(period, selectedRun, periodRecord, pack, company);
+  const { packTotals, scheduleTotals, periodTotals } = await buildPackTotals(period, packRunsSource, periodRecord, {
     pack,
+    company,
     calculation,
     payrollComputed,
   });
@@ -526,9 +583,11 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
     permissions: perms,
     access: { financeOnlyAccess, salaryReviewAccess },
     period,
-    periodLabel: payrollRunPeriodLabelForPack(payrollPeriodLabel(period), pack),
+    periodLabel: payrollRunPeriodLabelForPack(payrollPeriodLabel(period), pack, company),
     pack,
-    packLabel: payrollRunPackShortLabel(pack),
+    company,
+    packLabel: scope.label,
+    scheduleId: scope.id,
     dataMode,
     payrollComputed,
     isViewingActivePeriod: period === periodState.activePeriod,
@@ -548,8 +607,8 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
       : null,
     periods: periodState.periods.map((item) => {
       const itemPackRuns = runs.filter((row) => row.period === item.period);
-      const periodRun = itemPackRuns.find((row) => resolvePayrollRunPack(row) === pack)
-        || itemPackRuns.find((row) => resolvePayrollRunPack(row) === 'salaried')
+      const periodRun = itemPackRuns.find((row) => runMatchesScope(row, pack, company))
+        || itemPackRuns.find((row) => resolvePayrollRunPack(row) === pack)
         || itemPackRuns[0];
       return {
         period: item.period,
@@ -559,6 +618,7 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
         runId: periodRun?.id || null,
         packs: itemPackRuns.map((row) => ({
           pack: resolvePayrollRunPack(row),
+          company: resolvePayrollRunCompany(row),
           status: row.status,
           netPay: row.netPay,
           employeeCount: row.employeeCount,
@@ -592,6 +652,7 @@ export const buildManagementPayload = async (request: Request, requestedPeriod?:
       deferredExceptionCount: calculation.summary.deferredExceptionCount,
     },
     packTotals,
+    scheduleTotals,
     periodTotals,
     toleranceMode: calculation.toleranceMode,
     enterpriseSourceActive: calculation.enterpriseSourceActive,

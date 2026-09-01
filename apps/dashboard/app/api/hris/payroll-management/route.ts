@@ -27,6 +27,7 @@ import { readAppliedDayrateScheduleOverride } from '@/lib/dayrate-schedule-overr
 import { isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { readPayrollSnapshotsByPeriods } from '@/lib/payroll-run-store';
+import { normalizePayrollCompany, resolvePayrollCompany } from '@/lib/payroll-schedule-scope';
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -133,7 +134,7 @@ const employeeWorkedInPeriod = (record: {
   return dailyRateDaysWorked(record) > 0;
 };
 
-const filterExportRecords = (records: any[], status: string | null, pack?: string | null, currency?: string | null) => {
+const filterExportRecords = (records: any[], status: string | null, pack?: string | null, currency?: string | null, company?: string | null) => {
   // Daily Rate pack sheet: always require days worked, even if isDailyRate flag is missing.
   const worked = records.filter((record) => {
     if (pack === 'daily-rate') return dailyRateDaysWorked(record) > 0;
@@ -142,15 +143,19 @@ const filterExportRecords = (records: any[], status: string | null, pack?: strin
   const byStatus = status && status !== 'All'
     ? worked.filter((record) => record.payrollStatus === status)
     : worked;
+  const companyCode = normalizePayrollCompany(company);
+  const byCompany = companyCode
+    ? byStatus.filter((record) => resolvePayrollCompany(record) === companyCode)
+    : byStatus;
   const currencyToken = String(currency || '').trim().toLowerCase();
-  if (!currencyToken || currencyToken === 'all') return byStatus;
+  if (!currencyToken || currencyToken === 'all') return byCompany;
   if (currencyToken === 'usd' || currencyToken === 'dle-usd' || currencyToken === 'dle_usd') {
-    return byStatus.filter((record) => isDleUsdPayrollEmployee(record));
+    return byCompany.filter((record) => isDleUsdPayrollEmployee(record));
   }
   if (currencyToken === 'ngn' || currencyToken === 'naira') {
-    return byStatus.filter((record) => !isDleUsdPayrollEmployee(record));
+    return byCompany.filter((record) => !isDleUsdPayrollEmployee(record));
   }
-  return byStatus;
+  return byCompany;
 };
 
 const csvFromReport = (reportData: { columns: string[]; rows: unknown[][] }) => {
@@ -358,13 +363,15 @@ export async function GET(request: Request) {
     }
     const period = url.searchParams.get('period') || undefined;
     const requestedPack = url.searchParams.get('pack') || undefined;
-    const payload = await buildManagementPayload(request, period, requestedPack === 'all' ? 'salaried' : requestedPack);
+    const requestedCompany = url.searchParams.get('company') || undefined;
+    const payload = await buildManagementPayload(request, period, requestedPack === 'all' ? 'salaried' : requestedPack, requestedCompany);
     const report = compact(url.searchParams.get('report')) || 'payroll-register';
     const format = compact(url.searchParams.get('format')).toLowerCase();
     const currencyParam = compact(url.searchParams.get('currency'));
     // Excel defaults to NGN salaried/stipend only — DLE_USD is a separate export (currency=usd).
     const currencyScope = currencyParam || ((format === 'xls' || format === 'excel') ? 'ngn' : 'all');
-    const exportRecords = filterExportRecords(payload.records, url.searchParams.get('status'), payload.pack, currencyScope);
+    const exportCompany = requestedCompany || payload.company || null;
+    const exportRecords = filterExportRecords(payload.records, url.searchParams.get('status'), payload.pack, currencyScope, exportCompany);
     if (url.searchParams.get('audit') === '1') return jsonOk({ auditTrail: payload.auditTrail });
     let reportData = reportExport(exportRecords, report);
     const previousPeriod = previousPayrollPeriod(payload.period);
@@ -450,14 +457,14 @@ export async function GET(request: Request) {
       const packPayloads = requestedPack === 'all'
         ? [
             payload,
-            await buildManagementPayload(request, period, 'daily-rate'),
+            await buildManagementPayload(request, period, 'daily-rate', requestedCompany),
           ]
         : [payload];
       const filePack = currencyScope === 'usd' || currencyScope === 'dle-usd' || currencyScope === 'dle_usd'
         ? 'dle-usd'
         : requestedPack === 'all'
           ? 'both-packs'
-          : (payload.pack || 'salaried');
+          : `${payload.company || exportCompany || 'DLE'}-${payload.pack || 'salaried'}`;
 
       if (isOfficialPayrollExcelReport(report) && report !== 'payroll-review') {
         // Official workbooks (payroll-register / payroll-detail / salary-analysis / bank-schedule / dayrate-schedule)
@@ -466,8 +473,11 @@ export async function GET(request: Request) {
         // so any "Computed / pending" summary pending state or role mask on UI does not
         // accidentally leak into the generated file. Permission gate (canExport) already checked above.
         const livePeriod = String(payload.period || '').trim() || (await getActivePayrollPeriod().catch(() => ''));
-        const salariedRawCalc = livePeriod ? await calculatePayrollForPeriod(livePeriod, { pack: 'salaried' }).catch(() => null) : null;
-        const dailyRateRawCalc = livePeriod ? await calculatePayrollForPeriod(livePeriod, { pack: 'daily-rate' }).catch(() => null) : null;
+        const exportCompanyCode = normalizePayrollCompany(exportCompany);
+        const needSalaried = requestedPack !== 'daily-rate' && payload.pack !== 'daily-rate';
+        const needDayrate = requestedPack === 'daily-rate' || requestedPack === 'all' || payload.pack === 'daily-rate' || report === 'dayrate-schedule';
+        const salariedRawCalc = livePeriod && needSalaried ? await calculatePayrollForPeriod(livePeriod, { pack: 'salaried', company: exportCompanyCode }).catch(() => null) : null;
+        const dailyRateRawCalc = livePeriod && needDayrate ? await calculatePayrollForPeriod(livePeriod, { pack: 'daily-rate', company: exportCompanyCode }).catch(() => null) : null;
         const statusFilter = url.searchParams.get('status');
         const directory = await readPayrollEmployees().catch(() => ({ employees: [] as Awaited<ReturnType<typeof readPayrollEmployees>>['employees'] }));
 
@@ -476,21 +486,30 @@ export async function GET(request: Request) {
           ?? packPayloads.find((item) => item.pack === 'daily-rate')?.records
           ?? (payload.pack === 'daily-rate' ? payload.records : []);
 
-        const salariedRecords = filterExportRecords(salariedLiveRecords, statusFilter, 'salaried', currencyScope)
+        const officialSalaryWorkbook = isOfficialPayrollExcelReport(report)
+          && report !== 'dayrate-schedule'
+          && requestedPack !== 'daily-rate'
+          && payload.pack !== 'daily-rate';
+        const salariedExportCurrency = currencyParam
+          ? currencyScope
+          : (officialSalaryWorkbook ? 'all' : currencyScope);
+
+        const salariedRecords = filterExportRecords(salariedLiveRecords, statusFilter, 'salaried', salariedExportCurrency, exportCompany)
           .filter((record) => !record.isDailyRate);
         const dayrateExportReport = report === 'dayrate-schedule'
           || (report === 'payroll-register' && (requestedPack === 'daily-rate' || payload.pack === 'daily-rate'));
         const dayrateRecordsForTemplate = dayrateExportReport
           ? (() => {
             const applied = readAppliedDayrateScheduleOverride(livePeriod);
-            const statusFiltered = statusFilter && statusFilter !== 'All'
+            const statusFiltered = (statusFilter && statusFilter !== 'All'
               ? dayrateLiveRecords.filter((record) => record.payrollStatus === statusFilter)
-              : dayrateLiveRecords;
+              : dayrateLiveRecords)
+              .filter((record) => !exportCompanyCode || resolvePayrollCompany(record) === exportCompanyCode);
             if (applied?.rows?.length) return statusFiltered;
-            return filterExportRecords(dayrateLiveRecords, statusFilter, 'daily-rate', 'all')
+            return filterExportRecords(dayrateLiveRecords, statusFilter, 'daily-rate', 'all', exportCompany)
               .filter((record) => record.isDailyRate || requestedPack === 'daily-rate');
           })()
-          : filterExportRecords(dayrateLiveRecords, statusFilter, 'daily-rate', 'all')
+          : filterExportRecords(dayrateLiveRecords, statusFilter, 'daily-rate', 'all', exportCompany)
             .filter((record) => record.isDailyRate || requestedPack === 'daily-rate');
 
         if (dayrateExportReport) {
@@ -500,6 +519,7 @@ export async function GET(request: Request) {
               periodLabel: payload.periodLabel,
               records: dayrateRecordsForTemplate,
               directoryEmployees: directory.employees,
+              company: exportCompanyCode,
             });
             return new Response(new Uint8Array(workbook.buffer), {
               headers: {
@@ -527,7 +547,7 @@ export async function GET(request: Request) {
           salariedRecords,
           dayrateRecords,
           directoryEmployees: directory.employees,
-          currencyScope,
+          currencyScope: salariedExportCurrency,
         });
         if (worksheets.length) {
           const fallbackName = `${report}-${payload.period}-${filePack}.xls`;
@@ -542,7 +562,7 @@ export async function GET(request: Request) {
       }
 
       const worksheets = await Promise.all(packPayloads.map(async (packPayload) => {
-        const packRecords = filterExportRecords(packPayload.records, url.searchParams.get('status'), packPayload.pack, packPayload.pack === 'daily-rate' ? 'all' : currencyScope);
+        const packRecords = filterExportRecords(packPayload.records, url.searchParams.get('status'), packPayload.pack, packPayload.pack === 'daily-rate' ? 'all' : currencyScope, packPayload.company || exportCompany);
         let packReportData = reportExport(packRecords, report);
         if (report === 'payroll-review') {
           const packPreviousPeriod = previousPayrollPeriod(packPayload.period);
@@ -782,8 +802,8 @@ export async function POST(request: Request) {
 
   if (action === 'approve-entire-workflow') {
     if (role !== 'Super Admin') return jsonErr(403, 'Only the Global Super Administrator can approve the entire payroll workflow end-to-end.');
-    const payload = await buildManagementPayload(request, period);
-    let run = await getPayrollRunForPeriod(period);
+    const payload = await buildManagementPayload(request, period, compact(body.pack) || null, compact(body.company) || null);
+    let run = await getPayrollRunForPeriod(period, compact(body.pack) === 'daily-rate' ? 'daily-rate' : 'salaried', normalizePayrollCompany(body.company) || 'DLE');
     if (!run) return jsonErr(404, 'Payroll run not found');
     if (run.status === 'Closed') return jsonOk({ run, message: 'Payroll workflow is already closed.' });
     if (!['Submitted', 'Under Review'].includes(run.status)) return jsonErr(409, 'Submit payroll first. Entire workflow approval activates after submission.');
@@ -843,6 +863,7 @@ export async function POST(request: Request) {
         action,
         period,
         pack: compact(body.pack) || null,
+        company: compact(body.company) || null,
         runId: compact(body.runId) || null,
         actor,
         role,

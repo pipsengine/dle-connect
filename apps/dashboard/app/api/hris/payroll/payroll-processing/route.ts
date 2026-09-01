@@ -116,14 +116,15 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const period = url.searchParams.get('period') || (await getActivePayrollPeriod());
     const pack = url.searchParams.get('pack');
+    const company = url.searchParams.get('company');
     const format = compact(url.searchParams.get('format')).toLowerCase();
-    const payload = await buildProcessingPayload(request, period, pack);
+    const payload = await buildProcessingPayload(request, period, pack, company);
     if (format === 'csv') {
       if (!payload.permissions.canExport) return err(403, 'Permission denied');
       return new Response(csv(payload.records), {
         headers: {
           'content-type': 'text/csv; charset=utf-8',
-          'content-disposition': `attachment; filename="payroll-approval-${period}-${payload.pack || 'salaried'}.csv"`,
+          'content-disposition': `attachment; filename="payroll-approval-${period}-${payload.company || 'DLE'}-${payload.pack || 'salaried'}.csv"`,
         },
       });
     }
@@ -133,7 +134,7 @@ export async function GET(request: Request) {
         worksheets: [{
           title: `Payroll Approval — ${payload.periodLabel || period}`,
           subtitle: `${payload.packLabel || payload.pack || 'Payroll'} · ${payload.records.length} employees`,
-          sheetName: payload.pack === 'daily-rate' ? 'Wages' : 'Salaries',
+          sheetName: payload.pack === 'daily-rate' ? 'Day-rate' : 'Salaries',
           columns: headers,
           rows: exportRows(payload.records, extras),
         }],
@@ -141,7 +142,7 @@ export async function GET(request: Request) {
       return new Response(xml, {
         headers: {
           'content-type': excelMimeType,
-          'content-disposition': `attachment; filename="payroll-approval-${period}-${payload.pack || 'salaried'}.xls"`,
+          'content-disposition': `attachment; filename="payroll-approval-${period}-${payload.company || 'DLE'}-${payload.pack || 'salaried'}.xls"`,
           'cache-control': 'no-store',
         },
       });
@@ -160,6 +161,7 @@ export async function POST(request: Request) {
     const action = normalizePayrollApprovalAction(compact(body.action));
     const period = compact(body.period) || (await getActivePayrollPeriod());
     const pack = compact(body.pack) || null;
+    const company = compact(body.company) || null;
     const runId = compact(body.runId) || null;
     const note = compact(body.note);
     const reason = compact(body.reason);
@@ -178,6 +180,7 @@ export async function POST(request: Request) {
         runId,
         period,
         pack,
+        company,
         actor,
         role,
         baseUrl: origin,
@@ -223,6 +226,7 @@ export async function POST(request: Request) {
       action: action === 'submit' ? 'submit-run' : action,
       period,
       pack,
+      company,
       runId,
       actor,
       role,

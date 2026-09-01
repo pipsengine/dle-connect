@@ -1,5 +1,5 @@
 /**
- * Smoke-check official payroll Excel layouts against sample column sets.
+ * Smoke-check official payroll Excel layouts against the August 2026 salary schedule.
  * Usage: npx tsx --tsconfig apps/dashboard/tsconfig.json apps/dashboard/scripts/_smoke-official-excel-export.mts
  */
 import {
@@ -58,6 +58,19 @@ const cont = {
   netPay: 327126.71,
 };
 
+const intern = {
+  ...cont,
+  employeeId: 'IT0106',
+  employeeCode: 'IT0106',
+  fullName: 'OREZI GBOBODO',
+  employmentType: 'Intern',
+  earningLines: [{ code: 'ITALLOW', name: 'IT ALLOWANCE', amount: 100000 }],
+  deductionLines: [{ code: 'PAYE', label: 'PAYE', amount: 0 }],
+  paye: 0,
+  grossPay: 100000,
+  netPay: 100000,
+};
+
 const day = {
   ...base,
   employeeId: 'C1065',
@@ -77,51 +90,148 @@ const day = {
   netPay: 318492.5,
 };
 
+const usd = {
+  ...base,
+  employeeId: 'P0442',
+  employeeCode: 'P0442',
+  fullName: 'TEMITOPE ABIODUN ODULATE',
+  payrollGroup: 'DLE_USD',
+  payCurrency: 'USD',
+  jobTitle: 'GENERAL MANAGER, OPERATIONS',
+  location: 'IDI - IDI_ORO',
+  businessUnit: 'DLE',
+  grossPay: 4631.41,
+  netPay: 3423.25,
+  earningLines: [{ code: 'EXP_BASIC', name: 'EXP_ SMGT BASIC', amount: 926.28 }],
+  deductionLines: [{ code: 'PAYE', label: 'PAYE', amount: 1049.07 }],
+};
+
+const dayDlpc = {
+  ...day,
+  employeeId: 'C2001',
+  employeeCode: 'C2001',
+  fullName: 'TEST CONTRACTOR',
+  location: 'AGEGE',
+  businessUnit: 'DLPCG',
+  payrollGroup: 'DLPC',
+};
+
+const dlePerm = {
+  ...base,
+  employeeId: 'P0100',
+  employeeCode: 'P0100',
+  businessUnit: 'DLE',
+  payrollGroup: 'DLE',
+  location: 'IDI - IDI_ORO',
+};
+
 const missing = (cols: string[], required: string[]) => required.filter((c) => !cols.includes(c));
 
-const bank = buildOfficialBankScheduleWorksheets([base as any, day as any], { periodLabel: 'July 2026' });
-const sal = buildOfficialSalariedDetailWorksheets([base as any, cont as any], { periodLabel: 'July 2026' });
-const daySheets = await buildOfficialDayrateScheduleWorksheets([day as any], { period: '', periodLabel: 'July 2026' });
+const bank = buildOfficialBankScheduleWorksheets([base as any, day as any], { periodLabel: 'August 2026' });
+const salaryBank = buildOfficialBankScheduleWorksheets([base as any, cont as any, intern as any, usd as any], {
+  periodLabel: 'August 2026',
+  mode: 'salary-schedule',
+  currencyScope: 'all',
+});
+const sal = buildOfficialSalariedDetailWorksheets([base as any, cont as any, intern as any, usd as any], {
+  periodLabel: 'August 2026',
+  currencyScope: 'all',
+});
+const daySheets = await buildOfficialDayrateScheduleWorksheets([day as any, dayDlpc as any], { period: '', periodLabel: 'August 2026' });
+const dleOnlyBank = buildOfficialBankScheduleWorksheets([dlePerm as any, usd as any], {
+  periodLabel: 'August 2026',
+  mode: 'salary-schedule',
+  currencyScope: 'all',
+});
+
+const perm = sal.find((sheet) => sheet.sheetName === 'PERM.STAFF')!;
+const contSheet = sal.find((sheet) => sheet.sheetName === 'CONT. STAFF')!;
+const usdSheet = sal.find((sheet) => sheet.sheetName === 'USD REPORT')!;
+const summary = sal.find((sheet) => sheet.sheetName === 'Summary')!;
 
 const samplePerm = [
   'Employee Code', 'EmployeeSurname', 'EmployeeFirstName', 'Age', 'Date of Birth', 'Gender', 'Date Joined Group', 'Job Title Long Description',
   'BASIC SALARY (Earning)', 'FURNITURE (Earning)', 'HOUSING (Earning)', 'Earning Total', 'NHF - National Housing Fund (Deduction)',
-  'PAYE Tax (Deduction)', 'ITF Levy (CompanyContribution)', 'NSITF - Nigeria Social Insurance Tr (CompanyContribution)',
+  'PAYE Tax (Deduction)', 'Column2', 'ITF Levy (CompanyContribution)', 'NSITF - Nigeria Social Insurance Tr (CompanyContribution)',
   'RENT (Provisions)', 'Net Pay', 'Company (HA)', 'Supervisor (HA)',
 ];
 const sampleCont = [
-  'Employee Code', 'Cont Type', 'LUMSUM AMOUNT (Earning)', 'PAYE Tax (Deduction)', 'RENT (Provisions)', 'Net Pay', 'Supervisor (HA)',
+  'Employee Code', 'Cont Type', 'LUMSUM AMOUNT (Earning)', 'Weekly Transport ', 'PAYE Tax (Deduction)', 'RENT (Provisions)', 'Net Pay', 'Supervisor (HA)',
+];
+const sampleUsd = [
+  'Employee Code', 'EmployeeSecondName', 'EXP_ SMGT BASIC (Earning)', 'Earning Total', 'PAYE Tax (Deduction)', 'Taxable Earnings',
 ];
 const sampleDle = [
-  'Emp. Code', 'Location', 'Daily Rate', 'AGE', 'Total Weekday', 'Site Allowance', 'TCM Meal', 'TCM TRANSPORT', 'Net Pay',
+  'Contractor Code', 'Location', 'Daily Rate', 'AGE', 'Total Weekday', 'Site Allowance', 'TCM Meal', 'TCM TRANSPORT', 'Amount Payable',
 ];
 const sampleDlpc = [
-  'Emp. Code', 'Daily Rate', 'Age', 'Total Weekday', 'Stock Count', 'Total Earning- Transport', 'Net Pay',
+  'Contractor Code', 'Daily Rate', 'Age', 'Total Weekday', 'Meal Allowance', 'Transport', 'Amount Payable',
 ];
 const sampleBank = ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location'];
 
+const earningTotalIdx = perm.columns.indexOf('Earning Total');
+const payeIdx = perm.columns.indexOf('PAYE Tax (Deduction)');
+const taxableIdx = perm.columns.indexOf('Taxable Earnings');
+
 const report = {
   bankSheets: bank.map((s) => s.sheetName),
+  salaryBankSheets: salaryBank.map((s) => s.sheetName),
+  dleOnlyBankSheets: dleOnlyBank.map((s) => s.sheetName),
+  salarySheets: sal.map((s) => s.sheetName),
   bankMissing: missing(bank[0].columns, sampleBank),
-  permMissing: missing(sal[0].columns, samplePerm),
-  contMissing: missing(sal[1].columns, sampleCont),
+  salaryBankMissing: missing(salaryBank[0].columns, sampleBank),
+  permMissing: missing(perm.columns, samplePerm),
+  contMissing: missing(contSheet.columns, sampleCont),
+  usdMissing: missing(usdSheet.columns, sampleUsd),
   daySheets: daySheets.map((s) => s.sheetName),
   dleMissing: missing(daySheets.find((s) => s.sheetName === 'DLE')!.columns, sampleDle),
   dlpcMissing: missing(daySheets.find((s) => s.sheetName === 'DLPC')!.columns, sampleDlpc),
   dlpcHasLocation: daySheets.find((s) => s.sheetName === 'DLPC')!.columns.includes('Location'),
-  permCode: sal[0].rows[0]?.[0],
-  contType: sal[1].rows[0]?.[1],
-  summaryRows: daySheets.find((s) => s.sheetName === 'SUMMARY')!.rows,
+  permCode: perm.rows[0]?.[0],
+  contType: contSheet.rows[0]?.[1],
+  internType: contSheet.rows[1]?.[1],
+  usdCode: usdSheet.rows[0]?.[0],
+  earningTotalBeforePaye: earningTotalIdx >= 0 && payeIdx > earningTotalIdx,
+  permHasTaxable: taxableIdx >= 0,
+  summaryRows: summary.rows.slice(0, 6),
+  dayrateSummaryRows: daySheets.find((s) => s.sheetName === 'SUMMARY')!.rows,
 };
 
 console.log(JSON.stringify(report, null, 2));
 const failed = [
   ...report.bankMissing,
+  ...report.salaryBankMissing,
   ...report.permMissing,
   ...report.contMissing,
+  ...report.usdMissing,
   ...report.dleMissing,
   ...report.dlpcMissing,
-].length > 0 || report.permCode !== '0013' || report.dlpcHasLocation;
+].length > 0
+  || report.permCode !== '0013'
+  || report.contType !== 'Lumpsum'
+  || report.internType !== 'Intern'
+  || report.usdCode !== '0442_'
+  || !report.earningTotalBeforePaye
+  || report.permHasTaxable
+  || report.dlpcHasLocation
+  || JSON.stringify(report.salaryBankSheets) !== JSON.stringify([
+    'DLPC.PERM.BANK.SCHD',
+    'DLPC.CONT.BANK.SCHD',
+    'USD BANK SCHD',
+  ])
+  || JSON.stringify(report.dleOnlyBankSheets) !== JSON.stringify([
+    'DLE.PERM.BANK.SCHD',
+    'USD BANK SCHD',
+  ])
+  || JSON.stringify(report.salarySheets) !== JSON.stringify([
+    'Summary',
+    'PERM.STAFF',
+    'CONT. STAFF',
+    'DLPC.PERM.BANK.SCHD',
+    'DLPC.CONT.BANK.SCHD',
+    'USD REPORT',
+    'USD BANK SCHD',
+  ]);
 if (failed) {
   console.error('SMOKE FAILED');
   process.exit(1);

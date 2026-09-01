@@ -18,6 +18,7 @@ import {
 import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
 import { currencyCode, formatPayrollMoney, resolvePayCurrency } from '@/lib/payroll-currency';
 import PayrollApprovalStagePanel from './PayrollApprovalStagePanel';
+import { PAYROLL_SCHEDULE_SCOPES, type PayrollCompany } from '@/lib/payroll-schedule-scope';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Finance Controller' | 'Finance Manager' | 'CFO' | 'Executive Management' | 'Payroll Officer' | 'Auditor' | 'Employee';
 type RunStatus = 'Draft' | 'Open' | 'Calculated' | 'Computed' | 'Validated' | 'Ready for Approval' | 'Submitted' | 'Under Review' | 'HR Approved' | 'Finance Approved' | 'CFO Approved' | 'Approved' | 'Released' | 'Revision Requested' | 'Locked' | 'Posted' | 'Published' | 'Closed' | 'Reopened' | 'Rejected';
@@ -30,6 +31,7 @@ type PayrollRun = {
   period: string;
   periodLabel: string;
   pack?: PayrollPack;
+  company?: PayrollCompany | null;
   packLabel?: string;
   status: RunStatus;
   employeeCount: number;
@@ -71,6 +73,7 @@ type Payload = {
   period: string;
   periodLabel: string;
   pack?: PayrollPack;
+  company?: PayrollCompany | null;
   packLabel?: string;
   permissions: {
     canViewMoney: boolean;
@@ -90,6 +93,7 @@ type Payload = {
   runs: PayrollRun[];
   packs?: Array<{
     pack: PayrollPack;
+    company?: PayrollCompany;
     packLabel: string;
     run: PayrollRun | null;
     summary: Payload['summary'];
@@ -267,6 +271,7 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
   const [role, setRole] = useState<Role>('Employee');
   const [period, setPeriod] = useState('');
   const [pack, setPack] = useState<PayrollPack>('salaried');
+  const [company, setCompany] = useState<PayrollCompany>('DLE');
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState('');
   const [error, setError] = useState('');
@@ -298,13 +303,14 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
     }
   };
 
-  const load = async (targetPeriod = period, sessionRole = role, targetPack = pack) => {
+  const load = async (targetPeriod = period, sessionRole = role, targetPack = pack, targetCompany = company) => {
     setLoading(true);
     setError('');
     try {
       const params = new URLSearchParams();
       if (targetPeriod) params.set('period', targetPeriod);
       if (targetPack) params.set('pack', targetPack);
+      if (targetCompany) params.set('company', targetCompany);
       const suffix = params.toString() ? `?${params.toString()}` : '';
       const res = await fetch(`/api/hris/payroll/payroll-processing${suffix}`, {
         headers: { 'x-hris-role': sessionRole },
@@ -315,6 +321,7 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
       setPayload(json.data);
       setPeriod(json.data.period);
       if (json.data.pack) setPack(json.data.pack);
+      if (json.data.company === 'DLE' || json.data.company === 'DLPC') setCompany(json.data.company);
     } catch (event) {
       setError(event instanceof Error ? event.message : 'Unable to load payroll approval workspace');
     } finally {
@@ -328,7 +335,7 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
 
   useEffect(() => {
     if (!sessionReady) return;
-    void load(period, role, pack);
+    void load(period, role, pack, company);
   }, [sessionReady, role]);
 
   const run = payload?.run || null;
@@ -388,8 +395,9 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
           action: actionName,
           period,
           pack,
+          company,
           runId: run?.id || undefined,
-          note: note || `${actionName} from payroll approval console (${pack})`,
+          note: note || `${actionName} from payroll approval console (${company} ${pack})`,
         }),
       });
       const json = (await res.json()) as ApiResponse<{
@@ -419,7 +427,7 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
     setToast('');
     try {
       const res = await fetch(
-        `/api/hris/payroll/payroll-processing?period=${encodeURIComponent(period)}&pack=${encodeURIComponent(pack)}&format=xls`,
+        `/api/hris/payroll/payroll-processing?period=${encodeURIComponent(period)}&pack=${encodeURIComponent(pack)}&company=${encodeURIComponent(company)}&format=xls`,
         { cache: 'no-store' },
       );
       if (!res.ok) {
@@ -430,7 +438,7 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `payroll-approval-${period}-${pack || 'salaried'}.xls`;
+      anchor.download = `payroll-approval-${period}-${company}-${pack || 'salaried'}.xls`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -441,9 +449,10 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
     }
   };
 
-  const selectPack = (nextPack: PayrollPack) => {
+  const selectPack = (nextPack: PayrollPack, nextCompany: PayrollCompany = company) => {
     setPack(nextPack);
-    void load(period, role, nextPack);
+    setCompany(nextCompany);
+    void load(period, role, nextPack, nextCompany);
   };
 
   return (
@@ -467,7 +476,7 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <input type="month" value={period} onChange={(event) => setPeriod(event.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-800 outline-none" />
-          <button type="button" onClick={() => void load(period, role, pack)} disabled={loading} className="inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-3 text-xs font-extrabold text-white hover:bg-blue-700 disabled:cursor-wait disabled:opacity-60">
+          <button type="button" onClick={() => void load(period, role, pack, company)} disabled={loading} className="inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-3 text-xs font-extrabold text-white hover:bg-blue-700 disabled:cursor-wait disabled:opacity-60">
             <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
@@ -483,31 +492,40 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
       {payload?.dataSource?.warning && <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">{payload.dataSource.warning}</div>}
 
       <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-        <p className="font-semibold text-slate-900">Dual-pack approval</p>
+        <p className="font-semibold text-slate-900">Independent schedule approval</p>
         {packSummaries.some((item) => item.run?.status === 'Draft' || !item.run) && packSummaries.some((item) => item.run && !['Draft', 'Open'].includes(item.run.status)) ? (
           <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-950">
-            One pack is still Draft. Open Payroll Processing and run Calculate / Create Run for this period (processes both packs). Then refresh this approval screen.
+            Another schedule is still Draft. Open that payroll page and run Calculate for it. Then refresh this approval screen.
           </p>
         ) : null}
         <div className="mt-3 flex flex-wrap gap-2">
-          {(packSummaries.length ? packSummaries : [
-            { pack: 'salaried' as PayrollPack, packLabel: 'Salaries', run: null, summary: payload?.summary, records: [], approvalWorkflow: undefined },
-            { pack: 'daily-rate' as PayrollPack, packLabel: 'Wages', run: null, summary: payload?.summary, records: [], approvalWorkflow: undefined },
-          ]).map((item) => (
+          {(packSummaries.length ? packSummaries : PAYROLL_SCHEDULE_SCOPES.map((scope) => ({
+            pack: scope.pack as PayrollPack,
+            company: scope.company,
+            packLabel: scope.label,
+            run: null,
+            summary: payload?.summary,
+            records: [],
+            approvalWorkflow: undefined,
+          }))).map((item) => {
+            const itemCompany = item.company || 'DLE';
+            const active = pack === item.pack && company === itemCompany;
+            return (
             <button
-              key={item.pack}
+              key={`${itemCompany}-${item.pack}`}
               type="button"
-              onClick={() => selectPack(item.pack)}
+              onClick={() => selectPack(item.pack, itemCompany)}
               className={`min-w-0 w-full flex-1 rounded-xl border px-4 py-2 text-left text-xs font-extrabold transition sm:min-w-[16rem] ${
-                pack === item.pack ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300'
+                active ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300'
               }`}
             >
               <div className="truncate">{item.packLabel}</div>
-              <div className={`mt-1 break-words ${pack === item.pack ? 'text-blue-100' : 'text-slate-500'}`}>
-                {item.run?.status || 'Draft'} · {money(item.run?.netPay ?? item.summary?.netPay, canViewMoney)} · {number(item.run ? item.run.employeeCount : item.summary?.employees)} staff
+              <div className={`mt-1 break-words ${active ? 'text-blue-100' : 'text-slate-500'}`}>
+                {item.run?.status || 'Draft'} · {money(item.run?.netPay ?? item.summary?.netPay, canViewMoney)} · {number(item.run ? item.run.employeeCount : item.summary?.employees)} {item.pack === 'daily-rate' ? 'contractors' : 'staff'}
               </div>
             </button>
-          ))}
+            );
+          })}
         </div>
       </div>
 

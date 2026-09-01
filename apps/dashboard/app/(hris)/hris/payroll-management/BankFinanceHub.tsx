@@ -25,6 +25,7 @@ import {
   resolveBankScheduleStaffPack,
   type BankScheduleStaffPack,
 } from '@/lib/payroll-bank-schedule-packs';
+import { PAYROLL_SCHEDULE_SCOPES, payrollScheduleScopeById, type PayrollScheduleScope } from '@/lib/payroll-schedule-scope';
 
 type FinanceException = {
   id: string;
@@ -149,6 +150,8 @@ export type BankFinancePayload = {
   generatedAt: string;
   pack?: string;
   packLabel?: string;
+  company?: string;
+  scheduleId?: string;
   payrollComputed?: boolean;
   dataSource?: { source: string; employeeCount: number };
   periodRecord?: { status: string } | null;
@@ -200,6 +203,8 @@ type Props = {
   onViewAllExceptions: () => void;
   onFinanceAction: (actionId: string) => void;
   onSelectPeriod: (period: string) => void;
+  scheduleId?: string;
+  onSelectSchedule?: (scope: PayrollScheduleScope) => void;
 };
 
 const numberFmt = new Intl.NumberFormat('en-GB');
@@ -284,6 +289,8 @@ export default function BankFinanceHub({
   onViewAllExceptions,
   onFinanceAction,
   onSelectPeriod,
+  scheduleId,
+  onSelectSchedule,
 }: Props) {
   const run = payload?.currentRun;
   const payrollComputed = payload?.payrollComputed !== false;
@@ -426,6 +433,24 @@ export default function BankFinanceHub({
             showMetaBadges={false}
           />
         </div>
+        <label className="mt-4 block max-w-xl">
+          <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Bank schedule</span>
+          <select
+            value={scheduleId || payload?.scheduleId || 'dle-salaries'}
+            onChange={(event) => {
+              const scope = payrollScheduleScopeById(event.target.value);
+              if (scope) onSelectSchedule?.(scope);
+            }}
+            className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900"
+          >
+            {PAYROLL_SCHEDULE_SCOPES.map((scope) => (
+              <option key={scope.id} value={scope.id}>{scope.bankLabel}</option>
+            ))}
+          </select>
+          <span className="mt-2 block text-xs font-semibold text-slate-500">
+            Generate and download one file at a time: DLE Salaries, DLPC Salaries, DLE Day-rate, or DLPC Day-rate.
+          </span>
+        </label>
 
         <nav className="mt-4 overflow-x-auto">
           <div className="flex min-w-max gap-1 rounded-xl border border-[#E5E7EB] bg-slate-50 p-1">
@@ -786,10 +811,7 @@ function BankSchedulePanel({
           <div>
             <h2 className="text-2xl font-semibold">Bank Schedule</h2>
             <p className="mt-2 text-sm text-[#64748B]">
-              {payload?.periodLabel || 'Current period'} · {fmtNum(bankRows.length)} employees in payment schedule
-              {payload?.pack === 'daily-rate'
-                ? ' · Dayrate pack exports as DLE / DLPC company sheets'
-                : ' · NGN export splits Permanent / Contract Lumpsum / IT NYSC · DLE USD is a separate Excel'}
+              {payload?.periodLabel || 'Current period'} · {fmtNum(bankRows.length)} {payload?.pack === 'daily-rate' ? 'contractors' : 'employees'} in {payload?.packLabel || 'this'} payment schedule
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -888,10 +910,13 @@ function BankSchedulePanel({
         <div className="border-b border-[#E5E7EB] p-5">
           <h3 className="text-lg font-semibold">Employee Payment Schedule Preview</h3>
           <p className="mt-1 text-sm text-[#64748B]">
-            Review by staff pack before export. Showing first {fmtNum(previewRows.length)} of {fmtNum(filteredBankRows.length)}
-            {staffPackFilter === 'all' ? '' : ` (${BANK_SCHEDULE_STAFF_PACKS.find((p) => p.id === staffPackFilter)?.label})`} employees.
+            Review this schedule before export. Showing first {fmtNum(previewRows.length)} of {fmtNum(filteredBankRows.length)}
+            {staffPackFilter === 'all' ? '' : ` (${BANK_SCHEDULE_STAFF_PACKS.find((p) => p.id === staffPackFilter)?.label})`}
+            {payload?.pack === 'daily-rate' ? ' contractors' : ' employees'}.
           </p>
           <div className="mt-3 flex flex-wrap gap-2 print:hidden">
+            {payload?.pack !== 'daily-rate' ? (
+              <>
             <button
               type="button"
               onClick={() => setStaffPackFilter('all')}
@@ -909,6 +934,8 @@ function BankSchedulePanel({
                 {pack.label} ({fmtNum(packCounts[pack.id])})
               </button>
             ))}
+              </>
+            ) : null}
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -951,7 +978,7 @@ function BankSchedulePanel({
         </div>
         {filteredBankRows.length > previewRows.length ? (
           <p className="border-t border-slate-100 px-5 py-3 text-xs font-semibold text-[#64748B] print:hidden">
-            Export Excel for NGN packs (Permanent, Contract Lumpsum, IT NYSC) separately from DLE USD. Dayrate uses DLE/DLPC sheets.
+            Export Excel for the selected schedule only. DLE USD remains a separate export on DLE Salaries.
           </p>
         ) : null}
       </section>

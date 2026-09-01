@@ -21,6 +21,7 @@ import {
   TrendingUp,
   WalletCards,
 } from 'lucide-react';
+import { PAYROLL_SCHEDULE_SCOPES } from '@/lib/payroll-schedule-scope';
 
 type HubRun = {
   id: string;
@@ -340,6 +341,31 @@ export default function PayrollManagementHub({
               Review Issues
               <ChevronRight className="h-4 w-4" />
             </button>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-2xl font-semibold text-[#0F172A]">Payroll Schedules</h2>
+          <p className="mt-1 text-sm text-slate-600">Each company and pay type has its own page, approval, Excel download, and bank schedule.</p>
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {PAYROLL_SCHEDULE_SCOPES.map((scope) => (
+              <button
+                key={scope.id}
+                type="button"
+                onClick={() => { window.location.href = scope.href; }}
+                className="rounded-2xl border border-[#E5E7EB] bg-white p-5 text-left shadow-sm transition hover:border-blue-300 hover:shadow-md"
+              >
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#0F172A] text-white">
+                  {scope.pack === 'daily-rate' ? <WalletCards className="h-5 w-5" /> : <PlayCircle className="h-5 w-5" />}
+                </span>
+                <h3 className="mt-4 text-lg font-bold text-[#0F172A]">{scope.label}</h3>
+                <p className="mt-1 text-sm text-slate-600">{scope.kindLabel} for {scope.company}.</p>
+                <span className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-[#2563EB]">
+                  Open schedule
+                  <ArrowRight className="h-4 w-4" />
+                </span>
+              </button>
+            ))}
           </div>
         </section>
 

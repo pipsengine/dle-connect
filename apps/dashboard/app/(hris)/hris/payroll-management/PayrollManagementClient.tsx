@@ -15,6 +15,13 @@ import PayrollApprovalClient from '../payroll/payroll-approval/PayrollApprovalCl
 import { PayrollCommentsControl } from './PayrollCommentsThread';
 import { FINANCE_ONLY_PAYROLL_SECTION } from '@/lib/access/payroll-access';
 import {
+  PAYROLL_SCHEDULE_SCOPES,
+  findPayrollScheduleScope,
+  payrollScheduleScopeFromSection,
+  type PayrollCompany,
+  type PayrollScheduleScope,
+} from '@/lib/payroll-schedule-scope';
+import {
   bankScheduleDisplayEmployeeCode,
   resolveBankScheduleStaffPack,
 } from '@/lib/payroll-bank-schedule-packs';
@@ -139,6 +146,7 @@ type PayrollRun = {
   id: string;
   period: string;
   pack?: 'salaried' | 'daily-rate';
+  company?: PayrollCompany | null;
   packLabel?: string;
   status: PayrollRunStatus;
   employeeCount: number;
@@ -183,7 +191,9 @@ type PayrollPayload = {
   period: string;
   periodLabel: string;
   pack?: 'salaried' | 'daily-rate';
+  company?: PayrollCompany | null;
   packLabel?: string;
+  scheduleId?: string;
   dataMode?: 'live' | 'snapshot' | 'run-header' | 'pending';
   payrollComputed?: boolean;
   isViewingActivePeriod?: boolean;
@@ -212,6 +222,21 @@ type PayrollPayload = {
   packTotals?: {
     pack: 'salaried' | 'daily-rate';
     packLabel: string;
+    runId: string | null;
+    status: string;
+    computed: boolean;
+    employeeCount: number;
+    readyEmployees: number;
+    grossPay: number;
+    deductions: number;
+    netPay: number;
+  }[];
+  scheduleTotals?: {
+    id: string;
+    pack: 'salaried' | 'daily-rate';
+    company: PayrollCompany;
+    packLabel: string;
+    href: string;
     runId: string | null;
     status: string;
     computed: boolean;
@@ -267,12 +292,18 @@ type PayrollPayload = {
   currentRun?: PayrollRun | null;
 };
 
-const payrollRunFor = (payload: PayrollPayload | null, pack?: 'salaried' | 'daily-rate' | null) => {
+const payrollRunFor = (payload: PayrollPayload | null, pack?: 'salaried' | 'daily-rate' | null, company?: PayrollCompany | null) => {
   const selectedPack = pack || payload?.pack || 'salaried';
-  const fromPackRuns = (payload?.packRuns || []).find((run) => (run.pack || 'salaried') === selectedPack && run.period === payload?.period);
+  const selectedCompany = company || payload?.company || null;
+  const matchRun = (run: PayrollRun) => {
+    if ((run.pack || 'salaried') !== selectedPack) return false;
+    if (!selectedCompany) return true;
+    return !run.company || run.company === selectedCompany;
+  };
+  const fromPackRuns = (payload?.packRuns || []).find((run) => matchRun(run) && run.period === payload?.period);
   if (fromPackRuns) return fromPackRuns;
-  if (payload?.currentRun && ((payload.currentRun.pack || payload.pack || 'salaried') === selectedPack)) return payload.currentRun;
-  return payload?.runs.find((run) => run.period === payload?.period && (run.pack || 'salaried') === selectedPack)
+  if (payload?.currentRun && matchRun(payload.currentRun)) return payload.currentRun;
+  return payload?.runs.find((run) => run.period === payload?.period && matchRun(run))
     || payload?.runs.find((run) => run.period === payload?.period)
     || null;
 };
@@ -790,6 +821,10 @@ const sectionAliases: Record<string, SectionId> = {
   'bank-finance': 'finance-integration',
   reports: 'reports-analytics',
   'reports-and-analytics': 'reports-analytics',
+  'dle-salaries': 'payroll-processing',
+  'dlpc-salaries': 'payroll-processing',
+  'dle-dayrate': 'payroll-processing',
+  'dlpc-dayrate': 'payroll-processing',
 };
 
 const hubSection: SectionConfig = {
@@ -1820,7 +1855,8 @@ function ProcessPayrollWorkspace({
   viewPeriod,
   onSelectPeriod,
   viewPack = 'salaried',
-  onSelectPack,
+  viewCompany = 'DLE',
+  onSelectScope,
   onExportBothExcel,
   onExportDleUsdExcel,
   notice,
@@ -1838,7 +1874,8 @@ function ProcessPayrollWorkspace({
   viewPeriod?: string | null;
   onSelectPeriod?: (period: string) => void;
   viewPack?: 'salaried' | 'daily-rate';
-  onSelectPack?: (pack: 'salaried' | 'daily-rate') => void;
+  viewCompany?: PayrollCompany;
+  onSelectScope?: (scope: PayrollScheduleScope) => void;
   onExportBothExcel?: () => void;
   onExportDleUsdExcel?: () => void;
   notice?: string;
@@ -1854,7 +1891,7 @@ function ProcessPayrollWorkspace({
       document.getElementById('payroll-processing-register')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
   }, [registerViewRequest, onRegisterViewRequestHandled]);
-  const currentRun = payrollRunFor(payload, viewPack);
+  const currentRun = payrollRunFor(payload, viewPack, viewCompany);
   const status = currentRun?.status || payload?.workflow?.currentStatus || 'Draft';
   const records = payload?.records || [];
   const readyRows = records.filter((record) => record.payrollStatus === 'Ready');
@@ -1929,15 +1966,14 @@ function ProcessPayrollWorkspace({
   // Live per-pack totals from the payload, so both chips report the same measure from the
   // same source. Reading netPay off the run header showed the unselected pack whatever the
   // last compute persisted, which is why the figures appeared not to update.
-  const packCards = ([
-    { pack: 'salaried' as const, packLabel: 'Salaries' },
-    { pack: 'daily-rate' as const, packLabel: 'Wages' },
-  ]).map((item) => {
-    const totals = (payload?.packTotals || []).find((row) => row.pack === item.pack) || null;
-    const run = (payload?.packRuns || []).find((row) => (row.pack || 'salaried') === item.pack && row.period === payload?.period)
-      || (viewPack === item.pack ? currentRun : null);
+  const packCards = PAYROLL_SCHEDULE_SCOPES.map((scope) => {
+    const totals = (payload?.scheduleTotals || []).find((row) => row.id === scope.id)
+      || (payload?.packTotals || []).find((row) => row.pack === scope.pack && (row as { company?: PayrollCompany }).company === scope.company)
+      || null;
+    const run = (payload?.packRuns || []).find((row) => (row.pack || 'salaried') === scope.pack && (row.company || 'DLE') === scope.company && row.period === payload?.period)
+      || (viewPack === scope.pack && viewCompany === scope.company ? currentRun : null);
     return {
-      ...item,
+      ...scope,
       status: totals?.status || run?.status || 'Draft',
       grossPay: totals?.grossPay ?? 0,
       netPay: totals?.netPay ?? 0,
@@ -2114,24 +2150,24 @@ function ProcessPayrollWorkspace({
           <div className="mt-5 flex flex-col gap-3 border-t border-slate-100 pt-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 flex-1 flex-wrap gap-2">
               {packCards.map((item) => {
-                const active = viewPack === item.pack;
+                const active = viewPack === item.pack && viewCompany === item.company;
                 return (
                   <button
-                    key={item.pack}
+                    key={item.id}
                     type="button"
-                    onClick={() => onSelectPack?.(item.pack)}
+                    onClick={() => onSelectScope?.(item)}
                     className={`min-w-[180px] flex-1 rounded-xl border px-4 py-2.5 text-left transition sm:flex-none ${
                       active
                         ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
                         : 'border-slate-200 bg-white text-slate-800 hover:border-blue-300'
                     }`}
                   >
-                    <div className="text-xs font-extrabold">{item.packLabel}</div>
+                    <div className="text-xs font-extrabold">{item.label}</div>
                     <div className={`mt-1 text-[11px] font-semibold ${active ? 'text-blue-100' : 'text-slate-500'}`}>
-                      {item.status} · gross {money(item.grossPay, canViewMoney)} · {number(item.employeeCount)} staff
+                      {item.status} · gross {money(item.grossPay, canViewMoney)} · {number(item.employeeCount)} {item.pack === 'daily-rate' ? 'contractors' : 'staff'}
                     </div>
                     <div className={`text-[11px] font-semibold ${active ? 'text-blue-100' : 'text-slate-500'}`}>
-                      net {money(item.netPay, canViewMoney)}
+                      {item.pack === 'daily-rate' ? 'payable' : 'net'} {money(item.netPay, canViewMoney)}
                     </div>
                   </button>
                 );
@@ -2148,6 +2184,7 @@ function ProcessPayrollWorkspace({
                 <FileSpreadsheet className="h-4 w-4" />
                 Export NGN Excel
               </button>
+              {viewCompany === 'DLE' && viewPack === 'salaried' ? (
               <button
                 type="button"
                 onClick={onExportDleUsdExcel}
@@ -2157,6 +2194,7 @@ function ProcessPayrollWorkspace({
                 <FileSpreadsheet className="h-4 w-4" />
                 Export DLE USD Excel
               </button>
+              ) : null}
               {rerunStep ? (
                 <button
                   type="button"
@@ -2665,7 +2703,7 @@ function BankFinanceWorkspace({
   const bankScheduleRows = readyRows.length ? readyRows : records.filter((record) => record.payrollStatus !== 'Blocked');
   const canGenerateBankSchedule = ['Released', 'Locked', 'Posted', 'Published', 'Closed'].includes(currentRun?.status || '');
   const canPostJournal = ['Released', 'Locked', 'Published'].includes(currentRun?.status || '') || Boolean(currentRun?.bankScheduleGeneratedAt);
-  const bankScheduleExportUrl = `/api/hris/payroll-management?format=xls&report=bank-schedule&pack=all`;
+  const bankScheduleExportUrl = `/api/hris/payroll-management?format=xls&report=${payload?.pack === 'daily-rate' ? 'dayrate-schedule' : 'bank-schedule'}&pack=${payload?.pack || 'salaried'}&company=${payload?.company || 'DLE'}`;
   const [bankStaffPackFilter, setBankStaffPackFilter] = useState<'all' | 'permanent' | 'contract-lumpsum' | 'it-nysc' | 'dle-usd'>('all');
   const bankPackRows = bankStaffPackFilter === 'all'
     ? bankScheduleRows.filter((record) => resolveBankScheduleStaffPack(record) !== 'dle-usd')
@@ -3058,8 +3096,8 @@ function ReportsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Tab
   const records = payload?.records || [];
   const reportCatalog = [
     { id: 'payroll-summary', title: 'Payroll Summary', detail: 'Period totals, readiness, exceptions, approvals and values.', icon: FileBarChart, tone: 'blue' as Tone },
-    { id: 'payroll-register', title: 'Payroll Register', detail: 'Official Perm.Staff / Cont. Staff / dayrate workbook matching finance Excel layout.', icon: ClipboardCheck, tone: 'green' as Tone },
-    { id: 'payroll-detail', title: 'Official Payroll Detail', detail: 'JULY PAYROLL-style permanent and contract component matrix.', icon: ClipboardCheck, tone: 'green' as Tone },
+    { id: 'payroll-register', title: 'Payroll Register', detail: 'Official DLE salary schedule: Summary, PERM.STAFF, CONT. STAFF, company bank tabs, USD REPORT.', icon: ClipboardCheck, tone: 'green' as Tone },
+    { id: 'payroll-detail', title: 'Official Payroll Detail', detail: 'August salary-schedule layout: permanent, contract (Lumpsum/Intern) and USD component matrix.', icon: ClipboardCheck, tone: 'green' as Tone },
     { id: 'dayrate-schedule', title: 'Dayrate Payment Schedule', detail: 'SUMMARY + DLE/DLPC detail + bank schedule sheets.', icon: CreditCard, tone: 'slate' as Tone },
     { id: 'payroll-review', title: 'Payroll Review', detail: 'Month-on-month salary comparison with component variances.', icon: TrendingUp, tone: 'amber' as Tone },
     { id: 'salary-analysis', title: 'Salary Analysis', detail: 'Official workbook layout with earnings analysis by pack.', icon: TrendingUp, tone: 'violet' as Tone },
@@ -3137,8 +3175,8 @@ function ReportsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Tab
   };
   const reportFocus = {
     'payroll-summary': { label: 'Report Focus', value: 'Executive totals', detail: 'Period totals, status posture, and readiness overview.' },
-    'payroll-register': { label: 'Report Focus', value: 'Official register', detail: 'JULY PAYROLL / dayrate schedule workbook matching finance Excel layout.' },
-    'payroll-detail': { label: 'Report Focus', value: 'Official detail', detail: 'Permanent and contract component matrix (Perm.Staff / Cont. Staff).' },
+    'payroll-register': { label: 'Report Focus', value: 'Official register', detail: 'August DLE salary schedule workbook (Summary / PERM.STAFF / CONT. STAFF / company bank tabs / USD).' },
+    'payroll-detail': { label: 'Report Focus', value: 'Official detail', detail: 'Permanent and contract component matrix (PERM.STAFF / CONT. STAFF) plus USD REPORT.' },
     'dayrate-schedule': { label: 'Report Focus', value: 'Dayrate schedule', detail: 'SUMMARY + DLE/DLPC detail + bank schedule sheets.' },
     'payroll-review': { label: 'Report Focus', value: 'Month-on-month review', detail: 'Compare previous month and current month salary components with variance and percentage change.' },
     'salary-analysis': { label: 'Report Focus', value: 'Salary exposure', detail: 'Official workbook layout with earnings analysis by pack.' },
@@ -4428,8 +4466,10 @@ export default function PayrollManagementClient({
   const [processingKpiPanel, setProcessingKpiPanel] = useState<ProcessingKpiPanelId | null>(null);
   const [registerViewRequest, setRegisterViewRequest] = useState<'ready' | 'issues' | null>(null);
   const [fixIssue, setFixIssue] = useState<PayrollException | null>(null);
+  const lockedScope = payrollScheduleScopeFromSection(initialSection);
   const [viewPeriod, setViewPeriod] = useState<string | null>(null);
-  const [viewPack, setViewPack] = useState<'salaried' | 'daily-rate'>('salaried');
+  const [viewPack, setViewPack] = useState<'salaried' | 'daily-rate'>(lockedScope?.pack || 'salaried');
+  const [viewCompany, setViewCompany] = useState<PayrollCompany>(lockedScope?.company || 'DLE');
   const loadSeq = useRef(0);
 
   const section = sectionById(sectionId);
@@ -4451,7 +4491,7 @@ export default function PayrollManagementClient({
     }
     return sections;
   }, [financeOnlyAccess, salaryReviewAccess]);
-  const currentRun = payrollRunFor(payload, viewPack);
+  const currentRun = payrollRunFor(payload, viewPack, viewCompany);
   const lastLoaded = payload?.generatedAt || initialNow;
 
   const openSection = (targetSection: SectionId, targetTab?: string) => {
@@ -4481,16 +4521,18 @@ export default function PayrollManagementClient({
     });
   };
 
-  const load = async (periodOverride?: string | null, packOverride?: 'salaried' | 'daily-rate' | null) => {
+  const load = async (periodOverride?: string | null, packOverride?: 'salaried' | 'daily-rate' | null, companyOverride?: PayrollCompany | null) => {
     const seq = ++loadSeq.current;
     setLoading(true);
     setError('');
     try {
       const periodQuery = periodOverride ?? viewPeriod;
       const packQuery = packOverride ?? viewPack;
+      const companyQuery = companyOverride ?? viewCompany;
       const params = new URLSearchParams();
       if (periodQuery) params.set('period', periodQuery);
       if (packQuery) params.set('pack', packQuery);
+      if (companyQuery) params.set('company', companyQuery);
       const url = params.toString() ? `/api/hris/payroll-management?${params.toString()}` : '/api/hris/payroll-management';
       const res = await fetch(url, { cache: 'no-store' });
       const json = await readApiResponse<PayrollPayload>(res);
@@ -4500,12 +4542,20 @@ export default function PayrollManagementClient({
       setRole(json.data.role);
       setViewPeriod(json.data.period);
       if (json.data.pack === 'daily-rate' || json.data.pack === 'salaried') setViewPack(json.data.pack);
+      if (json.data.company === 'DLE' || json.data.company === 'DLPC') setViewCompany(json.data.company);
     } catch (e) {
       if (seq !== loadSeq.current) return;
       setError(e instanceof Error ? e.message : 'Unable to load payroll management');
     } finally {
       if (seq === loadSeq.current) setLoading(false);
     }
+  };
+
+  const selectSchedule = (scope: PayrollScheduleScope) => {
+    setViewPack(scope.pack);
+    setViewCompany(scope.company);
+    window.history.pushState(null, '', scope.href);
+    void load(viewPeriod, scope.pack, scope.company);
   };
 
   useEffect(() => {
@@ -4587,7 +4637,8 @@ export default function PayrollManagementClient({
           action,
           period,
           pack: viewPack,
-          runId: payrollRunFor(payload, viewPack)?.id,
+          company: viewCompany,
+          runId: payrollRunFor(payload, viewPack, viewCompany)?.id,
           reason,
           report: reportOptions?.report,
           reportName: reportOptions?.reportName,
@@ -4601,7 +4652,7 @@ export default function PayrollManagementClient({
       if (json.data?.run && ['generate-bank-schedule', 'generate-statutory-schedules'].includes(action)) {
         mergePayrollRun(json.data.run);
       } else {
-        await load(period || null, viewPack);
+        await load(period || null, viewPack, viewCompany);
       }
       return true;
     } catch (e) {
@@ -4660,7 +4711,8 @@ export default function PayrollManagementClient({
           employeeId,
           period: payload?.period || viewPeriod || undefined,
           pack: viewPack,
-          runId: payrollRunFor(payload, viewPack)?.id,
+          company: viewCompany,
+          runId: payrollRunFor(payload, viewPack, viewCompany)?.id,
           reason: 'Unconfigured daily-rate contract removed from payroll run.',
         }),
       });
@@ -4689,7 +4741,8 @@ export default function PayrollManagementClient({
           action: 'exclude-unconfigured-daily-rate-contracts',
           period: payload?.period || viewPeriod || undefined,
           pack: viewPack,
-          runId: payrollRunFor(payload, viewPack)?.id,
+          company: viewCompany,
+          runId: payrollRunFor(payload, viewPack, viewCompany)?.id,
           reason: 'Bulk removal of unconfigured daily-rate contract employees from payroll run.',
         }),
       });
@@ -4778,6 +4831,7 @@ export default function PayrollManagementClient({
     const period = viewPeriod || payload?.period;
     if (period) params.set('period', period);
     params.set('pack', pack);
+    params.set('company', viewCompany);
     params.set('currency', currency);
     return `/api/hris/payroll-management?${params.toString()}`;
   };
@@ -4814,13 +4868,14 @@ export default function PayrollManagementClient({
           action: 'save-journal-mapping',
           period,
           pack: viewPack,
+          company: viewCompany,
           mappings,
         }),
       });
       const json = await readApiResponse<{ message?: string; mappingComplete?: boolean }>(res);
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to save journal GL mapping');
       setToast(json.data?.message || 'Payroll journal GL mapping saved.');
-      await load(period || null, viewPack);
+      await load(period || null, viewPack, viewCompany);
       return true;
     } catch (e) {
       setToast(e instanceof Error ? e.message : 'Unable to save journal GL mapping');
@@ -4836,7 +4891,7 @@ export default function PayrollManagementClient({
     const resolvedReport = wagesPack && (report === 'payroll-register' || report === 'bank-schedule')
       ? 'dayrate-schedule'
       : report;
-    window.location.href = reportExportUrl('xls', resolvedReport, 'All', wagesPack ? 'daily-rate' : 'all', 'ngn');
+    window.location.href = reportExportUrl('xls', resolvedReport, 'All', wagesPack ? 'daily-rate' : viewPack, 'ngn');
   };
 
   const exportDleUsdExcel = (report = 'payroll-register') => {
@@ -5089,8 +5144,10 @@ export default function PayrollManagementClient({
           }}
           onSelectPeriod={(period) => {
             setViewPeriod(period);
-            void load(period);
+            void load(period, viewPack, viewCompany);
           }}
+          scheduleId={findPayrollScheduleScope(viewPack, viewCompany).id}
+          onSelectSchedule={selectSchedule}
         />
         {fixIssue ? (
           <IssueFixDrawer
@@ -5540,7 +5597,7 @@ export default function PayrollManagementClient({
                 onPeriodAction={(action, period, reason) => void runAction(action, reason, period)}
               />
             ) : activeTab.id === 'payroll-run' ? (
-              <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} registerViewRequest={registerViewRequest} onRegisterViewRequestHandled={() => setRegisterViewRequest(null)} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack); }} viewPack={viewPack} onSelectPack={(pack) => { setViewPack(pack); void load(viewPeriod, pack); }} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} onExportDleUsdExcel={() => exportDleUsdExcel('payroll-register')} notice={toast} />
+              <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} registerViewRequest={registerViewRequest} onRegisterViewRequestHandled={() => setRegisterViewRequest(null)} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack, viewCompany); }} viewPack={viewPack} viewCompany={viewCompany} onSelectScope={selectSchedule} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} onExportDleUsdExcel={() => exportDleUsdExcel('payroll-register')} notice={toast} />
             ) : (
               <FeaturePanel tab={activeTab} section={section} payload={payload} canViewMoney={canViewMoney} />
             )}
@@ -5706,7 +5763,7 @@ export default function PayrollManagementClient({
                   onPeriodAction={(action, period, reason) => void runAction(action, reason, period)}
                 />
               ) : (
-                <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack); }} viewPack={viewPack} onSelectPack={(pack) => { setViewPack(pack); void load(viewPeriod, pack); }} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} onExportDleUsdExcel={() => exportDleUsdExcel('payroll-register')} notice={toast} />
+                <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack, viewCompany); }} viewPack={viewPack} viewCompany={viewCompany} onSelectScope={selectSchedule} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} onExportDleUsdExcel={() => exportDleUsdExcel('payroll-register')} notice={toast} />
               )
             ) : (
               <FeaturePanel tab={activeTab} section={section} payload={payload} canViewMoney={canViewMoney} />

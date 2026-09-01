@@ -21,6 +21,7 @@ import { findDayrateScheduleOverrideRow, readAppliedDayrateScheduleOverride } fr
 import { normalizeBankSortCode, withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { payrollPeriodLabel } from '@/lib/payroll-period-store';
+import { findPayrollScheduleScope, resolvePayrollCompany, type PayrollCompany } from '@/lib/payroll-schedule-scope';
 import { computePayrollReadinessStatus, enrichCalculationRecordsWithReadiness, summarizePayrollReadiness, type PayrollReadinessStatus } from '@/lib/payroll-readiness';
 import { partitionPayrollIssues, payrollToleranceActive, reapplyPayrollValidationPolicy } from '@/lib/payroll-tolerance';
 import type { PayrollRunSnapshot } from '@/lib/payroll-run-store';
@@ -430,14 +431,17 @@ const sumPayrollMoneyTotals = (records: PayrollCalculationRecord[]) =>
 export const filterPayrollCalculationByPack = (
   calculation: PayrollCalculationResult,
   pack: import('@/lib/payroll-employee-classification').PayrollRunPack,
+  company?: import('@/lib/payroll-schedule-scope').PayrollCompany | null,
 ): PayrollCalculationResult => {
   const records = calculation.records.filter((record) => {
     if (pack === 'daily-rate') {
       if (!record.isDailyRate) return false;
-      // Daily-rate pack never includes zero-gross rows.
-      return Number(record.grossPay || 0) > 0;
+      if (Number(record.grossPay || 0) <= 0) return false;
+    } else if (record.isDailyRate) {
+      return false;
     }
-    return !record.isDailyRate;
+    if (company) return resolvePayrollCompany(record) === company;
+    return true;
   });
   const summaryRecords = summaryPayrollRecords(records);
   const ready = summaryRecords.filter((record) => record.status === 'Ready');
@@ -449,7 +453,7 @@ export const filterPayrollCalculationByPack = (
   const totals = sumPayrollMoneyTotals(summaryRecords);
   const component = (componentId: string, label: string, amount: number, tone: PayrollTone, payer: 'Employee' | 'Employer' | 'Both') =>
     ({ id: componentId, label, amount: roundMoney(amount), tone, payer });
-  const packLabel = payrollRunPackShortLabel(pack);
+  const packLabel = company ? findPayrollScheduleScope(pack, company).shortLabel : payrollRunPackShortLabel(pack);
   return {
     ...calculation,
     periodLabel: `${calculation.periodLabel} · ${packLabel}`,
@@ -745,7 +749,7 @@ export const buildPayrollCalculationFromSnapshot = async (period: string, snapsh
 
 export const calculatePayrollForPeriod = async (
   requestedPeriod: string,
-  options?: { forceRefresh?: boolean; pack?: import('@/lib/payroll-employee-classification').PayrollRunPack },
+  options?: { forceRefresh?: boolean; pack?: import('@/lib/payroll-employee-classification').PayrollRunPack; company?: PayrollCompany | null },
 ): Promise<PayrollCalculationResult> => {
   const cacheKey = `${requestedPeriod}:${adjustmentsFileMtime()}`;
   const cached = payrollCalculationCache.get(requestedPeriod);
@@ -766,7 +770,7 @@ export const calculatePayrollForPeriod = async (
     payrollCalculationCache.set(requestedPeriod, { key: cacheKey, expiresAt: 0, inFlight });
     full = await inFlight;
   }
-  if (options?.pack) return filterPayrollCalculationByPack(full, options.pack);
+  if (options?.pack) return filterPayrollCalculationByPack(full, options.pack, options.company);
   return full;
 };
 

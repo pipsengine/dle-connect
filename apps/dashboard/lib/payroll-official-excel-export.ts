@@ -1,8 +1,8 @@
 /**
  * Official payroll Excel workbooks matching finance/HR sample layouts:
- * - Salaried bank schedule: Permanent / Contract Lumpsum / IT NYSC (NGN) + separate DLE USD
+ * - Salaried salary schedule: DLE_AUGUST 2026 SALARY SCHEDULE
+ *   Summary + PERM.STAFF + CONT. STAFF + company×PERM/CONT bank tabs + USD REPORT / USD BANK SCHD
  * - Dayrate bank schedule: DLE/DLPC BANK SCHD (Employee Bank Details)
- * - Salaried detail: JULY PAYROLL.xlsx → Perm.Staff / Cont. Staff (NGN) + separate DLE USD
  * - Dayrate schedule: DAYRATE PAYMENT SCHEDULE → SUMMARY + DLE/DLPC + bank sheets
  */
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
@@ -18,12 +18,13 @@ import {
 } from '@/lib/payroll-bank-schedule-packs';
 import { buildPayrollAttendanceSheet, type PayrollAttendanceSheetRow } from '@/lib/timesheet-payroll-attendance-sheet';
 import { isTimesheetCountableForPayroll, readTimesheetData } from '@/lib/timesheet-entry-store';
+import { resolvePayrollCompany, type PayrollCompany } from '@/lib/payroll-schedule-scope';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 const compact = (value: unknown) => String(value || '').trim();
 const upper = (value: unknown) => compact(value).toUpperCase();
 
-export type OfficialCompanyBucket = 'DLE' | 'DLPC';
+export type OfficialCompanyBucket = PayrollCompany;
 
 export const resolveOfficialCompanyBucket = (record: {
   payrollGroup?: string | null;
@@ -32,29 +33,28 @@ export const resolveOfficialCompanyBucket = (record: {
   companyCode?: string | null;
   companyName?: string | null;
   department?: string | null;
-}): OfficialCompanyBucket => {
-  const blob = [
-    record.companyCode || '',
-    record.companyName || '',
-    record.payrollGroup || '',
-    record.businessUnit || '',
-    record.department || '',
-    record.location || '',
-  ].join(' ').toUpperCase();
-  if (/\bDLPCG\b|\bDLPC\b|DORMAN\s*LONG\s*PRODUCTS|PRODUCTS\s*CO|LIMITED\s*PRODUCTS|DLPC\s*LTD|DLPC\s*AGEGE/.test(blob)) return 'DLPC';
-  return 'DLE';
-};
+}): OfficialCompanyBucket => resolvePayrollCompany(record);
 
 export const officialCompanySummaryLabel = (bucket: OfficialCompanyBucket) => (bucket === 'DLPC' ? 'DLPC' : 'DLENG');
 
-const splitPersonName = (fullName: string, firstName?: string | null, lastName?: string | null) => {
+const splitPersonName = (
+  fullName: string,
+  firstName?: string | null,
+  lastName?: string | null,
+  middleName?: string | null,
+) => {
   if (compact(firstName) || compact(lastName)) {
-    return { firstName: compact(firstName) || compact(fullName), lastName: compact(lastName) };
+    return {
+      firstName: compact(firstName) || compact(fullName),
+      lastName: compact(lastName),
+      secondName: compact(middleName),
+    };
   }
   const cleaned = compact(fullName).replace(/^(Mr|Mrs|Miss|Ms|Dr|Engr)\.?\s+/i, '');
   const parts = cleaned.split(/\s+/).filter(Boolean);
-  if (parts.length <= 1) return { firstName: parts[0] || '', lastName: '' };
-  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+  if (parts.length <= 1) return { firstName: parts[0] || '', lastName: '', secondName: '' };
+  if (parts.length === 2) return { firstName: parts[0], lastName: parts[1], secondName: '' };
+  return { firstName: parts[0], secondName: parts[1], lastName: parts.slice(2).join(' ') };
 };
 
 const employeeCodeOf = (record: Pick<PayrollCalculationRecord, 'employeeCode' | 'employeeId'>) =>
@@ -92,11 +92,46 @@ const isContractOrStipend = (record: PayrollCalculationRecord) => {
 const contTypeOf = (record: PayrollCalculationRecord) => {
   const code = employeeCodeOf(record);
   const type = upper(record.employmentType);
-  if (/^N\d/i.test(code) || /NYSC/.test(type)) return 'NYSC';
-  if (/^I\d/i.test(code) || /INTERN|IT\b/.test(type)) return 'IT';
+  if (/^N\d|^NYSC|^IT\d|^I\d/i.test(code) || /NYSC|INTERN|IT\b|STIPEND/.test(type)) return 'Intern';
   if (/LUMPSUM|CONTRACT/.test(type) || /^L\d/i.test(code)) return 'Lumpsum';
-  return compact(record.employmentType) || 'Contract';
+  return compact(record.employmentType) || 'Lumpsum';
 };
+
+/** USD REPORT / USD BANK SCHD: Sage-style numeric code with trailing underscore. */
+const usdOfficialEmployeeCode = (record: Pick<PayrollCalculationRecord, 'employeeCode' | 'employeeId'>) => {
+  const code = officialEmployeeCode(record).replace(/_+$/, '');
+  return code ? `${code}_` : '';
+};
+
+const compareOfficialCode = (
+  a: Pick<PayrollCalculationRecord, 'employeeCode' | 'employeeId'>,
+  b: Pick<PayrollCalculationRecord, 'employeeCode' | 'employeeId'>,
+) => officialEmployeeCode(a).localeCompare(officialEmployeeCode(b), undefined, { numeric: true, sensitivity: 'base' });
+
+const compareContSchedule = (a: PayrollCalculationRecord, b: PayrollCalculationRecord) => {
+  const rank = (record: PayrollCalculationRecord) => (contTypeOf(record) === 'Intern' ? 1 : 0);
+  const byType = rank(a) - rank(b);
+  if (byType !== 0) return byType;
+  return compareOfficialCode(a, b);
+};
+
+const roleBlob = (record: { jobTitle?: string | null; fullName?: string | null; employmentType?: string | null; payrollGroup?: string | null; department?: string | null }) =>
+  `${record.jobTitle || ''} ${record.fullName || ''} ${record.employmentType || ''} ${record.payrollGroup || ''} ${record.department || ''}`;
+
+const isMdRole = (record: { jobTitle?: string | null; fullName?: string | null }) =>
+  /\bMANAGING DIRECTOR\b|\bMD\s*\/\s*CEO\b|\bCHIEF EXECUTIVE\b/.test(upper(roleBlob(record)));
+
+const isGmOpsRole = (record: { jobTitle?: string | null }) =>
+  /GENERAL MANAGER[, ]*OPERATIONS|\bGM[, ]*OPS\b|\bGM OPERATIONS\b/.test(upper(record.jobTitle));
+
+const isMubassRole = (record: { employmentType?: string | null; payrollGroup?: string | null; department?: string | null; fullName?: string | null }) =>
+  /MUBASS|OUTSOURCE/.test(upper(roleBlob(record)));
+
+const isNayakRole = (record: { fullName?: string | null; jobTitle?: string | null }) =>
+  /NAYAK/.test(upper(`${record.fullName || ''} ${record.jobTitle || ''}`));
+
+const isUsdGmSpCfoRole = (record: { jobTitle?: string | null; fullName?: string | null }) =>
+  !isMdRole(record) && !isNayakRole(record);
 
 const haLabel = (code: string, name?: string | null) => {
   const c = compact(code);
@@ -127,6 +162,7 @@ type DirectoryEnrichment = Pick<
   | 'employmentType'
   | 'managerName'
   | 'yearsOfService'
+  | 'middleName'
 > & {
   companyCode?: string | null;
   companyName?: string | null;
@@ -159,7 +195,12 @@ const directoryByKeys = (employees: DirectoryEnrichment[]) => {
 };
 
 const enrich = (record: PayrollCalculationRecord, dir?: DirectoryEnrichment | null) => {
-  const names = splitPersonName(record.fullName || dir?.fullName || '', dir?.firstName, dir?.lastName);
+  const names = splitPersonName(
+    record.fullName || dir?.fullName || '',
+    dir?.firstName,
+    dir?.lastName,
+    dir?.middleName,
+  );
   const companyBucket = resolveOfficialCompanyBucket({
     payrollGroup: record.payrollGroup,
     businessUnit: record.businessUnit || dir?.businessUnit,
@@ -174,6 +215,7 @@ const enrich = (record: PayrollCalculationRecord, dir?: DirectoryEnrichment | nu
     ...record,
     _firstName: names.firstName,
     _lastName: names.lastName,
+    _secondName: names.secondName,
     _gender: compact(dir?.gender),
     _dob: compact(dir?.dateOfBirth).slice(0, 10),
     _dateJoined: compact(dir?.dateJoined).slice(0, 10),
@@ -195,6 +237,14 @@ const enrich = (record: PayrollCalculationRecord, dir?: DirectoryEnrichment | nu
 };
 
 type Enriched = ReturnType<typeof enrich>;
+
+const bankEmployeeName = (record: Enriched | PayrollCalculationRecord) => {
+  if ('_lastName' in record) {
+    const named = compact([record._lastName, record._firstName, record._secondName].filter(Boolean).join(' '));
+    if (named) return named;
+  }
+  return compact(record.fullName);
+};
 
 /** —— Bank schedule —— */
 export type OfficialExportCurrencyScope = 'ngn' | 'usd' | 'all';
@@ -220,8 +270,8 @@ export const buildOfficialBankScheduleWorksheets = (
   options?: {
     periodLabel?: string;
     titlePrefix?: string;
-    /** staff-packs = Permanent / Contract Lumpsum / IT NYSC (+ optional DLE USD); company = DLE/DLPC */
-    mode?: 'staff-packs' | 'company';
+    /** staff-packs = Permanent / Contract Lumpsum / IT NYSC (+ optional DLE USD); company = DLE/DLPC; salary-schedule = August DLE/DLPC × PERM/CONT + USD BANK SCHD */
+    mode?: 'staff-packs' | 'company' | 'salary-schedule';
     /** Default ngn — DLE_USD never mixes into NGN packs. Use usd for the separate DLE USD export. */
     currencyScope?: OfficialExportCurrencyScope | string | null;
     /** Append trailing aggregate row with employee code = headcount, AUGUST sample format. */
@@ -263,7 +313,7 @@ export const buildOfficialBankScheduleWorksheets = (
         { bucket: 'DLE' as OfficialCompanyBucket, sheetName: 'DLE BANK SCHD', includeLocation: false, records: dle },
         { bucket: 'DLPC' as OfficialCompanyBucket, sheetName: 'DLPC.BANK.SCHD', includeLocation: true, records: dlpc },
       ];
-    })();
+    })().filter((config) => config.records.length > 0);
 
     return configs.map((config) => {
       const headcount = config.records.length;
@@ -289,17 +339,60 @@ export const buildOfficialBankScheduleWorksheets = (
       }
 
       const titleRow: ExcelCell[] = config.includeLocation
-        ? ['Employee Bank Details', '', '', '', '', '', '']
-        : ['Employee Bank Details', '', '', '', '', ''];
+        ? ['Contractor Bank Details', '', '', '', '', '', '']
+        : ['Contractor Bank Details', '', '', '', '', ''];
       const headerRow: string[] = config.includeLocation
-        ? ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location']
-        : ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary'];
+        ? ['Contractor Code', 'Contractor Name', 'Bank', 'Account No', 'Sort Code', 'Amount Payable', 'Location']
+        : ['Contractor Code', 'Contractor Name', 'Bank', 'Account No', 'Sort Code', 'Amount Payable'];
       return {
         title: config.sheetName || 'Employee Bank Details',
         sheetName: config.sheetName,
         columns: headerRow,
         rows: [titleRow, headerRow as unknown as ExcelCell[], ...rows],
         exactReferenceDayrateMode: true,
+      };
+    });
+  }
+
+  if (mode === 'salary-schedule') {
+    const ngn = scopedRecords.filter((record) => !record.isDailyRate && !isDleUsdPayrollEmployee(record));
+    const usd = scopedRecords.filter((record) => !record.isDailyRate && isDleUsdPayrollEmployee(record));
+    const permanent = ngn.filter((record) => !isContractOrStipend(record)).slice().sort(compareOfficialCode);
+    const contract = ngn.filter((record) => isContractOrStipend(record)).slice().sort(compareContSchedule);
+    const configs: Array<{ sheetName: string; records: PayrollCalculationRecord[]; usd?: boolean }> = [];
+    if (currencyScope !== 'usd') {
+      const permDlpc = permanent.filter((record) => resolveOfficialCompanyBucket(record) === 'DLPC');
+      const permDle = permanent.filter((record) => resolveOfficialCompanyBucket(record) === 'DLE');
+      const contDle = contract.filter((record) => resolveOfficialCompanyBucket(record) === 'DLE');
+      const contDlpc = contract.filter((record) => resolveOfficialCompanyBucket(record) === 'DLPC');
+      if (permDlpc.length) configs.push({ sheetName: 'DLPC.PERM.BANK.SCHD', records: permDlpc });
+      if (permDle.length) configs.push({ sheetName: 'DLE.PERM.BANK.SCHD', records: permDle });
+      if (contDle.length) configs.push({ sheetName: 'DLE.CONT.BANK.SCHD', records: contDle });
+      if (contDlpc.length) configs.push({ sheetName: 'DLPC.CONT.BANK.SCHD', records: contDlpc });
+    }
+    if (currencyScope !== 'ngn' && usd.length) {
+      configs.push({ sheetName: 'USD BANK SCHD', records: usd.slice().sort(compareOfficialCode), usd: true });
+    }
+    const columns = ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location'];
+    return configs.map((config) => {
+      const rows = config.records.map((record) => [
+        config.usd ? usdOfficialEmployeeCode(record) : officialEmployeeCode(record),
+        bankEmployeeName(record),
+        compact(record.bankName),
+        compact(record.accountNo),
+        compact(record.sortCode || record.branchCode || record.bankCode),
+        roundMoney(Number(record.netPay || 0)),
+        compact(record.location),
+      ] as ExcelCell[]);
+      const totalNet = roundMoney(config.records.reduce((sum, record) => sum + Number(record.netPay || 0), 0));
+      rows.push([config.records.length, '', '', '', '', totalNet, '']);
+      return {
+        title: 'Employee Bank Details',
+        sheetName: config.sheetName,
+        columns,
+        rows,
+        exactReferenceDayrateMode: true,
+        banner: 'Employee Bank Details',
       };
     });
   }
@@ -338,15 +431,15 @@ export const buildOfficialBankScheduleWorksheets = (
   });
 };
 
-/** —— Salaried / stipend JULY PAYROLL detail (exact sample column sets) —— */
+/** —— Salaried / stipend DLE salary schedule (August 2026 layout) —— */
 type DeductionColumnDef = { label: string; pattern: RegExp; fallback?: (r: Enriched) => number };
 
 const EARNING_PATTERN_BY_LABEL: Record<string, RegExp> = {
   'ARREARS (Earning)': /^ARREARS$/i,
-  'BASIC SALARY (Earning)': /BASIC(?!1_LUMPSUM)|SNM_BASIC|EXP_BASIC|MD BASIC/i,
+  'BASIC SALARY (Earning)': /(?<!EXP_.{0,30})(BASIC(?!1_LUMPSUM)|SNM_BASIC|MD BASIC)/i,
   'FURNITURE (Earning)': /^FURNITURE$/i,
   'FURNITURE ALLOWANCE (Earning)': /FURNITURE ALLOW/i,
-  'HOUSING (Earning)': /^(HOUSING|SNMHOUSING|EXP_HOUSING)/i,
+  'HOUSING (Earning)': /^(HOUSING|SNMHOUSING)(?!.*EXP)/i,
   'IT ALLOWANCE (Earning)': /IT ALLOW/i,
   'JNR MEDICAL (Earning)': /JNR.?MEDICAL/i,
   'JNR OTHER ALLOWANCE (Earning)': /JNR.?OTHER/i,
@@ -374,9 +467,15 @@ const EARNING_PATTERN_BY_LABEL: Record<string, RegExp> = {
   'SNR UNION (Earning)': /SNR UNION(?! DUES)/i,
   'STOCK COUNT (Earning)': /STOCK COUNT/i,
   'TCM TRANSPORT (Earning)': /TCM.?TRANS/i,
-  'TRANSPORT ALLOWANCE (Earning)': /TRANSPORT ALLOW|EXP_TRANS|^TRANS/i,
+  'TRANSPORT ALLOWANCE (Earning)': /TRANSPORT ALLOW|(?<!EXP_.{0,20})(?<!SNM)(?<!TCM)(?<!WEEKLY)^TRANS/i,
   'UTILITIES (Earning)': /^UTILITIES$/i,
   'UTILITY (Earning)': /^UTILITY$/i,
+  'Weekly Transport ': /WEEKLY TRANSPORT|TRANSPORT_WK/i,
+  'Weekly Transport': /WEEKLY TRANSPORT|TRANSPORT_WK/i,
+  'EXP_ SMGT BASIC (Earning)': /EXP_?\s*SMGT BASIC|EXP_BASIC/i,
+  'EXP_ SMGT OTHER ALLOWANCE (Earning)': /EXP_?\s*SMGT OTHER|EXP_OTHALL/i,
+  'EXP_SMGT HOUSING (Earning)': /EXP_SMGT HOUSING|EXP_HOUSING/i,
+  'EXP_SNMG TRANSPORT (Earning)': /EXP_SNMG TRANSPORT|EXP_TRANSP/i,
 };
 
 const PERM_EARNING_LABELS = [
@@ -390,20 +489,17 @@ const PERM_EARNING_LABELS = [
   'JNR UTILITY (Earning)',
   'JUNIOR UNION (Earning)',
   'Leave Allowance (Earning)',
-  'MD BASIC (Earning)',
   'MEAL (Earning)',
   'Meal Allowance (Earning)',
   'MEDICAL (Earning)',
   'OTHER ALLOWANCE (Earning)',
   'OVERTIME (Earning)',
   'PENSION REFUND (Earning)',
-  'REFUND (Earning)',
   'SENIOR MANAGEMENT HOUSING_TAX (Earning)',
   'SENIOR MANAGEMENT OTHER ALLOWANCE_T (Earning)',
   'SENIOR MANAGER TRANSPORT (Earning)',
   'SITE ALLOWANCE (Earning)',
   'SNR UNION (Earning)',
-  'STOCK COUNT (Earning)',
   'TCM TRANSPORT (Earning)',
   'TRANSPORT ALLOWANCE (Earning)',
   'UTILITIES (Earning)',
@@ -420,18 +516,25 @@ const CONT_EARNING_LABELS = [
   'NIGHT ALLOWANCE (Earning)',
   'NYSC ALLOWANCE (Earning)',
   'OVERTIME (Earning)',
-  'REFUND (Earning)',
   'SITE ALLOWANCE (Earning)',
-  'STOCK COUNT (Earning)',
   'TCM TRANSPORT (Earning)',
+  'Weekly Transport ',
+] as const;
+
+const USD_EARNING_LABELS = [
+  'BASIC SALARY (Earning)',
+  'EXP_ SMGT BASIC (Earning)',
+  'EXP_ SMGT OTHER ALLOWANCE (Earning)',
+  'EXP_SMGT HOUSING (Earning)',
+  'EXP_SNMG TRANSPORT (Earning)',
 ] as const;
 
 const PERM_DEDUCTION_COLUMNS: DeductionColumnDef[] = [
   { label: 'NHF - National Housing Fund (Deduction)', pattern: /^NHF$/i },
   { label: 'PAYE Tax (Deduction)', pattern: /^PAYE$/i, fallback: (r) => Number(r.paye || 0) },
+  { label: 'Column2', pattern: /^COLUMN2$/i },
   { label: 'Pension (Deduction)', pattern: /^PENSION_EE$|^PENSION$/i, fallback: (r) => Number(r.pensionEmployee || r.pension || 0) },
   { label: 'PENSION EE2 (Deduction)', pattern: /PENSION_EE2|VOLPENS|ADDITIONAL EMPLOYEE PENSION/i },
-  { label: 'TAX (Deduction)', pattern: /^TAX$/i },
   { label: 'UNION DUES (Deduction)', pattern: /UNION/i },
 ];
 
@@ -440,8 +543,6 @@ const CONT_DEDUCTION_COLUMNS: DeductionColumnDef[] = [
 ];
 
 const PERM_TAIL_COLUMNS = [
-  'Earning Total',
-  'Deduction Total',
   'ITF Levy (CompanyContribution)',
   'NSITF - Nigeria Social Insurance Tr (CompanyContribution)',
   'Pension (CompanyContribution)',
@@ -454,7 +555,6 @@ const PERM_TAIL_COLUMNS = [
   'Annual Salary',
   'Gross Earnings',
   'Net Pay',
-  'Taxable Earnings',
   'Company (HA)',
   'Department (HA)',
   'Employee Type (HA)',
@@ -466,15 +566,12 @@ const PERM_TAIL_COLUMNS = [
 ] as const;
 
 const CONT_TAIL_COLUMNS = [
-  'Earning Total',
-  'Deduction Total',
   'RENT (Provisions)',
   'Provisions Total',
   'Period Salary',
   'Annual Salary',
   'Gross Earnings',
   'Net Pay',
-  'Taxable Earnings',
   'Company (HA)',
   'Department (HA)',
   'Employee Type (HA)',
@@ -535,13 +632,43 @@ const haTailValues = (record: Enriched): ExcelCell[] => [
   record._supervisorHa,
 ];
 
+const companyGroupFooter = (records: Enriched[]): ExcelCell[][] => {
+  const buckets = new Map<string, Enriched[]>();
+  for (const record of records) {
+    const label = compact(record._companyHa) || 'Unassigned';
+    const list = buckets.get(label) || [];
+    list.push(record);
+    buckets.set(label, list);
+  }
+  const rows: ExcelCell[][] = [
+    [],
+    ['', 'Row Labels', 'Count of Company (HA)', 'Sum of Gross Earnings', 'Sum of Net Pay'],
+  ];
+  let totalGross = 0;
+  let totalNet = 0;
+  for (const [label, list] of [...buckets.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const gross = roundMoney(list.reduce((sum, record) => sum + Number(record.grossPay || 0), 0));
+    const net = roundMoney(list.reduce((sum, record) => sum + Number(record.netPay || 0), 0));
+    totalGross = roundMoney(totalGross + gross);
+    totalNet = roundMoney(totalNet + net);
+    rows.push(['', label, list.length, gross, net]);
+  }
+  rows.push(['', 'Grand Total', records.length, totalGross, totalNet]);
+  return rows;
+};
+
+const padRow = (values: ExcelCell[], width: number): ExcelCell[] => {
+  const next = values.slice();
+  while (next.length < width) next.push('');
+  return next;
+};
+
 const buildSalariedSheet = (
   records: Enriched[],
-  sheetName: 'Perm.Staff' | 'Cont. Staff' | 'DLE USD',
+  sheetName: 'PERM.STAFF' | 'CONT. STAFF',
   periodLabel: string,
-  layout: 'perm' | 'cont' = sheetName === 'Cont. Staff' ? 'cont' : 'perm',
 ): ExcelWorksheetInput => {
-  const isPerm = layout === 'perm';
+  const isPerm = sheetName === 'PERM.STAFF';
   const baseEarnings = [...(isPerm ? PERM_EARNING_LABELS : CONT_EARNING_LABELS)];
   const extraEarnings = dynamicEarningLabels(records, baseEarnings);
   const earningLabels = [...baseEarnings, ...extraEarnings];
@@ -552,11 +679,13 @@ const buildSalariedSheet = (
   const columns = [
     ...identity,
     ...earningLabels,
+    'Earning Total',
     ...deductionColumns.map((item) => item.label),
+    isPerm ? 'Deduction total' : 'Deduction Total',
     ...(isPerm ? PERM_TAIL_COLUMNS : CONT_TAIL_COLUMNS),
   ];
 
-  const rows = records.map((record) => {
+  const dataRows = records.map((record) => {
     const earningTotal = roundMoney((record.earningLines || []).reduce((sum, line) => sum + Number(line.amount || 0), 0))
       || roundMoney(Number(record.grossPay || 0));
     const deductionTotal = roundMoney(Number(record.totalDeductions || record.deductions || 0));
@@ -591,17 +720,21 @@ const buildSalariedSheet = (
         ];
 
     for (const label of earningLabels) values.push(earningValue(record, label));
+    values.push(earningTotal);
 
     for (const column of deductionColumns) {
+      if (column.label === 'Column2') {
+        values.push('');
+        continue;
+      }
       const fromLines = lineAmount(record.deductionLines, column.pattern);
       values.push(fromLines || (column.fallback ? roundMoney(column.fallback(record)) : 0));
     }
+    values.push(deductionTotal);
 
     if (isPerm) {
       const provisionsTotal = roundMoney(lifeAssuranceProvision + rentProvision);
       values.push(
-        earningTotal,
-        deductionTotal,
         itf,
         nsitf,
         record.payCurrency === 'USD' ? 0 : pensionEr,
@@ -614,21 +747,16 @@ const buildSalariedSheet = (
         roundMoney(periodSalary * 12),
         roundMoney(Number(record.grossPay || 0)),
         roundMoney(Number(record.netPay || 0)),
-        roundMoney(Number(record.taxablePay || record.grossPay || 0)),
         ...haTailValues(record),
       );
     } else {
-      const provisionsTotal = rentProvision;
       values.push(
-        earningTotal,
-        deductionTotal,
         rentProvision,
-        provisionsTotal,
+        rentProvision,
         periodSalary,
         roundMoney(periodSalary * 12),
         roundMoney(Number(record.grossPay || 0)),
         roundMoney(Number(record.netPay || 0)),
-        roundMoney(Number(record.taxablePay || record.grossPay || 0)),
         ...haTailValues(record),
       );
     }
@@ -636,18 +764,173 @@ const buildSalariedSheet = (
     return values;
   });
 
-  const title = sheetName === 'DLE USD'
-    ? `DLE USD Payroll Detail - ${periodLabel}`
-    : isPerm
-      ? `Permanent Staff Payroll Detail - ${periodLabel}`
-      : `Contract / Stipend Staff Payroll Detail - ${periodLabel}`;
+  const rows = [
+    ...dataRows,
+    padRow([records.length], columns.length),
+    ...companyGroupFooter(records).map((row) => padRow(row, columns.length)),
+  ];
 
   return {
-    title,
-    subtitle: `${records.length} employees · official JULY PAYROLL layout · ${sheetName === 'DLE USD' ? 'USD only' : 'NGN only'}`,
+    title: isPerm ? `Permanent Staff Payroll Detail - ${periodLabel}` : `Contract / Stipend Staff Payroll Detail - ${periodLabel}`,
     sheetName,
     columns,
     rows,
+    exactReferenceDayrateMode: true,
+  };
+};
+
+const usdEarningValue = (record: Enriched, label: string) => {
+  if (label === 'BASIC SALARY (Earning)') {
+    return lineAmount(record.earningLines, /^(BASIC|BASIC SALARY|BASICPAY)$/i);
+  }
+  return earningValue(record, label);
+};
+
+const buildUsdReportSheet = (records: Enriched[], periodLabel: string): ExcelWorksheetInput => {
+  const columns = [
+    'Employee Code',
+    'EmployeeSurname',
+    'EmployeeFirstName',
+    'EmployeeSecondName',
+    'Age',
+    'Date of Birth',
+    'Gender',
+    'Date Joined Group',
+    'Job Title Long Description',
+    ...USD_EARNING_LABELS,
+    'Earning Total',
+    'PAYE Tax (Deduction)',
+    'Pension (Deduction)',
+    'Deduction Total',
+    'ITF Levy (CompanyContribution)',
+    'NSITF - Nigeria Social Insurance Tr (CompanyContribution)',
+    'CompanyContribution Total',
+    'Period Salary',
+    'Annual Salary',
+    'Gross Earnings',
+    'Net Pay',
+    'Taxable Earnings',
+    'Company (HA)',
+    'Department (HA)',
+    'Employee Type (HA)',
+    'Location (HA)',
+    'Nigeria - Pension Fund (HA)',
+  ];
+
+  const dataRows = records.map((record) => {
+    const earningTotal = roundMoney((record.earningLines || []).reduce((sum, line) => sum + Number(line.amount || 0), 0))
+      || roundMoney(Number(record.grossPay || 0));
+    const deductionTotal = roundMoney(Number(record.totalDeductions || record.deductions || 0));
+    const { itf, nsitf } = splitEmployerStatutory(record);
+    const periodSalary = roundMoney(Number(record.periodPackageGross || record.grossPay || 0));
+    return [
+      usdOfficialEmployeeCode(record),
+      record._lastName,
+      record._firstName,
+      record._secondName,
+      record._age,
+      record._dob,
+      record._gender,
+      record._dateJoined,
+      record._jobTitle,
+      ...USD_EARNING_LABELS.map((label) => usdEarningValue(record, label)),
+      earningTotal,
+      lineAmount(record.deductionLines, /^PAYE$/i) || roundMoney(Number(record.paye || 0)),
+      lineAmount(record.deductionLines, /^PENSION_EE$|^PENSION$/i) || roundMoney(Number(record.pensionEmployee || record.pension || 0)),
+      deductionTotal,
+      itf,
+      nsitf,
+      roundMoney(itf + nsitf),
+      periodSalary,
+      roundMoney(periodSalary * 12),
+      roundMoney(Number(record.grossPay || 0)),
+      roundMoney(Number(record.netPay || 0)),
+      roundMoney(Number(record.taxablePay || record.grossPay || 0)),
+      record._companyHa,
+      record._departmentHa,
+      record._employeeTypeHa,
+      record._locationHa,
+      record._pensionHa,
+    ] as ExcelCell[];
+  });
+
+  const totalGross = roundMoney(records.reduce((sum, record) => sum + Number(record.grossPay || 0), 0));
+  const totalNet = roundMoney(records.reduce((sum, record) => sum + Number(record.netPay || 0), 0));
+  const totalRow = padRow([records.length], columns.length);
+  const earningTotalIdx = columns.indexOf('Earning Total');
+  const netIdx = columns.indexOf('Net Pay');
+  if (earningTotalIdx >= 0) totalRow[earningTotalIdx] = totalGross;
+  if (netIdx >= 0) totalRow[netIdx] = totalNet;
+
+  return {
+    title: `DLE USD Payroll Detail - ${periodLabel}`,
+    sheetName: 'USD REPORT',
+    columns,
+    rows: [...dataRows, totalRow],
+    exactReferenceDayrateMode: true,
+  };
+};
+
+const periodMonthToken = (periodLabel: string) => {
+  const match = compact(periodLabel).match(/January|February|March|April|May|June|July|August|September|October|November|December/i);
+  return (match?.[0] || 'PERIOD').toUpperCase();
+};
+
+const summaryBucket = (list: PayrollCalculationRecord[]) => ({
+  net: roundMoney(list.reduce((sum, record) => sum + Number(record.netPay || 0), 0)),
+  count: list.length,
+});
+
+const buildSalaryCostSummaryWorksheet = (input: {
+  periodLabel: string;
+  permanent: PayrollCalculationRecord[];
+  contract: PayrollCalculationRecord[];
+  dayrate: PayrollCalculationRecord[];
+  usd: PayrollCalculationRecord[];
+}): ExcelWorksheetInput => {
+  const month = periodMonthToken(input.periodLabel);
+  const columns = ['EMPLOYEE CATEGORY', `${month} (NGN)`, 'NO OF STAFF'];
+  const ngnPermanent = input.permanent.filter((record) => !isMubassRole(record));
+  const mubass = [...input.permanent, ...input.contract, ...input.dayrate].filter((record) => isMubassRole(record));
+  const dleContract = [...input.contract, ...input.dayrate].filter((record) => resolveOfficialCompanyBucket(record) === 'DLE' && !isMubassRole(record));
+  const dlpcContract = [...input.contract, ...input.dayrate].filter((record) => resolveOfficialCompanyBucket(record) === 'DLPC' && !isMubassRole(record));
+  const md = ngnPermanent.filter((record) => isMdRole(record));
+  const gmOps = ngnPermanent.filter((record) => isGmOpsRole(record) && !isMdRole(record));
+  const dleStaff = ngnPermanent.filter((record) => resolveOfficialCompanyBucket(record) === 'DLE' && !isMdRole(record) && !isGmOpsRole(record));
+  const dlpcStaff = ngnPermanent.filter((record) => resolveOfficialCompanyBucket(record) === 'DLPC' && !isMdRole(record) && !isGmOpsRole(record));
+  const line = (label: string, list: PayrollCalculationRecord[]): ExcelCell[] => {
+    const bucket = summaryBucket(list);
+    return [label, bucket.net, bucket.count];
+  };
+  const subtotal = [...dleContract, ...dlpcContract, ...dleStaff, ...dlpcStaff, ...gmOps, ...md];
+  const grand = [...subtotal, ...mubass];
+  const usdMd = input.usd.filter((record) => isMdRole(record));
+  const usdNayak = input.usd.filter((record) => isNayakRole(record));
+  const usdGm = input.usd.filter((record) => isUsdGmSpCfoRole(record));
+  const rows: ExcelCell[][] = [
+    line('DLE Contract ', dleContract),
+    line('DLPC Contract', dlpcContract),
+    line('DLE Staff', dleStaff),
+    line('Dlpc Staff', dlpcStaff),
+    line('GM Ops', gmOps),
+    line('MD', md),
+    ['', summaryBucket(subtotal).net, ''],
+    line('Mubass (Outsourced)', mubass),
+    ['GRAND TOTAL', summaryBucket(grand).net, summaryBucket(grand).count],
+    [],
+    ['USD', '', ''],
+    line('GM Ops, Mgr SP & CFO', usdGm),
+    line('MD ', usdMd),
+    line('Nayak ', usdNayak),
+    ['', summaryBucket(input.usd).net, summaryBucket(input.usd).count],
+  ];
+  return {
+    title: 'PAYROLL COST - NET',
+    sheetName: 'Summary',
+    columns,
+    rows,
+    exactReferenceDayrateMode: true,
+    banner: 'PAYROLL COST - NET',
   };
 };
 
@@ -656,45 +939,71 @@ export const buildOfficialSalariedDetailWorksheets = (
   options?: {
     periodLabel?: string;
     directoryEmployees?: DirectoryEnrichment[];
-    /** Default ngn — DLE_USD never mixes into Perm/Cont sheets. Use usd for the separate DLE USD export. */
+    /** Default all — NGN PERM/CONT plus USD REPORT in one salary-schedule workbook. */
     currencyScope?: OfficialExportCurrencyScope | string | null;
+    dayrateRecords?: PayrollCalculationRecord[];
+    includeSummary?: boolean;
+    includeBankSheets?: boolean;
   },
 ): ExcelWorksheetInput[] => {
   const currencyScope = normalizeExportCurrencyScope(options?.currencyScope);
   const dirMap = directoryByKeys(options?.directoryEmployees || []);
-  const enriched = filterRecordsByCurrencyScope(records, currencyScope)
-    .filter((record) => !record.isDailyRate)
-    .map((record) => enrich(record, dirMap.get(upper(record.employeeCode)) || dirMap.get(upper(record.employeeId)) || dirMap.get(upper(record.fullName))));
+  const enrichOne = (record: PayrollCalculationRecord) =>
+    enrich(record, dirMap.get(upper(record.employeeCode)) || dirMap.get(upper(record.employeeId)) || dirMap.get(upper(record.fullName)));
+  const salaried = records.filter((record) => !record.isDailyRate);
+  const ngn = filterRecordsByCurrencyScope(salaried, 'ngn').map(enrichOne);
+  const usd = filterRecordsByCurrencyScope(salaried, 'usd').map(enrichOne);
   const periodLabel = options?.periodLabel || 'Payroll Period';
+  const permanent = ngn.filter((record) => !isContractOrStipend(record)).slice().sort(compareOfficialCode);
+  const contract = ngn.filter((record) => isContractOrStipend(record)).slice().sort(compareContSchedule);
+  const usdSorted = usd.slice().sort(compareOfficialCode);
+  const dayrate = options?.dayrateRecords || [];
+  const includeSummary = options?.includeSummary !== false;
+  const includeBankSheets = options?.includeBankSheets !== false;
 
   if (currencyScope === 'usd') {
-    const permanentUsd = enriched.filter((record) => !isContractOrStipend(record));
-    const contractUsd = enriched.filter((record) => isContractOrStipend(record));
-    const sheets: ExcelWorksheetInput[] = [];
-    if (permanentUsd.length || !contractUsd.length) {
-      sheets.push(buildSalariedSheet(permanentUsd, 'DLE USD', periodLabel, 'perm'));
-    }
-    if (contractUsd.length) {
-      sheets.push(buildSalariedSheet(contractUsd, 'DLE USD', periodLabel, 'cont'));
-    }
-    // Excel sheet names must be unique — if both exist, rename cont sheet.
-    if (sheets.length === 2) {
-      sheets[1] = { ...sheets[1], sheetName: 'DLE USD Cont' };
+    const sheets: ExcelWorksheetInput[] = [buildUsdReportSheet(usdSorted, periodLabel)];
+    if (includeBankSheets) {
+      sheets.push(...buildOfficialBankScheduleWorksheets(records, {
+        periodLabel,
+        mode: 'salary-schedule',
+        currencyScope: 'usd',
+      }));
     }
     return sheets;
   }
 
-  const permanent = enriched.filter((record) => !isContractOrStipend(record));
-  const contract = enriched.filter((record) => isContractOrStipend(record));
-  return [
-    buildSalariedSheet(permanent, 'Perm.Staff', periodLabel, 'perm'),
-    buildSalariedSheet(contract, 'Cont. Staff', periodLabel, 'cont'),
-  ];
+  const sheets: ExcelWorksheetInput[] = [];
+  if (includeSummary) {
+    sheets.push(buildSalaryCostSummaryWorksheet({
+      periodLabel,
+      permanent,
+      contract,
+      dayrate,
+      usd: currencyScope === 'ngn' ? [] : usdSorted,
+    }));
+  }
+  sheets.push(buildSalariedSheet(permanent, 'PERM.STAFF', periodLabel));
+  sheets.push(buildSalariedSheet(contract, 'CONT. STAFF', periodLabel));
+  if (includeBankSheets) {
+    const banks = buildOfficialBankScheduleWorksheets(records, {
+      periodLabel,
+      mode: 'salary-schedule',
+      currencyScope,
+    });
+    const ngnBanks = banks.filter((sheet) => sheet.sheetName !== 'USD BANK SCHD');
+    const usdBank = banks.filter((sheet) => sheet.sheetName === 'USD BANK SCHD');
+    sheets.push(...ngnBanks);
+    if (currencyScope !== 'ngn') sheets.push(buildUsdReportSheet(usdSorted, periodLabel), ...usdBank);
+  } else if (currencyScope !== 'ngn') {
+    sheets.push(buildUsdReportSheet(usdSorted, periodLabel));
+  }
+  return sheets;
 };
 
 /** —— Dayrate schedule (matches HR Dayrate Payment Schedule template) —— */
 const DAYRATE_DLE_COLUMNS = [
-  'Emp. Code',
+  'Contractor Code',
   'First Name',
   'Last Name',
   'Job Title',
@@ -720,12 +1029,12 @@ const DAYRATE_DLE_COLUMNS = [
   'Arrears',
   'Total Earnings',
   'WHT',
-  'Gross Salary',
-  'Net Pay',
+  'Gross Amount',
+  'Amount Payable',
 ] as const;
 
 const DAYRATE_DLPC_COLUMNS = [
-  'Emp. Code',
+  'Contractor Code',
   'First Name',
   'Last Name',
   'Job Title',
@@ -748,8 +1057,8 @@ const DAYRATE_DLPC_COLUMNS = [
   'Transport',
   'Total Earnings',
   'WHT',
-  'Gross Salary',
-  'Net Pay',
+  'Gross Amount',
+  'Amount Payable',
 ] as const;
 
 const buildDayrateDetailSheet = (
@@ -1151,7 +1460,7 @@ export const buildOfficialDayrateScheduleWorksheets = async (
     '',
     '',
   ] as ExcelCell[];
-  const summaryHeaderRow: ExcelCell[] = ['COMPANY', 'HEADCOUNT', 'GROSS PAY', 'NET PAY'];
+  const summaryHeaderRow: ExcelCell[] = ['COMPANY', 'HEADCOUNT', 'GROSS AMOUNT', 'AMOUNT PAYABLE'];
   const grossDle = roundMoney(dle.reduce((sum, row) => sum + Number(row.grossPay || 0), 0));
   const netDle = roundMoney(dle.reduce((sum, row) => sum + Number(row.netPay || 0), 0));
   const grossDlpc = roundMoney(dlpc.reduce((sum, row) => sum + Number(row.grossPay || 0), 0));
@@ -1159,8 +1468,8 @@ export const buildOfficialDayrateScheduleWorksheets = async (
   const summaryRows: ExcelCell[][] = [
     summaryTitleRow,
     summaryHeaderRow,
-    ['DLE', dle.length, grossDle, netDle],
-    ['DLPC', dlpc.length, grossDlpc, netDlpc],
+    ...(dle.length ? [['DLE', dle.length, grossDle, netDle] as ExcelCell[]] : []),
+    ...(dlpc.length ? [['DLPC', dlpc.length, grossDlpc, netDlpc] as ExcelCell[]] : []),
     [
       'Total',
       dle.length + dlpc.length,
@@ -1176,11 +1485,9 @@ export const buildOfficialDayrateScheduleWorksheets = async (
     titlePrefix: 'Dayrate Bank Schedule',
     mode: 'company',
     appendCompanyTotalRow: true,
-    // Population parity: use exactly the employees in each detail tab (DLE/DLPC), in the same stable order as detail tabs.
-    // This ensures headcount + the set of employees match 1:1 between the detail sheet and the bank sheet for the same company.
     enforceCompanyBucketsFrom: [
-      { bucket: 'DLE', records: dle },
-      { bucket: 'DLPC', records: dlpc },
+      ...(dle.length ? [{ bucket: 'DLE' as const, records: dle }] : []),
+      ...(dlpc.length ? [{ bucket: 'DLPC' as const, records: dlpc }] : []),
     ],
   });
 
@@ -1188,12 +1495,12 @@ export const buildOfficialDayrateScheduleWorksheets = async (
     {
       title: 'SUMMARY',
       sheetName: 'SUMMARY',
-      columns: ['COMPANY', 'HEADCOUNT', 'GROSS PAY', 'NET PAY'],
+      columns: ['COMPANY', 'HEADCOUNT', 'GROSS AMOUNT', 'AMOUNT PAYABLE'],
       rows: summaryRows,
       exactReferenceDayrateMode: true,
     },
-    dleDetail,
-    dlpcDetail,
+    ...(dle.length ? [dleDetail] : []),
+    ...(dlpc.length ? [dlpcDetail] : []),
     ...bankSheets,
   ];
 };
@@ -1206,12 +1513,25 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
   salariedRecords: PayrollCalculationRecord[];
   dayrateRecords: PayrollCalculationRecord[];
   directoryEmployees?: DirectoryEnrichment[];
-  /** Default ngn for salaried/stipend. Pass usd for the dedicated DLE USD workbook. */
+  /** usd = USD REPORT + USD BANK SCHD only. Otherwise the full August salary-schedule workbook. */
   currencyScope?: OfficialExportCurrencyScope | string | null;
 }): Promise<ExcelWorksheetInput[]> => {
   const report = compact(input.report) || 'payroll-register';
   const pack = compact(input.pack) || 'salaried';
-  const currencyScope = normalizeExportCurrencyScope(input.currencyScope);
+  const requestedScope = compact(input.currencyScope).toLowerCase();
+  const currencyScope = requestedScope === 'usd' || requestedScope === 'dle-usd' || requestedScope === 'dle_usd'
+    ? 'usd'
+    : requestedScope === 'ngn' || requestedScope === 'naira'
+      ? 'ngn'
+      : 'all';
+
+  const salarySchedule = (scope: OfficialExportCurrencyScope) =>
+    buildOfficialSalariedDetailWorksheets(input.salariedRecords, {
+      periodLabel: input.periodLabel,
+      directoryEmployees: input.directoryEmployees,
+      currencyScope: scope,
+      dayrateRecords: pack === 'all' || pack === 'daily-rate' ? input.dayrateRecords : [],
+    });
 
   if (report === 'bank-schedule' || report === 'bank-payment-report') {
     if (pack === 'daily-rate') {
@@ -1225,31 +1545,16 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
       return buildOfficialBankScheduleWorksheets(input.salariedRecords, {
         periodLabel: input.periodLabel,
         titlePrefix: 'DLE USD Bank Schedule',
-        mode: 'staff-packs',
+        mode: 'salary-schedule',
         currencyScope: 'usd',
       });
     }
-    if (pack === 'all') {
-      return [
-        ...buildOfficialBankScheduleWorksheets(input.salariedRecords, {
-          periodLabel: input.periodLabel,
-          titlePrefix: 'Salaried Bank Schedule',
-          mode: 'staff-packs',
-          currencyScope: 'ngn',
-        }),
-        ...buildOfficialBankScheduleWorksheets(input.dayrateRecords, {
-          periodLabel: input.periodLabel,
-          titlePrefix: 'Dayrate Bank Schedule',
-          mode: 'company',
-        }),
-      ];
-    }
     return buildOfficialBankScheduleWorksheets(input.salariedRecords, {
-      periodLabel: input.periodLabel,
-      titlePrefix: 'Salaried Bank Schedule',
-      mode: 'staff-packs',
-      currencyScope: 'ngn',
-    });
+        periodLabel: input.periodLabel,
+        titlePrefix: 'Salaried Bank Schedule',
+        mode: 'salary-schedule',
+        currencyScope,
+      });
   }
 
   if (report === 'dayrate-schedule') {
@@ -1268,31 +1573,7 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
         directoryEmployees: input.directoryEmployees,
       });
     }
-    if (currencyScope === 'usd') {
-      return buildOfficialSalariedDetailWorksheets(input.salariedRecords, {
-        periodLabel: input.periodLabel,
-        directoryEmployees: input.directoryEmployees,
-        currencyScope: 'usd',
-      });
-    }
-    if (pack === 'all') {
-      const salariedSheets = buildOfficialSalariedDetailWorksheets(input.salariedRecords, {
-        periodLabel: input.periodLabel,
-        directoryEmployees: input.directoryEmployees,
-        currencyScope: 'ngn',
-      });
-      const dayrateSheets = await buildOfficialDayrateScheduleWorksheets(input.dayrateRecords, {
-        period: input.period,
-        periodLabel: input.periodLabel,
-        directoryEmployees: input.directoryEmployees,
-      });
-      return [...salariedSheets, ...dayrateSheets];
-    }
-    return buildOfficialSalariedDetailWorksheets(input.salariedRecords, {
-      periodLabel: input.periodLabel,
-      directoryEmployees: input.directoryEmployees,
-      currencyScope: 'ngn',
-    });
+    return salarySchedule(currencyScope);
   }
 
   return [];

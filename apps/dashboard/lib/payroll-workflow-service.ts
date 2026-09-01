@@ -20,6 +20,7 @@ import {
   getPayrollRunForPeriod,
   listPayrollRunsForPeriod,
   payrollRunPeriodLabelForPack,
+  resolvePayrollRunCompany,
   resolvePayrollRunPack,
   savePayrollRun,
   type PayrollRunPack,
@@ -31,6 +32,11 @@ import {
   PAYROLL_RUN_PACKS,
   payrollRunPackShortLabel,
 } from '@/lib/payroll-employee-classification';
+import {
+  PAYROLL_SCHEDULE_SCOPES,
+  normalizePayrollCompany,
+  type PayrollCompany,
+} from '@/lib/payroll-schedule-scope';
 import type { PayrollSessionRole } from '@/lib/payroll-session';
 import {
   clearPayrollApprovalReminder,
@@ -70,8 +76,9 @@ type WorkflowInput = {
   paymentDate?: string | null;
   isGlobalAdmin?: boolean;
   baseUrl?: string | null;
-  /** Target pack for approval / artifact actions. Calculate/create without pack updates both. */
+  /** Target pack for approval / artifact actions. Calculate/create without pack+company updates all four schedules. */
   pack?: PayrollRunPack | string | null;
+  company?: PayrollCompany | string | null;
   runId?: string | null;
 };
 
@@ -163,18 +170,21 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
   const periodLabel = payrollPeriodLabel(period);
 
   let resolvedPack = normalizePayrollRunPack(input.pack);
-  if (!resolvedPack && input.runId) {
+  let resolvedCompany = normalizePayrollCompany(input.company);
+  if ((!resolvedPack || !resolvedCompany) && input.runId) {
     const byId = await getPayrollRun(input.runId);
-    if (byId) resolvedPack = resolvePayrollRunPack(byId);
+    if (byId) {
+      resolvedPack = resolvedPack || resolvePayrollRunPack(byId);
+      resolvedCompany = resolvedCompany || resolvePayrollRunCompany(byId);
+    }
   }
 
   const dualProcessActions = new Set(['calculate', 'create-run', 'validate-payroll', 'create-period', 'open-period', 'activate-period']);
   const periodWideActions = new Set(['close-period', 'reopen-period', 'reopen']);
-  const packsToProcess: PayrollRunPack[] = dualProcessActions.has(action) && !resolvedPack
+  const processAllSchedules = (dualProcessActions.has(action) && !resolvedPack && !resolvedCompany) || periodWideActions.has(action);
+  const packsToProcess: PayrollRunPack[] = processAllSchedules
     ? [...PAYROLL_RUN_PACKS]
-    : periodWideActions.has(action)
-      ? [...PAYROLL_RUN_PACKS]
-      : [resolvedPack || 'salaried'];
+    : [resolvedPack || 'salaried'];
 
   if (action === 'create-period') {
     await createPayrollPeriod(period, actor, paymentDate);
@@ -198,7 +208,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     return {
       run: runs[0],
       runs,
-      calculation: await calculatePayrollForPeriod(period, { pack: runs[0].pack }),
+      calculation: await calculatePayrollForPeriod(period, { pack: runs[0].pack, company: resolvePayrollRunCompany(runs[0]) }),
       periodRecord: await ensurePayrollPeriod(period, actor),
     };
   }
@@ -226,7 +236,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     return {
       run: runs[0],
       runs,
-      calculation: await calculatePayrollForPeriod(period, { pack: runs[0].pack }),
+      calculation: await calculatePayrollForPeriod(period, { pack: runs[0].pack, company: resolvePayrollRunCompany(runs[0]) }),
       periodRecord,
     };
   }
@@ -253,19 +263,20 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     return {
       run: runs[0],
       runs,
-      calculation: await calculatePayrollForPeriod(period, { pack: runs[0].pack }),
+      calculation: await calculatePayrollForPeriod(period, { pack: runs[0].pack, company: resolvePayrollRunCompany(runs[0]) }),
       periodRecord,
     };
   }
 
-  // Dual calculate / create-run / validate for both packs when pack not specified.
-  if (['calculate', 'create-run', 'validate-payroll'].includes(action) && packsToProcess.length > 1) {
+  // Dual calculate / create-run / validate for all four schedules when pack+company are not specified.
+  if (['calculate', 'create-run', 'validate-payroll'].includes(action) && processAllSchedules) {
     const results: Array<{ run: UnifiedPayrollRun; calculation: Awaited<ReturnType<typeof calculatePayrollForPeriod>> }> = [];
-    for (const pack of packsToProcess) {
+    for (const scope of PAYROLL_SCHEDULE_SCOPES) {
       const nested = await executePayrollWorkflowAction({
         ...input,
         action,
-        pack,
+        pack: scope.pack,
+        company: scope.company,
       });
       results.push({ run: nested.run, calculation: nested.calculation });
     }
@@ -278,9 +289,11 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
   }
 
   const pack = packsToProcess[0];
-  let run = (input.runId ? await getPayrollRun(input.runId) : null) || (await getPayrollRunForPeriod(period, pack)) || (await ensurePayrollRun(period, periodLabel, actor, pack));
+  const company = resolvedCompany || 'DLE';
+  let run = (input.runId ? await getPayrollRun(input.runId) : null) || (await getPayrollRunForPeriod(period, pack, company)) || (await ensurePayrollRun(period, periodLabel, actor, pack, company));
   run.pack = resolvePayrollRunPack(run);
-  run.periodLabel = payrollRunPeriodLabelForPack(periodLabel, run.pack);
+  run.company = resolvePayrollRunCompany(run) || company;
+  run.periodLabel = payrollRunPeriodLabelForPack(periodLabel, run.pack, run.company);
   let calculation: Awaited<ReturnType<typeof calculatePayrollForPeriod>> | null = null;
   const loadCalculation = async () => {
     if (!calculation) {
@@ -289,6 +302,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
         {
           forceRefresh: FORCE_REFRESH_ACTIONS.has(action),
           pack: resolvePayrollRunPack(run),
+          company: resolvePayrollRunCompany(run) || company,
         },
       );
       await assertStoredDayrateScheduleVisible(period);
@@ -302,7 +316,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
       user: actor,
       role,
       action: auditAction,
-      record: run?.id || `payroll-${period}-${pack}`,
+      record: run?.id || `payroll-${period}-${pack}-${company}`,
       oldValue,
       newValue,
       reason: reason || null,
@@ -311,7 +325,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     });
   };
 
-  run = run || (await ensurePayrollRun(period, periodLabel, actor, pack));
+  run = run || (await ensurePayrollRun(period, periodLabel, actor, pack, company));
   action = resolvePayrollApprovalActionForRun(action, run) as string;
 
   const notifyNext = async () => {
@@ -348,8 +362,8 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     await savePayrollRun(run);
     await appendPayrollArtifact(run.id, {
       type: 'bank-schedule',
-      label: `Bank payment schedule (${payrollRunPackShortLabel(run.pack)})`,
-      fileName: `bank-schedule-${period}-${run.pack}.xls`,
+      label: `Bank payment schedule (${payrollRunPackShortLabel(run.pack)}${run.company ? ` · ${run.company}` : ''})`,
+      fileName: `bank-schedule-${period}-${run.pack}-${run.company || 'DLE'}.xls`,
       generatedBy: actor,
       meta: { netPay: run.netPay, employeeCount: run.employeeCount, pack: run.pack },
     });
@@ -368,9 +382,9 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     await appendPayrollArtifact(run.id, {
       type: 'statutory-schedules',
       label: `PAYE, pension, NHF, NSITF, ITF schedules (${payrollRunPackShortLabel(run.pack)})`,
-      fileName: `statutory-schedules-${period}-${run.pack}.zip`,
+      fileName: `statutory-schedules-${period}-${run.pack}-${run.company || 'DLE'}.zip`,
       generatedBy: actor,
-      meta: { pack: run.pack },
+      meta: { pack: run.pack, company: run.company || 'DLE' },
     });
     await audit('generate-statutory-schedules', null, 'Statutory schedules generated');
     return { run, calculation: calculation as NonNullable<typeof calculation> };
@@ -436,7 +450,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
       });
       run = item;
     }
-    calculation = await calculatePayrollForPeriod(period, { pack: resolvePayrollRunPack(run) });
+    calculation = await calculatePayrollForPeriod(period, { pack: resolvePayrollRunPack(run), company: resolvePayrollRunCompany(run) });
     const periodRecord = await closePayrollPeriodRecord(period, actor, reason);
     if (periodRecord.status !== 'Closed') {
       throw new Error('Payroll runs closed but period record could not be persisted to DLE_Enterprise.');
@@ -492,7 +506,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
       run = item;
     }
     const periodRecord = await reopenPayrollPeriodRecord(period, actor, reason);
-    calculation = await calculatePayrollForPeriod(period, { pack: resolvePayrollRunPack(run) });
+    calculation = await calculatePayrollForPeriod(period, { pack: resolvePayrollRunPack(run), company: resolvePayrollRunCompany(run) });
     return { run, runs: await listPayrollRunsForPeriod(period), calculation, periodRecord };
   }
 
@@ -631,9 +645,9 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     await appendPayrollArtifact(run.id, {
       type: 'payslips',
       label: 'Employee payslips published to ESS',
-      fileName: `payslips-${period}-${run.pack}.json`,
+      fileName: `payslips-${period}-${run.pack}-${run.company || 'DLE'}.json`,
       generatedBy: actor,
-      meta: { employeeCount: calculation.summary.payrollEligible, pack: run.pack },
+      meta: { employeeCount: calculation.summary.payrollEligible, pack: run.pack, company: run.company || 'DLE' },
     });
     await audit(action, before, run.status);
     return { run, calculation };
@@ -646,7 +660,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     if (!run.bankScheduleGeneratedAt || !run.statutorySchedulesGeneratedAt) {
       throw new Error('Generate bank and statutory schedules before posting payroll.');
     }
-    calculation = calculation || await calculatePayrollForPeriod(period, { pack: resolvePayrollRunPack(run) });
+    calculation = calculation || await calculatePayrollForPeriod(period, { pack: resolvePayrollRunPack(run), company: resolvePayrollRunCompany(run) });
     const journalBatch = await postPayrollJournalBatch({
       calculation,
       run,

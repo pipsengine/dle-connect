@@ -10,6 +10,7 @@ import { buildDayrateExportRoster, type DayrateExportRosterEntry } from '@/lib/d
 import { canonicalContractEmployeeCode } from '@/lib/dayrate-schedule-xlsx';
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
 import { loadDayrateAttendanceByEmpCode } from '@/lib/payroll-official-excel-export';
+import type { PayrollCompany } from '@/lib/payroll-schedule-scope';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 const compact = (value: unknown) => String(value || '').trim();
@@ -38,23 +39,31 @@ const resolveRepoRoot = () => {
   return path.resolve(resolveDashboardRoot(), '..', '..');
 };
 
-export const dayratePaymentScheduleFileName = (period: string, periodLabel?: string) => {
+export const dayratePaymentScheduleFileName = (period: string, periodLabel?: string, company?: PayrollCompany | null) => {
   const token = compact(period).replace(/^per-/i, '');
+  const companyToken = company ? ` ${company}` : '';
   const match = /^(\d{4})-(\d{2})$/.exec(token);
   if (match) {
     const year = match[1];
     const month = MONTH_NAMES[Number(match[2]) - 1] || 'MONTH';
-    return `${month} ${year}DAYRATE PAYMENT SCHEDULE .xlsx`;
+    return `${month} ${year}${companyToken} DAYRATE PAYMENT SCHEDULE.xlsx`;
   }
   const fromLabel = compact(periodLabel).toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
   if (fromLabel) {
     const parts = fromLabel.split(/\s+/);
     const month = MONTH_NAMES.find((name) => parts.includes(name));
     const year = parts.find((part) => /^\d{4}$/.test(part));
-    if (month && year) return `${month} ${year}DAYRATE PAYMENT SCHEDULE .xlsx`;
+    if (month && year) return `${month} ${year}${companyToken} DAYRATE PAYMENT SCHEDULE.xlsx`;
   }
-  return 'DAYRATE PAYMENT SCHEDULE .xlsx';
+  return `${company ? `${company} ` : ''}DAYRATE PAYMENT SCHEDULE.xlsx`;
 };
+
+const applyDayrateContractorHeadings = (xml: string) => xml
+  .replaceAll('Gross Salary', 'Gross Amount')
+  .replaceAll('Net Pay', 'Amount Payable')
+  .replaceAll('Emp. Code', 'Contractor Code')
+  .replaceAll('Employee Code', 'Contractor Code')
+  .replaceAll('Employee Name', 'Contractor Name');
 
 const scheduleTitleForSheet = (period: string, periodLabel?: string) => {
   const token = compact(period).replace(/^per-/i, '');
@@ -298,7 +307,7 @@ const buildDleTotalsRow = (rowNum: number, totals: ReturnType<typeof sumDetailRo
   const f = (col: string, formula: string, value: number, style?: string) =>
     cellXmlFormula(`${col}${rowNum}`, formula, value, style);
   return `<row r="${rowNum}" spans="1:28" x14ac:dyDescent="0.25">${
-    f('A', `SUBTOTAL(103,${table}[Emp. Code])`, totals.count)
+    f('A', `SUBTOTAL(103,${table}[Contractor Code])`, totals.count)
     + f('I', `SUBTOTAL(109,${table}[Total Weekday])`, totals.weekDays)
     + f('J', `SUBTOTAL(109,${table}[Weekday OVT])`, totals.weekdayOvtHrs)
     + f('K', `SUBTOTAL(109,${table}[Total Saturday])`, totals.satHrs)
@@ -317,8 +326,8 @@ const buildDleTotalsRow = (rowNum: number, totals: ReturnType<typeof sumDetailRo
     + `<c r="X${rowNum}" s="${MONEY_STYLE}"/>`
     + f('Y', `SUBTOTAL(109,${table}[Total Earnings])`, totals.totalEarnings, MONEY_STYLE)
     + f('Z', `SUBTOTAL(109,${table}[WHT])`, totals.wht, MONEY_STYLE)
-    + f('AA', `SUBTOTAL(109,${table}[Gross Salary])`, totals.totalEarnings, MONEY_STYLE)
-    + f('AB', `SUBTOTAL(109,${table}[Net Pay])`, totals.netPay, MONEY_STYLE)
+    + f('AA', `SUBTOTAL(109,${table}[Gross Amount])`, totals.totalEarnings, MONEY_STYLE)
+    + f('AB', `SUBTOTAL(109,${table}[Amount Payable])`, totals.netPay, MONEY_STYLE)
   }</row>`;
 };
 
@@ -358,7 +367,7 @@ const buildDlpcTotalsRow = (rowNum: number, totals: ReturnType<typeof sumDetailR
   const f = (col: string, formula: string, value: number, style?: string) =>
     cellXmlFormula(`${col}${rowNum}`, formula, value, style);
   return `<row r="${rowNum}" spans="1:25" x14ac:dyDescent="0.25">${
-    f('A', `SUBTOTAL(103,${table}[Emp. Code])`, totals.count)
+    f('A', `SUBTOTAL(103,${table}[Contractor Code])`, totals.count)
     + f('E', `SUBTOTAL(109,${table}[Daily Rate])`, totals.dailyRate, MONEY_STYLE)
     + f('H', `SUBTOTAL(109,${table}[Total Weekday])`, totals.weekDays)
     + f('I', `SUBTOTAL(109,${table}[Weekday OVT])`, totals.weekdayOvtHrs)
@@ -373,8 +382,8 @@ const buildDlpcTotalsRow = (rowNum: number, totals: ReturnType<typeof sumDetailR
     + f('U', `SUBTOTAL(109,${table}[Transport])`, totals.transport, MONEY_STYLE)
     + f('V', `SUBTOTAL(109,${table}[Total Earnings])`, totals.totalEarnings, MONEY_STYLE)
     + f('W', `SUBTOTAL(109,${table}[WHT])`, totals.wht, MONEY_STYLE)
-    + f('X', `SUBTOTAL(109,${table}[Gross Salary])`, totals.totalEarnings, MONEY_STYLE)
-    + f('Y', `SUBTOTAL(109,${table}[Net Pay])`, totals.netPay, MONEY_STYLE)
+    + f('X', `SUBTOTAL(109,${table}[Gross Amount])`, totals.totalEarnings, MONEY_STYLE)
+    + f('Y', `SUBTOTAL(109,${table}[Amount Payable])`, totals.netPay, MONEY_STYLE)
   }</row>`;
 };
 
@@ -387,7 +396,7 @@ const buildDleBankDataRow = (rowNum: number, row: DetailRow) =>
     + cellXml(`E${rowNum}`, row.sortCode, '15')
     + cellXmlFormula(
       `F${rowNum}`,
-      '_xlfn.XLOOKUP(Table13[[#This Row],[Employee Code]],DLE!A:A,DLE!AB:AB)',
+      '_xlfn.XLOOKUP(Table13[[#This Row],[Contractor Code]],DLE!A:A,DLE!AB:AB)',
       row.netPay,
       '16',
     )
@@ -402,7 +411,7 @@ const buildDlpcBankDataRow = (rowNum: number, row: DetailRow) =>
     + cellXml(`E${rowNum}`, row.sortCode, '4')
     + cellXmlFormula(
       `F${rowNum}`,
-      '_xlfn.XLOOKUP(Table146[[#This Row],[Employee Code]],Table52[Emp. Code],Table52[Net Pay])',
+      '_xlfn.XLOOKUP(Table146[[#This Row],[Contractor Code]],Table52[Contractor Code],Table52[Amount Payable])',
       row.netPay,
       '5',
     )
@@ -416,7 +425,7 @@ const buildBankTotalsRow = (
   netStyle = '5',
 ) =>
   `<row r="${rowNum}" spans="1:7" ht="15.6" customHeight="1" x14ac:dyDescent="0.25">${
-    cellXmlFormula(`A${rowNum}`, `SUBTOTAL(103,${tableName}[Employee Code])`, totals.count, '6')
+    cellXmlFormula(`A${rowNum}`, `SUBTOTAL(103,${tableName}[Contractor Code])`, totals.count, '6')
     + `<c r="B${rowNum}" s="6"/><c r="C${rowNum}" s="6"/><c r="D${rowNum}" s="6"/><c r="E${rowNum}" s="6"/>`
     + cellXmlFormula(`F${rowNum}`, `SUBTOTAL(109,${tableName}[NET Salary])`, totals.netPay, netStyle)
   }</row>`;
@@ -754,20 +763,23 @@ export const buildDayratePaymentScheduleXlsx = async (input: {
   periodLabel?: string;
   records: PayrollCalculationRecord[];
   directoryEmployees?: DleEmployeeDirectoryRow[];
+  company?: PayrollCompany | null;
 }) => {
   const templatePath = resolveDayratePaymentScheduleTemplatePath();
   if (!templatePath) throw new Error('Dayrate Payment Schedule template was not found.');
   const entries = readZipEntries(readFileSync(templatePath));
-  const { dle, dlpc } = await buildDetailRows(input.records, input.period, input.directoryEmployees || []);
+  const { dle: dleAll, dlpc: dlpcAll } = await buildDetailRows(input.records, input.period, input.directoryEmployees || []);
+  const dle = !input.company || input.company === 'DLE' ? dleAll : [];
+  const dlpc = !input.company || input.company === 'DLPC' ? dlpcAll : [];
   assertRowsFoot('DLE', dle);
   assertRowsFoot('DLPC', dlpc);
   const title = scheduleTitleForSheet(input.period, input.periodLabel);
 
-  const sheet1Template = entries.get('xl/worksheets/sheet1.xml')?.toString('utf8') || '';
-  const sheet2Template = entries.get('xl/worksheets/sheet2.xml')?.toString('utf8') || '';
-  const sheet3Template = entries.get('xl/worksheets/sheet3.xml')?.toString('utf8') || '';
-  const sheet4Template = entries.get('xl/worksheets/sheet4.xml')?.toString('utf8') || '';
-  const sheet5Template = entries.get('xl/worksheets/sheet5.xml')?.toString('utf8') || '';
+  const sheet1Template = applyDayrateContractorHeadings(entries.get('xl/worksheets/sheet1.xml')?.toString('utf8') || '');
+  const sheet2Template = applyDayrateContractorHeadings(entries.get('xl/worksheets/sheet2.xml')?.toString('utf8') || '');
+  const sheet3Template = applyDayrateContractorHeadings(entries.get('xl/worksheets/sheet3.xml')?.toString('utf8') || '');
+  const sheet4Template = applyDayrateContractorHeadings(entries.get('xl/worksheets/sheet4.xml')?.toString('utf8') || '');
+  const sheet5Template = applyDayrateContractorHeadings(entries.get('xl/worksheets/sheet5.xml')?.toString('utf8') || '');
 
   if (sheet1Template) {
     entries.set('xl/worksheets/sheet1.xml', Buffer.from(fillSummarySheet(sheet1Template, title), 'utf8'));
@@ -782,7 +794,7 @@ export const buildDayratePaymentScheduleXlsx = async (input: {
     if (table2) {
       entries.set(
         'xl/tables/table2.xml',
-        Buffer.from(patchTableXml(table2, `A1:AB${dleFilled.totalRowNum}`, `A1:AB${Math.max(1, dleFilled.totalRowNum - 1)}`), 'utf8'),
+        Buffer.from(applyDayrateContractorHeadings(patchTableXml(table2, `A1:AB${dleFilled.totalRowNum}`, `A1:AB${Math.max(1, dleFilled.totalRowNum - 1)}`)), 'utf8'),
       );
     }
   }
@@ -796,7 +808,7 @@ export const buildDayratePaymentScheduleXlsx = async (input: {
     if (table3) {
       entries.set(
         'xl/tables/table3.xml',
-        Buffer.from(patchTableXml(table3, `A1:Y${dlpcFilled.totalRowNum}`, `A1:Y${Math.max(1, dlpcFilled.totalRowNum - 1)}`), 'utf8'),
+        Buffer.from(applyDayrateContractorHeadings(patchTableXml(table3, `A1:Y${dlpcFilled.totalRowNum}`, `A1:Y${Math.max(1, dlpcFilled.totalRowNum - 1)}`)), 'utf8'),
       );
     }
   }
@@ -810,7 +822,7 @@ export const buildDayratePaymentScheduleXlsx = async (input: {
     if (table4) {
       entries.set(
         'xl/tables/table4.xml',
-        Buffer.from(patchTableXml(table4, `A2:F${dleBankFilled.totalRowNum}`, `A2:F${Math.max(2, dleBankFilled.totalRowNum - 1)}`), 'utf8'),
+        Buffer.from(applyDayrateContractorHeadings(patchTableXml(table4, `A2:F${dleBankFilled.totalRowNum}`, `A2:F${Math.max(2, dleBankFilled.totalRowNum - 1)}`)), 'utf8'),
       );
     }
   }
@@ -824,16 +836,21 @@ export const buildDayratePaymentScheduleXlsx = async (input: {
     if (table5) {
       entries.set(
         'xl/tables/table5.xml',
-        Buffer.from(patchTableXml(table5, `A2:G${dlpcBankFilled.totalRowNum}`, `A2:G${Math.max(2, dlpcBankFilled.totalRowNum - 1)}`), 'utf8'),
+        Buffer.from(applyDayrateContractorHeadings(patchTableXml(table5, `A2:G${dlpcBankFilled.totalRowNum}`, `A2:G${Math.max(2, dlpcBankFilled.totalRowNum - 1)}`)), 'utf8'),
       );
     }
   }
 
   // Drop cached formula chain so Excel recalculates cleanly after data rewrite.
   entries.delete('xl/calcChain.xml');
+  for (const [name, buffer] of [...entries.entries()]) {
+    if (!name.endsWith('.xml')) continue;
+    const next = applyDayrateContractorHeadings(buffer.toString('utf8'));
+    if (next !== buffer.toString('utf8')) entries.set(name, Buffer.from(next, 'utf8'));
+  }
 
   return {
-    fileName: dayratePaymentScheduleFileName(input.period, input.periodLabel),
+    fileName: dayratePaymentScheduleFileName(input.period, input.periodLabel, input.company),
     buffer: writeZipStore(entries),
     templatePath,
     counts: { dle: dle.length, dlpc: dlpc.length },
