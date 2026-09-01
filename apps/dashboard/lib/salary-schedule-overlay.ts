@@ -1,5 +1,8 @@
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
+import { canonicalContractEmployeeCode } from '@/lib/dayrate-schedule-xlsx';
+import { readAppliedDayrateScheduleOverride } from '@/lib/dayrate-schedule-override-read';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
+import { normalizePayrollCompany, withPayrollCompany, type PayrollCompany } from '@/lib/payroll-schedule-scope';
 import { salaryScheduleEmployeeKeys, type SalaryScheduleRow } from '@/lib/salary-schedule-xlsx';
 import {
   excelRowCurrency,
@@ -14,6 +17,26 @@ const recordKeys = (record: Pick<PayrollCalculationRecord, 'employeeCode' | 'emp
   salaryScheduleEmployeeKeys(record.employeeCode || record.employeeId || '').concat(
     compact(record.fullName).toUpperCase(),
   ).filter(Boolean);
+
+/** USD REPORT stays on DLE Salaries. NGN rows follow the Excel COMPANY column (DLENG / DLPCG). */
+export const payrollCompanyFromSalaryScheduleRow = (row: Pick<SalaryScheduleRow, 'company' | 'kind'>): PayrollCompany => {
+  if (row.kind === 'usd') return 'DLE';
+  return normalizePayrollCompany(row.company) || 'DLE';
+};
+
+const dayrateScheduleCodes = (period: string) => {
+  const codes = new Set<string>();
+  for (const row of readAppliedDayrateScheduleOverride(period)?.rows || []) {
+    [row.employeeCode, canonicalContractEmployeeCode(row.employeeCode)]
+      .map((value) => compact(value).toUpperCase())
+      .filter(Boolean)
+      .forEach((code) => codes.add(code));
+  }
+  return codes;
+};
+
+const salaryRowOnDayrateSchedule = (row: SalaryScheduleRow, dayrateCodes: Set<string>) =>
+  salaryScheduleEmployeeKeys(row.employeeCode).some((key) => dayrateCodes.has(key.toUpperCase()));
 
 const overlayRecord = (base: PayrollCalculationRecord, excel: SalaryScheduleRow): PayrollCalculationRecord => {
   const paye = roundMoney(excel.paye);
@@ -69,6 +92,9 @@ const overlayRecord = (base: PayrollCalculationRecord, excel: SalaryScheduleRow)
   };
 };
 
+const overlaySalaryRow = (base: PayrollCalculationRecord, excel: SalaryScheduleRow): PayrollCalculationRecord =>
+  withPayrollCompany(overlayRecord(base, excel), payrollCompanyFromSalaryScheduleRow(excel));
+
 const emptyRecordFromExcel = (excel: SalaryScheduleRow, period: string): PayrollCalculationRecord => {
   const currency = excelRowCurrency(excel);
   const stub: PayrollCalculationRecord = {
@@ -79,10 +105,12 @@ const emptyRecordFromExcel = (excel: SalaryScheduleRow, period: string): Payroll
     department: excel.department,
     businessUnit: excel.company,
     location: excel.location,
+    companyCode: payrollCompanyFromSalaryScheduleRow(excel),
+    companyName: payrollCompanyFromSalaryScheduleRow(excel),
     jobTitle: excel.jobTitle,
     employmentType: excel.employmentType || (excel.kind === 'cont' ? 'Contract Lumpsum' : 'Permanent'),
     employmentStatus: 'Active',
-    payrollGroup: currency === 'USD' ? 'DLE_USD' : 'DLE',
+    payrollGroup: currency === 'USD' ? 'DLE_USD' : payrollCompanyFromSalaryScheduleRow(excel),
     salaryGrade: excel.kind === 'cont' ? 'Lumpsum' : 'Unassigned',
     payCurrency: currency,
     paymentRun: 'Monthly',
@@ -129,7 +157,7 @@ const emptyRecordFromExcel = (excel: SalaryScheduleRow, period: string): Payroll
     annualBenefitLines: [],
     deductionLines: [],
   };
-  return overlayRecord(stub, excel);
+  return overlaySalaryRow(stub, excel);
 };
 
 export const applySalaryScheduleOverrideToRecords = (
@@ -154,17 +182,13 @@ export const applySalaryScheduleOverrideToRecords = (
     }
   }
 
-  const used = new Set<PayrollCalculationRecord>();
+  const dayrateCodes = dayrateScheduleCodes(period);
   const overlaid: PayrollCalculationRecord[] = [];
   for (const row of applied.parsed.rows) {
+    if (salaryRowOnDayrateSchedule(row, dayrateCodes)) continue;
     const currency = excelRowCurrency(row);
     const match = salaryScheduleEmployeeKeys(row.employeeCode).map((key) => byCurrency[currency].get(key)).find(Boolean) || null;
-    if (match) {
-      used.add(match);
-      overlaid.push(overlayRecord(match, row));
-    } else {
-      overlaid.push(emptyRecordFromExcel(row, period));
-    }
+    overlaid.push(match ? overlaySalaryRow(match, row) : emptyRecordFromExcel(row, period));
   }
 
   return [...dailyRate, ...overlaid];

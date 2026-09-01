@@ -270,7 +270,7 @@ export const buildOfficialBankScheduleWorksheets = (
   options?: {
     periodLabel?: string;
     titlePrefix?: string;
-    /** staff-packs = Permanent / Contract Lumpsum / IT NYSC (+ optional DLE USD); company = DLE/DLPC; salary-schedule = August DLE/DLPC × PERM/CONT + USD BANK SCHD */
+    /** staff-packs = Permanent / Contract Lumpsum / IT NYSC (+ optional DLE USD); company = DLE/DLPC; salary-schedule = DLE/DLPC × PERM/CONT + USD BANK SCHD */
     mode?: 'staff-packs' | 'company' | 'salary-schedule';
     /** Default ngn — DLE_USD never mixes into NGN packs. Use usd for the separate DLE USD export. */
     currencyScope?: OfficialExportCurrencyScope | string | null;
@@ -431,7 +431,7 @@ export const buildOfficialBankScheduleWorksheets = (
   });
 };
 
-/** —— Salaried / stipend DLE salary schedule (August 2026 layout) —— */
+/** —— Salaried / stipend salary schedule (PERM.STAFF / CONT. STAFF / USD REPORT layout) —— */
 type DeductionColumnDef = { label: string; pattern: RegExp; fallback?: (r: Enriched) => number };
 
 const EARNING_PATTERN_BY_LABEL: Record<string, RegExp> = {
@@ -1513,7 +1513,7 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
   salariedRecords: PayrollCalculationRecord[];
   dayrateRecords: PayrollCalculationRecord[];
   directoryEmployees?: DirectoryEnrichment[];
-  /** usd = USD REPORT + USD BANK SCHD only. Otherwise the full August salary-schedule workbook. */
+  /** usd = USD REPORT + USD BANK SCHD only. Otherwise the full salary-schedule workbook for the period. */
   currencyScope?: OfficialExportCurrencyScope | string | null;
 }): Promise<ExcelWorksheetInput[]> => {
   const report = compact(input.report) || 'payroll-register';

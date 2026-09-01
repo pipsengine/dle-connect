@@ -3119,7 +3119,7 @@ function ReportsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Tab
   const reportCatalog = [
     { id: 'payroll-summary', title: 'Payroll Summary', detail: 'Period totals, readiness, exceptions, approvals and values.', icon: FileBarChart, tone: 'blue' as Tone },
     { id: 'payroll-register', title: 'Payroll Register', detail: 'Official DLE salary schedule: Summary, PERM.STAFF, CONT. STAFF, company bank tabs, USD REPORT.', icon: ClipboardCheck, tone: 'green' as Tone },
-    { id: 'payroll-detail', title: 'Official Payroll Detail', detail: 'August salary-schedule layout: permanent, contract (Lumpsum/Intern) and USD component matrix.', icon: ClipboardCheck, tone: 'green' as Tone },
+    { id: 'payroll-detail', title: 'Official Payroll Detail', detail: 'Period salary-schedule layout: permanent, contract (Lumpsum/Intern) and USD component matrix.', icon: ClipboardCheck, tone: 'green' as Tone },
     { id: 'dayrate-schedule', title: 'Dayrate Payment Schedule', detail: 'SUMMARY + DLE/DLPC detail + bank schedule sheets.', icon: CreditCard, tone: 'slate' as Tone },
     { id: 'payroll-review', title: 'Payroll Review', detail: 'Month-on-month salary comparison with component variances.', icon: TrendingUp, tone: 'amber' as Tone },
     { id: 'salary-analysis', title: 'Salary Analysis', detail: 'Official workbook layout with earnings analysis by pack.', icon: TrendingUp, tone: 'violet' as Tone },
@@ -3197,7 +3197,7 @@ function ReportsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Tab
   };
   const reportFocus = {
     'payroll-summary': { label: 'Report Focus', value: 'Executive totals', detail: 'Period totals, status posture, and readiness overview.' },
-    'payroll-register': { label: 'Report Focus', value: 'Official register', detail: 'August DLE salary schedule workbook (Summary / PERM.STAFF / CONT. STAFF / company bank tabs / USD).' },
+    'payroll-register': { label: 'Report Focus', value: 'Official register', detail: 'Uploaded salary schedule workbook for the selected period (Summary / PERM.STAFF / CONT. STAFF / company bank tabs / USD).' },
     'payroll-detail': { label: 'Report Focus', value: 'Official detail', detail: 'Permanent and contract component matrix (PERM.STAFF / CONT. STAFF) plus USD REPORT.' },
     'dayrate-schedule': { label: 'Report Focus', value: 'Dayrate schedule', detail: 'SUMMARY + DLE/DLPC detail + bank schedule sheets.' },
     'payroll-review': { label: 'Report Focus', value: 'Month-on-month review', detail: 'Compare previous month and current month salary components with variance and percentage change.' },

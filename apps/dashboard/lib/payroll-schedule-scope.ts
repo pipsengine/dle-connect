@@ -81,13 +81,29 @@ export const PAYROLL_SCHEDULE_SCOPES: PayrollScheduleScope[] = [
 const compact = (value: unknown) => String(value || '').trim();
 const upper = (value: unknown) => compact(value).toUpperCase();
 
-/** Same site codes as finance payment management. */
+/**
+ * Same site codes as finance payment management, including Excel labels:
+ * "DLENG - DLENG", "DLPCG - DLPCG", sheet names DLE / DLPC, and DLE_USD.
+ */
 export const normalizePayrollCompany = (value?: string | null): PayrollCompany | null => {
-  const code = upper(value).replace(/[^A-Z0-9]/g, '');
-  if (code === 'DLENG' || code === 'DLE' || code === 'DLENG LTD') return 'DLE';
-  if (code === 'DLPCG' || code === 'DLPC') return 'DLPC';
+  const raw = upper(value);
+  if (!raw) return null;
+  const code = raw.replace(/[^A-Z0-9]/g, '');
+  if (!code) return null;
+  if (code.includes('DLPCG') || /\bDLPCG\b/.test(raw) || /\bDLPC\b/.test(raw) || code === 'DLPC') return 'DLPC';
+  if (code.includes('DLENG') || /\bDLENG\b/.test(raw) || code === 'DLE' || code.startsWith('DLE')) return 'DLE';
   return null;
 };
+
+/** Stamp the schedule company so pack filters and exports follow the workbook, not HRIS heuristics. */
+export const withPayrollCompany = <T extends object>(record: T, company: PayrollCompany): T & {
+  companyCode: PayrollCompany;
+  companyName: PayrollCompany;
+} => ({
+  ...record,
+  companyCode: company,
+  companyName: company,
+});
 
 export const resolvePayrollCompany = (record: {
   payrollGroup?: string | null;

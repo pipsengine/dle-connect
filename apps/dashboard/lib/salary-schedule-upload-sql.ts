@@ -1,6 +1,7 @@
 /**
- * DLE_Enterprise is the system of record for an applied August salaried schedule.
- * Later periods without an upload fall back to HRIS payroll setup (the ongoing authority).
+ * DLE_Enterprise stores the applied salaried schedule for the selected period.
+ * Each month's upload is the authority for that period (DLE vs DLPC from the COMPANY column).
+ * Periods without an upload fall back to HRIS payroll setup.
  */
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';

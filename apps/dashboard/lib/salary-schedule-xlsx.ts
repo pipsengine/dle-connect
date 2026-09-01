@@ -1,6 +1,7 @@
 /**
  * Parse DLE Salary Schedule workbooks (PERM.STAFF / CONT. STAFF / USD REPORT / Summary).
- * Used for August 2026 alignment — Excel is the input for that period only.
+ * One book covers both companies. COMPANY column DLENG → DLE Salaries, DLPCG → DLPC Salaries.
+ * USD REPORT always stays on DLE. Applied per selected period whenever HR uploads the month's file.
  */
 import { inflateRawSync } from 'node:zlib';
 

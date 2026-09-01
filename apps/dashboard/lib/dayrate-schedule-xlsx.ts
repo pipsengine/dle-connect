@@ -1,5 +1,6 @@
 /**
  * Parse HR Dayrate Payment Schedule workbooks (DLE / DLPC sheets).
+ * The sheet name is the company of record for that period's overlay.
  * Attendance buckets are the authority; money columns are kept as reference or
  * as non-formula adjustments (night amt, site, TCM, transport, arrears).
  */

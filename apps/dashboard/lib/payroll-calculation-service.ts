@@ -14,6 +14,7 @@ import { normalizePayrollPeriod, syncLeaveAllowanceEventsForPayroll } from '@/li
 import { ensureDayrateScheduleOverrideLoaded } from '@/lib/dayrate-schedule-upload-sql';
 import { ensureSalaryScheduleOverrideLoaded } from '@/lib/salary-schedule-upload-sql';
 import { applySalaryScheduleOverrideToRecords } from '@/lib/salary-schedule-overlay';
+import { applyDayrateScheduleOverrideToRecords } from '@/lib/dayrate-schedule-overlay';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { buildTimesheetHoursMapForPayrollPeriod } from '@/lib/timesheet-entry-store';
 import { dayrateBookedHours } from '@/lib/dayrate-schedule-xlsx';
@@ -37,6 +38,8 @@ export type PayrollCalculationRecord = {
   department: string;
   businessUnit: string;
   location: string;
+  companyCode?: string;
+  companyName?: string;
   jobTitle: string;
   employmentType: string;
   employmentStatus: string;
@@ -1021,6 +1024,8 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       department: employee.department,
       businessUnit: employee.businessUnit,
       location: employee.location,
+      companyCode: compact(employee.companyCode) || undefined,
+      companyName: compact(employee.companyName) || undefined,
       jobTitle: employee.jobTitle,
       employmentType: employee.employmentType,
       employmentStatus: employee.status,
@@ -1109,7 +1114,10 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     });
   });
 
-  const records = applySalaryScheduleOverrideToRecords(builtRecords, requestedPeriod);
+  const records = applyDayrateScheduleOverrideToRecords(
+    applySalaryScheduleOverrideToRecords(builtRecords, requestedPeriod),
+    requestedPeriod,
+  );
 
   const summaryRecords = summaryPayrollRecords(records);
   const totals = summaryRecords.reduce(
