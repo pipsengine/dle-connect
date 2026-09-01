@@ -240,7 +240,7 @@ export default function PayrollManagementHub({
       id: 'payroll-processing',
       tab: 'payroll-run',
       title: 'Process Payroll',
-      description: 'Run payroll validation, calculation and processing.',
+      description: 'Opens DLE Salaries. DLPC Salaries and both day-rate schedules have their own pages in the menu.',
       icon: PlayCircle,
       status: ['Computed', 'Submitted', 'Under Review', 'Approved', 'Released', 'Closed'].includes(status) ? 'In Progress' : 'Ready',
       statusTone: 'green',

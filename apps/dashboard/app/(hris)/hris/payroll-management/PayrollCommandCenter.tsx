@@ -82,7 +82,11 @@ type Props = {
 
 const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 });
 const numberFmt = new Intl.NumberFormat('en-GB');
-const fmtMoney = (value: number | null | undefined, canView: boolean) => (canView && value != null ? moneyFmt.format(value) : 'Restricted');
+const fmtMoney = (value: number | null | undefined, canView: boolean) => {
+  if (!canView) return 'Restricted';
+  if (value == null) return 'Not computed';
+  return moneyFmt.format(value);
+};
 const fmtPayrollAmount = (value: number | null | undefined, canView: boolean, payrollComputed: boolean) => {
   if (!payrollComputed) return 'Not computed';
   return fmtMoney(value, canView);
@@ -499,7 +503,7 @@ export default function PayrollCommandCenter({
                 );
               })}
             </div>
-            <Link href="/hris/payroll-management/payroll-processing" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-[#2563EB] hover:underline">
+            <Link href="/hris/payroll-management/process-payroll" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-[#2563EB] hover:underline">
               View all actions
               <ChevronRight className="h-4 w-4" />
             </Link>

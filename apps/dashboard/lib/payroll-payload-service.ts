@@ -508,7 +508,7 @@ export const buildManagementPayload = async (
   requestedCompany?: string | null,
 ) => {
   const { role, permissions, isGlobalAdmin, session } = await payrollSessionContext(request);
-  const perms = managementPermissions(role);
+  const perms = managementPermissions(role, { isGlobalAdmin });
   const identity = {
     isGlobalAdmin,
     roles: session?.roles || [],

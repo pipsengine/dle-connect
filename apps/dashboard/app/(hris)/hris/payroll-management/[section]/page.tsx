@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { payrollScheduleScopeFromSection } from '@/lib/payroll-schedule-scope';
 import PayrollManagementClient from '../PayrollManagementClient';
 
 const titleCase = (value: string) =>
@@ -8,7 +9,8 @@ const titleCase = (value: string) =>
 
 export async function generateMetadata({ params }: { params: Promise<{ section: string }> }): Promise<Metadata> {
   const { section } = await params;
-  return { title: titleCase(section || 'Payroll Management') };
+  const schedule = payrollScheduleScopeFromSection(section);
+  return { title: schedule?.label || titleCase(section || 'Payroll Management') };
 }
 
 export default async function PayrollManagementSectionPage({ params }: { params: Promise<{ section: string }> }) {

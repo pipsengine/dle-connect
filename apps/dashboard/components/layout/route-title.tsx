@@ -12,7 +12,7 @@ const titleOverrides: Record<string, string> = {
   '/workforce-portal': 'Employee Self-Service Portal',
   '/hris/payroll-management/payroll-processing': 'Payroll Processing',
   '/hris/payroll-management/payroll-approval': 'Payroll Approval',
-  '/hris/payroll-management/process-payroll': 'Payroll Processing',
+  '/hris/payroll-management/process-payroll': 'Payroll Management',
   '/hris/payroll-management/dle-salaries': 'DLE Salaries',
   '/hris/payroll-management/dlpc-salaries': 'DLPC Salaries',
   '/hris/payroll-management/dle-dayrate': 'DLE Day-rate',

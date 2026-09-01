@@ -389,13 +389,24 @@ const currencyCode = (value: unknown) => {
   return 'NGN';
 };
 const money = (value: number | null | undefined, canView = true, currency = 'NGN') => {
-  if (!canView || value == null) return 'Restricted';
+  if (!canView) return 'Restricted';
+  if (value == null) return 'Not computed';
   const code = currencyCode(currency);
   if (!currencyFormatters.has(code)) {
     currencyFormatters.set(code, new Intl.NumberFormat(code === 'USD' ? 'en-US' : 'en-NG', { style: 'currency', currency: code, maximumFractionDigits: code === 'USD' ? 2 : 0 }));
   }
   return currencyFormatters.get(code)!.format(value);
 };
+const sumRecordPay = (records: { grossPay?: number | null; deductions?: number | null; netPay?: number | null }[] | undefined) =>
+  (records || []).reduce(
+    (acc, record) => ({
+      grossPay: acc.grossPay + Number(record.grossPay || 0),
+      deductions: acc.deductions + Number(record.deductions || 0),
+      netPay: acc.netPay + Number(record.netPay || 0),
+    }),
+    { grossPay: 0, deductions: 0, netPay: 0 },
+  );
+const payrollAmount = (official: number | null | undefined, preview: number, computed?: boolean) => (computed ? official : preview);
 const recordCurrency = (record: Pick<PayrollRecord, 'payCurrency' | 'payrollGroup'>) => currencyCode(`${record.payCurrency} ${record.payrollGroup}`);
 const recordMoney = (record: Pick<PayrollRecord, 'payCurrency' | 'payrollGroup'>, value: number | null | undefined, canView = true) => money(value, canView, recordCurrency(record));
 const accessLabel = (role: Role | string) => role === 'Payroll Officer' ? 'Payroll Access' : String(role || 'Signed-in Access');
@@ -859,7 +870,7 @@ const sectionById = (id?: string) => {
 
 const sectionHref = (id: SectionId) => {
   if (id === 'dashboard') return '/hris/payroll-management/dashboard';
-  if (id === 'process-payroll') return '/hris/payroll-management/payroll-processing';
+  if (id === 'process-payroll') return '/hris/payroll-management/process-payroll';
   if (id === 'salary-management') return '/hris/payroll-management/pay-setup';
   if (id === 'earnings-management') return '/hris/payroll-management/earnings';
   if (id === 'deductions-management') return '/hris/payroll-management/deductions';
@@ -1856,10 +1867,10 @@ function ProcessPayrollWorkspace({
   onSelectPeriod,
   viewPack = 'salaried',
   viewCompany = 'DLE',
-  onSelectScope,
   onExportBothExcel,
   onExportDleUsdExcel,
   notice,
+  lockedScope = null,
 }: {
   payload: PayrollPayload | null;
   canViewMoney: boolean;
@@ -1875,10 +1886,10 @@ function ProcessPayrollWorkspace({
   onSelectPeriod?: (period: string) => void;
   viewPack?: 'salaried' | 'daily-rate';
   viewCompany?: PayrollCompany;
-  onSelectScope?: (scope: PayrollScheduleScope) => void;
   onExportBothExcel?: () => void;
   onExportDleUsdExcel?: () => void;
   notice?: string;
+  lockedScope?: PayrollScheduleScope | null;
 }) {
   const [processView, setProcessView] = useState<'ready' | 'issues' | 'outputs' | 'audit'>('ready');
   const [registerQuery, setRegisterQuery] = useState('');
@@ -1894,6 +1905,7 @@ function ProcessPayrollWorkspace({
   const currentRun = payrollRunFor(payload, viewPack, viewCompany);
   const status = currentRun?.status || payload?.workflow?.currentStatus || 'Draft';
   const records = payload?.records || [];
+  const previewPay = sumRecordPay(records);
   const readyRows = records.filter((record) => record.payrollStatus === 'Ready');
   const issueRows = records.filter((record) => record.payrollStatus !== 'Ready' || record.exceptionCount > 0);
   const removableIssueRows = issueRows.filter(isRemovableDailyRatePayrollRecord);
@@ -1975,8 +1987,9 @@ function ProcessPayrollWorkspace({
     return {
       ...scope,
       status: totals?.status || run?.status || 'Draft',
-      grossPay: totals?.grossPay ?? 0,
-      netPay: totals?.netPay ?? 0,
+      grossPay: totals?.computed ? totals.grossPay : null,
+      netPay: totals?.computed ? totals.netPay : null,
+      computed: Boolean(totals?.computed),
       employeeCount: totals?.employeeCount ?? 0,
     };
   });
@@ -2072,7 +2085,7 @@ function ProcessPayrollWorkspace({
         <section className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <h2 className="text-base font-bold text-[#0F172A]">Payroll Workflow</h2>
+              <h2 className="text-base font-bold text-[#0F172A]">{lockedScope ? `${lockedScope.label} workflow` : 'Payroll Workflow'}</h2>
               <p className="mt-0.5 text-xs font-semibold text-slate-500">Run: {currentRun?.id || 'Not started'} · {number(payload?.summary.payrollEligible)} employees</p>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
@@ -2097,8 +2110,12 @@ function ProcessPayrollWorkspace({
             />
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
               <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Gross Payroll</p>
-              <p className="mt-2 text-base font-bold text-slate-950">{money(payload?.summary.grossPay, canViewMoney)}</p>
-              <p className="mt-0.5 text-[11px] font-semibold text-emerald-700">{money(payload?.summary.netPay, canViewMoney)} net</p>
+              <p className="mt-2 text-base font-bold text-slate-950">{money(payrollAmount(payload?.summary.grossPay, previewPay.grossPay, payload?.payrollComputed), canViewMoney)}</p>
+              <p className="mt-0.5 text-[11px] font-semibold text-emerald-700">
+                {payload?.payrollComputed
+                  ? `${money(payload?.summary.netPay, canViewMoney)} net`
+                  : `${money(previewPay.netPay, canViewMoney)} preview · run payroll to lock`}
+              </p>
             </div>
             <WorkflowRingMetric
               label="Readiness"
@@ -2149,29 +2166,34 @@ function ProcessPayrollWorkspace({
 
           <div className="mt-5 flex flex-col gap-3 border-t border-slate-100 pt-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 flex-1 flex-wrap gap-2">
-              {packCards.map((item) => {
-                const active = viewPack === item.pack && viewCompany === item.company;
-                return (
-                  <button
+              {lockedScope ? (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5">
+                  <div className="text-xs font-extrabold text-blue-950">{lockedScope.label}</div>
+                  <div className="mt-1 text-[11px] font-semibold text-blue-800">
+                    This page is {lockedScope.kindLabel} for {lockedScope.company} only. Open DLE Salaries, DLPC Salaries, DLE Day-rate, or DLPC Day-rate from Payroll Management in the sidebar.
+                  </div>
+                </div>
+              ) : (
+                packCards.map((item) => (
+                  <Link
                     key={item.id}
-                    type="button"
-                    onClick={() => onSelectScope?.(item)}
+                    href={item.href}
                     className={`min-w-[180px] flex-1 rounded-xl border px-4 py-2.5 text-left transition sm:flex-none ${
-                      active
+                      viewPack === item.pack && viewCompany === item.company
                         ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
                         : 'border-slate-200 bg-white text-slate-800 hover:border-blue-300'
                     }`}
                   >
                     <div className="text-xs font-extrabold">{item.label}</div>
-                    <div className={`mt-1 text-[11px] font-semibold ${active ? 'text-blue-100' : 'text-slate-500'}`}>
+                    <div className={`mt-1 text-[11px] font-semibold ${viewPack === item.pack && viewCompany === item.company ? 'text-blue-100' : 'text-slate-500'}`}>
                       {item.status} · gross {money(item.grossPay, canViewMoney)} · {number(item.employeeCount)} {item.pack === 'daily-rate' ? 'contractors' : 'staff'}
                     </div>
-                    <div className={`text-[11px] font-semibold ${active ? 'text-blue-100' : 'text-slate-500'}`}>
+                    <div className={`text-[11px] font-semibold ${viewPack === item.pack && viewCompany === item.company ? 'text-blue-100' : 'text-slate-500'}`}>
                       {item.pack === 'daily-rate' ? 'payable' : 'net'} {money(item.netPay, canViewMoney)}
                     </div>
-                  </button>
-                );
-              })}
+                  </Link>
+                ))
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-2 lg:justify-end">
               <PayrollCommentsControl period={payload?.period} periodLabel={payload?.periodLabel} />
@@ -4554,7 +4576,6 @@ export default function PayrollManagementClient({
   const selectSchedule = (scope: PayrollScheduleScope) => {
     setViewPack(scope.pack);
     setViewCompany(scope.company);
-    window.history.pushState(null, '', scope.href);
     void load(viewPeriod, scope.pack, scope.company);
   };
 
@@ -4951,10 +4972,18 @@ export default function PayrollManagementClient({
       openSection('dashboard');
       return;
     }
+    if (target.section === 'payroll-processing' && target.tab === 'payroll-run') {
+      window.location.assign('/hris/payroll-management/dle-salaries');
+      return;
+    }
     openSection(target.section, target.tab);
   };
 
   const navigateFromHub = (workspace: HubWorkspaceId, tab?: string) => {
+    if (workspace === 'payroll-processing') {
+      window.location.assign('/hris/payroll-management/dle-salaries');
+      return;
+    }
     openSection(workspace as SectionId, tab);
   };
 
@@ -5435,7 +5464,11 @@ export default function PayrollManagementClient({
     const totalEmployees = payload?.summary.totalEmployees || 0;
     const readyEmployees = payload?.summary.readyEmployees || 0;
     const readyPct = totalEmployees ? Math.round((readyEmployees / totalEmployees) * 100) : 0;
-    const deductionPct = payload?.summary.grossPay ? Math.round(((payload.summary.deductions || 0) / payload.summary.grossPay) * 1000) / 10 : 0;
+    const previewPay = sumRecordPay(payload?.records);
+    const kpiGross = payrollAmount(payload?.summary.grossPay, previewPay.grossPay, payload?.payrollComputed);
+    const kpiDeductions = payrollAmount(payload?.summary.deductions, previewPay.deductions, payload?.payrollComputed);
+    const kpiNet = payrollAmount(payload?.summary.netPay, previewPay.netPay, payload?.payrollComputed);
+    const deductionPct = kpiGross ? Math.round(((Number(kpiDeductions || 0)) / Number(kpiGross)) * 1000) / 10 : 0;
     const runStatus = currentRun?.status || payload?.workflow?.currentStatus || 'Draft';
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A]">
@@ -5443,8 +5476,8 @@ export default function PayrollManagementClient({
           <div className="mx-auto max-w-[1600px]">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-slate-500">HRIS / Payroll Management / Process Payroll</p>
-                <h1 className="mt-1 text-[28px] font-bold tracking-tight text-slate-950 sm:text-[32px]">Payroll Processing</h1>
+                <p className="text-xs font-semibold text-slate-500">HRIS / Payroll Management / {lockedScope?.label || 'Process Payroll'}</p>
+                <h1 className="mt-1 text-[28px] font-bold tracking-tight text-slate-950 sm:text-[32px]">{lockedScope?.label || 'Payroll Processing'}</h1>
                 <div className="mt-3">
                   <PayrollPeriodContextBar
                     payload={payload}
@@ -5505,8 +5538,8 @@ export default function PayrollManagementClient({
           {payrollRunView ? (
             <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <ProcessingKpiCard title="Ready Employees" value={number(readyEmployees)} subtitle={`${readyPct}% of total employees`} icon={Users} tone="blue" active={processingKpiPanel === 'ready'} onClick={() => toggleProcessingKpiPanel('ready')} />
-              <ProcessingKpiCard title="Gross Pay" value={money(payload?.summary.grossPay, canViewMoney)} subtitle={`Net Pay: ${money(payload?.summary.netPay, canViewMoney)}`} icon={Banknote} tone="green" active={processingKpiPanel === 'gross'} onClick={() => toggleProcessingKpiPanel('gross')} />
-              <ProcessingKpiCard title="Deductions" value={money(payload?.summary.deductions, canViewMoney)} subtitle={`${deductionPct}% of gross pay`} icon={ReceiptText} tone="purple" active={processingKpiPanel === 'deductions'} onClick={() => toggleProcessingKpiPanel('deductions')} />
+              <ProcessingKpiCard title="Gross Pay" value={money(kpiGross, canViewMoney)} subtitle={payload?.payrollComputed ? `Net Pay: ${money(kpiNet, canViewMoney)}` : `Preview net: ${money(kpiNet, canViewMoney)} · run payroll to lock`} icon={Banknote} tone="green" active={processingKpiPanel === 'gross'} onClick={() => toggleProcessingKpiPanel('gross')} />
+              <ProcessingKpiCard title="Deductions" value={money(kpiDeductions, canViewMoney)} subtitle={payload?.payrollComputed ? `${deductionPct}% of gross pay` : 'Preview until payroll is run'} icon={ReceiptText} tone="purple" active={processingKpiPanel === 'deductions'} onClick={() => toggleProcessingKpiPanel('deductions')} />
               <ProcessingKpiCard title="Issues" value={number(payload?.summary.exceptionCount)} subtitle={`${number(payload?.summary.blockedEmployees)} blocked • ${number(payload?.summary.reviewEmployees)} review`} icon={AlertTriangle} tone="red" active={processingKpiPanel === 'issues'} onClick={() => toggleProcessingKpiPanel('issues')} />
             </div>
           ) : null}
@@ -5597,7 +5630,7 @@ export default function PayrollManagementClient({
                 onPeriodAction={(action, period, reason) => void runAction(action, reason, period)}
               />
             ) : activeTab.id === 'payroll-run' ? (
-              <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} registerViewRequest={registerViewRequest} onRegisterViewRequestHandled={() => setRegisterViewRequest(null)} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack, viewCompany); }} viewPack={viewPack} viewCompany={viewCompany} onSelectScope={selectSchedule} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} onExportDleUsdExcel={() => exportDleUsdExcel('payroll-register')} notice={toast} />
+              <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} registerViewRequest={registerViewRequest} onRegisterViewRequestHandled={() => setRegisterViewRequest(null)} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack, viewCompany); }} viewPack={viewPack} viewCompany={viewCompany} lockedScope={lockedScope} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} onExportDleUsdExcel={() => exportDleUsdExcel('payroll-register')} notice={toast} />
             ) : (
               <FeaturePanel tab={activeTab} section={section} payload={payload} canViewMoney={canViewMoney} />
             )}
@@ -5763,7 +5796,7 @@ export default function PayrollManagementClient({
                   onPeriodAction={(action, period, reason) => void runAction(action, reason, period)}
                 />
               ) : (
-                <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack, viewCompany); }} viewPack={viewPack} viewCompany={viewCompany} onSelectScope={selectSchedule} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} onExportDleUsdExcel={() => exportDleUsdExcel('payroll-register')} notice={toast} />
+                <ProcessPayrollWorkspace payload={payload} canViewMoney={canViewMoney} onAction={triggerAction} busyAction={busyAction} role={role} onExcludeFromPayroll={(employeeId) => void excludeFromPayrollRun(employeeId)} onBulkExcludeInvalidContracts={() => void bulkExcludeInvalidContracts()} excludeBusy={excludeBusy} viewPeriod={viewPeriod} onSelectPeriod={(period) => { setViewPeriod(period); void load(period, viewPack, viewCompany); }} viewPack={viewPack} viewCompany={viewCompany} lockedScope={lockedScope} onExportBothExcel={() => exportBothPacksExcel('payroll-register')} onExportDleUsdExcel={() => exportDleUsdExcel('payroll-register')} notice={toast} />
               )
             ) : (
               <FeaturePanel tab={activeTab} section={section} payload={payload} canViewMoney={canViewMoney} />

@@ -94,8 +94,8 @@ export const processingPermissions = (role: PayrollSessionRole, options?: { isGl
   };
 };
 
-export const managementPermissions = (role: PayrollSessionRole) => {
-  const canViewMoney = ['Super Admin', 'System Administrator', 'HR Director', 'HR Manager', 'Payroll Officer', 'Payroll Supervisor', 'Finance Controller', 'Finance Manager', 'CFO', 'Executive Director', 'Executive Management', 'Auditor'].includes(role);
+export const managementPermissions = (role: PayrollSessionRole, options?: { isGlobalAdmin?: boolean }) => {
+  const canViewMoney = ['Super Admin', 'System Administrator', 'HR Director', 'HR Manager', 'Payroll Officer', 'Payroll Supervisor', 'Finance Controller', 'Finance Manager', 'CFO', 'Executive Director', 'Executive Management', 'Auditor'].includes(role) || Boolean(options?.isGlobalAdmin);
   const canManageRun = ['Super Admin', 'Payroll Officer', 'Payroll Supervisor', 'Finance Controller', 'Finance Manager'].includes(role);
   const canApprove = ['Super Admin', 'HR Director', 'HR Manager', 'Finance Controller', 'Finance Manager', 'CFO', 'Executive Director', 'Executive Management'].includes(role);
   const canPost = ['Super Admin', 'Payroll Officer', 'Payroll Supervisor', 'Finance Controller', 'Finance Manager'].includes(role);
