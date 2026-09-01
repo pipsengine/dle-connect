@@ -466,10 +466,27 @@ const fillBankTableSheet = (
   return { sheetXml: replaceSheetData(templateSheetXml, inner, dimension), totalRowNum, netTotal };
 };
 
-const fillSummarySheet = (templateSheetXml: string, title: string) => {
+const fillSummarySheet = (templateSheetXml: string, title: string, dle: DetailRow[], dlpc: DetailRow[]) => {
   const titleRow = `<row r="1" spans="1:4" x14ac:dyDescent="0.25"><c r="A1" s="18" t="inlineStr"><is><t>${escapeXml(title)}</t></is></c></row>`;
-  const body = [3, 4, 5, 6].map((rowNum) => extractSheetRow(templateSheetXml, rowNum)).join('');
-  return replaceSheetData(templateSheetXml, `${titleRow}${body}`, 'A1:D6');
+  const headerRow = extractSheetRow(templateSheetXml, 2)
+    || `<row r="2" spans="1:4">${cellXml('A2', 'COMPANY')}${cellXml('B2', 'HEADCOUNT')}${cellXml('C2', 'GROSS AMOUNT')}${cellXml('D2', 'AMOUNT PAYABLE')}</row>`;
+  const dleGross = roundMoney(dle.reduce((sum, row) => sum + row.totalEarnings, 0));
+  const dleNet = roundMoney(dle.reduce((sum, row) => sum + row.netPay, 0));
+  const dlpcGross = roundMoney(dlpc.reduce((sum, row) => sum + row.totalEarnings, 0));
+  const dlpcNet = roundMoney(dlpc.reduce((sum, row) => sum + row.netPay, 0));
+  const line = (rowNum: number, label: string, count: number, gross: number, net: number) =>
+    `<row r="${rowNum}" spans="1:4">${
+      cellXml(`A${rowNum}`, label)
+      + cellXml(`B${rowNum}`, count)
+      + cellXml(`C${rowNum}`, gross, MONEY_STYLE)
+      + cellXml(`D${rowNum}`, net, MONEY_STYLE)
+    }</row>`;
+  const body = [
+    line(3, 'DLE', dle.length, dleGross, dleNet),
+    line(4, 'DLPC', dlpc.length, dlpcGross, dlpcNet),
+    line(5, 'Total', dle.length + dlpc.length, roundMoney(dleGross + dlpcGross), roundMoney(dleNet + dlpcNet)),
+  ].join('');
+  return replaceSheetData(templateSheetXml, `${titleRow}${headerRow}${body}`, 'A1:D5');
 };
 
 const replaceSheetData = (sheetXml: string, sheetDataInner: string, dimension: string) => {
@@ -782,7 +799,7 @@ export const buildDayratePaymentScheduleXlsx = async (input: {
   const sheet5Template = applyDayrateContractorHeadings(entries.get('xl/worksheets/sheet5.xml')?.toString('utf8') || '');
 
   if (sheet1Template) {
-    entries.set('xl/worksheets/sheet1.xml', Buffer.from(fillSummarySheet(sheet1Template, title), 'utf8'));
+    entries.set('xl/worksheets/sheet1.xml', Buffer.from(fillSummarySheet(sheet1Template, title, dle, dlpc), 'utf8'));
   }
 
   const dleFilled = sheet2Template

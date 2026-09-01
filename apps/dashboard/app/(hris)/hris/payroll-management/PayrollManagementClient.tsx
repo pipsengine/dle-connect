@@ -3179,14 +3179,11 @@ function ReportsWorkspace({ activeTab, payload, canViewMoney }: { activeTab: Tab
   const exportReport = (format: 'csv' | 'xls') => {
     const params = new URLSearchParams({ format, report: activeReport, groupBy, status: reportStatus });
     if (payload?.period) params.set('period', payload.period);
-    const pack = activeReport === 'dayrate-schedule'
+    const pack = payload?.pack === 'daily-rate' || activeReport === 'dayrate-schedule'
       ? 'daily-rate'
-      : activeReport === 'bank-payment-report'
-        ? 'all'
-        : activeReport === 'payroll-register' || activeReport === 'payroll-detail' || activeReport === 'salary-analysis'
-          ? 'all'
-          : (payload?.pack || 'salaried');
+      : (payload?.pack || 'salaried');
     params.set('pack', pack);
+    if (payload?.company) params.set('company', payload.company);
     window.location.href = `/api/hris/payroll-management?${params.toString()}`;
   };
   const chartTooltip = (value: unknown, name: unknown) => {

@@ -205,8 +205,8 @@ const enrich = (record: PayrollCalculationRecord, dir?: DirectoryEnrichment | nu
     payrollGroup: record.payrollGroup,
     businessUnit: record.businessUnit || dir?.businessUnit,
     location: record.location || dir?.location,
-    companyCode: dir?.companyCode,
-    companyName: dir?.companyName,
+    companyCode: record.companyCode || dir?.companyCode,
+    companyName: record.companyName || dir?.companyName,
     department: record.department || dir?.department,
   });
   const computedAge = ageFromDob(dir?.dateOfBirth);
@@ -283,6 +283,8 @@ export const buildOfficialBankScheduleWorksheets = (
      * and SUMMARY.headcount all agree to the same integer (no payable() exclusion drift).
      */
     enforceCompanyBucketsFrom?: Array<{ bucket: OfficialCompanyBucket; records: PayrollCalculationRecord[] }>;
+    /** When set, only that company's bank sheets are written (DLE Salaries vs DLPC Salaries). */
+    company?: PayrollCompany | null;
   },
 ): ExcelWorksheetInput[] => {
   const periodLabel = options?.periodLabel || 'Payroll Period';
@@ -313,7 +315,12 @@ export const buildOfficialBankScheduleWorksheets = (
         { bucket: 'DLE' as OfficialCompanyBucket, sheetName: 'DLE BANK SCHD', includeLocation: false, records: dle },
         { bucket: 'DLPC' as OfficialCompanyBucket, sheetName: 'DLPC.BANK.SCHD', includeLocation: true, records: dlpc },
       ];
-    })().filter((config) => config.records.length > 0);
+    })().filter((config) => {
+      if (!config.records.length) return false;
+      if (options?.company === 'DLPC') return config.bucket === 'DLPC';
+      if (options?.company === 'DLE') return config.bucket === 'DLE';
+      return true;
+    });
 
     return configs.map((config) => {
       const headcount = config.records.length;
@@ -371,7 +378,16 @@ export const buildOfficialBankScheduleWorksheets = (
       if (contDlpc.length) configs.push({ sheetName: 'DLPC.CONT.BANK.SCHD', records: contDlpc });
     }
     if (currencyScope !== 'ngn' && usd.length) {
-      configs.push({ sheetName: 'USD BANK SCHD', records: usd.slice().sort(compareOfficialCode), usd: true });
+      if (options?.company !== 'DLPC') configs.push({ sheetName: 'USD BANK SCHD', records: usd.slice().sort(compareOfficialCode), usd: true });
+    }
+    if (options?.company === 'DLPC') {
+      const dlpcOnly = configs.filter((config) => /DLPC/i.test(config.sheetName));
+      configs.length = 0;
+      configs.push(...dlpcOnly);
+    } else if (options?.company === 'DLE') {
+      const dleOnly = configs.filter((config) => !/DLPC/i.test(config.sheetName));
+      configs.length = 0;
+      configs.push(...dleOnly);
     }
     const columns = ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location'];
     return configs.map((config) => {
@@ -944,30 +960,33 @@ export const buildOfficialSalariedDetailWorksheets = (
     dayrateRecords?: PayrollCalculationRecord[];
     includeSummary?: boolean;
     includeBankSheets?: boolean;
+    company?: PayrollCompany | null;
   },
 ): ExcelWorksheetInput[] => {
   const currencyScope = normalizeExportCurrencyScope(options?.currencyScope);
+  const company = options?.company || null;
   const dirMap = directoryByKeys(options?.directoryEmployees || []);
   const enrichOne = (record: PayrollCalculationRecord) =>
     enrich(record, dirMap.get(upper(record.employeeCode)) || dirMap.get(upper(record.employeeId)) || dirMap.get(upper(record.fullName)));
-  const salaried = records.filter((record) => !record.isDailyRate);
+  const inCompany = (record: PayrollCalculationRecord) => !company || resolveOfficialCompanyBucket(record) === company;
+  const salaried = records.filter((record) => !record.isDailyRate && inCompany(record));
   const ngn = filterRecordsByCurrencyScope(salaried, 'ngn').map(enrichOne);
   const usd = filterRecordsByCurrencyScope(salaried, 'usd').map(enrichOne);
   const periodLabel = options?.periodLabel || 'Payroll Period';
   const permanent = ngn.filter((record) => !isContractOrStipend(record)).slice().sort(compareOfficialCode);
   const contract = ngn.filter((record) => isContractOrStipend(record)).slice().sort(compareContSchedule);
   const usdSorted = usd.slice().sort(compareOfficialCode);
-  const dayrate = options?.dayrateRecords || [];
   const includeSummary = options?.includeSummary !== false;
   const includeBankSheets = options?.includeBankSheets !== false;
 
   if (currencyScope === 'usd') {
-    const sheets: ExcelWorksheetInput[] = [buildUsdReportSheet(usdSorted, periodLabel)];
+    const sheets: ExcelWorksheetInput[] = usdSorted.length ? [buildUsdReportSheet(usdSorted, periodLabel)] : [];
     if (includeBankSheets) {
-      sheets.push(...buildOfficialBankScheduleWorksheets(records, {
+      sheets.push(...buildOfficialBankScheduleWorksheets(salaried, {
         periodLabel,
         mode: 'salary-schedule',
         currencyScope: 'usd',
+        company,
       }));
     }
     return sheets;
@@ -979,23 +998,26 @@ export const buildOfficialSalariedDetailWorksheets = (
       periodLabel,
       permanent,
       contract,
-      dayrate,
+      dayrate: [],
       usd: currencyScope === 'ngn' ? [] : usdSorted,
     }));
   }
   sheets.push(buildSalariedSheet(permanent, 'PERM.STAFF', periodLabel));
   sheets.push(buildSalariedSheet(contract, 'CONT. STAFF', periodLabel));
   if (includeBankSheets) {
-    const banks = buildOfficialBankScheduleWorksheets(records, {
+    const banks = buildOfficialBankScheduleWorksheets(salaried, {
       periodLabel,
       mode: 'salary-schedule',
       currencyScope,
+      company,
     });
     const ngnBanks = banks.filter((sheet) => sheet.sheetName !== 'USD BANK SCHD');
     const usdBank = banks.filter((sheet) => sheet.sheetName === 'USD BANK SCHD');
     sheets.push(...ngnBanks);
-    if (currencyScope !== 'ngn') sheets.push(buildUsdReportSheet(usdSorted, periodLabel), ...usdBank);
-  } else if (currencyScope !== 'ngn') {
+    if (currencyScope !== 'ngn' && company !== 'DLPC' && usdSorted.length) {
+      sheets.push(buildUsdReportSheet(usdSorted, periodLabel), ...usdBank);
+    }
+  } else if (currencyScope !== 'ngn' && company !== 'DLPC' && usdSorted.length) {
     sheets.push(buildUsdReportSheet(usdSorted, periodLabel));
   }
   return sheets;
@@ -1437,7 +1459,7 @@ export const loadDayrateAttendanceByEmpCode = async (period: string) => {
 
 export const buildOfficialDayrateScheduleWorksheets = async (
   records: PayrollCalculationRecord[],
-  options?: { period?: string; periodLabel?: string; directoryEmployees?: DirectoryEnrichment[] },
+  options?: { period?: string; periodLabel?: string; directoryEmployees?: DirectoryEnrichment[]; company?: PayrollCompany | null },
 ): Promise<ExcelWorksheetInput[]> => {
   const period = options?.period || '';
   const periodLabel = options?.periodLabel || period || 'Payroll Period';
@@ -1447,8 +1469,10 @@ export const buildOfficialDayrateScheduleWorksheets = async (
     .map((record) => enrich(record, dirMap.get(upper(record.employeeCode)) || dirMap.get(upper(record.employeeId))));
   const attendance = period ? await loadDayrateAttendanceByEmpCode(period) : new Map<string, PayrollAttendanceSheetRow>();
 
-  const dle = dayrate.filter((record) => record._companyBucket === 'DLE');
-  const dlpc = dayrate.filter((record) => record._companyBucket === 'DLPC');
+  const dleAll = dayrate.filter((record) => record._companyBucket === 'DLE');
+  const dlpcAll = dayrate.filter((record) => record._companyBucket === 'DLPC');
+  const dle = options?.company === 'DLPC' ? [] : dleAll;
+  const dlpc = options?.company === 'DLE' ? [] : dlpcAll;
 
   const summaryPeriodLabel = /^([A-Z]+)\s+(\d{4})$/i.test(periodLabel.trim())
     ? periodLabel.trim()
@@ -1473,18 +1497,19 @@ export const buildOfficialDayrateScheduleWorksheets = async (
     [
       'Total',
       dle.length + dlpc.length,
-      roundMoney(dayrate.reduce((sum, row) => sum + Number(row.grossPay || 0), 0)),
-      roundMoney(dayrate.reduce((sum, row) => sum + Number(row.netPay || 0), 0)),
+      roundMoney(grossDle + grossDlpc),
+      roundMoney(netDle + netDlpc),
     ],
   ];
 
   const dleDetail = buildDayrateDetailSheet(dle, attendance, 'DLE', periodLabel, { appendTotalRow: true });
   const dlpcDetail = buildDayrateDetailSheet(dlpc, attendance, 'DLPC', periodLabel, { appendTotalRow: true });
-  const bankSheets = buildOfficialBankScheduleWorksheets(dayrate, {
+  const bankSheets = buildOfficialBankScheduleWorksheets([...dle, ...dlpc], {
     periodLabel,
     titlePrefix: 'Dayrate Bank Schedule',
     mode: 'company',
     appendCompanyTotalRow: true,
+    company: options?.company,
     enforceCompanyBucketsFrom: [
       ...(dle.length ? [{ bucket: 'DLE' as const, records: dle }] : []),
       ...(dlpc.length ? [{ bucket: 'DLPC' as const, records: dlpc }] : []),
@@ -1515,9 +1540,11 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
   directoryEmployees?: DirectoryEnrichment[];
   /** usd = USD REPORT + USD BANK SCHD only. Otherwise the full salary-schedule workbook for the period. */
   currencyScope?: OfficialExportCurrencyScope | string | null;
+  company?: PayrollCompany | null;
 }): Promise<ExcelWorksheetInput[]> => {
   const report = compact(input.report) || 'payroll-register';
   const pack = compact(input.pack) || 'salaried';
+  const company = input.company || null;
   const requestedScope = compact(input.currencyScope).toLowerCase();
   const currencyScope = requestedScope === 'usd' || requestedScope === 'dle-usd' || requestedScope === 'dle_usd'
     ? 'usd'
@@ -1530,7 +1557,7 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
       periodLabel: input.periodLabel,
       directoryEmployees: input.directoryEmployees,
       currencyScope: scope,
-      dayrateRecords: pack === 'all' || pack === 'daily-rate' ? input.dayrateRecords : [],
+      company,
     });
 
   if (report === 'bank-schedule' || report === 'bank-payment-report') {
@@ -1539,6 +1566,7 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
         periodLabel: input.periodLabel,
         titlePrefix: 'Dayrate Bank Schedule',
         mode: 'company',
+        company,
       });
     }
     if (currencyScope === 'usd') {
@@ -1547,6 +1575,7 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
         titlePrefix: 'DLE USD Bank Schedule',
         mode: 'salary-schedule',
         currencyScope: 'usd',
+        company: company || 'DLE',
       });
     }
     return buildOfficialBankScheduleWorksheets(input.salariedRecords, {
@@ -1554,6 +1583,7 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
         titlePrefix: 'Salaried Bank Schedule',
         mode: 'salary-schedule',
         currencyScope,
+        company,
       });
   }
 
@@ -1562,6 +1592,7 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
       period: input.period,
       periodLabel: input.periodLabel,
       directoryEmployees: input.directoryEmployees,
+      company,
     });
   }
 
@@ -1571,6 +1602,7 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
         period: input.period,
         periodLabel: input.periodLabel,
         directoryEmployees: input.directoryEmployees,
+        company,
       });
     }
     return salarySchedule(currencyScope);

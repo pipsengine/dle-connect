@@ -541,13 +541,14 @@ export async function GET(request: Request) {
 
         const worksheets = await buildOfficialPayrollExcelWorksheets({
           report,
-          pack: requestedPack || payload.pack || 'salaried',
+          pack: requestedPack === 'all' ? (payload.pack || 'salaried') : (requestedPack || payload.pack || 'salaried'),
           period: payload.period,
           periodLabel: payload.periodLabel,
           salariedRecords,
           dayrateRecords,
           directoryEmployees: directory.employees,
           currencyScope: salariedExportCurrency,
+          company: exportCompanyCode,
         });
         if (worksheets.length) {
           const fallbackName = `${report}-${payload.period}-${filePack}.xls`;

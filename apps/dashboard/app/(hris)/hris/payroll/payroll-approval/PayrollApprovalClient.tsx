@@ -450,8 +450,9 @@ export default function PayrollApprovalClient({
   const exportExcel = async () => {
     setToast('');
     try {
+      const report = pack === 'daily-rate' ? 'dayrate-schedule' : 'payroll-register';
       const res = await fetch(
-        `/api/hris/payroll/payroll-processing?period=${encodeURIComponent(period)}&pack=${encodeURIComponent(pack)}&company=${encodeURIComponent(company)}&format=xls`,
+        `/api/hris/payroll-management?format=xls&report=${encodeURIComponent(report)}&period=${encodeURIComponent(period)}&pack=${encodeURIComponent(pack)}&company=${encodeURIComponent(company)}&currency=ngn`,
         { cache: 'no-store' },
       );
       if (!res.ok) {
@@ -461,8 +462,10 @@ export default function PayrollApprovalClient({
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
+      const disposition = res.headers.get('content-disposition') || '';
+      const named = /filename="([^"]+)"/i.exec(disposition)?.[1];
       anchor.href = url;
-      anchor.download = `payroll-approval-${period}-${company}-${pack || 'salaried'}.xls`;
+      anchor.download = named || `payroll-approval-${period}-${company}-${pack || 'salaried'}.xls`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
