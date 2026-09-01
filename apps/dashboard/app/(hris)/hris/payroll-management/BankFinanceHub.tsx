@@ -150,7 +150,7 @@ export type BankFinancePayload = {
   generatedAt: string;
   pack?: string;
   packLabel?: string;
-  company?: string;
+  company?: string | null;
   scheduleId?: string;
   payrollComputed?: boolean;
   dataSource?: { source: string; employeeCount: number };
