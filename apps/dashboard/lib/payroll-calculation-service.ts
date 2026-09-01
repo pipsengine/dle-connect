@@ -1024,8 +1024,6 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       department: employee.department,
       businessUnit: employee.businessUnit,
       location: employee.location,
-      companyCode: compact(employee.companyCode) || undefined,
-      companyName: compact(employee.companyName) || undefined,
       jobTitle: employee.jobTitle,
       employmentType: employee.employmentType,
       employmentStatus: employee.status,
