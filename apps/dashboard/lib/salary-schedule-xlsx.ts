@@ -43,6 +43,18 @@ export type SalaryScheduleRow = {
   deductions: SalaryScheduleDeductionLine[];
 };
 
+export type SalaryScheduleCostMonth = {
+  month: string;
+  dleContractNet: number;
+  dleContractCount: number;
+  dleStaffNet: number;
+  dleStaffCount: number;
+  dlpcContractNet: number;
+  dlpcContractCount: number;
+  dlpcStaffNet: number;
+  dlpcStaffCount: number;
+};
+
 export type SalaryScheduleParseResult = {
   title: string;
   rows: SalaryScheduleRow[];
@@ -58,6 +70,8 @@ export type SalaryScheduleParseResult = {
     contNet: number;
     usdNet: number;
   };
+  /** PAYROLL COST - NET sheet: DLE Staff + DLE Contract (and DLPC pair) by month. */
+  costSummary: SalaryScheduleCostMonth[];
   skipped: Array<{ sheet: string; reason: string; value?: string }>;
   sheets: Array<{ name: string; kind: SalaryScheduleSheetKind; rowCount: number }>;
 };
@@ -68,6 +82,116 @@ const num = (value: unknown) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
+
+const COST_MONTHS = [
+  'JANUARY',
+  'FEBRUARY',
+  'MARCH',
+  'APRIL',
+  'MAY',
+  'JUNE',
+  'JULY',
+  'AUGUST',
+  'SEPTEMBER',
+  'OCTOBER',
+  'NOVEMBER',
+  'DECEMBER',
+] as const;
+
+const monthFromHeader = (value: string) => {
+  const key = compact(value).toUpperCase().replace(/JANAURY/g, 'JANUARY');
+  return COST_MONTHS.find((month) => key.includes(month)) || null;
+};
+
+const costRowKind = (value: string) => {
+  const key = compact(value).toUpperCase().replace(/\s+/g, ' ');
+  if (key.startsWith('DLE CONTRACT')) return 'dleContract' as const;
+  if (key.startsWith('DLPC CONTRACT')) return 'dlpcContract' as const;
+  if (key.startsWith('DLE STAFF')) return 'dleStaff' as const;
+  if (key.startsWith('DLPC STAFF')) return 'dlpcStaff' as const;
+  return null;
+};
+
+const parseSalaryCostSummary = (grid: Map<number, Map<string, string>>): SalaryScheduleCostMonth[] => {
+  let headerRow: Map<string, string> | undefined;
+  for (const [, row] of [...grid.entries()].sort((a, b) => a[0] - b[0])) {
+    const months = [...row.values()].filter((value) => monthFromHeader(value)).length;
+    if (months >= 2) {
+      headerRow = row;
+      break;
+    }
+  }
+  if (!headerRow) return [];
+  const cols = [...headerRow.entries()].sort((a, b) => colToIndex(a[0]) - colToIndex(b[0]));
+  const monthCols: Array<{ month: string; amountCol: string; countCol?: string }> = [];
+  for (let i = 0; i < cols.length; i += 1) {
+    const month = monthFromHeader(cols[i][1]);
+    if (!month) continue;
+    const next = cols[i + 1];
+    const countCol = next && /NO OF STAFF/i.test(next[1]) ? next[0] : undefined;
+    const existing = monthCols.findIndex((item) => item.month === month);
+    const entry = { month, amountCol: cols[i][0], countCol };
+    if (existing >= 0) monthCols[existing] = entry;
+    else monthCols.push(entry);
+  }
+  const empty = (): Omit<SalaryScheduleCostMonth, 'month'> => ({
+    dleContractNet: 0,
+    dleContractCount: 0,
+    dleStaffNet: 0,
+    dleStaffCount: 0,
+    dlpcContractNet: 0,
+    dlpcContractCount: 0,
+    dlpcStaffNet: 0,
+    dlpcStaffCount: 0,
+  });
+  const byMonth = new Map<string, SalaryScheduleCostMonth>();
+  for (const col of monthCols) byMonth.set(col.month, { ...empty(), month: col.month });
+  for (const [, row] of grid) {
+    const first = compact(row.get('A') || [...row.entries()].sort((a, b) => colToIndex(a[0]) - colToIndex(b[0]))[0]?.[1]);
+    const resolved = costRowKind(first);
+    if (!resolved) continue;
+    for (const col of monthCols) {
+      const current = byMonth.get(col.month);
+      if (!current) continue;
+      const net = roundMoney(cellNum(row, col.amountCol));
+      const count = Math.round(cellNum(row, col.countCol));
+      if (resolved === 'dleContract') {
+        current.dleContractNet = net;
+        current.dleContractCount = count;
+      } else if (resolved === 'dleStaff') {
+        current.dleStaffNet = net;
+        current.dleStaffCount = count;
+      } else if (resolved === 'dlpcContract') {
+        current.dlpcContractNet = net;
+        current.dlpcContractCount = count;
+      } else {
+        current.dlpcStaffNet = net;
+        current.dlpcStaffCount = count;
+      }
+    }
+  }
+  return [...byMonth.values()];
+};
+
+/** NGN salary KPI from HR Summary (DLE Staff + DLE Contract, or DLPC pair) for the period month. */
+export const salaryScheduleNgnKpiFromCostSummary = (
+  costSummary: SalaryScheduleCostMonth[] | undefined,
+  period: string,
+  company: 'DLE' | 'DLPC',
+) => {
+  const month = COST_MONTHS[Number(String(period).slice(5, 7)) - 1];
+  if (!month || !costSummary?.length) return null;
+  const hit = costSummary.find((item) => item.month === month);
+  if (!hit) return null;
+  const netPay = roundMoney(
+    company === 'DLPC' ? hit.dlpcContractNet + hit.dlpcStaffNet : hit.dleContractNet + hit.dleStaffNet,
+  );
+  const employees = company === 'DLPC'
+    ? hit.dlpcContractCount + hit.dlpcStaffCount
+    : hit.dleContractCount + hit.dleStaffCount;
+  if (netPay <= 0 && employees <= 0) return null;
+  return { netPay, employees };
+};
 
 const u16 = (buf: Buffer, offset: number) => buf.readUInt16LE(offset);
 const u32 = (buf: Buffer, offset: number) => buf.readUInt32LE(offset);
@@ -359,6 +483,7 @@ export const parseSalaryScheduleWorkbook = (workbook: Buffer): SalarySchedulePar
   const sheets: SalaryScheduleParseResult['sheets'] = [];
   const byKind: SalaryScheduleParseResult['byKind'] = { perm: [], cont: [], usd: [] };
   const rows: SalaryScheduleRow[] = [];
+  let costSummary: SalaryScheduleCostMonth[] = [];
 
   for (const sheet of sheetsMeta) {
     const kind = sheetKind(sheet.name);
@@ -375,6 +500,9 @@ export const parseSalaryScheduleWorkbook = (workbook: Buffer): SalarySchedulePar
       byKind[kind].push(...parsed);
       rows.push(...parsed);
       sheets.push({ name: sheet.name, kind, rowCount: parsed.length });
+    } else if (kind === 'summary') {
+      costSummary = parseSalaryCostSummary(grid);
+      sheets.push({ name: sheet.name, kind, rowCount: Math.max(0, grid.size - 1) });
     } else {
       sheets.push({ name: sheet.name, kind, rowCount: Math.max(0, grid.size - 1) });
     }
@@ -398,6 +526,7 @@ export const parseSalaryScheduleWorkbook = (workbook: Buffer): SalarySchedulePar
       contNet: sum(byKind.cont, 'netPay'),
       usdNet: sum(byKind.usd, 'netPay'),
     },
+    costSummary,
     skipped,
     sheets,
   };

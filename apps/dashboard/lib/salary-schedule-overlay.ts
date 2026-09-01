@@ -3,7 +3,7 @@ import { canonicalContractEmployeeCode } from '@/lib/dayrate-schedule-xlsx';
 import { readAppliedDayrateScheduleOverride } from '@/lib/dayrate-schedule-override-read';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { normalizePayrollCompany, withPayrollCompany, type PayrollCompany } from '@/lib/payroll-schedule-scope';
-import { salaryScheduleEmployeeKeys, type SalaryScheduleRow } from '@/lib/salary-schedule-xlsx';
+import { salaryScheduleEmployeeKeys, salaryScheduleNgnKpiFromCostSummary, type SalaryScheduleRow } from '@/lib/salary-schedule-xlsx';
 import {
   excelRowCurrency,
   readAppliedSalaryScheduleOverride,
@@ -186,6 +186,9 @@ export const applySalaryScheduleOverrideToRecords = (
   const overlaid: PayrollCalculationRecord[] = [];
   for (const row of applied.parsed.rows) {
     if (salaryRowOnDayrateSchedule(row, dayrateCodes)) continue;
+    // HR Summary counts DLE Staff / DLE Contract from Company (HA). A blank COMPANY
+    // cell is not DLENG — do not default those rows onto DLE Salaries (P0440 net 0).
+    if (row.kind !== 'usd' && !normalizePayrollCompany(row.company)) continue;
     const currency = excelRowCurrency(row);
     const match = salaryScheduleEmployeeKeys(row.employeeCode).map((key) => byCurrency[currency].get(key)).find(Boolean) || null;
     overlaid.push(match ? overlaySalaryRow(match, row) : emptyRecordFromExcel(row, period));
@@ -193,3 +196,6 @@ export const applySalaryScheduleOverrideToRecords = (
 
   return [...dailyRate, ...overlaid];
 };
+
+export const ngnSalaryScheduleKpi = (period: string, company: PayrollCompany) =>
+  salaryScheduleNgnKpiFromCostSummary(readAppliedSalaryScheduleOverride(period)?.parsed?.costSummary, period, company);

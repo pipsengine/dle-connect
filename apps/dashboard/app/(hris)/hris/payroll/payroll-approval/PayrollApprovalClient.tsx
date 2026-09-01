@@ -19,6 +19,7 @@ import {
 import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
 import { currencyCode, formatPayrollMoney, resolvePayCurrency } from '@/lib/payroll-currency';
 import PayrollApprovalStagePanel from './PayrollApprovalStagePanel';
+import { ngnPayrollKpiRecords } from '@/lib/payroll-bank-schedule-packs';
 import { PAYROLL_SCHEDULE_SCOPES, payrollScheduleScopeFromSection, type PayrollCompany } from '@/lib/payroll-schedule-scope';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Finance Controller' | 'Finance Manager' | 'CFO' | 'Executive Management' | 'Payroll Officer' | 'Auditor' | 'Employee';
@@ -106,6 +107,7 @@ type Payload = {
     grossPay: number | null;
     totalDeductions: number | null;
     netPay: number | null;
+    scheduleNetPay?: number | null;
     employerCost: number | null;
     ready: number;
     review: number;
@@ -149,8 +151,8 @@ const money = (value: number | null | undefined, allowed = true, currency = 'NGN
   const code = currencyCode(currency);
   return formatPayrollMoney(value, code, { maximumFractionDigits: code === 'USD' ? 2 : 0 });
 };
-const sumRecordPay = (records: { grossPay?: number | null; totalDeductions?: number | null; netPay?: number | null; employerCost?: number | null }[] | undefined) =>
-  (records || []).reduce<{ grossPay: number; deductions: number; netPay: number; employerCost: number }>(
+const sumRecordPay = (records: { grossPay?: number | null; totalDeductions?: number | null; netPay?: number | null; employerCost?: number | null; payCurrency?: string | null; payrollGroup?: string | null }[] | undefined) =>
+  ngnPayrollKpiRecords(records).reduce<{ grossPay: number; deductions: number; netPay: number; employerCost: number }>(
     (acc, record) => ({
       grossPay: acc.grossPay + Number(record.grossPay || 0),
       deductions: acc.deductions + Number(record.totalDeductions || 0),
@@ -365,9 +367,10 @@ export default function PayrollApprovalClient({
   const packSummaries = payload?.packs || [];
   const payrollComputed = Boolean(run && !['Draft', 'Open', 'Reopened'].includes(run.status));
   const previewPay = sumRecordPay(payload?.records);
+  const previewNet = Number(payload?.summary.scheduleNetPay || 0) || previewPay.netPay;
 
   const salaryRows = useMemo(() => {
-    let rows = [...(payload?.records || [])];
+    let rows = [...ngnPayrollKpiRecords(payload?.records || [])];
     if (detailView === 'exceptions') {
       rows = rows.filter((record) => record.status !== 'Ready' || record.issues.length > 0);
     }
@@ -567,7 +570,7 @@ export default function PayrollApprovalClient({
         />
         <MetricCard
           label="Net Pay"
-          value={money(payrollAmount(payload?.summary.netPay, previewPay.netPay, payrollComputed), canViewMoney)}
+          value={money(payrollAmount(payload?.summary.netPay, previewNet, payrollComputed), canViewMoney)}
           detail={payrollComputed ? 'Bank schedule value after deductions' : 'Preview until payroll is run'}
           icon={Wallet}
           tone="green"

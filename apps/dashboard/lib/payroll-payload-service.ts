@@ -1,6 +1,7 @@
 import {
   buildPayrollCalculationFromSnapshot,
   calculatePayrollForPeriod,
+  filterPayrollCalculationByPack,
   maskPayrollCalculationRecords,
   type PayrollCalculationRecord,
 } from '@/lib/payroll-calculation-service';
@@ -91,6 +92,7 @@ const stripPendingPayrollAmounts = (calculation: Awaited<ReturnType<typeof calcu
     sageNetPay: 0,
     grossVariance: 0,
     netVariance: 0,
+    scheduleNetPay: Number(calculation.summary.scheduleNetPay || 0),
   },
   breakdowns: {
     ...calculation.breakdowns,
@@ -155,7 +157,8 @@ const resolvePeriodCalculation = async (
   if (payrollComputed && run) {
     const snapshot = await readPayrollSnapshot(run.id);
     if (shouldUseSnapshot(run, periodRecord, snapshot) && snapshot) {
-      const calculation = await buildPayrollCalculationFromSnapshot(period, snapshot);
+      let calculation = await buildPayrollCalculationFromSnapshot(period, snapshot);
+      if (pack) calculation = filterPayrollCalculationByPack(calculation, pack, company);
       return { calculation, dataMode: 'snapshot' as const, payrollComputed: true };
     }
   }

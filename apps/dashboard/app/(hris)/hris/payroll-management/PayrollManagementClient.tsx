@@ -23,6 +23,7 @@ import {
 } from '@/lib/payroll-schedule-scope';
 import {
   bankScheduleDisplayEmployeeCode,
+  ngnPayrollKpiRecords,
   resolveBankScheduleStaffPack,
 } from '@/lib/payroll-bank-schedule-packs';
 import {
@@ -212,6 +213,7 @@ type PayrollPayload = {
     grossPay: number | null;
     deductions: number | null;
     netPay: number | null;
+    scheduleNetPay?: number | null;
     basePay: number | null;
     allowances: number | null;
     exceptionCount: number;
@@ -397,8 +399,8 @@ const money = (value: number | null | undefined, canView = true, currency = 'NGN
   }
   return currencyFormatters.get(code)!.format(value);
 };
-const sumRecordPay = (records: { grossPay?: number | null; deductions?: number | null; netPay?: number | null }[] | undefined) =>
-  (records || []).reduce<{ grossPay: number; deductions: number; netPay: number }>(
+const sumRecordPay = (records: { grossPay?: number | null; deductions?: number | null; netPay?: number | null; payCurrency?: string | null; payrollGroup?: string | null }[] | undefined) =>
+  ngnPayrollKpiRecords(records).reduce<{ grossPay: number; deductions: number; netPay: number }>(
     (acc, record) => ({
       grossPay: acc.grossPay + Number(record.grossPay || 0),
       deductions: acc.deductions + Number(record.deductions || 0),
@@ -1906,6 +1908,7 @@ function ProcessPayrollWorkspace({
   const status = currentRun?.status || payload?.workflow?.currentStatus || 'Draft';
   const records = payload?.records || [];
   const previewPay = sumRecordPay(records);
+  const previewNet = Number(payload?.summary.scheduleNetPay || 0) || previewPay.netPay;
   const readyRows = records.filter((record) => record.payrollStatus === 'Ready');
   const issueRows = records.filter((record) => record.payrollStatus !== 'Ready' || record.exceptionCount > 0);
   const removableIssueRows = issueRows.filter(isRemovableDailyRatePayrollRecord);
@@ -2114,7 +2117,7 @@ function ProcessPayrollWorkspace({
               <p className="mt-0.5 text-[11px] font-semibold text-emerald-700">
                 {payload?.payrollComputed
                   ? `${money(payload?.summary.netPay, canViewMoney)} net`
-                  : `${money(previewPay.netPay, canViewMoney)} preview · run payroll to lock`}
+                  : `${money(previewNet, canViewMoney)} preview · run payroll to lock`}
               </p>
             </div>
             <WorkflowRingMetric
@@ -5470,9 +5473,10 @@ export default function PayrollManagementClient({
     const readyEmployees = payload?.summary.readyEmployees || 0;
     const readyPct = totalEmployees ? Math.round((readyEmployees / totalEmployees) * 100) : 0;
     const previewPay = sumRecordPay(payload?.records);
+    const previewNet = Number(payload?.summary.scheduleNetPay || 0) || previewPay.netPay;
     const kpiGross = payrollAmount(payload?.summary.grossPay, previewPay.grossPay, payload?.payrollComputed);
     const kpiDeductions = payrollAmount(payload?.summary.deductions, previewPay.deductions, payload?.payrollComputed);
-    const kpiNet = payrollAmount(payload?.summary.netPay, previewPay.netPay, payload?.payrollComputed);
+    const kpiNet = payrollAmount(payload?.summary.netPay, previewNet, payload?.payrollComputed);
     const deductionPct = kpiGross ? Math.round(((Number(kpiDeductions || 0)) / Number(kpiGross)) * 1000) / 10 : 0;
     const runStatus = currentRun?.status || payload?.workflow?.currentStatus || 'Draft';
     return (

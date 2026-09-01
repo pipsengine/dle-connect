@@ -7,6 +7,7 @@ import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { ensurePayrollSqlSchema } from '@/lib/payroll-sql-schema';
 import type { SalaryScheduleParseResult, SalaryScheduleRow } from '@/lib/salary-schedule-xlsx';
+import { parseSalaryScheduleWorkbook } from '@/lib/salary-schedule-xlsx';
 
 const compact = (value: unknown) => String(value || '').trim();
 const num = (value: unknown) => {
@@ -116,18 +117,28 @@ export const readActiveSalaryScheduleUploadFromSql = async (period: string): Pro
   const result = await pool.request()
     .input('period_code', sql.Char(7), period)
     .query(`
-      SELECT TOP 1 period_code, file_name, title, applied_at, applied_by, payload_json
+      SELECT TOP 1 period_code, file_name, title, applied_at, applied_by, payload_json, workbook
       FROM [hris].[SalaryScheduleUploads]
       WHERE period_code = @period_code AND is_active = 1
       ORDER BY applied_at DESC
     `);
   const row = result.recordset[0];
   if (!row) return null;
-  let parsed: SalaryScheduleParseResult;
-  try {
-    parsed = JSON.parse(String(row.payload_json || '')) as SalaryScheduleParseResult;
-  } catch {
-    return null;
+  let parsed: SalaryScheduleParseResult | null = null;
+  const workbook = row.workbook as Buffer | Uint8Array | null | undefined;
+  if (workbook && (workbook as Buffer).length) {
+    try {
+      parsed = parseSalaryScheduleWorkbook(Buffer.isBuffer(workbook) ? workbook : Buffer.from(workbook));
+    } catch {
+      parsed = null;
+    }
+  }
+  if (!parsed?.rows?.length) {
+    try {
+      parsed = JSON.parse(String(row.payload_json || '')) as SalaryScheduleParseResult;
+    } catch {
+      return null;
+    }
   }
   if (!parsed?.rows?.length) return null;
   return {

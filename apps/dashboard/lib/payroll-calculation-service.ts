@@ -13,13 +13,14 @@ import { activeLoansVersion, calculateLoanRecovery, loanInputsFromApplications, 
 import { normalizePayrollPeriod, syncLeaveAllowanceEventsForPayroll } from '@/lib/payroll-leave-allowance-store';
 import { ensureDayrateScheduleOverrideLoaded } from '@/lib/dayrate-schedule-upload-sql';
 import { ensureSalaryScheduleOverrideLoaded } from '@/lib/salary-schedule-upload-sql';
-import { applySalaryScheduleOverrideToRecords } from '@/lib/salary-schedule-overlay';
+import { applySalaryScheduleOverrideToRecords, ngnSalaryScheduleKpi } from '@/lib/salary-schedule-overlay';
 import { applyDayrateScheduleOverrideToRecords } from '@/lib/dayrate-schedule-overlay';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { buildTimesheetHoursMapForPayrollPeriod } from '@/lib/timesheet-entry-store';
 import { dayrateBookedHours } from '@/lib/dayrate-schedule-xlsx';
 import { findDayrateScheduleOverrideRow, readAppliedDayrateScheduleOverride } from '@/lib/dayrate-schedule-override-read';
 import { normalizeBankSortCode, withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
+import { isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { payrollPeriodLabel } from '@/lib/payroll-period-store';
 import { findPayrollScheduleScope, resolvePayrollCompany, type PayrollCompany } from '@/lib/payroll-schedule-scope';
@@ -146,6 +147,8 @@ export type PayrollCalculationSummary = {
   deferredExceptionCount: number;
   averageDeductionRatio: number;
   payrollCoveragePct: number;
+  /** HR Salary Schedule Summary (DLE Staff + DLE Contract) when an overlay is applied. */
+  scheduleNetPay: number;
 };
 
 export type PayrollCalculationResult = {
@@ -383,10 +386,8 @@ export const groupPayrollCalculationRecords = (records: PayrollCalculationRecord
     .sort((a, b) => b.grossPay - a.grossPay);
 
 /** KPI / summary money must not mix USD package rows into NGN totals. */
-const isNgnPayrollRecord = (record: Pick<PayrollCalculationRecord, 'payCurrency'>) => {
-  const currency = String(record.payCurrency || 'NGN').trim().toUpperCase();
-  return currency === 'NGN' || currency === 'NAIRA' || currency === '';
-};
+const isNgnPayrollRecord = (record: Pick<PayrollCalculationRecord, 'payCurrency' | 'payrollGroup'>) =>
+  !isDleUsdPayrollEmployee(record);
 
 /** Prefer NGN rows for pack summaries; fall back to all rows when the filtered set is USD-only. */
 export const summaryPayrollRecords = (records: PayrollCalculationRecord[]) => {
@@ -454,6 +455,11 @@ export const filterPayrollCalculationByPack = (
   const exceptionCount = summaryRecords.reduce((sum, record) => sum + Number(record.exceptionCount || 0), 0);
   const deferredExceptionCount = summaryRecords.reduce((sum, record) => sum + Number(record.deferredWarnings?.length || 0), 0);
   const totals = sumPayrollMoneyTotals(summaryRecords);
+  const scheduleKpi = pack !== 'daily-rate' && company
+    ? ngnSalaryScheduleKpi(calculation.period, company)
+    : null;
+  const netPay = scheduleKpi?.netPay ?? roundMoney(totals.netPay);
+  const employees = scheduleKpi?.employees || summaryRecords.length;
   const component = (componentId: string, label: string, amount: number, tone: PayrollTone, payer: 'Employee' | 'Employer' | 'Both') =>
     ({ id: componentId, label, amount: roundMoney(amount), tone, payer });
   const packLabel = company ? findPayrollScheduleScope(pack, company).shortLabel : payrollRunPackShortLabel(pack);
@@ -462,7 +468,7 @@ export const filterPayrollCalculationByPack = (
     periodLabel: `${calculation.periodLabel} · ${packLabel}`,
     summary: {
       ...calculation.summary,
-      employees: summaryRecords.length,
+      employees,
       payrollEligible: summaryRecords.length,
       ready: ready.length,
       review: review.length,
@@ -479,7 +485,7 @@ export const filterPayrollCalculationByPack = (
       grossPay: roundMoney(totals.grossPay),
       totalDeductions: roundMoney(totals.deductions),
       deductions: roundMoney(totals.deductions),
-      netPay: roundMoney(totals.netPay),
+      netPay,
       employerCost: roundMoney(totals.employerCost),
       sageGrossPay: roundMoney(totals.sageGrossPay),
       sageNetPay: roundMoney(totals.sageNetPay),
@@ -491,6 +497,7 @@ export const filterPayrollCalculationByPack = (
       payrollCoveragePct: summaryRecords.length
         ? Math.round((summaryRecords.filter((record) => record.setupAssignedToPayroll).length / summaryRecords.length) * 1000) / 10
         : 0,
+      scheduleNetPay: scheduleKpi?.netPay ?? 0,
     },
     records,
     breakdowns: {
@@ -606,6 +613,7 @@ const emptyPayrollSummary = (): PayrollCalculationSummary => ({
   deferredExceptionCount: 0,
   averageDeductionRatio: 0,
   payrollCoveragePct: 0,
+  scheduleNetPay: 0,
 });
 
 const snapshotSummaryFromRecords = (snapshot: PayrollRunSnapshot, records: PayrollCalculationRecord[]) => {
@@ -1200,6 +1208,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     payrollCoveragePct: summaryRecords.length
       ? Math.round((summaryRecords.filter((record) => record.setupAssignedToPayroll).length / summaryRecords.length) * 1000) / 10
       : 0,
+    scheduleNetPay: 0,
   };
 
   const component = (componentId: string, label: string, amount: number, tone: PayrollTone, payer: 'Employee' | 'Employer' | 'Both') =>

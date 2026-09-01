@@ -2,7 +2,7 @@ import { applyDayrateScheduleOverrideToRecords } from './dayrate-schedule-overla
 import type { DayrateScheduleRow } from './dayrate-schedule-xlsx';
 import type { PayrollCalculationRecord } from './payroll-calculation-service';
 import { applySalaryScheduleOverrideToRecords, payrollCompanyFromSalaryScheduleRow } from './salary-schedule-overlay';
-import type { SalaryScheduleRow } from './salary-schedule-xlsx';
+import { salaryScheduleNgnKpiFromCostSummary, type SalaryScheduleRow } from './salary-schedule-xlsx';
 import { normalizePayrollCompany, resolvePayrollCompany } from './payroll-schedule-scope';
 
 const assert = (condition: unknown, message: string) => {
@@ -17,7 +17,7 @@ assert(resolvePayrollCompany({ companyCode: 'DLPC' }) === 'DLPC', 'Stamped compa
 assert(resolvePayrollCompany({ businessUnit: 'DLPCG - DLPCG' }) === 'DLPC', 'Repeated DLPCG label still maps to DLPC');
 assert(payrollCompanyFromSalaryScheduleRow({ company: 'DLPCG - DLPCG', kind: 'perm' }) === 'DLPC', 'NGN perm DLPCG is DLPC Salaries');
 assert(payrollCompanyFromSalaryScheduleRow({ company: 'DLPCG - DLPCG', kind: 'usd' }) === 'DLE', 'USD REPORT stays on DLE even if company cell is DLPCG');
-assert(payrollCompanyFromSalaryScheduleRow({ company: '', kind: 'perm' }) === 'DLE', 'Blank COMPANY column defaults to DLE');
+assert(payrollCompanyFromSalaryScheduleRow({ company: '', kind: 'perm' }) === 'DLE', 'Blank COMPANY mapper still defaults, but overlay skips those NGN rows');
 
 const blankRecord = (overrides: Partial<PayrollCalculationRecord>): PayrollCalculationRecord => ({
   recordKey: 'row',
@@ -121,6 +121,7 @@ const salarySplit = applySalaryScheduleOverrideToRecords(
       rows: [
         salaryRow({ employeeCode: 'P0100', company: 'DLENG - DLENG', grossPay: 50, netPay: 50 }),
         salaryRow({ employeeCode: 'P0200', company: 'DLPCG - DLPCG', grossPay: 25, netPay: 25 }),
+        salaryRow({ employeeCode: 'P0440', company: '', grossPay: 0, netPay: 0 }),
         salaryRow({ employeeCode: 'P0300', kind: 'usd', sheet: 'USD REPORT', company: 'DLENG - DLENG', grossPay: 10, netPay: 10 }),
       ],
       byKind: { perm: [], cont: [], usd: [] },
@@ -131,11 +132,13 @@ const salarySplit = applySalaryScheduleOverrideToRecords(
       },
       skipped: [],
       sheets: [],
+      costSummary: [],
     },
   },
 );
 assert(salarySplit.filter((row) => resolvePayrollCompany(row) === 'DLE').length === 2, 'DLE Salaries gets DLENG + USD');
 assert(salarySplit.filter((row) => resolvePayrollCompany(row) === 'DLPC').length === 1, 'DLPC Salaries gets DLPCG only');
+assert(!salarySplit.some((row) => row.employeeCode === 'P0440'), 'Blank COMPANY NGN rows are not placed on DLE Salaries');
 assert(salarySplit.find((row) => row.employeeCode === 'P0300' && resolvePayrollCompany(row) === 'DLE'), 'USD row is on DLE Salaries');
 
 const dayrateRow = (overrides: Partial<DayrateScheduleRow>): DayrateScheduleRow => ({
@@ -205,5 +208,23 @@ assert(dayrateSplit.filter((row) => row.isDailyRate && resolvePayrollCompany(row
 assert(dayrateSplit.find((row) => row.employeeCode === 'C1001' && resolvePayrollCompany(row) === 'DLE'), 'C1001 HRIS DLPC is overridden by DLE sheet');
 assert(dayrateSplit.find((row) => row.employeeCode === 'C1002' && resolvePayrollCompany(row) === 'DLPC'), 'C1002 HRIS DLE is overridden by DLPC sheet');
 assert(!dayrateSplit.some((row) => row.employeeCode === 'C1999'), 'Contractors not on the uploaded dayrate sheets are not kept on a day-rate page');
+
+const augustKpi = salaryScheduleNgnKpiFromCostSummary(
+  [{
+    month: 'AUGUST',
+    dleContractNet: 30554557.1,
+    dleContractCount: 81,
+    dleStaffNet: 61276583.12,
+    dleStaffCount: 58,
+    dlpcContractNet: 4824403.68,
+    dlpcContractCount: 23,
+    dlpcStaffNet: 8426397.83,
+    dlpcStaffCount: 16,
+  }],
+  '2026-08',
+  'DLE',
+);
+assert(augustKpi?.employees === 139, 'HR Summary DLE Staff + DLE Contract is 139 people');
+assert(augustKpi?.netPay === 91831140.22, 'HR Summary DLE NGN net is 91,831,140.22');
 
 console.log('payroll-schedule-company tests passed');

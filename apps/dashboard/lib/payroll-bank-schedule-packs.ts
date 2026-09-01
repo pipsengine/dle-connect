@@ -50,6 +50,11 @@ export const isDleUsdPayrollEmployee = (employee: Pick<BankScheduleEmployeeLike,
   return /DLE_USD|(^|[^A-Z])USD([^A-Z]|$)/.test(group);
 };
 
+/** NGN salary KPIs and headcount — same population as official Excel `currency=ngn`. */
+export const ngnPayrollKpiRecords = <T extends Pick<BankScheduleEmployeeLike, 'payCurrency' | 'payrollGroup'>>(
+  records: T[] | null | undefined,
+) => (records || []).filter((record) => !isDleUsdPayrollEmployee(record));
+
 /**
  * Salaried / stipend bank-schedule pack (not daily-rate company packs).
  * Order of checks: DLE USD → IT/NYSC → Contract/Lumpsum → Permanent.
