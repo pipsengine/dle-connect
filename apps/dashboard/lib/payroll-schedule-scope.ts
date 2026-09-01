@@ -18,9 +18,14 @@ export type PayrollScheduleScope = {
   label: string;
   shortLabel: string;
   href: string;
+  processHref: string;
+  approvalHref: string;
   bankLabel: string;
   kindLabel: string;
 };
+
+const processHrefFor = (id: PayrollScheduleScopeId) => `/hris/payroll-management/process-payroll/${id}`;
+const approvalHrefFor = (id: PayrollScheduleScopeId) => `/hris/payroll-management/payroll-approval/${id}`;
 
 export const PAYROLL_SCHEDULE_SCOPES: PayrollScheduleScope[] = [
   {
@@ -29,7 +34,9 @@ export const PAYROLL_SCHEDULE_SCOPES: PayrollScheduleScope[] = [
     pack: 'salaried',
     label: 'DLE Salaries',
     shortLabel: 'DLE · Salaries',
-    href: '/hris/payroll-management/dle-salaries',
+    href: processHrefFor('dle-salaries'),
+    processHref: processHrefFor('dle-salaries'),
+    approvalHref: approvalHrefFor('dle-salaries'),
     bankLabel: 'DLE Salaries',
     kindLabel: 'Salaries',
   },
@@ -39,7 +46,9 @@ export const PAYROLL_SCHEDULE_SCOPES: PayrollScheduleScope[] = [
     pack: 'salaried',
     label: 'DLPC Salaries',
     shortLabel: 'DLPC · Salaries',
-    href: '/hris/payroll-management/dlpc-salaries',
+    href: processHrefFor('dlpc-salaries'),
+    processHref: processHrefFor('dlpc-salaries'),
+    approvalHref: approvalHrefFor('dlpc-salaries'),
     bankLabel: 'DLPC Salaries',
     kindLabel: 'Salaries',
   },
@@ -49,7 +58,9 @@ export const PAYROLL_SCHEDULE_SCOPES: PayrollScheduleScope[] = [
     pack: 'daily-rate',
     label: 'DLE Day-rate',
     shortLabel: 'DLE · Day-rate',
-    href: '/hris/payroll-management/dle-dayrate',
+    href: processHrefFor('dle-dayrate'),
+    processHref: processHrefFor('dle-dayrate'),
+    approvalHref: approvalHrefFor('dle-dayrate'),
     bankLabel: 'DLE Day-rate',
     kindLabel: 'Day-rate contractors',
   },
@@ -59,7 +70,9 @@ export const PAYROLL_SCHEDULE_SCOPES: PayrollScheduleScope[] = [
     pack: 'daily-rate',
     label: 'DLPC Day-rate',
     shortLabel: 'DLPC · Day-rate',
-    href: '/hris/payroll-management/dlpc-dayrate',
+    href: processHrefFor('dlpc-dayrate'),
+    processHref: processHrefFor('dlpc-dayrate'),
+    approvalHref: approvalHrefFor('dlpc-dayrate'),
     bankLabel: 'DLPC Day-rate',
     kindLabel: 'Day-rate contractors',
   },
@@ -120,3 +133,21 @@ export const payrollScheduleScopeLabel = (pack?: string | null, company?: string
   findPayrollScheduleScope(pack, company).label;
 
 export const isPayrollScheduleSection = (section?: string | null) => Boolean(payrollScheduleScopeFromSection(section));
+
+const hrisPath = (href: string) => href.replace(/^\/hris/, '') || '/';
+
+export const payrollScheduleProcessNavItems = () =>
+  PAYROLL_SCHEDULE_SCOPES.map((scope) => ({
+    title: scope.label,
+    slug: scope.id,
+    route: hrisPath(scope.processHref),
+    permissionKey: 'page.payroll.management.view',
+  }));
+
+export const payrollScheduleApprovalNavItems = () =>
+  PAYROLL_SCHEDULE_SCOPES.map((scope) => ({
+    title: scope.label,
+    slug: scope.id,
+    route: hrisPath(scope.approvalHref),
+    permissionKey: 'page.hris.payroll.approval.view',
+  }));

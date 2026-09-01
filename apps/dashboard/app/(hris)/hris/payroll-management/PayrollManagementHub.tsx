@@ -240,7 +240,7 @@ export default function PayrollManagementHub({
       id: 'payroll-processing',
       tab: 'payroll-run',
       title: 'Process Payroll',
-      description: 'Opens DLE Salaries. DLPC Salaries and both day-rate schedules have their own pages in the menu.',
+      description: 'Opens the Process Payroll hub. Each schedule has its own processing page under that menu.',
       icon: PlayCircle,
       status: ['Computed', 'Submitted', 'Under Review', 'Approved', 'Released', 'Closed'].includes(status) ? 'In Progress' : 'Ready',
       statusTone: 'green',
@@ -345,8 +345,8 @@ export default function PayrollManagementHub({
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold text-[#0F172A]">Payroll Schedules</h2>
-          <p className="mt-1 text-sm text-slate-600">Each company and pay type has its own page, approval, Excel download, and bank schedule.</p>
+          <h2 className="text-2xl font-semibold text-[#0F172A]">Process Payroll schedules</h2>
+          <p className="mt-1 text-sm text-slate-600">Each company and pay type has its own processing page. Approve the same schedule from Payroll Approval in the sidebar.</p>
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             {PAYROLL_SCHEDULE_SCOPES.map((scope) => (
               <button
@@ -361,7 +361,7 @@ export default function PayrollManagementHub({
                 <h3 className="mt-4 text-lg font-bold text-[#0F172A]">{scope.label}</h3>
                 <p className="mt-1 text-sm text-slate-600">{scope.kindLabel} for {scope.company}.</p>
                 <span className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-[#2563EB]">
-                  Open schedule
+                  Open processing
                   <ArrowRight className="h-4 w-4" />
                 </span>
               </button>

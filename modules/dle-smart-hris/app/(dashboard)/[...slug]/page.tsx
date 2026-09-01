@@ -23,7 +23,8 @@ export default async function GenericModulePage({ params }: { params: Promise<{ 
       currentItem = group;
       break;
     }
-    const foundSub = group.subItems?.find(sub => sub.route === path);
+    const foundSub = group.subItems?.find(sub => sub.route === path)
+      || group.subItems?.flatMap((sub) => sub.children || []).find((child) => child.route === path);
     if (foundSub) {
       currentGroup = group;
       currentItem = foundSub;

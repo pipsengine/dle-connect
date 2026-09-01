@@ -1,10 +1,5 @@
-import type { Metadata } from 'next';
-import PayrollApprovalClient from './PayrollApprovalClient';
+import { redirect } from 'next/navigation';
 
-export const metadata: Metadata = {
-  title: 'Payroll Approval',
-};
-
-export default function PayrollApprovalPage() {
-  return <PayrollApprovalClient initialNow={new Date().toISOString()} />;
+export default function PayrollApprovalLegacyPage() {
+  redirect('/hris/payroll-management/payroll-approval');
 }

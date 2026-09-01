@@ -59,10 +59,8 @@ export const navigationConfig: NavItem[] = [
       { title: 'HR Management', slug: 'hr-management', route: '/hris', permissionKey: 'view_hris' },
       { title: 'Workforce Portal', slug: 'workforce-portal', route: '/workforce-portal', permissionKey: 'view_workforce_portal' },
       { title: 'Pay Setup', slug: 'pay-setup', route: '/hris/payroll-management/pay-setup', permissionKey: 'page.hris.payroll.salary-management.view' },
-      { title: 'DLE Salaries', slug: 'dle-salaries', route: '/hris/payroll-management/dle-salaries', permissionKey: 'page.hris.payroll.salary-management.view' },
-      { title: 'DLPC Salaries', slug: 'dlpc-salaries', route: '/hris/payroll-management/dlpc-salaries', permissionKey: 'page.hris.payroll.salary-management.view' },
-      { title: 'DLE Day-rate', slug: 'dle-dayrate', route: '/hris/payroll-management/dle-dayrate', permissionKey: 'page.hris.payroll.salary-management.view' },
-      { title: 'DLPC Day-rate', slug: 'dlpc-dayrate', route: '/hris/payroll-management/dlpc-dayrate', permissionKey: 'page.hris.payroll.salary-management.view' },
+      { title: 'Payroll Approval', slug: 'payroll-approval', route: '/hris/payroll-management/payroll-approval', permissionKey: 'page.hris.payroll.approval.view' },
+      { title: 'Process Payroll', slug: 'process-payroll', route: '/hris/payroll-management/process-payroll', permissionKey: 'page.hris.payroll.salary-management.view' },
       { title: 'Bank & Finance', slug: 'bank-finance', route: '/hris/payroll-management/bank-finance', permissionKey: 'page.payroll.management.bank-finance.view' },
     ]
   },

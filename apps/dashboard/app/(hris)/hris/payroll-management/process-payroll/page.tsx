@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import PayrollManagementClient from '../PayrollManagementClient';
 
 export const metadata: Metadata = {
-  title: 'Payroll Management',
+  title: 'Process Payroll',
 };
 
 export default function ProcessPayrollHubPage() {

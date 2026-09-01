@@ -68,13 +68,19 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
     return navigationConfig
       .map((item) => {
         if (item.id === 'payroll' && !canUsePayroll) return null;
-        const subItems = item.subItems?.filter((sub) => {
-          const fullPath = toHref(sub.route);
-          if (item.id === 'payroll' && !canUsePayroll) return false;
-          const explicitOptions = hrisRoutePermissionOptions(fullPath);
-          if (!canUseHrPortal && !explicitOptions) return false;
-          return canAccessHrisPath(sessionContext, fullPath);
-        });
+        const subItems = item.subItems
+          ?.map((sub) => ({
+            ...sub,
+            children: sub.children?.filter((child) => canAccessHrisPath(sessionContext, toHref(child.route))),
+          }))
+          .filter((sub) => {
+            if (item.id === 'payroll' && !canUsePayroll) return false;
+            if (sub.children?.length) return true;
+            const fullPath = toHref(sub.route);
+            const explicitOptions = hrisRoutePermissionOptions(fullPath);
+            if (!canUseHrPortal && !explicitOptions) return false;
+            return canAccessHrisPath(sessionContext, fullPath);
+          });
         const itemPath = item.route ? toHref(item.route) : '';
         const canSeeItem = subItems?.length || (itemPath && canAccessHrisPath(sessionContext, itemPath));
         return canSeeItem ? { ...item, subItems } : null;
@@ -107,7 +113,10 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
             }
             const hasSubMenu = item.subItems && item.subItems.length > 0;
             // For simple paths, determine active state
-            const isActivePrimary = currentPath === item.route || (item.subItems && item.subItems.some(sub => currentPath === sub.route));
+            const routeMatches = (route?: string) => Boolean(route && (currentPath === route || currentPath.startsWith(`${route}/`)));
+            const isActivePrimary = routeMatches(item.route) || Boolean(item.subItems?.some((sub) =>
+              routeMatches(sub.route) || Boolean(sub.children?.some((child) => routeMatches(child.route)))
+            ));
             const isExpanded = expandedGroups[item.id] ?? Boolean(isActivePrimary);
 
             return (
@@ -174,7 +183,57 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
                       >
                         <div className="py-1 px-4 ml-5 mt-1 border-l border-slate-100 flex flex-col gap-1">
                           {item.subItems?.map((sub) => {
-                            const isSubActive = currentPath === sub.route;
+                            const childActive = Boolean(sub.children?.some((child) => currentPath === child.route || currentPath.startsWith(`${child.route}/`)));
+                            const isSubActive = currentPath === sub.route || currentPath.startsWith(`${sub.route}/`) || childActive;
+                            const nestedOpen = expandedGroups[sub.slug] ?? childActive;
+                            if (sub.children?.length) {
+                              return (
+                                <div key={sub.slug} className="flex flex-col gap-0.5">
+                                  <div className="flex items-center gap-1">
+                                    <Link
+                                      href={toHref(sub.route)}
+                                      className={`min-w-0 flex-1 text-[13px] py-2 px-3 rounded-md transition-colors ${
+                                        isSubActive && !childActive
+                                          ? 'text-dle-blue font-semibold bg-dle-blue/5'
+                                          : isSubActive
+                                            ? 'text-dle-blue font-semibold'
+                                            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      {sub.title}
+                                    </Link>
+                                    <button
+                                      type="button"
+                                      aria-label={`${nestedOpen ? 'Collapse' : 'Expand'} ${sub.title}`}
+                                      onClick={() => toggleGroup(sub.slug)}
+                                      className="rounded-md p-1 text-slate-400 hover:bg-slate-50 hover:text-slate-700"
+                                    >
+                                      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${nestedOpen ? 'rotate-180 text-dle-blue' : ''}`} />
+                                    </button>
+                                  </div>
+                                  {nestedOpen ? (
+                                    <div className="ml-3 mb-1 flex flex-col gap-0.5 border-l border-slate-100 pl-2">
+                                      {sub.children.map((child) => {
+                                        const isChildActive = currentPath === child.route;
+                                        return (
+                                          <Link
+                                            key={child.slug}
+                                            href={toHref(child.route)}
+                                            className={`text-[12px] py-1.5 px-2.5 rounded-md transition-colors ${
+                                              isChildActive
+                                                ? 'text-dle-blue font-semibold bg-dle-blue/5'
+                                                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                                            }`}
+                                          >
+                                            {child.title}
+                                          </Link>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              );
+                            }
                             return (
                               <Link
                                 key={sub.slug}

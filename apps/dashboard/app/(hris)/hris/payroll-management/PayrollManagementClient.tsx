@@ -2170,7 +2170,7 @@ function ProcessPayrollWorkspace({
                 <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5">
                   <div className="text-xs font-extrabold text-blue-950">{lockedScope.label}</div>
                   <div className="mt-1 text-[11px] font-semibold text-blue-800">
-                    This page is {lockedScope.kindLabel} for {lockedScope.company} only. Open DLE Salaries, DLPC Salaries, DLE Day-rate, or DLPC Day-rate from Payroll Management in the sidebar.
+                    This page is {lockedScope.kindLabel} for {lockedScope.company} only. Open other schedules from Process Payroll in the sidebar.
                   </div>
                 </div>
               ) : (
@@ -4973,7 +4973,11 @@ export default function PayrollManagementClient({
       return;
     }
     if (target.section === 'payroll-processing' && target.tab === 'payroll-run') {
-      window.location.assign('/hris/payroll-management/dle-salaries');
+      window.location.assign('/hris/payroll-management/process-payroll');
+      return;
+    }
+    if (target.section === 'payroll-approval') {
+      window.location.assign('/hris/payroll-management/payroll-approval');
       return;
     }
     openSection(target.section, target.tab);
@@ -4981,7 +4985,7 @@ export default function PayrollManagementClient({
 
   const navigateFromHub = (workspace: HubWorkspaceId, tab?: string) => {
     if (workspace === 'payroll-processing') {
-      window.location.assign('/hris/payroll-management/dle-salaries');
+      window.location.assign('/hris/payroll-management/process-payroll');
       return;
     }
     openSection(workspace as SectionId, tab);
@@ -4997,6 +5001,10 @@ export default function PayrollManagementClient({
       settings: { section: 'salary-management', tab: 'employee-salary-setup' },
     };
     const target = targets[link];
+    if (link === 'approval-center') {
+      window.location.assign('/hris/payroll-management/payroll-approval');
+      return;
+    }
     openSection(target.section, target.tab);
     if (link === 'audit-trail') setAuditOpen(true);
   };

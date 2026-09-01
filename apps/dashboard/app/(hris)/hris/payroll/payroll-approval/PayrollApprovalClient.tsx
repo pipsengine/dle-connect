@@ -2,6 +2,7 @@
 
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import {
   AlertTriangle,
   BadgeCheck,
@@ -18,7 +19,7 @@ import {
 import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
 import { currencyCode, formatPayrollMoney, resolvePayCurrency } from '@/lib/payroll-currency';
 import PayrollApprovalStagePanel from './PayrollApprovalStagePanel';
-import { PAYROLL_SCHEDULE_SCOPES, type PayrollCompany } from '@/lib/payroll-schedule-scope';
+import { PAYROLL_SCHEDULE_SCOPES, payrollScheduleScopeFromSection, type PayrollCompany } from '@/lib/payroll-schedule-scope';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Finance Controller' | 'Finance Manager' | 'CFO' | 'Executive Management' | 'Payroll Officer' | 'Auditor' | 'Employee';
 type RunStatus = 'Draft' | 'Open' | 'Calculated' | 'Computed' | 'Validated' | 'Ready for Approval' | 'Submitted' | 'Under Review' | 'HR Approved' | 'Finance Approved' | 'CFO Approved' | 'Approved' | 'Released' | 'Revision Requested' | 'Locked' | 'Posted' | 'Published' | 'Closed' | 'Reopened' | 'Rejected';
@@ -143,10 +144,22 @@ const recordCurrency = (record: Pick<PayrollRecord, 'payCurrency' | 'payrollGrou
     businessUnit: record.businessUnit,
   });
 const money = (value: number | null | undefined, allowed = true, currency = 'NGN') => {
-  if (!allowed || value === null || value === undefined) return 'Restricted';
+  if (!allowed) return 'Restricted';
+  if (value == null) return 'Not computed';
   const code = currencyCode(currency);
   return formatPayrollMoney(value, code, { maximumFractionDigits: code === 'USD' ? 2 : 0 });
 };
+const sumRecordPay = (records: { grossPay?: number | null; totalDeductions?: number | null; netPay?: number | null; employerCost?: number | null }[] | undefined) =>
+  (records || []).reduce<{ grossPay: number; deductions: number; netPay: number; employerCost: number }>(
+    (acc, record) => ({
+      grossPay: acc.grossPay + Number(record.grossPay || 0),
+      deductions: acc.deductions + Number(record.totalDeductions || 0),
+      netPay: acc.netPay + Number(record.netPay || 0),
+      employerCost: acc.employerCost + Number(record.employerCost || 0),
+    }),
+    { grossPay: 0, deductions: 0, netPay: 0, employerCost: 0 },
+  );
+const payrollAmount = (official: number | null | undefined, preview: number, computed?: boolean) => (computed ? official : preview);
 const number = (value: number | null | undefined) => numberFmt.format(Number(value || 0));
 
 const toneStyles: Record<Tone, { card: string; icon: string; chip: string; bar: string }> = {
@@ -266,12 +279,19 @@ const primaryRoleFromSession = (user: SessionUser | null): Role => {
   return 'Employee';
 };
 
-export default function PayrollApprovalClient({ initialNow }: { initialNow: string }) {
+export default function PayrollApprovalClient({
+  initialNow,
+  initialSchedule,
+}: {
+  initialNow: string;
+  initialSchedule?: string;
+}) {
+  const lockedScope = payrollScheduleScopeFromSection(initialSchedule);
   const [payload, setPayload] = useState<Payload | null>(null);
   const [role, setRole] = useState<Role>('Employee');
   const [period, setPeriod] = useState('');
-  const [pack, setPack] = useState<PayrollPack>('salaried');
-  const [company, setCompany] = useState<PayrollCompany>('DLE');
+  const [pack, setPack] = useState<PayrollPack>(lockedScope?.pack || 'salaried');
+  const [company, setCompany] = useState<PayrollCompany>(lockedScope?.company || 'DLE');
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState('');
   const [error, setError] = useState('');
@@ -320,8 +340,10 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
       if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Payroll approval request failed (${res.status})`);
       setPayload(json.data);
       setPeriod(json.data.period);
-      if (json.data.pack) setPack(json.data.pack);
-      if (json.data.company === 'DLE' || json.data.company === 'DLPC') setCompany(json.data.company);
+      if (!lockedScope) {
+        if (json.data.pack) setPack(json.data.pack);
+        if (json.data.company === 'DLE' || json.data.company === 'DLPC') setCompany(json.data.company);
+      }
     } catch (event) {
       setError(event instanceof Error ? event.message : 'Unable to load payroll approval workspace');
     } finally {
@@ -341,6 +363,8 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
   const run = payload?.run || null;
   const canViewMoney = Boolean(payload?.permissions.canViewMoney);
   const packSummaries = payload?.packs || [];
+  const payrollComputed = Boolean(run && !['Draft', 'Open', 'Reopened'].includes(run.status));
+  const previewPay = sumRecordPay(payload?.records);
 
   const salaryRows = useMemo(() => {
     let rows = [...(payload?.records || [])];
@@ -449,12 +473,6 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
     }
   };
 
-  const selectPack = (nextPack: PayrollPack, nextCompany: PayrollCompany = company) => {
-    setPack(nextPack);
-    setCompany(nextCompany);
-    void load(period, role, nextPack, nextCompany);
-  };
-
   return (
     <div className="min-h-screen bg-white">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -464,14 +482,18 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
               <ShieldCheck className="h-6 w-6" />
             </span>
             <div>
-              <h1 className="text-2xl font-black tracking-tight text-slate-950">Payroll Approval</h1>
+              <h1 className="text-2xl font-black tracking-tight text-slate-950">{lockedScope ? `${lockedScope.label} Approval` : 'Payroll Approval'}</h1>
               <p className="mt-1 max-w-5xl text-sm font-semibold text-slate-600">
-                Review and approve the payroll run for your authorized stage. Actions follow your logged-in role.
+                {lockedScope
+                  ? `Review and approve ${lockedScope.kindLabel} for ${lockedScope.company} only. Other schedules have their own Payroll Approval pages.`
+                  : 'Review and approve the payroll run for your authorized stage. Actions follow your logged-in role.'}
               </p>
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-extrabold text-blue-800">Period: {payload?.periodLabel || 'Loading'}</span>
+            <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-extrabold text-blue-800">
+              Period: {payload?.periodLabel || 'Loading'}{lockedScope ? ` • ${lockedScope.company} • ${lockedScope.kindLabel}` : ''}
+            </span>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -491,6 +513,7 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
       {toast && <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">{toast}</div>}
       {payload?.dataSource?.warning && <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">{payload.dataSource.warning}</div>}
 
+      {lockedScope ? null : (
       <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
         <p className="font-semibold text-slate-900">Independent schedule approval</p>
         {packSummaries.some((item) => item.run?.status === 'Draft' || !item.run) && packSummaries.some((item) => item.run && !['Draft', 'Open'].includes(item.run.status)) ? (
@@ -511,10 +534,9 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
             const itemCompany = item.company || 'DLE';
             const active = pack === item.pack && company === itemCompany;
             return (
-            <button
+            <Link
               key={`${itemCompany}-${item.pack}`}
-              type="button"
-              onClick={() => selectPack(item.pack, itemCompany)}
+              href={PAYROLL_SCHEDULE_SCOPES.find((scope) => scope.pack === item.pack && scope.company === itemCompany)?.approvalHref || '/hris/payroll-management/payroll-approval'}
               className={`min-w-0 w-full flex-1 rounded-xl border px-4 py-2 text-left text-xs font-extrabold transition sm:min-w-[16rem] ${
                 active ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300'
               }`}
@@ -523,17 +545,18 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
               <div className={`mt-1 break-words ${active ? 'text-blue-100' : 'text-slate-500'}`}>
                 {item.run?.status || 'Draft'} · {money(item.run?.netPay ?? item.summary?.netPay, canViewMoney)} · {number(item.run ? item.run.employeeCount : item.summary?.employees)} {item.pack === 'daily-rate' ? 'contractors' : 'staff'}
               </div>
-            </button>
+            </Link>
             );
           })}
         </div>
       </div>
+      )}
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           label="Gross Pay for Approval"
-          value={money(payload?.summary.grossPay, canViewMoney)}
-          detail={`${number(payload?.summary.employees)} employees in run scope`}
+          value={money(payrollAmount(payload?.summary.grossPay, previewPay.grossPay, payrollComputed), canViewMoney)}
+          detail={`${number(payload?.summary.employees)} ${lockedScope?.pack === 'daily-rate' ? 'contractors' : 'employees'} in this schedule`}
           icon={Banknote}
           tone="blue"
           active={detailView === 'gross'}
@@ -541,8 +564,8 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
         />
         <MetricCard
           label="Net Pay"
-          value={money(payload?.summary.netPay, canViewMoney)}
-          detail="Bank schedule value after deductions"
+          value={money(payrollAmount(payload?.summary.netPay, previewPay.netPay, payrollComputed), canViewMoney)}
+          detail={payrollComputed ? 'Bank schedule value after deductions' : 'Preview until payroll is run'}
           icon={Wallet}
           tone="green"
           active={detailView === 'net'}
@@ -550,8 +573,8 @@ export default function PayrollApprovalClient({ initialNow }: { initialNow: stri
         />
         <MetricCard
           label="Employer Cost"
-          value={money(payload?.summary.employerCost, canViewMoney)}
-          detail="Gross plus employer statutory costs"
+          value={money(payrollAmount(payload?.summary.employerCost, previewPay.employerCost, payrollComputed), canViewMoney)}
+          detail={payrollComputed ? 'Gross plus employer statutory costs' : 'Preview until payroll is run'}
           icon={BadgeCheck}
           tone="violet"
           active={detailView === 'employer'}
