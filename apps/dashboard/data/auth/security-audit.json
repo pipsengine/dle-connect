@@ -1,5 +1,16 @@
 [
   {
+    "id": "sec-1788257841715-b8a9a890",
+    "at": "2026-09-01T10:17:21.715Z",
+    "user": "P0432",
+    "action": "User assign-roles",
+    "ipAddress": "127.0.0.1",
+    "device": "assign-user-roles",
+    "oldValue": "{\"status\":\"Active\",\"roles\":[\"HR Manager\",\"HR Director\",\"HR Administrator\",\"Payroll Administrator\",\"Employee\",\"Manager\",\"HR Officer\",\"Payroll Officer\",\"Payroll Supervisor\",\"Payroll Approver\"],\"departmentAccess\":[\"HUMAN RESOURCES\"],\"moduleAccess\":[]}",
+    "newValue": "{\"status\":\"Active\",\"roles\":[\"HR Administrator\"],\"departmentAccess\":[\"HUMAN RESOURCES\"],\"moduleAccess\":[]}",
+    "performedBy": "System Repair"
+  },
+  {
     "id": "sec-1784726814448-e6b0a5bd",
     "at": "2026-07-22T13:26:54.449Z",
     "user": "P0146",

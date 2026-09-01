@@ -34,7 +34,7 @@ const compact = (value: unknown) => String(value || '').trim();
 const lower = (value: unknown) => compact(value).toLowerCase();
 
 const STAGE_ROLE_PATTERNS: Record<Exclude<PayrollApprovalStageId, 'payroll-officer'>, RegExp[]> = {
-  'hr-manager': [/hr manager/i, /hr director/i],
+  'hr-manager': [/hr manager/i, /hr director/i, /hr administrator/i],
   'finance-manager': [/finance manager/i, /finance controller/i, /finance payroll reviewer/i],
   cfo: [/\bcfo\b/i, /chief financial/i],
   'md-ceo': [/executive director/i, /executive management/i, /\bceo\b/i, /\bmd\b/i, /managing director/i],

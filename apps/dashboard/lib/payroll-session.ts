@@ -51,6 +51,7 @@ export const roleFromSession = (session: Awaited<ReturnType<typeof verifySession
   if (/finance payroll reviewer/i.test(text)) return 'Finance Manager';
   if (/hr director/i.test(text)) return 'HR Director';
   if (/hr manager/i.test(text)) return 'HR Manager';
+  if (/hr administrator/i.test(text)) return 'HR Manager';
   if (/hr officer/i.test(text)) return 'HR Officer';
   if (/auditor/i.test(text)) return 'Auditor';
   const roles: PayrollSessionRole[] = ['Super Admin', 'System Administrator', 'HR Director', 'HR Manager', 'HR Officer', 'Payroll Officer', 'Payroll Supervisor', 'Finance Controller', 'Finance Manager', 'CFO', 'Executive Director', 'Executive Management', 'Auditor', 'Employee'];
