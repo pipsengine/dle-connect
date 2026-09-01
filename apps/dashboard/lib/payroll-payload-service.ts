@@ -287,7 +287,6 @@ const mapRunForProcessing = (run: Awaited<ReturnType<typeof getPayrollRunForPeri
           to: entry.newValue || undefined,
           note: entry.comment || entry.reason || undefined,
         })),
-      }
   };
 };
 

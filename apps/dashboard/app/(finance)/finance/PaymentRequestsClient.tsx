@@ -1272,7 +1272,7 @@ export default function PaymentRequestsClient({
 
   return (
     <PageFrame>
-      <header className="flex flex-col gap-4 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5 lg:flex-row lg:items-end lg:justify-between">
+      <header className="flex flex-col gap-4 overflow-visible rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[28px]">
             {listMode === 'inbox'
@@ -1312,7 +1312,7 @@ export default function PaymentRequestsClient({
             </button>
           </ActionToolbar>
         ) : (
-          <ActionToolbar>
+          <ActionToolbar className="relative z-20 shrink-0 overflow-visible">
           <div className="relative">
             <button
               type="button"
@@ -1325,24 +1325,24 @@ export default function PaymentRequestsClient({
               <ChevronDown className="h-4 w-4" />
             </button>
             {typeMenuOpen ? (
-              <div className="absolute right-0 z-20 mt-1 w-[min(18rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+              <div className="absolute left-0 z-50 mt-1 w-72 max-w-[calc(100vw-2.5rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg lg:left-auto lg:right-0">
                 <button type="button" onClick={() => openComposer('Cash Advance Payment')} className="flex w-full items-start gap-2 px-3 py-2.5 text-left hover:bg-slate-50">
-                  <CreditCard className="mt-0.5 h-4 w-4 text-[#008FD5]" />
-                  <span>
+                  <CreditCard className="mt-0.5 h-4 w-4 shrink-0 text-[#008FD5]" />
+                  <span className="min-w-0">
                     <span className="block text-sm font-semibold text-slate-900">Cash Advance Payment</span>
                     <span className="block text-xs text-slate-500">Employee advance before activity</span>
                   </span>
                 </button>
                 <button type="button" onClick={() => openComposer('Supplier Invoice Payment')} className="flex w-full items-start gap-2 border-t border-slate-100 px-3 py-2.5 text-left hover:bg-slate-50">
-                  <Building2 className="mt-0.5 h-4 w-4 text-[#008FD5]" />
-                  <span>
+                  <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-[#008FD5]" />
+                  <span className="min-w-0">
                     <span className="block text-sm font-semibold text-slate-900">Supplier Invoice Payment</span>
                     <span className="block text-xs text-slate-500">Pay supplier against a purchase order</span>
                   </span>
                 </button>
                 <button type="button" onClick={() => openComposer('Expense Payment')} className="flex w-full items-start gap-2 border-t border-slate-100 px-3 py-2.5 text-left hover:bg-slate-50">
-                  <Wallet className="mt-0.5 h-4 w-4 text-[#008FD5]" />
-                  <span>
+                  <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-[#008FD5]" />
+                  <span className="min-w-0">
                     <span className="block text-sm font-semibold text-slate-900">Expense Payment</span>
                     <span className="block text-xs text-slate-500">Utility, LAWMA, rent and other bills without a PO</span>
                   </span>
