@@ -340,18 +340,23 @@ VALUES (@AuditId, @MatrixId, @ActionType, @ActorName, @DetailJson)
   }
 };
 
-/** Project path when project is selected, department looks like a project dept, or explicit flag. */
+const isPlaceholderProjectCode = (value: string) =>
+  /^(n\/?a|none|nil|null|—|-|no project|unassigned)$/i.test(value);
+
+/**
+ * Project path only when a real project is selected on the request
+ * (or an explicit test flag). Department name is not enough — staff in the
+ * PROJECT department can still raise overhead cash advances with no project.
+ */
 export const isProjectPaymentPath = (input: {
   department?: string | null;
   projectCode?: string | null;
   projectDepartment?: boolean;
 }) => {
   if (input.projectDepartment) return true;
-  if (compact(input.projectCode)) return true;
-  const department = compact(input.department);
-  if (/non[-\s]?project/i.test(department)) return false;
-  if (/project/i.test(department)) return true;
-  return false;
+  const projectCode = compact(input.projectCode);
+  if (!projectCode || isPlaceholderProjectCode(projectCode)) return false;
+  return true;
 };
 
 export const getPrevailingFxRate = async (fromCurrency: string, rateDate = new Date()) => {

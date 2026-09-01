@@ -237,7 +237,13 @@ function ProjectManagerConfirmation({
   projectCode: string;
   projects?: Array<{ code: string; name: string; label: string; projectManager: string }>;
 }) {
-  if (!projectCode) return null;
+  if (!projectCode) {
+    return (
+      <p className="mt-1.5 text-xs text-slate-500">
+        Leave blank for overhead. Project Manager is only added when a project is selected.
+      </p>
+    );
+  }
   const selected = (projects || []).find((item) => item.code === projectCode);
   const manager = String(selected?.projectManager || '').trim();
   if (manager && !/^unassigned$/i.test(manager)) {
@@ -948,7 +954,6 @@ export default function PaymentRequestsClient({
       employeeName: employee.fullName,
       department: resolvedDepartment || employee.department || prev.department,
       location: employee.location || prev.location,
-      projectCode: employee.projectCode || prev.projectCode,
       beneficiaryCode: employee.employeeCode,
       beneficiaryName: employee.fullName,
     }));
@@ -2108,8 +2113,11 @@ export default function PaymentRequestsClient({
                       <SearchableSelect
                         label="Project"
                         value={form.projectCode}
-                        placeholder="Search project"
-                        options={(lookups?.projects || []).map((item) => ({ value: item.code, label: item.label }))}
+                        placeholder="No project (optional)"
+                        options={[
+                          { value: '', label: 'No project (non-project / overhead)' },
+                          ...(lookups?.projects || []).map((item) => ({ value: item.code, label: item.label })),
+                        ]}
                         onChange={(value) => setForm((prev) => ({ ...prev, projectCode: value }))}
                       />
                       <ProjectManagerConfirmation projectCode={form.projectCode} projects={lookups?.projects} />
@@ -2332,8 +2340,11 @@ export default function PaymentRequestsClient({
                       <SearchableSelect
                         label="Project"
                         value={form.projectCode}
-                        placeholder="Search project"
-                        options={(lookups?.projects || []).map((item) => ({ value: item.code, label: item.label }))}
+                        placeholder="No project (optional)"
+                        options={[
+                          { value: '', label: 'No project (non-project / overhead)' },
+                          ...(lookups?.projects || []).map((item) => ({ value: item.code, label: item.label })),
+                        ]}
                         onChange={(value) => setForm((prev) => ({ ...prev, projectCode: value }))}
                       />
                       <ProjectManagerConfirmation projectCode={form.projectCode} projects={lookups?.projects} />

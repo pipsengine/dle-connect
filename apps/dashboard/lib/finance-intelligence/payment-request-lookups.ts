@@ -170,7 +170,7 @@ export const buildPaymentRequestLookups = async (): Promise<PaymentRequestLookup
       department: compact(employee.department || employee.businessUnit),
       location: compact(employee.workLocation || employee.location || employee.officeLocation || employee.projectSite),
       jobTitle: compact(employee.jobTitle || employee.designation),
-      projectCode: compact(employee.projectSite || ''),
+      projectCode: '',
     }))
     .filter((employee) => employee.employeeCode && employee.fullName)
     .sort((a, b) => a.fullName.localeCompare(b.fullName));

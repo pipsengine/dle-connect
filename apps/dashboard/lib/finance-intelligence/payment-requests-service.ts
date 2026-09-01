@@ -862,7 +862,7 @@ const stagesFromPayload = (payload: Record<string, unknown>) => {
 };
 
 const defaultStagesForPayment = (paymentType: string, projectCode?: string | null, department?: string | null) => {
-  const isProject = Boolean(compact(projectCode)) || /project/i.test(compact(department));
+  const isProject = isProjectPaymentPath({ projectCode, department });
   if (isVendorPaymentType(paymentType)) {
     return isProject
       ? ['Reporting Manager', 'Project Manager', 'Cost Controller', 'Finance Manager']
@@ -1122,7 +1122,7 @@ export const repairMissingProjectLineManager = async (row: PaymentRequestRow): P
     console.error('[payment-requests] project line-manager chain resolve failed', error);
   }
   if (!nextStages.length) {
-    const pathType = compact(row.projectCode) || /project/i.test(compact(row.department)) ? 'Project' : 'Non-project';
+    const pathType = isProjectPaymentPath({ projectCode: row.projectCode, department: row.department }) ? 'Project' : 'Non-project';
     nextStages = applyProjectReportingManagerFirst(
       defaultStagesForPayment(row.paymentType, row.projectCode, row.department),
       pathType,
@@ -1208,6 +1208,115 @@ WHERE [RequestId] = @RequestId
     actorName: 'System',
     baseUrl: resolveWorkflowLinkOrigin(),
   }).catch((error) => console.error('[payment-requests] line-manager repair notification failed', error));
+  return repaired;
+};
+
+const isProjectOnlyApprovalStage = (stage: string) =>
+  /project manager|cost controller|^gm$|general manager/i.test(compact(stage));
+
+/**
+ * Cash advances (and other payments) with no project selected must use the
+ * Non-project chain. Department = PROJECT used to force PM / Cost Controller.
+ */
+export const repairMisroutedProjectPathWithoutProject = async (row: PaymentRequestRow): Promise<PaymentRequestRow> => {
+  if (!['Pending Approval', 'Submitted', 'Finance Review'].includes(row.status)) return row;
+  if (isProjectPaymentPath({ projectCode: row.projectCode, department: row.department })) return row;
+
+  const existing = stagesFromPayload(row.payload);
+  const pathSaysProject = /project/i.test(compact(row.payload?.pathType));
+  const chainHasProjectStage = existing.some(isProjectOnlyApprovalStage);
+  const sittingOnProjectStage = isProjectOnlyApprovalStage(row.currentStage);
+  if (!pathSaysProject && !chainHasProjectStage && !sittingOnProjectStage) return row;
+
+  const matched = await resolveApprovalChain({
+    amount: row.netAmount,
+    currencyCode: row.currencyCode || 'NGN',
+    department: row.department,
+    projectCode: row.projectCode,
+    requesterCode: row.requesterCode,
+    supervisorName: row.supervisorName,
+  }).catch((error) => {
+    console.error('[payment-requests] non-project reroute resolve failed', error);
+    return null;
+  });
+
+  const nextStages = matched?.stages?.length
+    ? matched.stages
+    : defaultStagesForPayment(row.paymentType, row.projectCode, row.department);
+  if (!nextStages.length) return row;
+
+  const actions = await listPaymentRequestActions(row.requestId);
+  const approvedStages = new Set(
+    actions
+      .filter((action) => /approve/i.test(action.actionType))
+      .map((action) => compact(action.stage).toLowerCase())
+      .filter(Boolean),
+  );
+  const nextStage = nextStages.find((stage) => !approvedStages.has(compact(stage).toLowerCase()))
+    || nextStages[nextStages.length - 1];
+  const stagesUnchanged = existing.length === nextStages.length
+    && existing.every((stage, index) => stage.toLowerCase() === nextStages[index].toLowerCase());
+  const stageUnchanged = compact(row.currentStage).toLowerCase() === compact(nextStage).toLowerCase();
+  if (stagesUnchanged && stageUnchanged) return row;
+
+  row.payload = await persistPayloadStages(row.requestId, row.payload, nextStages, {
+    matrixRuleName: matched?.ruleName || row.payload.matrixRuleName || null,
+    approvalLevel: matched?.approvalLevel || nextStages.length,
+    pathType: matched?.pathType || 'Non-project',
+    amountNgn: matched?.amountNgn || row.payload.amountNgn || row.netAmount,
+    fxRate: matched?.fxRate || row.payload.fxRate || 1,
+    fxRateDate: matched?.fxRateDate || row.payload.fxRateDate || null,
+    fxSource: matched?.fxSource || row.payload.fxSource || null,
+    repairedStages: true,
+  });
+
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) return row;
+  try {
+    await pool.request()
+      .input('RequestId', sql.NVarChar(60), row.requestId)
+      .input('CurrentStage', sql.NVarChar(80), nextStage)
+      .query(`
+UPDATE [finance].[PaymentRequests]
+SET [CurrentStage] = @CurrentStage,
+    [Status] = N'Pending Approval',
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+    await assignCurrentApprover({
+      requestId: row.requestId,
+      stage: nextStage,
+      requesterCode: row.requesterCode,
+      projectCode: row.projectCode,
+      supervisorName: row.supervisorName,
+      paymentType: row.paymentType,
+    });
+    await logAction({
+      requestId: row.requestId,
+      actionType: 'repair-stages',
+      stage: nextStage,
+      actorName: 'System',
+      actorCode: 'system',
+      comment: 'Removed Project Manager because no project was selected. This request now follows the Non-project approval path.',
+    });
+  } catch (error) {
+    console.error('[payment-requests] non-project reroute failed', error);
+    return row;
+  }
+
+  const repaired = (await getPaymentRequestById(row.requestId)) || {
+    ...row,
+    currentStage: nextStage,
+    status: 'Pending Approval',
+  };
+  if (!stageUnchanged) {
+    await notifyPaymentApprovalRequired({
+      request: repaired,
+      stage: nextStage,
+      actorName: 'System',
+      baseUrl: resolveWorkflowLinkOrigin(),
+    }).catch((error) => console.error('[payment-requests] non-project reroute notification failed', error));
+  }
   return repaired;
 };
 
@@ -1624,6 +1733,15 @@ export const buildPaymentRequestsWorkspace = async (input?: {
       rows[index] = await repairMissingProjectLineManager(row);
     } catch (error) {
       console.error('[payment-requests] project line-manager repair failed', row.requestNumber, error);
+    }
+  }
+
+  // No project selected → Non-project path (do not keep PM because department is PROJECT).
+  for (let index = 0; index < rows.length; index += 1) {
+    try {
+      rows[index] = await repairMisroutedProjectPathWithoutProject(rows[index]);
+    } catch (error) {
+      console.error('[payment-requests] non-project path repair failed', rows[index]?.requestNumber, error);
     }
   }
 
@@ -2760,7 +2878,9 @@ export const transitionPaymentRequest = async (input: {
   const existingRaw = (await listRows()).find((row) => row.requestId === input.requestId)
     || await getPaymentRequestById(input.requestId);
   if (!existingRaw) throw new Error('Payment request not found.');
-  const existing = await repairMissingProjectLineManager(await repairPrematureTreasuryHandoff(existingRaw));
+  const existing = await repairMisroutedProjectPathWithoutProject(
+    await repairMissingProjectLineManager(await repairPrematureTreasuryHandoff(existingRaw)),
+  );
   if (['approve', 'reject', 'return', 'clarify', 'delegate', 'escalate'].includes(input.action)) {
     const actorCode = compact(input.actorCode).toLowerCase();
     const assigned = compact(existing.currentApproverCode).toLowerCase();

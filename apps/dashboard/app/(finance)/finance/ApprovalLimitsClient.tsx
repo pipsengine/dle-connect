@@ -241,7 +241,7 @@ export default function ApprovalLimitsClient({ initialWorkspace }: Props) {
           <div>
             <h1 className="text-[28px] font-semibold tracking-tight text-slate-900">Approval Limits</h1>
             <p className="mt-1 max-w-3xl text-sm text-slate-500">
-              One employee-payment matrix for Cash Advance and Supplier Invoice. Path is Non-project or Project; amounts route in NGN using the day’s prevailing FX rate.
+              One employee-payment matrix for Cash Advance and Supplier Invoice. Project path applies only when a project is selected on the request; otherwise the Non-project path is used. Amounts route in NGN using the day’s prevailing FX rate.
             </p>
           </div>
         </div>
