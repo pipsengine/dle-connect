@@ -215,15 +215,13 @@ const totalsFromSummaryAndRecords = (
   payrollComputed: boolean,
 ): PayrollMomTotals => {
   const ngn = ngnPayrollKpiRecords(records);
-  const fromRecords = ngn.reduce(
-    (acc: { grossPay: number; deductions: number; netPay: number; employerCost: number }, record) => ({
-      grossPay: acc.grossPay + Number(record.grossPay || 0),
-      deductions: acc.deductions + Number(record.totalDeductions || record.deductions || 0),
-      netPay: acc.netPay + Number(record.netPay || 0),
-      employerCost: acc.employerCost + Number(record.employerCost || 0),
-    }),
-    { grossPay: 0, deductions: 0, netPay: 0, employerCost: 0 },
-  );
+  const fromRecords = { grossPay: 0, deductions: 0, netPay: 0, employerCost: 0 };
+  for (const record of ngn) {
+    fromRecords.grossPay += Number(record.grossPay || 0);
+    fromRecords.deductions += Number(record.totalDeductions || record.deductions || 0);
+    fromRecords.netPay += Number(record.netPay || 0);
+    fromRecords.employerCost += Number(record.employerCost || 0);
+  }
   return {
     period,
     periodLabel: payrollPeriodLabel(period),
