@@ -1,4 +1,4 @@
-import { pairBiometricPunchesIntoShifts, isNightShiftEligibleAttendance, timesheetLineMatchesShift, applyNightPaperClock, timesheetLineHasBookedHours } from './timesheet-entry-shared';
+import { pairBiometricPunchesIntoShifts, isNightShiftEligibleAttendance, timesheetLineMatchesShift, applyNightPaperClock, timesheetLineHasBookedHours, isDayRateTimesheetEmployeeCode, maxBookableProductiveHours } from './timesheet-entry-shared';
 
 const assert = (condition: unknown, message: string) => {
   if (!condition) throw new Error(message);
@@ -69,5 +69,16 @@ const earlyBird = pairBiometricPunchesIntoShifts([
   { date: '2026-07-16', time: '16:42' },
 ]);
 assert(earlyBird[0]?.kind === 'Day' && earlyBird[0].clockIn === '05:54' && earlyBird[0].clockOut === '16:42', 'Early day starter stays on Day');
+
+assert(isDayRateTimesheetEmployeeCode('C0123'), 'C-codes are day-rate timesheet employees');
+assert(!isDayRateTimesheetEmployeeCode('P0123'), 'P-codes are not day-rate timesheet employees');
+assert(
+  !Number.isFinite(maxBookableProductiveHours({ clockIn: '07:00', clockOut: '12:00', attendanceDuration: 5, employeeNo: 'C1001' })),
+  'Day-rate biometric duration does not cap productive hours',
+);
+assert(
+  maxBookableProductiveHours({ clockIn: '07:00', clockOut: '12:00', attendanceDuration: 5, employeeNo: 'P1001' }) < 8,
+  'Salaried biometric duration still caps productive hours',
+);
 
 console.log('sequential pairing checks passed');

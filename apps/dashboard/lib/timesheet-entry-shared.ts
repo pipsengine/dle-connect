@@ -3,6 +3,10 @@
 export const STANDARD_TIMESHEET_HOURS = 8;
 export const DAILY_BREAK_HOURS = 1;
 export const GROSS_TIMESHEET_HOURS = STANDARD_TIMESHEET_HOURS + DAILY_BREAK_HOURS;
+
+/** Day-rate / C-code staff. Biometric hours must not cap their timesheet until all devices are live. */
+export const isDayRateTimesheetEmployeeCode = (code?: string | null) =>
+  /^C\d+/i.test(String(code || '').trim());
 export const DEFAULT_BREAK_IDLE_REASON_ID = 'idl-009';
 export const DEFAULT_BREAK_IDLE_REASON_NAME = 'Break Time';
 
@@ -545,10 +549,11 @@ export const formatProductiveHoursDenial = (input: {
 
 /** Max productive (work + OT) allowed from biometric — night does not subtract break. */
 export const maxBookableProductiveHours = (
-  line: { clockIn?: string | null; clockOut?: string | null; attendanceDuration?: number },
+  line: { clockIn?: string | null; clockOut?: string | null; attendanceDuration?: number; employeeNo?: string | null; employeeId?: string | null },
   _idleHours = DAILY_BREAK_HOURS,
   shiftValue?: string | null,
 ) => {
+  if (isDayRateTimesheetEmployeeCode(line.employeeNo || line.employeeId)) return Number.POSITIVE_INFINITY;
   if (!line.clockIn) return Number.POSITIVE_INFINITY;
   const attendance = resolveLineAttendanceDuration(line);
   return maxProductiveHoursFromBiometric(attendance, shiftValue);
@@ -702,12 +707,16 @@ export const upsertMatrixProjectHours = <
 
 /** Max total productive hours allowed across all matrix columns (8h standard, or up to biometric cap when OT is booked). */
 export const matrixProductiveHoursCap = (
-  line: { clockIn?: string | null; clockOut?: string | null; attendanceDuration?: number },
+  line: { clockIn?: string | null; clockOut?: string | null; attendanceDuration?: number; employeeNo?: string | null; employeeId?: string | null },
   usedHours: number,
   standardProductiveHours = STANDARD_TIMESHEET_HOURS,
   idleHours = DAILY_BREAK_HOURS,
   shiftValue?: string | null,
 ) => {
+  if (isDayRateTimesheetEmployeeCode(line.employeeNo || line.employeeId)) {
+    const overtimeHours = round1(Math.max(0, usedHours - standardProductiveHours));
+    return overtimeHours > 0.001 ? Number.POSITIVE_INFINITY : standardProductiveHours;
+  }
   const biometricCap = maxBookableProductiveHours(line, idleHours, shiftValue);
   if (!Number.isFinite(biometricCap)) return standardProductiveHours;
   const overtimeHours = round1(Math.max(0, usedHours - standardProductiveHours));

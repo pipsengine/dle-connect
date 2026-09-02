@@ -163,6 +163,7 @@ export async function POST(request: NextRequest) {
         }
       }
       for (const [code, totalHours] of hoursByEmployee) {
+        if (/^c\d+/i.test(code)) continue;
         const row = attendanceByCode.get(code);
         if (!row || row.biometricDuration <= 0) continue;
         const available = Math.max(0, Math.round((row.biometricDuration - row.usedHours) * 100) / 100);

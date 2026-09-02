@@ -304,6 +304,13 @@ export const applyDayrateScheduleOverride = async (input: {
   const { invalidateTimesheetHoursCacheForPeriod } = await import('@/lib/timesheet-entry-store');
   invalidateTimesheetHoursCacheForPeriod(period);
 
+  try {
+    const { persistAppliedPayrollSchedulesToHris } = await import('@/lib/payroll-schedule-hris-persist');
+    await persistAppliedPayrollSchedulesToHris(period);
+  } catch (error) {
+    console.warn('[dayrate-schedule] applied in SQL but HRIS rate persist failed', error);
+  }
+
   return next;
 };
 

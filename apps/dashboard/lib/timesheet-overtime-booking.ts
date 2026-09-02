@@ -22,6 +22,7 @@ import {
   OFFSHORE_PAYROLL_HOURS,
   OFFSHORE_BREAK_HOURS,
   capProductiveHoursToAttendance,
+  isDayRateTimesheetEmployeeCode,
 } from '@/lib/timesheet-entry-shared';
 import { resolveOvertimeBookingOptions } from '@/lib/timesheet-overtime-config';
 
@@ -45,6 +46,7 @@ const reconciliationMaxProductiveHours = (
   const otCap = openOvertimeCap(booking);
   const openMax = round1(standardProductiveHours + otCap);
   if (!line.clockIn) return openMax;
+  if (isDayRateTimesheetEmployeeCode(line.employeeNo || line.employeeId)) return openMax;
   const fromAttendance = maxBookableProductiveHours(line, DAILY_BREAK_HOURS, null);
   if (!Number.isFinite(fromAttendance)) return openMax;
   return round1(Math.min(openMax, fromAttendance));
@@ -230,7 +232,8 @@ export const validateStrictStandardDay = (line: TimesheetLine, dayContext?: Time
       validationMessage: `Total timesheet hours cannot exceed ${grossHours} hours including break time.`,
     };
   }
-  if (line.clockIn && attendanceDuration > 0.001 && totalHours > attendanceDuration + 0.001) {
+  const ignoreBiometricCap = isDayRateTimesheetEmployeeCode(line.employeeNo || line.employeeId);
+  if (!ignoreBiometricCap && line.clockIn && attendanceDuration > 0.001 && totalHours > attendanceDuration + 0.001) {
     const maxProductive = maxProductiveHoursFromBiometric(attendanceDuration, dayContext?.shiftLabel);
     return {
       usedHours,
@@ -404,7 +407,8 @@ export const validateTimesheetLine = (
     };
   }
 
-  if (line.clockIn && attendanceDuration > 0.001 && totalHours > attendanceDuration + 0.001) {
+  const ignoreBiometricCap = isDayRateTimesheetEmployeeCode(line.employeeNo || line.employeeId);
+  if (!ignoreBiometricCap && line.clockIn && attendanceDuration > 0.001 && totalHours > attendanceDuration + 0.001) {
     const maxProductive = maxProductiveHoursFromBiometric(attendanceDuration, dayContext?.shiftLabel);
     return {
       usedHours,
@@ -490,8 +494,16 @@ export const previewOvertimeBooking = (
 ): OvertimeBookingPreview => {
   const { standardProductiveHours } = resolveTimesheetHours(dayContext);
   const attendance = resolveLineAttendanceDuration(line);
-  const maxProductive = maxProductiveHoursFromBiometric(attendance, dayContext?.shiftLabel);
   const requestedProductive = round1(standardProductiveHours + otHours);
+  if (isDayRateTimesheetEmployeeCode(line.employeeNo || line.employeeId)) {
+    return {
+      canApply: true,
+      appliedOtHours: otHours,
+      targetProductiveHours: requestedProductive,
+      denialReason: null,
+    };
+  }
+  const maxProductive = maxProductiveHoursFromBiometric(attendance, dayContext?.shiftLabel);
 
   if (!line.clockIn || !Number.isFinite(maxProductive)) {
     return {

@@ -2534,6 +2534,85 @@ export const updateEmployeeDailyRatePayInDb = async (input: {
   return true;
 };
 
+export const upsertEmployeePayrollPackageFromScheduleInDb = async (input: {
+  employeeDbId: number;
+  payrollGroup?: string | null;
+  payCurrency?: string | null;
+  periodSalary?: number | null;
+  annualSalary?: number | null;
+  basicSalary?: number | null;
+  ratePerDay?: number | null;
+  ratePerHour?: number | null;
+  hoursPerDay?: number | null;
+  sageEarningLinesJson?: string | null;
+  sageDeductionLinesJson?: string | null;
+  writeLocalNgnPackage?: boolean;
+  localPayrollGroup?: string | null;
+  localPayCurrency?: string | null;
+  localPeriodSalary?: number | null;
+  sageLocalEarningLinesJson?: string | null;
+  sageLocalDeductionLinesJson?: string | null;
+}) => {
+  const p = await pool();
+  if (!p) return false;
+  const writeLocal = Boolean(input.writeLocalNgnPackage);
+  await p.request()
+    .input('employee_id', sql.BigInt, input.employeeDbId)
+    .input('payroll_group', sql.NVarChar(100), nullable(input.payrollGroup))
+    .input('pay_currency', sql.NVarChar(10), nullable(input.payCurrency))
+    .input('period_salary', sql.Decimal(19, 4), numOrNull(input.periodSalary))
+    .input('annual_salary', sql.Decimal(19, 4), numOrNull(input.annualSalary))
+    .input('basic_salary', sql.Decimal(19, 4), numOrNull(input.basicSalary))
+    .input('rate_per_day', sql.Decimal(19, 4), numOrNull(input.ratePerDay))
+    .input('rate_per_hour', sql.Decimal(19, 4), numOrNull(input.ratePerHour))
+    .input('hours_per_day', sql.Decimal(8, 2), numOrNull(input.hoursPerDay))
+    .input('sage_earning_lines_json', sql.NVarChar(sql.MAX), nullable(input.sageEarningLinesJson))
+    .input('sage_deduction_lines_json', sql.NVarChar(sql.MAX), nullable(input.sageDeductionLinesJson))
+    .input('write_local', sql.Bit, writeLocal ? 1 : 0)
+    .input('local_payroll_group', sql.NVarChar(100), nullable(input.localPayrollGroup))
+    .input('local_pay_currency', sql.NVarChar(10), nullable(input.localPayCurrency))
+    .input('local_period_salary', sql.Decimal(19, 4), numOrNull(input.localPeriodSalary))
+    .input('sage_local_earning_lines_json', sql.NVarChar(sql.MAX), nullable(input.sageLocalEarningLinesJson))
+    .input('sage_local_deduction_lines_json', sql.NVarChar(sql.MAX), nullable(input.sageLocalDeductionLinesJson))
+    .query(`
+      MERGE [hris].[EmployeePayrollSetup] AS target
+      USING (SELECT @employee_id AS employee_id) AS source
+      ON target.employee_id = source.employee_id
+      WHEN MATCHED THEN UPDATE SET
+        payroll_group = CASE WHEN @write_local = 1 THEN target.payroll_group ELSE COALESCE(@payroll_group, target.payroll_group) END,
+        pay_currency = CASE WHEN @write_local = 1 THEN target.pay_currency ELSE COALESCE(@pay_currency, target.pay_currency) END,
+        period_salary = CASE WHEN @write_local = 1 THEN target.period_salary ELSE COALESCE(@period_salary, target.period_salary) END,
+        annual_salary = COALESCE(@annual_salary, target.annual_salary),
+        basic_salary = CASE WHEN @write_local = 1 THEN target.basic_salary ELSE COALESCE(@basic_salary, target.basic_salary) END,
+        rate_per_day = COALESCE(@rate_per_day, target.rate_per_day),
+        rate_per_hour = COALESCE(@rate_per_hour, target.rate_per_hour),
+        hours_per_day = COALESCE(@hours_per_day, target.hours_per_day),
+        sage_earning_lines_json = CASE WHEN @write_local = 1 THEN target.sage_earning_lines_json ELSE COALESCE(@sage_earning_lines_json, target.sage_earning_lines_json) END,
+        sage_deduction_lines_json = CASE WHEN @write_local = 1 THEN target.sage_deduction_lines_json ELSE COALESCE(@sage_deduction_lines_json, target.sage_deduction_lines_json) END,
+        sage_local_payroll_group = CASE WHEN @write_local = 1 THEN COALESCE(@local_payroll_group, target.sage_local_payroll_group) ELSE target.sage_local_payroll_group END,
+        sage_local_pay_currency = CASE WHEN @write_local = 1 THEN COALESCE(@local_pay_currency, target.sage_local_pay_currency) ELSE target.sage_local_pay_currency END,
+        sage_local_period_salary = CASE WHEN @write_local = 1 THEN COALESCE(@local_period_salary, target.sage_local_period_salary) ELSE target.sage_local_period_salary END,
+        sage_local_earning_lines_json = CASE WHEN @write_local = 1 THEN COALESCE(@sage_local_earning_lines_json, target.sage_local_earning_lines_json) ELSE target.sage_local_earning_lines_json END,
+        sage_local_deduction_lines_json = CASE WHEN @write_local = 1 THEN COALESCE(@sage_local_deduction_lines_json, target.sage_local_deduction_lines_json) ELSE target.sage_local_deduction_lines_json END,
+        setup_assigned_to_payroll = 1,
+        modified_at = SYSUTCDATETIME()
+      WHEN NOT MATCHED THEN INSERT (
+        employee_id, payroll_group, pay_currency, period_salary, annual_salary, basic_salary,
+        rate_per_day, rate_per_hour, hours_per_day,
+        sage_earning_lines_json, sage_deduction_lines_json,
+        sage_local_payroll_group, sage_local_pay_currency, sage_local_period_salary,
+        sage_local_earning_lines_json, sage_local_deduction_lines_json, setup_assigned_to_payroll
+      ) VALUES (
+        @employee_id, @payroll_group, @pay_currency, @period_salary, @annual_salary, @basic_salary,
+        @rate_per_day, @rate_per_hour, @hours_per_day,
+        @sage_earning_lines_json, @sage_deduction_lines_json,
+        @local_payroll_group, @local_pay_currency, @local_period_salary,
+        @sage_local_earning_lines_json, @sage_local_deduction_lines_json, 1
+      );
+    `);
+  return true;
+};
+
 export const updateEmployeeContractPayrollClassificationInDb = async (input: {
   employeeDbId: number;
   action: 'deactivate-non-daily' | 'activate-daily-rate';

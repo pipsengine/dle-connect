@@ -569,9 +569,11 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
   };
   const availableOtHours = (line: AuthorizationBookingLine) => Math.max(0, Math.round((Number(line.biometricDuration || 0) - Number(line.usedHours || 0)) * 100) / 100);
   const roundHours = (value: number) => Math.max(0, Math.round(Number(value || 0) * 100) / 100);
+  const isDayRateLine = (line: AuthorizationBookingLine) => /^C\d+/i.test(String(line.employeeCode || '').trim());
 
-  /** Cap OT to biometric headroom (same pattern as standard timesheet booking). */
+  /** Cap OT to biometric headroom (same pattern as standard timesheet booking). Day-rate C-codes are not capped while devices are incomplete. */
   const capLineOtToHeadroom = (line: AuthorizationBookingLine): AuthorizationBookingLine => {
+    if (isDayRateLine(line)) return line;
     if (!(line.biometricDuration > 0)) return line;
     const available = availableOtHours(line);
     const total = lineOtTotal(line);
@@ -1083,7 +1085,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
       </div>
       {authorizationForm.projectCodes.length > 1 ? (
         <p className="mt-2 text-xs font-medium text-[#64748B]">
-          One authorization request will be created per selected project (each routes to that project&apos;s manager). Set OT hours per project below; if total OT exceeds biometric headroom, hours are capped to available time (same as timesheet booking).
+          One authorization request will be created per selected project (each routes to that project&apos;s manager). Set OT hours per project below. Salaried staff are still limited to biometric headroom; day-rate (C-code) staff are not, until all biometric devices are live.
         </p>
       ) : null}
 
@@ -1167,7 +1169,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
                   {filteredEmployeeLines.map((line) => {
                     const available = availableOtHours(line);
                     const total = lineOtTotal(line);
-                    const overLimit = line.biometricDuration > 0 && total > available + 0.001;
+                    const overLimit = !isDayRateLine(line) && line.biometricDuration > 0 && total > available + 0.001;
                     return (
                       <tr key={line.employeeCode} className={line.selected ? 'bg-[#EFF6FF]' : ''}>
                         <td className="px-4 py-2">

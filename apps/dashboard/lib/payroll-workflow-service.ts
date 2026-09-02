@@ -8,6 +8,7 @@ import {
   reopenPayrollPeriodRecord,
 } from '@/lib/payroll-period-store';
 import { calculatePayrollForPeriod } from '@/lib/payroll-calculation-service';
+import { persistAppliedPayrollSchedulesToHris } from '@/lib/payroll-schedule-hris-persist';
 import { assertStoredDayrateScheduleVisible } from '@/lib/dayrate-schedule-upload-sql';
 import { assertStoredSalaryScheduleVisible } from '@/lib/salary-schedule-upload-sql';
 import {
@@ -270,6 +271,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
 
   // Dual calculate / create-run / validate for all four schedules when pack+company are not specified.
   if (['calculate', 'create-run', 'validate-payroll'].includes(action) && processAllSchedules) {
+    await persistAppliedPayrollSchedulesToHris(period);
     const results: Array<{ run: UnifiedPayrollRun; calculation: Awaited<ReturnType<typeof calculatePayrollForPeriod>> }> = [];
     for (const scope of PAYROLL_SCHEDULE_SCOPES) {
       const nested = await executePayrollWorkflowAction({
@@ -393,6 +395,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
   calculation = await loadCalculation();
 
   if (['calculate', 'create-run', 'validate-payroll'].includes(action)) {
+    await persistAppliedPayrollSchedulesToHris(period);
     assertNotBlocked(calculation.summary, action === 'validate-payroll' ? ['blocked-check'] : []);
     const before = run.status;
     run.status = transitionProcessingStatus(action, run.status);

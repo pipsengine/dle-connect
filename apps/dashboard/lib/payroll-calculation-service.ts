@@ -14,6 +14,7 @@ import { normalizePayrollPeriod, syncLeaveAllowanceEventsForPayroll } from '@/li
 import { ensureDayrateScheduleOverrideLoaded } from '@/lib/dayrate-schedule-upload-sql';
 import { ensureSalaryScheduleOverrideLoaded } from '@/lib/salary-schedule-upload-sql';
 import { applySalaryScheduleOverrideToRecords, ngnSalaryScheduleKpi } from '@/lib/salary-schedule-overlay';
+import { persistAppliedPayrollSchedulesToHris } from '@/lib/payroll-schedule-hris-persist';
 import { applyDayrateScheduleOverrideToRecords } from '@/lib/dayrate-schedule-overlay';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { buildTimesheetHoursMapForPayrollPeriod } from '@/lib/timesheet-entry-store';
@@ -792,6 +793,7 @@ export const calculatePayrollForPeriod = async (
     payrollCalculationCache.set(requestedPeriod, { key: cacheKey, expiresAt: 0, inFlight });
     full = await inFlight;
   }
+  void persistAppliedPayrollSchedulesToHris(requestedPeriod);
   if (options?.pack) return filterPayrollCalculationByPack(full, options.pack, options.company);
   return full;
 };

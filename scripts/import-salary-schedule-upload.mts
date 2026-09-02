@@ -77,6 +77,13 @@ const main = async () => {
   });
   const verify = await readActiveSalaryScheduleUploadFromSql(period);
   console.log(`\nStored upload ${saved.uploadId} with ${verify?.parsed.rows.length ?? 0} rows.`);
+  try {
+    const { persistAppliedPayrollSchedulesToHris } = await import('../apps/dashboard/lib/payroll-schedule-hris-persist');
+    const persist = await persistAppliedPayrollSchedulesToHris(period);
+    console.log(`HRIS packages saved: ${persist.saved} employees (${persist.skipped} skipped).`);
+  } catch (error) {
+    console.warn('Stored the upload but could not copy packages onto HRIS employees:', error);
+  }
   console.log('Re-run the August salaried payroll so the cards pick up the stored schedule.');
 };
 
