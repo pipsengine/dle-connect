@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
 import PayrollCommandCenter, { type CommandCenterNavTab } from './PayrollCommandCenter';
 import PayrollPeriodContextBar from './PayrollPeriodContextBar';
@@ -12,6 +12,7 @@ import StatutoryComplianceHub, { type StatutoryTabId } from './StatutoryComplian
 import BankFinanceHub, { type BankFinanceTabId } from './BankFinanceHub';
 import PayrollReportsHub, { type ReportsTabId } from './PayrollReportsHub';
 import PayrollApprovalClient from '../payroll/payroll-approval/PayrollApprovalClient';
+import PayrollMonthOverMonthPanel, { PayrollMomBadge } from '../payroll/PayrollMonthOverMonth';
 import { PayrollCommentsControl } from './PayrollCommentsThread';
 import { FINANCE_ONLY_PAYROLL_SECTION } from '@/lib/access/payroll-access';
 import {
@@ -21,6 +22,7 @@ import {
   type PayrollCompany,
   type PayrollScheduleScope,
 } from '@/lib/payroll-schedule-scope';
+import type { PayrollMonthOverMonth } from '@/lib/payroll-month-over-month';
 import {
   bankScheduleDisplayEmployeeCode,
   ngnPayrollKpiRecords,
@@ -220,6 +222,7 @@ type PayrollPayload = {
     exceptionCount: number;
     deferredExceptionCount?: number;
   };
+  monthOverMonth?: PayrollMonthOverMonth | null;
   runs: PayrollRun[];
   packRuns?: PayrollRun[];
   packTotals?: {
@@ -1797,7 +1800,7 @@ const resolveProcessingAction = (id: string): PayrollAction => {
   return pool.find((item) => item.id === id) || action(id, id.replace(/-/g, ' '), 'workflow', payrollMakerRoles);
 };
 
-function ProcessingKpiCard({ title, value, subtitle, icon: Icon, tone, onClick, active = false }: { title: string; value: string; subtitle: string; icon: any; tone: 'blue' | 'green' | 'purple' | 'red'; onClick?: () => void; active?: boolean }) {
+function ProcessingKpiCard({ title, value, subtitle, icon: Icon, tone, onClick, active = false, trend }: { title: string; value: string; subtitle: string; icon: any; tone: 'blue' | 'green' | 'purple' | 'red'; onClick?: () => void; active?: boolean; trend?: ReactNode }) {
   const tones = {
     blue: 'border-blue-200 bg-gradient-to-br from-blue-50 to-white',
     green: 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-white',
@@ -1822,6 +1825,7 @@ function ProcessingKpiCard({ title, value, subtitle, icon: Icon, tone, onClick, 
           <p className="text-xs font-bold uppercase tracking-wide text-slate-600">{title}</p>
           <p className="mt-2 text-2xl font-black tracking-tight text-slate-950">{value}</p>
           <p className="mt-1 text-xs font-semibold text-slate-600">{subtitle}</p>
+          {trend}
         </div>
         <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconTone[tone]}`}>
           <Icon className="h-5 w-5" />
@@ -5550,10 +5554,20 @@ export default function PayrollManagementClient({
 
           {payrollRunView ? (
             <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <ProcessingKpiCard title="Ready Employees" value={number(readyEmployees)} subtitle={`${readyPct}% of total employees`} icon={Users} tone="blue" active={processingKpiPanel === 'ready'} onClick={() => toggleProcessingKpiPanel('ready')} />
-              <ProcessingKpiCard title="Gross Pay" value={money(kpiGross, canViewMoney)} subtitle={payload?.payrollComputed ? `Net Pay: ${money(kpiNet, canViewMoney)}` : `Preview net: ${money(kpiNet, canViewMoney)} · run payroll to lock`} icon={Banknote} tone="green" active={processingKpiPanel === 'gross'} onClick={() => toggleProcessingKpiPanel('gross')} />
-              <ProcessingKpiCard title="Deductions" value={money(kpiDeductions, canViewMoney)} subtitle={payload?.payrollComputed ? `${deductionPct}% of gross pay` : 'Preview until payroll is run'} icon={ReceiptText} tone="purple" active={processingKpiPanel === 'deductions'} onClick={() => toggleProcessingKpiPanel('deductions')} />
+              <ProcessingKpiCard title="Ready Employees" value={number(readyEmployees)} subtitle={`${readyPct}% of total employees`} icon={Users} tone="blue" active={processingKpiPanel === 'ready'} onClick={() => toggleProcessingKpiPanel('ready')} trend={<PayrollMomBadge mom={payload?.monthOverMonth} metricKey="employees" />} />
+              <ProcessingKpiCard title="Gross Pay" value={money(kpiGross, canViewMoney)} subtitle={payload?.payrollComputed ? `Net Pay: ${money(kpiNet, canViewMoney)}` : `Preview net: ${money(kpiNet, canViewMoney)} · run payroll to lock`} icon={Banknote} tone="green" active={processingKpiPanel === 'gross'} onClick={() => toggleProcessingKpiPanel('gross')} trend={<PayrollMomBadge mom={payload?.monthOverMonth} metricKey="grossPay" canViewMoney={canViewMoney} />} />
+              <ProcessingKpiCard title="Deductions" value={money(kpiDeductions, canViewMoney)} subtitle={payload?.payrollComputed ? `${deductionPct}% of gross pay` : 'Preview until payroll is run'} icon={ReceiptText} tone="purple" active={processingKpiPanel === 'deductions'} onClick={() => toggleProcessingKpiPanel('deductions')} trend={<PayrollMomBadge mom={payload?.monthOverMonth} metricKey="deductions" canViewMoney={canViewMoney} />} />
               <ProcessingKpiCard title="Issues" value={number(payload?.summary.exceptionCount)} subtitle={`${number(payload?.summary.blockedEmployees)} blocked • ${number(payload?.summary.reviewEmployees)} review`} icon={AlertTriangle} tone="red" active={processingKpiPanel === 'issues'} onClick={() => toggleProcessingKpiPanel('issues')} />
+            </div>
+          ) : null}
+
+          {payrollRunView ? (
+            <div className="mb-5">
+            <PayrollMonthOverMonthPanel
+              mom={payload?.monthOverMonth}
+              packLabel={payload?.packLabel || lockedScope?.label}
+              canViewMoney={canViewMoney}
+            />
             </div>
           ) : null}
 

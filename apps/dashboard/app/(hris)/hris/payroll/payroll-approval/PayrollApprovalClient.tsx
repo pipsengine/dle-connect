@@ -1,7 +1,7 @@
 'use client';
 
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -19,8 +19,10 @@ import {
 import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
 import { currencyCode, formatPayrollMoney, resolvePayCurrency } from '@/lib/payroll-currency';
 import PayrollApprovalStagePanel from './PayrollApprovalStagePanel';
+import PayrollMonthOverMonthPanel, { PayrollMomBadge } from '@/app/(hris)/hris/payroll/PayrollMonthOverMonth';
 import { ngnPayrollKpiRecords } from '@/lib/payroll-bank-schedule-packs';
 import { PAYROLL_SCHEDULE_SCOPES, payrollScheduleScopeFromSection, type PayrollCompany } from '@/lib/payroll-schedule-scope';
+import type { PayrollMonthOverMonth } from '@/lib/payroll-month-over-month';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Finance Controller' | 'Finance Manager' | 'CFO' | 'Executive Management' | 'Payroll Officer' | 'Auditor' | 'Employee';
 type RunStatus = 'Draft' | 'Open' | 'Calculated' | 'Computed' | 'Validated' | 'Ready for Approval' | 'Submitted' | 'Under Review' | 'HR Approved' | 'Finance Approved' | 'CFO Approved' | 'Approved' | 'Released' | 'Revision Requested' | 'Locked' | 'Posted' | 'Published' | 'Closed' | 'Reopened' | 'Rejected';
@@ -116,6 +118,7 @@ type Payload = {
     exceptionCount: number;
     averageDeductionRatio: number | null;
   };
+  monthOverMonth?: PayrollMonthOverMonth | null;
   records: PayrollRecord[];
   controls: Array<{ id: string; label: string; status: string; detail: string; tone: Tone }>;
   approvalWorkflow?: {
@@ -227,6 +230,7 @@ function MetricCard({
   tone,
   active,
   onClick,
+  trend,
 }: {
   label: string;
   value: string;
@@ -235,6 +239,7 @@ function MetricCard({
   tone: Tone;
   active?: boolean;
   onClick?: () => void;
+  trend?: ReactNode;
 }) {
   const styles = toneStyles[tone];
   return (
@@ -248,6 +253,7 @@ function MetricCard({
           <p className="text-xs font-black uppercase tracking-normal text-slate-600">{label}</p>
           <p className="mt-2 text-xl font-black text-slate-950 sm:text-2xl">{value}</p>
           <p className="mt-1 line-clamp-2 text-xs font-semibold text-slate-600">{detail}</p>
+          {trend}
           <p className="mt-2 text-[10px] font-black uppercase tracking-wide text-slate-500">Click for details</p>
         </div>
         <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${styles.icon}`}>
@@ -569,6 +575,7 @@ export default function PayrollApprovalClient({
           tone="blue"
           active={detailView === 'gross'}
           onClick={() => setDetailView('gross')}
+          trend={<PayrollMomBadge mom={payload?.monthOverMonth} metricKey="grossPay" canViewMoney={canViewMoney} />}
         />
         <MetricCard
           label="Net Pay"
@@ -578,6 +585,7 @@ export default function PayrollApprovalClient({
           tone="green"
           active={detailView === 'net'}
           onClick={() => setDetailView('net')}
+          trend={<PayrollMomBadge mom={payload?.monthOverMonth} metricKey="netPay" canViewMoney={canViewMoney} />}
         />
         <MetricCard
           label="Employer Cost"
@@ -587,6 +595,7 @@ export default function PayrollApprovalClient({
           tone="violet"
           active={detailView === 'employer'}
           onClick={() => setDetailView('employer')}
+          trend={<PayrollMomBadge mom={payload?.monthOverMonth} metricKey="employerCost" canViewMoney={canViewMoney} />}
         />
         <MetricCard
           label="Approval Exceptions"
@@ -598,6 +607,12 @@ export default function PayrollApprovalClient({
           onClick={() => setDetailView('exceptions')}
         />
       </div>
+
+      <PayrollMonthOverMonthPanel
+        mom={payload?.monthOverMonth}
+        packLabel={payload?.packLabel || lockedScope?.label}
+        canViewMoney={canViewMoney}
+      />
 
       <section className="mt-6">
         <PayrollApprovalStagePanel
