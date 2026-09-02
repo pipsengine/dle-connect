@@ -897,6 +897,11 @@ const summaryBucket = (list: PayrollCalculationRecord[]) => ({
   count: list.length,
 });
 
+const summaryHasFigure = (list: PayrollCalculationRecord[]) => {
+  const bucket = summaryBucket(list);
+  return bucket.net !== 0 || bucket.count > 0;
+};
+
 const buildSalaryCostSummaryWorksheet = (input: {
   periodLabel: string;
   permanent: PayrollCalculationRecord[];
@@ -918,28 +923,41 @@ const buildSalaryCostSummaryWorksheet = (input: {
     const bucket = summaryBucket(list);
     return [label, bucket.net, bucket.count];
   };
+  const maybeLine = (label: string, list: PayrollCalculationRecord[]) =>
+    (summaryHasFigure(list) ? line(label, list) : null);
   const subtotal = [...dleContract, ...dlpcContract, ...dleStaff, ...dlpcStaff, ...gmOps, ...md];
   const grand = [...subtotal, ...mubass];
   const usdMd = input.usd.filter((record) => isMdRole(record));
   const usdNayak = input.usd.filter((record) => isNayakRole(record));
   const usdGm = input.usd.filter((record) => isUsdGmSpCfoRole(record));
-  const rows: ExcelCell[][] = [
-    line('DLE Contract ', dleContract),
-    line('DLPC Contract', dlpcContract),
-    line('DLE Staff', dleStaff),
-    line('Dlpc Staff', dlpcStaff),
-    line('GM Ops', gmOps),
-    line('MD', md),
-    ['', summaryBucket(subtotal).net, ''],
-    line('Mubass (Outsourced)', mubass),
-    ['GRAND TOTAL', summaryBucket(grand).net, summaryBucket(grand).count],
-    [],
-    ['USD', '', ''],
-    line('GM Ops, Mgr SP & CFO', usdGm),
-    line('MD ', usdMd),
-    line('Nayak ', usdNayak),
-    ['', summaryBucket(input.usd).net, summaryBucket(input.usd).count],
-  ];
+  const ngnLines = [
+    maybeLine('DLE Contract ', dleContract),
+    maybeLine('DLPC Contract', dlpcContract),
+    maybeLine('DLE Staff', dleStaff),
+    maybeLine('Dlpc Staff', dlpcStaff),
+    maybeLine('GM Ops', gmOps),
+    maybeLine('MD', md),
+  ].filter((row): row is ExcelCell[] => Boolean(row));
+  const mubassLine = maybeLine('Mubass (Outsourced)', mubass);
+  const usdLines = [
+    maybeLine('GM Ops, Mgr SP & CFO', usdGm),
+    maybeLine('MD ', usdMd),
+    maybeLine('Nayak ', usdNayak),
+  ].filter((row): row is ExcelCell[] => Boolean(row));
+  const rows: ExcelCell[][] = [...ngnLines];
+  if (mubassLine) {
+    if (ngnLines.length) rows.push(['', summaryBucket(subtotal).net, '']);
+    rows.push(mubassLine);
+  }
+  if (ngnLines.length || mubassLine) {
+    rows.push(['GRAND TOTAL', summaryBucket(grand).net, summaryBucket(grand).count]);
+  }
+  if (usdLines.length) {
+    if (rows.length) rows.push([]);
+    rows.push(['USD', '', '']);
+    rows.push(...usdLines);
+    rows.push(['', summaryBucket(input.usd).net, summaryBucket(input.usd).count]);
+  }
   return {
     title: 'PAYROLL COST - NET',
     sheetName: 'Summary',
@@ -1494,12 +1512,14 @@ export const buildOfficialDayrateScheduleWorksheets = async (
     summaryHeaderRow,
     ...(dle.length ? [['DLE', dle.length, grossDle, netDle] as ExcelCell[]] : []),
     ...(dlpc.length ? [['DLPC', dlpc.length, grossDlpc, netDlpc] as ExcelCell[]] : []),
-    [
-      'Total',
-      dle.length + dlpc.length,
-      roundMoney(grossDle + grossDlpc),
-      roundMoney(netDle + netDlpc),
-    ],
+    ...(dle.length || dlpc.length
+      ? [[
+          'Total',
+          dle.length + dlpc.length,
+          roundMoney(grossDle + grossDlpc),
+          roundMoney(netDle + netDlpc),
+        ] as ExcelCell[]]
+      : []),
   ];
 
   const dleDetail = buildDayrateDetailSheet(dle, attendance, 'DLE', periodLabel, { appendTotalRow: true });

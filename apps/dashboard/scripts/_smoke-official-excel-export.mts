@@ -148,6 +148,21 @@ const perm = sal.find((sheet) => sheet.sheetName === 'PERM.STAFF')!;
 const contSheet = sal.find((sheet) => sheet.sheetName === 'CONT. STAFF')!;
 const usdSheet = sal.find((sheet) => sheet.sheetName === 'USD REPORT')!;
 const summary = sal.find((sheet) => sheet.sheetName === 'Summary')!;
+const dleOnlySal = buildOfficialSalariedDetailWorksheets([dlePerm as any, usd as any], {
+  periodLabel: 'August 2026',
+  currencyScope: 'all',
+  company: 'DLE',
+});
+const dlpcOnlySal = buildOfficialSalariedDetailWorksheets([base as any, cont as any], {
+  periodLabel: 'August 2026',
+  currencyScope: 'all',
+  company: 'DLPC',
+});
+const summaryLabels = (sheet?: { rows: Array<Array<unknown>> }) =>
+  (sheet?.rows || []).map((row) => String(row[0] ?? '').trim());
+const dleSummaryLabels = summaryLabels(dleOnlySal.find((sheet) => sheet.sheetName === 'Summary'));
+const dlpcSummaryLabels = summaryLabels(dlpcOnlySal.find((sheet) => sheet.sheetName === 'Summary'));
+const mixedSummaryLabels = summaryLabels(summary);
 
 const samplePerm = [
   'Employee Code', 'EmployeeSurname', 'EmployeeFirstName', 'Age', 'Date of Birth', 'Gender', 'Date Joined Group', 'Job Title Long Description',
@@ -194,6 +209,9 @@ const report = {
   earningTotalBeforePaye: earningTotalIdx >= 0 && payeIdx > earningTotalIdx,
   permHasTaxable: taxableIdx >= 0,
   summaryRows: summary.rows.slice(0, 6),
+  mixedSummaryLabels,
+  dleSummaryLabels,
+  dlpcSummaryLabels,
   dayrateSummaryRows: daySheets.find((s) => s.sheetName === 'SUMMARY')!.rows,
 };
 
@@ -231,7 +249,16 @@ const failed = [
     'DLPC.CONT.BANK.SCHD',
     'USD REPORT',
     'USD BANK SCHD',
-  ]);
+  ])
+  || mixedSummaryLabels.includes('DLE Contract')
+  || mixedSummaryLabels.includes('Mubass (Outsourced)')
+  || dleSummaryLabels.includes('DLPC Contract')
+  || dleSummaryLabels.includes('Dlpc Staff')
+  || !dleSummaryLabels.includes('DLE Staff')
+  || dlpcSummaryLabels.includes('DLE Contract')
+  || dlpcSummaryLabels.includes('DLE Staff')
+  || dlpcSummaryLabels.includes('USD')
+  || !dlpcSummaryLabels.includes('Dlpc Staff');
 if (failed) {
   console.error('SMOKE FAILED');
   process.exit(1);

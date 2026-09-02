@@ -481,12 +481,24 @@ const fillSummarySheet = (templateSheetXml: string, title: string, dle: DetailRo
       + cellXml(`C${rowNum}`, gross, MONEY_STYLE)
       + cellXml(`D${rowNum}`, net, MONEY_STYLE)
     }</row>`;
-  const body = [
-    line(3, 'DLE', dle.length, dleGross, dleNet),
-    line(4, 'DLPC', dlpc.length, dlpcGross, dlpcNet),
-    line(5, 'Total', dle.length + dlpc.length, roundMoney(dleGross + dlpcGross), roundMoney(dleNet + dlpcNet)),
-  ].join('');
-  return replaceSheetData(templateSheetXml, `${titleRow}${headerRow}${body}`, 'A1:D5');
+  const companyLines = [
+    ...(dle.length ? [{ label: 'DLE', count: dle.length, gross: dleGross, net: dleNet }] : []),
+    ...(dlpc.length ? [{ label: 'DLPC', count: dlpc.length, gross: dlpcGross, net: dlpcNet }] : []),
+  ];
+  const bodyLines = [
+    ...companyLines,
+    ...(companyLines.length
+      ? [{
+          label: 'Total',
+          count: dle.length + dlpc.length,
+          gross: roundMoney(dleGross + dlpcGross),
+          net: roundMoney(dleNet + dlpcNet),
+        }]
+      : []),
+  ];
+  const body = bodyLines.map((item, index) => line(3 + index, item.label, item.count, item.gross, item.net)).join('');
+  const lastRow = 2 + bodyLines.length;
+  return replaceSheetData(templateSheetXml, `${titleRow}${headerRow}${body}`, `A1:D${Math.max(2, lastRow)}`);
 };
 
 const replaceSheetData = (sheetXml: string, sheetDataInner: string, dimension: string) => {
