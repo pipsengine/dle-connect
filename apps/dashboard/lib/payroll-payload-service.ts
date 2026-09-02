@@ -216,7 +216,7 @@ const totalsFromSummaryAndRecords = (
 ): PayrollMomTotals => {
   const ngn = ngnPayrollKpiRecords(records);
   const fromRecords = ngn.reduce(
-    (acc, record) => ({
+    (acc: { grossPay: number; deductions: number; netPay: number; employerCost: number }, record) => ({
       grossPay: acc.grossPay + Number(record.grossPay || 0),
       deductions: acc.deductions + Number(record.totalDeductions || record.deductions || 0),
       netPay: acc.netPay + Number(record.netPay || 0),
