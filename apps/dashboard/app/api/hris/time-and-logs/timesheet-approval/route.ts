@@ -52,7 +52,7 @@ const activeApprovalStatuses = new Set<TimesheetStatus>([
 export const maxDuration = 120;
 
 const resolvePeriod = (periods: TimesheetPeriod[], dateStr: string): TimesheetPeriod => {
-  const calculated = calculateTimesheetPeriod(new Date(dateStr));
+  const calculated = calculateTimesheetPeriod(dateStr);
   const stored = periods.find((period) => period.id === calculated.id);
   if (stored) {
     return { ...calculated, ...stored, startDate: calculated.startDate, endDate: calculated.endDate, name: calculated.name };
@@ -491,6 +491,7 @@ const buildPayload = async (request: Request) => {
 
   return {
     generatedAt: new Date().toISOString(),
+    currentPeriodId: calculateTimesheetPeriod(new Date()).id,
     pagination: {
       page,
       pageSize,

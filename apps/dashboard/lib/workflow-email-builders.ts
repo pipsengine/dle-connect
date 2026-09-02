@@ -395,6 +395,33 @@ export const buildOvertimeApprovalRequestEmail = (input: {
   footerNote: 'Approval links expire after 7 days. Your login session must match the designated approver account.',
 }, input.baseUrl);
 
+export const buildTimesheetApprovalRequestEmail = (input: {
+  recipientName: string;
+  stage: string;
+  periodLabel: string;
+  timesheetDate?: string | null;
+  supervisorName?: string | null;
+  workCenterName?: string | null;
+  actorName: string;
+  workspaceLink: string;
+  baseUrl?: string | null;
+}) => withBrand({
+  recipientName: input.recipientName,
+  subject: `Timesheet approval required — ${input.stage}`,
+  module: 'Timesheet Approval',
+  headline: `${input.stage} review required`,
+  intro: `${input.actorName} moved a timesheet into your approval stage. Open the workspace to start the review.`,
+  tone: 'warning',
+  details: [
+    { label: 'Period', value: input.periodLabel },
+    ...(input.timesheetDate ? [{ label: 'Timesheet date', value: input.timesheetDate }] : []),
+    ...(input.supervisorName ? [{ label: 'Supervisor', value: input.supervisorName }] : []),
+    ...(input.workCenterName ? [{ label: 'Work centre', value: input.workCenterName }] : []),
+    { label: 'Stage', value: input.stage },
+  ],
+  actions: [{ href: input.workspaceLink, label: 'Open Timesheet Approval', tone: 'primary' }],
+}, input.baseUrl);
+
 export const buildOvertimeApprovedEmail = (input: {
   recipientName: string;
   projectCode: string;

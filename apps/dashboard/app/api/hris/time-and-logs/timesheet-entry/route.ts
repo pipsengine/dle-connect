@@ -5,6 +5,7 @@ import { appendOrganizationAuditEvent } from '@/lib/organization-audit-store';
 import { getUiPermissions, hasPermission, resolveAccessContext } from '@/lib/hris-access';
 import {
   calculateTimesheetPeriod,
+  parseTimesheetCalendarDate,
   advanceTimesheetWorkflow,
   generateProjectCode,
   idleReasons,
@@ -345,10 +346,10 @@ async function handleCopyPreviousDay(request: Request, date: string, supervisorI
   const { headers, lines: allLines } = await readTimesheetData();
   
   // 1. Find previous day's header
-  const targetDate = new Date(date);
+  const targetDate = parseTimesheetCalendarDate(date);
   const prevDate = new Date(targetDate);
   prevDate.setDate(targetDate.getDate() - 1);
-  const prevDateStr = prevDate.toISOString().split('T')[0];
+  const prevDateStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}-${String(prevDate.getDate()).padStart(2, '0')}`;
 
   const prevHeader = headers.find(h => h.timesheetDate === prevDateStr && h.supervisorId === supervisorId && h.workCenterName === workCenterName);
   if (!prevHeader) {
@@ -922,7 +923,7 @@ const buildPayload = async (
   let targetWorkCenter = clean(requestedHeader?.workCenterName || workCenterName);
   let targetLocation = clean(locationName);
   const pinnedWorkCenter = Boolean(targetWorkCenter);
-  const period = await readTimesheetPeriod(new Date(targetDate));
+  const period = await readTimesheetPeriod(targetDate);
   const recordSupervisors = Array.from(new Set(timesheetRecords.map((record) => record.supervisor).map(clean).filter(Boolean)));
   const employeesBySupervisor = new Map<string, typeof activeEmployees>();
   for (const employee of activeEmployees) {
@@ -1933,14 +1934,17 @@ export async function PATCH(request: Request) {
 
       await writeTimesheetHeaderLines(header, persistCheck.lines);
       if (action === 'SUBMIT') {
-        void import('@/lib/timesheet-workflow-notifications')
-          .then(({ notifyTimesheetStageChange }) => notifyTimesheetStageChange({
+        try {
+          const { notifyTimesheetStageChange } = await import('@/lib/timesheet-workflow-notifications');
+          await notifyTimesheetStageChange({
             header,
             action: 'SUBMIT',
             actor,
             comment: payload.reviewerNote,
-          }))
-          .catch((error) => console.warn('[Timesheet] Submit notification skipped:', error instanceof Error ? error.message : error));
+          });
+        } catch (error) {
+          console.warn('[Timesheet] Submit notification skipped:', error instanceof Error ? error.message : error);
+        }
       }
       return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName, mode));
     }

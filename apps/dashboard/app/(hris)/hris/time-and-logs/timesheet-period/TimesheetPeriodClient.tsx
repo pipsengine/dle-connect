@@ -227,8 +227,8 @@ export default function TimesheetPeriodClient() {
                 {periods.map((period) => {
                   const isCurrentPeriod = period.id === payload?.currentPeriodId;
                   const canManagePeriod = Boolean(payload?.permissions.canManagePeriod);
-                  const canClosePeriod = canManagePeriod && isCurrentPeriod && period.status === 'Open';
-                  const canOpenPeriod = canManagePeriod && period.id <= String(payload?.currentPeriodId || '') && period.status === 'Closed';
+                  const canClosePeriod = canManagePeriod && period.status === 'Open';
+                  const canOpenPeriod = canManagePeriod && isCurrentPeriod && period.status === 'Closed';
                   const isHistoricalClosed = !isCurrentPeriod && period.status === 'Closed';
 
                   return (

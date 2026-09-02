@@ -656,10 +656,23 @@ export const withDefaultIdleReason = <T extends { reasonId: string; reasonName: 
   return normalized;
 };
 
-export const calculateTimesheetPeriod = (date: Date = new Date()): TimesheetPeriod => {
-  const year = date.getFullYear();
-  const month = date.getMonth(); // 0-indexed
-  const day = date.getDate();
+/** Parse YYYY-MM-DD as a local calendar date so the 16th–15th period is not shifted by UTC. */
+export const parseTimesheetCalendarDate = (value: string | Date = new Date()) => {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? new Date() : value;
+  }
+  const text = String(value || '').trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(text);
+  if (match) return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+};
+
+export const calculateTimesheetPeriod = (date: Date | string = new Date()): TimesheetPeriod => {
+  const resolved = parseTimesheetCalendarDate(date);
+  const year = resolved.getFullYear();
+  const month = resolved.getMonth(); // 0-indexed
+  const day = resolved.getDate();
 
   let startYear = year;
   let startMonth = month;
@@ -1120,7 +1133,26 @@ export async function writeTimesheetPeriods(periods: TimesheetPeriod[]) {
   }
 }
 
-export async function readTimesheetPeriod(date: Date = new Date()): Promise<TimesheetPeriod> {
+const closeOtherOpenPeriods = async (periods: TimesheetPeriod[], keepId: string, actor = 'System') => {
+  const extras = periods.filter((period) => period.id !== keepId && period.status === 'Open');
+  if (!extras.length) return periods;
+  const now = new Date().toISOString();
+  const next = periods.map((period) => {
+    if (period.id === keepId || period.status !== 'Open') return period;
+    return {
+      ...period,
+      status: 'Closed' as const,
+      closedAt: now,
+      closedBy: actor,
+      updatedAt: now,
+      updatedBy: actor,
+    };
+  });
+  await writeTimesheetPeriods(next);
+  return next;
+};
+
+export async function readTimesheetPeriod(date: Date | string = new Date()): Promise<TimesheetPeriod> {
   const calculated = calculateTimesheetPeriod(date);
   const periods = await readTimesheetPeriods();
   const stored = periods.find((period) => period.id === calculated.id);
@@ -1148,11 +1180,20 @@ export async function readTimesheetPeriod(date: Date = new Date()): Promise<Time
         updatedBy: 'System',
       };
       try {
-        await writeTimesheetPeriods(periods.map((period) => (period.id === reopened.id ? reopened : period)));
+        const withCurrent = periods.map((period) => (period.id === reopened.id ? reopened : period));
+        await writeTimesheetPeriods(withCurrent);
+        await closeOtherOpenPeriods(withCurrent, reopened.id);
       } catch {
         // Read-only fallback: the page can still render when SQL is temporarily unavailable.
       }
       return reopened;
+    }
+    if (isCurrentPeriod && stored.status === 'Open') {
+      try {
+        await closeOtherOpenPeriods(periods, stored.id);
+      } catch {
+        // Keep serving the current open period even if a prior period cannot be closed.
+      }
     }
     return normalized;
   }
@@ -1170,14 +1211,16 @@ export async function readTimesheetPeriod(date: Date = new Date()): Promise<Time
   };
 
   try {
-    await writeTimesheetPeriods([...periods, period]);
+    const withCurrent = [...periods, period];
+    await writeTimesheetPeriods(withCurrent);
+    if (shouldAutoOpen) await closeOtherOpenPeriods(withCurrent, period.id);
   } catch {
     // Read-only fallback: the page can still render when SQL is temporarily unavailable.
   }
   return period;
 }
 
-export async function updateTimesheetPeriodStatus(date: Date, status: TimesheetPeriod['status'], actor: string): Promise<TimesheetPeriod> {
+export async function updateTimesheetPeriodStatus(date: Date | string, status: TimesheetPeriod['status'], actor: string): Promise<TimesheetPeriod> {
   const calculated = calculateTimesheetPeriod(date);
   const current = await readTimesheetPeriod(date);
   if (current.status === 'Locked' && status !== 'Locked') {
@@ -1211,6 +1254,10 @@ export async function updateTimesheetPeriodStatus(date: Date, status: TimesheetP
   });
   if (existingIndex >= 0) updatedPeriods[existingIndex] = next;
   else updatedPeriods.push(next);
+
+  if (status === 'Closed' || status === 'Locked') {
+    await rebuildPayrollSnapshotForPeriod(next.id, actor);
+  }
 
   await writeTimesheetPeriods(updatedPeriods);
   return next;
@@ -3073,11 +3120,11 @@ export async function advanceTimesheetWorkflow(
       .catch((error) => console.warn('[Timesheet] Permanent OT/night allowance posting skipped:', error instanceof Error ? error.message : error));
   }
 
-  void import('@/lib/timesheet-workflow-notifications')
-    .then(({ notifyTimesheetStageChange }) => {
-      if (action === 'REJECT' || action === 'RETURN') {
-        return notifyTimesheetStageChange({ header, action, actor, comment });
-      }
+  try {
+    const { notifyTimesheetStageChange } = await import('@/lib/timesheet-workflow-notifications');
+    if (action === 'REJECT' || action === 'RETURN') {
+      await notifyTimesheetStageChange({ header, action, actor, comment });
+    } else {
       const nextStage = status === 'Submitted'
         ? 'Project Manager'
         : status === 'Cost_Control_Reviewed'
@@ -3085,9 +3132,11 @@ export async function advanceTimesheetWorkflow(
           : status === 'GM_Operations_Reviewed'
             ? 'Payroll'
             : null;
-      return notifyTimesheetStageChange({ header, action: 'APPROVE', nextStage, actor, comment });
-    })
-    .catch((error) => console.warn('[Timesheet] Stage notification skipped:', error instanceof Error ? error.message : error));
+      await notifyTimesheetStageChange({ header, action: 'APPROVE', nextStage, actor, comment });
+    }
+  } catch (error) {
+    console.warn('[Timesheet] Stage notification skipped:', error instanceof Error ? error.message : error);
+  }
 
   return { header, payrollUpdate };
 }
@@ -3252,18 +3301,18 @@ export async function advanceProjectTimesheetApproval(
   await writeTimesheetHeaderLines(header, headerLines);
   const refreshedApprovals = buildProjectTimesheetApprovals(header, headerLines, projects);
 
-  void import('@/lib/timesheet-workflow-notifications')
-    .then(({ notifyTimesheetStageChange }) => {
-      if (action === 'REJECT' || action === 'RETURN') {
-        return notifyTimesheetStageChange({
-          header,
-          action,
-          actor,
-          comment: options.comment,
-          projectCode: options.projectCode,
-        });
-      }
-      return notifyTimesheetStageChange({
+  try {
+    const { notifyTimesheetStageChange } = await import('@/lib/timesheet-workflow-notifications');
+    if (action === 'REJECT' || action === 'RETURN') {
+      await notifyTimesheetStageChange({
+        header,
+        action,
+        actor,
+        comment: options.comment,
+        projectCode: options.projectCode,
+      });
+    } else {
+      await notifyTimesheetStageChange({
         header,
         action: 'APPROVE',
         nextStage: notifiedNextStage,
@@ -3271,8 +3320,10 @@ export async function advanceProjectTimesheetApproval(
         comment: options.comment,
         projectCode: options.projectCode,
       });
-    })
-    .catch((error) => console.warn('[Timesheet] Project stage notification skipped:', error instanceof Error ? error.message : error));
+    }
+  } catch (error) {
+    console.warn('[Timesheet] Project stage notification skipped:', error instanceof Error ? error.message : error);
+  }
 
   return { header, projectApprovals: refreshedApprovals };
 }
@@ -3586,7 +3637,7 @@ export async function syncAttendanceForTimesheet(
       attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName).forEach((key) => dayDurationKeys.add(key));
     }
   }
-  const period = calculateTimesheetPeriod(new Date(date));
+  const period = calculateTimesheetPeriod(date);
 
   const workCenterId = workCenterName.toLowerCase().replace(/\s+/g, '-');
   const supervisorSlug = supervisorId.toLowerCase().replace(/\s+/g, '-');

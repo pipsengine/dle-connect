@@ -162,6 +162,7 @@ type TimesheetSummary = {
 };
 
 type ApprovalPayload = {
+  currentPeriodId?: string;
   dataSource?: {
     system: string;
     database: string;
@@ -451,6 +452,12 @@ const parseApiResponse = async (res: Response) => {
   }
 };
 
+const currentTimesheetPeriodId = () => {
+  const today = new Date();
+  const end = today.getDate() >= 16 ? new Date(today.getFullYear(), today.getMonth() + 1, 1) : today;
+  return `per-${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}`;
+};
+
 export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'active' | 'history' }) {
   const [payload, setPayload] = useState<ApprovalPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -463,7 +470,7 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
   const [projectFilter, setProjectFilter] = useState('All');
   const [pmFilter, setPmFilter] = useState('All');
   const [costFilter, setCostFilter] = useState('All');
-  const [periodFilter, setPeriodFilter] = useState('All');
+  const [periodFilter, setPeriodFilter] = useState(currentTimesheetPeriodId);
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>('timesheets');
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);

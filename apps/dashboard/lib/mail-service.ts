@@ -33,6 +33,7 @@ import {
   buildPayrollRevisionRequestedEmail,
   buildPayrollStageApprovedEmail,
   buildPayrollSubmittedEmail,
+  buildTimesheetApprovalRequestEmail,
   employeeDisplayName,
   leaveApprovalLinks,
   type LeaveEmailEvent,
@@ -478,6 +479,24 @@ export const sendOvertimeApprovalRequestEmail = async (input: {
   const to = compact(input.recipientEmail);
   if (!to) return { sent: false, reason: 'No recipient email.' };
   const email = buildOvertimeApprovalRequestEmail({ ...input, baseUrl: input.baseUrl });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
+
+export const sendTimesheetApprovalRequestEmail = async (input: {
+  recipientName: string;
+  recipientEmail: string | null;
+  stage: string;
+  periodLabel: string;
+  timesheetDate?: string | null;
+  supervisorName?: string | null;
+  workCenterName?: string | null;
+  actorName: string;
+  workspaceLink: string;
+  baseUrl?: string | null;
+}) => {
+  const to = compact(input.recipientEmail);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const email = buildTimesheetApprovalRequestEmail({ ...input, baseUrl: input.baseUrl });
   return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
 };
 
