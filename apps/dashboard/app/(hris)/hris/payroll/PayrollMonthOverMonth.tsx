@@ -45,7 +45,7 @@ export function PayrollMomBadge({
   canViewMoney?: boolean;
 }) {
   const metric = payrollMomMetric(mom, metricKey);
-  if (!metric) return null;
+  if (!mom || !metric) return null;
   const Icon = metric.direction === 'down' ? TrendingDown : TrendingUp;
   const amount = metric.kind === 'count'
     ? signedCount(metric.variance)
