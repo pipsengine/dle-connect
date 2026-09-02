@@ -273,6 +273,17 @@ VALUES (@employee_id, 1, 0);
         assignedBy: performedBy,
       });
 
+      if (employeeCode) {
+        await new sql.Request(tx)
+          .input('employee_code', sql.NVarChar(50), employeeCode)
+          .input('assignment_batch', sql.NVarChar(120), assignmentBatch)
+          .query(`
+DELETE FROM [hris].[SupervisorEmployeeAssignments]
+WHERE employee_code = @employee_code
+  AND assignment_batch <> @assignment_batch;
+`);
+      }
+
       if (employee) {
         await new sql.Request(tx)
           .input('employee_id', sql.BigInt, employee.employee_id)

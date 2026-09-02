@@ -1,0 +1,20 @@
+{
+  "assignmentBatch": "2026-09-02-agege-riggers-adeniyi-joseph",
+  "assignmentGroup": "AGEGE RIGGERS",
+  "supervisorEmployeeCode": "C1544",
+  "performedBy": "codex.database-import",
+  "reason": "Agege daily-rate riggers assigned to Joseph Adeniyi from AGEGE WORKERS AND THEIR SUPERVISORS FOR DAILY RATE.",
+  "rows": [
+    { "sourceName": "GANIYU IDOWU", "tradeRole": "RIGGER", "employeeCode": "C2608", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "AIYEDE OKERE PETER", "tradeRole": "RIGGER", "employeeCode": "C1955", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "ADEMUYIWA BADEJO", "tradeRole": "RIGGER", "employeeCode": "C1771", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "ROTIMI OKEOWO", "tradeRole": "RIGGER", "employeeCode": "C2082", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "TAIWO OGUNBIYI", "tradeRole": "RIGGER", "employeeCode": "C2339", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "LUKPATHA MATHIAS", "tradeRole": "RIGGER", "employeeCode": "C1078", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "ADEOSUN ADEKUNLE", "tradeRole": "RIGGER", "employeeCode": "C2607", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "OZILI KEN", "tradeRole": "RIGGER", "employeeCode": "C2516", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "SUNDAY ADENIJI", "tradeRole": "RIGGER", "employeeCode": "C2722", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "RABIU AGBOLAGBADE", "tradeRole": "RIGGER", "employeeCode": "C2088", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "EBIALE VINCENT", "tradeRole": "RIGGER", "employeeCode": "C2822", "matchConfidence": "AgegeRosterEmployeeCode" }
+  ]
+}

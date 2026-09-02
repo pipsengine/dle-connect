@@ -11,16 +11,17 @@ if (!fileArg) {
 }
 
 function loadWorkspaceEnv() {
-  const envPath = path.resolve('.env');
-  if (!fs.existsSync(envPath)) return;
-  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
-    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (!match) continue;
-    let value = match[2].trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
+  for (const envPath of [path.resolve('.env'), path.resolve('apps/dashboard/.env')]) {
+    if (!fs.existsSync(envPath)) continue;
+    for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+      const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (!match) continue;
+      let value = match[2].trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      if (!process.env[match[1]]) process.env[match[1]] = value;
     }
-    if (!process.env[match[1]]) process.env[match[1]] = value;
   }
 }
 
@@ -202,6 +203,15 @@ VALUES (@employee_id, 1, 0);
         newReportingManager,
         assignedBy: clean(config.performedBy) || 'codex.database-import',
       });
+
+      await new sql.Request(tx)
+        .input('employee_code', sql.NVarChar(50), employee?.employee_code || clean(row.employeeCode))
+        .input('assignment_batch', sql.NVarChar(120), config.assignmentBatch)
+        .query(`
+DELETE FROM [hris].[SupervisorEmployeeAssignments]
+WHERE employee_code = @employee_code
+  AND assignment_batch <> @assignment_batch;
+`);
 
       if (employee) {
         await new sql.Request(tx)

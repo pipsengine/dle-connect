@@ -1,0 +1,33 @@
+{
+  "assignmentBatch": "2026-09-02-agege-fitters-raymond-adanou",
+  "assignmentGroup": "AGEGE FITTERS",
+  "supervisorEmployeeCode": "C1720",
+  "performedBy": "codex.database-import",
+  "reason": "Agege daily-rate fitters assigned to Raymond Adanou, replacing Gbenga Daramola as supervisor for this crew.",
+  "rows": [
+    { "sourceName": "JULIUS TAIWO", "tradeRole": "FITTER", "employeeCode": "C2121", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "GBENGA DARAMOLA", "tradeRole": "FITTER", "employeeCode": "C1783", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "OLADIPUPO AKANLE", "tradeRole": "FITTER", "employeeCode": "C2338", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "BABATUNDE OYELEYE", "tradeRole": "FITTER", "employeeCode": "C2412", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "OBINNA ONUOHA ABRAHMA", "tradeRole": "FITTER", "employeeCode": "C2484", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "OGUNYEMI AYODELE", "tradeRole": "FITTER", "employeeCode": "C2491", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "AKEEM AKINGBADE", "tradeRole": "FITTER", "employeeCode": "C2395", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "ADESOJI ADEYEYE", "tradeRole": "FITTER", "employeeCode": "C2343", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "SUNDAY YERIMA", "tradeRole": "FITTER", "employeeCode": "C2697", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "PETER OJO", "tradeRole": "FITTER", "employeeCode": "C2690", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "ABIODUN OYEWOLE", "tradeRole": "FITTER", "employeeCode": "C2383", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "EKWERE AKPAN", "tradeRole": "FITTER", "employeeCode": "C2810", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "GABRIEL TAIWO", "tradeRole": "FITTER", "employeeCode": "C2300", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "GIDEON AKINGBOYE", "tradeRole": "FITTER", "employeeCode": "C2813", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "ADEBISI OLALEKAN", "tradeRole": "FITTER", "employeeCode": "C2704", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "IDOWU ADELEKE", "tradeRole": "FITTER", "employeeCode": "C2614", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "AJAYI ADEBAYO", "tradeRole": "FITTER", "employeeCode": "C2011", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "AKINLABI AKINMOLADU", "tradeRole": "FITTER", "employeeCode": "C2699", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "AMADI VALINS", "tradeRole": "FITTER", "employeeCode": "C2823", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "THOMPSON NKANU", "tradeRole": "FITTER", "employeeCode": "C2807", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "BENJEMIN CHURK", "tradeRole": "FITTER", "employeeCode": "C2757", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "MUSA EZEMBOR", "tradeRole": "FITTER", "employeeCode": "C2083", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "STEVE ERAGHARE", "tradeRole": "FITTER", "employeeCode": "C2171", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "JOHN OHIEMBOR", "tradeRole": "FITTER", "employeeCode": "C1870", "matchConfidence": "AgegeRosterEmployeeCode" }
+  ]
+}

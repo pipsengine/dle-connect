@@ -1,0 +1,14 @@
+{
+  "assignmentBatch": "2026-09-02-agege-painters-jimoh-gbadamosi",
+  "assignmentGroup": "AGEGE PAINTERS",
+  "supervisorEmployeeCode": "C1001",
+  "performedBy": "codex.database-import",
+  "reason": "Agege daily-rate painters assigned to Jimoh Gbadamosi from AGEGE WORKERS AND THEIR SUPERVISORS FOR DAILY RATE.",
+  "rows": [
+    { "sourceName": "TAJUDEEN ADESEYE", "tradeRole": "BLASTER / PAINTER", "employeeCode": "C1933", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "FEMI OLAITAN", "tradeRole": "BLASTER / PAINTER", "employeeCode": "C2098", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "EZEKIEL DAYO", "tradeRole": "BLASTER / PAINTER", "employeeCode": "C1931", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "SUNDAY COKER", "tradeRole": "BLASTER / PAINTER", "employeeCode": "C2097", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "OLUWASEYI ADEBANJO", "tradeRole": "BLASTER / PAINTER", "employeeCode": "C2790", "matchConfidence": "AgegeRosterEmployeeCode" }
+  ]
+}

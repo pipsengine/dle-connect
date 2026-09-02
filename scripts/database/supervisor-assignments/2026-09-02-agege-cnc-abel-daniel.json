@@ -1,0 +1,17 @@
+{
+  "assignmentBatch": "2026-09-02-agege-cnc-abel-daniel",
+  "assignmentGroup": "AGEGE CNC",
+  "supervisorEmployeeCode": "C2225",
+  "performedBy": "codex.database-import",
+  "reason": "Agege daily-rate CNC crew assigned to Abel Daniel, including operators previously under Ojika Chukwudumebi.",
+  "rows": [
+    { "sourceName": "CHRISTIAN AGBATA", "tradeRole": "CNC OPERATOR", "employeeCode": "C2224", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "EZEAGU ANTHONY", "tradeRole": "CNC OPERATOR", "employeeCode": "C2222", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "KAMORUDEEN YUNUS", "tradeRole": "CNC OPERATOR", "employeeCode": "C2221", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "AYUBA OGUNBONA", "tradeRole": "CNC OPERATOR", "employeeCode": "C2632", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "SUNDAY KENECHUKWU", "tradeRole": "CNC OPERATOR", "employeeCode": "C2633", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "FESTUS AMUNE", "tradeRole": "FITTER/CNC OPR", "employeeCode": "C2015", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "OJIKA CHUKWUDUMEBI", "tradeRole": "FITTER/CNC OPR", "employeeCode": "C1607", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "ABEL UGBEKILE", "tradeRole": "CNC OPERATOR", "employeeCode": "C2220", "matchConfidence": "AgegeRosterEmployeeCode" }
+  ]
+}
