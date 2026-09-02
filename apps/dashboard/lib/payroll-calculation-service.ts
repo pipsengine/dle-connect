@@ -149,6 +149,8 @@ export type PayrollCalculationSummary = {
   payrollCoveragePct: number;
   /** HR Salary Schedule Summary (DLE Staff + DLE Contract) when an overlay is applied. */
   scheduleNetPay: number;
+  scheduleGrossPay: number;
+  scheduleEmployees: number;
 };
 
 export type PayrollCalculationResult = {
@@ -459,7 +461,12 @@ export const filterPayrollCalculationByPack = (
     ? ngnSalaryScheduleKpi(calculation.period, company)
     : null;
   const netPay = scheduleKpi?.netPay ?? roundMoney(totals.netPay);
+  const grossPay = scheduleKpi?.grossPay || roundMoney(totals.grossPay);
+  const deductions = scheduleKpi?.grossPay
+    ? roundMoney(scheduleKpi.deductions)
+    : roundMoney(totals.deductions);
   const employees = scheduleKpi?.employees || summaryRecords.length;
+  const readyCount = scheduleKpi?.employees || ready.length;
   const component = (componentId: string, label: string, amount: number, tone: PayrollTone, payer: 'Employee' | 'Employer' | 'Both') =>
     ({ id: componentId, label, amount: roundMoney(amount), tone, payer });
   const packLabel = company ? findPayrollScheduleScope(pack, company).shortLabel : payrollRunPackShortLabel(pack);
@@ -469,11 +476,11 @@ export const filterPayrollCalculationByPack = (
     summary: {
       ...calculation.summary,
       employees,
-      payrollEligible: summaryRecords.length,
-      ready: ready.length,
+      payrollEligible: employees,
+      ready: readyCount,
       review: review.length,
       blocked: blocked.length,
-      readyEmployees: ready.length,
+      readyEmployees: readyCount,
       reviewEmployees: review.length,
       blockedEmployees: blocked.length,
       readinessReadyEmployees: readiness.readinessReadyEmployees,
@@ -482,22 +489,24 @@ export const filterPayrollCalculationByPack = (
       readinessBlockedEmployees: readiness.readinessBlockedEmployees,
       basePay: roundMoney(totals.basePay),
       allowances: roundMoney(totals.allowances),
-      grossPay: roundMoney(totals.grossPay),
-      totalDeductions: roundMoney(totals.deductions),
-      deductions: roundMoney(totals.deductions),
+      grossPay,
+      totalDeductions: deductions,
+      deductions,
       netPay,
       employerCost: roundMoney(totals.employerCost),
       sageGrossPay: roundMoney(totals.sageGrossPay),
       sageNetPay: roundMoney(totals.sageNetPay),
-      grossVariance: roundMoney(totals.sageGrossPay - totals.grossPay),
-      netVariance: roundMoney(totals.sageNetPay - totals.netPay),
+      grossVariance: roundMoney(totals.sageGrossPay - grossPay),
+      netVariance: roundMoney(totals.sageNetPay - netPay),
       exceptionCount,
       deferredExceptionCount,
-      averageDeductionRatio: totals.grossPay > 0 ? roundMoney(totals.deductions / totals.grossPay) : 0,
+      averageDeductionRatio: grossPay > 0 ? roundMoney(deductions / grossPay) : 0,
       payrollCoveragePct: summaryRecords.length
         ? Math.round((summaryRecords.filter((record) => record.setupAssignedToPayroll).length / summaryRecords.length) * 1000) / 10
         : 0,
       scheduleNetPay: scheduleKpi?.netPay ?? 0,
+      scheduleGrossPay: scheduleKpi?.grossPay ?? 0,
+      scheduleEmployees: scheduleKpi?.employees ?? 0,
     },
     records,
     breakdowns: {
@@ -614,6 +623,8 @@ const emptyPayrollSummary = (): PayrollCalculationSummary => ({
   averageDeductionRatio: 0,
   payrollCoveragePct: 0,
   scheduleNetPay: 0,
+  scheduleGrossPay: 0,
+  scheduleEmployees: 0,
 });
 
 const snapshotSummaryFromRecords = (snapshot: PayrollRunSnapshot, records: PayrollCalculationRecord[]) => {
@@ -1209,6 +1220,8 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       ? Math.round((summaryRecords.filter((record) => record.setupAssignedToPayroll).length / summaryRecords.length) * 1000) / 10
       : 0,
     scheduleNetPay: 0,
+    scheduleGrossPay: 0,
+    scheduleEmployees: 0,
   };
 
   const component = (componentId: string, label: string, amount: number, tone: PayrollTone, payer: 'Employee' | 'Employer' | 'Both') =>

@@ -1,8 +1,10 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { applyDayrateScheduleOverrideToRecords } from './dayrate-schedule-overlay';
 import type { DayrateScheduleRow } from './dayrate-schedule-xlsx';
 import type { PayrollCalculationRecord } from './payroll-calculation-service';
 import { applySalaryScheduleOverrideToRecords, payrollCompanyFromSalaryScheduleRow } from './salary-schedule-overlay';
-import { salaryScheduleNgnKpiFromCostSummary, type SalaryScheduleRow } from './salary-schedule-xlsx';
+import { parseSalaryScheduleWorkbook, salaryScheduleNgnKpiFromCostSummary, type SalaryScheduleRow } from './salary-schedule-xlsx';
 import { normalizePayrollCompany, resolvePayrollCompany } from './payroll-schedule-scope';
 
 const assert = (condition: unknown, message: string) => {
@@ -133,6 +135,7 @@ const salarySplit = applySalaryScheduleOverrideToRecords(
       skipped: [],
       sheets: [],
       costSummary: [],
+      pivotTotals: { dleStaffGross: 0, dleContractGross: 0, dlpcStaffGross: 0, dlpcContractGross: 0 },
     },
   },
 );
@@ -223,8 +226,28 @@ const augustKpi = salaryScheduleNgnKpiFromCostSummary(
   }],
   '2026-08',
   'DLE',
+  {
+    dleStaffGross: 78716808.58,
+    dleContractGross: 35002602.48,
+    dlpcStaffGross: 10334239.15,
+    dlpcContractGross: 5244447.21,
+  },
 );
 assert(augustKpi?.employees === 139, 'HR Summary DLE Staff + DLE Contract is 139 people');
 assert(augustKpi?.netPay === 91831140.22, 'HR Summary DLE NGN net is 91,831,140.22');
+assert(augustKpi?.grossPay === 113719411.06, 'HR pivot DLE NGN gross is 113,719,411.06');
+assert(augustKpi?.deductions === 21888270.84, 'HR DLE NGN deductions are pivot gross minus Summary net');
+
+const officialSalaryBook = [
+  path.resolve('backups/Dayrate Payment Schedule/DLE_AUGUST 2026 SALARY SCHEDULE.xlsx'),
+  path.resolve('../../backups/Dayrate Payment Schedule/DLE_AUGUST 2026 SALARY SCHEDULE.xlsx'),
+].find((file) => fs.existsSync(file));
+if (officialSalaryBook) {
+  const parsed = parseSalaryScheduleWorkbook(fs.readFileSync(officialSalaryBook));
+  const fromFile = salaryScheduleNgnKpiFromCostSummary(parsed.costSummary, '2026-08', 'DLE', parsed.pivotTotals);
+  assert(fromFile?.grossPay === 113719411.06, 'Official August workbook DLE pivot gross is 113,719,411.06');
+  assert(fromFile?.netPay === 91831140.22, 'Official August workbook DLE Summary net is 91,831,140.22');
+  assert(fromFile?.employees === 139, 'Official August workbook DLE headcount is 139');
+}
 
 console.log('payroll-schedule-company tests passed');

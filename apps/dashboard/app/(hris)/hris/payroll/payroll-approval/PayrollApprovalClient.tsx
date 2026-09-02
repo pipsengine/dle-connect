@@ -108,6 +108,7 @@ type Payload = {
     totalDeductions: number | null;
     netPay: number | null;
     scheduleNetPay?: number | null;
+    scheduleGrossPay?: number | null;
     employerCost: number | null;
     ready: number;
     review: number;
@@ -367,6 +368,7 @@ export default function PayrollApprovalClient({
   const packSummaries = payload?.packs || [];
   const payrollComputed = Boolean(run && !['Draft', 'Open', 'Reopened'].includes(run.status));
   const previewPay = sumRecordPay(payload?.records);
+  const previewGross = Number(payload?.summary.scheduleGrossPay || 0) || previewPay.grossPay;
   const previewNet = Number(payload?.summary.scheduleNetPay || 0) || previewPay.netPay;
 
   const salaryRows = useMemo(() => {
@@ -561,7 +563,7 @@ export default function PayrollApprovalClient({
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           label="Gross Pay for Approval"
-          value={money(payrollAmount(payload?.summary.grossPay, previewPay.grossPay, payrollComputed), canViewMoney)}
+          value={money(payrollAmount(payload?.summary.grossPay, previewGross, payrollComputed), canViewMoney)}
           detail={`${number(payload?.summary.employees)} ${lockedScope?.pack === 'daily-rate' ? 'contractors' : 'employees'} in this schedule`}
           icon={Banknote}
           tone="blue"

@@ -197,5 +197,7 @@ export const applySalaryScheduleOverrideToRecords = (
   return [...dailyRate, ...overlaid];
 };
 
-export const ngnSalaryScheduleKpi = (period: string, company: PayrollCompany) =>
-  salaryScheduleNgnKpiFromCostSummary(readAppliedSalaryScheduleOverride(period)?.parsed?.costSummary, period, company);
+export const ngnSalaryScheduleKpi = (period: string, company: PayrollCompany) => {
+  const parsed = readAppliedSalaryScheduleOverride(period)?.parsed;
+  return salaryScheduleNgnKpiFromCostSummary(parsed?.costSummary, period, company, parsed?.pivotTotals);
+};

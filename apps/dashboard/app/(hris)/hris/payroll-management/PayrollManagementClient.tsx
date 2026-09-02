@@ -214,6 +214,7 @@ type PayrollPayload = {
     deductions: number | null;
     netPay: number | null;
     scheduleNetPay?: number | null;
+    scheduleGrossPay?: number | null;
     basePay: number | null;
     allowances: number | null;
     exceptionCount: number;
@@ -1908,6 +1909,7 @@ function ProcessPayrollWorkspace({
   const status = currentRun?.status || payload?.workflow?.currentStatus || 'Draft';
   const records = payload?.records || [];
   const previewPay = sumRecordPay(records);
+  const previewGross = Number(payload?.summary.scheduleGrossPay || 0) || previewPay.grossPay;
   const previewNet = Number(payload?.summary.scheduleNetPay || 0) || previewPay.netPay;
   const readyRows = records.filter((record) => record.payrollStatus === 'Ready');
   const issueRows = records.filter((record) => record.payrollStatus !== 'Ready' || record.exceptionCount > 0);
@@ -2113,7 +2115,7 @@ function ProcessPayrollWorkspace({
             />
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
               <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Gross Payroll</p>
-              <p className="mt-2 text-base font-bold text-slate-950">{money(payrollAmount(payload?.summary.grossPay, previewPay.grossPay, payload?.payrollComputed), canViewMoney)}</p>
+              <p className="mt-2 text-base font-bold text-slate-950">{money(payrollAmount(payload?.summary.grossPay, previewGross, payload?.payrollComputed), canViewMoney)}</p>
               <p className="mt-0.5 text-[11px] font-semibold text-emerald-700">
                 {payload?.payrollComputed
                   ? `${money(payload?.summary.netPay, canViewMoney)} net`
@@ -5473,9 +5475,11 @@ export default function PayrollManagementClient({
     const readyEmployees = payload?.summary.readyEmployees || 0;
     const readyPct = totalEmployees ? Math.round((readyEmployees / totalEmployees) * 100) : 0;
     const previewPay = sumRecordPay(payload?.records);
+    const previewGross = Number(payload?.summary.scheduleGrossPay || 0) || previewPay.grossPay;
     const previewNet = Number(payload?.summary.scheduleNetPay || 0) || previewPay.netPay;
-    const kpiGross = payrollAmount(payload?.summary.grossPay, previewPay.grossPay, payload?.payrollComputed);
-    const kpiDeductions = payrollAmount(payload?.summary.deductions, previewPay.deductions, payload?.payrollComputed);
+    const previewDeductions = previewGross && previewNet ? Math.round((previewGross - previewNet) * 100) / 100 : previewPay.deductions;
+    const kpiGross = payrollAmount(payload?.summary.grossPay, previewGross, payload?.payrollComputed);
+    const kpiDeductions = payrollAmount(payload?.summary.deductions, previewDeductions, payload?.payrollComputed);
     const kpiNet = payrollAmount(payload?.summary.netPay, previewNet, payload?.payrollComputed);
     const deductionPct = kpiGross ? Math.round(((Number(kpiDeductions || 0)) / Number(kpiGross)) * 1000) / 10 : 0;
     const runStatus = currentRun?.status || payload?.workflow?.currentStatus || 'Draft';

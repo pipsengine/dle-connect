@@ -3,6 +3,7 @@ import {
   calculatePayrollForPeriod,
   filterPayrollCalculationByPack,
   maskPayrollCalculationRecords,
+  summaryPayrollRecords,
   type PayrollCalculationRecord,
 } from '@/lib/payroll-calculation-service';
 import { buildPayrollJournalWorkspace } from '@/lib/payroll-journal-service';
@@ -93,6 +94,8 @@ const stripPendingPayrollAmounts = (calculation: Awaited<ReturnType<typeof calcu
     grossVariance: 0,
     netVariance: 0,
     scheduleNetPay: Number(calculation.summary.scheduleNetPay || 0),
+    scheduleGrossPay: Number(calculation.summary.scheduleGrossPay || 0),
+    scheduleEmployees: Number(calculation.summary.scheduleEmployees || 0),
   },
   breakdowns: {
     ...calculation.breakdowns,
@@ -118,27 +121,31 @@ const refreshCalculationFromRecords = (
   calculation: Awaited<ReturnType<typeof calculatePayrollForPeriod>>,
   records: PayrollCalculationRecord[],
 ) => {
-  const ready = records.filter((record) => record.status === 'Ready');
-  const review = records.filter((record) => record.status === 'Review');
-  const blocked = records.filter((record) => record.status === 'Blocked');
-  const readiness = summarizePayrollReadiness(records);
+  const counted = summaryPayrollRecords(records);
+  const ready = counted.filter((record) => record.status === 'Ready');
+  const review = counted.filter((record) => record.status === 'Review');
+  const blocked = counted.filter((record) => record.status === 'Blocked');
+  const readiness = summarizePayrollReadiness(counted);
+  const scheduleHeadcount = Number(calculation.summary.scheduleEmployees || 0);
   return {
     ...calculation,
     records,
     summary: {
       ...calculation.summary,
-      ready: ready.length,
+      employees: scheduleHeadcount || calculation.summary.employees,
+      payrollEligible: scheduleHeadcount || calculation.summary.payrollEligible,
+      ready: scheduleHeadcount || ready.length,
       review: review.length,
       blocked: blocked.length,
       blockedEmployees: blocked.length,
-      readyEmployees: ready.length,
+      readyEmployees: scheduleHeadcount || ready.length,
       reviewEmployees: review.length,
-      readinessReadyEmployees: readiness.readinessReadyEmployees,
+      readinessReadyEmployees: scheduleHeadcount || readiness.readinessReadyEmployees,
       readinessAwaitingTimesheetEmployees: readiness.readinessAwaitingTimesheetEmployees,
       readinessReviewEmployees: readiness.readinessReviewEmployees,
       readinessBlockedEmployees: readiness.readinessBlockedEmployees,
-      exceptionCount: records.reduce((sum, record) => sum + Number(record.exceptionCount || 0), 0),
-      deferredExceptionCount: records.reduce((sum, record) => sum + Number(record.deferredWarnings?.length || 0), 0),
+      exceptionCount: counted.reduce((sum, record) => sum + Number(record.exceptionCount || 0), 0),
+      deferredExceptionCount: counted.reduce((sum, record) => sum + Number(record.deferredWarnings?.length || 0), 0),
     },
   };
 };
@@ -648,6 +655,8 @@ export const buildManagementPayload = async (
       grossPay: payrollComputed ? roundMoney(calculation.summary.grossPay) : null,
       deductions: payrollComputed ? roundMoney(calculation.summary.deductions) : null,
       netPay: payrollComputed ? roundMoney(calculation.summary.netPay) : null,
+      scheduleNetPay: Number(calculation.summary.scheduleNetPay || 0) || null,
+      scheduleGrossPay: Number(calculation.summary.scheduleGrossPay || 0) || null,
       basePay: payrollComputed ? roundMoney(calculation.summary.basePay) : null,
       allowances: payrollComputed ? roundMoney(calculation.summary.allowances) : null,
       exceptionCount: calculation.summary.exceptionCount,

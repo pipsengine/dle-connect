@@ -55,6 +55,21 @@ export type SalaryScheduleCostMonth = {
   dlpcStaffCount: number;
 };
 
+/** PERM/CONT pivot “Sum of Gross Earnings” by Company (HA) — same GETPIVOTDATA population as Summary net. */
+export type SalarySchedulePivotTotals = {
+  dleStaffGross: number;
+  dleContractGross: number;
+  dlpcStaffGross: number;
+  dlpcContractGross: number;
+};
+
+export type SalaryScheduleNgnKpi = {
+  netPay: number;
+  grossPay: number;
+  deductions: number;
+  employees: number;
+};
+
 export type SalaryScheduleParseResult = {
   title: string;
   rows: SalaryScheduleRow[];
@@ -72,6 +87,8 @@ export type SalaryScheduleParseResult = {
   };
   /** PAYROLL COST - NET sheet: DLE Staff + DLE Contract (and DLPC pair) by month. */
   costSummary: SalaryScheduleCostMonth[];
+  /** PERM.STAFF + CONT. STAFF company pivots for the uploaded month. */
+  pivotTotals: SalarySchedulePivotTotals;
   skipped: Array<{ sheet: string; reason: string; value?: string }>;
   sheets: Array<{ name: string; kind: SalaryScheduleSheetKind; rowCount: number }>;
 };
@@ -173,12 +190,44 @@ const parseSalaryCostSummary = (grid: Map<number, Map<string, string>>): SalaryS
   return [...byMonth.values()];
 };
 
-/** NGN salary KPI from HR Summary (DLE Staff + DLE Contract, or DLPC pair) for the period month. */
+const emptyPivotTotals = (): SalarySchedulePivotTotals => ({
+  dleStaffGross: 0,
+  dleContractGross: 0,
+  dlpcStaffGross: 0,
+  dlpcContractGross: 0,
+});
+
+/** Company (HA) pivot on PERM.STAFF / CONT. STAFF: DLENG and DLPCG gross. */
+const parseCompanyGrossPivot = (grid: Map<number, Map<string, string>>) => {
+  const rows = [...grid.entries()].sort((a, b) => a[0] - b[0]);
+  let header: { rowNo: number; labelCol: string; grossCol: string } | null = null;
+  for (const [rowNo, row] of rows) {
+    const cells = [...row.entries()].sort((a, b) => colToIndex(a[0]) - colToIndex(b[0]));
+    const label = cells.find(([, value]) => /^row labels$/i.test(compact(value)));
+    const gross = cells.find(([, value]) => /sum of gross earnings/i.test(compact(value)));
+    if (!label || !gross) continue;
+    header = { rowNo, labelCol: label[0], grossCol: gross[0] };
+    break;
+  }
+  const out = { dleGross: 0, dlpcGross: 0 };
+  if (!header) return out;
+  for (const [rowNo, row] of rows) {
+    if (rowNo <= header.rowNo) continue;
+    const label = compact(row.get(header.labelCol));
+    if (/^grand total$/i.test(label)) break;
+    if (/DLPCG/i.test(label)) out.dlpcGross = roundMoney(cellNum(row, header.grossCol));
+    else if (/DLENG/i.test(label)) out.dleGross = roundMoney(cellNum(row, header.grossCol));
+  }
+  return out;
+};
+
+/** NGN salary KPI from HR Summary net + PERM/CONT pivot gross (DLE Staff + DLE Contract, or DLPC pair). */
 export const salaryScheduleNgnKpiFromCostSummary = (
   costSummary: SalaryScheduleCostMonth[] | undefined,
   period: string,
   company: 'DLE' | 'DLPC',
-) => {
+  pivotTotals?: SalarySchedulePivotTotals | null,
+): SalaryScheduleNgnKpi | null => {
   const month = COST_MONTHS[Number(String(period).slice(5, 7)) - 1];
   if (!month || !costSummary?.length) return null;
   const hit = costSummary.find((item) => item.month === month);
@@ -190,7 +239,13 @@ export const salaryScheduleNgnKpiFromCostSummary = (
     ? hit.dlpcContractCount + hit.dlpcStaffCount
     : hit.dleContractCount + hit.dleStaffCount;
   if (netPay <= 0 && employees <= 0) return null;
-  return { netPay, employees };
+  const grossPay = roundMoney(
+    company === 'DLPC'
+      ? Number(pivotTotals?.dlpcStaffGross || 0) + Number(pivotTotals?.dlpcContractGross || 0)
+      : Number(pivotTotals?.dleStaffGross || 0) + Number(pivotTotals?.dleContractGross || 0),
+  );
+  const deductions = grossPay > 0 ? roundMoney(grossPay - netPay) : 0;
+  return { netPay, grossPay, deductions, employees };
 };
 
 const u16 = (buf: Buffer, offset: number) => buf.readUInt16LE(offset);
@@ -254,19 +309,19 @@ const colToIndex = (col: string) => [...col].reduce((n, ch) => n * 26 + (ch.char
 
 const parseSheetGrid = (xml: string, shared: string[]) => {
   const rows = new Map<number, Map<string, string>>();
-  for (const rowMatch of xml.matchAll(/<row r="(\d+)"[^>]*>([\s\S]*?)<\/row>/g)) {
-    const rowNo = Number(rowMatch[1]);
-    const cells = new Map<string, string>();
-    for (const cellMatch of rowMatch[2].matchAll(/<c r="([A-Z]+)(\d+)"([^>]*)>([\s\S]*?)<\/c>/g)) {
-      const col = cellMatch[1];
-      const attrs = cellMatch[3] || '';
-      const body = cellMatch[4] || '';
-      const valueMatch = body.match(/<v>([^<]*)<\/v>/);
-      if (!valueMatch) continue;
-      const raw = valueMatch[1];
-      cells.set(col, attrs.includes('t="s"') ? decodeXml(shared[Number(raw)] ?? raw) : raw);
+  for (const cellMatch of xml.matchAll(/<c r="([A-Z]+)(\d+)"([^>/]*)>([\s\S]*?)<\/c>/g)) {
+    const col = cellMatch[1];
+    const rowNo = Number(cellMatch[2]);
+    const attrs = cellMatch[3] || '';
+    const valueMatch = cellMatch[4].match(/<v>([^<]*)<\/v>/);
+    if (!valueMatch) continue;
+    const raw = valueMatch[1];
+    let cells = rows.get(rowNo);
+    if (!cells) {
+      cells = new Map<string, string>();
+      rows.set(rowNo, cells);
     }
-    if (cells.size) rows.set(rowNo, cells);
+    cells.set(col, attrs.includes('t="s"') ? decodeXml(shared[Number(raw)] ?? raw) : raw);
   }
   return rows;
 };
@@ -484,6 +539,7 @@ export const parseSalaryScheduleWorkbook = (workbook: Buffer): SalarySchedulePar
   const byKind: SalaryScheduleParseResult['byKind'] = { perm: [], cont: [], usd: [] };
   const rows: SalaryScheduleRow[] = [];
   let costSummary: SalaryScheduleCostMonth[] = [];
+  const pivotTotals = emptyPivotTotals();
 
   for (const sheet of sheetsMeta) {
     const kind = sheetKind(sheet.name);
@@ -500,6 +556,16 @@ export const parseSalaryScheduleWorkbook = (workbook: Buffer): SalarySchedulePar
       byKind[kind].push(...parsed);
       rows.push(...parsed);
       sheets.push({ name: sheet.name, kind, rowCount: parsed.length });
+      if (kind === 'perm' || kind === 'cont') {
+        const pivot = parseCompanyGrossPivot(grid);
+        if (kind === 'perm') {
+          pivotTotals.dleStaffGross = pivot.dleGross;
+          pivotTotals.dlpcStaffGross = pivot.dlpcGross;
+        } else {
+          pivotTotals.dleContractGross = pivot.dleGross;
+          pivotTotals.dlpcContractGross = pivot.dlpcGross;
+        }
+      }
     } else if (kind === 'summary') {
       costSummary = parseSalaryCostSummary(grid);
       sheets.push({ name: sheet.name, kind, rowCount: Math.max(0, grid.size - 1) });
@@ -527,6 +593,7 @@ export const parseSalaryScheduleWorkbook = (workbook: Buffer): SalarySchedulePar
       usdNet: sum(byKind.usd, 'netPay'),
     },
     costSummary,
+    pivotTotals,
     skipped,
     sheets,
   };
