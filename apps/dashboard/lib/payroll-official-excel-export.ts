@@ -19,6 +19,7 @@ import {
 import { buildPayrollAttendanceSheet, type PayrollAttendanceSheetRow } from '@/lib/timesheet-payroll-attendance-sheet';
 import { isTimesheetCountableForPayroll, readTimesheetData } from '@/lib/timesheet-entry-store';
 import { resolvePayrollCompany, type PayrollCompany } from '@/lib/payroll-schedule-scope';
+import { ngnSalaryScheduleCostSummary } from '@/lib/salary-schedule-overlay';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 const compact = (value: unknown) => String(value || '').trim();
@@ -903,7 +904,9 @@ const summaryHasFigure = (list: PayrollCalculationRecord[]) => {
 };
 
 const buildSalaryCostSummaryWorksheet = (input: {
+  period?: string;
   periodLabel: string;
+  company?: PayrollCompany | null;
   permanent: PayrollCalculationRecord[];
   contract: PayrollCalculationRecord[];
   dayrate: PayrollCalculationRecord[];
@@ -915,28 +918,49 @@ const buildSalaryCostSummaryWorksheet = (input: {
   const mubass = [...input.permanent, ...input.contract, ...input.dayrate].filter((record) => isMubassRole(record));
   const dleContract = [...input.contract, ...input.dayrate].filter((record) => resolveOfficialCompanyBucket(record) === 'DLE' && !isMubassRole(record));
   const dlpcContract = [...input.contract, ...input.dayrate].filter((record) => resolveOfficialCompanyBucket(record) === 'DLPC' && !isMubassRole(record));
-  const md = ngnPermanent.filter((record) => isMdRole(record));
-  const gmOps = ngnPermanent.filter((record) => isGmOpsRole(record) && !isMdRole(record));
-  const dleStaff = ngnPermanent.filter((record) => resolveOfficialCompanyBucket(record) === 'DLE' && !isMdRole(record) && !isGmOpsRole(record));
-  const dlpcStaff = ngnPermanent.filter((record) => resolveOfficialCompanyBucket(record) === 'DLPC' && !isMdRole(record) && !isGmOpsRole(record));
+  const dleStaff = ngnPermanent.filter((record) => resolveOfficialCompanyBucket(record) === 'DLE');
+  const dlpcStaff = ngnPermanent.filter((record) => resolveOfficialCompanyBucket(record) === 'DLPC');
+  const scheduleSummary = input.period ? ngnSalaryScheduleCostSummary(input.period) : null;
   const line = (label: string, list: PayrollCalculationRecord[]): ExcelCell[] => {
     const bucket = summaryBucket(list);
     return [label, bucket.net, bucket.count];
   };
+  const lineFromTotals = (label: string, net: number, count: number): ExcelCell[] => [label, roundMoney(net), count];
   const maybeLine = (label: string, list: PayrollCalculationRecord[]) =>
     (summaryHasFigure(list) ? line(label, list) : null);
-  const subtotal = [...dleContract, ...dlpcContract, ...dleStaff, ...dlpcStaff, ...gmOps, ...md];
-  const grand = [...subtotal, ...mubass];
+  const maybeSummaryLine = (
+    label: string,
+    list: PayrollCalculationRecord[],
+    net?: number,
+    count?: number,
+  ) => (typeof net === 'number' && typeof count === 'number'
+    ? (net !== 0 || count > 0 ? lineFromTotals(label, net, count) : null)
+    : maybeLine(label, list));
+  const dleContractNet = scheduleSummary?.dleContractNet ?? summaryBucket(dleContract).net;
+  const dleContractCount = scheduleSummary?.dleContractCount ?? summaryBucket(dleContract).count;
+  const dlpcContractNet = scheduleSummary?.dlpcContractNet ?? summaryBucket(dlpcContract).net;
+  const dlpcContractCount = scheduleSummary?.dlpcContractCount ?? summaryBucket(dlpcContract).count;
+  const dleStaffNet = scheduleSummary?.dleStaffNet ?? summaryBucket(dleStaff).net;
+  const dleStaffCount = scheduleSummary?.dleStaffCount ?? summaryBucket(dleStaff).count;
+  const dlpcStaffNet = scheduleSummary?.dlpcStaffNet ?? summaryBucket(dlpcStaff).net;
+  const dlpcStaffCount = scheduleSummary?.dlpcStaffCount ?? summaryBucket(dlpcStaff).count;
+  const scopeCompany = input.company || null;
+  const subtotalNet = roundMoney(
+    (scopeCompany !== 'DLPC' ? dleContractNet + dleStaffNet : 0)
+      + (scopeCompany !== 'DLE' ? dlpcContractNet + dlpcStaffNet : 0),
+  );
+  const subtotalCount = (scopeCompany !== 'DLPC' ? dleContractCount + dleStaffCount : 0)
+    + (scopeCompany !== 'DLE' ? dlpcContractCount + dlpcStaffCount : 0);
+  const grandNet = roundMoney(subtotalNet + summaryBucket(mubass).net);
+  const grandCount = subtotalCount + summaryBucket(mubass).count;
   const usdMd = input.usd.filter((record) => isMdRole(record));
   const usdNayak = input.usd.filter((record) => isNayakRole(record));
   const usdGm = input.usd.filter((record) => isUsdGmSpCfoRole(record));
   const ngnLines = [
-    maybeLine('DLE Contract ', dleContract),
-    maybeLine('DLPC Contract', dlpcContract),
-    maybeLine('DLE Staff', dleStaff),
-    maybeLine('Dlpc Staff', dlpcStaff),
-    maybeLine('GM Ops', gmOps),
-    maybeLine('MD', md),
+    scopeCompany !== 'DLPC' ? maybeSummaryLine('DLE Contract ', dleContract, dleContractNet, dleContractCount) : null,
+    scopeCompany !== 'DLPC' ? maybeSummaryLine('DLE Staff', dleStaff, dleStaffNet, dleStaffCount) : null,
+    scopeCompany !== 'DLE' ? maybeSummaryLine('DLPC Contract', dlpcContract, dlpcContractNet, dlpcContractCount) : null,
+    scopeCompany !== 'DLE' ? maybeSummaryLine('Dlpc Staff', dlpcStaff, dlpcStaffNet, dlpcStaffCount) : null,
   ].filter((row): row is ExcelCell[] => Boolean(row));
   const mubassLine = maybeLine('Mubass (Outsourced)', mubass);
   const usdLines = [
@@ -946,11 +970,11 @@ const buildSalaryCostSummaryWorksheet = (input: {
   ].filter((row): row is ExcelCell[] => Boolean(row));
   const rows: ExcelCell[][] = [...ngnLines];
   if (mubassLine) {
-    if (ngnLines.length) rows.push(['', summaryBucket(subtotal).net, '']);
+    if (ngnLines.length) rows.push(['', subtotalNet, '']);
     rows.push(mubassLine);
   }
   if (ngnLines.length || mubassLine) {
-    rows.push(['GRAND TOTAL', summaryBucket(grand).net, summaryBucket(grand).count]);
+    rows.push(['GRAND TOTAL', grandNet, grandCount]);
   }
   if (usdLines.length) {
     if (rows.length) rows.push([]);
@@ -971,6 +995,7 @@ const buildSalaryCostSummaryWorksheet = (input: {
 export const buildOfficialSalariedDetailWorksheets = (
   records: PayrollCalculationRecord[],
   options?: {
+    period?: string;
     periodLabel?: string;
     directoryEmployees?: DirectoryEnrichment[];
     /** Default all — NGN PERM/CONT plus USD REPORT in one salary-schedule workbook. */
@@ -1013,7 +1038,9 @@ export const buildOfficialSalariedDetailWorksheets = (
   const sheets: ExcelWorksheetInput[] = [];
   if (includeSummary) {
     sheets.push(buildSalaryCostSummaryWorksheet({
+      period: options?.period,
       periodLabel,
+      company,
       permanent,
       contract,
       dayrate: [],
@@ -1574,6 +1601,7 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
 
   const salarySchedule = (scope: OfficialExportCurrencyScope) =>
     buildOfficialSalariedDetailWorksheets(input.salariedRecords, {
+      period: input.period,
       periodLabel: input.periodLabel,
       directoryEmployees: input.directoryEmployees,
       currencyScope: scope,

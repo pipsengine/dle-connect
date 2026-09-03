@@ -38,6 +38,24 @@ const dlePerm = {
   netPay: 500000,
 };
 
+const dleMd = {
+  ...dlePerm,
+  employeeId: 'P0101',
+  employeeCode: 'P0101',
+  fullName: 'JANE MD',
+  jobTitle: 'Managing Director',
+  netPay: 250000,
+};
+
+const dleGmOps = {
+  ...dlePerm,
+  employeeId: 'P0102',
+  employeeCode: 'P0102',
+  fullName: 'JOHN GM OPS',
+  jobTitle: 'General Manager, Operations',
+  netPay: 150000,
+};
+
 const dlpcCont = {
   ...base,
   employeeId: 'L0191',
@@ -96,6 +114,8 @@ assert(!dleLabels.includes('DLPC Contract'), 'DLE salary Summary drops empty DLP
 assert(!dleLabels.includes('Dlpc Staff'), 'DLE salary Summary drops empty DLPC Staff');
 assert(!dleLabels.includes('Mubass (Outsourced)'), 'DLE salary Summary drops empty Mubass');
 assert(!dleLabels.includes('Nayak'), 'DLE salary Summary drops empty Nayak');
+assert(!dleLabels.includes('GM Ops'), 'DLE salary Summary no longer creates a GM Ops row');
+assert(!dleLabels.includes('MD'), 'DLE salary Summary no longer creates an MD row');
 
 const dlpcSummary = buildOfficialSalariedDetailWorksheets([base as any, dlpcCont as any], {
   periodLabel: 'August 2026',
@@ -112,6 +132,19 @@ assert(!dlpcLabels.includes('DLE Staff'), 'DLPC salary Summary drops empty DLE S
 assert(!dlpcLabels.includes('USD'), 'DLPC salary Summary drops the USD block when it has no figure');
 assert(!dlpcLabels.includes('GM Ops'), 'DLPC salary Summary drops empty GM Ops');
 assert(!dlpcLabels.includes('MD'), 'DLPC salary Summary drops empty MD');
+
+const managementSummary = buildOfficialSalariedDetailWorksheets(
+  [dlePerm as any, dleMd as any, dleGmOps as any],
+  { periodLabel: 'August 2026', currencyScope: 'ngn', company: 'DLE' },
+).find((sheet) => sheet.sheetName === 'Summary');
+const managementRows = managementSummary?.rows || [];
+const managementLabels = labelsOf(managementRows);
+const dleStaffRow = managementRows.find((row) => String(row[0] ?? '').trim() === 'DLE Staff');
+assert(managementLabels.includes('DLE Staff'), 'Management staff are still reported under DLE Staff');
+assert(!managementLabels.includes('GM Ops'), 'GM Ops is rolled into DLE Staff');
+assert(!managementLabels.includes('MD'), 'MD is rolled into DLE Staff');
+assert(Number(dleStaffRow?.[1] || 0) === 900000, 'DLE Staff net total includes normal staff, MD, and GM Ops');
+assert(Number(dleStaffRow?.[2] || 0) === 3, 'DLE Staff headcount includes normal staff, MD, and GM Ops');
 
 const mixedSummary = buildOfficialSalariedDetailWorksheets(
   [base as any, dlpcCont as any, dlePerm as any, usd as any],

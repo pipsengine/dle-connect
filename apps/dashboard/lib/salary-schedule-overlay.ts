@@ -3,7 +3,12 @@ import { canonicalContractEmployeeCode } from '@/lib/dayrate-schedule-xlsx';
 import { readAppliedDayrateScheduleOverride } from '@/lib/dayrate-schedule-override-read';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { normalizePayrollCompany, withPayrollCompany, type PayrollCompany } from '@/lib/payroll-schedule-scope';
-import { salaryScheduleEmployeeKeys, salaryScheduleNgnKpiFromCostSummary, type SalaryScheduleRow } from '@/lib/salary-schedule-xlsx';
+import {
+  salaryScheduleCostSummaryForPeriod,
+  salaryScheduleEmployeeKeys,
+  salaryScheduleNgnKpiFromCostSummary,
+  type SalaryScheduleRow,
+} from '@/lib/salary-schedule-xlsx';
 import {
   excelRowCurrency,
   readAppliedSalaryScheduleOverride,
@@ -200,4 +205,9 @@ export const applySalaryScheduleOverrideToRecords = (
 export const ngnSalaryScheduleKpi = (period: string, company: PayrollCompany) => {
   const parsed = readAppliedSalaryScheduleOverride(period)?.parsed;
   return salaryScheduleNgnKpiFromCostSummary(parsed?.costSummary, period, company, parsed?.pivotTotals);
+};
+
+export const ngnSalaryScheduleCostSummary = (period: string) => {
+  const parsed = readAppliedSalaryScheduleOverride(period)?.parsed;
+  return salaryScheduleCostSummaryForPeriod(parsed?.costSummary, period);
 };

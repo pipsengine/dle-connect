@@ -27,6 +27,88 @@ assert(!totalsHaveFigures({
   employerCost: 0,
 }), 'all-zero prior month is not a figure');
 
+const previousRecords = [
+  {
+    employeeId: 'P001',
+    employeeCode: 'P001',
+    fullName: 'Alice Example',
+    grossPay: 100000,
+    totalDeductions: 20000,
+    deductions: 20000,
+    netPay: 80000,
+    employerCost: 110000,
+    basePay: 70000,
+    allowances: 30000,
+    paye: 12000,
+    pensionEmployee: 5000,
+    pension: 5000,
+    pensionEmployer: 7000,
+    statutoryEmployer: 3000,
+    loanRecovery: 2000,
+    otherDeductions: 1000,
+  },
+  {
+    employeeId: 'P002',
+    employeeCode: 'P002',
+    fullName: 'Bob Exit',
+    grossPay: 50000,
+    totalDeductions: 5000,
+    deductions: 5000,
+    netPay: 45000,
+    employerCost: 54000,
+    basePay: 40000,
+    allowances: 10000,
+    paye: 3000,
+    pensionEmployee: 1000,
+    pension: 1000,
+    pensionEmployer: 2000,
+    statutoryEmployer: 1000,
+    loanRecovery: 500,
+    otherDeductions: 500,
+  },
+] as any[];
+
+const currentRecords = [
+  {
+    employeeId: 'P001',
+    employeeCode: 'P001',
+    fullName: 'Alice Example',
+    grossPay: 120000,
+    totalDeductions: 25000,
+    deductions: 25000,
+    netPay: 95000,
+    employerCost: 132000,
+    basePay: 80000,
+    allowances: 40000,
+    paye: 15000,
+    pensionEmployee: 6000,
+    pension: 6000,
+    pensionEmployer: 8000,
+    statutoryEmployer: 4000,
+    loanRecovery: 2000,
+    otherDeductions: 2000,
+  },
+  {
+    employeeId: 'P003',
+    employeeCode: 'P003',
+    fullName: 'Cara Join',
+    grossPay: 60000,
+    totalDeductions: 6000,
+    deductions: 6000,
+    netPay: 54000,
+    employerCost: 65000,
+    basePay: 45000,
+    allowances: 15000,
+    paye: 3500,
+    pensionEmployee: 1500,
+    pension: 1500,
+    pensionEmployer: 2500,
+    statutoryEmployer: 1000,
+    loanRecovery: 500,
+    otherDeductions: 500,
+  },
+] as any[];
+
 const mom = buildPayrollMonthOverMonth({
   currentPeriod: '2026-08',
   currentPeriodLabel: 'August 2026',
@@ -48,6 +130,8 @@ const mom = buildPayrollMonthOverMonth({
     netPay: 90000000,
     employerCost: 115000000,
   },
+  currentRecords,
+  previousRecords,
 });
 
 assert(mom.available, 'prior month with figures is available');
@@ -56,6 +140,8 @@ const employer = payrollMomMetric(mom, 'employerCost');
 assert(employer?.direction === 'up', 'employer cost went up');
 assert(employer?.variance === 4238344, 'employer cost naira variance');
 assert(payrollMomMetric(mom, 'employees')?.variance === 1, 'headcount +1');
+assert(payrollMomMetric(mom, 'grossPay')?.detail?.buckets.some((bucket) => bucket.id === 'headcount'), 'gross pay detail includes headcount movement');
+assert(payrollMomMetric(mom, 'employees')?.detail?.contributors.some((item) => item.employeeCode === 'P003' && item.reason.includes('New in current period')), 'employee detail lists joiners');
 
 const empty = buildPayrollMonthOverMonth({
   currentPeriod: '2026-08',

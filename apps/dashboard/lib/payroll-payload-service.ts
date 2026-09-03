@@ -247,13 +247,13 @@ const totalsFromCalculation = (
   payrollComputed: boolean,
 ): PayrollMomTotals => totalsFromSummaryAndRecords(period, calculation.summary, calculation.records, payrollComputed);
 
-const loadPriorMonthTotals = async (
+const loadPriorMonthComparison = async (
   period: string,
   pack: PayrollRunPack,
   company: PayrollCompany,
-): Promise<PayrollMomTotals | null> => {
+): Promise<{ totals: PayrollMomTotals | null; records: PayrollCalculationRecord[] }> => {
   const priorPeriod = previousPayrollPeriod(period);
-  if (!priorPeriod) return null;
+  if (!priorPeriod) return { totals: null, records: [] };
   const periodState = await listPayrollPeriods();
   const periodRecord = periodState.periods.find((item) => item.period === priorPeriod) || null;
   const run = await getPayrollRunForPeriod(priorPeriod, pack, company).catch(() => null);
@@ -265,28 +265,31 @@ const loadPriorMonthTotals = async (
       let calculation = await buildPayrollCalculationFromSnapshot(priorPeriod, snapshot);
       calculation = filterPayrollCalculationByPack(calculation, pack, company);
       const totals = totalsFromCalculation(priorPeriod, calculation, true);
-      if (totalsHaveFigures(totals)) return totals;
+      if (totalsHaveFigures(totals)) return { totals, records: ngnPayrollKpiRecords(calculation.records) as PayrollCalculationRecord[] };
     }
   }
 
   const live = await calculatePayrollForPeriod(priorPeriod, { pack, company }).catch(() => null);
   if (live) {
     const totals = totalsFromCalculation(priorPeriod, live, true);
-    if (totalsHaveFigures(totals)) return totals;
+    if (totalsHaveFigures(totals)) return { totals, records: ngnPayrollKpiRecords(live.records) as PayrollCalculationRecord[] };
   }
 
   if (run && (Number(run.grossPay || 0) || Number(run.netPay || 0) || Number(run.employerCost || 0) || Number(run.employeeCount || 0))) {
     return {
-      period: priorPeriod,
-      periodLabel: payrollPeriodLabel(priorPeriod),
-      employees: Number(run.employeeCount || 0),
-      grossPay: roundMoney(Number(run.grossPay || 0)),
-      deductions: roundMoney(Number(run.deductions || 0)),
-      netPay: roundMoney(Number(run.netPay || 0)),
-      employerCost: roundMoney(Number(run.employerCost || 0)),
+      totals: {
+        period: priorPeriod,
+        periodLabel: payrollPeriodLabel(priorPeriod),
+        employees: Number(run.employeeCount || 0),
+        grossPay: roundMoney(Number(run.grossPay || 0)),
+        deductions: roundMoney(Number(run.deductions || 0)),
+        netPay: roundMoney(Number(run.netPay || 0)),
+        employerCost: roundMoney(Number(run.employerCost || 0)),
+      },
+      records: [],
     };
   }
-  return null;
+  return { totals: null, records: [] };
 };
 
 const buildMonthOverMonthForScope = async (
@@ -295,13 +298,18 @@ const buildMonthOverMonthForScope = async (
   pack: PayrollRunPack,
   company: PayrollCompany,
   current: PayrollMomTotals,
+  currentRecords: PayrollCalculationRecord[],
+  includeMoneyDetails: boolean,
 ): Promise<PayrollMonthOverMonth> => {
-  const previous = await loadPriorMonthTotals(period, pack, company);
+  const previous = await loadPriorMonthComparison(period, pack, company);
   return buildPayrollMonthOverMonth({
     currentPeriod: period,
     currentPeriodLabel: periodLabel,
     current,
-    previous,
+    previous: previous.totals,
+    currentRecords,
+    previousRecords: previous.records,
+    includeMoneyDetails,
   });
 };
 
@@ -461,6 +469,11 @@ const buildPackPayload = async (
   const scopedRun = run ? { ...run, pack: resolvePayrollRunPack(run) || pack, company: resolvePayrollRunCompany(run) || company } : null;
   const { calculation, dataMode, payrollComputed } = await resolvePeriodCalculation(period, scopedRun, periodRecord, pack, company);
   const scope = findPayrollScheduleScope(pack, company);
+  const totals = totalsFromSummaryAndRecords(period, calculation.summary, calculation.records, payrollComputed);
+  const presentMoney = (value: number | null | undefined, fallback: number) =>
+    value == null || (Math.abs(Number(value || 0)) < 0.005 && Math.abs(fallback) >= 0.005)
+      ? roundMoney(fallback)
+      : value;
 
   const summary = canViewMoney
     ? calculation.summary
@@ -479,6 +492,18 @@ const buildPackPayload = async (
         netVariance: null,
         averageDeductionRatio: null,
       };
+  const displaySummary = canViewMoney
+    ? {
+        ...summary,
+        grossPay: presentMoney(summary.grossPay, totals.grossPay),
+        totalDeductions: presentMoney(summary.totalDeductions, totals.deductions),
+        deductions: presentMoney(summary.deductions, totals.deductions),
+        netPay: presentMoney(summary.netPay, totals.netPay),
+        employerCost: presentMoney(summary.employerCost, totals.employerCost),
+        scheduleGrossPay: presentMoney(summary.scheduleGrossPay, totals.grossPay),
+        scheduleNetPay: presentMoney(summary.scheduleNetPay, totals.netPay),
+      }
+    : summary;
 
   return {
     pack,
@@ -488,7 +513,7 @@ const buildPackPayload = async (
     run: mapRunForProcessing(scopedRun),
     dataMode,
     payrollComputed,
-    summary,
+    summary: displaySummary,
     records: canViewMoney ? calculation.records : maskPayrollCalculationRecords(calculation.records),
     breakdowns: {
       byPayrollGroup: calculation.breakdowns.byPayrollGroup.map((item) =>
@@ -555,6 +580,8 @@ export const buildProcessingPayload = async (
     pack,
     company,
     currentTotals,
+    ngnPayrollKpiRecords(scopedLive.records) as PayrollCalculationRecord[],
+    perms.canViewMoney,
   );
 
   return {
@@ -727,6 +754,8 @@ export const buildManagementPayload = async (
     pack,
     company,
     totalsFromSummaryAndRecords(period, calculation.summary, calculation.records, payrollComputed),
+    ngnPayrollKpiRecords(calculation.records) as PayrollCalculationRecord[],
+    perms.canViewMoney,
   );
 
   return {

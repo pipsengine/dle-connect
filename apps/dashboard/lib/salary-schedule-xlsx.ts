@@ -222,15 +222,22 @@ const parseCompanyGrossPivot = (grid: Map<number, Map<string, string>>) => {
 };
 
 /** NGN salary KPI from HR Summary net + PERM/CONT pivot gross (DLE Staff + DLE Contract, or DLPC pair). */
+export const salaryScheduleCostSummaryForPeriod = (
+  costSummary: SalaryScheduleCostMonth[] | undefined,
+  period: string,
+) => {
+  const month = COST_MONTHS[Number(String(period).slice(5, 7)) - 1];
+  if (!month || !costSummary?.length) return null;
+  return costSummary.find((item) => item.month === month) || null;
+};
+
 export const salaryScheduleNgnKpiFromCostSummary = (
   costSummary: SalaryScheduleCostMonth[] | undefined,
   period: string,
   company: 'DLE' | 'DLPC',
   pivotTotals?: SalarySchedulePivotTotals | null,
 ): SalaryScheduleNgnKpi | null => {
-  const month = COST_MONTHS[Number(String(period).slice(5, 7)) - 1];
-  if (!month || !costSummary?.length) return null;
-  const hit = costSummary.find((item) => item.month === month);
+  const hit = salaryScheduleCostSummaryForPeriod(costSummary, period);
   if (!hit) return null;
   const netPay = roundMoney(
     company === 'DLPC' ? hit.dlpcContractNet + hit.dlpcStaffNet : hit.dleContractNet + hit.dleStaffNet,

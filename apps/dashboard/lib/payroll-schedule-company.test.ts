@@ -4,7 +4,12 @@ import { applyDayrateScheduleOverrideToRecords } from './dayrate-schedule-overla
 import type { DayrateScheduleRow } from './dayrate-schedule-xlsx';
 import type { PayrollCalculationRecord } from './payroll-calculation-service';
 import { applySalaryScheduleOverrideToRecords, payrollCompanyFromSalaryScheduleRow } from './salary-schedule-overlay';
-import { parseSalaryScheduleWorkbook, salaryScheduleNgnKpiFromCostSummary, type SalaryScheduleRow } from './salary-schedule-xlsx';
+import {
+  parseSalaryScheduleWorkbook,
+  salaryScheduleCostSummaryForPeriod,
+  salaryScheduleNgnKpiFromCostSummary,
+  type SalaryScheduleRow,
+} from './salary-schedule-xlsx';
 import { normalizePayrollCompany, resolvePayrollCompany } from './payroll-schedule-scope';
 
 const assert = (condition: unknown, message: string) => {
@@ -237,6 +242,22 @@ assert(augustKpi?.employees === 139, 'HR Summary DLE Staff + DLE Contract is 139
 assert(augustKpi?.netPay === 91831140.22, 'HR Summary DLE NGN net is 91,831,140.22');
 assert(augustKpi?.grossPay === 113719411.06, 'HR pivot DLE NGN gross is 113,719,411.06');
 assert(augustKpi?.deductions === 21888270.84, 'HR DLE NGN deductions are pivot gross minus Summary net');
+
+const splitManagementSummary = salaryScheduleCostSummaryForPeriod([
+  {
+    month: 'AUGUST',
+    dleContractNet: 29210413,
+    dleContractCount: 69,
+    dleStaffNet: 56856334.59 + 4652106.79 + 968141.71,
+    dleStaffCount: 67 + 1 + 2,
+    dlpcContractNet: 0,
+    dlpcContractCount: 0,
+    dlpcStaffNet: 0,
+    dlpcStaffCount: 0,
+  },
+], '2026-08');
+assert(splitManagementSummary?.dleStaffNet === 62476583.09, 'Split management rows are rolled into DLE Staff totals');
+assert(splitManagementSummary?.dleStaffCount === 70, 'Split management headcount is rolled into DLE Staff');
 
 const officialSalaryBook = [
   path.resolve('backups/Dayrate Payment Schedule/DLE_AUGUST 2026 SALARY SCHEDULE.xlsx'),
