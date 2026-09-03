@@ -61,6 +61,19 @@ import type { PaymentRequestLookups } from '@/lib/finance-intelligence/payment-r
 import { preferredPaymentDepartment } from '@/lib/finance-intelligence/payment-request-departments';
 import { downloadExcelWorkbook } from '@/lib/excel-export';
 import PaymentRequestCommentsThread from './PaymentRequestCommentsThread';
+import {
+  PaymentColumnHeader,
+  comparePaymentColumn,
+  isDateColumn,
+  isHeaderFilterActive,
+  isNumericColumn,
+  matchesHeaderFilters,
+  uniqueColumnValues,
+  PAYMENT_COLUMN_LABELS,
+  type HeaderFilters,
+  type PaymentColumnKey,
+  type SortDir,
+} from './payment-requests-column-header';
 
 type Props = {
   initialWorkspace: PaymentRequestsWorkspace;
@@ -387,6 +400,9 @@ export default function PaymentRequestsClient({
   const [submittedFrom, setSubmittedFrom] = useState('');
   const [submittedTo, setSubmittedTo] = useState('');
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const [sortKey, setSortKey] = useState<PaymentColumnKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [headerFilters, setHeaderFilters] = useState<HeaderFilters>({});
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(FINANCE_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
@@ -604,7 +620,7 @@ export default function PaymentRequestsClient({
     };
   }, [workspace.rows]);
 
-  const filteredRows = useMemo(() => {
+  const listRows = useMemo(() => {
     const actor = String(workspace.viewer?.actorCode || '').trim().toLowerCase();
     return workspace.rows.filter((row) => {
       // Defense in depth: non–Finance / non–Super-Admin never see other employees' raised payments
@@ -700,6 +716,76 @@ export default function PaymentRequestsClient({
     restrictedToOwnPayments,
   ]);
 
+  const columnFilterOptions = useMemo(() => ({
+    requestNumber: uniqueColumnValues(listRows, 'requestNumber'),
+    paymentType: uniqueColumnValues(listRows, 'paymentType'),
+    beneficiary: uniqueColumnValues(listRows, 'beneficiary'),
+    description: uniqueColumnValues(listRows, 'description'),
+    currency: uniqueColumnValues(listRows, 'currency'),
+    department: uniqueColumnValues(listRows, 'department'),
+    project: uniqueColumnValues(listRows, 'project'),
+    currentStage: uniqueColumnValues(listRows, 'currentStage'),
+    approver: uniqueColumnValues(listRows, 'approver'),
+    status: uniqueColumnValues(listRows, 'status'),
+    grossAmount: [] as string[],
+    netAmount: [] as string[],
+    amountNgn: [] as string[],
+    submitted: [] as string[],
+  }), [listRows]);
+
+  const filteredRows = useMemo(() => {
+    const next = listRows.filter((row) => matchesHeaderFilters(row, headerFilters));
+    if (!sortKey) return next;
+    return [...next].sort((a, b) => comparePaymentColumn(a, b, sortKey, sortDir));
+  }, [headerFilters, listRows, sortDir, sortKey]);
+
+  const toggleColumnSort = (column: PaymentColumnKey) => {
+    if (sortKey === column) {
+      setSortDir((current) => (current === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setSortKey(column);
+    setSortDir(isNumericColumn(column) || isDateColumn(column) ? 'desc' : 'asc');
+  };
+
+  const setColumnSortDir = (column: PaymentColumnKey, dir: SortDir) => {
+    setSortKey(column);
+    setSortDir(dir);
+  };
+
+  const setColumnFilter = (column: PaymentColumnKey, next: HeaderFilters[PaymentColumnKey]) => {
+    setHeaderFilters((current) => {
+      const copy = { ...current };
+      if (!next || !isHeaderFilterActive(next)) delete copy[column];
+      else copy[column] = next;
+      return copy;
+    });
+  };
+
+  const renderColumnHeader = (
+    column: PaymentColumnKey,
+    label: string,
+    extraClass = '',
+    align: 'left' | 'right' = 'left',
+  ) => (
+    <th key={column} className={`whitespace-nowrap px-2.5 py-2 font-semibold ${extraClass}`}>
+      <PaymentColumnHeader
+        label={label}
+        column={column}
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSort={toggleColumnSort}
+        onSortDir={setColumnSortDir}
+        filter={headerFilters[column]}
+        options={columnFilterOptions[column]}
+        onFilterChange={setColumnFilter}
+        align={align}
+      />
+    </th>
+  );
+
+  const headerFilterCount = Object.values(headerFilters).filter((item) => isHeaderFilterActive(item)).length;
+
   useEffect(() => {
     setPage(1);
   }, [
@@ -717,6 +803,9 @@ export default function PaymentRequestsClient({
     detailFocus,
     listMode,
     pageSize,
+    headerFilters,
+    sortKey,
+    sortDir,
   ]);
 
   const { pageRows, totalPages } = useMemo(
@@ -739,6 +828,8 @@ export default function PaymentRequestsClient({
     Boolean(submittedFrom),
     Boolean(submittedTo),
     Boolean(query.trim()),
+    headerFilterCount,
+    Boolean(sortKey),
   ].filter(Boolean).length;
 
   const clearListFilters = () => {
@@ -752,6 +843,9 @@ export default function PaymentRequestsClient({
     setSubmittedFrom('');
     setSubmittedTo('');
     setQuery('');
+    setHeaderFilters({});
+    setSortKey(null);
+    setSortDir('asc');
   };
 
   const exportFilteredRows = () => {
@@ -1277,9 +1371,9 @@ export default function PaymentRequestsClient({
 
   return (
     <PageFrame>
-      <header className="flex flex-col gap-4 overflow-visible rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5 lg:flex-row lg:items-center lg:justify-between">
+      <header className="flex flex-col gap-3 overflow-visible rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between lg:p-5">
         <div className="min-w-0">
-          <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[28px]">
+          <h1 className="text-xl font-semibold tracking-tight text-slate-900 lg:text-[28px]">
             {listMode === 'inbox'
               ? 'My Approval Inbox'
               : listMode === 'mine'
@@ -1288,7 +1382,7 @@ export default function PaymentRequestsClient({
                   ? 'Payment Requests'
                   : 'Payment Requests'}
           </h1>
-          <p className="mt-1 max-w-3xl text-sm text-slate-500">
+          <p className="mt-1 max-w-3xl text-xs text-slate-500 lg:text-sm">
             {listMode === 'inbox'
               ? 'Only payments waiting for your approval. Click a card or row to open the request.'
               : listMode === 'mine'
@@ -1298,7 +1392,7 @@ export default function PaymentRequestsClient({
                   : 'Create, submit, track and manage payment requests through the full approval lifecycle.'}
           </p>
           {listMode !== 'inbox' ? (
-            <p className="mt-2 text-xs font-medium text-slate-400">
+            <p className="mt-1 hidden text-xs font-medium text-slate-400 xl:block">
               Enabled types: Cash Advance Payment · Supplier Invoice Payment · Expense Payment
             </p>
           ) : null}
@@ -1376,7 +1470,7 @@ export default function PaymentRequestsClient({
 
       {toast ? <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">{toast}</div> : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="flex gap-2 overflow-x-auto pb-1 2xl:grid 2xl:grid-cols-4 2xl:overflow-visible">
         {visibleKpis.map((kpi) => {
           const active = detailFocus === kpi.id;
           return (
@@ -1384,18 +1478,18 @@ export default function PaymentRequestsClient({
               key={kpi.id}
               type="button"
               onClick={() => selectKpi(kpi.id)}
-              className={`cursor-pointer rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:border-[#008FD5] hover:bg-[#EAF6FF] hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#008FD5]/40 ${
+              className={`min-w-[158px] shrink-0 cursor-pointer rounded-2xl border bg-white p-3 text-left shadow-sm transition hover:border-[#008FD5] hover:bg-[#EAF6FF] hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#008FD5]/40 2xl:min-w-0 ${
                 active ? 'border-[#008FD5] ring-2 ring-[#008FD5]/20' : 'border-slate-200/80'
               }`}
             >
               <div className="flex items-start justify-between gap-2">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">{kpi.label}</p>
-                <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl ${kpi.wrap}`}>
-                  <kpi.icon className={`h-4 w-4 ${kpi.color}`} />
+                <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-500">{kpi.label}</p>
+                <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${kpi.wrap}`}>
+                  <kpi.icon className={`h-3.5 w-3.5 ${kpi.color}`} />
                 </span>
               </div>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{kpi.count}</p>
-              <p className="mt-1 text-xs font-medium text-slate-500">{moneyCompact(kpi.value)}</p>
+              <p className="mt-1.5 text-xl font-semibold tabular-nums text-slate-900 2xl:text-2xl">{kpi.count}</p>
+              <p className="mt-0.5 text-[11px] font-medium text-slate-500">{moneyCompact(kpi.value)}</p>
             </button>
           );
         })}
@@ -1592,6 +1686,31 @@ export default function PaymentRequestsClient({
           </div>
         ) : null}
 
+        {(sortKey || headerFilterCount) ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-1.5">
+            <p className="text-[11px] font-medium text-slate-600">
+              {sortKey ? `Sorted by ${PAYMENT_COLUMN_LABELS[sortKey]} (${sortDir === 'asc' ? 'A→Z' : 'Z→A'})` : 'Column filters on'}
+              {headerFilterCount ? ` · ${headerFilterCount} header filter${headerFilterCount === 1 ? '' : 's'}` : ''}
+              <span className="text-slate-400"> · Click a column title to sort, arrow to filter</span>
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setHeaderFilters({});
+                setSortKey(null);
+                setSortDir('asc');
+              }}
+              className="rounded-md px-2 py-0.5 text-[11px] font-semibold text-[#0369A1] hover:bg-white"
+            >
+              Clear header sort/filter
+            </button>
+          </div>
+        ) : (
+          <p className="hidden border-b border-slate-100 px-3 py-1.5 text-[11px] text-slate-400 lg:block">
+            Click any column title to sort. Use the arrow beside it to filter that field.
+          </p>
+        )}
+
         <MobileCardList>
           {filteredRows.length ? pageRows.map((row) => {
             const showApproveActions = canApproveRow(row.requestId);
@@ -1673,29 +1792,25 @@ export default function PaymentRequestsClient({
         </MobileCardList>
 
         <DesktopOnlyTable>
-          <ScrollTable minWidth={showFxColumn ? 1280 : 1180}>
-            <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50/90 text-slate-500">
+          <ScrollTable minWidth={showFxColumn ? 1080 : 960} maxHeight="min(58vh, 640px)">
+            <table className="w-full border-separate border-spacing-0 text-left text-xs [&_td]:border-b [&_td]:border-slate-100 [&_th]:border-b [&_th]:border-slate-200">
+            <thead className="text-slate-500">
               <tr>
-                {[
-                  'Request No.',
-                  'Payment Type',
-                  'Beneficiary',
-                  'Description',
-                  'Gross Amount',
-                  'Net Amount',
-                  ...(showFxColumn ? ['Amount (NGN)'] : []),
-                  'Currency',
-                  'Department',
-                  'Project',
-                  'Submitted',
-                  'Current Stage',
-                  'Approver',
-                  'Status',
-                  'Action',
-                ].map((column) => (
-                  <th key={column || 'actions'} className="whitespace-nowrap px-3 py-2.5 font-semibold">{column}</th>
-                ))}
+                {renderColumnHeader('requestNumber', 'Request No.', 'sticky left-0 top-0 z-30 bg-slate-50 shadow-[1px_0_0_#e2e8f0]')}
+                {renderColumnHeader('paymentType', 'Payment Type', 'sticky top-0 z-20 bg-slate-50')}
+                {renderColumnHeader('beneficiary', 'Beneficiary', 'sticky top-0 z-20 bg-slate-50')}
+                {renderColumnHeader('description', 'Description', 'sticky top-0 z-20 hidden bg-slate-50 2xl:table-cell')}
+                {renderColumnHeader('grossAmount', 'Gross Amount', 'sticky top-0 z-20 bg-slate-50 text-right', 'right')}
+                {renderColumnHeader('netAmount', 'Net Amount', 'sticky top-0 z-20 bg-slate-50 text-right', 'right')}
+                {showFxColumn ? renderColumnHeader('amountNgn', 'Amount (NGN)', 'sticky top-0 z-20 bg-slate-50 text-right', 'right') : null}
+                {renderColumnHeader('currency', 'Currency', 'sticky top-0 z-20 hidden bg-slate-50 2xl:table-cell')}
+                {renderColumnHeader('department', 'Department', 'sticky top-0 z-20 bg-slate-50')}
+                {renderColumnHeader('project', 'Project', 'sticky top-0 z-20 hidden bg-slate-50 2xl:table-cell')}
+                {renderColumnHeader('submitted', 'Submitted', 'sticky top-0 z-20 bg-slate-50')}
+                {renderColumnHeader('currentStage', 'Current Stage', 'sticky top-0 z-20 hidden bg-slate-50 2xl:table-cell')}
+                {renderColumnHeader('approver', 'Approver', 'sticky top-0 z-20 hidden bg-slate-50 2xl:table-cell')}
+                {renderColumnHeader('status', 'Status', 'sticky top-0 z-20 bg-slate-50')}
+                <th className="sticky right-0 top-0 z-30 whitespace-nowrap bg-slate-50 px-2.5 py-2 font-semibold shadow-[-1px_0_0_#e2e8f0]">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -1711,14 +1826,14 @@ export default function PaymentRequestsClient({
                 return (
                   <tr
                     key={row.requestId}
-                    className="cursor-pointer border-t border-slate-100 hover:bg-[#EAF6FF]"
+                    className="group cursor-pointer hover:bg-[#EAF6FF]"
                     onClick={(event) => {
                       if ((event.target as HTMLElement).closest('a, button, input')) return;
                       router.push(`/finance/approvals/request/${row.requestId}`);
                     }}
                   >
-                    <td className="px-3 py-2.5">
-                      <div className="flex flex-col gap-1">
+                    <td className="sticky left-0 z-10 bg-white px-2.5 py-2 shadow-[1px_0_0_#e2e8f0] group-hover:bg-[#EAF6FF]">
+                      <div className="flex flex-col gap-0.5">
                         <Link href={`/finance/approvals/request/${row.requestId}`} className="font-semibold text-[#008FD5] hover:underline">
                           {row.requestNumber}
                         </Link>
@@ -1734,32 +1849,18 @@ export default function PaymentRequestsClient({
                         ) : null}
                       </div>
                     </td>
-                    <td className="px-3 py-2.5">
-                      <span className="inline-flex flex-col gap-1">
-                        <span className="inline-flex items-center gap-1.5">
-                          <TypeIcon className="h-3.5 w-3.5 text-slate-400" />
-                          {row.paymentType}
-                        </span>
-                        {supplierInvoiceCategoryLabel(row) ? (
-                          <span className={`w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                            isExpenseNoPoPayment(row)
-                              ? 'bg-amber-50 text-amber-800'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}>
-                            {supplierInvoiceCategoryLabel(row)}
-                            {isExpenseNoPoPayment(row) && row.payload?.expenseNature
-                              ? ` · ${String(row.payload.expenseNature)}`
-                              : ''}
-                          </span>
-                        ) : null}
+                    <td className="whitespace-nowrap px-2.5 py-2">
+                      <span className="inline-flex max-w-[150px] items-center gap-1.5 truncate">
+                          <TypeIcon className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                          <span className="truncate">{row.paymentType.replace(/ Payment$/i, '')}</span>
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 text-slate-700">{row.beneficiaryName || '—'}</td>
-                    <td className="max-w-[220px] truncate px-3 py-2.5 text-slate-600">{row.description || row.title}</td>
-                    <td className="px-3 py-2.5 tabular-nums">{moneyFull(row.grossAmount, row.currencyCode)}</td>
-                    <td className="px-3 py-2.5 tabular-nums font-semibold">{moneyFull(row.netAmount, row.currencyCode)}</td>
+                    <td className="max-w-[140px] truncate px-2.5 py-2 text-slate-700">{row.beneficiaryName || '—'}</td>
+                    <td className="hidden max-w-[200px] truncate px-2.5 py-2 text-slate-600 2xl:table-cell">{row.description || row.title}</td>
+                    <td className="whitespace-nowrap px-2.5 py-2 text-right tabular-nums">{moneyFull(row.grossAmount, row.currencyCode)}</td>
+                    <td className="whitespace-nowrap px-2.5 py-2 text-right tabular-nums font-semibold">{moneyFull(row.netAmount, row.currencyCode)}</td>
                     {showFxColumn ? (
-                      <td className="px-3 py-2.5">
+                      <td className="whitespace-nowrap px-2.5 py-2 text-right">
                         {foreign ? (
                           <div>
                             <div className="tabular-nums font-semibold text-slate-800">{moneyNgn(rowAmountNgn(row))}</div>
@@ -1775,18 +1876,18 @@ export default function PaymentRequestsClient({
                         )}
                       </td>
                     ) : null}
-                    <td className="px-3 py-2.5">{row.currencyCode}</td>
-                    <td className="px-3 py-2.5">{row.department || '—'}</td>
-                    <td className="px-3 py-2.5">{row.projectCode || '—'}</td>
-                    <td className="px-3 py-2.5">{fmtDateTime(row.submittedAt || row.createdAt)}</td>
-                    <td className="px-3 py-2.5">
+                    <td className="hidden px-2.5 py-2 2xl:table-cell">{row.currencyCode}</td>
+                    <td className="max-w-[120px] truncate px-2.5 py-2">{row.department || '—'}</td>
+                    <td className="hidden px-2.5 py-2 2xl:table-cell">{row.projectCode || '—'}</td>
+                    <td className="whitespace-nowrap px-2.5 py-2">{fmtDateTime(row.submittedAt || row.createdAt)}</td>
+                    <td className="hidden px-2.5 py-2 2xl:table-cell">
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">{row.currentStage}</span>
                     </td>
-                    <td className="px-3 py-2.5">{row.currentApproverName || '—'}</td>
-                    <td className="px-3 py-2.5">
+                    <td className="hidden max-w-[120px] truncate px-2.5 py-2 2xl:table-cell">{row.currentApproverName || '—'}</td>
+                    <td className="whitespace-nowrap px-2.5 py-2">
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusTone(row.status)}`}>{row.status}</span>
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="sticky right-0 z-10 bg-white px-2.5 py-2 shadow-[-1px_0_0_#e2e8f0] group-hover:bg-[#EAF6FF]">
                       {showApproveActions ? (
                         <div className="flex flex-wrap items-center gap-1.5">
                           <button

@@ -25,11 +25,14 @@ export function PageFrame({
 export function ScrollTable({
   children,
   minWidth = 1100,
+  maxHeight,
   className = '',
   hint = true,
 }: {
   children: ReactNode;
   minWidth?: number | string;
+  /** Freeze header/columns inside a laptop-friendly pane when set. */
+  maxHeight?: number | string;
   className?: string;
   /** Show a subtle “scroll for more” cue on small screens */
   hint?: boolean;
@@ -37,15 +40,21 @@ export function ScrollTable({
   const style = {
     minWidth: typeof minWidth === 'number' ? `${minWidth}px` : minWidth,
   } as CSSProperties;
+  const frameStyle = maxHeight
+    ? { maxHeight: typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight }
+    : undefined;
 
   return (
     <div className={`relative min-w-0 ${className}`.trim()}>
       {hint ? (
-        <p className="px-3 pb-1 text-[10px] font-medium text-slate-400 lg:hidden">
-          Swipe sideways to see all columns
+        <p className="px-3 pb-1 text-[10px] font-medium text-slate-400 2xl:hidden">
+          Scroll sideways to see all columns
         </p>
       ) : null}
-      <div className="dle-scroll-x overflow-x-auto overscroll-x-contain">
+      <div
+        className={`dle-scroll-x overscroll-contain ${maxHeight ? 'overflow-auto' : 'overflow-x-auto overscroll-x-contain'}`}
+        style={frameStyle}
+      >
         <div style={style}>{children}</div>
       </div>
     </div>
