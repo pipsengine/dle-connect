@@ -158,13 +158,14 @@ const contributorReason = (
     return 'Gross pay changed';
   }
   if (key === 'deductions') {
-    const deltas: Array<[string, number]> = [
+    const deductionDeltas: Array<[string, number]> = [
       ['PAYE changed', roundMoney(Number(current.paye || 0) - Number(previous.paye || 0))],
       ['Employee pension changed', roundMoney(Number(current.pensionEmployee || 0) - Number(previous.pensionEmployee || previous.pension || 0))],
       ['Loan recovery changed', roundMoney(Number(current.loanRecovery || 0) - Number(previous.loanRecovery || 0))],
       ['Other deductions changed', roundMoney(Number(current.otherDeductions || 0) - Number(previous.otherDeductions || 0))],
-    ].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
-    return Math.abs(deltas[0][1]) >= 0.005 ? deltas[0][0] : 'Deduction mix changed';
+    ];
+    deductionDeltas.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+    return Math.abs(deductionDeltas[0][1]) >= 0.005 ? deductionDeltas[0][0] : 'Deduction mix changed';
   }
   if (key === 'netPay') {
     const grossDelta = roundMoney(Number(current.grossPay || 0) - Number(previous.grossPay || 0));
@@ -173,12 +174,13 @@ const contributorReason = (
     if (Math.abs(deductionDelta) >= 0.005) return 'Deductions changed';
     return 'Net pay changed';
   }
-  const deltas: Array<[string, number]> = [
+  const employerDeltas: Array<[string, number]> = [
     ['Employer pension changed', roundMoney(Number(current.pensionEmployer || 0) - Number(previous.pensionEmployer || 0))],
     ['Employer statutory changed', roundMoney(Number(current.statutoryEmployer || 0) - Number(previous.statutoryEmployer || 0))],
     ['Gross-pay-linked cost changed', roundMoney(Number(current.grossPay || 0) - Number(previous.grossPay || 0))],
-  ].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
-  return Math.abs(deltas[0][1]) >= 0.005 ? deltas[0][0] : 'Employer cost changed';
+  ];
+  employerDeltas.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  return Math.abs(employerDeltas[0][1]) >= 0.005 ? employerDeltas[0][0] : 'Employer cost changed';
 };
 
 const buildPayrollMomMetricDetail = (
