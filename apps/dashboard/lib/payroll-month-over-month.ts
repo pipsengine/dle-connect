@@ -158,7 +158,7 @@ const contributorReason = (
     return 'Gross pay changed';
   }
   if (key === 'deductions') {
-    const deltas = [
+    const deltas: Array<[string, number]> = [
       ['PAYE changed', roundMoney(Number(current.paye || 0) - Number(previous.paye || 0))],
       ['Employee pension changed', roundMoney(Number(current.pensionEmployee || 0) - Number(previous.pensionEmployee || previous.pension || 0))],
       ['Loan recovery changed', roundMoney(Number(current.loanRecovery || 0) - Number(previous.loanRecovery || 0))],
@@ -173,7 +173,7 @@ const contributorReason = (
     if (Math.abs(deductionDelta) >= 0.005) return 'Deductions changed';
     return 'Net pay changed';
   }
-  const deltas = [
+  const deltas: Array<[string, number]> = [
     ['Employer pension changed', roundMoney(Number(current.pensionEmployer || 0) - Number(previous.pensionEmployer || 0))],
     ['Employer statutory changed', roundMoney(Number(current.statutoryEmployer || 0) - Number(previous.statutoryEmployer || 0))],
     ['Gross-pay-linked cost changed', roundMoney(Number(current.grossPay || 0) - Number(previous.grossPay || 0))],
