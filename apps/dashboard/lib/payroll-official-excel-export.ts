@@ -630,7 +630,7 @@ const splitEmployerStatutory = (record: Enriched) => {
   const gross = Number(record.grossPay || 0);
   const onePct = roundMoney(gross * 0.01);
   const total = Number(record.statutoryEmployer || 0);
-  if (total <= 0) return { itf: onePct, nsitf: onePct };
+  if (record.isDailyRate || total <= 0) return { itf: 0, nsitf: 0 };
   // JULY PAYROLL sample uses 1% ITF + 1% NSITF of gross when employer statutory ≈ 2%.
   if (Math.abs(total - onePct * 2) <= 1) return { itf: onePct, nsitf: onePct };
   const half = roundMoney(total / 2);

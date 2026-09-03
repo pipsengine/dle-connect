@@ -46,7 +46,7 @@
           "annualCap": null,
           "minimumMonthlyIncome": 0,
           "eligibilityMode": "all_payroll_employees",
-          "eligibleEmploymentTypes": ["Permanent", "Contract", "Payroll", "Daily"],
+          "eligibleEmploymentTypes": ["Permanent", "Contract", "Payroll"],
           "remittanceFrequency": "Monthly",
           "remittanceDueDay": 30,
           "authority": "Nigeria Social Insurance Trust Fund",
@@ -67,7 +67,7 @@
           "eligibilityMode": "employer_threshold",
           "employeeThreshold": 25,
           "turnoverThreshold": 50000000,
-          "eligibleEmploymentTypes": ["Permanent", "Contract", "Payroll", "Daily"],
+          "eligibleEmploymentTypes": ["Permanent", "Contract", "Payroll"],
           "remittanceFrequency": "Annual",
           "remittanceDueDate": "03-31",
           "authority": "Industrial Training Fund",
@@ -77,7 +77,8 @@
       "regulatoryChanges": [
         { "id": "nhf-rate", "title": "NHF Contribution", "effectiveDate": "2026-01-01", "impact": "NHF is not deducted from employee pay in the migrated Sage payroll baseline." },
         { "id": "nsitf-employer-cost", "title": "NSITF Employer Contribution", "effectiveDate": "2026-01-01", "impact": "NSITF configured as 1% employer contribution and not an employee deduction." },
-        { "id": "itf-annual-payroll", "title": "ITF Annual Payroll Levy", "effectiveDate": "2026-01-01", "impact": "ITF configured as 1% of annual payroll with employer threshold support." }
+        { "id": "itf-annual-payroll", "title": "ITF Annual Payroll Levy", "effectiveDate": "2026-01-01", "impact": "ITF configured as 1% of annual payroll with employer threshold support." },
+        { "id": "day-rate-tax-only", "title": "Day-rate contractors excluded from statutory funds", "effectiveDate": "2026-09-03", "impact": "Daily-rate / contract-day-rate staff have no NHF, NSITF or ITF. The only deduction is tax (WHT)." }
       ]
     }
   ],

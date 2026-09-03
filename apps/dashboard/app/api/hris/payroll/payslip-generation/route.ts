@@ -278,7 +278,7 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
       ...!compact(employee.payrollGroup) ? ['Payroll group is missing'] : [],
       ...!activeEmployee(employee) ? ['Employee is not payroll active'] : [],
       ...pension.issues.filter((issue) => issue.includes('missing') || issue.includes('not payroll active')).map((issue) => `Pension: ${issue}`),
-      ...funds.issues.map((issue) => `Statutory: ${issue}`),
+      ...dailyRateEmployee ? [] : funds.issues.map((issue) => `Statutory: ${issue}`),
       ...loans.flatMap((loan) => loan.issues.filter((issue) => issue.includes('missing') || issue.includes('disabled')).map((issue) => `Loan: ${issue}`)),
     ];
     const status = statusFrom(issues);
@@ -366,10 +366,12 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
         { label: 'Other Deductions', amount: otherStatutory },
         { label: 'Loan / Salary Advance', amount: loanRecovery },
       ].filter((item) => item.amount > 0),
-      employerContributions: [
-        { label: 'Employer Pension', amount: roundMoney(pension.employerContribution) },
-        { label: 'Employer Statutory Funds', amount: roundMoney(funds.employerCosts) },
-      ].filter((item) => item.amount > 0),
+      employerContributions: dailyRateEmployee
+        ? []
+        : [
+          { label: 'Employer Pension', amount: roundMoney(pension.employerContribution) },
+          { label: 'Employer Statutory Funds', amount: roundMoney(funds.employerCosts) },
+        ].filter((item) => item.amount > 0),
       grossPay: amounts.grossPay,
       totalDeductions,
       netPay,

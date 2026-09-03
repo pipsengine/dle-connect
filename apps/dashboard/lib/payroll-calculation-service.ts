@@ -937,6 +937,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const baseAmounts = calculatePayrollEarnings(calculationEmployee, calculationOptions);
     const amounts = applyDailyRateFromTimesheets(employee, baseAmounts, timesheetHours, requestedPeriod);
     const dailyRatePreview = isDailyRatePayrollEmployee(employee, amounts.profileId);
+    const dailyRateEmployee = dailyRatePreview;
     const timesheetPreview = resolveTimesheetHoursForEmployee(employee, timesheetHours);
     const hasBookedTimesheet = Boolean(
       timesheetPreview && (Number(timesheetPreview.daysWorked || 0) > 0 || Number(timesheetPreview.bookedHours || 0) > 0),
@@ -969,25 +970,27 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const paye = variant.payCurrency === 'USD'
       ? (Number.isFinite(usdPayeOverride) ? roundMoney(usdPayeOverride) : roundMoney(tax.monthlyPaye))
       : (Number.isFinite(ngnPayeOverride) ? roundMoney(ngnPayeOverride) : tax.monthlyPaye);
-    const statutoryPension = variant.payCurrency === 'USD' ? 0 : roundMoney(pension.employeeContribution);
-    const additionalPension = variant.payCurrency === 'USD' ? 0 : roundMoney(pension.voluntaryContribution);
+    const skipStatutory = variant.payCurrency === 'USD' || dailyRateEmployee;
+    const statutoryPension = skipStatutory ? 0 : roundMoney(pension.employeeContribution);
+    const additionalPension = skipStatutory ? 0 : roundMoney(pension.voluntaryContribution);
     const employeePension = roundMoney(statutoryPension + additionalPension);
-    const statutoryEmployee = variant.payCurrency === 'USD' ? 0 : funds.employeeDeductions;
+    const statutoryEmployee = skipStatutory ? 0 : funds.employeeDeductions;
     const loanRecovery = roundMoney(loans.reduce((sum, loan) => sum + loan.payrollRecovery, 0));
     const taxComponentMonthly = (componentId: string) => (tax.statutoryItems.find((item) => item.id === componentId)?.amount || 0) / 12;
-    const nhf = variant.payCurrency === 'USD' ? 0 : taxComponentMonthly('nhf');
-    const nhfFundDeduction = roundMoney(funds.fundResults.find((item) => item.id === 'nhf')?.monthlyAmount || 0);
+    const nhf = skipStatutory ? 0 : taxComponentMonthly('nhf');
+    const nhfFundDeduction = skipStatutory ? 0 : roundMoney(funds.fundResults.find((item) => item.id === 'nhf')?.monthlyAmount || 0);
     const statutoryEmployeeDeductions = roundMoney(Math.max(0, statutoryEmployee - (nhf > 0 && nhfFundDeduction > 0 ? nhfFundDeduction : 0)));
-    const unionDues = variant.payCurrency === 'USD' ? 0 : taxComponentMonthly('union-dues');
-    const otherStatutory = variant.payCurrency === 'USD' ? 0 : taxComponentMonthly('other-statutory');
+    const unionDues = skipStatutory ? 0 : taxComponentMonthly('union-dues');
+    const otherStatutory = skipStatutory ? 0 : taxComponentMonthly('other-statutory');
     const otherDeductions = roundMoney(unionDues + otherStatutory);
     const totalDeductions = roundMoney(paye + employeePension + statutoryEmployeeDeductions + loanRecovery + nhf + otherDeductions);
     const netPay = roundMoney(Math.max(0, amounts.grossPay - totalDeductions));
-    const employerPension = variant.payCurrency === 'USD' ? 0 : pension.employerContribution;
-    const employerStatutory = variant.payCurrency === 'USD' ? 0 : funds.employerCosts;
-    const employerCost = roundMoney(amounts.grossPay + employerPension + employerStatutory);
+    const employerPension = skipStatutory ? 0 : pension.employerContribution;
+    const employerStatutory = skipStatutory ? 0 : funds.employerCosts;
+    const employerCost = dailyRateEmployee
+      ? roundMoney(amounts.grossPay)
+      : roundMoney(amounts.grossPay + employerPension + employerStatutory);
     const deductionRatio = amounts.grossPay > 0 ? roundMoney((totalDeductions / amounts.grossPay) * 100) : 0;
-    const dailyRateEmployee = isDailyRatePayrollEmployee(employee, amounts.profileId);
     const stipendEmployee = amounts.profileId === 'stipend-non-taxable';
     const nonPermanentEmployee = isNonPermanentPayrollEmployee(employee);
     const rates = dailyRateValues(employee, dailyRateEmployee);

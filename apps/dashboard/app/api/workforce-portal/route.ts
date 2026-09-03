@@ -4,7 +4,7 @@ import { employeeReportsToManager, resolveReportingManagerDisplay } from '@/lib/
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { AUTH_COOKIE, verifySessionToken, type SessionPayload } from '@/lib/auth/session';
 import { calculatePayrollEarnings, calculatePermanentUnionDues, isGenericPayrollGrade } from '@/lib/payroll-earnings-engine';
-import { isNonPermanentPayrollEmployee, permanentStyleSageEarnings, sagePayslipAcceptableForEmployee, sanitizePermanentPayslipEarnings } from '@/lib/payroll-employee-classification';
+import { isDailyRatePayrollEmployee, isNonPermanentPayrollEmployee, permanentStyleSageEarnings, sagePayslipAcceptableForEmployee, sanitizePermanentPayslipEarnings } from '@/lib/payroll-employee-classification';
 import { activeLoansVersion, readPayrollLoanApplications, readPayrollLoansConfig } from '@/lib/payroll-loans-engine';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
@@ -436,11 +436,20 @@ const mapEnterpriseDeductionLines = (record: PayrollCalculationRecord) =>
       amount: roundMoney(Number(line.amount || 0)),
     }))
     .filter((line) => Math.abs(line.amount) > 0.004);
-const mapEnterpriseEmployerContributionLines = (record: PayrollCalculationRecord) => [
-  { code: 'PENSION_ER', label: 'Pension Employer Contribution', units: record.pensionEmployer > 0 ? 1 : 0, amount: roundMoney(record.pensionEmployer) },
-  { code: 'NSITF', label: 'NSITF', units: record.grossPay > 0 ? 1 : 0, amount: roundMoney(record.grossPay * 0.01) },
-  { code: 'ITF', label: 'ITF', units: record.grossPay > 0 ? 1 : 0, amount: roundMoney(record.grossPay * 0.01) },
-].filter((line) => Math.abs(line.amount) > 0.004);
+const mapEnterpriseEmployerContributionLines = (record: PayrollCalculationRecord) => {
+  const pension = {
+    code: 'PENSION_ER',
+    label: 'Pension Employer Contribution',
+    units: record.pensionEmployer > 0 ? 1 : 0,
+    amount: roundMoney(record.pensionEmployer),
+  };
+  if (record.isDailyRate) return [pension].filter((line) => Math.abs(line.amount) > 0.004);
+  return [
+    pension,
+    { code: 'NSITF', label: 'NSITF', units: record.grossPay > 0 ? 1 : 0, amount: roundMoney(record.grossPay * 0.01) },
+    { code: 'ITF', label: 'ITF', units: record.grossPay > 0 ? 1 : 0, amount: roundMoney(record.grossPay * 0.01) },
+  ].filter((line) => Math.abs(line.amount) > 0.004);
+};
 
 const dedupePayrollLinesByCode = <T extends { code: string; label: string; units: number; amount: number }>(lines: T[]) => {
   const merged = new Map<string, T>();
@@ -782,9 +791,10 @@ export async function GET(request: Request) {
       const unionDues = roundMoney((tax?.statutoryItems.find((item) => item.id === 'union-dues')?.amount || 0) / 12);
       const deductions = roundMoney(paye + pensionEmployee + nhf + unionDues + otherStatutory);
       const employerPension = roundMoney(pension?.employerContribution || 0);
-      const nsitf = roundMoney(earnings.grossPay * 0.01);
-      const itf = roundMoney(earnings.grossPay * 0.01);
-      const storedContributionLines = (payrollEmployee.sagePayrollContributions?.lines || [])
+      const dailyRatePayslip = isDailyRatePayrollEmployee(payrollEmployee);
+      const nsitf = dailyRatePayslip ? 0 : roundMoney(earnings.grossPay * 0.01);
+      const itf = dailyRatePayslip ? 0 : roundMoney(earnings.grossPay * 0.01);
+      const storedContributionLines = (dailyRatePayslip ? [] : (payrollEmployee.sagePayrollContributions?.lines || []))
         .map((line) => ({
           code: compact(line.code),
           label: compact(line.name || line.code),

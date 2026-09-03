@@ -35,6 +35,12 @@ const stampDayrateCompany = (record: PayrollCalculationRecord, row: DayrateSched
       salaryStructure: 'Daily Rate',
       timesheetDaysWorked: row.weekdayDays || record.timesheetDaysWorked,
       timesheetBookedHours: dayrateBookedHours(row) || record.timesheetBookedHours,
+      pensionEmployee: 0,
+      pensionEmployer: 0,
+      statutoryEmployee: 0,
+      statutoryEmployer: 0,
+      nhfApplicable: false,
+      employerCost: roundMoney(Number(record.grossPay || 0)),
     },
     row.company,
   );
