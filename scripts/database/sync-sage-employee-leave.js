@@ -185,7 +185,11 @@ WITH legacy AS (
 MERGE [hris].[LeaveBalances] AS target
 USING legacy AS source
 ON target.[EmployeeId] = source.employeeCode AND target.[LeaveType] = source.[LeaveType]
-WHEN MATCHED AND source.isSage = 1 THEN UPDATE SET
+WHEN MATCHED AND source.isSage = 1
+  AND (
+    NULLIF(LTRIM(RTRIM(ISNULL(target.[SourceSystem], N''))), N'') IS NULL
+    OR target.[SourceSystem] = N'Sage 300 People Payroll'
+  ) THEN UPDATE SET
   [FullName]=source.[FullName],[Department]=source.[Department],[CurrentBalance]=source.[CurrentBalance],
   [AccruedBalance]=source.[AccruedBalance],[UsedBalance]=source.[UsedBalance],[PendingBalance]=source.[PendingBalance],
   [ForfeitedBalance]=source.[ForfeitedBalance],[CarryForwardBalance]=source.[CarryForwardBalance],
@@ -296,7 +300,10 @@ const upsertBalance = async (pool, employee, row) => {
 MERGE [hris].[LeaveBalances] AS target
 USING (SELECT @EmployeeId AS [EmployeeId], @LeaveType AS [LeaveType]) AS source
 ON target.[EmployeeId] = source.[EmployeeId] AND target.[LeaveType] = source.[LeaveType]
-WHEN MATCHED THEN UPDATE SET
+WHEN MATCHED AND (
+  NULLIF(LTRIM(RTRIM(ISNULL(target.[SourceSystem], N''))), N'') IS NULL
+  OR target.[SourceSystem] = N'Sage 300 People Payroll'
+) THEN UPDATE SET
   [FullName]=@FullName,[Department]=@Department,[CurrentBalance]=@CurrentBalance,[AccruedBalance]=@AccruedBalance,
   [UsedBalance]=@UsedBalance,[PendingBalance]=@PendingBalance,[ForfeitedBalance]=@ForfeitedBalance,[CarryForwardBalance]=@CarryForwardBalance,
   [LiabilityValue]=@LiabilityValue,[StatusName]=@StatusName,[ExceptionsJson]=@ExceptionsJson,[SourceSystem]=@SourceSystem,[UpdatedAt]=SYSUTCDATETIME()
@@ -341,13 +348,17 @@ const upsertTransaction = async (pool, employee, row) => {
 MERGE [hris].[LeaveApplications] AS target
 USING (SELECT @Id AS [Id]) AS source
 ON target.[Id] = source.[Id]
-WHEN MATCHED THEN UPDATE SET
+WHEN MATCHED AND target.[Id] LIKE N'sage-leave-tx-%'
+  AND (
+    NULLIF(LTRIM(RTRIM(ISNULL(target.[SourceSystem], N''))), N'') IS NULL
+    OR target.[SourceSystem] = N'Sage 300 People Payroll'
+  ) THEN UPDATE SET
   [SourceSystem]=@SourceSystem,[EmployeeId]=@EmployeeId,[FullName]=@FullName,[Department]=@Department,[ManagerName]=@ManagerName,
   [Location]=@Location,[EmployeeCategory]=@EmployeeCategory,[LeaveType]=@LeaveType,[StartDate]=@StartDate,[EndDate]=@EndDate,
   [Days]=@Days,[StatusName]=@StatusName,[WorkflowStage]=@WorkflowStage,[ApprovalStatus]=@ApprovalStatus,
   [PolicyComplianceStatus]=@PolicyComplianceStatus,[BalanceImpact]=@BalanceImpact,[ActingOfficer]=@ActingOfficer,
   [SupportingDocuments]=@SupportingDocuments,[ExceptionsJson]=@ExceptionsJson,[UpdatedAt]=SYSUTCDATETIME()
-WHEN NOT MATCHED THEN INSERT
+WHEN NOT MATCHED AND @Id LIKE N'sage-leave-tx-%' THEN INSERT
   ([Id],[SourceSystem],[EmployeeId],[FullName],[Department],[ManagerName],[Location],[EmployeeCategory],[LeaveType],[StartDate],[EndDate],
    [Days],[StatusName],[WorkflowStage],[ApprovalStatus],[PolicyComplianceStatus],[BalanceImpact],[AvailableBalance],[ActingOfficer],[SupportingDocuments],[ExceptionsJson])
 VALUES
