@@ -316,7 +316,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
   const [grade, setGrade] = useState('All Grades');
   const [department, setDepartment] = useState('All Departments');
   const [employmentType, setEmploymentType] = useState('All Types');
-  const [selectedId, setSelectedId] = useState('');
+  const [detailRecordKey, setDetailRecordKey] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [savingNhf, setSavingNhf] = useState(false);
@@ -331,7 +331,6 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
       if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Employee salary setup request failed (${res.status})`);
       const data = json.data;
       setPayload(data);
-      setSelectedId((current) => current || (data.records[0] ? (data.records[0].recordKey || `${data.records[0].employeeId}:${data.records[0].payrollGroup}:${data.records[0].payCurrency}`) : ''));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to load employee salary setup');
     } finally {
@@ -379,7 +378,24 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const selected = filtered.find((record) => recordKeyOf(record) === selectedId) || pageRows[0] || null;
+  const detailRecord = records.find((record) => recordKeyOf(record) === detailRecordKey) || null;
+
+  const openDetail = (rowKey: string) => setDetailRecordKey(rowKey);
+  const closeDetail = () => setDetailRecordKey('');
+
+  useEffect(() => {
+    if (!detailRecordKey) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeDetail();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [detailRecordKey]);
   const salaryTableColumns = useMemo(() => buildSalaryTableColumns(records), [records]);
   const salaryTableColumnCount = salaryTableColumns.length;
 
@@ -511,7 +527,6 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to save NHF option');
       setToast(nhfApplicable ? 'NHF enabled for selected employee.' : 'NHF disabled for selected employee.');
       await load();
-      setSelectedId(employeeId);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to save NHF option');
     } finally {
@@ -650,9 +665,8 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 wide:grid-cols-[minmax(0,1fr)_420px]">
-                <div className="min-w-0 border-r border-[#E5E7EB]">
-                  <div className="max-h-[620px] overflow-auto">
+              <div className="min-w-0">
+                <div className="max-h-[620px] overflow-auto">
                     <table className="min-w-[2400px] w-full text-left">
                       <thead className="sticky top-0 z-10 bg-[#F8FAFC] text-[11px] font-semibold uppercase tracking-wide text-[#64748B]">
                         <tr>
@@ -699,12 +713,12 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                         ) : pageRows.length ? (
                           pageRows.map((record) => {
                             const rowKey = recordKeyOf(record);
-                            const active = selected ? recordKeyOf(selected) === rowKey : false;
+                            const active = detailRecordKey === rowKey;
                             const rowCurrency = record.payCurrency || 'NGN';
                             return (
                               <tr
                                 key={rowKey}
-                                onClick={() => setSelectedId(rowKey)}
+                                onClick={() => openDetail(rowKey)}
                                 className={`cursor-pointer transition-colors hover:bg-[#F1F5F9] ${active ? 'bg-blue-50/70' : indexEven(rowKey) ? 'bg-white' : 'bg-[#FCFDFF]'}`}
                               >
                                 {salaryTableColumns.map((column) => {
@@ -744,7 +758,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                                     return (
                                       <td key={column.id} className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                                         <div className="flex items-center gap-1">
-                                          <button type="button" onClick={() => setSelectedId(rowKey)} className="rounded-lg p-2 text-[#64748B] hover:bg-blue-50 hover:text-[#2563EB]" title="View">
+                                          <button type="button" onClick={() => openDetail(rowKey)} className="rounded-lg p-2 text-[#64748B] hover:bg-blue-50 hover:text-[#2563EB]" title="View">
                                             <Eye className="h-4 w-4" />
                                           </button>
                                           <button type="button" className="rounded-lg p-2 text-[#64748B] hover:bg-slate-100" title="More">
@@ -814,113 +828,6 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                     </div>
                   </div>
                 </div>
-
-                <aside className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto p-4">
-                  {selected ? (
-                    <div className="space-y-4">
-                      <div className="flex items-start gap-3">
-                        <EmployeeAvatar fullName={selected.fullName} employeeCode={selected.employeeId} tryPhoto size="lg" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-lg font-semibold text-[#0F172A]">{selected.fullName}</p>
-                          <p className="text-sm text-[#64748B]">{selected.employeeId}</p>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <StatusPill label={setupStatusLabel(selected)} tone={setupStatusTone(selected)} />
-                            <StatusPill label={selected.payrollStatus} tone={statusTone(selected.payrollStatus)} />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        {[
-                          ['Department', selected.department],
-                          ['Business Unit', selected.businessUnit],
-                          ['Location', selected.location],
-                          ['Grade', selected.salaryGrade],
-                          ['Payroll Group', selected.payrollGroup],
-                          ['Pay Currency', selected.payCurrency],
-                          ['Employment Type', selected.employmentType],
-                          ...(selected.isDailyRate
-                            ? [
-                                ['Days Worked', selected.timesheetDaysWorked != null ? String(selected.timesheetDaysWorked) : '—'],
-                                ['Hours Worked', selected.timesheetBookedHours != null ? String(selected.timesheetBookedHours) : '—'],
-                                ['Daily Rate', selected.ratePerDay ? money(selected.ratePerDay, canViewMoney, selected.payCurrency) : '—'],
-                              ]
-                            : []),
-                        ].map(([label, value]) => (
-                          <div key={label} className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-3">
-                            <p className="text-[11px] font-semibold uppercase text-[#94A3B8]">{label}</p>
-                            <p className="mt-1 text-sm font-medium text-[#0F172A]">{value || '—'}</p>
-                          </div>
-                        ))}
-                      </div>
-
-                      <DonutChart
-                        centerLabel="Gross"
-                        centerValue={canViewMoney ? money(selected.grossPay || 0, true, selected.payCurrency) : '—'}
-                        rows={[
-                          { label: 'Basic', value: selected.basePay || 0, color: '#2563EB' },
-                          { label: 'Allowances', value: selected.allowances || 0, color: '#10B981' },
-                          { label: 'Deductions', value: selected.deductions || 0, color: '#EF4444' },
-                          { label: 'Net Pay', value: selected.netPay || 0, color: '#7C3AED' },
-                        ]}
-                      />
-
-                      <AccordionSection title="Earnings" count={selected.earningLines.length} defaultOpen>
-                        <div className="space-y-2">
-                          {(selected.earningLines.length ? selected.earningLines : [{ code: 'NONE', name: 'No earning lines', amount: null }]).map((line) => (
-                            <div key={line.code} className="flex items-center justify-between gap-2 text-xs">
-                              <span className="truncate text-[#475569]">{line.name}</span>
-                              <span className="font-semibold text-[#0F172A]">{money(line.amount, canViewMoney, selected.payCurrency)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </AccordionSection>
-
-                      <AccordionSection title="Deductions" count={selected.deductionLines?.length || 3}>
-                        <div className="space-y-2">
-                          {(selected.deductionLines?.length
-                            ? selected.deductionLines
-                            : [
-                                { label: 'PAYE', amount: selected.paye },
-                                { label: 'Pension', amount: selected.pension },
-                                { label: 'Other', amount: selected.otherDeductions },
-                              ]
-                          ).map((line) => (
-                            <div key={line.label} className="flex items-center justify-between gap-2 text-xs">
-                              <span className="text-[#475569]">{line.label}</span>
-                              <span className="font-semibold text-[#0F172A]">{money(line.amount, canViewMoney, selected.payCurrency)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </AccordionSection>
-
-                      <AccordionSection title="Workflow Status">
-                        <WorkflowTimeline steps={workflowSteps(selected)} />
-                      </AccordionSection>
-
-                      <div className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-[#0F172A]">NHF Applicability</p>
-                            <p className="mt-1 text-xs text-[#64748B]">Controls statutory deduction on payslip.</p>
-                          </div>
-                          <StatusPill label={selected.nhfApplicable ? 'NHF On' : 'NHF Off'} tone={selected.nhfApplicable ? 'green' : 'slate'} />
-                        </div>
-                        <label className="mt-3 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-[#E5E7EB] bg-white p-3">
-                          <span className="text-xs font-medium text-[#475569]">Apply NHF deduction</span>
-                          <input type="checkbox" checked={selected.nhfApplicable} disabled={savingNhf} onChange={(event) => void setNhfApplicability(selected.employeeId, event.target.checked)} className="h-5 w-5 rounded border-slate-300 text-[#2563EB]" />
-                        </label>
-                      </div>
-
-                      <Link href={`/hris/employees/employee-profile?employeeId=${encodeURIComponent(selected.employeeId)}`} className="flex w-full items-center justify-center rounded-xl bg-[#2563EB] px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700">
-                        View Full Employee Profile
-                      </Link>
-                    </div>
-                  ) : (
-                    <p className="py-8 text-center text-sm text-[#64748B]">Select an employee to view salary details.</p>
-                  )}
-                </aside>
-              </div>
             </>
           ) : null}
 
@@ -960,7 +867,8 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                     key={`${item.employeeId}-${item.kind}-${index}`}
                     type="button"
                     onClick={() => {
-                      setSelectedId(item.employeeId);
+                      const match = records.find((row) => row.employeeId === item.employeeId);
+                      if (match) openDetail(recordKeyOf(match));
                       setWorkspaceTab('salaries');
                     }}
                     className="flex w-full items-start justify-between gap-3 rounded-xl border border-[#E5E7EB] bg-white px-4 py-3 text-left transition hover:border-blue-200 hover:bg-blue-50/40"
@@ -1078,6 +986,135 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
           </div>
         </section>
       </div>
+
+      {detailRecord ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${detailRecord.fullName} salary details`}
+          onClick={closeDetail}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-[80vw] overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-[#E5E7EB] px-6 py-4">
+              <div className="flex min-w-0 items-start gap-4">
+                <EmployeeAvatar fullName={detailRecord.fullName} employeeCode={detailRecord.employeeId} tryPhoto size="lg" />
+                <div className="min-w-0">
+                  <p className="text-lg font-semibold text-[#0F172A]">{detailRecord.fullName}</p>
+                  <p className="text-sm text-[#64748B]">{detailRecord.employeeId}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <StatusPill label={setupStatusLabel(detailRecord)} tone={setupStatusTone(detailRecord)} />
+                    <StatusPill label={detailRecord.payrollStatus} tone={statusTone(detailRecord.payrollStatus)} />
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeDetail}
+                className="rounded-xl border border-[#E5E7EB] p-2 text-[#64748B] transition hover:bg-[#F8FAFC] hover:text-[#0F172A]"
+                aria-label="Close employee salary details"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid max-h-[calc(90vh-5.5rem)] gap-5 overflow-y-auto p-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {[
+                    ['Department', detailRecord.department],
+                    ['Business Unit', detailRecord.businessUnit],
+                    ['Location', detailRecord.location],
+                    ['Grade', detailRecord.salaryGrade],
+                    ['Payroll Group', detailRecord.payrollGroup],
+                    ['Pay Currency', detailRecord.payCurrency],
+                    ['Employment Type', detailRecord.employmentType],
+                    ...(detailRecord.isDailyRate
+                      ? [
+                          ['Days Worked', detailRecord.timesheetDaysWorked != null ? String(detailRecord.timesheetDaysWorked) : '—'],
+                          ['Hours Worked', detailRecord.timesheetBookedHours != null ? String(detailRecord.timesheetBookedHours) : '—'],
+                          ['Daily Rate', detailRecord.ratePerDay ? money(detailRecord.ratePerDay, canViewMoney, detailRecord.payCurrency) : '—'],
+                        ]
+                      : []),
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-3">
+                      <p className="text-[11px] font-semibold uppercase text-[#94A3B8]">{label}</p>
+                      <p className="mt-1 text-sm font-medium text-[#0F172A]">{value || '—'}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <AccordionSection title="Earnings" count={detailRecord.earningLines.length} defaultOpen>
+                  <div className="space-y-2">
+                    {(detailRecord.earningLines.length ? detailRecord.earningLines : [{ code: 'NONE', name: 'No earning lines', amount: null }]).map((line) => (
+                      <div key={line.code} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="truncate text-[#475569]">{line.name}</span>
+                        <span className="font-semibold text-[#0F172A]">{money(line.amount, canViewMoney, detailRecord.payCurrency)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </AccordionSection>
+
+                <AccordionSection title="Deductions" count={detailRecord.deductionLines?.length || 3}>
+                  <div className="space-y-2">
+                    {(detailRecord.deductionLines?.length
+                      ? detailRecord.deductionLines
+                      : [
+                          { label: 'PAYE', amount: detailRecord.paye },
+                          { label: 'Pension', amount: detailRecord.pension },
+                          { label: 'Other', amount: detailRecord.otherDeductions },
+                        ]
+                    ).map((line) => (
+                      <div key={line.label} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="text-[#475569]">{line.label}</span>
+                        <span className="font-semibold text-[#0F172A]">{money(line.amount, canViewMoney, detailRecord.payCurrency)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </AccordionSection>
+
+                <AccordionSection title="Workflow Status">
+                  <WorkflowTimeline steps={workflowSteps(detailRecord)} />
+                </AccordionSection>
+              </div>
+
+              <div className="space-y-4">
+                <DonutChart
+                  centerLabel="Gross"
+                  centerValue={canViewMoney ? money(detailRecord.grossPay || 0, true, detailRecord.payCurrency) : '—'}
+                  rows={[
+                    { label: 'Basic', value: detailRecord.basePay || 0, color: '#2563EB' },
+                    { label: 'Allowances', value: detailRecord.allowances || 0, color: '#10B981' },
+                    { label: 'Deductions', value: detailRecord.deductions || 0, color: '#EF4444' },
+                    { label: 'Net Pay', value: detailRecord.netPay || 0, color: '#7C3AED' },
+                  ]}
+                />
+
+                <div className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-[#0F172A]">NHF Applicability</p>
+                      <p className="mt-1 text-xs text-[#64748B]">Controls statutory deduction on payslip.</p>
+                    </div>
+                    <StatusPill label={detailRecord.nhfApplicable ? 'NHF On' : 'NHF Off'} tone={detailRecord.nhfApplicable ? 'green' : 'slate'} />
+                  </div>
+                  <label className="mt-3 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-[#E5E7EB] bg-white p-3">
+                    <span className="text-xs font-medium text-[#475569]">Apply NHF deduction</span>
+                    <input type="checkbox" checked={detailRecord.nhfApplicable} disabled={savingNhf} onChange={(event) => void setNhfApplicability(detailRecord.employeeId, event.target.checked)} className="h-5 w-5 rounded border-slate-300 text-[#2563EB]" />
+                  </label>
+                </div>
+
+                <Link href={`/hris/employees/employee-profile?employeeId=${encodeURIComponent(detailRecord.employeeId)}`} className="flex w-full items-center justify-center rounded-xl bg-[#2563EB] px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700">
+                  View Full Employee Profile
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
