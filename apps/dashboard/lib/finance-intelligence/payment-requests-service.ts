@@ -58,6 +58,11 @@ const OUTSTANDING_CASH_ADVANCE_STATUSES = [
   'Finance Verification',
 ] as const;
 
+/** Unpaid items sitting with Treasury (or scheduled) that can still be closed without disbursement. */
+export const isUnpaidTreasuryPayable = (row: { status?: string | null; paidAt?: string | null }) =>
+  /^(ready for treasury|approved|payment scheduled|payment processing)$/i.test(compact(row.status))
+  && !compact(row.paidAt);
+
 export type CashAdvanceEligibility = {
   employeeCode: string;
   outstandingCount: number;
@@ -131,6 +136,7 @@ export const SUPPLIER_PAYMENT_STATUSES = [
   'Paid',
   'Completed',
   'Rejected',
+  'Cancelled',
   'Returned',
 ] as const;
 
@@ -2779,7 +2785,7 @@ export const buildTreasuryWorkspace = async (): Promise<TreasuryWorkspace> => {
   const retirementToVerify = rows.filter((row) =>
     /retirement submitted|treasury verification|finance verification/i.test(row.status));
   const history = rows.filter((row) =>
-    /^(paid|completed|retired|closed)$/i.test(row.status)
+    /^(paid|completed|retired|closed|cancelled)$/i.test(row.status)
     || (Boolean(row.paidAt) && !isSameDay(row.paidAt)));
 
   return {
@@ -2848,7 +2854,7 @@ export const buildFinancePostingWorkspace = async (): Promise<FinancePostingWork
 
 export const transitionPaymentRequest = async (input: {
   requestId: string;
-  action: 'approve' | 'reject' | 'return' | 'clarify' | 'delegate' | 'escalate' | 'mark-ready-treasury' | 'mark-paid' | 'submit-retirement' | 'acknowledge-retirement' | 'return-retirement' | 'mark-posted' | 'ready-to-post';
+  action: 'approve' | 'reject' | 'return' | 'clarify' | 'delegate' | 'escalate' | 'mark-ready-treasury' | 'mark-paid' | 'do-not-pay' | 'submit-retirement' | 'acknowledge-retirement' | 'return-retirement' | 'mark-posted' | 'ready-to-post';
   actor: string;
   actorCode?: string;
   comment?: string;
@@ -2889,7 +2895,7 @@ export const transitionPaymentRequest = async (input: {
     }
   }
 
-  const requiresReason = ['reject', 'return', 'delegate', 'escalate', 'clarify', 'return-retirement'].includes(input.action);
+  const requiresReason = ['reject', 'return', 'delegate', 'escalate', 'clarify', 'return-retirement', 'do-not-pay'].includes(input.action);
   if (requiresReason && !compact(input.reason || input.comment)) {
     throw new Error('A reason is required for this action.');
   }
@@ -2906,7 +2912,7 @@ export const transitionPaymentRequest = async (input: {
   let retirementJson: Record<string, unknown> | null = existing.retirement;
   let postingJson: Record<string, unknown> | null = existing.posting;
   let attachmentsJson: PaymentRequestAttachment[] | null = null;
-  let notifyEvent: 'approved' | 'rejected' | 'returned' | 'stage-advanced' | 'paid' | 'posted' | 'retirement-submitted' | 'retirement-acknowledged' | null = null;
+  let notifyEvent: 'approved' | 'rejected' | 'returned' | 'cancelled' | 'stage-advanced' | 'paid' | 'posted' | 'retirement-submitted' | 'retirement-acknowledged' | null = null;
   let completedStage = existing.currentStage;
   let advancedTo: string | undefined;
   let assignedApprover: Awaited<ReturnType<typeof assignCurrentApprover>> | null = null;
@@ -2947,6 +2953,26 @@ export const transitionPaymentRequest = async (input: {
       nextStatus = 'Ready for Treasury';
       nextStage = 'Treasury';
       break;
+    case 'do-not-pay': {
+      if (!isUnpaidTreasuryPayable(existing)) {
+        throw new Error('Only unpaid Approved / Ready for Treasury payments can be closed without paying.');
+      }
+      const reason = compact(input.reason || input.comment);
+      if (reason.length < 10) {
+        throw new Error('Provide a reason of at least 10 characters. This request will not be paid and will stay on the audit trail.');
+      }
+      nextStatus = 'Cancelled';
+      nextStage = 'Do not pay';
+      treasuryJson = {
+        ...(existing.treasury || {}),
+        doNotPayAt: nowIso(),
+        doNotPayBy: input.actor,
+        doNotPayByCode: input.actorCode || null,
+        doNotPayReason: reason,
+      };
+      notifyEvent = 'cancelled';
+      break;
+    }
     case 'mark-paid': {
       if (!/^(ready for treasury|approved|payment scheduled|payment processing)$/i.test(existing.status)) {
         throw new Error('Only Approved / Ready for Treasury payments can be marked paid.');
@@ -3188,7 +3214,7 @@ WHERE [RequestId] = @RequestId
       supervisorName: existing.supervisorName,
       paymentType: existing.paymentType,
     });
-  } else if (notifyEvent === 'approved' || notifyEvent === 'rejected' || notifyEvent === 'returned' || notifyEvent === 'paid' || notifyEvent === 'retirement-acknowledged') {
+  } else if (notifyEvent === 'approved' || notifyEvent === 'rejected' || notifyEvent === 'returned' || notifyEvent === 'cancelled' || notifyEvent === 'paid' || notifyEvent === 'retirement-acknowledged') {
     await pool.request()
       .input('RequestId', sql.NVarChar(60), input.requestId)
       .query(`

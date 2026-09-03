@@ -54,7 +54,10 @@ export default function PaymentRequestDetailPanel({
   const paymentEvidence = (request.attachments || []).filter((file) => file.kind === 'payment-evidence');
   const retirementEvidence = (request.attachments || []).filter((file) => file.kind === 'retirement-evidence');
   const retirementNote = String(request.retirement?.note || '');
-  const visibleActions = filterDocumentPaymentActions(actions);
+  const visibleActions = [
+    ...filterDocumentPaymentActions(actions),
+    ...actions.filter((item) => /^do-not-pay$/i.test(String(item.actionType || ''))),
+  ];
 
   const fields: Array<[string, string]> = [
     ['Request #', request.requestNumber],

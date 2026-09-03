@@ -38,6 +38,7 @@ import {
   repairPrematureTreasuryHandoff,
   repairMissingProjectLineManager,
   repairMisroutedProjectPathWithoutProject,
+  isUnpaidTreasuryPayable,
   transitionPaymentRequest,
   updateReturnedPaymentRequest,
   type PaymentRequestType,
@@ -204,6 +205,7 @@ export async function GET(request: Request) {
           isRequesterOnly: isPaymentRequesterOnly(actor, paymentRequest),
           canDownloadPdf: canDownloadPaymentDocumentPdf(paymentRequest),
           canSubmitRetirement: canSubmitCashAdvanceRetirement(actor, paymentRequest),
+          canDoNotPay: canOperateTreasury(actor) && isUnpaidTreasuryPayable(paymentRequest),
         },
       });
     }
@@ -587,7 +589,7 @@ export async function POST(request: Request) {
       const requestId = String(body.requestId || '').trim();
       if (!requestId) return jsonErr(400, 'requestId is required.');
       const transition = String(body.transition || '').trim();
-      const treasuryActions = ['mark-paid', 'acknowledge-retirement', 'return-retirement', 'mark-ready-treasury'];
+      const treasuryActions = ['mark-paid', 'do-not-pay', 'acknowledge-retirement', 'return-retirement', 'mark-ready-treasury'];
       const postingActions = ['mark-posted', 'ready-to-post'];
       const approvalActions = ['approve', 'reject', 'return', 'clarify', 'delegate', 'escalate'];
       if (treasuryActions.includes(transition) && !canOperateTreasury(actor)) {
@@ -636,11 +638,14 @@ export async function POST(request: Request) {
         : [];
       // Never return an unscoped payment list to non–Finance / non–Super-Admin actors.
       const workspaceForViewer = await buildViewerPaymentWorkspace(actor, { listScope: body.listScope });
+      const message = transition === 'do-not-pay'
+        ? `${result.request?.requestNumber || 'Request'} will not be paid and has been cancelled.`
+        : 'Payment request updated.';
       return jsonOk({
         ...result,
         workspace: workspaceForViewer,
         actions,
-        message: 'Payment request updated.',
+        message,
       });
     }
 

@@ -554,7 +554,7 @@ export const notifyPaymentClarificationComment = async (input: {
 
 export const notifyPaymentDecision = async (input: {
   request: PaymentNotifyRequest;
-  event: 'approved' | 'rejected' | 'returned' | 'stage-advanced' | 'paid' | 'posted' | 'retirement-submitted' | 'retirement-acknowledged';
+  event: 'approved' | 'rejected' | 'returned' | 'cancelled' | 'stage-advanced' | 'paid' | 'posted' | 'retirement-submitted' | 'retirement-acknowledged';
   actorName: string;
   stage?: string;
   nextStage?: string;
@@ -580,6 +580,7 @@ export const notifyPaymentDecision = async (input: {
     approved: 'Payment request approved',
     rejected: 'Payment request rejected',
     returned: 'Payment request returned',
+    cancelled: 'Payment will not be paid',
     'stage-advanced': 'Payment approval progressed',
     paid: 'Payment disbursed',
     posted: 'Payment marked posted',
@@ -590,6 +591,7 @@ export const notifyPaymentDecision = async (input: {
     approved: 'success',
     rejected: 'critical',
     returned: 'warning',
+    cancelled: 'warning',
     'stage-advanced': 'info',
     paid: 'success',
     posted: 'info',
@@ -608,7 +610,9 @@ export const notifyPaymentDecision = async (input: {
             ? `${input.request.requestNumber} retirement was submitted by ${input.actorName} and is awaiting Treasury verification.${input.reason ? ` ${input.reason}` : ''}`
             : input.event === 'retirement-acknowledged'
               ? `${input.request.requestNumber} retirement was acknowledged by Treasury. The advance is now closed.${input.reason ? ` ${input.reason}` : ''}`
-              : `${input.request.requestNumber} was ${input.event} by ${input.actorName}.${input.reason ? ` Reason: ${input.reason}` : ''}`;
+              : input.event === 'cancelled'
+                ? `${input.request.requestNumber} will not be paid. Treasury closed it without disbursement.${input.reason ? ` Reason: ${input.reason}` : ''} Do not reuse this request number.`
+                : `${input.request.requestNumber} was ${input.event} by ${input.actorName}.${input.reason ? ` Reason: ${input.reason}` : ''}`;
 
   const href = paymentRequestDetailPath(input.request.requestId);
   const shouldNotifyRequester = input.event !== 'posted' && input.event !== 'retirement-submitted';
@@ -659,7 +663,7 @@ export const notifyPaymentDecision = async (input: {
           detailUrl: paymentRequestDetailUrl(input.request.requestId, input.baseUrl),
           baseUrl: input.baseUrl,
         }));
-    } else if (input.event === 'rejected' || input.event === 'returned') {
+    } else if (input.event === 'rejected' || input.event === 'returned' || input.event === 'cancelled') {
       console.warn('[payment-approval] requester email skipped — no mailbox', {
         requestId: input.request.requestId,
         requesterCode: input.request.requesterCode,

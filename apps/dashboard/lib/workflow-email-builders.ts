@@ -863,7 +863,7 @@ export const buildPaymentApprovalRequestEmail = (input: {
 export const buildPaymentDecisionEmail = (input: {
   recipientName: string;
   request: PaymentEmailRequest;
-  event: 'approved' | 'rejected' | 'returned' | 'stage-advanced' | 'paid' | 'posted';
+  event: 'approved' | 'rejected' | 'returned' | 'cancelled' | 'stage-advanced' | 'paid' | 'posted';
   actorName?: string;
   stage?: string;
   nextStage?: string;
@@ -875,6 +875,7 @@ export const buildPaymentDecisionEmail = (input: {
     approved: `Payment approved — ${input.request.requestNumber}`,
     rejected: `Payment rejected — ${input.request.requestNumber}`,
     returned: `Payment returned — ${input.request.requestNumber}`,
+    cancelled: `Payment will not be paid — ${input.request.requestNumber}`,
     'stage-advanced': `Payment progressed — ${input.request.requestNumber}`,
     paid: `Payment disbursed — ${input.request.requestNumber}`,
     posted: `Payment marked posted — ${input.request.requestNumber}`,
@@ -883,6 +884,7 @@ export const buildPaymentDecisionEmail = (input: {
     approved: 'Payment request approved',
     rejected: 'Payment request rejected',
     returned: 'Payment request returned',
+    cancelled: 'Payment will not be paid',
     'stage-advanced': 'Payment approval progressed',
     paid: 'Payment disbursed by Treasury',
     posted: 'Payment marked posted',
@@ -891,6 +893,7 @@ export const buildPaymentDecisionEmail = (input: {
     approved: 'Your payment request has been fully approved and can proceed to treasury.',
     rejected: 'Your payment request has been rejected. Review the details below.',
     returned: 'Your payment request was returned for correction.',
+    cancelled: 'Treasury will not pay this request. It has been closed on the audit trail. Do not reuse this request number — raise a new request if payment is still required.',
     'stage-advanced': `Your payment request cleared ${input.stage || 'a stage'} and is now awaiting ${input.nextStage || 'the next approver'}.`,
     paid: 'Treasury has marked your payment as paid. See the payment reference below.',
     posted: 'Finance has marked this payment as posted. It is cleared from the Finance Posting Desk.',
@@ -899,6 +902,7 @@ export const buildPaymentDecisionEmail = (input: {
     approved: 'success',
     rejected: 'danger',
     returned: 'warning',
+    cancelled: 'warning',
     'stage-advanced': 'info',
     paid: 'success',
     posted: 'info',

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
+  Ban,
   CheckCircle2,
   Clock3,
   Download,
@@ -82,6 +83,7 @@ type DetailPayload = {
     isRequesterOnly?: boolean;
     canDownloadPdf?: boolean;
     canSubmitRetirement?: boolean;
+    canDoNotPay?: boolean;
   };
 };
 
@@ -244,6 +246,56 @@ export default function PaymentApprovalDetailClient() {
     }
   };
 
+  const doNotPay = async () => {
+    if (!detail?.request) return;
+    if (reason.trim().length < 10) {
+      setMessage('Provide a reason of at least 10 characters before closing this request without paying.');
+      return;
+    }
+    const confirmed = window.confirm(
+      `${detail.request.requestNumber} will not be paid. The request stays on the audit trail and this number cannot be reused. Continue?`,
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      const response = await fetch('/api/finance/payment-requests', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'transition',
+          requestId: detail.request.requestId,
+          transition: 'do-not-pay',
+          reason: reason.trim(),
+          comment: reason.trim(),
+        }),
+      });
+      const json = await response.json().catch(() => ({ status: 'error', error: 'Unable to close this request.' }));
+      if (!response.ok || json.status !== 'success') {
+        throw new Error(json.error || 'Unable to close this request without paying.');
+      }
+      setMessage(json.data?.message || 'This request will not be paid and has been cancelled.');
+      setReason('');
+      if (json.data?.request) {
+        setDetail((prev) => ({
+          request: json.data.request as PaymentRequestRow,
+          actions: (json.data.actions as PaymentRequestActionRow[]) || prev?.actions || [],
+          comments: prev?.comments || [],
+          viewer: {
+            ...(prev?.viewer || {}),
+            canDoNotPay: false,
+            canApprove: false,
+          },
+        }));
+      }
+      await load({ soft: true });
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to close this request without paying.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submitRetirement = async () => {
     if (!detail?.request) return;
     if (retirementNote.trim().length < 10) {
@@ -325,7 +377,10 @@ export default function PaymentApprovalDetailClient() {
   }
 
   const request = detail.request;
-  const visibleActions = filterDocumentPaymentActions(detail.actions || []);
+  const visibleActions = [
+    ...filterDocumentPaymentActions(detail.actions || []),
+    ...(detail.actions || []).filter((action) => /^do-not-pay$/i.test(String(action.actionType || ''))),
+  ];
   const stages = Array.isArray(request.payload?.stages)
     ? (request.payload.stages as string[]).map((item) => String(item))
     : [];
@@ -337,18 +392,20 @@ export default function PaymentApprovalDetailClient() {
   const canCancelOwn = Boolean(detail.viewer?.canCancelOwn) && (isDraft || pending);
   const canDownloadPdf = Boolean(detail.viewer?.canDownloadPdf);
   const canSubmitRetirement = Boolean(detail.viewer?.canSubmitRetirement);
+  const canDoNotPay = Boolean(detail.viewer?.canDoNotPay);
   const retirementNoteExisting = String(request.retirement?.note || '');
   const retirementEvidence = (request.attachments || []).filter((file) => file.kind === 'retirement-evidence');
   const supportingDocs = (request.attachments || []).filter((file) => file.kind !== 'payment-evidence' && file.kind !== 'retirement-evidence');
   const showActionBar = canApprove;
   const showRetirementBar = canSubmitRetirement;
+  const showDoNotPayBar = canDoNotPay && !showActionBar && !showRetirementBar;
   const returnReason = [...(detail.actions || [])]
     .find((action) => /return/i.test(action.actionType))?.reason
     || [...(detail.actions || [])].find((action) => /return/i.test(action.actionType))?.comment
     || '';
 
   return (
-    <div className={`space-y-4 ${showActionBar || showRetirementBar ? 'pb-36' : 'pb-6'}`}>
+    <div className={`space-y-4 ${showActionBar || showRetirementBar || showDoNotPayBar ? 'pb-36' : 'pb-6'}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link href="/finance/approvals/payments" className="inline-flex items-center gap-1.5 text-sm font-medium text-[#008FD5]">
           <ArrowLeft className="h-4 w-4" /> Payment requests
@@ -703,6 +760,35 @@ export default function PaymentApprovalDetailClient() {
               className="inline-flex items-center gap-1.5 rounded-xl bg-[#008FD5] px-3.5 py-2 text-xs font-semibold text-white disabled:opacity-50"
             >
               <CheckCircle2 className="h-3.5 w-3.5" /> Submit retirement
+            </button>
+          </div>
+        </div>
+      </div>
+      ) : showDoNotPayBar ? (
+      <div id="payment-detail-actions" className="fixed inset-x-0 bottom-0 z-20 border-t border-rose-200 bg-rose-50/95 px-4 py-3 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur lg:left-[270px]">
+        <div className="mx-auto flex max-w-[1400px] flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-rose-900">Close without paying</p>
+            {message ? <p className="text-xs text-slate-700">{message}</p> : null}
+          </div>
+          <p className="text-xs text-rose-800">
+            Use this when the request should not be disbursed. The record and request number stay on the audit trail.
+          </p>
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={2}
+            placeholder="Reason this request must not be paid (required, min 10 characters)"
+            className="w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-rose-200"
+          />
+          <div className="flex justify-end">
+            <button
+              type="button"
+              disabled={busy || reason.trim().length < 10}
+              onClick={() => void doNotPay()}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-rose-700 px-3.5 py-2 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              <Ban className="h-3.5 w-3.5" /> Do not pay
             </button>
           </div>
         </div>

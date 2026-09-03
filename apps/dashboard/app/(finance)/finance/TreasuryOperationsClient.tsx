@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ScrollTable } from '@/components/ui/responsive';
 import {
   Banknote,
+  Ban,
   CheckCircle2,
   Clock3,
   FileUp,
@@ -54,6 +55,7 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
   const [actions, setActions] = useState<PaymentRequestActionRow[]>([]);
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [comment, setComment] = useState('');
+  const [doNotPayReason, setDoNotPayReason] = useState('');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(FINANCE_PAGE_SIZE);
@@ -77,6 +79,7 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
     setSelected(row);
     setEvidenceFile(null);
     setComment('');
+    setDoNotPayReason('');
     setModalError('');
     setActions([]);
     try {
@@ -108,6 +111,13 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
           contentBase64: await fileToBase64(evidenceFile),
         };
       }
+      if (transition === 'do-not-pay') {
+        const reason = doNotPayReason.trim();
+        if (reason.length < 10) {
+          throw new Error('Provide a reason of at least 10 characters before closing this request without paying.');
+        }
+        extra = { ...extra, reason, comment: reason };
+      }
 
       const res = await fetch('/api/finance/payment-requests', {
         method: 'POST',
@@ -128,8 +138,11 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
       setActions(json.data.actions || []);
       if (json.data.request) setSelected(json.data.request as PaymentRequestRow);
       setEvidenceFile(null);
+      setDoNotPayReason('');
       await refresh();
-      if (transition === 'mark-paid' || transition === 'acknowledge-retirement') setSelected(null);
+      if (transition === 'mark-paid' || transition === 'do-not-pay' || transition === 'acknowledge-retirement') {
+        setSelected(null);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Action failed';
       setModalError(message);
@@ -178,7 +191,7 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
         <div>
           <h1 className="text-[28px] font-semibold tracking-tight text-slate-900">Treasury Operations</h1>
           <p className="mt-1 max-w-3xl text-sm text-slate-500">
-            Disburse fully approved payments, upload payment evidence, notify requesters, and acknowledge cash-advance retirements.
+            Disburse fully approved payments, upload payment evidence, close requests that should not be paid, notify requesters, and acknowledge cash-advance retirements.
           </p>
         </div>
         <button type="button" onClick={() => void refresh()} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-600">
@@ -299,7 +312,7 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
                 actions={actions}
                 footer={(
                   <div className="space-y-3">
-                    {/ready for treasury|approved/i.test(selected.status) ? (
+                    {/ready for treasury|approved|payment scheduled|payment processing/i.test(selected.status) && !selected.paidAt ? (
                       <>
                         <label className="block text-sm">
                           <span className="mb-1 block font-medium">Payment evidence *</span>
@@ -338,6 +351,33 @@ export default function TreasuryOperationsClient({ initialWorkspace }: Props) {
                         >
                           <CheckCircle2 className="h-4 w-4" /> Mark paid & notify requester
                         </button>
+                        <div className="border-t border-slate-100 pt-3">
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Close without paying</p>
+                          <label className="block text-sm">
+                            <span className="mb-1 block font-medium">Reason *</span>
+                            <textarea
+                              value={doNotPayReason}
+                              onChange={(e) => setDoNotPayReason(e.target.value)}
+                              rows={3}
+                              placeholder="Why this approved request must not be paid (min. 10 characters)"
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            disabled={busy || doNotPayReason.trim().length < 10}
+                            onClick={() => {
+                              const confirmed = window.confirm(
+                                `${selected.requestNumber} will not be paid. The request stays on the audit trail and this number cannot be reused. Continue?`,
+                              );
+                              if (!confirmed) return;
+                              void runTransition('do-not-pay');
+                            }}
+                            className="mt-2 inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-sm font-semibold text-rose-800 disabled:opacity-60"
+                          >
+                            <Ban className="h-4 w-4" /> Do not pay
+                          </button>
+                        </div>
                       </>
                     ) : null}
                     {/retirement submitted|treasury verification|finance verification/i.test(selected.status) ? (
