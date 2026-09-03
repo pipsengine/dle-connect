@@ -1,0 +1,14 @@
+{
+  "assignmentBatch": "2026-09-03-idioro-production-supervisors-momoh",
+  "assignmentGroup": "IDI-ORO PRODUCTION SUPERVISORS",
+  "supervisorEmployeeCode": "C1882",
+  "performedBy": "scripts/apply-idioro-production-reporting-lines.mts",
+  "reason": "All Idi-oro Production supervisors report to Momoh Mohammed (C1882).",
+  "rows": [
+    { "sourceName": "BELLO FEMI", "tradeRole": "SCAFFOLDER SUPERVISOR", "employeeCode": "C0585", "matchConfidence": "IdioroProductionSupervisor" },
+    { "sourceName": "VINCENT OKEKE", "tradeRole": "CRANE/RIGGER SUPERVISOR", "employeeCode": "C1533", "matchConfidence": "IdioroProductionSupervisor" },
+    { "sourceName": "OGONNAYA DAVID OGUDU", "tradeRole": "ROLLING SUPERVISOR", "employeeCode": "P0044", "matchConfidence": "IdioroProductionSupervisor" },
+    { "sourceName": "KOLAWOLE OJO OLOKO", "tradeRole": "RIGGING SUPERVISOR", "employeeCode": "P0045", "matchConfidence": "IdioroProductionSupervisor" },
+    { "sourceName": "OWOLOJA AKANDE", "tradeRole": "SUB ARC WELDER SUPERVISOR", "employeeCode": "P0072", "matchConfidence": "IdioroProductionSupervisor" }
+  ]
+}

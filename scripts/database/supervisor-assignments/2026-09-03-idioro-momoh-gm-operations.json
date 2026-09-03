@@ -1,0 +1,10 @@
+{
+  "assignmentBatch": "2026-09-03-idioro-momoh-gm-operations",
+  "assignmentGroup": "IDI-ORO MOMOH TO GM OPERATIONS",
+  "supervisorEmployeeCode": "P0442",
+  "performedBy": "scripts/apply-idioro-production-reporting-lines.mts",
+  "reason": "Momoh Mohammed (C1882) reports to GM Operations (P0442 Odulate).",
+  "rows": [
+    { "sourceName": "MOMOH MOHAMMED", "tradeRole": "FITTER SUPERVISOR", "employeeCode": "C1882", "matchConfidence": "IdioroMomohToGmOperations" }
+  ]
+}
