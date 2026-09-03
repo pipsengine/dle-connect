@@ -1,8 +1,7 @@
 /**
- * Workforce Portal (ESS) is unpublished until go-live.
- * Flip this to true when the portal is ready to restore for users.
+ * Workforce Portal (ESS) — enabled for all employees.
  */
-export const WORKFORCE_PORTAL_ENABLED = false;
+export const WORKFORCE_PORTAL_ENABLED = true;
 
 export const isWorkforcePortalPath = (pathname: string) =>
   pathname === '/workforce-portal'
