@@ -142,6 +142,8 @@ assert(employer?.variance === 4238344, 'employer cost naira variance');
 assert(payrollMomMetric(mom, 'employees')?.variance === 1, 'headcount +1');
 assert(payrollMomMetric(mom, 'grossPay')?.detail?.buckets.some((bucket) => bucket.id === 'headcount'), 'gross pay detail includes headcount movement');
 assert(payrollMomMetric(mom, 'employees')?.detail?.contributors.some((item) => item.employeeCode === 'P003' && item.reason.includes('New in current period')), 'employee detail lists joiners');
+assert(payrollMomMetric(mom, 'netPay')?.detail?.contributors.some((item) => item.staffPack === 'permanent'), 'permanent staff appear in net pay contributors');
+assert((payrollMomMetric(mom, 'netPay')?.detail?.contributorTotal || 0) >= 2, 'all employees with net movement are included');
 
 const moneyMetricKeys = ['grossPay', 'deductions', 'netPay', 'employerCost'] as const;
 for (const key of moneyMetricKeys) {
@@ -212,6 +214,106 @@ const dedupedNet = payrollMomMetric(deduped, 'netPay');
 const alice = dedupedNet?.detail?.contributors.find((item) => item.employeeCode === 'P001');
 assert(alice?.current === 99000, 'duplicate employee rows are aggregated before ranking contributors');
 assert(Math.round((dedupedNet!.detail!.buckets.reduce((sum, bucket) => sum + bucket.value, 0)) * 100) / 100 === dedupedNet!.variance, 'deduped drivers still reconcile');
+
+const manyPrevious = Array.from({ length: 14 }, (_, index) => ({
+  employeeId: `L${1000 + index}`,
+  employeeCode: `L${1000 + index}`,
+  fullName: `Lumpsum ${index}`,
+  employmentType: 'Lumpsum',
+  grossPay: 1_000_000 - index * 10_000,
+  totalDeductions: 100_000,
+  deductions: 100_000,
+  netPay: 900_000 - index * 10_000,
+  employerCost: 1_050_000,
+  basePay: 1_000_000,
+  allowances: 0,
+  paye: 80_000,
+  pensionEmployee: 20_000,
+  pension: 20_000,
+  pensionEmployer: 40_000,
+  statutoryEmployer: 10_000,
+  loanRecovery: 0,
+  otherDeductions: 0,
+}));
+const manyCurrent = [
+  ...manyPrevious.map((row, index) => ({
+    ...row,
+    netPay: row.netPay - (200_000 - index * 1_000),
+    grossPay: row.grossPay - (200_000 - index * 1_000),
+  })),
+  {
+    employeeId: 'P0500',
+    employeeCode: 'P0500',
+    fullName: 'Permanent Small Move',
+    employmentType: 'Permanent',
+    grossPay: 500_000,
+    totalDeductions: 80_000,
+    deductions: 80_000,
+    netPay: 420_000,
+    employerCost: 540_000,
+    basePay: 400_000,
+    allowances: 100_000,
+    paye: 50_000,
+    pensionEmployee: 20_000,
+    pension: 20_000,
+    pensionEmployer: 30_000,
+    statutoryEmployer: 10_000,
+    loanRecovery: 0,
+    otherDeductions: 10_000,
+  },
+];
+const manyPreviousWithPermanent = [
+  ...manyPrevious,
+  {
+    employeeId: 'P0500',
+    employeeCode: 'P0500',
+    fullName: 'Permanent Small Move',
+    employmentType: 'Permanent',
+    grossPay: 495_000,
+    totalDeductions: 80_000,
+    deductions: 80_000,
+    netPay: 415_000,
+    employerCost: 535_000,
+    basePay: 395_000,
+    allowances: 100_000,
+    paye: 50_000,
+    pensionEmployee: 20_000,
+    pension: 20_000,
+    pensionEmployer: 30_000,
+    statutoryEmployer: 10_000,
+    loanRecovery: 0,
+    otherDeductions: 10_000,
+  },
+];
+const manyMom = buildPayrollMonthOverMonth({
+  currentPeriod: '2026-08',
+  currentPeriodLabel: 'August 2026',
+  current: {
+    period: '2026-08',
+    periodLabel: 'August 2026',
+    employees: 15,
+    grossPay: 1,
+    deductions: 1,
+    netPay: 1,
+    employerCost: 1,
+  },
+  previous: {
+    period: '2026-07',
+    periodLabel: 'July 2026',
+    employees: 15,
+    grossPay: 2,
+    deductions: 2,
+    netPay: 2,
+    employerCost: 2,
+  },
+  currentRecords: manyCurrent as any[],
+  previousRecords: manyPreviousWithPermanent as any[],
+});
+const manyNet = payrollMomMetric(manyMom, 'netPay');
+assert((manyNet?.detail?.contributors.length || 0) === 15, 'all 15 employees with net movement are listed (not top-12 only)');
+assert(manyNet?.detail?.contributors.some((item) => item.employeeCode === 'P0500' && item.staffPack === 'permanent'), 'permanent staff with smaller variance still appear alongside lumpsum');
+assert(manyNet?.detail?.contributors.some((item) => item.staffPack === 'contract-lumpsum'), 'lumpsum staff appear in the same list');
+assert((manyNet?.detail?.contributorTotal || 0) === 15, 'contributorTotal matches full list');
 
 const empty = buildPayrollMonthOverMonth({
   currentPeriod: '2026-08',

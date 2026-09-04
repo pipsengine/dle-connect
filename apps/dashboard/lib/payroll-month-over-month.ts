@@ -1,4 +1,21 @@
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
+import {
+  resolveBankScheduleStaffPack,
+  type BankScheduleStaffPack,
+} from '@/lib/payroll-bank-schedule-packs';
+
+const staffPackLabel = (pack: BankScheduleStaffPack) => {
+  switch (pack) {
+    case 'contract-lumpsum':
+      return 'Contract / Lumpsum';
+    case 'it-nysc':
+      return 'IT / NYSC';
+    case 'dle-usd':
+      return 'DLE USD';
+    default:
+      return 'Permanent';
+  }
+};
 
 const previousPayrollPeriod = (period: string) => {
   const match = /^(\d{4})-(\d{2})$/.exec(String(period || '').trim());
@@ -51,6 +68,8 @@ export type PayrollMomContributor = {
   current: number;
   previous: number;
   reason: string;
+  staffPack?: BankScheduleStaffPack;
+  staffPackLabel?: string;
 };
 
 export type PayrollMomMetricDetail = {
@@ -59,6 +78,10 @@ export type PayrollMomMetricDetail = {
   summary: string;
   buckets: PayrollMomDetailBucket[];
   contributors: PayrollMomContributor[];
+  /** Employees with a non-zero variance for this metric (same as contributors.length). */
+  contributorTotal: number;
+  /** Retained employees with ~0 variance for this metric. */
+  unchangedCount: number;
 };
 
 export type PayrollMonthOverMonth = {
@@ -131,6 +154,8 @@ type MomAggRecord = {
   employeeId: string;
   employeeCode: string;
   fullName: string;
+  staffPack: BankScheduleStaffPack;
+  staffPackLabel: string;
   grossPay: number;
   deductions: number;
   netPay: number;
@@ -165,11 +190,14 @@ const metricAggValue = (record: MomAggRecord, key: PayrollMomMetricKey) => {
 const toMomAgg = (record: PayrollCalculationRecord): MomAggRecord | null => {
   const key = recordMatchKey(record);
   if (!key) return null;
+  const staffPack = resolveBankScheduleStaffPack(record);
   return {
     key,
     employeeId: compact(record.employeeId) || compact(record.employeeCode) || key,
     employeeCode: compact(record.employeeCode) || compact(record.employeeId) || key,
     fullName: compact(record.fullName) || compact(record.employeeCode) || key,
+    staffPack,
+    staffPackLabel: staffPackLabel(staffPack),
     grossPay: Number(record.grossPay || 0),
     deductions: Number(record.totalDeductions || record.deductions || 0),
     netPay: Number(record.netPay || 0),
@@ -200,6 +228,8 @@ const aggregateMomRecords = (records: PayrollCalculationRecord[]) => {
       fullName: existing.fullName || next.fullName,
       employeeId: existing.employeeId || next.employeeId,
       employeeCode: existing.employeeCode || next.employeeCode,
+      staffPack: existing.staffPack || next.staffPack,
+      staffPackLabel: existing.staffPackLabel || next.staffPackLabel,
       grossPay: existing.grossPay + next.grossPay,
       deductions: existing.deductions + next.deductions,
       netPay: existing.netPay + next.netPay,
@@ -315,6 +345,8 @@ const buildPayrollMomMetricDetail = (
         current: 1,
         previous: 0,
         reason: 'New in current period',
+        staffPack: record.staffPack,
+        staffPackLabel: record.staffPackLabel,
       })),
       ...exited.map((record) => ({
         employeeId: record.employeeId,
@@ -324,14 +356,18 @@ const buildPayrollMomMetricDetail = (
         current: 0,
         previous: 1,
         reason: 'Present in previous period only',
+        staffPack: record.staffPack,
+        staffPackLabel: record.staffPackLabel,
       })),
-    ].slice(0, 12);
+    ].sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance) || a.fullName.localeCompare(b.fullName));
     return {
       key: metric.key,
       kind: 'count',
       summary: topSummary(buckets.filter((bucket) => bucket.id !== 'retained'), { ...metric, pctChange: 0, direction: 'flat', detail: null }),
       buckets,
       contributors,
+      contributorTotal: contributors.length,
+      unchangedCount: retainedPairs.length,
     };
   }
 
@@ -391,14 +427,13 @@ const buildPayrollMomMetricDetail = (
 
   const reconciled = reconcileBucketsToTarget(buckets, metric.variance);
 
-  const contributors = allKeys
+  const ranked = allKeys
     .map((key) => {
       const current = currentByKey.get(key);
       const previous = previousByKey.get(key);
       const currentValue = current ? metricAggValue(current, metric.key) : 0;
       const previousValue = previous ? metricAggValue(previous, metric.key) : 0;
       const variance = roundMoney(currentValue - previousValue);
-      if (Math.abs(variance) < 0.005) return null;
       const sample = current || previous!;
       return {
         employeeId: sample.employeeId,
@@ -408,11 +443,14 @@ const buildPayrollMomMetricDetail = (
         current: roundMoney(currentValue),
         previous: roundMoney(previousValue),
         reason: contributorReason(metric.key, current, previous),
+        staffPack: sample.staffPack,
+        staffPackLabel: sample.staffPackLabel,
       } satisfies PayrollMomContributor;
     })
-    .filter((item): item is PayrollMomContributor => Boolean(item))
-    .sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance))
-    .slice(0, 12);
+    .sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance) || a.fullName.localeCompare(b.fullName));
+
+  const contributors = ranked.filter((item) => Math.abs(item.variance) >= 0.005);
+  const unchangedCount = ranked.length - contributors.length;
 
   const rankedBuckets = sortBuckets(reconciled);
   return {
@@ -421,6 +459,8 @@ const buildPayrollMomMetricDetail = (
     summary: topSummary(rankedBuckets, { ...metric, pctChange: 0, direction: 'flat', detail: null }),
     buckets: rankedBuckets,
     contributors,
+    contributorTotal: contributors.length,
+    unchangedCount,
   };
 };
 
