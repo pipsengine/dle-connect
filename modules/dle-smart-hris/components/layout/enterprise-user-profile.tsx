@@ -238,17 +238,24 @@ export function EnterpriseUserProfile({
       })
       .catch(() => undefined);
 
-    fetch(`/api/current-user?context=${context}`, { cache: 'no-store' })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((payload) => {
-        if (!ignore && payload?.data) setCurrentUser(pruneEmpty(payload.data));
-      })
-      .catch(() => {
-        if (!ignore) setCurrentUser({});
-      });
+    const loadCurrentUser = () => {
+      fetch(`/api/current-user?context=${context}`, { cache: 'no-store' })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((payload) => {
+          if (!ignore && payload?.data) setCurrentUser(pruneEmpty(payload.data));
+        })
+        .catch(() => undefined);
+    };
+
+    loadCurrentUser();
+    const interval = window.setInterval(loadCurrentUser, 60000);
+    const onFocus = () => loadCurrentUser();
+    window.addEventListener('focus', onFocus);
 
     return () => {
       ignore = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
     };
   }, [context]);
 

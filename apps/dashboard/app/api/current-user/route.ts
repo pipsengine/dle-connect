@@ -3,7 +3,7 @@ import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { countDirectReportsFromEmployees, payrollDataSourceInfo, readDirectoryEmployees } from '@/lib/payroll-employee-source';
 import { pendingLeaveApprovalsForActor, loadWorkflowLeaveRequests } from '@/lib/leave-workflow-service';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
-import { listEnterpriseNotifications } from '@/lib/enterprise-notifications-store';
+import { unreadNotificationCountForSession } from '@/lib/enterprise-notifications-feed';
 import { resolveReportingManagerDisplay } from '@/lib/reporting-manager-match';
 
 type CurrentUserContext = 'enterprise' | 'hris' | 'ess';
@@ -124,7 +124,7 @@ export async function GET(request: Request) {
   const context = contexts.has(contextParam as CurrentUserContext) ? contextParam as CurrentUserContext : 'enterprise';
   const token = cookieFirst(request, AUTH_COOKIE);
   const session = await verifySessionToken(token);
-  const notificationCount = session ? await listEnterpriseNotifications(session, 'all').then((result) => result.counts.unread).catch(() => 0) : 0;
+  const notificationCount = session ? await unreadNotificationCountForSession(session).catch(() => 0) : 0;
 
   const sessionIdentities = [session?.employeeCode, session?.employeeId, session?.username, session?.fullName].filter(Boolean) as string[];
   const configuredIdentities = session ? sessionIdentities : configuredEmployeeIdentities(request, context);

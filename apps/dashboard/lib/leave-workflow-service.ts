@@ -1437,7 +1437,7 @@ export const listLiveLeaveApprovalNotifications = async (input: {
     severity: 'warning' as const,
     status: 'Unread' as const,
     href: '/workforce-portal?tab=leave&leaveSection=Approvals',
-    createdAt: new Date().toISOString(),
+    createdAt: item.appliedOn || new Date().toISOString(),
     actor: 'Leave Workflow',
     channels: ['In-App'] as Array<'In-App' | 'Email' | 'SMS'>,
     metadata: { requestId: item.id, live: true },

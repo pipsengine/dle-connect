@@ -145,21 +145,28 @@ export function NotificationCenter({
         ...json.data,
         notifications: json.data.notifications
           .filter((item) => !dismissed.has(item.id))
-          .map((item) => ({ ...item, status: read.has(item.id) ? 'Read' as const : item.status })),
+          .map((item) => ({
+            ...item,
+            // Prefer server status; only apply sessionStorage read overlay for live ids still Unread.
+            status: item.status === 'Unread' && read.has(item.id) ? 'Read' as const : item.status,
+          })),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : `Unable to load ${title.toLowerCase()}`);
     } finally {
       setLoading(false);
     }
-  }, [scope, title]);
+  }, [scope, title, inEssPortal]);
 
   useEffect(() => {
     const initial = window.setTimeout(() => void load(), 0);
     const interval = window.setInterval(() => void load(), 60000);
+    const onFocus = () => void load();
+    window.addEventListener('focus', onFocus);
     return () => {
       window.clearTimeout(initial);
       window.clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
     };
   }, [load]);
 
@@ -213,14 +220,8 @@ export function NotificationCenter({
       });
       const json = (await res.json()) as ApiResponse;
       if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || 'Notification update failed');
-      const dismissed = readDismissedIds();
-      const read = readReadIds();
-      setPayload({
-        ...json.data,
-        notifications: json.data.notifications
-          .filter((item) => !dismissed.has(item.id))
-          .map((item) => ({ ...item, status: read.has(item.id) ? 'Read' as const : item.status })),
-      });
+      // Reload scoped feed so bell/mail panels stay accurate after updates.
+      await load();
     } catch {
       // Keep optimistic UI state when persistence is unavailable (for example IIS EPERM).
     }
@@ -238,8 +239,9 @@ export function NotificationCenter({
       markReadLocally(allIds);
     }
 
-    if (action === 'mark-all-read' || persistedIds.length) {
-      void persistUpdate(action, persistedIds);
+    // Persist both stored and live notification state so badges/messages stay updated after refresh.
+    if (action === 'mark-all-read' || persistedIds.length || liveIds.length) {
+      void persistUpdate(action, action === 'mark-all-read' ? [] : [...persistedIds, ...liveIds]);
     }
   };
 

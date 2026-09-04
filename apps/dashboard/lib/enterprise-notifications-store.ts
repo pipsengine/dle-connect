@@ -2,7 +2,6 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import type { SessionPayload } from '@/lib/auth/session';
 import {
-  essSeedNotificationHrefs,
   isEssSelfServiceSession,
   normalizeEssNotificationHref,
   resolveNotificationHref,
@@ -33,12 +32,28 @@ export type EnterpriseNotification = {
   metadata?: Record<string, string | number | boolean>;
 };
 
+export type LiveNotificationOverride = {
+  id: string;
+  userKey: string;
+  status: 'Read' | 'Archived';
+  updatedAt: string;
+};
+
 type NotificationFile = {
   schemaVersion: number;
   notifications: EnterpriseNotification[];
+  liveOverrides?: LiveNotificationOverride[];
 };
 
 export type NotificationScope = 'all' | 'messages' | 'notifications' | 'approvals';
+
+export type NotificationCounts = {
+  unread: number;
+  notifications: number;
+  messages: number;
+  approvals: number;
+  critical: number;
+};
 
 const compact = (value: unknown) => String(value || '').trim();
 const normalizeRecipientKey = (value: unknown) => compact(value).toUpperCase();
@@ -48,7 +63,6 @@ const notificationsCandidatePaths = () => {
   if (override) return [override];
   const cwd = process.cwd();
   const dashboardRoot = /[\\/]apps[\\/]dashboard$/i.test(cwd) ? cwd : path.join(cwd, 'apps', 'dashboard');
-  // Prefer apps/dashboard/data so Next/IIS/scripts share one store regardless of process.cwd().
   return [
     path.join(dashboardRoot, 'data', 'enterprise', 'notifications.json'),
     path.join(cwd, 'data', 'enterprise', 'notifications.json'),
@@ -62,6 +76,19 @@ const isStorageAccessError = (error: unknown) => {
 
 const nowIso = () => new Date().toISOString();
 
+const emptyCounts = (): NotificationCounts => ({
+  unread: 0,
+  notifications: 0,
+  messages: 0,
+  approvals: 0,
+  critical: 0,
+});
+
+const isPersistentSeed = (item: EnterpriseNotification) => {
+  if (item.metadata?.persistentSeed === true) return true;
+  return /^(security-session|profile-review|payslip-ready|hr-message|approval-queue|timesheet-approval)-/i.test(item.id);
+};
+
 const readStore = async (): Promise<NotificationFile> => {
   let lastAccessError: unknown = null;
   for (const dataFile of notificationsCandidatePaths()) {
@@ -71,6 +98,7 @@ const readStore = async (): Promise<NotificationFile> => {
       return {
         schemaVersion: parsed.schemaVersion || 1,
         notifications: Array.isArray(parsed.notifications) ? parsed.notifications : [],
+        liveOverrides: Array.isArray(parsed.liveOverrides) ? parsed.liveOverrides : [],
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -85,11 +113,15 @@ const readStore = async (): Promise<NotificationFile> => {
   if (lastAccessError) {
     console.warn('[enterprise-notifications] Unable to read notifications store; continuing with empty feed.', lastAccessError);
   }
-  return { schemaVersion: 1, notifications: [] };
+  return { schemaVersion: 1, notifications: [], liveOverrides: [] };
 };
 
 const writeStore = async (store: NotificationFile) => {
-  const payload = `${JSON.stringify(store, null, 2)}\n`;
+  const payload = `${JSON.stringify({
+    schemaVersion: store.schemaVersion || 1,
+    notifications: store.notifications || [],
+    liveOverrides: store.liveOverrides || [],
+  }, null, 2)}\n`;
   let lastAccessError: unknown = null;
   for (const dataFile of notificationsCandidatePaths()) {
     try {
@@ -129,130 +161,34 @@ const ownerMatches = (item: EnterpriseNotification, session: SessionPayload) => 
   return false;
 };
 
-const seededNotifications = (session: SessionPayload): EnterpriseNotification[] => {
-  const essMode = isEssSelfServiceSession(session);
-  const base = {
-    recipientUserId: session.sub,
-    recipientUsername: session.username,
-    recipientEmployeeCode: session.employeeCode || session.employeeId,
-    recipientRoles: session.roles,
-    channels: ['In-App', 'Email'] as Array<'In-App' | 'Email'>,
-  };
-  const managerLike = session.permissions.includes('*') || session.permissions.some((permission) => permission.includes('approval') || permission.includes('admin') || permission.includes('payroll') || permission.includes('hris'));
-  const seeds: EnterpriseNotification[] = [
-    {
-      ...base,
-      id: `security-session-${session.sub}`,
-      kind: 'Security',
-      module: 'Security & MFA',
-      title: 'Enterprise session secured',
-      body: 'Your current enterprise access is protected by RBAC, session controls, and activity logging.',
-      severity: 'success',
-      status: 'Unread',
-      href: essMode ? '/workforce-portal?tab=security' : '/hris/administration/audit-trail',
-      createdAt: nowIso(),
-      actor: 'Security Service',
-      metadata: { persistentSeed: true },
-    },
-    {
-      ...base,
-      id: `profile-review-${session.sub}`,
-      kind: 'Notification',
-      module: 'Employee Profile',
-      title: 'Review your employee profile',
-      body: 'Keep contact details, emergency contacts, bank details, and supporting documents up to date.',
-      severity: 'info',
-      status: 'Unread',
-      href: essMode ? '/workforce-portal?tab=profile' : '/hris/employees/employee-profile',
-      createdAt: nowIso(),
-      actor: 'HRIS',
-      metadata: { persistentSeed: true },
-    },
-    {
-      ...base,
-      id: `payslip-ready-${session.sub}`,
-      kind: 'Notification',
-      module: 'Payroll Management',
-      title: 'Payroll self-service available',
-      body: 'Payslips, deductions, pension contributions, allowances, and loan deductions can be reviewed from payroll self-service.',
-      severity: 'info',
-      status: 'Unread',
-      href: essMode ? '/workforce-portal?tab=payroll' : '/hris/payroll/payslip-generation',
-      createdAt: nowIso(),
-      actor: 'Payroll Service',
-      metadata: { persistentSeed: true },
-    },
-    {
-      ...base,
-      id: `hr-message-${session.sub}`,
-      kind: 'Message',
-      module: 'Communication Center',
-      title: 'HR communication center is active',
-      body: 'Company announcements, policy updates, request comments, and service messages will appear here.',
-      severity: 'info',
-      status: 'Unread',
-      href: essMode ? '/workforce-portal?tab=communication' : '/hris/announcements',
-      createdAt: nowIso(),
-      actor: 'Human Capital',
-      metadata: { persistentSeed: true },
-    },
-  ];
+const sessionOverrideKeys = (session: SessionPayload) =>
+  new Set([
+    normalizeRecipientKey(session.sub),
+    normalizeRecipientKey(session.username),
+    normalizeRecipientKey(session.employeeCode),
+    normalizeRecipientKey(session.employeeId),
+  ].filter(Boolean));
 
-  if (managerLike) {
-    seeds.push(
-      {
-        ...base,
-        id: `approval-queue-${session.sub}`,
-        kind: 'Approval',
-        module: 'Workflow & Approvals',
-        title: 'Approval queue requires review',
-        body: 'Review pending HR, payroll, leave, workforce, and employee service requests according to your role permissions.',
-        severity: 'warning',
-        status: 'Unread',
-        href: essMode ? '/workforce-portal?tab=leave&leaveSection=Approvals' : '/hris/administration/approval-workflow',
-        createdAt: nowIso(),
-        actor: 'Workflow Engine',
-        metadata: { persistentSeed: true },
-      },
-      {
-        ...base,
-        id: `timesheet-approval-${session.sub}`,
-        kind: 'Workflow',
-        module: 'Workforce Management',
-        title: 'Timesheet and attendance actions available',
-        body: 'Timesheet periods, project approvals, attendance exceptions, and payroll-ready hours are available for review.',
-        severity: 'warning',
-        status: 'Unread',
-        href: essMode ? '/workforce-portal?tab=time' : '/hris/time-and-logs/timesheet-approval',
-        createdAt: nowIso(),
-        actor: 'Workforce Management',
-        metadata: { persistentSeed: true },
-      }
-    );
-  }
-
-  return seeds;
-};
-
-const migrateSeededHrefs = (session: SessionPayload, store: NotificationFile) => {
+const migrateEssHrefs = (session: SessionPayload, store: NotificationFile) => {
   if (!isEssSelfServiceSession(session)) return store;
-  const hrefs = essSeedNotificationHrefs(session);
   store.notifications = store.notifications.map((item) => {
-    const nextHref = hrefs[item.id] || normalizeEssNotificationHref(item.href);
+    const nextHref = normalizeEssNotificationHref(item.href);
     if (!nextHref || nextHref === item.href) return item;
     return { ...item, href: nextHref };
   });
   return store;
 };
 
-const ensureSeeded = async (session: SessionPayload) => {
+/** Remove static demo seeds that previously flooded every inbox with the same messages. */
+const purgePersistentSeeds = async (session: SessionPayload) => {
   let store = await readStore();
-  const existingIds = new Set(store.notifications.map((item) => item.id));
-  const missing = seededNotifications(session).filter((item) => !existingIds.has(item.id));
-  if (missing.length) store.notifications.push(...missing);
-  const before = JSON.stringify(store.notifications);
-  store = migrateSeededHrefs(session, store);
-  if (missing.length || JSON.stringify(store.notifications) !== before) await writeStore(store);
+  const before = store.notifications.length;
+  store.notifications = store.notifications.filter((item) => !isPersistentSeed(item));
+  const beforeJson = JSON.stringify(store.notifications);
+  store = migrateEssHrefs(session, store);
+  if (store.notifications.length !== before || JSON.stringify(store.notifications) !== beforeJson) {
+    await writeStore(store);
+  }
   return store;
 };
 
@@ -269,8 +205,19 @@ const byScope = (scope: NotificationScope) => (item: EnterpriseNotification) => 
   return true;
 };
 
+export const computeNotificationCounts = (items: EnterpriseNotification[]): NotificationCounts => {
+  const visible = items.filter((item) => item.status !== 'Archived');
+  return {
+    unread: visible.filter((item) => item.status === 'Unread').length,
+    notifications: visible.filter((item) => item.kind !== 'Message' && item.status === 'Unread').length,
+    messages: visible.filter((item) => item.kind === 'Message' && item.status === 'Unread').length,
+    approvals: visible.filter((item) => ['Approval', 'Workflow'].includes(item.kind) && item.status === 'Unread').length,
+    critical: visible.filter((item) => item.severity === 'critical' && item.status === 'Unread').length,
+  };
+};
+
 export const listEnterpriseNotifications = async (session: SessionPayload, scope: NotificationScope = 'all') => {
-  const store = await ensureSeeded(session);
+  const store = await purgePersistentSeeds(session);
   const items = store.notifications
     .filter((item) => ownerMatches(item, session))
     .filter(byScope(scope))
@@ -279,22 +226,70 @@ export const listEnterpriseNotifications = async (session: SessionPayload, scope
   const allVisible = store.notifications.filter((item) => ownerMatches(item, session) && item.status !== 'Archived');
   return {
     notifications: withResolvedHrefs(session, items),
-    counts: {
-      unread: allVisible.filter((item) => item.status === 'Unread').length,
-      notifications: allVisible.filter((item) => item.kind !== 'Message' && item.status === 'Unread').length,
-      messages: allVisible.filter((item) => item.kind === 'Message' && item.status === 'Unread').length,
-      approvals: allVisible.filter((item) => ['Approval', 'Workflow'].includes(item.kind) && item.status === 'Unread').length,
-      critical: allVisible.filter((item) => item.severity === 'critical' && item.status === 'Unread').length,
-    },
+    counts: computeNotificationCounts(allVisible),
   };
 };
 
-export const updateEnterpriseNotifications = async (session: SessionPayload, ids: string[], action: 'mark-read' | 'archive' | 'mark-all-read') => {
-  const store = await ensureSeeded(session);
+export const applyLiveNotificationOverrides = async <T extends { id: string; status: NotificationStatus }>(
+  session: SessionPayload,
+  items: T[],
+): Promise<T[]> => {
+  const store = await readStore();
+  const keys = sessionOverrideKeys(session);
+  const byId = new Map(
+    (store.liveOverrides || [])
+      .filter((entry) => keys.has(normalizeRecipientKey(entry.userKey)))
+      .map((entry) => [entry.id, entry] as const),
+  );
+  return items
+    .map((item) => {
+      const override = byId.get(item.id);
+      if (!override) return item;
+      return { ...item, status: override.status as T['status'] };
+    })
+    .filter((item) => item.status !== 'Archived');
+};
+
+export const updateLiveNotificationOverrides = async (
+  session: SessionPayload,
+  ids: string[],
+  action: 'mark-read' | 'archive' | 'mark-all-read',
+) => {
+  if (!ids.length) return;
+  const store = await readStore();
+  const keys = sessionOverrideKeys(session);
+  const primaryKey = normalizeRecipientKey(session.sub || session.username || session.employeeCode || session.employeeId);
+  if (!primaryKey) return;
+  const at = nowIso();
+  const idSet = new Set(ids);
+  const next = (store.liveOverrides || []).filter((entry) => {
+    if (!keys.has(normalizeRecipientKey(entry.userKey))) return true;
+    return !idSet.has(entry.id);
+  });
+  for (const id of idSet) {
+    next.push({
+      id,
+      userKey: primaryKey,
+      status: action === 'archive' ? 'Archived' : 'Read',
+      updatedAt: at,
+    });
+  }
+  store.liveOverrides = next;
+  await writeStore(store);
+};
+
+export const updateEnterpriseNotifications = async (
+  session: SessionPayload,
+  ids: string[],
+  action: 'mark-read' | 'archive' | 'mark-all-read',
+) => {
+  const store = await purgePersistentSeeds(session);
   const idSet = new Set(ids);
   const at = nowIso();
   store.notifications = store.notifications.map((item) => {
-    const selected = action === 'mark-all-read' ? ownerMatches(item, session) && item.status !== 'Archived' : idSet.has(item.id) && ownerMatches(item, session);
+    const selected = action === 'mark-all-read'
+      ? ownerMatches(item, session) && item.status !== 'Archived'
+      : idSet.has(item.id) && ownerMatches(item, session);
     if (!selected) return item;
     if (action === 'archive') return { ...item, status: 'Archived', archivedAt: at, readAt: item.readAt || at };
     return { ...item, status: 'Read', readAt: item.readAt || at };
@@ -304,6 +299,25 @@ export const updateEnterpriseNotifications = async (session: SessionPayload, ids
     return listEnterpriseNotifications(session);
   }
   return listEnterpriseNotifications(session);
+};
+
+export const mergeNotificationFeeds = (
+  persisted: EnterpriseNotification[],
+  live: Array<Omit<EnterpriseNotification, 'recipientUserId' | 'recipientUsername' | 'recipientEmployeeCode' | 'recipientRoles'>>,
+) => {
+  const seen = new Set(persisted.map((item) => item.id));
+  const merged = [...persisted];
+  for (const item of live) {
+    if (seen.has(item.id)) continue;
+    merged.unshift({
+      ...item,
+      recipientUserId: '',
+      recipientUsername: '',
+      recipientEmployeeCode: undefined,
+      recipientRoles: [],
+    });
+  }
+  return merged.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 };
 
 export const createEnterpriseNotification = async (
@@ -340,3 +354,5 @@ export const createEnterpriseNotification = async (
   }
   return record;
 };
+
+export { emptyCounts };
