@@ -114,16 +114,47 @@ export const totalsHaveFigures = (totals: PayrollMomTotals | null | undefined) =
 const recordMatchKey = (record: PayrollCalculationRecord) =>
   upper(record.employeeCode || record.employeeId || record.fullName);
 
-const metricRecordValue = (record: PayrollCalculationRecord, key: PayrollMomMetricKey) => {
+const sortBuckets = (buckets: PayrollMomDetailBucket[]) =>
+  buckets.filter((bucket) => Math.abs(bucket.value) >= (bucket.kind === 'count' ? 1 : 0.005))
+    .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+
+const topSummary = (buckets: PayrollMomDetailBucket[], metric: PayrollMomMetric) => {
+  if (!buckets.length) return `${metric.label} had no material movement.`;
+  const top = buckets.filter((bucket) => bucket.id !== 'residual').slice(0, 2).map((bucket) => bucket.label).join(' and ');
+  return top
+    ? `${metric.label} changed mainly because of ${top}.`
+    : `${metric.label} changed mainly because of schedule adjustments.`;
+};
+
+type MomAggRecord = {
+  key: string;
+  employeeId: string;
+  employeeCode: string;
+  fullName: string;
+  grossPay: number;
+  deductions: number;
+  netPay: number;
+  employerCost: number;
+  basePay: number;
+  allowances: number;
+  paye: number;
+  pensionEmployee: number;
+  loanRecovery: number;
+  otherDeductions: number;
+  pensionEmployer: number;
+  statutoryEmployer: number;
+};
+
+const metricAggValue = (record: MomAggRecord, key: PayrollMomMetricKey) => {
   switch (key) {
     case 'grossPay':
-      return Number(record.grossPay || 0);
+      return record.grossPay;
     case 'deductions':
-      return Number(record.totalDeductions || record.deductions || 0);
+      return record.deductions;
     case 'netPay':
-      return Number(record.netPay || 0);
+      return record.netPay;
     case 'employerCost':
-      return Number(record.employerCost || 0);
+      return record.employerCost;
     case 'employees':
       return 1;
     default:
@@ -131,70 +162,143 @@ const metricRecordValue = (record: PayrollCalculationRecord, key: PayrollMomMetr
   }
 };
 
-const sortBuckets = (buckets: PayrollMomDetailBucket[]) =>
-  buckets.filter((bucket) => Math.abs(bucket.value) >= (bucket.kind === 'count' ? 1 : 0.005))
-    .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+const toMomAgg = (record: PayrollCalculationRecord): MomAggRecord | null => {
+  const key = recordMatchKey(record);
+  if (!key) return null;
+  return {
+    key,
+    employeeId: compact(record.employeeId) || compact(record.employeeCode) || key,
+    employeeCode: compact(record.employeeCode) || compact(record.employeeId) || key,
+    fullName: compact(record.fullName) || compact(record.employeeCode) || key,
+    grossPay: Number(record.grossPay || 0),
+    deductions: Number(record.totalDeductions || record.deductions || 0),
+    netPay: Number(record.netPay || 0),
+    employerCost: Number(record.employerCost || 0),
+    basePay: Number(record.basePay || 0),
+    allowances: Number(record.allowances || 0),
+    paye: Number(record.paye || 0),
+    pensionEmployee: Number(record.pensionEmployee || record.pension || 0),
+    loanRecovery: Number(record.loanRecovery || 0),
+    otherDeductions: Number(record.otherDeductions || 0),
+    pensionEmployer: Number(record.pensionEmployer || 0),
+    statutoryEmployer: Number(record.statutoryEmployer || 0),
+  };
+};
 
-const topSummary = (buckets: PayrollMomDetailBucket[], metric: PayrollMomMetric) => {
-  if (!buckets.length) return `${metric.label} had no material movement.`;
-  const top = buckets.slice(0, 2).map((bucket) => bucket.label).join(' and ');
-  return `${metric.label} changed mainly because of ${top}.`;
+const aggregateMomRecords = (records: PayrollCalculationRecord[]) => {
+  const map = new Map<string, MomAggRecord>();
+  for (const record of records) {
+    const next = toMomAgg(record);
+    if (!next) continue;
+    const existing = map.get(next.key);
+    if (!existing) {
+      map.set(next.key, next);
+      continue;
+    }
+    map.set(next.key, {
+      ...existing,
+      fullName: existing.fullName || next.fullName,
+      employeeId: existing.employeeId || next.employeeId,
+      employeeCode: existing.employeeCode || next.employeeCode,
+      grossPay: existing.grossPay + next.grossPay,
+      deductions: existing.deductions + next.deductions,
+      netPay: existing.netPay + next.netPay,
+      employerCost: existing.employerCost + next.employerCost,
+      basePay: existing.basePay + next.basePay,
+      allowances: existing.allowances + next.allowances,
+      paye: existing.paye + next.paye,
+      pensionEmployee: existing.pensionEmployee + next.pensionEmployee,
+      loanRecovery: existing.loanRecovery + next.loanRecovery,
+      otherDeductions: existing.otherDeductions + next.otherDeductions,
+      pensionEmployer: existing.pensionEmployer + next.pensionEmployer,
+      statutoryEmployer: existing.statutoryEmployer + next.statutoryEmployer,
+    });
+  }
+  return map;
 };
 
 const contributorReason = (
   key: PayrollMomMetricKey,
-  current: PayrollCalculationRecord | undefined,
-  previous: PayrollCalculationRecord | undefined,
+  current: MomAggRecord | undefined,
+  previous: MomAggRecord | undefined,
 ) => {
   if (current && !previous) return 'New in current period';
   if (!current && previous) return 'Present in previous period only';
   if (!current || !previous) return 'No comparable record';
   if (key === 'employees') return 'Retained across both periods';
   if (key === 'grossPay') {
-    const baseDelta = roundMoney(Number(current.basePay || 0) - Number(previous.basePay || 0));
-    const allowanceDelta = roundMoney(Number(current.allowances || 0) - Number(previous.allowances || 0));
+    const baseDelta = roundMoney(current.basePay - previous.basePay);
+    const allowanceDelta = roundMoney(current.allowances - previous.allowances);
     if (Math.abs(baseDelta) >= Math.abs(allowanceDelta) && Math.abs(baseDelta) >= 0.005) return 'Base salary changed';
     if (Math.abs(allowanceDelta) >= 0.005) return 'Allowances changed';
     return 'Gross pay changed';
   }
   if (key === 'deductions') {
     const deductionDeltas: Array<[string, number]> = [
-      ['PAYE changed', roundMoney(Number(current.paye || 0) - Number(previous.paye || 0))],
-      ['Employee pension changed', roundMoney(Number(current.pensionEmployee || 0) - Number(previous.pensionEmployee || previous.pension || 0))],
-      ['Loan recovery changed', roundMoney(Number(current.loanRecovery || 0) - Number(previous.loanRecovery || 0))],
-      ['Other deductions changed', roundMoney(Number(current.otherDeductions || 0) - Number(previous.otherDeductions || 0))],
+      ['PAYE changed', roundMoney(current.paye - previous.paye)],
+      ['Employee pension changed', roundMoney(current.pensionEmployee - previous.pensionEmployee)],
+      ['Loan recovery changed', roundMoney(current.loanRecovery - previous.loanRecovery)],
+      ['Other deductions changed', roundMoney(current.otherDeductions - previous.otherDeductions)],
     ];
     deductionDeltas.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
     return Math.abs(deductionDeltas[0][1]) >= 0.005 ? deductionDeltas[0][0] : 'Deduction mix changed';
   }
   if (key === 'netPay') {
-    const grossDelta = roundMoney(Number(current.grossPay || 0) - Number(previous.grossPay || 0));
-    const deductionDelta = roundMoney(Number(current.totalDeductions || current.deductions || 0) - Number(previous.totalDeductions || previous.deductions || 0));
+    const grossDelta = roundMoney(current.grossPay - previous.grossPay);
+    const deductionDelta = roundMoney(current.deductions - previous.deductions);
     if (Math.abs(grossDelta) >= Math.abs(deductionDelta) && Math.abs(grossDelta) >= 0.005) return 'Gross pay changed';
     if (Math.abs(deductionDelta) >= 0.005) return 'Deductions changed';
     return 'Net pay changed';
   }
   const employerDeltas: Array<[string, number]> = [
-    ['Employer pension changed', roundMoney(Number(current.pensionEmployer || 0) - Number(previous.pensionEmployer || 0))],
-    ['Employer statutory changed', roundMoney(Number(current.statutoryEmployer || 0) - Number(previous.statutoryEmployer || 0))],
-    ['Gross-pay-linked cost changed', roundMoney(Number(current.grossPay || 0) - Number(previous.grossPay || 0))],
+    ['Employer pension changed', roundMoney(current.pensionEmployer - previous.pensionEmployer)],
+    ['Employer statutory changed', roundMoney(current.statutoryEmployer - previous.statutoryEmployer)],
+    ['Gross-pay-linked cost changed', roundMoney(current.grossPay - previous.grossPay)],
   ];
   employerDeltas.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
   return Math.abs(employerDeltas[0][1]) >= 0.005 ? employerDeltas[0][0] : 'Employer cost changed';
 };
 
+const reconcileBucketsToTarget = (
+  buckets: PayrollMomDetailBucket[],
+  targetVariance: number,
+): PayrollMomDetailBucket[] => {
+  const explained = roundMoney(buckets.reduce((sum, bucket) => sum + bucket.value, 0));
+  const residual = roundMoney(targetVariance - explained);
+  if (Math.abs(residual) < 0.005) return buckets;
+  return [
+    ...buckets,
+    {
+      id: 'residual',
+      label: 'schedule / other adjustments vs employee lines',
+      value: residual,
+      kind: 'money',
+    },
+  ];
+};
+
 const buildPayrollMomMetricDetail = (
-  metric: { key: PayrollMomMetricKey; label: string; kind: 'money' | 'count' },
+  metric: { key: PayrollMomMetricKey; label: string; kind: 'money' | 'count'; current: number; previous: number; variance: number },
   currentRecords: PayrollCalculationRecord[],
   previousRecords: PayrollCalculationRecord[],
 ): PayrollMomMetricDetail => {
-  const currentByKey = new Map(currentRecords.map((record) => [recordMatchKey(record), record]));
-  const previousByKey = new Map(previousRecords.map((record) => [recordMatchKey(record), record]));
-  const joined = currentRecords.filter((record) => !previousByKey.has(recordMatchKey(record)));
-  const exited = previousRecords.filter((record) => !currentByKey.has(recordMatchKey(record)));
-  const retainedPairs = currentRecords
-    .map((record) => [record, previousByKey.get(recordMatchKey(record))] as const)
-    .filter((pair): pair is readonly [PayrollCalculationRecord, PayrollCalculationRecord] => Boolean(pair[1]));
+  const currentByKey = aggregateMomRecords(currentRecords);
+  const previousByKey = aggregateMomRecords(previousRecords);
+  const allKeys = Array.from(new Set([...currentByKey.keys(), ...previousByKey.keys()]));
+
+  const joined = allKeys
+    .map((key) => currentByKey.get(key))
+    .filter((record): record is MomAggRecord => Boolean(record && !previousByKey.has(record.key)));
+  const exited = allKeys
+    .map((key) => previousByKey.get(key))
+    .filter((record): record is MomAggRecord => Boolean(record && !currentByKey.has(record.key)));
+  const retainedPairs = allKeys
+    .map((key) => {
+      const current = currentByKey.get(key);
+      const previous = previousByKey.get(key);
+      return current && previous ? ([current, previous] as const) : null;
+    })
+    .filter((pair): pair is readonly [MomAggRecord, MomAggRecord] => Boolean(pair));
 
   if (metric.kind === 'count') {
     const buckets = sortBuckets([
@@ -225,42 +329,50 @@ const buildPayrollMomMetricDetail = (
     return {
       key: metric.key,
       kind: 'count',
-      summary: topSummary(buckets.filter((bucket) => bucket.id !== 'retained'), { ...metric, current: 0, previous: 0, variance: 0, pctChange: 0, direction: 'flat', detail: null }),
+      summary: topSummary(buckets.filter((bucket) => bucket.id !== 'retained'), { ...metric, pctChange: 0, direction: 'flat', detail: null }),
       buckets,
       contributors,
     };
   }
 
   const headcountMovement = roundMoney(
-    joined.reduce((sum, record) => sum + metricRecordValue(record, metric.key), 0)
-      - exited.reduce((sum, record) => sum + metricRecordValue(record, metric.key), 0),
+    joined.reduce((sum, record) => sum + metricAggValue(record, metric.key), 0)
+      - exited.reduce((sum, record) => sum + metricAggValue(record, metric.key), 0),
   );
   const retainedDelta = roundMoney(retainedPairs.reduce(
-    (sum, [current, previous]) => sum + metricRecordValue(current, metric.key) - metricRecordValue(previous, metric.key),
+    (sum, [current, previous]) => sum + metricAggValue(current, metric.key) - metricAggValue(previous, metric.key),
     0,
   ));
 
   const buckets: PayrollMomDetailBucket[] = [
     { id: 'headcount', label: 'headcount movement', value: headcountMovement, kind: 'money' },
   ];
+
   if (metric.key === 'grossPay') {
+    const baseDelta = roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + current.basePay - previous.basePay, 0));
+    const allowanceDelta = roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + current.allowances - previous.allowances, 0));
     buckets.push(
-      { id: 'base-pay', label: 'base salary changes on retained staff', value: roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + Number(current.basePay || 0) - Number(previous.basePay || 0), 0)), kind: 'money' },
-      { id: 'allowances', label: 'allowance changes on retained staff', value: roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + Number(current.allowances || 0) - Number(previous.allowances || 0), 0)), kind: 'money' },
+      { id: 'base-pay', label: 'base salary changes on retained staff', value: baseDelta, kind: 'money' },
+      { id: 'allowances', label: 'allowance changes on retained staff', value: allowanceDelta, kind: 'money' },
+      { id: 'other-retained', label: 'other gross movement on retained staff', value: roundMoney(retainedDelta - baseDelta - allowanceDelta), kind: 'money' },
     );
   } else if (metric.key === 'deductions') {
+    const payeDelta = roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + current.paye - previous.paye, 0));
+    const pensionDelta = roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + current.pensionEmployee - previous.pensionEmployee, 0));
+    const loanOtherDelta = roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + current.loanRecovery + current.otherDeductions - previous.loanRecovery - previous.otherDeductions, 0));
     buckets.push(
-      { id: 'paye', label: 'PAYE movement on retained staff', value: roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + Number(current.paye || 0) - Number(previous.paye || 0), 0)), kind: 'money' },
-      { id: 'pension-ee', label: 'employee pension movement on retained staff', value: roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + Number(current.pensionEmployee || 0) - Number(previous.pensionEmployee || previous.pension || 0), 0)), kind: 'money' },
-      { id: 'loans-other', label: 'loan and other deduction movement on retained staff', value: roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + Number(current.loanRecovery || 0) + Number(current.otherDeductions || 0) - Number(previous.loanRecovery || 0) - Number(previous.otherDeductions || 0), 0)), kind: 'money' },
+      { id: 'paye', label: 'PAYE movement on retained staff', value: payeDelta, kind: 'money' },
+      { id: 'pension-ee', label: 'employee pension movement on retained staff', value: pensionDelta, kind: 'money' },
+      { id: 'loans-other', label: 'loan and other deduction movement on retained staff', value: loanOtherDelta, kind: 'money' },
+      { id: 'other-retained', label: 'other deduction movement on retained staff', value: roundMoney(retainedDelta - payeDelta - pensionDelta - loanOtherDelta), kind: 'money' },
     );
   } else if (metric.key === 'netPay') {
     const positiveRetained = roundMoney(retainedPairs.reduce((sum, [current, previous]) => {
-      const delta = Number(current.netPay || 0) - Number(previous.netPay || 0);
+      const delta = current.netPay - previous.netPay;
       return delta > 0 ? sum + delta : sum;
     }, 0));
     const negativeRetained = roundMoney(retainedPairs.reduce((sum, [current, previous]) => {
-      const delta = Number(current.netPay || 0) - Number(previous.netPay || 0);
+      const delta = current.netPay - previous.netPay;
       return delta < 0 ? sum + delta : sum;
     }, 0));
     buckets.push(
@@ -268,8 +380,8 @@ const buildPayrollMomMetricDetail = (
       { id: 'retained-down', label: 'net pay decreases on retained staff', value: negativeRetained, kind: 'money' },
     );
   } else if (metric.key === 'employerCost') {
-    const pensionEmployerDelta = roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + Number(current.pensionEmployer || 0) - Number(previous.pensionEmployer || 0), 0));
-    const statutoryEmployerDelta = roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + Number(current.statutoryEmployer || 0) - Number(previous.statutoryEmployer || 0), 0));
+    const pensionEmployerDelta = roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + current.pensionEmployer - previous.pensionEmployer, 0));
+    const statutoryEmployerDelta = roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + current.statutoryEmployer - previous.statutoryEmployer, 0));
     buckets.push(
       { id: 'pension-er', label: 'employer pension movement on retained staff', value: pensionEmployerDelta, kind: 'money' },
       { id: 'statutory-er', label: 'employer statutory movement on retained staff', value: statutoryEmployerDelta, kind: 'money' },
@@ -277,39 +389,36 @@ const buildPayrollMomMetricDetail = (
     );
   }
 
-  const contributors = [
-    ...currentRecords.map((record) => {
-      const previous = previousByKey.get(recordMatchKey(record));
-      const variance = roundMoney(metricRecordValue(record, metric.key) - (previous ? metricRecordValue(previous, metric.key) : 0));
-      return variance === 0 ? null : {
-        employeeId: record.employeeId,
-        employeeCode: record.employeeCode,
-        fullName: record.fullName,
+  const reconciled = reconcileBucketsToTarget(buckets, metric.variance);
+
+  const contributors = allKeys
+    .map((key) => {
+      const current = currentByKey.get(key);
+      const previous = previousByKey.get(key);
+      const currentValue = current ? metricAggValue(current, metric.key) : 0;
+      const previousValue = previous ? metricAggValue(previous, metric.key) : 0;
+      const variance = roundMoney(currentValue - previousValue);
+      if (Math.abs(variance) < 0.005) return null;
+      const sample = current || previous!;
+      return {
+        employeeId: sample.employeeId,
+        employeeCode: sample.employeeCode,
+        fullName: sample.fullName,
         variance,
-        current: roundMoney(metricRecordValue(record, metric.key)),
-        previous: roundMoney(previous ? metricRecordValue(previous, metric.key) : 0),
-        reason: contributorReason(metric.key, record, previous),
-      };
-    }),
-    ...exited.map((record) => ({
-      employeeId: record.employeeId,
-      employeeCode: record.employeeCode,
-      fullName: record.fullName,
-      variance: roundMoney(-metricRecordValue(record, metric.key)),
-      current: 0,
-      previous: roundMoney(metricRecordValue(record, metric.key)),
-      reason: contributorReason(metric.key, undefined, record),
-    })),
-  ]
+        current: roundMoney(currentValue),
+        previous: roundMoney(previousValue),
+        reason: contributorReason(metric.key, current, previous),
+      } satisfies PayrollMomContributor;
+    })
     .filter((item): item is PayrollMomContributor => Boolean(item))
     .sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance))
     .slice(0, 12);
 
-  const rankedBuckets = sortBuckets(buckets);
+  const rankedBuckets = sortBuckets(reconciled);
   return {
     key: metric.key,
     kind: 'money',
-    summary: topSummary(rankedBuckets, { ...metric, current: 0, previous: 0, variance: 0, pctChange: 0, direction: 'flat', detail: null }),
+    summary: topSummary(rankedBuckets, { ...metric, pctChange: 0, direction: 'flat', detail: null }),
     buckets: rankedBuckets,
     contributors,
   };
@@ -342,7 +451,11 @@ export const buildPayrollMonthOverMonth = (input: {
       pctChange: payrollMomPctChange(prior, current),
       direction: payrollMomDirection(variance),
       detail: canBuildDetail
-        ? buildPayrollMomMetricDetail(def, input.currentRecords || [], input.previousRecords || [])
+        ? buildPayrollMomMetricDetail(
+          { ...def, current, previous: prior, variance },
+          input.currentRecords || [],
+          input.previousRecords || [],
+        )
         : null,
     };
   });

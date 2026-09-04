@@ -143,6 +143,76 @@ assert(payrollMomMetric(mom, 'employees')?.variance === 1, 'headcount +1');
 assert(payrollMomMetric(mom, 'grossPay')?.detail?.buckets.some((bucket) => bucket.id === 'headcount'), 'gross pay detail includes headcount movement');
 assert(payrollMomMetric(mom, 'employees')?.detail?.contributors.some((item) => item.employeeCode === 'P003' && item.reason.includes('New in current period')), 'employee detail lists joiners');
 
+const moneyMetricKeys = ['grossPay', 'deductions', 'netPay', 'employerCost'] as const;
+for (const key of moneyMetricKeys) {
+  const metric = payrollMomMetric(mom, key);
+  assert(metric?.detail, `${key} has detail`);
+  const driverTotal = Math.round((metric!.detail!.buckets.reduce((sum, bucket) => sum + bucket.value, 0)) * 100) / 100;
+  assert(driverTotal === metric!.variance, `${key} drivers must reconcile to summary variance`);
+}
+
+const mismatched = buildPayrollMonthOverMonth({
+  currentPeriod: '2026-08',
+  currentPeriodLabel: 'August 2026',
+  current: {
+    period: '2026-08',
+    periodLabel: 'August 2026',
+    employees: 2,
+    grossPay: 200000,
+    deductions: 40000,
+    netPay: 160000,
+    employerCost: 210000,
+  },
+  previous: {
+    period: '2026-07',
+    periodLabel: 'July 2026',
+    employees: 2,
+    grossPay: 150000,
+    deductions: 25000,
+    netPay: 125000,
+    employerCost: 160000,
+  },
+  currentRecords,
+  previousRecords,
+});
+const mismatchedNet = payrollMomMetric(mismatched, 'netPay');
+assert(mismatchedNet?.detail?.buckets.some((bucket) => bucket.id === 'residual'), 'schedule vs employee-line gap becomes residual');
+const mismatchedDriverTotal = Math.round((mismatchedNet!.detail!.buckets.reduce((sum, bucket) => sum + bucket.value, 0)) * 100) / 100;
+assert(mismatchedDriverTotal === mismatchedNet!.variance, 'mismatched schedule still reconciles via residual');
+
+const duplicateCurrent = [
+  currentRecords[0],
+  { ...currentRecords[0], grossPay: 5000, netPay: 4000, totalDeductions: 1000, deductions: 1000 },
+  currentRecords[1],
+] as any[];
+const deduped = buildPayrollMonthOverMonth({
+  currentPeriod: '2026-08',
+  current: {
+    period: '2026-08',
+    periodLabel: 'August 2026',
+    employees: 2,
+    grossPay: 185000,
+    deductions: 32000,
+    netPay: 153000,
+    employerCost: 197000,
+  },
+  previous: {
+    period: '2026-07',
+    periodLabel: 'July 2026',
+    employees: 2,
+    grossPay: 150000,
+    deductions: 25000,
+    netPay: 125000,
+    employerCost: 164000,
+  },
+  currentRecords: duplicateCurrent,
+  previousRecords,
+});
+const dedupedNet = payrollMomMetric(deduped, 'netPay');
+const alice = dedupedNet?.detail?.contributors.find((item) => item.employeeCode === 'P001');
+assert(alice?.current === 99000, 'duplicate employee rows are aggregated before ranking contributors');
+assert(Math.round((dedupedNet!.detail!.buckets.reduce((sum, bucket) => sum + bucket.value, 0)) * 100) / 100 === dedupedNet!.variance, 'deduped drivers still reconcile');
+
 const empty = buildPayrollMonthOverMonth({
   currentPeriod: '2026-08',
   current: mom.current,
@@ -152,3 +222,4 @@ assert(!empty.available, 'missing prior month is not available');
 assert(!payrollMomMetric(empty, 'employerCost'), 'no metric chip when prior month is missing');
 
 console.log('payroll-month-over-month.test.ts OK');
+

@@ -234,6 +234,14 @@ export default function PayrollMonthOverMonthPanel({
                     )) : (
                       <p className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-500">No detailed drivers available for this metric yet.</p>
                     )}
+                    {activeMetric.kind === 'money' && activeDetail.buckets.length ? (
+                      <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                        <span className="font-black text-slate-800">Drivers total</span>
+                        <span className={`font-black ${directionClass(activeMetric.direction)}`}>
+                          {signedMoney(activeDetail.buckets.reduce((sum, bucket) => sum + bucket.value, 0), canViewMoney)}
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </section>
