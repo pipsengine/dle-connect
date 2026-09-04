@@ -1,5 +1,7 @@
 'use client';
 
+import { useMemo, useState } from 'react';
+import { ChevronDown, Search } from 'lucide-react';
 import PayrollLinesEditor, { DEDUCTION_LINE_PRESETS, EARNING_LINE_PRESETS } from '@/components/payroll/PayrollLinesEditor';
 import {
   sumMonthlyPackageGross,
@@ -48,9 +50,17 @@ export type PayrollSetupDraft = {
   deductionLines: FlexiblePayrollLineDraft[];
 };
 
+type BankCatalogItem = {
+  name: string;
+  bankCode?: string;
+  sortCode?: string;
+  aliases?: string[];
+};
+
 type FormOptionsSlice = {
   payrollGroups: string[];
   banks: string[];
+  bankCatalog?: BankCatalogItem[];
   pensionProviders: string[];
   benefitGroups: string[];
 };
@@ -116,6 +126,103 @@ const SelectField = ({
     </select>
   </div>
 );
+
+const SearchableBankField = ({
+  value,
+  onChange,
+  banks,
+  catalog,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  banks: string[];
+  catalog?: BankCatalogItem[];
+}) => {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+
+  const items = useMemo(() => {
+    if (catalog?.length) return catalog;
+    return banks.map((name) => ({ name }));
+  }, [banks, catalog]);
+
+  const filtered = useMemo(() => {
+    const needle = (query || value).trim().toLowerCase();
+    const matched = !needle
+      ? items
+      : items.filter((item) => {
+          const blob = [item.name, item.bankCode, item.sortCode, ...(item.aliases || [])].filter(Boolean).join(' ').toLowerCase();
+          return blob.includes(needle);
+        });
+    const hasCurrent = value && matched.some((item) => item.name.toLowerCase() === value.toLowerCase());
+    const withCurrent = value && !hasCurrent ? [{ name: value }, ...matched] : matched;
+    return withCurrent.slice(0, 80);
+  }, [items, query, value]);
+
+  const selectedMeta = items.find((item) => item.name.toLowerCase() === value.trim().toLowerCase());
+
+  return (
+    <div className="relative rounded-2xl border border-slate-200 bg-white p-3">
+      <div className="text-[11px] font-extrabold text-slate-600">Bank Name</div>
+      <div className="relative mt-2">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <input
+          value={open ? query : value}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+            onChange(e.target.value);
+          }}
+          onFocus={() => {
+            setQuery(value);
+            setOpen(true);
+          }}
+          onBlur={() => window.setTimeout(() => setOpen(false), 150)}
+          placeholder="Search Nigeria banks…"
+          className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-9 text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+        />
+        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+      </div>
+      {selectedMeta?.bankCode || selectedMeta?.sortCode ? (
+        <p className="mt-1 text-[11px] font-semibold text-slate-500">
+          {selectedMeta.bankCode ? `Code ${selectedMeta.bankCode}` : ''}
+          {selectedMeta.bankCode && selectedMeta.sortCode ? ' · ' : ''}
+          {selectedMeta.sortCode ? `HO Sort ${selectedMeta.sortCode}` : ''}
+        </p>
+      ) : (
+        <p className="mt-1 text-[11px] font-semibold text-slate-500">Search by bank name, short name, or bank code</p>
+      )}
+      {open ? (
+        <div className="absolute left-0 right-0 z-30 mt-1 max-h-64 overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+          {filtered.length ? filtered.map((item) => (
+            <button
+              key={`${item.name}:${item.bankCode || ''}`}
+              type="button"
+              className="flex w-full flex-col items-start gap-0.5 border-b border-slate-100 px-3 py-2 text-left last:border-b-0 hover:bg-slate-50"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onChange(item.name);
+                setQuery(item.name);
+                setOpen(false);
+              }}
+            >
+              <span className="text-sm font-semibold text-slate-900">{item.name}</span>
+              {(item.bankCode || item.sortCode) ? (
+                <span className="text-[11px] font-semibold text-slate-500">
+                  {item.bankCode ? `Code ${item.bankCode}` : ''}
+                  {item.bankCode && item.sortCode ? ' · ' : ''}
+                  {item.sortCode ? `HO Sort ${item.sortCode}` : ''}
+                </span>
+              ) : null}
+            </button>
+          )) : (
+            <p className="px-3 py-4 text-sm font-semibold text-slate-500">No banks match “{query || value}”.</p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+};
 
 export default function PayrollSetupStep({
   payroll,
@@ -219,7 +326,12 @@ export default function PayrollSetupStep({
             hint={isLumpsum ? 'Base lumpsum package only — overtime and other supplements stay on earning lines below' : 'Total monthly pay before one-off supplements'}
           />
         ) : null}
-        <SelectField label="Bank Name" value={payroll.bankName} onChange={(v) => patch({ bankName: v })} options={options.banks} />
+        <SearchableBankField
+          value={payroll.bankName}
+          onChange={(v) => patch({ bankName: v })}
+          banks={options.banks}
+          catalog={options.bankCatalog}
+        />
         <Field label="Account Number" value={payroll.accountNumber} onChange={(v) => patch({ accountNumber: v })} />
         <Field label="Account Name" value={payroll.accountName} onChange={(v) => patch({ accountName: v })} />
         <SelectField label="Pension Provider (PFA)" value={payroll.pensionProvider} onChange={(v) => patch({ pensionProvider: v })} options={options.pensionProviders} />

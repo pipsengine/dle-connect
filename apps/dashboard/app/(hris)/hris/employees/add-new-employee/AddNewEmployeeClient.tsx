@@ -108,6 +108,7 @@ type FormOptions = {
   payrollGroups: string[];
   salaryGrades: string[];
   banks: string[];
+  bankCatalog?: Array<{ name: string; bankCode: string; sortCode: string; aliases?: string[] }>;
   pensionProviders: string[];
   benefitGroups: string[];
   workModes: string[];
@@ -1986,6 +1987,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
       options={{
         payrollGroups: options.data?.payrollGroups || [],
         banks: options.data?.banks || [],
+        bankCatalog: options.data?.bankCatalog || [],
         pensionProviders: options.data?.pensionProviders || [],
         benefitGroups: options.data?.benefitGroups || [],
       }}

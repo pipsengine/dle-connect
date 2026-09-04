@@ -550,6 +550,7 @@ type ProfileFormOptions = {
   roleProfiles: string[];
   payrollGroups?: string[];
   banks?: string[];
+  bankCatalog?: Array<{ name: string; bankCode: string; sortCode: string; aliases?: string[] }>;
   pensionProviders?: string[];
   benefitGroups?: string[];
   employees?: Array<{ employeeId: string; fullName: string; department?: string; jobTitle?: string; location?: string; manager?: string }>;
@@ -2800,6 +2801,7 @@ export default function EmployeeProfileClient({
                             options={{
                               payrollGroups: payrollFormOptions?.payrollGroups || [],
                               banks: payrollFormOptions?.banks || [],
+                              bankCatalog: payrollFormOptions?.bankCatalog || [],
                               pensionProviders: payrollFormOptions?.pensionProviders || [],
                               benefitGroups: payrollFormOptions?.benefitGroups || [],
                             }}

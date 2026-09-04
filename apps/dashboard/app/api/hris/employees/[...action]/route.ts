@@ -11,6 +11,7 @@ import {
 } from '@/lib/dle-enterprise-db';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { readActiveSagePayrollEmployees } from '@/lib/sage-people-payroll-store';
+import { listNigeriaBanks, nigeriaBankNames } from '@/lib/nigeria-banks-store';
 
 type Role =
   | 'Super Admin'
@@ -105,6 +106,7 @@ type FormOptions = {
   payrollGroups: string[];
   salaryGrades: string[];
   banks: string[];
+  bankCatalog?: Array<{ name: string; bankCode: string; sortCode: string; aliases?: string[] }>;
   pensionProviders: string[];
   benefitGroups: string[];
   workModes: string[];
@@ -413,7 +415,13 @@ const fallbackOptionsPayload = (): FormOptions => ({
   projectSites: ['Lekki Project', 'NLNG Train 7', 'Bonny Island', 'Onshore Pipeline', 'Bridgeworks', 'Fabrication Bay', 'N/A'],
   payrollGroups: ['Monthly', 'Bi-Weekly', 'Project-Based'],
   salaryGrades: ['SG-07', 'SG-08', 'SG-09', 'SG-10', 'SG-11'],
-  banks: ['GTBank', 'Access Bank', 'Zenith Bank', 'FirstBank', 'UBA'],
+  banks: [
+    'GUARANTY TRUST BANK PLC',
+    'ACCESS BANK NIGERIA PLC',
+    'ZENITH BANK PLC',
+    'FIRST BANK OF NIGERIA PLC',
+    'UBA PLC.',
+  ],
   pensionProviders: ['ARM Pensions', 'Stanbic IBTC', 'Leadway Pensure', 'PENCOM'],
   benefitGroups: ['Standard', 'Executive', 'Project', 'Contractor'],
   workModes: ['Onsite', 'Hybrid', 'Remote'],
@@ -430,10 +438,25 @@ const mergeUnique = (primary: string[], fallback: string[]) => uniqueSorted([...
 
 const optionsPayload = async (includeEmployees = false): Promise<FormOptions> => {
   const fallback = fallbackOptionsPayload();
+  const nigeriaBanks = await listNigeriaBanks().catch(() => []);
+  const bankNames = nigeriaBanks.length
+    ? nigeriaBanks.map((bank) => bank.name)
+    : await nigeriaBankNames().catch(() => fallback.banks);
   try {
     const employeeSource = await readPayrollEmployees();
     const employees = employeeSource.employees;
-    if (!employees.length) return fallback;
+    if (!employees.length) {
+      return {
+        ...fallback,
+        banks: bankNames.length ? bankNames : fallback.banks,
+        bankCatalog: nigeriaBanks.map((bank) => ({
+          name: bank.name,
+          bankCode: bank.bankCode,
+          sortCode: bank.sortCode,
+          aliases: bank.aliases,
+        })),
+      };
+    }
     const fromDb = {
       departments: uniqueSorted(employees.map((employee: any) => employee.department)),
       divisions: uniqueSorted(employees.map((employee: any) => employee.division)),
@@ -448,6 +471,13 @@ const optionsPayload = async (includeEmployees = false): Promise<FormOptions> =>
     };
     return {
       ...fallback,
+      banks: bankNames.length ? bankNames : fallback.banks,
+      bankCatalog: nigeriaBanks.map((bank) => ({
+        name: bank.name,
+        bankCode: bank.bankCode,
+        sortCode: bank.sortCode,
+        aliases: bank.aliases,
+      })),
       departments: mergeUnique(fromDb.departments, fallback.departments),
       divisions: mergeUnique(fromDb.divisions, fallback.divisions),
       businessUnits: mergeUnique(fromDb.businessUnits, fallback.businessUnits),
@@ -470,7 +500,16 @@ const optionsPayload = async (includeEmployees = false): Promise<FormOptions> =>
         : undefined,
     };
   } catch {
-    return fallback;
+    return {
+      ...fallback,
+      banks: bankNames.length ? bankNames : fallback.banks,
+      bankCatalog: nigeriaBanks.map((bank) => ({
+        name: bank.name,
+        bankCode: bank.bankCode,
+        sortCode: bank.sortCode,
+        aliases: bank.aliases,
+      })),
+    };
   }
 };
 
