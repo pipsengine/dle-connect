@@ -2,8 +2,18 @@
 
 /* eslint-disable react-hooks/set-state-in-effect */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Anchor, RefreshCcw, Ship, UserMinus, XCircle } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertTriangle,
+  Anchor,
+  ClipboardPaste,
+  Download,
+  RefreshCcw,
+  Ship,
+  Upload,
+  UserMinus,
+  XCircle,
+} from 'lucide-react';
 import { PageTemplate } from '@/components/layout/page-template';
 
 type TimesheetMobilization = {
@@ -42,7 +52,24 @@ type Payload = {
   };
 };
 
+type UploadReport = {
+  matchedCount: number;
+  unmatchedCodes: string[];
+  duplicateCodes: string[];
+  uploadedCount: number;
+  fileName?: string;
+};
+
 const today = new Date().toISOString().slice(0, 10);
+const CREW_UPLOAD_TEMPLATE_CSV = 'Employee Code\nC2225\nP0425\n';
+
+const fileToBase64 = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Unable to read upload file.'));
+    reader.readAsDataURL(file);
+  });
 
 export default function CrewMobilizationClient() {
   const [payload, setPayload] = useState<Payload | null>(null);
@@ -60,6 +87,10 @@ export default function CrewMobilizationClient() {
   const [reason, setReason] = useState('Offshore project mobilization');
   const [employeeQuery, setEmployeeQuery] = useState('');
   const [selectedCodes, setSelectedCodes] = useState<string[]>([]);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState('');
+  const [uploadReport, setUploadReport] = useState<UploadReport | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,6 +126,12 @@ export default function CrewMobilizationClient() {
     });
   }, [employeeQuery, payload?.options.employees]);
 
+  const filteredSelectedCount = useMemo(
+    () => filteredEmployees.filter((employee) => selectedCodes.includes(employee.employeeCode)).length,
+    [filteredEmployees, selectedCodes],
+  );
+  const allFilteredSelected = filteredEmployees.length > 0 && filteredSelectedCount === filteredEmployees.length;
+
   const roster = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return (payload?.mobilizations || []).filter((item) => {
@@ -105,6 +142,82 @@ export default function CrewMobilizationClient() {
         .includes(needle);
     });
   }, [payload?.mobilizations, query]);
+
+  const applyMatchedCodes = (matchedCodes: string[], report: Omit<UploadReport, 'matchedCount'> & { matchedCount?: number }) => {
+    setSelectedCodes((current) => Array.from(new Set([...current, ...matchedCodes])));
+    setUploadReport({
+      matchedCount: matchedCodes.length,
+      unmatchedCodes: report.unmatchedCodes,
+      duplicateCodes: report.duplicateCodes,
+      uploadedCount: report.uploadedCount,
+      fileName: report.fileName,
+    });
+    if (matchedCodes.length) {
+      setNotice(`Selected ${matchedCodes.length} employee${matchedCodes.length === 1 ? '' : 's'} from upload.`);
+    }
+  };
+
+  const parseCodes = async (input: { file?: File; text?: string }) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const body: Record<string, string> = { action: 'PARSE_CODES' };
+      if (input.file) {
+        body.fileName = input.file.name;
+        body.fileBase64 = await fileToBase64(input.file);
+      } else {
+        body.text = input.text || '';
+        body.fileName = 'paste.txt';
+      }
+      const res = await fetch('/api/hris/time-and-logs/crew-mobilization', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to parse crew upload');
+      applyMatchedCodes(json.data.matchedCodes || [], {
+        unmatchedCodes: json.data.unmatchedCodes || [],
+        duplicateCodes: json.data.duplicateCodes || [],
+        uploadedCount: json.data.uploadedCount || 0,
+        fileName: input.file?.name,
+      });
+      if (!(json.data.matchedCodes || []).length) {
+        setError('No uploaded codes matched active employees. Check the Employee Code column and try again.');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to parse crew upload');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const downloadTemplate = () => {
+    const blob = new Blob([CREW_UPLOAD_TEMPLATE_CSV], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'crew-mobilization-template.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const selectAllFiltered = () => {
+    const codes = filteredEmployees.map((employee) => employee.employeeCode);
+    setSelectedCodes((current) => Array.from(new Set([...current, ...codes])));
+    setNotice(`Selected all ${codes.length} filtered employee${codes.length === 1 ? '' : 's'}.`);
+  };
+
+  const clearFilteredSelection = () => {
+    const filtered = new Set(filteredEmployees.map((employee) => employee.employeeCode));
+    setSelectedCodes((current) => current.filter((code) => !filtered.has(code)));
+  };
+
+  const clearAllSelection = () => {
+    setSelectedCodes([]);
+    setUploadReport(null);
+  };
 
   const createRoster = async () => {
     if (!supervisorId || !projectCode || !startDate || !selectedCodes.length) {
@@ -142,6 +255,7 @@ export default function CrewMobilizationClient() {
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to mobilize crew');
       setNotice(json.data?.message || 'Crew mobilized.');
       setSelectedCodes([]);
+      setUploadReport(null);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to mobilize crew');
@@ -235,18 +349,121 @@ export default function CrewMobilizationClient() {
             Reason
             <input value={reason} onChange={(event) => setReason(event.target.value)} className="mt-1 h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-semibold" />
           </label>
+
           <div className="mt-4">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs font-black uppercase text-slate-500">Crew ({selectedCodes.length} selected)</p>
-              <input
-                value={employeeQuery}
-                onChange={(event) => setEmployeeQuery(event.target.value)}
-                placeholder="Search employee, code, department"
-                className="h-10 w-full max-w-md rounded-xl border border-slate-200 px-3 text-sm font-semibold"
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={downloadTemplate}
+                  className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 hover:bg-slate-50"
+                >
+                  <Download className="h-3.5 w-3.5" /> Template
+                </button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".csv,.xlsx,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = '';
+                    if (file) void parseCodes({ file });
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={busy || !payload?.permissions.canManage}
+                  onClick={() => fileRef.current?.click()}
+                  className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-black text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+                >
+                  <Upload className="h-3.5 w-3.5" /> Upload Excel / CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPasteOpen((open) => !open)}
+                  className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 hover:bg-slate-50"
+                >
+                  <ClipboardPaste className="h-3.5 w-3.5" /> Paste codes
+                </button>
+                <input
+                  value={employeeQuery}
+                  onChange={(event) => setEmployeeQuery(event.target.value)}
+                  placeholder="Search employee, code, department"
+                  className="h-10 w-full max-w-xs rounded-xl border border-slate-200 px-3 text-sm font-semibold"
+                />
+              </div>
             </div>
-            <div className="max-h-64 overflow-auto rounded-xl border border-slate-200">
-              {filteredEmployees.slice(0, 200).map((employee) => {
+
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={!filteredEmployees.length}
+                onClick={() => (allFilteredSelected ? clearFilteredSelection() : selectAllFiltered())}
+                className="inline-flex h-9 items-center rounded-lg border border-slate-200 px-3 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                {allFilteredSelected ? 'Clear filtered' : `Select all filtered (${filteredEmployees.length})`}
+              </button>
+              {selectedCodes.length ? (
+                <button
+                  type="button"
+                  onClick={clearAllSelection}
+                  className="inline-flex h-9 items-center rounded-lg border border-slate-200 px-3 text-xs font-black text-slate-700 hover:bg-slate-50"
+                >
+                  Clear all selected
+                </button>
+              ) : null}
+              <span className="text-xs font-semibold text-slate-500">
+                Showing {filteredEmployees.length} of {(payload?.options.employees || []).length} employees
+              </span>
+            </div>
+
+            {pasteOpen ? (
+              <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold text-slate-600">Paste employee codes separated by new lines, commas, or tabs.</p>
+                <textarea
+                  value={pasteText}
+                  onChange={(event) => setPasteText(event.target.value)}
+                  rows={4}
+                  placeholder="C2225&#10;P0425&#10;C1830"
+                  className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold"
+                />
+                <div className="mt-2 flex justify-end gap-2">
+                  <button type="button" onClick={() => { setPasteOpen(false); setPasteText(''); }} className="h-9 rounded-lg border border-slate-200 px-3 text-xs font-black text-slate-700">
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || !pasteText.trim()}
+                    onClick={() => void parseCodes({ text: pasteText }).then(() => { setPasteText(''); setPasteOpen(false); })}
+                    className="h-9 rounded-lg bg-slate-950 px-3 text-xs font-black text-white disabled:opacity-50"
+                  >
+                    Match pasted codes
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {uploadReport ? (
+              <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+                <p>
+                  {uploadReport.fileName ? <span className="font-black">{uploadReport.fileName}: </span> : null}
+                  matched {uploadReport.matchedCount} of {uploadReport.uploadedCount}
+                  {uploadReport.duplicateCodes.length ? ` · ${uploadReport.duplicateCodes.length} duplicate` : ''}
+                  {uploadReport.unmatchedCodes.length ? ` · ${uploadReport.unmatchedCodes.length} unmatched` : ''}
+                </p>
+                {uploadReport.unmatchedCodes.length ? (
+                  <p className="mt-1 text-amber-800">
+                    Unmatched: {uploadReport.unmatchedCodes.slice(0, 12).join(', ')}
+                    {uploadReport.unmatchedCodes.length > 12 ? ` +${uploadReport.unmatchedCodes.length - 12} more` : ''}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="max-h-80 overflow-auto rounded-xl border border-slate-200">
+              {filteredEmployees.map((employee) => {
                 const checked = selectedCodes.includes(employee.employeeCode);
                 return (
                   <label key={employee.employeeCode} className="flex items-center gap-3 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0 hover:bg-slate-50">
@@ -266,6 +483,9 @@ export default function CrewMobilizationClient() {
                   </label>
                 );
               })}
+              {!filteredEmployees.length ? (
+                <p className="px-3 py-6 text-center text-sm font-semibold text-slate-500">No employees match the current search.</p>
+              ) : null}
             </div>
           </div>
           <div className="mt-4 flex justify-end">
@@ -275,7 +495,7 @@ export default function CrewMobilizationClient() {
               disabled={busy || !payload?.permissions.canManage}
               className="inline-flex h-11 items-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-50"
             >
-              Mobilize selected crew
+              Mobilize selected crew{selectedCodes.length ? ` (${selectedCodes.length})` : ''}
             </button>
           </div>
         </section>

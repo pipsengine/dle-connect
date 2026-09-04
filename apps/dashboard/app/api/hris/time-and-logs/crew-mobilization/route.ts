@@ -12,9 +12,15 @@ import {
   demobilizeTimesheetMobilization,
   readTimesheetMobilizations,
 } from '@/lib/timesheet-mobilization-store';
+import {
+  extractEmployeeCodesFromText,
+  extractEmployeeCodesFromXlsx,
+  matchCrewUploadCodes,
+} from '@/lib/crew-mobilization-upload';
 
 const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 const tokenFrom = (request: Request) =>
   request.headers.get('cookie')?.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${AUTH_COOKIE}=`))?.split('=').slice(1).join('=');
@@ -102,7 +108,7 @@ export async function POST(request: Request) {
   try {
     const { actor } = await requireHrActor(request);
     const body = await request.json() as {
-      action?: 'CREATE' | 'DEMOBILIZE' | 'CANCEL';
+      action?: 'CREATE' | 'DEMOBILIZE' | 'CANCEL' | 'PARSE_CODES';
       id?: string;
       endDate?: string | null;
       employeeCodes?: string[];
@@ -113,7 +119,42 @@ export async function POST(request: Request) {
       projectName?: string;
       startDate?: string;
       reason?: string | null;
+      fileName?: string;
+      fileBase64?: string;
+      text?: string;
     };
+
+    if (body.action === 'PARSE_CODES') {
+      const fileName = clean(body.fileName) || 'crew-upload.csv';
+      let uploadedCodes: string[] = [];
+      if (clean(body.text)) {
+        uploadedCodes = extractEmployeeCodesFromText(body.text || '');
+      } else {
+        const raw = clean(body.fileBase64);
+        if (!raw) return err(400, 'Upload a CSV or Excel file with employee codes.');
+        const payload = raw.includes(',') ? raw.slice(raw.indexOf(',') + 1) : raw;
+        const buffer = Buffer.from(payload, 'base64');
+        if (!buffer.length) return err(400, 'Upload file is empty.');
+        if (buffer.length > MAX_UPLOAD_BYTES) return err(400, 'Upload is larger than 4 MB.');
+        if (/\.xlsx$/i.test(fileName)) {
+          uploadedCodes = extractEmployeeCodesFromXlsx(buffer);
+        } else if (/\.csv$/i.test(fileName) || /\.txt$/i.test(fileName)) {
+          uploadedCodes = extractEmployeeCodesFromText(buffer.toString('utf8'));
+        } else {
+          return err(400, 'Upload a .csv or .xlsx file with an Employee Code column.');
+        }
+      }
+      if (!uploadedCodes.length) return err(400, 'No employee codes found in the upload.');
+      const payroll = await readPayrollEmployees();
+      const knownCodes = payroll.employees
+        .filter((employee) => !['Resigned', 'Terminated', 'Retired'].includes(employee.status))
+        .map((employee) => employee.employeeCode);
+      const match = matchCrewUploadCodes(uploadedCodes, knownCodes);
+      return ok({
+        message: `Matched ${match.matchedCodes.length} of ${match.uploadedCount} uploaded codes.`,
+        ...match,
+      });
+    }
 
     if (body.action === 'DEMOBILIZE') {
       if (!body.id) return err(400, 'Mobilization ID is required.');
