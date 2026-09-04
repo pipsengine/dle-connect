@@ -13,7 +13,7 @@ import { annualLeaveEntitlementForEmployee, dormantLongPolicy, isFourteenDayPaid
 import { listEssReleasedPayrollPeriods, latestEssReleasedPayrollPeriod } from '@/lib/ess-payroll-periods';
 import { isEnterprisePayrollPeriod } from '@/lib/payroll-enterprise-source';
 import { ensureSagePeriodEarningAdjustments } from '@/lib/payroll-period-earning-adjustments-store';
-import { buildStoredEnterprisePayslipSnapshot, computeEnterpriseYtdTotals, readAuthoritativeSagePayslipSnapshotsByPeriod, readEnterpriseEmployeePayslipRecordsByPeriod } from '@/lib/payroll-ess-payslip-store';
+import { buildStoredEnterprisePayslipSnapshot, computeEnterpriseYtdTotals, computePayslipHistoryYtdTotals, readAuthoritativeSagePayslipSnapshotsByPeriod, readEnterpriseEmployeePayslipRecordsByPeriod } from '@/lib/payroll-ess-payslip-store';
 import type { SageEmployeePayslipSnapshot } from '@/lib/sage-people-payroll-store';
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
 import { payslipIdentityMap, syncPayslipIdentitiesFromSage, type PayslipEmployeeIdentity } from '@/lib/payroll-payslip-identity-store';
@@ -813,7 +813,6 @@ export async function GET(request: Request) {
       );
       const totalEmployerContributions = roundMoney(employerContributionLines.reduce((sum, line) => sum + line.amount, 0));
       const unionRule = calculatePermanentUnionDues(payrollEmployee);
-      const monthNumber = Number(period.slice(5, 7)) || 1;
       return {
         period,
         periodLabel: periodTitle(period),
@@ -849,11 +848,14 @@ export async function GET(request: Request) {
         statutoryInfo: sharedStatutoryInfo,
         leaveInfo: sharedLeaveInfo,
         ytd: {
-          grossEarnings: roundMoney(earnings.grossPay * monthNumber),
-          taxPaid: roundMoney(paye * monthNumber),
-          pensionContribution: roundMoney(pensionEmployee * monthNumber),
-          deductions: roundMoney(deductions * monthNumber),
-          netEarnings: roundMoney(Math.max(0, earnings.grossPay - deductions) * monthNumber),
+          grossEarnings: 0,
+          taxPaid: 0,
+          pensionContribution: 0,
+          deductions: 0,
+          netEarnings: 0,
+          nhf: 0,
+          bonuses: 0,
+          leaveAllowance: 0,
         },
         verification: {
           qrCode: `DLE|${employee.employeeId}|${period}|${roundMoney(Math.max(0, earnings.grossPay - deductions))}`,
@@ -876,12 +878,16 @@ export async function GET(request: Request) {
       payslipIdentity?.sourceEmployeeCode,
     ].filter((value): value is string => Boolean(value));
     enterpriseRecordsByPeriod = await readEnterpriseEmployeePayslipRecordsByPeriod(employeeMatchKeys, releasedPayrollPeriods).catch(() => new Map());
-    const payrollHistory = releasedPayrollPeriods.map((period) => payrollForPeriod(
+    const payrollHistoryRaw = releasedPayrollPeriods.map((period) => payrollForPeriod(
       period,
       true,
       enterpriseRecordsByPeriod.get(period),
       null,
     ));
+    const payrollHistory = payrollHistoryRaw.map((row) => ({
+      ...row,
+      ytd: computePayslipHistoryYtdTotals(row.period, payrollHistoryRaw),
+    }));
     const latestReleasedPayroll = payrollHistory[0] || null;
     const currentPeriodReleased = Boolean(essDisplayPeriod);
     const essContext = await buildEssDashboardContext({

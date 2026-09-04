@@ -23,7 +23,16 @@ export type PayrollHistoryRow = {
   employeeInfo?: Record<string, string | number>;
   statutoryInfo?: Record<string, string | number>;
   leaveInfo?: { annualLeaveEntitlement: number; leaveTaken: number; leaveBalance: number; carryForwardLeave: number };
-  ytd?: { grossEarnings: number; taxPaid: number; pensionContribution: number; deductions: number; netEarnings: number };
+  ytd?: {
+    grossEarnings: number;
+    taxPaid: number;
+    pensionContribution: number;
+    deductions: number;
+    netEarnings: number;
+    nhf?: number;
+    bonuses?: number;
+    leaveAllowance?: number;
+  };
   verification?: { qrCode: string; generatedAt: string; approvalStatus: string };
 };
 
@@ -141,7 +150,16 @@ export function buildPayslipModel(
   const info = selected.employeeInfo || {};
   const statutory = selected.statutoryInfo || {};
   const leave = selected.leaveInfo || { annualLeaveEntitlement: 0, leaveTaken: 0, leaveBalance: 0, carryForwardLeave: 0 };
-  const ytd = selected.ytd || { grossEarnings: 0, taxPaid: 0, pensionContribution: 0, deductions: 0, netEarnings: 0 };
+  const ytd = selected.ytd || {
+    grossEarnings: 0,
+    taxPaid: 0,
+    pensionContribution: 0,
+    deductions: 0,
+    netEarnings: 0,
+    nhf: 0,
+    bonuses: 0,
+    leaveAllowance: 0,
+  };
   const verification = selected.verification || {
     qrCode: `DLE|${employee?.employeeId || ''}|${selected.period}`,
     generatedAt: generatedAt || new Date().toISOString(),
@@ -239,9 +257,9 @@ export function buildPayslipModel(
       ['YTD Net Earnings', money2(ytd.netEarnings)],
       ['YTD Tax Paid', money2(ytd.taxPaid)],
       ['YTD Pension Contribution', money2(ytd.pensionContribution)],
-      ['YTD NHF', money2(lineAmount(deductions, ['NHF'])?.amount || 0)],
-      ['YTD Bonuses', money2(lineAmount(earnings, ['BONUS'])?.amount || 0)],
-      ['YTD Leave Allowance', money2(lineAmount(earnings, ['LEAVE ALLOWANCE', 'LEAVE_ALLOW'])?.amount || 0)],
+      ['YTD NHF', money2(ytd.nhf || 0)],
+      ['YTD Bonuses', money2(ytd.bonuses || 0)],
+      ['YTD Leave Allowance', money2(ytd.leaveAllowance || 0)],
       ['YTD Deductions', money2(ytd.deductions)],
     ] as Array<[string, string]>,
   };

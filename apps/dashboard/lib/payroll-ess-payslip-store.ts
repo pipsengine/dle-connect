@@ -151,11 +151,59 @@ export async function readEnterpriseEmployeePayslipRecordsByPeriod(
   return byPeriod;
 }
 
+export type EssYtdTotals = {
+  grossEarnings: number;
+  taxPaid: number;
+  pensionContribution: number;
+  deductions: number;
+  netEarnings: number;
+  nhf: number;
+  bonuses: number;
+  leaveAllowance: number;
+};
+
+const emptyYtdTotals = (): EssYtdTotals => ({
+  grossEarnings: 0,
+  taxPaid: 0,
+  pensionContribution: 0,
+  deductions: 0,
+  netEarnings: 0,
+  nhf: 0,
+  bonuses: 0,
+  leaveAllowance: 0,
+});
+
+const matchesLine = (line: { code?: unknown; label?: unknown; name?: unknown }, patterns: RegExp[]) => {
+  const blob = `${line.code || ''} ${line.label || ''} ${line.name || ''}`.toUpperCase();
+  return patterns.some((pattern) => pattern.test(blob));
+};
+
+const sumMatchingLines = (
+  lines: Array<{ code?: unknown; label?: unknown; name?: unknown; amount?: unknown }> | undefined,
+  patterns: RegExp[],
+) => roundMoney((lines || []).reduce((sum, line) => (
+  matchesLine(line, patterns) ? sum + Number(line.amount || 0) : sum
+), 0));
+
+const BONUS_PATTERNS = [/BONUS/];
+const LEAVE_ALLOWANCE_PATTERNS = [/LEAVE[_\s-]*ALLOW/];
+const NHF_PATTERNS = [/\bNHF\b/];
+const PAYE_PATTERNS = [/\bPAYE\b/];
+
+const recordBonusAmount = (record: PayrollCalculationRecord) =>
+  sumMatchingLines(record.earningLines as Array<{ code?: unknown; label?: unknown; name?: unknown; amount?: unknown }>, BONUS_PATTERNS);
+
+const recordLeaveAllowanceAmount = (record: PayrollCalculationRecord) =>
+  sumMatchingLines(record.earningLines as Array<{ code?: unknown; label?: unknown; name?: unknown; amount?: unknown }>, LEAVE_ALLOWANCE_PATTERNS);
+
+const recordNhfAmount = (record: PayrollCalculationRecord) =>
+  sumMatchingLines(record.deductionLines, NHF_PATTERNS);
+
 export const computeEnterpriseYtdTotals = (
   period: string,
   periods: string[],
   recordsByPeriod: Map<string, PayrollCalculationRecord>,
-) => {
+): EssYtdTotals => {
   const year = period.slice(0, 4);
   const eligiblePeriods = periods.filter((item) => item.startsWith(year) && item <= period).sort();
   const sumField = (field: keyof Pick<PayrollCalculationRecord, 'grossPay' | 'paye' | 'pensionEmployee' | 'totalDeductions' | 'netPay'>) =>
@@ -167,6 +215,55 @@ export const computeEnterpriseYtdTotals = (
     pensionContribution: sumField('pensionEmployee'),
     deductions: sumField('totalDeductions'),
     netEarnings: sumField('netPay'),
+    nhf: roundMoney(eligiblePeriods.reduce((sum, item) => {
+      const record = recordsByPeriod.get(item);
+      return record ? sum + recordNhfAmount(record) : sum;
+    }, 0)),
+    bonuses: roundMoney(eligiblePeriods.reduce((sum, item) => {
+      const record = recordsByPeriod.get(item);
+      return record ? sum + recordBonusAmount(record) : sum;
+    }, 0)),
+    leaveAllowance: roundMoney(eligiblePeriods.reduce((sum, item) => {
+      const record = recordsByPeriod.get(item);
+      return record ? sum + recordLeaveAllowanceAmount(record) : sum;
+    }, 0)),
+  };
+};
+
+/** Authoritative ESS YTD: sum actual released payslip rows in the same calendar year up to `period`. */
+export const computePayslipHistoryYtdTotals = (
+  period: string,
+  history: Array<{
+    period: string;
+    grossPay?: number | null;
+    netPay?: number | null;
+    deductions?: number | null;
+    pensionEmployee?: number | null;
+    earnings?: Array<{ code?: string; label?: string; name?: string; amount?: number | null }>;
+    deductionLines?: Array<{ code?: string; label?: string; name?: string; amount?: number | null }>;
+  }>,
+): EssYtdTotals => {
+  const safePeriod = String(period || '').trim();
+  if (!/^\d{4}-\d{2}$/.test(safePeriod)) return emptyYtdTotals();
+  const year = safePeriod.slice(0, 4);
+  const eligible = history
+    .filter((row) => /^\d{4}-\d{2}$/.test(String(row.period || '')) && String(row.period).startsWith(year) && String(row.period) <= safePeriod)
+    .sort((a, b) => String(a.period).localeCompare(String(b.period)));
+
+  return {
+    grossEarnings: roundMoney(eligible.reduce((sum, row) => sum + Number(row.grossPay || 0), 0)),
+    taxPaid: roundMoney(eligible.reduce((sum, row) => sum + sumMatchingLines(row.deductionLines, PAYE_PATTERNS), 0)),
+    pensionContribution: roundMoney(eligible.reduce((sum, row) => {
+      const fromLines = roundMoney((row.deductionLines || []).reduce((lineSum, line) => (
+        isPensionDeductionCode(String(line.code || line.label || '')) ? lineSum + Number(line.amount || 0) : lineSum
+      ), 0));
+      return sum + (fromLines > 0.004 ? fromLines : Number(row.pensionEmployee || 0));
+    }, 0)),
+    deductions: roundMoney(eligible.reduce((sum, row) => sum + Number(row.deductions || 0), 0)),
+    netEarnings: roundMoney(eligible.reduce((sum, row) => sum + Number(row.netPay || 0), 0)),
+    nhf: roundMoney(eligible.reduce((sum, row) => sum + sumMatchingLines(row.deductionLines, NHF_PATTERNS), 0)),
+    bonuses: roundMoney(eligible.reduce((sum, row) => sum + sumMatchingLines(row.earnings, BONUS_PATTERNS), 0)),
+    leaveAllowance: roundMoney(eligible.reduce((sum, row) => sum + sumMatchingLines(row.earnings, LEAVE_ALLOWANCE_PATTERNS), 0)),
   };
 };
 
