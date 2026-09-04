@@ -254,6 +254,26 @@ export const hashPassword = (password: string, salt = crypto.randomBytes(16).toS
   hash: crypto.pbkdf2Sync(password, salt, 210000, 32, 'sha256').toString('hex'),
 });
 
+/**
+ * Temporary / first-login password derived from surname.
+ * Spaces are removed so multi-word surnames (e.g. "Kalu Eke") become "KaluEke"
+ * and are easier to type than an exact spaced string.
+ */
+export const defaultPasswordFromSurname = (surname: string, fallback = '') => {
+  const normalized = compact(surname).replace(/\s+/g, '');
+  if (normalized) return normalized;
+  return compact(fallback).replace(/\s+/g, '') || compact(fallback);
+};
+
+/** Login candidates so spaced / unspaced typing still matches the stored default. */
+export const passwordVerifyCandidates = (password: string) => {
+  const raw = String(password || '');
+  const trimmed = raw.trim();
+  const collapsed = trimmed.replace(/\s+/g, ' ');
+  const compactSpaces = trimmed.replace(/\s+/g, '');
+  return Array.from(new Set([raw, trimmed, collapsed, compactSpaces].filter((item) => item.length > 0)));
+};
+
 const verifyPassword = (password: string, hash: string, salt: string) => {
   if (!hash || !salt) return false;
   try {
@@ -266,6 +286,9 @@ const verifyPassword = (password: string, hash: string, salt: string) => {
     return false;
   }
 };
+
+const passwordMatches = (password: string, hash: string, salt: string) =>
+  passwordVerifyCandidates(password).some((candidate) => verifyPassword(candidate, hash, salt));
 
 const upsertDbUser = async (pool: sql.ConnectionPool, user: UserAccount) => {
   await pool.request()
@@ -320,7 +343,8 @@ const writeUsersStore = async (users: UserAccount[]) => {
 const surnameOf = (employee: DleEmployeeDirectoryRow) => compact(employee.lastName || employee.fullName.split(/\s+/).slice(-1)[0] || employee.employeeCode);
 
 const userFromEmployee = (employee: DleEmployeeDirectoryRow): UserAccount => {
-  const password = surnameOf(employee);
+  const surname = surnameOf(employee);
+  const password = defaultPasswordFromSurname(surname, employee.employeeCode || employee.employeeId);
   const hashed = hashPassword(password);
   const role = defaultRoleForEmployee(
     employee.jobTitle || employee.designation,
@@ -336,7 +360,7 @@ const userFromEmployee = (employee: DleEmployeeDirectoryRow): UserAccount => {
     employeeId: employee.employeeId,
     employeeCode: employee.employeeCode || employee.employeeId,
     fullName: employee.fullName,
-    surname: surnameOf(employee),
+    surname: surname,
     email: employee.officialEmail || employee.email || employee.personalEmail || '',
     department: employee.department || '',
     unit: employee.businessUnit || employee.division || '',
@@ -645,7 +669,7 @@ export const authenticate = async (login: string, password: string, headers: Hea
     await appendLogin({ userId: user.id, username: user.username, ipAddress: ip, device, status: 'Blocked', reason: 'Account locked' });
     throw new Error('Account is locked. Contact an administrator.');
   }
-  if (!verifyPassword(password, user.passwordHash, user.passwordSalt)) {
+  if (!passwordMatches(password, user.passwordHash, user.passwordSalt)) {
     const nextUsers = users.map((item) => {
       if (item.id !== user.id) return item;
       const failedAttempts = item.failedAttempts + 1;
@@ -726,7 +750,7 @@ export const updateUser = async (
   if (action === 'unlock') updated = { ...target, status: target.firstLoginRequired ? 'Pending First Login' : 'Active', failedAttempts: 0, lockedUntil: null, updatedAt: nowIso() };
   if (action === 'force-password-change') updated = { ...target, status: 'Password Reset Required', passwordResetRequired: true, updatedAt: nowIso() };
   if (action === 'reset-password') {
-    const hashed = hashPassword(target.surname);
+    const hashed = hashPassword(defaultPasswordFromSurname(target.surname, target.username));
     updated = { ...target, passwordHash: hashed.hash, passwordSalt: hashed.salt, status: 'Password Reset Required', passwordResetRequired: true, failedAttempts: 0, lockedUntil: null, updatedAt: nowIso() };
   }
   if (action === 'recover-account') {
@@ -748,7 +772,7 @@ export const updateUser = async (
       updatedAt: nowIso(),
     };
     if (resetPassword) {
-      const hashed = hashPassword(target.surname || target.username);
+      const hashed = hashPassword(defaultPasswordFromSurname(target.surname, target.username));
       next = {
         ...next,
         passwordHash: hashed.hash,

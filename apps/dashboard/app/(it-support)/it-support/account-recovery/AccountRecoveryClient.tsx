@@ -305,7 +305,7 @@ export default function AccountRecoveryClient() {
                     onChange={(event) => setResetPassword(event.target.checked)}
                   />
                   <span>
-                    Also reset password to the employee surname (user will be required to change it after login).
+                    Also reset password to the employee surname with spaces removed (e.g. &quot;Kalu Eke&quot; becomes KaluEke). The user must change it after login.
                     Use this when the person forgot their password.
                   </span>
                 </label>
