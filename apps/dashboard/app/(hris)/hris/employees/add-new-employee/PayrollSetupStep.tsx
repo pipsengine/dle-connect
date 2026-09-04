@@ -141,7 +141,7 @@ const SearchableBankField = ({
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
 
-  const items = useMemo(() => {
+  const items = useMemo((): BankCatalogItem[] => {
     if (catalog?.length) return catalog;
     return banks.map((name) => ({ name }));
   }, [banks, catalog]);
@@ -155,7 +155,7 @@ const SearchableBankField = ({
           return blob.includes(needle);
         });
     const hasCurrent = value && matched.some((item) => item.name.toLowerCase() === value.toLowerCase());
-    const withCurrent = value && !hasCurrent ? [{ name: value }, ...matched] : matched;
+    const withCurrent: BankCatalogItem[] = value && !hasCurrent ? [{ name: value }, ...matched] : matched;
     return withCurrent.slice(0, 80);
   }, [items, query, value]);
 
