@@ -6,6 +6,7 @@ import {
   BadgeCheck,
   Banknote,
   Building2,
+  CheckSquare,
   ChevronRight,
   Download,
   FileText,
@@ -16,10 +17,12 @@ import {
   Printer,
   Share2,
   Shield,
+  Square,
   TrendingDown,
   TrendingUp,
   Users,
   Wallet,
+  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
@@ -37,7 +40,7 @@ import type { EssTab } from './ess-portal-shell';
 
 export type EssPayrollPayload = {
   generatedAt?: string;
-  employee?: EssPayrollEmployee;
+  employee?: EssPayrollEmployee & { email?: string };
   payrollHistory?: PayrollHistoryRow[];
   payrollAccess?: {
     currentPeriod: string;
@@ -57,7 +60,6 @@ function PayrollKpiCard({
   icon: Icon,
   accent,
   iconBg,
-  onViewDetails,
 }: {
   label: string;
   value: string;
@@ -65,7 +67,6 @@ function PayrollKpiCard({
   icon: LucideIcon;
   accent: string;
   iconBg: string;
-  onViewDetails?: () => void;
 }) {
   return (
     <div className="flex min-h-[130px] flex-col rounded-[18px] border border-[#E5E7EB] bg-white p-5 shadow-[0_4px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)]">
@@ -79,9 +80,6 @@ function PayrollKpiCard({
           <Icon className="h-5 w-5" strokeWidth={2} />
         </span>
       </div>
-      <button type="button" onClick={onViewDetails} className="mt-auto pt-4 text-left text-[12px] font-semibold text-[#2563EB] hover:underline">
-        View details
-      </button>
     </div>
   );
 }
@@ -118,6 +116,25 @@ function WorkflowStepper({ payDate, status }: { payDate?: string; status: string
   );
 }
 
+const triggerBrowserDownload = (filename: string, bytes: ArrayBuffer | Uint8Array, contentType = 'application/pdf') => {
+  const blob = new Blob([bytes as BlobPart], { type: contentType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+};
+
+const base64ToBytes = (value: string) => {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+};
+
 export function EssPayrollDashboardView({
   payload,
   onNavigate,
@@ -128,8 +145,18 @@ export function EssPayrollDashboardView({
   const periods = payload?.payrollHistory || [];
   const employee = payload?.employee;
   const employeeCode = employee?.employeeCode || employee?.employeeId || '';
+  const employeeEmail = String(employee?.email || '').trim();
   const [selectedPeriod, setSelectedPeriod] = useState('');
   const [leftTab, setLeftTab] = useState<'Overview' | 'Analytics'>('Overview');
+  const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
+  const [busyAction, setBusyAction] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailMode, setEmailMode] = useState<'employee' | 'custom'>(employeeEmail ? 'employee' : 'custom');
+  const [customEmail, setCustomEmail] = useState(employeeEmail);
+  const [emailKind, setEmailKind] = useState<'payslip' | 'tax'>('payslip');
+  const [emailBulk, setEmailBulk] = useState(false);
 
   const selected = periods.find((item) => item.period === selectedPeriod) || periods[0];
 
@@ -137,6 +164,11 @@ export function EssPayrollDashboardView({
     const preferred = payload?.payrollAccess?.currentPeriod || periods[0]?.period || '';
     if (!selectedPeriod && preferred) setSelectedPeriod(preferred);
   }, [periods, payload?.payrollAccess?.currentPeriod, selectedPeriod]);
+
+  useEffect(() => {
+    if (!selected?.period) return;
+    setSelectedPeriods((current) => (current.includes(selected.period) ? current : [selected.period]));
+  }, [selected?.period]);
 
   const model = useMemo(
     () => (selected ? buildPayslipModel(selected, employee, payload?.generatedAt) : null),
@@ -177,12 +209,114 @@ export function EssPayrollDashboardView({
     return rows;
   }, [model?.payeTax, model?.pensionEmployee, netChangePct, previous, selected]);
 
+  const targetPayslips = (periodsList: string[]) =>
+    periods.filter((item) => periodsList.includes(item.period));
+
+  const downloadPayslips = async (periodsList: string[], kind: 'payslip' | 'tax' = 'payslip') => {
+    const payslips = targetPayslips(periodsList);
+    if (!payslips.length) {
+      setActionError('Select at least one payslip.');
+      return;
+    }
+    setBusyAction(`download-${kind}`);
+    setActionError('');
+    setActionMessage('');
+    try {
+      const response = await fetch('/api/workforce-portal', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'download-payslips',
+          kind,
+          periods: periodsList,
+          payslips,
+        }),
+      });
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/pdf')) {
+        const bytes = await response.arrayBuffer();
+        if (!response.ok) throw new Error('Unable to download payslip PDF.');
+        const disposition = response.headers.get('content-disposition') || '';
+        const match = /filename="([^"]+)"/i.exec(disposition);
+        triggerBrowserDownload(match?.[1] || `payslip-${periodsList[0]}.pdf`, bytes);
+        setActionMessage(kind === 'tax' ? 'Tax slip downloaded.' : 'Payslip PDF downloaded.');
+        return;
+      }
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || json.status === 'error') throw new Error(json.error || 'Unable to download payslips.');
+      for (const file of json.data?.files || []) {
+        triggerBrowserDownload(file.filename, base64ToBytes(file.contentBase64));
+      }
+      setActionMessage(`${(json.data?.files || []).length || periodsList.length} payslip PDF(s) downloaded.`);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to download payslip PDF.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const openEmailModal = (bulk: boolean, kind: 'payslip' | 'tax' = 'payslip') => {
+    setEmailBulk(bulk);
+    setEmailKind(kind);
+    setEmailMode(employeeEmail ? 'employee' : 'custom');
+    setCustomEmail(employeeEmail);
+    setEmailOpen(true);
+    setActionError('');
+    setActionMessage('');
+  };
+
+  const sendPayslipsEmail = async () => {
+    const periodsList = emailBulk ? selectedPeriods : (selected ? [selected.period] : []);
+    const payslips = targetPayslips(periodsList);
+    if (!payslips.length) {
+      setActionError('Select at least one payslip.');
+      return;
+    }
+    setBusyAction('email');
+    setActionError('');
+    setActionMessage('');
+    try {
+      const response = await fetch('/api/workforce-portal', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'email-payslips',
+          kind: emailKind,
+          periods: periodsList,
+          payslips,
+          recipientMode: emailMode,
+          email: customEmail,
+        }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || json.status === 'error') throw new Error(json.error || 'Unable to email payslip.');
+      setActionMessage(json.data?.message || 'Payslip emailed.');
+      setEmailOpen(false);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to email payslip.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
   const printPayslip = () => typeof window !== 'undefined' && window.print();
-  const emailPayslip = () => {
+
+  const shareSecureLink = async () => {
     if (!selected) return;
-    const subject = encodeURIComponent(`Payslip ${selected.periodLabel || selected.period}`);
-    const body = encodeURIComponent(`Please find my payslip for ${selected.periodLabel || selected.period}. Net pay: ${money2(selected.netPay)}.`);
-    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+    const url = `${window.location.origin}/workforce-portal?tab=payroll`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setActionMessage('Secure portal link copied to clipboard.');
+      setActionError('');
+    } catch {
+      setActionError('Unable to copy secure link.');
+    }
+  };
+
+  const togglePeriod = (period: string) => {
+    setSelectedPeriods((current) => (
+      current.includes(period) ? current.filter((item) => item !== period) : [...current, period]
+    ));
   };
 
   if (!selected) {
@@ -215,17 +349,32 @@ export function EssPayrollDashboardView({
             <h1 className="text-[28px] font-bold text-[#111827]">Payroll Summary — {periodTitle}</h1>
             <span className="rounded-full bg-[#ECFDF3] px-3 py-1 text-[12px] font-semibold text-[#047857] ring-1 ring-[#BBF7D0]">{statusLabel}</span>
           </div>
+          {(actionMessage || actionError) ? (
+            <p className={`mt-2 text-[13px] font-semibold ${actionError ? 'text-[#B91C1C]' : 'text-[#047857]'}`}>
+              {actionError || actionMessage}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={printPayslip} className="inline-flex h-11 items-center gap-2 rounded-[12px] bg-[#2563EB] px-4 text-[14px] font-semibold text-white shadow-[0_2px_10px_rgba(37,99,235,0.18)] hover:bg-[#1D4ED8]">
+          <button
+            type="button"
+            disabled={Boolean(busyAction)}
+            onClick={() => void downloadPayslips([selected.period], 'payslip')}
+            className="inline-flex h-11 items-center gap-2 rounded-[12px] bg-[#2563EB] px-4 text-[14px] font-semibold text-white shadow-[0_2px_10px_rgba(37,99,235,0.18)] hover:bg-[#1D4ED8] disabled:opacity-60"
+          >
             <Download className="h-4 w-4" />
-            Download PDF
+            {busyAction === 'download-payslip' ? 'Downloading…' : 'Download PDF'}
           </button>
-          <button type="button" onClick={emailPayslip} className="inline-flex h-11 items-center gap-2 rounded-[12px] border border-[#D1D5DB] bg-white px-4 text-[14px] font-semibold text-[#111827] hover:bg-[#F8FAFC]">
+          <button
+            type="button"
+            disabled={Boolean(busyAction)}
+            onClick={() => openEmailModal(false, 'payslip')}
+            className="inline-flex h-11 items-center gap-2 rounded-[12px] border border-[#D1D5DB] bg-white px-4 text-[14px] font-semibold text-[#111827] hover:bg-[#F8FAFC] disabled:opacity-60"
+          >
             <Mail className="h-4 w-4" />
             Email Payslip
           </button>
-          <button type="button" className="inline-flex h-11 w-11 items-center justify-center rounded-[12px] border border-[#D1D5DB] bg-white text-[#6B7280] hover:bg-[#F8FAFC]">
+          <button type="button" onClick={printPayslip} className="inline-flex h-11 w-11 items-center justify-center rounded-[12px] border border-[#D1D5DB] bg-white text-[#6B7280] hover:bg-[#F8FAFC]" aria-label="More print options">
             <MoreHorizontal className="h-4 w-4" />
           </button>
         </div>
@@ -314,7 +463,6 @@ export function EssPayrollDashboardView({
                     </div>
                   ))}
                 </div>
-                <button type="button" className="mt-4 text-[13px] font-semibold text-[#2563EB] hover:underline">View Full Report</button>
               </>
             ) : (
               <div className="space-y-3">
@@ -355,49 +503,64 @@ export function EssPayrollDashboardView({
             generatedAt={payload?.generatedAt}
             showToolbar
             onPrint={printPayslip}
-            onDownload={printPayslip}
-            onEmail={emailPayslip}
+            onDownload={() => void downloadPayslips([selected.period], 'payslip')}
+            onEmail={() => openEmailModal(false, 'payslip')}
           />
         </EssCard>
 
         <div className="ess-no-print space-y-5">
           <EssCard className="p-5">
-            <EssSectionHeader title="Payslip History" />
+            <EssSectionHeader
+              title="Payslip History"
+              action={(
+                <div className="flex gap-2">
+                  <button type="button" disabled={!selectedPeriods.length || Boolean(busyAction)} onClick={() => void downloadPayslips(selectedPeriods, 'payslip')} className="text-[11px] font-bold text-[#2563EB] hover:underline disabled:opacity-50">
+                    Download selected
+                  </button>
+                  <button type="button" disabled={!selectedPeriods.length || Boolean(busyAction)} onClick={() => openEmailModal(true, 'payslip')} className="text-[11px] font-bold text-[#2563EB] hover:underline disabled:opacity-50">
+                    Email selected
+                  </button>
+                </div>
+              )}
+            />
             <div className="max-h-[280px] space-y-2 overflow-y-auto pr-1">
-              {periods.map((item) => (
-                <button
-                  key={item.period}
-                  type="button"
-                  onClick={() => setSelectedPeriod(item.period)}
-                  className={`flex w-full items-center justify-between gap-2 rounded-[12px] border px-3 py-3 text-left transition ${
-                    item.period === selected.period ? 'border-[#2563EB] bg-[#EFF6FF]' : 'border-[#E5E7EB] bg-[#F8FAFC] hover:border-[#93C5FD]'
-                  }`}
-                >
-                  <div>
-                    <p className="text-[14px] font-semibold text-[#111827]">{item.periodLabel || item.period}</p>
-                    <p className="text-[11px] text-[#6B7280]">{fmtDate(item.payDate)}</p>
+              {periods.map((item) => {
+                const checked = selectedPeriods.includes(item.period);
+                return (
+                  <div
+                    key={item.period}
+                    className={`flex w-full items-center gap-2 rounded-[12px] border px-3 py-3 transition ${
+                      item.period === selected.period ? 'border-[#2563EB] bg-[#EFF6FF]' : 'border-[#E5E7EB] bg-[#F8FAFC]'
+                    }`}
+                  >
+                    <button type="button" onClick={() => togglePeriod(item.period)} className="text-[#2563EB]" aria-label={`Select ${item.period}`}>
+                      {checked ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                    </button>
+                    <button type="button" onClick={() => setSelectedPeriod(item.period)} className="min-w-0 flex-1 text-left">
+                      <p className="text-[14px] font-semibold text-[#111827]">{item.periodLabel || item.period}</p>
+                      <p className="text-[11px] text-[#6B7280]">{fmtDate(item.payDate)}</p>
+                    </button>
+                    <span className="rounded-full bg-[#ECFDF3] px-2 py-0.5 text-[10px] font-semibold text-[#047857]">{item.status}</span>
                   </div>
-                  <span className="rounded-full bg-[#ECFDF3] px-2 py-0.5 text-[10px] font-semibold text-[#047857]">{item.status}</span>
-                </button>
-              ))}
+                );
+              })}
             </div>
-            <button type="button" className="mt-4 text-[13px] font-semibold text-[#2563EB] hover:underline">View All</button>
           </EssCard>
 
           <EssCard className="p-5">
             <EssSectionHeader title="Actions" />
             <div className="grid grid-cols-2 gap-2">
               {[
-                { label: 'Download PDF', icon: Download, action: printPayslip },
+                { label: 'Download PDF', icon: Download, action: () => void downloadPayslips([selected.period], 'payslip') },
                 { label: 'Print Payslip', icon: Printer, action: printPayslip },
-                { label: 'Email Payslip', icon: Mail, action: emailPayslip },
-                { label: 'Share Secure Link', icon: Share2, action: () => undefined },
+                { label: 'Email Payslip', icon: Mail, action: () => openEmailModal(false, 'payslip') },
+                { label: 'Share Secure Link', icon: Share2, action: () => void shareSecureLink() },
                 { label: 'Report an Issue', icon: AlertCircle, action: () => onNavigate('services') },
-                { label: 'Download Tax Slip', icon: FileText, action: printPayslip },
+                { label: 'Download Tax Slip', icon: FileText, action: () => void downloadPayslips([selected.period], 'tax') },
               ].map((item) => {
                 const Icon = item.icon;
                 return (
-                  <button key={item.label} type="button" onClick={item.action} className="flex flex-col items-start gap-2 rounded-[12px] border border-[#E5E7EB] bg-[#F8FAFC] p-3 text-left transition hover:border-[#2563EB]/30 hover:bg-[#EFF6FF]">
+                  <button key={item.label} type="button" onClick={item.action} disabled={Boolean(busyAction)} className="flex flex-col items-start gap-2 rounded-[12px] border border-[#E5E7EB] bg-[#F8FAFC] p-3 text-left transition hover:border-[#2563EB]/30 hover:bg-[#EFF6FF] disabled:opacity-60">
                     <Icon className="h-4 w-4 text-[#2563EB]" />
                     <span className="text-[12px] font-semibold text-[#111827]">{item.label}</span>
                   </button>
@@ -433,6 +596,63 @@ export function EssPayrollDashboardView({
           </EssCard>
         </div>
       </div>
+
+      {emailOpen ? (
+        <div className="ess-no-print fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" role="dialog" aria-modal="true" aria-label="Email payslip">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Email {emailKind === 'tax' ? 'tax slip' : 'payslip'}</p>
+                <h3 className="mt-1 text-lg font-black text-slate-950">
+                  {emailBulk ? `Send ${selectedPeriods.length} selected document(s)` : `Send ${selected.periodLabel || selected.period}`}
+                </h3>
+              </div>
+              <button type="button" onClick={() => setEmailOpen(false)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50" aria-label="Close">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-3">
+                <input type="radio" name="email-mode" checked={emailMode === 'employee'} onChange={() => setEmailMode('employee')} disabled={!employeeEmail} />
+                <span>
+                  <span className="block text-sm font-bold text-slate-900">Send to my employee email</span>
+                  <span className="block text-xs font-semibold text-slate-500">{employeeEmail || 'No employee email on file'}</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-3">
+                <input type="radio" name="email-mode" checked={emailMode === 'custom'} onChange={() => setEmailMode('custom')} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold text-slate-900">Send to another email</span>
+                  <input
+                    type="email"
+                    value={customEmail}
+                    onChange={(event) => setCustomEmail(event.target.value)}
+                    placeholder="name@example.com"
+                    className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-slate-300"
+                  />
+                </span>
+              </label>
+            </div>
+
+            {actionError ? <p className="mt-3 text-sm font-semibold text-red-700">{actionError}</p> : null}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setEmailOpen(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(busyAction)}
+                onClick={() => void sendPayslipsEmail()}
+                className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-bold text-white hover:bg-[#1D4ED8] disabled:opacity-60"
+              >
+                {busyAction === 'email' ? 'Sending…' : 'Send email'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

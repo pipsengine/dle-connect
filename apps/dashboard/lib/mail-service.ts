@@ -117,7 +117,13 @@ export const resolveEmployeeMailbox = async (employee?: DleEmployeeDirectoryRow 
   return normalizeMailboxAddress(match?.email);
 };
 
-export const sendTransactionalEmail = async (input: { to: string; subject: string; text: string; html?: string }): Promise<MailSendResult> => {
+export const sendTransactionalEmail = async (input: {
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+  fileAttachments?: Array<{ filename: string; contentType?: string; content: Buffer | string }>;
+}): Promise<MailSendResult> => {
   const to = compact(input.to);
   if (!to) return { sent: false, reason: 'No recipient email.' };
 
@@ -138,6 +144,11 @@ export const sendTransactionalEmail = async (input: { to: string; subject: strin
         contentDisposition: 'inline' as const,
       }]
     : [];
+  const fileAttachments = (input.fileAttachments || []).map((attachment) => ({
+    filename: attachment.filename,
+    content: attachment.content,
+    contentType: attachment.contentType || 'application/octet-stream',
+  }));
 
   if (provider === 'graph') {
     try {
@@ -155,6 +166,13 @@ export const sendTransactionalEmail = async (input: { to: string; subject: strin
               contentId: logoAttachment.contentId,
             }]
           : [],
+        fileAttachments: fileAttachments.map((attachment) => ({
+          name: attachment.filename,
+          contentType: attachment.contentType,
+          contentBytes: Buffer.isBuffer(attachment.content)
+            ? attachment.content.toString('base64')
+            : Buffer.from(String(attachment.content), 'utf8').toString('base64'),
+        })),
       });
       if (!result.sent) {
         console.error('[mail-service] Graph send failed.', { to, subject: input.subject, reason: result.reason });
@@ -178,7 +196,7 @@ export const sendTransactionalEmail = async (input: { to: string; subject: strin
       subject: input.subject,
       text: input.text,
       html: input.html || input.text.replace(/\n/g, '<br/>'),
-      attachments: inlineAttachments,
+      attachments: [...inlineAttachments, ...fileAttachments],
     });
     return { sent: true, messageId: compact(info.messageId) || undefined, provider: 'smtp' as const };
   } catch (error) {

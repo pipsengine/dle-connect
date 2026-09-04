@@ -157,13 +157,31 @@ const statusTone = (status?: string) => {
 const linksFor = (context: EnterpriseUserProfileContext, user: ProfileUser) => {
   const ess = context === 'ess';
   const hrisProfile = user.employeeCode && user.employeeCode !== 'UNLINKED' ? `/hris/employees/employee-profile/${encodeURIComponent(user.employeeCode)}` : '/hris/employees/employee-profile';
+  const essProfile = '/workforce-portal?tab=profile';
   return [
-    { label: 'My Profile', href: user.profileHref || (ess ? '/workforce-portal?tab=profile' : hrisProfile), icon: UserRound },
+    { label: 'My Profile', href: ess ? essProfile : (user.profileHref || hrisProfile), icon: UserRound },
     { label: 'My Documents', href: ess ? '/workforce-portal?tab=documents' : '/hris/employees/employee-documents', icon: FileText },
     { label: 'My Payslips', href: ess ? '/workforce-portal?tab=payroll' : '/hris/payroll/payslip-generation', icon: ReceiptText },
     { label: 'My Leave', href: ess ? '/workforce-portal?tab=leave' : '/hris/leave-management/applications', icon: CalendarDays },
     { label: 'My Requests', href: ess ? '/workforce-portal?tab=services' : '/hris/employees/employee-timeline', icon: CheckSquare },
     { label: 'My Approvals', href: ess ? '/workforce-portal?tab=leave&leaveSection=Approvals' : '/hris/employees/reporting-line', icon: ShieldCheck, count: user.pendingApprovals || 0 },
+  ];
+};
+
+const utilityLinksFor = (context: EnterpriseUserProfileContext, rbacRole: string) => {
+  if (context === 'ess') {
+    return [
+      { label: 'Account Settings', href: '/workforce-portal?tab=profile&profileTab=Preferences', icon: Settings, tone: 'text-slate-500' },
+      { label: 'Security & MFA', href: '/workforce-portal?tab=security', icon: LockKeyhole, tone: 'text-emerald-600' },
+      { label: 'Help & Support', href: '/workforce-portal?tab=services', icon: LifeBuoy, tone: 'text-blue-600' },
+      { label: `RBAC: ${rbacRole || 'Employee'}`, href: '/workforce-portal?tab=security', icon: HelpCircle, tone: 'text-violet-600' },
+    ];
+  }
+  return [
+    { label: 'Account Settings', href: '/hris/administration/user-management/user-accounts', icon: Settings, tone: 'text-slate-500' },
+    { label: 'Security & MFA', href: '/hris/administration/roles-and-permissions', icon: LockKeyhole, tone: 'text-emerald-600' },
+    { label: 'Help & Support', href: '/hris', icon: LifeBuoy, tone: 'text-blue-600' },
+    { label: `RBAC: ${rbacRole || 'Employee'}`, href: '/hris/administration/roles-and-permissions', icon: HelpCircle, tone: 'text-violet-600' },
   ];
 };
 
@@ -240,21 +258,29 @@ export function EnterpriseUserProfile({
   );
   // Live session/HR profile wins over portal shell props so modules cannot
   // replace the assigned role/job title with labels like "IT Support".
+  // ESS must keep portal-local profile links (do not send employees to HRIS admin profile).
   const user = {
     ...defaults[context],
     ...explicitUser,
     ...currentUser,
     ...(compact(currentUser.rbacRole) ? { rbacRole: currentUser.rbacRole } : {}),
     ...(compact(currentUser.role) ? { role: currentUser.role } : {}),
+    ...(context === 'ess'
+      ? { profileHref: compact(explicitUser.profileHref) || '/workforce-portal?tab=profile' }
+      : {}),
   } as ProfileUser;
   user.role = displayRole(user.role) || user.role;
   const resolvedPhotoUrl = resolveProfilePhotoUrl(user);
   const useEmployeePhoto = Boolean(resolvedPhotoUrl) || !isPlaceholderEmployeeCode(user.employeeCode);
   const tone = contextTone(context);
   const links = linksFor(context, user);
+  const utilityLinks = utilityLinksFor(context, user.rbacRole || 'Employee');
   const notificationCount = Number(user.notificationCount || 0);
   const pendingApprovalCount = Number(user.pendingApprovals || 0);
   const isManager = pendingApprovalCount > 0 || Number(user.teamSize || 0) > 0 || compact(user.rbacRole).match(/manager|executive/i);
+  const profileActionHref = context === 'ess' ? '/workforce-portal?tab=profile' : user.profileHref;
+  const leaveActionHref = context === 'ess' ? '/workforce-portal?tab=leave&leaveSection=Apply%20Leave' : '/hris/leave-management/applications';
+  const payslipActionHref = context === 'ess' ? '/workforce-portal?tab=payroll' : '/hris/payroll/payslip-generation';
   const logout = async () => {
     await fetch('/api/auth/logout', { method: 'POST', cache: 'no-store' }).catch(() => undefined);
     window.location.replace('/login');
@@ -324,13 +350,13 @@ export function EnterpriseUserProfile({
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-2 min-[420px]:grid-cols-3">
-            <Link href={user.profileHref} className={`flex min-h-11 items-center justify-center rounded-lg px-3 py-2 text-center text-xs font-black text-white ${tone.action}`}>
+            <Link href={profileActionHref} className={`flex min-h-11 items-center justify-center rounded-lg px-3 py-2 text-center text-xs font-black text-white ${tone.action}`}>
               View Profile
             </Link>
-            <Link href={context === 'ess' ? '/workforce-portal?tab=leave' : '/hris/leave-management/applications'} className="flex min-h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-xs font-black text-slate-800 hover:bg-slate-50">
+            <Link href={leaveActionHref} className="flex min-h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-xs font-black text-slate-800 hover:bg-slate-50">
               Apply Leave
             </Link>
-            <Link href={context === 'ess' ? '/workforce-portal?tab=payroll' : '/hris/payroll/payslip-generation'} className="flex min-h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-xs font-black text-slate-800 hover:bg-slate-50">
+            <Link href={payslipActionHref} className="flex min-h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-xs font-black text-slate-800 hover:bg-slate-50">
               View Payslip
             </Link>
           </div>
@@ -372,22 +398,15 @@ export function EnterpriseUserProfile({
         </nav>
 
         <div className="grid grid-cols-1 gap-1 border-b border-slate-100 p-2 min-[420px]:grid-cols-2">
-          <Link href="/settings" className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
-            <Settings className="h-4 w-4 text-slate-500" />
-            Account Settings
-          </Link>
-          <Link href="/settings/security" className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
-            <LockKeyhole className="h-4 w-4 text-emerald-600" />
-            Security & MFA
-          </Link>
-          <Link href="/help" className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
-            <LifeBuoy className="h-4 w-4 text-blue-600" />
-            Help & Support
-          </Link>
-          <button type="button" className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-bold text-slate-700 hover:bg-slate-50">
-            <HelpCircle className="h-4 w-4 text-violet-600" />
-            RBAC: {user.rbacRole || 'Employee'}
-          </button>
+          {utilityLinks.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link key={item.label} href={item.href} className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                <Icon className={`h-4 w-4 ${item.tone}`} />
+                {item.label}
+              </Link>
+            );
+          })}
         </div>
 
         <div className="p-2">

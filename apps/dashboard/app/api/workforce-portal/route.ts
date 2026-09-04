@@ -81,7 +81,9 @@ import {
   readLeaveCalendarConfig,
 } from '@/lib/leave-workflow-service';
 import { isLeaveEssRequest, isPendingLeaveStatus } from '@/lib/leave-request-shared';
-import { resolveMailProvider, verifyMailConnection, resolveEmployeeMailbox } from '@/lib/mail-service';
+import { resolveMailProvider, verifyMailConnection, resolveEmployeeMailbox, sendTransactionalEmail } from '@/lib/mail-service';
+import { buildEssPayslipPdf, buildEssPayslipPdfBundle } from '@/lib/ess-payslip-pdf';
+import type { PayrollHistoryRow } from '@/app/workforce-portal/ess-payslip-shared';
 import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
 
 type EssRequest = {
@@ -1613,6 +1615,97 @@ export async function POST(request: Request) {
         provider,
         verification,
         employeeMailbox: mailbox,
+      });
+    }
+
+    if (action === 'download-payslips' || action === 'email-payslips') {
+      const kind = compact(body.kind).toLowerCase() === 'tax' ? 'tax' as const : 'payslip' as const;
+      const requestedPeriods = Array.isArray(body.periods)
+        ? body.periods.map((item) => compact(item)).filter((item) => /^\d{4}-\d{2}$/.test(item))
+        : [compact(body.period)].filter((item) => /^\d{4}-\d{2}$/.test(item));
+      if (!requestedPeriods.length) return err(400, 'Select at least one payslip period.');
+
+      const releasedPeriods = await listEssReleasedPayrollPeriods();
+      const allowed = requestedPeriods.filter((period) => releasedPeriods.includes(period));
+      if (!allowed.length) return err(403, 'Selected payslip period is not released for employee access.');
+
+      const historyRows = Array.isArray(body.payslips)
+        ? (body.payslips as PayrollHistoryRow[]).filter((row) => allowed.includes(compact(row?.period)))
+        : [];
+      if (!historyRows.length) return err(400, 'Payslip data was not provided for the selected periods.');
+
+      const employeePayload = {
+        employeeId: employee.employeeId,
+        employeeCode: employee.employeeCode || employee.employeeId,
+        fullName: employee.fullName,
+        jobTitle: employee.jobTitle || employee.designation,
+        department: employee.department,
+        businessUnit: employee.businessUnit,
+        location: employee.workLocation || employee.location,
+        payrollGroup: employee.payrollGroup,
+        salaryGrade: employee.salaryGrade || employee.jobGrade,
+        status: employee.status,
+        photoUrl: linkedEmployeePhotoUrl(employee),
+        hasPhoto: Boolean(employee.hasPhoto),
+      };
+
+      const files = await buildEssPayslipPdfBundle(historyRows, employeePayload, {
+        kind,
+        generatedAt: new Date().toISOString(),
+      });
+
+      if (action === 'download-payslips') {
+        if (files.length === 1) {
+          return new NextResponse(new Uint8Array(files[0].buffer), {
+            status: 200,
+            headers: {
+              'content-type': 'application/pdf',
+              'content-disposition': `attachment; filename="${files[0].filename}"`,
+              'cache-control': 'no-store',
+            },
+          });
+        }
+        return ok({
+          files: files.map((file) => ({
+            filename: file.filename,
+            period: file.period,
+            contentBase64: file.buffer.toString('base64'),
+          })),
+        });
+      }
+
+      const mailbox = await resolveEmployeeMailbox(employee);
+      const recipientMode = compact(body.recipientMode).toLowerCase() === 'custom' ? 'custom' : 'employee';
+      const customEmail = compact(body.email).toLowerCase();
+      const to = recipientMode === 'custom' ? customEmail : (mailbox || compact(employee.officialEmail || employee.email || employee.personalEmail).toLowerCase());
+      if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+        return err(400, recipientMode === 'custom'
+          ? 'Enter a valid email address.'
+          : 'No employee email is on file. Enter an email address to send the payslip.');
+      }
+
+      const periodLabels = historyRows.map((row) => row.periodLabel || row.period).join(', ');
+      const subject = files.length > 1
+        ? `Your DLE payslips (${files.length})`
+        : `Your DLE ${kind === 'tax' ? 'tax slip' : 'payslip'} — ${historyRows[0]?.periodLabel || historyRows[0]?.period}`;
+      const sent = await sendTransactionalEmail({
+        to,
+        subject,
+        text: `Dear ${employee.fullName || 'Colleague'},\n\nPlease find attached your ${kind === 'tax' ? 'tax slip(s)' : 'payslip(s)'} for ${periodLabels}.\n\nRegards,\nDLE Connect Workforce Portal`,
+        html: `<p>Dear ${employee.fullName || 'Colleague'},</p><p>Please find attached your <strong>${kind === 'tax' ? 'tax slip(s)' : 'payslip(s)'}</strong> for <strong>${periodLabels}</strong>.</p><p>Regards,<br/>DLE Connect Workforce Portal</p>`,
+        fileAttachments: files.map((file) => ({
+          filename: file.filename,
+          contentType: 'application/pdf',
+          content: file.buffer,
+        })),
+      });
+      if (!sent.sent) return err(502, sent.reason || 'Unable to send payslip email.');
+      return ok({
+        message: files.length > 1
+          ? `${files.length} payslips emailed to ${to}.`
+          : `Payslip emailed to ${to}.`,
+        to,
+        count: files.length,
       });
     }
 

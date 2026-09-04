@@ -99,6 +99,11 @@ export const sendGraphMail = async (input: {
     contentBytes: string;
     contentId: string;
   }>;
+  fileAttachments?: Array<{
+    name: string;
+    contentType: string;
+    contentBytes: string;
+  }>;
 }): Promise<GraphMailResult> => {
   const to = compact(input.to);
   if (!to) return { sent: false, reason: 'No recipient email.' };
@@ -119,16 +124,24 @@ export const sendGraphMail = async (input: {
   if (replyTo) {
     message.replyTo = [{ emailAddress: { address: replyTo } }];
   }
-  if (input.inlineAttachments?.length) {
-    message.attachments = input.inlineAttachments.map((attachment) => ({
+  const attachments = [
+    ...(input.inlineAttachments || []).map((attachment) => ({
       '@odata.type': '#microsoft.graph.fileAttachment',
       name: attachment.name,
       contentType: attachment.contentType,
       contentBytes: attachment.contentBytes,
       isInline: true,
       contentId: attachment.contentId,
-    }));
-  }
+    })),
+    ...(input.fileAttachments || []).map((attachment) => ({
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      name: attachment.name,
+      contentType: attachment.contentType,
+      contentBytes: attachment.contentBytes,
+      isInline: false,
+    })),
+  ];
+  if (attachments.length) message.attachments = attachments;
 
   const response = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender)}/sendMail`, {
     method: 'POST',

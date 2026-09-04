@@ -471,6 +471,11 @@ export function EssProfileDashboardView({
     setApprovalModalOpen(true);
   }, [canApproveProfileUpdates, profileApprovalQueue, searchParams]);
 
+  useEffect(() => {
+    const requestedTab = compactText(searchParams.get('profileTab') || '') as ProfileTab;
+    if (requestedTab && profileTabs.includes(requestedTab)) setActiveTab(requestedTab);
+  }, [searchParams]);
+
   const openApprovalModal = (requestId?: string) => {
     const targetId = requestId || profileApprovalQueue[0]?.id || null;
     if (!targetId) return;
