@@ -1,61 +1,133 @@
-import { PageHeading, Card, KpiCard, DataTable, Status, Toolbar, MiniBar } from '@/components/projects-engineering/UI';
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { PageHeading, Card, KpiCard, DataTable, Status, MiniBar, Progress, Button } from '@/components/projects-engineering/UI';
+import { money, dmy } from '@/lib/projects-engineering/format';
+import type { Project } from '@/lib/projects-engineering/types';
+
+const POLL_MS = 30000;
 
 export default function PortfolioPlanningPage() {
+  const router = useRouter();
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const res = await fetch('/api/projects-engineering/projects', { cache: 'no-store', credentials: 'same-origin' });
+      const json = await res.json();
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to load projects');
+      setProjects(Array.isArray(json.data?.projects) ? json.data.projects : []);
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load portfolio');
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const timer = window.setInterval(() => void load(true), POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [load]);
+
+  const stats = useMemo(() => {
+    const active = projects.filter((p) => /^(active|approved|open)$/i.test(p.status));
+    const avgSpi =
+      projects.length
+        ? projects.reduce((sum, p) => sum + Number(p.schedulePerformance || 0), 0) / projects.length
+        : 0;
+    const atRisk = projects.filter((p) => p.health === 'Watch' || p.health === 'Critical');
+    const avgActual =
+      projects.length ? projects.reduce((sum, p) => sum + Number(p.actual || 0), 0) / projects.length : 0;
+    return { active: active.length, avgSpi, atRisk: atRisk.length, avgActual };
+  }, [projects]);
+
+  const rows = projects.map((p) => [
+    <button
+      type="button"
+      className="project-cell project-cell-btn"
+      key={p.id}
+      onClick={() => router.push(`/projects-engineering/projects/${p.id}/planning`)}
+    >
+      <span className="project-avatar">{p.code.slice(0, 2)}</span>
+      <div>
+        <b>{p.name}</b>
+        <small>
+          {p.code} · {p.phase}
+        </small>
+      </div>
+    </button>,
+    dmy(p.start),
+    dmy(p.finish),
+    <Progress key={`${p.id}-p`} value={Number(p.actual || 0)} />,
+    Number(p.schedulePerformance || 0).toFixed(2),
+    <Status key={`${p.id}-h`}>{p.health}</Status>,
+  ]);
+
   return (
     <>
       <PageHeading
         title="Planning & Portfolio Controls"
-        description="Integrated portfolio planning, schedule performance, resource demand and milestone governance. Schedule truth can be imported from Primavera P6 / MS Project."
+        description="Live portfolio planning view driven by DLE_Enterprise projects. Schedule registers will attach as WBS data is captured."
+        actions={
+          <Button variant="secondary" href="/projects-engineering/projects">
+            Projects list
+          </Button>
+        }
       />
+      {error ? <div className="audit-strip">⚠ {error}</div> : null}
+      {loading ? <div className="audit-strip">Loading live portfolio…</div> : null}
       <div className="kpi-grid four">
-        <KpiCard label="Baseline Activities" value="8,426" delta="Across 12 active projects" />
-        <KpiCard label="Critical Activities" value="314" delta="38 newly critical" tone="amber" />
-        <KpiCard label="Average SPI" value="0.94" delta="Target ≥ 0.98" tone="indigo" />
-        <KpiCard label="Milestones at Risk" value="18" delta="6 within 30 days" tone="rose" />
+        <KpiCard label="Active Projects" value={String(stats.active)} delta={`${projects.length} total`} href="/projects-engineering/projects" />
+        <KpiCard label="Average SPI" value={stats.avgSpi.toFixed(2)} delta="Target ≥ 0.98" tone="indigo" href="/projects-engineering/projects" />
+        <KpiCard label="Avg Progress" value={`${stats.avgActual.toFixed(1)}%`} delta="Actual across portfolio" tone="cyan" href="/projects-engineering/projects" />
+        <KpiCard label="At Risk" value={String(stats.atRisk)} delta="Watch + Critical" tone="rose" href="/projects-engineering/projects" />
       </div>
       <div className="grid two">
-        <Card title="Portfolio Schedule Health" subtitle="Discipline-weighted progress">
-          <MiniBar label="Engineering" value={71} />
-          <MiniBar label="Procurement" value={54} />
-          <MiniBar label="Fabrication" value={42} />
-          <MiniBar label="Construction" value={24} />
-          <MiniBar label="Commissioning" value={8} />
+        <Card title="Portfolio Schedule Health" subtitle="Derived from live project progress">
+          <MiniBar label="Average actual" value={stats.avgActual} />
+          <MiniBar label="Healthy share" value={projects.length ? (projects.filter((p) => p.health === 'Healthy').length / projects.length) * 100 : 0} />
+          <MiniBar label="Watch share" value={projects.length ? (projects.filter((p) => p.health === 'Watch').length / projects.length) * 100 : 0} />
+          <MiniBar label="Critical share" value={projects.length ? (projects.filter((p) => p.health === 'Critical').length / projects.length) * 100 : 0} />
         </Card>
-        <Card title="Resource Demand – Next 12 Weeks" subtitle="Planned capacity vs approved availability">
+        <Card title="Commercial Position" subtitle="Contract values from project profiles">
           <div className="metric-stack">
-            <div>
-              <span>Engineering</span>
-              <b>118 / 126 FTE</b>
-              <Status>Watch</Status>
-            </div>
-            <div>
-              <span>Fabrication</span>
-              <b>246 / 280 FTE</b>
-              <Status>Healthy</Status>
-            </div>
-            <div>
-              <span>Construction</span>
-              <b>196 / 174 FTE</b>
-              <Status>Critical</Status>
-            </div>
-            <div>
-              <span>Project Controls</span>
-              <b>28 / 31 FTE</b>
-              <Status>Healthy</Status>
-            </div>
+            {projects.slice(0, 4).map((p) => (
+              <button
+                type="button"
+                key={p.id}
+                className="metric-stack-btn"
+                onClick={() => router.push(`/projects-engineering/projects/${p.id}/overview`)}
+                style={{ display: 'contents' }}
+              >
+                <div>
+                  <span>{p.code}</span>
+                  <b>{money(p.contractValue, p.currency)}</b>
+                  <Status>{p.status}</Status>
+                </div>
+              </button>
+            ))}
+            {!projects.length ? (
+              <div>
+                <span>No projects</span>
+                <b>—</b>
+                <Status>Draft</Status>
+              </div>
+            ) : null}
           </div>
         </Card>
       </div>
-      <Card title="Portfolio Milestone Register" action={<Toolbar />}>
-        <DataTable
-          headers={['Project', 'Milestone', 'Baseline', 'Forecast', 'Variance', 'Owner', 'Status']}
-          rows={[
-            ['HDJK-001', 'Structural steel available', '15 Sep 2026', '27 Sep 2026', '+12d', 'Procurement Lead', <Status key="c">Critical</Status>],
-            ['PIPE-014', 'IFC package 70%', '11 Sep 2026', '18 Sep 2026', '+7d', 'Engineering Manager', <Status key="w">Watch</Status>],
-            ['DLE-ENG-026', 'Fabrication 65%', '14 Sep 2026', '12 Sep 2026', '-2d', 'Yard Manager', <Status key="h">Healthy</Status>],
-            ['TERM-011', 'Mechanical Completion', '28 Sep 2026', '29 Sep 2026', '+1d', 'Construction Manager', <Status key="h2">Healthy</Status>],
-          ]}
-        />
+      <Card title="Project Schedule Board" subtitle="Click a project to open planning workspace">
+        {!projects.length && !loading ? (
+          <p style={{ margin: 0, color: '#6f7f95', fontSize: 12 }}>No live projects available.</p>
+        ) : (
+          <DataTable headers={['Project', 'Start', 'Finish', 'Progress', 'SPI', 'Health']} rows={rows} />
+        )}
       </Card>
     </>
   );

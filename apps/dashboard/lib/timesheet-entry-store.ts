@@ -198,7 +198,7 @@ export type Project = {
   clientName: string;
   site: string;
   projectManager: string;
-  status: 'Active' | 'Approved' | 'Open' | 'Completed' | 'Suspended' | 'Closed' | 'Archived';
+  status: 'Active' | 'Approved' | 'Open' | 'Completed' | 'Suspended' | 'Closed' | 'Archived' | 'Draft';
   tasks?: ProjectTask[];
 };
 

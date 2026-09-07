@@ -34,6 +34,13 @@ export const PROJECTS_ENGINEERING_NAV: ProjectsEngineeringNavItem[] = [
     permissionKeys: [...PROJECTS_ENGINEERING_VIEW_PERMISSIONS],
   },
   {
+    id: 'projects',
+    label: 'Projects',
+    href: '/projects-engineering/projects',
+    icon: FolderKanban,
+    permissionKeys: [...PROJECTS_ENGINEERING_VIEW_PERMISSIONS],
+  },
+  {
     id: 'portfolio',
     label: 'Planning & Controls',
     href: '/projects-engineering/portfolio',
@@ -43,14 +50,14 @@ export const PROJECTS_ENGINEERING_NAV: ProjectsEngineeringNavItem[] = [
   {
     id: 'new-project',
     label: 'New Project',
-    href: '/projects-engineering/projects/new',
+    href: '/projects-engineering/projects?action=create',
     icon: PlusCircle,
     permissionKeys: [...PROJECTS_ENGINEERING_VIEW_PERMISSIONS, 'create_project', 'edit_project'],
   },
   {
     id: 'active-project',
     label: 'Active Project Workspace',
-    href: '/projects-engineering/projects/hdjk/overview',
+    href: '/projects-engineering/projects',
     icon: FolderKanban,
     permissionKeys: [...PROJECTS_ENGINEERING_VIEW_PERMISSIONS],
   },
@@ -71,14 +78,14 @@ export const PROJECTS_ENGINEERING_NAV: ProjectsEngineeringNavItem[] = [
   {
     id: 'ai',
     label: 'AI Intelligence',
-    href: '/projects-engineering/projects/hdjk/ai',
+    href: '/projects-engineering/projects',
     icon: Bot,
     permissionKeys: [...PROJECTS_ENGINEERING_VIEW_PERMISSIONS, 'use_project_ai'],
   },
   {
     id: 'actions',
     label: 'Actions & Decisions',
-    href: '/projects-engineering/projects/hdjk/actions',
+    href: '/projects-engineering/projects',
     icon: ClipboardList,
     permissionKeys: [...PROJECTS_ENGINEERING_VIEW_PERMISSIONS],
   },

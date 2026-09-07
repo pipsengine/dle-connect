@@ -29,7 +29,51 @@ export function Button({
     </button>
   );
 }
-export function KpiCard({label,value,delta,tone='blue',icon}:{label:string,value:string,delta:string,tone?:string,icon?:string}){return <div className={`kpi-card ${tone}`}><div className="kpi-top"><span>{label}</span><div className="kpi-icon"><Icon name={icon||'progress'}/></div></div><strong>{value}</strong><small>{delta}</small></div>}
+export function KpiCard({
+  label,
+  value,
+  delta,
+  tone = 'blue',
+  icon,
+  href,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  delta: string;
+  tone?: string;
+  icon?: string;
+  href?: string;
+  onClick?: () => void;
+}) {
+  const body = (
+    <>
+      <div className="kpi-top">
+        <span>{label}</span>
+        <div className="kpi-icon">
+          <Icon name={icon || 'progress'} />
+        </div>
+      </div>
+      <strong>{value}</strong>
+      <small>{delta}</small>
+    </>
+  );
+  if (href) {
+    return (
+      <Link href={href} className={`kpi-card ${tone} kpi-card-link`}>
+        {body}
+      </Link>
+    );
+  }
+  if (onClick) {
+    return (
+      <button type="button" className={`kpi-card ${tone} kpi-card-link`} onClick={onClick}>
+        {body}
+      </button>
+    );
+  }
+  return <div className={`kpi-card ${tone}`}>{body}</div>;
+}
 export function Card({title,subtitle,action,children,className=''}:{title?:string,subtitle?:string,action?:React.ReactNode,children:React.ReactNode,className?:string}){return <section className={`card ${className}`}>{(title||action)&&<header className="card-head"><div>{title&&<h3>{title}</h3>}{subtitle&&<p>{subtitle}</p>}</div>{action}</header>}<div className="card-body">{children}</div></section>}
 export function Status({children}:{children:React.ReactNode}){const t=String(children).toLowerCase();let k='neutral';if(/healthy|approved|complete|closed|active|on track/.test(t))k='success';else if(/watch|due soon|medium|review|open/.test(t))k='warning';else if(/critical|overdue|high|late|blocked/.test(t))k='danger';else if(/draft|planned/.test(t))k='info'; return <span className={`status ${k}`}><i/>{children}</span>}
 export function Progress({value}:{value:number}){return <div className="progress-wrap"><div className="progress-track"><span style={{width:`${Math.min(100,Math.max(0,value))}%`}}/></div><b>{value.toFixed(1)}%</b></div>}

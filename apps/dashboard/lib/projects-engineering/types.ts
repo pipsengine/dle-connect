@@ -1,5 +1,15 @@
 export type Health = 'Healthy' | 'Watch' | 'Critical';
 
+export type ProjectStatus =
+  | 'Draft'
+  | 'Active'
+  | 'Approved'
+  | 'Open'
+  | 'Suspended'
+  | 'Completed'
+  | 'Closed'
+  | 'Archived';
+
 export type Project = {
   id: string;
   code: string;
@@ -26,7 +36,24 @@ export type Project = {
   projectType?: string;
   createdBy?: string;
   createdAt?: string;
+  /** Timesheet / enterprise registry id (`hris.TimesheetProjects.Id`). */
+  registryId?: string;
+  /** Optional `pm.Projects.ProjectId` when a rich PM profile exists. */
+  pmProjectId?: string;
 };
+
+export const PROJECT_STATUS_OPTIONS: ProjectStatus[] = [
+  'Draft',
+  'Active',
+  'Approved',
+  'Open',
+  'Suspended',
+  'Completed',
+  'Closed',
+  'Archived',
+];
+
+export const PROJECT_HEALTH_OPTIONS: Health[] = ['Healthy', 'Watch', 'Critical'];
 
 export type NavItem = { label: string; href: string; icon: string; permission?: string };
 export type SectionKey =

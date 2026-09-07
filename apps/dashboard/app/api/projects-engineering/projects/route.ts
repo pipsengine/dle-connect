@@ -21,23 +21,31 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ status: 'error', error: 'Forbidden' }, { status: 403 });
   }
 
-  const all = await listAllProjects();
-  const visible = filterProjectsForSession(session, all);
-  const scope = visible.length === all.length ? 'enterprise' : 'managed';
+  try {
+    const all = await listAllProjects();
+    const visible = filterProjectsForSession(session, all);
+    const scope = visible.length === all.length ? 'enterprise' : 'managed';
 
-  return NextResponse.json({
-    status: 'success',
-    data: {
-      projects: visible,
-      scope,
-      counts: {
-        total: visible.length,
-        active: visible.filter((project) => /active/i.test(project.status)).length,
-        atRisk: visible.filter((project) => project.health === 'Watch' || project.health === 'Critical').length,
-        critical: visible.filter((project) => project.health === 'Critical').length,
+    return NextResponse.json({
+      status: 'success',
+      data: {
+        projects: visible,
+        scope,
+        generatedAt: new Date().toISOString(),
+        counts: {
+          total: visible.length,
+          active: visible.filter((project) => /^(active|approved|open)$/i.test(project.status)).length,
+          atRisk: visible.filter((project) => project.health === 'Watch' || project.health === 'Critical').length,
+          critical: visible.filter((project) => project.health === 'Critical').length,
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { status: 'error', error: error instanceof Error ? error.message : 'Unable to load projects' },
+      { status: 500 },
+    );
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -48,7 +56,7 @@ export async function POST(request: NextRequest) {
   }
   if (!canCreateProjects(session)) {
     return NextResponse.json(
-      { status: 'error', error: 'Only IT Department employees can create projects at this time.' },
+      { status: 'error', error: 'Only IT Department or Global Super Administrator can create projects.' },
       { status: 403 },
     );
   }
@@ -63,12 +71,13 @@ export async function POST(request: NextRequest) {
     const project = await createProjectRecord(parsed.data, {
       username: session.username,
       fullName: session.fullName,
+      sub: session.sub,
     });
     return NextResponse.json(
       {
         status: 'success',
         data: {
-          message: 'Project created as Draft. Assign the Project Manager employee code to unlock their dashboard.',
+          message: 'Project created in DLE_Enterprise and available across the system.',
           project,
           actor: session.username,
         },

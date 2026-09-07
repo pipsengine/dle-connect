@@ -6,8 +6,9 @@ import { canAccessProject, canAccessProjectsEngineeringPortal } from '@/lib/acce
 import { ProjectHeader } from '@/components/projects-engineering/Workspace';
 import * as S from '@/components/projects-engineering/ProjectSections';
 import { getProjectById } from '@/lib/projects-engineering/project-store';
+import type { Project } from '@/lib/projects-engineering/types';
 
-const map: Record<string, React.ComponentType> = {
+const map: Record<string, React.ComponentType<{ project: Project }>> = {
   overview: S.Overview,
   planning: S.Planning,
   engineering: S.Engineering,
@@ -54,7 +55,7 @@ export default async function ProjectSectionPage({
     <>
       <ProjectHeader id={project.id} active={section} />
       <div className="workspace-content">
-        <Component />
+        <Component project={project} />
       </div>
     </>
   );

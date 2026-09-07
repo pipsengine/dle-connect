@@ -72,6 +72,17 @@ export const canCreateProjects = (session: ProjectsSessionIdentity | null | unde
   return isItDepartmentEmployee(session);
 };
 
+/** Edit Project — same gate as create (IT / Super Admin), plus enterprise portfolio admins. */
+export const canEditProjects = (session: ProjectsSessionIdentity | null | undefined) => {
+  if (!session) return false;
+  if (canCreateProjects(session)) return true;
+  return canViewEnterprisePortfolio(session);
+};
+
+/** Delete Project — Global Super Administrator only. */
+export const canDeleteProjects = (session: ProjectsSessionIdentity | null | undefined) =>
+  Boolean(session && isUnrestricted(session));
+
 const sessionIdentityKeys = (session: ProjectsSessionIdentity) =>
   new Set(
     [session.employeeCode, session.employeeId, session.username, session.sub, session.fullName]
@@ -123,11 +134,11 @@ export const filterProjectsEngineeringNav = (
   const unrestricted = isUnrestricted(session);
   const canCreate = canCreateProjects(session);
   const canEnterprise = canViewEnterprisePortfolio(session);
-  const workspaceId = managedProjectId || 'hdjk';
+  const workspaceId = managedProjectId || null;
 
   return PROJECTS_ENGINEERING_NAV
     .map((item) => {
-      if (item.id === 'active-project' || item.id === 'ai' || item.id === 'actions') {
+      if ((item.id === 'active-project' || item.id === 'ai' || item.id === 'actions') && workspaceId) {
         const section = item.id === 'active-project' ? 'overview' : item.id === 'ai' ? 'ai' : 'actions';
         return {
           ...item,
@@ -140,10 +151,9 @@ export const filterProjectsEngineeringNav = (
       if (unrestricted) return true;
       if (item.id === 'new-project') return canCreate;
       if (item.id === 'integrations' || item.id === 'settings') return canEnterprise || canCreate;
-      if (item.id === 'portfolio' || item.id === 'reports') {
+      if (item.id === 'portfolio' || item.id === 'reports' || item.id === 'projects') {
         return canEnterprise || hasAnyPermission(session.permissions || [], item.permissionKeys);
       }
-      // Active workspace / AI / actions only useful when user has at least one project (or enterprise view)
       if (item.id === 'active-project' || item.id === 'ai' || item.id === 'actions') {
         return canEnterprise || Boolean(managedProjectId);
       }

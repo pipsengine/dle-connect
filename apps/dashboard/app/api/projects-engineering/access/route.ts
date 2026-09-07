@@ -5,11 +5,14 @@ import {
   canAccessProject,
   canAccessProjectsEngineeringPortal,
   canCreateProjects,
+  canDeleteProjects,
+  canEditProjects,
   canViewEnterprisePortfolio,
   filterProjectsForSession,
   isItDepartmentEmployee,
 } from '@/lib/access/projects-engineering-access';
 import { getProjectById, listAllProjects } from '@/lib/projects-engineering/project-store';
+import { isSuperActor } from '@/lib/auth/role-delegation';
 
 const getSession = async (request: NextRequest) => {
   const session = await verifySessionToken(request.cookies.get(AUTH_COOKIE)?.value);
@@ -37,7 +40,10 @@ export async function GET(request: NextRequest) {
         fullName: session.fullName || null,
         isItDepartment: isItDepartmentEmployee(session),
         canCreateProjects: canCreateProjects(session),
+        canEditProjects: canEditProjects(session),
+        canDeleteProjects: canDeleteProjects(session),
         canViewEnterprisePortfolio: canViewEnterprisePortfolio(session),
+        isSuperAdministrator: isSuperActor(session),
       },
       managedProjects: managed,
       primaryProjectId: managed[0]?.id || null,

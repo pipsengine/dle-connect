@@ -1,43 +1,219 @@
-﻿import { Card, KpiCard, DataTable, Status, Toolbar, MiniBar, Progress, Button } from '@/components/projects-engineering/UI';
-import { engineeringDeliverables, procurement, risks, actions, milestones } from '@/lib/projects-engineering/data';
+﻿import { Card, KpiCard, DataTable, Status, MiniBar, Progress, Button } from '@/components/projects-engineering/UI';
+import { money, dmy } from '@/lib/projects-engineering/format';
+import type { Project } from '@/lib/projects-engineering/types';
 
-const statusRows=(rows:string[][], idx:number)=>rows.map(r=>r.map((x,i)=>i===idx?<Status key={String(x)}>{x}</Status>:x));
+type ProjectProps = { project: Project };
 
-export function Overview(){return <><div className="kpi-grid five"><KpiCard label="Actual Progress" value="39.6%" delta="42.8% planned"/><KpiCard label="Schedule Index" value="0.93" delta="3.2% behind baseline" tone="amber"/><KpiCard label="Cost Index" value="0.97" delta="Within approved tolerance" tone="indigo"/><KpiCard label="Open Risks" value="14" delta="3 high / critical" tone="rose"/><KpiCard label="Overdue Actions" value="7" delta="Oldest: 9 days" tone="purple"/></div><div className="grid two-one"><Card title="Execution Progress" subtitle="Weighted project progress by control account"><MiniBar label="Engineering" value={74}/><MiniBar label="Procurement" value={61}/><MiniBar label="Fabrication" value={34}/><MiniBar label="Construction" value={12}/><MiniBar label="Commissioning" value={0}/></Card><Card title="Project Health"><div className="health-dial"><div><strong>WATCH</strong><span>72</span><small>Health score / 100</small></div></div><div className="health-legend"><span>Schedule <b>Watch</b></span><span>Cost <b>Healthy</b></span><span>Engineering <b>Watch</b></span><span>HSE <b>Healthy</b></span></div></Card></div><div className="grid two"><Card title="Critical Milestones"><DataTable headers={['ID','Milestone','Discipline','Due','Progress','Status']} rows={statusRows(milestones,5)}/></Card><Card title="Immediate Risks & Actions"><div className="risk-list">{risks.slice(0,3).map(r=><div className="risk-row" key={r[0]}><div className="risk-score">{r[5]==='Critical'?'16':'12'}</div><div><b>{r[1]}</b><small>{r[0]} Â· {r[6]}</small></div><Status>{r[5]}</Status></div>)}</div></Card></div></>}
+const EmptyRegister = ({ title, subtitle }: { title: string; subtitle: string }) => (
+  <Card title={title} subtitle={subtitle}>
+    <p style={{ margin: 0, color: '#6f7f95', fontSize: 12, lineHeight: 1.5 }}>
+      No register records are stored for this project yet. Update the project master data from Projects → Edit, then capture operational registers as they are implemented against DLE_Enterprise.
+    </p>
+  </Card>
+);
 
-export function Planning(){return <><div className="kpi-grid four"><KpiCard label="Activities" value="1,284" delta="116 critical / near critical"/><KpiCard label="SPI" value="0.93" delta="Below 0.98 threshold" tone="amber"/><KpiCard label="Float Consumed" value="68%" delta="Critical path pressure" tone="rose"/><KpiCard label="Forecast Finish" value="12 Jul 2027" delta="+12 days vs baseline" tone="purple"/></div><Card title="Integrated Master Schedule" subtitle="P6-ready Level 3/4 schedule view" action={<Toolbar placeholder="Search WBS, activity, owner..."/>}><DataTable headers={['Activity ID','WBS / Activity','Baseline Start','Baseline Finish','Forecast Finish','% Complete','Total Float','Status']} rows={[["ENG-3200","Issue IFC structural steel package","24 Aug","10 Sep","15 Sep","82%","-5d",<Status>Critical</Status>],["PROC-4110","Structural steel manufacture & delivery","14 Jul","15 Sep","27 Sep","68%","-12d",<Status>Critical</Status>],["FAB-5100","Pipe rack fabrication â€“ Batch 1","16 Sep","15 Oct","22 Oct","0%","-7d",<Status>Watch</Status>],["CONST-6100","Area A foundations","01 Sep","03 Oct","04 Oct","34%","9d",<Status>Healthy</Status>]]}/></Card><div className="grid two"><Card title="Lookahead â€“ 6 Weeks"><div className="week-grid">{['W37','W38','W39','W40','W41','W42'].map((w,i)=><div key={w}><b>{w}</b><span style={{height:`${42+i*9}px`}}/><small>{[18,24,31,39,43,47][i]} tasks</small></div>)}</div></Card><Card title="Baseline Control"><div className="metric-stack"><div><span>Current baseline</span><b>BL-03 Â· Approved 14 Aug 2026</b><Status>Active</Status></div><div><span>Pending change</span><b>CR-017 schedule impact</b><Status>Review</Status></div><div><span>Last P6 import</span><b>06 Sep 2026 Â· 22:14</b><Status>Healthy</Status></div></div></Card></div></>}
+export function Overview({ project }: ProjectProps) {
+  const healthScore = project.health === 'Healthy' ? 88 : project.health === 'Watch' ? 72 : 48;
+  return (
+    <>
+      <div className="kpi-grid five">
+        <KpiCard
+          label="Actual Progress"
+          value={`${Number(project.actual || 0).toFixed(1)}%`}
+          delta={`${Number(project.planned || 0).toFixed(1)}% planned`}
+          href={`/projects-engineering/projects/${project.id}/progress`}
+        />
+        <KpiCard
+          label="Schedule Index"
+          value={Number(project.schedulePerformance || 0).toFixed(2)}
+          delta={Number(project.schedulePerformance || 0) < 0.98 ? 'Below threshold' : 'On track'}
+          tone={Number(project.schedulePerformance || 0) < 0.98 ? 'amber' : 'blue'}
+          href={`/projects-engineering/projects/${project.id}/planning`}
+        />
+        <KpiCard
+          label="Cost Index"
+          value={Number(project.costPerformance || 0).toFixed(2)}
+          delta="From project profile"
+          tone="indigo"
+          href={`/projects-engineering/projects/${project.id}/cost`}
+        />
+        <KpiCard
+          label="Status"
+          value={project.status}
+          delta={project.phase}
+          tone="cyan"
+          href="/projects-engineering/projects"
+        />
+        <KpiCard
+          label="Contract Value"
+          value={money(project.contractValue, project.currency)}
+          delta={project.client}
+          tone="purple"
+          href="/projects-engineering/projects"
+        />
+      </div>
+      <div className="grid two-one">
+        <Card title="Execution Snapshot" subtitle="From live project profile">
+          <MiniBar label="Actual progress" value={Number(project.actual || 0)} />
+          <MiniBar label="Planned progress" value={Number(project.planned || 0)} />
+          <MiniBar label="SPI × 100" value={Math.min(100, Number(project.schedulePerformance || 0) * 100)} />
+          <MiniBar label="CPI × 100" value={Math.min(100, Number(project.costPerformance || 0) * 100)} />
+        </Card>
+        <Card title="Project Health">
+          <div className="health-dial">
+            <div>
+              <strong>{project.health.toUpperCase()}</strong>
+              <span>{healthScore}</span>
+              <small>Health score / 100</small>
+            </div>
+          </div>
+          <div className="health-legend">
+            <span>
+              Schedule <b>{Number(project.schedulePerformance || 0) < 0.95 ? 'Watch' : 'Healthy'}</b>
+            </span>
+            <span>
+              Cost <b>{Number(project.costPerformance || 0) < 0.95 ? 'Watch' : 'Healthy'}</b>
+            </span>
+            <span>
+              Overall <b>{project.health}</b>
+            </span>
+            <span>
+              Status <b>{project.status}</b>
+            </span>
+          </div>
+        </Card>
+      </div>
+      <div className="grid two">
+        <Card title="Project Master Data" subtitle="Editable from Projects register">
+          <DataTable
+            headers={['Field', 'Value']}
+            rows={[
+              ['Code', project.code],
+              ['Client', project.client],
+              ['Manager', project.manager],
+              ['Location', project.location],
+              ['Business Unit', project.businessUnit],
+              ['Type', project.projectType || '—'],
+              ['Dates', `${dmy(project.start)} – ${dmy(project.finish)}`],
+              ['Health', <Status key="h">{project.health}</Status>],
+            ]}
+          />
+        </Card>
+        <Card title="Description">
+          <p style={{ margin: 0, color: '#435970', fontSize: 12, lineHeight: 1.55 }}>{project.description}</p>
+          <div style={{ marginTop: 14 }}>
+            <Button href="/projects-engineering/projects">Manage in Projects list</Button>
+          </div>
+        </Card>
+      </div>
+    </>
+  );
+}
 
-export function Engineering(){return <><div className="kpi-grid five"><KpiCard label="MDR Deliverables" value="486" delta="359 issued"/><KpiCard label="IFC Complete" value="71.2%" delta="74.8% planned" tone="amber"/><KpiCard label="Overdue" value="17" delta="6 client / 11 internal" tone="rose"/><KpiCard label="Open Comments" value="86" delta="23 due this week" tone="purple"/><KpiCard label="TQs / RFIs" value="24" delta="8 awaiting client" tone="indigo"/></div><Card title="Engineering Deliverables Register" subtitle="Controlled multi-discipline engineering production" action={<><Button variant="secondary">Import MDR</Button><Button>ï¼‹ New Deliverable</Button></>}><Toolbar placeholder="Search document number, title, discipline..."/><DataTable headers={['Document No.','Title','Discipline','Revision','Status','Required Date','Owner','Health']} rows={statusRows(engineeringDeliverables,7)}/></Card><div className="grid two"><Card title="Discipline Progress"><MiniBar label="Process" value={92}/><MiniBar label="Mechanical" value={81}/><MiniBar label="Piping" value={69}/><MiniBar label="Civil / Structural" value={63}/><MiniBar label="Electrical" value={74}/><MiniBar label="Instrumentation" value={66}/></Card><Card title="Review Cycle Performance"><div className="metric-stack"><div><span>Average internal review</span><b>2.8 days</b><Status>Healthy</Status></div><div><span>Average client review</span><b>8.6 days</b><Status>Watch</Status></div><div><span>First-pass acceptance</span><b>76%</b><Status>Healthy</Status></div><div><span>Revisions â‰¥ Rev D</span><b>21 documents</b><Status>Watch</Status></div></div></Card></div></>}
+export function Planning({ project }: ProjectProps) {
+  return (
+    <>
+      <div className="kpi-grid four">
+        <KpiCard label="SPI" value={Number(project.schedulePerformance || 0).toFixed(2)} delta="Live profile" tone="amber" />
+        <KpiCard label="Planned" value={`${Number(project.planned || 0).toFixed(1)}%`} delta="Baseline progress" />
+        <KpiCard label="Actual" value={`${Number(project.actual || 0).toFixed(1)}%`} delta="Measured progress" />
+        <KpiCard label="Finish" value={dmy(project.finish)} delta={`Start ${dmy(project.start)}`} tone="purple" />
+      </div>
+      <EmptyRegister title="Integrated Master Schedule" subtitle={`No WBS/activities loaded for ${project.code} yet`} />
+    </>
+  );
+}
 
-export function Deliverables(){return <><div className="kpi-grid four"><KpiCard label="Master Deliverables" value="614" delta="Across engineering + vendors"/><KpiCard label="Submitted" value="448" delta="73.0%"/><KpiCard label="Overdue" value="29" delta="11 > 7 days" tone="rose"/><KpiCard label="Due Next 14 Days" value="53" delta="7 high priority" tone="amber"/></div><Card title="Master Deliverables Register" action={<Toolbar placeholder="Search MDR/SDR..."/>}><DataTable headers={['Deliverable','Type','Discipline / Vendor','Planned','Forecast','Actual','Revision','Workflow','Status']} rows={[["ENG-PIP-0112","Engineering","Piping","08 Sep","12 Sep","â€”","Rev C","Client Review",<Status>Watch</Status>],["VDR-VAL-0044","Vendor Data","Control Valve Vendor","09 Sep","09 Sep","07 Sep","Rev B","Approved",<Status>Healthy</Status>],["CALC-STR-0087","Calculation","Structural","04 Sep","10 Sep","â€”","Rev B","Client Review",<Status>Critical</Status>],["HDO-0018","Handover","Project Controls","30 Jun 2027","30 Jun 2027","â€”","Rev 0","Planned",<Status>Planned</Status>]]}/></Card></>}
-
-export function Documents(){return <><div className="kpi-grid four"><KpiCard label="Controlled Documents" value="2,846" delta="Current project repository"/><KpiCard label="Transmittals" value="186" delta="31 this month"/><KpiCard label="Awaiting Response" value="42" delta="9 overdue" tone="amber"/><KpiCard label="Superseded" value="318" delta="Locked from execution" tone="indigo"/></div><div className="grid two-one"><Card title="Controlled Information Register" action={<Toolbar placeholder="Search number, title, revision..."/>}><DataTable headers={['Document No.','Title','Rev','Class','Status','Updated','Owner']} rows={[["HDJK-DLE-PIP-00011","Piping Design Basis","C","Engineering","Approved","06 Sep","Piping Lead"],["HDJK-DLE-PRO-00004","Process Design Criteria","B","Engineering","IFC","05 Sep","Process Lead"],["HDJK-DLE-PM-00015","Project Execution Plan","D","Management","Approved","01 Sep","Project Manager"],["HDJK-VDR-00089","Valve Manufacturing Record","A","Vendor","Review","07 Sep","Vendor Coordinator"]]}/></Card><Card title="Document Control Compliance"><div className="donut"><div><strong>96%</strong><small>Metadata completeness</small></div></div><div className="control-check compact"><label>âœ“ Naming convention</label><label>âœ“ Revision integrity</label><label>âœ“ Classification</label><label>âš  9 response dates overdue</label></div></Card></div></>}
-
-export function Procurement(){return <><div className="kpi-grid five"><KpiCard label="Procurement Packages" value="74" delta="51 committed"/><KpiCard label="Committed Value" value="â‚¦6.84bn" delta="72% of procurement budget"/><KpiCard label="Critical Packages" value="6" delta="2 require escalation" tone="rose"/><KpiCard label="Vendor Docs Due" value="34" delta="11 overdue" tone="amber"/><KpiCard label="Expediting Visits" value="8" delta="Next 30 days" tone="indigo"/></div><Card title="Procurement Package Register" action={<Toolbar placeholder="Search PR, package, vendor..."/>}><DataTable headers={['PR / Package','Description','Stage','Vendor','Value','Required On Site','Progress','Health']} rows={statusRows(procurement,7)}/></Card><div className="grid two"><Card title="Procurement Cycle"><MiniBar label="Requisitions Approved" value={92}/><MiniBar label="RFQs Issued" value={86}/><MiniBar label="Technical Evaluation" value={73}/><MiniBar label="Commercial / CBE" value={68}/><MiniBar label="PO Award" value={64}/><MiniBar label="Delivered" value={38}/></Card><Card title="Expediting Alerts"><div className="attention-list"><div className="attention critical"><span>01</span><div><b>Structural steel package</b><small>Forecast 12 days late Â· recovery plan due</small></div></div><div className="attention warning"><span>02</span><div><b>Control valve technical queries</b><small>3 vendor clarifications blocking CBE</small></div></div><div className="attention info"><span>03</span><div><b>Electrical cable FAT</b><small>Witness date: 18 Sep 2026</small></div></div></div></Card></div></>}
-
-export function Cost(){return <><div className="kpi-grid five"><KpiCard label="Approved Budget" value="â‚¦18.60bn" delta="Current control budget"/><KpiCard label="Committed" value="â‚¦11.84bn" delta="63.7%"/><KpiCard label="Actual Cost" value="â‚¦7.21bn" delta="38.8% of budget"/><KpiCard label="EAC" value="â‚¦19.14bn" delta="+2.9% forecast" tone="amber"/><KpiCard label="CPI" value="0.97" delta="Within tolerance" tone="indigo"/></div><div className="grid two"><Card title="Cost Performance by Control Account"><DataTable headers={['Control Account','Budget','Committed','Actual','EAC','Variance']} rows={[["Engineering","â‚¦2.31bn","â‚¦1.87bn","â‚¦1.52bn","â‚¦2.42bn","+â‚¦110m"],["Procurement","â‚¦9.48bn","â‚¦6.84bn","â‚¦4.01bn","â‚¦9.76bn","+â‚¦280m"],["Fabrication","â‚¦3.84bn","â‚¦1.76bn","â‚¦1.08bn","â‚¦3.79bn","-â‚¦50m"],["Construction","â‚¦2.97bn","â‚¦1.37bn","â‚¦600m","â‚¦3.17bn","+â‚¦200m"]]}/></Card><Card title="Earned Value"><div className="ev-grid"><div><span>PV</span><b>â‚¦7.96bn</b><small>Planned Value</small></div><div><span>EV</span><b>â‚¦7.36bn</b><small>Earned Value</small></div><div><span>AC</span><b>â‚¦7.58bn</b><small>Actual Cost</small></div><div><span>VAC</span><b>-â‚¦540m</b><small>Variance at Completion</small></div></div><div className="callout warning"><b>Forecast observation</b><p>Imported equipment and logistics are driving 68% of forecast overrun exposure.</p></div></Card></div></>}
-
-export function Resources(){return <><div className="kpi-grid four"><KpiCard label="Project Personnel" value="386" delta="DLE + subcontractors"/><KpiCard label="Utilization" value="87.4%" delta="Target 85â€“92%"/><KpiCard label="Open Positions" value="18" delta="7 critical roles" tone="amber"/><KpiCard label="Timesheet Compliance" value="96.2%" delta="14 outstanding" tone="indigo"/></div><Card title="Resource Plan & Deployment"><DataTable headers={['Discipline','Approved Plan','Deployed','Demand +4 Weeks','Variance','Utilization','Health']} rows={[["Engineering","126","118","124","-2","93.7%",<Status>Healthy</Status>],["Project Controls","31","28","31","-3","90.3%",<Status>Watch</Status>],["Fabrication","280","246","268","-12","87.9%",<Status>Healthy</Status>],["Construction","174","196","218","+44","112.6%",<Status>Critical</Status>]]}/></Card></>}
-
-export function Construction(){return <><div className="kpi-grid five"><KpiCard label="Physical Progress" value="12.4%" delta="13.1% planned"/><KpiCard label="Work Packs" value="96" delta="34 released"/><KpiCard label="Open Workfronts" value="14" delta="3 constrained" tone="amber"/><KpiCard label="Punch Items" value="72" delta="9 category A" tone="rose"/><KpiCard label="Productivity" value="0.94" delta="vs target" tone="indigo"/></div><Card title="Construction Work Package Status" action={<Toolbar/>}><DataTable headers={['CWP','Area','Scope','Planned %','Actual %','Constraint','Supervisor','Status']} rows={[["CWP-CIV-011","Area A","Foundations","38%","34%","Access window","Site Civil Lead",<Status>Watch</Status>],["CWP-STR-004","Pipe Rack 1","Steel erection","12%","8%","Steel delivery","Construction Lead",<Status>Critical</Status>],["CWP-ELE-008","Substation","Cable tray supports","20%","21%","None","Electrical Lead",<Status>Healthy</Status>],["CWP-PIP-016","Unit 300","UG piping","16%","18%","None","Piping Lead",<Status>Healthy</Status>]]}/></Card></>}
-
-export function Quality(){return <><div className="kpi-grid five"><KpiCard label="ITPs" value="82" delta="61 approved"/><KpiCard label="Inspections" value="428" delta="96.4% accepted"/><KpiCard label="Open NCRs" value="16" delta="5 > 14 days" tone="rose"/><KpiCard label="Weld Repair Rate" value="1.8%" delta="Target < 2.5%" tone="indigo"/><KpiCard label="Punch Items" value="72" delta="9 category A" tone="amber"/></div><div className="grid two"><Card title="NCR Register"><DataTable headers={['NCR','Description','Discipline','Raised','Age','Owner','Status']} rows={[["NCR-026-031","Baseplate dimensional deviation","Structural","24 Aug","14d","QA/QC Lead",<Status>Critical</Status>],["NCR-026-035","Cable gland material mismatch","Electrical","02 Sep","5d","Electrical QA",<Status>Open</Status>],["NCR-026-037","Coating DFT below spec","Painting","04 Sep","3d","Coating Inspector",<Status>Review</Status>]]}/></Card><Card title="Quality Performance"><MiniBar label="Inspection acceptance" value={96.4}/><MiniBar label="NCR closure within SLA" value={78}/><MiniBar label="Weld first-pass acceptance" value={98.2}/><MiniBar label="Vendor quality documents" value={84}/></Card></div></>}
-
-export function HSE(){return <><div className="kpi-grid five"><KpiCard label="Safe Man-hours" value="428,640" delta="Since project start"/><KpiCard label="LTI" value="0" delta="TRIR 0.23" tone="indigo"/><KpiCard label="Observations" value="186" delta="92% closed"/><KpiCard label="PTW Open" value="28" delta="Across 6 workfronts" tone="amber"/><KpiCard label="Training Compliance" value="98.1%" delta="7 expiries due"/></div><div className="grid two"><Card title="HSE Leading Indicators"><MiniBar label="Toolbox talks completed" value={98}/><MiniBar label="Safety observations closed" value={92}/><MiniBar label="Permit audits" value={94}/><MiniBar label="Induction compliance" value={100}/></Card><Card title="Recent HSE Events"><DataTable headers={['Date','Event','Area','Severity','Owner','Status']} rows={[["06 Sep","Dropped object near miss","Fab Bay 2","Low","HSE Officer",<Status>Closed</Status>],["04 Sep","Housekeeping observation","Area A","Low","Site Supervisor",<Status>Open</Status>],["01 Sep","PTW deviation","Unit 300","Medium","Construction Manager",<Status>Review</Status>]]}/></Card></div></>}
-
-export function Risks(){return <><div className="kpi-grid four"><KpiCard label="Open Risks" value="14" delta="3 high / critical"/><KpiCard label="Open Issues" value="9" delta="2 require escalation" tone="rose"/><KpiCard label="Mitigations Due" value="11" delta="4 overdue" tone="amber"/><KpiCard label="Exposure Trend" value="-8%" delta="vs previous month" tone="indigo"/></div><div className="grid one-two"><Card title="Risk Heatmap"><div className="heatmap"><div/><div/><div className="m">1</div><div className="h">2</div><div className="c">1</div><div/><div className="m">2</div><div className="h">3</div><div className="h">1</div><div/><div className="l">1</div><div className="m">2</div><div className="m">1</div><div/><div className="l">1</div><div className="l">1</div><div/><div/><div/><div/><div/><div/><div/><div/><div/></div><div className="heat-label">Likelihood â†’ / Impact â†‘</div></Card><Card title="Project Risk Register" action={<Toolbar/>}><DataTable headers={['ID','Risk / Issue','Category','Impact','Likelihood','Rating','Owner','Response']} rows={statusRows(risks,5)}/></Card></div></>}
-
-export function Changes(){return <><div className="kpi-grid four"><KpiCard label="Change Requests" value="21" delta="9 approved"/><KpiCard label="Pending Value" value="â‚¦840m" delta="Client / internal review" tone="amber"/><KpiCard label="Approved Value" value="â‚¦1.26bn" delta="6.8% of original value"/><KpiCard label="Claims Exposure" value="â‚¦410m" delta="3 active notices" tone="rose"/></div><Card title="Change & Variation Register" action={<Toolbar/>}><DataTable headers={['Change','Title','Origin','Cost Impact','Schedule Impact','Stage','Owner','Status']} rows={[["CR-017","Additional pipe rack scope","Client","+â‚¦380m","+12d","Commercial Review","Project Manager",<Status>Review</Status>],["CR-019","Valve metallurgy revision","Client","+â‚¦120m","+4d","Technical Impact","Engineering Manager",<Status>Open</Status>],["CR-021","Fabrication sequence optimization","Internal","-â‚¦45m","-3d","Approved","Yard Manager",<Status>Approved</Status>]]}/></Card></>}
-
-export function Actions(){return <><div className="kpi-grid four"><KpiCard label="Open Actions" value="42" delta="Across meetings / reviews"/><KpiCard label="Overdue" value="7" delta="Oldest 9 days" tone="rose"/><KpiCard label="Due This Week" value="18" delta="6 high priority" tone="amber"/><KpiCard label="Closure Rate" value="91%" delta="30-day average"/></div><Card title="Action & Decision Register" action={<Toolbar/>}><DataTable headers={['ID','Action','Source','Owner','Due','Status']} rows={statusRows(actions,5)}/></Card><Card title="Meeting Governance"><DataTable headers={['Meeting','Cadence','Next Meeting','Chair','Open Actions','Last Minutes']} rows={[["Project Management Review","Weekly","09 Sep 2026","Project Manager","11","MOM-036"],["Engineering Coordination","Twice weekly","08 Sep 2026","Engineering Manager","14","MOM-072"],["Client Progress Meeting","Weekly","10 Sep 2026","Project Director","8","MOM-029"],["HSE Coordination","Weekly","11 Sep 2026","HSE Manager","4","MOM-031"]]}/></Card></>}
-
-export function Interface(){return <><div className="kpi-grid four"><KpiCard label="Client Correspondence" value="312" delta="48 this month"/><KpiCard label="RFIs / TQs Open" value="24" delta="8 awaiting client" tone="amber"/><KpiCard label="Submittals Awaiting" value="42" delta="9 overdue" tone="rose"/><KpiCard label="Avg Response Time" value="6.8d" delta="SLA 7 days"/></div><Card title="Client & Contractor Interface Register" action={<Toolbar/>}><DataTable headers={['Reference','Type','Subject','Issued','Response Due','Party','Owner','Status']} rows={[["DLE-CLI-RFI-0081","RFI","Area A access constraints","05 Sep","10 Sep","Client",'Project Manager',<Status>Open</Status>],["DLE-CLI-TQ-0044","TQ","Control valve metallurgy","02 Sep","09 Sep","Client",'Engineering Manager',<Status>Watch</Status>],["CLI-DLE-LTR-0118","Letter","Approved workfront release","06 Sep","â€”","Client",'Document Control',<Status>Approved</Status>]]}/></Card></>}
-
-export function ProgressPage(){return <><div className="kpi-grid five"><KpiCard label="Overall Progress" value="39.6%" delta="42.8% planned"/><KpiCard label="Weekly Gain" value="+1.4%" delta="Target +1.8%" tone="amber"/><KpiCard label="Monthly Forecast" value="44.1%" delta="46.0% baseline" tone="amber"/><KpiCard label="Schedule Variance" value="-3.2%" delta="Recovery active" tone="rose"/><KpiCard label="Data Cut-off" value="06 Sep" delta="22:00 WAT" tone="indigo"/></div><div className="grid two"><Card title="Progress by Discipline"><MiniBar label="Engineering" value={74}/><MiniBar label="Procurement" value={61}/><MiniBar label="Fabrication" value={34}/><MiniBar label="Construction" value={12}/><MiniBar label="Commissioning" value={0}/></Card><Card title="Progress Certification"><div className="metric-stack"><div><span>Measured progress</span><b>39.6%</b><Status>Submitted</Status></div><div><span>Client certified</span><b>38.8%</b><Status>Approved</Status></div><div><span>Variance</span><b>0.8%</b><Status>Review</Status></div><div><span>Next cut-off</span><b>13 Sep 2026</b><Status>Planned</Status></div></div></Card></div><Card title="Weekly Progress Register"><DataTable headers={['Week Ending','Planned','Actual','Variance','Engineering','Procurement','Fabrication','Construction','Status']} rows={[["06 Sep","42.8%","39.6%","-3.2%","74%","61%","34%","12%",<Status>Watch</Status>],["30 Aug","41.0%","38.2%","-2.8%","71%","58%","31%","10%",<Status>Watch</Status>],["23 Aug","39.3%","36.9%","-2.4%","69%","55%","28%","8%",<Status>Watch</Status>]]}/></Card></>}
-
-export function Reports(){return <><div className="report-grid">{[['Executive Project Report','One-page project health, progress, cost, risk and decisions','Weekly','MD/CEO Â· CFO Â· GMs'],['Monthly Progress Report','Client-facing engineering, procurement, construction and HSE pack','Monthly','Client Â· Project Team'],['Engineering Status Report','MDR progress, overdue deliverables, review cycles and TQs','Weekly','Engineering'],['Cost & Forecast Report','Budget, commitments, actuals, EAC, cash flow and variances','Monthly','CFO Â· Project Manager'],['Procurement Status Report','PR/RFQ/CBE/PO/expediting/logistics status','Weekly','Procurement Â· Project'],['HSE & Quality Report','Leading/lagging HSE and QA/QC performance','Monthly','Management Â· Client']].map(r=><Card key={r[0]}><div className="report-card"><div className="report-icon">â–¥</div><h3>{r[0]}</h3><p>{r[1]}</p><div><span>{r[2]}</span><small>{r[3]}</small></div><Button variant="secondary">Generate Report</Button></div></Card>)}</div></>}
-
-export function AI(){return <><div className="ai-banner"><div className="ai-orb">âœ¦</div><div><span>DLE Project Intelligence</span><h2>Project Copilot</h2><p>Evidence-grounded project intelligence using approved DLE project data. Recommendations remain advisory and controlled actions require authorized human approval.</p></div><Button>Ask Project AI</Button></div><div className="kpi-grid four"><KpiCard label="Schedule Risk" value="High" delta="12-day completion exposure" tone="rose"/><KpiCard label="Cost Forecast" value="+2.9%" delta="Likely EAC variance" tone="amber"/><KpiCard label="Data Confidence" value="94%" delta="Across 18 sources"/><KpiCard label="Open AI Alerts" value="6" delta="2 require PM action" tone="purple"/></div><div className="grid two"><Card title="AI Executive Insights"><div className="insight-list"><div><span>01</span><div><b>Structural steel is now the dominant schedule driver</b><p>Current vendor forecast is 12 days beyond required-on-site. If no recovery action is confirmed by 10 Sep, downstream pipe-rack fabrication is likely to lose 7â€“10 additional days.</p><small>Sources: Procurement package PR-026-104 Â· IMS activities PROC-4110/FAB-5100</small></div></div><div><span>02</span><div><b>Engineering backlog is concentrated in structural and piping</b><p>11 of 17 overdue deliverables are in two disciplines. Reallocating checker capacity for five working days could recover approximately 38% of the backlog.</p><small>Sources: MDR Â· timesheet capacity Â· document review logs</small></div></div><div><span>03</span><div><b>Forecast cost pressure remains manageable</b><p>Imported equipment and logistics account for most EAC variance. No evidence currently indicates labour productivity as a primary cost-overrun driver.</p><small>Sources: Cost ledger Â· commitments Â· procurement forecast</small></div></div></div></Card><Card title="Ask Project AI"><div className="ai-chat"><div className="prompt-chip">Why is the project behind schedule?</div><div className="prompt-chip">What requires executive intervention this week?</div><div className="prompt-chip">Forecast project completion date</div><div className="prompt-chip">Summarize client actions overdue</div><textarea rows={5} placeholder="Ask a question about this project..."/><Button>âœ¦ Generate Evidence-Based Answer</Button><small>AI activity is logged. Sensitive data remains subject to DLE access permissions.</small></div></Card></div></>}
-
-export function Closeout(){return <><div className="kpi-grid four"><KpiCard label="Closeout Readiness" value="18%" delta="Based on 126 requirements"/><KpiCard label="As-Built Status" value="12%" delta="14 of 118 prepared"/><KpiCard label="Handover Dossiers" value="2 / 18" delta="16 not started" tone="amber"/><KpiCard label="Open Punch A" value="9" delta="Must close before MC" tone="rose"/></div><div className="grid two"><Card title="Project Closeout Checklist"><div className="control-check"><label><input type="checkbox"/> Final as-built engineering documents</label><label><input type="checkbox"/> Vendor data books complete</label><label><input type="checkbox"/> Mechanical completion dossiers</label><label><input type="checkbox"/> Punch list Category A closed</label><label><input type="checkbox"/> Final account / commercial settlement</label><label><input type="checkbox"/> Asset data handover validated</label><label><input type="checkbox"/> Lessons learned workshop completed</label><label><input type="checkbox"/> Client acceptance certificate</label></div></Card><Card title="Information Handover Readiness"><MiniBar label="Engineering as-builts" value={12}/><MiniBar label="Vendor documentation" value={44}/><MiniBar label="Inspection records" value={31}/><MiniBar label="Asset data / tags" value={18}/><MiniBar label="Project records index" value={57}/></Card></div></>}
-
+export function Engineering({ project }: ProjectProps) {
+  return <EmptyRegister title="Engineering Deliverables" subtitle={`No MDR records for ${project.code} yet`} />;
+}
+export function Deliverables({ project }: ProjectProps) {
+  return <EmptyRegister title="Master Deliverables Register" subtitle={`No deliverables for ${project.code} yet`} />;
+}
+export function Documents({ project }: ProjectProps) {
+  return <EmptyRegister title="Controlled Documents" subtitle={`No EDMS links for ${project.code} yet`} />;
+}
+export function Procurement({ project }: ProjectProps) {
+  return <EmptyRegister title="Procurement Packages" subtitle={`No packages for ${project.code} yet`} />;
+}
+export function Cost({ project }: ProjectProps) {
+  return (
+    <>
+      <div className="kpi-grid four">
+        <KpiCard label="Contract Value" value={money(project.contractValue, project.currency)} delta="Approved contract" />
+        <KpiCard label="CPI" value={Number(project.costPerformance || 0).toFixed(2)} delta="Cost performance" tone="indigo" />
+        <KpiCard label="Actual Progress" value={`${Number(project.actual || 0).toFixed(1)}%`} delta="Earned proxy" />
+        <KpiCard label="Status" value={project.status} delta={project.health} tone="amber" />
+      </div>
+      <EmptyRegister title="Cost Control Accounts" subtitle={`No control accounts for ${project.code} yet`} />
+    </>
+  );
+}
+export function Resources({ project }: ProjectProps) {
+  return <EmptyRegister title="Resource Plan" subtitle={`No resource plan for ${project.code} yet`} />;
+}
+export function Construction({ project }: ProjectProps) {
+  return <EmptyRegister title="Construction Work Packages" subtitle={`No CWPs for ${project.code} yet`} />;
+}
+export function Quality({ project }: ProjectProps) {
+  return <EmptyRegister title="Quality / NCR Register" subtitle={`No NCRs for ${project.code} yet`} />;
+}
+export function HSE({ project }: ProjectProps) {
+  return <EmptyRegister title="HSE Events" subtitle={`No HSE events for ${project.code} yet`} />;
+}
+export function Risks({ project }: ProjectProps) {
+  return <EmptyRegister title="Risk Register" subtitle={`No risks logged for ${project.code} yet`} />;
+}
+export function Changes({ project }: ProjectProps) {
+  return <EmptyRegister title="Change Register" subtitle={`No changes for ${project.code} yet`} />;
+}
+export function Actions({ project }: ProjectProps) {
+  return <EmptyRegister title="Action Register" subtitle={`No actions for ${project.code} yet`} />;
+}
+export function Interface({ project }: ProjectProps) {
+  return <EmptyRegister title="Client Interface" subtitle={`No correspondence for ${project.code} yet`} />;
+}
+export function ProgressPage({ project }: ProjectProps) {
+  return (
+    <>
+      <div className="kpi-grid five">
+        <KpiCard label="Overall Progress" value={`${Number(project.actual || 0).toFixed(1)}%`} delta={`${Number(project.planned || 0).toFixed(1)}% planned`} />
+        <KpiCard label="SPI" value={Number(project.schedulePerformance || 0).toFixed(2)} delta="Schedule performance" tone="amber" />
+        <KpiCard label="CPI" value={Number(project.costPerformance || 0).toFixed(2)} delta="Cost performance" tone="indigo" />
+        <KpiCard label="Health" value={project.health} delta={project.status} tone={project.health === 'Critical' ? 'rose' : 'blue'} />
+        <KpiCard label="Finish" value={dmy(project.finish)} delta={`Start ${dmy(project.start)}`} />
+      </div>
+      <Card title="Progress Profile">
+        <Progress value={Number(project.actual || 0)} />
+        <div style={{ marginTop: 12 }}>
+          <MiniBar label="Planned" value={Number(project.planned || 0)} />
+          <MiniBar label="Actual" value={Number(project.actual || 0)} />
+        </div>
+      </Card>
+    </>
+  );
+}
+export function Reports({ project }: ProjectProps) {
+  return <EmptyRegister title="Project Reports" subtitle={`Generate reports once operational registers are populated for ${project.code}`} />;
+}
+export function AI({ project }: ProjectProps) {
+  return (
+    <Card title="Project Intelligence" subtitle={project.code}>
+      <p style={{ margin: 0, color: '#6f7f95', fontSize: 12, lineHeight: 1.5 }}>
+        AI insights will use live DLE_Enterprise project data for <b>{project.name}</b>. No mock assessments are shown.
+      </p>
+    </Card>
+  );
+}
+export function Closeout({ project }: ProjectProps) {
+  return (
+    <Card title="Closeout" subtitle={project.code}>
+      <p style={{ margin: 0, color: '#6f7f95', fontSize: 12, lineHeight: 1.5 }}>
+        Closeout checklist will activate when {project.name} moves to Completed / Closed status.
+      </p>
+      <div style={{ marginTop: 12 }}>
+        <Status>{project.status}</Status>
+      </div>
+    </Card>
+  );
+}
