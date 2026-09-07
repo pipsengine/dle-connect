@@ -607,7 +607,7 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
       };
       const res = await fetch('/api/hris/time-and-logs/timesheet-approval', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'x-hris-role': payload?.permissions.role || 'OrganizationAdmin', 'x-hris-actor': payload?.permissions.actor || 'HRIS Administrator' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       const json = await parseApiResponse(res);

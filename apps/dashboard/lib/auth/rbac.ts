@@ -213,8 +213,8 @@ export const roleDefinitions: RoleDefinition[] = [
   role('Integration Administrator', 'Global / System', ['integration.*', 'admin.roles.view', 'audit.view'], 'ERP, AD, SSO, API, and service integration administration.'),
   role('Executive User', 'General Enterprise', ['enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', 'hris.view', 'operations.view', 'operations.dashboard.view', 'operations.reports.view', ...payrollMdReviewPerms, ...telephoneAllowanceMdPerms], 'Executive dashboard, reports, and MD/CEO payroll salary review.'),
   role('Department Head', 'General Enterprise', ['hris.view', 'employees.view', 'workflow.approve', 'reports.view', 'operations.view', 'operations.allocation.view', 'operations.dashboard.view', 'finance.payments.self'], 'Department-level visibility and approvals.'),
-  role('Manager', 'General Enterprise', ['hris.view', 'employees.view', 'workflow.approve', 'leave.approve', 'timesheet.approve', 'operations.view', 'operations.timesheets.approve', 'operations.allocation.view', 'finance.payments.self'], 'Team management and approvals.'),
-  role('Supervisor', 'General Enterprise', ['hris.view', 'employees.view', 'timesheet.submit', 'timesheet.approve', 'attendance.view', 'operations.view', 'operations.timesheets.submit', 'operations.timesheets.approve', 'operations.daily-reports.create', 'finance.payments.self'], 'Supervisor timesheet and attendance review.'),
+  role('Manager', 'General Enterprise', ['hris.view', 'employees.view', 'workflow.approve', 'leave.approve', 'timesheet.approve', 'timesheet.supervisor.approve', 'page.hris.time-and-logs.timesheet-approval.view', 'operations.view', 'operations.timesheets.approve', 'operations.allocation.view', 'finance.payments.self'], 'Team management and approvals.'),
+  role('Supervisor', 'General Enterprise', ['hris.view', 'employees.view', 'timesheet.submit', 'timesheet.approve', 'timesheet.supervisor.approve', 'timesheet.supervisor.reject', 'timesheet.supervisor.return', 'page.hris.time-and-logs.timesheet-approval.view', 'attendance.view', 'operations.view', 'operations.timesheets.submit', 'operations.timesheets.approve', 'operations.daily-reports.create', 'finance.payments.self'], 'Supervisor timesheet and attendance review.'),
   role('Employee', 'General Enterprise', ['ess.view', 'profile.view', 'leave.submit', 'timesheet.submit', 'payroll.payslip.view', 'finance.payments.self'], 'Employee self-service access including own payment requests.'),
   role('Auditor', 'General Enterprise', ['audit.view', 'reports.view', 'reports.export', ...telephoneAllowanceViewPerms], 'Read-oriented compliance review.'),
   role('Read-Only User', 'General Enterprise', ['enterprise.view', 'hris.view', 'reports.view'], 'Read-only enterprise visibility.'),
@@ -324,6 +324,6 @@ export const defaultRoleForEmployee = (
     return 'IT Support Officer';
   }
   if (text.includes('manager') || text.includes('head')) return 'Manager';
-  if (text.includes('supervisor')) return 'Supervisor';
+  if (/\bsupervisor\b|\bforeman\b|site lead|site-lead/i.test(text)) return 'Supervisor';
   return 'Employee';
 };

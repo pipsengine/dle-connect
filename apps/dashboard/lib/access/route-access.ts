@@ -234,7 +234,12 @@ export const hrisRoutePermissionOptions = (pathname: string): string[] | null =>
       'timesheet.approve',
     ];
   }
-  if (path === '/hris/workforce-management/timesheet-approval' || path === '/hris/time-and-logs/timesheet-approval') {
+  if (
+    path === '/hris/workforce-management/timesheet-approval'
+    || path.startsWith('/hris/workforce-management/timesheet-approval-')
+    || path === '/hris/time-and-logs/timesheet-approval'
+    || path.startsWith('/hris/time-and-logs/timesheet-approval-')
+  ) {
     return [
       'page.hris.time-and-logs.timesheet-approval.view',
       'timesheet.supervisor.approve',

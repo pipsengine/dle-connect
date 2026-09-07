@@ -3400,7 +3400,33 @@ const supervisorMatchesEmployee = (managerName: string | null | undefined, super
   const managerTokens = supervisorNameTokens(managerName);
   const selectedTokens = supervisorNameTokens(supervisorId);
   const hasNameAlias = managerTokens.length > 0 && managerTokens.every((token) => selectedTokens.includes(token));
-  return manager === selected || manager === selectedName || manager.includes(selected) || hasSharedCode || hasNameAlias;
+  const reverseNameAlias = selectedTokens.length > 0 && selectedTokens.every((token) => managerTokens.includes(token));
+  return manager === selected || manager === selectedName || manager.includes(selected) || selected.includes(manager) || hasSharedCode || hasNameAlias || reverseNameAlias;
+};
+
+export type TimesheetActorIdentity = {
+  fullName?: string;
+  username?: string;
+  employeeCode?: string;
+  employeeId?: string;
+};
+
+export const actorMatchesTimesheetSupervisor = (
+  header: Pick<TimesheetHeader, 'supervisorId' | 'supervisorName'>,
+  actor: TimesheetActorIdentity,
+) => {
+  const actorValues = [actor.employeeCode, actor.employeeId, actor.username, actor.fullName]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  const supervisorValues = [header.supervisorId, header.supervisorName]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  if (!actorValues.length || !supervisorValues.length) return false;
+  return actorValues.some((actorValue) =>
+    supervisorValues.some((supervisorValue) =>
+      supervisorMatchesEmployee(actorValue, supervisorValue) || supervisorMatchesEmployee(supervisorValue, actorValue),
+    ),
+  );
 };
 
 const attendanceMatchKeys = (...values: Array<string | number | null | undefined>) => {

@@ -7,6 +7,7 @@ import {
   calculateTimesheetPeriod,
   parseTimesheetCalendarDate,
   advanceTimesheetWorkflow,
+  actorMatchesTimesheetSupervisor,
   generateProjectCode,
   idleReasons,
   normalizePaidWorkHours,
@@ -1458,18 +1459,21 @@ const requireEditableTimesheet = (header: TimesheetHeader) => {
   }
 };
 
-const requireApprovalActionAccess = (header: TimesheetHeader, actor: string, role: string) => {
+const requireApprovalActionAccess = (header: TimesheetHeader, actor: string, role: string, request?: Request) => {
   if (isSuperAdministrator(role)) return;
   const status = normalizeTimesheetStatus(header.status);
-  const combined = lowerText(`${actor} ${role}`);
+  const combined = lowerText(`${actor} ${role} ${(request?.headers.get('x-auth-roles') || '')}`);
   if (!['Submitted', 'Cost_Control_Reviewed', 'GM_Operations_Reviewed'].includes(status)) {
     throw new Error('This workflow stage requires project-level approval. Only the Super Administrator can approve all levels at once.');
   }
   if (status === 'Submitted') {
-    const supervisorText = lowerText(header.supervisorName || header.supervisorId);
-    const actorValue = lowerText(actor);
-    const isAssignedSupervisor = supervisorText && (supervisorText.includes(actorValue) || actorValue.includes(supervisorText));
-    if (!isAssignedSupervisor && !includesAny(combined, ['supervisor', 'site lead', 'foreman'])) {
+    const identity = {
+      fullName: actor,
+      username: request?.headers.get('x-auth-user') || '',
+      employeeCode: request?.headers.get('x-auth-employee-code') || '',
+      employeeId: request?.headers.get('x-auth-employee-id') || '',
+    };
+    if (!actorMatchesTimesheetSupervisor(header, identity) && !isSuperAdministrator(role)) {
       throw new Error('Only the assigned supervisor can complete supervisor review.');
     }
   }
@@ -1957,7 +1961,7 @@ export async function PATCH(request: Request) {
       if (!uiPermissions.canApproveTimesheet) {
         return err(403, 'You do not have permission to approve timesheets.');
       }
-      requireApprovalActionAccess(header, actor, uiPermissions.role);
+      requireApprovalActionAccess(header, actor, uiPermissions.role, request);
 
       if (action === 'APPROVE') {
         await advanceTimesheetWorkflow(header.id, 'APPROVE', actor, payload.reviewerNote);

@@ -104,6 +104,8 @@ export async function middleware(request: NextRequest) {
     requestHeaders.set('x-auth-roles', roles.join(','));
     requestHeaders.set('x-auth-permissions', permissions.join(','));
     requestHeaders.set('x-auth-global-admin', session.isGlobalAdmin ? '1' : '0');
+    requestHeaders.set('x-auth-employee-code', session.employeeCode || '');
+    requestHeaders.set('x-auth-employee-id', session.employeeId || '');
     requestHeaders.set('x-hris-actor', session.fullName || session.username || 'HRIS User');
     if (!requestHeaders.get('x-hris-role')) {
       requestHeaders.set('x-hris-role', deriveHrisRole(roles));

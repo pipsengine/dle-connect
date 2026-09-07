@@ -5,6 +5,7 @@ import {
   aggregateEmployeeAttendanceForHeaders,
   advanceProjectTimesheetApproval,
   advanceTimesheetWorkflow,
+  actorMatchesTimesheetSupervisor,
   buildProjectTimesheetApprovals,
   calculateTimesheetPeriod,
   isTimesheetCountableForPayroll,
@@ -21,6 +22,7 @@ import {
   readTimesheetPeriods,
   writeTimesheetPayrollUpdates,
   writeTimesheetHeaderLines,
+  type TimesheetActorIdentity,
   type TimesheetHeader,
   type TimesheetLine,
   type TimesheetPeriod,
@@ -86,10 +88,41 @@ const nextActionLabel = (status: TimesheetStatus) => {
   return null;
 };
 
-const roleScope = (role: string, actor: string, request?: Request) => {
+const sessionRolesFrom = (request?: Request) =>
+  (request?.headers.get('x-auth-roles') || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const actorIdentityFrom = (request: Request, actorName: string): TimesheetActorIdentity => ({
+  fullName: actorName || request.headers.get('x-hris-actor') || '',
+  username: request.headers.get('x-auth-user') || '',
+  employeeCode: request.headers.get('x-auth-employee-code') || '',
+  employeeId: request.headers.get('x-auth-employee-id') || '',
+});
+
+const isSupervisorSessionRole = (roles: string[]) =>
+  roles.some((role) => {
+    const value = lower(role);
+    return value === 'supervisor'
+      || /\bsupervisor\b/.test(value)
+      || /\bforeman\b/.test(value)
+      || value.includes('site lead');
+  });
+
+const roleScope = (derivedRole: string, actor: string, request?: Request) => {
   if (request?.headers.get('x-auth-global-admin') === '1') return 'enterprise';
-  const text = lower(`${role} ${actor}`);
-  if (isSuperAdministrator(role) || includesAny(text, ['admin', 'hr', 'human resources', 'payroll', 'gm operations', 'general manager', 'operations'])) return 'enterprise';
+  const sessionRoles = sessionRolesFrom(request);
+  const roleText = lower([...sessionRoles, derivedRole].join(' '));
+  if (isSuperAdministrator(derivedRole) || includesAny(roleText, ['super administrator', 'system administrator', 'application administrator'])) return 'enterprise';
+  if (includesAny(roleText, ['hr administrator', 'hr manager', 'hr director', 'hr officer', 'human resources', 'payroll', 'gm operations', 'general manager', 'operations manager', 'executive'])) return 'enterprise';
+  if (includesAny(roleText, ['cost control', 'cost controller', 'finance controller', 'finance manager', 'accountant'])) return 'cost-control';
+  if (includesAny(roleText, ['project manager'])) return 'project-manager';
+  if (isSupervisorSessionRole(sessionRoles) || sessionRoles.some((role) => ['manager', 'department head'].includes(lower(role))) || includesAny(roleText, ['supervisor', 'foreman', 'site lead'])) {
+    return 'supervisor';
+  }
+  const text = lower(`${derivedRole} ${actor}`);
+  if (includesAny(text, ['admin', 'hr', 'human resources', 'payroll', 'gm operations', 'general manager'])) return 'enterprise';
   if (includesAny(text, ['cost control', 'cost controller', 'finance'])) return 'cost-control';
   if (includesAny(text, ['project manager', 'pm '])) return 'project-manager';
   if (includesAny(text, ['supervisor', 'foreman', 'site lead'])) return 'supervisor';
@@ -118,11 +151,19 @@ const stageAccess = (stage: ProjectApprovalStage | null, actor: string, role: st
   return false;
 };
 
-const requireHeaderStageAccess = (header: TimesheetHeader, action: ApprovalAction, actor: string, role: string, request?: Request, acc?: string[]) => {
+const requireHeaderStageAccess = (
+  header: TimesheetHeader,
+  action: ApprovalAction,
+  actor: string,
+  role: string,
+  request?: Request,
+  acc?: string[],
+  identity?: TimesheetActorIdentity,
+) => {
   if (isSuperAdministrator(role)) return;
   const stage = currentStageForStatus(header.status);
-  const actorRole = lower(`${actor} ${role}`);
-  const supervisorText = lower(header.supervisorName || header.supervisorId || '');
+  const actorRole = lower(`${actor} ${role} ${sessionRolesFrom(request).join(' ')}`);
+  const assignedSupervisor = actorMatchesTimesheetSupervisor(header, identity || { fullName: actor });
 
   if (action === 'PROCESS_PAYROLL' || action === 'POST_PAYROLL') {
     if (!stageAccess('Payroll', actor, role, request, acc) && !includesAny(actorRole, ['payroll', 'hr', 'human resources'])) {
@@ -138,9 +179,10 @@ const requireHeaderStageAccess = (header: TimesheetHeader, action: ApprovalActio
   }
 
   if (stage === 'Supervisor') {
-    const isAssignedSupervisor = supervisorText && (supervisorText.includes(lower(actor)) || lower(actor).includes(supervisorText));
-    if (!isAssignedSupervisor && !stageAccess('Supervisor', actor, role, request, acc)) throw new Error('Only the assigned supervisor can complete supervisor review.');
-    return;
+    if (assignedSupervisor) return;
+    const scope = roleScope(role, actor, request);
+    if ((scope === 'enterprise' || scope === 'cost-control') && stageAccess('Supervisor', actor, role, request, acc)) return;
+    throw new Error('Only the assigned supervisor can complete supervisor review.');
   }
   if (stage === 'GM Operations') {
     if (!stageAccess('GM Operations', actor, role, request, acc)) throw new Error('Only GM Operations can approve the consolidated timesheet pack.');
@@ -206,15 +248,21 @@ const workflowSteps = (header: TimesheetHeader) => {
   });
 };
 
-const canSeeHeader = (scope: string, header: TimesheetHeader, projectApprovals: ReturnType<typeof buildProjectTimesheetApprovals>, actor: string) => {
+const canSeeHeader = (
+  scope: string,
+  header: TimesheetHeader,
+  projectApprovals: ReturnType<typeof buildProjectTimesheetApprovals>,
+  actor: string,
+  identity?: TimesheetActorIdentity,
+) => {
   if (scope === 'enterprise' || scope === 'cost-control') return true;
-  const actorKey = lower(actor);
-  const supervisorKeys = [header.supervisorName, header.supervisorId].map((value) => lower(value)).filter(Boolean);
-  if (scope === 'supervisor') {
-    return supervisorKeys.some((supervisorKey) => supervisorKey.includes(actorKey) || actorKey.includes(supervisorKey));
+  const actorIdentity = identity || { fullName: actor };
+  if (scope === 'supervisor') return actorMatchesTimesheetSupervisor(header, actorIdentity);
+  if (scope === 'project-manager') {
+    const actorKey = lower(actor);
+    return projectApprovals.some((item) => lower(item.projectManager).includes(actorKey) || actorKey.includes(lower(item.projectManager)));
   }
-  if (scope === 'project-manager') return projectApprovals.some((item) => lower(item.projectManager).includes(actorKey) || actorKey.includes(lower(item.projectManager)));
-  return false;
+  return actorMatchesTimesheetSupervisor(header, actorIdentity);
 };
 
 const parseListRequest = (request: Request) => {
@@ -301,12 +349,13 @@ const buildTimesheetSummary = (
   employeeLookup: Map<string, TimesheetApprovalEmployeeMeta>,
   scope: string,
   actor: string,
+  identity?: TimesheetActorIdentity,
 ) => {
   const status = normalizeTimesheetStatus(header.status);
   const period = resolvePeriod(periods, header.timesheetDate);
   const payrollUpdate = payrollUpdates.find((update) => update.headerIds.includes(header.id));
   const allProjectApprovals = buildProjectTimesheetApprovals(header, headerLines, projects);
-  if (!canSeeHeader(scope, header, allProjectApprovals, actor)) return null;
+  if (!canSeeHeader(scope, header, allProjectApprovals, actor, identity)) return null;
   const visibleProjectApprovals = scope === 'project-manager' ? buildProjectTimesheetApprovals(header, headerLines, projects, actor) : allProjectApprovals;
   const employeeRows = headerLines.map((line) => {
     const meta = employeeMeta(employeeLookup, line);
@@ -418,7 +467,11 @@ const buildPayload = async (request: Request) => {
   }
 
   const { page, pageSize, listMode, status, periodId } = parseListRequest(request);
-  const scope = roleScope(access.role, access.actor, request);
+  const identity = actorIdentityFrom(request, access.actor);
+  let scope = roleScope(access.role, access.actor, request);
+  if (scope === 'restricted' && hasAccTimesheetStageApprove(livePermissions, 'Supervisor')) {
+    scope = 'supervisor';
+  }
 
   const [workspaceStats, projects, payrollUpdates, periods, employeeLookup, draftBookedData] = await Promise.all([
     readTimesheetApprovalWorkspaceStats(),
@@ -453,7 +506,7 @@ const buildPayload = async (request: Request) => {
       if (periodId && header.periodId !== periodId) return false;
       const headerLines = allData.lines.filter((line) => line.headerId === header.id);
       const projectApprovals = buildProjectTimesheetApprovals(header, headerLines, projects);
-      return canSeeHeader(scope, header, projectApprovals, access.actor);
+      return canSeeHeader(scope, header, projectApprovals, access.actor, identity);
     });
     total = visibleHeaders.length;
     const start = (page - 1) * pageSize;
@@ -466,14 +519,14 @@ const buildPayload = async (request: Request) => {
   const draftLineByHeader = new Map<string, TimesheetLine[]>();
   for (const line of draftLines) draftLineByHeader.set(line.headerId, [...(draftLineByHeader.get(line.headerId) || []), line]);
   const draftBookedTimesheets = draftHeaders
-    .map((header) => buildTimesheetSummary(header, draftLineByHeader.get(header.id) || [], periods, payrollUpdates, projects, employeeLookup, scope, access.actor))
+    .map((header) => buildTimesheetSummary(header, draftLineByHeader.get(header.id) || [], periods, payrollUpdates, projects, employeeLookup, scope, access.actor, identity))
     .filter(Boolean);
 
   const lineByHeader = new Map<string, TimesheetLine[]>();
   for (const line of lines) lineByHeader.set(line.headerId, [...(lineByHeader.get(line.headerId) || []), line]);
 
   const pageTimesheets = headers
-    .map((header) => buildTimesheetSummary(header, lineByHeader.get(header.id) || [], periods, payrollUpdates, projects, employeeLookup, scope, access.actor))
+    .map((header) => buildTimesheetSummary(header, lineByHeader.get(header.id) || [], periods, payrollUpdates, projects, employeeLookup, scope, access.actor, identity))
     .filter(Boolean)
     .sort((a, b) => new Date(b!.timesheetDate).getTime() - new Date(a!.timesheetDate).getTime());
 
@@ -516,8 +569,9 @@ const buildPayload = async (request: Request) => {
       actor: access.actor,
       role: access.role,
       visibilityScope: scope,
-      canApprove: uiPermissions.canApproveTimesheet,
-      canBulkApprove: uiPermissions.canApproveTimesheet && (scope === 'enterprise' || scope === 'cost-control'),
+      canApprove: uiPermissions.canApproveTimesheet || isSupervisorSessionRole(sessionRolesFrom(request)),
+      canBulkApprove: (uiPermissions.canApproveTimesheet || isSupervisorSessionRole(sessionRolesFrom(request)))
+        && (scope === 'enterprise' || scope === 'cost-control' || scope === 'supervisor'),
       canAcknowledgePayroll: uiPermissions.canApproveTimesheet || uiPermissions.canEditAttendance,
       canApproveAllLevels: isSuperAdministrator(access.role) || request.headers.get('x-auth-global-admin') === '1',
       canExport: true,
@@ -664,7 +718,9 @@ export async function PATCH(request: Request) {
   const livePermissions = await permissionsForRequest(request);
   const access = resolveAccessContext(request, livePermissions);
   const permissions = getUiPermissions(access);
-  if (!permissions.canApproveTimesheet) return err(403, 'You do not have permission to approve timesheets.');
+  const identity = actorIdentityFrom(request, access.actor);
+  const canApprove = permissions.canApproveTimesheet || isSupervisorSessionRole(sessionRolesFrom(request));
+  if (!canApprove) return err(403, 'You do not have permission to approve timesheets.');
 
   try {
     const payload = await request.json() as {
@@ -694,7 +750,7 @@ export async function PATCH(request: Request) {
     const applyHeader = async (headerId: string, headerList = headers) => {
       const header = headerList.find((item) => item.id === headerId);
       if (!header) throw new Error(`Timesheet ${headerId} was not found.`);
-      requireHeaderStageAccess(header, payload.action!, access.actor, access.role, request, livePermissions);
+      requireHeaderStageAccess(header, payload.action!, access.actor, access.role, request, livePermissions, identity);
       if (payload.action === 'PROCESS_PAYROLL' || payload.action === 'POST_PAYROLL') {
         payrollHeaderIds.push(headerId);
         return;

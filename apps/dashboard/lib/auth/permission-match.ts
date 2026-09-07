@@ -28,6 +28,12 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
   'operations.timesheets.approve': [
     'page.hris.time-and-logs.timesheet-approval.view',
     'timesheet.approve',
+    'timesheet.supervisor.approve',
+  ],
+  'timesheet.approve': [
+    'page.hris.time-and-logs.timesheet-approval.view',
+    'timesheet.supervisor.approve',
+    'operations.timesheets.approve',
   ],
   'operations.timesheets.view': [
     'page.hris.time-and-logs.timesheet-reports.view',
