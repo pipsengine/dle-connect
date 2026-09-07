@@ -189,11 +189,17 @@ export function CostControlOverviewFigma({ project }: Props) {
 
   const costCodes = pieData.map((s, i) => ({
     code: ['LAB-001', 'MAT-001', 'SUB-001', 'EQP-001', 'OTH-001'][i],
-    description: s.name === 'Labour' ? 'Direct Labour' : s.name === 'Materials' ? 'Structural Materials' : s.name === 'Subcontract' ? 'Fabrication Subcontract' : s.name === 'Equipment' ? 'Plant & Equipment' : 'Other Costs',
+    description:
+      s.name === 'Labour'
+        ? 'Direct Labour'
+        : s.name === 'Materials'
+          ? 'Structural Materials'
+          : s.name === 'Subcontract'
+            ? 'Fabrication Subcontract'
+            : s.name === 'Equipment'
+              ? 'Plant & Equipment'
+              : 'Other Costs',
     actual: money(s.naira, project.currency),
-    pct: `${Math.round(s.share * 100 || (s.value / Math.max(1, pieData.reduce((a, b) => a + b.value, 0))) * 100)}%`,
-  })).map((row, i) => ({
-    ...row,
     pct: `${[36, 27, 24, 8, 5][i]}%`,
   }));
 
