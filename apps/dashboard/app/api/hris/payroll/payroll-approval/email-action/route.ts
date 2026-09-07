@@ -7,10 +7,29 @@ import {
   payrollStageActionForId,
 } from '@/lib/payroll-approval-workflow';
 import { verifyPayrollEmailActionToken } from '@/lib/payroll-email-action-token';
-import { getPayrollRunForPeriod } from '@/lib/payroll-run-store';
+import {
+  getPayrollRun,
+  getPayrollRunForPeriod,
+  inferPayrollCompanyFromId,
+  inferPayrollRunPackFromId,
+  resolvePayrollRunCompany,
+  resolvePayrollRunPack,
+} from '@/lib/payroll-run-store';
 import { roleFromSession } from '@/lib/payroll-session';
 import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
 import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
+
+const resolveRunFromApprovalToken = async (payload: ReturnType<typeof verifyPayrollEmailActionToken>) => {
+  const byId = await getPayrollRun(payload.runId);
+  if (byId && byId.period === payload.period) return byId;
+
+  // Fallback for older tokens / legacy ids: resolve pack + company from the runId in the link.
+  const pack = inferPayrollRunPackFromId(payload.runId);
+  const company = inferPayrollCompanyFromId(payload.runId);
+  const byPeriod = await getPayrollRunForPeriod(payload.period, pack, company);
+  if (byPeriod && byPeriod.id === payload.runId) return byPeriod;
+  return null;
+};
 
 const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -51,8 +70,8 @@ export async function GET(request: NextRequest) {
     const token = request.nextUrl.searchParams.get('token') || '';
     if (!token) return err(400, 'Approval token is required.');
     const payload = verifyPayrollEmailActionToken(token);
-    const run = await getPayrollRunForPeriod(payload.period);
-    if (!run || run.id !== payload.runId) return err(404, 'Payroll run not found for this approval link.');
+    const run = await resolveRunFromApprovalToken(payload);
+    if (!run) return err(404, 'Payroll run not found for this approval link.');
 
     const session = await verifySessionToken(cookieValue(request, AUTH_COOKIE));
     const authenticated = Boolean(session);
@@ -97,8 +116,8 @@ export async function POST(request: NextRequest) {
     const auth = await authorizeSession(request, payload);
     if (auth.error) return auth.error;
 
-    const run = await getPayrollRunForPeriod(payload.period);
-    if (!run || run.id !== payload.runId) return err(404, 'Payroll run not found.');
+    const run = await resolveRunFromApprovalToken(payload);
+    if (!run) return err(404, 'Payroll run not found.');
 
     const activeStage = getCurrentPayrollApprovalStage(run);
     if (!auth.isGlobalAdmin && activeStage?.id !== payload.stageId) {
@@ -113,6 +132,9 @@ export async function POST(request: NextRequest) {
     const result = await executePayrollWorkflowAction({
       action: workflowAction,
       period: payload.period,
+      runId: run.id,
+      pack: resolvePayrollRunPack(run),
+      company: resolvePayrollRunCompany(run),
       actor: auth.actor!,
       role: auth.role!,
       comment: note || `Actioned from authenticated email link (${payload.decision}).`,
