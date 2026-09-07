@@ -1493,11 +1493,18 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const reviewWarningCount = shiftLines.filter((line) => line.validationStatus === 'Warning' || line.validationStatus === 'Incomplete').length;
   const reviewErrorCount = shiftLines.filter((line) => line.validationStatus === 'Error').length;
   const reviewAbsentCount = shiftLines.filter((line) => isTimesheetAbsentLine(line)).length;
-  const reviewProjectHours = round1(shiftLines.reduce((sum, line) => sum + line.usedHours, 0));
+  const reviewProjectHours = round1(shiftLines.reduce((sum, line) => sum + productiveProjectHours(line.projectAllocations), 0));
   const reviewIdleHours = round1(shiftLines.reduce((sum, line) => sum + line.idleHours, 0));
   const reviewTotalHours = round1(shiftLines.reduce((sum, line) => sum + line.totalHours, 0));
-  const reviewProjectCodes = Array.from(new Set(shiftLines.flatMap((line) => line.projectAllocations.map((item) => item.projectCode).filter(Boolean)))).sort();
+  const reviewProjectCodes = Array.from(new Set(shiftLines.flatMap((line) =>
+    line.projectAllocations
+      .filter((item) => Number(item.hours || 0) > 0 && !isIdleTimeProjectCode(item.projectCode))
+      .map((item) => item.projectCode)
+      .filter(Boolean),
+  ))).sort();
+  const reviewMissingProjectHours = reviewProjectHours <= 0.001;
   const canOpenSubmitReview = canEditTimesheet && reviewLineCount > 0 && reviewErrorCount === 0;
+  const canConfirmSubmit = canOpenSubmitReview && !reviewMissingProjectHours;
   const canManageTimesheetSetup = Boolean(payload?.permissions.canManagePeriod);
   const canCreateProject = canManageTimesheetSetup || canEditTimesheet;
   const pageTitle = isWorkforceSupervisor ? 'Workforce Timesheet Entry' : 'Timesheet Entry';
@@ -2488,6 +2495,11 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
               </button>
             </div>
             <div className="max-h-[72vh] overflow-y-auto p-6">
+              {(error || reviewMissingProjectHours) && (
+                <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+                  {error || 'Project hours are required before submit. Go Back to Edit, add a project column (or use Auto Distribute), book productive hours for present crew, then return here.'}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
                 {[
                   ['Crew', reviewLineCount],
@@ -2562,10 +2574,14 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 p-5">
-              <p className="text-xs font-semibold text-slate-500">Submitting places this timesheet in supervisor review. You can keep correcting it until it is approved and released to the project manager.</p>
+              <p className="text-xs font-semibold text-slate-500">
+                {reviewMissingProjectHours
+                  ? 'Clock times alone are not enough — book productive project hours first, then submit.'
+                  : 'Submitting places this timesheet in supervisor review. You can keep correcting it until it is approved and released to the project manager.'}
+              </p>
               <div className="flex items-center gap-3">
                 <button onClick={() => setShowSubmitReview(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50">Back to Edit</button>
-                <button onClick={() => handleSave(true)} disabled={submitting || !canEditTimesheet || reviewErrorCount > 0 || reviewLineCount === 0} className="rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-indigo-700 disabled:opacity-50">
+                <button onClick={() => handleSave(true)} disabled={submitting || !canConfirmSubmit} className="rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-indigo-700 disabled:opacity-50">
                   {submitting ? 'Submitting...' : 'Submit Timesheet'}
                 </button>
               </div>
