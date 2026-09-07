@@ -35,26 +35,56 @@ export async function ProjectHeader({ id, active }: { id: string; active: string
         <div className="project-hero-grid">
           <div>
             <small>Project Manager</small>
-            <strong>{project.manager}</strong>
+            <strong>{project.manager || '—'}</strong>
+          </div>
+          <div>
+            <small>Project Type</small>
+            <strong>{project.projectType || project.phase || '—'}</strong>
+          </div>
+          <div>
+            <small>Business Unit</small>
+            <strong>{project.businessUnit || '—'}</strong>
           </div>
           <div>
             <small>Contract Value</small>
             <strong>{money(project.contractValue, project.currency)}</strong>
           </div>
           <div>
-            <small>Project Dates</small>
+            <small>Start / Baseline Finish</small>
             <strong>
               {dmy(project.start)} – {dmy(project.finish)}
             </strong>
           </div>
           <div>
-            <small>Progress</small>
+            <small>Overall Progress</small>
             <Progress value={project.actual} />
           </div>
           <div>
-            <small>Health</small>
-            <Status>{project.health}</Status>
+            <small>SPI / CPI</small>
+            <strong>
+              {Number(project.schedulePerformance || 0).toFixed(2)} / {Number(project.costPerformance || 0).toFixed(2)}
+            </strong>
           </div>
+          <div>
+            <small>Stage / Health</small>
+            <strong>
+              {project.phase || project.status} · <Status>{project.health}</Status>
+            </strong>
+          </div>
+        </div>
+        <div className="project-hero-actions" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+          <Link href={`/projects-engineering/projects/${project.id}/reports`} className="btn secondary">
+            Generate Report
+          </Link>
+          <Link href={`/projects-engineering/projects/${project.id}/risks`} className="btn secondary">
+            View Alerts
+          </Link>
+          <Link href={`/projects-engineering/projects/${project.id}/actions`} className="btn secondary">
+            Actions
+          </Link>
+          <Link href={`/projects-engineering/timesheets`} className="btn secondary">
+            Man-Hours
+          </Link>
         </div>
       </div>
       <nav className="workspace-tabs">

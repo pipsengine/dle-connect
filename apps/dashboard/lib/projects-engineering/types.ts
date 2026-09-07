@@ -2,11 +2,22 @@ export type Health = 'Healthy' | 'Watch' | 'Critical';
 
 export type ProjectStatus =
   | 'Draft'
+  | 'Initiation'
+  | 'Mobilisation'
+  | 'Engineering'
+  | 'Procurement'
+  | 'Fabrication'
+  | 'Construction'
+  | 'Commissioning'
+  | 'Handover'
+  | 'Closeout'
   | 'Active'
   | 'Approved'
   | 'Open'
+  | 'On Hold'
   | 'Suspended'
   | 'Completed'
+  | 'Cancelled'
   | 'Closed'
   | 'Archived';
 
@@ -44,11 +55,22 @@ export type Project = {
 
 export const PROJECT_STATUS_OPTIONS: ProjectStatus[] = [
   'Draft',
+  'Initiation',
+  'Mobilisation',
+  'Engineering',
+  'Procurement',
+  'Fabrication',
+  'Construction',
+  'Commissioning',
+  'Handover',
+  'Closeout',
   'Active',
   'Approved',
   'Open',
+  'On Hold',
   'Suspended',
   'Completed',
+  'Cancelled',
   'Closed',
   'Archived',
 ];

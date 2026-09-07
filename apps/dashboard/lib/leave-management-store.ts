@@ -1194,8 +1194,10 @@ GROUP BY [EmployeeId],[LeaveType];`);
     }
 
     // Leave Entitled = current-year grant + remaining (unconsumed, unexpired) carry-forward only.
+    // CurrentBalance = remaining after approved usage only. Pending/unapproved applications are
+    // tracked in PendingBalance and must not reduce CurrentBalance until final approval.
     const accrued = round2(entitlement + carryRemaining);
-    const current = Math.max(0, round2(accrued - used - pending));
+    const current = Math.max(0, round2(accrued - used));
     const exceptions = [
       ...(current < 3 && entitlement > 0 ? ['Low leave balance'] : []),
       ...(used > accrued && accrued > 0 ? [`Used days (${used}) exceed ${leaveYear} available entitlement (${accrued})`] : []),
@@ -1632,9 +1634,11 @@ export function validateLeaveAction(actionId: LeaveActionId, roleInput: string |
     const employeeBalance = payload.balances.find((balance) => balance.employeeId === employeeKey && balance.leaveType === leaveType)
       || payload.balances.find((balance) => balance.employeeId === employeeKey)
       || payload.balances.find((balance) => balance.leaveType === leaveType);
+    const storedCurrent = employeeBalance?.currentBalance || 0;
+    const pendingReserved = employeeBalance?.pendingBalance || 0;
     const availableBalance = Number.isFinite(Number(body.availableBalance))
       ? Number(body.availableBalance)
-      : (employeeBalance?.currentBalance || 0);
+      : Math.max(0, storedCurrent - pendingReserved);
     if (leaveType === 'Maternity Leave' && !isMaternityEligibleEmployee({ employeeId: employeeKey, employeeCode: employeeKey, employmentType: employeeCategory, employeeCategory, staffCategory: employeeCategory, payrollGroup: '', salaryGrade: '', jobGrade: '', status: body.employmentStatus || '', gender: body.gender || '' } as DleEmployeeDirectoryRow)) {
       return { ok: false, status: 409, message: 'Maternity Leave is available only to eligible permanent or lumpsum female employees.' };
     }

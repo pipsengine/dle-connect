@@ -303,10 +303,12 @@ WHERE TRY_CONVERT(bigint, la.[EmployeeId]) IS NOT NULL
   );`);
 }
 
-const mapSageTransactionStatus = (transactionStatus: number | null, cancelled: unknown) => {
+const mapSageTransactionStatus = (transactionStatus: number | null, cancelled: unknown): string => {
   if (cancelled) return 'Cancelled';
   if (transactionStatus === 1) return 'Approved';
   if (transactionStatus === 0) return 'Submitted';
+  // Sage may use other codes for declined/terminated leave — keep balance impact at zero for non-open states.
+  if (transactionStatus === 2 || transactionStatus === 3) return 'Rejected';
   return 'Approved';
 };
 
@@ -364,9 +366,9 @@ FROM Leave.LeaveTransaction lt
 JOIN Employee.EmployeeRule er ON er.EmployeeRuleID = lt.EmployeeRuleID
 JOIN Employee.Employee e ON e.EmployeeID = er.EmployeeID
 JOIN Leave.LeaveType ltype ON ltype.LeaveTypeID = lt.LeaveTypeID
-WHERE lt.Cancelled IS NULL
-  AND ltype.Status = 'A'
+WHERE ltype.Status = 'A'
 `;
+// Include Cancelled rows so HRIS can clear stale Submitted/Pending imports that otherwise keep holding leave balance.
 
 let leaveTablesReady = false;
 
@@ -525,6 +527,7 @@ const upsertTransaction = async (
   if (!leaveType || !startDate || !endDate || days <= 0) return;
 
   const statusName = mapSageTransactionStatus(row.transactionStatus, row.cancelled);
+  const balanceImpact = statusName === 'Cancelled' || statusName === 'Rejected' ? 0 : days;
   await pool.request()
     .input('Id', sql.NVarChar(120), `sage-leave-tx-${row.sageTransactionId}`)
     .input('SourceSystem', sql.NVarChar(80), SOURCE_SYSTEM)
@@ -542,7 +545,7 @@ const upsertTransaction = async (
     .input('WorkflowStage', sql.NVarChar(40), workflowStageForStatus(statusName))
     .input('ApprovalStatus', sql.NVarChar(60), approvalStatusFor(statusName))
     .input('PolicyComplianceStatus', sql.NVarChar(40), 'Compliant')
-    .input('BalanceImpact', sql.Decimal(9, 2), days)
+    .input('BalanceImpact', sql.Decimal(9, 2), balanceImpact)
     .input('AvailableBalance', sql.Decimal(9, 2), 0)
     .input('ActingOfficer', sql.NVarChar(180), 'Not configured')
     .input('SupportingDocuments', sql.Int, 0)

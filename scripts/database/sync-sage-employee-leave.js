@@ -102,9 +102,9 @@ FROM Leave.LeaveTransaction lt
 JOIN Employee.EmployeeRule er ON er.EmployeeRuleID = lt.EmployeeRuleID
 JOIN Employee.Employee e ON e.EmployeeID = er.EmployeeID
 JOIN Leave.LeaveType ltype ON ltype.LeaveTypeID = lt.LeaveTypeID
-WHERE lt.Cancelled IS NULL
-  AND ltype.Status = 'A'
+WHERE ltype.Status = 'A'
 `;
+// Include Cancelled rows so HRIS can clear stale Submitted/Pending imports.
 
 const ensureLeaveTables = async (pool) => {
   await pool.request().query(`

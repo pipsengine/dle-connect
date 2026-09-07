@@ -3,7 +3,9 @@ import { hasAnyPermission } from '@/lib/auth/permission-match';
 import { isSuperActor } from '@/lib/auth/role-delegation';
 import {
   PROJECTS_ENGINEERING_NAV,
+  PROJECTS_ENGINEERING_NAV_GROUPS,
   PROJECTS_ENGINEERING_VIEW_PERMISSIONS,
+  type ProjectsEngineeringNavGroup,
   type ProjectsEngineeringNavItem,
 } from '@/lib/projects-engineering/nav';
 import type { Project } from '@/lib/projects-engineering/types';
@@ -119,6 +121,55 @@ export const filterProjectsForSession = (
   return projects.filter((project) => isProjectManagerOf(session, project));
 };
 
+const rewriteNavItem = (
+  item: ProjectsEngineeringNavItem,
+  managedProjectId?: string | null,
+): ProjectsEngineeringNavItem => {
+  const workspaceId = managedProjectId || null;
+  if ((item.id === 'active-project' || item.id === 'ai' || item.id === 'actions') && workspaceId) {
+    const section = item.id === 'active-project' ? 'overview' : item.id === 'ai' ? 'ai' : 'actions';
+    return {
+      ...item,
+      href: `/projects-engineering/projects/${workspaceId}/${section}`,
+    };
+  }
+  return item;
+};
+
+const canSeeNavItem = (
+  item: ProjectsEngineeringNavItem,
+  session: ProjectsSessionIdentity,
+  managedProjectId?: string | null,
+) => {
+  const unrestricted = isUnrestricted(session);
+  if (unrestricted) return true;
+
+  const canCreate = canCreateProjects(session);
+  const canEnterprise = canViewEnterprisePortfolio(session);
+
+  if (item.id === 'new-project') return canCreate;
+  if (item.id === 'integrations' || item.id === 'admin' || item.id === 'configuration' || item.id === 'settings') {
+    return canEnterprise || canCreate;
+  }
+  if (
+    item.id === 'dashboard'
+    || item.id === 'projects'
+    || item.id === 'cost-control'
+    || item.id === 'timesheets'
+    || item.id === 'reports-portfolio'
+    || item.id === 'reports-project'
+    || item.id === 'planning'
+    || item.id === 'portfolio'
+    || item.id === 'reports'
+  ) {
+    return canEnterprise || hasAnyPermission(session.permissions || [], item.permissionKeys);
+  }
+  if (item.id === 'active-project' || item.id === 'ai' || item.id === 'actions') {
+    return canEnterprise || Boolean(managedProjectId);
+  }
+  return hasAnyPermission(session.permissions || [], item.permissionKeys);
+};
+
 export const filterProjectsEngineeringNav = (
   session: ProjectsSessionIdentity,
   managedProjectId?: string | null,
@@ -131,32 +182,27 @@ export const filterProjectsEngineeringNav = (
   );
   if (!canPortal) return [];
 
-  const unrestricted = isUnrestricted(session);
-  const canCreate = canCreateProjects(session);
-  const canEnterprise = canViewEnterprisePortfolio(session);
-  const workspaceId = managedProjectId || null;
-
   return PROJECTS_ENGINEERING_NAV
-    .map((item) => {
-      if ((item.id === 'active-project' || item.id === 'ai' || item.id === 'actions') && workspaceId) {
-        const section = item.id === 'active-project' ? 'overview' : item.id === 'ai' ? 'ai' : 'actions';
-        return {
-          ...item,
-          href: `/projects-engineering/projects/${workspaceId}/${section}`,
-        };
-      }
-      return item;
-    })
-    .filter((item) => {
-      if (unrestricted) return true;
-      if (item.id === 'new-project') return canCreate;
-      if (item.id === 'integrations' || item.id === 'settings') return canEnterprise || canCreate;
-      if (item.id === 'portfolio' || item.id === 'reports' || item.id === 'projects' || item.id === 'cost-control') {
-        return canEnterprise || hasAnyPermission(session.permissions || [], item.permissionKeys);
-      }
-      if (item.id === 'active-project' || item.id === 'ai' || item.id === 'actions') {
-        return canEnterprise || Boolean(managedProjectId);
-      }
-      return hasAnyPermission(session.permissions || [], item.permissionKeys);
-    });
+    .map((item) => rewriteNavItem(item, managedProjectId))
+    .filter((item) => canSeeNavItem(item, session, managedProjectId));
+};
+
+export const filterProjectsEngineeringNavGroups = (
+  session: ProjectsSessionIdentity,
+  managedProjectId?: string | null,
+): ProjectsEngineeringNavGroup[] => {
+  const canPortal = canAccessProjectsEngineeringPortal(
+    session.permissions || [],
+    session.isGlobalAdmin,
+    session.roles,
+    session.sub,
+  );
+  if (!canPortal) return [];
+
+  return PROJECTS_ENGINEERING_NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items
+      .map((item) => rewriteNavItem(item, managedProjectId))
+      .filter((item) => canSeeNavItem(item, session, managedProjectId)),
+  })).filter((group) => group.items.length > 0);
 };

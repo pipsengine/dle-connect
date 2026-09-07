@@ -1538,7 +1538,7 @@ const readEmployeeLeaveBalanceForValidation = async (
   keys.forEach((key, index) => request.input(`EmployeeKey${index}`, sql.NVarChar(120), key));
   const keySql = keys.map((_, index) => `@EmployeeKey${index}`).join(', ');
   const result = await request.query(`
-SELECT TOP 1 [EmployeeId],[LeaveType],[CurrentBalance],[AccruedBalance]
+SELECT TOP 1 [EmployeeId],[LeaveType],[CurrentBalance],[AccruedBalance],[PendingBalance]
 FROM [hris].[LeaveBalances]
 WHERE [EmployeeId] IN (${keySql})
   AND [LeaveType]=@LeaveType
@@ -1548,12 +1548,17 @@ ORDER BY [UpdatedAt] DESC;`);
     LeaveType?: string;
     CurrentBalance?: number;
     AccruedBalance?: number;
+    PendingBalance?: number;
   } | undefined;
   if (!row) return null;
+  const currentBalance = Number(row.CurrentBalance ?? row.AccruedBalance ?? 0);
+  const pendingBalance = Number(row.PendingBalance || 0);
   return {
     employeeId: String(row.EmployeeId || keys[0]),
     leaveType: String(row.LeaveType || leaveType),
-    currentBalance: Number(row.CurrentBalance ?? row.AccruedBalance ?? 0),
+    // Bookable days exclude pending/unapproved reservations without reducing stored CurrentBalance.
+    currentBalance: Math.max(0, round2(currentBalance - pendingBalance)),
+    pendingBalance,
   };
 };
 
@@ -1824,6 +1829,7 @@ ORDER BY [UpdatedAt] DESC;`);
   const entitlement = leaveType === 'Annual Leave' ? annualLeaveEntitlementForEmployee(input.employee) : days;
 
   if (input.mode === 'reserve-pending') {
+    // Pending reservation must not reduce CurrentBalance; only Approved leave confirms usage.
     await pool.request()
       .input('EmployeeId', sql.NVarChar(80), employeeId)
       .input('LeaveType', sql.NVarChar(120), leaveType)
@@ -1838,13 +1844,12 @@ USING (SELECT @EmployeeId AS [EmployeeId], @LeaveType AS [LeaveType]) AS source
 ON target.[EmployeeId] = source.[EmployeeId] AND target.[LeaveType] = source.[LeaveType]
 WHEN MATCHED THEN UPDATE SET
   [PendingBalance] = ISNULL(target.[PendingBalance], 0) + @Days,
-  [CurrentBalance] = CASE WHEN ISNULL(target.[CurrentBalance], target.[AccruedBalance]) - @Days < 0 THEN 0 ELSE ISNULL(target.[CurrentBalance], target.[AccruedBalance]) - @Days END,
   [SourceSystem] = CASE WHEN ISNULL(target.[PendingBalance], 0) + @Days > 0 THEN @SourceSystem ELSE target.[SourceSystem] END,
   [UpdatedAt] = SYSUTCDATETIME()
 WHEN NOT MATCHED THEN INSERT
   ([EmployeeId],[LeaveType],[FullName],[Department],[CurrentBalance],[AccruedBalance],[UsedBalance],[PendingBalance],[ForfeitedBalance],[CarryForwardBalance],[LiabilityValue],[StatusName],[ExceptionsJson],[SourceSystem])
 VALUES
-  (@EmployeeId,@LeaveType,@FullName,@Department,@Entitlement - @Days,@Entitlement,0,@Days,0,0,0,N'Healthy',N'[]',@SourceSystem);`);
+  (@EmployeeId,@LeaveType,@FullName,@Department,@Entitlement,@Entitlement,0,@Days,0,0,0,N'Healthy',N'[]',@SourceSystem);`);
     return;
   }
 
@@ -1856,7 +1861,6 @@ VALUES
       .query(`
 UPDATE [hris].[LeaveBalances]
 SET [PendingBalance] = CASE WHEN ISNULL([PendingBalance],0) - @Days < 0 THEN 0 ELSE ISNULL([PendingBalance],0) - @Days END,
-    [CurrentBalance] = ISNULL([CurrentBalance],0) + @Days,
     [UpdatedAt] = SYSUTCDATETIME()
 WHERE [EmployeeId]=@EmployeeId AND [LeaveType]=@LeaveType;`);
     return;
@@ -1870,6 +1874,7 @@ WHERE [EmployeeId]=@EmployeeId AND [LeaveType]=@LeaveType;`);
 UPDATE [hris].[LeaveBalances]
 SET [PendingBalance] = CASE WHEN ISNULL([PendingBalance],0) - @Days < 0 THEN 0 ELSE ISNULL([PendingBalance],0) - @Days END,
     [UsedBalance] = ISNULL([UsedBalance],0) + @Days,
+    [CurrentBalance] = CASE WHEN ISNULL([CurrentBalance],0) - @Days < 0 THEN 0 ELSE ISNULL([CurrentBalance],0) - @Days END,
     [UpdatedAt] = SYSUTCDATETIME()
   WHERE [EmployeeId]=@EmployeeId AND [LeaveType]=@LeaveType;`);
 };
@@ -1898,7 +1903,8 @@ export const adjustLeavePolicyCardsForEssPending = (
     return {
       ...card,
       pending: round2(currentPending + extraPending),
-      balance: Math.max(0, round2(currentBalance - extraPending)),
+      // Keep available balance unchanged for unapproved leave; pending is informational only here.
+      balance: currentBalance,
     };
   });
 };

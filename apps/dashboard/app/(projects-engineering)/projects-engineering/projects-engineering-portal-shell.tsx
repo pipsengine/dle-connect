@@ -5,25 +5,44 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { Menu, PanelLeftClose, PanelLeftOpen, Search, X } from 'lucide-react';
+import { ChevronDown, Menu, PanelLeftClose, PanelLeftOpen, Search, X } from 'lucide-react';
 import { EnterpriseHomeButton } from '@/components/layout/enterprise-home-button';
 import { NotificationCenter } from '@/components/layout/notification-center';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
-import { filterProjectsEngineeringNav } from '@/lib/access/projects-engineering-access';
+import { filterProjectsEngineeringNavGroups } from '@/lib/access/projects-engineering-access';
 import { useViewportRailCollapsed } from '@/lib/use-viewport-sidebar';
 import './projects-engineering.css';
 
 type Props = { children: ReactNode };
 
+const GROUP_STORAGE_KEY = 'dle.pe.nav.groups';
+
 function searchPlaceholder(pathname: string) {
   if (pathname.includes('/cost-control')) return 'Search cost codes, commitments, forecasts…';
-  if (pathname.includes('/portfolio')) return 'Search portfolio plans, milestones…';
-  if (pathname.includes('/integrations')) return 'Search connectors (P6, EDMS, Procore)…';
+  if (pathname.includes('/planning') || pathname.includes('/portfolio')) return 'Search schedules, milestones…';
+  if (pathname.includes('/timesheets')) return 'Search man-hours, projects, employees…';
+  if (pathname.includes('/commercial')) return 'Search contracts, certificates, claims…';
+  if (pathname.includes('/integrations')) return 'Search connectors (P6, EDMS, Sage)…';
   if (pathname.includes('/projects/new')) return 'Search project templates…';
   if (pathname.includes('/reports')) return 'Search project reports…';
-  if (pathname.includes('/settings')) return 'Search configuration…';
+  if (pathname.includes('/configuration') || pathname.includes('/settings') || pathname.includes('/admin')) {
+    return 'Search configuration…';
+  }
   if (pathname.includes('/projects/')) return 'Search WBS, deliverables, packages…';
   return 'Search projects, clients, managers…';
+}
+
+function readExpandedGroups(groupIds: string[]): Record<string, boolean> {
+  const defaults = Object.fromEntries(groupIds.map((id) => [id, true]));
+  if (typeof window === 'undefined') return defaults;
+  try {
+    const raw = window.localStorage.getItem(GROUP_STORAGE_KEY);
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw) as Record<string, boolean>;
+    return { ...defaults, ...parsed };
+  } catch {
+    return defaults;
+  }
 }
 
 export function ProjectsEngineeringPortalShell({ children }: Props) {
@@ -31,6 +50,7 @@ export function ProjectsEngineeringPortalShell({ children }: Props) {
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [railCollapsed, setRailCollapsed] = useViewportRailCollapsed();
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [session, setSession] = useState({
     permissions: [] as string[],
     isGlobalAdmin: false,
@@ -81,9 +101,9 @@ export function ProjectsEngineeringPortalShell({ children }: Props) {
     };
   }, [pathname]);
 
-  const nav = useMemo(
+  const navGroups = useMemo(
     () =>
-      filterProjectsEngineeringNav(
+      filterProjectsEngineeringNavGroups(
         {
           permissions: session.permissions,
           isGlobalAdmin: session.isGlobalAdmin,
@@ -99,10 +119,28 @@ export function ProjectsEngineeringPortalShell({ children }: Props) {
     [session],
   );
 
+  const navFlat = useMemo(() => navGroups.flatMap((g) => g.items), [navGroups]);
+
+  useEffect(() => {
+    setExpanded(readExpandedGroups(navGroups.map((g) => g.id)));
+  }, [navGroups]);
+
   useEffect(() => {
     if (!session.ready) return;
-    if (!nav.length) router.replace('/access-denied');
-  }, [nav.length, router, session.ready]);
+    if (!navFlat.length) router.replace('/access-denied');
+  }, [navFlat.length, router, session.ready]);
+
+  const toggleGroup = (groupId: string) => {
+    setExpanded((current) => {
+      const next = { ...current, [groupId]: !current[groupId] };
+      try {
+        window.localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
 
   const widthClass = railCollapsed ? 'w-[72px]' : 'w-[270px]';
   const contentPad = railCollapsed ? 'lg:pl-[72px]' : 'lg:pl-[270px]';
@@ -112,14 +150,23 @@ export function ProjectsEngineeringPortalShell({ children }: Props) {
     }
     if (id === 'active-project') {
       return (
-        pathname.startsWith('/projects-engineering/projects/')
-        && !pathname.includes('/projects/new')
-        && !pathname.endsWith('/ai')
-        && !pathname.endsWith('/actions')
+        pathname === '/projects-engineering/workspace'
+        || (
+          pathname.startsWith('/projects-engineering/projects/')
+          && !pathname.includes('/projects/new')
+          && !pathname.includes('/reports')
+        )
       );
     }
-    if (id === 'ai') return pathname.endsWith('/ai');
-    if (id === 'actions') return pathname.endsWith('/actions');
+    if (id === 'ai') return pathname.includes('/ai-intelligence') || pathname.endsWith('/ai');
+    if (id === 'actions') return pathname.includes('/actions') && !pathname.includes('/closeout');
+    if (id === 'reports-portfolio') return pathname.startsWith('/projects-engineering/reports/portfolio') || pathname === '/projects-engineering/reports';
+    if (id === 'configuration') {
+      return pathname.startsWith('/projects-engineering/configuration') || pathname.startsWith('/projects-engineering/settings');
+    }
+    if (id === 'planning') {
+      return pathname.startsWith('/projects-engineering/planning') || pathname.startsWith('/projects-engineering/portfolio');
+    }
     return pathname === href || pathname.startsWith(`${href}/`);
   };
 
@@ -128,10 +175,55 @@ export function ProjectsEngineeringPortalShell({ children }: Props) {
       selected ? 'bg-blue-600 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'
     } ${collapsed ? 'justify-center px-2' : ''}`;
 
+  const renderNav = (collapsed: boolean, onNavigate?: () => void) => (
+    <nav className="space-y-2">
+      {navGroups.map((group) => {
+        const isOpen = collapsed || expanded[group.id] !== false;
+        const groupHasActive = group.items.some((item) => active(item.href, item.id));
+        return (
+          <div key={group.id}>
+            {!collapsed ? (
+              <button
+                type="button"
+                onClick={() => toggleGroup(group.id)}
+                className={`flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${
+                  groupHasActive ? 'text-cyan-300' : 'text-white/50 hover:text-white/80'
+                }`}
+              >
+                <span>{group.label}</span>
+                <ChevronDown className={`h-3.5 w-3.5 transition ${isOpen ? 'rotate-0' : '-rotate-90'}`} />
+              </button>
+            ) : null}
+            {isOpen ? (
+              <div className="space-y-1">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const selected = active(item.href, item.id);
+                  return (
+                    <Link
+                      key={item.id}
+                      href={item.href}
+                      title={item.label}
+                      onClick={onNavigate}
+                      className={navLinkClass(selected, collapsed)}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      {!collapsed ? <span className="truncate">{item.label}</span> : null}
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </nav>
+  );
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div className="min-h-screen bg-[#F5F8FC] text-slate-900">
       <aside
-        className={`fixed inset-y-0 left-0 z-40 hidden border-r border-white/10 bg-[#0b1f4a] transition-all lg:flex lg:flex-col ${widthClass}`}
+        className={`fixed inset-y-0 left-0 z-40 hidden border-r border-white/10 bg-[#081B42] transition-all lg:flex lg:flex-col ${widthClass}`}
       >
         <div className={`flex items-center gap-2 border-b border-white/10 px-3 py-4 ${railCollapsed ? 'justify-center' : ''}`}>
           <Image src="/brand/dorman-long-logo.png" alt="DLE" width={36} height={36} className="rounded bg-white/10 p-0.5" />
@@ -151,23 +243,7 @@ export function ProjectsEngineeringPortalShell({ children }: Props) {
             {railCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-2">
-          {!railCollapsed ? (
-            <div className="px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white/50">Project Portal</div>
-          ) : null}
-          <nav className="space-y-1">
-            {nav.map((item) => {
-              const Icon = item.icon;
-              const selected = active(item.href, item.id);
-              return (
-                <Link key={item.id} href={item.href} title={item.label} className={navLinkClass(selected, railCollapsed)}>
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {!railCollapsed ? <span className="truncate">{item.label}</span> : null}
-                </Link>
-              );
-            })}
-          </nav>
-        </div>
+        <div className="flex-1 overflow-y-auto p-2">{renderNav(railCollapsed)}</div>
         <div className="border-t border-white/10 p-2">
           <button
             type="button"
@@ -183,29 +259,14 @@ export function ProjectsEngineeringPortalShell({ children }: Props) {
       {mobileOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden">
           <button type="button" className="absolute inset-0 bg-slate-900/40" onClick={() => setMobileOpen(false)} aria-label="Close menu" />
-          <div className="absolute inset-y-0 left-0 w-[270px] bg-[#0b1f4a] shadow-xl">
+          <div className="absolute inset-y-0 left-0 w-[270px] bg-[#081B42] shadow-xl">
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
               <div className="text-sm font-black text-white">Projects & Engineering</div>
               <button type="button" onClick={() => setMobileOpen(false)} className="text-white/80">
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <nav className="space-y-1 p-2">
-              {nav.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.id}
-                    href={item.href}
-                    onClick={() => setMobileOpen(false)}
-                    className={navLinkClass(active(item.href, item.id), false)}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </nav>
+            <div className="overflow-y-auto p-2">{renderNav(false, () => setMobileOpen(false))}</div>
           </div>
         </div>
       ) : null}
