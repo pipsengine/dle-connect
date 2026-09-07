@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Card, DataTable, KpiCard, MiniBar, PageHeading, Progress, Status, Toolbar } from '@/components/projects-engineering/UI';
 import { ManHourUtilizationPanel } from '@/components/projects-engineering/ManHourUtilizationPanel';
+import { CostControlOverviewFigma } from '@/components/projects-engineering/CostControlOverviewFigma';
 import { deriveProjectCostSnapshot } from '@/lib/projects-engineering/cost-control';
 import { money } from '@/lib/projects-engineering/format';
 import type { Project } from '@/lib/projects-engineering/types';
@@ -16,12 +17,12 @@ export const costTabs = [
   ['commitments', 'Commitments'],
   ['actuals', 'Actual Costs'],
   ['labour-timesheets', 'Labour & Timesheets'],
-  ['forecast', 'Forecast / ETC / EAC'],
+  ['forecast', 'Forecast / ETC'],
   ['earned-value', 'Earned Value'],
-  ['variations', 'Variations & Changes'],
+  ['variations', 'Variations'],
   ['cash-flow', 'Cash Flow'],
   ['period-close', 'Period Close'],
-  ['reports', 'Cost Reports'],
+  ['reports', 'Reports'],
 ] as const;
 
 export type CostTabKey = (typeof costTabs)[number][0];
@@ -40,20 +41,23 @@ export function CostControlHeader({ project, active = 'overview' }: { project: P
   const snap = deriveProjectCostSnapshot(project);
   return (
     <>
-      <div className="cost-hero">
+      <div className="cost-hero cc-figma-hero">
         <div className="cost-hero-top">
           <div>
-            <div className="eyebrow">Project Cost Control</div>
-            <h1>
-              {project.code} · {project.name}
-            </h1>
-            <p>Budget governance, commitments, actuals, forecasting, earned value, labour-cost validation and period close.</p>
+            <div className="eyebrow">Project Controls</div>
+            <h1>Cost Control</h1>
+            <p>
+              Monitor and control project costs, commitments, manpower utilization and forecasts for {project.code} · {project.name}.
+            </p>
           </div>
           <div className="page-actions">
             <Button variant="secondary" href="/projects-engineering/cost-control">
               Portfolio Workbench
             </Button>
-            <Button href={`/projects-engineering/projects/${project.id}/cost-control/forecast`}>Open Forecast</Button>
+            <Button href={`/projects-engineering/projects/${project.id}/cost-control/labour-timesheets`}>Labour & Timesheets</Button>
+            <Button variant="secondary" href={`/projects-engineering/projects/${project.id}/resources`}>
+              Man Hours
+            </Button>
           </div>
         </div>
         <div className="cost-hero-metrics">
@@ -79,7 +83,7 @@ export function CostControlHeader({ project, active = 'overview' }: { project: P
           </div>
         </div>
       </div>
-      <nav className="cost-tabs">
+      <nav className="cost-tabs cc-figma-tabs">
         {costTabs.map(([key, label]) => (
           <Link
             key={key}
@@ -284,70 +288,7 @@ export function CostControlWorkbench() {
 type ProjectProps = { project: Project };
 
 export function CostOverview({ project }: ProjectProps) {
-  const snap = deriveProjectCostSnapshot(project);
-  return (
-    <>
-      <div className="kpi-grid six">
-        <KpiCard label="Approved BAC" value={money(snap.bac, project.currency)} delta="From live contract value" />
-        <KpiCard label="Commitments" value={money(snap.commitments, project.currency)} delta={`${snap.bac ? ((snap.commitments / snap.bac) * 100).toFixed(1) : 0}% of BAC`} tone="indigo" />
-        <KpiCard label="Actual Cost" value={money(snap.actual, project.currency)} delta={`${Number(project.actual || 0).toFixed(1)}% physical`} tone="cyan" />
-        <KpiCard label="ETC" value={money(snap.etc, project.currency)} delta="Remaining forecast" tone="purple" />
-        <KpiCard label="EAC" value={money(snap.eac, project.currency)} delta={`${snap.bac ? (((snap.eac / snap.bac) - 1) * 100).toFixed(1) : 0}% vs BAC`} tone="amber" />
-        <KpiCard label="VAC" value={money(snap.vac, project.currency)} delta={snap.vac < 0 ? 'Forecast overrun' : 'Within BAC'} tone="rose" />
-      </div>
-      <div className="grid two">
-        <Card title="Cost Performance Summary">
-          <div className="cost-summary-grid">
-            <div>
-              <span>CPI</span>
-              <b>{snap.cpi.toFixed(2)}</b>
-              <small>{snap.cpi < 1 ? 'Below target 1.00' : 'On / above target'}</small>
-            </div>
-            <div>
-              <span>SPI</span>
-              <b>{snap.spi.toFixed(2)}</b>
-              <small>Schedule efficiency</small>
-            </div>
-            <div>
-              <span>Physical %</span>
-              <b>{Number(project.actual || 0).toFixed(1)}%</b>
-              <small>Measured progress</small>
-            </div>
-            <div>
-              <span>Cost %</span>
-              <b>{snap.bac ? ((snap.actual / snap.bac) * 100).toFixed(1) : 0}%</b>
-              <small>Actual / BAC</small>
-            </div>
-          </div>
-          <div className="cost-waterfall">
-            <div>
-              <span>Contract / BAC</span>
-              <b>{money(snap.bac, project.currency)}</b>
-            </div>
-            <div>
-              <span>Commitments</span>
-              <b>{money(snap.commitments, project.currency)}</b>
-            </div>
-            <div>
-              <span>Actual</span>
-              <b>{money(snap.actual, project.currency)}</b>
-            </div>
-            <div>
-              <span>Forecast EAC</span>
-              <b>{money(snap.eac, project.currency)}</b>
-            </div>
-          </div>
-        </Card>
-        <Card title="Progress vs Cost">
-          <MiniBar label="Physical progress" value={Number(project.actual || 0)} />
-          <MiniBar label="Planned progress" value={Number(project.planned || 0)} />
-          <MiniBar label="Cost consumed" value={snap.bac ? Math.min(100, (snap.actual / snap.bac) * 100) : 0} />
-          <MiniBar label="Commitment level" value={snap.bac ? Math.min(100, (snap.commitments / snap.bac) * 100) : 0} />
-        </Card>
-      </div>
-      <EmptyCostRegister title="Cost Control Account Summary" subtitle={`Awaiting control accounts for ${project.code}`} />
-    </>
-  );
+  return <CostControlOverviewFigma project={project} />;
 }
 
 export function BudgetBaseline({ project }: ProjectProps) {
