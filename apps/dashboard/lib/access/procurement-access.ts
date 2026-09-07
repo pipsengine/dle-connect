@@ -1,4 +1,4 @@
-import { hasAnyPermission } from '@/lib/auth/permission-match';
+import { hasAnyPermission, hasUnrestrictedAccess } from '@/lib/auth/permission-match';
 import { PROCUREMENT_NAV, type ProcurementNavItem } from '@/lib/procurement/nav';
 
 export const PROCUREMENT_VIEW_PERMISSIONS = [
@@ -27,16 +27,16 @@ export const PROCUREMENT_APPROVE_PERMISSIONS = [
 ] as const;
 
 export const canAccessProcurementPortal = (permissions: string[], isGlobalAdmin?: boolean) =>
-  Boolean(isGlobalAdmin) || hasAnyPermission(permissions, [...PROCUREMENT_VIEW_PERMISSIONS]);
+  hasUnrestrictedAccess(permissions, isGlobalAdmin) || hasAnyPermission(permissions, [...PROCUREMENT_VIEW_PERMISSIONS]);
 
 export const canViewProcurement = canAccessProcurementPortal;
 
 export const canCreateProcurement = (permissions: string[], isGlobalAdmin?: boolean) =>
-  Boolean(isGlobalAdmin) ||
+  hasUnrestrictedAccess(permissions, isGlobalAdmin) ||
   hasAnyPermission(permissions, [...PROCUREMENT_VIEW_PERMISSIONS, ...PROCUREMENT_CREATE_PERMISSIONS]);
 
 export const canEditProcurement = (permissions: string[], isGlobalAdmin?: boolean) =>
-  Boolean(isGlobalAdmin) ||
+  hasUnrestrictedAccess(permissions, isGlobalAdmin) ||
   hasAnyPermission(permissions, [
     ...PROCUREMENT_VIEW_PERMISSIONS,
     ...PROCUREMENT_CREATE_PERMISSIONS,
@@ -44,11 +44,11 @@ export const canEditProcurement = (permissions: string[], isGlobalAdmin?: boolea
   ]);
 
 export const canApproveProcurement = (permissions: string[], isGlobalAdmin?: boolean) =>
-  Boolean(isGlobalAdmin) ||
+  hasUnrestrictedAccess(permissions, isGlobalAdmin) ||
   hasAnyPermission(permissions, [...PROCUREMENT_VIEW_PERMISSIONS, ...PROCUREMENT_APPROVE_PERMISSIONS]);
 
 export const filterProcurementNav = (permissions: string[], isGlobalAdmin?: boolean): ProcurementNavItem[] =>
   PROCUREMENT_NAV.filter(
     (item) =>
-      Boolean(isGlobalAdmin) || hasAnyPermission(permissions, item.permissionKeys),
+      hasUnrestrictedAccess(permissions, isGlobalAdmin) || hasAnyPermission(permissions, item.permissionKeys),
   );

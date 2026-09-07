@@ -1,4 +1,6 @@
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
+import { isSuperActor } from '@/lib/auth/role-delegation';
+import { resolveAccessPermissions } from '@/lib/auth/resolve-access-session';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import {
   isPayrollActingFinanceManager,
@@ -64,14 +66,16 @@ export const payrollSessionContext = async (request: Request) => {
   const fallbackRole = session ? '' : (request.headers.get('x-hris-role') || '');
   const role = roleFromSession(session, fallbackRole);
   const actor = String(session?.fullName || session?.username || role).trim();
-  const permissions = session?.isGlobalAdmin
+  const unrestricted = Boolean(session && isSuperActor(session));
+  const permissions = unrestricted
     ? ['*']
     : session
-      ? await effectivePermissionsForUser(session.sub, session.roles).catch(() => session.permissions)
+      ? await effectivePermissionsForUser(session.sub, session.roles).catch(() => resolveAccessPermissions(session))
       : [];
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || null;
-  const processingPerms = processingPermissions(role, { isGlobalAdmin: session?.isGlobalAdmin });
-  return { session, role, actor, permissions, ip, isGlobalAdmin: Boolean(session?.isGlobalAdmin), processingPerms };
+  const isGlobalAdmin = unrestricted;
+  const processingPerms = processingPermissions(role, { isGlobalAdmin });
+  return { session, role, actor, permissions, ip, isGlobalAdmin, processingPerms };
 };
 
 export const processingPermissions = (role: PayrollSessionRole, options?: { isGlobalAdmin?: boolean }) => {

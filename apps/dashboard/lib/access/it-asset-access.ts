@@ -1,4 +1,4 @@
-import { hasAnyPermission } from '@/lib/auth/permission-match';
+import { hasAnyPermission, hasUnrestrictedAccess } from '@/lib/auth/permission-match';
 
 export const IT_ASSET_VIEW_PERMISSIONS = [
   'view_it_assets',
@@ -31,13 +31,13 @@ export const IT_ASSET_EXPORT_PERMISSIONS = [
 ] as const;
 
 export const canViewItAssets = (permissions: string[], isGlobalAdmin?: boolean) =>
-  Boolean(isGlobalAdmin) || hasAnyPermission(permissions, [...IT_ASSET_VIEW_PERMISSIONS]);
+  hasUnrestrictedAccess(permissions, isGlobalAdmin) || hasAnyPermission(permissions, [...IT_ASSET_VIEW_PERMISSIONS]);
 
 export const canManageItAssets = (permissions: string[], isGlobalAdmin?: boolean) =>
-  Boolean(isGlobalAdmin) || hasAnyPermission(permissions, [...IT_ASSET_VIEW_PERMISSIONS, ...IT_ASSET_MANAGE_PERMISSIONS]);
+  hasUnrestrictedAccess(permissions, isGlobalAdmin) || hasAnyPermission(permissions, [...IT_ASSET_VIEW_PERMISSIONS, ...IT_ASSET_MANAGE_PERMISSIONS]);
 
 export const canDeleteItAssets = (permissions: string[], isGlobalAdmin?: boolean) =>
-  Boolean(isGlobalAdmin) || hasAnyPermission(permissions, [...IT_ASSET_DELETE_PERMISSIONS]);
+  hasUnrestrictedAccess(permissions, isGlobalAdmin) || hasAnyPermission(permissions, [...IT_ASSET_DELETE_PERMISSIONS]);
 
 export const canExportItAssets = (permissions: string[], isGlobalAdmin?: boolean) =>
-  Boolean(isGlobalAdmin) || hasAnyPermission(permissions, [...IT_ASSET_EXPORT_PERMISSIONS, ...IT_ASSET_VIEW_PERMISSIONS]);
+  hasUnrestrictedAccess(permissions, isGlobalAdmin) || hasAnyPermission(permissions, [...IT_ASSET_EXPORT_PERMISSIONS, ...IT_ASSET_VIEW_PERMISSIONS]);

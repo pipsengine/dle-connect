@@ -1,4 +1,4 @@
-import { hasAnyPermission } from '@/lib/auth/permission-match';
+import { hasAnyPermission, hasUnrestrictedAccess } from '@/lib/auth/permission-match';
 
 export const FLEET_VIEW_PERMISSIONS = [
   'view_logistics_fleet',
@@ -71,29 +71,29 @@ const codeMatchesSupervisor = (employeeCode?: string | null) => {
 export const canViewFleet = (_permissions: string[], _isGlobalAdmin?: boolean) => true;
 
 export const canManageFleet = (permissions: string[], isGlobalAdmin?: boolean) =>
-  Boolean(isGlobalAdmin) || hasAnyPermission(permissions, [...FLEET_VIEW_PERMISSIONS, ...FLEET_MANAGE_PERMISSIONS]);
+  hasUnrestrictedAccess(permissions, isGlobalAdmin) || hasAnyPermission(permissions, [...FLEET_VIEW_PERMISSIONS, ...FLEET_MANAGE_PERMISSIONS]);
 
 /** Any authenticated user may request a trip. */
 export const canSubmitFleetTrip = (_permissions: string[], _isGlobalAdmin?: boolean) => true;
 
 export const canLineApproveFleetTrip = (permissions: string[], isGlobalAdmin?: boolean) =>
-  Boolean(isGlobalAdmin) || hasAnyPermission(permissions, [...FLEET_LINE_APPROVE_PERMISSIONS]);
+  hasUnrestrictedAccess(permissions, isGlobalAdmin) || hasAnyPermission(permissions, [...FLEET_LINE_APPROVE_PERMISSIONS]);
 
 export const canAllocateFleetTrip = (permissions: string[], isGlobalAdmin?: boolean, employeeCode?: string | null) =>
-  Boolean(isGlobalAdmin)
+  hasUnrestrictedAccess(permissions, isGlobalAdmin)
   || hasAnyPermission(permissions, [...FLEET_ALLOCATE_PERMISSIONS])
   || codeMatchesSupervisor(employeeCode);
 
 export const canDispatchFleetTrip = (permissions: string[], isGlobalAdmin?: boolean, employeeCode?: string | null) =>
-  Boolean(isGlobalAdmin)
+  hasUnrestrictedAccess(permissions, isGlobalAdmin)
   || hasAnyPermission(permissions, [...FLEET_DISPATCH_PERMISSIONS])
   || codeMatchesSupervisor(employeeCode);
 
 export const canAccessFleetOperations = (permissions: string[], isGlobalAdmin?: boolean) =>
-  Boolean(isGlobalAdmin) || hasAnyPermission(permissions, [...FLEET_OPERATIONS_PERMISSIONS]);
+  hasUnrestrictedAccess(permissions, isGlobalAdmin) || hasAnyPermission(permissions, [...FLEET_OPERATIONS_PERMISSIONS]);
 
 export const canAccessFleetAdministration = (permissions: string[], isGlobalAdmin?: boolean) =>
-  Boolean(isGlobalAdmin) || hasAnyPermission(permissions, [...FLEET_ADMIN_PERMISSIONS]);
+  hasUnrestrictedAccess(permissions, isGlobalAdmin) || hasAnyPermission(permissions, [...FLEET_ADMIN_PERMISSIONS]);
 
 export type FleetWorkspaceAccessId =
   | 'dashboard'

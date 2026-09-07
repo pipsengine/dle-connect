@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
-import { permissionsForRoles } from '@/lib/auth/rbac';
+import { resolveAccessPermissions } from '@/lib/auth/resolve-access-session';
+import { isSuperActor } from '@/lib/auth/role-delegation';
 import {
   AUTH_COOKIE,
   authCookieMaxAgeForUser,
@@ -25,8 +26,8 @@ const readAuthToken = (request: Request) => {
 };
 
 const resolvePermissionsWithBudget = async (session: NonNullable<Awaited<ReturnType<typeof verifySessionToken>>>) => {
-  if (session.isGlobalAdmin || session.sub === 'global-admin') return ['*'];
-  const roleFallback = permissionsForRoles(session.roles || []);
+  if (isSuperActor(session)) return ['*'];
+  const roleFallback = resolveAccessPermissions(session);
   try {
     const live = await Promise.race([
       effectivePermissionsForUser(session.sub, session.roles),

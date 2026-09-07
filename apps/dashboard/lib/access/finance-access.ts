@@ -1,4 +1,4 @@
-import { hasAnyPermission } from '@/lib/auth/permission-match';
+import { hasAnyPermission, hasUnrestrictedAccess } from '@/lib/auth/permission-match';
 import { FINANCE_PAYMENTS_SELF_PERMISSION } from '@/lib/finance-intelligence/payment-access';
 
 export const FINANCE_VIEW_PERMISSIONS = [
@@ -34,7 +34,7 @@ export const canAccessFinanceModule = (
   permissions: string[] | undefined | null,
   isGlobalAdmin = false,
 ) => {
-  if (isGlobalAdmin) return true;
+  if (hasUnrestrictedAccess(permissions, isGlobalAdmin)) return true;
   return hasAnyPermission(permissions || [], [...FINANCE_VIEW_PERMISSIONS, ...FINANCE_PAYMENT_SELF_PERMISSIONS]);
 };
 
@@ -43,7 +43,7 @@ export const canAccessFullFinanceIntelligence = (
   permissions: string[] | undefined | null,
   isGlobalAdmin = false,
 ) => {
-  if (isGlobalAdmin) return true;
+  if (hasUnrestrictedAccess(permissions, isGlobalAdmin)) return true;
   return hasAnyPermission(permissions || [], [...FINANCE_VIEW_PERMISSIONS]);
 };
 
@@ -51,7 +51,7 @@ export const canApproveFinance = (
   permissions: string[] | undefined | null,
   isGlobalAdmin = false,
 ) => {
-  if (isGlobalAdmin) return true;
+  if (hasUnrestrictedAccess(permissions, isGlobalAdmin)) return true;
   return hasAnyPermission(permissions || [], [...FINANCE_APPROVE_PERMISSIONS, ...FINANCE_VIEW_PERMISSIONS]);
 };
 
@@ -59,7 +59,7 @@ export const canConfigureFinance = (
   permissions: string[] | undefined | null,
   isGlobalAdmin = false,
 ) => {
-  if (isGlobalAdmin) return true;
+  if (hasUnrestrictedAccess(permissions, isGlobalAdmin)) return true;
   return hasAnyPermission(permissions || [], [...FINANCE_CONFIG_PERMISSIONS]);
 };
 

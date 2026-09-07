@@ -203,7 +203,7 @@ export default function PortfolioDashboardPage() {
       <div className="audit-strip">
         ⓘ Scope: {scope === 'enterprise' ? 'Enterprise portfolio' : 'Project Manager assignments only'}
         {identity?.department ? ` · Department: ${identity.department}` : ''}
-        {identity?.canCreateProjects ? ' · Create Project: enabled (IT)' : ' · Create Project: IT only'}
+        {identity?.canCreateProjects ? ' · Create Project: enabled' : ' · Create Project: IT / Super Admin only'}
       </div>
     </>
   );

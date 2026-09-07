@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { AUTH_COOKIE, clearAuthCookieOptions, isPublicPath, verifySessionToken } from '@/lib/auth/session';
 import { canAccessRoute } from '@/lib/access/route-access';
 import { deriveHrisRole } from '@/lib/hris-access';
-import { permissionsForRoles } from '@/lib/auth/rbac';
+import { resolveAccessPermissions } from '@/lib/auth/resolve-access-session';
 import {
   isWorkforcePortalExceptionPath,
   isWorkforcePortalPath,
@@ -32,9 +32,7 @@ const denied = (request: NextRequest, status = 403) => {
  */
 const resolveMiddlewarePermissions = (session: Awaited<ReturnType<typeof verifySessionToken>>) => {
   if (!session) return [] as string[];
-  if (session.isGlobalAdmin) return ['*'];
-  if (Array.isArray(session.permissions) && session.permissions.length) return session.permissions;
-  return permissionsForRoles(session.roles || []);
+  return resolveAccessPermissions(session);
 };
 
 export async function middleware(request: NextRequest) {

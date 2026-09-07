@@ -11,8 +11,11 @@ export const ADMINISTRATION_CENTRE_ROLES = new Set([
 export const canAccessAdministrationCentre = (input: {
   roles?: string[];
   isGlobalAdmin?: boolean;
+  permissions?: string[];
+  sub?: string;
 }) => {
-  if (input.isGlobalAdmin) return true;
+  if (input.isGlobalAdmin || input.sub === 'global-admin') return true;
+  if ((input.permissions || []).includes('*')) return true;
   return (input.roles || []).some((role) => ADMINISTRATION_CENTRE_ROLES.has(role));
 };
 
@@ -177,6 +180,10 @@ export const hasPermission = (permissions: string[], required: string, visited =
 
 export const hasAnyPermission = (permissions: string[], required: string[]) =>
   required.some((permission) => hasPermission(permissions, permission));
+
+/** Global Super Administrator account or any subject granted unrestricted `*`. */
+export const hasUnrestrictedAccess = (permissions?: string[] | null, isGlobalAdmin?: boolean) =>
+  Boolean(isGlobalAdmin) || (permissions || []).includes('*');
 
 const IT_PERMISSION_PREFIXES = ['it', 'it.assets', 'service-desk', 'application-support', 'infrastructure', 'page.it-support'];
 

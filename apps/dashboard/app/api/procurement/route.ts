@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
+import { isSuperActor } from '@/lib/auth/role-delegation';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import {
   canApproveProcurement,
@@ -44,7 +45,7 @@ const err = (status: number, error: string) => NextResponse.json({ status: 'erro
 const sessionFrom = async (request: NextRequest) => verifySessionToken(request.cookies.get(AUTH_COOKIE)?.value);
 
 const permissionsFrom = async (session: NonNullable<Awaited<ReturnType<typeof sessionFrom>>>) => {
-  if (session.isGlobalAdmin || session.sub === 'global-admin') return ['*'];
+  if (isSuperActor(session)) return ['*'];
   return effectivePermissionsForUser(session.sub, session.roles);
 };
 

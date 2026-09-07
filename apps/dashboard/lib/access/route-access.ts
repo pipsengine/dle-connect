@@ -7,6 +7,7 @@ import { canCreateProjects } from '@/lib/access/projects-engineering-access';
 type SessionLike = Pick<SessionPayload, 'department' | 'unit' | 'roles' | 'permissions' | 'isGlobalAdmin'> & {
   employeeCode?: string;
   username?: string;
+  sub?: string;
 };
 
 const normalizePath = (pathname: string) => pathname.replace(/\/+$/, '') || '/';
@@ -507,6 +508,7 @@ export const canAccessRoute = (session: SessionLike, pathname: string) => {
         roles: session.roles || [],
         employeeCode: session.employeeCode,
         username: session.username || '',
+        sub: session.sub,
       });
     }
     return true;

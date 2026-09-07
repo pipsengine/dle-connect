@@ -1,5 +1,6 @@
 import type { SessionPayload } from '@/lib/auth/session';
 import { hasAnyPermission } from '@/lib/auth/permission-match';
+import { isSuperActor } from '@/lib/auth/role-delegation';
 import {
   PROJECTS_ENGINEERING_NAV,
   PROJECTS_ENGINEERING_VIEW_PERMISSIONS,
@@ -24,9 +25,12 @@ const normalizeKey = (value: unknown) =>
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, '');
 
+const isUnrestricted = (session: ProjectsSessionIdentity | null | undefined) =>
+  Boolean(session && isSuperActor(session));
+
 export const isItDepartmentEmployee = (session: ProjectsSessionIdentity | null | undefined) => {
   if (!session) return false;
-  if (session.isGlobalAdmin) return true;
+  if (isUnrestricted(session)) return true;
   const raw = compact(session.department);
   if (!raw) return false;
   if (/information\s*technology|info\.?\s*tech|\bICT\b/i.test(raw)) return true;
@@ -38,12 +42,16 @@ export const isItDepartmentEmployee = (session: ProjectsSessionIdentity | null |
 export const canAccessProjectsEngineeringPortal = (
   permissions: string[],
   isGlobalAdmin?: boolean,
-) => Boolean(isGlobalAdmin) || hasAnyPermission(permissions, [...PROJECTS_ENGINEERING_VIEW_PERMISSIONS]);
+  roles?: string[],
+  sub?: string,
+) =>
+  isSuperActor({ permissions, isGlobalAdmin, roles, sub })
+  || hasAnyPermission(permissions, [...PROJECTS_ENGINEERING_VIEW_PERMISSIONS]);
 
 /** Enterprise portfolio (all projects) — IT, admins, and explicit project admin permissions. */
 export const canViewEnterprisePortfolio = (session: ProjectsSessionIdentity | null | undefined) => {
   if (!session) return false;
-  if (session.isGlobalAdmin) return true;
+  if (isUnrestricted(session)) return true;
   if (isItDepartmentEmployee(session)) return true;
   const roles = (session.roles || []).map((role) => role.toLowerCase());
   if (roles.some((role) => /super administrator|md\/ceo|cfo|gm operations|project controls|pmo/i.test(role))) {
@@ -57,10 +65,10 @@ export const canViewEnterprisePortfolio = (session: ProjectsSessionIdentity | nu
   ]);
 };
 
-/** Create Project — IT Department only for now (plus global admin). */
+/** Create Project — IT Department only for now (plus Global Super Administrator). */
 export const canCreateProjects = (session: ProjectsSessionIdentity | null | undefined) => {
   if (!session) return false;
-  if (session.isGlobalAdmin) return true;
+  if (isUnrestricted(session)) return true;
   return isItDepartmentEmployee(session);
 };
 
@@ -104,9 +112,15 @@ export const filterProjectsEngineeringNav = (
   session: ProjectsSessionIdentity,
   managedProjectId?: string | null,
 ): ProjectsEngineeringNavItem[] => {
-  const canPortal = canAccessProjectsEngineeringPortal(session.permissions || [], session.isGlobalAdmin);
+  const canPortal = canAccessProjectsEngineeringPortal(
+    session.permissions || [],
+    session.isGlobalAdmin,
+    session.roles,
+    session.sub,
+  );
   if (!canPortal) return [];
 
+  const unrestricted = isUnrestricted(session);
   const canCreate = canCreateProjects(session);
   const canEnterprise = canViewEnterprisePortfolio(session);
   const workspaceId = managedProjectId || 'hdjk';
@@ -123,6 +137,7 @@ export const filterProjectsEngineeringNav = (
       return item;
     })
     .filter((item) => {
+      if (unrestricted) return true;
       if (item.id === 'new-project') return canCreate;
       if (item.id === 'integrations' || item.id === 'settings') return canEnterprise || canCreate;
       if (item.id === 'portfolio' || item.id === 'reports') {
@@ -132,6 +147,6 @@ export const filterProjectsEngineeringNav = (
       if (item.id === 'active-project' || item.id === 'ai' || item.id === 'actions') {
         return canEnterprise || Boolean(managedProjectId);
       }
-      return Boolean(session.isGlobalAdmin) || hasAnyPermission(session.permissions || [], item.permissionKeys);
+      return hasAnyPermission(session.permissions || [], item.permissionKeys);
     });
 };

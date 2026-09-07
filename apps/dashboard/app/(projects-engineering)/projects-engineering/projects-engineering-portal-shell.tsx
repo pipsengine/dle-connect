@@ -56,7 +56,11 @@ export function ProjectsEngineeringPortalShell({ children }: Props) {
         if (!active) return;
         setSession({
           permissions: Array.isArray(meJson?.data?.permissions) ? meJson.data.permissions : [],
-          isGlobalAdmin: Boolean(meJson?.data?.isGlobalAdmin),
+          isGlobalAdmin:
+            Boolean(meJson?.data?.isGlobalAdmin)
+            || Boolean(meJson?.data?.sub === 'global-admin')
+            || (Array.isArray(meJson?.data?.roles) && meJson.data.roles.includes('Super Administrator'))
+            || (Array.isArray(meJson?.data?.permissions) && meJson.data.permissions.includes('*')),
           department: String(meJson?.data?.department || ''),
           employeeCode: String(meJson?.data?.employeeCode || ''),
           employeeId: String(meJson?.data?.employeeId || ''),
@@ -128,14 +132,23 @@ export function ProjectsEngineeringPortalShell({ children }: Props) {
       <aside
         className={`fixed inset-y-0 left-0 z-40 hidden border-r border-white/10 bg-[#0b1f4a] transition-all lg:flex lg:flex-col ${widthClass}`}
       >
-        <div className={`flex items-center gap-3 border-b border-white/10 px-3 py-4 ${railCollapsed ? 'justify-center' : ''}`}>
+        <div className={`flex items-center gap-2 border-b border-white/10 px-3 py-4 ${railCollapsed ? 'justify-center' : ''}`}>
           <Image src="/brand/dorman-long-logo.png" alt="DLE" width={36} height={36} className="rounded bg-white/10 p-0.5" />
           {!railCollapsed ? (
-            <div>
+            <div className="min-w-0 flex-1">
               <div className="text-sm font-black text-white">DLE Connect</div>
               <div className="text-[10px] font-semibold uppercase tracking-wide text-white/60">Projects & Engineering</div>
             </div>
           ) : null}
+          <button
+            type="button"
+            onClick={() => setRailCollapsed((value) => !value)}
+            className="shrink-0 rounded-md p-1.5 text-white/70 hover:bg-white/10 hover:text-white"
+            aria-label={railCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={railCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {railCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto p-2">
           {!railCollapsed ? (
@@ -201,6 +214,15 @@ export function ProjectsEngineeringPortalShell({ children }: Props) {
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <button type="button" className="rounded-md border border-slate-200 p-2 lg:hidden" onClick={() => setMobileOpen(true)}>
               <Menu className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              className="hidden rounded-md border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 lg:inline-flex"
+              onClick={() => setRailCollapsed((value) => !value)}
+              aria-label={railCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              title={railCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {railCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
             </button>
             <EnterpriseHomeButton />
             <div className="shrink-0 text-sm font-black text-slate-900">Projects & Engineering</div>

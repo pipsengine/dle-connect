@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import { withResolvedAccess } from '@/lib/auth/resolve-access-session';
 import {
   canAccessProject,
   canAccessProjectsEngineeringPortal,
@@ -11,9 +12,10 @@ import { getProjectById, listAllProjects } from '@/lib/projects-engineering/proj
 export default async function ProjectIndexPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const jar = await cookies();
-  const session = await verifySessionToken(jar.get(AUTH_COOKIE)?.value);
-  if (!session) redirect('/login');
-  if (!canAccessProjectsEngineeringPortal(session.permissions || [], session.isGlobalAdmin)) {
+  const raw = await verifySessionToken(jar.get(AUTH_COOKIE)?.value);
+  if (!raw) redirect('/login');
+  const session = withResolvedAccess(raw);
+  if (!canAccessProjectsEngineeringPortal(session.permissions, session.isGlobalAdmin, session.roles, session.sub)) {
     redirect('/access-denied');
   }
 

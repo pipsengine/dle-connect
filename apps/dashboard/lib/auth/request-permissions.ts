@@ -1,4 +1,6 @@
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
+import { resolveAccessPermissions } from '@/lib/auth/resolve-access-session';
+import { isSuperActor } from '@/lib/auth/role-delegation';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 
 const readAuthToken = (request: Request) => {
@@ -22,10 +24,13 @@ const headerPermissions = (request: Request) =>
 export const permissionsForRequest = async (request: Request) => {
   const session = await verifySessionToken(readAuthToken(request));
   if (!session) return headerPermissions(request);
-  if (session.isGlobalAdmin || session.sub === 'global-admin') return ['*'];
+  if (isSuperActor(session)) return ['*'];
   try {
-    return await effectivePermissionsForUser(session.sub, session.roles);
+    const live = await effectivePermissionsForUser(session.sub, session.roles);
+    if (Array.isArray(live) && live.length) return live;
   } catch {
-    return session.permissions.length ? session.permissions : headerPermissions(request);
+    /* fall through */
   }
+  const resolved = resolveAccessPermissions(session);
+  return resolved.length ? resolved : headerPermissions(request);
 };

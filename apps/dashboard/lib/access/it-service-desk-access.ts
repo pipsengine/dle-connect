@@ -1,4 +1,4 @@
-import { hasAnyPermission } from '@/lib/auth/permission-match';
+import { hasAnyPermission, hasUnrestrictedAccess } from '@/lib/auth/permission-match';
 
 export const IT_SERVICE_DESK_VIEW_PERMISSIONS = [
   'view_itsm',
@@ -21,14 +21,14 @@ export const IT_SERVICE_DESK_EDIT_PERMISSIONS = [
 ] as const;
 
 export const canViewServiceDesk = (permissions: string[], isGlobalAdmin?: boolean) =>
-  Boolean(isGlobalAdmin) || hasAnyPermission(permissions, [...IT_SERVICE_DESK_VIEW_PERMISSIONS]);
+  hasUnrestrictedAccess(permissions, isGlobalAdmin) || hasAnyPermission(permissions, [...IT_SERVICE_DESK_VIEW_PERMISSIONS]);
 
 export const canCreateServiceDesk = (permissions: string[], isGlobalAdmin?: boolean) =>
-  Boolean(isGlobalAdmin) ||
+  hasUnrestrictedAccess(permissions, isGlobalAdmin) ||
   hasAnyPermission(permissions, [...IT_SERVICE_DESK_VIEW_PERMISSIONS, ...IT_SERVICE_DESK_CREATE_PERMISSIONS]);
 
 export const canEditServiceDesk = (permissions: string[], isGlobalAdmin?: boolean) =>
-  Boolean(isGlobalAdmin) ||
+  hasUnrestrictedAccess(permissions, isGlobalAdmin) ||
   hasAnyPermission(permissions, [
     ...IT_SERVICE_DESK_VIEW_PERMISSIONS,
     ...IT_SERVICE_DESK_CREATE_PERMISSIONS,

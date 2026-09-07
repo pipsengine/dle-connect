@@ -1,4 +1,4 @@
-import { hasAnyPermission } from '@/lib/auth/permission-match';
+import { hasAnyPermission, hasUnrestrictedAccess } from '@/lib/auth/permission-match';
 import {
   IT_SUPPORT_MODULE_CARDS,
   IT_SUPPORT_NAV_SECTIONS,
@@ -32,14 +32,14 @@ const PORTAL_ENTRY_PERMISSIONS = [
 ] as const;
 
 export const canAccessItSupportPortal = (permissions: string[], isGlobalAdmin?: boolean) =>
-  Boolean(isGlobalAdmin) || hasAnyPermission(permissions, [...PORTAL_ENTRY_PERMISSIONS]);
+  hasUnrestrictedAccess(permissions, isGlobalAdmin) || hasAnyPermission(permissions, [...PORTAL_ENTRY_PERMISSIONS]);
 
 export const canAccessItSupportKeys = (
   permissionKeys: string[] | undefined,
   permissions: string[],
   isGlobalAdmin?: boolean,
 ) => {
-  if (isGlobalAdmin) return true;
+  if (hasUnrestrictedAccess(permissions, isGlobalAdmin)) return true;
   if (!permissionKeys?.length) return canAccessItSupportPortal(permissions, isGlobalAdmin);
   return hasAnyPermission(permissions, permissionKeys);
 };

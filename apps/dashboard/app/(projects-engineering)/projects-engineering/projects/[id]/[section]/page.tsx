@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import { withResolvedAccess } from '@/lib/auth/resolve-access-session';
 import { canAccessProject, canAccessProjectsEngineeringPortal } from '@/lib/access/projects-engineering-access';
 import { ProjectHeader } from '@/components/projects-engineering/Workspace';
 import * as S from '@/components/projects-engineering/ProjectSections';
@@ -38,9 +39,10 @@ export default async function ProjectSectionPage({
   if (!Component) notFound();
 
   const jar = await cookies();
-  const session = await verifySessionToken(jar.get(AUTH_COOKIE)?.value);
-  if (!session) redirect('/login');
-  if (!canAccessProjectsEngineeringPortal(session.permissions || [], session.isGlobalAdmin)) {
+  const raw = await verifySessionToken(jar.get(AUTH_COOKIE)?.value);
+  if (!raw) redirect('/login');
+  const session = withResolvedAccess(raw);
+  if (!canAccessProjectsEngineeringPortal(session.permissions, session.isGlobalAdmin, session.roles, session.sub)) {
     redirect('/access-denied');
   }
 
