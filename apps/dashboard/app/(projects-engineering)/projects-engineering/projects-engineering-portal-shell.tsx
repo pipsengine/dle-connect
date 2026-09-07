@@ -33,32 +33,65 @@ export function ProjectsEngineeringPortalShell({ children }: Props) {
   const [session, setSession] = useState({
     permissions: [] as string[],
     isGlobalAdmin: false,
+    department: '',
+    employeeCode: '',
+    employeeId: '',
+    fullName: '',
+    username: '',
+    roles: [] as string[],
     ready: false,
+    primaryProjectId: null as string | null,
   });
 
   useEffect(() => {
     let active = true;
-    fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
+    const load = async () => {
+      try {
+        const [meRes, accessRes] = await Promise.all([
+          fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' }),
+          fetch('/api/projects-engineering/access', { cache: 'no-store', credentials: 'same-origin' }),
+        ]);
+        const meJson = meRes.ok ? await meRes.json() : null;
+        const accessJson = accessRes.ok ? await accessRes.json() : null;
         if (!active) return;
         setSession({
-          permissions: Array.isArray(json?.data?.permissions) ? json.data.permissions : [],
-          isGlobalAdmin: Boolean(json?.data?.isGlobalAdmin),
+          permissions: Array.isArray(meJson?.data?.permissions) ? meJson.data.permissions : [],
+          isGlobalAdmin: Boolean(meJson?.data?.isGlobalAdmin),
+          department: String(meJson?.data?.department || ''),
+          employeeCode: String(meJson?.data?.employeeCode || ''),
+          employeeId: String(meJson?.data?.employeeId || ''),
+          fullName: String(meJson?.data?.fullName || ''),
+          username: String(meJson?.data?.username || ''),
+          roles: Array.isArray(meJson?.data?.roles) ? meJson.data.roles : [],
           ready: true,
+          primaryProjectId: accessJson?.data?.primaryProjectId || null,
         });
-      })
-      .catch(() => {
+      } catch {
         if (active) setSession((current) => ({ ...current, ready: true }));
-      });
+      }
+    };
+    void load();
     return () => {
       active = false;
     };
   }, [pathname]);
 
   const nav = useMemo(
-    () => filterProjectsEngineeringNav(session.permissions, session.isGlobalAdmin),
-    [session.isGlobalAdmin, session.permissions],
+    () =>
+      filterProjectsEngineeringNav(
+        {
+          permissions: session.permissions,
+          isGlobalAdmin: session.isGlobalAdmin,
+          department: session.department,
+          employeeCode: session.employeeCode,
+          employeeId: session.employeeId,
+          fullName: session.fullName,
+          username: session.username,
+          roles: session.roles,
+        },
+        session.primaryProjectId,
+      ),
+    [session],
   );
 
   useEffect(() => {

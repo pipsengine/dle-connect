@@ -2,6 +2,7 @@ import type { SessionPayload } from '@/lib/auth/session';
 import { canAccessAdministrationCentre, hasAnyPermission, hasPermission } from '@/lib/auth/permission-match';
 import { PLATFORM_ROLES_WITHOUT_HRIS } from '@/lib/auth/platform-access';
 import { canAccessPayrollPath, isBankFinancePayrollPath, isPayrollSalaryReviewPath, payrollRoutePermissionOptions } from '@/lib/access/payroll-access';
+import { canCreateProjects } from '@/lib/access/projects-engineering-access';
 
 type SessionLike = Pick<SessionPayload, 'department' | 'unit' | 'roles' | 'permissions' | 'isGlobalAdmin'> & {
   employeeCode?: string;
@@ -483,7 +484,7 @@ export const canAccessRoute = (session: SessionLike, pathname: string) => {
   }
   if (path.startsWith('/projects-engineering') || path.startsWith('/api/projects-engineering')) {
     if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
-    return hasAnyPermission(session.permissions || [], [
+    const canPortal = hasAnyPermission(session.permissions || [], [
       'view_projects_engineering',
       'project.view',
       'project.*',
@@ -492,6 +493,18 @@ export const canAccessRoute = (session: SessionLike, pathname: string) => {
       'manage_project_planning',
       'manage_project_integrations',
     ]);
+    if (!canPortal) return false;
+    if (path === '/projects-engineering/projects/new') {
+      return canCreateProjects({
+        department: session.department,
+        isGlobalAdmin: session.isGlobalAdmin,
+        permissions: session.permissions || [],
+        roles: session.roles || [],
+        employeeCode: session.employeeCode,
+        username: session.username || '',
+      });
+    }
+    return true;
   }
   return true;
 };

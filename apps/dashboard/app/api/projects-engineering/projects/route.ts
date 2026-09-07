@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
-import { canAccessProjectsEngineeringPortal } from '@/lib/access/projects-engineering-access';
-import { projects } from '@/lib/projects-engineering/data';
-import { pmQuery } from '@/lib/projects-engineering/db';
+import {
+  canAccessProjectsEngineeringPortal,
+  canCreateProjects,
+  filterProjectsForSession,
+} from '@/lib/access/projects-engineering-access';
+import { createProjectRecord, listAllProjects } from '@/lib/projects-engineering/project-store';
 import { parseProjectCreate } from '@/lib/projects-engineering/validators';
 
 const getSession = async (request: NextRequest) => verifySessionToken(request.cookies.get(AUTH_COOKIE)?.value);
@@ -14,19 +17,23 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ status: 'error', error: 'Forbidden' }, { status: 403 });
   }
 
-  try {
-    const rows = await pmQuery('SELECT TOP 200 * FROM pm.Projects WHERE IsDeleted=0 ORDER BY ModifiedAt DESC');
-    return NextResponse.json({ status: 'success', data: { projects: rows, source: 'sql' } });
-  } catch {
-    return NextResponse.json({
-      status: 'success',
-      data: {
-        projects,
-        source: 'demo',
-        warning: 'SQL pm.Projects unavailable — serving portfolio demo data until DLE_SQL_CONNECTION_STRING / schema is applied.',
+  const all = await listAllProjects();
+  const visible = filterProjectsForSession(session, all);
+  const scope = visible.length === all.length ? 'enterprise' : 'managed';
+
+  return NextResponse.json({
+    status: 'success',
+    data: {
+      projects: visible,
+      scope,
+      counts: {
+        total: visible.length,
+        active: visible.filter((project) => /active/i.test(project.status)).length,
+        atRisk: visible.filter((project) => project.health === 'Watch' || project.health === 'Critical').length,
+        critical: visible.filter((project) => project.health === 'Critical').length,
       },
-    });
-  }
+    },
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -35,6 +42,12 @@ export async function POST(request: NextRequest) {
   if (!canAccessProjectsEngineeringPortal(session.permissions || [], session.isGlobalAdmin)) {
     return NextResponse.json({ status: 'error', error: 'Forbidden' }, { status: 403 });
   }
+  if (!canCreateProjects(session)) {
+    return NextResponse.json(
+      { status: 'error', error: 'Only IT Department employees can create projects at this time.' },
+      { status: 403 },
+    );
+  }
 
   const body = await request.json().catch(() => null);
   const parsed = parseProjectCreate(body);
@@ -42,15 +55,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'error', error: parsed.error || 'Invalid project request' }, { status: 400 });
   }
 
-  return NextResponse.json(
-    {
-      status: 'success',
-      data: {
-        message: 'Validated. Wire to pm.usp_ProjectCreate with authenticated actor context.',
-        project: parsed.data,
-        actor: session.username,
+  try {
+    const project = await createProjectRecord(parsed.data, {
+      username: session.username,
+      fullName: session.fullName,
+    });
+    return NextResponse.json(
+      {
+        status: 'success',
+        data: {
+          message: 'Project created as Draft. Assign the Project Manager employee code to unlock their dashboard.',
+          project,
+          actor: session.username,
+        },
       },
-    },
-    { status: 202 },
-  );
+      { status: 201 },
+    );
+  } catch (error) {
+    return NextResponse.json(
+      { status: 'error', error: error instanceof Error ? error.message : 'Unable to create project' },
+      { status: 409 },
+    );
+  }
 }

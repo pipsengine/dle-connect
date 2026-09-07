@@ -1,41 +1,127 @@
+'use client';
+
+import { FormEvent, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { PageHeading, Button, Card } from '@/components/projects-engineering/UI';
 
-const Field = ({
-  label,
-  placeholder,
-  required = false,
-  type = 'text',
-}: {
-  label: string;
-  placeholder?: string;
-  required?: boolean;
-  type?: string;
-}) => (
-  <label className="field">
-    <span>
-      {label}
-      {required ? <b>*</b> : null}
-    </span>
-    <input type={type} placeholder={placeholder} />
-  </label>
-);
-
 export default function NewProjectPage() {
+  const router = useRouter();
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [department, setDepartment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/projects-engineering/access', { cache: 'no-store', credentials: 'same-origin' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (!active) return;
+        const canCreate = Boolean(json?.data?.identity?.canCreateProjects);
+        setAllowed(canCreate);
+        setDepartment(String(json?.data?.identity?.department || ''));
+        if (!canCreate) {
+          setError('Only IT Department employees can create projects at this time.');
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setAllowed(false);
+          setError('Unable to verify create-project authorization.');
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!allowed) return;
+    setSubmitting(true);
+    setError('');
+    setMessage('');
+    const form = new FormData(event.currentTarget);
+    const payload = {
+      code: String(form.get('code') || ''),
+      name: String(form.get('name') || ''),
+      projectType: String(form.get('projectType') || 'EPC'),
+      businessUnit: String(form.get('businessUnit') || ''),
+      clientName: String(form.get('clientName') || ''),
+      location: String(form.get('location') || ''),
+      description: String(form.get('description') || ''),
+      contractValue: Number(form.get('contractValue') || 0),
+      currency: String(form.get('currency') || 'NGN'),
+      plannedStart: String(form.get('plannedStart') || ''),
+      plannedFinish: String(form.get('plannedFinish') || ''),
+      projectManagerName: String(form.get('projectManagerName') || ''),
+      projectManagerEmployeeCode: String(form.get('projectManagerEmployeeCode') || ''),
+      projectManagerId: String(form.get('projectManagerEmployeeCode') || form.get('projectManagerName') || ''),
+    };
+
+    try {
+      const res = await fetch('/api/projects-engineering/projects', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Create failed');
+      setMessage(`Created ${json.data.project.code}. Opening project workspace…`);
+      router.push(`/projects-engineering/projects/${json.data.project.id}/overview`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to create project');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (allowed === false) {
+    return (
+      <>
+        <PageHeading
+          eyebrow="Projects / New Project"
+          title="Create Project restricted"
+          description="Project creation is limited to IT Department employees while the controlled rollout is in progress."
+          actions={
+            <Button variant="secondary" href="/projects-engineering">
+              Back to dashboard
+            </Button>
+          }
+        />
+        <Card title="Access denied">
+          <p style={{ margin: 0, color: '#6f7f95', fontSize: 12, lineHeight: 1.5 }}>
+            {error || 'Your account is not authorized to create projects.'}
+            {department ? ` Detected department: ${department}.` : ' No IT department was detected on your session.'}
+          </p>
+        </Card>
+      </>
+    );
+  }
+
   return (
     <>
       <PageHeading
         eyebrow="Projects / New Project"
         title="Create Project"
-        description="Register a controlled DLE project and establish the master project context used across engineering, procurement, cost, quality, HSE and reporting."
+        description="IT-controlled project registration. Assign a Project Manager employee code so that manager receives their own dashboard and project workspace."
         actions={
           <>
             <Button variant="secondary" href="/projects-engineering">
               Cancel
             </Button>
-            <Button>Save Draft</Button>
+            <Button type="submit" form="pm-create-project" disabled={submitting || allowed !== true}>
+              {submitting ? 'Saving…' : 'Save Draft Project'}
+            </Button>
           </>
         }
       />
+
+      {error ? <div className="audit-strip">⚠ {error}</div> : null}
+      {message ? <div className="audit-strip">ⓘ {message}</div> : null}
+
       <div className="stepper">
         <span className="active">
           1 <b>Project Identity</b>
@@ -47,153 +133,151 @@ export default function NewProjectPage() {
           3 <b>Schedule</b>
         </span>
         <span>
-          4 <b>Governance</b>
+          4 <b>PM Assignment</b>
         </span>
         <span>
           5 <b>Review</b>
         </span>
       </div>
-      <div className="form-layout">
-        <div>
-          <Card title="Project Identity" subtitle="Core master-data record">
-            <div className="form-grid">
-              <Field label="Project Code" placeholder="e.g. HDJK-001" required />
-              <Field label="Project Name" placeholder="Enter official project name" required />
-              <label className="field">
-                <span>Project Type*</span>
-                <select>
-                  <option>EPC</option>
-                  <option>Engineering Services</option>
-                  <option>Fabrication</option>
-                  <option>Construction</option>
-                  <option>Maintenance</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Business Unit*</span>
-                <select>
-                  <option>Projects & Engineering</option>
-                  <option>Operations</option>
-                </select>
-              </label>
-              <Field label="Client" placeholder="Select or enter client" required />
-              <Field label="Project Location" placeholder="City / site / region" />
-              <label className="field full">
-                <span>Project Description*</span>
-                <textarea rows={4} placeholder="Scope summary, contract context and principal deliverables..." />
-              </label>
-            </div>
-          </Card>
-          <Card title="Commercial & Contract" subtitle="High-level contract controls">
-            <div className="form-grid">
-              <Field label="Contract Number" placeholder="Client contract reference" />
-              <Field label="Contract Value" placeholder="0.00" type="number" />
-              <label className="field">
-                <span>Currency</span>
-                <select>
-                  <option>NGN</option>
-                  <option>USD</option>
-                  <option>EUR</option>
-                  <option>GBP</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Commercial Model</span>
-                <select>
-                  <option>Lump Sum</option>
-                  <option>Reimbursable</option>
-                  <option>Unit Rate</option>
-                  <option>Hybrid</option>
-                </select>
-              </label>
-              <Field label="Client PO / Award Ref." placeholder="PO or award reference" />
-              <Field label="Cost Centre" placeholder="Project cost centre" />
-            </div>
-          </Card>
-          <Card title="Schedule & Governance">
-            <div className="form-grid">
-              <Field label="Planned Start" type="date" />
-              <Field label="Planned Finish" type="date" />
-              <label className="field">
-                <span>Project Manager*</span>
-                <select>
-                  <option>Engr. A. Adeyemi</option>
-                  <option>Engr. M. Okafor</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Executive Sponsor*</span>
-                <select>
-                  <option>GM Operations</option>
-                  <option>MD/CEO</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Project Classification</span>
-                <select>
-                  <option>Strategic</option>
-                  <option>Major</option>
-                  <option>Standard</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Risk Classification</span>
-                <select>
-                  <option>Medium</option>
-                  <option>High</option>
-                  <option>Critical</option>
-                </select>
-              </label>
-            </div>
-          </Card>
+
+      <form id="pm-create-project" onSubmit={onSubmit}>
+        <div className="form-layout">
+          <div>
+            <Card title="Project Identity" subtitle="Core master-data record">
+              <div className="form-grid">
+                <label className="field">
+                  <span>
+                    Project Code<b>*</b>
+                  </span>
+                  <input name="code" required placeholder="e.g. HDJK-002" />
+                </label>
+                <label className="field">
+                  <span>
+                    Project Name<b>*</b>
+                  </span>
+                  <input name="name" required placeholder="Enter official project name" />
+                </label>
+                <label className="field">
+                  <span>Project Type*</span>
+                  <select name="projectType" defaultValue="EPC">
+                    <option value="EPC">EPC</option>
+                    <option value="ENGINEERING">Engineering Services</option>
+                    <option value="FABRICATION">Fabrication</option>
+                    <option value="CONSTRUCTION">Construction</option>
+                    <option value="MAINTENANCE">Maintenance</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Business Unit*</span>
+                  <select name="businessUnit" defaultValue="Projects & Engineering">
+                    <option>Projects & Engineering</option>
+                    <option>Operations</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>
+                    Client<b>*</b>
+                  </span>
+                  <input name="clientName" required placeholder="Select or enter client" />
+                </label>
+                <label className="field">
+                  <span>Project Location</span>
+                  <input name="location" placeholder="City / site / region" />
+                </label>
+                <label className="field full">
+                  <span>
+                    Project Description<b>*</b>
+                  </span>
+                  <textarea name="description" required rows={4} placeholder="Scope summary, contract context and principal deliverables..." />
+                </label>
+              </div>
+            </Card>
+
+            <Card title="Commercial & Schedule">
+              <div className="form-grid">
+                <label className="field">
+                  <span>Contract Value</span>
+                  <input name="contractValue" type="number" min={0} step="0.01" defaultValue={0} />
+                </label>
+                <label className="field">
+                  <span>Currency</span>
+                  <select name="currency" defaultValue="NGN">
+                    <option>NGN</option>
+                    <option>USD</option>
+                    <option>EUR</option>
+                    <option>GBP</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>
+                    Planned Start<b>*</b>
+                  </span>
+                  <input name="plannedStart" type="date" required />
+                </label>
+                <label className="field">
+                  <span>
+                    Planned Finish<b>*</b>
+                  </span>
+                  <input name="plannedFinish" type="date" required />
+                </label>
+              </div>
+            </Card>
+
+            <Card title="Project Manager Assignment" subtitle="This unlocks the manager’s personal dashboard">
+              <div className="form-grid">
+                <label className="field">
+                  <span>
+                    PM Employee Code<b>*</b>
+                  </span>
+                  <input name="projectManagerEmployeeCode" required placeholder="e.g. P0146" />
+                </label>
+                <label className="field">
+                  <span>
+                    Project Manager Name<b>*</b>
+                  </span>
+                  <input name="projectManagerName" required placeholder="Engr. Full Name" />
+                </label>
+              </div>
+            </Card>
+          </div>
+
+          <aside>
+            <Card title="IT controls">
+              <div className="control-check">
+                <b>Required before activation</b>
+                <label>✓ Created by IT Department only</label>
+                <label>✓ Project Manager employee code assigned</label>
+                <label>✓ Server-side authorization enforced</label>
+                <label>✓ Duplicate project codes blocked</label>
+              </div>
+            </Card>
+            <Card title="Workflow">
+              <div className="workflow-mini">
+                <span className="done">1</span>
+                <div>
+                  <b>IT Creates Project</b>
+                  <small>Projects & Engineering portal</small>
+                </div>
+                <span>2</span>
+                <div>
+                  <b>PM Dashboard Enabled</b>
+                  <small>Matched by employee code</small>
+                </div>
+                <span>3</span>
+                <div>
+                  <b>Commercial Review</b>
+                  <small>Finance / Commercial</small>
+                </div>
+                <span>4</span>
+                <div>
+                  <b>Activation</b>
+                  <small>Status → Active</small>
+                </div>
+              </div>
+            </Card>
+          </aside>
         </div>
-        <aside>
-          <Card title="Creation Controls">
-            <div className="control-check">
-              <b>Required before activation</b>
-              <label>
-                <input type="checkbox" /> Approved contract / award evidence
-              </label>
-              <label>
-                <input type="checkbox" /> Project manager assigned
-              </label>
-              <label>
-                <input type="checkbox" /> Cost centre validated
-              </label>
-              <label>
-                <input type="checkbox" /> Baseline dates approved
-              </label>
-              <label>
-                <input type="checkbox" /> Project security classification
-              </label>
-            </div>
-          </Card>
-          <Card title="Workflow">
-            <div className="workflow-mini">
-              <span className="done">1</span>
-              <div>
-                <b>Project Creation</b>
-                <small>Project Management</small>
-              </div>
-              <span>2</span>
-              <div>
-                <b>Commercial Review</b>
-                <small>Commercial / Finance</small>
-              </div>
-              <span>3</span>
-              <div>
-                <b>Management Approval</b>
-                <small>Approval matrix</small>
-              </div>
-              <span>4</span>
-              <div>
-                <b>Activation</b>
-                <small>System generated</small>
-              </div>
-            </div>
-          </Card>
-        </aside>
-      </div>
+      </form>
     </>
   );
 }

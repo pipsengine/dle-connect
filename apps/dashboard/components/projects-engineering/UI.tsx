@@ -11,6 +11,7 @@ export function Button({
   onClick,
   disabled,
   type = 'button',
+  form,
 }: {
   children: React.ReactNode;
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -18,11 +19,12 @@ export function Button({
   onClick?: () => void;
   disabled?: boolean;
   type?: 'button' | 'submit' | 'reset';
+  form?: string;
 }) {
   const c = `btn ${variant}`;
   if (href) return <Link href={href} className={c}>{children}</Link>;
   return (
-    <button type={type} className={c} onClick={onClick} disabled={disabled}>
+    <button type={type} className={c} onClick={onClick} disabled={disabled} form={form}>
       {children}
     </button>
   );
