@@ -76,7 +76,7 @@ const requiredPermission = (route?: string) => {
   if (route.startsWith('/operations-center')) return 'operations.view';
   if (route.startsWith('/finance-accounting') || route.startsWith('/finance')) return 'finance.view';
   if (route.startsWith('/procurement')) return 'procurement.view';
-  if (route.startsWith('/projects-engineering')) return 'project.view';
+  if (route.startsWith('/projects-engineering')) return 'view_projects_engineering';
   if (route.startsWith('/hse-management')) return 'hse.view';
   if (route.startsWith('/quality-management')) return 'quality.view';
   if (route.startsWith('/document-management')) return 'documents.view';

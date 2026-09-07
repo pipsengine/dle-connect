@@ -21,6 +21,8 @@ const routePathFromRequestPath = (pathname: string) => {
   if (path === '/api/finance') return '/finance';
   if (path.startsWith('/api/procurement/')) return path.replace(/^\/api\/procurement/, '/procurement');
   if (path === '/api/procurement') return '/procurement';
+  if (path.startsWith('/api/projects-engineering/')) return path.replace(/^\/api\/projects-engineering/, '/projects-engineering');
+  if (path === '/api/projects-engineering') return '/projects-engineering';
   return path;
 };
 
@@ -477,6 +479,18 @@ export const canAccessRoute = (session: SessionLike, pathname: string) => {
       'procurement.*',
       'vendor.view',
       'vendor.*',
+    ]);
+  }
+  if (path.startsWith('/projects-engineering') || path.startsWith('/api/projects-engineering')) {
+    if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
+    return hasAnyPermission(session.permissions || [], [
+      'view_projects_engineering',
+      'project.view',
+      'project.*',
+      'create_project',
+      'edit_project',
+      'manage_project_planning',
+      'manage_project_integrations',
     ]);
   }
   return true;

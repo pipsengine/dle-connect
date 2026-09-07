@@ -92,7 +92,8 @@ export async function middleware(request: NextRequest) {
       (!pathname.startsWith('/api')
         || pathname.startsWith('/api/hris')
         || pathname.startsWith('/api/it-support')
-        || pathname.startsWith('/api/procurement'))
+        || pathname.startsWith('/api/procurement')
+        || pathname.startsWith('/api/projects-engineering'))
       && !canAccessRoute({ ...session, permissions }, pathname)
     ) {
       return denied(request, 403);
