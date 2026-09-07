@@ -139,6 +139,9 @@ export default function ProjectsListPage() {
       <Link className="btn ghost" href={`/projects-engineering/projects/${project.id}/overview`}>
         Open
       </Link>
+      <Link className="btn ghost" href={`/projects-engineering/projects/${project.id}/resources`}>
+        Man Hours
+      </Link>
       {identity?.canEditProjects ? (
         <Button variant="secondary" onClick={() => openEdit(project)}>
           Edit
@@ -258,6 +261,9 @@ export default function ProjectsListPage() {
               <div className="pm-modal-foot">
                 <Button variant="secondary" href={`/projects-engineering/projects/${detail.id}/overview`}>
                   Open Workspace
+                </Button>
+                <Button variant="secondary" href={`/projects-engineering/projects/${detail.id}/resources`}>
+                  Man Hours
                 </Button>
                 {identity?.canEditProjects ? (
                   <Button

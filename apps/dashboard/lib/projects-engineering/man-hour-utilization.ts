@@ -15,6 +15,7 @@ import type { Project } from '@/lib/projects-engineering/types';
 import type {
   ManHourEmployeeSummary,
   ManHourRegisterRow,
+  PortfolioManHourSummary,
   ProjectManHourUtilization,
   UtilizationGate,
 } from '@/lib/projects-engineering/man-hour-types';
@@ -23,6 +24,7 @@ export type {
   ManHourEmployeeSummary,
   ManHourRegisterRow,
   ManHourWeekBucket,
+  PortfolioManHourSummary,
   ProjectManHourUtilization,
   UtilizationGate,
 } from '@/lib/projects-engineering/man-hour-types';
@@ -282,3 +284,103 @@ export const buildProjectManHourUtilization = async (
       .slice(0, 100),
   };
 };
+
+/** One timesheet scan → man-hour totals for many project codes (portfolio dashboard). */
+export const buildPortfolioManHourSummaries = async (
+  projects: Array<Pick<Project, 'code'>>,
+  options?: { gate?: UtilizationGate },
+): Promise<PortfolioManHourSummary[]> => {
+  const gate = options?.gate || 'pmApproved';
+  const wanted = new Map(
+    projects
+      .map((project) => canonicalProjectCode(project.code))
+      .filter(Boolean)
+      .map((code) => [code, code]),
+  );
+  if (!wanted.size) return [];
+
+  const { headers, lines } = await readTimesheetData({ softFail: true });
+  const headerById = new Map<string, TimesheetHeader>();
+  for (const header of headers) headerById.set(header.id, header);
+
+  type Acc = {
+    productiveHours: number;
+    totalHours: number;
+    idleHours: number;
+    pmApprovedHours: number;
+    employees: Set<string>;
+    days: Set<string>;
+  };
+  const byCode = new Map<string, Acc>();
+  const ensure = (code: string): Acc => {
+    const existing = byCode.get(code);
+    if (existing) return existing;
+    const created: Acc = {
+      productiveHours: 0,
+      totalHours: 0,
+      idleHours: 0,
+      pmApprovedHours: 0,
+      employees: new Set(),
+      days: new Set(),
+    };
+    byCode.set(code, created);
+    return created;
+  };
+
+  for (const line of lines as TimesheetLine[]) {
+    const header = headerById.get(line.headerId);
+    if (!header) continue;
+    const status = normalizeTimesheetStatus(header.status);
+    if (['Rejected', 'Returned'].includes(status)) continue;
+    const workDate = String(header.timesheetDate || '').slice(0, 10);
+    for (const allocation of line.projectAllocations || []) {
+      const code = canonicalProjectCode(allocation.projectCode);
+      if (!wanted.has(code)) continue;
+      const hours = round1(Number(allocation.hours || 0));
+      if (hours <= 0) continue;
+      const acc = ensure(code);
+      acc.totalHours = round1(acc.totalHours + hours);
+      if (isIdleTimeProjectCode(code)) acc.idleHours = round1(acc.idleHours + hours);
+      else acc.productiveHours = round1(acc.productiveHours + hours);
+      if (PM_APPROVED.includes(status)) acc.pmApprovedHours = round1(acc.pmApprovedHours + hours);
+      if (!passesGate(status, gate)) continue;
+      acc.employees.add(line.employeeId || line.employeeNo || line.employeeName);
+      if (workDate) acc.days.add(workDate);
+    }
+  }
+
+  const budgetByCode = new Map<string, number>();
+  await Promise.all(
+    [...wanted.keys()].map(async (code) => {
+      budgetByCode.set(code, await readManHourBudget(code));
+    }),
+  );
+
+  return [...wanted.keys()]
+    .map((projectCode) => {
+      const acc = byCode.get(projectCode) || {
+        productiveHours: 0,
+        totalHours: 0,
+        idleHours: 0,
+        pmApprovedHours: 0,
+        employees: new Set<string>(),
+        days: new Set<string>(),
+      };
+      const budgetedHours = round1(budgetByCode.get(projectCode) || 0);
+      const availableProxy = Math.max(acc.pmApprovedHours, budgetedHours || acc.pmApprovedHours, 1);
+      return {
+        projectCode,
+        productiveHours: acc.productiveHours,
+        totalHours: acc.totalHours,
+        idleHours: acc.idleHours,
+        employeeCount: acc.employees.size,
+        dayCount: acc.days.size,
+        pmApprovedHours: acc.pmApprovedHours,
+        budgetedHours,
+        utilizationPct: Math.min(100, round1((acc.productiveHours / availableProxy) * 100)),
+        consumedPct: budgetedHours ? round1((acc.productiveHours / budgetedHours) * 100) : 0,
+      } satisfies PortfolioManHourSummary;
+    })
+    .sort((a, b) => b.productiveHours - a.productiveHours || a.projectCode.localeCompare(b.projectCode));
+};
+

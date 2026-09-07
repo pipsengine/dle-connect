@@ -10,7 +10,7 @@ export const workspaceTabs: { key: SectionKey; label: string }[] = [
   { key: 'procurement', label: 'Procurement' },
   { key: 'cost', label: 'Cost & Budget' },
   { key: 'cost-control', label: 'Cost Control' },
-  { key: 'resources', label: 'Resources' },
+  { key: 'resources', label: 'Man Hours' },
   { key: 'construction', label: 'Construction' },
   { key: 'quality', label: 'Quality' },
   { key: 'hse', label: 'HSE' },

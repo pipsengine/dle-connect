@@ -39,11 +39,11 @@ export function Overview({ project }: ProjectProps) {
           href={`/projects-engineering/projects/${project.id}/cost`}
         />
         <KpiCard
-          label="Status"
-          value={project.status}
-          delta={project.phase}
-          tone="cyan"
-          href="/projects-engineering/projects"
+          label="Man Hours"
+          value="Live"
+          delta="Timesheet utilization"
+          tone="rose"
+          href={`/projects-engineering/projects/${project.id}/resources`}
         />
         <KpiCard
           label="Contract Value"
@@ -53,6 +53,7 @@ export function Overview({ project }: ProjectProps) {
           href="/projects-engineering/projects"
         />
       </div>
+      <ManHourUtilizationPanel project={project} mode="resources" canEditBudget />
       <div className="grid two-one">
         <Card title="Execution Snapshot" subtitle="From live project profile">
           <MiniBar label="Actual progress" value={Number(project.actual || 0)} />
@@ -102,8 +103,14 @@ export function Overview({ project }: ProjectProps) {
         </Card>
         <Card title="Description">
           <p style={{ margin: 0, color: '#435970', fontSize: 12, lineHeight: 1.55 }}>{project.description}</p>
-          <div style={{ marginTop: 14 }}>
-            <Button href="/projects-engineering/projects">Manage in Projects list</Button>
+          <div style={{ marginTop: 14 }} className="page-actions">
+            <Button href={`/projects-engineering/projects/${project.id}/resources`}>Open Man Hours</Button>
+            <Button variant="secondary" href={`/projects-engineering/projects/${project.id}/cost-control/labour-timesheets`}>
+              Labour & Timesheets
+            </Button>
+            <Button variant="secondary" href="/projects-engineering/projects">
+              Manage in Projects list
+            </Button>
           </div>
         </Card>
       </div>

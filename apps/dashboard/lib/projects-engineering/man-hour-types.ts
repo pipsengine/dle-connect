@@ -65,3 +65,17 @@ export type ProjectManHourUtilization = {
     costValidationStatus: 'Pending' | 'Approved' | 'Returned' | 'Blocked';
   }>;
 };
+
+/** Lightweight portfolio row for dashboards (client-safe). */
+export type PortfolioManHourSummary = {
+  projectCode: string;
+  productiveHours: number;
+  totalHours: number;
+  idleHours: number;
+  employeeCount: number;
+  dayCount: number;
+  pmApprovedHours: number;
+  budgetedHours: number;
+  utilizationPct: number;
+  consumedPct: number;
+};
