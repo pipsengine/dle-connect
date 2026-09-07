@@ -1,4 +1,5 @@
 ﻿import { Card, KpiCard, DataTable, Status, MiniBar, Progress, Button } from '@/components/projects-engineering/UI';
+import { ActiveProjectOverviewFigma } from '@/components/projects-engineering/ActiveProjectOverviewFigma';
 import { ManHourUtilizationPanel } from '@/components/projects-engineering/ManHourUtilizationPanel';
 import { money, dmy } from '@/lib/projects-engineering/format';
 import type { Project } from '@/lib/projects-engineering/types';
@@ -14,108 +15,7 @@ const EmptyRegister = ({ title, subtitle }: { title: string; subtitle: string })
 );
 
 export function Overview({ project }: ProjectProps) {
-  const healthScore = project.health === 'Healthy' ? 88 : project.health === 'Watch' ? 72 : 48;
-  return (
-    <>
-      <div className="kpi-grid five">
-        <KpiCard
-          label="Actual Progress"
-          value={`${Number(project.actual || 0).toFixed(1)}%`}
-          delta={`${Number(project.planned || 0).toFixed(1)}% planned`}
-          href={`/projects-engineering/projects/${project.id}/progress`}
-        />
-        <KpiCard
-          label="Schedule Index"
-          value={Number(project.schedulePerformance || 0).toFixed(2)}
-          delta={Number(project.schedulePerformance || 0) < 0.98 ? 'Below threshold' : 'On track'}
-          tone={Number(project.schedulePerformance || 0) < 0.98 ? 'amber' : 'blue'}
-          href={`/projects-engineering/projects/${project.id}/planning`}
-        />
-        <KpiCard
-          label="Cost Index"
-          value={Number(project.costPerformance || 0).toFixed(2)}
-          delta="From project profile"
-          tone="indigo"
-          href={`/projects-engineering/projects/${project.id}/cost`}
-        />
-        <KpiCard
-          label="Man Hours"
-          value="Live"
-          delta="Timesheet utilization"
-          tone="rose"
-          href={`/projects-engineering/projects/${project.id}/resources`}
-        />
-        <KpiCard
-          label="Contract Value"
-          value={money(project.contractValue, project.currency)}
-          delta={project.client}
-          tone="purple"
-          href="/projects-engineering/projects"
-        />
-      </div>
-      <ManHourUtilizationPanel project={project} mode="resources" canEditBudget />
-      <div className="grid two-one">
-        <Card title="Execution Snapshot" subtitle="From live project profile">
-          <MiniBar label="Actual progress" value={Number(project.actual || 0)} />
-          <MiniBar label="Planned progress" value={Number(project.planned || 0)} />
-          <MiniBar label="SPI × 100" value={Math.min(100, Number(project.schedulePerformance || 0) * 100)} />
-          <MiniBar label="CPI × 100" value={Math.min(100, Number(project.costPerformance || 0) * 100)} />
-        </Card>
-        <Card title="Project Health">
-          <div className="health-dial">
-            <div>
-              <strong>{project.health.toUpperCase()}</strong>
-              <span>{healthScore}</span>
-              <small>Health score / 100</small>
-            </div>
-          </div>
-          <div className="health-legend">
-            <span>
-              Schedule <b>{Number(project.schedulePerformance || 0) < 0.95 ? 'Watch' : 'Healthy'}</b>
-            </span>
-            <span>
-              Cost <b>{Number(project.costPerformance || 0) < 0.95 ? 'Watch' : 'Healthy'}</b>
-            </span>
-            <span>
-              Overall <b>{project.health}</b>
-            </span>
-            <span>
-              Status <b>{project.status}</b>
-            </span>
-          </div>
-        </Card>
-      </div>
-      <div className="grid two">
-        <Card title="Project Master Data" subtitle="Editable from Projects register">
-          <DataTable
-            headers={['Field', 'Value']}
-            rows={[
-              ['Code', project.code],
-              ['Client', project.client],
-              ['Manager', project.manager],
-              ['Location', project.location],
-              ['Business Unit', project.businessUnit],
-              ['Type', project.projectType || '—'],
-              ['Dates', `${dmy(project.start)} – ${dmy(project.finish)}`],
-              ['Health', <Status key="h">{project.health}</Status>],
-            ]}
-          />
-        </Card>
-        <Card title="Description">
-          <p style={{ margin: 0, color: '#435970', fontSize: 12, lineHeight: 1.55 }}>{project.description}</p>
-          <div style={{ marginTop: 14 }} className="page-actions">
-            <Button href={`/projects-engineering/projects/${project.id}/resources`}>Open Man Hours</Button>
-            <Button variant="secondary" href={`/projects-engineering/projects/${project.id}/cost-control/labour-timesheets`}>
-              Labour & Timesheets
-            </Button>
-            <Button variant="secondary" href="/projects-engineering/projects">
-              Manage in Projects list
-            </Button>
-          </div>
-        </Card>
-      </div>
-    </>
-  );
+  return <ActiveProjectOverviewFigma project={project} />;
 }
 
 export function Planning({ project }: ProjectProps) {
