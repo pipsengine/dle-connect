@@ -58,15 +58,17 @@ export async function ProjectHeader({ id, active }: { id: string; active: string
         </div>
       </div>
       <nav className="workspace-tabs">
-        {workspaceTabs.map((tab) => (
-          <Link
-            key={tab.key}
-            href={`/projects-engineering/projects/${project.id}/${tab.key}`}
-            className={active === tab.key ? 'active' : ''}
-          >
-            {tab.label}
-          </Link>
-        ))}
+        {workspaceTabs.map((tab) => {
+          const href =
+            tab.key === 'cost-control'
+              ? `/projects-engineering/projects/${project.id}/cost-control/overview`
+              : `/projects-engineering/projects/${project.id}/${tab.key}`;
+          return (
+            <Link key={tab.key} href={href} className={active === tab.key ? 'active' : ''}>
+              {tab.label}
+            </Link>
+          );
+        })}
       </nav>
     </>
   );

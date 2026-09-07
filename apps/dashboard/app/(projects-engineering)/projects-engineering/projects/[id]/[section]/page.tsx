@@ -36,6 +36,10 @@ export default async function ProjectSectionPage({
   params: Promise<{ id: string; section: string }>;
 }) {
   const { id, section } = await params;
+  // Cost Control is a nested workspace (not a single [section] page).
+  if (section === 'cost-control') {
+    redirect(`/projects-engineering/projects/${id}/cost-control/overview`);
+  }
   const Component = map[section];
   if (!Component) notFound();
 
