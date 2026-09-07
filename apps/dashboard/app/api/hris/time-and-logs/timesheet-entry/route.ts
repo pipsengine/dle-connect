@@ -70,6 +70,11 @@ import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetHeaderShiftKind, timesheetShiftHeaderSlug, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { mobilizationCoversDate, mobilizationMatchesSupervisor, readTimesheetMobilizations, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
+import {
+  applyAgegeBlastingSupervisorContext,
+  extractSupervisorEmployeeCode,
+  isTimesheetTradeLabelLocation,
+} from '@/lib/timesheet-agege-blasting';
 
 const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string | null): TimesheetDayContext => ({
   date,
@@ -500,7 +505,7 @@ const canonicalSupervisorValue = (
 ) => {
   const raw = stripSupervisorCount(clean(value));
   if (!raw) return '';
-  const code = raw.includes(' - ') ? raw.split(' - ')[0]?.trim() : '';
+  const code = extractSupervisorEmployeeCode(raw);
   for (const key of matchKeys(code)) {
     const employee = index.byKey.get(key);
     const display = employee ? supervisorDisplay(employee) : '';
@@ -528,7 +533,7 @@ const findSupervisorEmployee = <T extends SupervisorSourceEmployee>(
   const raw = stripSupervisorCount(clean(value));
   if (!raw) return null;
   const canonical = canonicalSupervisorValue(raw, index);
-  const code = canonical.includes(' - ') ? canonical.split(' - ')[0]?.trim() : raw.includes(' - ') ? raw.split(' - ')[0]?.trim() : '';
+  const code = extractSupervisorEmployeeCode(canonical || raw);
   for (const key of matchKeys(code)) {
     const employee = index.byKey.get(key);
     if (employee) return employee;
@@ -814,9 +819,11 @@ const defaultWorkCenterForEmployees = (
 const workCenterFromSupervisorProfile = (profile: SupervisorSourceEmployee | null | undefined, workCenters: TimesheetWorkCenter[]) => {
   const title = clean(profile?.jobTitle).toLowerCase();
   if (!title) return '';
+  // Blaster before painter so "BLASTER& PAINTER SUPERVISOR" maps to Blasting (Agege C1001).
   const aliases: Array<[RegExp, string]> = [
     [/\bfitter|fitting\b/i, 'Fitting'],
     [/\bwelder|welding\b/i, 'Welding'],
+    [/\bblaster|blasting\b/i, 'Blasting'],
     [/\bpainter|painting|coating\b/i, 'Painting'],
     [/\brigger|rigging\b/i, 'Rigging'],
     [/\bscaffold/i, 'Structural Assembly'],
@@ -828,6 +835,13 @@ const workCenterFromSupervisorProfile = (profile: SupervisorSourceEmployee | nul
     if (match) return match.name;
   }
   return workCenters.find((workCenter) => title.includes(clean(workCenter.name).toLowerCase()))?.name || '';
+};
+
+const workCenterSiteLocation = (workCenter: TimesheetWorkCenter | undefined, workCenterNames: string[]) => {
+  if (!workCenter) return '';
+  const candidate = clean(workCenter.location || workCenter.site);
+  if (!candidate || isTimesheetTradeLabelLocation(candidate, workCenterNames)) return '';
+  return candidate;
 };
 
 const resolveProjectManagerForSubmission = (lines: TimesheetLine[], projects: Project[]) => {
@@ -996,7 +1010,7 @@ const buildPayload = async (
     .sort((a, b) => a.label.localeCompare(b.label));
   const targetSupervisor = canonicalSupervisorValue(requestedSupervisor || supervisorDirectory[0]?.value || recordSupervisors[0] || access.actor, supervisorIndex);
   const selectedSupervisorProfile = findSupervisorEmployee(targetSupervisor, supervisorIndex) || activeEmployees.find((employee) => supervisorMatchesSelection(employee, targetSupervisor));
-  const targetSupervisorCode = clean(targetSupervisor).split(' - ')[0]?.trim().toLowerCase();
+  const targetSupervisorCode = extractSupervisorEmployeeCode(targetSupervisor).toLowerCase();
   const dateMobilizations = allMobilizations.filter((item) => mobilizationCoversDate(item, targetDate));
   const hostMobilizations = dateMobilizations.filter((item) => mobilizationMatchesSupervisor(item, targetSupervisor));
   const scopedWorkCenters = [...workCenters];
@@ -1022,6 +1036,24 @@ const buildPayload = async (
       site: OFFSHORE_LOCATION_NAME,
       sourceSystem: 'HRIS',
     });
+  }
+  const workCenterNameList = scopedWorkCenters.map((workCenter) => workCenter.name);
+  const directoryLocationNames = Array.from(new Set([
+    ...activeEmployees.map(employeeLocation),
+    ...scopedLocations.flatMap((location) => [location.name, location.site]),
+  ].map(clean).filter(Boolean)));
+  {
+    const forced = applyAgegeBlastingSupervisorContext({
+      supervisorValue: targetSupervisor,
+      locationName: targetLocation,
+      workCenterName: targetWorkCenter,
+      locationNames: directoryLocationNames,
+      workCenterNames: workCenterNameList,
+    });
+    if (forced.forced) {
+      targetLocation = forced.locationName;
+      targetWorkCenter = forced.workCenterName;
+    }
   }
   if (isOffshoreWorkCenterName(targetWorkCenter)) {
     targetLocation = OFFSHORE_LOCATION_NAME;
@@ -1056,11 +1088,21 @@ const buildPayload = async (
   const selectedSupervisorAllDirectReports = assignedSupervisorEmployees.length ? assignedSupervisorEmployees : reportingManagerEmployees;
   {
     const supervisorRecordsForDefault = timesheetRecords.filter((record) => managerMatches({ managerName: record.supervisor }, targetSupervisor));
-    if (pinnedWorkCenter) {
+    const agegeForced = applyAgegeBlastingSupervisorContext({
+      supervisorValue: targetSupervisor,
+      locationName: targetLocation,
+      workCenterName: targetWorkCenter,
+      locationNames: directoryLocationNames,
+      workCenterNames: workCenterNameList,
+    });
+    if (agegeForced.forced) {
+      targetLocation = agegeForced.locationName;
+      targetWorkCenter = agegeForced.workCenterName;
+    } else if (pinnedWorkCenter) {
       const workCenterRow = scopedWorkCenters.find((workCenter) => clean(workCenter.name) === targetWorkCenter);
       targetLocation =
         targetLocation ||
-        clean(workCenterRow?.location || workCenterRow?.site) ||
+        workCenterSiteLocation(workCenterRow, workCenterNameList) ||
         preferredLocationFromDirectory(selectedSupervisorAllDirectReports, scopedLocations, scopedWorkCenters) ||
         clean(selectedSupervisorProfile ? employeeLocation(selectedSupervisorProfile) : '') ||
         mostCommon(supervisorRecordsForDefault.flatMap((record) => [record.location, record.site]));
@@ -1076,7 +1118,7 @@ const buildPayload = async (
       targetLocation =
         targetLocation ||
         preferredLocationFromDirectory([], scopedLocations, scopedWorkCenters) ||
-        clean(scopedWorkCenters.find((workCenter) => workCenter.name === targetWorkCenter)?.site || scopedWorkCenters.find((workCenter) => workCenter.name === targetWorkCenter)?.location) ||
+        workCenterSiteLocation(scopedWorkCenters.find((workCenter) => workCenter.name === targetWorkCenter), workCenterNameList) ||
         mostCommon(scopedLocations.flatMap((location) => [location.name, location.site]));
       if (targetLocation && targetWorkCenter && !isOffshoreWorkCenterName(targetWorkCenter)) {
         const workCentersForLocation = scopedWorkCenters.filter((workCenter) => {
@@ -1096,6 +1138,13 @@ const buildPayload = async (
       }
     }
     if (isOffshoreWorkCenterName(targetWorkCenter)) targetLocation = OFFSHORE_LOCATION_NAME;
+    // Drop trade-label locations (e.g. Painting) so Agege crew is not filtered out.
+    if (targetLocation && isTimesheetTradeLabelLocation(targetLocation, workCenterNameList)) {
+      targetLocation =
+        preferredLocationFromDirectory(selectedSupervisorAllDirectReports, scopedLocations, scopedWorkCenters) ||
+        clean(selectedSupervisorProfile ? employeeLocation(selectedSupervisorProfile) : '') ||
+        '';
+    }
   }
   const selectedSupervisorDirectReports = targetLocation
     ? selectedSupervisorAllDirectReports.filter((employee) => employeeMatchesLocation(employee, targetLocation))
@@ -1178,6 +1227,32 @@ const buildPayload = async (
         && timesheetHeaderMatchesShift(h.shiftLabel, targetShiftForSheet)
       ))) ||
     null;
+  // C1001: reuse conflicting Painting drafts under Blasting instead of creating a second empty sheet.
+  let remappedConflictingPaintingHeader = false;
+  if (!header && !requestedHeader && applyAgegeBlastingSupervisorContext({
+    supervisorValue: targetSupervisor,
+    workCenterName: targetWorkCenter,
+    locationNames: directoryLocationNames,
+    workCenterNames: workCenterNameList,
+  }).forced && targetWorkCenter === 'Blasting') {
+    const conflicting = headers.find((h) => (
+      h.timesheetDate === targetDate
+      && canonicalSupervisorValue(h.supervisorId, supervisorIndex) === targetSupervisor
+      && clean(h.workCenterName).toLowerCase() === 'painting'
+      && timesheetHeaderMatchesShift(h.shiftLabel, targetShiftForSheet)
+      && ['Draft', 'Returned'].includes(normalizeTimesheetStatus(h.status))
+    ));
+    if (conflicting) {
+      header = {
+        ...conflicting,
+        supervisorId: targetSupervisor,
+        supervisorName: selectedSupervisorProfile ? supervisorDisplay(selectedSupervisorProfile) : targetSupervisor,
+        workCenterId: 'blasting',
+        workCenterName: 'Blasting',
+      };
+      remappedConflictingPaintingHeader = true;
+    }
+  }
   const selectedEmployeeKeys = new Set(selectedSupervisorEmployees.flatMap((employee) => matchKeys(employee.employeeCode, employee.fullName)).filter(Boolean));
   const lineBelongsToSelectedCrew = (line: TimesheetLine) =>
     selectedEmployeeKeys.size > 0
@@ -1229,6 +1304,8 @@ const buildPayload = async (
         lastSyncAt: null,
         shiftLabel: targetShiftForSheet,
       };
+      persistRoster = true;
+    } else if (remappedConflictingPaintingHeader) {
       persistRoster = true;
     }
     const existingKeys = new Set(lines.flatMap((line) => matchKeys(line.employeeNo, line.employeeId, line.employeeName)));
@@ -1326,7 +1403,9 @@ const buildPayload = async (
         ...(hostMobilizations.length ? [OFFSHORE_LOCATION_NAME] : []),
       ].map(clean).filter(Boolean),
     ),
-  ).sort((a, b) => a.localeCompare(b));
+  )
+    .filter((name) => !isTimesheetTradeLabelLocation(name, workCenterNameList))
+    .sort((a, b) => a.localeCompare(b));
   const summary = {
     totalEmployees: lines.length,
     presentEmployees: lines.filter((l) => l.clockIn || isManualOffshoreLine(l)).length,

@@ -8,6 +8,7 @@ import {
   PlusCircle,
   Settings2,
   Target,
+  WalletCards,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -25,6 +26,16 @@ export const PROJECTS_ENGINEERING_VIEW_PERMISSIONS = [
   'project.*',
 ] as const;
 
+export const PROJECTS_ENGINEERING_COST_PERMISSIONS = [
+  'view_project_costs',
+  'COST_CONTROL_VIEW',
+  'COST_CONTROL_VALIDATE',
+  'COST_CONTROL_FORECAST',
+  'COST_CONTROL_REPORT',
+  'project.admin',
+  'project.*',
+] as const;
+
 export const PROJECTS_ENGINEERING_NAV: ProjectsEngineeringNavItem[] = [
   {
     id: 'dashboard',
@@ -39,6 +50,13 @@ export const PROJECTS_ENGINEERING_NAV: ProjectsEngineeringNavItem[] = [
     href: '/projects-engineering/projects',
     icon: FolderKanban,
     permissionKeys: [...PROJECTS_ENGINEERING_VIEW_PERMISSIONS],
+  },
+  {
+    id: 'cost-control',
+    label: 'Cost Control',
+    href: '/projects-engineering/cost-control',
+    icon: WalletCards,
+    permissionKeys: [...PROJECTS_ENGINEERING_VIEW_PERMISSIONS, ...PROJECTS_ENGINEERING_COST_PERMISSIONS],
   },
   {
     id: 'portfolio',

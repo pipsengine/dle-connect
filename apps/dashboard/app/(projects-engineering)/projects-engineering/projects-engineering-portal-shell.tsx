@@ -16,6 +16,7 @@ import './projects-engineering.css';
 type Props = { children: ReactNode };
 
 function searchPlaceholder(pathname: string) {
+  if (pathname.includes('/cost-control')) return 'Search cost codes, commitments, forecasts…';
   if (pathname.includes('/portfolio')) return 'Search portfolio plans, milestones…';
   if (pathname.includes('/integrations')) return 'Search connectors (P6, EDMS, Procore)…';
   if (pathname.includes('/projects/new')) return 'Search project templates…';

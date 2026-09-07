@@ -1,0 +1,14 @@
+{
+  "assignmentBatch": "2026-09-07-agege-blasting-jimoh-gbadamosi",
+  "assignmentGroup": "AGEGE BLASTING",
+  "supervisorEmployeeCode": "C1001",
+  "performedBy": "codex.database-import",
+  "reason": "Streamline Jimoh Gbadamosi (C1001) to AGEGE location + Blasting work center. Move Agege blaster/painter crew off Painting conflict onto Blasting.",
+  "rows": [
+    { "sourceName": "TAJUDEEN ADESEYE", "tradeRole": "BLASTER", "employeeCode": "C1933", "matchConfidence": "AgegeBlastingRoster" },
+    { "sourceName": "FEMI OLAITAN", "tradeRole": "BLASTER", "employeeCode": "C2098", "matchConfidence": "AgegeBlastingRoster" },
+    { "sourceName": "EZEKIEL DAYO", "tradeRole": "BLASTER", "employeeCode": "C1931", "matchConfidence": "AgegeBlastingRoster" },
+    { "sourceName": "SUNDAY COKER", "tradeRole": "BLASTER", "employeeCode": "C2097", "matchConfidence": "AgegeBlastingRoster" },
+    { "sourceName": "OLUWASEYI ADEBANJO", "tradeRole": "BLASTER", "employeeCode": "C2790", "matchConfidence": "AgegeBlastingRoster" }
+  ]
+}

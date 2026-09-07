@@ -151,7 +151,7 @@ export const filterProjectsEngineeringNav = (
       if (unrestricted) return true;
       if (item.id === 'new-project') return canCreate;
       if (item.id === 'integrations' || item.id === 'settings') return canEnterprise || canCreate;
-      if (item.id === 'portfolio' || item.id === 'reports' || item.id === 'projects') {
+      if (item.id === 'portfolio' || item.id === 'reports' || item.id === 'projects' || item.id === 'cost-control') {
         return canEnterprise || hasAnyPermission(session.permissions || [], item.permissionKeys);
       }
       if (item.id === 'active-project' || item.id === 'ai' || item.id === 'actions') {

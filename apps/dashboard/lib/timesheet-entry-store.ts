@@ -8,6 +8,7 @@ import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { normalizePayrollMatchKey, readActiveSagePayrollEmployeeKeys, type SagePayrollEmployee } from '@/lib/sage-people-payroll-store';
 import { approvedPaidLeaveForDate } from '@/lib/leave-management-store';
 import { readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
+import { extractSupervisorEmployeeCode } from '@/lib/timesheet-agege-blasting';
 import {
   DAILY_BREAK_HOURS,
   STANDARD_TIMESHEET_HOURS,
@@ -1069,9 +1070,16 @@ END
         .query(`
 MERGE [hris].[TimesheetWorkCenters] AS target
 USING (SELECT @Id AS [Id]) AS source ON target.[Id] = source.[Id]
-WHEN MATCHED THEN UPDATE SET [Code]=@Code,[Name]=@Name,[Location]=@Name,[Site]=@Name,[Status]=N'Active',[SourceSystem]=N'HRIS',[UpdatedAt]=SYSUTCDATETIME()
-WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[Location],[Site],[Status],[SourceSystem]) VALUES (@Id,@Code,@Name,@Name,@Name,N'Active',N'HRIS');`);
+WHEN MATCHED THEN UPDATE SET [Code]=@Code,[Name]=@Name,[Status]=N'Active',[SourceSystem]=N'HRIS',[UpdatedAt]=SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[Location],[Site],[Status],[SourceSystem]) VALUES (@Id,@Code,@Name,NULL,NULL,N'Active',N'HRIS');`);
     }
+    // Clear trade-name-as-location noise (e.g. Painting/Blasting used as Site).
+    // Real sites (AGEGE) come from employee directory / supervisor context — not WC name.
+    await pool.request().query(`
+UPDATE [hris].[TimesheetWorkCenters]
+SET [Location] = NULL, [Site] = NULL, [UpdatedAt] = SYSUTCDATETIME()
+WHERE [Location] = [Name] OR [Site] = [Name];
+`);
     await pool.request().query(`UPDATE [hris].[TimesheetWorkCenters] SET [Status]=N'Inactive',[UpdatedAt]=SYSUTCDATETIME() WHERE [SourceSystem]=N'Sage Payroll'`);
     })().catch((error) => {
       dbEnsureState.promise = null;
@@ -2754,8 +2762,8 @@ ORDER BY CASE WHEN [Status]=N'Active' THEN 0 ELSE 1 END, [Name]`);
     id: workCenterId(name),
     code: workCenterCode(name),
     name,
-    location: name,
-    site: name,
+    location: '',
+    site: '',
     status: 'Active' as const,
     sourceSystem: 'Local HRIS fallback',
     createdAt: now,
@@ -3450,7 +3458,7 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
   const source = await readPayrollEmployees();
   const keys = new Set<string>();
   const employees: Array<{ employeeCode: string; fullName: string }> = [];
-  const selectedCode = selected.split(' - ')[0]?.trim();
+  const selectedCode = extractSupervisorEmployeeCode(selected);
   try {
     const assignments = selectedCode ? await readSupervisorAssignments({ supervisorEmployeeCode: selectedCode }) : [];
     const matchedAssignments = assignments.filter((assignment) => assignment.employeeCode && assignment.matchedStatus !== 'Unresolved');

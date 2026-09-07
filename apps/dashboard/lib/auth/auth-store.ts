@@ -255,23 +255,27 @@ export const hashPassword = (password: string, salt = crypto.randomBytes(16).toS
 });
 
 /**
- * Temporary / first-login password derived from surname.
- * Spaces are removed so multi-word surnames (e.g. "Kalu Eke") become "KaluEke"
- * and are easier to type than an exact spaced string.
+ * Temporary / first-login / reset password derived from surname.
+ * Spaces are removed and the result is uppercased (e.g. "Kalu Eke" → "KALUEKE").
  */
 export const defaultPasswordFromSurname = (surname: string, fallback = '') => {
-  const normalized = compact(surname).replace(/\s+/g, '');
+  const normalized = compact(surname).replace(/\s+/g, '').toUpperCase();
   if (normalized) return normalized;
-  return compact(fallback).replace(/\s+/g, '') || compact(fallback);
+  const fromFallback = compact(fallback).replace(/\s+/g, '').toUpperCase();
+  return fromFallback || compact(fallback).toUpperCase();
 };
 
-/** Login candidates so spaced / unspaced typing still matches the stored default. */
+/**
+ * Login / change-password candidates so spaced / unspaced and mixed-case typing
+ * still match surname defaults (CAPS) and older mixed-case hashes.
+ */
 export const passwordVerifyCandidates = (password: string) => {
   const raw = String(password || '');
   const trimmed = raw.trim();
   const collapsed = trimmed.replace(/\s+/g, ' ');
   const compactSpaces = trimmed.replace(/\s+/g, '');
-  return Array.from(new Set([raw, trimmed, collapsed, compactSpaces].filter((item) => item.length > 0)));
+  const base = [raw, trimmed, collapsed, compactSpaces].filter((item) => item.length > 0);
+  return Array.from(new Set(base.flatMap((item) => [item, item.toUpperCase()])));
 };
 
 const verifyPassword = (password: string, hash: string, salt: string) => {
@@ -700,7 +704,10 @@ export const changePassword = async (userId: string, currentPassword: string | u
   const { ip, device } = client(headers);
   if (userId === 'global-admin') {
     const state = await readGlobalAdmin();
-    if (currentPassword && !verifyPassword(currentPassword, state.passwordHash, state.passwordSalt)) throw new Error('Current password is not correct.');
+    // Same candidate matching as login (spaced / unspaced surname defaults).
+    if (currentPassword && !passwordMatches(currentPassword, state.passwordHash, state.passwordSalt)) {
+      throw new Error('Current password is not correct.');
+    }
     const hashed = hashPassword(newPassword);
     await writeGlobalAdmin({ ...state, passwordHash: hashed.hash, passwordSalt: hashed.salt, firstLoginRequired: false, passwordResetRequired: false, failedAttempts: 0, lockedUntil: null, updatedAt: nowIso() });
     await appendAudit({ user: 'Admin', action: 'Password change', ipAddress: ip, device, performedBy: performedBy || 'Admin' });
@@ -709,7 +716,10 @@ export const changePassword = async (userId: string, currentPassword: string | u
   const users = await readUsersStoreRaw();
   const target = users.find((item) => item.id === userId);
   if (!target) throw new Error('User account was not found.');
-  if (currentPassword && !verifyPassword(currentPassword, target.passwordHash, target.passwordSalt)) throw new Error('Current password is not correct.');
+  // Match authenticate(): spaced / mixed-case typing still verifies against CAPS surname defaults.
+  if (currentPassword && !passwordMatches(currentPassword, target.passwordHash, target.passwordSalt)) {
+    throw new Error('Current password is not correct.');
+  }
   const hashed = hashPassword(newPassword);
   const nextUsers = users.map((item) => item.id === userId ? {
     ...item,

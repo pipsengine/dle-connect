@@ -102,7 +102,10 @@ export const parseProjectCreate = (body: unknown): { data?: ProjectCreateInput; 
   }
   if (new Date(plannedFinish) < new Date(plannedStart)) return { error: 'Finish date must be on or after start date' };
   if (!projectManagerId && !projectManagerEmployeeCode && !projectManagerName) {
-    return { error: 'Project manager is required (employee code or name)' };
+    return { error: 'Project manager is required (select an employee)' };
+  }
+  if (!projectManagerEmployeeCode && !projectManagerName) {
+    return { error: 'Select a Project Manager from the employee directory' };
   }
   if (description.length < 10 || description.length > 4000) return { error: 'Description must be 10–4000 characters' };
   if (!clientName) return { error: 'Client is required' };

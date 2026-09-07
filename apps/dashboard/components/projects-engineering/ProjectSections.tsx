@@ -1,4 +1,5 @@
 ﻿import { Card, KpiCard, DataTable, Status, MiniBar, Progress, Button } from '@/components/projects-engineering/UI';
+import { ManHourUtilizationPanel } from '@/components/projects-engineering/ManHourUtilizationPanel';
 import { money, dmy } from '@/lib/projects-engineering/format';
 import type { Project } from '@/lib/projects-engineering/types';
 
@@ -137,20 +138,47 @@ export function Procurement({ project }: ProjectProps) {
   return <EmptyRegister title="Procurement Packages" subtitle={`No packages for ${project.code} yet`} />;
 }
 export function Cost({ project }: ProjectProps) {
+  const snapNote = `${Number(project.costPerformance || 0).toFixed(2)} CPI · ${project.status}`;
   return (
     <>
       <div className="kpi-grid four">
-        <KpiCard label="Contract Value" value={money(project.contractValue, project.currency)} delta="Approved contract" />
-        <KpiCard label="CPI" value={Number(project.costPerformance || 0).toFixed(2)} delta="Cost performance" tone="indigo" />
-        <KpiCard label="Actual Progress" value={`${Number(project.actual || 0).toFixed(1)}%`} delta="Earned proxy" />
-        <KpiCard label="Status" value={project.status} delta={project.health} tone="amber" />
+        <KpiCard label="Contract Value" value={money(project.contractValue, project.currency)} delta="Approved contract" href={`/projects-engineering/projects/${project.id}/cost-control/overview`} />
+        <KpiCard label="CPI" value={Number(project.costPerformance || 0).toFixed(2)} delta="Cost performance" tone="indigo" href={`/projects-engineering/projects/${project.id}/cost-control/earned-value`} />
+        <KpiCard label="Actual Progress" value={`${Number(project.actual || 0).toFixed(1)}%`} delta="Earned proxy" href={`/projects-engineering/projects/${project.id}/cost-control/forecast`} />
+        <KpiCard label="Status" value={project.status} delta={snapNote} tone="amber" href={`/projects-engineering/projects/${project.id}/cost-control/overview`} />
       </div>
-      <EmptyRegister title="Cost Control Accounts" subtitle={`No control accounts for ${project.code} yet`} />
+      <Card title="Cost Control Unit" subtitle="Full budget, commitments, actuals, forecast and EVM workspaces">
+        <p style={{ margin: '0 0 12px', color: '#6f7f95', fontSize: 12, lineHeight: 1.5 }}>
+          Open the dedicated Cost Control workspace for {project.code}. Portfolio workbench is also available from the rail.
+        </p>
+        <div className="page-actions">
+          <Button href={`/projects-engineering/projects/${project.id}/cost-control/overview`}>Open Project Cost Control</Button>
+          <Button variant="secondary" href="/projects-engineering/cost-control">
+            Portfolio Cost Workbench
+          </Button>
+        </div>
+      </Card>
     </>
   );
 }
 export function Resources({ project }: ProjectProps) {
-  return <EmptyRegister title="Resource Plan" subtitle={`No resource plan for ${project.code} yet`} />;
+  return (
+    <>
+      <div className="kpi-grid four">
+        <KpiCard label="Project" value={project.code} delta={project.name} href={`/projects-engineering/projects/${project.id}/overview`} />
+        <KpiCard label="Manager" value={project.manager} delta={project.managerEmployeeCode || 'Assign PM'} tone="indigo" />
+        <KpiCard label="Status" value={project.status} delta={project.phase} tone="cyan" />
+        <KpiCard
+          label="Labour Workspace"
+          value="Live"
+          delta="Timesheet MH utilization"
+          tone="purple"
+          href={`/projects-engineering/projects/${project.id}/cost-control/labour-timesheets`}
+        />
+      </div>
+      <ManHourUtilizationPanel project={project} mode="resources" canEditBudget />
+    </>
+  );
 }
 export function Construction({ project }: ProjectProps) {
   return <EmptyRegister title="Construction Work Packages" subtitle={`No CWPs for ${project.code} yet`} />;

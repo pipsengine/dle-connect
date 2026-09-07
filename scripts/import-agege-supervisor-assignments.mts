@@ -35,7 +35,7 @@ const ROSTER_FILES = [
   '2026-09-02-agege-fitters-raymond-adanou.json',
   '2026-09-02-agege-cnc-abel-daniel.json',
   '2026-09-02-agege-riggers-adeniyi-joseph.json',
-  '2026-09-02-agege-painters-jimoh-gbadamosi.json',
+  '2026-09-07-agege-blasting-jimoh-gbadamosi.json',
 ];
 
 const arg = (flag: string) => {

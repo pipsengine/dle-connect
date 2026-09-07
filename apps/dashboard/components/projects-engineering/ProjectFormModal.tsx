@@ -1,7 +1,12 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/projects-engineering/UI';
+import {
+  EmployeeSearchSelect,
+  LookupSearchSelect,
+  type PmEmployeeOption,
+} from '@/components/projects-engineering/ProjectFormPickers';
 import {
   PROJECT_HEALTH_OPTIONS,
   PROJECT_STATUS_OPTIONS,
@@ -21,6 +26,8 @@ export type ProjectFormValues = {
   plannedStart: string;
   plannedFinish: string;
   projectManagerEmployeeCode: string;
+  projectManagerEmployeeId: string;
+  projectManagerUsername: string;
   projectManagerName: string;
   status: string;
   health: string;
@@ -44,6 +51,8 @@ const emptyForm = (): ProjectFormValues => ({
   plannedStart: '',
   plannedFinish: '',
   projectManagerEmployeeCode: '',
+  projectManagerEmployeeId: '',
+  projectManagerUsername: '',
   projectManagerName: '',
   status: 'Draft',
   health: 'Healthy',
@@ -67,6 +76,8 @@ export const projectToFormValues = (project: Project): ProjectFormValues => ({
   plannedStart: (project.start || '').slice(0, 10),
   plannedFinish: (project.finish || '').slice(0, 10),
   projectManagerEmployeeCode: project.managerEmployeeCode || '',
+  projectManagerEmployeeId: project.managerEmployeeId || '',
+  projectManagerUsername: project.managerUsername || '',
   projectManagerName: project.manager || '',
   status: project.status || 'Active',
   health: project.health || 'Healthy',
@@ -96,20 +107,62 @@ export function ProjectFormModal({ open, mode, project, onClose, onSaved }: Prop
     setForm(mode === 'edit' && project ? projectToFormValues(project) : emptyForm());
   }, [open, mode, project]);
 
+  const selectedEmployee = useMemo<PmEmployeeOption | null>(() => {
+    if (!form.projectManagerName && !form.projectManagerEmployeeCode) return null;
+    return {
+      employeeCode: form.projectManagerEmployeeCode,
+      employeeId: form.projectManagerEmployeeId,
+      fullName: form.projectManagerName,
+      username: form.projectManagerUsername,
+    };
+  }, [
+    form.projectManagerEmployeeCode,
+    form.projectManagerEmployeeId,
+    form.projectManagerName,
+    form.projectManagerUsername,
+  ]);
+
   if (!open) return null;
 
   const setField = <K extends keyof ProjectFormValues>(key: K, value: ProjectFormValues[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
 
+  const onSelectEmployee = (employee: PmEmployeeOption | null) => {
+    setForm((current) => ({
+      ...current,
+      projectManagerEmployeeCode: employee?.employeeCode || '',
+      projectManagerEmployeeId: employee?.employeeId || employee?.employeeCode || '',
+      projectManagerUsername: employee?.username || '',
+      projectManagerName: employee?.fullName || '',
+    }));
+  };
+
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!form.projectManagerName.trim()) {
+      setError('Select a Project Manager from the employee directory.');
+      return;
+    }
+    if (!form.location.trim()) {
+      setError('Select or enter a Location / Site.');
+      return;
+    }
+    if (!form.clientName.trim()) {
+      setError('Select or enter a Client.');
+      return;
+    }
+
     setSubmitting(true);
     setError('');
     const payload = {
       ...form,
-      projectManagerId: form.projectManagerEmployeeCode || form.projectManagerName,
+      projectManagerId: form.projectManagerEmployeeId || form.projectManagerEmployeeCode,
+      projectManagerEmployeeCode: form.projectManagerEmployeeCode,
+      projectManagerName: form.projectManagerName,
+      projectManagerUsername: form.projectManagerUsername || undefined,
       clientName: form.clientName,
+      location: form.location,
     };
 
     try {
@@ -193,13 +246,25 @@ export function ProjectFormModal({ open, mode, project, onClose, onSaved }: Prop
               <span>
                 Client<b>*</b>
               </span>
-              <input required value={form.clientName} onChange={(e) => setField('clientName', e.target.value)} />
+              <LookupSearchSelect
+                section="clients"
+                value={form.clientName}
+                required
+                placeholder="Search existing clients or type new…"
+                onChange={(value) => setField('clientName', value)}
+              />
             </label>
             <label className="field">
               <span>
                 Location / Site<b>*</b>
               </span>
-              <input required value={form.location} onChange={(e) => setField('location', e.target.value)} />
+              <LookupSearchSelect
+                section="locations"
+                value={form.location}
+                required
+                placeholder="Search sites/locations…"
+                onChange={(value) => setField('location', value)}
+              />
             </label>
             <label className="field">
               <span>Status*</span>
@@ -266,23 +331,20 @@ export function ProjectFormModal({ open, mode, project, onClose, onSaved }: Prop
                 onChange={(e) => setField('plannedFinish', e.target.value)}
               />
             </label>
-            <label className="field">
-              <span>PM Employee Code</span>
-              <input
-                value={form.projectManagerEmployeeCode}
-                onChange={(e) => setField('projectManagerEmployeeCode', e.target.value.toUpperCase())}
-                placeholder="e.g. P0146"
-              />
+            <label className="field full">
+              <span>
+                Project Manager<b>*</b>
+              </span>
+              <EmployeeSearchSelect value={selectedEmployee} required onSelect={onSelectEmployee} />
+              <small className="field-hint">Search and select from the live HRIS employee directory in DLE_Enterprise.</small>
             </label>
             <label className="field">
-              <span>
-                Project Manager Name<b>*</b>
-              </span>
-              <input
-                required
-                value={form.projectManagerName}
-                onChange={(e) => setField('projectManagerName', e.target.value)}
-              />
+              <span>PM Employee Code</span>
+              <input value={form.projectManagerEmployeeCode} readOnly placeholder="Filled from employee selection" />
+            </label>
+            <label className="field">
+              <span>Project Manager Name</span>
+              <input value={form.projectManagerName} readOnly placeholder="Filled from employee selection" />
             </label>
             <label className="field">
               <span>Planned Progress %</span>

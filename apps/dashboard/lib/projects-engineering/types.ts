@@ -64,6 +64,7 @@ export type SectionKey =
   | 'documents'
   | 'procurement'
   | 'cost'
+  | 'cost-control'
   | 'resources'
   | 'construction'
   | 'quality'
