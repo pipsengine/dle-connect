@@ -17,7 +17,6 @@ import {
   Megaphone,
   HelpCircle,
 } from 'lucide-react';
-import { payrollScheduleApprovalNavItems, payrollScheduleProcessNavItems } from '@/lib/payroll-schedule-scope';
 
 export interface SubMenu {
   title: string;
@@ -195,11 +194,11 @@ export const navigationConfig: NavItem[] = [
       'Bank & Finance',
       'Reports',
     ], 'page.payroll.management').map((item) => {
+      // Schedule packs live as in-page tabs — keep these as single hub links (no sidebar children).
       if (item.slug === 'process-payroll') {
         return {
           ...item,
           route: '/payroll-management/process-payroll',
-          children: payrollScheduleProcessNavItems(),
         };
       }
       if (item.slug === 'payroll-approval') {
@@ -207,7 +206,6 @@ export const navigationConfig: NavItem[] = [
           ...item,
           route: '/payroll-management/payroll-approval',
           permissionKey: 'page.hris.payroll.approval.view',
-          children: payrollScheduleApprovalNavItems(),
         };
       }
       if (item.slug === 'pay-setup') return { ...item, route: '/payroll-management/pay-setup', permissionKey: 'page.hris.payroll.salary-management.view' };

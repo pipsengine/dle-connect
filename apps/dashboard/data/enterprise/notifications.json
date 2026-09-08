@@ -2,6 +2,33 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1788860457090-dhp030",
+      "recipientUserId": "P0060",
+      "recipientUsername": "P0060",
+      "recipientEmployeeCode": "P0060",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss OLUFUNKE COMFORT ABE submitted Expense Payment DLE260938 (NGN 164,250) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1788773967696",
+      "createdAt": "2026-09-08T09:40:57.090Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1788773967696",
+        "requestNumber": "DLE260938",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0060",
+        "recipientName": "Mrs ROSEMARY NGOZICHUKWUKA BENSON"
+      }
+    },
+    {
       "id": "ntf-1788859177556-p6zdj9",
       "recipientUserId": "P0429",
       "recipientUsername": "P0429",
