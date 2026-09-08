@@ -9,6 +9,11 @@ import {
 } from '@/lib/payroll-salary-setup-export';
 import { formatPayrollMoney, currencyCode } from '@/lib/payroll-currency';
 import {
+  groupDleUsdRecords,
+  isDleUsdPayrollEmployee,
+  isDleUsdPayrollGroupFilter,
+} from '@/lib/payroll-bank-schedule-packs';
+import {
   AccordionSection,
   DonutChart,
   FilterSelect,
@@ -361,9 +366,14 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const dleUsdGroup = isDleUsdPayrollGroupFilter(group);
     return records.filter((record) => {
       if (status !== 'All Status' && record.payrollStatus !== status.replace(' Status', '')) return false;
-      if (group !== 'All Groups' && record.payrollGroup !== group) return false;
+      if (dleUsdGroup) {
+        if (!isDleUsdPayrollEmployee(record)) return false;
+      } else if (group !== 'All Groups' && record.payrollGroup !== group) {
+        return false;
+      }
       if (grade !== 'All Grades' && record.salaryGrade !== grade) return false;
       if (department !== 'All Departments' && record.department !== department) return false;
       if (employmentType !== 'All Types' && record.employmentType !== employmentType) return false;
@@ -373,6 +383,12 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
       );
     });
   }, [department, employmentType, grade, group, query, records, status]);
+
+  const dleUsdSections = useMemo(
+    () => (isDleUsdPayrollGroupFilter(group) ? groupDleUsdRecords(filtered, { includeEmpty: true }) : []),
+    [filtered, group],
+  );
+  const showDleUsdSections = isDleUsdPayrollGroupFilter(group);
 
   useEffect(() => setPage(1), [query, status, group, grade, department, employmentType]);
 
@@ -710,6 +726,117 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                               </td>
                             </tr>
                           ))
+                        ) : showDleUsdSections ? (
+                          dleUsdSections.flatMap((section) => {
+                            const header = (
+                              <tr key={`usd-section-${section.id}`} className="bg-slate-900/95">
+                                <td colSpan={salaryTableColumnCount} className="px-4 py-2.5">
+                                  <div className="flex flex-wrap items-center justify-between gap-2 text-white">
+                                    <div>
+                                      <p className="text-xs font-black uppercase tracking-[0.14em]">{section.label}</p>
+                                      <p className="mt-0.5 text-[11px] font-semibold text-slate-300">{section.detail} · {section.summaryLabel}</p>
+                                    </div>
+                                    <p className="text-xs font-bold text-slate-200">{section.rows.length} employee{section.rows.length === 1 ? '' : 's'}</p>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                            if (!section.rows.length) {
+                              return [
+                                header,
+                                <tr key={`usd-empty-${section.id}`}>
+                                  <td colSpan={salaryTableColumnCount} className="px-4 py-4 text-sm font-medium text-[#64748B]">
+                                    No employees in this DLE USD section for the current filters.
+                                  </td>
+                                </tr>,
+                              ];
+                            }
+                            const body = section.rows.map((record) => {
+                              const rowKey = recordKeyOf(record);
+                              const active = detailRecordKey === rowKey;
+                              const rowCurrency = record.payCurrency || 'NGN';
+                              return (
+                                <tr
+                                  key={rowKey}
+                                  onClick={() => openDetail(rowKey)}
+                                  className={`cursor-pointer transition-colors hover:bg-[#F1F5F9] ${active ? 'bg-blue-50/70' : indexEven(rowKey) ? 'bg-white' : 'bg-[#FCFDFF]'}`}
+                                >
+                                  {salaryTableColumns.map((column) => {
+                                    if (column.kind === 'checkbox') {
+                                      return (
+                                        <td key={column.id} className="sticky left-0 z-10 bg-inherit px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                                          <input type="checkbox" checked={selectedIds.includes(rowKey)} onChange={() => toggleRow(rowKey)} className="rounded border-slate-300" />
+                                        </td>
+                                      );
+                                    }
+                                    if (column.kind === 'employee') {
+                                      return (
+                                        <td key={column.id} className="sticky left-12 z-10 bg-inherit px-4 py-3">
+                                          <div className="flex items-center gap-3">
+                                            <EmployeeAvatar fullName={record.fullName} employeeCode={record.employeeId} tryPhoto size="sm" />
+                                            <div className="min-w-0">
+                                              <p className="truncate text-sm font-semibold text-[#0F172A]">{record.fullName}</p>
+                                              <p className="text-xs text-[#64748B]">{record.employeeId} · {record.payrollGroup} · {rowCurrency}</p>
+                                            </div>
+                                            {record.exceptionCount > 0 ? (
+                                              <span title="Validation issue">
+                                                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" aria-hidden />
+                                              </span>
+                                            ) : null}
+                                          </div>
+                                        </td>
+                                      );
+                                    }
+                                    if (column.kind === 'status') {
+                                      return (
+                                        <td key={column.id} className="px-4 py-3">
+                                          <StatusPill label={setupStatusLabel(record)} tone={setupStatusTone(record)} />
+                                        </td>
+                                      );
+                                    }
+                                    if (column.kind === 'actions') {
+                                      return (
+                                        <td key={column.id} className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                                          <div className="flex items-center gap-1">
+                                            <button type="button" onClick={() => openDetail(rowKey)} className="rounded-lg p-2 text-[#64748B] hover:bg-blue-50 hover:text-[#2563EB]" title="View">
+                                              <Eye className="h-4 w-4" />
+                                            </button>
+                                            <button type="button" className="rounded-lg p-2 text-[#64748B] hover:bg-slate-100" title="More">
+                                              <MoreHorizontal className="h-4 w-4" />
+                                            </button>
+                                          </div>
+                                        </td>
+                                      );
+                                    }
+                                    if (column.kind === 'money') {
+                                      const value = column.getMoney?.(record) ?? null;
+                                      const isNet = column.id === 'net-pay';
+                                      return (
+                                        <td key={column.id} className={`px-3 py-3 text-sm font-semibold whitespace-nowrap text-right ${isNet ? 'text-emerald-700' : 'text-[#0F172A]'}`}>
+                                          {value != null && value !== 0 ? money(value, canViewMoney, rowCurrency) : '—'}
+                                        </td>
+                                      );
+                                    }
+                                    if (column.kind === 'rate') {
+                                      const value = column.getMoney?.(record) ?? null;
+                                      return (
+                                        <td key={column.id} className="px-3 py-3 text-sm font-semibold whitespace-nowrap text-right text-[#0F172A]">
+                                          {value != null && value > 0 ? money(value, canViewMoney, rowCurrency) : '—'}
+                                        </td>
+                                      );
+                                    }
+                                    const text = column.getText?.(record) || '—';
+                                    return (
+                                      <td key={column.id} className={`px-3 py-3 text-sm whitespace-nowrap ${column.kind === 'days' ? 'text-right font-semibold text-[#0F172A]' : 'text-[#475569]'}`}>
+                                        {text}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              );
+                            });
+                            return [header, ...body];
+                          })
                         ) : pageRows.length ? (
                           pageRows.map((record) => {
                             const rowKey = recordKeyOf(record);
@@ -807,8 +934,11 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                   </div>
                   <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E5E7EB] px-4 py-3">
                     <p className="text-xs font-medium text-[#64748B]">
-                      Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
+                      {showDleUsdSections
+                        ? `DLE USD · ${filtered.length} employee${filtered.length === 1 ? '' : 's'} across Permanent, Contract (MD), and Expatriate (Nayak)`
+                        : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, filtered.length)} of ${filtered.length}`}
                     </p>
+                    {showDleUsdSections ? null : (
                     <div className="flex items-center gap-1">
                       <button type="button" disabled={page <= 1} onClick={() => setPage(1)} className="rounded-lg border border-[#E5E7EB] p-2 disabled:opacity-40">
                         <ChevronsLeft className="h-4 w-4" />
@@ -826,6 +956,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                         <ChevronsRight className="h-4 w-4" />
                       </button>
                     </div>
+                    )}
                   </div>
                 </div>
             </>

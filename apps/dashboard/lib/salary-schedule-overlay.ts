@@ -1,4 +1,5 @@
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
+import { isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
 import { canonicalContractEmployeeCode } from '@/lib/dayrate-schedule-xlsx';
 import { readAppliedDayrateScheduleOverride } from '@/lib/dayrate-schedule-override-read';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
@@ -199,7 +200,18 @@ export const applySalaryScheduleOverrideToRecords = (
     overlaid.push(match ? overlaySalaryRow(match, row) : emptyRecordFromExcel(row, period));
   }
 
-  return [...dailyRate, ...overlaid];
+  // USD REPORT only lists permanent senior staff. MD / Expatriate live on separate workbook
+  // tabs and must still appear from live HRIS DLE_USD calculation when active.
+  const overlaidKeys = new Set<string>();
+  for (const record of overlaid) {
+    for (const key of recordKeys(record)) overlaidKeys.add(key);
+  }
+  const missingUsdFromHris = salaried.filter((record) => {
+    if (!isDleUsdPayrollEmployee(record)) return false;
+    return recordKeys(record).every((key) => !overlaidKeys.has(key));
+  });
+
+  return [...dailyRate, ...overlaid, ...missingUsdFromHris];
 };
 
 export const ngnSalaryScheduleKpi = (period: string, company: PayrollCompany) => {

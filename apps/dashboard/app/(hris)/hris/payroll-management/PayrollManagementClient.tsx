@@ -25,6 +25,7 @@ import {
 import type { PayrollMonthOverMonth } from '@/lib/payroll-month-over-month';
 import {
   bankScheduleDisplayEmployeeCode,
+  groupDleUsdRecords,
   ngnPayrollKpiRecords,
   resolveBankScheduleStaffPack,
 } from '@/lib/payroll-bank-schedule-packs';
@@ -839,6 +840,7 @@ const sectionAliases: Record<string, SectionId> = {
   reports: 'reports-analytics',
   'reports-and-analytics': 'reports-analytics',
   'dle-salaries': 'payroll-processing',
+  'dle-usd': 'payroll-processing',
   'dlpc-salaries': 'payroll-processing',
   'dle-dayrate': 'payroll-processing',
   'dlpc-dayrate': 'payroll-processing',
@@ -2739,7 +2741,10 @@ function BankFinanceWorkspace({
   const bankPackRows = bankStaffPackFilter === 'all'
     ? bankScheduleRows.filter((record) => resolveBankScheduleStaffPack(record) !== 'dle-usd')
     : bankScheduleRows.filter((record) => resolveBankScheduleStaffPack(record) === bankStaffPackFilter);
-  const bankSchedulePreviewRows = bankPackRows.slice(0, 25);
+  const dleUsdBankSections = bankStaffPackFilter === 'dle-usd'
+    ? groupDleUsdRecords(bankPackRows, { includeEmpty: true })
+    : [];
+  const bankSchedulePreviewRows = bankStaffPackFilter === 'dle-usd' ? bankPackRows : bankPackRows.slice(0, 25);
   const bankScheduleTotals = bankPackRows.reduce(
     (sum, record) => ({
       grossPay: sum.grossPay + Number(record.grossPay || 0),
@@ -2883,7 +2888,7 @@ function BankFinanceWorkspace({
           <div>
             <p className="text-xs font-black uppercase text-slate-500">Bank Schedule Salary Preview</p>
             <h3 className="mt-1 text-lg font-black text-slate-950">{payload?.periodLabel || 'Current period'} salary schedule</h3>
-            <p className="mt-1 text-xs font-semibold text-slate-600">{number(bankPackRows.length)} employees in selected pack · NGN export splits Permanent / Contract Lumpsum / IT NYSC. DLE USD is a separate export.</p>
+            <p className="mt-1 text-xs font-semibold text-slate-600">{number(bankPackRows.length)} employees in selected pack · NGN export splits Permanent / Contract Lumpsum / IT NYSC. DLE USD is one pack with Permanent / Contract (MD) / Expatriate (Nayak) sections.</p>
             <div className="mt-3 flex flex-wrap gap-2 print:hidden">
               {([
                 ['all', 'NGN All'],
@@ -2924,7 +2929,48 @@ function BankFinanceWorkspace({
               <tr>{['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location'].map((head) => <th key={head} className="px-4 py-3">{head}</th>)}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {bankSchedulePreviewRows.map((record) => {
+              {bankStaffPackFilter === 'dle-usd' ? (
+                dleUsdBankSections.flatMap((section) => {
+                  const header = (
+                    <tr key={`usd-h-${section.id}`} className="bg-slate-800">
+                      <td colSpan={7} className="px-4 py-2.5 text-xs font-black uppercase tracking-wide text-white">
+                        {section.label}
+                        <span className="ml-2 font-semibold normal-case text-slate-300">
+                          {section.detail} · {number(section.rows.length)}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                  if (!section.rows.length) {
+                    return [
+                      header,
+                      <tr key={`usd-e-${section.id}`}>
+                        <td colSpan={7} className="px-4 py-4 text-sm font-black text-slate-700">No employees in this DLE USD section.</td>
+                      </tr>,
+                    ];
+                  }
+                  const body = section.rows.map((record) => (
+                    <tr key={`${section.id}-${record.employeeId}`} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 text-sm font-black text-slate-950">{bankScheduleDisplayEmployeeCode(record, 'permanent')}</td>
+                      <td className="px-4 py-3 text-sm font-black text-slate-950">{record.fullName}</td>
+                      <td className="px-4 py-3 text-xs font-bold text-slate-700">{record.bankName || 'Not configured'}</td>
+                      <td className="px-4 py-3 text-xs font-black text-slate-700">{record.accountNo || 'Not configured'}</td>
+                      <td className="px-4 py-3 text-xs font-black text-slate-700">{record.sortCode || record.branchCode || record.bankCode || 'Not configured'}</td>
+                      <td className="px-4 py-3 text-sm font-black text-emerald-700">{money(record.netPay, canViewMoney)}</td>
+                      <td className="px-4 py-3 text-xs font-bold text-slate-700">{record.location || 'No location'}</td>
+                    </tr>
+                  ));
+                  const sectionNet = section.rows.reduce((sum, record) => sum + Number(record.netPay || 0), 0);
+                  const footer = (
+                    <tr key={`usd-f-${section.id}`} className="bg-slate-50">
+                      <td colSpan={5} className="px-4 py-2 text-right text-xs font-black uppercase text-slate-600">{section.label} total</td>
+                      <td className="px-4 py-2 text-sm font-black text-emerald-700">{money(sectionNet, canViewMoney)}</td>
+                      <td className="px-4 py-2" />
+                    </tr>
+                  );
+                  return [header, ...body, footer];
+                })
+              ) : bankSchedulePreviewRows.map((record) => {
                 const pack = resolveBankScheduleStaffPack(record);
                 return (
                 <tr key={record.employeeId} className="hover:bg-slate-50">

@@ -12,6 +12,9 @@ import {
   BANK_SCHEDULE_NGN_STAFF_PACKS,
   BANK_SCHEDULE_USD_STAFF_PACK,
   bankScheduleDisplayEmployeeCode,
+  groupDleUsdRecords,
+  isDleUsdExpatriateEmployee,
+  isDleUsdMdEmployee,
   isDleUsdPayrollEmployee,
   resolveBankScheduleStaffPack,
   type BankScheduleStaffPack,
@@ -119,8 +122,8 @@ const compareContSchedule = (a: PayrollCalculationRecord, b: PayrollCalculationR
 const roleBlob = (record: { jobTitle?: string | null; fullName?: string | null; employmentType?: string | null; payrollGroup?: string | null; department?: string | null }) =>
   `${record.jobTitle || ''} ${record.fullName || ''} ${record.employmentType || ''} ${record.payrollGroup || ''} ${record.department || ''}`;
 
-const isMdRole = (record: { jobTitle?: string | null; fullName?: string | null }) =>
-  /\bMANAGING DIRECTOR\b|\bMD\s*\/\s*CEO\b|\bCHIEF EXECUTIVE\b/.test(upper(roleBlob(record)));
+const isMdRole = (record: { jobTitle?: string | null; fullName?: string | null; employeeCode?: string | null; employeeId?: string | null }) =>
+  isDleUsdMdEmployee(record);
 
 const isGmOpsRole = (record: { jobTitle?: string | null }) =>
   /GENERAL MANAGER[, ]*OPERATIONS|\bGM[, ]*OPS\b|\bGM OPERATIONS\b/.test(upper(record.jobTitle));
@@ -129,9 +132,9 @@ const isMubassRole = (record: { employmentType?: string | null; payrollGroup?: s
   /MUBASS|OUTSOURCE/.test(upper(roleBlob(record)));
 
 const isNayakRole = (record: { fullName?: string | null; jobTitle?: string | null }) =>
-  /NAYAK/.test(upper(`${record.fullName || ''} ${record.jobTitle || ''}`));
+  isDleUsdExpatriateEmployee(record);
 
-const isUsdGmSpCfoRole = (record: { jobTitle?: string | null; fullName?: string | null }) =>
+const isUsdGmSpCfoRole = (record: { jobTitle?: string | null; fullName?: string | null; employeeCode?: string | null; employeeId?: string | null }) =>
   !isMdRole(record) && !isNayakRole(record);
 
 const haLabel = (code: string, name?: string | null) => {
@@ -392,17 +395,46 @@ export const buildOfficialBankScheduleWorksheets = (
     }
     const columns = ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location'];
     return configs.map((config) => {
-      const rows = config.records.map((record) => [
-        config.usd ? usdOfficialEmployeeCode(record) : officialEmployeeCode(record),
-        bankEmployeeName(record),
-        compact(record.bankName),
-        compact(record.accountNo),
-        compact(record.sortCode || record.branchCode || record.bankCode),
-        roundMoney(Number(record.netPay || 0)),
-        compact(record.location),
-      ] as ExcelCell[]);
-      const totalNet = roundMoney(config.records.reduce((sum, record) => sum + Number(record.netPay || 0), 0));
-      rows.push([config.records.length, '', '', '', '', totalNet, '']);
+      const rows: ExcelCell[][] = [];
+      if (config.usd) {
+        const sections = groupDleUsdRecords(config.records, { includeEmpty: false });
+        let totalNet = 0;
+        let totalCount = 0;
+        for (const section of sections) {
+          rows.push([section.label, section.summaryLabel, '', '', '', '', ''] as ExcelCell[]);
+          for (const record of section.rows) {
+            totalNet = roundMoney(totalNet + Number(record.netPay || 0));
+            totalCount += 1;
+            rows.push([
+              usdOfficialEmployeeCode(record),
+              bankEmployeeName(record),
+              compact(record.bankName),
+              compact(record.accountNo),
+              compact(record.sortCode || record.branchCode || record.bankCode),
+              roundMoney(Number(record.netPay || 0)),
+              compact(record.location),
+            ] as ExcelCell[]);
+          }
+          const sectionNet = roundMoney(section.rows.reduce((sum, record) => sum + Number(record.netPay || 0), 0));
+          rows.push([section.rows.length, `${section.label} total`, '', '', '', sectionNet, ''] as ExcelCell[]);
+          rows.push(['', '', '', '', '', '', ''] as ExcelCell[]);
+        }
+        rows.push([totalCount, 'DLE USD total', '', '', '', totalNet, ''] as ExcelCell[]);
+      } else {
+        for (const record of config.records) {
+          rows.push([
+            officialEmployeeCode(record),
+            bankEmployeeName(record),
+            compact(record.bankName),
+            compact(record.accountNo),
+            compact(record.sortCode || record.branchCode || record.bankCode),
+            roundMoney(Number(record.netPay || 0)),
+            compact(record.location),
+          ] as ExcelCell[]);
+        }
+        const totalNet = roundMoney(config.records.reduce((sum, record) => sum + Number(record.netPay || 0), 0));
+        rows.push([config.records.length, '', '', '', '', totalNet, '']);
+      }
       return {
         title: 'Employee Bank Details',
         sheetName: config.sheetName,
@@ -422,28 +454,62 @@ export const buildOfficialBankScheduleWorksheets = (
 
   return packs.map((pack) => {
     const packId = pack.id as BankScheduleStaffPack;
-    const rows = scopedRecords
+    const packRecords = scopedRecords
       .filter((record) => !record.isDailyRate)
       .filter((record) => resolveBankScheduleStaffPack(record) === packId)
-      .filter(payable)
-      .map((record) => [
-        bankScheduleDisplayEmployeeCode(record, packId === 'dle-usd' ? 'permanent' : packId),
-        compact(record.fullName),
-        compact(record.bankName),
-        compact(record.accountNo),
-        compact(record.sortCode || record.branchCode || record.bankCode),
-        roundMoney(Number(record.netPay || 0)),
-        compact(record.location),
-      ] as ExcelCell[]);
+      .filter(payable);
+
     const columns: string[] = ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location'];
     const titleRow: ExcelCell[] = ['Employee Bank Details', '', '', '', '', '', ''];
     const headerRow = columns.slice();
+    const rows: ExcelCell[][] = [titleRow, headerRow as unknown as ExcelCell[]];
+
+    if (packId === 'dle-usd') {
+      const sections = groupDleUsdRecords(packRecords, { includeEmpty: false });
+      let totalNet = 0;
+      let totalCount = 0;
+      for (const section of sections) {
+        rows.push([section.label, section.summaryLabel, '', '', '', '', ''] as ExcelCell[]);
+        for (const record of section.rows) {
+          totalNet = roundMoney(totalNet + Number(record.netPay || 0));
+          totalCount += 1;
+          rows.push([
+            bankScheduleDisplayEmployeeCode(record, 'permanent'),
+            compact(record.fullName),
+            compact(record.bankName),
+            compact(record.accountNo),
+            compact(record.sortCode || record.branchCode || record.bankCode),
+            roundMoney(Number(record.netPay || 0)),
+            compact(record.location),
+          ] as ExcelCell[]);
+        }
+        const sectionNet = roundMoney(section.rows.reduce((sum, record) => sum + Number(record.netPay || 0), 0));
+        rows.push([section.rows.length, `${section.label} total`, '', '', '', sectionNet, ''] as ExcelCell[]);
+        rows.push(['', '', '', '', '', '', ''] as ExcelCell[]);
+      }
+      rows.push([totalCount, 'DLE USD total', '', '', '', totalNet, ''] as ExcelCell[]);
+    } else {
+      for (const record of packRecords) {
+        rows.push([
+          bankScheduleDisplayEmployeeCode(record, packId),
+          compact(record.fullName),
+          compact(record.bankName),
+          compact(record.accountNo),
+          compact(record.sortCode || record.branchCode || record.bankCode),
+          roundMoney(Number(record.netPay || 0)),
+          compact(record.location),
+        ] as ExcelCell[]);
+      }
+      const totalNet = roundMoney(packRecords.reduce((sum, record) => sum + Number(record.netPay || 0), 0));
+      rows.push([packRecords.length, '', '', '', '', totalNet, ''] as ExcelCell[]);
+    }
+
     return {
       title: 'Employee Bank Details',
       subtitle: `${options?.titlePrefix || 'Bank Payment Schedule'} · ${periodLabel} · ${pack.label}`,
       sheetName: pack.sheetName,
       columns,
-      rows: [titleRow, headerRow as unknown as ExcelCell[], ...rows],
+      rows,
     };
   });
 };
@@ -834,46 +900,60 @@ const buildUsdReportSheet = (records: Enriched[], periodLabel: string): ExcelWor
     'Nigeria - Pension Fund (HA)',
   ];
 
-  const dataRows = records.map((record) => {
-    const earningTotal = roundMoney((record.earningLines || []).reduce((sum, line) => sum + Number(line.amount || 0), 0))
-      || roundMoney(Number(record.grossPay || 0));
-    const deductionTotal = roundMoney(Number(record.totalDeductions || record.deductions || 0));
-    const { itf, nsitf } = splitEmployerStatutory(record);
-    const periodSalary = roundMoney(Number(record.periodPackageGross || record.grossPay || 0));
-    return [
-      usdOfficialEmployeeCode(record),
-      record._lastName,
-      record._firstName,
-      record._secondName,
-      record._age,
-      record._dob,
-      record._gender,
-      record._dateJoined,
-      record._jobTitle,
-      ...USD_EARNING_LABELS.map((label) => usdEarningValue(record, label)),
-      earningTotal,
-      lineAmount(record.deductionLines, /^PAYE$/i) || roundMoney(Number(record.paye || 0)),
-      lineAmount(record.deductionLines, /^PENSION_EE$|^PENSION$/i) || roundMoney(Number(record.pensionEmployee || record.pension || 0)),
-      deductionTotal,
-      itf,
-      nsitf,
-      roundMoney(itf + nsitf),
-      periodSalary,
-      roundMoney(periodSalary * 12),
-      roundMoney(Number(record.grossPay || 0)),
-      roundMoney(Number(record.netPay || 0)),
-      roundMoney(Number(record.taxablePay || record.grossPay || 0)),
-      record._companyHa,
-      record._departmentHa,
-      record._employeeTypeHa,
-      record._locationHa,
-      record._pensionHa,
-    ] as ExcelCell[];
-  });
+  const sections = groupDleUsdRecords(records, { includeEmpty: false });
+  const dataRows: ExcelCell[][] = [];
+  for (const section of sections) {
+    dataRows.push(padRow([section.label, section.summaryLabel], columns.length));
+    for (const record of section.rows) {
+      const earningTotal = roundMoney((record.earningLines || []).reduce((sum, line) => sum + Number(line.amount || 0), 0))
+        || roundMoney(Number(record.grossPay || 0));
+      const deductionTotal = roundMoney(Number(record.totalDeductions || record.deductions || 0));
+      const { itf, nsitf } = splitEmployerStatutory(record);
+      const periodSalary = roundMoney(Number(record.periodPackageGross || record.grossPay || 0));
+      dataRows.push([
+        usdOfficialEmployeeCode(record),
+        record._lastName,
+        record._firstName,
+        record._secondName,
+        record._age,
+        record._dob,
+        record._gender,
+        record._dateJoined,
+        record._jobTitle,
+        ...USD_EARNING_LABELS.map((label) => usdEarningValue(record, label)),
+        earningTotal,
+        lineAmount(record.deductionLines, /^PAYE$/i) || roundMoney(Number(record.paye || 0)),
+        lineAmount(record.deductionLines, /^PENSION_EE$|^PENSION$/i) || roundMoney(Number(record.pensionEmployee || record.pension || 0)),
+        deductionTotal,
+        itf,
+        nsitf,
+        roundMoney(itf + nsitf),
+        periodSalary,
+        roundMoney(periodSalary * 12),
+        roundMoney(Number(record.grossPay || 0)),
+        roundMoney(Number(record.netPay || 0)),
+        roundMoney(Number(record.taxablePay || record.grossPay || 0)),
+        record._companyHa,
+        record._departmentHa,
+        record._employeeTypeHa,
+        record._locationHa,
+        record._pensionHa,
+      ] as ExcelCell[]);
+    }
+    const sectionNet = roundMoney(section.rows.reduce((sum, record) => sum + Number(record.netPay || 0), 0));
+    const sectionGross = roundMoney(section.rows.reduce((sum, record) => sum + Number(record.grossPay || 0), 0));
+    const sectionTotal = padRow([section.rows.length, `${section.label} total`], columns.length);
+    const sectionEarningIdx = columns.indexOf('Earning Total');
+    const sectionNetIdx = columns.indexOf('Net Pay');
+    if (sectionEarningIdx >= 0) sectionTotal[sectionEarningIdx] = sectionGross;
+    if (sectionNetIdx >= 0) sectionTotal[sectionNetIdx] = sectionNet;
+    dataRows.push(sectionTotal);
+    dataRows.push(padRow([], columns.length));
+  }
 
   const totalGross = roundMoney(records.reduce((sum, record) => sum + Number(record.grossPay || 0), 0));
   const totalNet = roundMoney(records.reduce((sum, record) => sum + Number(record.netPay || 0), 0));
-  const totalRow = padRow([records.length], columns.length);
+  const totalRow = padRow([records.length, 'DLE USD total'], columns.length);
   const earningTotalIdx = columns.indexOf('Earning Total');
   const netIdx = columns.indexOf('Net Pay');
   if (earningTotalIdx >= 0) totalRow[earningTotalIdx] = totalGross;

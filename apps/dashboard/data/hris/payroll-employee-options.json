@@ -360,8 +360,11 @@
     "employeeId": "0413",
     "employeeCode": "P0413",
     "nhfApplicable": false,
-    "updatedAt": "2026-08-12T12:20:00.000Z",
-    "updatedBy": "Restore USD-only MD to DLE_USD salaried roster"
+    "updatedAt": "2026-09-08T11:09:01.834Z",
+    "updatedBy": "Activate DLE USD MD/Nayak",
+    "excludedFromPayrollRun": false,
+    "setupAssignedToPayroll": true,
+    "payrollGroup": "DLE_USD"
   },
   {
     "employeeId": "0415",
@@ -764,9 +767,14 @@
     "employeeId": "EX001",
     "employeeCode": "PEX001",
     "nhfApplicable": false,
-    "excludedFromPayrollRun": true,
-    "updatedAt": "2026-08-11T18:40:00.000Z",
-    "updatedBy": "Exclude non-July extra from salaried run"
+    "excludedFromPayrollRun": false,
+    "updatedAt": "2026-09-08T11:09:01.858Z",
+    "updatedBy": "Activate DLE USD MD/Nayak",
+    "setupAssignedToPayroll": true,
+    "payrollGroup": "DLE_USD",
+    "payeCalculation": {
+      "monthlyPayeOverride": 616.91
+    }
   },
   {
     "employeeId": "IT0106",

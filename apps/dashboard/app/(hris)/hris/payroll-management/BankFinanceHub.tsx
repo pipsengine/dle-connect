@@ -22,6 +22,7 @@ import {
 import {
   BANK_SCHEDULE_STAFF_PACKS,
   bankScheduleDisplayEmployeeCode,
+  groupDleUsdRecords,
   resolveBankScheduleStaffPack,
   type BankScheduleStaffPack,
 } from '@/lib/payroll-bank-schedule-packs';
@@ -776,7 +777,11 @@ function BankSchedulePanel({
     if (staffPackFilter === 'all') return bankRows.filter((row) => resolveBankScheduleStaffPack(row) !== 'dle-usd');
     return bankRows.filter((row) => resolveBankScheduleStaffPack(row) === staffPackFilter);
   }, [bankRows, staffPackFilter]);
-  const previewRows = filteredBankRows.slice(0, 25);
+  const dleUsdSections = useMemo(
+    () => (staffPackFilter === 'dle-usd' ? groupDleUsdRecords(filteredBankRows, { includeEmpty: true }) : []),
+    [filteredBankRows, staffPackFilter],
+  );
+  const previewRows = staffPackFilter === 'dle-usd' ? filteredBankRows : filteredBankRows.slice(0, 25);
   const validationIssues = bankValidationIssues(records);
   const bankScheduleReady = bankScheduleReadyFor(run);
   const payrollReleased = releasedStatuses.includes(run?.status || '');
@@ -950,7 +955,51 @@ function BankSchedulePanel({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {previewRows.map((record) => {
+              {staffPackFilter === 'dle-usd' ? (
+                dleUsdSections.flatMap((section) => {
+                  const header = (
+                    <tr key={`usd-h-${section.id}`} className="bg-slate-800">
+                      <td colSpan={8} className="px-4 py-2.5 text-xs font-black uppercase tracking-wide text-white">
+                        {section.label}
+                        <span className="ml-2 font-semibold normal-case text-slate-300">
+                          {section.detail} · {section.rows.length} employee{section.rows.length === 1 ? '' : 's'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                  if (!section.rows.length) {
+                    return [
+                      header,
+                      <tr key={`usd-e-${section.id}`}>
+                        <td colSpan={8} className="px-4 py-4 text-sm font-semibold text-slate-600">
+                          No employees in this DLE USD section.
+                        </td>
+                      </tr>,
+                    ];
+                  }
+                  const body = section.rows.map((record) => (
+                    <tr key={`${section.id}-${record.employeeId}`} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 text-sm font-semibold text-[#0F172A]">{bankScheduleDisplayEmployeeCode(record, 'permanent')}</td>
+                      <td className="px-4 py-3 text-xs font-bold text-slate-600">{section.label}</td>
+                      <td className="px-4 py-3 text-sm font-semibold text-[#0F172A]">{record.fullName}</td>
+                      <td className="px-4 py-3 text-xs text-slate-700">{record.bankName || 'Not configured'}</td>
+                      <td className="px-4 py-3 text-xs font-semibold text-slate-700">{record.accountNo || 'Not configured'}</td>
+                      <td className="px-4 py-3 text-xs text-slate-700">{record.sortCode || record.branchCode || record.bankCode || '—'}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-emerald-700">{fmtMoney(record.netPay, canViewMoney, payload?.payrollComputed !== false)}</td>
+                      <td className="px-4 py-3 text-xs text-slate-700">{record.location || '—'}</td>
+                    </tr>
+                  ));
+                  const sectionNet = section.rows.reduce((sum, record) => sum + Number(record.netPay || 0), 0);
+                  const footer = (
+                    <tr key={`usd-f-${section.id}`} className="bg-slate-50">
+                      <td colSpan={6} className="px-4 py-2 text-right text-xs font-black uppercase text-slate-600">{section.label} total</td>
+                      <td className="px-4 py-2 text-sm font-black text-emerald-700">{fmtMoney(sectionNet, canViewMoney, payload?.payrollComputed !== false)}</td>
+                      <td className="px-4 py-2" />
+                    </tr>
+                  );
+                  return [header, ...body, footer];
+                })
+              ) : previewRows.map((record) => {
                 const pack = resolveBankScheduleStaffPack(record);
                 const packLabel = BANK_SCHEDULE_STAFF_PACKS.find((item) => item.id === pack)?.label || pack;
                 return (

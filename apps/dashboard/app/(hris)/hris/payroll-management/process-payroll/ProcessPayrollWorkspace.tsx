@@ -1,7 +1,7 @@
 'use client';
 
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   CalendarDays,
@@ -16,14 +16,17 @@ import {
   Users,
   WalletCards,
 } from 'lucide-react';
-import { currencyCode, formatPayrollMoney, resolvePayCurrency } from '@/lib/payroll-currency';
-import { ngnPayrollKpiRecords } from '@/lib/payroll-bank-schedule-packs';
+import {
+  groupDleUsdRecords,
+  groupPayrollRegisterSections,
+} from '@/lib/payroll-bank-schedule-packs';
 import {
   PAYROLL_SCHEDULE_SCOPES,
   payrollScheduleScopeById,
   type PayrollCompany,
   type PayrollScheduleScopeId,
 } from '@/lib/payroll-schedule-scope';
+import { currencyCode, formatPayrollMoney, resolvePayCurrency } from '@/lib/payroll-currency';
 import type { PayrollMonthOverMonth, PayrollMomMetricKey } from '@/lib/payroll-month-over-month';
 import { payrollMomMetric } from '@/lib/payroll-month-over-month';
 import styles from '@/styles/process-payroll.module.css';
@@ -108,6 +111,7 @@ type Payload = {
   pack?: PayrollPack;
   company?: PayrollCompany | null;
   packLabel?: string;
+  scheduleId?: string;
   availablePeriods?: Array<{ period: string; periodLabel: string }>;
   permissions: {
     canViewMoney: boolean;
@@ -174,11 +178,12 @@ type WorkflowStep = {
   action?: string;
 };
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 10;
 const numberFmt = new Intl.NumberFormat('en-GB');
 
 const scheduleVisual: Record<PayrollScheduleScopeId, { icon: string; Icon: typeof Users }> = {
   'dle-salaries': { icon: styles.sched_blue, Icon: Users },
+  'dle-usd': { icon: styles.sched_teal, Icon: WalletCards },
   'dlpc-salaries': { icon: styles.sched_amber, Icon: Users },
   'dle-dayrate': { icon: styles.sched_green, Icon: WalletCards },
   'dlpc-dayrate': { icon: styles.sched_purple, Icon: WalletCards },
@@ -310,6 +315,7 @@ export default function ProcessPayrollWorkspace({
   const [deptFilter, setDeptFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [registerSection, setRegisterSection] = useState<string>('all');
   const [page, setPage] = useState(1);
 
   const loadSession = async () => {
@@ -336,6 +342,7 @@ export default function ProcessPayrollWorkspace({
     sessionRole = role,
     targetPack = pack,
     targetCompany = company,
+    targetSchedule = scheduleId,
   ) => {
     setLoading(true);
     setError('');
@@ -344,6 +351,7 @@ export default function ProcessPayrollWorkspace({
       if (targetPeriod) params.set('period', targetPeriod);
       if (targetPack) params.set('pack', targetPack);
       if (targetCompany) params.set('company', targetCompany);
+      if (targetSchedule) params.set('schedule', targetSchedule);
       const suffix = params.toString() ? `?${params.toString()}` : '';
       const res = await fetch(`/api/hris/payroll/payroll-processing${suffix}`, {
         headers: { 'x-hris-role': sessionRole },
@@ -357,6 +365,7 @@ export default function ProcessPayrollWorkspace({
       setPeriod(json.data.period);
       if (json.data.pack) setPack(json.data.pack);
       if (json.data.company === 'DLE' || json.data.company === 'DLPC') setCompany(json.data.company);
+      if (json.data.scheduleId) setScheduleId(json.data.scheduleId as PayrollScheduleScopeId);
     } catch (event) {
       setError(event instanceof Error ? event.message : 'Unable to load process payroll workspace');
     } finally {
@@ -370,7 +379,7 @@ export default function ProcessPayrollWorkspace({
 
   useEffect(() => {
     if (!sessionReady) return;
-    void load(period, role, pack, company);
+    void load(period, role, pack, company, scheduleId);
   }, [sessionReady, role]);
 
   const run = payload?.run || null;
@@ -388,16 +397,15 @@ export default function ProcessPayrollWorkspace({
   const packCards = useMemo(() => {
     const packs = payload?.packs || [];
     return PAYROLL_SCHEDULE_SCOPES.map((scope) => {
-      const match = packs.find(
-        (item) =>
-          (item.scheduleId && item.scheduleId === scope.id)
-          || (item.pack === scope.pack && (item.company || 'DLE') === scope.company),
-      );
+      const match = packs.find((item) => item.scheduleId === scope.id)
+        || (scope.id !== 'dle-usd'
+          ? packs.find((item) => item.pack === scope.pack && (item.company || 'DLE') === scope.company && item.scheduleId !== 'dle-usd')
+          : null);
       const status = match?.run?.status
         || (scope.id === selectedScope.id ? run?.status : null)
         || null;
-      const headcount = match?.run?.employeeCount
-        ?? match?.summary?.employees
+      const headcount = match?.summary?.employees
+        ?? match?.run?.employeeCount
         ?? (scope.id === selectedScope.id ? payload?.summary.employees : null);
       return {
         scope,
@@ -551,7 +559,7 @@ export default function ProcessPayrollWorkspace({
   }, [payload?.records]);
 
   const employeeRows = useMemo(() => {
-    let rows = [...ngnPayrollKpiRecords(payload?.records || [])];
+    let rows = [...(payload?.records || [])];
     if (activeTab === 'issues') {
       rows = rows.filter((record) => record.status !== 'Ready' || (record.issues || []).length > 0);
     }
@@ -565,14 +573,41 @@ export default function ProcessPayrollWorkspace({
     return rows;
   }, [payload?.records, salaryQuery, activeTab, deptFilter, categoryFilter, statusFilter]);
 
+  const registerSections = useMemo(() => {
+    if (pack !== 'salaried') return [];
+    if (selectedScope.currencySlice === 'usd') {
+      const sections = groupDleUsdRecords(employeeRows, { includeEmpty: registerSection !== 'all' });
+      if (registerSection === 'all') return sections;
+      return sections.filter((section) => section.id === registerSection);
+    }
+    const sections = groupPayrollRegisterSections(employeeRows).filter((section) => !section.id.startsWith('dle-usd-'));
+    if (registerSection === 'all') return sections;
+    return sections.filter((section) => section.id === registerSection);
+  }, [employeeRows, pack, registerSection, selectedScope.currencySlice]);
+
+  const flatSectionRows = useMemo(
+    () => registerSections.flatMap((section) => section.rows.map((record) => ({
+      sectionId: section.id,
+      sectionLabel: section.label,
+      sectionDetail: section.detail,
+      record,
+    }))),
+    [registerSections],
+  );
+
   useEffect(() => {
     setPage(1);
-  }, [salaryQuery, activeTab, payload?.period, scheduleId, deptFilter, categoryFilter, statusFilter]);
+  }, [salaryQuery, activeTab, payload?.period, scheduleId, deptFilter, categoryFilter, statusFilter, registerSection]);
 
-  const pageCount = Math.max(1, Math.ceil(employeeRows.length / PAGE_SIZE));
+  const listLength = pack === 'salaried' ? flatSectionRows.length : employeeRows.length;
+  const pageCount = Math.max(1, Math.ceil(listLength / PAGE_SIZE));
   const pageRows = useMemo(
     () => employeeRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
     [employeeRows, page],
+  );
+  const pageSectionRows = useMemo(
+    () => flatSectionRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [flatSectionRows, page],
   );
   const pageWindowStart = Math.max(1, Math.min(page - 2, pageCount - 4));
   const visiblePages = Array.from({ length: Math.min(5, pageCount) }, (_, i) => pageWindowStart + i);
@@ -589,8 +624,9 @@ export default function ProcessPayrollWorkspace({
     setCompany(scope.company);
     setActiveTab('register');
     setSalaryQuery('');
+    setRegisterSection('all');
     router.replace(`/hris/payroll-management/process-payroll?schedule=${scope.id}`, { scroll: false });
-    void load(period, role, scope.pack as PayrollPack, scope.company);
+    void load(period, role, scope.pack as PayrollPack, scope.company, scope.id);
   };
 
   const action = async (actionName: string) => {
@@ -677,6 +713,7 @@ export default function ProcessPayrollWorkspace({
   };
 
   const showRegister = activeTab === 'register' || activeTab === 'issues';
+  const sectionedRegister = showRegister && pack === 'salaried';
   const processPrimaryAction = canCalculate
     ? (computedStatuses.includes(status) ? 'Re-run Payroll' : 'Process Payroll')
     : null;
@@ -932,6 +969,33 @@ export default function ProcessPayrollWorkspace({
                 <Download size={15} /> Export Excel
               </button>
             </div>
+            {sectionedRegister ? (
+              <div className={styles.sectionChips}>
+                {(selectedScope.currencySlice === 'usd'
+                  ? [
+                      ['all', 'All sections'],
+                      ['permanent', 'Permanent'],
+                      ['contract-md', 'Contract (MD)'],
+                      ['expatriate', 'Expatriate'],
+                    ]
+                  : [
+                      ['all', 'All sections'],
+                      ['ngn-permanent', 'Permanent'],
+                      ['ngn-contract-lumpsum', 'Contract'],
+                      ['ngn-it-nysc', 'IT / NYSC'],
+                    ]
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setRegisterSection(id)}
+                    className={`${styles.sectionChip} ${registerSection === id ? styles.sectionChipActive : ''}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <div className="dle-scroll-x overflow-x-auto">
               <table className={styles.dataTable}>
                 <thead>
@@ -950,7 +1014,62 @@ export default function ProcessPayrollWorkspace({
                   </tr>
                 </thead>
                 <tbody>
-                  {pageRows.map((record, index) => {
+                  {sectionedRegister ? (
+                    (() => {
+                      const nodes: ReactNode[] = [];
+                      let lastSectionId = '';
+                      pageSectionRows.forEach((item, index) => {
+                        if (item.sectionId !== lastSectionId) {
+                          lastSectionId = item.sectionId;
+                          const sectionCount = registerSections.find((section) => section.id === item.sectionId)?.rows.length || 0;
+                          nodes.push(
+                            <tr key={`sec-${item.sectionId}-${page}`} style={{ background: '#0f172a' }}>
+                              <td colSpan={11} style={{ color: '#fff', fontWeight: 800, padding: '10px 12px' }}>
+                                {item.sectionLabel}
+                                <span style={{ marginLeft: 10, fontWeight: 600, color: '#cbd5e1', fontSize: 11 }}>
+                                  {item.sectionDetail} · {sectionCount} employee{sectionCount === 1 ? '' : 's'}
+                                </span>
+                              </td>
+                            </tr>,
+                          );
+                        }
+                        const record = item.record;
+                        const cc = recordCurrency(record);
+                        nodes.push(
+                          <tr key={`${item.sectionId}-${record.employeeId}`}>
+                            <td>{(page - 1) * PAGE_SIZE + index + 1}</td>
+                            <td>
+                              <div className={styles.emp}>{record.fullName}</div>
+                              {activeTab === 'issues' && record.issues?.length ? (
+                                <div className={styles.muted}>{record.issues.slice(0, 2).join('; ')}</div>
+                              ) : null}
+                            </td>
+                            <td>{record.employeeId}</td>
+                            <td>{record.department || '—'}</td>
+                            <td>{item.sectionLabel}</td>
+                            <td className={styles.money}>{money(record.grossPay, canViewMoney, cc)}</td>
+                            <td className={styles.deduct}>{money(record.totalDeductions, canViewMoney, cc)}</td>
+                            <td className={styles.net}>{money(record.netPay, canViewMoney, cc)}</td>
+                            <td className={styles.employer}>{money(record.employerCost, canViewMoney, cc)}</td>
+                            <td><span className={statusBadgeClass(record.status)}>{record.status}</span></td>
+                            <td>
+                              <button
+                                type="button"
+                                className={styles.viewBtn}
+                                onClick={() => {
+                                  setSalaryQuery(record.employeeId);
+                                  setActiveTab('register');
+                                }}
+                              >
+                                View
+                              </button>
+                            </td>
+                          </tr>,
+                        );
+                      });
+                      return nodes;
+                    })()
+                  ) : pageRows.map((record, index) => {
                     const cc = recordCurrency(record);
                     return (
                       <tr key={record.employeeId}>
@@ -984,7 +1103,7 @@ export default function ProcessPayrollWorkspace({
                       </tr>
                     );
                   })}
-                  {!pageRows.length ? (
+                  {(sectionedRegister ? !flatSectionRows.length : !employeeRows.length) ? (
                     <tr>
                       <td colSpan={11}>
                         <div className={styles.emptyState}>
@@ -998,9 +1117,9 @@ export default function ProcessPayrollWorkspace({
             </div>
             <div className={styles.pagination}>
               <span>
-                Showing {employeeRows.length ? (page - 1) * PAGE_SIZE + 1 : 0}
-                {' '}to {Math.min(page * PAGE_SIZE, employeeRows.length)}
-                {' '}of {number(employeeRows.length)} employees
+                Showing {listLength ? (page - 1) * PAGE_SIZE + 1 : 0}
+                {' '}to {Math.min(page * PAGE_SIZE, listLength)}
+                {' '}of {number(listLength)} employees
               </span>
               <div className={styles.pages}>
                 <button type="button" className={styles.pageBtn} disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>‹</button>

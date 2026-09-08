@@ -1,7 +1,7 @@
 'use client';
 
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
@@ -28,7 +28,10 @@ import {
 } from 'lucide-react';
 import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
 import { currencyCode, formatPayrollMoney, resolvePayCurrency } from '@/lib/payroll-currency';
-import { ngnPayrollKpiRecords } from '@/lib/payroll-bank-schedule-packs';
+import {
+  groupDleUsdRecords,
+  groupPayrollRegisterSections,
+} from '@/lib/payroll-bank-schedule-packs';
 import {
   PAYROLL_SCHEDULE_SCOPES,
   payrollScheduleScopeById,
@@ -142,6 +145,7 @@ type Payload = {
   pack?: PayrollPack;
   company?: PayrollCompany | null;
   packLabel?: string;
+  scheduleId?: string;
   permissions: {
     canViewMoney: boolean;
     canCalculate: boolean;
@@ -203,11 +207,12 @@ type SessionUser = {
   isGlobalAdmin?: boolean;
 };
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 10;
 const numberFmt = new Intl.NumberFormat('en-GB');
 
 const scheduleVisual: Record<PayrollScheduleScopeId, { icon: string; dot: string; Icon: typeof PlayCircle }> = {
   'dle-salaries': { icon: styles.schedule_blue, dot: styles.dot_blue, Icon: PlayCircle },
+  'dle-usd': { icon: styles.schedule_teal, dot: styles.dot_teal, Icon: WalletCards },
   'dlpc-salaries': { icon: styles.schedule_amber, dot: styles.dot_amber, Icon: PlayCircle },
   'dle-dayrate': { icon: styles.schedule_green, dot: styles.dot_green, Icon: WalletCards },
   'dlpc-dayrate': { icon: styles.schedule_purple, dot: styles.dot_purple, Icon: WalletCards },
@@ -235,12 +240,10 @@ const sumRecordPay = (
         totalDeductions?: number | null;
         netPay?: number | null;
         employerCost?: number | null;
-        payCurrency?: string | null;
-        payrollGroup?: string | null;
       }[]
     | undefined,
 ) =>
-  ngnPayrollKpiRecords(records).reduce<{ grossPay: number; deductions: number; netPay: number; employerCost: number }>(
+  (records || []).reduce<{ grossPay: number; deductions: number; netPay: number; employerCost: number }>(
     (acc, record) => ({
       grossPay: acc.grossPay + Number(record.grossPay || 0),
       deductions: acc.deductions + Number(record.totalDeductions || 0),
@@ -371,6 +374,7 @@ export default function PayrollApprovalWorkspace({
   const [sessionReady, setSessionReady] = useState(false);
   const [activeTab, setActiveTab] = useState<BottomTab>('employees');
   const [salaryQuery, setSalaryQuery] = useState('');
+  const [registerSection, setRegisterSection] = useState('all');
   const [page, setPage] = useState(1);
 
   const loadSession = async () => {
@@ -398,6 +402,7 @@ export default function PayrollApprovalWorkspace({
     sessionRole = role,
     targetPack = pack,
     targetCompany = company,
+    targetSchedule = scheduleId,
   ) => {
     setLoading(true);
     setError('');
@@ -406,6 +411,7 @@ export default function PayrollApprovalWorkspace({
       if (targetPeriod) params.set('period', targetPeriod);
       if (targetPack) params.set('pack', targetPack);
       if (targetCompany) params.set('company', targetCompany);
+      if (targetSchedule) params.set('schedule', targetSchedule);
       const suffix = params.toString() ? `?${params.toString()}` : '';
       const res = await fetch(`/api/hris/payroll/payroll-processing${suffix}`, {
         headers: { 'x-hris-role': sessionRole },
@@ -419,6 +425,7 @@ export default function PayrollApprovalWorkspace({
       setPeriod(json.data.period);
       if (json.data.pack) setPack(json.data.pack);
       if (json.data.company === 'DLE' || json.data.company === 'DLPC') setCompany(json.data.company);
+      if (json.data.scheduleId) setScheduleId(json.data.scheduleId as PayrollScheduleScopeId);
     } catch (event) {
       setError(event instanceof Error ? event.message : 'Unable to load payroll approval workspace');
     } finally {
@@ -432,7 +439,7 @@ export default function PayrollApprovalWorkspace({
 
   useEffect(() => {
     if (!sessionReady) return;
-    void load(period, role, pack, company);
+    void load(period, role, pack, company, scheduleId);
   }, [sessionReady, role]);
 
   const run = payload?.run || null;
@@ -480,16 +487,15 @@ export default function PayrollApprovalWorkspace({
   const packCards = useMemo(() => {
     const packs = payload?.packs || [];
     return PAYROLL_SCHEDULE_SCOPES.map((scope) => {
-      const match = packs.find(
-        (item) =>
-          (item.scheduleId && item.scheduleId === scope.id)
-          || (item.pack === scope.pack && (item.company || 'DLE') === scope.company),
-      );
+      const match = packs.find((item) => item.scheduleId === scope.id)
+        || (scope.id !== 'dle-usd'
+          ? packs.find((item) => item.pack === scope.pack && (item.company || 'DLE') === scope.company && item.scheduleId !== 'dle-usd')
+          : null);
       const status = match?.run?.status
         || (scope.id === selectedScope.id ? run?.status : null)
         || null;
-      const headcount = match?.run?.employeeCount
-        ?? match?.summary?.employees
+      const headcount = match?.summary?.employees
+        ?? match?.run?.employeeCount
         ?? (scope.id === selectedScope.id ? payload?.summary.employees : null);
       return {
         scope,
@@ -537,7 +543,7 @@ export default function PayrollApprovalWorkspace({
   }, [payload?.controls, payload?.summary, payrollComputed, previewGross, previewNet, canViewMoney]);
 
   const employeeRows = useMemo(() => {
-    let rows = [...ngnPayrollKpiRecords(payload?.records || [])];
+    let rows = [...(payload?.records || [])];
     if (activeTab === 'exceptions') {
       rows = rows.filter((record) => record.status !== 'Ready' || record.issues.length > 0);
     }
@@ -546,14 +552,41 @@ export default function PayrollApprovalWorkspace({
     return rows;
   }, [payload?.records, salaryQuery, activeTab]);
 
+  const registerSections = useMemo(() => {
+    if (pack !== 'salaried') return [];
+    if (selectedScope.currencySlice === 'usd') {
+      const sections = groupDleUsdRecords(employeeRows, { includeEmpty: registerSection !== 'all' });
+      if (registerSection === 'all') return sections;
+      return sections.filter((section) => section.id === registerSection);
+    }
+    const sections = groupPayrollRegisterSections(employeeRows).filter((section) => !section.id.startsWith('dle-usd-'));
+    if (registerSection === 'all') return sections;
+    return sections.filter((section) => section.id === registerSection);
+  }, [employeeRows, pack, registerSection, selectedScope.currencySlice]);
+
+  const flatSectionRows = useMemo(
+    () => registerSections.flatMap((section) => section.rows.map((record) => ({
+      sectionId: section.id,
+      sectionLabel: section.label,
+      sectionDetail: section.detail,
+      record,
+    }))),
+    [registerSections],
+  );
+
   useEffect(() => {
     setPage(1);
-  }, [salaryQuery, activeTab, payload?.period, scheduleId]);
+  }, [salaryQuery, activeTab, payload?.period, scheduleId, registerSection]);
 
-  const pageCount = Math.max(1, Math.ceil(employeeRows.length / PAGE_SIZE));
+  const listLength = pack === 'salaried' ? flatSectionRows.length : employeeRows.length;
+  const pageCount = Math.max(1, Math.ceil(listLength / PAGE_SIZE));
   const pageRows = useMemo(
     () => employeeRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
     [employeeRows, page],
+  );
+  const pageSectionRows = useMemo(
+    () => flatSectionRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [flatSectionRows, page],
   );
   const pageWindowStart = Math.max(1, Math.min(page - 2, pageCount - 4));
   const visiblePages = Array.from({ length: Math.min(5, pageCount) }, (_, i) => pageWindowStart + i);
@@ -572,8 +605,9 @@ export default function PayrollApprovalWorkspace({
     setCompany(scope.company);
     setActiveTab('employees');
     setSalaryQuery('');
+    setRegisterSection('all');
     router.replace(`/hris/payroll-management/payroll-approval?schedule=${scope.id}`, { scroll: false });
-    void load(period, role, scope.pack as PayrollPack, scope.company);
+    void load(period, role, scope.pack as PayrollPack, scope.company, scope.id);
   };
 
   const action = async (actionName: string) => {
@@ -647,6 +681,7 @@ export default function PayrollApprovalWorkspace({
   };
 
   const showEmployeeTable = activeTab === 'employees' || activeTab === 'exceptions';
+  const sectionedRegister = showEmployeeTable && pack === 'salaried';
   const exceptionCount = payload?.summary.exceptionCount || 0;
 
   return (
@@ -1030,6 +1065,33 @@ export default function PayrollApprovalWorkspace({
                 <Download size={13} /> Export
               </button>
             </div>
+            {sectionedRegister ? (
+              <div className={styles.sectionChips}>
+                {(selectedScope.currencySlice === 'usd'
+                  ? [
+                      ['all', 'All sections'],
+                      ['permanent', 'Permanent'],
+                      ['contract-md', 'Contract (MD)'],
+                      ['expatriate', 'Expatriate'],
+                    ]
+                  : [
+                      ['all', 'All sections'],
+                      ['ngn-permanent', 'Permanent'],
+                      ['ngn-contract-lumpsum', 'Contract'],
+                      ['ngn-it-nysc', 'IT / NYSC'],
+                    ]
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setRegisterSection(id)}
+                    className={`${styles.sectionChip} ${registerSection === id ? styles.sectionChipActive : ''}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <div className="dle-scroll-x overflow-x-auto">
               <table className={styles.dataTable}>
                 <thead>
@@ -1044,7 +1106,54 @@ export default function PayrollApprovalWorkspace({
                   </tr>
                 </thead>
                 <tbody>
-                  {pageRows.map((record) => (
+                  {sectionedRegister ? (
+                    (() => {
+                      const nodes: ReactNode[] = [];
+                      let lastSectionId = '';
+                      pageSectionRows.forEach((item) => {
+                        if (item.sectionId !== lastSectionId) {
+                          lastSectionId = item.sectionId;
+                          const sectionCount = registerSections.find((section) => section.id === item.sectionId)?.rows.length || 0;
+                          nodes.push(
+                            <tr key={`sec-${item.sectionId}-${page}`} style={{ background: '#0f172a' }}>
+                              <td colSpan={7} style={{ color: '#fff', fontWeight: 800, padding: '10px 12px' }}>
+                                {item.sectionLabel}
+                                <span style={{ marginLeft: 10, fontWeight: 600, color: '#cbd5e1', fontSize: 11 }}>
+                                  {item.sectionDetail} · {sectionCount} employee{sectionCount === 1 ? '' : 's'}
+                                </span>
+                              </td>
+                            </tr>,
+                          );
+                        }
+                        const record = item.record;
+                        nodes.push(
+                          <tr key={`${item.sectionId}-${record.employeeId}`}>
+                            <td>
+                              <div className={styles.empName}>{record.fullName}</div>
+                              <div style={{ color: '#7a8da8' }}>{record.employeeId}</div>
+                              {activeTab === 'exceptions' && record.issues.length ? (
+                                <div style={{ color: '#9a6b00', marginTop: 2 }}>{record.issues.slice(0, 2).join('; ')}</div>
+                              ) : null}
+                            </td>
+                            <td>
+                              {record.department || '—'}
+                              <div style={{ color: '#7a8da8' }}>
+                                {item.sectionLabel} · {recordCurrency(record)}
+                              </div>
+                            </td>
+                            <td>{money(record.grossPay, canViewMoney, recordCurrency(record))}</td>
+                            <td>{money(record.totalDeductions, canViewMoney, recordCurrency(record))}</td>
+                            <td>{money(record.netPay, canViewMoney, recordCurrency(record))}</td>
+                            <td>{money(record.employerCost, canViewMoney, recordCurrency(record))}</td>
+                            <td>
+                              <span className={styles.ready}>{record.status}</span>
+                            </td>
+                          </tr>,
+                        );
+                      });
+                      return nodes;
+                    })()
+                  ) : pageRows.map((record) => (
                     <tr key={record.employeeId}>
                       <td>
                         <div className={styles.empName}>{record.fullName}</div>
@@ -1068,7 +1177,7 @@ export default function PayrollApprovalWorkspace({
                       </td>
                     </tr>
                   ))}
-                  {!pageRows.length ? (
+                  {(sectionedRegister ? !flatSectionRows.length : !employeeRows.length) ? (
                     <tr>
                       <td colSpan={7} style={{ textAlign: 'center', padding: '28px 10px', color: '#6c7f98' }}>
                         {loading
@@ -1084,8 +1193,8 @@ export default function PayrollApprovalWorkspace({
             </div>
             <div className={styles.pagination}>
               <span>
-                {employeeRows.length
-                  ? `${(page - 1) * PAGE_SIZE + 1} to ${Math.min(page * PAGE_SIZE, employeeRows.length)} of ${number(employeeRows.length)}`
+                {listLength
+                  ? `${(page - 1) * PAGE_SIZE + 1} to ${Math.min(page * PAGE_SIZE, listLength)} of ${number(listLength)}`
                   : 'No employees'}
               </span>
               <div>

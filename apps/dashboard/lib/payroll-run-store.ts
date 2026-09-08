@@ -10,9 +10,9 @@ import {
   type PayrollRunPack,
 } from '@/lib/payroll-employee-classification';
 import {
-  PAYROLL_SCHEDULE_SCOPES,
   findPayrollScheduleScope,
   normalizePayrollCompany,
+  payrollRunScopes,
   type PayrollCompany,
 } from '@/lib/payroll-schedule-scope';
 import { ensurePayrollSqlSchema, payrollJsonMirrorEnabled, payrollSqlRequired, toIso } from '@/lib/payroll-sql-schema';
@@ -578,7 +578,7 @@ export const ensurePayrollRun = async (
 
 export const ensurePayrollRunsForPeriod = async (period: string, periodLabel: string, actor: string) => {
   const runs: UnifiedPayrollRun[] = [];
-  for (const scope of PAYROLL_SCHEDULE_SCOPES) {
+  for (const scope of payrollRunScopes()) {
     runs.push(await ensurePayrollRun(period, periodLabel, actor, scope.pack, scope.company));
   }
   return runs;

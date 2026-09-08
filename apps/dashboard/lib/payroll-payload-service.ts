@@ -31,7 +31,11 @@ import {
   PAYROLL_SCHEDULE_SCOPES,
   findPayrollScheduleScope,
   normalizePayrollCompany,
+  payrollRunScopes,
+  payrollScheduleScopeById,
   type PayrollCompany,
+  type PayrollCurrencySlice,
+  type PayrollScheduleScope,
 } from '@/lib/payroll-schedule-scope';
 import {
   summarizePayrollReadiness,
@@ -44,7 +48,7 @@ import {
   resolvePayrollApprovalNextOwner,
   resolvePayrollApprovalStageLabel,
 } from '@/lib/payroll-approval-workflow';
-import { ngnPayrollKpiRecords } from '@/lib/payroll-bank-schedule-packs';
+import { filterPayrollRecordsByCurrencySlice, ngnPayrollKpiRecords } from '@/lib/payroll-bank-schedule-packs';
 import {
   buildPayrollMonthOverMonth,
   totalsHaveFigures,
@@ -54,6 +58,91 @@ import {
 import { previousPayrollPeriod } from '@/lib/payroll-review-export';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
+
+const moneyTotalsFromRecords = (
+  records: Array<{
+    grossPay?: number | null;
+    totalDeductions?: number | null;
+    deductions?: number | null;
+    netPay?: number | null;
+    employerCost?: number | null;
+  }>,
+) => {
+  const totals = { grossPay: 0, deductions: 0, netPay: 0, employerCost: 0 };
+  for (const record of records) {
+    totals.grossPay += Number(record.grossPay || 0);
+    totals.deductions += Number(record.totalDeductions || record.deductions || 0);
+    totals.netPay += Number(record.netPay || 0);
+    totals.employerCost += Number(record.employerCost || 0);
+  }
+  return {
+    grossPay: roundMoney(totals.grossPay),
+    deductions: roundMoney(totals.deductions),
+    netPay: roundMoney(totals.netPay),
+    employerCost: roundMoney(totals.employerCost),
+  };
+};
+
+/** Apply NGN/USD schedule card filter on top of a pack calculation. */
+const applyCurrencySliceToCalculation = <T extends {
+  records: PayrollCalculationRecord[];
+  summary: Record<string, unknown>;
+}>(
+  calculation: T,
+  slice: PayrollCurrencySlice,
+): T => {
+  if (slice === 'all') return calculation;
+  const records = filterPayrollRecordsByCurrencySlice(calculation.records, slice) as PayrollCalculationRecord[];
+  const ready = records.filter((record) => record.status === 'Ready');
+  const review = records.filter((record) => record.status === 'Review');
+  const blocked = records.filter((record) => record.status === 'Blocked');
+  const money = moneyTotalsFromRecords(records);
+  const employees = records.length;
+  // NGN DLE Salaries keep workbook KPI overrides already on the pack summary when present.
+  const keepNgnKpi = slice === 'ngn'
+    && Number(calculation.summary.scheduleEmployees || calculation.summary.employees || 0) > 0
+    && Number(calculation.summary.scheduleGrossPay || calculation.summary.grossPay || 0) > 0;
+  if (keepNgnKpi) {
+    return {
+      ...calculation,
+      records,
+      summary: {
+        ...calculation.summary,
+        employees: Number(calculation.summary.scheduleEmployees || calculation.summary.employees || employees),
+        payrollEligible: Number(calculation.summary.scheduleEmployees || calculation.summary.payrollEligible || employees),
+        ready: Number(calculation.summary.ready || ready.length),
+        review: review.length,
+        blocked: blocked.length,
+        readyEmployees: Number(calculation.summary.readyEmployees || calculation.summary.ready || ready.length),
+        reviewEmployees: review.length,
+        blockedEmployees: blocked.length,
+      },
+    };
+  }
+  return {
+    ...calculation,
+    records,
+    summary: {
+      ...calculation.summary,
+      employees,
+      payrollEligible: employees,
+      ready: ready.length,
+      review: review.length,
+      blocked: blocked.length,
+      readyEmployees: ready.length,
+      reviewEmployees: review.length,
+      blockedEmployees: blocked.length,
+      grossPay: money.grossPay,
+      totalDeductions: money.deductions,
+      deductions: money.deductions,
+      netPay: money.netPay,
+      employerCost: money.employerCost,
+      scheduleGrossPay: money.grossPay,
+      scheduleNetPay: money.netPay,
+      scheduleEmployees: employees,
+    },
+  };
+};
 
 const FINALIZED_RUN_STATUSES = new Set([
   'Posted',
@@ -213,10 +302,15 @@ const totalsFromSummaryAndRecords = (
     payrollGroup?: string | null;
   }>,
   payrollComputed: boolean,
+  currencySlice: PayrollCurrencySlice = 'ngn',
 ): PayrollMomTotals => {
-  const ngn = ngnPayrollKpiRecords(records);
+  const forKpi = currencySlice === 'usd'
+    ? (records || [])
+    : currencySlice === 'all'
+      ? (records || [])
+      : ngnPayrollKpiRecords(records);
   const fromRecords = { grossPay: 0, deductions: 0, netPay: 0, employerCost: 0 };
-  for (const record of ngn) {
+  for (const record of forKpi) {
     fromRecords.grossPay += Number(record.grossPay || 0);
     fromRecords.deductions += Number(record.totalDeductions || record.deductions || 0);
     fromRecords.netPay += Number(record.netPay || 0);
@@ -225,7 +319,7 @@ const totalsFromSummaryAndRecords = (
   return {
     period,
     periodLabel: payrollPeriodLabel(period),
-    employees: Number(summary.scheduleEmployees || summary.employees || summary.payrollEligible || ngn.length || 0),
+    employees: Number(summary.scheduleEmployees || summary.employees || summary.payrollEligible || forKpi.length || 0),
     grossPay: roundMoney(
       payrollComputed
         ? Number(summary.grossPay || 0)
@@ -333,7 +427,10 @@ const buildPackTotals = async (
     const resolved = scope.pack === selected.pack && scope.company === selected.company
       ? { calculation: selected.calculation, payrollComputed: selected.payrollComputed }
       : await resolvePeriodCalculation(period, run, periodRecord, scope.pack, scope.company).catch(() => null);
-    const summary = resolved?.calculation.summary;
+    const sliced = resolved
+      ? applyCurrencySliceToCalculation(resolved.calculation, scope.currencySlice)
+      : null;
+    const summary = sliced?.summary;
     return {
       id: scope.id,
       pack: scope.pack,
@@ -343,15 +440,16 @@ const buildPackTotals = async (
       runId: run?.id || null,
       status: run?.status || 'Draft',
       computed: Boolean(resolved?.payrollComputed),
-      employeeCount: Number(summary?.payrollEligible || 0),
-      readyEmployees: Number(summary?.readyEmployees || 0),
+      employeeCount: Number(summary?.payrollEligible || summary?.employees || 0),
+      readyEmployees: Number(summary?.readyEmployees || summary?.ready || 0),
       grossPay: roundMoney(Number(summary?.grossPay || 0)),
       deductions: roundMoney(Number(summary?.deductions || 0)),
       netPay: roundMoney(Number(summary?.netPay || 0)),
     };
   }));
   const totals = PAYROLL_RUN_PACKS.map((pack) => {
-    const items = scheduleTotals.filter((item) => item.pack === pack);
+    // Avoid double-counting DLE USD (same salaried run as DLE Salaries).
+    const items = scheduleTotals.filter((item) => item.pack === pack && item.id !== 'dle-usd');
     return {
       pack,
       packLabel: payrollRunPackShortLabel(pack),
@@ -366,7 +464,9 @@ const buildPackTotals = async (
     };
   });
 
-  const periodTotals = scheduleTotals.reduce(
+  const periodTotals = scheduleTotals
+    .filter((item) => item.id !== 'dle-usd')
+    .reduce(
     (acc, item) => ({
       employeeCount: acc.employeeCount + item.employeeCount,
       readyEmployees: acc.readyEmployees + item.readyEmployees,
@@ -474,11 +574,15 @@ const buildPackPayload = async (
   periodRecord: { status: string } | null,
   canViewMoney: boolean,
   company: PayrollCompany = 'DLE',
+  scheduleScope?: PayrollScheduleScope | null,
 ) => {
+  const scope = scheduleScope || findPayrollScheduleScope(pack, company);
   const scopedRun = run ? { ...run, pack: resolvePayrollRunPack(run) || pack, company: resolvePayrollRunCompany(run) || company } : null;
-  const { calculation, dataMode, payrollComputed } = await resolvePeriodCalculation(period, scopedRun, periodRecord, pack, company);
-  const scope = findPayrollScheduleScope(pack, company);
-  const totals = totalsFromSummaryAndRecords(period, calculation.summary, calculation.records, payrollComputed);
+  const resolved = await resolvePeriodCalculation(period, scopedRun, periodRecord, pack, company);
+  const calculation = applyCurrencySliceToCalculation(resolved.calculation, scope.currencySlice);
+  const dataMode = resolved.dataMode;
+  const payrollComputed = resolved.payrollComputed;
+  const totals = totalsFromSummaryAndRecords(period, calculation.summary, calculation.records, payrollComputed, scope.currencySlice);
   const presentMoney = (value: number | null | undefined, fallback: number) =>
     value == null || (Math.abs(Number(value || 0)) < 0.005 && Math.abs(fallback) >= 0.005)
       ? roundMoney(fallback)
@@ -545,13 +649,15 @@ export const buildProcessingPayload = async (
   requestedPeriod?: string,
   requestedPack?: string | null,
   requestedCompany?: string | null,
+  requestedScheduleId?: string | null,
 ) => {
   const { role, processingPerms } = await payrollSessionContext(request);
   const perms = processingPerms;
   const period = requestedPeriod || (await getActivePayrollPeriod());
-  const pack = normalizePayrollRunPack(requestedPack) || 'salaried';
-  const company = normalizePayrollCompany(requestedCompany) || 'DLE';
-  const scope = findPayrollScheduleScope(pack, company);
+  const scheduleFromId = payrollScheduleScopeById(requestedScheduleId);
+  const pack = scheduleFromId?.pack || normalizePayrollRunPack(requestedPack) || 'salaried';
+  const company = scheduleFromId?.company || normalizePayrollCompany(requestedCompany) || 'DLE';
+  const scope = scheduleFromId || findPayrollScheduleScope(pack, company);
   const periodState = await listPayrollPeriods();
   const periodRecord = periodState.periods.find((item) => item.period === period) || null;
 
@@ -562,7 +668,7 @@ export const buildProcessingPayload = async (
   ]);
 
   let packRuns = periodPackRuns;
-  const missingScope = PAYROLL_SCHEDULE_SCOPES.some(
+  const missingScope = payrollRunScopes().some(
     (item) => !packRuns.some((run) => runMatchesScope(run, item.pack, item.company)),
   );
   if (!packRuns.length || missingScope) {
@@ -572,16 +678,22 @@ export const buildProcessingPayload = async (
   const packPayloads = await Promise.all(
     PAYROLL_SCHEDULE_SCOPES.map(async (item) => {
       const packRun = packRuns.find((run) => runMatchesScope(run, item.pack, item.company)) || null;
-      return buildPackPayload(period, item.pack, packRun, periodRecord, perms.canViewMoney, item.company);
+      return buildPackPayload(period, item.pack, packRun, periodRecord, perms.canViewMoney, item.company, item);
     }),
   );
-  const activePack = packPayloads.find((item) => item.pack === pack && item.company === company) || packPayloads[0];
-  const scopedLive = filterPayrollCalculationByPack(fullCalculation, pack, company);
+  const activePack = packPayloads.find((item) => item.scheduleId === scope.id)
+    || packPayloads.find((item) => item.pack === pack && item.company === company && item.scheduleId !== 'dle-usd')
+    || packPayloads[0];
+  const scopedLive = applyCurrencySliceToCalculation(
+    filterPayrollCalculationByPack(fullCalculation, pack, company),
+    scope.currencySlice,
+  );
   const currentTotals = totalsFromSummaryAndRecords(
     period,
     scopedLive.summary,
     scopedLive.records,
     Boolean(activePack.payrollComputed),
+    scope.currencySlice,
   );
   const monthOverMonth = await buildMonthOverMonthForScope(
     period,
@@ -589,7 +701,9 @@ export const buildProcessingPayload = async (
     pack,
     company,
     currentTotals,
-    ngnPayrollKpiRecords(scopedLive.records) as PayrollCalculationRecord[],
+    (scope.currencySlice === 'usd'
+      ? scopedLive.records
+      : ngnPayrollKpiRecords(scopedLive.records)) as PayrollCalculationRecord[],
     perms.canViewMoney,
   );
 
@@ -627,9 +741,9 @@ export const buildProcessingPayload = async (
       },
       {
         id: 'schedule-split',
-        label: 'Four payroll schedules',
+        label: 'Payroll schedules',
         status: 'Split cost',
-        detail: 'DLE Salaries, DLPC Salaries, DLE Day-rate, and DLPC Day-rate are independent runs with the same approval chain.',
+        detail: 'DLE Salaries (NGN), DLE USD, DLPC Salaries, DLE Day-rate, and DLPC Day-rate. DLE USD shares the DLE salaried run.',
         tone: 'cyan',
       },
     ],
@@ -717,7 +831,7 @@ export const buildManagementPayload = async (
   ]);
   const periodRecord = periodState.periods.find((item) => item.period === period) || null;
   let packRunsSource = periodPackRuns;
-  const missingScope = PAYROLL_SCHEDULE_SCOPES.some(
+  const missingScope = payrollRunScopes().some(
     (item) => !packRunsSource.some((run) => runMatchesScope(run, item.pack, item.company)),
   );
   if (!packRunsSource.length || missingScope) {

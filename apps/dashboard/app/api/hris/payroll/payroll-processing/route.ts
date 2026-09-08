@@ -117,8 +117,9 @@ export async function GET(request: Request) {
     const period = url.searchParams.get('period') || (await getActivePayrollPeriod());
     const pack = url.searchParams.get('pack');
     const company = url.searchParams.get('company');
+    const schedule = url.searchParams.get('schedule');
     const format = compact(url.searchParams.get('format')).toLowerCase();
-    const payload = await buildProcessingPayload(request, period, pack, company);
+    const payload = await buildProcessingPayload(request, period, pack, company, schedule);
     if (format === 'csv') {
       if (!payload.permissions.canExport) return err(403, 'Permission denied');
       return new Response(csv(payload.records), {

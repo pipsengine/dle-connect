@@ -1,6 +1,7 @@
 /**
- * Payroll is four independent schedules:
- * DLE Salaries, DLPC Salaries, DLE Day-rate, DLPC Day-rate.
+ * Payroll schedule cards:
+ * DLE Salaries (NGN), DLE USD, DLPC Salaries, DLE Day-rate, DLPC Day-rate.
+ * DLE USD shares the DLE salaried run but is a separate card (USD staff only).
  * Company matches payment-management sites (DLE / DLPC, including DLENG / DLPCG).
  */
 import type { PayrollRunPack } from '@/lib/payroll-employee-classification';
@@ -9,12 +10,22 @@ export type PayrollCompany = 'DLE' | 'DLPC';
 
 export const PAYROLL_COMPANIES: PayrollCompany[] = ['DLE', 'DLPC'];
 
-export type PayrollScheduleScopeId = 'dle-salaries' | 'dlpc-salaries' | 'dle-dayrate' | 'dlpc-dayrate';
+/** NGN vs USD slice within the same pack+company run (DLE salaried). */
+export type PayrollCurrencySlice = 'all' | 'ngn' | 'usd';
+
+export type PayrollScheduleScopeId =
+  | 'dle-salaries'
+  | 'dle-usd'
+  | 'dlpc-salaries'
+  | 'dle-dayrate'
+  | 'dlpc-dayrate';
 
 export type PayrollScheduleScope = {
   id: PayrollScheduleScopeId;
   company: PayrollCompany;
   pack: PayrollRunPack;
+  /** View filter within the shared pack run. */
+  currencySlice: PayrollCurrencySlice;
   label: string;
   shortLabel: string;
   href: string;
@@ -32,6 +43,7 @@ export const PAYROLL_SCHEDULE_SCOPES: PayrollScheduleScope[] = [
     id: 'dle-salaries',
     company: 'DLE',
     pack: 'salaried',
+    currencySlice: 'ngn',
     label: 'DLE Salaries',
     shortLabel: 'DLE · Salaries',
     href: processHrefFor('dle-salaries'),
@@ -41,9 +53,23 @@ export const PAYROLL_SCHEDULE_SCOPES: PayrollScheduleScope[] = [
     kindLabel: 'Salaries',
   },
   {
+    id: 'dle-usd',
+    company: 'DLE',
+    pack: 'salaried',
+    currencySlice: 'usd',
+    label: 'DLE USD',
+    shortLabel: 'DLE · USD',
+    href: processHrefFor('dle-usd'),
+    processHref: processHrefFor('dle-usd'),
+    approvalHref: approvalHrefFor('dle-usd'),
+    bankLabel: 'DLE USD',
+    kindLabel: 'USD salaries',
+  },
+  {
     id: 'dlpc-salaries',
     company: 'DLPC',
     pack: 'salaried',
+    currencySlice: 'all',
     label: 'DLPC Salaries',
     shortLabel: 'DLPC · Salaries',
     href: processHrefFor('dlpc-salaries'),
@@ -56,6 +82,7 @@ export const PAYROLL_SCHEDULE_SCOPES: PayrollScheduleScope[] = [
     id: 'dle-dayrate',
     company: 'DLE',
     pack: 'daily-rate',
+    currencySlice: 'all',
     label: 'DLE Day-rate',
     shortLabel: 'DLE · Day-rate',
     href: processHrefFor('dle-dayrate'),
@@ -68,6 +95,7 @@ export const PAYROLL_SCHEDULE_SCOPES: PayrollScheduleScope[] = [
     id: 'dlpc-dayrate',
     company: 'DLPC',
     pack: 'daily-rate',
+    currencySlice: 'all',
     label: 'DLPC Day-rate',
     shortLabel: 'DLPC · Day-rate',
     href: processHrefFor('dlpc-dayrate'),
@@ -77,6 +105,17 @@ export const PAYROLL_SCHEDULE_SCOPES: PayrollScheduleScope[] = [
     kindLabel: 'Day-rate contractors',
   },
 ];
+
+/** Unique pack+company runs (DLE USD shares DLE Salaries run). */
+export const payrollRunScopes = () => {
+  const seen = new Set<string>();
+  return PAYROLL_SCHEDULE_SCOPES.filter((scope) => {
+    const key = `${scope.pack}:${scope.company}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
 
 const compact = (value: unknown) => String(value || '').trim();
 const upper = (value: unknown) => compact(value).toUpperCase();
@@ -141,8 +180,13 @@ export const payrollScheduleScopeFromSection = (section?: string | null) =>
 export const findPayrollScheduleScope = (pack?: string | null, company?: string | null) => {
   const normalizedPack = compact(pack).toLowerCase() === 'daily-rate' ? 'daily-rate' : 'salaried';
   const normalizedCompany = normalizePayrollCompany(company) || 'DLE';
-  return PAYROLL_SCHEDULE_SCOPES.find((scope) => scope.pack === normalizedPack && scope.company === normalizedCompany)
-    || PAYROLL_SCHEDULE_SCOPES[0];
+  // Prefer the primary NGN/all card — never resolve pack+company to DLE USD alone.
+  return PAYROLL_SCHEDULE_SCOPES.find(
+    (scope) =>
+      scope.pack === normalizedPack
+      && scope.company === normalizedCompany
+      && scope.currencySlice !== 'usd',
+  ) || PAYROLL_SCHEDULE_SCOPES[0];
 };
 
 export const payrollScheduleScopeLabel = (pack?: string | null, company?: string | null) =>
