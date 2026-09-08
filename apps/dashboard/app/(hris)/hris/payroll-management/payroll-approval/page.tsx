@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { payrollScheduleScopeFromSection } from '@/lib/payroll-schedule-scope';
+import { payrollScheduleScopeFromSection, SALARIES_SUMMARY_VIEW_ID } from '@/lib/payroll-schedule-scope';
 import PayrollApprovalWorkspace from './PayrollApprovalWorkspace';
 
 export const metadata: Metadata = {
@@ -17,6 +17,8 @@ export default async function PayrollApprovalPage({
     : Array.isArray(sp.schedule)
       ? sp.schedule[0]
       : undefined;
-  const scope = payrollScheduleScopeFromSection(raw);
-  return <PayrollApprovalWorkspace initialSchedule={scope?.id} />;
+  const initialSchedule = raw === SALARIES_SUMMARY_VIEW_ID
+    ? SALARIES_SUMMARY_VIEW_ID
+    : payrollScheduleScopeFromSection(raw)?.id;
+  return <PayrollApprovalWorkspace initialSchedule={initialSchedule} />;
 }

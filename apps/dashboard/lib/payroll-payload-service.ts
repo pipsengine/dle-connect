@@ -50,6 +50,11 @@ import {
 } from '@/lib/payroll-approval-workflow';
 import { filterPayrollRecordsByCurrencySlice, ngnPayrollKpiRecords } from '@/lib/payroll-bank-schedule-packs';
 import {
+  buildPayrollSalariesSummary,
+  payrollSalariesSummaryLockDate,
+} from '@/lib/payroll-salaries-summary';
+import { getPrevailingFxRate } from '@/lib/finance-intelligence/approval-matrix-service';
+import {
   buildPayrollMonthOverMonth,
   totalsHaveFigures,
   type PayrollMomTotals,
@@ -707,6 +712,85 @@ export const buildProcessingPayload = async (
     perms.canViewMoney,
   );
 
+  const lockDate = payrollSalariesSummaryLockDate(period);
+  const fx = await getPrevailingFxRate('USD', lockDate).catch(() => ({
+    fromCurrency: 'USD',
+    toCurrency: 'NGN',
+    rate: 1620,
+    rateDate: lockDate.toISOString().slice(0, 10),
+    source: 'Fallback',
+  }));
+
+  let priorTotalsNgn: PayrollMomTotals | null = null;
+  let priorSchedules: ReturnType<typeof buildPayrollSalariesSummary>['schedules'] | null = null;
+  let priorTotalEarningsNgn: number | null = null;
+  const priorPeriod = previousPayrollPeriod(period);
+  if (priorPeriod) {
+    const priorLockDate = payrollSalariesSummaryLockDate(priorPeriod);
+    const priorFx = await getPrevailingFxRate('USD', priorLockDate).catch(() => ({
+      fromCurrency: 'USD',
+      toCurrency: 'NGN',
+      rate: Number(fx.rate || 0) || 1620,
+      rateDate: priorLockDate.toISOString().slice(0, 10),
+      source: fx.source || 'Fallback',
+    }));
+    const priorCalc = await calculatePayrollForPeriod(priorPeriod).catch(() => null);
+    if (priorCalc) {
+      const priorPacks = PAYROLL_SCHEDULE_SCOPES.map((item) => {
+        const sliced = applyCurrencySliceToCalculation(
+          filterPayrollCalculationByPack(priorCalc, item.pack, item.company),
+          item.currencySlice,
+        );
+        return {
+          scheduleId: item.id,
+          packLabel: item.label,
+          pack: item.pack,
+          company: item.company,
+          payrollComputed: true,
+          run: {
+            status: 'Computed',
+            employeeCount: Number(sliced.summary.employees || sliced.records.length || 0),
+          },
+          summary: sliced.summary,
+          records: sliced.records,
+        };
+      });
+      const priorSummary = buildPayrollSalariesSummary({
+        period: priorPeriod,
+        packs: priorPacks,
+        lockedFx: {
+          rate: Number(priorFx.rate || 0) || Number(fx.rate || 0) || 1620,
+          rateDate: priorFx.rateDate || priorLockDate.toISOString().slice(0, 10),
+          source: priorFx.source || 'finance.FxRates',
+        },
+      });
+      priorTotalsNgn = {
+        period: priorPeriod,
+        periodLabel: priorSummary.periodLabel,
+        employees: priorSummary.headcount.total,
+        grossPay: priorSummary.totalsNgn.grossPay,
+        deductions: priorSummary.totalsNgn.deductions,
+        netPay: priorSummary.totalsNgn.netPay,
+        employerCost: priorSummary.totalsNgn.employerCost,
+      };
+      priorSchedules = priorSummary.schedules;
+      priorTotalEarningsNgn = priorSummary.totalsNgn.totalEarnings;
+    }
+  }
+
+  const salariesSummary = buildPayrollSalariesSummary({
+    period,
+    packs: packPayloads,
+    lockedFx: {
+      rate: Number(fx.rate || 0) || 1620,
+      rateDate: fx.rateDate || lockDate.toISOString().slice(0, 10),
+      source: fx.source || 'finance.FxRates',
+    },
+    priorTotalsNgn,
+    priorTotalEarningsNgn,
+    priorSchedules,
+  });
+
   return {
     generatedAt: fullCalculation.generatedAt,
     source: fullCalculation.source,
@@ -721,6 +805,7 @@ export const buildProcessingPayload = async (
     role,
     permissions: perms,
     monthOverMonth,
+    salariesSummary,
     run: activePack.run,
     runs: runs.slice(0, 24).map((item) => mapRunForProcessing(item)).filter(Boolean),
     packRuns: packPayloads.map((item) => item.run).filter(Boolean),

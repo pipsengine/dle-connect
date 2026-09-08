@@ -20,6 +20,10 @@ export type PayrollScheduleScopeId =
   | 'dle-dayrate'
   | 'dlpc-dayrate';
 
+/** Approval-only consolidated view (not a payroll run / schedule pack). */
+export const SALARIES_SUMMARY_VIEW_ID = 'salaries-summary' as const;
+export type PayrollSalariesSummaryViewId = typeof SALARIES_SUMMARY_VIEW_ID;
+
 export type PayrollScheduleScope = {
   id: PayrollScheduleScopeId;
   company: PayrollCompany;

@@ -100,7 +100,7 @@
 
 .scheduleGrid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -155,6 +155,11 @@
 .schedule_teal {
   background: #e6fbf7;
   color: #0f766e;
+}
+
+.schedule_navy {
+  background: #e8eef8;
+  color: #1e3a5f;
 }
 
 .scheduleText {

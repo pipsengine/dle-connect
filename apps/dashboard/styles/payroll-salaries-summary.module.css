@@ -1,0 +1,481 @@
+/* Salaries Summary consolidated panel — Payroll Approval (content only). */
+
+.panelRoot {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.summaryHeader {
+  background: #fff;
+  border: 1px solid #dce7f4;
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: 1fr minmax(280px, 560px);
+  gap: 12px;
+}
+
+.summaryTitle h2 {
+  margin: 0;
+  font-size: 18px;
+  display: inline;
+  color: #0b2047;
+}
+
+.summaryTitle p {
+  margin: 6px 0 0;
+  color: #506b91;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+  max-width: 720px;
+}
+
+.validated {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #def7ec;
+  color: #0c8e65;
+  border-radius: 12px;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 8px;
+  vertical-align: 3px;
+}
+
+.infoCards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.infoCard {
+  background: #f7fbff;
+  border: 1px solid #dce7f4;
+  border-radius: 7px;
+  padding: 8px 9px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.infoIcon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #edf5ff;
+  color: #1e65cf;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.infoCard span,
+.infoCard b,
+.infoCard small {
+  display: block;
+}
+
+.infoCard span {
+  font-size: 9px;
+  color: #53709a;
+  font-weight: 700;
+}
+
+.infoCard b {
+  font-size: 13px;
+  margin-top: 2px;
+  color: #0b2047;
+}
+
+.infoCard small {
+  font-size: 9px;
+  color: #637b9c;
+  margin-top: 2px;
+  font-weight: 600;
+}
+
+.infoCard em {
+  font-style: normal;
+  background: #ddf8eb;
+  color: #0a8c61;
+  padding: 2px 5px;
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.kpi {
+  min-width: 0;
+  min-height: 108px;
+  border: 1px solid #dbe6f2;
+  border-radius: 7px;
+  padding: 12px 10px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.kpi > div:last-child {
+  min-width: 0;
+}
+
+.kpi span,
+.kpi strong,
+.kpi b,
+.kpi small {
+  display: block;
+}
+
+.kpi span {
+  font-size: 10px;
+  color: #2c4d79;
+  font-weight: 700;
+}
+
+.kpi strong {
+  font-size: 16px;
+  margin: 3px 0 4px;
+  letter-spacing: -0.02em;
+  color: #0b2047;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kpi small {
+  font-size: 9px;
+  color: #6a82a5;
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+.kpiIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.deltaDown {
+  font-size: 9.5px;
+  color: #f0242a;
+  font-weight: 700;
+}
+
+.deltaUp {
+  font-size: 9.5px;
+  color: #0a9c6d;
+  font-weight: 700;
+}
+
+.deltaFlat {
+  font-size: 9.5px;
+  color: #6a82a5;
+  font-weight: 700;
+}
+
+.kpi_blue { background: #f0f6ff; }
+.kpi_amber { background: #fff8eb; }
+.kpi_red { background: #fff1f3; }
+.kpi_green { background: #effbf6; }
+.kpi_purple { background: #f7f1ff; }
+
+.icon_blue { background: #dcecff; color: #0870ff; }
+.icon_amber { background: #fff0c8; color: #ff9f00; }
+.icon_red { background: #ffdfe3; color: #ff2430; }
+.icon_green { background: #daf7e9; color: #0aa46e; }
+.icon_purple { background: #eadcff; color: #7d2df2; }
+
+.midGrid {
+  display: grid;
+  grid-template-columns: 2.2fr 1fr 1fr;
+  gap: 8px;
+}
+
+.bottomGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #dbe6f2;
+  border-radius: 8px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.panelHead {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 11px;
+  border-bottom: 1px solid #edf2f8;
+}
+
+.panelHead h3 {
+  margin: 0;
+  font-size: 12px;
+  color: #0b2047;
+}
+
+.tableWrap {
+  overflow: auto;
+}
+
+.dataTable,
+.miniTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.dataTable th,
+.miniTable th {
+  background: #f6f9fd;
+  color: #48658c;
+  font-size: 9px;
+  text-align: left;
+  padding: 7px 8px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dataTable td,
+.miniTable td {
+  padding: 8px;
+  border-top: 1px solid #edf2f7;
+  font-size: 10px;
+  color: #15345f;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.rowLabel {
+  font-weight: 800;
+}
+
+.totalRow td {
+  font-weight: 800;
+  background: #eef5fc;
+}
+
+.stackBar {
+  height: 21px;
+  margin: 10px 9px 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  display: flex;
+  background: #edf3f9;
+}
+
+.stackSeg {
+  display: block;
+  height: 100%;
+}
+
+.segBlue { background: #0b6ff9; }
+.segGreen { background: #0ba779; }
+.segPurple { background: #7a2dec; }
+
+.legendRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  padding: 0 8px 10px;
+  font-size: 9px;
+  color: #4f6788;
+  font-weight: 700;
+}
+
+.legendDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 4px;
+}
+
+.currencyBody {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  align-items: center;
+  padding: 8px;
+  gap: 8px;
+}
+
+.donutWrap {
+  height: 150px;
+  position: relative;
+}
+
+.donutCenter {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.donutCenter b {
+  font-size: 14px;
+  color: #0b2047;
+}
+
+.donutCenter span {
+  font-size: 9px;
+  color: #5d779b;
+  font-weight: 700;
+}
+
+.currencyLegend p {
+  font-size: 9px;
+  color: #446084;
+  line-height: 1.35;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.currencyLegend b {
+  font-size: 10px;
+  color: #0a234b;
+}
+
+.fxBox {
+  margin: 0 9px 9px;
+  border: 1px solid #d9e7f5;
+  background: #f6fbff;
+  border-radius: 7px;
+  padding: 8px;
+}
+
+.fxBox > b {
+  font-size: 10px;
+  color: #0b2047;
+}
+
+.fxBox div {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+.fxBox span {
+  color: #59769a;
+}
+
+.fxBox strong {
+  font-size: 10px;
+  color: #0b2047;
+}
+
+.redText {
+  color: #f21f2b !important;
+}
+
+.greenText {
+  color: #0a9c6d !important;
+}
+
+.status {
+  padding: 3px 7px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 8px;
+}
+
+.statusGreen {
+  background: #dcf6e9;
+  color: #0b8b63;
+}
+
+.statusAmber {
+  background: #fff2cb;
+  color: #c97d00;
+}
+
+.statusRed {
+  background: #ffe1e4;
+  color: #ec1f2a;
+}
+
+.detailTabs {
+  margin-top: 2px;
+  min-height: 39px;
+  background: #fff;
+  border: 1px solid #dbe6f2;
+  border-radius: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  overflow: hidden;
+}
+
+.detailTabs button {
+  border: 0;
+  border-right: 1px solid #edf2f7;
+  background: #fff;
+  color: #36557f;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.detailActive {
+  background: #0e6df6 !important;
+  color: #fff !important;
+}
+
+.muted {
+  color: #6c7f98;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 14px;
+}
+
+@media (max-width: 1350px) {
+  .kpiGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .summaryHeader {
+    grid-template-columns: 1fr;
+  }
+
+  .midGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .schedulePanel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 980px) {
+  .midGrid,
+  .bottomGrid,
+  .infoCards {
+    grid-template-columns: 1fr;
+  }
+
+  .kpiGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

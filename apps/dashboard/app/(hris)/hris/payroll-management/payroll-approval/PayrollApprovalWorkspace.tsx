@@ -24,6 +24,7 @@ import {
   UserCheck,
   Wallet,
   WalletCards,
+  BarChart3,
   X,
 } from 'lucide-react';
 import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
@@ -34,14 +35,17 @@ import {
 } from '@/lib/payroll-bank-schedule-packs';
 import {
   PAYROLL_SCHEDULE_SCOPES,
+  SALARIES_SUMMARY_VIEW_ID,
   payrollScheduleScopeById,
   type PayrollCompany,
   type PayrollScheduleScopeId,
 } from '@/lib/payroll-schedule-scope';
 import type { PayrollMonthOverMonth, PayrollMomMetricKey } from '@/lib/payroll-month-over-month';
 import { payrollMomMetric } from '@/lib/payroll-month-over-month';
+import type { PayrollSalariesSummary } from '@/lib/payroll-salaries-summary';
 import PayrollMonthOverMonthPanel from '@/app/(hris)/hris/payroll/PayrollMonthOverMonth';
 import { PayrollCommentsControl } from '../PayrollCommentsThread';
+import PayrollSalariesSummaryPanel from './PayrollSalariesSummaryPanel';
 import styles from '@/styles/payroll-approval.module.css';
 
 type Role =
@@ -187,6 +191,7 @@ type Payload = {
     averageDeductionRatio: number | null;
   };
   monthOverMonth?: PayrollMonthOverMonth | null;
+  salariesSummary?: PayrollSalariesSummary | null;
   records: PayrollRecord[];
   controls: Array<{ id: string; label: string; status: string; detail: string; tone: Tone }>;
   artifacts?: Array<{ type: string; label: string; fileName: string; generatedAt: string; generatedBy: string }>;
@@ -358,7 +363,8 @@ export default function PayrollApprovalWorkspace({
   initialSchedule?: string;
 }) {
   const router = useRouter();
-  const initialScope = payrollScheduleScopeById(initialSchedule) || PAYROLL_SCHEDULE_SCOPES[0];
+  const initialIsSummary = initialSchedule === SALARIES_SUMMARY_VIEW_ID;
+  const initialScope = payrollScheduleScopeById(initialIsSummary ? undefined : initialSchedule) || PAYROLL_SCHEDULE_SCOPES[0];
 
   const [payload, setPayload] = useState<Payload | null>(null);
   const [role, setRole] = useState<Role>('Employee');
@@ -366,6 +372,9 @@ export default function PayrollApprovalWorkspace({
   const [pack, setPack] = useState<PayrollPack>(initialScope.pack as PayrollPack);
   const [company, setCompany] = useState<PayrollCompany>(initialScope.company);
   const [scheduleId, setScheduleId] = useState<PayrollScheduleScopeId>(initialScope.id);
+  const [panelView, setPanelView] = useState<'schedule' | typeof SALARIES_SUMMARY_VIEW_ID>(
+    initialIsSummary ? SALARIES_SUMMARY_VIEW_ID : 'schedule',
+  );
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState('');
   const [error, setError] = useState('');
@@ -403,6 +412,7 @@ export default function PayrollApprovalWorkspace({
     targetPack = pack,
     targetCompany = company,
     targetSchedule = scheduleId,
+    options?: { keepScheduleSelection?: boolean },
   ) => {
     setLoading(true);
     setError('');
@@ -425,7 +435,9 @@ export default function PayrollApprovalWorkspace({
       setPeriod(json.data.period);
       if (json.data.pack) setPack(json.data.pack);
       if (json.data.company === 'DLE' || json.data.company === 'DLPC') setCompany(json.data.company);
-      if (json.data.scheduleId) setScheduleId(json.data.scheduleId as PayrollScheduleScopeId);
+      if (!options?.keepScheduleSelection && json.data.scheduleId) {
+        setScheduleId(json.data.scheduleId as PayrollScheduleScopeId);
+      }
     } catch (event) {
       setError(event instanceof Error ? event.message : 'Unable to load payroll approval workspace');
     } finally {
@@ -600,6 +612,7 @@ export default function PayrollApprovalWorkspace({
   const selectSchedule = (id: PayrollScheduleScopeId) => {
     const scope = payrollScheduleScopeById(id);
     if (!scope) return;
+    setPanelView('schedule');
     setScheduleId(scope.id);
     setPack(scope.pack as PayrollPack);
     setCompany(scope.company);
@@ -608,6 +621,12 @@ export default function PayrollApprovalWorkspace({
     setRegisterSection('all');
     router.replace(`/hris/payroll-management/payroll-approval?schedule=${scope.id}`, { scroll: false });
     void load(period, role, scope.pack as PayrollPack, scope.company, scope.id);
+  };
+
+  const selectSalariesSummary = () => {
+    setPanelView(SALARIES_SUMMARY_VIEW_ID);
+    router.replace(`/hris/payroll-management/payroll-approval?schedule=${SALARIES_SUMMARY_VIEW_ID}`, { scroll: false });
+    void load(period, role, pack, company, scheduleId, { keepScheduleSelection: true });
   };
 
   const action = async (actionName: string) => {
@@ -743,7 +762,7 @@ export default function PayrollApprovalWorkspace({
         {packCards.map(({ scope, status, headcount, loaded }) => {
           const visual = scheduleVisual[scope.id];
           const Icon = visual.Icon;
-          const active = scope.id === selectedScope.id;
+          const active = panelView === 'schedule' && scope.id === selectedScope.id;
           return (
             <button
               key={scope.id}
@@ -769,8 +788,38 @@ export default function PayrollApprovalWorkspace({
             </button>
           );
         })}
+        <button
+          type="button"
+          className={`${styles.scheduleCard} ${panelView === SALARIES_SUMMARY_VIEW_ID ? styles.scheduleActive : ''}`}
+          onClick={() => selectSalariesSummary()}
+        >
+          <span className={`${styles.scheduleIcon} ${styles.schedule_navy}`}>
+            <BarChart3 size={18} />
+          </span>
+          <span className={styles.scheduleText}>
+            <strong>Salaries Summary</strong>
+            <span>Consolidated View</span>
+            <small>
+              <span className={`${styles.dot} ${styles.dot_blue}`} />
+              All schedules
+            </small>
+          </span>
+        </button>
       </div>
 
+      {panelView === SALARIES_SUMMARY_VIEW_ID ? (
+        payload?.salariesSummary ? (
+          <PayrollSalariesSummaryPanel
+            summary={payload.salariesSummary}
+            canViewMoney={canViewMoney}
+          />
+        ) : (
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-sm font-semibold text-slate-600">
+            {loading ? 'Loading salaries summary…' : 'Salaries summary is unavailable for this period.'}
+          </div>
+        )
+      ) : (
+      <>
       <div className={styles.workspaceGrid}>
         <div className={styles.workspaceMain}>
           <div className={styles.scheduleHeaderRow}>
@@ -1283,6 +1332,8 @@ export default function PayrollApprovalWorkspace({
           </div>
         ) : null}
       </div>
+      </>
+      )}
     </div>
   );
 }
