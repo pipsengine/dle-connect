@@ -140,7 +140,7 @@ const periodEndDate = (period: string) => {
 const moneyOf = (value: number | null | undefined) => roundMoney(Number(value || 0));
 
 const headcountOf = (pack: SummaryPackLike) =>
-  Number(pack.summary?.employees || pack.summary?.payrollEligible || pack.run?.employeeCount || pack.records?.length || 0);
+  Number(pack.records?.length || pack.summary?.employees || pack.summary?.payrollEligible || pack.run?.employeeCount || 0);
 
 const classifyCategory = (record: NonNullable<SummaryPackLike['records']>[number]): PayrollSalariesSummaryCategoryRow['id'] => {
   if (isDleUsdExpatriateEmployee(record) || Boolean(record.expatriate) || /expat/i.test(String(record.employmentType || ''))) {
@@ -153,12 +153,28 @@ const classifyCategory = (record: NonNullable<SummaryPackLike['records']>[number
   return 'permanent';
 };
 
-const packEarningsNative = (pack: SummaryPackLike | undefined) => {
-  const base = moneyOf(pack?.summary?.basePay);
-  const allowances = moneyOf(pack?.summary?.allowances);
-  const fromParts = roundMoney(base + allowances);
-  if (fromParts > 0.005) return fromParts;
-  return moneyOf(pack?.summary?.grossPay);
+/** Authoritative pack money from employee rows (never Excel Summary KPI / stale basePay). */
+const totalsFromPackRecords = (pack: SummaryPackLike | undefined) => {
+  const records = pack?.records || [];
+  if (!records.length) {
+    return {
+      headcount: headcountOf(pack || {}),
+      grossPay: moneyOf(pack?.summary?.grossPay),
+      deductions: moneyOf(pack?.summary?.totalDeductions ?? pack?.summary?.deductions),
+      netPay: moneyOf(pack?.summary?.netPay),
+      employerCost: moneyOf(pack?.summary?.employerCost),
+    };
+  }
+  return records.reduce(
+    (acc, record) => ({
+      headcount: acc.headcount + 1,
+      grossPay: roundMoney(acc.grossPay + moneyOf(record.grossPay)),
+      deductions: roundMoney(acc.deductions + moneyOf(record.totalDeductions ?? record.deductions)),
+      netPay: roundMoney(acc.netPay + moneyOf(record.netPay)),
+      employerCost: roundMoney(acc.employerCost + moneyOf(record.employerCost)),
+    }),
+    { headcount: 0, grossPay: 0, deductions: 0, netPay: 0, employerCost: 0 },
+  );
 };
 
 export const buildPayrollSalariesSummary = (input: {
@@ -178,31 +194,21 @@ export const buildPayrollSalariesSummary = (input: {
   const schedules: PayrollSalariesSummaryScheduleRow[] = PAYROLL_SCHEDULE_SCOPES.map((scope) => {
     const pack = byId.get(scope.id);
     const nativeCurrency: 'NGN' | 'USD' = scope.currencySlice === 'usd' ? 'USD' : 'NGN';
-    const gross = moneyOf(pack?.summary?.grossPay);
-    const deductions = moneyOf(pack?.summary?.totalDeductions ?? pack?.summary?.deductions);
-    const net = moneyOf(pack?.summary?.netPay);
-    const employer = moneyOf(pack?.summary?.employerCost);
+    const totals = totalsFromPackRecords(pack);
     return {
       id: scope.id,
       label: scope.label,
-      headcount: pack ? headcountOf(pack) : 0,
-      grossPayNgn: toNgn(gross, nativeCurrency),
-      deductionsNgn: toNgn(deductions, nativeCurrency),
-      netPayNgn: toNgn(net, nativeCurrency),
-      employerCostNgn: toNgn(employer, nativeCurrency),
+      headcount: totals.headcount,
+      grossPayNgn: toNgn(totals.grossPay, nativeCurrency),
+      deductionsNgn: toNgn(totals.deductions, nativeCurrency),
+      netPayNgn: toNgn(totals.netPay, nativeCurrency),
+      employerCostNgn: toNgn(totals.employerCost, nativeCurrency),
       pctOfTotal: 0,
       status: pack?.run?.status || (pack?.payrollComputed ? 'Computed' : 'Draft'),
       nativeCurrency,
-      nativeGrossPay: gross,
+      nativeGrossPay: totals.grossPay,
     };
   });
-
-  let totalEarningsNgn = 0;
-  for (const scope of PAYROLL_SCHEDULE_SCOPES) {
-    const pack = byId.get(scope.id);
-    const nativeCurrency: 'NGN' | 'USD' = scope.currencySlice === 'usd' ? 'USD' : 'NGN';
-    totalEarningsNgn = roundMoney(totalEarningsNgn + toNgn(packEarningsNative(pack), nativeCurrency));
-  }
 
   const totalsNgn = schedules.reduce(
     (acc, row) => ({
@@ -213,7 +219,8 @@ export const buildPayrollSalariesSummary = (input: {
     }),
     { grossPay: 0, deductions: 0, netPay: 0, employerCost: 0 },
   );
-  if (totalEarningsNgn < 0.005) totalEarningsNgn = totalsNgn.grossPay;
+  // Monthly gross earnings = schedule gross (not basePay+allowances, which can retain stale pack KPI leftovers).
+  const totalEarningsNgn = totalsNgn.grossPay;
 
   const withPct = schedules.map((row) => ({
     ...row,
@@ -256,6 +263,7 @@ export const buildPayrollSalariesSummary = (input: {
   }));
 
   const usdRow = withPct.find((row) => row.id === 'dle-usd');
+  const usdPackTotals = totalsFromPackRecords(byId.get('dle-usd'));
   const ngnGross = roundMoney(totalsNgn.grossPay - (usdRow?.grossPayNgn || 0));
   const usdGrossNgn = usdRow?.grossPayNgn || 0;
   const ngnHeadcount = withPct.filter((row) => row.id !== 'dle-usd').reduce((sum, row) => sum + row.headcount, 0);
@@ -275,12 +283,7 @@ export const buildPayrollSalariesSummary = (input: {
     currentPeriod: input.period,
     currentPeriodLabel: periodLabel,
     current: currentMom,
-    previous: input.priorTotalsNgn
-      ? {
-          ...input.priorTotalsNgn,
-          // Keep MoM metrics on gross-family totals; earnings compared separately in UI.
-        }
-      : null,
+    previous: input.priorTotalsNgn || null,
     includeMoneyDetails: false,
   });
 
@@ -334,10 +337,10 @@ export const buildPayrollSalariesSummary = (input: {
         }
       : null,
     usdNative: {
-      grossPay: usdRow?.nativeGrossPay || 0,
-      deductions: moneyOf(byId.get('dle-usd')?.summary?.totalDeductions ?? byId.get('dle-usd')?.summary?.deductions),
-      netPay: moneyOf(byId.get('dle-usd')?.summary?.netPay),
-      employerCost: moneyOf(byId.get('dle-usd')?.summary?.employerCost),
+      grossPay: usdPackTotals.grossPay,
+      deductions: usdPackTotals.deductions,
+      netPay: usdPackTotals.netPay,
+      employerCost: usdPackTotals.employerCost,
       headcount: usdHeadcount,
     },
     schedules: withPct,

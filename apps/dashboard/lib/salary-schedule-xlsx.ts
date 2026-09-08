@@ -5,7 +5,7 @@
  */
 import { inflateRawSync } from 'node:zlib';
 
-export type SalaryScheduleSheetKind = 'perm' | 'cont' | 'usd' | 'summary' | 'other';
+export type SalaryScheduleSheetKind = 'perm' | 'cont' | 'usd' | 'summary' | 'md' | 'other';
 
 export type SalaryScheduleEarningLine = {
   code: string;
@@ -89,6 +89,8 @@ export type SalaryScheduleParseResult = {
   costSummary: SalaryScheduleCostMonth[];
   /** PERM.STAFF + CONT. STAFF company pivots for the uploaded month. */
   pivotTotals: SalarySchedulePivotTotals;
+  /** From Exchange Rate / MD tabs when present (USD→NGN). */
+  lockedUsdNgnRate: { rate: number; rateDate: string; source: string } | null;
   skipped: Array<{ sheet: string; reason: string; value?: string }>;
   sheets: Array<{ name: string; kind: SalaryScheduleSheetKind; rowCount: number }>;
 };
@@ -339,6 +341,9 @@ const sheetKind = (name: string): SalaryScheduleSheetKind => {
   if (key === 'CONT. STAFF' || key === 'CONT STAFF' || key === 'CONT.STAFF') return 'cont';
   if (key === 'USD REPORT') return 'usd';
   if (key === 'SUMMARY') return 'summary';
+  // MD (2) detail tab — not MD SCHD bank schedule.
+  if (/^MD\b/.test(key) && !/SCHD|BANK|SCHEDULE/.test(key)) return 'md';
+  if (/EXCHANGE\s*RATE/.test(key)) return 'other';
   return 'other';
 };
 
@@ -349,10 +354,17 @@ const normalizeEmployeeCode = (raw: string, kind: SalaryScheduleSheetKind) => {
   if (/^[PLCNI]\d+$/i.test(code)) return code.toUpperCase();
   if (/^\d+$/.test(code)) {
     // Permanent numeric codes in this workbook are P-prefixed HRIS codes.
-    if (kind === 'perm' || kind === 'usd') return `P${code.padStart(4, '0')}`;
+    if (kind === 'perm' || kind === 'usd' || kind === 'md') return `P${code.padStart(4, '0')}`;
     return code;
   }
   return code;
+};
+
+const canonicalizeEmployeeCode = (code: string, kind: SalaryScheduleSheetKind) => {
+  const normalized = normalizeEmployeeCode(code, kind === 'other' ? 'perm' : kind);
+  const bare = compact(normalized).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (/^(00)?MD01$/.test(bare) || bare === 'MD') return 'P0413';
+  return normalized;
 };
 
 const isEmployeeCode = (code: string) => /^(?:[PLCNI]\d+|NYSC\d+|IT\d+)$/i.test(compact(code));
@@ -466,7 +478,7 @@ const parseEmployeeSheet = (
     if (rowNo === 1) continue;
     const rawCode = cell(row, codeCol);
     if (!rawCode || /^total$/i.test(rawCode) || /^grand total$/i.test(rawCode)) continue;
-    const employeeCode = normalizeEmployeeCode(rawCode, kind);
+    const employeeCode = canonicalizeEmployeeCode(rawCode, kind);
     if (!employeeCode) {
       skipped.push({ sheet: sheetName, reason: 'blank employee code', value: `row ${rowNo}` });
       continue;
@@ -475,7 +487,11 @@ const parseEmployeeSheet = (
     const first = cell(row, findCol(byKey, 'EMPLOYEEFIRSTNAME'));
     const second = cell(row, findCol(byKey, 'EMPLOYEESECONDNAME'));
     const employeeName = compact([first, second, surname].filter(Boolean).join(' '));
-    // Sheet total / subtotal rows: numeric "name", or codes that are not real HRIS IDs.
+    // Sheet total / subtotal rows: numeric "name", blank identity, or codes that are not real HRIS IDs.
+    if (!surname && !first) {
+      skipped.push({ sheet: sheetName, reason: 'summary/total row', value: `${rawCode}:blank-name` });
+      continue;
+    }
     if (/^\d+(\.\d+)?$/.test(employeeName)) {
       skipped.push({ sheet: sheetName, reason: 'summary/total row', value: `${rawCode}:${employeeName || 'blank'}` });
       continue;
@@ -528,6 +544,143 @@ const parseEmployeeSheet = (
   return rows;
 };
 
+/**
+ * MD (2) tab: Managing Director package split — typically 40% NGN + 60% USD.
+ * Emits one NGN row (PERM-like / DLE) and one USD row for the same employee.
+ */
+const parseMdSplitSheet = (
+  sheetName: string,
+  grid: Map<number, Map<string, string>>,
+  skipped: SalaryScheduleParseResult['skipped'],
+) => {
+  const sorted = [...grid.entries()].sort((a, b) => a[0] - b[0]);
+  const sectionStarts: Array<{ rowNo: number; currency: 'NGN' | 'USD' }> = [];
+  for (const [rowNo, row] of sorted) {
+    const label = compact([...row.values()].join(' ')).toUpperCase();
+    if (/NAIRA\s+PAYMENT/.test(label)) sectionStarts.push({ rowNo, currency: 'NGN' });
+    if (/DOLLAR\s+PAYMENT/.test(label)) sectionStarts.push({ rowNo, currency: 'USD' });
+  }
+  if (!sectionStarts.length) {
+    skipped.push({ sheet: sheetName, reason: 'MD sheet missing NAIRA/DOLLAR PAYMENT sections' });
+    return [] as SalaryScheduleRow[];
+  }
+
+  const rows: SalaryScheduleRow[] = [];
+  for (let i = 0; i < sectionStarts.length; i += 1) {
+    const section = sectionStarts[i];
+    const nextStart = sectionStarts[i + 1]?.rowNo ?? Number.POSITIVE_INFINITY;
+    const headerEntry = sorted.find(([rowNo]) => rowNo > section.rowNo && rowNo < nextStart
+      && [...(grid.get(rowNo)?.values() || [])].some((value) => /employee\s*code/i.test(value)));
+    if (!headerEntry) {
+      skipped.push({ sheet: sheetName, reason: `MD ${section.currency} header missing` });
+      continue;
+    }
+    const [headerRowNo, header] = headerEntry;
+    const { byKey, earnings: earningCols, deductions: deductionCols } = buildHeaderMap(header);
+    const codeCol = findCol(byKey, 'EMPLOYEE CODE');
+    for (const [rowNo, row] of sorted) {
+      if (rowNo <= headerRowNo || rowNo >= nextStart) continue;
+      const rawCode = cell(row, codeCol);
+      if (!rawCode || /^total$/i.test(rawCode)) continue;
+      const employeeCode = canonicalizeEmployeeCode(rawCode, 'md');
+      if (!isEmployeeCode(employeeCode) && employeeCode !== 'P0413') {
+        skipped.push({ sheet: sheetName, reason: 'MD non-employee code', value: rawCode });
+        continue;
+      }
+      const surname = cell(row, findCol(byKey, 'EMPLOYEESURNAME'));
+      const first = cell(row, findCol(byKey, 'EMPLOYEEFIRSTNAME'));
+      const employeeName = compact([first, surname].filter(Boolean).join(' ')) || 'CHRIS IJELI';
+      const earnings = earningCols
+        .map((item) => ({
+          code: item.code,
+          name: item.name.replace(/\s*\(Earning\)\s*/i, '').trim(),
+          amount: roundMoney(cellNum(row, item.col)),
+        }))
+        .filter((line) => line.amount !== 0);
+      const deductions = deductionCols
+        .map((item) => ({
+          code: item.code,
+          name: item.name.replace(/\s*\(Deduction\)\s*/i, '').trim(),
+          amount: roundMoney(cellNum(row, item.col)),
+        }))
+        .filter((line) => line.amount !== 0);
+      const earningTotal = roundMoney(
+        cellNum(row, findCol(byKey, 'EARNING TOTAL')) || earnings.reduce((sum, line) => sum + line.amount, 0),
+      );
+      const deductionTotal = roundMoney(
+        cellNum(row, findCol(byKey, 'DEDUCTION TOTAL')) || deductions.reduce((sum, line) => sum + line.amount, 0),
+      );
+      const grossPay = roundMoney(cellNum(row, findCol(byKey, 'GROSS EARNINGS')) || earningTotal);
+      const netPay = roundMoney(cellNum(row, findCol(byKey, 'NET PAY')) || (grossPay - deductionTotal));
+      const kind: 'perm' | 'usd' = section.currency === 'USD' ? 'usd' : 'perm';
+      rows.push({
+        sheet: sheetName,
+        kind,
+        employeeCode,
+        employeeName,
+        jobTitle: cell(row, findCol(byKey, 'JOB TITLE LONG DESCRIPTION')) || 'MANAGING DIRECTOR',
+        company: cell(row, findCol(byKey, 'COMPANY')) || 'DLENG - DLENG',
+        department: cell(row, findCol(byKey, 'DEPARTMENT')) || 'CORPORATE OFFICE',
+        location: cell(row, findCol(byKey, 'LOCATION')) || '',
+        employmentType: 'Managing Director',
+        contType: section.currency === 'USD' ? 'MD USD 60%' : 'MD NGN 40%',
+        periodSalary: grossPay,
+        annualSalary: roundMoney(grossPay * 12),
+        earningTotal,
+        deductionTotal,
+        grossPay,
+        netPay,
+        paye: roundMoney(deductions.find((line) => line.code === 'PAYE')?.amount || 0),
+        pension: roundMoney(deductions.find((line) => line.code === 'PENSION_EE' || line.code === 'PENSION')?.amount || 0),
+        nhf: roundMoney(deductions.find((line) => line.code === 'NHF')?.amount || 0),
+        earnings,
+        deductions,
+      });
+    }
+  }
+  return rows;
+};
+
+const parseLockedUsdNgnRate = (
+  sheetName: string,
+  grid: Map<number, Map<string, string>>,
+): { rate: number; rateDate: string; source: string } | null => {
+  const sorted = [...grid.entries()].sort((a, b) => a[0] - b[0]);
+  for (const [, row] of sorted) {
+    const values = [...row.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([, value]) => compact(value));
+    const joined = values.join(' ').toUpperCase();
+    // MD tab: "Rate CBN", 1351, "Cbn rate as at 20th August 2026"
+    if (/RATE\s*CBN|CBN\s*RATE|DOLLAR\s*RATE|US\s*DOLLAR/.test(joined)) {
+      const rate = values.map((value) => num(value)).find((value) => value > 100 && value < 10000);
+      if (!rate) continue;
+      const dateMatch = joined.match(/(\d{1,2})(?:ST|ND|RD|TH)?\s+(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\s+(\d{4})/i)
+        || joined.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      let rateDate = '';
+      if (dateMatch && dateMatch[2] && /[A-Z]/i.test(dateMatch[2])) {
+        const month = COST_MONTHS.indexOf(dateMatch[2].toUpperCase() as (typeof COST_MONTHS)[number]);
+        if (month >= 0) {
+          rateDate = `${dateMatch[3]}-${String(month + 1).padStart(2, '0')}-${String(Number(dateMatch[1])).padStart(2, '0')}`;
+        }
+      } else if (dateMatch) {
+        rateDate = `${dateMatch[3]}-${String(Number(dateMatch[2])).padStart(2, '0')}-${String(Number(dateMatch[1])).padStart(2, '0')}`;
+      }
+      return { rate: roundMoney(rate), rateDate, source: sheetName };
+    }
+    // Exchange Rate sheet rows: date | US DOLLAR | 1351
+    if (/US\s*DOLLAR|USD/.test(joined)) {
+      const rate = values.map((value) => num(value)).find((value) => value > 100 && value < 10000);
+      if (!rate) continue;
+      const dateRaw = values.find((value) => /^\d{4}-\d{2}-\d{2}/.test(value) || /\d{1,2}\/\d{1,2}\/\d{4}/.test(value));
+      return {
+        rate: roundMoney(rate),
+        rateDate: compact(dateRaw).slice(0, 10),
+        source: sheetName,
+      };
+    }
+  }
+  return null;
+};
+
 export const parseSalaryScheduleWorkbook = (workbook: Buffer): SalaryScheduleParseResult => {
   const zip = readZipEntries(workbook);
   const shared = readSharedStrings(zip);
@@ -547,6 +700,7 @@ export const parseSalaryScheduleWorkbook = (workbook: Buffer): SalarySchedulePar
   const rows: SalaryScheduleRow[] = [];
   let costSummary: SalaryScheduleCostMonth[] = [];
   const pivotTotals = emptyPivotTotals();
+  let lockedUsdNgnRate: SalaryScheduleParseResult['lockedUsdNgnRate'] = null;
 
   for (const sheet of sheetsMeta) {
     const kind = sheetKind(sheet.name);
@@ -573,10 +727,21 @@ export const parseSalaryScheduleWorkbook = (workbook: Buffer): SalarySchedulePar
           pivotTotals.dlpcContractGross = pivot.dlpcGross;
         }
       }
+    } else if (kind === 'md') {
+      const parsed = parseMdSplitSheet(sheet.name, grid, skipped);
+      for (const row of parsed) {
+        byKind[row.kind === 'usd' ? 'usd' : 'perm'].push(row);
+        rows.push(row);
+      }
+      sheets.push({ name: sheet.name, kind, rowCount: parsed.length });
+      lockedUsdNgnRate = parseLockedUsdNgnRate(sheet.name, grid) || lockedUsdNgnRate;
     } else if (kind === 'summary') {
       costSummary = parseSalaryCostSummary(grid);
       sheets.push({ name: sheet.name, kind, rowCount: Math.max(0, grid.size - 1) });
     } else {
+      if (/EXCHANGE\s*RATE/i.test(sheet.name)) {
+        lockedUsdNgnRate = parseLockedUsdNgnRate(sheet.name, grid) || lockedUsdNgnRate;
+      }
       sheets.push({ name: sheet.name, kind, rowCount: Math.max(0, grid.size - 1) });
     }
   }
@@ -601,6 +766,7 @@ export const parseSalaryScheduleWorkbook = (workbook: Buffer): SalarySchedulePar
     },
     costSummary,
     pivotTotals,
+    lockedUsdNgnRate,
     skipped,
     sheets,
   };

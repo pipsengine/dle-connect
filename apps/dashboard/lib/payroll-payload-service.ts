@@ -54,6 +54,7 @@ import {
   payrollSalariesSummaryLockDate,
 } from '@/lib/payroll-salaries-summary';
 import { getPrevailingFxRate } from '@/lib/finance-intelligence/approval-matrix-service';
+import { readAppliedSalaryScheduleOverride } from '@/lib/salary-schedule-upload-sql';
 import {
   buildPayrollMonthOverMonth,
   totalsHaveFigures,
@@ -137,6 +138,8 @@ const applyCurrencySliceToCalculation = <T extends {
       readyEmployees: ready.length,
       reviewEmployees: review.length,
       blockedEmployees: blocked.length,
+      basePay: records.reduce((sum, record) => sum + Number(record.basePay || 0), 0),
+      allowances: records.reduce((sum, record) => sum + Number(record.allowances || 0), 0),
       grossPay: money.grossPay,
       totalDeductions: money.deductions,
       deductions: money.deductions,
@@ -713,13 +716,25 @@ export const buildProcessingPayload = async (
   );
 
   const lockDate = payrollSalariesSummaryLockDate(period);
-  const fx = await getPrevailingFxRate('USD', lockDate).catch(() => ({
+  const scheduleFx = readAppliedSalaryScheduleOverride(period)?.parsed?.lockedUsdNgnRate || null;
+  const marketFx = await getPrevailingFxRate('USD', lockDate).catch(() => ({
     fromCurrency: 'USD',
     toCurrency: 'NGN',
-    rate: 1620,
-    rateDate: lockDate.toISOString().slice(0, 10),
+    rate: scheduleFx?.rate || 1620,
+    rateDate: scheduleFx?.rateDate || lockDate.toISOString().slice(0, 10),
     source: 'Fallback',
   }));
+  const fx = scheduleFx?.rate
+    ? {
+        rate: scheduleFx.rate,
+        rateDate: scheduleFx.rateDate || lockDate.toISOString().slice(0, 10),
+        source: `Salary schedule (${scheduleFx.source})`,
+      }
+    : {
+        rate: Number(marketFx.rate || 0) || 1620,
+        rateDate: marketFx.rateDate || lockDate.toISOString().slice(0, 10),
+        source: marketFx.source || 'finance.FxRates',
+      };
 
   let priorTotalsNgn: PayrollMomTotals | null = null;
   let priorSchedules: ReturnType<typeof buildPayrollSalariesSummary>['schedules'] | null = null;

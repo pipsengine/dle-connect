@@ -201,7 +201,8 @@ export const applySalaryScheduleOverrideToRecords = (
   }
 
   // USD REPORT only lists permanent senior staff. MD / Expatriate live on separate workbook
-  // tabs and must still appear from live HRIS DLE_USD calculation when active.
+  // tabs (MD (2) = 40% NGN + 60% USD). Prefer those Excel rows; only fall back to HRIS USD
+  // for people still missing after the upload overlay.
   const overlaidKeys = new Set<string>();
   for (const record of overlaid) {
     for (const key of recordKeys(record)) overlaidKeys.add(key);
