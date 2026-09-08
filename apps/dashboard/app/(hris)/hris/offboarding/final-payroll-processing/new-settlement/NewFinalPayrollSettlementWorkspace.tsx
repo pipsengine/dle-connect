@@ -569,7 +569,11 @@ export default function NewFinalPayrollSettlementWorkspace({
                       <td>{line.policyBasis}</td>
                       <td>{line.periodDays}</td>
                       <td>{formatFinalPayrollMoney(line.amount, settlement.currency)}</td>
-                      <td>{line.remarks}</td>
+                      <td>
+                        <span className={styles.remarksCell} title={line.remarks}>
+                          {line.remarks}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                   <tr className={styles.total}>

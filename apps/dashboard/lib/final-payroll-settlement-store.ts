@@ -6,10 +6,19 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { readEmployeeExitStatusFromDb, type EmployeeExitStatusRecord } from '@/lib/employee-exit-status-store';
+import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { calculatePayrollEarnings } from '@/lib/payroll-earnings-engine';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
-import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
 import {
+  activeStatutoryFundsVersion,
+  calculateStatutoryFunds,
+  readStatutoryFundsConfig,
+  statutoryFundInputFromEmployee,
+} from '@/lib/payroll-statutory-funds-engine';
+import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
+import {
+  type ApprovalStageStatus,
   type FinalPayrollApprovalStage,
   type FinalPayrollClearanceItem,
   type FinalPayrollKpi,
@@ -343,17 +352,21 @@ const resolveSettlementPay = async (
   allowances = roundMoney(Math.max(allowances, Math.max(0, gross - basic)));
 
   const currency: 'NGN' | 'USD' = /USD|US\$/i.test(String(employee.payCurrency || '')) ? 'USD' : 'NGN';
-  const lineNames = monthlyLines
+  const allowanceLines = monthlyLines.filter(
+    (line) => !/BASIC|LUMPSUM|JCWEEKDAY/i.test(`${line.code} ${line.name}`),
+  );
+  const lineNames = allowanceLines
     .map((line) => `${line.name || line.code} ${formatFinalPayrollMoney(line.amount, currency)}`)
-    .slice(0, 8);
+    .slice(0, 5);
+  const moreCount = Math.max(0, allowanceLines.length - lineNames.length);
 
   return {
     basicSalary: roundMoney(basic),
     allowanceMonthly: allowances,
     grossSalary: gross,
     packageBreakdown: lineNames.length
-      ? `Package: ${lineNames.join(' · ')}`
-      : `Monthly package ${formatFinalPayrollMoney(gross, currency)}`,
+      ? `Allowances: ${lineNames.join(' · ')}${moreCount ? ` · +${moreCount} more` : ''}`
+      : `Monthly allowances ${formatFinalPayrollMoney(allowances, currency)}`,
     payCurrency: employee.payCurrency || null,
     contractStartDate: employee.contractStartDate || null,
     jobGrade: employee.jobGrade || null,
@@ -416,7 +429,116 @@ export const buildDefaultStatutory = (): FinalPayrollLine[] => [
     remarks: '-',
     included: true,
   },
+  {
+    id: 'nhf',
+    label: 'NHF',
+    description: 'National Housing Fund',
+    policyBasis: 'Statutory',
+    periodDays: '-',
+    amount: 0,
+    remarks: 'Where applicable',
+    included: true,
+  },
 ];
+
+/** Compute PAYE / pension / NHF from live payroll engines, prorated to days in settlement period. */
+export const buildComputedStatutory = async (input: {
+  employee: DleEmployeeDirectoryRow | null;
+  period: string;
+  currency: 'NGN' | 'USD';
+  lastWorkingDay?: string | null;
+}): Promise<FinalPayrollLine[]> => {
+  const defaults = buildDefaultStatutory();
+  if (!input.employee) {
+    return defaults.map((line) => ({ ...line, remarks: 'Employee package not found' }));
+  }
+  if (input.currency === 'USD') {
+    return defaults.map((line) => ({
+      ...line,
+      amount: 0,
+      remarks: 'USD settlements exclude NGN statutory deductions',
+      included: false,
+    }));
+  }
+
+  try {
+    const days = workingDaysUntil(input.period, input.lastWorkingDay);
+    const monthDays = daysInMonth(input.period);
+    const factor = monthDays > 0 ? Math.min(1, Math.max(0, days / monthDays)) : 1;
+    const options = { period: input.period, useHrisPackageLines: true as const };
+    const earnings = calculatePayrollEarnings(input.employee, options);
+
+    const [taxConfig, pensionConfig, fundsConfig] = await Promise.all([
+      readPayrollTaxConfig(),
+      readPayrollPensionConfig(),
+      readStatutoryFundsConfig(),
+    ]);
+    const taxVersion = activeTaxVersion(taxConfig);
+    const pensionVersion = activePensionVersion(pensionConfig);
+    const fundsVersion = activeStatutoryFundsVersion(fundsConfig);
+    if (!taxVersion || !pensionVersion) {
+      return defaults.map((line) => ({ ...line, remarks: 'Tax/pension configuration not available' }));
+    }
+
+    const pension = calculatePension(pensionInputFromEmployee(input.employee, options), pensionVersion);
+    const tax = calculatePayrollTax(
+      {
+        ...payrollInputFromEmployee(input.employee, options, earnings),
+        additionalEmployeePensionMonthly: pension.voluntaryContribution,
+      },
+      taxVersion,
+    );
+    const funds = fundsVersion
+      ? calculateStatutoryFunds(statutoryFundInputFromEmployee(input.employee, 1, options), fundsVersion)
+      : null;
+
+    const payeOverride = Number(
+      input.employee.payeCalculation?.ngnMonthlyPayeOverride
+        ?? input.employee.payeCalculation?.monthlyPayeOverride,
+    );
+    const monthlyPaye = Number.isFinite(payeOverride) ? roundMoney(payeOverride) : roundMoney(tax.monthlyPaye);
+    const monthlyPension = roundMoney(pension.employeeContribution + pension.voluntaryContribution);
+    const monthlyNhf = roundMoney(funds?.fundResults?.find((item) => item.id === 'nhf')?.monthlyAmount || 0);
+    const prorationNote = factor < 0.999
+      ? `Prorated ${days}/${monthDays} days on monthly statutory`
+      : 'From payroll tax / pension engines';
+
+    return [
+      {
+        id: 'paye',
+        label: 'PAYE',
+        description: 'Pay-as-you-earn tax',
+        policyBasis: 'Statutory',
+        periodDays: `${days} days`,
+        amount: roundMoney(monthlyPaye * factor),
+        remarks: prorationNote,
+        included: true,
+      },
+      {
+        id: 'pension',
+        label: 'Pension (Employee)',
+        description: 'Employee pension contribution',
+        policyBasis: 'Statutory',
+        periodDays: `${days} days`,
+        amount: roundMoney(monthlyPension * factor),
+        remarks: prorationNote,
+        included: true,
+      },
+      {
+        id: 'nhf',
+        label: 'NHF',
+        description: 'National Housing Fund',
+        policyBasis: 'Statutory',
+        periodDays: `${days} days`,
+        amount: roundMoney(monthlyNhf * factor),
+        remarks: monthlyNhf > 0 ? prorationNote : 'Not applicable for this employee',
+        included: monthlyNhf > 0,
+      },
+    ];
+  } catch {
+    return defaults.map((line) => ({ ...line, remarks: 'Unable to compute statutory — check payroll config' }));
+  }
+};
 
 const mapStatusFromExit = (row: EmployeeExitStatusRecord): FinalPayrollStatus => {
   if (row.clearanceStatus === 'Overdue') return 'Exception';
@@ -560,6 +682,12 @@ export const recalculateSettlement = async (settlement: FinalPayrollSettlement):
     grossSalary,
     grade: compact(pay.jobGrade || pay.salaryGrade) || settlement.grade,
     earnings,
+    statutory: await buildComputedStatutory({
+      employee: pay.employee,
+      period: settlement.period,
+      currency: settlement.currency,
+      lastWorkingDay: settlement.lastWorkingDay,
+    }),
     updatedAt: nowIso(),
   };
 };
@@ -831,6 +959,12 @@ export const createFinalPayrollSettlement = async (input: {
       allowanceMonthly: pay.allowanceMonthly,
       grossSalary: pay.grossSalary,
       packageBreakdown: pay.packageBreakdown,
+      lastWorkingDay: input.lastWorkingDay ?? settlement.lastWorkingDay,
+    }),
+    statutory: await buildComputedStatutory({
+      employee: directory,
+      period,
+      currency: settlement.currency,
       lastWorkingDay: input.lastWorkingDay ?? settlement.lastWorkingDay,
     }),
   };

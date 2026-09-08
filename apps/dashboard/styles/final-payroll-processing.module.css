@@ -275,6 +275,10 @@
   border-collapse: collapse;
 }
 
+.earnings table {
+  table-layout: fixed;
+}
+
 .register th,
 .register td,
 .earnings th,
@@ -284,6 +288,62 @@
   text-align: left;
   font-size: 11px;
   white-space: nowrap;
+}
+
+.earnings th,
+.earnings td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  vertical-align: top;
+}
+
+.earnings th:nth-child(1),
+.earnings td:nth-child(1) {
+  width: 36px;
+  white-space: nowrap;
+}
+
+.earnings th:nth-child(2),
+.earnings td:nth-child(2) {
+  width: 18%;
+}
+
+.earnings th:nth-child(3),
+.earnings td:nth-child(3) {
+  width: 16%;
+}
+
+.earnings th:nth-child(4),
+.earnings td:nth-child(4) {
+  width: 12%;
+}
+
+.earnings th:nth-child(5),
+.earnings td:nth-child(5) {
+  width: 10%;
+  white-space: nowrap;
+}
+
+.earnings th:nth-child(6),
+.earnings td:nth-child(6) {
+  width: 12%;
+  white-space: nowrap;
+}
+
+.earnings th:nth-child(7),
+.earnings td:nth-child(7) {
+  width: 22%;
+}
+
+.earnings .remarksCell {
+  max-width: 220px;
+  color: #49658c;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .register th,

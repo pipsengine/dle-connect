@@ -173,7 +173,13 @@ const totalsFromPackRecords = (pack: SummaryPackLike | undefined) => {
       netPay: roundMoney(acc.netPay + moneyOf(record.netPay)),
       employerCost: roundMoney(acc.employerCost + moneyOf(record.employerCost)),
     }),
-    { headcount: 0, grossPay: 0, deductions: 0, netPay: 0, employerCost: 0 },
+    { headcount: 0, grossPay: 0, deductions: 0, netPay: 0, employerCost: 0 } as {
+      headcount: number;
+      grossPay: number;
+      deductions: number;
+      netPay: number;
+      employerCost: number;
+    },
   );
 };
 
