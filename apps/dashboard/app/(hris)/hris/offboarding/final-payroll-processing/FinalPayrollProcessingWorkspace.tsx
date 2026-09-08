@@ -230,7 +230,7 @@ export default function FinalPayrollProcessingWorkspace({
       <div className={styles.titleRow}>
         <div>
           <h1>Final Payroll Processing</h1>
-          <p>Calculate, review and approve employee final settlements.</p>
+          <p>Settlement calculation after resignation clearance (standard: Resignation → Notice → Clearance → Final Payroll).</p>
         </div>
         <div className={styles.actions}>
           <button type="button" onClick={() => void load(period || undefined, selectedId)}>
@@ -239,7 +239,10 @@ export default function FinalPayrollProcessingWorkspace({
           <button type="button" onClick={exportCsv}>
             <Download /> Export
           </button>
-          <Link className={`${styles.btn} ${styles.primary}`} href="/hris/offboarding/final-payroll-processing/new-settlement">
+          <Link className={`${styles.btn} ${styles.primary}`} href="/hris/offboarding/resignation-management">
+            Resignation Register
+          </Link>
+          <Link className={styles.btn} href="/hris/offboarding/final-payroll-processing/new-settlement">
             <Plus /> New Settlement
           </Link>
         </div>
@@ -323,7 +326,9 @@ export default function FinalPayrollProcessingWorkspace({
           <div className={styles.empty}>Loading final payroll register…</div>
         ) : rows.length === 0 ? (
           <div className={styles.empty}>
-            No settlements for this period. Create one with <b>New Settlement</b>.
+            No settlements for this period. Standard flow: complete{' '}
+            <Link href="/hris/offboarding/resignation-management">Resignation → Clearance</Link>
+            {' '}first, then open <b>New Settlement</b> from that case.
           </div>
         ) : (
           <table>

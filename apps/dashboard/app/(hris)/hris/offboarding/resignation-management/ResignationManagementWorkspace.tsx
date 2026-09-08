@@ -29,8 +29,12 @@ import {
   formatResignationDate,
   noticeBalanceDays,
   noticeStatusLabel,
+  resignationAssetReturnHref,
+  resignationExitClearanceHref,
   resignationFinalPayrollHref,
+  resignationHandoverHref,
   resignationProfileHref,
+  resignationReadyForFinalPayroll,
 } from '@/lib/resignation-management-shared';
 import styles from '@/styles/resignation-management.module.css';
 
@@ -224,7 +228,7 @@ export default function ResignationManagementWorkspace({
       <div className={styles.titleRow}>
         <div>
           <h1>Resignation Management</h1>
-          <p>Manage employee resignations from submission to final exit.</p>
+          <p>Standard offboarding starts here: resignation → notice → clearance → final payroll.</p>
         </div>
         <div className={styles.actions}>
           <button type="button" onClick={() => void load(period || undefined, selectedId)}>
@@ -373,15 +377,35 @@ export default function ResignationManagementWorkspace({
               <button type="button" className={styles.btn} onClick={() => openProfile(selected)}>
                 <ExternalLink size={14} /> Open Profile
               </button>
-              <Link className={styles.btn} href={resignationFinalPayrollHref(selected)}>
-                Final Payroll
-              </Link>
               <Link
                 className={styles.btn}
                 href={`/hris/employees/employee-exit-status?employeeId=${encodeURIComponent(selected.employeeId || selected.employeeCode)}`}
               >
                 Exit Status
               </Link>
+              {resignationReadyForFinalPayroll(selected) ? (
+                <Link className={`${styles.btn} ${styles.primary}`} href={resignationFinalPayrollHref(selected)}>
+                  Open Final Payroll
+                </Link>
+              ) : selected.status === 'Clearance' || selected.status === 'Handover' ? (
+                <Link
+                  className={`${styles.btn} ${styles.primary}`}
+                  href={
+                    selected.status === 'Handover'
+                      ? resignationHandoverHref(selected)
+                      : resignationExitClearanceHref(selected)
+                  }
+                >
+                  {selected.status === 'Handover' ? 'Open Handover' : 'Open Clearance'}
+                </Link>
+              ) : (
+                <span className={styles.status} title="Complete clearance first (standard flow)">
+                  Final Payroll after Clearance
+                </span>
+              )}
+              <Link className={styles.btn} href={resignationHandoverHref(selected)}>Handover</Link>
+              <Link className={styles.btn} href={resignationExitClearanceHref(selected)}>Clearance</Link>
+              <Link className={styles.btn} href={resignationAssetReturnHref(selected)}>Assets</Link>
             </div>
             <div className={styles.detailGrid}>
               {[
@@ -448,12 +472,27 @@ export default function ResignationManagementWorkspace({
 
               <div className={`${styles.card} ${styles.box}`}>
                 <h3>Progress Overview</h3>
-                {(selected.progress || []).map((item) => (
-                  <div className={styles.line} key={item.id}>
-                    <span>{item.label}</span>
-                    <span className={statusClass(item.status)}>{item.status}</span>
-                  </div>
-                ))}
+                {(selected.progress || []).map((item) => {
+                  const href = item.id === 'handover'
+                    ? resignationHandoverHref(selected)
+                    : item.id === 'clearance'
+                      ? resignationExitClearanceHref(selected)
+                      : item.id === 'asset'
+                        ? resignationAssetReturnHref(selected)
+                        : item.id === 'payroll'
+                          ? resignationFinalPayrollHref(selected)
+                          : null;
+                  return (
+                    <div className={styles.line} key={item.id}>
+                      {href ? (
+                        <Link href={href}>{item.label}</Link>
+                      ) : (
+                        <span>{item.label}</span>
+                      )}
+                      <span className={statusClass(item.status)}>{item.status}</span>
+                    </div>
+                  );
+                })}
               </div>
 
               <div className={`${styles.card} ${styles.box} ${styles.timeline}`}>
@@ -467,6 +506,33 @@ export default function ResignationManagementWorkspace({
                 ))}
               </div>
             </div>
+
+            {(detailTab === 'Handover' || detailTab === 'Clearance' || detailTab === 'Final Payroll') ? (
+              <div className={styles.empty}>
+                {detailTab === 'Handover' ? (
+                  <>
+                    Manage tasks in the dedicated module.{' '}
+                    <Link href={resignationHandoverHref(selected)}>Open Handover Checklist →</Link>
+                  </>
+                ) : detailTab === 'Clearance' ? (
+                  <>
+                    Track department clearances and assets.{' '}
+                    <Link href={resignationExitClearanceHref(selected)}>Open Exit Clearance →</Link>
+                    {' · '}
+                    <Link href={resignationAssetReturnHref(selected)}>Asset Return →</Link>
+                  </>
+                ) : (
+                  <>
+                    Calculate final settlement after clearance.{' '}
+                    {resignationReadyForFinalPayroll(selected) ? (
+                      <Link href={resignationFinalPayrollHref(selected)}>Open Final Payroll →</Link>
+                    ) : (
+                      <span>Complete Exit Clearance first.</span>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : null}
 
             {(detailTab === 'Audit Trail' || detailTab === 'Documents' || detailTab === 'Exit Interview') ? (
               <div className={styles.empty}>
@@ -492,9 +558,23 @@ export default function ResignationManagementWorkspace({
                   Accept Resignation
                 </button>
               ) : null}
-              <button type="button" className={styles.primary} disabled={busy} onClick={() => void runAction('next')}>
-                Next Step →
-              </button>
+              {resignationReadyForFinalPayroll(selected) ? (
+                <Link className={`${styles.btn} ${styles.primary}`} href={resignationFinalPayrollHref(selected)}>
+                  Proceed to Final Payroll →
+                </Link>
+              ) : selected.status === 'Handover' ? (
+                <Link className={`${styles.btn} ${styles.primary}`} href={resignationHandoverHref(selected)}>
+                  Open Handover Checklist →
+                </Link>
+              ) : selected.status === 'Clearance' ? (
+                <Link className={`${styles.btn} ${styles.primary}`} href={resignationExitClearanceHref(selected)}>
+                  Open Exit Clearance →
+                </Link>
+              ) : (
+                <button type="button" className={styles.primary} disabled={busy} onClick={() => void runAction('next')}>
+                  Next Step →
+                </button>
+              )}
             </div>
           </div>
         </section>

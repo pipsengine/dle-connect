@@ -17,6 +17,14 @@ export default async function NewFinalPayrollSettlementPage({
     <NewFinalPayrollSettlementWorkspace
       initialId={pick('id')}
       initialEmployeeCode={pick('employeeCode') || pick('code')}
+      initialResignationId={pick('resignationId')}
+      initialExitType={pick('exitType')}
+      initialResignationDate={pick('resignationDate')}
+      initialLastWorkingDay={pick('lastWorkingDay')}
+      initialNoticePeriod={pick('noticePeriod')}
+      initialReason={pick('reasonForLeaving')}
+      initialRemarks={pick('remarks')}
+      fromResignation={pick('fromResignation') === '1'}
     />
   );
 }

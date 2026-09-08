@@ -20,6 +20,10 @@ import {
   formatFinalPayrollMoney,
   sumIncludedLines,
 } from '@/lib/final-payroll-settlement-shared';
+import {
+  noticePeriodLabelFromDays,
+  resignationReadyForFinalPayroll,
+} from '@/lib/resignation-management-shared';
 import styles from '@/styles/final-payroll-processing.module.css';
 
 const STEPS = [
@@ -66,9 +70,25 @@ const isPreviewId = (id?: string | null) => Boolean(id && String(id).startsWith(
 export default function NewFinalPayrollSettlementWorkspace({
   initialId,
   initialEmployeeCode,
+  initialResignationId,
+  initialExitType,
+  initialResignationDate,
+  initialLastWorkingDay,
+  initialNoticePeriod,
+  initialReason,
+  initialRemarks,
+  fromResignation = false,
 }: {
   initialId?: string;
   initialEmployeeCode?: string;
+  initialResignationId?: string;
+  initialExitType?: string;
+  initialResignationDate?: string;
+  initialLastWorkingDay?: string;
+  initialNoticePeriod?: string;
+  initialReason?: string;
+  initialRemarks?: string;
+  fromResignation?: boolean;
 }) {
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -77,12 +97,18 @@ export default function NewFinalPayrollSettlementWorkspace({
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [settlement, setSettlement] = useState<FinalPayrollSettlement | null>(null);
   const [persisted, setPersisted] = useState(false);
-  const [exitType, setExitType] = useState('Resignation');
-  const [resignationDate, setResignationDate] = useState('');
-  const [lastWorkingDay, setLastWorkingDay] = useState('');
-  const [noticePeriod, setNoticePeriod] = useState('1 Month');
-  const [reason, setReason] = useState('Career Growth');
-  const [remarks, setRemarks] = useState('');
+  const [linkedResignation, setLinkedResignation] = useState<{
+    id: string;
+    status: string;
+    referenceNumber?: string;
+  } | null>(null);
+  const [resignationGate, setResignationGate] = useState<string | null>(null);
+  const [exitType, setExitType] = useState(initialExitType || 'Resignation');
+  const [resignationDate, setResignationDate] = useState(initialResignationDate || '');
+  const [lastWorkingDay, setLastWorkingDay] = useState(initialLastWorkingDay || '');
+  const [noticePeriod, setNoticePeriod] = useState(initialNoticePeriod || '1 Month');
+  const [reason, setReason] = useState(initialReason || 'Career Growth');
+  const [remarks, setRemarks] = useState(initialRemarks || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -121,23 +147,82 @@ export default function NewFinalPayrollSettlementWorkspace({
     }
   }, [router]);
 
-  const previewFromEmployee = async (employeeCode: string) => {
+  const previewFromEmployee = async (employeeCode: string, selectedExitType?: string) => {
+    const effectiveExitType = selectedExitType || exitType || 'Resignation';
     setBusy(true);
     setError(null);
     setMessage(null);
+    setResignationGate(null);
     try {
+      const lookup = await fetch(
+        `/api/hris/offboarding/resignation-management?lookup=employee&employeeCode=${encodeURIComponent(employeeCode)}`,
+        { cache: 'no-store' },
+      );
+      const lookupData = await lookup.json().catch(() => ({}));
+      const resignation = lookup.ok && lookupData.ok ? lookupData.resignation : null;
+
+      let nextExitType = effectiveExitType;
+      let nextResignationDate = resignationDate;
+      let nextLastWorkingDay = lastWorkingDay;
+      let nextNoticePeriod = noticePeriod;
+      let nextReason = reason;
+      let nextRemarks = remarks;
+
+      if (effectiveExitType === 'Resignation') {
+        if (!resignation) {
+          setLinkedResignation(null);
+          setResignationGate(
+            'No active resignation found for this employee. Start Resignation Management first (standard: Resignation → Notice → Clearance → Final Payroll).',
+          );
+          setBusy(false);
+          return;
+        }
+        setLinkedResignation({
+          id: resignation.id,
+          status: resignation.status,
+          referenceNumber: resignation.referenceNumber,
+        });
+        if (!resignationReadyForFinalPayroll(resignation)) {
+          setResignationGate(
+            `Resignation ${resignation.referenceNumber || resignation.id} is at "${resignation.status}". Advance through notice/handover to Clearance, then proceed to Final Payroll from that case.`,
+          );
+          setBusy(false);
+          return;
+        }
+        nextExitType = 'Resignation';
+        nextResignationDate = resignation.resignationDate?.slice(0, 10) || resignationDate || initialResignationDate || '';
+        nextLastWorkingDay = resignation.lastWorkingDay?.slice(0, 10) || lastWorkingDay || initialLastWorkingDay || '';
+        nextNoticePeriod = noticePeriodLabelFromDays(Number(resignation.noticePeriodDays || 0)) || noticePeriod;
+        nextReason = resignation.reasonForLeaving || reason;
+        nextRemarks = resignation.remarks || remarks;
+        setExitType(nextExitType);
+        setResignationDate(nextResignationDate);
+        setLastWorkingDay(nextLastWorkingDay);
+        setNoticePeriod(nextNoticePeriod);
+        setReason(nextReason);
+        setRemarks(nextRemarks);
+      } else if (resignation) {
+        setLinkedResignation({
+          id: resignation.id,
+          status: resignation.status,
+          referenceNumber: resignation.referenceNumber,
+        });
+      } else {
+        setLinkedResignation(null);
+      }
+
       const res = await fetch('/api/hris/offboarding/final-payroll', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           persist: false,
           employeeCode,
-          exitType,
-          resignationDate: resignationDate || null,
-          lastWorkingDay: lastWorkingDay || null,
-          noticePeriod,
-          reasonForLeaving: reason,
-          remarks,
+          exitType: nextExitType,
+          resignationDate: nextResignationDate || null,
+          lastWorkingDay: nextLastWorkingDay || null,
+          noticePeriod: nextNoticePeriod,
+          reasonForLeaving: nextReason,
+          remarks: nextRemarks,
         }),
       });
       const data = await res.json();
@@ -145,8 +230,15 @@ export default function NewFinalPayrollSettlementWorkspace({
       applySettlement(data.settlement, false);
       setHits([]);
       setQuery('');
-      setMessage('Preview only — not saved until you click Save as Draft or Submit for Approval.');
-      router.replace(`/hris/offboarding/final-payroll-processing/new-settlement?employeeCode=${encodeURIComponent(employeeCode)}`);
+      setMessage(
+        resignation && effectiveExitType === 'Resignation'
+          ? `Linked to resignation ${resignation.referenceNumber || resignation.id} (${resignation.status}). Preview only — not saved yet.`
+          : 'Preview only — not saved until you click Save as Draft or Submit for Approval.',
+      );
+      const qs = new URLSearchParams({ employeeCode });
+      if (resignation?.id) qs.set('resignationId', resignation.id);
+      if (effectiveExitType === 'Resignation') qs.set('fromResignation', '1');
+      router.replace(`/hris/offboarding/final-payroll-processing/new-settlement?${qs.toString()}`);
     } catch (err: any) {
       setError(err?.message || 'Unable to load employee settlement preview.');
     } finally {
@@ -160,7 +252,7 @@ export default function NewFinalPayrollSettlementWorkspace({
       return;
     }
     if (!initialEmployeeCode) return;
-    void previewFromEmployee(initialEmployeeCode);
+    void previewFromEmployee(initialEmployeeCode, initialExitType || 'Resignation');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialId, initialEmployeeCode, loadExisting]);
 
@@ -327,7 +419,11 @@ export default function NewFinalPayrollSettlementWorkspace({
           </button>
           <div>
             <h1>New Final Payroll Settlement</h1>
-            <p>Create and calculate final settlement for an exiting employee.</p>
+            <p>
+              {fromResignation || initialResignationId
+                ? 'Settlement opened from a resignation case — review calculation, then save or submit.'
+                : 'Standard flow: complete Resignation → Clearance first, then calculate final settlement here.'}
+            </p>
           </div>
         </div>
         <div className={styles.actions}>
@@ -344,7 +440,30 @@ export default function NewFinalPayrollSettlementWorkspace({
       </div>
 
       {error ? <p className={styles.error}>{error}</p> : null}
+      {resignationGate ? (
+        <div className={styles.error} style={{ display: 'grid', gap: 8 }}>
+          <span>{resignationGate}</span>
+          <span>
+            <Link href="/hris/offboarding/resignation-management">Open Resignation Register</Link>
+            {' · '}
+            <Link
+              href={`/hris/offboarding/resignation-management/new?employeeCode=${encodeURIComponent(query || initialEmployeeCode || '')}`}
+            >
+              Start Resignation
+            </Link>
+          </span>
+        </div>
+      ) : null}
       {message ? <p>{message}</p> : null}
+      {linkedResignation && !resignationGate ? (
+        <p style={{ margin: '0 0 10px' }}>
+          Linked resignation:{' '}
+          <Link href={`/hris/offboarding/resignation-management?id=${encodeURIComponent(linkedResignation.id)}`}>
+            {linkedResignation.referenceNumber || linkedResignation.id}
+          </Link>{' '}
+          · {linkedResignation.status}
+        </p>
+      ) : null}
       {settlement && !persisted ? (
         <p style={{ color: '#b87100', margin: '0 0 10px', fontWeight: 600 }}>
           Unsaved preview — this settlement is not on the register until you Save as Draft or Submit.

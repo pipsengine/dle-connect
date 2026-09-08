@@ -1,0 +1,16 @@
+import { redirect } from 'next/navigation';
+
+export default async function OffboardingAssetReturnRedirect({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = (await searchParams) || {};
+  const params = new URLSearchParams();
+  for (const key of ['period', 'id', 'employeeCode', 'employeeId', 'code']) {
+    const value = sp[key];
+    if (typeof value === 'string' && value) params.set(key, value);
+  }
+  const qs = params.toString();
+  redirect(`/hris/offboarding/asset-return${qs ? `?${qs}` : ''}`);
+}

@@ -81,9 +81,12 @@ export const navigationConfig: NavItem[] = [
     permissionKey: 'offboarding.view',
     subItems: [
       { title: 'Resignation Management', slug: 'resignation-management', route: '/hris/offboarding/resignation-management', permissionKey: 'offboarding.view' },
-      { title: 'New Resignation', slug: 'new-resignation', route: '/hris/offboarding/resignation-management/new', permissionKey: 'offboarding.view' },
+      { title: 'Exit Clearance', slug: 'exit-clearance', route: '/hris/offboarding/exit-clearance', permissionKey: 'offboarding.view' },
+      { title: 'Handover Checklist', slug: 'handover-checklist', route: '/hris/offboarding/handover-checklist', permissionKey: 'offboarding.view' },
+      { title: 'Asset Return', slug: 'asset-return', route: '/hris/offboarding/asset-return', permissionKey: 'offboarding.view' },
       { title: 'Final Payroll Processing', slug: 'final-payroll-processing', route: '/hris/offboarding/final-payroll-processing', permissionKey: 'offboarding.view' },
-      { title: 'New Settlement', slug: 'new-settlement', route: '/hris/offboarding/final-payroll-processing/new-settlement', permissionKey: 'offboarding.view' },
+      { title: 'New Resignation', slug: 'new-resignation', route: '/hris/offboarding/resignation-management/new', permissionKey: 'offboarding.view' },
+      { title: 'New Settlement (after Clearance)', slug: 'new-settlement', route: '/hris/offboarding/final-payroll-processing/new-settlement', permissionKey: 'offboarding.view' },
     ],
   },
   {

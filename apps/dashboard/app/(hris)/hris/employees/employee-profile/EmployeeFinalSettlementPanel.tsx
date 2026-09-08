@@ -15,6 +15,9 @@ type SettlementLookup = {
   totals?: { gross: number; deductions: number; statutory: number; net: number } | null;
   registerHref?: string;
   newSettlementHref?: string;
+  openResignationHref?: string;
+  resignationReady?: boolean;
+  resignation?: { id: string; status: string; referenceNumber?: string } | null;
 };
 
 const money = (amount: number, currency: 'NGN' | 'USD') => {
@@ -56,10 +59,20 @@ export default function EmployeeFinalSettlementPanel({
   }, [employeeId, employeeCode]);
 
   const settlement = data?.settlement;
+  const needsResignationFirst = !settlement && !data?.resignationReady;
   const openHref = settlement
     ? (data?.registerHref || `/hris/offboarding/final-payroll-processing?id=${encodeURIComponent(settlement.id)}`)
-    : (data?.newSettlementHref
-      || `/hris/offboarding/final-payroll-processing/new-settlement?employeeCode=${encodeURIComponent(employeeCode || employeeId)}`);
+    : needsResignationFirst
+      ? (data?.openResignationHref
+        || `/hris/offboarding/resignation-management/new?employeeCode=${encodeURIComponent(employeeCode || employeeId)}`)
+      : (data?.newSettlementHref
+        || `/hris/offboarding/final-payroll-processing/new-settlement?employeeCode=${encodeURIComponent(employeeCode || employeeId)}`);
+
+  const ctaLabel = settlement
+    ? 'Open Settlement'
+    : needsResignationFirst
+      ? (data?.resignation ? 'Open Resignation (then Final Payroll)' : 'Start Resignation First')
+      : 'Proceed to Final Settlement';
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -71,7 +84,7 @@ export default function EmployeeFinalSettlementPanel({
           <div>
             <div className="text-sm font-extrabold text-slate-900">Final Payroll Settlement</div>
             <div className="text-xs text-slate-500 font-semibold mt-0.5">
-              Offboarding final pay workflow linked to this employee record.
+              After resignation clearance — calculate and approve final pay.
             </div>
           </div>
         </div>
@@ -80,7 +93,7 @@ export default function EmployeeFinalSettlementPanel({
           className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors"
         >
           <ExternalLink className="w-4 h-4" />
-          {settlement ? 'Open Settlement' : 'Start Final Settlement'}
+          {ctaLabel}
         </Link>
       </div>
 
@@ -88,7 +101,12 @@ export default function EmployeeFinalSettlementPanel({
         <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
           <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Status</div>
           <div className="mt-1 text-sm font-extrabold text-slate-900">
-            {loading ? 'Loading…' : settlement?.status || 'Not started'}
+            {loading
+              ? 'Loading…'
+              : settlement?.status
+                || (data?.resignation
+                  ? `Resignation: ${data.resignation.status}`
+                  : 'Not started — begin with Resignation')}
           </div>
         </div>
         <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">

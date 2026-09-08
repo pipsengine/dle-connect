@@ -566,6 +566,36 @@ export const updateResignation = async (input: {
   return row;
 };
 
+/** Update a progress track item and optionally advance resignation status. */
+export const syncResignationProgressItem = async (input: {
+  resignationId: string;
+  actor: string;
+  progressId: 'handover' | 'clearance' | 'asset' | 'payroll';
+  progressStatus: ResignationProgressItem['status'];
+  advanceStatusTo?: ResignationStatus;
+}) => {
+  const all = await readJson();
+  const index = all.findIndex((row) => row.id === input.resignationId);
+  if (index < 0) throw new Error('Resignation not found.');
+  let row: ResignationRecord = { ...all[index] };
+  row.progress = (row.progress || defaultProgress()).map((item) =>
+    item.id === input.progressId ? { ...item, status: input.progressStatus } : item,
+  );
+  row.clearancePct = clearancePctFromProgress(row.progress);
+  if (input.advanceStatusTo) {
+    row.status = input.advanceStatusTo;
+    if (input.advanceStatusTo === 'Final Payroll') {
+      row.finalPayrollStatus = 'Pending';
+    }
+    row.workflow = defaultWorkflow(row.status, row.submittedAt);
+  }
+  row.updatedAt = nowIso();
+  row.updatedBy = input.actor;
+  all[index] = row;
+  await writeJson(all);
+  return row;
+};
+
 export const resignationsToCsv = (rows: ResignationRecord[]) => {
   const header = [
     'Employee', 'Employee ID', 'Department', 'Position', 'Resignation Date', 'Last Working Day',

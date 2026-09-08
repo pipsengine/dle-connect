@@ -171,8 +171,71 @@ export const formatResignationMoney = (amount: number, currency: 'NGN' | 'USD' =
   return `${symbol}${Math.round(Number(amount) || 0).toLocaleString('en-NG')}`;
 };
 
+/** Stages where final settlement calculation is the next standard action. */
+export const RESIGNATION_READY_FOR_FINAL_PAYROLL: ResignationStatus[] = [
+  'Clearance',
+  'Final Payroll',
+  'Completed',
+];
+
+export const resignationReadyForFinalPayroll = (
+  row: Pick<ResignationRecord, 'status'>,
+) => RESIGNATION_READY_FOR_FINAL_PAYROLL.includes(row.status);
+
+export const noticePeriodLabelFromDays = (days: number) => {
+  if (days <= 0) return 'None';
+  if (days === 30) return '1 Month';
+  if (days === 60) return '2 Months';
+  if (days === 90) return '3 Months';
+  return `${days} Days`;
+};
+
 export const resignationProfileHref = (row: Pick<ResignationRecord, 'employeeId' | 'employeeCode'>) =>
   `/hris/employees/employee-profile/${encodeURIComponent(row.employeeId || row.employeeCode)}`;
 
-export const resignationFinalPayrollHref = (row: Pick<ResignationRecord, 'employeeId' | 'employeeCode'>) =>
-  `/hris/offboarding/final-payroll-processing?employeeCode=${encodeURIComponent(row.employeeCode)}&employeeId=${encodeURIComponent(row.employeeId)}`;
+export const resignationHandoverHref = (row: Pick<ResignationRecord, 'employeeCode' | 'id' | 'period'>) => {
+  const params = new URLSearchParams({ employeeCode: row.employeeCode });
+  if (row.period) params.set('period', row.period);
+  return `/hris/offboarding/handover-checklist?${params.toString()}`;
+};
+
+export const resignationExitClearanceHref = (row: Pick<ResignationRecord, 'employeeCode' | 'period'>) => {
+  const params = new URLSearchParams({ employeeCode: row.employeeCode });
+  if (row.period) params.set('period', row.period);
+  return `/hris/offboarding/exit-clearance?${params.toString()}`;
+};
+
+export const resignationAssetReturnHref = (row: Pick<ResignationRecord, 'employeeCode' | 'period'>) => {
+  const params = new URLSearchParams({ employeeCode: row.employeeCode });
+  if (row.period) params.set('period', row.period);
+  return `/hris/offboarding/asset-return?${params.toString()}`;
+};
+
+/** Deep-link into Final Payroll New Settlement, prefilled from the resignation case. */
+export const resignationFinalPayrollHref = (
+  row: Pick<
+    ResignationRecord,
+    | 'employeeId'
+    | 'employeeCode'
+    | 'resignationDate'
+    | 'lastWorkingDay'
+    | 'noticePeriodDays'
+    | 'reasonForLeaving'
+    | 'remarks'
+    | 'id'
+    | 'status'
+  >,
+) => {
+  const params = new URLSearchParams();
+  params.set('employeeCode', row.employeeCode);
+  if (row.employeeId) params.set('employeeId', row.employeeId);
+  if (row.id) params.set('resignationId', row.id);
+  if (row.resignationDate) params.set('resignationDate', row.resignationDate.slice(0, 10));
+  if (row.lastWorkingDay) params.set('lastWorkingDay', row.lastWorkingDay.slice(0, 10));
+  params.set('noticePeriod', noticePeriodLabelFromDays(Number(row.noticePeriodDays || 0)));
+  if (row.reasonForLeaving) params.set('reasonForLeaving', row.reasonForLeaving);
+  if (row.remarks) params.set('remarks', row.remarks);
+  params.set('exitType', 'Resignation');
+  params.set('fromResignation', '1');
+  return `/hris/offboarding/final-payroll-processing/new-settlement?${params.toString()}`;
+};

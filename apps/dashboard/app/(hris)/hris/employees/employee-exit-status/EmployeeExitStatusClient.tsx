@@ -165,11 +165,26 @@ export default function EmployeeExitStatusClient({ initialPayload, initialEmploy
   const openStatus = (employeeId: string) => router.push(`/hris/employees/employee-status?employeeId=${encodeURIComponent(employeeId)}`);
   const openFinalSettlement = (record: { employeeId: string; employeeCode: string }) => {
     const code = record.employeeCode || record.employeeId;
-    router.push(`/hris/offboarding/final-payroll-processing?employeeCode=${encodeURIComponent(code)}&employeeId=${encodeURIComponent(record.employeeId)}`);
+    // Standard flow gates inside New Settlement when resignation is missing/not ready.
+    router.push(
+      `/hris/offboarding/final-payroll-processing/new-settlement?employeeCode=${encodeURIComponent(code)}&employeeId=${encodeURIComponent(record.employeeId)}`,
+    );
   };
   const openResignation = (record: { employeeId: string; employeeCode: string }) => {
     const code = record.employeeCode || record.employeeId;
     router.push(`/hris/offboarding/resignation-management?employeeCode=${encodeURIComponent(code)}&employeeId=${encodeURIComponent(record.employeeId)}`);
+  };
+  const openHandover = (record: { employeeId: string; employeeCode: string }) => {
+    const code = record.employeeCode || record.employeeId;
+    router.push(`/hris/offboarding/handover-checklist?employeeCode=${encodeURIComponent(code)}&employeeId=${encodeURIComponent(record.employeeId)}`);
+  };
+  const openClearance = (record: { employeeId: string; employeeCode: string }) => {
+    const code = record.employeeCode || record.employeeId;
+    router.push(`/hris/offboarding/exit-clearance?employeeCode=${encodeURIComponent(code)}&employeeId=${encodeURIComponent(record.employeeId)}`);
+  };
+  const openAssets = (record: { employeeId: string; employeeCode: string }) => {
+    const code = record.employeeCode || record.employeeId;
+    router.push(`/hris/offboarding/asset-return?employeeCode=${encodeURIComponent(code)}&employeeId=${encodeURIComponent(record.employeeId)}`);
   };
 
   const workflow = selected
@@ -417,7 +432,7 @@ export default function EmployeeExitStatusClient({ initialPayload, initialEmploy
                     </div>
                   </div>
 
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     <button
                       type="button"
                       onClick={() => openProfile(selected.employeeId)}
@@ -432,6 +447,27 @@ export default function EmployeeExitStatusClient({ initialPayload, initialEmploy
                       className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-sky-200 bg-sky-50 text-sm font-bold text-sky-700 hover:bg-sky-100"
                     >
                       Resignation
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openHandover(selected)}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-700 hover:border-sky-200 hover:text-sky-700"
+                    >
+                      Handover
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openClearance(selected)}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-700 hover:border-sky-200 hover:text-sky-700"
+                    >
+                      Clearance
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openAssets(selected)}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-700 hover:border-sky-200 hover:text-sky-700"
+                    >
+                      Assets
                     </button>
                     <button
                       type="button"

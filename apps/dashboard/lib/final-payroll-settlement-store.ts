@@ -18,6 +18,13 @@ import {
 } from '@/lib/payroll-statutory-funds-engine';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
 import {
+  findResignationByEmployee,
+} from '@/lib/resignation-management-store';
+import {
+  resignationFinalPayrollHref,
+  resignationReadyForFinalPayroll,
+} from '@/lib/resignation-management-shared';
+import {
   type ApprovalStageStatus,
   type FinalPayrollApprovalStage,
   type FinalPayrollClearanceItem,
@@ -801,14 +808,31 @@ export const resolveFinalPayrollForEmployee = async (input: {
 
   const settlement = matches[0] || null;
   const totals = settlement ? settlementTotals(settlement) : null;
+
+  const resignation = await findResignationByEmployee({
+    employeeCode: code || null,
+    employeeId: employeeId || null,
+  });
+  const startResignationHref = `/hris/offboarding/resignation-management/new?employeeCode=${encodeURIComponent(code || employeeId)}`;
+  const openResignationHref = resignation
+    ? `/hris/offboarding/resignation-management?id=${encodeURIComponent(resignation.id)}&period=${encodeURIComponent(resignation.period)}`
+    : startResignationHref;
+  const newSettlementHref = resignation && resignationReadyForFinalPayroll(resignation)
+    ? resignationFinalPayrollHref(resignation)
+    : openResignationHref;
+
   return {
     settlement,
     totals,
+    resignation,
+    resignationReady: resignation ? resignationReadyForFinalPayroll(resignation) : false,
     profileHref: `/hris/employees/employee-profile/${encodeURIComponent(settlement?.employeeId || employeeId || code)}`,
     registerHref: settlement
       ? `/hris/offboarding/final-payroll-processing?id=${encodeURIComponent(settlement.id)}&period=${encodeURIComponent(settlement.period)}`
       : `/hris/offboarding/final-payroll-processing${period ? `?period=${encodeURIComponent(period)}` : ''}`,
-    newSettlementHref: `/hris/offboarding/final-payroll-processing/new-settlement?employeeCode=${encodeURIComponent(code || employeeId)}`,
+    newSettlementHref,
+    openResignationHref,
+    startResignationHref,
   };
 };
 
