@@ -461,13 +461,12 @@ export const filterPayrollCalculationByPack = (
   const scheduleKpi = pack !== 'daily-rate' && company
     ? ngnSalaryScheduleKpi(calculation.period, company)
     : null;
-  const netPay = scheduleKpi?.netPay ?? roundMoney(totals.netPay);
-  const grossPay = scheduleKpi?.grossPay || roundMoney(totals.grossPay);
-  const deductions = scheduleKpi?.grossPay
-    ? roundMoney(scheduleKpi.deductions)
-    : roundMoney(totals.deductions);
-  const employees = scheduleKpi?.employees || summaryRecords.length;
-  const readyCount = scheduleKpi?.employees || ready.length;
+  // Live schedule rows are authoritative. Excel Summary KPI can lag CONT.STAFF detail / omit MD NGN.
+  const netPay = roundMoney(totals.netPay);
+  const grossPay = roundMoney(totals.grossPay);
+  const deductions = roundMoney(totals.deductions);
+  const employees = summaryRecords.length;
+  const readyCount = ready.length;
   const component = (componentId: string, label: string, amount: number, tone: PayrollTone, payer: 'Employee' | 'Employer' | 'Both') =>
     ({ id: componentId, label, amount: roundMoney(amount), tone, payer });
   const packLabel = company ? findPayrollScheduleScope(pack, company).shortLabel : payrollRunPackShortLabel(pack);

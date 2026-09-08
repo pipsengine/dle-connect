@@ -67,6 +67,8 @@ const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value
 
 const moneyTotalsFromRecords = (
   records: Array<{
+    basePay?: number | null;
+    allowances?: number | null;
     grossPay?: number | null;
     totalDeductions?: number | null;
     deductions?: number | null;
@@ -74,14 +76,18 @@ const moneyTotalsFromRecords = (
     employerCost?: number | null;
   }>,
 ) => {
-  const totals = { grossPay: 0, deductions: 0, netPay: 0, employerCost: 0 };
+  const totals = { basePay: 0, allowances: 0, grossPay: 0, deductions: 0, netPay: 0, employerCost: 0 };
   for (const record of records) {
+    totals.basePay += Number(record.basePay || 0);
+    totals.allowances += Number(record.allowances || 0);
     totals.grossPay += Number(record.grossPay || 0);
     totals.deductions += Number(record.totalDeductions || record.deductions || 0);
     totals.netPay += Number(record.netPay || 0);
     totals.employerCost += Number(record.employerCost || 0);
   }
   return {
+    basePay: roundMoney(totals.basePay),
+    allowances: roundMoney(totals.allowances),
     grossPay: roundMoney(totals.grossPay),
     deductions: roundMoney(totals.deductions),
     netPay: roundMoney(totals.netPay),
@@ -104,27 +110,8 @@ const applyCurrencySliceToCalculation = <T extends {
   const blocked = records.filter((record) => record.status === 'Blocked');
   const money = moneyTotalsFromRecords(records);
   const employees = records.length;
-  // NGN DLE Salaries keep workbook KPI overrides already on the pack summary when present.
-  const keepNgnKpi = slice === 'ngn'
-    && Number(calculation.summary.scheduleEmployees || calculation.summary.employees || 0) > 0
-    && Number(calculation.summary.scheduleGrossPay || calculation.summary.grossPay || 0) > 0;
-  if (keepNgnKpi) {
-    return {
-      ...calculation,
-      records,
-      summary: {
-        ...calculation.summary,
-        employees: Number(calculation.summary.scheduleEmployees || calculation.summary.employees || employees),
-        payrollEligible: Number(calculation.summary.scheduleEmployees || calculation.summary.payrollEligible || employees),
-        ready: Number(calculation.summary.ready || ready.length),
-        review: review.length,
-        blocked: blocked.length,
-        readyEmployees: Number(calculation.summary.readyEmployees || calculation.summary.ready || ready.length),
-        reviewEmployees: review.length,
-        blockedEmployees: blocked.length,
-      },
-    };
-  }
+  // Preserve Excel Summary schedule* reference fields when present; live money/HC always from records.
+  const preserveScheduleKpi = slice === 'ngn' && Number(calculation.summary.scheduleGrossPay || 0) > 0;
   return {
     ...calculation,
     records,
@@ -138,16 +125,20 @@ const applyCurrencySliceToCalculation = <T extends {
       readyEmployees: ready.length,
       reviewEmployees: review.length,
       blockedEmployees: blocked.length,
-      basePay: records.reduce((sum, record) => sum + Number(record.basePay || 0), 0),
-      allowances: records.reduce((sum, record) => sum + Number(record.allowances || 0), 0),
+      basePay: money.basePay,
+      allowances: money.allowances,
       grossPay: money.grossPay,
       totalDeductions: money.deductions,
       deductions: money.deductions,
       netPay: money.netPay,
       employerCost: money.employerCost,
-      scheduleGrossPay: money.grossPay,
-      scheduleNetPay: money.netPay,
-      scheduleEmployees: employees,
+      ...(preserveScheduleKpi
+        ? {}
+        : {
+            scheduleGrossPay: money.grossPay,
+            scheduleNetPay: money.netPay,
+            scheduleEmployees: employees,
+          }),
     },
   };
 };

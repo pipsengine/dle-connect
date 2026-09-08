@@ -498,6 +498,9 @@ export default function PayrollApprovalWorkspace({
 
   const packCards = useMemo(() => {
     const packs = payload?.packs || [];
+    const summaryBySchedule = new Map(
+      (payload?.salariesSummary?.schedules || []).map((row) => [row.id, row.headcount]),
+    );
     return PAYROLL_SCHEDULE_SCOPES.map((scope) => {
       const match = packs.find((item) => item.scheduleId === scope.id)
         || (scope.id !== 'dle-usd'
@@ -506,7 +509,10 @@ export default function PayrollApprovalWorkspace({
       const status = match?.run?.status
         || (scope.id === selectedScope.id ? run?.status : null)
         || null;
-      const headcount = match?.summary?.employees
+      // Prefer Salaries Summary / live records over Excel Summary KPI (which excludes MD NGN → 139 vs 140).
+      const headcount = summaryBySchedule.get(scope.id)
+        ?? (Array.isArray(match?.records) ? match.records.length : null)
+        ?? match?.summary?.employees
         ?? match?.run?.employeeCount
         ?? (scope.id === selectedScope.id ? payload?.summary.employees : null);
       return {
@@ -516,7 +522,7 @@ export default function PayrollApprovalWorkspace({
         loaded: Boolean(match) || scope.id === selectedScope.id,
       };
     });
-  }, [payload?.packs, payload?.summary.employees, run?.status, selectedScope.id]);
+  }, [payload?.packs, payload?.salariesSummary?.schedules, payload?.summary.employees, run?.status, selectedScope.id]);
 
   const controls = useMemo(() => {
     if (payload?.controls?.length) return payload.controls;

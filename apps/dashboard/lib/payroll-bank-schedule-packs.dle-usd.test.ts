@@ -21,6 +21,8 @@ assert.equal(isDleUsdMdEmployee({ fullName: 'Mr CHRIS IJELI', employeeCode: 'P04
 assert.equal(isDleUsdExpatriateEmployee({ fullName: 'Nayak Sushil', jobTitle: 'Expatriate' }), true);
 assert.equal(isDleUsdExpatriateEmployee({ fullName: 'SUSHILKUMAR NAYAK', employeeCode: 'PEX001' }), true);
 assert.equal(isDleUsdMdEmployee({ fullName: 'TEMITOPE ODULATE', jobTitle: 'GENERAL MANAGER, OPERATIONS' }), false);
+assert.equal(isDleUsdMdEmployee({ fullName: 'ROSEMARY BENSON', jobTitle: 'PA. TO MD/CEO', employeeCode: 'P0060' }), false);
+assert.equal(isDleUsdMdEmployee({ fullName: 'OLUFUNKE ABE', jobTitle: 'EA. TO MD / CEO', employeeCode: 'P0465' }), false);
 
 assert.equal(resolveDleUsdSection({
   fullName: 'TEMITOPE ODULATE',

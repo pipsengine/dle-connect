@@ -80,6 +80,13 @@ export const isDleUsdMdEmployee = (
   if (/^(P?0413|00MD01|MD01|MD)$/.test(code) || /MD01/.test(code)) return true;
   const blob = upper(roleBlob(employee));
   if (/\bIJELI\b/.test(blob)) return true;
+  // PA / EA / assistants "to MD/CEO" must not be classified as the MD (title contains MD/CEO).
+  if (
+    /\b(P\.?\s*A\.?|E\.?\s*A\.?|PA|EA|ASSISTANT|SECRETARY|AIDE)\b/.test(blob)
+    && /\b(MD|CEO|MANAGING DIRECTOR|CHIEF EXECUTIVE)\b/.test(blob)
+  ) {
+    return false;
+  }
   return /\bMANAGING DIRECTOR\b|\bMD\s*\/\s*CEO\b|\bCHIEF EXECUTIVE\b/.test(blob);
 };
 

@@ -1,5 +1,14 @@
 [
   {
+    "id": "login-1788875578493-fea11f95",
+    "at": "2026-09-08T13:52:58.494Z",
+    "userId": "usr-P0146",
+    "username": "P0146",
+    "ipAddress": "127.0.0.1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
     "id": "login-1788874696590-c7759e50",
     "at": "2026-09-08T13:38:16.591Z",
     "userId": "usr-P0146",
