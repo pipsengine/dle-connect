@@ -6,7 +6,7 @@
     "dev": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" node node_modules/next/dist/bin/next dev apps/dashboard -p 3010",
     "dev:3020": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Restart-DashboardDev.ps1 -Port 3020",
     "dev:3020:only": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" node node_modules/next/dist/bin/next dev apps/dashboard -p 3020 -H 127.0.0.1",
-    "dev:3020:clean": "npm run clean && npm run dev:3020:only",
+    "dev:3020:clean": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Restart-DashboardDev.ps1 -Port 3020 -Clean",
     "dev:3020:restart": "npm run dev:3020",
     "dev:all": "npm run dev",
     "build": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" node node_modules/next/dist/bin/next build apps/dashboard",

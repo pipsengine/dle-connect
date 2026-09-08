@@ -1,5 +1,6 @@
 param(
-  [int]$Port = 3020
+  [int]$Port = 3020,
+  [switch]$Clean
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,9 +24,15 @@ if ($pids) {
   Start-Sleep -Seconds 1
 }
 
-Write-Host "Cleaning apps/dashboard/.next..."
-& npm run clean
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+# Full .next wipe forces every route to cold-compile again (very slow on this app).
+# Use -Clean only when the cache is corrupt.
+if ($Clean) {
+  Write-Host "Cleaning apps/dashboard/.next..."
+  & npm run clean
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+} else {
+  Write-Host "Keeping apps/dashboard/.next warm (pass -Clean to wipe cache)."
+}
 
 Write-Host "Starting dashboard dev server on port $Port (use http://localhost:$Port in your browser)..."
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoRoot "scripts\Sync-MailEnvironment.ps1") -InternalServer -TargetFiles @((Join-Path $RepoRoot "apps\dashboard\.env")) 2>$null

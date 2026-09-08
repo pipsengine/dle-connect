@@ -1504,7 +1504,9 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   ))).sort();
   const reviewMissingProjectHours = reviewProjectHours <= 0.001;
   const canOpenSubmitReview = canEditTimesheet && reviewLineCount > 0 && reviewErrorCount === 0;
-  const canConfirmSubmit = canOpenSubmitReview && !reviewMissingProjectHours;
+  // Server auto-books standard productive hours onto the primary managed project on SUBMIT
+  // when clocked rows still have break-only / empty allocations (Agege attendance sync path).
+  const canConfirmSubmit = canOpenSubmitReview;
   const canManageTimesheetSetup = Boolean(payload?.permissions.canManagePeriod);
   const canCreateProject = canManageTimesheetSetup || canEditTimesheet;
   const pageTitle = isWorkforceSupervisor ? 'Workforce Timesheet Entry' : 'Timesheet Entry';
@@ -2496,8 +2498,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             </div>
             <div className="max-h-[72vh] overflow-y-auto p-6">
               {(error || reviewMissingProjectHours) && (
-                <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-                  {error || 'Project hours are required before submit. Go Back to Edit, add a project column (or use Auto Distribute), book productive hours for present crew, then return here.'}
+                <div className={`mb-4 rounded-xl border px-4 py-3 text-sm font-semibold ${error ? 'border-red-200 bg-red-50 text-red-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+                  {error || 'No project hours yet. Submit will auto-book standard productive hours onto the primary project (with a Project Manager). You can Back to Edit first to choose a different project.'}
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
@@ -2576,7 +2578,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 p-5">
               <p className="text-xs font-semibold text-slate-500">
                 {reviewMissingProjectHours
-                  ? 'Clock times alone are not enough — book productive project hours first, then submit.'
+                  ? 'Clock times are present. Submit will allocate standard project hours automatically, then place this timesheet in supervisor review.'
                   : 'Submitting places this timesheet in supervisor review. You can keep correcting it until it is approved and released to the project manager.'}
               </p>
               <div className="flex items-center gap-3">

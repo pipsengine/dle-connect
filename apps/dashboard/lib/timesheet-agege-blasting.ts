@@ -28,12 +28,34 @@ export const extractSupervisorEmployeeCode = (value: string | null | undefined) 
 export const isAgegeBlastingSupervisor = (supervisorValue: string | null | undefined) =>
   extractSupervisorEmployeeCode(supervisorValue) === AGEGE_BLASTING_SUPERVISOR_CODE;
 
+/**
+ * Collapse duplicated site labels such as "AGEGE - AGEGE" → "AGEGE".
+ * Keeps distinct compound sites like "Lagos - Idi Oro" unchanged.
+ */
+export const normalizeTimesheetLocationLabel = (value: string | null | undefined) => {
+  const raw = clean(value);
+  if (!raw) return '';
+  if (/^agege(\s*-\s*agege)*$/i.test(raw) || /^agege$/i.test(raw)) return AGEGE_TIMESHEET_LOCATION;
+
+  const parts = raw.split(/\s*-\s*/).map((part) => part.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    const first = parts[0].toLowerCase();
+    if (parts.every((part) => part.toLowerCase() === first)) {
+      return parts[0];
+    }
+  }
+  return raw;
+};
+
+export const isAgegeTimesheetLocation = (value: string | null | undefined) =>
+  /\bagege\b/i.test(normalizeTimesheetLocationLabel(value) || clean(value));
+
 /** True when a "location" is really a trade / work-center label (e.g. Painting). */
 export const isTimesheetTradeLabelLocation = (
   locationName: string | null | undefined,
   workCenterNames: Iterable<string>,
 ) => {
-  const selected = clean(locationName).toLowerCase();
+  const selected = normalizeTimesheetLocationLabel(locationName).toLowerCase() || clean(locationName).toLowerCase();
   if (!selected) return false;
   for (const name of workCenterNames) {
     const workCenter = clean(name).toLowerCase();
@@ -44,11 +66,22 @@ export const isTimesheetTradeLabelLocation = (
   return false;
 };
 
-export const resolveAgegeLocationLabel = (locationNames: string[]) => {
-  const agege = locationNames.find((name) => /^agege(\s*-\s*agege)?$/i.test(clean(name)));
-  if (agege) return agege;
-  const contains = locationNames.find((name) => /\bagege\b/i.test(clean(name)));
-  return contains || AGEGE_TIMESHEET_LOCATION;
+/** Always prefer the canonical AGEGE label when any Agege variant is present. */
+export const resolveAgegeLocationLabel = (_locationNames: string[] = []) => AGEGE_TIMESHEET_LOCATION;
+
+/**
+ * Deduplicate location pick-list values after normalizing AGEGE - AGEGE → AGEGE
+ * and other repeated "Site - Site" labels.
+ */
+export const dedupeTimesheetLocationLabels = (values: Array<string | null | undefined>) => {
+  const byKey = new Map<string, string>();
+  for (const value of values) {
+    const normalized = normalizeTimesheetLocationLabel(value);
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (!byKey.has(key)) byKey.set(key, normalized);
+  }
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 };
 
 /**
@@ -64,16 +97,14 @@ export const applyAgegeBlastingSupervisorContext = (input: {
 }) => {
   if (!isAgegeBlastingSupervisor(input.supervisorValue)) {
     return {
-      locationName: clean(input.locationName),
+      locationName: normalizeTimesheetLocationLabel(input.locationName) || clean(input.locationName),
       workCenterName: clean(input.workCenterName),
       forced: false as const,
     };
   }
 
   const workCenterNames = input.workCenterNames || [];
-  const locationNames = input.locationNames || [];
-  const agegeLocation = resolveAgegeLocationLabel(locationNames);
-  const requestedLocation = clean(input.locationName);
+  const requestedLocation = normalizeTimesheetLocationLabel(input.locationName) || clean(input.locationName);
   const requestedWorkCenter = clean(input.workCenterName);
 
   const locationLooksTrade =
@@ -85,10 +116,10 @@ export const applyAgegeBlastingSupervisorContext = (input: {
     !requestedWorkCenter
     || requestedWorkCenter.toLowerCase() === AGEGE_BLASTING_CONFLICTING_WORK_CENTER.toLowerCase();
 
-  const locationMatchesAgege = requestedLocation && /\bagege\b/i.test(requestedLocation);
+  const locationMatchesAgege = isAgegeTimesheetLocation(requestedLocation);
 
   return {
-    locationName: locationLooksTrade || !locationMatchesAgege ? agegeLocation : requestedLocation,
+    locationName: locationLooksTrade || !locationMatchesAgege ? AGEGE_TIMESHEET_LOCATION : requestedLocation,
     workCenterName: workCenterConflicts ? AGEGE_BLASTING_WORK_CENTER : requestedWorkCenter,
     forced: true as const,
   };

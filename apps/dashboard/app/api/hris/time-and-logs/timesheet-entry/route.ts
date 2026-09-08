@@ -66,14 +66,16 @@ import {
   resolveOvertimeAuthorizationsForBooking,
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
-import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
+import { applyTimesheetLineDefaults, ensureClockedLinesHaveProjectAllocation } from '@/lib/timesheet-line-defaults';
 import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetHeaderShiftKind, timesheetShiftHeaderSlug, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { mobilizationCoversDate, mobilizationMatchesSupervisor, readTimesheetMobilizations, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
 import {
   applyAgegeBlastingSupervisorContext,
+  dedupeTimesheetLocationLabels,
   extractSupervisorEmployeeCode,
   isTimesheetTradeLabelLocation,
+  normalizeTimesheetLocationLabel,
 } from '@/lib/timesheet-agege-blasting';
 
 const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string | null): TimesheetDayContext => ({
@@ -593,13 +595,14 @@ const employeeLocation = (employee: {
   workLocation?: string | null;
   officeLocation?: string | null;
   projectSite?: string | null;
-}) => clean(employee.location || employee.workLocation || employee.officeLocation || employee.projectSite);
+}) => normalizeTimesheetLocationLabel(employee.location || employee.workLocation || employee.officeLocation || employee.projectSite)
+  || clean(employee.location || employee.workLocation || employee.officeLocation || employee.projectSite);
 
 const employeeMatchesLocation = (employee: Parameters<typeof employeeLocation>[0], locationName?: string) => {
-  const selected = clean(locationName).toLowerCase();
+  const selected = (normalizeTimesheetLocationLabel(locationName) || clean(locationName)).toLowerCase();
   if (!selected) return true;
   return [employee.location, employee.workLocation, employee.officeLocation, employee.projectSite]
-    .map((value) => clean(value).toLowerCase())
+    .map((value) => (normalizeTimesheetLocationLabel(value) || clean(value)).toLowerCase())
     .filter(Boolean)
     .some((value) => value === selected || value.includes(selected) || selected.includes(value));
 };
@@ -754,14 +757,12 @@ const preferredLocationFromDirectory = (
   workCenters: TimesheetWorkCenter[],
 ) => {
   const workCenterNames = new Set(workCenters.map((workCenter) => clean(workCenter.name).toLowerCase()).filter(Boolean));
-  const directReportLocation = mostCommon(directReports.map(employeeLocation));
+  const directReportLocation = mostCommon(directReports.map(employeeLocation).map((value) => normalizeTimesheetLocationLabel(value) || value));
   if (directReportLocation && !workCenterNames.has(directReportLocation.toLowerCase())) return directReportLocation;
 
-  const systemLocations = locations
-    .flatMap((location) => [location.name, location.site])
-    .map(clean)
-    .filter((value): value is string => Boolean(value))
-    .filter((value) => !workCenterNames.has(value.toLowerCase()));
+  const systemLocations = dedupeTimesheetLocationLabels(
+    locations.flatMap((location) => [location.name, location.site]),
+  ).filter((value) => !workCenterNames.has(value.toLowerCase()));
   return systemLocations.find((value) => /^idi[_\-\s]?oro$/i.test(value)) || mostCommon(systemLocations);
 };
 
@@ -1038,10 +1039,10 @@ const buildPayload = async (
     });
   }
   const workCenterNameList = scopedWorkCenters.map((workCenter) => workCenter.name);
-  const directoryLocationNames = Array.from(new Set([
+  const directoryLocationNames = dedupeTimesheetLocationLabels([
     ...activeEmployees.map(employeeLocation),
     ...scopedLocations.flatMap((location) => [location.name, location.site]),
-  ].map(clean).filter(Boolean)));
+  ]);
   {
     const forced = applyAgegeBlastingSupervisorContext({
       supervisorValue: targetSupervisor,
@@ -1385,27 +1386,20 @@ const buildPayload = async (
   // Keep the initial page load lightweight. Attendance sync can involve biometric
   // and Sage enrichment calls, so it is only run from the explicit Fetch Punches action.
 
-  const projectSiteOptions = Array.from(
-    new Set(
-      locations
-        .flatMap((location) => [location.site, location.name])
-        .map(clean)
-        .filter((site) => site && site !== 'Unassigned Location'),
-    ),
-  ).sort((a, b) => a.localeCompare(b));
-  const systemLocationNames = Array.from(
-    new Set(
-      [
-        ...timesheetRecords.flatMap((record) => [record.location, record.site]),
-        ...activeEmployees.map(employeeLocation),
-        ...locations.flatMap((location) => [location.name, location.site]),
-        ...scopedLocations.flatMap((location) => [location.name, location.site]),
-        ...(hostMobilizations.length ? [OFFSHORE_LOCATION_NAME] : []),
-      ].map(clean).filter(Boolean),
-    ),
-  )
-    .filter((name) => !isTimesheetTradeLabelLocation(name, workCenterNameList))
-    .sort((a, b) => a.localeCompare(b));
+  const projectSiteOptions = dedupeTimesheetLocationLabels(
+    locations
+      .flatMap((location) => [location.site, location.name])
+      .filter((site) => site && site !== 'Unassigned Location'),
+  );
+  const systemLocationNames = dedupeTimesheetLocationLabels(
+    [
+      ...timesheetRecords.flatMap((record) => [record.location, record.site]),
+      ...activeEmployees.map(employeeLocation),
+      ...locations.flatMap((location) => [location.name, location.site]),
+      ...scopedLocations.flatMap((location) => [location.name, location.site]),
+      ...(hostMobilizations.length ? [OFFSHORE_LOCATION_NAME] : []),
+    ],
+  ).filter((name) => !isTimesheetTradeLabelLocation(name, workCenterNameList));
   const summary = {
     totalEmployees: lines.length,
     presentEmployees: lines.filter((l) => l.clockIn || isManualOffshoreLine(l)).length,
@@ -1577,7 +1571,11 @@ export async function GET(request: Request) {
     return ok(await buildPayload(request, date, supervisorId, workCenterName, locationName, mode, headerId, shiftLabel));
   } catch (error) {
     console.error('Timesheet entry API Error:', error);
-    return err(500, error instanceof Error ? error.message : 'Unable to load timesheet entry.');
+    const message = error instanceof Error ? error.message : 'Unable to load timesheet entry.';
+    const clientStatus = /period|closed|reopen|recapture|payroll|permission|required|invalid|cannot|not found|authenticate|denied|draft|timed out/i.test(message)
+      ? 400
+      : 500;
+    return err(clientStatus, message);
   }
 }
 
@@ -1875,6 +1873,13 @@ export async function PATCH(request: Request) {
         scopedLocationName,
         { shiftLabel: shiftLabel || existingHeader?.shiftLabel || '01 (Day)' },
       );
+      const holidayDates = await readPublicHolidayDates();
+      const dayContext = dayContextFor(synced.header.timesheetDate, holidayDates, synced.header.shiftLabel || shiftLabel);
+      const projects = await readProjects();
+      const autoBooked = ensureClockedLinesHaveProjectAllocation(synced.lines, projects, dayContext);
+      if (autoBooked.bookedCount > 0) {
+        await writeTimesheetHeaderLines(synced.header, autoBooked.lines);
+      }
       return ok(await buildPayload(
         request,
         synced.header.timesheetDate,
@@ -1896,22 +1901,27 @@ export async function PATCH(request: Request) {
       requireEditableTimesheet(header);
       const previousStatus = normalizeTimesheetStatus(header.status);
 
-      // Validate gross day separately from payroll/productive hours.
       const overtimeBooking = resolveOvertimeBookingOptions();
       const saveProjects = await readProjects();
-      const approvedOvertimeAuthorizations = overtimeBooking.enabled
-        ? await loadOvertimeAuthorizationsForBooking(
-            header,
-            updatedLines,
-            saveProjects.filter((project) => ['Active', 'Approved', 'Open'].includes(project.status)),
-            overtimeBooking,
-          )
-        : [];
       const holidayDates = await readPublicHolidayDates();
       const dayContext = dayContextFor(header.timesheetDate, holidayDates, header.shiftLabel || payload.shiftLabel);
       if (payload.shiftLabel) header.shiftLabel = String(payload.shiftLabel);
       const isNightHeader = resolveTimesheetShift(header.shiftLabel).kind === 'Night';
-      const reconciledLines = updatedLines.map((line) => applyNightPaperClock(reconcileTimesheetLineHours(line), header.shiftLabel));
+
+      // Attendance sync leaves clocked Incomplete rows with break only. On save/submit,
+      // book standard productive hours onto the primary managed project when missing.
+      const allocationSeed = ensureClockedLinesHaveProjectAllocation(updatedLines, saveProjects, dayContext);
+      const linesForSave = allocationSeed.lines;
+
+      const approvedOvertimeAuthorizations = overtimeBooking.enabled
+        ? await loadOvertimeAuthorizationsForBooking(
+            header,
+            linesForSave,
+            saveProjects.filter((project) => ['Active', 'Approved', 'Open'].includes(project.status)),
+            overtimeBooking,
+          )
+        : [];
+      const reconciledLines = linesForSave.map((line) => applyNightPaperClock(reconcileTimesheetLineHours(line), header.shiftLabel));
       for (const line of reconciledLines) {
         const projectHours = (line.projectAllocations || []).reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
         if (!isNightHeader && !line.clockIn && !isManualOffshoreLine(line) && projectHours > 0.001) {
@@ -1966,7 +1976,12 @@ export async function PATCH(request: Request) {
         } catch (error) {
           return err(400, error instanceof Error ? error.message : 'Unable to resolve project manager for submission.');
         }
-        if (!projectManagerAssignment) return err(400, 'At least one project allocation is required before submitting this timesheet.');
+        if (!projectManagerAssignment) {
+          return err(
+            400,
+            'At least one project allocation is required before submitting this timesheet. Sync attendance again or use Auto Distribute after confirming a project has a Project Manager assigned.',
+          );
+        }
         header.status = 'Submitted';
         header.submittedAt = new Date().toISOString();
         header.submittedBy = actor;
@@ -2081,6 +2096,10 @@ export async function PATCH(request: Request) {
     return err(400, 'Invalid action.');
   } catch (error) {
     console.error('Timesheet Action Error:', error);
-    return err(500, error instanceof Error ? error.message : 'Internal Server Error');
+    const message = error instanceof Error ? error.message : 'Internal Server Error';
+    const clientStatus = /period|closed|reopen|recapture|payroll|permission|required|invalid|cannot|not found|mismatch|absent|authorization|timed out|authenticate|denied|draft|editable|locked|blocked/i.test(message)
+      ? 400
+      : 500;
+    return err(clientStatus, message);
   }
 }

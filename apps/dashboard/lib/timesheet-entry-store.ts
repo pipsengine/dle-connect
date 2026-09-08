@@ -8,7 +8,7 @@ import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { normalizePayrollMatchKey, readActiveSagePayrollEmployeeKeys, type SagePayrollEmployee } from '@/lib/sage-people-payroll-store';
 import { approvedPaidLeaveForDate } from '@/lib/leave-management-store';
 import { readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
-import { extractSupervisorEmployeeCode } from '@/lib/timesheet-agege-blasting';
+import { extractSupervisorEmployeeCode, normalizeTimesheetLocationLabel } from '@/lib/timesheet-agege-blasting';
 import {
   DAILY_BREAK_HOURS,
   STANDARD_TIMESHEET_HOURS,
@@ -2872,14 +2872,27 @@ WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[Site],[SourceSystem]) VALUES (
 
 async function readStoredTimesheetLocations(pool: sql.ConnectionPool): Promise<TimesheetLocation[]> {
   const result = await pool.request().query(`SELECT [Id],[Code],[Name],[Site],[SourceSystem],[UpdatedAt] FROM [hris].[TimesheetLocations] ORDER BY [Name]`);
-  return result.recordset.map((row) => ({
-    id: row.Id,
-    code: row.Code,
-    name: row.Name,
-    site: row.Site || row.Name,
-    sourceSystem: row.SourceSystem || 'DLE Enterprise',
-    updatedAt: toIso(row.UpdatedAt),
-  }));
+  const byCanonical = new Map<string, TimesheetLocation>();
+  for (const row of result.recordset) {
+    const name = normalizeTimesheetLocationLabel(row.Name) || String(row.Name || '').trim();
+    const site = normalizeTimesheetLocationLabel(row.Site) || String(row.Site || row.Name || '').trim() || null;
+    const key = name.toLowerCase();
+    if (!key) continue;
+    // Prefer a row that is already canonically named AGEGE over AGEGE - AGEGE.
+    const existing = byCanonical.get(key);
+    const candidate: TimesheetLocation = {
+      id: row.Id,
+      code: row.Code,
+      name,
+      site,
+      sourceSystem: row.SourceSystem || 'DLE Enterprise',
+      updatedAt: toIso(row.UpdatedAt),
+    };
+    if (!existing || String(row.Name || '').trim().toUpperCase() === name.toUpperCase()) {
+      byCanonical.set(key, candidate);
+    }
+  }
+  return [...byCanonical.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function upsertTimesheetWorkCenter(input: Partial<TimesheetWorkCenter> & { name: string }): Promise<TimesheetWorkCenter> {
@@ -2926,11 +2939,19 @@ export async function syncSageTimesheetDimensions(): Promise<{ departments: Time
       departments.set(code.toLowerCase(), { id: `sage-dept-${code.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, code, name: departmentName.trim(), sourceSystem: 'Sage Payroll' });
     }
 
-    const locationName = employee.hierarchyLocationName || employee.siteName;
-    const locationCode = employee.hierarchyLocationCode || employee.siteCode || locationName;
-    if (locationName && locationCode) {
+    const locationNameRaw = employee.hierarchyLocationName || employee.siteName;
+    const locationCode = employee.hierarchyLocationCode || employee.siteCode || locationNameRaw;
+    if (locationNameRaw && locationCode) {
       const code = String(locationCode).trim();
-      locations.set(code.toLowerCase(), { id: `sage-loc-${code.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, code, name: locationName.trim(), site: employee.siteName || locationName.trim(), sourceSystem: 'Sage Payroll' });
+      const locationName = normalizeTimesheetLocationLabel(locationNameRaw) || String(locationNameRaw).trim();
+      const site = normalizeTimesheetLocationLabel(employee.siteName) || locationName;
+      locations.set(locationName.toLowerCase(), {
+        id: `sage-loc-${locationName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+        code: normalizeTimesheetLocationLabel(code) || code,
+        name: locationName,
+        site,
+        sourceSystem: 'Sage Payroll',
+      });
     }
   }
 
