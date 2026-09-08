@@ -13,6 +13,8 @@ import {
 } from '@/lib/payroll-profile-setup';
 import { formatPayrollMoney } from '@/lib/payroll-currency';
 import { ContractPayrollClassificationPanel, type ContractPayrollClassificationView } from '../components/ContractPayrollClassificationUi';
+import EmployeeFinalSettlementPanel from './EmployeeFinalSettlementPanel';
+import EmployeeResignationPanel from './EmployeeResignationPanel';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
@@ -1085,9 +1087,13 @@ const ProfileSkeleton = () => (
 const OverviewTab = ({
   overview,
   permissions,
+  employeeId,
+  employeeCode,
 }: {
   overview: EmployeeOverview;
   permissions: ReturnType<typeof rolePermissions>;
+  employeeId: string;
+  employeeCode?: string;
 }) => {
   return (
     <div className="space-y-6">
@@ -1101,6 +1107,9 @@ const OverviewTab = ({
           tone={{ bg: 'bg-violet-600/5', fg: 'text-violet-700' }}
         />
       </div>
+
+      <EmployeeResignationPanel employeeId={employeeId} employeeCode={employeeCode || employeeId} />
+      <EmployeeFinalSettlementPanel employeeId={employeeId} employeeCode={employeeCode || employeeId} />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <Card className="p-5 xl:col-span-2">
@@ -1719,7 +1728,12 @@ export default function EmployeeProfileClient({
           <AnimatePresence mode="wait">
             {tab === 'overview' && (
               <motion.div key="overview" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.16 }}>
-                <OverviewTab overview={overviewData} permissions={perms} />
+                <OverviewTab
+                  overview={overviewData}
+                  permissions={perms}
+                  employeeId={profileData.employeeId}
+                  employeeCode={profileData.employeeId}
+                />
               </motion.div>
             )}
 

@@ -60,6 +60,7 @@ const requiredPermission = (route?: string) => {
   if (route.startsWith('/hris/payroll/payroll-approval') || route.startsWith('/hris/payroll-management/payroll-approval')) {
     return 'page.hris.payroll.approval.view';
   }
+  if (route.startsWith('/hris/offboarding')) return 'hris.view';
   if (route.startsWith('/hris/payroll-management')) return 'payroll.view';
   if (route.startsWith('/hris/payroll')) return 'payroll.view';
   if (route.startsWith('/hris/employees')) return 'employees.view';

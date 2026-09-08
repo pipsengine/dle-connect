@@ -16,6 +16,7 @@ import {
   Webhook,
   HelpCircle,
   Truck,
+  LogOut,
 } from 'lucide-react';
 
 export interface SubMenu {
@@ -69,6 +70,21 @@ export const navigationConfig: NavItem[] = [
       { title: 'Reports & Analytics', slug: 'reports', route: '/hris/payroll-management/reports', permissionKey: 'page.payroll.management.view' },
       { title: 'Workflow', slug: 'workflow', route: '/hris/payroll-management/workflow', permissionKey: 'page.payroll.management.view' },
     ]
+  },
+  {
+    id: 'offboarding',
+    label: 'Offboarding',
+    slug: 'offboarding',
+    icon: LogOut,
+    group: 'main',
+    route: '/hris/offboarding/resignation-management',
+    permissionKey: 'offboarding.view',
+    subItems: [
+      { title: 'Resignation Management', slug: 'resignation-management', route: '/hris/offboarding/resignation-management', permissionKey: 'offboarding.view' },
+      { title: 'New Resignation', slug: 'new-resignation', route: '/hris/offboarding/resignation-management/new', permissionKey: 'offboarding.view' },
+      { title: 'Final Payroll Processing', slug: 'final-payroll-processing', route: '/hris/offboarding/final-payroll-processing', permissionKey: 'offboarding.view' },
+      { title: 'New Settlement', slug: 'new-settlement', route: '/hris/offboarding/final-payroll-processing/new-settlement', permissionKey: 'offboarding.view' },
+    ],
   },
   {
     id: 'finance',

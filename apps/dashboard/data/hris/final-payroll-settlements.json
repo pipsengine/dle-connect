@@ -1,0 +1,215 @@
+{
+  "settlements": [
+    {
+      "id": "FPS-202609-P0459",
+      "period": "2026-09",
+      "employeeId": "P0459",
+      "employeeCode": "P0459",
+      "employeeName": "GBOLAHAN ISAAC FATUROTI",
+      "department": "HUMAN RESOURCES",
+      "employmentType": "Permanent",
+      "jobTitle": "HRG - HR GENERALIST",
+      "grade": "SS5",
+      "currency": "NGN",
+      "basicSalary": 320389.72,
+      "dateOfJoining": null,
+      "serviceLength": "0 Years 0 Months",
+      "exitType": "Resignation",
+      "resignationDate": null,
+      "lastWorkingDay": null,
+      "noticePeriod": "1 Month",
+      "reasonForLeaving": "Career Growth",
+      "remarks": "",
+      "lastRegularPayroll": "Sep 2026",
+      "nextPayrollExcluded": true,
+      "status": "Draft",
+      "clearance": [
+        {
+          "id": "hr",
+          "label": "HR Clearance",
+          "status": "Completed"
+        },
+        {
+          "id": "it",
+          "label": "IT Clearance",
+          "status": "Completed"
+        },
+        {
+          "id": "finance",
+          "label": "Finance Clearance",
+          "status": "Completed"
+        },
+        {
+          "id": "admin",
+          "label": "Administration",
+          "status": "Pending"
+        },
+        {
+          "id": "asset",
+          "label": "Asset Return",
+          "status": "Pending",
+          "note": "Laptop outstanding."
+        },
+        {
+          "id": "access",
+          "label": "Access Deactivation",
+          "status": "Completed"
+        },
+        {
+          "id": "handover",
+          "label": "Handover Checklist",
+          "status": "Completed"
+        }
+      ],
+      "approvalStages": [
+        {
+          "id": "prep",
+          "label": "Payroll Preparation",
+          "status": "In Review"
+        },
+        {
+          "id": "hr",
+          "label": "HR Manager Review",
+          "status": "Pending"
+        },
+        {
+          "id": "finance",
+          "label": "Finance Review",
+          "status": "Pending"
+        },
+        {
+          "id": "cfo",
+          "label": "CFO Authorization",
+          "status": "Pending"
+        },
+        {
+          "id": "payment",
+          "label": "Final Payment",
+          "status": "Pending"
+        }
+      ],
+      "earnings": [
+        {
+          "id": "salary-lwd",
+          "label": "Salary up to Last Working Day",
+          "description": "Pro-rated basic salary",
+          "policyBasis": "Actual days worked",
+          "periodDays": "30 days",
+          "amount": 320389.72,
+          "remarks": "Sep 1 – —",
+          "included": true
+        },
+        {
+          "id": "outstanding-salary",
+          "label": "Outstanding Salary",
+          "description": "Unpaid salary (if any)",
+          "policyBasis": "Payroll records",
+          "periodDays": "-",
+          "amount": 0,
+          "remarks": "-",
+          "included": true
+        },
+        {
+          "id": "earned-allowances",
+          "label": "Earned Allowances",
+          "description": "Housing, transport, etc.",
+          "policyBasis": "Pro-rated",
+          "periodDays": "30 days",
+          "amount": 48058.46,
+          "remarks": "Based on current entitlements",
+          "included": true
+        },
+        {
+          "id": "leave-encashment",
+          "label": "Leave Encashment",
+          "description": "Unused annual leave",
+          "policyBasis": "Company policy",
+          "periodDays": "0 days",
+          "amount": 0,
+          "remarks": "No eligible leave balance",
+          "included": true
+        },
+        {
+          "id": "overtime",
+          "label": "Overtime",
+          "description": "Approved overtime",
+          "policyBasis": "Timesheet records",
+          "periodDays": "-",
+          "amount": 0,
+          "remarks": "-",
+          "included": true
+        },
+        {
+          "id": "bonus",
+          "label": "Bonus / Commission",
+          "description": "Outstanding bonus/commission",
+          "policyBasis": "Approval records",
+          "periodDays": "-",
+          "amount": 0,
+          "remarks": "-",
+          "included": true
+        }
+      ],
+      "deductions": [
+        {
+          "id": "staff-loan",
+          "label": "Staff Loan Balance",
+          "description": "Outstanding staff loan",
+          "policyBasis": "Loan register",
+          "periodDays": "-",
+          "amount": 0,
+          "remarks": "-",
+          "included": true
+        },
+        {
+          "id": "cash-advance",
+          "label": "Unretired Cash Advance",
+          "description": "Open cash advances",
+          "policyBasis": "Treasury records",
+          "periodDays": "-",
+          "amount": 0,
+          "remarks": "-",
+          "included": true
+        },
+        {
+          "id": "other-deductions",
+          "label": "Other Deductions",
+          "description": "Other recoveries",
+          "policyBasis": "HR / Finance",
+          "periodDays": "-",
+          "amount": 0,
+          "remarks": "-",
+          "included": true
+        }
+      ],
+      "statutory": [
+        {
+          "id": "paye",
+          "label": "PAYE",
+          "description": "Pay-as-you-earn tax",
+          "policyBasis": "Statutory",
+          "periodDays": "-",
+          "amount": 0,
+          "remarks": "Applied on final earnings where due",
+          "included": true
+        },
+        {
+          "id": "pension",
+          "label": "Pension (Employee)",
+          "description": "Employee pension contribution",
+          "policyBasis": "Statutory",
+          "periodDays": "-",
+          "amount": 0,
+          "remarks": "-",
+          "included": true
+        }
+      ],
+      "comments": [],
+      "createdAt": "2026-09-08T15:25:11.700Z",
+      "updatedAt": "2026-09-08T15:25:11.700Z",
+      "createdBy": "Mr CHRISTIAN ONUWABHAGBE OGBAISI",
+      "updatedBy": "Mr CHRISTIAN ONUWABHAGBE OGBAISI"
+    }
+  ],
+  "updatedAt": "2026-09-08T15:25:11.702Z"
+}

@@ -156,11 +156,11 @@ const sections: SectionConfig[] = [
     icon: LogOut,
     tone: 'red',
     tabs: [
-      { id: 'resignations', label: 'Resignations', description: 'Employee resignation submissions, notice period, and approval workflows.', items: ['Resignations', 'Notice period', 'Approval workflow'] },
+      { id: 'resignations', label: 'Resignations', description: 'Employee resignation submissions, notice period, and approval workflows.', legacyHref: '/hris/offboarding/resignation-management', items: ['Resignations', 'Notice period', 'Approval workflow'] },
       { id: 'terminations', label: 'Terminations', description: 'Termination processing, controls, documentation, and audit.', items: ['Terminations', 'Termination reason', 'Approval controls'] },
       { id: 'retirements', label: 'Retirements', description: 'Retirement monitoring, processing, and benefit coordination.', items: ['Retirements', 'Retirement due date', 'Benefit coordination'] },
       { id: 'exit-clearance', label: 'Exit Clearance', description: 'HR, Finance, IT, Admin, Asset, and Payroll clearance tracking.', legacyHref: '/hris/employees/employee-exit-status', items: ['Exit clearance', 'Asset return', 'Access deactivation', 'Payroll closure'] },
-      { id: 'final-settlements', label: 'Final Settlements', description: 'Final payroll, deductions, benefits, and settlement status.', legacyHref: '/hris/employees/employee-exit-status', items: ['Final settlements', 'Final payroll', 'Benefit closure'] },
+      { id: 'final-settlements', label: 'Final Settlements', description: 'Final payroll, deductions, benefits, and settlement status.', legacyHref: '/hris/offboarding/final-payroll-processing', items: ['Final settlements', 'Final payroll', 'Benefit closure'] },
       { id: 'exit-interviews', label: 'Exit Interviews', description: 'Exit interview capture and feedback analytics.', items: ['Exit interviews', 'Feedback capture', 'Reason analytics'] },
       { id: 'exit-status-tracking', label: 'Exit Status Tracking', description: 'Exit status, clearance progress, and overdue actions.', legacyHref: '/hris/employees/employee-exit-status', items: ['Exit status tracking', 'Clearance status', 'Overdue actions'] },
     ],

@@ -163,6 +163,14 @@ export default function EmployeeExitStatusClient({ initialPayload, initialEmploy
 
   const openProfile = (employeeId: string) => router.push(`/hris/employees/employee-profile/${encodeURIComponent(employeeId)}`);
   const openStatus = (employeeId: string) => router.push(`/hris/employees/employee-status?employeeId=${encodeURIComponent(employeeId)}`);
+  const openFinalSettlement = (record: { employeeId: string; employeeCode: string }) => {
+    const code = record.employeeCode || record.employeeId;
+    router.push(`/hris/offboarding/final-payroll-processing?employeeCode=${encodeURIComponent(code)}&employeeId=${encodeURIComponent(record.employeeId)}`);
+  };
+  const openResignation = (record: { employeeId: string; employeeCode: string }) => {
+    const code = record.employeeCode || record.employeeId;
+    router.push(`/hris/offboarding/resignation-management?employeeCode=${encodeURIComponent(code)}&employeeId=${encodeURIComponent(record.employeeId)}`);
+  };
 
   const workflow = selected
     ? [
@@ -409,7 +417,7 @@ export default function EmployeeExitStatusClient({ initialPayload, initialEmploy
                     </div>
                   </div>
 
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <button
                       type="button"
                       onClick={() => openProfile(selected.employeeId)}
@@ -417,6 +425,20 @@ export default function EmployeeExitStatusClient({ initialPayload, initialEmploy
                     >
                       <ExternalLink className="h-4 w-4" />
                       Open Profile
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openResignation(selected)}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-sky-200 bg-sky-50 text-sm font-bold text-sky-700 hover:bg-sky-100"
+                    >
+                      Resignation
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openFinalSettlement(selected)}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-rose-200 bg-rose-50 text-sm font-bold text-rose-700 hover:bg-rose-100"
+                    >
+                      Final Settlement
                     </button>
                     <button
                       type="button"

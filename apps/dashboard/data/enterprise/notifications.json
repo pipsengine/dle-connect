@@ -2,6 +2,81 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1788880983212-579343",
+      "recipientUserId": "P0413",
+      "recipientUsername": "P0413",
+      "recipientEmployeeCode": "P0413",
+      "recipientRoles": [
+        "Employee",
+        "Executive Director",
+        "Executive User",
+        "Manager"
+      ],
+      "kind": "Approval",
+      "module": "Payroll Management",
+      "title": "Payroll approval required — August 2026 · DLE · Salaries",
+      "body": "MD / CEO review is required for August 2026 · DLE · Salaries. Gross ₦113,719,411.06, Net ₦91,831,140.22, 139 employees. Approvals are pack-specific (Salaries vs Wages).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0wOC1zYWxhcmllZC1ETEUiLCJwZXJpb2QiOiIyMDI2LTA4Iiwic3RhZ2VJZCI6Im1kLWNlbyIsImRlY2lzaW9uIjoiYXBwcm92ZSIsInJlY2lwaWVudEVtYWlsIjoiY2hyaXNpamVsaUBkb3JtYW5sb25nZW5nLmNvbSIsInJlY2lwaWVudFVzZXJuYW1lIjoicDA0MTMiLCJleHAiOjE3ODk0ODU3ODMyMTF9.S1c2G4eRYh6SUif6RUFeZ-scHQPk_E3fqqaNpQhc5mg",
+      "createdAt": "2026-09-08T15:23:03.212Z",
+      "actor": "Payroll Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "runId": "payroll-2026-08-salaried-DLE",
+        "period": "2026-08",
+        "pack": "salaried",
+        "stageId": "md-ceo"
+      }
+    },
+    {
+      "id": "ntf-1788880978173-fldi99",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [
+        "Super Administrator",
+        "System Administrator",
+        "Admin",
+        "Manager",
+        "Department Head",
+        "HR Administrator",
+        "HR Manager",
+        "HR Director",
+        "Payroll Administrator",
+        "Application Administrator",
+        "Integration Administrator",
+        "Executive User",
+        "Security Administrator",
+        "Audit Administrator",
+        "Finance Administrator",
+        "Executive Management",
+        "Executive Director"
+      ],
+      "kind": "Approval",
+      "module": "Payroll Management",
+      "title": "Payroll approval required — August 2026 · DLE · Salaries",
+      "body": "MD / CEO review is required for August 2026 · DLE · Salaries. Gross ₦113,719,411.06, Net ₦91,831,140.22, 139 employees. Approvals are pack-specific (Salaries vs Wages).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0wOC1zYWxhcmllZC1ETEUiLCJwZXJpb2QiOiIyMDI2LTA4Iiwic3RhZ2VJZCI6Im1kLWNlbyIsImRlY2lzaW9uIjoiYXBwcm92ZSIsInJlY2lwaWVudEVtYWlsIjoiY2hyaXNvZ2JhaXNpQGRvcm1hbmxvbmdlbmcuY29tIiwicmVjaXBpZW50VXNlcm5hbWUiOiJwMDE0NiIsImV4cCI6MTc4OTQ4NTc3ODE3MX0.AR5yJS2zDQVEeg1Y2WfgyMFy2NDTuPSjLDSvss4hbMs",
+      "createdAt": "2026-09-08T15:22:58.173Z",
+      "actor": "Payroll Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "runId": "payroll-2026-08-salaried-DLE",
+        "period": "2026-08",
+        "pack": "salaried",
+        "stageId": "md-ceo"
+      }
+    },
+    {
       "id": "ntf-1788865611764-g36gwg",
       "recipientUserId": "P0392",
       "recipientUsername": "P0392",
