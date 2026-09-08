@@ -6,7 +6,9 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { readEmployeeExitStatusFromDb, type EmployeeExitStatusRecord } from '@/lib/employee-exit-status-store';
+import { calculatePayrollEarnings } from '@/lib/payroll-earnings-engine';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
+import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import {
   type FinalPayrollApprovalStage,
   type FinalPayrollClearanceItem,
@@ -155,21 +157,30 @@ export const buildDefaultEarnings = (input: {
   currency: 'NGN' | 'USD';
   basicSalary: number;
   lastWorkingDay?: string | null;
+  /** Monthly structural allowances (gross − basic). Prefer real package; do not invent 15%. */
   allowanceMonthly?: number;
+  grossSalary?: number;
+  packageBreakdown?: string;
 }): FinalPayrollLine[] => {
   const days = workingDaysUntil(input.period, input.lastWorkingDay);
   const monthDays = daysInMonth(input.period);
   const basic = Math.max(0, Number(input.basicSalary || 0));
-  const allowances = Math.max(0, Number(input.allowanceMonthly ?? basic * 0.15));
+  const allowances = Math.max(0, Number(input.allowanceMonthly ?? 0));
   const salary = roundMoney((basic / monthDays) * days);
   const earnedAllowances = roundMoney((allowances / monthDays) * days);
   const period = periodLabelFromCode(input.period);
   const lwd = formatFinalPayrollDate(input.lastWorkingDay);
+  const packageNote = input.packageBreakdown
+    || (input.grossSalary
+      ? `Monthly package ${formatFinalPayrollMoney(input.grossSalary, input.currency)}`
+      : allowances > 0
+        ? 'From employee salary package'
+        : 'No package allowances on file');
   return [
     {
       id: 'salary-lwd',
       label: 'Salary up to Last Working Day',
-      description: 'Pro-rated basic salary',
+      description: 'Pro-rated basic salary (from package)',
       policyBasis: 'Actual days worked',
       periodDays: `${days} days`,
       amount: salary,
@@ -187,13 +198,23 @@ export const buildDefaultEarnings = (input: {
       included: true,
     },
     {
+      id: 'unpaid-arrears',
+      label: 'Unpaid Salary / Arrears',
+      description: 'Salary arrears due',
+      policyBasis: 'Payroll records',
+      periodDays: '-',
+      amount: 0,
+      remarks: '-',
+      included: true,
+    },
+    {
       id: 'earned-allowances',
       label: 'Earned Allowances',
-      description: 'Housing, transport, etc.',
-      policyBasis: 'Pro-rated',
+      description: 'Housing, transport, medical, utility, and other package allowances',
+      policyBasis: 'Pro-rated package',
       periodDays: `${days} days`,
       amount: earnedAllowances,
-      remarks: 'Based on current entitlements',
+      remarks: packageNote,
       included: true,
     },
     {
@@ -226,7 +247,119 @@ export const buildDefaultEarnings = (input: {
       remarks: '-',
       included: true,
     },
+    {
+      id: 'gratuity',
+      label: 'Gratuity / Terminal Benefit',
+      description: 'Terminal benefit where applicable',
+      policyBasis: 'Company policy',
+      periodDays: '-',
+      amount: 0,
+      remarks: 'Add where applicable',
+      included: true,
+    },
+    {
+      id: 'notice-pay',
+      label: 'Notice Pay',
+      description: 'Notice pay in lieu / recovery',
+      policyBasis: 'Exit case',
+      periodDays: '-',
+      amount: 0,
+      remarks: 'Add or deduct depending on case',
+      included: true,
+    },
   ];
+};
+
+type ResolvedSettlementPay = {
+  basicSalary: number;
+  allowanceMonthly: number;
+  grossSalary: number;
+  packageBreakdown: string;
+  payCurrency: string | null;
+  contractStartDate: string | null;
+  jobGrade: string | null;
+  salaryGrade: string | null;
+  employee: DleEmployeeDirectoryRow | null;
+};
+
+const resolveSettlementPay = async (
+  employeeCode: string,
+  period: string,
+): Promise<ResolvedSettlementPay> => {
+  const employee = await findEmployeePay(employeeCode);
+  if (!employee) {
+    return {
+      basicSalary: 0,
+      allowanceMonthly: 0,
+      grossSalary: 0,
+      packageBreakdown: 'Employee package not found',
+      payCurrency: null,
+      contractStartDate: null,
+      jobGrade: null,
+      salaryGrade: null,
+      employee: null,
+    };
+  }
+
+  const earnings = calculatePayrollEarnings(employee, {
+    period,
+    useHrisPackageLines: true,
+  });
+  const monthlyLines = (earnings.paidEarningLines || []).filter((line) => {
+    if (line.includeInMonthlyPayroll === false) return false;
+    const code = compact(line.code).toUpperCase();
+    const name = compact(line.name).toUpperCase();
+    // Keep structural monthly package only (exclude leave/one-off event lines).
+    if (code.includes('LEAVE') || name.includes('LEAVE ALLOW')) return false;
+    if (code === 'PER_MEAL' || code === 'REFUND') return false;
+    return Number(line.amount || 0) > 0;
+  });
+  const basicFromLines = roundMoney(
+    monthlyLines
+      .filter((line) => /BASIC|LUMPSUM|JCWEEKDAY/i.test(`${line.code} ${line.name}`))
+      .reduce((sum, line) => sum + Number(line.amount || 0), 0),
+  );
+  const basic = Math.max(
+    0,
+    basicFromLines || Number(earnings.basePay || employee.basicSalary || 0),
+  );
+  const allowancesFromLines = roundMoney(
+    monthlyLines
+      .filter((line) => !/BASIC|LUMPSUM|JCWEEKDAY/i.test(`${line.code} ${line.name}`))
+      .reduce((sum, line) => sum + Number(line.amount || 0), 0),
+  );
+  const periodSalary = Number(employee.periodSalary || 0);
+  const latestAllowances = Number((employee as { latestAllowances?: number | null }).latestAllowances || 0);
+  let allowances = Math.max(0, allowancesFromLines || Number(earnings.allowances || 0));
+  if (allowances <= 0 && periodSalary > basic) allowances = roundMoney(periodSalary - basic);
+  if (allowances <= 0 && latestAllowances > 0) allowances = roundMoney(latestAllowances);
+  let gross = Math.max(
+    basic + allowances,
+    Number(earnings.grossPay || 0),
+    periodSalary,
+    basic,
+  );
+  gross = roundMoney(gross);
+  allowances = roundMoney(Math.max(allowances, Math.max(0, gross - basic)));
+
+  const currency: 'NGN' | 'USD' = /USD|US\$/i.test(String(employee.payCurrency || '')) ? 'USD' : 'NGN';
+  const lineNames = monthlyLines
+    .map((line) => `${line.name || line.code} ${formatFinalPayrollMoney(line.amount, currency)}`)
+    .slice(0, 8);
+
+  return {
+    basicSalary: roundMoney(basic),
+    allowanceMonthly: allowances,
+    grossSalary: gross,
+    packageBreakdown: lineNames.length
+      ? `Package: ${lineNames.join(' · ')}`
+      : `Monthly package ${formatFinalPayrollMoney(gross, currency)}`,
+    payCurrency: employee.payCurrency || null,
+    contractStartDate: employee.contractStartDate || null,
+    jobGrade: employee.jobGrade || null,
+    salaryGrade: employee.salaryGrade || null,
+    employee,
+  };
 };
 
 export const buildDefaultDeductions = (): FinalPayrollLine[] => [
@@ -390,21 +523,42 @@ const findEmployeePay = async (employeeCode: string) => {
   return hit || null;
 };
 
-export const recalculateSettlement = (settlement: FinalPayrollSettlement): FinalPayrollSettlement => {
+export const recalculateSettlement = async (settlement: FinalPayrollSettlement): Promise<FinalPayrollSettlement> => {
+  const pay = await resolveSettlementPay(settlement.employeeCode, settlement.period);
+  const basicSalary = pay.basicSalary || settlement.basicSalary;
+  const allowanceMonthly = pay.allowanceMonthly;
+  const grossSalary = pay.grossSalary || roundMoney(basicSalary + allowanceMonthly);
   const earnings = buildDefaultEarnings({
     period: settlement.period,
     currency: settlement.currency,
-    basicSalary: settlement.basicSalary,
+    basicSalary,
+    allowanceMonthly,
+    grossSalary,
+    packageBreakdown: pay.packageBreakdown,
     lastWorkingDay: settlement.lastWorkingDay,
   }).map((line) => {
     const existing = settlement.earnings.find((item) => item.id === line.id);
     if (!existing) return line;
-    // Preserve manual overrides for non-prorated lines; refresh prorated salary/allowances.
-    if (line.id === 'salary-lwd' || line.id === 'earned-allowances') return { ...line, included: existing.included };
-    return { ...existing, label: line.label, description: line.description, policyBasis: line.policyBasis };
+    // Refresh package-driven prorated lines; preserve manual amounts on case-specific lines.
+    if (
+      line.id === 'salary-lwd'
+      || line.id === 'earned-allowances'
+    ) {
+      return { ...line, included: existing.included };
+    }
+    return {
+      ...existing,
+      label: line.label,
+      description: line.description,
+      policyBasis: line.policyBasis,
+    };
   });
   return {
     ...settlement,
+    basicSalary,
+    allowanceMonthly,
+    grossSalary,
+    grade: compact(pay.jobGrade || pay.salaryGrade) || settlement.grade,
     earnings,
     updatedAt: nowIso(),
   };
@@ -414,16 +568,12 @@ const settlementFromExit = (
   row: EmployeeExitStatusRecord,
   period: string,
   actor: string,
-  pay?: {
-    basicSalary?: number | null;
-    payCurrency?: string | null;
-    contractStartDate?: string | null;
-    jobGrade?: string | null;
-    salaryGrade?: string | null;
-  } | null,
+  pay?: ResolvedSettlementPay | null,
 ): FinalPayrollSettlement => {
   const currency: 'NGN' | 'USD' = /USD|US\$/i.test(String(pay?.payCurrency || '')) ? 'USD' : 'NGN';
   const basic = Number(pay?.basicSalary || 0);
+  const allowanceMonthly = Number(pay?.allowanceMonthly || 0);
+  const grossSalary = Number(pay?.grossSalary || basic + allowanceMonthly);
   const lastWorkingDay = row.exitDate || row.contractEndDate;
   const status = mapStatusFromExit(row);
   const id = `FPS-${period.replace('-', '')}-${compact(row.employeeCode).toUpperCase()}`;
@@ -439,6 +589,8 @@ const settlementFromExit = (
     grade: compact(pay?.jobGrade || pay?.salaryGrade) || '—',
     currency,
     basicSalary: basic,
+    allowanceMonthly,
+    grossSalary,
     dateOfJoining: pay?.contractStartDate || row.contractStartDate,
     serviceLength: serviceLengthLabel(row.serviceYears, pay?.contractStartDate || row.contractStartDate, lastWorkingDay),
     exitType: row.exitCategory === 'Active Monitoring' ? 'Resignation' : row.exitCategory,
@@ -455,7 +607,15 @@ const settlementFromExit = (
       status: row.clearanceStatus === 'Complete' ? 'Completed' : item.status,
     })),
     approvalStages: defaultApprovalStages(status),
-    earnings: buildDefaultEarnings({ period, currency, basicSalary: basic, lastWorkingDay }),
+    earnings: buildDefaultEarnings({
+      period,
+      currency,
+      basicSalary: basic,
+      allowanceMonthly,
+      grossSalary,
+      packageBreakdown: pay?.packageBreakdown,
+      lastWorkingDay,
+    }),
     deductions: buildDefaultDeductions(),
     statutory: buildDefaultStatutory(),
     comments: [],
@@ -466,42 +626,15 @@ const settlementFromExit = (
   };
 };
 
-const ensureSeededFromExit = async (period: string, actor: string) => {
+/** Previously auto-created drafts from exit register; disabled so settlements are only saved explicitly. */
+const loadSettlementsForPeriod = async (period: string) => {
   const existing = await readJsonSettlements();
-  const byCode = new Map(existing.map((row) => [`${row.period}:${compact(row.employeeCode).toUpperCase()}`, row]));
-  const exit = await readEmployeeExitStatusFromDb().catch(() => null);
-  const candidates = (exit?.records || []).filter((row) =>
-    row.payrollStatus === 'Final Settlement Due'
-    || row.payrollStatus === 'Monitor'
-    || row.exitStage === 'Payroll Closure'
-    || row.exitStage === 'In Clearance'
-    || row.exitStage === 'Due Soon'
-    || row.clearanceStatus === 'Pending Payroll'
-    || row.clearanceStatus === 'Overdue'
-    || row.clearanceStatus === 'In Progress'
-    || row.clearanceStatus === 'Complete',
-  );
-
-  let changed = false;
-  const next = [...existing];
-  for (const row of candidates.slice(0, 40)) {
-    const key = `${period}:${compact(row.employeeCode).toUpperCase()}`;
-    if (byCode.has(key)) continue;
-    const pay = await findEmployeePay(row.employeeCode);
-    const created = settlementFromExit(row, period, actor, pay);
-    next.push(created);
-    byCode.set(key, created);
-    changed = true;
-  }
-
-  if (changed) await writeJsonSettlements(next);
-  return next;
+  return existing.filter((row) => row.period === period);
 };
 
 export const listFinalPayrollSettlements = async (period?: string) => {
   const periodCode = period || currentFinalPayrollPeriod();
-  const rows = await ensureSeededFromExit(periodCode, 'System');
-  return rows.filter((row) => row.period === periodCode);
+  return loadSettlementsForPeriod(periodCode);
 };
 
 export const getFinalPayrollSettlement = async (id: string) => {
@@ -559,8 +692,7 @@ export const buildFinalPayrollPayload = async (input?: {
   actor?: string;
 }): Promise<FinalPayrollPayload> => {
   const period = input?.period || currentFinalPayrollPeriod();
-  const actor = input?.actor || 'System';
-  const all = await ensureSeededFromExit(period, actor);
+  const all = await readJsonSettlements();
   const settlements = all
     .filter((row) => row.period === period)
     .sort((a, b) => a.employeeName.localeCompare(b.employeeName));
@@ -607,45 +739,50 @@ export const createFinalPayrollSettlement = async (input: {
   noticePeriod?: string;
   reasonForLeaving?: string;
   remarks?: string;
+  /** When false, build settlement in memory only (do not write JSON). */
+  persist?: boolean;
 }) => {
   const period = input.period || currentFinalPayrollPeriod();
   const code = compact(input.employeeCode).toUpperCase();
   if (!code) throw new Error('Employee code is required.');
+  const persist = input.persist !== false;
 
   const all = await readJsonSettlements();
   const existing = all.find((row) => row.period === period && compact(row.employeeCode).toUpperCase() === code);
-  if (existing) return existing;
+  // Never reuse a premature Draft when caller asked for a non-persisted preview.
+  if (existing && persist && existing.status !== 'Draft') return existing;
 
   const exit = await readEmployeeExitStatusFromDb().catch(() => null);
   const exitRow = (exit?.records || []).find((row) => compact(row.employeeCode).toUpperCase() === code);
-  const pay = await findEmployeePay(code);
+  const pay = await resolveSettlementPay(code, period);
+  const directory = pay.employee;
 
   let settlement: FinalPayrollSettlement;
   if (exitRow) {
     settlement = settlementFromExit(exitRow, period, input.actor, pay);
-  } else if (pay) {
+  } else if (directory) {
     settlement = settlementFromExit(
       {
-        id: pay.employeeId || code,
-        employeeId: pay.employeeId || code,
-        employeeCode: pay.employeeCode || code,
-        employeeName: pay.fullName || code,
-        jobTitle: pay.jobTitle || '—',
-        department: pay.department || '—',
-        division: pay.division || '',
-        businessUnit: pay.businessUnit || '',
-        costCenter: pay.costCenter || '',
-        location: pay.location || '',
-        managerName: pay.managerName || '',
+        id: directory.employeeId || code,
+        employeeId: directory.employeeId || code,
+        employeeCode: directory.employeeCode || code,
+        employeeName: directory.fullName || code,
+        jobTitle: directory.jobTitle || '—',
+        department: directory.department || '—',
+        division: directory.division || '',
+        businessUnit: directory.businessUnit || '',
+        costCenter: directory.costCenter || '',
+        location: directory.location || '',
+        managerName: directory.managerName || '',
         hrBusinessPartner: '',
-        employmentType: pay.employmentType || 'Permanent',
-        currentStatus: pay.status || 'Active',
+        employmentType: directory.employmentType || 'Permanent',
+        currentStatus: directory.status || 'Active',
         exitCategory: input.exitType || 'Resignation',
         exitStage: 'Payroll Closure',
         exitDate: input.lastWorkingDay || null,
         noticeDate: input.resignationDate || null,
-        contractStartDate: pay.contractStartDate || null,
-        contractEndDate: pay.contractEndDate || null,
+        contractStartDate: directory.contractStartDate || null,
+        contractEndDate: directory.contractEndDate || null,
         daysToExit: null,
         daysSinceExit: null,
         clearanceStatus: 'In Progress',
@@ -654,8 +791,8 @@ export const createFinalPayrollSettlement = async (input: {
         documentStatus: 'Partial',
         risk: 'Medium',
         riskReason: 'Final settlement created manually.',
-        serviceYears: Number(pay.yearsOfService || 0),
-        documentCount: Number(pay.documentCount || 0),
+        serviceYears: Number(directory.yearsOfService || 0),
+        documentCount: Number(directory.documentCount || 0),
         emergencyContactCount: 0,
         lastUpdated: nowIso(),
       },
@@ -669,6 +806,7 @@ export const createFinalPayrollSettlement = async (input: {
 
   settlement = {
     ...settlement,
+    id: persist && existing?.status === 'Draft' ? existing.id : `FPS-${period.replace('-', '')}-${code}-DRAFT`,
     status: 'Draft',
     exitType: input.exitType || settlement.exitType,
     resignationDate: input.resignationDate ?? settlement.resignationDate,
@@ -677,17 +815,70 @@ export const createFinalPayrollSettlement = async (input: {
     reasonForLeaving: input.reasonForLeaving || '',
     remarks: input.remarks || '',
     approvalStages: defaultApprovalStages('Draft'),
+    basicSalary: pay.basicSalary || settlement.basicSalary,
+    allowanceMonthly: pay.allowanceMonthly,
+    grossSalary: pay.grossSalary,
+    dateOfJoining: pay.contractStartDate || settlement.dateOfJoining,
+    serviceLength: serviceLengthLabel(
+      Number(directory?.yearsOfService || exitRow?.serviceYears || 0),
+      pay.contractStartDate || settlement.dateOfJoining,
+      input.lastWorkingDay ?? settlement.lastWorkingDay,
+    ),
     earnings: buildDefaultEarnings({
       period,
       currency: settlement.currency,
-      basicSalary: settlement.basicSalary,
+      basicSalary: pay.basicSalary || settlement.basicSalary,
+      allowanceMonthly: pay.allowanceMonthly,
+      grossSalary: pay.grossSalary,
+      packageBreakdown: pay.packageBreakdown,
       lastWorkingDay: input.lastWorkingDay ?? settlement.lastWorkingDay,
     }),
   };
 
-  all.push(settlement);
-  await writeJsonSettlements(all);
+  if (!persist) {
+    // Ephemeral preview id — not written until Save / Submit.
+    settlement = { ...settlement, id: `PREVIEW-${code}` };
+    return settlement;
+  }
+
+  // Replace any existing Draft for this employee/period.
+  const next = all.filter((row) => !(row.period === period && compact(row.employeeCode).toUpperCase() === code && row.status === 'Draft'));
+  settlement = {
+    ...settlement,
+    id: `FPS-${period.replace('-', '')}-${code}`,
+  };
+  next.push(settlement);
+  await writeJsonSettlements(next);
   return settlement;
+};
+
+export const previewFinalPayrollSettlement = async (input: {
+  actor: string;
+  period?: string;
+  employeeCode: string;
+  exitType?: string;
+  resignationDate?: string | null;
+  lastWorkingDay?: string | null;
+  noticePeriod?: string;
+  reasonForLeaving?: string;
+  remarks?: string;
+}) => createFinalPayrollSettlement({ ...input, persist: false });
+
+export const discardDraftFinalPayrollSettlement = async (input: {
+  id?: string;
+  employeeCode?: string;
+  period?: string;
+}) => {
+  const period = input.period || currentFinalPayrollPeriod();
+  const all = await readJsonSettlements();
+  const code = compact(input.employeeCode).toUpperCase();
+  const next = all.filter((row) => {
+    if (input.id && row.id === input.id && row.status === 'Draft') return false;
+    if (code && row.period === period && compact(row.employeeCode).toUpperCase() === code && row.status === 'Draft') return false;
+    return true;
+  });
+  if (next.length !== all.length) await writeJsonSettlements(next);
+  return { removed: all.length - next.length };
 };
 
 export const updateFinalPayrollSettlement = async (input: {
@@ -702,7 +893,7 @@ export const updateFinalPayrollSettlement = async (input: {
   if (index < 0) throw new Error('Settlement not found.');
   let row = { ...all[index], ...(input.patch || {}) };
 
-  if (input.action === 'recalculate') row = recalculateSettlement(row);
+  if (input.action === 'recalculate') row = await recalculateSettlement(row);
   if (input.action === 'submit') {
     row.status = row.clearance.some((item) => item.status === 'Pending') ? 'Awaiting Clearance' : 'In Review';
     row.approvalStages = defaultApprovalStages(row.status);

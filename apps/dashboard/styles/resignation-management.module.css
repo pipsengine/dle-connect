@@ -618,6 +618,70 @@
   gap: 10px;
 }
 
+.designTop {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.kvGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+  margin-top: 14px;
+}
+
+.kvItem span {
+  display: block;
+  color: #46698f;
+  font-size: 11px;
+  margin-bottom: 3px;
+}
+
+.kvItem b {
+  font-size: 13px;
+}
+
+.earningsTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.earningsTable th,
+.earningsTable td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #e5edf5;
+  text-align: left;
+  font-size: 12px;
+}
+
+.earningsTable th {
+  color: #46698f;
+  font-size: 11px;
+  background: #f7fbff;
+}
+
+.earningsTable td:last-child,
+.earningsTable th:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.earningsTotal td {
+  font-weight: 800;
+  background: #eef7ff;
+  color: #0b2552;
+  border-bottom: 0;
+}
+
+.threeCols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
 .formCard,
 .wideCard {
   padding: 16px;
@@ -801,7 +865,10 @@
   .formGrid,
   .three,
   .fourCols,
-  .summary {
+  .summary,
+  .designTop,
+  .threeCols,
+  .kvGrid {
     grid-template-columns: 1fr;
   }
   .stepper {

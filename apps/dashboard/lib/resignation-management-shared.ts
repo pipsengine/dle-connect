@@ -36,6 +36,12 @@ export type ResignationComment = {
   createdAt: string;
 };
 
+export type ResignationEarningLine = {
+  code: string;
+  name: string;
+  amount: number;
+};
+
 export type ResignationRecord = {
   id: string;
   referenceNumber: string;
@@ -46,6 +52,7 @@ export type ResignationRecord = {
   department: string;
   position: string;
   employmentType: string;
+  grade: string;
   managerName: string;
   hrReviewer: string;
   workLocation: string;
@@ -67,6 +74,10 @@ export type ResignationRecord = {
   finalPayrollStatus: 'Not Started' | 'Pending' | 'Approved' | 'Paid';
   managementAcceptance: 'Pending' | 'Accepted' | 'Rejected';
   managementAcceptedAt: string | null;
+  currency: 'NGN' | 'USD';
+  basicSalary: number;
+  grossMonthly: number;
+  earningsBreakdown: ResignationEarningLine[];
   nextOfKinName: string;
   nextOfKinRelationship: string;
   nextOfKinPhone: string;
@@ -153,6 +164,11 @@ export const formatNoticeMonths = (days: number) => {
   if (months === 1) return '1 Month';
   if (Number.isInteger(months)) return `${months} Months`;
   return `${days} Days`;
+};
+
+export const formatResignationMoney = (amount: number, currency: 'NGN' | 'USD' = 'NGN') => {
+  const symbol = currency === 'USD' ? '$' : '₦';
+  return `${symbol}${Math.round(Number(amount) || 0).toLocaleString('en-NG')}`;
 };
 
 export const resignationProfileHref = (row: Pick<ResignationRecord, 'employeeId' | 'employeeCode'>) =>

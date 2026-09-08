@@ -79,6 +79,7 @@ export async function POST(request: Request) {
   try {
     const actor = await resolveActor();
     const body = await request.json().catch(() => ({}));
+    const persist = body.persist !== false && body.preview !== true;
     const resignation = await createResignation({
       actor,
       period: body.period,
@@ -98,12 +99,16 @@ export async function POST(request: Request) {
       nextOfKinEmail: body.nextOfKinEmail,
       propertyAcknowledged: body.propertyAcknowledged,
       submissionChannel: body.submissionChannel,
+      persist,
     });
+    if (!persist) {
+      return NextResponse.json({ ok: true, persisted: false, resignation });
+    }
     const payload = await buildResignationPayload({
       period: resignation.period,
       selectedId: resignation.id,
     });
-    return NextResponse.json({ ok: true, resignation, ...payload });
+    return NextResponse.json({ ok: true, persisted: true, resignation, ...payload });
   } catch (error: any) {
     return NextResponse.json(
       { ok: false, error: error?.message || 'Unable to create resignation.' },
@@ -118,6 +123,15 @@ export async function PATCH(request: Request) {
     const body = await request.json().catch(() => ({}));
     const id = String(body.id || '').trim();
     if (!id) return NextResponse.json({ ok: false, error: 'Resignation id is required.' }, { status: 400 });
+
+    // Unsaved preview: persist first if needed is handled by the client via POST.
+    if (id.startsWith('PREVIEW-')) {
+      return NextResponse.json(
+        { ok: false, error: 'Save the resignation first before updating.' },
+        { status: 400 },
+      );
+    }
+
     if (!(await getResignation(id))) {
       return NextResponse.json({ ok: false, error: 'Resignation not found.' }, { status: 404 });
     }

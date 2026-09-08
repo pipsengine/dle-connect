@@ -61,6 +61,8 @@ const initials = (name: string) =>
     .map((part) => part[0]?.toUpperCase() || '')
     .join('') || '—';
 
+const isPreviewId = (id?: string | null) => Boolean(id && String(id).startsWith('PREVIEW-'));
+
 export default function NewFinalPayrollSettlementWorkspace({
   initialId,
   initialEmployeeCode,
@@ -74,6 +76,7 @@ export default function NewFinalPayrollSettlementWorkspace({
   const [query, setQuery] = useState(initialEmployeeCode || '');
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [settlement, setSettlement] = useState<FinalPayrollSettlement | null>(null);
+  const [persisted, setPersisted] = useState(false);
   const [exitType, setExitType] = useState('Resignation');
   const [resignationDate, setResignationDate] = useState('');
   const [lastWorkingDay, setLastWorkingDay] = useState('');
@@ -84,6 +87,17 @@ export default function NewFinalPayrollSettlementWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
+  const applySettlement = (row: FinalPayrollSettlement, isPersisted: boolean) => {
+    setSettlement(row);
+    setPersisted(isPersisted && !isPreviewId(row.id));
+    setExitType(row.exitType || 'Resignation');
+    setResignationDate(row.resignationDate || '');
+    setLastWorkingDay(row.lastWorkingDay || '');
+    setNoticePeriod(row.noticePeriod || '1 Month');
+    setReason(row.reasonForLeaving || 'Career Growth');
+    setRemarks(row.remarks || '');
+  };
+
   const loadExisting = useCallback(async (id: string) => {
     setBusy(true);
     setError(null);
@@ -92,22 +106,22 @@ export default function NewFinalPayrollSettlementWorkspace({
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || 'Unable to load settlement.');
       const row = data.selected || data.settlements?.find((item: FinalPayrollSettlement) => item.id === id);
-      if (!row) throw new Error('Settlement not found.');
-      setSettlement(row);
-      setExitType(row.exitType || 'Resignation');
-      setResignationDate(row.resignationDate || '');
-      setLastWorkingDay(row.lastWorkingDay || '');
-      setNoticePeriod(row.noticePeriod || '1 Month');
-      setReason(row.reasonForLeaving || 'Career Growth');
-      setRemarks(row.remarks || '');
+      if (!row) {
+        setSettlement(null);
+        setPersisted(false);
+        setMessage('No saved settlement for this id. Select an employee to start (not saved until you click Save as Draft).');
+        router.replace('/hris/offboarding/final-payroll-processing/new-settlement');
+        return;
+      }
+      applySettlement(row, true);
     } catch (err: any) {
       setError(err?.message || 'Unable to load settlement.');
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [router]);
 
-  const createFromEmployee = async (hit: SearchHit) => {
+  const previewFromEmployee = async (employeeCode: string) => {
     setBusy(true);
     setError(null);
     setMessage(null);
@@ -116,7 +130,8 @@ export default function NewFinalPayrollSettlementWorkspace({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          employeeCode: hit.employeeCode,
+          persist: false,
+          employeeCode,
           exitType,
           resignationDate: resignationDate || null,
           lastWorkingDay: lastWorkingDay || null,
@@ -126,58 +141,26 @@ export default function NewFinalPayrollSettlementWorkspace({
         }),
       });
       const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || 'Unable to create settlement.');
-      setSettlement(data.settlement);
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Unable to load employee settlement preview.');
+      applySettlement(data.settlement, false);
       setHits([]);
       setQuery('');
-      setMessage('Draft settlement created.');
+      setMessage('Preview only — not saved until you click Save as Draft or Submit for Approval.');
+      router.replace(`/hris/offboarding/final-payroll-processing/new-settlement?employeeCode=${encodeURIComponent(employeeCode)}`);
     } catch (err: any) {
-      setError(err?.message || 'Unable to create settlement.');
+      setError(err?.message || 'Unable to load employee settlement preview.');
     } finally {
       setBusy(false);
     }
   };
 
   useEffect(() => {
-    if (initialId) {
+    if (initialId && !isPreviewId(initialId)) {
       void loadExisting(initialId);
       return;
     }
     if (!initialEmployeeCode) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const lookup = await fetch(
-          `/api/hris/offboarding/final-payroll?lookup=employee&employeeCode=${encodeURIComponent(initialEmployeeCode)}&profile=1`,
-          { cache: 'no-store' },
-        );
-        const lookupData = await lookup.json();
-        if (cancelled) return;
-        if (lookup.ok && lookupData.ok && lookupData.settlement) {
-          setSettlement(lookupData.settlement);
-          setExitType(lookupData.settlement.exitType || 'Resignation');
-          setResignationDate(lookupData.settlement.resignationDate || '');
-          setLastWorkingDay(lookupData.settlement.lastWorkingDay || '');
-          setNoticePeriod(lookupData.settlement.noticePeriod || '1 Month');
-          setReason(lookupData.settlement.reasonForLeaving || 'Career Growth');
-          setRemarks(lookupData.settlement.remarks || '');
-          return;
-        }
-        const searchRes = await fetch(`/api/hris/offboarding/final-payroll?q=${encodeURIComponent(initialEmployeeCode)}`);
-        const searchData = await searchRes.json();
-        if (cancelled || !searchRes.ok || !searchData.ok) return;
-        const hit = (searchData.results || []).find((item: SearchHit) =>
-          String(item.employeeCode).toUpperCase() === initialEmployeeCode.toUpperCase()
-          || String(item.employeeId).toUpperCase() === initialEmployeeCode.toUpperCase(),
-        ) || (searchData.results || [])[0];
-        if (hit) await createFromEmployee(hit);
-      } catch {
-        // leave empty for manual search
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    void previewFromEmployee(initialEmployeeCode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialId, initialEmployeeCode, loadExisting]);
 
@@ -198,7 +181,7 @@ export default function NewFinalPayrollSettlementWorkspace({
     return () => clearTimeout(handle);
   }, [query]);
 
-  const patchSettlement = async (action: 'save' | 'recalculate' | 'submit') => {
+  const persistSettlement = async (action: 'save' | 'submit') => {
     if (!settlement) {
       setError('Select an employee first.');
       return;
@@ -207,12 +190,35 @@ export default function NewFinalPayrollSettlementWorkspace({
     setError(null);
     setMessage(null);
     try {
+      let current = settlement;
+      if (!persisted || isPreviewId(settlement.id)) {
+        const createRes = await fetch('/api/hris/offboarding/final-payroll', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            persist: true,
+            employeeCode: settlement.employeeCode,
+            exitType,
+            resignationDate: resignationDate || null,
+            lastWorkingDay: lastWorkingDay || null,
+            noticePeriod,
+            reasonForLeaving: reason,
+            remarks,
+          }),
+        });
+        const createData = await createRes.json();
+        if (!createRes.ok || !createData.ok) throw new Error(createData.error || 'Unable to save settlement.');
+        current = createData.settlement;
+        applySettlement(current, true);
+        router.replace(`/hris/offboarding/final-payroll-processing/new-settlement?id=${encodeURIComponent(current.id)}`);
+      }
+
       const res = await fetch('/api/hris/offboarding/final-payroll', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: settlement.id,
-          action,
+          id: current.id,
+          action: action === 'submit' ? 'submit' : 'save',
           patch: {
             exitType,
             resignationDate: resignationDate || null,
@@ -225,15 +231,72 @@ export default function NewFinalPayrollSettlementWorkspace({
       });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || 'Unable to update settlement.');
-      setSettlement(data.settlement);
+      applySettlement(data.settlement, true);
       if (action === 'submit') {
         setMessage('Submitted for approval.');
         router.push(`/hris/offboarding/final-payroll-processing?period=${encodeURIComponent(data.settlement.period)}`);
         return;
       }
-      setMessage(action === 'recalculate' ? 'Earnings recalculated from policy.' : 'Draft saved.');
+      setMessage('Draft saved.');
     } catch (err: any) {
-      setError(err?.message || 'Unable to update settlement.');
+      setError(err?.message || 'Unable to save settlement.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const recalculate = async () => {
+    if (!settlement) {
+      setError('Select an employee first.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      if (!persisted || isPreviewId(settlement.id)) {
+        const res = await fetch('/api/hris/offboarding/final-payroll', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            persist: false,
+            employeeCode: settlement.employeeCode,
+            exitType,
+            resignationDate: resignationDate || null,
+            lastWorkingDay: lastWorkingDay || null,
+            noticePeriod,
+            reasonForLeaving: reason,
+            remarks,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || 'Unable to recalculate.');
+        applySettlement(data.settlement, false);
+        setMessage('Earnings recalculated from employee salary package (preview — not saved).');
+        return;
+      }
+      const res = await fetch('/api/hris/offboarding/final-payroll', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: settlement.id,
+          action: 'recalculate',
+          patch: {
+            exitType,
+            resignationDate: resignationDate || null,
+            lastWorkingDay: lastWorkingDay || null,
+            noticePeriod,
+            reasonForLeaving: reason,
+            remarks,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Unable to recalculate.');
+      applySettlement(data.settlement, true);
+      setMessage('Earnings recalculated from employee salary package.');
+    } catch (err: any) {
+      setError(err?.message || 'Unable to recalculate.');
     } finally {
       setBusy(false);
     }
@@ -268,13 +331,13 @@ export default function NewFinalPayrollSettlementWorkspace({
           </div>
         </div>
         <div className={styles.actions}>
-          <button type="button" disabled={busy} onClick={() => void patchSettlement('save')}>
+          <button type="button" disabled={busy || !settlement} onClick={() => void persistSettlement('save')}>
             <Save /> Save as Draft
           </button>
           <button type="button" disabled={busy || !settlement} onClick={() => setStep(6)}>
             <Eye /> Preview
           </button>
-          <button type="button" className={styles.primary} disabled={busy} onClick={() => void patchSettlement('submit')}>
+          <button type="button" className={styles.primary} disabled={busy || !settlement} onClick={() => void persistSettlement('submit')}>
             <Send /> Submit for Approval
           </button>
         </div>
@@ -282,6 +345,11 @@ export default function NewFinalPayrollSettlementWorkspace({
 
       {error ? <p className={styles.error}>{error}</p> : null}
       {message ? <p>{message}</p> : null}
+      {settlement && !persisted ? (
+        <p style={{ color: '#b87100', margin: '0 0 10px', fontWeight: 600 }}>
+          Unsaved preview — this settlement is not on the register until you Save as Draft or Submit.
+        </p>
+      ) : null}
 
       <div className={styles.steps}>
         {STEPS.map((label, index) => (
@@ -313,7 +381,7 @@ export default function NewFinalPayrollSettlementWorkspace({
           {hits.length > 0 ? (
             <div className={styles.searchResults}>
               {hits.map((hit) => (
-                <button key={hit.employeeCode} type="button" onClick={() => void createFromEmployee(hit)}>
+                <button key={hit.employeeCode} type="button" onClick={() => void previewFromEmployee(hit.employeeCode)}>
                   <b>{hit.employeeName}</b> · {hit.employeeCode} · {hit.department}
                 </button>
               ))}
@@ -342,6 +410,7 @@ export default function NewFinalPayrollSettlementWorkspace({
                   ['Current Grade', settlement.grade],
                   ['Payroll Currency', settlement.currency],
                   ['Current Basic Salary', formatFinalPayrollMoney(settlement.basicSalary, settlement.currency)],
+                  ['Monthly Package Gross', formatFinalPayrollMoney(settlement.grossSalary || settlement.basicSalary + (settlement.allowanceMonthly || 0), settlement.currency)],
                   ['Date of Joining', formatFinalPayrollDate(settlement.dateOfJoining)],
                   ['Service Length', settlement.serviceLength],
                 ].map(([label, value]) => (
@@ -372,75 +441,68 @@ export default function NewFinalPayrollSettlementWorkspace({
               </div>
             </div>
             <div>
-              <label>Resignation Date *</label>
+              <label>Resignation Date</label>
               <div className={styles.input}>
                 <CalendarDays />
-                <input type="date" value={resignationDate || ''} onChange={(event) => setResignationDate(event.target.value)} />
+                <input type="date" value={resignationDate} onChange={(event) => setResignationDate(event.target.value)} />
               </div>
             </div>
             <div>
-              <label>Last Working Day *</label>
+              <label>Last Working Day</label>
               <div className={styles.input}>
                 <CalendarDays />
-                <input type="date" value={lastWorkingDay || ''} onChange={(event) => setLastWorkingDay(event.target.value)} />
+                <input type="date" value={lastWorkingDay} onChange={(event) => setLastWorkingDay(event.target.value)} />
               </div>
             </div>
             <div>
               <label>Notice Period</label>
               <div className={styles.input}>
-                <input value={noticePeriod} onChange={(event) => setNoticePeriod(event.target.value)} />
+                <select value={noticePeriod} onChange={(event) => setNoticePeriod(event.target.value)}>
+                  {['1 Month', '2 Months', '3 Months', 'None'].map((item) => (
+                    <option key={item} value={item}>{item}</option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
-          <label>Reason for Leaving *</label>
+          <label>Reason for Leaving</label>
           <div className={styles.input}>
             <select value={reason} onChange={(event) => setReason(event.target.value)}>
-              {['Career Growth', 'Personal', 'Relocation', 'Performance', 'Other'].map((item) => (
+              {['Career Growth', 'Personal', 'Relocation', 'Better Opportunity', 'Retirement', 'Other'].map((item) => (
                 <option key={item} value={item}>{item}</option>
               ))}
             </select>
           </div>
           <label>Remarks</label>
-          <textarea
-            value={remarks}
-            maxLength={500}
-            onChange={(event) => setRemarks(event.target.value)}
-            placeholder="Enter additional remarks (optional)..."
-          />
-          <small>{remarks.length}/500</small>
+          <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} placeholder="Optional notes..." />
         </section>
 
         <section className={`${styles.card} ${styles.formCard}`}>
           <h2>Payroll Control</h2>
-          <p>System will manage payroll inclusion/exclusion automatically.</p>
+          <p>Settlement period and payroll exclusion controls.</p>
           {[
             ['Last Regular Payroll', settlement?.lastRegularPayroll || '—'],
             ['Next Payroll', nextPayrollLabel],
-            ['Final Settlement Period', settlement?.lastRegularPayroll || '—'],
-            ['Status', settlement?.status || 'Not Started'],
+            ['Final Settlement Period', settlement?.period || '—'],
+            ['Status', settlement ? (persisted ? settlement.status : 'Unsaved Preview') : '—'],
           ].map(([label, value]) => (
             <div className={styles.kv} key={label}>
               <span>{label}</span>
-              <b>
-                {label === 'Next Payroll' && value === 'Excluded' ? (
-                  <span className={`${styles.status} ${styles.statusExcluded}`}>Excluded</span>
-                ) : value}
-              </b>
+              <b>{value}</b>
             </div>
           ))}
           <div className={styles.info}>
             <Info />
             <div>
               <b>Important</b>
-              <p>This employee will be automatically excluded from subsequent regular payroll after final settlement is processed.</p>
+              <p>This employee will be automatically excluded from subsequent regular payrolls after final settlement is processed.</p>
             </div>
           </div>
-          <h3>Approval Workflow</h3>
           <div className={styles.miniFlow}>
-            {['Payroll Preparation', 'HR Manager Review', 'Finance Review', 'CFO Authorization', 'Final Payment'].map((label, index) => (
-              <div key={label} className={index === 0 ? styles.done : undefined}>
+            {(settlement?.approvalStages || []).map((stage, index) => (
+              <div key={stage.id} className={stage.status !== 'Pending' ? styles.done : undefined}>
                 <i>{index + 1}</i>
-                <span>{label}</span>
+                {stage.label}
               </div>
             ))}
           </div>
@@ -462,19 +524,16 @@ export default function NewFinalPayrollSettlementWorkspace({
         </div>
 
         {earningsTab === 'Clearance Status' && settlement ? (
-          <div style={{ padding: 16 }}>
+          <div className={styles.formCard}>
             {(settlement.clearance || []).map((item) => (
               <div className={styles.check} key={item.id}>
-                <span />
                 <span>{item.label}{item.note ? ` — ${item.note}` : ''}</span>
-                <span className={`${styles.status} ${item.status === 'Completed' ? styles.statusCompleted : styles.statusPending}`}>
-                  {item.status}
-                </span>
+                <span className={styles.status}>{item.status}</span>
               </div>
             ))}
           </div>
         ) : earningsTab === 'Documents' ? (
-          <div className={styles.empty}>Upload exit letters and clearance evidence from Employee Documents.</div>
+          <div className={styles.empty}>Attach exit documents from Employee Documents when available.</div>
         ) : (
           <>
             <div className={styles.sectionHead}>
@@ -486,16 +545,13 @@ export default function NewFinalPayrollSettlementWorkspace({
                       ? 'Statutory Deductions'
                       : 'Deductions & Recoveries'}
                 </h2>
-                <p>Configure the employee&apos;s final {earningsTab === 'Earnings' ? 'earnings' : 'deductions'}. Amounts are calculated based on company policy.</p>
+                <p>Amounts are calculated from the employee salary package.</p>
               </div>
-              <button type="button" disabled={busy || !settlement} onClick={() => void patchSettlement('recalculate')}>
+              <button type="button" disabled={busy || !settlement} onClick={() => void recalculate()}>
                 <RefreshCw /> Recalculate
               </button>
             </div>
-
-            {!settlement ? (
-              <div className={styles.empty}>Select an employee to calculate settlement lines.</div>
-            ) : (
+            {settlement ? (
               <table>
                 <thead>
                   <tr>
@@ -507,7 +563,7 @@ export default function NewFinalPayrollSettlementWorkspace({
                 <tbody>
                   {activeLines.map((line, index) => (
                     <tr key={line.id}>
-                      <td>{line.included ? '☑' : '☐'} {index + 1}</td>
+                      <td>{index + 1}</td>
                       <td>{line.label}</td>
                       <td>{line.description}</td>
                       <td>{line.policyBasis}</td>
@@ -517,20 +573,34 @@ export default function NewFinalPayrollSettlementWorkspace({
                     </tr>
                   ))}
                   <tr className={styles.total}>
-                    <td />
-                    <td>Total {earningsTab === 'Earnings' ? 'Earnings' : earningsTab === 'Statutory Deductions' ? 'Statutory' : 'Deductions'}</td>
-                    <td />
-                    <td />
-                    <td />
+                    <td colSpan={5}>Total {earningsTab === 'Earnings' ? 'Earnings' : earningsTab === 'Statutory Deductions' ? 'Statutory' : 'Deductions'}</td>
                     <td>{formatFinalPayrollMoney(totalAmount, settlement.currency)}</td>
                     <td />
                   </tr>
                 </tbody>
               </table>
+            ) : (
+              <div className={styles.empty}>Select an employee to calculate settlement lines.</div>
             )}
           </>
         )}
       </section>
+
+      <div className={styles.footerActions}>
+        <button type="button" disabled={step === 0} onClick={() => setStep((value) => Math.max(0, value - 1))}>
+          Back
+        </button>
+        <button
+          type="button"
+          className={styles.primary}
+          onClick={() => {
+            if (step >= STEPS.length - 1) void persistSettlement('submit');
+            else setStep((value) => Math.min(STEPS.length - 1, value + 1));
+          }}
+        >
+          {step >= STEPS.length - 1 ? 'Submit for Approval' : 'Next Step'}
+        </button>
+      </div>
     </div>
   );
 }

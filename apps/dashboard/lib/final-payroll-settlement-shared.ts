@@ -59,6 +59,10 @@ export type FinalPayrollSettlement = {
   grade: string;
   currency: 'NGN' | 'USD';
   basicSalary: number;
+  /** Monthly package gross (basic + structural allowances) used for settlement earnings. */
+  grossSalary?: number;
+  /** Monthly structural allowances (gross − basic). */
+  allowanceMonthly?: number;
   dateOfJoining: string | null;
   serviceLength: string;
   exitType: string;

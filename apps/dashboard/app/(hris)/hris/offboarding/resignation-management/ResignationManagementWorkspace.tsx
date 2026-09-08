@@ -388,6 +388,7 @@ export default function ResignationManagementWorkspace({
                 ['Department', selected.department],
                 ['Position', selected.position],
                 ['Employment Type', selected.employmentType],
+                ['Grade / Level', selected.grade || '—'],
                 ['Date of Joining', formatResignationDate(selected.dateOfJoining)],
                 ['Resignation Date', formatResignationDate(selected.resignationDate)],
                 ['Last Working Day', formatResignationDate(selected.lastWorkingDay)],

@@ -4,8 +4,10 @@
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { calculatePayrollEarnings } from '@/lib/payroll-earnings-engine';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import {
+  type ResignationEarningLine,
   type ResignationKpi,
   type ResignationPayload,
   type ResignationProgressItem,
@@ -219,27 +221,69 @@ const findEmployee = async (employeeCode: string) => {
   }) || null;
 };
 
+const resolveEarningsPackage = (employee: NonNullable<Awaited<ReturnType<typeof findEmployee>>>, period: string) => {
+  const currency: 'NGN' | 'USD' = /USD|US\$/i.test(String(employee.payCurrency || '')) ? 'USD' : 'NGN';
+  const earnings = calculatePayrollEarnings(employee, { period, useHrisPackageLines: true });
+  const lines: ResignationEarningLine[] = (earnings.paidEarningLines || [])
+    .filter((line) => line.includeInMonthlyPayroll !== false && Number(line.amount || 0) > 0)
+    .map((line) => ({
+      code: compact(line.code) || compact(line.name),
+      name: compact(line.name) || compact(line.code) || 'Earning',
+      amount: Math.round(Number(line.amount || 0) * 100) / 100,
+    }));
+  const basicSalary = Math.max(0, Number(earnings.basePay || employee.basicSalary || 0));
+  const grossMonthly = Math.max(
+    basicSalary,
+    Number(earnings.grossPay || employee.periodSalary || lines.reduce((sum, line) => sum + line.amount, 0)),
+  );
+  return {
+    currency,
+    basicSalary: Math.round(basicSalary * 100) / 100,
+    grossMonthly: Math.round(grossMonthly * 100) / 100,
+    earningsBreakdown: lines.length
+      ? lines
+      : basicSalary > 0
+        ? [
+            { code: 'BASIC', name: 'Basic Salary', amount: Math.round(basicSalary * 100) / 100 },
+            ...(grossMonthly > basicSalary
+              ? [{ code: 'ALLOW', name: 'Allowances', amount: Math.round((grossMonthly - basicSalary) * 100) / 100 }]
+              : []),
+          ]
+        : [],
+    grade: compact(employee.jobGrade || employee.salaryGrade) || '—',
+  };
+};
+
 export const searchEmployeesForResignation = async (query: string, limit = 12) => {
   const q = compact(query).toLowerCase();
   if (q.length < 2) return [];
   const source = await readPayrollEmployees();
+  const period = currentResignationPeriod();
   return source.employees
     .filter((row) => `${row.fullName} ${row.employeeCode} ${row.employeeId} ${row.department}`.toLowerCase().includes(q))
     .slice(0, limit)
-    .map((row) => ({
-      employeeId: row.employeeId,
-      employeeCode: row.employeeCode,
-      employeeName: row.fullName,
-      department: row.department,
-      position: row.jobTitle,
-      employmentType: row.employmentType,
-      managerName: row.managerName || '',
-      workLocation: row.location || '',
-      dateOfJoining: row.contractStartDate || null,
-      email: row.officialEmail || row.email || '',
-      phone: row.primaryPhone || row.phone || '',
-      status: row.status,
-    }));
+    .map((row) => {
+      const pack = resolveEarningsPackage(row, period);
+      return {
+        employeeId: row.employeeId,
+        employeeCode: row.employeeCode,
+        employeeName: row.fullName,
+        department: row.department,
+        position: row.jobTitle,
+        employmentType: row.employmentType,
+        grade: pack.grade,
+        managerName: row.managerName || '',
+        workLocation: row.location || '',
+        dateOfJoining: row.contractStartDate || null,
+        email: row.officialEmail || row.email || '',
+        phone: row.primaryPhone || row.phone || '',
+        status: row.status,
+        currency: pack.currency,
+        basicSalary: pack.basicSalary,
+        grossMonthly: pack.grossMonthly,
+        earningsBreakdown: pack.earningsBreakdown,
+      };
+    });
 };
 
 export const listResignations = async (period?: string) => {
@@ -263,15 +307,8 @@ export const findResignationByEmployee = async (input: {
       || codesMatch(row.employeeId, input.employeeCode)),
   );
   if (open) return open;
-  return all
-    .slice()
-    .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
-    .find((row) =>
-      codesMatch(row.employeeCode, input.employeeCode)
-      || codesMatch(row.employeeId, input.employeeId)
-      || codesMatch(row.employeeCode, input.employeeId)
-      || codesMatch(row.employeeId, input.employeeCode),
-    ) || null;
+  // Do not surface cancelled drafts as active linked resignations.
+  return null;
 };
 
 export const buildResignationPayload = async (input?: {
@@ -335,10 +372,13 @@ export const createResignation = async (input: {
   nextOfKinEmail?: string;
   propertyAcknowledged?: boolean;
   submissionChannel?: string;
+  /** When false, build in memory only — do not write JSON. */
+  persist?: boolean;
 }) => {
   const period = input.period || currentResignationPeriod();
   const code = compact(input.employeeCode).toUpperCase();
   if (!code) throw new Error('Employee code is required.');
+  const persist = input.persist !== false;
 
   const all = await readJson();
   const open = all.find((row) =>
@@ -346,10 +386,31 @@ export const createResignation = async (input: {
     && codesMatch(row.employeeCode, code)
     && !['Completed', 'Cancelled'].includes(row.status),
   );
-  if (open) return open;
-
   const employee = await findEmployee(code);
   if (!employee) throw new Error(`Employee ${code} was not found.`);
+  const pack = resolveEarningsPackage(employee, period);
+
+  // Only reuse an existing open resignation when actually persisting.
+  if (persist && open) {
+    if (!open.earningsBreakdown?.length || !open.grossMonthly) {
+      const index = all.findIndex((row) => row.id === open.id);
+      const enriched: ResignationRecord = {
+        ...open,
+        grade: open.grade || pack.grade,
+        currency: open.currency || pack.currency,
+        basicSalary: open.basicSalary || pack.basicSalary,
+        grossMonthly: open.grossMonthly || pack.grossMonthly,
+        earningsBreakdown: open.earningsBreakdown?.length ? open.earningsBreakdown : pack.earningsBreakdown,
+        updatedAt: nowIso(),
+      };
+      if (index >= 0) {
+        all[index] = enriched;
+        await writeJson(all);
+      }
+      return enriched;
+    }
+    return open;
+  }
 
   const resignationDate = input.resignationDate || new Date().toISOString().slice(0, 10);
   const noticePeriodDays = Math.max(0, Number(input.noticePeriodDays || 30));
@@ -361,11 +422,12 @@ export const createResignation = async (input: {
     )).toISOString().slice(0, 10);
   const progress = defaultProgress();
   const status: ResignationStatus = 'Draft';
-  const id = `RES-${period.replace('-', '')}-${code}-${Date.now().toString(36).toUpperCase()}`;
-  const referenceNumber = `RES-${period.replace('-', '')}-${String(all.length + 1).padStart(4, '0')}`;
+  const referenceNumber = persist
+    ? `RES-${period.replace('-', '')}-${String(all.filter((row) => row.period === period).length + 1).padStart(4, '0')}`
+    : 'Auto-generated';
 
   const record: ResignationRecord = {
-    id,
+    id: persist ? `RES-${period.replace('-', '')}-${code}` : `PREVIEW-${code}`,
     referenceNumber,
     period,
     employeeId: employee.employeeId || code,
@@ -374,6 +436,7 @@ export const createResignation = async (input: {
     department: employee.department || '—',
     position: employee.jobTitle || '—',
     employmentType: employee.employmentType || '—',
+    grade: pack.grade,
     managerName: employee.managerName || '—',
     hrReviewer: '—',
     workLocation: employee.location || '—',
@@ -395,6 +458,10 @@ export const createResignation = async (input: {
     finalPayrollStatus: 'Not Started',
     managementAcceptance: 'Pending',
     managementAcceptedAt: null,
+    currency: pack.currency,
+    basicSalary: pack.basicSalary,
+    grossMonthly: pack.grossMonthly,
+    earningsBreakdown: pack.earningsBreakdown,
     nextOfKinName: input.nextOfKinName || '',
     nextOfKinRelationship: input.nextOfKinRelationship || '',
     nextOfKinPhone: input.nextOfKinPhone || '',
@@ -409,10 +476,20 @@ export const createResignation = async (input: {
     updatedBy: input.actor,
   };
 
-  all.push(record);
-  await writeJson(all);
+  if (!persist) return record;
+
+  // Replace any cancelled/draft leftovers for same employee+period.
+  const next = all.filter((row) =>
+    !(row.period === period && codesMatch(row.employeeCode, code) && ['Draft', 'Cancelled'].includes(row.status)),
+  );
+  next.push(record);
+  await writeJson(next);
   return record;
 };
+
+export const previewResignation = async (input: Parameters<typeof createResignation>[0]) =>
+  createResignation({ ...input, persist: false });
+
 
 export const updateResignation = async (input: {
   id: string;

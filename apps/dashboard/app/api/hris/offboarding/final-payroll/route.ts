@@ -5,7 +5,9 @@ import {
   buildFinalPayrollPayload,
   createFinalPayrollSettlement,
   currentFinalPayrollPeriod,
+  discardDraftFinalPayrollSettlement,
   getFinalPayrollSettlement,
+  previewFinalPayrollSettlement,
   resolveFinalPayrollForEmployee,
   searchEmployeesForFinalPayroll,
   settlementsToCsv,
@@ -34,14 +36,32 @@ export async function GET(request: Request) {
     const q = searchParams.get('q');
     const format = searchParams.get('format');
     const lookup = searchParams.get('lookup');
+    const preview = searchParams.get('preview');
 
     if (q) {
       const results = await searchEmployeesForFinalPayroll(q);
       return NextResponse.json({ ok: true, results });
     }
 
+    if (preview === '1' && employeeCode) {
+      const { actor } = await resolveActor();
+      const settlement = await previewFinalPayrollSettlement({
+        actor,
+        period,
+        employeeCode,
+        exitType: searchParams.get('exitType') || 'Resignation',
+        resignationDate: searchParams.get('resignationDate'),
+        lastWorkingDay: searchParams.get('lastWorkingDay'),
+        noticePeriod: searchParams.get('noticePeriod') || '1 Month',
+        reasonForLeaving: searchParams.get('reasonForLeaving') || '',
+        remarks: searchParams.get('remarks') || '',
+      });
+      return NextResponse.json({ ok: true, persisted: false, settlement });
+    }
+
     if (lookup === 'employee' || ((employeeCode || employeeId) && searchParams.get('profile') === '1')) {
       const resolved = await resolveFinalPayrollForEmployee({ employeeCode, employeeId, period });
+      // Profile panel: only return already-persisted settlements (never auto-create).
       return NextResponse.json({ ok: true, period, ...(resolved || { settlement: null }) });
     }
 
@@ -75,23 +95,42 @@ export async function POST(request: Request) {
   try {
     const { actor } = await resolveActor();
     const body = await request.json().catch(() => ({}));
-    const settlement = await createFinalPayrollSettlement({
-      actor,
-      period: body.period,
-      employeeCode: body.employeeCode,
-      exitType: body.exitType,
-      resignationDate: body.resignationDate,
-      lastWorkingDay: body.lastWorkingDay,
-      noticePeriod: body.noticePeriod,
-      reasonForLeaving: body.reasonForLeaving,
-      remarks: body.remarks,
-    });
+    const persist = body.persist !== false && body.preview !== true;
+    const settlement = persist
+      ? await createFinalPayrollSettlement({
+          actor,
+          period: body.period,
+          employeeCode: body.employeeCode,
+          exitType: body.exitType,
+          resignationDate: body.resignationDate,
+          lastWorkingDay: body.lastWorkingDay,
+          noticePeriod: body.noticePeriod,
+          reasonForLeaving: body.reasonForLeaving,
+          remarks: body.remarks,
+          persist: true,
+        })
+      : await previewFinalPayrollSettlement({
+          actor,
+          period: body.period,
+          employeeCode: body.employeeCode,
+          exitType: body.exitType,
+          resignationDate: body.resignationDate,
+          lastWorkingDay: body.lastWorkingDay,
+          noticePeriod: body.noticePeriod,
+          reasonForLeaving: body.reasonForLeaving,
+          remarks: body.remarks,
+        });
+
+    if (!persist) {
+      return NextResponse.json({ ok: true, persisted: false, settlement });
+    }
+
     const payload = await buildFinalPayrollPayload({
       period: settlement.period,
       selectedId: settlement.id,
       actor,
     });
-    return NextResponse.json({ ok: true, settlement, ...payload });
+    return NextResponse.json({ ok: true, persisted: true, settlement, ...payload });
   } catch (error: any) {
     return NextResponse.json(
       { ok: false, error: error?.message || 'Unable to create final payroll settlement.' },
@@ -105,8 +144,34 @@ export async function PATCH(request: Request) {
     const { actor } = await resolveActor();
     const body = await request.json().catch(() => ({}));
     const id = String(body.id || '').trim();
+
+    if (body.action === 'discard') {
+      const result = await discardDraftFinalPayrollSettlement({
+        id: body.id,
+        employeeCode: body.employeeCode,
+        period: body.period,
+      });
+      return NextResponse.json({ ok: true, ...result });
+    }
+
     if (!id) {
       return NextResponse.json({ ok: false, error: 'Settlement id is required.' }, { status: 400 });
+    }
+
+    // Unsaved preview: recalculate in memory.
+    if (id.startsWith('PREVIEW-') && body.action === 'recalculate') {
+      const settlement = await previewFinalPayrollSettlement({
+        actor,
+        period: body.patch?.period || body.period,
+        employeeCode: body.employeeCode || id.replace(/^PREVIEW-/, ''),
+        exitType: body.patch?.exitType,
+        resignationDate: body.patch?.resignationDate,
+        lastWorkingDay: body.patch?.lastWorkingDay,
+        noticePeriod: body.patch?.noticePeriod,
+        reasonForLeaving: body.patch?.reasonForLeaving,
+        remarks: body.patch?.remarks,
+      });
+      return NextResponse.json({ ok: true, persisted: false, settlement });
     }
 
     const existing = await getFinalPayrollSettlement(id);
@@ -126,7 +191,7 @@ export async function PATCH(request: Request) {
       selectedId: settlement.id,
       actor,
     });
-    return NextResponse.json({ ok: true, settlement, ...payload });
+    return NextResponse.json({ ok: true, persisted: true, settlement, ...payload });
   } catch (error: any) {
     return NextResponse.json(
       { ok: false, error: error?.message || 'Unable to update final payroll settlement.' },
