@@ -163,7 +163,7 @@ export default function DailyRatePayClient({
   const [payModeFilter, setPayModeFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [payrollGroup, setPayrollGroup] = useState('All');
-  const [selectedId, setSelectedId] = useState('');
+  const [detailId, setDetailId] = useState('');
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [form, setForm] = useState({
@@ -187,7 +187,7 @@ export default function DailyRatePayClient({
       if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Daily rate pay request failed (${res.status})`);
       const data = json.data;
       setPayload(data);
-      setSelectedId((current) => current || data.records[0]?.employeeId || '');
+      setDetailId((current) => (current && data.records.some((record) => record.employeeId === current) ? current : ''));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to load daily rate pay');
     } finally {
@@ -230,9 +230,26 @@ export default function DailyRatePayClient({
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const selected = records.find((r) => r.employeeId === selectedId) || pageRows[0] || null;
+  const selected = records.find((r) => r.employeeId === detailId) || null;
   const canViewMoney = Boolean(payload?.permissions.canViewMoney);
   const summary = payload?.summary;
+
+  const openDetail = (employeeId: string) => setDetailId(employeeId);
+  const closeDetail = () => setDetailId('');
+
+  useEffect(() => {
+    if (!detailId) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeDetail();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [detailId]);
 
   useEffect(() => {
     if (!selected) return;
@@ -541,7 +558,7 @@ export default function DailyRatePayClient({
       </div>
 
       {/* Main workspace */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_420px]">
+      <div className="mb-6">
         <PanelShell title="Daily Rate Register" subtitle="Timesheet-derived pay for contract and daily-rate employees in the selected payroll period.">
           <div className="overflow-x-auto">
             <table className="min-w-[1200px] w-full text-left">
@@ -568,14 +585,13 @@ export default function DailyRatePayClient({
                     ))
                   : pageRows.map((record) => {
                       const tone = statusTone(record.status);
-                      const isSelected = selectedId === record.employeeId;
+                      const isSelected = detailId === record.employeeId;
                       return (
                         <tr
                           key={record.employeeId}
-                          className={`cursor-pointer transition-colors hover:bg-[#F8FAFC] ${isSelected ? 'bg-[#EFF6FF]' : ''}`}
-                          onClick={() => setSelectedId(record.employeeId)}
+                          className={`transition-colors hover:bg-[#F8FAFC] ${isSelected ? 'bg-[#EFF6FF]' : ''}`}
                         >
-                          <td className="sticky left-0 z-10 bg-white px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          <td className="sticky left-0 z-10 bg-white px-4 py-3">
                             <input type="checkbox" className="rounded" checked={selectedRows.has(record.employeeId)} onChange={() => toggleRow(record.employeeId)} />
                           </td>
                           <td className="px-4 py-3">
@@ -606,9 +622,13 @@ export default function DailyRatePayClient({
                           <td className="px-4 py-3">
                             <StatusPill label={record.status} tone={tone} />
                           </td>
-                          <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          <td className="px-4 py-3">
                             <div className="flex items-center gap-1">
-                              <button type="button" className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#E5E7EB] px-2 text-xs font-semibold text-[#2563EB]">
+                              <button
+                                type="button"
+                                onClick={() => openDetail(record.employeeId)}
+                                className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#E5E7EB] px-2 text-xs font-semibold text-[#2563EB] hover:bg-[#EFF6FF]"
+                              >
                                 <Eye className="h-3.5 w-3.5" /> View
                               </button>
                               <button type="button" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E5E7EB] text-[#64748B]">
@@ -649,141 +669,152 @@ export default function DailyRatePayClient({
             </div>
           </div>
         </PanelShell>
+      </div>
 
-        {/* Right panel */}
-        <aside className="xl:sticky xl:top-24 xl:self-start">
-          <div className="rounded-[18px] border border-[#E5E7EB] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
-            <div className="border-b border-[#E5E7EB] p-5">
-              <p className="text-xs font-semibold uppercase tracking-wide text-[#94A3B8]">Update Daily Pay</p>
-              {selected ? (
-                <>
-                  <div className="mt-2 flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-[#2563EB]">
-                        {initials(selected.employeeName)}
-                      </span>
-                      <div>
-                        <h3 className="text-lg font-bold text-[#0F172A]">{selected.employeeName}</h3>
-                        <p className="text-sm text-[#64748B]">{selected.employeeId}</p>
-                      </div>
-                    </div>
+      {selected ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${selected.employeeName} daily pay details`}
+          onClick={closeDetail}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-[#E5E7EB] px-6 py-4">
+              <div className="flex min-w-0 items-start gap-4">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-[#2563EB]">
+                  {initials(selected.employeeName)}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-lg font-semibold text-[#0F172A]">{selected.employeeName}</p>
+                  <p className="text-sm text-[#64748B]">{selected.employeeId} · {selected.department}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
                     <StatusPill label={selected.status} tone={statusTone(selected.status)} />
+                    <StatusPill label={selected.payMode} tone="blue" />
                   </div>
-                </>
-              ) : (
-                <p className="mt-2 text-sm text-[#64748B]">Select an employee from the register.</p>
-              )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeDetail}
+                className="rounded-xl border border-[#E5E7EB] p-2 text-[#64748B] transition hover:bg-[#F8FAFC] hover:text-[#0F172A]"
+                aria-label="Close daily pay details"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
 
-            {selected ? (
-              <div className="space-y-4 p-5">
+            <div className="max-h-[calc(90vh-5.5rem)] space-y-4 overflow-y-auto p-6">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#94A3B8]">Update Daily Pay</p>
+              <label className="block">
+                <span className="text-xs font-semibold text-[#64748B]">Pay Mode</span>
+                <select
+                  value={form.payMode}
+                  onChange={(e) => setForm((prev) => ({ ...prev, payMode: e.target.value }))}
+                  className="mt-1 h-10 w-full rounded-xl border border-[#E5E7EB] px-3 text-sm font-medium outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-blue-100"
+                >
+                  <option>Daily</option>
+                  <option>Hourly</option>
+                </select>
+              </label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="block">
-                  <span className="text-xs font-semibold text-[#64748B]">Pay Mode</span>
-                  <select
-                    value={form.payMode}
-                    onChange={(e) => setForm((prev) => ({ ...prev, payMode: e.target.value }))}
-                    className="mt-1 h-10 w-full rounded-xl border border-[#E5E7EB] px-3 text-sm font-medium outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-blue-100"
-                  >
-                    <option>Daily</option>
-                    <option>Hourly</option>
-                  </select>
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="block">
-                    <span className="text-xs font-semibold text-[#64748B]">Day Rate</span>
-                    <input
-                      value={form.ratePerDay}
-                      onChange={(e) => setForm((prev) => ({ ...prev, ratePerDay: e.target.value }))}
-                      disabled={form.payMode === 'Hourly'}
-                      className="mt-1 h-10 w-full rounded-xl border border-[#E5E7EB] px-3 text-sm font-semibold outline-none disabled:bg-[#F1F5F9]"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs font-semibold text-[#64748B]">Hourly Rate</span>
-                    <input
-                      value={form.ratePerHour}
-                      onChange={(e) => setForm((prev) => ({ ...prev, ratePerHour: e.target.value }))}
-                      disabled={form.payMode === 'Daily'}
-                      className="mt-1 h-10 w-full rounded-xl border border-[#E5E7EB] px-3 text-sm font-semibold outline-none disabled:bg-[#F1F5F9]"
-                    />
-                  </label>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="block">
-                    <span className="text-xs font-semibold text-[#64748B]">Paid Hours / Day</span>
-                    <input value="8" disabled className="mt-1 h-10 w-full rounded-xl border border-[#E5E7EB] bg-[#F1F5F9] px-3 text-sm font-semibold text-[#475569]" />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs font-semibold text-[#64748B]">Payroll Group</span>
-                    <input
-                      value={form.payrollGroup}
-                      onChange={(e) => setForm((prev) => ({ ...prev, payrollGroup: e.target.value }))}
-                      className="mt-1 h-10 w-full rounded-xl border border-[#E5E7EB] px-3 text-sm font-medium outline-none"
-                    />
-                  </label>
-                </div>
-                <label className="block">
-                  <span className="text-xs font-semibold text-[#64748B]">Salary Grade</span>
+                  <span className="text-xs font-semibold text-[#64748B]">Day Rate</span>
                   <input
-                    value={form.salaryGrade}
-                    onChange={(e) => setForm((prev) => ({ ...prev, salaryGrade: e.target.value }))}
+                    value={form.ratePerDay}
+                    onChange={(e) => setForm((prev) => ({ ...prev, ratePerDay: e.target.value }))}
+                    disabled={form.payMode === 'Hourly'}
+                    className="mt-1 h-10 w-full rounded-xl border border-[#E5E7EB] px-3 text-sm font-semibold outline-none disabled:bg-[#F1F5F9]"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-[#64748B]">Hourly Rate</span>
+                  <input
+                    value={form.ratePerHour}
+                    onChange={(e) => setForm((prev) => ({ ...prev, ratePerHour: e.target.value }))}
+                    disabled={form.payMode === 'Daily'}
+                    className="mt-1 h-10 w-full rounded-xl border border-[#E5E7EB] px-3 text-sm font-semibold outline-none disabled:bg-[#F1F5F9]"
+                  />
+                </label>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-xs font-semibold text-[#64748B]">Paid Hours / Day</span>
+                  <input value="8" disabled className="mt-1 h-10 w-full rounded-xl border border-[#E5E7EB] bg-[#F1F5F9] px-3 text-sm font-semibold text-[#475569]" />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-[#64748B]">Payroll Group</span>
+                  <input
+                    value={form.payrollGroup}
+                    onChange={(e) => setForm((prev) => ({ ...prev, payrollGroup: e.target.value }))}
                     className="mt-1 h-10 w-full rounded-xl border border-[#E5E7EB] px-3 text-sm font-medium outline-none"
                   />
                 </label>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3">
-                    <p className="text-xs font-semibold text-cyan-800">Timesheet</p>
-                    <p className="mt-1 text-lg font-bold text-[#0F172A]">{number(selected.daysWorked)} Days</p>
-                  </div>
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                    <p className="text-xs font-semibold text-emerald-800">Pay</p>
-                    <p className="mt-1 text-lg font-bold text-[#0F172A]">{money(selected.grossPay, canViewMoney)}</p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => void saveRate()}
-                  disabled={saving || !payload?.permissions.canUpdateRates}
-                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#2563EB] text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-50"
-                >
-                  <Save className="h-4 w-4" />
-                  {saving ? 'Saving…' : 'Save Daily Pay Setup'}
-                </button>
-
-                <ReadinessGauge
-                  score={readinessScore(selected)}
-                  readyDays={Math.round(selected.payrollReadyDays)}
-                  issuesFound={selected.issues.length}
-                  blockingIssues={selected.status === 'Blocked' ? selected.issues.length : 0}
-                />
-
-                <AccordionSection title="Calculation Breakdown" subtitle="Day rate earnings engine" defaultOpen>
-                  <div className="space-y-1 text-xs text-[#475569]">
-                    <p>Mode: {selected.payMode}</p>
-                    <p>Days worked: {number(selected.daysWorked)}</p>
-                    <p>Payroll-ready days: {number(selected.payrollReadyDays)}</p>
-                    <p>Calculated gross: {money(selected.grossPay, canViewMoney)}</p>
-                  </div>
-                </AccordionSection>
-                <AccordionSection title="Payroll Impact" count={1}>
-                  <p className="text-xs text-[#64748B]">Gross pay posts to contract day-rate earnings for {payload?.periodLabel}.</p>
-                </AccordionSection>
-                <AccordionSection title="Assignments" count={1}>
-                  <p className="text-xs text-[#64748B]">{selected.payrollGroup} · {selected.paymentRun}</p>
-                </AccordionSection>
-                <AccordionSection title="Approval History" count={2}>
-                  <p className="text-xs text-[#64748B]">Timesheet status: {timesheetStatusLabel(selected)}</p>
-                </AccordionSection>
-                <AccordionSection title="Notes">
-                  <ReadinessIssueList issues={selected.issues} tone={statusTone(selected.status)} />
-                </AccordionSection>
               </div>
-            ) : null}
+              <label className="block">
+                <span className="text-xs font-semibold text-[#64748B]">Salary Grade</span>
+                <input
+                  value={form.salaryGrade}
+                  onChange={(e) => setForm((prev) => ({ ...prev, salaryGrade: e.target.value }))}
+                  className="mt-1 h-10 w-full rounded-xl border border-[#E5E7EB] px-3 text-sm font-medium outline-none"
+                />
+              </label>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3">
+                  <p className="text-xs font-semibold text-cyan-800">Timesheet</p>
+                  <p className="mt-1 text-lg font-bold text-[#0F172A]">{number(selected.daysWorked)} Days</p>
+                </div>
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                  <p className="text-xs font-semibold text-emerald-800">Pay</p>
+                  <p className="mt-1 text-lg font-bold text-[#0F172A]">{money(selected.grossPay, canViewMoney)}</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void saveRate()}
+                disabled={saving || !payload?.permissions.canUpdateRates}
+                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#2563EB] text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-50"
+              >
+                <Save className="h-4 w-4" />
+                {saving ? 'Saving…' : 'Save Daily Pay Setup'}
+              </button>
+
+              <ReadinessGauge
+                score={readinessScore(selected)}
+                readyDays={Math.round(selected.payrollReadyDays)}
+                issuesFound={selected.issues.length}
+                blockingIssues={selected.status === 'Blocked' ? selected.issues.length : 0}
+              />
+
+              <AccordionSection title="Calculation Breakdown" subtitle="Day rate earnings engine" defaultOpen>
+                <div className="space-y-1 text-xs text-[#475569]">
+                  <p>Mode: {selected.payMode}</p>
+                  <p>Days worked: {number(selected.daysWorked)}</p>
+                  <p>Payroll-ready days: {number(selected.payrollReadyDays)}</p>
+                  <p>Calculated gross: {money(selected.grossPay, canViewMoney)}</p>
+                </div>
+              </AccordionSection>
+              <AccordionSection title="Payroll Impact" count={1}>
+                <p className="text-xs text-[#64748B]">Gross pay posts to contract day-rate earnings for {payload?.periodLabel}.</p>
+              </AccordionSection>
+              <AccordionSection title="Assignments" count={1}>
+                <p className="text-xs text-[#64748B]">{selected.payrollGroup} · {selected.paymentRun}</p>
+              </AccordionSection>
+              <AccordionSection title="Approval History" count={2}>
+                <p className="text-xs text-[#64748B]">Timesheet status: {timesheetStatusLabel(selected)}</p>
+              </AccordionSection>
+              <AccordionSection title="Notes">
+                <ReadinessIssueList issues={selected.issues} tone={statusTone(selected.status)} />
+              </AccordionSection>
+            </div>
           </div>
-        </aside>
-      </div>
+        </div>
+      ) : null}
 
       {/* Analytics */}
       <div className="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
