@@ -1,3 +1,5 @@
+import { isProtectedGlobalSuperAdminIdentity } from '@/lib/auth/protected-global-admin';
+
 type PermissionNodeLike = {
   module: string;
   permissionPrefix: string;
@@ -45,4 +47,7 @@ export const moduleOperationPermissions = (
 
 export const isProtectedAccessSubject = (subjectType: 'role' | 'user', subjectId: string) =>
   (subjectType === 'role' && subjectId === 'Super Administrator')
-  || (subjectType === 'user' && ['global-admin', 'Admin'].includes(subjectId));
+  || (subjectType === 'user' && (
+    ['global-admin', 'Admin'].includes(subjectId)
+    || isProtectedGlobalSuperAdminIdentity(subjectId)
+  ));

@@ -17,6 +17,7 @@ import {
   isSuperActor,
 } from '@/lib/auth/role-delegation';
 import { enterpriseRoles, permissionsForRoles, roleDefinitions } from '@/lib/auth/rbac';
+import { isProtectedGlobalSuperAdminIdentity } from '@/lib/auth/protected-global-admin';
 import type { SessionPayload } from '@/lib/auth/session';
 
 export const accessActions = [
@@ -721,7 +722,9 @@ export const effectivePermissionsForRoles = async (roles: string[]) => {
 };
 
 const resolveEffectivePermissions = (state: AccessControlState, userId: string, roles: string[]) => {
-  if (roles.includes('Super Administrator') || userId === 'global-admin') return ['*'];
+  if (roles.includes('Super Administrator') || userId === 'global-admin' || isProtectedGlobalSuperAdminIdentity(userId)) {
+    return ['*'];
+  }
   const base = permissionsForRoles(roles);
   const roleGrants = state.published
     .filter((item) => item.subjectType === 'role' && roles.includes(item.subjectId) && item.status === 'published')
@@ -751,7 +754,9 @@ export const saveAccessAssignment = async (
   const subjectId = compact(payload.subjectId);
   if (!subjectId) throw new Error('Select a role or user before saving permissions.');
   if (subjectType === 'role' && subjectId === 'Super Administrator') throw new Error('The Super Administrator role is protected and cannot be edited, restricted, or demoted.');
-  if (subjectType === 'user' && ['global-admin', 'Admin'].includes(subjectId)) throw new Error('The protected default Super Administrator account cannot be edited, disabled, restricted, or demoted.');
+  if (subjectType === 'user' && (['global-admin', 'Admin'].includes(subjectId) || isProtectedGlobalSuperAdminIdentity(subjectId))) {
+    throw new Error('The protected Global Super Administrator account cannot be edited, disabled, restricted, or demoted.');
+  }
 
   const actorIsSuper = isSuperActor(actor);
   let requested = unique(expandPublishedPermissions(Array.isArray(payload.permissions) ? payload.permissions : []));

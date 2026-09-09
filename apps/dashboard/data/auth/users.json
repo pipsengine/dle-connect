@@ -25622,23 +25622,7 @@
     "passwordSalt": "46cbe5d0c0638d442eefa1110c7b6f68",
     "status": "Active",
     "roles": [
-      "Super Administrator",
-      "System Administrator",
-      "Admin",
-      "Manager",
-      "Department Head",
-      "HR Administrator",
-      "HR Manager",
-      "HR Director",
-      "Payroll Administrator",
-      "Application Administrator",
-      "Integration Administrator",
-      "Executive User",
-      "Security Administrator",
-      "Audit Administrator",
-      "Finance Administrator",
-      "Executive Management",
-      "Executive Director"
+      "Super Administrator"
     ],
     "permissions": [
       "*"
@@ -25653,9 +25637,10 @@
     "lockedUntil": null,
     "lastLoginAt": "2026-09-09T11:19:34.146Z",
     "createdAt": "2026-06-14T12:32:30.629Z",
-    "updatedAt": "2026-09-09T11:19:34.146Z",
+    "updatedAt": "2026-09-09T12:22:55.590Z",
     "disabledAt": null,
-    "deleted": false
+    "deleted": false,
+    "isGlobalAdmin": true
   },
   {
     "id": "usr-P0181",

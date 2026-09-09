@@ -1,16 +1,20 @@
 import { permissionsForRoles } from '@/lib/auth/rbac';
+import { isProtectedGlobalSuperAdminIdentity } from '@/lib/auth/protected-global-admin';
 
 export type SuperActorInput = {
   sub?: string;
   roles?: string[];
   permissions?: string[];
   isGlobalAdmin?: boolean;
+  username?: string;
+  employeeCode?: string;
 };
 
 /** Global Super Administrator account OR Super Administrator role holders. */
 export const isSuperActor = (input?: SuperActorInput | null) => {
   if (!input) return false;
   if (input.isGlobalAdmin || input.sub === 'global-admin') return true;
+  if (isProtectedGlobalSuperAdminIdentity(input)) return true;
   if ((input.roles || []).includes('Super Administrator')) return true;
   if ((input.permissions || []).includes('*')) return true;
   return false;

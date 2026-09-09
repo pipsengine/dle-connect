@@ -9,6 +9,11 @@ import type { SessionPayload, SessionUser } from '@/lib/auth/session';
 import { passwordPolicyErrors } from '@/lib/auth/session';
 import { effectivePermissionsForRoles, effectivePermissionsForUser, effectivePermissionsForUsers } from '@/lib/auth/access-control-store';
 import { assertActorCanAssignRoles, canManageSuperAdministratorRole } from '@/lib/auth/role-delegation';
+import {
+  assertProtectedGlobalSuperAdminMutable,
+  isProtectedGlobalSuperAdminIdentity,
+  protectedGlobalSuperAdminRoles,
+} from '@/lib/auth/protected-global-admin';
 
 export type UserStatus = 'Active' | 'Inactive' | 'Disabled' | 'Locked' | 'Pending First Login' | 'Password Reset Required';
 
@@ -43,6 +48,8 @@ export type UserAccount = {
   updatedAt: string;
   disabledAt?: string | null;
   deleted?: boolean;
+  /** Locked Global Super Administrator — unrestricted access; roles cannot be changed. */
+  isGlobalAdmin?: boolean;
 };
 
 export type SecurityAudit = {
@@ -395,6 +402,7 @@ const userFromEmployee = (employee: DleEmployeeDirectoryRow): UserAccount => {
 const mergeEmployee = (user: UserAccount, employee: DleEmployeeDirectoryRow): UserAccount => {
   const employmentStatus = employee.status || user.employmentStatus;
   const inactive = !activeEmployee(employee);
+  const lockedGlobal = isProtectedGlobalSuperAdminIdentity(user) || Boolean(user.isGlobalAdmin);
   return {
     ...user,
     employeeId: employee.employeeId || user.employeeId,
@@ -409,7 +417,11 @@ const mergeEmployee = (user: UserAccount, employee: DleEmployeeDirectoryRow): Us
     location: employee.workLocation || employee.location || employee.officeLocation || user.location,
     employmentStatus,
     reportingManager: employee.managerName || employee.functionalManager || employee.departmentHead || user.reportingManager,
-    status: inactive && user.status !== 'Locked' ? 'Inactive' : user.status,
+    // Protected Global Super Admins stay Active with locked Super Administrator role.
+    status: lockedGlobal ? 'Active' : (inactive && user.status !== 'Locked' ? 'Inactive' : user.status),
+    roles: lockedGlobal ? protectedGlobalSuperAdminRoles() : user.roles,
+    permissions: lockedGlobal ? ['*'] : user.permissions,
+    isGlobalAdmin: lockedGlobal ? true : user.isGlobalAdmin,
     updatedAt: nowIso(),
   };
 };
@@ -507,26 +519,43 @@ export const syncUsersFromEmployeeDirectory = async () => {
 
 export const readUsers = async () => {
   const stored = await readUsersStoreRaw();
-  const activeUsers = stored.filter((user) => !user.deleted);
+  const activeUsers = stored.filter((user) => !user.deleted).map((user) => {
+    if (!(isProtectedGlobalSuperAdminIdentity(user) || user.isGlobalAdmin)) return user;
+    return {
+      ...user,
+      roles: protectedGlobalSuperAdminRoles(),
+      permissions: ['*'],
+      isGlobalAdmin: true,
+      status: user.status === 'Password Reset Required' ? user.status : 'Active' as UserStatus,
+    };
+  });
   const permissions = await effectivePermissionsForUsers(activeUsers.map((user) => ({ id: user.id, roles: user.roles })));
-  return activeUsers.map((user, index) => ({ ...user, permissions: permissions[index] }));
+  return activeUsers.map((user, index) => ({
+    ...user,
+    permissions: (user.isGlobalAdmin || isProtectedGlobalSuperAdminIdentity(user)) ? ['*'] : permissions[index],
+  }));
 };
 
 export const readUsersForAccessControl = async () => {
   const stored = await readUsersStoreRaw();
   const activeUsers = stored.filter((user) => !user.deleted);
   const permissions = await effectivePermissionsForUsers(activeUsers.map((user) => ({ id: user.id, roles: user.roles })));
-  return activeUsers.map((user, index) => ({
-    id: user.id,
-    username: user.username,
-    employeeCode: user.employeeCode,
-    fullName: user.fullName,
-    department: user.department,
-    jobTitle: user.jobTitle,
-    status: user.status,
-    roles: user.roles,
-    permissions: permissions[index],
-  }));
+  return activeUsers.map((user, index) => {
+    const locked = isProtectedGlobalSuperAdminIdentity(user) || Boolean(user.isGlobalAdmin);
+    return {
+      id: user.id,
+      username: user.username,
+      employeeCode: user.employeeCode,
+      fullName: user.fullName,
+      department: user.department,
+      jobTitle: user.jobTitle,
+      status: user.status,
+      roles: locked ? protectedGlobalSuperAdminRoles() : user.roles,
+      permissions: locked ? ['*'] : permissions[index],
+      isGlobalAdmin: locked,
+      rolesLocked: locked,
+    };
+  });
 };
 
 const globalAdminDefault = (): GlobalAdminState => {
@@ -594,21 +623,26 @@ const findLoginUser = (users: UserAccount[], login: string) => {
     || users.find((item) => lower(item.email) === key);
 };
 
-const publicUser = async (user: UserAccount): Promise<SessionUser> => ({
-  userId: user.id,
-  username: user.username,
-  employeeId: user.employeeId,
-  employeeCode: user.employeeCode,
-  fullName: user.fullName,
-  email: user.email,
-  department: user.department,
-  unit: user.unit,
-  roles: user.roles,
-  permissions: await effectivePermissionsForUser(user.id, user.roles),
-  status: user.status,
-  firstLoginRequired: user.firstLoginRequired,
-  passwordResetRequired: user.passwordResetRequired,
-});
+const publicUser = async (user: UserAccount): Promise<SessionUser> => {
+  const lockedGlobal = isProtectedGlobalSuperAdminIdentity(user) || Boolean(user.isGlobalAdmin);
+  const roles = lockedGlobal ? protectedGlobalSuperAdminRoles() : user.roles;
+  return {
+    userId: user.id,
+    username: user.username,
+    employeeId: user.employeeId,
+    employeeCode: user.employeeCode,
+    fullName: user.fullName,
+    email: user.email,
+    department: user.department,
+    unit: user.unit,
+    roles,
+    permissions: lockedGlobal ? ['*'] : await effectivePermissionsForUser(user.id, roles),
+    status: user.status,
+    firstLoginRequired: user.firstLoginRequired,
+    passwordResetRequired: user.passwordResetRequired,
+    isGlobalAdmin: lockedGlobal,
+  };
+};
 
 const globalSessionUser = (state: GlobalAdminState): SessionUser => ({
   userId: 'global-admin',
@@ -754,6 +788,15 @@ export const updateUser = async (
   if (!target) throw new Error('User account was not found.');
   let updated: UserAccount = target;
   const oldValue = JSON.stringify({ status: target.status, roles: target.roles, departmentAccess: target.departmentAccess, moduleAccess: target.moduleAccess });
+
+  const protectedTarget = isProtectedGlobalSuperAdminIdentity(target) || Boolean(target.isGlobalAdmin);
+  if (protectedTarget && !['reset-password', 'force-password-change'].includes(action)) {
+    // Password ops allowed; role / access / disable / lock / recover are blocked.
+    if (['assign-roles', 'assign-access', 'activate', 'disable', 'lock', 'unlock', 'recover-account'].includes(action)) {
+      assertProtectedGlobalSuperAdminMutable(target, action.replace(/-/g, ' '));
+    }
+  }
+
   if (action === 'activate') updated = { ...target, status: 'Active', disabledAt: null, updatedAt: nowIso() };
   if (action === 'disable') updated = { ...target, status: 'Disabled', disabledAt: nowIso(), updatedAt: nowIso() };
   if (action === 'lock') updated = { ...target, status: 'Locked', lockedUntil: new Date(Date.now() + LOCKOUT_MINUTES * 60000).toISOString(), updatedAt: nowIso() };
@@ -764,7 +807,7 @@ export const updateUser = async (
     updated = { ...target, passwordHash: hashed.hash, passwordSalt: hashed.salt, status: 'Password Reset Required', passwordResetRequired: true, failedAttempts: 0, lockedUntil: null, updatedAt: nowIso() };
   }
   if (action === 'recover-account') {
-    if (lower(target.username) === 'admin' || target.id === 'global-admin') {
+    if (lower(target.username) === 'admin' || target.id === 'global-admin' || protectedTarget) {
       throw new Error('The protected Global Admin account cannot be recovered from this tool.');
     }
     if (target.roles.includes('Super Administrator') && !canManageSuperAdministratorAccount(actor)) {
@@ -802,6 +845,7 @@ export const updateUser = async (
     updated = next;
   }
   if (action === 'assign-roles') {
+    if (protectedTarget) assertProtectedGlobalSuperAdminMutable(target, 'role-changed');
     const roles = Array.isArray(payload.roles) ? payload.roles.filter((item: string) => enterpriseRoles.includes(item as any)) : target.roles;
     const touchesSuperAdministrator = roles.includes('Super Administrator') || target.roles.includes('Super Administrator');
     if (touchesSuperAdministrator && !canManageSuperAdministratorAccount(actor)) {
@@ -815,6 +859,7 @@ export const updateUser = async (
     updated = { ...target, roles, permissions: await effectivePermissionsForRoles(roles), updatedAt: nowIso() };
   }
   if (action === 'assign-access') {
+    if (protectedTarget) assertProtectedGlobalSuperAdminMutable(target, 'access-changed');
     updated = {
       ...target,
       departmentAccess: Array.isArray(payload.departmentAccess) ? payload.departmentAccess.map(compact).filter(Boolean) : target.departmentAccess,
@@ -822,6 +867,20 @@ export const updateUser = async (
       updatedAt: nowIso(),
     };
   }
+
+  // Re-assert locked identity invariants after any allowed mutation.
+  if (isProtectedGlobalSuperAdminIdentity(updated) || Boolean(updated.isGlobalAdmin)) {
+    updated = {
+      ...updated,
+      roles: protectedGlobalSuperAdminRoles(),
+      permissions: ['*'],
+      isGlobalAdmin: true,
+      status: updated.status === 'Password Reset Required' ? updated.status : 'Active',
+      disabledAt: null,
+      deleted: false,
+    };
+  }
+
   const nextUsers = users.map((item) => item.id === userId ? updated : item);
   await writeUsersStore(nextUsers);
   const { ip, device } = client(headers);
