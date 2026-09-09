@@ -30,15 +30,20 @@ export type PaymentRequestType = (typeof PAYMENT_TYPES)[number];
 export {
   EXPENSE_NATURE_OPTIONS,
   SUPPLIER_INVOICE_CATEGORIES,
+  TRAVELLING_EXPENSE_NATURE,
+  applyHrManagerAfterReportingManager,
   invoiceCategoryForPaymentType,
   isExpenseNoPoPayment,
   isSupplierPoInvoicePayment,
+  isTravellingExpenseNature,
   supplierInvoiceCategoryLabel,
   type SupplierInvoiceCategory,
 } from '@/lib/finance-intelligence/payment-invoice-category';
 import {
+  applyHrManagerAfterReportingManager,
   invoiceCategoryForPaymentType,
   isExpenseNoPoPayment,
+  isTravellingExpenseNature,
   type SupplierInvoiceCategory,
 } from '@/lib/finance-intelligence/payment-invoice-category';
 
@@ -325,6 +330,7 @@ const resolveInitialStage = async (
     projectCode?: string;
     requesterCode?: string;
     supervisorName?: string;
+    expenseNature?: string;
   },
 ) => {
   try {
@@ -337,12 +343,13 @@ const resolveInitialStage = async (
       supervisorName: context?.supervisorName,
     });
     if (matched) {
+      const stages = applyHrManagerAfterReportingManager(matched.stages, context?.expenseNature);
       return {
-        stage: matched.currentStage,
+        stage: stages[0] || matched.currentStage,
         status: 'Pending Approval' as const,
         matrixRuleName: matched.ruleName,
-        approvalLevel: matched.approvalLevel,
-        stages: matched.stages,
+        approvalLevel: stages.length || matched.approvalLevel,
+        stages,
         pathType: matched.pathType,
         amountNgn: matched.amountNgn,
         fxRate: matched.fxRate,
@@ -403,6 +410,7 @@ const resolveInitialStage = async (
     supervisorName: context?.supervisorName,
     projectCode: context?.projectCode,
   });
+  fallbackStages = applyHrManagerAfterReportingManager(fallbackStages, context?.expenseNature);
   return {
     stage: fallbackStages[0],
     status: 'Pending Approval' as const,
@@ -938,10 +946,13 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
       supervisorName: row.supervisorName,
     });
     if (matched?.stages?.length) {
-      matchedStages = matched.stages;
+      matchedStages = applyHrManagerAfterReportingManager(
+        matched.stages,
+        compact(row.payload?.expenseNature),
+      );
       matchedMeta = {
         matrixRuleName: matched.ruleName,
-        approvalLevel: matched.approvalLevel,
+        approvalLevel: matchedStages.length || matched.approvalLevel,
         pathType: matched.pathType,
         amountNgn: matched.amountNgn,
         fxRate: matched.fxRate,
@@ -971,6 +982,10 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
     || /seed|fallback/i.test(storedFxSource)
   );
 
+  const travellingNeedsHr = isTravellingExpenseNature(compact(row.payload?.expenseNature))
+    && existing.length > 0
+    && !existing.some((stage) => /hr\s*manager/i.test(stage));
+
   const inFlightProjectWithoutRm = Boolean(
     existing.length
     && !/draft/i.test(compact(row.status))
@@ -983,7 +998,10 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
       const prefixMatches = existing.every((stage, index) =>
         compact(stage).toLowerCase() === compact(withoutRm[index] || '').toLowerCase());
       if (prefixMatches && withoutRm.length >= existing.length) {
-        return [...existing, ...withoutRm.slice(existing.length)];
+        return applyHrManagerAfterReportingManager(
+          [...existing, ...withoutRm.slice(existing.length)],
+          compact(row.payload?.expenseNature),
+        );
       }
       return existing;
     })()
@@ -995,7 +1013,8 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
     || onlyReportingManager
     || (row.paymentType === 'Cash Advance Payment' && existing.length > 0 && !hasFinanceManager)
     || stageMismatch
-    || needsFxRepair;
+    || needsFxRepair
+    || travellingNeedsHr;
 
   if (!needsRepair) return existing;
 
@@ -1005,6 +1024,9 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
     if (existing[0] && !stages.some((stage) => stage.toLowerCase() === existing[0].toLowerCase())) {
       stages = [existing[0], ...stages.filter((stage) => stage.toLowerCase() !== existing[0].toLowerCase())];
     }
+  }
+  if (travellingNeedsHr || isTravellingExpenseNature(compact(row.payload?.expenseNature))) {
+    stages = applyHrManagerAfterReportingManager(stages, compact(row.payload?.expenseNature));
   }
 
   row.payload = await persistPayloadStages(row.requestId, row.payload, stages, {
@@ -2129,6 +2151,7 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
       projectCode: compact(input.projectCode),
       requesterCode: compact(input.requesterCode) || beneficiaryCode,
       supervisorName: compact(input.supervisorName),
+      expenseNature: input.paymentType === 'Expense Payment' ? compact(input.expenseNature) : undefined,
     })
     : {
       stage: 'Draft',
@@ -2420,6 +2443,9 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
       projectCode: compact(input.projectCode) || existing.projectCode,
       requesterCode: compact(input.requesterCode) || existing.requesterCode || beneficiaryCode,
       supervisorName: compact(input.supervisorName) || existing.supervisorName,
+      expenseNature: (existing.paymentType === 'Expense Payment' || isExpenseNoPoPayment(existing))
+        ? expenseNature
+        : undefined,
     })
     : wasDraft
       ? {

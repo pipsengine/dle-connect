@@ -151,6 +151,7 @@ const roleMatches = (delegationRole: string, stage: string) => {
   if (role === stageKey) return true;
   if (role.includes(stageKey) || stageKey.includes(role)) return true;
   if (/reporting manager|line manager/.test(role) && /reporting manager|line manager|supervisor/.test(stageKey)) return true;
+  if (/hr\s*manager/.test(role) && /hr\s*manager/.test(stageKey)) return true;
   if (/finance manager/.test(role) && /finance manager/.test(stageKey)) return true;
   if (/^gm$|general manager/.test(role) && /^gm$|general manager/.test(stageKey)) return true;
   if (/md\/?ceo|managing director/.test(role) && /md\/?ceo|managing director|chief executive/.test(stageKey)) return true;

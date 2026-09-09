@@ -120,6 +120,7 @@ const roleFallbacksForStage = (stage: string): string[] => {
   }
   if (/project manager/.test(value)) return ['Project Manager'];
   if (/cost controller/.test(value)) return ['Cost Controller'];
+  if (/hr\s*manager/.test(value)) return ['HR Manager'];
   if (/finance manager/.test(value)) return ['Finance Manager', 'Finance Controller'];
   if (/^gm$|general manager/.test(value)) return ['General Manager', 'GM'];
   if (/cfo|chief financial/.test(value)) return ['CFO', 'Chief Financial Officer'];
@@ -200,6 +201,32 @@ export const resolvePaymentStageApprover = async (input: {
     }
   } else if (/cost controller/.test(stageKey)) {
     matched = matchJobTitle(employees, [/cost\s*controller/i]);
+  } else if (/hr\s*manager/.test(stageKey)) {
+    // Prefer Active auth accounts with exact "HR Manager" role; fall back to directory title.
+    try {
+      const { readUsers } = await import('@/lib/auth/auth-store');
+      const users = await readUsers().catch(() => [] as Awaited<ReturnType<typeof readUsers>>);
+      const hrManagers = (users || [])
+        .filter((user) => {
+          if (user.status && user.status !== 'Active') return false;
+          return (user.roles || []).some((role) => /^hr\s*manager$/i.test(String(role || '').trim()));
+        })
+        .map((user) => {
+          const code = compact(user.employeeCode || user.employeeId || user.username).toUpperCase();
+          return employees.find((employee) => {
+            if (/inactive|terminated|resigned|retired|deceased|suspend/i.test(compact(employee.status))) return false;
+            return employeeCodeOf(employee).toUpperCase() === code
+              || compact(employee.employeeId).toUpperCase() === code;
+          }) || null;
+        })
+        .filter(Boolean) as DleEmployeeDirectoryRow[];
+      matched = hrManagers.sort((a, b) => employeeCodeOf(a).localeCompare(employeeCodeOf(b)))[0] || null;
+    } catch {
+      matched = null;
+    }
+    if (!matched) {
+      matched = matchJobTitle(employees, [/^\s*hr\s+manager\b/i, /hr\s*manager/i]);
+    }
   } else if (/finance manager/.test(stageKey)) {
     // Acting Finance Manager (temporary): Rapheal/Raphael Iyanda until a permanent FM job title is set.
     // HRIS spelling is RAPHEAL OLAITAN IYANDA (P0429).

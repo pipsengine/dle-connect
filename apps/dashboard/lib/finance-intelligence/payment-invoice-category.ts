@@ -14,8 +14,45 @@ export const EXPENSE_NATURE_OPTIONS = [
   'Insurance',
   'Subscription / License',
   'Statutory / Regulatory',
+  'Travelling Expense/Allowance',
   'Other',
 ] as const;
+
+export const TRAVELLING_EXPENSE_NATURE = 'Travelling Expense/Allowance';
+
+/** Expense natures that require HR Manager approval after the line/reporting manager. */
+export const isTravellingExpenseNature = (nature?: string | null) =>
+  /travell?ing\s*expense|travel(?:ling)?\s*allowance/i.test(String(nature || '').trim());
+
+/**
+ * For Travelling Expense/Allowance: insert HR Manager immediately after Reporting/Line Manager.
+ * Idempotent if HR Manager is already in the chain.
+ */
+export const applyHrManagerAfterReportingManager = (
+  stages: string[],
+  expenseNature?: string | null,
+): string[] => {
+  if (!isTravellingExpenseNature(expenseNature)) return stages;
+  const next = stages.map((stage) => String(stage || '').trim()).filter(Boolean);
+  if (next.some((stage) => /hr\s*manager/i.test(stage))) return next;
+
+  const reportingIndex = next.findIndex((stage) =>
+    /reporting\s*manager|line\s*manager/i.test(stage));
+  if (reportingIndex >= 0) {
+    next.splice(reportingIndex + 1, 0, 'HR Manager');
+    return next;
+  }
+
+  const financeIndex = next.findIndex((stage) =>
+    /finance\s*manager|cost\s*controller|\bcfo\b|^gm$|general\s*manager|md\/?ceo/i.test(stage));
+  if (financeIndex >= 0) {
+    next.splice(financeIndex, 0, 'HR Manager');
+    return next;
+  }
+
+  return ['HR Manager', ...next];
+};
+
 
 /** True for Expense Payment type, or legacy Supplier Invoice rows tagged expense-no-po. */
 export const isExpenseNoPoPayment = (row: {
