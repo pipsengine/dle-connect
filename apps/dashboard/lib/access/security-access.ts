@@ -20,13 +20,13 @@ export const canAccessSecurityPortal = (permissions?: string[], isGlobalAdmin = 
 };
 
 export const canAccessSecurityKeys = (
-  permissionKeys?: string[],
+  permissionKeys?: readonly string[] | string[],
   permissions?: string[],
   isGlobalAdmin = false,
 ) => {
   if (hasUnrestrictedAccess(permissions, isGlobalAdmin)) return true;
   if (!permissionKeys?.length) return canAccessSecurityPortal(permissions, isGlobalAdmin);
-  return hasAnyPermission(permissions || [], permissionKeys);
+  return hasAnyPermission(permissions || [], [...permissionKeys]);
 };
 
 export const filterSecurityNavSections = (
