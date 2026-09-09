@@ -353,7 +353,7 @@ export default function RecruitmentFormModal({ open, kind, editId, payload, onCl
     <ModalShell
       open={open}
       title={titles[kind]}
-      subtitle="Directory fields load from employees, departments and locations in MSSQL. Saves write to [hris] recruitment tables."
+      subtitle="Departments and locations from HRIS. Project list comes from system projects ([hris].[TimesheetProjects]). Saves write to [hris] recruitment tables."
       onClose={onClose}
       footer={(
         <>
