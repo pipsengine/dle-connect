@@ -38,6 +38,26 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
     'timesheet.supervisor.approve',
     'operations.timesheets.approve',
   ],
+  'offboarding.view': [
+    'page.hris.offboarding.resignation-management.view',
+    'page.hris.offboarding.handover-checklist.view',
+    'page.hris.offboarding.exit-clearance.view',
+    'page.hris.offboarding.asset-return.view',
+    'page.hris.offboarding.final-payroll.view',
+  ],
+  'offboarding.*': [
+    'page.hris.offboarding.resignation-management.view',
+    'page.hris.offboarding.handover-checklist.view',
+    'page.hris.offboarding.exit-clearance.view',
+    'page.hris.offboarding.asset-return.view',
+    'page.hris.offboarding.final-payroll.view',
+    'offboarding.clearance.view',
+    'offboarding.clearance.approve',
+  ],
+  'offboarding.clearance.approve': [
+    'page.hris.offboarding.exit-clearance.view',
+    'offboarding.clearance.view',
+  ],
   'operations.timesheets.view': [
     'page.hris.time-and-logs.timesheet-reports.view',
     'page.hris.time-and-logs.timesheet-recapture.view',

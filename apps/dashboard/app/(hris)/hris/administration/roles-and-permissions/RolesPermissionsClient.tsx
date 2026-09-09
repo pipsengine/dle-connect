@@ -98,7 +98,7 @@ type AuditRecord = { id: string; modifiedBy: string; modifiedAt: string; roleOrU
 type SubjectOption = { id: string; label: string; permissions: string[]; meta: string };
 
 const dataScopes = ['Own', 'Team', 'Department', 'Location', 'Company', 'Global'];
-const approvalLevels = ['L1 - User', 'L2 - Manager', 'L2 - HR Admin', 'L2 - Project Manager', 'L3 - Approver', 'L3 - Payroll Approver', 'L3 - Finance Approver', 'L3 - Super Admin'];
+const approvalLevels = ['L1 - User', 'L2 - Supervisor', 'L2 - Manager', 'L2 - HR Admin', 'L2 - Project Manager', 'L3 - Approver', 'L3 - Payroll Approver', 'L3 - Finance Approver', 'L3 - Super Admin'];
 const riskyActions = new Set(['delete', 'disable', 'assign', 'override', 'approve', 'post', 'release', 'lock', 'unlock', 'reopen', 'unmask', 'sync', 'delegate', 'escalate', 'impersonate']);
 
 const permissionOf = (node: PermissionNode, action: string) => `${node.permissionPrefix}.${action}`;
@@ -556,6 +556,11 @@ export default function RolesPermissionsClient() {
           Global Super Administrator mode: you can assign any role — including Super Administrator — and publish permissions. Admin and System Administrator cannot self-elevate or promote anyone to Super Administrator.
         </div>
       ) : null}
+      <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+        Access policy: <span className="font-black">Offboarding Management</span> is HR-only (use template “Offboarding Management (HR)”).
+        <span className="font-black"> Exit Clearance Approval</span> is for line managers (template “Exit Clearance Line Manager Approver”).
+        <span className="font-black"> Timesheet Entry / Approval</span> is for supervisors, line managers, IT, and admins — not ordinary employees (template “Timesheet Entry & Approval Operator”).
+      </div>
       {!canWrite ? (
         <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
           View-only mode: you can review permissions, but changes require rights within your own access level.

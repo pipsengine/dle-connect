@@ -297,8 +297,8 @@ permissionCatalog.push(
   node('Page Access', 'Attendance', 'Mobile Attendance', 'Mobile Attendance Page', 'Page', 'L2 - Manager', 'Location', 'page.hris.attendance.mobile'),
   node('Page Access', 'Attendance', 'Site Attendance', 'Site Attendance Page', 'Page', 'L2 - Manager', 'Location', 'page.hris.attendance.site'),
 
-  node('Page Access', 'Time & Logs', 'Timesheet Entry', 'Timesheet Entry Page', 'Page', 'L2 - Supervisor', 'Team', 'page.hris.time-and-logs.timesheet-entry'),
-  node('Page Access', 'Time & Logs', 'Timesheet Approval', 'Timesheet Approval Page', 'Page', 'L2 - Manager', 'Team', 'page.hris.time-and-logs.timesheet-approval'),
+  node('Page Access', 'Time & Logs', 'Timesheet Entry', 'Timesheet Entry Page (supervisors, line managers, IT, admins — not employees)', 'Page', 'L2 - Supervisor', 'Team', 'page.hris.time-and-logs.timesheet-entry'),
+  node('Page Access', 'Time & Logs', 'Timesheet Approval', 'Timesheet Approval Page (supervisors, line managers, IT, admins — not employees)', 'Page', 'L2 - Manager', 'Team', 'page.hris.time-and-logs.timesheet-approval'),
   node('Page Access', 'Time & Logs', 'Timesheet Reports', 'Timesheet Reports Page', 'Page', 'L2 - Manager', 'Company', 'page.hris.time-and-logs.timesheet-reports'),
   node('Page Access', 'Time & Logs', 'Timesheet Recapture', 'Timesheet Recapture Page', 'Page', 'L2 - Supervisor', 'Team', 'page.hris.time-and-logs.timesheet-recapture'),
   node('Page Access', 'Time & Logs', 'Dayrate Payment Schedule', 'Dayrate Payment Schedule Page', 'Page', 'L2 - HR Admin', 'Company', 'page.hris.time-and-logs.dayrate-schedule-reconcile'),
@@ -311,8 +311,8 @@ permissionCatalog.push(
   node('Leave', 'Approval', 'Leave Email Authorization', 'Authenticated Leave Email Approve/Reject', 'API', 'L2 - Manager', 'Team', 'leave.workflow.email-action'),
   node('Payroll', 'Approval', 'MD / CEO Payroll Approval', 'Executive Payroll Sign-off', 'Workflow', 'L3 - Executive Approver', 'Company', 'payroll.workflow.md-approval'),
 
-  node('Timesheet', 'Entry', 'Timesheet Entry', 'Capture and Save Timesheet Lines', 'Workflow', 'L2 - Supervisor', 'Team', 'timesheet.entry'),
-  node('Timesheet', 'Submission', 'Timesheet Submission', 'Submit Timesheet for Approval', 'Workflow', 'L2 - Supervisor', 'Team', 'timesheet.submission'),
+  node('Timesheet', 'Entry', 'Timesheet Entry', 'Capture crew timesheet lines (not employee self-service)', 'Workflow', 'L2 - Supervisor', 'Team', 'timesheet.entry'),
+  node('Timesheet', 'Submission', 'Timesheet Submission', 'Submit timesheet for approval (supervisor / line manager)', 'Workflow', 'L2 - Supervisor', 'Team', 'timesheet.submission'),
   node('Timesheet', 'Supervisor Review', 'Supervisor Approval', 'Approve/Return/Reject Supervisor Stage', 'Workflow', 'L2 - Supervisor', 'Team', 'timesheet.supervisor'),
   node('Timesheet', 'Cost Control Review', 'Cost Control Approval', 'Validate Cost Centre, Charge Code, Budget', 'Workflow', 'L3 - Approver', 'Company', 'timesheet.cost-control'),
   node('Timesheet', 'Project Manager Review', 'Project Approval', 'Approve Project-Specific Time', 'Workflow', 'L2 - Project Manager', 'Team', 'timesheet.project-manager'),
@@ -468,20 +468,29 @@ const defaultTemplates = (): PermissionTemplate[] => {
     },
     {
       id: 'tpl-timesheet-supervisor-approver',
-      name: 'Timesheet Supervisor Approver',
-      description: 'Review and approve submitted timesheets at the supervisor stage.',
+      name: 'Timesheet Entry & Approval Operator',
+      description: 'Open Timesheet Entry and Approval for supervisors, line managers, and IT operators. Not for ordinary employees (use Workforce Portal for personal time).',
       permissions: [
+        'page.hris.time-and-logs.timesheet-entry.view',
         'page.hris.time-and-logs.timesheet-approval.view',
+        'timesheet.entry.view',
+        'timesheet.entry.create',
+        'timesheet.entry.edit',
+        'timesheet.submission.view',
+        'timesheet.submission.submit',
         'timesheet.supervisor.approve',
         'timesheet.supervisor.reject',
         'timesheet.supervisor.return',
         'timesheet.view',
+        'timesheet.submit',
+        'timesheet.approve',
         'timesheet.export',
         'operations.timesheets.view',
+        'operations.timesheets.submit',
         'operations.timesheets.approve',
       ],
       dataScope: 'Team',
-      approvalLevel: 'L2 - Manager',
+      approvalLevel: 'L2 - Supervisor',
     },
     {
       id: 'tpl-timesheet-cost-control-approver',
@@ -490,6 +499,31 @@ const defaultTemplates = (): PermissionTemplate[] => {
       permissions: pick('timesheet.cost-control', 'timesheet', 'operations.timesheets', 'page.hris.time-and-logs.timesheet-approval').filter((item) => /\.(view|approve|reject|return|export)$/.test(item)),
       dataScope: 'Company',
       approvalLevel: 'L3 - Approver',
+    },
+    {
+      id: 'tpl-offboarding-hr',
+      name: 'Offboarding Management (HR)',
+      description: 'Full Offboarding Management for HR: resignation, handover, exit clearance, asset return, and final payroll. Not for ordinary employees.',
+      permissions: [
+        ...pick('offboarding', 'page.hris.offboarding'),
+        'employees.view',
+        'hris.view',
+      ],
+      dataScope: 'Department',
+      approvalLevel: 'L2 - HR Admin',
+    },
+    {
+      id: 'tpl-offboarding-clearance-approver',
+      name: 'Exit Clearance Line Manager Approver',
+      description: 'Approve or reject assigned Exit Clearance (DL-HRD-F-030) sections only. Does not grant full Offboarding Management.',
+      permissions: [
+        'offboarding.clearance.view',
+        'offboarding.clearance.approve',
+        'offboarding.clearance.reject',
+        'page.hris.offboarding.exit-clearance.view',
+      ],
+      dataScope: 'Team',
+      approvalLevel: 'L2 - Manager',
     },
     {
       id: 'tpl-finance-payroll-operator',
@@ -595,10 +629,11 @@ const db = async () => {
   return dbReady;
 };
 
+/** Keep product `tpl-*` templates aligned with code; preserve any custom (non-tpl) templates. */
 const mergeTemplates = (existing: PermissionTemplate[] = []) => {
   const defaults = defaultTemplates();
-  const known = new Set(existing.map((item) => item.id));
-  return [...existing, ...defaults.filter((item) => !known.has(item.id))];
+  const custom = existing.filter((item) => !String(item.id || '').startsWith('tpl-'));
+  return [...defaults, ...custom];
 };
 
 const normalizeState = (state: AccessControlState): AccessControlState => ({
