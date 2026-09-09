@@ -642,18 +642,32 @@ export const sumProjectAllocationHours = (
   allocations?: Array<{ projectCode: string; hours: number }> | null,
 ) => round1(normalizeProjectAllocations(allocations).reduce((sum, item) => sum + Number(item.hours || 0), 0));
 
-/** Prefer DL1985 when present, otherwise the first matrix column / first booked project. */
+/** Optional org default via TIMESHEET_DEFAULT_PROJECT_CODE (no hardcoded project). */
+export const configuredTimesheetDefaultProjectCode = () =>
+  String(process.env.TIMESHEET_DEFAULT_PROJECT_CODE || '').trim().toUpperCase();
+
+/**
+ * Resolve primary project for matrix / auto-book:
+ * 1) already-booked productive allocation
+ * 2) configured default when present in the available codes
+ * 3) first non-idle available code
+ */
 export const resolvePrimaryProjectCode = (
   projectCodes: string[] = [],
   allocations?: Array<{ projectCode: string; hours: number }> | null,
 ) => {
   const codes = projectCodes.map(canonicalProjectCode).filter(Boolean);
-  const preferred = codes.find((code) => code === 'DL1985');
-  if (preferred) return preferred;
-  if (codes[0]) return codes[0];
   const normalized = normalizeProjectAllocations(allocations);
   const booked = normalized.find((item) => Number(item.hours || 0) > 0 && !isIdleTimeProjectCode(item.projectCode));
-  return canonicalProjectCode(booked?.projectCode) || codes.find((code) => !isIdleTimeProjectCode(code)) || codes[0] || 'GENERAL';
+  if (booked) return canonicalProjectCode(booked.projectCode);
+
+  const configured = configuredTimesheetDefaultProjectCode();
+  if (configured) {
+    const match = codes.find((code) => code === configured);
+    if (match) return match;
+  }
+
+  return codes.find((code) => !isIdleTimeProjectCode(code)) || codes[0] || 'GENERAL';
 };
 
 /** Read hours booked on a matrix project column. */

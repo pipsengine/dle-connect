@@ -30,26 +30,28 @@ const baseLine = (overrides: Partial<TimesheetLine> = {}): TimesheetLine => ({
   ...overrides,
 });
 
+// First managed project in list wins — DL1985 must not be specially preferred.
 const projects = [
-  { id: 'p1', code: 'DL1985', name: 'Primary', projectManager: 'PM One', status: 'Active' },
   { id: 'p2', code: 'DL9999', name: 'Other', projectManager: 'PM Two', status: 'Active' },
+  { id: 'p1', code: 'DL1985', name: 'Legacy Preferred', projectManager: 'PM One', status: 'Active' },
 ];
 
-assert.equal(resolveBookableTimesheetProject(projects)?.code, 'DL1985');
-assert.equal(resolveBookableTimesheetProject([{ ...projects[1], projectManager: '' }]), null);
+assert.equal(resolveBookableTimesheetProject(projects)?.code, 'DL9999');
+assert.equal(resolveBookableTimesheetProject([{ ...projects[0], projectManager: '' }, projects[1]])?.code, 'DL1985');
+assert.equal(resolveBookableTimesheetProject([{ ...projects[0], projectManager: '' }, { ...projects[1], projectManager: '' }]), null);
 
 const result = ensureClockedLinesHaveProjectAllocation([baseLine()], projects, dayContext);
 assert.equal(result.bookedCount, 1);
-assert.equal(result.projectCode, 'DL1985');
+assert.equal(result.projectCode, 'DL9999');
 assert.equal(result.lines[0].usedHours, 8);
 assert.equal(result.lines[0].idleHours, 1);
 assert.equal(result.lines[0].totalHours, 9);
 assert.equal(result.lines[0].validationStatus, 'Valid');
-assert.equal(result.lines[0].projectAllocations[0]?.projectCode, 'DL1985');
+assert.equal(result.lines[0].projectAllocations[0]?.projectCode, 'DL9999');
 
 const alreadyBooked = ensureClockedLinesHaveProjectAllocation(
   [baseLine({
-    projectAllocations: [{ projectId: 'p2', projectCode: 'DL9999', projectName: 'Other', hours: 8, remarks: null }],
+    projectAllocations: [{ projectId: 'p1', projectCode: 'DL1985', projectName: 'Legacy Preferred', hours: 8, remarks: null }],
     usedHours: 8,
     idleHours: 1,
     totalHours: 9,
@@ -59,7 +61,7 @@ const alreadyBooked = ensureClockedLinesHaveProjectAllocation(
   dayContext,
 );
 assert.equal(alreadyBooked.bookedCount, 0);
-assert.equal(alreadyBooked.lines[0].projectAllocations[0]?.projectCode, 'DL9999');
+assert.equal(alreadyBooked.lines[0].projectAllocations[0]?.projectCode, 'DL1985');
 
 const absent = ensureClockedLinesHaveProjectAllocation(
   [baseLine({ clockIn: null, clockOut: null, attendanceDuration: 0 })],

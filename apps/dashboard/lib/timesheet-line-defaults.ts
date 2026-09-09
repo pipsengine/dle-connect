@@ -31,7 +31,7 @@ export type TimesheetBookableProject = {
   status?: string | null;
 };
 
-/** Prefer a managed Active/Approved/Open project (DL1985 when present) for attendance-backed booking. */
+/** Prefer a managed Active/Approved/Open project for attendance-backed booking (no hardcoded project code). */
 export const resolveBookableTimesheetProject = (projects: TimesheetBookableProject[]) => {
   const bookable = projects.filter((project) => {
     const status = String(project.status || 'Active');
