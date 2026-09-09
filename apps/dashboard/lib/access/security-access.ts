@@ -1,26 +1,55 @@
+import { hasAnyPermission, hasUnrestrictedAccess } from '@/lib/auth/permission-match';
 import {
   SECURITY_MODULE_CARDS,
   SECURITY_NAV_SECTIONS,
   type SecurityNavSection,
 } from '@/lib/security/nav';
 
-/**
- * Soft-open during rollout (same reachability pattern as Logistics)
- * while Security ACL keys are published in Access Control.
- */
-export const canAccessSecurityPortal = (_permissions?: string[], _isGlobalAdmin?: boolean) => true;
+export const SECURITY_PORTAL_PERMISSIONS = [
+  'view_security',
+  'security.view',
+  'security.*',
+  'security.visitor.view',
+  'visitor.view',
+  'visitor.*',
+] as const;
+
+export const canAccessSecurityPortal = (permissions?: string[], isGlobalAdmin = false) => {
+  if (hasUnrestrictedAccess(permissions, isGlobalAdmin)) return true;
+  return hasAnyPermission(permissions || [], [...SECURITY_PORTAL_PERMISSIONS]);
+};
 
 export const canAccessSecurityKeys = (
-  _permissionKeys?: string[],
-  _permissions?: string[],
-  _isGlobalAdmin?: boolean,
-) => true;
+  permissionKeys?: string[],
+  permissions?: string[],
+  isGlobalAdmin = false,
+) => {
+  if (hasUnrestrictedAccess(permissions, isGlobalAdmin)) return true;
+  if (!permissionKeys?.length) return canAccessSecurityPortal(permissions, isGlobalAdmin);
+  return hasAnyPermission(permissions || [], permissionKeys);
+};
 
 export const filterSecurityNavSections = (
-  _permissions?: string[],
-  _isGlobalAdmin?: boolean,
-): SecurityNavSection[] =>
-  SECURITY_NAV_SECTIONS.map((section) => ({ ...section, children: [...section.children] }));
+  permissions?: string[],
+  isGlobalAdmin = false,
+): SecurityNavSection[] => {
+  if (!canAccessSecurityPortal(permissions, isGlobalAdmin)) return [];
+  return SECURITY_NAV_SECTIONS
+    .map((section) => ({
+      ...section,
+      children: section.children.filter((child) =>
+        canAccessSecurityKeys(child.permissionKeys, permissions, isGlobalAdmin),
+      ),
+    }))
+    .filter((section) =>
+      section.children.length > 0
+      && canAccessSecurityKeys(section.permissionKeys, permissions, isGlobalAdmin),
+    );
+};
 
-export const filterSecurityModuleCards = (_permissions?: string[], _isGlobalAdmin?: boolean) =>
-  [...SECURITY_MODULE_CARDS];
+export const filterSecurityModuleCards = (permissions?: string[], isGlobalAdmin = false) => {
+  if (!canAccessSecurityPortal(permissions, isGlobalAdmin)) return [];
+  return SECURITY_MODULE_CARDS.filter((card) =>
+    canAccessSecurityKeys(card.permissionKeys, permissions, isGlobalAdmin),
+  );
+};

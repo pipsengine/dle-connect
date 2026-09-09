@@ -21,6 +21,7 @@ import {
   canAccessFullFinanceIntelligence,
   canConfigureFinance,
 } from '@/lib/access/finance-access';
+import { canAccessFleetOperations } from '@/lib/access/fleet-access';
 import { canAccessItSupportPortal } from '@/lib/access/it-support-access';
 import { canAccessSecurityPortal } from '@/lib/access/security-access';
 import { WORKFORCE_PORTAL_ENABLED } from '@/lib/workforce-portal-availability';
@@ -66,8 +67,8 @@ const requiredPermission = (route?: string) => {
   if (route.startsWith('/hris/leave-management')) return 'leave.view';
   if (route.startsWith('/hris')) return 'hris.view';
   if (route.startsWith('/workforce-portal')) return '';
-  if (route.startsWith('/logistics-fleet')) return '';
-  if (route.startsWith('/security')) return '';
+  if (route.startsWith('/logistics-fleet')) return 'view_logistics_fleet';
+  if (route.startsWith('/security')) return 'view_security';
   if (route.startsWith('/operations-center/timesheets')) return 'operations.timesheets.submit';
   if (route.startsWith('/operations-center/workforce-allocation')) return 'operations.allocation.view';
   if (route.startsWith('/operations-center/resource-planning')) return 'operations.resource-planning.view';
@@ -191,13 +192,14 @@ export function Sidebar({
         const canSeeItem = item.id === 'hris'
           ? !!subItems?.length
           : item.id === 'logistics-fleet'
-            || (item.id === 'security'
+            ? canAccessFleetOperations(permissions, sessionContext.isGlobalAdmin)
+            : item.id === 'security'
               ? canAccessSecurityPortal(permissions, sessionContext.isGlobalAdmin)
               : item.id === 'it-support'
                 ? canAccessItSupportPortal(permissions, sessionContext.isGlobalAdmin)
                 : (item.route === '/finance' || item.route?.startsWith('/finance')
-                  ? canAccessFinanceModule(permissions, sessionContext.isGlobalAdmin)
-                  : canAccess(permissions, requiredPermission(item.route))))
+                  ? canAccessFullFinanceIntelligence(permissions, sessionContext.isGlobalAdmin)
+                  : canAccess(permissions, requiredPermission(item.route)))
             || !!subItems?.length;
         return canSeeItem ? {
           ...item,

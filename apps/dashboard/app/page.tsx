@@ -20,30 +20,32 @@ import {
   Webhook,
 } from 'lucide-react';
 import DashboardLayout from '@/components/layout/dashboard-layout';
+import { canAccessFullFinanceIntelligence } from '@/lib/access/finance-access';
+import { canAccessFleetOperations } from '@/lib/access/fleet-access';
+import { canAccessItSupportPortal } from '@/lib/access/it-support-access';
+import { canAccessSecurityPortal } from '@/lib/access/security-access';
 import { canAccessTimesheetEntryAndApproval } from '@/lib/access/timesheet-access';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
+import { hasAnyPermission } from '@/lib/auth/permission-match';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { WORKFORCE_PORTAL_ENABLED } from '@/lib/workforce-portal-availability';
-
-const can = (permissions: string[], required: string) => {
-  if (!required) return true;
-  if (permissions.includes('*') || permissions.includes(required)) return true;
-  return permissions.includes(`${required.split('.')[0]}.*`);
-};
-
-const canAny = (permissions: string[], required: string[]) =>
-  required.length === 0 || required.some((item) => can(permissions, item));
 
 const getSessionPermissions = async () => {
   const token = (await cookies()).get(AUTH_COOKIE)?.value;
   const session = await verifySessionToken(token);
-  if (!session) return { permissions: [] as string[], name: 'Signed-in user', session: null };
+  if (!session) return { permissions: [] as string[], name: 'Signed-in user', session: null, isGlobalAdmin: false };
   const permissions = await effectivePermissionsForUser(session.sub, session.roles).catch(() => session.permissions);
-  return { permissions, name: session.fullName || session.username, session: { ...session, permissions } };
+  return {
+    permissions,
+    name: session.fullName || session.username,
+    session: { ...session, permissions },
+    isGlobalAdmin: Boolean(session.isGlobalAdmin),
+  };
 };
 
 const workspaceModules = [
   {
+    id: 'hris',
     title: 'HR Management',
     href: '/hris',
     icon: Users,
@@ -52,6 +54,7 @@ const workspaceModules = [
     permissions: ['page.hris.management.view', 'hris.view', 'employees.view', 'leave.view', 'attendance.view', 'recruitment.view', 'onboarding.view'],
   },
   {
+    id: 'workforce-portal',
     title: 'Workforce Portal',
     href: '/workforce-portal',
     icon: UserRound,
@@ -60,14 +63,16 @@ const workspaceModules = [
     permissions: ['page.workforce.portal.view', 'ess.view', 'profile.view'],
   },
   {
+    id: 'payroll',
     title: 'Payroll Management',
     href: '/hris/payroll-management',
     icon: Banknote,
     status: 'Live',
     signal: 'Payroll setup, processing, approval, payslips, tax, and deductions',
-    permissions: ['page.payroll.management.view', 'payroll.view', 'payroll.create', 'payroll.edit', 'payroll.approve', 'payroll.*'],
+    permissions: ['page.payroll.management.view', 'payroll.view', 'payroll.create', 'payroll.edit', 'payroll.approve'],
   },
   {
+    id: 'time-logs',
     title: 'Time & Logs',
     href: '/hris/time-and-logs/timesheet-entry',
     icon: Clock,
@@ -76,113 +81,145 @@ const workspaceModules = [
     permissions: ['page.hris.time-and-logs.timesheet-entry.view', 'page.hris.time-and-logs.timesheet-approval.view', 'timesheet.supervisor.approve', 'operations.timesheets.approve', 'operations.timesheets.submit'],
   },
   {
+    id: 'operations',
     title: 'Operations Center',
     href: '/operations-center',
     icon: Box,
     status: 'Live',
     signal: 'Workforce execution, labor allocation, reports, and production tracking',
-    permissions: ['page.operations.center.view', 'operations.view', 'operations.dashboard.view', 'operations.timesheets.submit', 'operations.allocation.view', 'operations.production.view', 'operations.*'],
+    permissions: ['page.operations.center.view', 'operations.view', 'operations.dashboard.view', 'operations.allocation.view', 'operations.production.view'],
   },
   {
+    id: 'finance',
     title: 'Finance Intelligence & Approvals',
     href: '/finance',
     icon: Banknote,
     status: 'Live',
     signal: 'Financial reporting, analytics, AI insights and payment approvals with Sage X3',
-    permissions: ['finance.view', 'finance.*', 'finance.payments.self', 'view_finance_intelligence', 'view_finance_accounting', 'budget.view', 'treasury.view', 'ess.view'],
+    permissions: ['finance.view', 'view_finance_intelligence', 'view_finance_accounting', 'budget.view', 'treasury.view'],
   },
   {
+    id: 'procurement',
     title: 'Procurement',
     href: '/procurement',
     icon: Webhook,
     status: 'Live',
     signal: 'Vendor, sourcing, CBE, procurement requests, and approvals',
-    permissions: ['procurement.view', 'procurement.*', 'view_procurement', 'vendor.view'],
+    permissions: ['procurement.view', 'view_procurement', 'vendor.view'],
   },
   {
+    id: 'projects',
     title: 'Projects & Engineering',
     href: '/projects-engineering',
     icon: Target,
     status: 'Ready',
     signal: 'Project delivery, planning, engineering, and cost controls',
-    permissions: ['project.view', 'project.*', 'planning.view', 'cost.view'],
+    permissions: ['project.view', 'planning.view', 'cost.view', 'view_projects_engineering'],
   },
   {
+    id: 'eam',
     title: 'EAM / CMMS',
     href: '/eam-cmms',
     icon: FileKey,
     status: 'Ready',
     signal: 'Asset reliability, maintenance planning, and work orders',
-    permissions: ['asset.view', 'asset.*', 'maintenance.view', 'maintenance.*'],
+    permissions: ['asset.view', 'maintenance.view', 'view_eam_cmms'],
   },
   {
+    id: 'hse',
     title: 'HSE Management',
     href: '/hse-management',
     icon: ShieldCheck,
     status: 'Ready',
     signal: 'Safety compliance, incidents, investigation, and corrective controls',
-    permissions: ['hse.view', 'hse.*', 'incident.view', 'compliance.view'],
+    permissions: ['hse.view', 'incident.view', 'compliance.view', 'view_hse_management'],
   },
   {
+    id: 'quality',
     title: 'Quality Management',
     href: '/quality-management',
     icon: Scale,
     status: 'Ready',
     signal: 'Inspection, NCR review, and corrective action workflows',
-    permissions: ['quality.view', 'quality.*', 'ncr.view', 'corrective-action.view'],
+    permissions: ['quality.view', 'ncr.view', 'corrective-action.view', 'view_quality_management'],
   },
   {
+    id: 'documents',
     title: 'Document Management',
     href: '/document-management',
     icon: Files,
     status: 'Ready',
     signal: 'Enterprise records, controlled documents, review, and approvals',
-    permissions: ['documents.view', 'documents.*'],
+    permissions: ['documents.view', 'view_document_management'],
   },
   {
+    id: 'logistics',
     title: 'Logistics & Fleet',
     href: '/logistics-fleet',
     icon: Box,
     status: 'Live',
     signal: 'Fleet portal for vehicles, drivers, trips, fuel, maintenance, and compliance',
-    permissions: [],
+    permissions: ['view_logistics_fleet', 'fleet.view', 'logistics.view', 'driver.view'],
   },
   {
+    id: 'reports',
     title: 'Reports & Analytics',
     href: '/reports-analytics',
     icon: BarChart4,
     status: 'Ready',
     signal: 'Reports, exports, dashboards, and business intelligence',
-    permissions: ['reports.view', 'reports.export', 'dashboard.view'],
+    permissions: ['reports.view', 'reports.export', 'view_reports_analytics'],
   },
   {
+    id: 'it-support',
     title: 'IT & Support',
     href: '/it-support',
     icon: HelpCircle,
     status: 'Live',
     signal: 'IT Service & Operations portal — recovery, assets, service desk, and monitoring',
-    permissions: ['it.view', 'it.*', 'infrastructure.view', 'application-support.view', 'service-desk.view', 'view_it_support', 'view_it_assets'],
+    permissions: ['it.view', 'infrastructure.view', 'application-support.view', 'service-desk.view', 'view_it_support', 'view_it_assets'],
   },
   {
+    id: 'security',
     title: 'Security',
     href: '/security',
     icon: ShieldCheck,
     status: 'Live',
     signal: 'Security portal for visitor management, reception, approvals, and site control',
-    permissions: [],
+    permissions: ['view_security', 'security.view', 'security.visitor.view', 'visitor.view'],
   },
-];
+] as const;
 
 export default async function Home() {
-  const { permissions, name, session } = await getSessionPermissions();
+  const { permissions, name, session, isGlobalAdmin } = await getSessionPermissions();
+
   const visibleModules = workspaceModules.filter((module) => {
     if (module.href === '/workforce-portal' && !WORKFORCE_PORTAL_ENABLED) return false;
-    if (module.href === '/hris/time-and-logs/timesheet-entry') {
+
+    if (module.id === 'time-logs') {
       return canAccessTimesheetEntryAndApproval(session);
     }
-    return canAny(permissions, module.permissions);
+    if (module.id === 'finance') {
+      return canAccessFullFinanceIntelligence(permissions, isGlobalAdmin);
+    }
+    if (module.id === 'logistics') {
+      return canAccessFleetOperations(permissions, isGlobalAdmin);
+    }
+    if (module.id === 'security') {
+      return canAccessSecurityPortal(permissions, isGlobalAdmin);
+    }
+    if (module.id === 'it-support') {
+      return canAccessItSupportPortal(permissions, isGlobalAdmin);
+    }
+
+    // Never treat empty permission lists as allow-all.
+    if (!module.permissions.length) return false;
+    return hasAnyPermission(permissions, [...module.permissions]);
   });
-  const primaryModule = visibleModules[0];
+
+  // Prefer ESS as primary for self-service users; otherwise first entitled workspace.
+  const primaryModule = visibleModules.find((module) => module.id === 'workforce-portal')
+    || visibleModules[0];
 
   const enterpriseKpis = [
     { label: 'My Workspaces', value: String(visibleModules.length), detail: 'Available from your published access' },
@@ -203,7 +240,7 @@ export default async function Home() {
               </div>
               <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-950">Welcome, {name}</h1>
               <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
-                This dashboard shows the pages and workspaces assigned to your role or user account. Modules outside your published access are hidden from this landing page.
+                This dashboard shows only the workspaces your role or published Access Control entitlements allow. Modules outside your access stay hidden.
               </p>
             </div>
             {primaryModule ? (
@@ -269,7 +306,7 @@ export default async function Home() {
                 <div>
                   <h2 className="text-base font-extrabold text-slate-950">Access Notice</h2>
                   <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">
-                    Human Resources, Payroll, Operations, and ESS are now separated by published page permissions and functional module permissions.
+                    Human Resources, Payroll, Operations, and ESS are separated by published page permissions. Employees only see workspaces they are entitled to.
                   </p>
                 </div>
               </div>
