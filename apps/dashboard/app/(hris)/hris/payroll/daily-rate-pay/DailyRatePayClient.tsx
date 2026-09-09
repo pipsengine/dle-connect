@@ -411,7 +411,7 @@ export default function DailyRatePayClient({
   const lastLoaded = payload?.generatedAt || initialNow || '';
 
   return (
-    <div className={embedded ? 'pb-6' : 'min-h-screen bg-[#F8FAFC] pb-12'}>
+    <div className={`${embedded ? 'pb-6' : 'min-h-screen bg-[#F8FAFC] pb-12'} max-w-full overflow-x-hidden`}>
       {!embedded ? (
       <div className="sticky top-0 z-30 -mx-4 mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#E5E7EB] bg-white/95 px-4 py-3 backdrop-blur-md lg:-mx-6 lg:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-[#64748B]">
@@ -479,7 +479,7 @@ export default function DailyRatePayClient({
             <Timer className="h-7 w-7" />
           </span>
           <div>
-            <h1 className="text-[32px] font-bold leading-tight text-[#0F172A]">Daily Rate Pay Command Center</h1>
+            <h1 className="text-2xl font-bold leading-tight text-[#0F172A] sm:text-[28px] xl:text-[32px]">Daily Rate Pay Command Center</h1>
             <p className="mt-1 max-w-4xl text-[15px] text-[#475569]">
               Calculate daily rate employee pay from approved daily timesheets using configured day rates and payroll rules.
             </p>
@@ -502,8 +502,8 @@ export default function DailyRatePayClient({
       {error ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{error}</div> : null}
       {toast ? <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">{toast}</div> : null}
 
-      {/* 7 KPI cards */}
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+      {/* KPI cards — wrap earlier on laptop widths */}
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
         <PremiumKpiCard label="Daily Rate Employees" value={String(summary?.dailyRateEmployees || 0)} subtitle="Contract / daily classification" icon={Users} tone="blue" trend={8.2} />
         <PremiumKpiCard label="Timesheet Days" value={number(summary?.daysWorked || 0)} subtitle={`${number(summary?.attendanceHours || 0)} attendance hrs`} icon={CalendarCheck} tone="blue" trend={6.8} />
         <PremiumKpiCard label="Calculated Pay" value={money(summary?.grossPay, canViewMoney)} subtitle={`${number(summary?.payrollReadyDays || 0)} ready days`} icon={Banknote} tone="green" trend={12.4} />
@@ -514,7 +514,7 @@ export default function DailyRatePayClient({
       </div>
 
       {/* Workflow + AI */}
-      <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_320px]">
+      <div className="mb-6 grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
         <DailyPayWorkflow
           stages={workflowStages}
           ribbon={{ slaBreaches: 6, avgTime: '1d 6h', longestWaiting: '5d 12h', estimatedCompletion: '28 Jun 2026', escalations: 2 }}
@@ -522,7 +522,7 @@ export default function DailyRatePayClient({
         <AiDailyPayValidation items={aiInsights} />
       </div>
 
-      <div className="mb-4">
+      <div className="mb-4 min-w-0">
         <QuickActionToolbar actions={quickActions} />
         {hasSelection ? (
           <p className="mt-2 text-xs font-medium text-[#64748B]">{selectedRows.size} row(s) selected</p>
@@ -532,8 +532,8 @@ export default function DailyRatePayClient({
       </div>
 
       {/* Filters */}
-      <div className="mb-6 flex flex-wrap gap-3 rounded-[16px] border border-[#E5E7EB] bg-white p-4 shadow-sm">
-        <div className="relative min-w-[200px] flex-[2]">
+      <div className="mb-6 grid grid-cols-1 gap-3 rounded-[16px] border border-[#E5E7EB] bg-white p-3 shadow-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-[minmax(0,1.5fr)_repeat(5,minmax(0,1fr))_auto] 2xl:items-end sm:p-4">
+        <div className="relative min-w-0 sm:col-span-2 lg:col-span-3 xl:col-span-4 2xl:col-span-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
           <input
             value={query}
@@ -552,16 +552,16 @@ export default function DailyRatePayClient({
         <FilterSelect label="Pay Mode" value={payModeFilter} onChange={setPayModeFilter} options={['All', 'Daily', 'Hourly']} />
         <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={['All', 'Ready', 'Review', 'Blocked']} />
         <FilterSelect label="Payroll Group" value={payrollGroup} onChange={setPayrollGroup} options={groups} />
-        <button type="button" className="mt-5 inline-flex h-10 items-center gap-2 self-end rounded-xl border border-[#E5E7EB] bg-white px-3 text-sm font-semibold text-[#475569] hover:bg-[#F8FAFC]">
+        <button type="button" className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#E5E7EB] bg-white px-3 text-sm font-semibold text-[#475569] hover:bg-[#F8FAFC] 2xl:mt-5">
           <SlidersHorizontal className="h-4 w-4" /> Saved Views
         </button>
       </div>
 
       {/* Main workspace */}
-      <div className="mb-6">
+      <div className="mb-6 min-w-0 max-w-full">
         <PanelShell title="Daily Rate Register" subtitle="Timesheet-derived pay for contract and daily-rate employees in the selected payroll period.">
-          <div className="overflow-x-auto">
-            <table className="min-w-[1200px] w-full text-left">
+          <div className="max-w-full overflow-x-auto">
+            <table className="w-full min-w-[920px] text-left">
               <thead className="sticky top-0 z-10 bg-[#F8FAFC] text-[13px] font-semibold uppercase tracking-wide text-[#64748B]">
                 <tr>
                   <th className="sticky left-0 z-20 bg-[#F8FAFC] px-4 py-3">
@@ -673,14 +673,14 @@ export default function DailyRatePayClient({
 
       {selected ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/40 p-3 sm:p-4"
           role="dialog"
           aria-modal="true"
           aria-label={`${selected.employeeName} daily pay details`}
           onClick={closeDetail}
         >
           <div
-            className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl"
+            className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-4 border-b border-[#E5E7EB] px-6 py-4">
@@ -817,7 +817,7 @@ export default function DailyRatePayClient({
       ) : null}
 
       {/* Analytics */}
-      <div className="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3">
         <AnalyticsCard title="Daily Pay Trend (This Month)" action={{ label: 'Export', icon: Download }}>
           <DualLineChart labels={trendMonths} seriesA={payTrend} seriesB={empTrend} nameA="Calculated Pay" nameB="Employees" />
         </AnalyticsCard>

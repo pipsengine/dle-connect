@@ -117,16 +117,16 @@ function DonutChart({ rows, total }: { rows: Array<{ label: string; count: numbe
 
 function SummaryCard({ label, value, pct, accent, iconBg }: { label: string; value: number; pct: string; accent: string; iconBg: string }) {
   return (
-    <div className="flex h-[110px] min-w-[220px] flex-1 flex-col justify-between rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+    <div className="flex h-[110px] min-w-0 w-full flex-col justify-between rounded-xl border border-[#E5E7EB] bg-white p-3 sm:p-4 shadow-sm">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-medium text-[#64748B]">{label}</p>
-        <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${iconBg}`}>
+        <p className="text-xs sm:text-sm font-medium text-[#64748B] leading-snug">{label}</p>
+        <span className={`flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-lg ${iconBg}`}>
           <Users className="h-4 w-4" />
         </span>
       </div>
       <div>
-        <p className={`text-2xl font-bold ${accent}`}>{formatNumber(value)}</p>
-        <p className="mt-0.5 text-xs font-medium text-[#64748B]">{pct} of workforce</p>
+        <p className={`text-xl sm:text-2xl font-bold ${accent}`}>{formatNumber(value)}</p>
+        <p className="mt-0.5 text-[11px] sm:text-xs font-medium text-[#64748B]">{pct} of workforce</p>
       </div>
     </div>
   );
@@ -413,11 +413,11 @@ export default function EmployeeDirectoryHub({ initialNow }: { initialNow: strin
   const drawerCategory = drawerEmployee ? resolveWorkforceCategory(drawerEmployee) : 'Other';
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A]" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-      <div className="border-b border-[#E5E7EB] bg-white px-6 py-5">
+    <div className="min-h-screen max-w-full overflow-x-hidden bg-[#F8FAFC] text-[#0F172A]" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+      <div className="border-b border-[#E5E7EB] bg-white px-4 py-5 sm:px-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <h1 className="text-4xl font-bold tracking-tight">Employee Directory</h1>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl xl:text-4xl">Employee Directory</h1>
             <p className="mt-1 max-w-3xl text-sm text-[#64748B]">Centralized directory to search, view and manage employees across the organization.</p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">Last Updated: {formatDateTime(syncedAt)}</span>
@@ -440,11 +440,11 @@ export default function EmployeeDirectoryHub({ initialNow }: { initialNow: strin
         </div>
       </div>
 
-      <div className="px-6 py-5">
+      <div className="px-4 py-5 sm:px-6">
         {error ? <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{error}</div> : null}
         {directoryWarning && !error ? <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">{directoryWarning}</div> : null}
 
-        <div className="flex gap-3 overflow-x-auto pb-1">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           {categoryKpis.map((item) => {
             const workforceTotal = workforceEmployees.length || 1;
             const value = item.key === 'total' ? workforceEmployees.length : categoryCounts[item.key];
@@ -453,10 +453,10 @@ export default function EmployeeDirectoryHub({ initialNow }: { initialNow: strin
           })}
         </div>
 
-        <div className="mt-5 rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex flex-1 flex-col gap-3 lg:flex-row lg:items-center">
-              <div className="relative w-full max-w-[500px]">
+        <div className="mt-5 rounded-xl border border-[#E5E7EB] bg-white p-3 shadow-sm sm:p-4">
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))_auto] lg:items-end">
+              <div className="relative w-full min-w-0 sm:col-span-2 lg:col-span-1">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#64748B]" />
                 <input
                   value={query}
@@ -468,18 +468,18 @@ export default function EmployeeDirectoryHub({ initialNow }: { initialNow: strin
                   className="w-full rounded-lg border border-[#E5E7EB] py-2.5 pl-10 pr-3 text-sm text-[#0F172A] placeholder:text-[#64748B] focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-blue-100"
                 />
               </div>
-              <select value={departmentFilter} onChange={(event) => { setDepartmentFilter(event.target.value); setPage(1); }} className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5 text-sm font-medium text-slate-700">
+              <select value={departmentFilter} onChange={(event) => { setDepartmentFilter(event.target.value); setPage(1); }} className="min-w-0 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5 text-sm font-medium text-slate-700">
                 {departments.map((item) => <option key={item} value={item}>{item === 'All Departments' ? 'Department' : item}</option>)}
               </select>
-              <select value={locationFilter} onChange={(event) => { setLocationFilter(event.target.value); setPage(1); }} className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5 text-sm font-medium text-slate-700">
+              <select value={locationFilter} onChange={(event) => { setLocationFilter(event.target.value); setPage(1); }} className="min-w-0 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5 text-sm font-medium text-slate-700">
                 {locations.map((item) => <option key={item} value={item}>{item === 'All Locations' ? 'Location' : item}</option>)}
               </select>
-              <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }} className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5 text-sm font-medium text-slate-700">
+              <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }} className="min-w-0 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5 text-sm font-medium text-slate-700">
                 {statuses.map((item) => <option key={item} value={item}>{item === 'All Status' ? 'Status' : item}</option>)}
               </select>
-              <button type="button" onClick={clearFilters} className="text-sm font-semibold text-[#2563EB] hover:text-blue-700">Clear All</button>
+              <button type="button" onClick={clearFilters} className="justify-self-start text-sm font-semibold text-[#2563EB] hover:text-blue-700 lg:pb-2.5">Clear All</button>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button type="button" onClick={() => setViewMode('card')} className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${viewMode === 'card' ? 'border-[#2563EB] bg-blue-50 text-[#2563EB]' : 'border-[#E5E7EB] bg-white text-slate-700'}`}>
                 <LayoutGrid className="h-4 w-4" />
                 Card View
@@ -520,10 +520,10 @@ export default function EmployeeDirectoryHub({ initialNow }: { initialNow: strin
           </div>
         </div>
 
-        <div className="mt-5 grid grid-cols-1 gap-5 wide:grid-cols-[minmax(0,1fr)_320px]">
-          <section className="min-w-0">
+        <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <section className="min-w-0 max-w-full">
             {viewMode === 'card' ? (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-5">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4">
                 {pageRows.map((employee) => (
                   <EmployeeCard
                     key={employee.id}

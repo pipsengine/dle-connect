@@ -112,14 +112,14 @@ export function AiCompensationInsights({
 
 export function QuickActionToolbar({ actions }: { actions: Array<{ id: string; label: string; icon: ComponentType<{ className?: string }>; primary?: boolean }> }) {
   return (
-    <div className="sticky top-0 z-20 -mx-1 flex flex-wrap gap-2 rounded-[16px] border border-[#E5E7EB] bg-white/95 p-3 shadow-[0_8px_20px_rgba(15,23,42,0.05)] backdrop-blur-sm">
+    <div className="sticky top-0 z-20 max-w-full -mx-1 flex flex-wrap gap-2 rounded-[16px] border border-[#E5E7EB] bg-white/95 p-3 shadow-[0_8px_20px_rgba(15,23,42,0.05)] backdrop-blur-sm">
       {actions.map((action) => {
         const Icon = action.icon;
         return (
           <button
             key={action.id}
             type="button"
-            className={`inline-flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-semibold transition-all hover:-translate-y-px ${
+            className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-semibold transition-all hover:-translate-y-px sm:text-sm ${
               action.primary
                 ? 'bg-[#2563EB] text-white shadow-sm hover:bg-[#1D4ED8] hover:shadow-[0_8px_20px_rgba(37,99,235,0.2)]'
                 : 'border border-[#E5E7EB] bg-white text-[#475569] hover:border-[#93C5FD] hover:bg-[#F8FAFC] hover:text-[#0F172A]'
