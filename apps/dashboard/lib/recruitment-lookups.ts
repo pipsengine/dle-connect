@@ -1,0 +1,77 @@
+/**
+ * Recruitment directory lookups — departments, locations, employees from HRIS DB sources.
+ * Server-only.
+ */
+import { readSystemDepartmentsFromOrganizationDb } from '@/lib/organization-departments-store';
+import { syncSageLocationsToOrganizationDb } from '@/lib/organization-locations-store';
+import { readPayrollEmployees } from '@/lib/payroll-employee-source';
+import type { RecruitmentEmployeeOption, RecruitmentLookups } from '@/lib/recruitment-shared';
+
+export type { RecruitmentEmployeeOption, RecruitmentLookups } from '@/lib/recruitment-shared';
+
+const compact = (value: unknown) => String(value || '').trim();
+const uniqueSorted = (values: string[]) =>
+  Array.from(new Set(values.map(compact).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+
+export const readRecruitmentLookups = async (): Promise<RecruitmentLookups> => {
+  const [deptPayload, locPayload, employeeSource] = await Promise.all([
+    readSystemDepartmentsFromOrganizationDb().catch(() => null),
+    syncSageLocationsToOrganizationDb().catch(() => null),
+    readPayrollEmployees().catch(() => null),
+  ]);
+
+  const employees = employeeSource?.employees || [];
+  const orgDepartments = (deptPayload?.departments || []).map((d) => compact(d.name));
+  const empDepartments = employees.map((e) => compact(e.department));
+  const orgLocations = (locPayload?.records || []).map((r) => compact(r.name));
+  const empLocations = employees.flatMap((e) => [
+    compact(e.location),
+    compact((e as { workLocation?: string }).workLocation),
+    compact((e as { officeLocation?: string }).officeLocation),
+    compact((e as { projectSite?: string }).projectSite),
+  ]);
+
+  return {
+    departments: uniqueSorted([...orgDepartments, ...empDepartments]),
+    locations: uniqueSorted([...orgLocations, ...empLocations]),
+    costCentres: uniqueSorted(employees.map((e) => compact((e as { costCenter?: string }).costCenter))),
+    projects: uniqueSorted(employees.map((e) => compact((e as { projectSite?: string }).projectSite))),
+    jobTitles: uniqueSorted(employees.flatMap((e) => [
+      compact(e.jobTitle),
+      compact((e as { designation?: string }).designation),
+    ])),
+    grades: uniqueSorted(employees.map((e) => compact((e as { jobGrade?: string }).jobGrade))),
+    employmentTypes: uniqueSorted([
+      'Permanent',
+      'Contract',
+      'Lumpsum',
+      'Daily Rate',
+      'NYSC',
+      'IT',
+      'Intern',
+      ...employees.map((e) => compact(e.employmentType)),
+    ]),
+  };
+};
+
+export const searchRecruitmentEmployees = async (query: string, limit = 15): Promise<RecruitmentEmployeeOption[]> => {
+  const q = compact(query).toLowerCase();
+  if (q.length < 2) return [];
+  const source = await readPayrollEmployees();
+  return (source.employees || [])
+    .filter((row) => {
+      const hay = `${row.fullName} ${row.employeeCode} ${row.employeeId} ${row.department} ${row.jobTitle}`.toLowerCase();
+      return hay.includes(q);
+    })
+    .slice(0, limit)
+    .map((row) => ({
+      employeeId: compact(row.employeeId),
+      employeeCode: compact(row.employeeCode),
+      employeeName: compact(row.fullName),
+      department: compact(row.department),
+      jobTitle: compact(row.jobTitle),
+      email: compact(row.officialEmail || row.email),
+      workLocation: compact(row.location || (row as { workLocation?: string }).workLocation),
+      status: compact(row.status),
+    }));
+};

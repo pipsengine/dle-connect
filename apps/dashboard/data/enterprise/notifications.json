@@ -2,6 +2,87 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1788949852793-mr7bcs",
+      "recipientUserId": "P0060",
+      "recipientUsername": "P0060",
+      "recipientEmployeeCode": "P0060",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss OLUFUNKE COMFORT ABE submitted Supplier Invoice Payment DLE260939 (NGN 20,277,720) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1788776151332",
+      "createdAt": "2026-09-09T10:30:52.793Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1788776151332",
+        "requestNumber": "DLE260939",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0060",
+        "recipientName": "Mrs ROSEMARY NGOZICHUKWUKA BENSON"
+      }
+    },
+    {
+      "id": "ntf-1788949851748-ge3a06",
+      "recipientUserId": "P0449",
+      "recipientUsername": "P0449",
+      "recipientEmployeeCode": "P0449",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss KEHINDE GLORY ADENUBI submitted Supplier Invoice Payment DLE260929 (NGN 1,462,000) for Project Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1788447105834",
+      "createdAt": "2026-09-09T10:30:51.748Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1788447105834",
+        "requestNumber": "DLE260929",
+        "stage": "Project Manager",
+        "recipientCode": "P0449",
+        "recipientName": "Mr OLABODE OLUWASEGUN OKE"
+      }
+    },
+    {
+      "id": "ntf-1788949847196-iv4bta",
+      "recipientUserId": "P0449",
+      "recipientUsername": "P0449",
+      "recipientEmployeeCode": "P0449",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss KEHINDE GLORY ADENUBI submitted Supplier Invoice Payment DLE260922 (NGN 2,150,000) for Project Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1788426646826",
+      "createdAt": "2026-09-09T10:30:47.196Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1788426646826",
+        "requestNumber": "DLE260922",
+        "stage": "Project Manager",
+        "recipientCode": "P0449",
+        "recipientName": "Mr OLABODE OLUWASEGUN OKE"
+      }
+    },
+    {
       "id": "ntf-1788943962290-syhzqy",
       "recipientUserId": "P0458",
       "recipientUsername": "P0458",

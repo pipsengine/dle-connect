@@ -16,7 +16,6 @@ import {
   Webhook,
   HelpCircle,
   Truck,
-  LogOut,
 } from 'lucide-react';
 
 export interface SubMenu {
@@ -57,37 +56,10 @@ export const navigationConfig: NavItem[] = [
     route: '/hris',
     permissionKey: 'view_hris',
     subItems: [
+      // Payroll, Recruitment, and Offboarding live inside the HRIS portal — not as MAIN sidebar modules.
       { title: 'HR Management', slug: 'hr-management', route: '/hris', permissionKey: 'view_hris' },
       { title: 'Workforce Portal', slug: 'workforce-portal', route: '/workforce-portal', permissionKey: 'view_workforce_portal' },
-      { title: 'Payroll Dashboard', slug: 'payroll-dashboard', route: '/hris/payroll-management/dashboard', permissionKey: 'page.payroll.management.view' },
-      { title: 'Pay Setup', slug: 'pay-setup', route: '/hris/payroll-management/pay-setup', permissionKey: 'page.hris.payroll.salary-management.view' },
-      { title: 'Earnings', slug: 'earnings', route: '/hris/payroll-management/earnings', permissionKey: 'page.hris.payroll.salary-management.view' },
-      { title: 'Deductions', slug: 'deductions', route: '/hris/payroll-management/deductions', permissionKey: 'page.hris.payroll.salary-management.view' },
-      { title: 'Process Payroll', slug: 'process-payroll', route: '/hris/payroll-management/process-payroll', permissionKey: 'page.hris.payroll.salary-management.view' },
-      { title: 'Payroll Approval', slug: 'payroll-approval', route: '/hris/payroll-management/payroll-approval', permissionKey: 'page.hris.payroll.approval.view' },
-      { title: 'Bank & Finance', slug: 'bank-finance', route: '/hris/payroll-management/bank-finance', permissionKey: 'page.payroll.management.bank-finance.view' },
-      { title: 'Statutory & Remittance', slug: 'statutory', route: '/hris/payroll-management/statutory', permissionKey: 'page.payroll.management.view' },
-      { title: 'Reports & Analytics', slug: 'reports', route: '/hris/payroll-management/reports', permissionKey: 'page.payroll.management.view' },
-      { title: 'Workflow', slug: 'workflow', route: '/hris/payroll-management/workflow', permissionKey: 'page.payroll.management.view' },
     ]
-  },
-  {
-    id: 'offboarding',
-    label: 'Offboarding',
-    slug: 'offboarding',
-    icon: LogOut,
-    group: 'main',
-    route: '/hris/offboarding/resignation-management',
-    permissionKey: 'offboarding.view',
-    subItems: [
-      { title: '1. Resignation Management', slug: 'resignation-management', route: '/hris/offboarding/resignation-management', permissionKey: 'offboarding.view' },
-      { title: 'New Resignation', slug: 'new-resignation', route: '/hris/offboarding/resignation-management/new', permissionKey: 'offboarding.view' },
-      { title: '2. Handover Checklist', slug: 'handover-checklist', route: '/hris/offboarding/handover-checklist', permissionKey: 'offboarding.view' },
-      { title: '3. Exit Clearance', slug: 'exit-clearance', route: '/hris/offboarding/exit-clearance', permissionKey: 'offboarding.clearance.approve' },
-      { title: '4. Asset Return', slug: 'asset-return', route: '/hris/offboarding/asset-return', permissionKey: 'offboarding.view' },
-      { title: '5. Final Payroll Processing', slug: 'final-payroll-processing', route: '/hris/offboarding/final-payroll-processing', permissionKey: 'offboarding.view' },
-      { title: 'New Settlement (after Clearance)', slug: 'new-settlement', route: '/hris/offboarding/final-payroll-processing/new-settlement', permissionKey: 'offboarding.view' },
-    ],
   },
   {
     id: 'finance',

@@ -7,6 +7,7 @@ import {
   canAccessExitClearance,
   canAccessOffboardingManagement,
 } from '@/lib/access/offboarding-access';
+import { canAccessRecruitment } from '@/lib/access/recruitment-access';
 import { canAccessTimesheetEntryAndApproval, isTimesheetEntryOrApprovalPath } from '@/lib/access/timesheet-access';
 
 type SessionLike = Pick<SessionPayload, 'department' | 'unit' | 'roles' | 'permissions' | 'isGlobalAdmin'> & {
@@ -364,6 +365,9 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
   }
 
   // Offboarding Management = HR only. Exit Clearance = HR + line managers.
+  if (path.startsWith('/hris/recruitment')) {
+    return canAccessRecruitment(session);
+  }
   if (path.startsWith('/hris/offboarding/exit-clearance')) {
     return canAccessExitClearance(session);
   }

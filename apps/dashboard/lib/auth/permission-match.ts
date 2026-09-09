@@ -58,6 +58,20 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
     'page.hris.offboarding.exit-clearance.view',
     'offboarding.clearance.view',
   ],
+  'recruitment.view': [
+    'page.hris.recruitment.view',
+    'page.hris.recruitment.dashboard.view',
+    'page.hris.recruitment.manpower-request.view',
+    'recruitment.manage',
+    'recruitment.*',
+  ],
+  'recruitment.*': [
+    'page.hris.recruitment.view',
+    'page.hris.recruitment.dashboard.view',
+    'page.hris.recruitment.manpower-request.view',
+    'recruitment.view',
+    'recruitment.manage',
+  ],
   'operations.timesheets.view': [
     'page.hris.time-and-logs.timesheet-reports.view',
     'page.hris.time-and-logs.timesheet-recapture.view',

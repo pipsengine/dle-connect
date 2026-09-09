@@ -13,15 +13,7 @@ import {
 } from 'lucide-react';
 import { navigationConfig, NavItem } from '@/lib/config/navigation';
 import { canAccessAdministrationCentre, hasPermission } from '@/lib/auth/permission-match';
-import {
-  canAccessBankFinanceNav,
-  canAccessHrManagementNav,
-  canAccessPaySetupNav,
-} from '@/lib/access/route-access';
-import {
-  canAccessExitClearance,
-  canAccessOffboardingManagement,
-} from '@/lib/access/offboarding-access';
+import { canAccessHrManagementNav } from '@/lib/access/route-access';
 import { canAccessTimesheetEntryAndApproval } from '@/lib/access/timesheet-access';
 import {
   canAccessFinanceModule,
@@ -65,6 +57,7 @@ const requiredPermission = (route?: string) => {
   if (route.startsWith('/hris/payroll/payroll-approval') || route.startsWith('/hris/payroll-management/payroll-approval')) {
     return 'page.hris.payroll.approval.view';
   }
+  if (route.startsWith('/hris/recruitment')) return 'recruitment.view';
   if (route.startsWith('/hris/offboarding/exit-clearance')) return 'offboarding.clearance.approve';
   if (route.startsWith('/hris/offboarding')) return 'offboarding.view';
   if (route.startsWith('/hris/payroll-management')) return 'payroll.view';
@@ -179,21 +172,8 @@ export function Sidebar({
         const subItems = item.subItems?.filter((sub) => {
           if (sub.route === '/hris') return canAccessHrManagementNav(sessionLike);
           if (sub.route === '/workforce-portal') return WORKFORCE_PORTAL_ENABLED;
-          if (sub.route === '/hris/payroll-management/pay-setup') return canAccessPaySetupNav(sessionLike);
-          if (
-            sub.route === '/hris/payroll-management/bank-finance'
-            || sub.route === '/hris/payroll-management/bank-and-finance'
-          ) {
-            return canAccessBankFinanceNav(sessionLike);
-          }
           if (sub.route === '/finance' || sub.route?.startsWith('/finance/') || sub.route === '/finance-accounting') {
             return canAccessFinanceSubItem(sub.route, permissions, sessionContext.isGlobalAdmin);
-          }
-          if (sub.route?.startsWith('/hris/offboarding/exit-clearance')) {
-            return canAccessExitClearance(sessionLike);
-          }
-          if (sub.route?.startsWith('/hris/offboarding')) {
-            return canAccessOffboardingManagement(sessionLike);
           }
           if (
             sub.route?.startsWith('/hris/workforce-management/timesheet-entry')
@@ -210,9 +190,7 @@ export function Sidebar({
         });
         const canSeeItem = item.id === 'hris'
           ? !!subItems?.length
-          : item.id === 'offboarding'
-            ? (canAccessOffboardingManagement(sessionLike) || canAccessExitClearance(sessionLike)) && !!subItems?.length
-            : item.id === 'logistics-fleet'
+          : item.id === 'logistics-fleet'
             || (item.id === 'security'
               ? canAccessSecurityPortal(permissions, sessionContext.isGlobalAdmin)
               : item.id === 'it-support'
@@ -224,9 +202,6 @@ export function Sidebar({
         return canSeeItem ? {
           ...item,
           subItems,
-          ...(item.id === 'offboarding' && !canAccessOffboardingManagement(sessionLike)
-            ? { label: 'Exit Clearance', route: '/hris/offboarding/exit-clearance' }
-            : {}),
         } : null;
       })
       .filter(Boolean) as NavItem[];
