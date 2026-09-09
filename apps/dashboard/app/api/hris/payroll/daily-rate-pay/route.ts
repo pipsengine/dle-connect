@@ -6,6 +6,7 @@ import { calculateTimesheetPeriod, aggregateEmployeeAttendanceForHeaders, canoni
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { mergeTimesheetDayRateEarnings } from '@/lib/payroll-earnings-engine';
 import { activePayrollPeriod, payrollPeriodLabel } from '@/lib/payroll-periods';
+import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Payroll Officer' | 'Finance Controller' | 'Executive Management' | 'Auditor' | 'Employee';
 
@@ -139,6 +140,8 @@ const buildPayload = async (request: Request) => {
 
   const periodPayrollUpdates = payrollUpdates.filter((update) => update.periodId === periodId);
   const hasPayrollUpdateForPeriod = periodPayrollUpdates.length > 0;
+  const taxConfig = await readPayrollTaxConfig().catch(() => null);
+  const taxVersion = taxConfig ? activeTaxVersion(taxConfig) : null;
 
   for (const update of periodPayrollUpdates) {
     for (const employee of update.employeeAttendance) {
@@ -174,7 +177,24 @@ const buildPayload = async (request: Request) => {
       daysWorked: payMode === 'Hourly' ? payableHours / hoursPerDay : payableDays,
       period: payrollPeriod,
     });
-    const grossPay = dayRateEarnings.grossPay || (payMode === 'Hourly' ? payableHours * ratePerHour : payableDays * ratePerDay);
+    const grossPay = roundMoney(dayRateEarnings.grossPay || (payMode === 'Hourly' ? payableHours * ratePerHour : payableDays * ratePerDay));
+    const payCurrency = compact(employee.payCurrency) || 'NGN';
+    // Daily-rate payroll: statutory pension/NHF are skipped; PAYE still applies on taxable day-rate earnings.
+    let paye = 0;
+    if (taxVersion && /NGN|Naira/i.test(payCurrency) && grossPay > 0) {
+      try {
+        const tax = calculatePayrollTax(
+          payrollInputFromEmployee(employee, { period: payrollPeriod, useHrisPackageLines: false }, dayRateEarnings),
+          taxVersion,
+        );
+        const ngnOverride = Number(employee.payeCalculation?.ngnMonthlyPayeOverride);
+        paye = Number.isFinite(ngnOverride) ? roundMoney(ngnOverride) : roundMoney(tax.monthlyPaye);
+      } catch {
+        paye = 0;
+      }
+    }
+    const totalDeductions = roundMoney(paye);
+    const netPay = roundMoney(Math.max(0, grossPay - totalDeductions));
     const issues: string[] = [];
     if (!ratePerDay && !ratePerHour) issues.push('Daily or hourly rate is missing');
     if (!attendance.daysWorked && !attendance.bookedHours && !attendance.attendanceHours) issues.push('No daily timesheet found');
@@ -190,7 +210,7 @@ const buildPayload = async (request: Request) => {
       location: employee.location,
       payrollGroup: employee.payrollGroup || 'Daily Rate',
       salaryGrade: employee.salaryGrade || employee.jobGrade || 'Daily Rate',
-      payCurrency: employee.payCurrency || 'NGN',
+      payCurrency,
       paymentRun: employee.paymentRun || 'Daily Timesheet',
       paymentType: employee.paymentType || 'Timesheet Rate',
       earningProfile: dayRateEarnings.profileName,
@@ -205,7 +225,11 @@ const buildPayload = async (request: Request) => {
       idleHours: round2(attendance.idleHours),
       payrollReadyDays: round2(attendance.payrollReadyDays),
       payrollReadyHours: round2(attendance.payrollReadyHours),
-      grossPay: roundMoney(grossPay),
+      grossPay,
+      paye: roundMoney(paye),
+      totalDeductions,
+      deductions: totalDeductions,
+      netPay,
       taxablePay: dayRateEarnings.taxablePay,
       nonTaxablePay: dayRateEarnings.nonTaxablePay,
       earnings: dayRateEarnings.earningLines,
@@ -219,18 +243,31 @@ const buildPayload = async (request: Request) => {
     };
   });
 
-  const visibleRecords = perms.canViewMoney ? records : records.map((record) => ({ ...record, ratePerDay: null, ratePerHour: null, grossPay: null }));
+  const visibleRecords = perms.canViewMoney
+    ? records
+    : records.map((record) => ({
+        ...record,
+        ratePerDay: null,
+        ratePerHour: null,
+        grossPay: null,
+        paye: null,
+        totalDeductions: null,
+        deductions: null,
+        netPay: null,
+      }));
   const totals = records.reduce(
     (sum, record) => ({
       daysWorked: sum.daysWorked + record.daysWorked,
       attendanceHours: sum.attendanceHours + record.attendanceHours,
       payrollReadyDays: sum.payrollReadyDays + record.payrollReadyDays,
       grossPay: sum.grossPay + record.grossPay,
+      totalDeductions: sum.totalDeductions + record.totalDeductions,
+      netPay: sum.netPay + record.netPay,
       ready: sum.ready + (record.status === 'Ready' ? 1 : 0),
       review: sum.review + (record.status === 'Review' ? 1 : 0),
       blocked: sum.blocked + (record.status === 'Blocked' ? 1 : 0),
     }),
-    { daysWorked: 0, attendanceHours: 0, payrollReadyDays: 0, grossPay: 0, ready: 0, review: 0, blocked: 0 }
+    { daysWorked: 0, attendanceHours: 0, payrollReadyDays: 0, grossPay: 0, totalDeductions: 0, netPay: 0, ready: 0, review: 0, blocked: 0 }
   );
 
   return {
@@ -256,6 +293,9 @@ const buildPayload = async (request: Request) => {
       attendanceHours: round2(totals.attendanceHours),
       payrollReadyDays: round2(totals.payrollReadyDays),
       grossPay: roundMoney(totals.grossPay),
+      totalDeductions: roundMoney(totals.totalDeductions),
+      deductions: roundMoney(totals.totalDeductions),
+      netPay: roundMoney(totals.netPay),
       ready: totals.ready,
       review: totals.review,
       blocked: totals.blocked,
@@ -267,9 +307,9 @@ const buildPayload = async (request: Request) => {
 };
 
 const csv = (records: any[]) => {
-  const headers = ['Employee ID', 'Name', 'Department', 'Mode', 'Day Rate', 'Hourly Rate', 'Days Worked', 'Hours', 'Payroll Ready Days', 'Gross Pay', 'Status', 'Issues'];
+  const headers = ['Employee ID', 'Name', 'Department', 'Mode', 'Day Rate', 'Hourly Rate', 'Days Worked', 'Hours', 'Payroll Ready Days', 'Gross Pay', 'Deductions', 'Net Pay', 'Status', 'Issues'];
   const lines = records.map((record) =>
-    [record.employeeId, record.employeeName, record.department, record.payMode, record.ratePerDay, record.ratePerHour, record.daysWorked, record.attendanceHours, record.payrollReadyDays, record.grossPay, record.status, record.issues.join('; ')]
+    [record.employeeId, record.employeeName, record.department, record.payMode, record.ratePerDay, record.ratePerHour, record.daysWorked, record.attendanceHours, record.payrollReadyDays, record.grossPay, record.totalDeductions, record.netPay, record.status, record.issues.join('; ')]
       .map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`)
       .join(',')
   );

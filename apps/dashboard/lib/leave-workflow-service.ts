@@ -19,6 +19,7 @@ import {
   type WorkflowStage,
 } from '@/lib/leave-management-store';
 import { postLeaveAllowanceOnAnnualLeaveApproval } from '@/lib/payroll-leave-allowance-store';
+import { syncCCodeLeaveToTimesheet } from '@/lib/timesheet-leave-sync';
 import {
   approvalStatusForEss,
   isLeaveEssRequest,
@@ -2252,6 +2253,11 @@ export const transitionEssLeaveRequest = async (input: {
   } catch (error) {
     console.error('[leave-workflow] failed to update leave balance after approval action', error);
   }
+  if (approved && nextStatus === 'Approved') {
+    void syncApprovedLeaveToCCodeTimesheet({ request: found, requester, mode: 'apply' });
+  } else if (!approved) {
+    void syncApprovedLeaveToCCodeTimesheet({ request: found, requester, mode: 'remove' });
+  }
   await auditLeaveAction({
     user: input.actorName,
     role: (approverKind === 'hr' ? 'HR Manager' : 'Supervisor') as LeaveRole,
@@ -2338,6 +2344,30 @@ const runLeaveApprovalFollowUp = async (input: {
       actorName: input.actorName,
       baseUrl: input.baseUrl,
     });
+  }
+};
+
+const syncApprovedLeaveToCCodeTimesheet = async (input: {
+  request: Pick<EssLeaveRequest, 'id' | 'employeeId' | 'leaveType' | 'startDate' | 'endDate'>;
+  requester?: DleEmployeeDirectoryRow | null;
+  mode: 'apply' | 'remove';
+}) => {
+  const startDate = compact(input.request.startDate);
+  const endDate = compact(input.request.endDate);
+  if (!startDate || !endDate) return;
+  try {
+    await syncCCodeLeaveToTimesheet({
+      employeeId: input.request.employeeId,
+      employeeCode: input.requester?.employeeCode || input.request.employeeId,
+      employeeName: input.requester?.fullName || null,
+      leaveType: input.request.leaveType,
+      startDate,
+      endDate,
+      requestId: input.request.id,
+      mode: input.mode,
+    });
+  } catch (error) {
+    console.error('[leave-workflow] failed to sync leave to C-code timesheet', error);
   }
 };
 
@@ -2438,12 +2468,22 @@ WHERE [Id]=@Id;`);
   if (snapshot) {
     const refreshedRequest = (await readAllEssRequests()).find((item) => item.id === input.applicationId) || snapshot.request;
     if (nextEssStatus === 'Approved') {
+      void syncApprovedLeaveToCCodeTimesheet({
+        request: refreshedRequest,
+        requester: snapshot.requester,
+        mode: 'apply',
+      });
       await notifyLeaveFinalApproval({
         request: { ...refreshedRequest, status: 'Approved' },
         requester: snapshot.requester,
         actorName: input.actor,
       });
     } else if (nextEssStatus === 'Rejected') {
+      void syncApprovedLeaveToCCodeTimesheet({
+        request: refreshedRequest,
+        requester: snapshot.requester,
+        mode: 'remove',
+      });
       await notifyLeaveRejected({
         request: { ...refreshedRequest, status: 'Rejected' },
         requester: snapshot.requester,

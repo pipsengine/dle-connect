@@ -11,9 +11,11 @@ import { readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
 import { extractSupervisorEmployeeCode, normalizeTimesheetLocationLabel } from '@/lib/timesheet-agege-blasting';
 import {
   DAILY_BREAK_HOURS,
+  buildLeaveIdleTimeAllocation,
   STANDARD_TIMESHEET_HOURS,
   attendanceDurationFromClock,
   dedupeTimesheetLinesByEmployee,
+  isDayRateTimesheetEmployeeCode,
   isEditableTimesheetStatus,
   isTimesheetPaidLeaveLine,
   normalizeIdleAllocations,
@@ -3771,14 +3773,15 @@ export async function syncAttendanceForTimesheet(
       : clockIn
         ? STANDARD_TIMESHEET_HOURS
         : 0;
-    const shouldAutoBookPaidLeave = Boolean(approvedLeave && !att.checkInTime && !existingLine?.totalHours);
-    const leaveAllocation: TimesheetLine['projectAllocations'] | null = shouldAutoBookPaidLeave ? [{
-      projectId: 'LEAVE',
-      projectCode: 'LEAVE',
-      projectName: 'Leave and Authorized Absence',
-      hours: STANDARD_TIMESHEET_HOURS,
-      remarks: `Approved paid leave ${approvedLeave!.requestId}`,
-    }] : null;
+    const shouldAutoBookPaidLeave = Boolean(
+      approvedLeave
+      && isDayRateTimesheetEmployeeCode(employeeCode)
+      && !att.checkInTime
+      && (!existingLine?.totalHours || isTimesheetPaidLeaveLine(existingLine)),
+    );
+    const leaveAllocation: TimesheetLine['projectAllocations'] | null = shouldAutoBookPaidLeave
+      ? buildLeaveIdleTimeAllocation(approvedLeave!.requestId)
+      : null;
     const bookedTotal = shouldAutoBookPaidLeave ? STANDARD_TIMESHEET_HOURS : existingLine?.totalHours || 0;
 
     const nextLine: TimesheetLine = {

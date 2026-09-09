@@ -1271,7 +1271,6 @@ export async function approvedPaidLeaveForDate(date: string): Promise<ApprovedPa
   const applications = await readLeaveApplications(pool);
   return applications
     .filter((application) =>
-      application.leaveType === 'Annual Leave' &&
       ['Approved', 'Completed'].includes(application.status) &&
       application.policyComplianceStatus !== 'Blocked' &&
       dateInRange(date, application.startDate, application.endDate),

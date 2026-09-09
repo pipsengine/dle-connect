@@ -576,6 +576,16 @@ export const canonicalProjectCode = (value?: string | null) => String(value || '
 export const IDLE_TIME_PROJECT_CODE = 'DL1949';
 export const IDLE_TIME_PROJECT_NAME = 'IDLE TIME';
 
+export const APPROVED_PAID_LEAVE_REMARK = 'Approved paid leave';
+
+export const buildLeaveIdleTimeAllocation = (requestId: string) => ([{
+  projectId: IDLE_TIME_PROJECT_CODE,
+  projectCode: IDLE_TIME_PROJECT_CODE,
+  projectName: IDLE_TIME_PROJECT_NAME,
+  hours: STANDARD_TIMESHEET_HOURS,
+  remarks: `${APPROVED_PAID_LEAVE_REMARK} ${String(requestId || '').trim()}`.trim(),
+}]);
+
 export const isIdleTimeProjectCode = (value?: string | null) =>
   canonicalProjectCode(value) === IDLE_TIME_PROJECT_CODE;
 
@@ -805,7 +815,14 @@ export const isTimesheetPaidLeaveLine = (line: {
   idleAllocations?: Array<{ reasonName?: string; hours?: number }> | null;
   remarks?: string | null;
 }) => {
-  const projectLeave = (line.projectAllocations || []).some((item) => item.projectCode?.toUpperCase() === 'LEAVE' && Number(item.hours || 0) > 0);
+  const projectLeave = (line.projectAllocations || []).some((item) => {
+    const code = canonicalProjectCode(item.projectCode);
+    const hours = Number(item.hours || 0);
+    if (hours <= 0) return false;
+    if (code === 'LEAVE') return true;
+    if (isIdleTimeProjectCode(code) && String(line.remarks || '').toLowerCase().includes('approved paid leave')) return true;
+    return false;
+  });
   const idleLeave = (line.idleAllocations || []).some((item) => item.reasonName?.toLowerCase().includes('leave') && Number(item.hours || 0) > 0);
   return projectLeave || idleLeave || String(line.remarks || '').toLowerCase().includes('approved paid leave');
 };
