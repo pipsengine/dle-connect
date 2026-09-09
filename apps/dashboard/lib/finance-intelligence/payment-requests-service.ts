@@ -1170,6 +1170,7 @@ export const repairMissingProjectLineManager = async (row: PaymentRequestRow): P
       paymentType: row.paymentType,
     });
   }
+  nextStages = applyHrManagerAfterReportingManager(nextStages, compact(row.payload?.expenseNature));
 
   const nextFirst = nextStages[0] || '';
   if (!/reporting manager|line manager/i.test(nextFirst)) return row;
@@ -1268,9 +1269,10 @@ export const repairMisroutedProjectPathWithoutProject = async (row: PaymentReque
     return null;
   });
 
-  const nextStages = matched?.stages?.length
+  let nextStages = matched?.stages?.length
     ? matched.stages
     : defaultStagesForPayment(row.paymentType, row.projectCode, row.department);
+  nextStages = applyHrManagerAfterReportingManager(nextStages, compact(row.payload?.expenseNature));
   if (!nextStages.length) return row;
 
   const actions = await listPaymentRequestActions(row.requestId);
@@ -1770,6 +1772,19 @@ export const buildPaymentRequestsWorkspace = async (input?: {
       rows[index] = await repairMisroutedProjectPathWithoutProject(rows[index]);
     } catch (error) {
       console.error('[payment-requests] non-project path repair failed', rows[index]?.requestNumber, error);
+    }
+  }
+
+  // Travelling Expense/Allowance must include HR Manager after Reporting/Line Manager.
+  for (const row of rows) {
+    if (!['Pending Approval', 'Submitted', 'Finance Review'].includes(row.status)) continue;
+    if (!isTravellingExpenseNature(compact(row.payload?.expenseNature))) continue;
+    const stages = stagesFromPayload(row.payload);
+    if (stages.some((stage) => /hr\s*manager/i.test(stage))) continue;
+    try {
+      await ensureApprovalStages(row);
+    } catch (error) {
+      console.error('[payment-requests] travelling HR stage repair failed', row.requestNumber, error);
     }
   }
 
