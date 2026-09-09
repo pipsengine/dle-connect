@@ -51,12 +51,20 @@ export type ProfileDisciplinaryRecord = {
   approver?: string | null;
 };
 
+export type EmploymentExtras = {
+  exitDate?: string | null;
+  exitReason?: string | null;
+  rehireEligibility?: string | null;
+};
+
 export type EmployeeProfileExtensions = {
   medicalHse?: ProfileMedicalHSE;
   training?: ProfileTrainingRecord[];
   assets?: ProfileAssetItem[];
   performanceSummary?: ProfilePerformanceSummary;
   disciplinary?: ProfileDisciplinaryRecord[];
+  /** Employment fields without dedicated SQL columns (exit / rehire). */
+  employmentExtras?: EmploymentExtras;
   updatedAt?: string;
 };
 

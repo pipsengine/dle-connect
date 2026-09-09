@@ -12,6 +12,7 @@ import {
   type ProfilePayrollSummary,
 } from '@/lib/payroll-profile-setup';
 import { formatPayrollMoney } from '@/lib/payroll-currency';
+import { getNigeriaLgas, getNigeriaStates } from '@/lib/nigeria-locations';
 import { ContractPayrollClassificationPanel, type ContractPayrollClassificationView } from '../components/ContractPayrollClassificationUi';
 import EmployeeFinalSettlementPanel from './EmployeeFinalSettlementPanel';
 import EmployeeResignationPanel from './EmployeeResignationPanel';
@@ -396,6 +397,62 @@ const EMPLOYMENT_FIELD_LABELS: Record<string, string> = {
   unionStatus: 'Union Status',
 };
 
+const CONTACT_FIELD_LABELS: Record<string, string> = {
+  officialEmail: 'Official Email',
+  personalEmail: 'Personal Email',
+  officeExtension: 'Office Extension',
+  primaryPhone: 'Primary Phone',
+  alternativePhone: 'Alternative Phone',
+  nearestBusStop: 'Nearest Bus Stop',
+  city: 'City',
+  state: 'State',
+  country: 'Country',
+  postalCode: 'Postal Code',
+};
+
+const TITLE_OPTIONS = ['Mr', 'Mrs', 'Miss', 'Ms', 'Dr', 'Engr', 'Prof', 'Chief', 'Alhaji', 'Pastor', 'Rev'];
+const GENDER_OPTIONS = ['Male', 'Female', 'M', 'F', 'Other'];
+const MARITAL_STATUS_OPTIONS = ['Single', 'Married', 'SIN - Single', 'MRD - Married', 'Divorced', 'Widowed', 'Separated'];
+const NATIONALITY_OPTIONS = ['Nigeria', 'Nigerian', 'Ghana', 'Benin', 'Togo', 'Cameroon', 'Other'];
+const RELIGION_OPTIONS = ['Christianity', 'Islam', 'Traditional', 'Other'];
+const EMPLOYMENT_TYPE_OPTIONS = [
+  'Permanent',
+  'Junior Permanent',
+  'Contract',
+  'Temporary',
+  'Daily Rate',
+  'Lumpsum',
+  'Intern',
+  'Industrial Trainee',
+  'NYSC',
+  'Consultant',
+  'Expatriate',
+  'Outsourced Staff',
+];
+const EMPLOYMENT_STATUS_OPTIONS = [
+  'Active',
+  'Probation',
+  'Confirmed',
+  'Suspended',
+  'On Leave',
+  'Seconded',
+  'Field Assignment',
+  'Inactive',
+  'Resigned',
+  'Terminated',
+  'Retired',
+];
+const WORK_MODE_OPTIONS = ['Onsite', 'Remote', 'Hybrid'];
+const SHIFT_PATTERN_OPTIONS = ['Day', 'Night', 'Rotating', 'Rotational', 'Flexible', 'Standard'];
+const STAFF_CATEGORY_OPTIONS = ['PERMANENT', 'JUNIOR PERMANENT', 'CONTRACT', 'DAILY RATE', 'LUMPSUM', 'NYSC', 'IT', 'INTERN'];
+const EMPLOYEE_CATEGORY_OPTIONS = ['PERMANENT', 'JUNIOR PERMANENT', 'CONTRACT', 'DAILY RATE', 'LUMPSUM', 'NYSC', 'IT', 'INTERN'];
+const UNION_STATUS_OPTIONS = ['Union Member', 'Non-Union', 'Exempt', 'Not Applicable'];
+const REHIRE_ELIGIBILITY_OPTIONS = ['Eligible', 'Not Eligible', 'Under Review', 'Not Applicable'];
+const EXIT_REASON_OPTIONS = ['Resignation', 'Termination', 'Retirement', 'End of Contract', 'Redundancy', 'Mutual Separation', 'Other'];
+const COUNTRY_OPTIONS = ['NG', 'Nigeria', 'GH', 'BJ', 'TG', 'CM', 'Other'];
+
+const NIGERIA_STATE_OPTIONS = getNigeriaStates();
+
 const JOB_FIELD_LABELS: Record<string, string> = {
   jobTitle: 'Job Title',
   designation: 'Designation',
@@ -427,6 +484,7 @@ const JOB_FIELD_LABELS: Record<string, string> = {
 
 const humanizeFieldKey = (key: string) => key.replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase());
 const employmentLabel = (key: string) => EMPLOYMENT_FIELD_LABELS[key] || humanizeFieldKey(key);
+const contactLabel = (key: string) => CONTACT_FIELD_LABELS[key] || humanizeFieldKey(key);
 const jobLabel = (key: string) => JOB_FIELD_LABELS[key] || humanizeFieldKey(key);
 
 const Card = ({ children, className }: { children: React.ReactNode; className?: string }) => (
@@ -1465,7 +1523,7 @@ export default function EmployeeProfileClient({
   }, [payrollEdit, payrollFormOptions, role]);
 
   useEffect(() => {
-    if (!jobEdit) return;
+    if (!(jobEdit || personalEdit || employmentEdit || contactsEdit)) return;
     if (jobFormOptions) return;
     let cancelled = false;
     const load = async () => {
@@ -1477,14 +1535,14 @@ export default function EmployeeProfileClient({
         });
         const json = (await res.json()) as { status: string; data?: ProfileFormOptions; error?: string };
         if (!res.ok || (json.status !== 'success' && json.status !== 'ok') || !json.data) {
-          throw new Error(json.error || 'Unable to load job form options');
+          throw new Error(json.error || 'Unable to load form options');
         }
         if (!cancelled) setJobFormOptions(json.data);
       } catch (e) {
         if (!cancelled) {
           setToast({
             title: 'Options load failed',
-            detail: e instanceof Error ? e.message : 'Unable to load searchable job options',
+            detail: e instanceof Error ? e.message : 'Unable to load searchable profile options',
             tone: 'err',
           });
         }
@@ -1496,7 +1554,7 @@ export default function EmployeeProfileClient({
     return () => {
       cancelled = true;
     };
-  }, [jobEdit, jobFormOptions, role]);
+  }, [jobEdit, personalEdit, employmentEdit, contactsEdit, jobFormOptions, role]);
 
   const setJobField = (key: string, next: string) => {
     setJobDraft((prev) => ({ ...(prev || {}), [key]: next || null }));
@@ -1772,7 +1830,17 @@ export default function EmployeeProfileClient({
                                       role,
                                       viewerEmployeeId,
                                     });
-                                    updateProfile((p) => ({ ...p, personalInfo: next }));
+                                    updateProfile((p) => {
+                                      const composed = [next.firstName, next.middleName, next.lastName]
+                                        .map((part) => String(part || '').trim())
+                                        .filter(Boolean)
+                                        .join(' ');
+                                      return {
+                                        ...p,
+                                        personalInfo: next,
+                                        fullName: composed || p.fullName,
+                                      };
+                                    });
                                     pushAudit({ id: `audit-${Math.random().toString(16).slice(2)}`, at: new Date().toISOString(), action: 'Edited personal information', performedBy: role });
                                     setPersonalEdit(false);
                                     setToast({ title: 'Saved', detail: 'Personal information updated and audited.', tone: 'ok' });
@@ -1803,37 +1871,95 @@ export default function EmployeeProfileClient({
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {(
                           [
-                            { label: 'Title', key: 'title', restricted: false },
-                            { label: 'First Name', key: 'firstName', restricted: false },
-                            { label: 'Middle Name', key: 'middleName', restricted: false },
-                            { label: 'Last Name', key: 'lastName', restricted: false },
-                            { label: 'Preferred Name', key: 'preferredName', restricted: false },
-                            { label: 'Gender', key: 'gender', restricted: false },
-                            { label: 'Date of Birth', key: 'dateOfBirth', restricted: true },
-                            { label: 'Marital Status', key: 'maritalStatus', restricted: true },
-                            { label: 'Nationality', key: 'nationality', restricted: false },
-                            { label: 'State of Origin', key: 'stateOfOrigin', restricted: false },
-                            { label: 'Local Government Area', key: 'localGovernmentArea', restricted: false },
-                            { label: 'Religion', key: 'religion', restricted: true },
-                            { label: 'Languages Spoken', key: 'languagesSpoken', restricted: false },
-                            { label: 'Personal Email', key: 'personalEmail', restricted: false },
-                            { label: 'Personal Phone', key: 'personalPhone', restricted: true },
-                            { label: 'Residential Address', key: 'residentialAddress', restricted: true },
-                            { label: 'Permanent Address', key: 'permanentAddress', restricted: true },
+                            { label: 'Title', key: 'title', control: 'select', options: TITLE_OPTIONS },
+                            { label: 'First Name', key: 'firstName', control: 'text' },
+                            { label: 'Middle Name', key: 'middleName', control: 'text' },
+                            { label: 'Last Name', key: 'lastName', control: 'text' },
+                            { label: 'Preferred Name', key: 'preferredName', control: 'text' },
+                            { label: 'Gender', key: 'gender', control: 'select', options: GENDER_OPTIONS },
+                            { label: 'Date of Birth', key: 'dateOfBirth', control: 'date', restricted: true },
+                            { label: 'Marital Status', key: 'maritalStatus', control: 'select', options: MARITAL_STATUS_OPTIONS, restricted: true },
+                            { label: 'Nationality', key: 'nationality', control: 'select', options: NATIONALITY_OPTIONS },
+                            { label: 'State of Origin', key: 'stateOfOrigin', control: 'select', options: NIGERIA_STATE_OPTIONS },
+                            { label: 'Local Government Area', key: 'localGovernmentArea', control: 'lga' },
+                            { label: 'Religion', key: 'religion', control: 'select', options: RELIGION_OPTIONS, restricted: true },
+                            { label: 'Languages Spoken', key: 'languagesSpoken', control: 'text' },
+                            { label: 'Personal Email', key: 'personalEmail', control: 'email' },
+                            { label: 'Personal Phone', key: 'personalPhone', control: 'tel', restricted: true },
+                            { label: 'Residential Address', key: 'residentialAddress', control: 'text', restricted: true },
+                            { label: 'Permanent Address', key: 'permanentAddress', control: 'text', restricted: true },
                           ] as const
                         ).map((f) => {
-                          const restricted = f.restricted && !perms.canViewSensitivePersonal;
+                          const restricted = 'restricted' in f && f.restricted && !perms.canViewSensitivePersonal;
                           const current = profileData.personalInfo[f.key] ?? null;
                           if (!personalEdit) return <Field key={f.key} label={f.label} value={v(current)} masked={restricted} />;
+                          if (restricted) {
+                            return (
+                              <EditField
+                                key={f.key}
+                                label={f.label}
+                                value="••••••"
+                                disabled
+                                onChange={() => undefined}
+                              />
+                            );
+                          }
+                          const draftValue = personalDraft?.[f.key] ?? current;
+                          const setPersonalField = (next: string) => {
+                            setPersonalDraft((prev) => {
+                              const base = { ...(prev || {}) } as PersonalInfo;
+                              base[f.key] = next;
+                              if (f.key === 'stateOfOrigin') {
+                                const lgas = getNigeriaLgas(next);
+                                const currentLga = String(base.localGovernmentArea || '').trim();
+                                if (currentLga && !lgas.some((item) => item.toLowerCase() === currentLga.toLowerCase())) {
+                                  base.localGovernmentArea = '';
+                                }
+                              }
+                              return base;
+                            });
+                          };
+                          if (f.control === 'select') {
+                            return (
+                              <FixedSelectField
+                                key={f.key}
+                                label={f.label}
+                                value={editValue(draftValue)}
+                                onChange={setPersonalField}
+                                options={[...(f.options || [])]}
+                              />
+                            );
+                          }
+                          if (f.control === 'lga') {
+                            const state = editValue(personalDraft?.stateOfOrigin ?? profileData.personalInfo.stateOfOrigin);
+                            return (
+                              <FixedSelectField
+                                key={f.key}
+                                label={f.label}
+                                value={editValue(draftValue)}
+                                onChange={setPersonalField}
+                                options={getNigeriaLgas(state)}
+                              />
+                            );
+                          }
+                          if (f.control === 'date') {
+                            return (
+                              <EditField
+                                key={f.key}
+                                label={f.label}
+                                type="date"
+                                value={editDateValue(draftValue)}
+                                onChange={setPersonalField}
+                              />
+                            );
+                          }
                           return (
                             <EditField
                               key={f.key}
                               label={f.label}
-                              value={restricted ? '••••••' : editValue(personalDraft?.[f.key] ?? current)}
-                              disabled={restricted}
-                              onChange={(next) => {
-                                setPersonalDraft((prev) => ({ ...(prev || {}), [f.key]: next } as PersonalInfo));
-                              }}
+                              type={f.control === 'email' ? 'email' : f.control === 'tel' ? 'tel' : 'text'}
+                              value={editValue(draftValue)}
+                              onChange={setPersonalField}
                             />
                           );
                         })}
@@ -1873,7 +1999,14 @@ export default function EmployeeProfileClient({
                                         role,
                                         viewerEmployeeId,
                                       });
-                                      updateProfile((p) => ({ ...p, employmentDetails: next }));
+                                      updateProfile((p) => ({
+                                        ...p,
+                                        employmentDetails: next,
+                                        employmentType: next.employmentType || p.employmentType,
+                                        employmentStatus: (next.employmentStatus as EmployeeStatus) || p.employmentStatus,
+                                        location: next.workLocation || p.location,
+                                        dateJoined: next.dateJoined ? `${String(next.dateJoined).slice(0, 10)}T00:00:00.000Z` : p.dateJoined,
+                                      }));
                                       pushAudit({ id: `audit-${Math.random().toString(16).slice(2)}`, at: new Date().toISOString(), action: 'Updated employment details', performedBy: role });
                                       setEmploymentEdit(false);
                                       setToast({ title: 'Saved', detail: 'Employment details updated and audited.', tone: 'ok' });
@@ -1908,14 +2041,73 @@ export default function EmployeeProfileClient({
                         }
                       >
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {Object.entries(profileData.employmentDetails).map(([k, val]) => {
-                            if (!employmentEdit) return <Field key={k} label={employmentLabel(k)} value={v(val)} />;
+                        {(
+                          [
+                            { key: 'employeeId', control: 'readonly' },
+                            { key: 'employmentType', control: 'select', options: EMPLOYMENT_TYPE_OPTIONS },
+                            { key: 'employmentStatus', control: 'select', options: EMPLOYMENT_STATUS_OPTIONS },
+                            { key: 'dateJoined', control: 'date' },
+                            { key: 'confirmationDate', control: 'date' },
+                            { key: 'probationStartDate', control: 'date' },
+                            { key: 'probationEndDate', control: 'date' },
+                            { key: 'contractStartDate', control: 'date' },
+                            { key: 'contractEndDate', control: 'date' },
+                            { key: 'exitDate', control: 'date' },
+                            { key: 'exitReason', control: 'select', options: EXIT_REASON_OPTIONS },
+                            { key: 'rehireEligibility', control: 'select', options: REHIRE_ELIGIBILITY_OPTIONS },
+                            { key: 'workLocation', control: 'search', optionsKey: 'locations' as const },
+                            { key: 'workMode', control: 'select', options: WORK_MODE_OPTIONS },
+                            { key: 'shiftPattern', control: 'select', options: SHIFT_PATTERN_OPTIONS },
+                            { key: 'staffCategory', control: 'select', options: STAFF_CATEGORY_OPTIONS },
+                            { key: 'employeeCategory', control: 'select', options: EMPLOYEE_CATEGORY_OPTIONS },
+                            { key: 'unionStatus', control: 'select', options: UNION_STATUS_OPTIONS },
+                          ] as const
+                        ).map((f) => {
+                            const val = profileData.employmentDetails[f.key] ?? null;
+                            if (!employmentEdit) return <Field key={f.key} label={employmentLabel(f.key)} value={v(val)} />;
+                            const draftValue = employmentDraft?.[f.key] ?? val;
+                            const setEmploymentField = (next: string) =>
+                              setEmploymentDraft((prev) => ({ ...(prev || {}), [f.key]: next }));
+                            if (f.control === 'readonly') {
+                              return (
+                                <EditField
+                                  key={f.key}
+                                  label={employmentLabel(f.key)}
+                                  value={editValue(draftValue)}
+                                  disabled
+                                  onChange={() => undefined}
+                                />
+                              );
+                            }
+                            if (f.control === 'date') {
+                              return (
+                                <EditField
+                                  key={f.key}
+                                  label={employmentLabel(f.key)}
+                                  type="date"
+                                  value={editDateValue(draftValue)}
+                                  onChange={setEmploymentField}
+                                />
+                              );
+                            }
+                            if (f.control === 'search') {
+                              return (
+                                <SearchableSelectField
+                                  key={f.key}
+                                  label={employmentLabel(f.key)}
+                                  value={editValue(draftValue)}
+                                  onChange={setEmploymentField}
+                                  options={jobFormOptions?.locations || []}
+                                />
+                              );
+                            }
                             return (
-                              <EditField
-                                key={k}
-                                label={employmentLabel(k)}
-                                value={editValue(employmentDraft?.[k] ?? val)}
-                                onChange={(next) => setEmploymentDraft((prev) => ({ ...(prev || {}), [k]: next }))}
+                              <FixedSelectField
+                                key={f.key}
+                                label={employmentLabel(f.key)}
+                                value={editValue(draftValue)}
+                                onChange={setEmploymentField}
+                                options={[...(f.options || [])]}
                               />
                             );
                           })}
@@ -2316,14 +2508,43 @@ export default function EmployeeProfileClient({
                       }
                     >
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {Object.entries(profileData.contacts).map(([k, val]) => {
-                          if (!contactsEdit) return <Field key={k} label={k} value={v(val)} />;
+                        {(
+                          [
+                            { key: 'officialEmail', control: 'email' },
+                            { key: 'personalEmail', control: 'email' },
+                            { key: 'officeExtension', control: 'text' },
+                            { key: 'primaryPhone', control: 'tel' },
+                            { key: 'alternativePhone', control: 'tel' },
+                            { key: 'nearestBusStop', control: 'text' },
+                            { key: 'city', control: 'text' },
+                            { key: 'state', control: 'select', options: NIGERIA_STATE_OPTIONS },
+                            { key: 'country', control: 'select', options: COUNTRY_OPTIONS },
+                            { key: 'postalCode', control: 'text' },
+                          ] as const
+                        ).map((f) => {
+                          const val = profileData.contacts[f.key] ?? null;
+                          if (!contactsEdit) return <Field key={f.key} label={contactLabel(f.key)} value={v(val)} />;
+                          const draftValue = contactsDraft?.[f.key] ?? val;
+                          const setContactField = (next: string) =>
+                            setContactsDraft((prev) => ({ ...(prev || {}), [f.key]: next }));
+                          if (f.control === 'select') {
+                            return (
+                              <FixedSelectField
+                                key={f.key}
+                                label={contactLabel(f.key)}
+                                value={editValue(draftValue)}
+                                onChange={setContactField}
+                                options={[...(f.options || [])]}
+                              />
+                            );
+                          }
                           return (
                             <EditField
-                              key={k}
-                              label={k}
-                              value={editValue(contactsDraft?.[k] ?? val)}
-                              onChange={(next) => setContactsDraft((prev) => ({ ...(prev || {}), [k]: next }))}
+                              key={f.key}
+                              label={contactLabel(f.key)}
+                              type={f.control === 'email' ? 'email' : f.control === 'tel' ? 'tel' : 'text'}
+                              value={editValue(draftValue)}
+                              onChange={setContactField}
                             />
                           );
                         })}

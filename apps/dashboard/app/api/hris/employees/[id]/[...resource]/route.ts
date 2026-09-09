@@ -11,7 +11,7 @@ import { readDirectoryEmployees, invalidatePayrollEmployeeCache } from '@/lib/pa
 import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import { ensureEmployeeLeaveFromHris } from '@/lib/hris-leave-read';
 import { contractPayrollClassification, type ContractPayrollClassification } from '@/lib/payroll-employee-classification';
-import { readEmployeeProfileExtensions } from '@/lib/employee-profile-extensions-store';
+import { readEmployeeProfileExtensions, writeEmployeeProfileExtensions } from '@/lib/employee-profile-extensions-store';
 import {
   buildStoredPayrollLinesFromDrafts,
   enrichPayrollSummaryFromRow,
@@ -2537,11 +2537,11 @@ const buildDbProfileRecord = (row: DleEmployeeDirectoryRow): EmployeeRecord => {
       exitReason: row.status === 'Terminated' ? 'System status marked terminated' : null,
       rehireEligibility: null,
       workLocation: valueOrNull(row.workLocation || row.location),
-      workMode: row.remoteWorker ? 'Remote' : 'Onsite',
-      shiftPattern: valueOrNull(row.shift),
+      workMode: valueOrNull(row.workMode) || (row.remoteWorker ? 'Remote' : 'Onsite'),
+      shiftPattern: valueOrNull(row.shiftPattern) || valueOrNull(row.shift),
       staffCategory: valueOrNull(row.staffCategory),
       employeeCategory: valueOrNull(row.employeeCategory),
-      unionStatus: null,
+      unionStatus: valueOrNull(row.unionStatus),
     },
     jobDetails: {
       jobTitle: valueOrNull(row.jobTitle),
@@ -2689,6 +2689,13 @@ const persistHrisProfileToEnterprise = async (rec: EmployeeRecord, options?: { r
       })),
       replaceEmergencyContacts: options?.replaceEmergencyContacts,
     });
+    await writeEmployeeProfileExtensions(employeeCode, {
+      employmentExtras: {
+        exitDate: rec.profile.employmentDetails?.exitDate ?? null,
+        exitReason: rec.profile.employmentDetails?.exitReason ?? null,
+        rehireEligibility: rec.profile.employmentDetails?.rehireEligibility ?? null,
+      },
+    });
     if (synced) invalidateHrisEmployeeCaches();
   } catch (error) {
     console.error('Failed to persist HRIS profile to DLE_Enterprise', error);
@@ -2723,6 +2730,12 @@ const ensureRecordFromDb = async (employeeId: string) => {
   if (extensions.assets?.length) record.assets = extensions.assets;
   if (extensions.performanceSummary) record.performanceSummary = extensions.performanceSummary;
   if (extensions.disciplinary?.length) record.disciplinary = extensions.disciplinary;
+  if (extensions.employmentExtras) {
+    const extras = extensions.employmentExtras;
+    if (extras.exitDate !== undefined) record.profile.employmentDetails.exitDate = extras.exitDate;
+    if (extras.exitReason !== undefined) record.profile.employmentDetails.exitReason = extras.exitReason;
+    if (extras.rehireEligibility !== undefined) record.profile.employmentDetails.rehireEligibility = extras.rehireEligibility;
+  }
   record.payrollClassification = found.payrollClassification || contractPayrollClassification(found);
   store.set(found.employeeCode, record);
   return record;
@@ -5130,15 +5143,30 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 
   if (root === 'personal-info') {
     const next = { ...rec.profile.personalInfo };
-    for (const k of Object.keys(next)) {
-      if (!(k in body)) continue;
-      const v = normalizeStr(body[k], 500);
-      next[k] = v;
+    for (const [k, raw] of Object.entries(body || {})) {
+      if (k === 'personalPhone') continue;
+      next[k] = normalizeStr(raw, 500);
     }
     const phone = body.personalPhone ? normalizeStr(body.personalPhone, 40) : null;
-    if (phone && !validatePhone(phone)) return jsonErr(400, 'Phone number must be valid');
-    if (phone) next.personalPhone = phone;
+    if (body.personalPhone !== undefined) {
+      if (phone && !validatePhone(phone)) return jsonErr(400, 'Phone number must be valid');
+      next.personalPhone = phone;
+    }
+    if (next.dateOfBirth) {
+      const dob = String(next.dateOfBirth).slice(0, 10);
+      next.dateOfBirth = /^\d{4}-\d{2}-\d{2}$/.test(dob) ? dob : next.dateOfBirth;
+    }
     rec.profile.personalInfo = next;
+    const composedName = [next.firstName, next.middleName, next.lastName].map((part) => String(part || '').trim()).filter(Boolean).join(' ');
+    if (composedName) rec.profile.fullName = composedName;
+    // Keep contact-table mirrors in sync so DB MERGE writes the values just edited here.
+    rec.profile.contacts = {
+      ...rec.profile.contacts,
+      personalEmail: next.personalEmail ?? rec.profile.contacts.personalEmail ?? null,
+      primaryPhone: next.personalPhone ?? rec.profile.contacts.primaryPhone ?? null,
+      residentialAddress: next.residentialAddress ?? rec.profile.contacts.residentialAddress ?? null,
+      permanentAddress: next.permanentAddress ?? rec.profile.contacts.permanentAddress ?? null,
+    };
     rec.audit.unshift(auditEntry('Edited personal information', role));
     await persistHrisProfileToEnterprise(rec);
     return jsonOk(sanitizeProfileForRole(rec, perms).personalInfo);
@@ -5146,9 +5174,13 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 
   if (root === 'employment') {
     const next = { ...rec.profile.employmentDetails };
-    for (const k of Object.keys(next)) {
-      if (!(k in body)) continue;
-      next[k] = normalizeStr(body[k], 200);
+    for (const [k, raw] of Object.entries(body || {})) {
+      next[k] = normalizeStr(raw, 200);
+    }
+    for (const dateKey of ['dateJoined', 'confirmationDate', 'probationStartDate', 'probationEndDate', 'contractStartDate', 'contractEndDate', 'exitDate']) {
+      if (!next[dateKey]) continue;
+      const day = String(next[dateKey]).slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(day)) next[dateKey] = day;
     }
     const dateJoined = next.dateJoined ? new Date(`${next.dateJoined}T00:00:00.000Z`).getTime() : null;
     if (dateJoined && dateJoined > Date.now()) return jsonErr(400, 'Date joined cannot be future date');
@@ -5161,6 +5193,10 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     const exit = next.exitDate ? new Date(`${next.exitDate}T00:00:00.000Z`).getTime() : null;
     if (exit && dateJoined && exit < dateJoined) return jsonErr(400, 'Exit date cannot be before date joined');
     rec.profile.employmentDetails = next;
+    if (next.employmentType) rec.profile.employmentType = next.employmentType;
+    if (next.employmentStatus) rec.profile.employmentStatus = next.employmentStatus as EmployeeStatus;
+    if (next.dateJoined) rec.profile.dateJoined = `${String(next.dateJoined).slice(0, 10)}T00:00:00.000Z`;
+    if (next.workLocation) rec.profile.location = next.workLocation;
     rec.audit.unshift(auditEntry('Updated employment details', role));
     await persistHrisProfileToEnterprise(rec);
     return jsonOk(rec.profile.employmentDetails);
@@ -5168,9 +5204,8 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 
   if (root === 'job') {
     const next = { ...rec.profile.jobDetails };
-    for (const k of Object.keys(next)) {
-      if (!(k in body)) continue;
-      next[k] = normalizeStr(body[k], 500);
+    for (const [k, raw] of Object.entries(body || {})) {
+      next[k] = normalizeStr(raw, 500);
     }
     if (body.reportingManager && normalizeStr(body.reportingManager, 200) === rec.profile.fullName) return jsonErr(400, 'Manager cannot be same as employee');
     rec.profile.jobDetails = next;
@@ -5185,14 +5220,23 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 
   if (root === 'contacts') {
     const next = { ...rec.profile.contacts };
-    for (const k of Object.keys(next)) {
-      if (!(k in body)) continue;
-      next[k] = normalizeStr(body[k], 500);
+    for (const [k, raw] of Object.entries(body || {})) {
+      if (k === 'primaryPhone') continue;
+      next[k] = normalizeStr(raw, 500);
     }
     const phone = body.primaryPhone ? normalizeStr(body.primaryPhone, 40) : null;
-    if (phone && !validatePhone(phone)) return jsonErr(400, 'Phone number must be valid');
-    if (phone) next.primaryPhone = phone;
+    if (body.primaryPhone !== undefined) {
+      if (phone && !validatePhone(phone)) return jsonErr(400, 'Phone number must be valid');
+      next.primaryPhone = phone;
+    }
     rec.profile.contacts = next;
+    rec.profile.personalInfo = {
+      ...rec.profile.personalInfo,
+      personalEmail: next.personalEmail ?? rec.profile.personalInfo.personalEmail ?? null,
+      personalPhone: next.primaryPhone ?? rec.profile.personalInfo.personalPhone ?? null,
+      residentialAddress: next.residentialAddress ?? rec.profile.personalInfo.residentialAddress ?? null,
+      permanentAddress: next.permanentAddress ?? rec.profile.personalInfo.permanentAddress ?? null,
+    };
     rec.audit.unshift(auditEntry('Updated contact information', role));
     await persistHrisProfileToEnterprise(rec);
     return jsonOk(rec.profile.contacts);

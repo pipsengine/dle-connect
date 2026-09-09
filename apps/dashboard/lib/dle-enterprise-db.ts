@@ -78,7 +78,11 @@ export type DleEmployeeDirectoryRow = {
   workLocation: string;
   officeLocation: string;
   projectSite?: string;
+  /** Full shift_pattern from DB (any configured value). */
+  shiftPattern?: string;
   shift?: 'Day' | 'Night' | 'Rotational';
+  workMode?: string;
+  unionStatus?: string;
   staffCategory: string;
   employeeCategory: string;
   employmentType: string;
@@ -1198,6 +1202,7 @@ const DIRECTORY_EMPLOYEE_SELECT_SQL = `
       emp.confirmation_due_date,
       emp.contract_start_date,
       emp.shift_pattern,
+      emp.union_status,
       emp.contract_end_date,
       emp.expatriate_status,
       payroll.payroll_group,
@@ -1314,7 +1319,10 @@ const mapDirectoryEmployeeRow = (row: any): DleEmployeeDirectoryRow => {
     workLocation,
     officeLocation,
     projectSite: projectSite || undefined,
+    shiftPattern: str(row.shift_pattern) || undefined,
     shift: (['Day', 'Night', 'Rotational'].includes(str(row.shift_pattern)) ? str(row.shift_pattern) : undefined) as DleEmployeeDirectoryRow['shift'],
+    workMode: workMode || undefined,
+    unionStatus: str(row.union_status) || undefined,
     staffCategory: str(row.staff_category),
     employeeCategory: str(row.employee_category),
     employmentType,
