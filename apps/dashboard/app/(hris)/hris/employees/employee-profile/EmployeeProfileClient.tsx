@@ -451,6 +451,35 @@ const REHIRE_ELIGIBILITY_OPTIONS = ['Eligible', 'Not Eligible', 'Under Review', 
 const EXIT_REASON_OPTIONS = ['Resignation', 'Termination', 'Retirement', 'End of Contract', 'Redundancy', 'Mutual Separation', 'Other'];
 const COUNTRY_OPTIONS = ['NG', 'Nigeria', 'GH', 'BJ', 'TG', 'CM', 'Other'];
 
+type ProfileControl = 'text' | 'email' | 'tel' | 'date' | 'select' | 'lga' | 'search' | 'readonly';
+
+type EmploymentEditField = {
+  key: keyof EmploymentDetails | string;
+  control: ProfileControl;
+  options?: string[];
+};
+
+const EMPLOYMENT_EDIT_FIELDS: EmploymentEditField[] = [
+  { key: 'employeeId', control: 'readonly' },
+  { key: 'employmentType', control: 'select', options: EMPLOYMENT_TYPE_OPTIONS },
+  { key: 'employmentStatus', control: 'select', options: EMPLOYMENT_STATUS_OPTIONS },
+  { key: 'dateJoined', control: 'date' },
+  { key: 'confirmationDate', control: 'date' },
+  { key: 'probationStartDate', control: 'date' },
+  { key: 'probationEndDate', control: 'date' },
+  { key: 'contractStartDate', control: 'date' },
+  { key: 'contractEndDate', control: 'date' },
+  { key: 'exitDate', control: 'date' },
+  { key: 'exitReason', control: 'select', options: EXIT_REASON_OPTIONS },
+  { key: 'rehireEligibility', control: 'select', options: REHIRE_ELIGIBILITY_OPTIONS },
+  { key: 'workLocation', control: 'search' },
+  { key: 'workMode', control: 'select', options: WORK_MODE_OPTIONS },
+  { key: 'shiftPattern', control: 'select', options: SHIFT_PATTERN_OPTIONS },
+  { key: 'staffCategory', control: 'select', options: STAFF_CATEGORY_OPTIONS },
+  { key: 'employeeCategory', control: 'select', options: EMPLOYEE_CATEGORY_OPTIONS },
+  { key: 'unionStatus', control: 'select', options: UNION_STATUS_OPTIONS },
+];
+
 const NIGERIA_STATE_OPTIONS = getNigeriaStates();
 
 const JOB_FIELD_LABELS: Record<string, string> = {
@@ -559,21 +588,35 @@ const EditField = ({
   disabled?: boolean;
   placeholder?: string;
   type?: 'text' | 'date' | 'email' | 'tel';
-}) => (
-  <div className={`rounded-xl border p-2.5 ${disabled ? 'border-slate-100 bg-slate-50' : 'border-slate-200 bg-white'}`}>
-    <div className="text-[11px] font-extrabold text-slate-600">{label}</div>
-    <input
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      disabled={disabled}
-      placeholder={placeholder || 'Enter value'}
-      type={type || 'text'}
-      className={`mt-1.5 w-full rounded-lg border px-2.5 py-2 text-sm font-semibold focus:border-dle-blue focus:outline-none focus:ring-2 focus:ring-dle-blue/20 ${
-        disabled ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400' : 'border-slate-200 bg-white text-slate-900'
-      }`}
-    />
-  </div>
-);
+}) => {
+  const inputType = type || 'text';
+  const isDate = inputType === 'date';
+  return (
+    <div
+      data-field-control={inputType}
+      className={`rounded-xl border p-2.5 ${disabled ? 'border-slate-100 bg-slate-50' : 'border-slate-200 bg-white'}`}
+    >
+      <div className="text-[11px] font-extrabold text-slate-600">{label}</div>
+      <div className="relative mt-1.5">
+        {isDate ? (
+          <Calendar className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+        ) : null}
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          placeholder={isDate ? undefined : placeholder || 'Enter value'}
+          type={inputType}
+          className={`w-full rounded-lg border py-2 text-sm font-semibold focus:border-dle-blue focus:outline-none focus:ring-2 focus:ring-dle-blue/20 ${
+            isDate ? 'pl-8 pr-2.5' : 'px-2.5'
+          } ${
+            disabled ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400' : 'border-slate-200 bg-white text-slate-900'
+          }`}
+        />
+      </div>
+    </div>
+  );
+};
 
 const EditTextArea = ({
   label,
@@ -748,13 +791,13 @@ const FixedSelectField = ({
   onChange: (next: string) => void;
   options: string[];
 }) => (
-  <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+  <div data-field-control="select" className="rounded-xl border border-slate-200 bg-white p-2.5">
     <div className="text-[11px] font-extrabold text-slate-600">{label}</div>
     <div className="relative mt-1.5">
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-2.5 pr-8 text-sm font-semibold text-slate-900 focus:border-dle-blue focus:outline-none focus:ring-2 focus:ring-dle-blue/20"
+        className="w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 py-2 pl-2.5 pr-8 text-sm font-semibold text-slate-900 focus:border-dle-blue focus:bg-white focus:outline-none focus:ring-2 focus:ring-dle-blue/20"
       >
         <option value="">Select…</option>
         {withCurrentOption(options, value).map((item) => (
@@ -763,7 +806,7 @@ const FixedSelectField = ({
           </option>
         ))}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
     </div>
   </div>
 );
@@ -2041,38 +2084,18 @@ export default function EmployeeProfileClient({
                         }
                       >
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {(
-                          [
-                            { key: 'employeeId', control: 'readonly' },
-                            { key: 'employmentType', control: 'select', options: EMPLOYMENT_TYPE_OPTIONS },
-                            { key: 'employmentStatus', control: 'select', options: EMPLOYMENT_STATUS_OPTIONS },
-                            { key: 'dateJoined', control: 'date' },
-                            { key: 'confirmationDate', control: 'date' },
-                            { key: 'probationStartDate', control: 'date' },
-                            { key: 'probationEndDate', control: 'date' },
-                            { key: 'contractStartDate', control: 'date' },
-                            { key: 'contractEndDate', control: 'date' },
-                            { key: 'exitDate', control: 'date' },
-                            { key: 'exitReason', control: 'select', options: EXIT_REASON_OPTIONS },
-                            { key: 'rehireEligibility', control: 'select', options: REHIRE_ELIGIBILITY_OPTIONS },
-                            { key: 'workLocation', control: 'search', optionsKey: 'locations' as const },
-                            { key: 'workMode', control: 'select', options: WORK_MODE_OPTIONS },
-                            { key: 'shiftPattern', control: 'select', options: SHIFT_PATTERN_OPTIONS },
-                            { key: 'staffCategory', control: 'select', options: STAFF_CATEGORY_OPTIONS },
-                            { key: 'employeeCategory', control: 'select', options: EMPLOYEE_CATEGORY_OPTIONS },
-                            { key: 'unionStatus', control: 'select', options: UNION_STATUS_OPTIONS },
-                          ] as const
-                        ).map((f) => {
-                            const val = profileData.employmentDetails[f.key] ?? null;
-                            if (!employmentEdit) return <Field key={f.key} label={employmentLabel(f.key)} value={v(val)} />;
-                            const draftValue = employmentDraft?.[f.key] ?? val;
+                        {EMPLOYMENT_EDIT_FIELDS.map((f) => {
+                            const fieldKey = String(f.key);
+                            const val = profileData.employmentDetails[fieldKey] ?? null;
+                            if (!employmentEdit) return <Field key={fieldKey} label={employmentLabel(fieldKey)} value={v(val)} />;
+                            const draftValue = employmentDraft?.[fieldKey] ?? val;
                             const setEmploymentField = (next: string) =>
-                              setEmploymentDraft((prev) => ({ ...(prev || {}), [f.key]: next }));
+                              setEmploymentDraft((prev) => ({ ...(prev || {}), [fieldKey]: next }));
                             if (f.control === 'readonly') {
                               return (
                                 <EditField
-                                  key={f.key}
-                                  label={employmentLabel(f.key)}
+                                  key={fieldKey}
+                                  label={employmentLabel(fieldKey)}
                                   value={editValue(draftValue)}
                                   disabled
                                   onChange={() => undefined}
@@ -2082,8 +2105,8 @@ export default function EmployeeProfileClient({
                             if (f.control === 'date') {
                               return (
                                 <EditField
-                                  key={f.key}
-                                  label={employmentLabel(f.key)}
+                                  key={fieldKey}
+                                  label={employmentLabel(fieldKey)}
                                   type="date"
                                   value={editDateValue(draftValue)}
                                   onChange={setEmploymentField}
@@ -2093,21 +2116,32 @@ export default function EmployeeProfileClient({
                             if (f.control === 'search') {
                               return (
                                 <SearchableSelectField
-                                  key={f.key}
-                                  label={employmentLabel(f.key)}
+                                  key={fieldKey}
+                                  label={employmentLabel(fieldKey)}
                                   value={editValue(draftValue)}
                                   onChange={setEmploymentField}
                                   options={jobFormOptions?.locations || []}
+                                  placeholder="Search work location…"
+                                />
+                              );
+                            }
+                            if (f.control === 'select') {
+                              return (
+                                <FixedSelectField
+                                  key={fieldKey}
+                                  label={employmentLabel(fieldKey)}
+                                  value={editValue(draftValue)}
+                                  onChange={setEmploymentField}
+                                  options={f.options || []}
                                 />
                               );
                             }
                             return (
-                              <FixedSelectField
-                                key={f.key}
-                                label={employmentLabel(f.key)}
+                              <EditField
+                                key={fieldKey}
+                                label={employmentLabel(fieldKey)}
                                 value={editValue(draftValue)}
                                 onChange={setEmploymentField}
-                                options={[...(f.options || [])]}
                               />
                             );
                           })}
