@@ -2,6 +2,33 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1788952179820-ef8b3f",
+      "recipientUserId": "P0392",
+      "recipientUsername": "P0392",
+      "recipientEmployeeCode": "P0392",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr ADEKUNLE ADESINA submitted Expense Payment DLE2608100 (NGN 405,000) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1788169096781",
+      "createdAt": "2026-09-09T11:09:39.820Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1788169096781",
+        "requestNumber": "DLE2608100",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0392",
+        "recipientName": "Mr JUDE UMUKORO"
+      }
+    },
+    {
       "id": "ntf-1788949852793-mr7bcs",
       "recipientUserId": "P0060",
       "recipientUsername": "P0060",

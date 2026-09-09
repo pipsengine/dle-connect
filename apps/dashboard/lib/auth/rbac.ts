@@ -313,7 +313,7 @@ export const defaultRoleForEmployee = (
   if (/\bcfo\b|chief financial officer/i.test(text)) return 'CFO';
   if (/\bmd\b|\bceo\b|managing director|chief executive/i.test(text)) return 'Executive Director';
   if (text.includes('payroll')) return 'Payroll Officer';
-  if (text.includes('human') || text.includes('hr')) return 'HR Officer';
+  if (/\bhr\b|human\s*resources/i.test(text)) return 'HR Officer';
   if (text.includes('finance') || text.includes('account')) return 'Accountant';
   if (text.includes('procurement') || text.includes('purchase')) return 'Procurement Officer';
   if (text.includes('hse') || text.includes('safety')) return 'HSE Officer';

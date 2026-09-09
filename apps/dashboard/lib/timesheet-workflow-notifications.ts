@@ -49,11 +49,8 @@ const nameFromLabel = (value?: string | null) => {
 };
 
 const roleMatches = (userRoles: string[], needed: string[]) => {
-  const haystack = userRoles.map((role) => role.toLowerCase());
-  return needed.some((need) => {
-    const needle = need.toLowerCase();
-    return haystack.some((role) => role === needle || role.includes(needle) || needle.includes(role));
-  });
+  const haystack = userRoles.map((role) => role.toLowerCase().trim());
+  return needed.some((need) => haystack.includes(need.toLowerCase().trim()));
 };
 
 type ResolvedRecipient = {
@@ -82,7 +79,12 @@ const resolveTimesheetApproverRecipients = async (input: {
     })
     : [];
   const named = byCode.length ? byCode : byName;
-  const picked = named.length ? named : users.filter((user) => roleMatches(user.roles, input.roles));
+  // Never fan out to every role match when a named approver was expected but missing.
+  const picked = named.length
+    ? named
+    : (code || nameHint)
+      ? []
+      : users.filter((user) => roleMatches(user.roles, input.roles));
   const seen = new Set<string>();
   const recipients: ResolvedRecipient[] = [];
   for (const user of picked) {

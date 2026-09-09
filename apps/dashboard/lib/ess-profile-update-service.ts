@@ -38,11 +38,17 @@ export type EssProfileUpdateRequest = EssLeaveRequest & {
 
 const compact = (value: unknown) => String(value || '').trim();
 const PROFILE_SERVICE_ID = 'profile-update';
-const HR_ROLE_PATTERN = /super admin|hr director|hr manager|hr officer|system administrator/i;
-const HR_TITLE_PATTERN = /hr manager|hr head|hr director|hr officer|human resources manager|head of hr/i;
+/** Email notifications go only to accounts with exact HR Manager role. */
+const PROFILE_HR_EMAIL_ROLES = new Set(['hr manager']);
+/** Approve/reject UI — HR Manager / Officer / Head / Director only (not Super/System Admin). */
+const PROFILE_HR_APPROVE_ROLES = new Set(['hr manager', 'hr officer', 'hr head', 'hr director']);
+const HR_TITLE_FALLBACK = /^\s*hr\s+manager\b/i;
+
+const roleExactMatch = (roles: string[] = [], allowed: Set<string>) =>
+  roles.some((role) => allowed.has(role.toLowerCase().trim()));
 
 export const canApproveEssProfileUpdate = (roles: string[] = []) =>
-  roles.some((role) => HR_ROLE_PATTERN.test(role));
+  roleExactMatch(roles, PROFILE_HR_APPROVE_ROLES);
 
 export const isProfileUpdateRequest = (request: EssLeaveRequest): request is EssProfileUpdateRequest =>
   compact((request as EssProfileUpdateRequest).serviceId) === PROFILE_SERVICE_ID
@@ -130,8 +136,9 @@ export const resolveProfileHrRecipients = async (
     });
   };
 
+  // Primary: Active auth users with exact "HR Manager" role only.
   for (const user of users.filter((item) => item.status === 'Active' || !item.status)) {
-    if (!(user.roles || []).some((role) => HR_ROLE_PATTERN.test(role))) continue;
+    if (!roleExactMatch(user.roles || [], PROFILE_HR_EMAIL_ROLES)) continue;
     const code = compact(user.employeeCode || user.employeeId || user.username);
     const directoryEmployee = directory.find((employee) =>
       [employee.employeeCode, employee.employeeId, employee.sourceEmployeeId]
@@ -141,19 +148,22 @@ export const resolveProfileHrRecipients = async (
       employeeCode: code,
       fullName: user.fullName,
       email: user.email,
-      roles: user.roles || ['HR Manager'],
+      roles: ['HR Manager'],
       directoryEmployee,
     });
   }
 
-  for (const employee of directory) {
-    if (!HR_TITLE_PATTERN.test(`${employee.jobTitle || ''} ${employee.designation || ''}`)) continue;
-    await upsert({
-      employeeCode: employee.employeeCode || employee.employeeId,
-      fullName: employee.fullName,
-      directoryEmployee: employee,
-      roles: ['HR Manager'],
-    });
+  // Fallback only when no HR Manager auth accounts exist — exact job title "HR Manager".
+  if (!byCode.size) {
+    for (const employee of directory) {
+      if (!HR_TITLE_FALLBACK.test(`${employee.jobTitle || ''} ${employee.designation || ''}`)) continue;
+      await upsert({
+        employeeCode: employee.employeeCode || employee.employeeId,
+        fullName: employee.fullName,
+        directoryEmployee: employee,
+        roles: ['HR Manager'],
+      });
+    }
   }
 
   return Array.from(byCode.values()).filter((item) => item.email || item.employeeCode);
@@ -399,8 +409,8 @@ const notifyProfileSubmittedToHr = async (input: {
     severity: 'warning',
     href,
     actor: input.actorName,
-    channels: ['In-App', 'Email'],
-    recipientRoles: ['HR Manager', 'HR Director', 'HR Officer', 'HR Head'],
+    channels: ['In-App'],
+    recipientRoles: ['HR Manager'],
     metadata: {
       requestId: input.request.id,
       module: 'ess-profile-update',

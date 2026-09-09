@@ -243,7 +243,7 @@ const ESS_REQUESTS_PATH = path.join(resolveDashboardRoot(), 'data', 'hris', 'ess
 
 const adminRoles: LeaveRole[] = ['Leave Administrator', 'HR Officer', 'HR Manager', 'System Administrator', 'Super Administrator'];
 const managerRoles: LeaveRole[] = ['Department Manager', 'Supervisor', 'HR Manager', 'Executive', 'Super Administrator'];
-const approvalRoles: LeaveRole[] = ['Supervisor', 'Department Manager', 'HR Manager', 'Executive', 'System Administrator', 'Super Administrator', 'Leave Administrator'];
+const approvalRoles: LeaveRole[] = ['HR Manager', 'HR Officer', 'Leave Administrator', 'System Administrator', 'Super Administrator'];
 const financeRoles: LeaveRole[] = ['Payroll Officer', 'HR Manager', 'Executive', 'System Administrator', 'Super Administrator'];
 const allRoles: LeaveRole[] = ['Leave Administrator', 'HR Officer', 'HR Manager', 'Department Manager', 'Supervisor', 'Payroll Officer', 'Employee', 'Executive', 'System Administrator', 'Super Administrator'];
 
@@ -1352,7 +1352,7 @@ const reportList = ['Executive Leave Policy Dashboard', 'Leave Utilization Repor
 
 const normalizeRole = (role?: string | null): LeaveRole => {
   const text = String(role || '').trim().toLowerCase();
-  if (!text) return 'Leave Administrator';
+  if (!text) return 'Employee';
   if (/super\s*admin|emergency system administration/.test(text)) return 'Super Administrator';
   if (/system\s*admin/.test(text)) return 'System Administrator';
   if (/hr\s*manager|hr\s*head|hr\s*director/.test(text)) return 'HR Manager';
@@ -1364,7 +1364,7 @@ const normalizeRole = (role?: string | null): LeaveRole => {
   if (/leave\s*admin/.test(text)) return 'Leave Administrator';
   if (/employee/.test(text)) return 'Employee';
   const found = allRoles.find((item) => item.toLowerCase() === text);
-  return found || 'Leave Administrator';
+  return found || 'Employee';
 };
 
 const permissionsFor = (role: LeaveRole): LeavePayload['permissions'] => ({

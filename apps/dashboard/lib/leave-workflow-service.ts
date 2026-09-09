@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sql from 'mssql';
+import { readUsers } from '@/lib/auth/auth-store';
 import type { SessionPayload } from '@/lib/auth/session';
 import { getDleEnterpriseDbPool, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import {
@@ -652,7 +653,8 @@ const namesMatch = (left: string, right: string) => {
   const a = clean(left).toLowerCase();
   const b = clean(right).toLowerCase();
   if (!a || !b) return false;
-  return a === b || a.includes(b) || b.includes(a);
+  // Exact normalized match only — substring includes() caused false approver hits.
+  return a === b;
 };
 
 const employeeCodeFromReference = (reference: string) => {
@@ -947,7 +949,7 @@ export const notifyLeaveAwaitingHrApproval = async (input: {
       title: 'Leave request awaiting HR approval',
       body: `${requestLabel} has been approved by the line manager and is awaiting HR Manager / Head approval.`,
       severity: 'warning',
-      recipientRoles: ['HR Manager', 'HR Head', 'HR Officer', 'Leave Administrator'],
+      recipientRoles: ['HR Manager', 'HR Head', 'HR Director'],
       href: '/workforce-portal?tab=leave&leaveSection=Approvals',
       channels: ['In-App', 'Email'],
       metadata: { requestId: input.request.id },
@@ -1005,7 +1007,7 @@ export const notifyLeaveWithdrawn = async (input: {
     return;
   }
 
-  const hrRecipients = resolveHrRecipients(employees);
+  const hrRecipients = await resolveHrRecipients(employees);
   const notified = new Set<string>();
   for (const recipient of hrRecipients.slice(0, 5)) {
     const key = compact(recipient.employeeCode || recipient.employeeId);
@@ -1021,7 +1023,7 @@ export const notifyLeaveWithdrawn = async (input: {
       title: 'Leave request withdrawn',
       body,
       severity: 'info',
-      recipientRoles: ['HR Manager', 'HR Head', 'HR Officer', 'Leave Administrator'],
+      recipientRoles: ['HR Manager', 'HR Head', 'HR Director'],
       href: '/workforce-portal?tab=leave&leaveSection=Approvals',
       channels: ['In-App'],
       metadata: { requestId: input.request.id },
@@ -1241,8 +1243,58 @@ export const retryLeaveManagerNotification = async (input: {
   });
 };
 
-const resolveHrRecipients = (employees: DleEmployeeDirectoryRow[]) =>
-  employees.filter((employee) => /hr manager|hr head|hr officer|leave administrator/i.test(`${employee.jobTitle || ''} ${employee.designation || ''}`));
+/** Exact HR roles allowed to receive leave HR-stage emails / act at HR Review. */
+const LEAVE_HR_NOTIFY_ROLES = new Set(['hr manager', 'hr head', 'hr director']);
+const LEAVE_HR_ACTION_ROLES = new Set(['hr manager', 'hr head', 'hr director', 'hr officer', 'leave administrator']);
+
+const resolveHrRecipients = async (employees: DleEmployeeDirectoryRow[]) => {
+  const users = await readUsers().catch(() => []);
+  const byKey = new Map<string, DleEmployeeDirectoryRow>();
+
+  for (const user of users) {
+    if (user.status && user.status !== 'Active') continue;
+    const roles = (user.roles || []).map((role) => role.toLowerCase().trim());
+    if (!roles.some((role) => LEAVE_HR_NOTIFY_ROLES.has(role))) continue;
+
+    const code = compact(user.employeeCode || user.employeeId || user.username).toUpperCase();
+    if (!code) continue;
+
+    const directoryEmployee = employees.find((employee) =>
+      [employee.employeeCode, employee.employeeId, employee.sourceEmployeeId]
+        .map((value) => compact(value).toUpperCase())
+        .includes(code),
+    );
+
+    const key = directoryEmployee?.employeeId || code;
+    if (byKey.has(key)) continue;
+
+    byKey.set(key, directoryEmployee || ({
+      id: code,
+      employeeId: code,
+      employeeCode: code,
+      employeeDbId: 0,
+      fullName: compact(user.fullName) || code,
+      email: compact(user.email),
+      officialEmail: compact(user.email),
+      jobTitle: 'HR Manager',
+      designation: 'HR Manager',
+      department: 'Human Resources',
+      status: 'Active',
+    } as DleEmployeeDirectoryRow));
+  }
+
+  // Fallback: directory titles only when no auth HR Manager recipients exist.
+  if (!byKey.size) {
+    for (const employee of employees) {
+      if (!/^\s*hr\s+(manager|head|director)\b/i.test(`${employee.jobTitle || ''} ${employee.designation || ''}`)) continue;
+      const key = employee.employeeId || employee.employeeCode;
+      if (!key || byKey.has(key)) continue;
+      byKey.set(key, employee);
+    }
+  }
+
+  return Array.from(byKey.values());
+};
 
 export const emailLeaveApproversForRequest = async (input: {
   request: EssLeaveRequest;
@@ -1264,7 +1316,7 @@ export const emailLeaveApproversForRequest = async (input: {
     return;
   }
   if (input.request.status === 'HR Review') {
-    const recipients = resolveHrRecipients(employees);
+    const recipients = await resolveHrRecipients(employees);
     for (const recipient of recipients.slice(0, 5)) {
       await sendLeaveApprovalRequestEmail({
         request: input.request,
@@ -1277,11 +1329,12 @@ export const emailLeaveApproversForRequest = async (input: {
   }
 };
 
-const hrRoles = new Set(['hr manager', 'hr head', 'hr officer', 'hr director', 'leave administrator', 'system administrator', 'super administrator', 'super admin']);
-const managerRoles = new Set(['supervisor', 'department manager', 'line manager', 'manager', 'head of department']);
-
 export type LeaveApproverKind = 'line-manager' | 'hr' | null;
 
+/**
+ * Leave approval is only Line Manager (assigned reporting manager) then HR.
+ * Role membership alone must never unlock company-wide Line Manager Review queues.
+ */
 export const resolveLeaveApproverKind = (input: {
   actor: DleEmployeeDirectoryRow;
   requester: DleEmployeeDirectoryRow;
@@ -1290,35 +1343,25 @@ export const resolveLeaveApproverKind = (input: {
   isGlobalAdmin?: boolean;
   employees?: DleEmployeeDirectoryRow[];
 }): LeaveApproverKind => {
-  const { actor, requester, request, roles = [], isGlobalAdmin, employees = [] } = input;
+  const { actor, requester, request, roles = [], employees = [] } = input;
   if (!['Line Manager Review', 'HR Review'].includes(request.status)) return null;
-  const roleText = roles.map((role) => role.toLowerCase());
-  const isSuperAdmin = Boolean(isGlobalAdmin) || roleText.some((role) => /super\s*admin|system\s*admin|emergency system administration/.test(role));
-  const isHr = isSuperAdmin || roleText.some((role) => hrRoles.has(role) || /\bhr\b/.test(role));
 
-  // Super Administrator / System Administrator can action any pending leave approval stage.
-  if (isSuperAdmin) {
-    if (request.status === 'HR Review') return 'hr';
-    if (request.status === 'Line Manager Review') return 'line-manager';
+  const roleText = roles.map((role) => role.toLowerCase().trim());
+  const isHrActor = roleText.some((role) => LEAVE_HR_ACTION_ROLES.has(role));
+
+  if (request.status === 'HR Review') {
+    return isHrActor ? 'hr' : null;
   }
 
-  if (request.status === 'HR Review' && isHr) return 'hr';
-
-  const resolvedManager = employees.length ? resolveLineManagerForEmployee(requester, employees) : null;
-  const isAssignedManager = resolvedManager ? employeeRequestMatches(actor, resolvedManager.employee.employeeId) : false;
+  // Line Manager Review — assigned reporting manager only (no manager-role / department-head fan-out).
   if (request.lineManagerEmployeeId && employeeRequestMatches(actor, request.lineManagerEmployeeId)) {
-    if (request.status === 'Line Manager Review') return 'line-manager';
+    return 'line-manager';
   }
-
-  const managerName = resolvedManager?.label || managerOwnerFor(requester);
-  const isManagerRole = roleText.some((role) => managerRoles.has(role) || /manager|supervisor|head/.test(role));
-  const isNamedManager = namesMatch(actor.fullName, managerName)
-    || namesMatch(actor.fullName, requester.managerName || '')
-    || namesMatch(actor.fullName, requester.departmentHead || '')
-    || namesMatch(actor.fullName, requester.functionalManager || '');
-  const sameDepartmentHead = compact(actor.departmentHead).toLowerCase() === compact(actor.fullName).toLowerCase()
-    && compact(actor.department).toLowerCase() === compact(requester.department).toLowerCase();
-  if (request.status === 'Line Manager Review' && (isAssignedManager || isNamedManager || isManagerRole || sameDepartmentHead)) {
+  const resolvedManager = employees.length ? resolveLineManagerForEmployee(requester, employees) : null;
+  if (resolvedManager && employeeRequestMatches(actor, resolvedManager.employee.employeeId)) {
+    return 'line-manager';
+  }
+  if (namesMatch(actor.fullName, requester.managerName || '')) {
     return 'line-manager';
   }
   return null;

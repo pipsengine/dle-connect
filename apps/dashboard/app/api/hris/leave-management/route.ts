@@ -36,7 +36,7 @@ const leaveRoleFromSession = (
   if (/executive|md\b|ceo\b|cfo\b/.test(text)) return 'Executive';
   if (/leave\s*admin/.test(text)) return 'Leave Administrator';
   if (/employee/.test(text)) return 'Employee';
-  return fallback || 'Leave Administrator';
+  return fallback || 'Employee';
 };
 
 const resolveLeaveRole = async (request: NextRequest, bodyRole?: string | null) => {
@@ -44,7 +44,7 @@ const resolveLeaveRole = async (request: NextRequest, bodyRole?: string | null) 
   const queryRole = request.nextUrl.searchParams.get('role');
   const session = await verifySessionToken(cookieValue(request, AUTH_COOKIE));
   if (session) return leaveRoleFromSession(session, bodyRole || headerRole || queryRole);
-  return bodyRole || headerRole || queryRole || 'Leave Administrator';
+  return bodyRole || headerRole || queryRole || 'Employee';
 };
 
 export async function GET(request: NextRequest) {
