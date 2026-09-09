@@ -14,8 +14,10 @@ import {
   type ResignationRecord,
   type ResignationStatus,
   type ResignationWorkflowStage,
+  RESIGNATION_STATUS_OPTIONS,
   currentResignationPeriod,
   formatResignationDate,
+  normalizeResignationStatus,
   noticeBalanceDays,
   periodLabelFromCode,
   previousResignationPeriod,
@@ -62,12 +64,12 @@ const defaultProgress = (): ResignationProgressItem[] => [
   { id: 'benefits', label: 'Benefits Closure', status: 'Not Started' },
 ];
 
+/** HR-only resignation workflow (no line-manager review stage). */
 const defaultWorkflow = (status: ResignationStatus, submittedAt?: string | null): ResignationWorkflowStage[] => {
   const stages: ResignationWorkflowStage[] = [
-    { id: 'submit', label: 'Employee Submission', status: 'Pending', at: null },
-    { id: 'manager', label: 'Line Manager Review', status: 'Pending', at: null },
-    { id: 'hr', label: 'HR Review', status: 'Pending', at: null },
-    { id: 'exit', label: 'Final Exit Approval', status: 'Pending', at: null },
+    { id: 'submit', label: 'Resignation Recorded', status: 'Pending', at: null },
+    { id: 'hr', label: 'HR Acceptance', status: 'Pending', at: null },
+    { id: 'exit', label: 'Exit Processing', status: 'Pending', at: null },
   ];
   const mark = (index: number, value: ResignationWorkflowStage['status']) => {
     for (let i = 0; i < stages.length; i += 1) {
@@ -76,30 +78,23 @@ const defaultWorkflow = (status: ResignationStatus, submittedAt?: string | null)
       else stages[i].status = 'Pending';
     }
   };
-  switch (status) {
+  const normalized = normalizeResignationStatus(status);
+  switch (normalized) {
     case 'Draft':
       break;
     case 'Submitted':
-      mark(0, 'Completed');
-      stages[0].at = submittedAt || nowIso();
-      mark(1, 'In Review');
-      break;
-    case 'Manager Review':
-      mark(0, 'Completed');
-      stages[0].at = submittedAt || nowIso();
-      mark(1, 'In Review');
-      break;
     case 'HR Review':
-      mark(1, 'Completed');
-      mark(2, 'In Review');
+      mark(0, 'Completed');
       stages[0].at = submittedAt || nowIso();
+      mark(1, 'In Review');
       break;
     case 'Serving Notice':
     case 'Handover':
     case 'Clearance':
     case 'Final Payroll':
-      mark(2, 'Completed');
-      mark(3, 'In Review');
+      mark(0, 'Completed');
+      mark(1, 'Completed');
+      mark(2, 'In Review');
       stages[0].at = submittedAt || nowIso();
       break;
     case 'Completed':
@@ -115,6 +110,17 @@ const defaultWorkflow = (status: ResignationStatus, submittedAt?: string | null)
   return stages;
 };
 
+const normalizeResignationRow = (row: ResignationRecord): ResignationRecord => {
+  const status = normalizeResignationStatus(row.status);
+  const workflowNeedsRefresh = (row.workflow || []).some((stage) => stage.id === 'manager')
+    || status !== row.status;
+  return {
+    ...row,
+    status,
+    workflow: workflowNeedsRefresh ? defaultWorkflow(status, row.submittedAt) : (row.workflow || defaultWorkflow(status, row.submittedAt)),
+  };
+};
+
 const clearancePctFromProgress = (progress: ResignationProgressItem[]) => {
   if (!progress.length) return 0;
   const score = progress.reduce((sum, item) => sum + (item.status === 'Completed' ? 1 : item.status === 'In Progress' ? 0.5 : 0), 0);
@@ -125,7 +131,9 @@ const readJson = async (): Promise<ResignationRecord[]> => {
   try {
     const parsed = JSON.parse(await readFile(FILE_PATH, 'utf8'));
     const rows = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.resignations) ? parsed.resignations : [];
-    return rows.filter((row: ResignationRecord) => row?.id && row?.employeeCode);
+    return rows
+      .filter((row: ResignationRecord) => row?.id && row?.employeeCode)
+      .map((row: ResignationRecord) => normalizeResignationRow(row));
   } catch {
     return [];
   }
@@ -164,7 +172,7 @@ const buildKpis = (current: ResignationRecord[], prior: ResignationRecord[]): Re
     rows.filter((row) => statuses.includes(row.status)).length;
   const pairs: Array<[ResignationKpi['id'], string, ResignationStatus[], ResignationKpi['tone']]> = [
     ['new', 'New Resignations', ['Submitted', 'Draft'], 'blue'],
-    ['review', 'Under Review', ['Manager Review', 'HR Review'], 'amber'],
+    ['review', 'Under Review', ['HR Review', 'Manager Review'], 'amber'],
     ['notice', 'Serving Notice', ['Serving Notice'], 'mint'],
     ['clearance', 'Clearance in Progress', ['Clearance', 'Handover'], 'purple'],
     ['payroll', 'Final Payroll Pending', ['Final Payroll'], 'rose'],
@@ -189,7 +197,6 @@ const tabCountsFor = (rows: ResignationRecord[]) => {
   const counts: Record<string, number> = {
     All: rows.length,
     Submitted: 0,
-    'Manager Review': 0,
     'HR Review': 0,
     'Notice Period': 0,
     Handover: 0,
@@ -199,15 +206,15 @@ const tabCountsFor = (rows: ResignationRecord[]) => {
     Exceptions: 0,
   };
   for (const row of rows) {
-    if (row.status === 'Submitted' || row.status === 'Draft') counts.Submitted += 1;
-    else if (row.status === 'Manager Review') counts['Manager Review'] += 1;
-    else if (row.status === 'HR Review') counts['HR Review'] += 1;
-    else if (row.status === 'Serving Notice') counts['Notice Period'] += 1;
-    else if (row.status === 'Handover') counts.Handover += 1;
-    else if (row.status === 'Clearance') counts.Clearance += 1;
-    else if (row.status === 'Final Payroll') counts['Final Payroll'] += 1;
-    else if (row.status === 'Completed') counts.Completed += 1;
-    else if (row.status === 'Exception' || row.status === 'Cancelled') counts.Exceptions += 1;
+    const status = normalizeResignationStatus(row.status);
+    if (status === 'Submitted' || status === 'Draft') counts.Submitted += 1;
+    else if (status === 'HR Review') counts['HR Review'] += 1;
+    else if (status === 'Serving Notice') counts['Notice Period'] += 1;
+    else if (status === 'Handover') counts.Handover += 1;
+    else if (status === 'Clearance') counts.Clearance += 1;
+    else if (status === 'Final Payroll') counts['Final Payroll'] += 1;
+    else if (status === 'Completed') counts.Completed += 1;
+    else if (status === 'Exception' || status === 'Cancelled') counts.Exceptions += 1;
   }
   return counts;
 };
@@ -348,7 +355,7 @@ export const buildResignationPayload = async (input?: {
     filterOptions: {
       departments: [...new Set(resignations.map((row) => row.department).filter(Boolean))].sort(),
       managers: [...new Set(resignations.map((row) => row.managerName).filter(Boolean))].sort(),
-      statuses: ['Draft', 'Submitted', 'Manager Review', 'HR Review', 'Serving Notice', 'Handover', 'Clearance', 'Final Payroll', 'Completed', 'Cancelled', 'Exception'],
+      statuses: [...RESIGNATION_STATUS_OPTIONS],
     },
   };
 };
@@ -509,19 +516,24 @@ export const updateResignation = async (input: {
   if (input.action === 'submit') {
     if (!row.propertyAcknowledged) throw new Error('Company property acknowledgement is required.');
     if (!row.resignationDate || !row.lastWorkingDay) throw new Error('Resignation date and last working day are required.');
-    row.status = 'Manager Review';
+    // HR-only path: submit = HR accepts and starts notice (no manager stage).
+    row.status = 'Serving Notice';
     row.submittedAt = nowIso();
+    row.managementAcceptance = 'Accepted';
+    row.managementAcceptedAt = nowIso();
+    row.hrReviewer = input.actor;
     row.workflow = defaultWorkflow(row.status, row.submittedAt);
   }
   if (input.action === 'accept') {
     row.managementAcceptance = 'Accepted';
     row.managementAcceptedAt = nowIso();
+    row.hrReviewer = input.actor;
     row.status = 'Serving Notice';
     row.workflow = defaultWorkflow(row.status, row.submittedAt);
   }
   if (input.action === 'next') {
-    const order: ResignationStatus[] = ['Draft', 'Submitted', 'Manager Review', 'HR Review', 'Serving Notice', 'Handover', 'Clearance', 'Final Payroll', 'Completed'];
-    const at = order.indexOf(row.status);
+    const order: ResignationStatus[] = ['Draft', 'Submitted', 'HR Review', 'Serving Notice', 'Handover', 'Clearance', 'Final Payroll', 'Completed'];
+    const at = order.indexOf(normalizeResignationStatus(row.status));
     row.status = order[Math.min(order.length - 1, Math.max(0, at) + 1)];
     if (row.status === 'Handover') {
       row.progress = row.progress.map((item) => item.id === 'handover' ? { ...item, status: 'In Progress' } : item);

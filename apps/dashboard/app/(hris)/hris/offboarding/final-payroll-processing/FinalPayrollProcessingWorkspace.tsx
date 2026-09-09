@@ -230,7 +230,7 @@ export default function FinalPayrollProcessingWorkspace({
       <div className={styles.titleRow}>
         <div>
           <h1>Final Payroll Processing</h1>
-          <p>Settlement calculation after resignation clearance (standard: Resignation → Notice → Clearance → Final Payroll).</p>
+          <p>Settlement calculation after resignation clearance, including terminal benefits (gratuity, leave encashment, and related exit pay).</p>
         </div>
         <div className={styles.actions}>
           <button type="button" onClick={() => void load(period || undefined, selectedId)}>

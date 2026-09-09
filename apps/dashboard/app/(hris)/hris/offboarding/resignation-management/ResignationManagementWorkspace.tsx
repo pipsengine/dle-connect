@@ -50,7 +50,6 @@ const KPI_ICONS = {
 const STATUS_TABS = [
   'All',
   'Submitted',
-  'Manager Review',
   'HR Review',
   'Notice Period',
   'Handover',
@@ -463,7 +462,7 @@ export default function ResignationManagementWorkspace({
                 <p>{selected.reasonForLeaving || '—'}</p>
                 <h3>Additional Remarks</h3>
                 <p>{selected.remarks || '—'}</p>
-                <h3>Management Acceptance</h3>
+                <h3>HR Acceptance</h3>
                 <div className={styles.line}>
                   <span className={statusClass(selected.managementAcceptance)}>{selected.managementAcceptance}</span>
                   <b>{formatResignationDate(selected.managementAcceptedAt)}</b>
@@ -553,9 +552,9 @@ export default function ResignationManagementWorkspace({
               <button type="button" className={styles.danger} disabled={busy} onClick={() => void runAction('cancel')}>
                 Cancel Resignation
               </button>
-              {selected.managementAcceptance === 'Pending' && ['Manager Review', 'HR Review', 'Submitted'].includes(selected.status) ? (
+              {selected.managementAcceptance === 'Pending' && ['HR Review', 'Submitted', 'Manager Review'].includes(selected.status) ? (
                 <button type="button" disabled={busy} onClick={() => void runAction('accept')}>
-                  Accept Resignation
+                  Accept Resignation (HR)
                 </button>
               ) : null}
               {resignationReadyForFinalPayroll(selected) ? (

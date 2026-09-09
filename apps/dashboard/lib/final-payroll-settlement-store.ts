@@ -6,6 +6,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { readEmployeeExitStatusFromDb, type EmployeeExitStatusRecord } from '@/lib/employee-exit-status-store';
+import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { calculatePayrollEarnings } from '@/lib/payroll-earnings-engine';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
@@ -168,6 +169,105 @@ const serviceLengthLabel = (years: number, joining?: string | null, lastDay?: st
   return `${whole} Year${whole === 1 ? '' : 's'} ${months} Month${months === 1 ? '' : 's'}`;
 };
 
+const serviceYearsExact = (joining?: string | null, lastDay?: string | null, fallbackYears = 0) => {
+  if (joining && lastDay) {
+    const start = new Date(`${joining.slice(0, 10)}T00:00:00.000Z`);
+    const end = new Date(`${lastDay.slice(0, 10)}T00:00:00.000Z`);
+    if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end >= start) {
+      return Math.max(0, (end.getTime() - start.getTime()) / (365.25 * 86400000));
+    }
+  }
+  return Math.max(0, Number(fallbackYears || 0));
+};
+
+const parseNoticePeriodDays = (noticePeriod?: string | null, fallbackDays = 30) => {
+  const text = compact(noticePeriod).toLowerCase();
+  if (!text) return fallbackDays;
+  if (/^(none|n\/a|waived|0)$/i.test(text)) return 0;
+  const monthMatch = text.match(/(\d+(?:\.\d+)?)\s*month/);
+  if (monthMatch) return Math.round(Number(monthMatch[1]) * 30);
+  const dayMatch = text.match(/(\d+)\s*day/);
+  if (dayMatch) return Number(dayMatch[1]);
+  return fallbackDays;
+};
+
+/** Company default: 1× monthly basic per completed year, after 5 years continuous service. */
+const GRATUITY_MIN_YEARS = 5;
+
+const lookupAnnualLeaveBalanceDays = async (employeeCode: string, employeeId?: string | null) => {
+  try {
+    const pool = await getDleEnterpriseDbPool();
+    if (!pool) return 0;
+    const code = compact(employeeCode);
+    const id = compact(employeeId || employeeCode);
+    if (!code && !id) return 0;
+    const targeted = await pool.request()
+      .input('code', code)
+      .input('id', id)
+      .query(`
+SELECT TOP (1) [CurrentBalance]
+FROM [hris].[LeaveBalances]
+WHERE [LeaveType] IN (N'Annual Leave', N'Annual')
+  AND (
+    UPPER(REPLACE(REPLACE([EmployeeId], N' ', N''), N'-', N'')) = UPPER(REPLACE(REPLACE(@code, N' ', N''), N'-', N''))
+    OR UPPER(REPLACE(REPLACE([EmployeeId], N' ', N''), N'-', N'')) = UPPER(REPLACE(REPLACE(@id, N' ', N''), N'-', N''))
+    OR UPPER(REPLACE(REPLACE([EmployeeId], N'P', N''), N' ', N'')) = UPPER(REPLACE(REPLACE(@code, N'P', N''), N' ', N''))
+  );`);
+    return Math.max(0, Number(targeted.recordset?.[0]?.CurrentBalance || 0));
+  } catch {
+    return 0;
+  }
+};
+
+type TerminalBenefitContext = {
+  dateOfJoining?: string | null;
+  serviceYears?: number;
+  exitType?: string;
+  leaveBalanceDays?: number;
+  noticePayDays?: number;
+  noticeRecoveryDays?: number;
+};
+
+const resolveTerminalBenefitContext = async (input: {
+  employeeCode: string;
+  employeeId?: string | null;
+  dateOfJoining?: string | null;
+  serviceYears?: number;
+  exitType?: string;
+  lastWorkingDay?: string | null;
+  resignationDate?: string | null;
+  noticePeriod?: string | null;
+}): Promise<TerminalBenefitContext> => {
+  const resignation = await findResignationByEmployee({
+    employeeCode: input.employeeCode,
+    employeeId: input.employeeId,
+  }).catch(() => null);
+  const leaveBalanceDays = await lookupAnnualLeaveBalanceDays(input.employeeCode, input.employeeId);
+  const noticeRequired = resignation
+    ? Number(resignation.noticePeriodDays || 0)
+    : parseNoticePeriodDays(input.noticePeriod, 30);
+  const noticeServed = resignation
+    ? Number(resignation.noticeServedDays || 0)
+    : (() => {
+      if (!input.resignationDate || !input.lastWorkingDay) return noticeRequired;
+      const start = new Date(`${input.resignationDate.slice(0, 10)}T00:00:00.000Z`);
+      const end = new Date(`${input.lastWorkingDay.slice(0, 10)}T00:00:00.000Z`);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return noticeRequired;
+      return Math.max(0, Math.round((end.getTime() - start.getTime()) / 86400000));
+    })();
+  const unserved = Math.max(0, noticeRequired - noticeServed);
+  const exitType = input.exitType || resignation?.reasonForLeaving || 'Resignation';
+  const employerDriven = /retrench|redundan|terminat|layoff|disengag|end of contract/i.test(exitType);
+  return {
+    dateOfJoining: input.dateOfJoining || resignation?.dateOfJoining || null,
+    serviceYears: input.serviceYears,
+    exitType,
+    leaveBalanceDays,
+    noticePayDays: employerDriven ? unserved : 0,
+    noticeRecoveryDays: employerDriven ? 0 : unserved,
+  };
+};
+
 export const buildDefaultEarnings = (input: {
   period: string;
   currency: 'NGN' | 'USD';
@@ -177,6 +277,11 @@ export const buildDefaultEarnings = (input: {
   allowanceMonthly?: number;
   grossSalary?: number;
   packageBreakdown?: string;
+  dateOfJoining?: string | null;
+  serviceYears?: number;
+  exitType?: string;
+  leaveBalanceDays?: number;
+  noticePayDays?: number;
 }): FinalPayrollLine[] => {
   const days = workingDaysUntil(input.period, input.lastWorkingDay);
   const monthDays = daysInMonth(input.period);
@@ -192,6 +297,20 @@ export const buildDefaultEarnings = (input: {
       : allowances > 0
         ? 'From employee salary package'
         : 'No package allowances on file');
+  const years = serviceYearsExact(input.dateOfJoining, input.lastWorkingDay, input.serviceYears || 0);
+  const completedYears = Math.floor(years);
+  const dailyBasic = roundMoney(basic / 30);
+  const leaveDays = Math.max(0, Number(input.leaveBalanceDays || 0));
+  const leaveEncashment = leaveDays > 0 ? roundMoney(dailyBasic * leaveDays) : 0;
+  const gratuityEligible = completedYears >= GRATUITY_MIN_YEARS && basic > 0;
+  const gratuity = gratuityEligible ? roundMoney(basic * completedYears) : 0;
+  const exitType = compact(input.exitType).toLowerCase();
+  const employerDriven = /retrench|redundan|terminat|layoff|disengag|end of contract/i.test(exitType);
+  const noticePayDays = Math.max(0, Number(input.noticePayDays || 0));
+  const noticePay = employerDriven && noticePayDays > 0 ? roundMoney(dailyBasic * noticePayDays) : 0;
+  const severanceEligible = /retrench|redundan|layoff/i.test(exitType) && completedYears >= 1 && basic > 0;
+  const severance = severanceEligible ? roundMoney(basic * completedYears) : 0;
+
   return [
     {
       id: 'salary-lwd',
@@ -236,11 +355,13 @@ export const buildDefaultEarnings = (input: {
     {
       id: 'leave-encashment',
       label: 'Leave Encashment',
-      description: 'Unused annual leave',
-      policyBasis: 'Company policy',
-      periodDays: '0 days',
-      amount: 0,
-      remarks: 'No eligible leave balance',
+      description: 'Unused annual leave (terminal benefit)',
+      policyBasis: 'HR / Payroll exit policy',
+      periodDays: leaveDays > 0 ? `${leaveDays} days` : '0 days',
+      amount: leaveEncashment,
+      remarks: leaveDays > 0
+        ? `Daily basic × ${leaveDays} unused days`
+        : 'No eligible leave balance on file — adjust if approved',
       included: true,
     },
     {
@@ -265,22 +386,40 @@ export const buildDefaultEarnings = (input: {
     },
     {
       id: 'gratuity',
-      label: 'Gratuity / Terminal Benefit',
-      description: 'Terminal benefit where applicable',
-      policyBasis: 'Company policy',
-      periodDays: '-',
-      amount: 0,
-      remarks: 'Add where applicable',
+      label: 'Gratuity',
+      description: 'Terminal gratuity benefit',
+      policyBasis: `1× monthly basic × completed years (min ${GRATUITY_MIN_YEARS} yrs)`,
+      periodDays: `${completedYears} yr${completedYears === 1 ? '' : 's'}`,
+      amount: gratuity,
+      remarks: gratuityEligible
+        ? `${formatFinalPayrollMoney(basic, input.currency)} × ${completedYears} years`
+        : completedYears > 0
+          ? `Below ${GRATUITY_MIN_YEARS}-year qualifying service (${completedYears} completed)`
+          : 'Service length not available — enter manually if due',
       included: true,
     },
     {
+      id: 'severance',
+      label: 'Severance / Retrenchment Pay',
+      description: 'Terminal severance where exit type qualifies',
+      policyBasis: 'Company exit policy',
+      periodDays: severanceEligible ? `${completedYears} yr${completedYears === 1 ? '' : 's'}` : '-',
+      amount: severance,
+      remarks: severanceEligible
+        ? `Applied for ${input.exitType || 'redundancy'}`
+        : 'Not applicable for this exit type',
+      included: severanceEligible,
+    },
+    {
       id: 'notice-pay',
-      label: 'Notice Pay',
-      description: 'Notice pay in lieu / recovery',
+      label: 'Notice Pay (In Lieu)',
+      description: 'Employer pay in lieu of notice',
       policyBasis: 'Exit case',
-      periodDays: '-',
-      amount: 0,
-      remarks: 'Add or deduct depending on case',
+      periodDays: noticePay > 0 ? `${noticePayDays} days` : '-',
+      amount: noticePay,
+      remarks: noticePay > 0
+        ? `Daily basic × ${noticePayDays} days (employer-driven exit)`
+        : 'Use Notice Period Recovery under deductions if employee short-serves',
       included: true,
     },
   ];
@@ -382,38 +521,60 @@ const resolveSettlementPay = async (
   };
 };
 
-export const buildDefaultDeductions = (): FinalPayrollLine[] => [
-  {
-    id: 'staff-loan',
-    label: 'Staff Loan Balance',
-    description: 'Outstanding staff loan',
-    policyBasis: 'Loan register',
-    periodDays: '-',
-    amount: 0,
-    remarks: '-',
-    included: true,
-  },
-  {
-    id: 'cash-advance',
-    label: 'Unretired Cash Advance',
-    description: 'Open cash advances',
-    policyBasis: 'Treasury records',
-    periodDays: '-',
-    amount: 0,
-    remarks: '-',
-    included: true,
-  },
-  {
-    id: 'other-deductions',
-    label: 'Other Deductions',
-    description: 'Other recoveries',
-    policyBasis: 'HR / Finance',
-    periodDays: '-',
-    amount: 0,
-    remarks: '-',
-    included: true,
-  },
-];
+export const buildDefaultDeductions = (input?: {
+  basicSalary?: number;
+  noticeRecoveryDays?: number;
+}): FinalPayrollLine[] => {
+  const basic = Math.max(0, Number(input?.basicSalary || 0));
+  const recoveryDays = Math.max(0, Number(input?.noticeRecoveryDays || 0));
+  const noticeRecovery = recoveryDays > 0 && basic > 0
+    ? roundMoney((basic / 30) * recoveryDays)
+    : 0;
+  return [
+    {
+      id: 'staff-loan',
+      label: 'Staff Loan Balance',
+      description: 'Outstanding staff loan',
+      policyBasis: 'Loan register',
+      periodDays: '-',
+      amount: 0,
+      remarks: '-',
+      included: true,
+    },
+    {
+      id: 'cash-advance',
+      label: 'Unretired Cash Advance',
+      description: 'Open cash advances',
+      policyBasis: 'Treasury records',
+      periodDays: '-',
+      amount: 0,
+      remarks: '-',
+      included: true,
+    },
+    {
+      id: 'notice-recovery',
+      label: 'Notice Period Recovery',
+      description: 'Unserved notice days recovered from final pay',
+      policyBasis: 'Exit / resignation case',
+      periodDays: recoveryDays > 0 ? `${recoveryDays} days` : '-',
+      amount: noticeRecovery,
+      remarks: noticeRecovery > 0
+        ? `Daily basic × ${recoveryDays} unserved notice days`
+        : 'No unserved notice days',
+      included: true,
+    },
+    {
+      id: 'other-deductions',
+      label: 'Other Deductions',
+      description: 'Other recoveries',
+      policyBasis: 'HR / Finance',
+      periodDays: '-',
+      amount: 0,
+      remarks: '-',
+      included: true,
+    },
+  ];
+};
 
 export const buildDefaultStatutory = (): FinalPayrollLine[] => [
   {
@@ -657,6 +818,24 @@ export const recalculateSettlement = async (settlement: FinalPayrollSettlement):
   const basicSalary = pay.basicSalary || settlement.basicSalary;
   const allowanceMonthly = pay.allowanceMonthly;
   const grossSalary = pay.grossSalary || roundMoney(basicSalary + allowanceMonthly);
+  const terminal = await resolveTerminalBenefitContext({
+    employeeCode: settlement.employeeCode,
+    employeeId: settlement.employeeId,
+    dateOfJoining: pay.contractStartDate || settlement.dateOfJoining,
+    serviceYears: Number(pay.employee?.yearsOfService || 0),
+    exitType: settlement.exitType,
+    lastWorkingDay: settlement.lastWorkingDay,
+    resignationDate: settlement.resignationDate,
+    noticePeriod: settlement.noticePeriod,
+  });
+  const autoLineIds = new Set([
+    'salary-lwd',
+    'earned-allowances',
+    'leave-encashment',
+    'gratuity',
+    'severance',
+    'notice-pay',
+  ]);
   const earnings = buildDefaultEarnings({
     period: settlement.period,
     currency: settlement.currency,
@@ -665,14 +844,15 @@ export const recalculateSettlement = async (settlement: FinalPayrollSettlement):
     grossSalary,
     packageBreakdown: pay.packageBreakdown,
     lastWorkingDay: settlement.lastWorkingDay,
+    dateOfJoining: terminal.dateOfJoining,
+    serviceYears: terminal.serviceYears,
+    exitType: terminal.exitType || settlement.exitType,
+    leaveBalanceDays: terminal.leaveBalanceDays,
+    noticePayDays: terminal.noticePayDays,
   }).map((line) => {
     const existing = settlement.earnings.find((item) => item.id === line.id);
     if (!existing) return line;
-    // Refresh package-driven prorated lines; preserve manual amounts on case-specific lines.
-    if (
-      line.id === 'salary-lwd'
-      || line.id === 'earned-allowances'
-    ) {
+    if (autoLineIds.has(line.id)) {
       return { ...line, included: existing.included };
     }
     return {
@@ -682,13 +862,31 @@ export const recalculateSettlement = async (settlement: FinalPayrollSettlement):
       policyBasis: line.policyBasis,
     };
   });
+  const nextDeductions = buildDefaultDeductions({
+    basicSalary,
+    noticeRecoveryDays: terminal.noticeRecoveryDays,
+  }).map((line) => {
+    const existing = settlement.deductions.find((item) => item.id === line.id);
+    if (!existing) return line;
+    if (line.id === 'notice-recovery') {
+      return { ...line, included: existing.included };
+    }
+    return existing;
+  });
   return {
     ...settlement,
     basicSalary,
     allowanceMonthly,
     grossSalary,
     grade: compact(pay.jobGrade || pay.salaryGrade) || settlement.grade,
+    dateOfJoining: pay.contractStartDate || settlement.dateOfJoining,
+    serviceLength: serviceLengthLabel(
+      Number(terminal.serviceYears || pay.employee?.yearsOfService || 0),
+      pay.contractStartDate || settlement.dateOfJoining,
+      settlement.lastWorkingDay,
+    ),
     earnings,
+    deductions: nextDeductions,
     statutory: await buildComputedStatutory({
       employee: pay.employee,
       period: settlement.period,
@@ -750,8 +948,11 @@ const settlementFromExit = (
       grossSalary,
       packageBreakdown: pay?.packageBreakdown,
       lastWorkingDay,
+      dateOfJoining: pay?.contractStartDate || row.contractStartDate,
+      serviceYears: row.serviceYears,
+      exitType: row.exitCategory === 'Active Monitoring' ? 'Resignation' : row.exitCategory,
     }),
-    deductions: buildDefaultDeductions(),
+    deductions: buildDefaultDeductions({ basicSalary: basic }),
     statutory: buildDefaultStatutory(),
     comments: [],
     createdAt: nowIso(),
@@ -956,13 +1157,27 @@ export const createFinalPayrollSettlement = async (input: {
     throw new Error(`Employee ${code} was not found in the directory or exit register.`);
   }
 
+  const lastWorkingDay = input.lastWorkingDay ?? settlement.lastWorkingDay;
+  const resignationDate = input.resignationDate ?? settlement.resignationDate;
+  const exitType = input.exitType || settlement.exitType;
+  const terminal = await resolveTerminalBenefitContext({
+    employeeCode: code,
+    employeeId: settlement.employeeId || directory?.employeeId,
+    dateOfJoining: pay.contractStartDate || settlement.dateOfJoining,
+    serviceYears: Number(directory?.yearsOfService || exitRow?.serviceYears || 0),
+    exitType,
+    lastWorkingDay,
+    resignationDate,
+    noticePeriod: input.noticePeriod || settlement.noticePeriod,
+  });
+
   settlement = {
     ...settlement,
     id: persist && existing?.status === 'Draft' ? existing.id : `FPS-${period.replace('-', '')}-${code}-DRAFT`,
     status: 'Draft',
-    exitType: input.exitType || settlement.exitType,
-    resignationDate: input.resignationDate ?? settlement.resignationDate,
-    lastWorkingDay: input.lastWorkingDay ?? settlement.lastWorkingDay,
+    exitType,
+    resignationDate,
+    lastWorkingDay,
     noticePeriod: input.noticePeriod || settlement.noticePeriod,
     reasonForLeaving: input.reasonForLeaving || '',
     remarks: input.remarks || '',
@@ -974,7 +1189,7 @@ export const createFinalPayrollSettlement = async (input: {
     serviceLength: serviceLengthLabel(
       Number(directory?.yearsOfService || exitRow?.serviceYears || 0),
       pay.contractStartDate || settlement.dateOfJoining,
-      input.lastWorkingDay ?? settlement.lastWorkingDay,
+      lastWorkingDay,
     ),
     earnings: buildDefaultEarnings({
       period,
@@ -983,13 +1198,22 @@ export const createFinalPayrollSettlement = async (input: {
       allowanceMonthly: pay.allowanceMonthly,
       grossSalary: pay.grossSalary,
       packageBreakdown: pay.packageBreakdown,
-      lastWorkingDay: input.lastWorkingDay ?? settlement.lastWorkingDay,
+      lastWorkingDay,
+      dateOfJoining: terminal.dateOfJoining,
+      serviceYears: terminal.serviceYears,
+      exitType: terminal.exitType || exitType,
+      leaveBalanceDays: terminal.leaveBalanceDays,
+      noticePayDays: terminal.noticePayDays,
+    }),
+    deductions: buildDefaultDeductions({
+      basicSalary: pay.basicSalary || settlement.basicSalary,
+      noticeRecoveryDays: terminal.noticeRecoveryDays,
     }),
     statutory: await buildComputedStatutory({
       employee: directory,
       period,
       currency: settlement.currency,
-      lastWorkingDay: input.lastWorkingDay ?? settlement.lastWorkingDay,
+      lastWorkingDay,
     }),
   };
 

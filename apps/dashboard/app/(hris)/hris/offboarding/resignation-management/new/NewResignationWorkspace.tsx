@@ -310,7 +310,7 @@ export default function NewResignationWorkspace({
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || 'Unable to save resignation.');
       applyRecord(data.resignation, true);
-      setMessage(submit ? 'Resignation submitted for manager review.' : 'Draft saved.');
+      setMessage(submit ? 'Resignation accepted by HR — notice period started.' : 'Draft saved.');
       if (submit) {
         router.push(`/hris/offboarding/resignation-management?id=${encodeURIComponent(data.resignation.id)}&period=${encodeURIComponent(data.resignation.period)}`);
       }
@@ -546,7 +546,7 @@ export default function NewResignationWorkspace({
                     className={`${styles.input} ${styles.textarea}`}
                     value={remarks}
                     onChange={(e) => setRemarks(e.target.value)}
-                    placeholder="Optional comments for HR / Line Manager..."
+                    placeholder="Optional comments for HR..."
                   />
                 </div>
               </div>
@@ -599,7 +599,7 @@ export default function NewResignationWorkspace({
                 <Info />
                 <div>
                   <b>Important</b>
-                  <div>Your resignation request will be sent to your Line Manager for review after submission.</div>
+                  <div>HR will accept this resignation and start the notice / exit process. Exit clearance still involves the relevant departments.</div>
                 </div>
               </div>
             </div>
@@ -645,7 +645,7 @@ export default function NewResignationWorkspace({
       {step === 2 ? (
         <div className={`${styles.card} ${styles.wideCard}`}>
           <h2>Handover</h2>
-          <p className={styles.sub}>Handover checklist starts after management acceptance.</p>
+          <p className={styles.sub}>Handover checklist starts after HR accepts the resignation.</p>
           <ul>
             {(resignation?.progress || []).map((item) => (
               <li key={item.id}>{item.label} — {item.status}</li>
@@ -665,7 +665,7 @@ export default function NewResignationWorkspace({
       {step === 4 ? (
         <div className={`${styles.card} ${styles.wideCard}`}>
           <h2>Review & Submit</h2>
-          <p className={styles.sub}>Confirm details before submitting to Line Manager.</p>
+          <p className={styles.sub}>Confirm details before HR accepts and starts the notice period.</p>
           {!resignation ? (
             <div className={styles.empty}>Select an employee on step 1 first.</div>
           ) : (

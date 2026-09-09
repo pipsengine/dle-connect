@@ -6,7 +6,7 @@
 export type ResignationStatus =
   | 'Draft'
   | 'Submitted'
-  | 'Manager Review'
+  | 'Manager Review' // legacy — normalized to HR Review on load
   | 'HR Review'
   | 'Serving Notice'
   | 'Handover'
@@ -15,6 +15,24 @@ export type ResignationStatus =
   | 'Completed'
   | 'Cancelled'
   | 'Exception';
+
+/** Active statuses used in filters / tabs (Manager Review removed — HR-only path). */
+export const RESIGNATION_STATUS_OPTIONS: ResignationStatus[] = [
+  'Draft',
+  'Submitted',
+  'HR Review',
+  'Serving Notice',
+  'Handover',
+  'Clearance',
+  'Final Payroll',
+  'Completed',
+  'Cancelled',
+  'Exception',
+];
+
+/** Normalize legacy Manager Review into the HR-only workflow. */
+export const normalizeResignationStatus = (status: ResignationStatus): ResignationStatus =>
+  status === 'Manager Review' ? 'HR Review' : status;
 
 export type ResignationProgressItem = {
   id: string;

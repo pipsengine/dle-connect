@@ -37,7 +37,7 @@ const STEPS = [
 ] as const;
 
 const EARNINGS_TABS = [
-  'Earnings',
+  'Earnings & Terminal Benefits',
   'Deductions & Recoveries',
   'Statutory Deductions',
   'Clearance Status',
@@ -92,7 +92,7 @@ export default function NewFinalPayrollSettlementWorkspace({
 }) {
   const router = useRouter();
   const [step, setStep] = useState(0);
-  const [earningsTab, setEarningsTab] = useState<(typeof EARNINGS_TABS)[number]>('Earnings');
+  const [earningsTab, setEarningsTab] = useState<(typeof EARNINGS_TABS)[number]>('Earnings & Terminal Benefits');
   const [query, setQuery] = useState(initialEmployeeCode || '');
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [settlement, setSettlement] = useState<FinalPayrollSettlement | null>(null);
@@ -658,13 +658,19 @@ export default function NewFinalPayrollSettlementWorkspace({
             <div className={styles.sectionHead}>
               <div>
                 <h2>
-                  {earningsTab === 'Earnings'
-                    ? 'Earnings & Entitlements'
+                  {earningsTab === 'Earnings & Terminal Benefits'
+                    ? 'Earnings & Terminal Benefits'
                     : earningsTab === 'Statutory Deductions'
                       ? 'Statutory Deductions'
                       : 'Deductions & Recoveries'}
                 </h2>
-                <p>Amounts are calculated from the employee salary package.</p>
+                <p>
+                  {earningsTab === 'Earnings & Terminal Benefits'
+                    ? 'Includes prorated salary plus terminal benefits (gratuity, leave encashment, notice/severance where due).'
+                    : earningsTab === 'Deductions & Recoveries'
+                      ? 'Includes notice period recovery and other exit recoveries.'
+                      : 'Amounts are calculated from the employee salary package.'}
+                </p>
               </div>
               <button type="button" disabled={busy || !settlement} onClick={() => void recalculate()}>
                 <RefreshCw /> Recalculate
@@ -674,7 +680,7 @@ export default function NewFinalPayrollSettlementWorkspace({
               <table>
                 <thead>
                   <tr>
-                    {['#', earningsTab === 'Earnings' ? 'Earning Component' : 'Component', 'Description', 'Policy Basis', 'Period / Days', `Amount (${settlement.currency === 'USD' ? '$' : '₦'})`, 'Remarks'].map((heading) => (
+                    {['#', earningsTab === 'Earnings & Terminal Benefits' ? 'Earning Component' : 'Component', 'Description', 'Policy Basis', 'Period / Days', `Amount (${settlement.currency === 'USD' ? '$' : '₦'})`, 'Remarks'].map((heading) => (
                       <th key={heading}>{heading}</th>
                     ))}
                   </tr>
@@ -696,7 +702,7 @@ export default function NewFinalPayrollSettlementWorkspace({
                     </tr>
                   ))}
                   <tr className={styles.total}>
-                    <td colSpan={5}>Total {earningsTab === 'Earnings' ? 'Earnings' : earningsTab === 'Statutory Deductions' ? 'Statutory' : 'Deductions'}</td>
+                    <td colSpan={5}>Total {earningsTab === 'Earnings & Terminal Benefits' ? 'Earnings' : earningsTab === 'Statutory Deductions' ? 'Statutory' : 'Deductions'}</td>
                     <td>{formatFinalPayrollMoney(totalAmount, settlement.currency)}</td>
                     <td />
                   </tr>
