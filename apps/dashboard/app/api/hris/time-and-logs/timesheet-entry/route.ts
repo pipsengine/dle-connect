@@ -52,6 +52,7 @@ import {
 import { readBiometricDevices, type BiometricDeviceRecord } from '@/lib/biometric-attendance-store';
 import { readPayrollEmployees, type PayrollEmployeeSource } from '@/lib/payroll-employee-source';
 import type { StructureInsight } from '@/lib/organization-data';
+import { assertTimesheetEntryAndApprovalAccess } from '@/lib/access/timesheet-access';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
 import { listApprovedOvertimeForSupervisor, type OvertimeAuthorizationRequest } from '@/lib/overtime-approval-workflow-store';
@@ -1560,6 +1561,8 @@ const requireApprovalActionAccess = (header: TimesheetHeader, actor: string, rol
 
 export async function GET(request: Request) {
   try {
+    const session = await sessionFrom(request);
+    assertTimesheetEntryAndApprovalAccess(session);
     const { searchParams } = new URL(request.url);
     const headerId = searchParams.get('headerId') || undefined;
     const date = searchParams.get('date') || undefined;
@@ -1572,7 +1575,9 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error('Timesheet entry API Error:', error);
     const message = error instanceof Error ? error.message : 'Unable to load timesheet entry.';
-    const clientStatus = /period|closed|reopen|recapture|payroll|permission|required|invalid|cannot|not found|authenticate|denied|draft|timed out/i.test(message)
+    const clientStatus = /restricted|forbidden|denied/i.test(message)
+      ? 403
+      : /period|closed|reopen|recapture|payroll|permission|required|invalid|cannot|not found|authenticate|draft|timed out/i.test(message)
       ? 400
       : 500;
     return err(clientStatus, message);
@@ -1582,6 +1587,11 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   const access = resolveAccessContext(request);
   const session = await sessionFrom(request);
+  try {
+    assertTimesheetEntryAndApprovalAccess(session);
+  } catch (error) {
+    return err(403, error instanceof Error ? error.message : 'Forbidden');
+  }
   const actor = session?.fullName || access.actor;
 
   try {

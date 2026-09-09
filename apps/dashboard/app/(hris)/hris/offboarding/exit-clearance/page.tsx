@@ -19,6 +19,8 @@ export default async function ExitClearancePage({
       initialId={pick('id')}
       initialEmployeeCode={pick('employeeCode') || pick('code')}
       initialEmployeeId={pick('employeeId')}
+      initialOpenForm={pick('openForm') === '1'}
+      initialSectionId={pick('section')}
     />
   );
 }

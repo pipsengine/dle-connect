@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { assertTimesheetEntryAndApprovalAccess } from '@/lib/access/timesheet-access';
+import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { permissionsForRequest } from '@/lib/auth/request-permissions';
 import { getUiPermissions, hasAccTimesheetStageApprove, permissionsFromRequest, resolveAccessContext } from '@/lib/hris-access';
 import {
@@ -702,10 +705,14 @@ const processPayrollBatch = async (headerIds: string[], actor: string, post: boo
 
 export async function GET(request: Request) {
   try {
+    const jar = await cookies();
+    const session = await verifySessionToken(jar.get(AUTH_COOKIE)?.value);
+    assertTimesheetEntryAndApprovalAccess(session);
     return ok(await buildPayload(request));
   } catch (error) {
     console.error('Approval API Error:', error);
-    return err(500, error instanceof Error ? error.message : 'Internal Server Error');
+    const message = error instanceof Error ? error.message : 'Internal Server Error';
+    return err(/restricted/i.test(message) ? 403 : 500, message);
   }
 }
 
@@ -715,6 +722,13 @@ const invalidateApprovalCaches = () => {
 };
 
 export async function PATCH(request: Request) {
+  const jar = await cookies();
+  const session = await verifySessionToken(jar.get(AUTH_COOKIE)?.value);
+  try {
+    assertTimesheetEntryAndApprovalAccess(session);
+  } catch (error) {
+    return err(403, error instanceof Error ? error.message : 'Forbidden');
+  }
   const livePermissions = await permissionsForRequest(request);
   const access = resolveAccessContext(request, livePermissions);
   const permissions = getUiPermissions(access);

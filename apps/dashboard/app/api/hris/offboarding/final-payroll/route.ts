@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { assertOffboardingManagementAccess } from '@/lib/access/offboarding-access';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import {
   buildFinalPayrollPayload,
@@ -20,6 +21,7 @@ const resolveActor = async () => {
   const jar = await cookies();
   const token = jar.get(AUTH_COOKIE)?.value;
   const session = token ? await verifySessionToken(token) : null;
+  assertOffboardingManagementAccess(session);
   return {
     actor: session?.fullName || session?.username || session?.sub || 'HR User',
     session,
@@ -28,6 +30,7 @@ const resolveActor = async () => {
 
 export async function GET(request: Request) {
   try {
+    await resolveActor();
     const { searchParams } = new URL(request.url);
     const period = searchParams.get('period') || currentFinalPayrollPeriod();
     const selectedId = searchParams.get('id');
@@ -84,9 +87,10 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ ok: true, ...payload });
   } catch (error: any) {
+    const message = error?.message || 'Unable to load final payroll settlements.';
     return NextResponse.json(
-      { ok: false, error: error?.message || 'Unable to load final payroll settlements.' },
-      { status: 500 },
+      { ok: false, error: message },
+      { status: /restricted/i.test(message) ? 403 : 500 },
     );
   }
 }

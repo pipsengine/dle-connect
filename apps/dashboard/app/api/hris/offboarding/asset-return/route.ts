@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { assertOffboardingManagementAccess } from '@/lib/access/offboarding-access';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import {
   assetReturnsToCsv,
@@ -10,22 +11,23 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-const resolveActor = async () => {
+const resolveSession = async () => {
   const jar = await cookies();
   const token = jar.get(AUTH_COOKIE)?.value;
-  const session = token ? await verifySessionToken(token) : null;
-  return session?.fullName || session?.username || session?.sub || 'HR User';
+  return token ? await verifySessionToken(token) : null;
 };
 
 export async function GET(request: Request) {
   try {
+    const session = await resolveSession();
+    assertOffboardingManagementAccess(session);
     const { searchParams } = new URL(request.url);
     const period = searchParams.get('period') || currentAssetReturnPeriod();
     const selectedId = searchParams.get('id');
     const employeeCode = searchParams.get('employeeCode') || searchParams.get('code');
     const employeeId = searchParams.get('employeeId');
     const format = searchParams.get('format');
-    const actor = await resolveActor();
+    const actor = session!.fullName || session!.username || session!.sub || 'HR User';
 
     const payload = await buildAssetReturnPayload({
       period,
@@ -47,16 +49,16 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ ok: true, ...payload });
   } catch (error: any) {
-    return NextResponse.json(
-      { ok: false, error: error?.message || 'Unable to load asset return.' },
-      { status: 500 },
-    );
+    const message = error?.message || 'Unable to load asset return.';
+    return NextResponse.json({ ok: false, error: message }, { status: /restricted/i.test(message) ? 403 : 500 });
   }
 }
 
 export async function PATCH(request: Request) {
   try {
-    const actor = await resolveActor();
+    const session = await resolveSession();
+    assertOffboardingManagementAccess(session);
+    const actor = session!.fullName || session!.username || session!.sub || 'HR User';
     const body = await request.json().catch(() => ({}));
     const id = String(body.id || '').trim();
     if (!id) return NextResponse.json({ ok: false, error: 'Asset return id is required.' }, { status: 400 });
@@ -78,9 +80,7 @@ export async function PATCH(request: Request) {
     });
     return NextResponse.json({ ok: true, case: updated, ...payload });
   } catch (error: any) {
-    return NextResponse.json(
-      { ok: false, error: error?.message || 'Unable to update asset return.' },
-      { status: 400 },
-    );
+    const message = error?.message || 'Unable to update asset return.';
+    return NextResponse.json({ ok: false, error: message }, { status: /restricted/i.test(message) ? 403 : 400 });
   }
 }

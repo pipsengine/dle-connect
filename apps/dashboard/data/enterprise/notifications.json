@@ -2,6 +2,87 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1788943962290-syhzqy",
+      "recipientUserId": "P0458",
+      "recipientUsername": "P0458",
+      "recipientEmployeeCode": "P0458",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss KEHINDE GLORY ADENUBI submitted Supplier Invoice Payment DLE260943 (NGN 1,118,000) for CFO approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1788789648933",
+      "createdAt": "2026-09-09T08:52:42.290Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1788789648933",
+        "requestNumber": "DLE260943",
+        "stage": "CFO",
+        "recipientCode": "P0458",
+        "recipientName": "Mrs ABIODUN OLUWAFUNMI MAMORA"
+      }
+    },
+    {
+      "id": "ntf-1788943073276-9qngop",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "IDRIS ASIPITA ABUBAKAR submitted Expense Payment DLE260898 (NGN 900,000) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1788158554934",
+      "createdAt": "2026-09-09T08:37:53.276Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1788158554934",
+        "requestNumber": "DLE260898",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs TEMITOPE ABIODUN ODULATE"
+      }
+    },
+    {
+      "id": "ntf-1788943060883-iq97ve",
+      "recipientUserId": "P0458",
+      "recipientUsername": "P0458",
+      "recipientEmployeeCode": "P0458",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss KEHINDE GLORY ADENUBI submitted Supplier Invoice Payment DLE26088 (NGN 28,487,500) for CFO approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1786955845447",
+      "createdAt": "2026-09-09T08:37:40.883Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1786955845447",
+        "requestNumber": "DLE26088",
+        "stage": "CFO",
+        "recipientCode": "P0458",
+        "recipientName": "Mrs ABIODUN OLUWAFUNMI MAMORA"
+      }
+    },
+    {
       "id": "ntf-1788880983212-579343",
       "recipientUserId": "P0413",
       "recipientUsername": "P0413",

@@ -18,6 +18,7 @@ import {
   Users,
   Zap,
 } from 'lucide-react';
+import { canAccessTimesheetEntryAndApproval } from '@/lib/access/timesheet-access';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { WORKFORCE_PORTAL_ENABLED } from '@/lib/workforce-portal-availability';
@@ -28,7 +29,7 @@ const quickLinks = [
   { title: 'Employee Directory', href: '/hris/employees/employee-directory', icon: Search, detail: 'Search employee records, departments, locations and job details', permissions: ['employees.view', 'employees.*'], tone: 'blue' },
   { title: 'Employee Profile', href: '/hris/employees/employee-profile', icon: UserRound, detail: 'Personal, job, contact, document and payroll profile records', permissions: ['employees.view', 'profile.view'], tone: 'blue' },
   { title: 'Attendance Register', href: '/hris/attendance/attendance-register', icon: CalendarCheck, detail: 'Daily attendance, review status, payroll readiness and exceptions', permissions: ['attendance.view', 'attendance.*'], tone: 'green' },
-  { title: 'Timesheet Entry', href: '/hris/time-and-logs/timesheet-entry', icon: Clock3, detail: 'Project time, overtime, employee self-service entries and approvals', permissions: ['timesheet.submit', 'timesheet.approve', 'timesheet.view'], tone: 'violet' },
+  { title: 'Timesheet Entry', href: '/hris/time-and-logs/timesheet-entry', icon: Clock3, detail: 'Supervisor and line-manager timesheet capture and approvals', permissions: ['page.hris.time-and-logs.timesheet-entry.view', 'timesheet.supervisor.approve'], tone: 'violet' },
   { title: 'Payroll Dashboard', href: '/hris/payroll/payroll-dashboard', icon: Banknote, detail: 'Payroll setup, processing, approvals, payslips, tax and deductions', permissions: ['payroll.view', 'payroll.*'], tone: 'green' },
   { title: 'Benefits Management', href: '/hris/benefits/overview', icon: Gift, detail: 'Medical, insurance, pension, welfare, enrollment, claims, and compliance', permissions: ['hris.view', 'payroll.view', 'employees.view'], tone: 'violet' },
   { title: 'Workforce Portal', href: '/workforce-portal', icon: UserCircle2, detail: 'Employee self-service dashboard, profile, leave, attendance, payroll and documents', permissions: ['ess.view', 'profile.view'], tone: 'orange' },
@@ -57,8 +58,9 @@ const can = (permissions: string[], required: string) => {
 const getPermissions = async () => {
   const token = (await cookies()).get(AUTH_COOKIE)?.value;
   const session = await verifySessionToken(token);
-  if (!session) return [] as string[];
-  return effectivePermissionsForUser(session.sub, session.roles).catch(() => session.permissions);
+  if (!session) return { permissions: [] as string[], session: null };
+  const permissions = await effectivePermissionsForUser(session.sub, session.roles).catch(() => session.permissions);
+  return { permissions, session: { ...session, permissions } };
 };
 
 function HeroVisual() {
@@ -93,9 +95,12 @@ function HeroVisual() {
 }
 
 export default async function HRISHomePage() {
-  const permissions = await getPermissions();
+  const { permissions, session } = await getPermissions();
   const visibleQuickLinks = quickLinks.filter((item) => {
     if (item.href === '/workforce-portal' && !WORKFORCE_PORTAL_ENABLED) return false;
+    if (item.href === '/hris/time-and-logs/timesheet-entry') {
+      return canAccessTimesheetEntryAndApproval(session);
+    }
     return item.permissions.some((permission) => can(permissions, permission));
   });
 

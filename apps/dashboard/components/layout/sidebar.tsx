@@ -19,6 +19,11 @@ import {
   canAccessPaySetupNav,
 } from '@/lib/access/route-access';
 import {
+  canAccessExitClearance,
+  canAccessOffboardingManagement,
+} from '@/lib/access/offboarding-access';
+import { canAccessTimesheetEntryAndApproval } from '@/lib/access/timesheet-access';
+import {
   canAccessFinanceModule,
   canAccessFinanceSection,
   canAccessFullFinanceIntelligence,
@@ -60,7 +65,8 @@ const requiredPermission = (route?: string) => {
   if (route.startsWith('/hris/payroll/payroll-approval') || route.startsWith('/hris/payroll-management/payroll-approval')) {
     return 'page.hris.payroll.approval.view';
   }
-  if (route.startsWith('/hris/offboarding')) return 'hris.view';
+  if (route.startsWith('/hris/offboarding/exit-clearance')) return 'offboarding.clearance.approve';
+  if (route.startsWith('/hris/offboarding')) return 'offboarding.view';
   if (route.startsWith('/hris/payroll-management')) return 'payroll.view';
   if (route.startsWith('/hris/payroll')) return 'payroll.view';
   if (route.startsWith('/hris/employees')) return 'employees.view';
@@ -183,6 +189,20 @@ export function Sidebar({
           if (sub.route === '/finance' || sub.route?.startsWith('/finance/') || sub.route === '/finance-accounting') {
             return canAccessFinanceSubItem(sub.route, permissions, sessionContext.isGlobalAdmin);
           }
+          if (sub.route?.startsWith('/hris/offboarding/exit-clearance')) {
+            return canAccessExitClearance(sessionLike);
+          }
+          if (sub.route?.startsWith('/hris/offboarding')) {
+            return canAccessOffboardingManagement(sessionLike);
+          }
+          if (
+            sub.route?.startsWith('/hris/workforce-management/timesheet-entry')
+            || sub.route?.startsWith('/hris/time-and-logs/timesheet-entry')
+            || sub.route?.startsWith('/hris/workforce-management/timesheet-approval')
+            || sub.route?.startsWith('/hris/time-and-logs/timesheet-approval')
+          ) {
+            return canAccessTimesheetEntryAndApproval(sessionLike);
+          }
           if (sub.route?.startsWith('/hris/') && platformOnly && !sessionContext.isGlobalAdmin && !sessionContext.roles.includes('Super Administrator')) {
             return false;
           }
@@ -190,7 +210,9 @@ export function Sidebar({
         });
         const canSeeItem = item.id === 'hris'
           ? !!subItems?.length
-          : item.id === 'logistics-fleet'
+          : item.id === 'offboarding'
+            ? (canAccessOffboardingManagement(sessionLike) || canAccessExitClearance(sessionLike)) && !!subItems?.length
+            : item.id === 'logistics-fleet'
             || (item.id === 'security'
               ? canAccessSecurityPortal(permissions, sessionContext.isGlobalAdmin)
               : item.id === 'it-support'
@@ -199,7 +221,13 @@ export function Sidebar({
                   ? canAccessFinanceModule(permissions, sessionContext.isGlobalAdmin)
                   : canAccess(permissions, requiredPermission(item.route))))
             || !!subItems?.length;
-        return canSeeItem ? { ...item, subItems } : null;
+        return canSeeItem ? {
+          ...item,
+          subItems,
+          ...(item.id === 'offboarding' && !canAccessOffboardingManagement(sessionLike)
+            ? { label: 'Exit Clearance', route: '/hris/offboarding/exit-clearance' }
+            : {}),
+        } : null;
       })
       .filter(Boolean) as NavItem[];
   }, [permissions, sessionContext]);

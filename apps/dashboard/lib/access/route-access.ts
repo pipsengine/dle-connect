@@ -3,6 +3,11 @@ import { canAccessAdministrationCentre, hasAnyPermission, hasPermission } from '
 import { PLATFORM_ROLES_WITHOUT_HRIS } from '@/lib/auth/platform-access';
 import { canAccessPayrollPath, isBankFinancePayrollPath, isPayrollSalaryReviewPath, payrollRoutePermissionOptions } from '@/lib/access/payroll-access';
 import { canCreateProjects } from '@/lib/access/projects-engineering-access';
+import {
+  canAccessExitClearance,
+  canAccessOffboardingManagement,
+} from '@/lib/access/offboarding-access';
+import { canAccessTimesheetEntryAndApproval, isTimesheetEntryOrApprovalPath } from '@/lib/access/timesheet-access';
 
 type SessionLike = Pick<SessionPayload, 'department' | 'unit' | 'roles' | 'permissions' | 'isGlobalAdmin'> & {
   employeeCode?: string;
@@ -231,8 +236,8 @@ export const hrisRoutePermissionOptions = (pathname: string): string[] | null =>
       'timesheet.view',
       'timesheet.create',
       'timesheet.edit',
-      'timesheet.submit',
       'timesheet.approve',
+      // Note: bare timesheet.submit alone is NOT enough — canAccessTimesheetEntryAndApproval gates roles.
     ];
   }
   if (
@@ -358,6 +363,19 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
     return isHrPortalUser(session);
   }
 
+  // Offboarding Management = HR only. Exit Clearance = HR + line managers.
+  if (path.startsWith('/hris/offboarding/exit-clearance')) {
+    return canAccessExitClearance(session);
+  }
+  if (path.startsWith('/hris/offboarding')) {
+    return canAccessOffboardingManagement(session);
+  }
+
+  // Timesheet Entry / Approval — supervisors, line managers, IT, admins only (not employees).
+  if (isTimesheetEntryOrApprovalPath(path)) {
+    return canAccessTimesheetEntryAndApproval(session);
+  }
+
   const explicitOptions = hrisRoutePermissionOptions(path);
   if (explicitOptions) {
     if (!hasAnyPermission(permissions, explicitOptions)) return false;
@@ -448,6 +466,9 @@ export const itSupportRoutePermissionOptions = (pathname: string): string[] | nu
 export const canAccessRoute = (session: SessionLike, pathname: string) => {
   const path = routePathFromRequestPath(pathname);
   if (path.startsWith('/hris')) return canAccessHrisPath(session, path);
+  // Legacy /offboarding/* redirects — same gates as /hris/offboarding/*
+  if (path.startsWith('/offboarding/exit-clearance')) return canAccessExitClearance(session);
+  if (path.startsWith('/offboarding')) return canAccessOffboardingManagement(session);
   if (path.startsWith('/administration')) {
     if (!canAccessAdministrationCentre(session)) return false;
     return hasAnyPermission(session.permissions || [], administrationRoutePermissions(path));

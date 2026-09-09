@@ -26,6 +26,9 @@ import {
   buildPaymentApprovalRequestEmail,
   buildPaymentDecisionEmail,
   buildTreasuryPaymentReadyEmail,
+  buildExitClearanceApprovalRequestEmail,
+  buildExitClearanceSectionDecisionEmail,
+  buildExitClearanceFinalReadyEmail,
   buildPayrollApprovalRequestEmail,
   buildPayrollFullyApprovedEmail,
   buildPayrollRejectedEmail,
@@ -808,5 +811,58 @@ export const sendTreasuryPaymentReadyEmail = async (input: {
     detailUrl: input.detailUrl,
     baseUrl: input.baseUrl,
   });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
+
+export const sendExitClearanceApprovalRequestEmail = async (input: {
+  recipientName: string;
+  recipientEmail: string;
+  sectionTitle: string;
+  assigneeRole: string;
+  employeeName: string;
+  employeeCode: string;
+  department: string;
+  dateOfExit: string;
+  reference: string;
+  requestedBy: string;
+  workspaceUrl: string;
+  baseUrl?: string | null;
+}): Promise<MailSendResult> => {
+  const to = normalizeMailboxAddress(input.recipientEmail);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const email = buildExitClearanceApprovalRequestEmail({ ...input, baseUrl: input.baseUrl });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
+
+export const sendExitClearanceSectionDecisionEmail = async (input: {
+  recipientName: string;
+  recipientEmail: string;
+  decision: 'Approved' | 'Rejected';
+  sectionTitle: string;
+  employeeName: string;
+  employeeCode: string;
+  actorName: string;
+  reason?: string | null;
+  workspaceUrl: string;
+  baseUrl?: string | null;
+}): Promise<MailSendResult> => {
+  const to = normalizeMailboxAddress(input.recipientEmail);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const email = buildExitClearanceSectionDecisionEmail({ ...input, baseUrl: input.baseUrl });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
+
+export const sendExitClearanceFinalReadyEmail = async (input: {
+  recipientName: string;
+  recipientEmail: string;
+  employeeName: string;
+  employeeCode: string;
+  reference: string;
+  workspaceUrl: string;
+  baseUrl?: string | null;
+}): Promise<MailSendResult> => {
+  const to = normalizeMailboxAddress(input.recipientEmail);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const email = buildExitClearanceFinalReadyEmail({ ...input, baseUrl: input.baseUrl });
   return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
 };

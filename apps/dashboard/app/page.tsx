@@ -20,6 +20,7 @@ import {
   Webhook,
 } from 'lucide-react';
 import DashboardLayout from '@/components/layout/dashboard-layout';
+import { canAccessTimesheetEntryAndApproval } from '@/lib/access/timesheet-access';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { WORKFORCE_PORTAL_ENABLED } from '@/lib/workforce-portal-availability';
@@ -36,9 +37,9 @@ const canAny = (permissions: string[], required: string[]) =>
 const getSessionPermissions = async () => {
   const token = (await cookies()).get(AUTH_COOKIE)?.value;
   const session = await verifySessionToken(token);
-  if (!session) return { permissions: [] as string[], name: 'Signed-in user' };
+  if (!session) return { permissions: [] as string[], name: 'Signed-in user', session: null };
   const permissions = await effectivePermissionsForUser(session.sub, session.roles).catch(() => session.permissions);
-  return { permissions, name: session.fullName || session.username };
+  return { permissions, name: session.fullName || session.username, session: { ...session, permissions } };
 };
 
 const workspaceModules = [
@@ -48,7 +49,7 @@ const workspaceModules = [
     icon: Users,
     status: 'Live',
     signal: 'Employee records, HR workflows, attendance, leave, and organization controls',
-    permissions: ['page.hris.management.view', 'hris.view', 'employees.view', 'leave.view', 'attendance.view', 'recruitment.view', 'onboarding.view', 'offboarding.view'],
+    permissions: ['page.hris.management.view', 'hris.view', 'employees.view', 'leave.view', 'attendance.view', 'recruitment.view', 'onboarding.view'],
   },
   {
     title: 'Workforce Portal',
@@ -72,7 +73,7 @@ const workspaceModules = [
     icon: Clock,
     status: 'Live',
     signal: 'Timesheet entry, attendance exceptions, periods, and approvals',
-    permissions: ['timesheet.submit', 'timesheet.approve', 'timesheet.view', 'operations.timesheets.submit', 'operations.timesheets.approve'],
+    permissions: ['page.hris.time-and-logs.timesheet-entry.view', 'page.hris.time-and-logs.timesheet-approval.view', 'timesheet.supervisor.approve', 'operations.timesheets.approve', 'operations.timesheets.submit'],
   },
   {
     title: 'Operations Center',
@@ -173,9 +174,12 @@ const workspaceModules = [
 ];
 
 export default async function Home() {
-  const { permissions, name } = await getSessionPermissions();
+  const { permissions, name, session } = await getSessionPermissions();
   const visibleModules = workspaceModules.filter((module) => {
     if (module.href === '/workforce-portal' && !WORKFORCE_PORTAL_ENABLED) return false;
+    if (module.href === '/hris/time-and-logs/timesheet-entry') {
+      return canAccessTimesheetEntryAndApproval(session);
+    }
     return canAny(permissions, module.permissions);
   });
   const primaryModule = visibleModules[0];

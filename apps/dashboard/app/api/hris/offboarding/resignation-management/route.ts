@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { assertOffboardingManagementAccess } from '@/lib/access/offboarding-access';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import {
   buildResignationPayload,
@@ -14,15 +15,16 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-const resolveActor = async () => {
+const resolveSession = async () => {
   const jar = await cookies();
   const token = jar.get(AUTH_COOKIE)?.value;
-  const session = token ? await verifySessionToken(token) : null;
-  return session?.fullName || session?.username || session?.sub || 'HR User';
+  return token ? await verifySessionToken(token) : null;
 };
 
 export async function GET(request: Request) {
   try {
+    const session = await resolveSession();
+    assertOffboardingManagementAccess(session);
     const { searchParams } = new URL(request.url);
     const period = searchParams.get('period') || currentResignationPeriod();
     const selectedId = searchParams.get('id');
@@ -68,16 +70,19 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ ok: true, ...payload });
   } catch (error: any) {
+    const message = error?.message || 'Unable to load resignations.';
     return NextResponse.json(
-      { ok: false, error: error?.message || 'Unable to load resignations.' },
-      { status: 500 },
+      { ok: false, error: message },
+      { status: /restricted/i.test(message) ? 403 : 500 },
     );
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const actor = await resolveActor();
+    const session = await resolveSession();
+    assertOffboardingManagementAccess(session);
+    const actor = session!.fullName || session!.username || session!.sub || 'HR User';
     const body = await request.json().catch(() => ({}));
     const persist = body.persist !== false && body.preview !== true;
     const resignation = await createResignation({
@@ -110,16 +115,19 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ ok: true, persisted: true, resignation, ...payload });
   } catch (error: any) {
+    const message = error?.message || 'Unable to create resignation.';
     return NextResponse.json(
-      { ok: false, error: error?.message || 'Unable to create resignation.' },
-      { status: 400 },
+      { ok: false, error: message },
+      { status: /restricted/i.test(message) ? 403 : 400 },
     );
   }
 }
 
 export async function PATCH(request: Request) {
   try {
-    const actor = await resolveActor();
+    const session = await resolveSession();
+    assertOffboardingManagementAccess(session);
+    const actor = session!.fullName || session!.username || session!.sub || 'HR User';
     const body = await request.json().catch(() => ({}));
     const id = String(body.id || '').trim();
     if (!id) return NextResponse.json({ ok: false, error: 'Resignation id is required.' }, { status: 400 });
@@ -148,9 +156,10 @@ export async function PATCH(request: Request) {
     });
     return NextResponse.json({ ok: true, resignation, ...payload });
   } catch (error: any) {
+    const message = error?.message || 'Unable to update resignation.';
     return NextResponse.json(
-      { ok: false, error: error?.message || 'Unable to update resignation.' },
-      { status: 400 },
+      { ok: false, error: message },
+      { status: /restricted/i.test(message) ? 403 : 400 },
     );
   }
 }

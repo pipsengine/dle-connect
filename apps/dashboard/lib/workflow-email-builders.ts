@@ -951,3 +951,93 @@ export const buildTreasuryPaymentReadyEmail = (input: {
   ],
   footerNote: 'This notification is sent to Treasury when the last approver clears the payment.',
 }, input.baseUrl);
+
+export const buildExitClearanceApprovalRequestEmail = (input: {
+  recipientName: string;
+  sectionTitle: string;
+  assigneeRole: string;
+  employeeName: string;
+  employeeCode: string;
+  department: string;
+  dateOfExit: string;
+  reference: string;
+  requestedBy: string;
+  workspaceUrl: string;
+  baseUrl?: string | null;
+}) => withBrand({
+  recipientName: input.recipientName,
+  subject: `Exit clearance approval required — ${input.sectionTitle} (${input.employeeCode})`,
+  module: 'HRIS',
+  headline: 'Department clearance approval required',
+  intro: `${input.requestedBy} has requested your sign-off on the Exit Clearance form (DL-HRD-F-030) as ${input.assigneeRole}.`,
+  tone: 'warning',
+  statusBadge: 'Action required',
+  details: [
+    { label: 'Employee', value: `${input.employeeName} (${input.employeeCode})` },
+    { label: 'Department', value: input.department || '—' },
+    { label: 'Date of exit', value: formatEmailDate(input.dateOfExit) },
+    { label: 'Clearance section', value: input.sectionTitle },
+    { label: 'Your role', value: input.assigneeRole },
+    { label: 'Reference', value: input.reference || '—' },
+  ],
+  note: 'Please review the checklist items for your section, mark outcomes, and approve or reject with your authorized signature.',
+  actions: [
+    { href: input.workspaceUrl, label: 'Open Clearance Form', tone: 'primary' },
+  ],
+  footerNote: 'This message was sent by DLE Connect Offboarding / Exit Clearance.',
+}, input.baseUrl);
+
+export const buildExitClearanceSectionDecisionEmail = (input: {
+  recipientName: string;
+  decision: 'Approved' | 'Rejected';
+  sectionTitle: string;
+  employeeName: string;
+  employeeCode: string;
+  actorName: string;
+  reason?: string | null;
+  workspaceUrl: string;
+  baseUrl?: string | null;
+}) => withBrand({
+  recipientName: input.recipientName,
+  subject: `Exit clearance ${input.decision.toLowerCase()} — ${input.sectionTitle} (${input.employeeCode})`,
+  module: 'HRIS',
+  headline: `Section ${input.decision.toLowerCase()}`,
+  intro: `${input.actorName} ${input.decision === 'Approved' ? 'approved' : 'rejected'} the ${input.sectionTitle} section for ${input.employeeName}.`,
+  tone: input.decision === 'Approved' ? 'success' : 'danger',
+  statusBadge: input.decision,
+  details: [
+    { label: 'Employee', value: `${input.employeeName} (${input.employeeCode})` },
+    { label: 'Section', value: input.sectionTitle },
+    { label: 'Decision by', value: input.actorName },
+    ...(input.reason ? [{ label: 'Reason', value: input.reason }] : []),
+  ],
+  actions: [
+    { href: input.workspaceUrl, label: 'Open Clearance Form', tone: 'primary' },
+  ],
+  footerNote: 'This message was sent by DLE Connect Offboarding / Exit Clearance.',
+}, input.baseUrl);
+
+export const buildExitClearanceFinalReadyEmail = (input: {
+  recipientName: string;
+  employeeName: string;
+  employeeCode: string;
+  reference: string;
+  workspaceUrl: string;
+  baseUrl?: string | null;
+}) => withBrand({
+  recipientName: input.recipientName,
+  subject: `Exit clearance ready for final HR/Finance sign-off — ${input.employeeCode}`,
+  module: 'HRIS',
+  headline: 'Department clearances complete',
+  intro: `All department sections for ${input.employeeName} are cleared. HR and Finance final authorization is now required on DL-HRD-F-030.`,
+  tone: 'info',
+  statusBadge: 'Final sign-off',
+  details: [
+    { label: 'Employee', value: `${input.employeeName} (${input.employeeCode})` },
+    { label: 'Reference', value: input.reference || '—' },
+  ],
+  actions: [
+    { href: input.workspaceUrl, label: 'Complete Final Authorization', tone: 'primary' },
+  ],
+  footerNote: 'Final Payroll remains locked until HR and Finance signatures are recorded.',
+}, input.baseUrl);
