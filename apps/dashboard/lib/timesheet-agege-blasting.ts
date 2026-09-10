@@ -46,6 +46,29 @@ export const supervisorCodesMatch = (left?: string | null, right?: string | null
   return Boolean(a && b && a === b);
 };
 
+const compactPersonName = (value: string | null | undefined) =>
+  clean(value).toLowerCase().replace(/[^a-z]/g, '');
+
+/**
+ * Same-day booking clash identity.
+ * P0013 matches 0013. C1001 does not match 1001 or P1001.
+ */
+export const timesheetEmployeeRecordsMatch = (
+  left: { employeeNo?: string | null; employeeId?: string | null; employeeName?: string | null },
+  right: { employeeNo?: string | null; employeeId?: string | null; employeeName?: string | null },
+) => {
+  const leftCodes = [left.employeeNo, left.employeeId].map(clean).filter(Boolean);
+  const rightCodes = [right.employeeNo, right.employeeId].map(clean).filter(Boolean);
+  for (const a of leftCodes) {
+    for (const b of rightCodes) {
+      if (supervisorCodesMatch(a, b)) return true;
+    }
+  }
+  const leftName = compactPersonName(left.employeeName);
+  const rightName = compactPersonName(right.employeeName);
+  return Boolean(leftName && rightName && leftName === rightName);
+};
+
 /** SQL / lookup variants so `P0013` also finds rows stored as `0013`. */
 export const supervisorCodeLookupVariants = (value: string | null | undefined) => {
   const code = extractSupervisorEmployeeCode(value) || compactEmployeeCode(String(value || ''));

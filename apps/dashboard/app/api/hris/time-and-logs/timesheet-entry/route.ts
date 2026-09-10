@@ -79,6 +79,7 @@ import {
   isTimesheetTradeLabelLocation,
   normalizeTimesheetLocationLabel,
   supervisorCodesMatch,
+  timesheetEmployeeRecordsMatch,
 } from '@/lib/timesheet-agege-blasting';
 
 const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string | null): TimesheetDayContext => ({
@@ -1959,16 +1960,16 @@ export async function PATCH(request: Request) {
       for (const line of reconciledLines) {
         const bookedHours = Number(line.usedHours || 0) + (line.projectAllocations || []).reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
         if (bookedHours <= 0.001) continue;
-        const keys = matchKeys(line.employeeNo, line.employeeId, line.employeeName);
         const clash = otherDateLines.find((other) => {
-          if (Number(other.usedHours || 0) <= 0.001) return false;
+          if (Number(other.usedHours || 0) <= 0.001 && !timesheetLineHasBookedHours(other)) return false;
           const otherHeader = headers.find((item) => item.id === other.headerId);
           if (timesheetHeaderShiftKind(otherHeader?.shiftLabel) !== headerKind) return false;
-          return matchKeys(other.employeeNo, other.employeeId, other.employeeName).some((key) => keys.includes(key));
+          return timesheetEmployeeRecordsMatch(line, other);
         });
         if (clash) {
           const otherHeader = headers.find((item) => item.id === clash.headerId);
-          return err(400, `${line.employeeName} is already booked on ${otherHeader?.workCenterName || 'another timesheet'} for this date.`);
+          const otherLabel = [otherHeader?.workCenterName, otherHeader?.supervisorName].filter(Boolean).join(' / ') || 'another timesheet';
+          return err(400, `${line.employeeName} (${line.employeeNo || line.employeeId}) is already booked on ${otherLabel} for this date.`);
         }
       }
 

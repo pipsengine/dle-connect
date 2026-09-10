@@ -31,6 +31,7 @@ import {
   type Project,
   type TimesheetHeader,
 } from '@/lib/timesheet-entry-store';
+import { timesheetEmployeeRecordsMatch } from '@/lib/timesheet-agege-blasting';
 import { validateTimesheetLine, type OvertimeAuthorization } from '@/lib/timesheet-overtime-booking';
 import {
   resolveOvertimeAuthorizationsForBooking,
@@ -133,10 +134,8 @@ const preferClashWinner = (
   return left.header.workCenterName.localeCompare(right.header.workCenterName) <= 0 ? left : right;
 };
 
-const overlappingEmployee = (left: TimesheetLine, right: TimesheetLine) => {
-  const keys = matchKeys(left.employeeNo, left.employeeId, left.employeeName);
-  return matchKeys(right.employeeNo, right.employeeId, right.employeeName).some((key) => keys.includes(key));
-};
+const overlappingEmployee = (left: TimesheetLine, right: TimesheetLine) =>
+  timesheetEmployeeRecordsMatch(left, right);
 
 const resolveSameDayDraftClashes = (headers: TimesheetHeader[], lines: TimesheetLine[]) => {
   const stripped: Array<{ headerId: string; employeeName: string; keptOn: string }> = [];
@@ -384,16 +383,16 @@ export async function submitTimesheetForApproval(input: {
   for (const line of reconciledLines) {
     const bookedHours = Number(line.usedHours || 0) + (line.projectAllocations || []).reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
     if (bookedHours <= 0.001) continue;
-    const keys = matchKeys(line.employeeNo, line.employeeId, line.employeeName);
     const clash = otherDateLines.find((other) => {
-      if (Number(other.usedHours || 0) <= 0.001) return false;
+      if (Number(other.usedHours || 0) <= 0.001 && !timesheetLineHasBookedHours(other)) return false;
       const otherHeader = input.otherHeaders.find((item) => item.id === other.headerId);
       if (timesheetHeaderShiftKind(otherHeader?.shiftLabel) !== headerKind) return false;
-      return matchKeys(other.employeeNo, other.employeeId, other.employeeName).some((key) => keys.includes(key));
+      return timesheetEmployeeRecordsMatch(line, other);
     });
     if (clash) {
       const otherHeader = input.otherHeaders.find((item) => item.id === clash.headerId);
-      throw new Error(`${line.employeeName} is already booked on ${otherHeader?.workCenterName || 'another timesheet'} for this date.`);
+      const otherLabel = [otherHeader?.workCenterName, otherHeader?.supervisorName].filter(Boolean).join(' / ') || 'another timesheet';
+      throw new Error(`${line.employeeName} (${line.employeeNo || line.employeeId}) is already booked on ${otherLabel} for this date.`);
     }
   }
 

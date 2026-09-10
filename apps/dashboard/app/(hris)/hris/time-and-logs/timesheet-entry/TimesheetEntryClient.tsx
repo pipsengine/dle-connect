@@ -1005,7 +1005,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       setError('This timesheet period is closed. Reopen it before saving or submitting timesheets.');
       return;
     }
-    if (!payload?.header?.id && !isSubmit) {
+    if (!payload?.header?.id) {
       setError('No active timesheet header. Please sync attendance first.');
       return;
     }
@@ -2586,11 +2586,15 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 p-5">
-              <p className="text-xs font-semibold text-slate-500">
-                {reviewMissingProjectHours
-                  ? 'Clock times are present. Submit will allocate standard project hours automatically, then place this timesheet in supervisor review.'
-                  : 'Submitting places this timesheet in supervisor review. You can keep correcting it until it is approved and released to the project manager.'}
-              </p>
+              {error ? (
+                <p className="w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{error}</p>
+              ) : (
+                <p className="text-xs font-semibold text-slate-500">
+                  {reviewMissingProjectHours
+                    ? 'Clock times are present. Submit will allocate standard project hours automatically, then place this timesheet in supervisor review.'
+                    : 'Submitting places this timesheet in supervisor review. You can keep correcting it until it is approved and released to the project manager.'}
+                </p>
+              )}
               <div className="flex items-center gap-3">
                 <button onClick={() => setShowSubmitReview(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50">Back to Edit</button>
                 <button onClick={() => handleSave(true)} disabled={submitting || !canConfirmSubmit} className="rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-indigo-700 disabled:opacity-50">

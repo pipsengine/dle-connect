@@ -12,6 +12,7 @@ import {
   resolveAgegeLocationLabel,
   supervisorCodeLookupVariants,
   supervisorCodesMatch,
+  timesheetEmployeeRecordsMatch,
 } from './timesheet-agege-blasting.ts';
 
 assert.equal(extractSupervisorEmployeeCode('C1001 - JIMOH GBADAMOSI'), 'C1001');
@@ -26,6 +27,28 @@ assert.equal(supervisorCodesMatch('P0013', '0013'), true);
 assert.equal(supervisorCodesMatch('P0013 - Mr SAMUEL KARONWI', '0013 - Mr KARONWI'), true);
 assert.equal(supervisorCodesMatch('C1001', '1001'), false);
 assert.equal(supervisorCodesMatch('P0289', 'P0289 - Ebele'), true);
+
+assert.equal(
+  timesheetEmployeeRecordsMatch(
+    { employeeNo: 'C1001', employeeId: 'C1001', employeeName: 'JIMOH GBADAMOSI' },
+    { employeeNo: '1001', employeeId: '1001', employeeName: 'Someone Else' },
+  ),
+  false,
+);
+assert.equal(
+  timesheetEmployeeRecordsMatch(
+    { employeeNo: 'C1001', employeeId: 'C1001', employeeName: 'JIMOH GBADAMOSI' },
+    { employeeNo: 'C1001', employeeId: 'C1001', employeeName: 'JIMOH GBADAMOSI' },
+  ),
+  true,
+);
+assert.equal(
+  timesheetEmployeeRecordsMatch(
+    { employeeNo: 'P0013', employeeId: 'P0013', employeeName: 'SAMUEL KARONWI' },
+    { employeeNo: '0013', employeeId: '0013', employeeName: 'Mr KARONWI' },
+  ),
+  true,
+);
 assert.ok(supervisorCodeLookupVariants('P0013').includes('0013'));
 assert.ok(supervisorCodeLookupVariants('0013').includes('P0013'));
 
