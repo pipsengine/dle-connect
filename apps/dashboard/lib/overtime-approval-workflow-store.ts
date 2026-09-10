@@ -458,7 +458,7 @@ export const markOvertimeAuthorizationTokenUsed = async (tokenValue: string) => 
 };
 
 const notifySupervisorApproved = async (request: OvertimeAuthorizationRequest, baseUrl?: string | null) => {
-  const href = `/hris/time-and-logs/timesheet-entry?date=${encodeURIComponent(request.workDate)}&supervisorId=${encodeURIComponent(`${request.supervisorCode} - ${request.supervisorName}`)}`;
+  const href = `/hris/workforce-management/timesheet-entry?date=${encodeURIComponent(request.workDate)}&supervisorId=${encodeURIComponent(`${request.supervisorCode} - ${request.supervisorName}`)}`;
   await createEnterpriseNotification(systemSession(request.createdBy), {
     kind: 'Workflow',
     module: 'Overtime Management',

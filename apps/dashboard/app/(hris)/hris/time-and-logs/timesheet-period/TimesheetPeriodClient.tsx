@@ -136,7 +136,7 @@ export default function TimesheetPeriodClient() {
       <PageTemplate
         title="Timesheet Period"
         description="Loading period records..."
-        breadcrumbs={[{ label: 'HRIS', href: '/hris' }, { label: 'Time & Logs', href: '/hris/time-and-logs' }, { label: 'Timesheet Period' }]}
+        breadcrumbs={[{ label: 'HRIS', href: '/hris' }, { label: 'Workforce Management', href: '/hris/workforce-management' }, { label: 'Timesheet Period' }]}
       >
         <div className="flex h-96 items-center justify-center"><RefreshCcw className="h-8 w-8 animate-spin text-slate-400" /></div>
       </PageTemplate>
@@ -147,7 +147,7 @@ export default function TimesheetPeriodClient() {
     <PageTemplate
       title="Timesheet Period"
       description="Manage monthly timesheet periods from the 16th of the previous month to the 15th of the selected month."
-      breadcrumbs={[{ label: 'HRIS', href: '/hris' }, { label: 'Time & Logs', href: '/hris/time-and-logs' }, { label: 'Timesheet Period' }]}
+      breadcrumbs={[{ label: 'HRIS', href: '/hris' }, { label: 'Workforce Management', href: '/hris/workforce-management' }, { label: 'Timesheet Period' }]}
       primaryAction={{ label: 'Refresh', onClick: load, icon: RefreshCcw }}
     >
       <div className="space-y-6">

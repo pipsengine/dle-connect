@@ -7,7 +7,6 @@ import {
   Banknote,
   BarChart4,
   Box,
-  Clock,
   FileKey,
   Files,
   HelpCircle,
@@ -24,7 +23,6 @@ import { canAccessFullFinanceIntelligence } from '@/lib/access/finance-access';
 import { canAccessFleetOperations } from '@/lib/access/fleet-access';
 import { canAccessItSupportPortal } from '@/lib/access/it-support-access';
 import { canAccessSecurityPortal } from '@/lib/access/security-access';
-import { canAccessTimesheetEntryAndApproval } from '@/lib/access/timesheet-access';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { hasAnyPermission } from '@/lib/auth/permission-match';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
@@ -70,15 +68,6 @@ const workspaceModules = [
     status: 'Live',
     signal: 'Payroll setup, processing, approval, payslips, tax, and deductions',
     permissions: ['page.payroll.management.view', 'payroll.view', 'payroll.create', 'payroll.edit', 'payroll.approve'],
-  },
-  {
-    id: 'time-logs',
-    title: 'Time & Logs',
-    href: '/hris/time-and-logs/timesheet-entry',
-    icon: Clock,
-    status: 'Live',
-    signal: 'Timesheet entry, attendance exceptions, periods, and approvals',
-    permissions: ['page.hris.time-and-logs.timesheet-entry.view', 'page.hris.time-and-logs.timesheet-approval.view', 'timesheet.supervisor.approve', 'operations.timesheets.approve', 'operations.timesheets.submit'],
   },
   {
     id: 'operations',
@@ -191,14 +180,11 @@ const workspaceModules = [
 ] as const;
 
 export default async function Home() {
-  const { permissions, name, session, isGlobalAdmin } = await getSessionPermissions();
+  const { permissions, name, isGlobalAdmin } = await getSessionPermissions();
 
   const visibleModules = workspaceModules.filter((module) => {
     if (module.href === '/workforce-portal' && !WORKFORCE_PORTAL_ENABLED) return false;
 
-    if (module.id === 'time-logs') {
-      return canAccessTimesheetEntryAndApproval(session);
-    }
     if (module.id === 'finance') {
       return canAccessFullFinanceIntelligence(permissions, isGlobalAdmin);
     }

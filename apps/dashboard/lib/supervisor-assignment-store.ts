@@ -1,6 +1,8 @@
 import sql from 'mssql';
 
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
+import { invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
+import { extractSupervisorEmployeeCode, supervisorCodeLookupVariants, supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
 
 export type SupervisorAssignmentRow = {
   assignmentId: number;
@@ -44,6 +46,13 @@ const nullable = (value: unknown) => clean(value) || null;
 const nowBatch = () => `supervisor-assignment-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
 const staticAssignedAt = '2026-06-23T00:00:00.000Z';
 
+export const assignmentSupervisorCode = (value?: string | null) =>
+  extractSupervisorEmployeeCode(value) || clean(value).toUpperCase();
+
+export const assignmentMatchesSupervisor = (row: Pick<SupervisorAssignmentRow, 'supervisorEmployeeCode'>, supervisorCode?: string | null) => (
+  supervisorCodesMatch(row.supervisorEmployeeCode, supervisorCode)
+);
+
 const staticSupervisorAssignments: SupervisorAssignmentRow[] = [
   { assignmentId: -2026062301, assignmentBatch: '2026-06-23-maintenance-sunday-okewu', assignmentGroup: 'MAINTENANCE', sourceLabel: 'Olakunle Olaniyan', supervisorEmployeeId: null, supervisorEmployeeCode: 'P0436', supervisorName: 'Mr SUNDAY OKEWU', employeeId: null, employeeCode: 'C0293', employeeName: 'OLAKUNLE OLANIYAN', tradeRole: 'Electrician', matchedStatus: 'Matched', matchConfidence: 'Exact', matchNote: null, previousReportingManager: null, newReportingManager: 'P0436 - Mr SUNDAY OKEWU', assignedAt: staticAssignedAt, assignedBy: 'codex.static-assignment' },
   { assignmentId: -2026062302, assignmentBatch: '2026-06-23-maintenance-sunday-okewu', assignmentGroup: 'MAINTENANCE', sourceLabel: 'Rotimi Matthew', supervisorEmployeeId: null, supervisorEmployeeCode: 'P0436', supervisorName: 'Mr SUNDAY OKEWU', employeeId: null, employeeCode: 'C1705', employeeName: 'MATTHEW ROTIMI', tradeRole: 'Mechanic', matchedStatus: 'Matched', matchConfidence: 'ExactReversed', matchNote: 'Database name is MATTHEW ROTIMI.', previousReportingManager: null, newReportingManager: 'P0436 - Mr SUNDAY OKEWU', assignedAt: staticAssignedAt, assignedBy: 'codex.static-assignment' },
@@ -54,7 +63,7 @@ const staticSupervisorAssignments: SupervisorAssignmentRow[] = [
 
 const applyAssignmentFilters = (rows: SupervisorAssignmentRow[], filters: { assignmentBatch?: string; supervisorEmployeeCode?: string } = {}) => rows.filter((row) => {
   if (filters.assignmentBatch && row.assignmentBatch !== filters.assignmentBatch) return false;
-  if (filters.supervisorEmployeeCode && row.supervisorEmployeeCode !== filters.supervisorEmployeeCode) return false;
+  if (filters.supervisorEmployeeCode && !assignmentMatchesSupervisor(row, filters.supervisorEmployeeCode)) return false;
   return true;
 });
 
@@ -193,21 +202,35 @@ export async function readSupervisorAssignments(filters: { assignmentBatch?: str
   const fallbackRows = applyAssignmentFilters(staticSupervisorAssignments, filters);
   if (!pool) return fallbackRows;
   await ensureSupervisorAssignmentTable(pool.request());
+  const scopedCode = assignmentSupervisorCode(filters.supervisorEmployeeCode) || null;
+  const supervisorVariants = supervisorCodeLookupVariants(filters.supervisorEmployeeCode);
+  const scoped = Boolean(filters.assignmentBatch || scopedCode);
   const request = pool.request()
-    .input('assignment_batch', sql.NVarChar(120), nullable(filters.assignmentBatch))
-    .input('supervisor_employee_code', sql.NVarChar(50), nullable(filters.supervisorEmployeeCode));
+    .input('assignment_batch', sql.NVarChar(120), nullable(filters.assignmentBatch));
+  const supervisorSql = supervisorVariants.length
+    ? `(${supervisorVariants.map((_, index) => {
+      request.input(`supervisor_code_${index}`, sql.NVarChar(50), supervisorVariants[index]);
+      return `supervisor_employee_code = @supervisor_code_${index} OR supervisor_employee_code LIKE @supervisor_code_${index} + N' - %'`;
+    }).join('\n    OR ')})`
+    : `(@supervisor_employee_code IS NULL
+    OR supervisor_employee_code = @supervisor_employee_code
+    OR supervisor_employee_code LIKE @supervisor_employee_code + N' - %')`;
+  if (!supervisorVariants.length) {
+    request.input('supervisor_employee_code', sql.NVarChar(50), nullable(scopedCode));
+  }
   const result = await request.query(`
-SELECT TOP 1000 *
+SELECT ${scoped ? '' : 'TOP 5000 '}*
 FROM [hris].[SupervisorEmployeeAssignments]
 WHERE (@assignment_batch IS NULL OR assignment_batch = @assignment_batch)
-  AND (@supervisor_employee_code IS NULL OR supervisor_employee_code = @supervisor_employee_code)
+  AND ${supervisorSql}
 ORDER BY assigned_at DESC, assignment_id DESC;
 `);
-  return mergeAssignmentRows(result.recordset.map(mapAssignmentRow), fallbackRows);
+  return mergeAssignmentRows(result.recordset.map(mapAssignmentRow), fallbackRows)
+    .filter((row) => !scopedCode || assignmentMatchesSupervisor(row, scopedCode));
 }
 
 export async function assignEmployeesToSupervisor(input: AssignEmployeesToSupervisorInput) {
-  const supervisorEmployeeCode = clean(input.supervisorEmployeeCode);
+  const supervisorEmployeeCode = assignmentSupervisorCode(input.supervisorEmployeeCode);
   const employeeCodes = Array.from(new Set(input.employeeCodes.map(clean).filter(Boolean))).filter((code) => code !== supervisorEmployeeCode);
   if (!supervisorEmployeeCode) throw new Error('Supervisor employee code is required.');
   if (!employeeCodes.length) throw new Error('At least one employee code is required.');
@@ -320,6 +343,7 @@ VALUES (@employee_id, @audit_action, @performed_by, @reason, @old_value, @new_va
 
     await tx.commit();
     committed = true;
+    invalidatePayrollEmployeeCache();
     return {
       assignmentBatch,
       assignmentGroup,

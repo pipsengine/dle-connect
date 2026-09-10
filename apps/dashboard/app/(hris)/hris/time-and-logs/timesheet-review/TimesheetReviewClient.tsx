@@ -147,7 +147,7 @@ export default function TimesheetReviewClient() {
     <PageTemplate
       title="Timesheet Review"
       description="Read-only timesheet detail for project manager, cost control, HR, and audit review."
-      breadcrumbs={[{ label: 'HRIS', href: '/hris' }, { label: 'Time & Logs', href: '/hris/time-and-logs' }, { label: 'Timesheet Review' }]}
+      breadcrumbs={[{ label: 'HRIS', href: '/hris' }, { label: 'Workforce Management', href: '/hris/workforce-management' }, { label: 'Timesheet Review' }]}
       primaryAction={{ label: 'Refresh', onClick: load, icon: RefreshCcw }}
       secondaryAction={{ label: 'Back to Approvals', onClick: () => { window.location.href = '/hris/time-and-logs/timesheet-approval'; }, icon: ArrowLeft }}
     >

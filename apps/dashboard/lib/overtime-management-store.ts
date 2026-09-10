@@ -14,6 +14,7 @@ import {
 } from '@/lib/timesheet-entry-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
+import { supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
 import { overtimeDayTypeForDate, isPremiumTimesheetDay, overtimePaysHoursAboveStandard } from '@/lib/timesheet-entry-shared';
 import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 
@@ -842,17 +843,18 @@ export const readOvertimeManagementPayload = async (roleInput?: string | null) =
   for (const assignment of supervisorAssignments) {
     const code = clean(assignment.supervisorEmployeeCode);
     if (!code || assignment.matchedStatus === 'Unresolved') continue;
-    const employee = employeeByCode.get(code.toLowerCase());
-    uniqueSupervisors.set(code.toLowerCase(), employee ? employeeOption(employee) : {
-      id: code,
-      code,
-      name: clean(assignment.supervisorName) || code,
+    const employee = activeEmployees.find((row) => supervisorCodesMatch(row.employeeCode, code)) || employeeByCode.get(code.toLowerCase());
+    const canonicalCode = clean(employee?.employeeCode) || code;
+    uniqueSupervisors.set(canonicalCode.toLowerCase(), employee ? employeeOption(employee) : {
+      id: canonicalCode,
+      code: canonicalCode,
+      name: clean(assignment.supervisorName) || canonicalCode,
       department: clean(assignment.assignmentGroup),
     });
-    const groups = assignmentGroupsBySupervisor.get(code.toLowerCase()) || new Set<string>();
+    const groups = assignmentGroupsBySupervisor.get(canonicalCode.toLowerCase()) || new Set<string>();
     if (clean(assignment.assignmentGroup)) groups.add(clean(assignment.assignmentGroup));
-    assignmentGroupsBySupervisor.set(code.toLowerCase(), groups);
-    if (clean(assignment.employeeCode)) addAssignedEmployee(code, assignment.employeeCode!, clean(assignment.employeeName) || '');
+    assignmentGroupsBySupervisor.set(canonicalCode.toLowerCase(), groups);
+    if (clean(assignment.employeeCode)) addAssignedEmployee(canonicalCode, assignment.employeeCode!, clean(assignment.employeeName) || '');
   }
   for (const employee of activeEmployees) {
     const text = `${employee.jobTitle} ${employee.designation} ${employee.fullName}`.toLowerCase();
@@ -870,7 +872,12 @@ export const readOvertimeManagementPayload = async (roleInput?: string | null) =
     for (const [key, option] of uniqueSupervisors) {
       const codeLower = option.code.toLowerCase();
       const nameLower = option.name.toLowerCase();
-      if ((codeLower && manager.includes(codeLower)) || (nameLower && manager.includes(nameLower))) {
+      if (
+        supervisorCodesMatch(employee.managerName, option.code)
+        || supervisorCodesMatch(employee.functionalManager, option.code)
+        || (codeLower && manager.includes(codeLower))
+        || (nameLower && manager.includes(nameLower))
+      ) {
         addAssignedEmployee(key, clean(employee.employeeCode) || clean(employee.employeeId), clean(employee.fullName));
         break;
       }

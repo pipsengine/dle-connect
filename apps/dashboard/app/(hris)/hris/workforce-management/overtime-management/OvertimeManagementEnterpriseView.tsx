@@ -620,7 +620,7 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
                         <td className="px-3 py-3 font-bold text-[#0F172A]">{props.money(record.grossPay)}</td>
                         <td className="px-3 py-3 text-sm font-medium text-[#475569]">{record.currentOwner}</td>
                         <td className="px-3 py-3">
-                          <Link href="/hris/time-and-logs/timesheet-entry" className="text-sm font-semibold text-[#2563EB] hover:underline">
+                          <Link href="/hris/workforce-management/timesheet-entry" className="text-sm font-semibold text-[#2563EB] hover:underline">
                             TS-{record.id.slice(-5).toUpperCase()}
                           </Link>
                         </td>

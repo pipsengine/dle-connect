@@ -8,6 +8,7 @@ import {
 } from './OvertimeManagementEnterpriseView';
 import { OvertimeFormField } from './overtime-management-ui';
 import { hasBiometricClockIn, overtimeDayTypeForDate } from '@/lib/timesheet-entry-shared';
+import { supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
 
 type ComboOption = { value: string; label: string; sublabel?: string };
 
@@ -904,7 +905,11 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
   }, [role]);
 
   const onSupervisorChange = (supervisorCode: string) => {
-    const supervisor = setup?.supervisors.find((item) => item.code === supervisorCode || item.name === supervisorCode);
+    const supervisor = setup?.supervisors.find((item) => (
+      item.code === supervisorCode
+      || item.name === supervisorCode
+      || supervisorCodesMatch(item.code, supervisorCode)
+    ));
     const defaultWorkCenter = supervisor?.defaultWorkCenter
       || (setup?.workCenters || []).find((workCenter) => workCenter.name.toLowerCase() === String(supervisor?.department || '').toLowerCase())?.name
       || '';

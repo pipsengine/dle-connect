@@ -1413,7 +1413,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       <PageTemplate 
         title="Timesheet Entry" 
         description="Loading timesheet data..."
-        breadcrumbs={[{ label: 'HRIS', href: '/hris' }, { label: 'Time & Logs', href: '/hris/time-and-logs' }, { label: 'Timesheet Entry' }]}
+        breadcrumbs={[{ label: 'HRIS', href: '/hris' }, { label: 'Workforce Management', href: '/hris/workforce-management' }, { label: 'Timesheet Entry' }]}
       >
         <div className="flex h-96 items-center justify-center"><RefreshCcw className="h-8 w-8 animate-spin text-slate-400" /></div>
       </PageTemplate>
@@ -1518,7 +1518,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     : 'Record daily work hour allocations across projects and tasks.';
   const pageBreadcrumbs = isWorkforceSupervisor
     ? [{ label: 'HRIS', href: '/hris' }, { label: 'Workforce Management', href: '/hris/workforce-management' }, { label: 'Timesheet Entry' }]
-    : [{ label: 'HRIS', href: '/hris' }, { label: 'Time & Logs', href: '/hris/time-and-logs' }, { label: 'Timesheet Entry' }];
+    : [{ label: 'HRIS', href: '/hris' }, { label: 'Workforce Management', href: '/hris/workforce-management' }, { label: 'Timesheet Entry' }];
   const isOffshoreSheet = isOffshoreWorkCenterName(selectedWorkCenter) || isOffshoreWorkCenterName(payload?.header?.workCenterName);
   const primaryPageAction = isOffshoreSheet
     ? undefined
@@ -1944,7 +1944,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                 <p className="mt-1 text-sm font-black text-sky-800">{supervisorJobTitle}</p>
               )}
               <p className="mt-1 text-xs font-semibold text-slate-600">
-                {supervisorEmployees.length ? `${supervisorEmployees.length} employee${supervisorEmployees.length === 1 ? '' : 's'} assigned for ${selectedLocation || 'all locations'}${selectedWorkCenter ? ` / ${selectedWorkCenter}` : ''}.` : 'No employees match this supervisor, location, and work center selection.'}
+                {supervisorEmployees.length ? `${supervisorEmployees.length} employee${supervisorEmployees.length === 1 ? '' : 's'} assigned to this supervisor.` : 'No employees are assigned to this supervisor yet.'}
               </p>
             </div>
             <span className="rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-black text-sky-800">{supervisorEmployees.length} assigned</span>
@@ -1981,7 +1981,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                 </div>
               ) : (
                 <div className="rounded-xl border border-slate-200 bg-white p-4 text-xs font-bold text-slate-500">
-                  No assigned employees found for the selected filters.
+                  No assigned employees found for this supervisor.
                 </div>
               )}
             </div>

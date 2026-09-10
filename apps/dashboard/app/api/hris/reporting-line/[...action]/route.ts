@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { assignEmployeesToSupervisor, readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
+import { extractSupervisorEmployeeCode, supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
 import { auditDepartmentReportingManagers, syncDepartmentReportingManagers } from '@/lib/department-reporting-manager-sync';
 
 type Role =
@@ -392,9 +393,21 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
     return match?.fullName || value.trim();
   };
   const resolveSupervisorCode = (value: string) => {
+    const fromLabel = extractSupervisorEmployeeCode(value);
+    if (fromLabel) {
+      const byCode = employees.find((e) => supervisorCodesMatch(e.employeeId, fromLabel));
+      return byCode?.employeeId || fromLabel;
+    }
     const needle = value.trim().toLowerCase();
-    const match = employees.find((e) => e.employeeId.toLowerCase() === needle || e.fullName.toLowerCase() === needle);
-    return match?.employeeId || value.trim();
+    const exact = employees.find((e) =>
+      e.employeeId.toLowerCase() === needle
+      || e.fullName.toLowerCase() === needle
+      || `${e.employeeId} - ${e.fullName}`.toLowerCase() === needle
+    );
+    if (exact) return exact.employeeId;
+    const named = employees.filter((e) => e.fullName.toLowerCase() === needle);
+    if (named.length === 1) return named[0].employeeId;
+    return value.trim();
   };
   const currentSupervisor = resolveSupervisor(currentManager);
   const newSupervisor = resolveSupervisor(newManager);

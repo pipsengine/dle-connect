@@ -7,14 +7,27 @@ import {
   extractSupervisorEmployeeCode,
   isAgegeBlastingSupervisor,
   isTimesheetTradeLabelLocation,
+  normalizeSupervisorMatchKey,
   normalizeTimesheetLocationLabel,
   resolveAgegeLocationLabel,
+  supervisorCodeLookupVariants,
+  supervisorCodesMatch,
 } from './timesheet-agege-blasting.ts';
 
 assert.equal(extractSupervisorEmployeeCode('C1001 - JIMOH GBADAMOSI'), 'C1001');
 assert.equal(extractSupervisorEmployeeCode('JIMOH GBADAMOSI [C1001]'), 'C1001');
 assert.equal(isAgegeBlastingSupervisor('JIMOH GBADAMOSI [C1001]'), true);
 assert.equal(isAgegeBlastingSupervisor('P0277 - Someone'), false);
+
+assert.equal(normalizeSupervisorMatchKey('P0013'), '13');
+assert.equal(normalizeSupervisorMatchKey('0013 - Mr KARONWI'), '13');
+assert.equal(normalizeSupervisorMatchKey('P0013 - Mr SAMUEL KARONWI'), '13');
+assert.equal(supervisorCodesMatch('P0013', '0013'), true);
+assert.equal(supervisorCodesMatch('P0013 - Mr SAMUEL KARONWI', '0013 - Mr KARONWI'), true);
+assert.equal(supervisorCodesMatch('C1001', '1001'), false);
+assert.equal(supervisorCodesMatch('P0289', 'P0289 - Ebele'), true);
+assert.ok(supervisorCodeLookupVariants('P0013').includes('0013'));
+assert.ok(supervisorCodeLookupVariants('0013').includes('P0013'));
 
 assert.equal(normalizeTimesheetLocationLabel('AGEGE - AGEGE'), 'AGEGE');
 assert.equal(normalizeTimesheetLocationLabel('Agege-Agege'), 'AGEGE');

@@ -29,7 +29,7 @@ const quickLinks = [
   { title: 'Employee Directory', href: '/hris/employees/employee-directory', icon: Search, detail: 'Search employee records, departments, locations and job details', permissions: ['employees.view', 'employees.*'], tone: 'blue' },
   { title: 'Employee Profile', href: '/hris/employees/employee-profile', icon: UserRound, detail: 'Personal, job, contact, document and payroll profile records', permissions: ['employees.view', 'profile.view'], tone: 'blue' },
   { title: 'Attendance Register', href: '/hris/attendance/attendance-register', icon: CalendarCheck, detail: 'Daily attendance, review status, payroll readiness and exceptions', permissions: ['attendance.view', 'attendance.*'], tone: 'green' },
-  { title: 'Timesheet Entry', href: '/hris/time-and-logs/timesheet-entry', icon: Clock3, detail: 'Supervisor and line-manager timesheet capture and approvals', permissions: ['page.hris.time-and-logs.timesheet-entry.view', 'timesheet.supervisor.approve'], tone: 'violet' },
+  { title: 'Timesheet Entry', href: '/hris/workforce-management/timesheet-entry', icon: Clock3, detail: 'Supervisor and line-manager timesheet capture and approvals', permissions: ['page.hris.time-and-logs.timesheet-entry.view', 'timesheet.supervisor.approve'], tone: 'violet' },
   { title: 'Payroll Dashboard', href: '/hris/payroll/payroll-dashboard', icon: Banknote, detail: 'Payroll setup, processing, approvals, payslips, tax and deductions', permissions: ['payroll.view', 'payroll.*'], tone: 'green' },
   { title: 'Benefits Management', href: '/hris/benefits/overview', icon: Gift, detail: 'Medical, insurance, pension, welfare, enrollment, claims, and compliance', permissions: ['hris.view', 'payroll.view', 'employees.view'], tone: 'violet' },
   { title: 'Workforce Portal', href: '/workforce-portal', icon: UserCircle2, detail: 'Employee self-service dashboard, profile, leave, attendance, payroll and documents', permissions: ['ess.view', 'profile.view'], tone: 'orange' },
@@ -98,7 +98,7 @@ export default async function HRISHomePage() {
   const { permissions, session } = await getPermissions();
   const visibleQuickLinks = quickLinks.filter((item) => {
     if (item.href === '/workforce-portal' && !WORKFORCE_PORTAL_ENABLED) return false;
-    if (item.href === '/hris/time-and-logs/timesheet-entry') {
+    if (item.href === '/hris/workforce-management/timesheet-entry') {
       return canAccessTimesheetEntryAndApproval(session);
     }
     return item.permissions.some((permission) => can(permissions, permission));
@@ -117,7 +117,7 @@ export default async function HRISHomePage() {
               </div>
               <h1 className="mt-7 text-4xl font-black tracking-normal text-slate-950 md:text-[36px]">HRIS Portal</h1>
               <p className="mt-4 max-w-3xl text-[15px] font-semibold leading-7 text-slate-600">
-                Fast access to HR dashboards, employee records, attendance, time logs, payroll, organization setup, and controlled HR workflows.
+                Fast access to HR dashboards, employee records, attendance, timesheets, payroll, organization setup, and controlled HR workflows.
               </p>
             </div>
             <HeroVisual />

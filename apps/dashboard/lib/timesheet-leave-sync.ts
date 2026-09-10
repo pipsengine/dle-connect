@@ -5,7 +5,7 @@
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
-import { extractSupervisorEmployeeCode, normalizeTimesheetLocationLabel } from '@/lib/timesheet-agege-blasting';
+import { extractSupervisorEmployeeCode, normalizeTimesheetLocationLabel, supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
 import {
   APPROVED_PAID_LEAVE_REMARK,
   STANDARD_TIMESHEET_HOURS,
@@ -121,7 +121,7 @@ const resolveSupervisorId = async (employee: DleEmployeeDirectoryRow) => {
   const managerCode = extractSupervisorEmployeeCode(employee.managerName);
   if (managerCode) {
     const source = await readPayrollEmployees();
-    const manager = source.employees.find((row) => compact(row.employeeCode).toUpperCase() === managerCode);
+    const manager = source.employees.find((row) => supervisorCodesMatch(row.employeeCode, managerCode));
     if (manager) return `${manager.employeeCode} - ${manager.fullName}`;
   }
   if (compact(employee.managerName)) return compact(employee.managerName);

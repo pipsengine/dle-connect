@@ -171,7 +171,7 @@ export function OvertimeQuickLinks() {
     { href: '#', label: 'Overtime Policy', icon: BookOpen },
     { href: '#', label: 'Approval Workflow', icon: ClipboardList },
     { href: '/hris/workforce-management/reports-and-analytics', label: 'Reporting Dashboard', icon: BarChart3 },
-    { href: '/hris/time-and-logs/timesheet-entry', label: 'Timesheet Entry', icon: FileText },
+    { href: '/hris/workforce-management/timesheet-entry', label: 'Timesheet Entry', icon: FileText },
   ];
   return (
     <ul className="space-y-1">

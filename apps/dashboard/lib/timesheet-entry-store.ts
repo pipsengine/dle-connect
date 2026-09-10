@@ -7,8 +7,8 @@ import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { normalizePayrollMatchKey, readActiveSagePayrollEmployeeKeys, type SagePayrollEmployee } from '@/lib/sage-people-payroll-store';
 import { approvedPaidLeaveForDate } from '@/lib/leave-management-store';
-import { readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
-import { extractSupervisorEmployeeCode, normalizeTimesheetLocationLabel } from '@/lib/timesheet-agege-blasting';
+import { assignmentMatchesSupervisor, readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
+import { extractSupervisorEmployeeCode, normalizeTimesheetLocationLabel, supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
 import {
   DAILY_BREAK_HOURS,
   buildLeaveIdleTimeAllocation,
@@ -3435,6 +3435,7 @@ const supervisorNameTokens = (value: string | null | undefined) =>
     .filter((token) => token.length > 1);
 
 const supervisorMatchesEmployee = (managerName: string | null | undefined, supervisorId: string) => {
+  if (supervisorCodesMatch(managerName, supervisorId)) return true;
   const manager = normalizeAttendanceScope(managerName);
   const selected = normalizeAttendanceScope(cleanSupervisorLabel(supervisorId));
   if (!manager || !selected) return false;
@@ -3499,23 +3500,28 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
   const selectedCode = extractSupervisorEmployeeCode(selected);
   try {
     const assignments = selectedCode ? await readSupervisorAssignments({ supervisorEmployeeCode: selectedCode }) : [];
-    const matchedAssignments = assignments.filter((assignment) => assignment.employeeCode && assignment.matchedStatus !== 'Unresolved');
-    if (matchedAssignments.length) {
-      for (const assignment of matchedAssignments) {
-        const employeeCode = assignment.employeeCode || '';
-        const fullName = assignment.employeeName || employeeCode;
-        employees.push({ employeeCode, fullName });
-        attendanceMatchKeys(employeeCode, fullName).forEach((key) => keys.add(key));
-      }
-      return { keys, employees };
+    const matchedAssignments = assignments.filter((assignment) =>
+      assignment.employeeCode
+      && assignment.matchedStatus !== 'Unresolved'
+      && assignmentMatchesSupervisor(assignment, selectedCode),
+    );
+    for (const assignment of matchedAssignments) {
+      const employeeCode = assignment.employeeCode || '';
+      const fullName = assignment.employeeName || employeeCode;
+      employees.push({ employeeCode, fullName });
+      attendanceMatchKeys(employeeCode, fullName).forEach((key) => keys.add(key));
     }
   } catch (error) {
     console.warn('Timesheet supervisor assignment scope could not be loaded; falling back to reporting manager data:', error);
   }
+  const existingCodes = new Set(employees.map((employee) => employee.employeeCode.toLowerCase()));
   for (const employee of source.employees) {
     if (['Resigned', 'Terminated', 'Retired'].includes(employee.status)) continue;
     if (!supervisorMatchesEmployee(employee.managerName, selected)) continue;
-    employees.push({ employeeCode: employee.employeeCode, fullName: employee.fullName });
+    const employeeCode = employee.employeeCode || employee.employeeId;
+    if (!employeeCode || existingCodes.has(employeeCode.toLowerCase())) continue;
+    existingCodes.add(employeeCode.toLowerCase());
+    employees.push({ employeeCode, fullName: employee.fullName });
     [
       employee.employeeId,
       employee.employeeCode,

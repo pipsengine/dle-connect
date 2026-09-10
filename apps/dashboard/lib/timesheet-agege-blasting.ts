@@ -10,6 +10,7 @@ export const AGEGE_BLASTING_WORK_CENTER = 'Blasting';
 export const AGEGE_BLASTING_CONFLICTING_WORK_CENTER = 'Painting';
 
 const clean = (value: unknown) => String(value || '').trim();
+const compactEmployeeCode = (value: string) => clean(value).toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 /** Extract employee code from `C1001 - Name` or `Name [C1001]`. */
 export const extractSupervisorEmployeeCode = (value: string | null | undefined) => {
@@ -23,6 +24,46 @@ export const extractSupervisorEmployeeCode = (value: string | null | undefined) 
   if (bracket?.[1]) return bracket[1].toUpperCase();
   if (/^[A-Za-z]?\d+[A-Za-z0-9]*$/.test(raw)) return raw.toUpperCase();
   return '';
+};
+
+/**
+ * Treat Sage `P0013` and legacy `0013` as the same supervisor.
+ * Contract codes such as C1001 stay distinct from numeric `1001`.
+ */
+export const normalizeSupervisorMatchKey = (value: string | null | undefined) => {
+  const code = extractSupervisorEmployeeCode(value) || compactEmployeeCode(String(value || ''));
+  if (!code) return '';
+  const compact = compactEmployeeCode(code);
+  const permanent = compact.match(/^P0*(\d+)$/);
+  if (permanent) return permanent[1].replace(/^0+/, '') || permanent[1];
+  if (/^\d+$/.test(compact)) return compact.replace(/^0+/, '') || compact;
+  return compact;
+};
+
+export const supervisorCodesMatch = (left?: string | null, right?: string | null) => {
+  const a = normalizeSupervisorMatchKey(left);
+  const b = normalizeSupervisorMatchKey(right);
+  return Boolean(a && b && a === b);
+};
+
+/** SQL / lookup variants so `P0013` also finds rows stored as `0013`. */
+export const supervisorCodeLookupVariants = (value: string | null | undefined) => {
+  const code = extractSupervisorEmployeeCode(value) || compactEmployeeCode(String(value || ''));
+  if (!code) return [];
+  const variants = new Set<string>([code]);
+  const compact = compactEmployeeCode(code);
+  const digits = compact.match(/^P?0*(\d+)$/)?.[1];
+  if (digits) {
+    const stripped = digits.replace(/^0+/, '') || digits;
+    const padded = stripped.padStart(4, '0');
+    variants.add(digits);
+    variants.add(stripped);
+    variants.add(padded);
+    variants.add(`P${stripped}`);
+    variants.add(`P${padded}`);
+    variants.add(`P${digits}`);
+  }
+  return [...variants];
 };
 
 export const isAgegeBlastingSupervisor = (supervisorValue: string | null | undefined) =>

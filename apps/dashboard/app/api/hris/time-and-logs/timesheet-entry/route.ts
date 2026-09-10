@@ -54,7 +54,7 @@ import { readPayrollEmployees, type PayrollEmployeeSource } from '@/lib/payroll-
 import type { StructureInsight } from '@/lib/organization-data';
 import { assertTimesheetEntryAndApprovalAccess } from '@/lib/access/timesheet-access';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
-import { readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
+import { assignmentMatchesSupervisor, assignmentSupervisorCode, readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
 import { listApprovedOvertimeForSupervisor, type OvertimeAuthorizationRequest } from '@/lib/overtime-approval-workflow-store';
 import {
   applyOvertimeBooking,
@@ -78,6 +78,7 @@ import {
   extractSupervisorEmployeeCode,
   isTimesheetTradeLabelLocation,
   normalizeTimesheetLocationLabel,
+  supervisorCodesMatch,
 } from '@/lib/timesheet-agege-blasting';
 
 const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string | null): TimesheetDayContext => ({
@@ -584,12 +585,17 @@ const employeeDisplay = (employee: { employeeCode?: string | null; fullName?: st
 };
 
 const managerMatches = (employee: { managerName?: string | null }, supervisor: string) => {
-  const selected = clean(supervisor).toLowerCase();
-  if (!selected) return false;
-  const selectedCode = selected.split(' - ')[0]?.trim();
-  const selectedName = selected.includes(' - ') ? selected.split(' - ').slice(1).join(' - ').trim() : selected;
-  const managerName = clean(employee.managerName).toLowerCase();
-  return managerName === selected || managerName === selectedName || managerName.includes(selected) || managerName.includes(selectedCode);
+  const selected = clean(supervisor);
+  const managerName = clean(employee.managerName);
+  if (!selected || !managerName) return false;
+  if (supervisorCodesMatch(managerName, selected)) return true;
+  const selectedLower = selected.toLowerCase();
+  const managerLower = managerName.toLowerCase();
+  const selectedName = selected.includes(' - ') ? selected.split(' - ').slice(1).join(' - ').trim().toLowerCase() : selectedLower;
+  return managerLower === selectedLower
+    || managerLower === selectedName
+    || managerLower.includes(selectedLower)
+    || selectedLower.includes(managerLower);
 };
 
 const employeeLocation = (employee: {
@@ -636,9 +642,12 @@ const supervisorMatchesSelection = (employee: {
   if (!selected) return false;
   const selectedCode = selected.split(' - ')[0]?.replace(/[()]/g, '').trim();
   const selectedName = selected.includes(' - ') ? selected.split(' - ').slice(1).join(' - ').replace(/\(\d+\)\s*$/, '').trim() : selected.replace(/\(\d+\)\s*$/, '').trim();
-  const code = clean(employee.employeeCode || employee.employeeId).toLowerCase();
+  const code = clean(employee.employeeCode || employee.employeeId);
   const name = clean(employee.fullName).toLowerCase();
-  return Boolean((selectedCode && code === selectedCode) || (selectedName && (name === selectedName || name.includes(selectedName))));
+  return Boolean(
+    (selectedCode && (code.toLowerCase() === selectedCode || supervisorCodesMatch(code, selectedCode)))
+    || (selectedName && (name === selectedName || name.includes(selectedName))),
+  );
 };
 
 const employeeSummary = (employee: {
@@ -758,7 +767,7 @@ const preferredLocationFromDirectory = (
 };
 
 const assignedEmployeesForSupervisor = async (supervisor: string, employees: SupervisorSourceEmployee[]) => {
-  const supervisorCode = clean(supervisor).split(' - ')[0]?.trim();
+  const supervisorCode = extractSupervisorEmployeeCode(supervisor);
   if (!supervisorCode) return [];
   try {
     const assignments = await readSupervisorAssignments({ supervisorEmployeeCode: supervisorCode });
@@ -777,10 +786,10 @@ const assignedEmployeesForSupervisor = async (supervisor: string, employees: Sup
           division: assignment.assignmentGroup || '',
           businessUnit: assignment.assignmentGroup || '',
           costCenter: '',
-          projectSite: 'IDI_ORO',
-          workLocation: 'IDI_ORO',
-          officeLocation: 'IDI_ORO',
-          location: 'IDI_ORO',
+          projectSite: '',
+          workLocation: '',
+          officeLocation: '',
+          location: '',
           managerName: supervisor,
           status: 'Active',
         } as SupervisorSourceEmployee;
@@ -924,7 +933,7 @@ const buildPayload = async (
     employeeCount: number;
   }>();
   for (const assignment of assignmentRows) {
-    const supervisorCode = clean(assignment.supervisorEmployeeCode);
+    const supervisorCode = assignmentSupervisorCode(assignment.supervisorEmployeeCode);
     const supervisorName = clean(assignment.supervisorName);
     if (!supervisorCode || assignment.matchedStatus === 'Unresolved') continue;
     const supervisorEmployee = supervisorIndex.byKey.get(supervisorCode.toLowerCase());
@@ -1024,8 +1033,8 @@ const buildPayload = async (
     targetLocation = OFFSHORE_LOCATION_NAME;
   }
   const employeesByCode = new Map(activeEmployees.map((employee) => [clean(employee.employeeCode).toLowerCase(), employee]));
-  const assignedSupervisorEmployees = assignmentRows
-    .filter((assignment) => clean(assignment.supervisorEmployeeCode).toLowerCase() === targetSupervisorCode && assignment.employeeCode && assignment.matchedStatus !== 'Unresolved')
+  const assignedFromGlobalRows = assignmentRows
+    .filter((assignment) => assignmentMatchesSupervisor(assignment, targetSupervisorCode) && assignment.employeeCode && assignment.matchedStatus !== 'Unresolved')
     .map((assignment) => {
       const employee = employeesByCode.get(clean(assignment.employeeCode).toLowerCase());
       return employee || {
@@ -1038,19 +1047,31 @@ const buildPayload = async (
         division: assignment.assignmentGroup || '',
         businessUnit: assignment.assignmentGroup || '',
         costCenter: '',
-        projectSite: 'IDI_ORO',
-        workLocation: 'IDI_ORO',
-        officeLocation: 'IDI_ORO',
-        location: 'IDI_ORO',
+        projectSite: '',
+        workLocation: '',
+        officeLocation: '',
+        location: '',
         managerName: targetSupervisor,
         status: 'Active',
       };
+    });
+  const assignedSupervisorEmployees = (await assignedEmployeesForSupervisor(targetSupervisor, activeEmployees))
+    .concat(assignedFromGlobalRows)
+    .filter((employee, index, rows) => {
+      const key = clean(employee.employeeCode).toLowerCase();
+      return key && rows.findIndex((row) => clean(row.employeeCode).toLowerCase() === key) === index;
     });
   const reportingManagerEmployees = activeEmployees.filter((employee) => {
     const canonicalManager = canonicalSupervisorValue(employee.managerName, supervisorIndex);
     return canonicalManager === targetSupervisor || managerMatches({ managerName: canonicalManager || employee.managerName }, targetSupervisor);
   });
-  const selectedSupervisorAllDirectReports = assignedSupervisorEmployees.length ? assignedSupervisorEmployees : reportingManagerEmployees;
+  const selectedSupervisorAllDirectReports = [...assignedSupervisorEmployees];
+  for (const employee of reportingManagerEmployees) {
+    const key = clean(employee.employeeCode).toLowerCase();
+    if (!key) continue;
+    if (selectedSupervisorAllDirectReports.some((row) => clean(row.employeeCode).toLowerCase() === key)) continue;
+    selectedSupervisorAllDirectReports.push(employee);
+  }
   {
     const supervisorRecordsForDefault = timesheetRecords.filter((record) => managerMatches({ managerName: record.supervisor }, targetSupervisor));
     const agegeForced = applyAgegeBlastingSupervisorContext({
@@ -1111,13 +1132,7 @@ const buildPayload = async (
         '';
     }
   }
-  const selectedSupervisorDirectReports = targetLocation
-    ? selectedSupervisorAllDirectReports.filter((employee) => employeeMatchesLocation(employee, targetLocation))
-    : selectedSupervisorAllDirectReports;
-  const selectedSupervisorWorkCenterReports = targetWorkCenter
-    ? selectedSupervisorDirectReports.filter((employee) => employeeMatchesWorkCenter(employee, targetWorkCenter))
-    : [];
-  const selectedSupervisorEmployeesFromDirectory = (selectedSupervisorWorkCenterReports.length ? selectedSupervisorWorkCenterReports : selectedSupervisorDirectReports)
+  const selectedSupervisorEmployeesFromDirectory = selectedSupervisorAllDirectReports
     .map((employee) => ({
       employeeId: clean(employee.employeeId),
       employeeCode: clean(employee.employeeCode),
