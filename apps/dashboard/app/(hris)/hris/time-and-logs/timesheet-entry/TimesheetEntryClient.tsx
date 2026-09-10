@@ -1021,6 +1021,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           locationName: selectedLocation,
           headerId: payload?.header?.id,
           lines: shiftLines.map((line) => applyNightPaperClock(reconcileTimesheetLineHours(line), selectedShift)),
+          shiftLabel: selectedShift,
         }),
       });
       const json = await readApiJson(res);

@@ -30,6 +30,7 @@ import { activePayrollPeriod } from '@/lib/payroll-periods';
 import { sendLeaveApprovalRequestEmail, sendLeaveRelieverAssignmentEmail, sendLeaveWorkflowEmail, resolveEmployeeMailbox, resolveMailProvider, type MailSendResult } from '@/lib/mail-service';
 import { buildEssEmployeeLookupKeys } from '@/lib/ess-dashboard-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
+import { supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
 import { HRIS_LEAVE_SOURCE, isLegacySageLeaveImport, normalizeLeaveTypeName } from '@/lib/hris-leave-read';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import { invalidateEssPortalCache } from '@/lib/ess-portal-cache';
@@ -1244,9 +1245,32 @@ export const retryLeaveManagerNotification = async (input: {
   });
 };
 
-/** Exact HR roles allowed to receive leave HR-stage emails / act at HR Review. */
+/** HR roles that receive HR-stage leave emails. */
 const LEAVE_HR_NOTIFY_ROLES = new Set(['hr manager', 'hr head', 'hr director']);
-const LEAVE_HR_ACTION_ROLES = new Set(['hr manager', 'hr head', 'hr director', 'hr officer', 'leave administrator']);
+/** HR roles that can action HR Review. Includes HR Administrator — production HR Manager is often assigned that role. */
+const LEAVE_HR_ACTION_ROLES = new Set(['hr manager', 'hr head', 'hr director', 'hr officer', 'leave administrator', 'hr administrator']);
+const LEAVE_HR_TITLE_PATTERN = /\bhr[\s._-]*(manager|head|director)\b/i;
+
+export const isLeaveHrActor = (roles: string[] = [], jobTitle?: string | null, designation?: string | null) => {
+  const roleText = roles.map((role) => role.toLowerCase().trim());
+  if (roleText.some((role) => LEAVE_HR_ACTION_ROLES.has(role))) return true;
+  return LEAVE_HR_TITLE_PATTERN.test(`${jobTitle || ''} ${designation || ''}`);
+};
+
+const isLeaveHrNotifyActor = (roles: string[] = [], jobTitle?: string | null, designation?: string | null) => {
+  const roleText = roles.map((role) => role.toLowerCase().trim());
+  if (roleText.some((role) => LEAVE_HR_NOTIFY_ROLES.has(role))) return true;
+  return LEAVE_HR_TITLE_PATTERN.test(`${jobTitle || ''} ${designation || ''}`);
+};
+
+const actorMatchesLeaveReference = (actor: DleEmployeeDirectoryRow, reference?: string | null) => {
+  const value = compact(reference);
+  if (!value) return false;
+  return employeeRequestMatches(actor, value)
+    || referenceMatchesEmployee(actor, value)
+    || supervisorCodesMatch(actor.employeeCode, value)
+    || supervisorCodesMatch(actor.employeeId, value);
+};
 
 const resolveHrRecipients = async (employees: DleEmployeeDirectoryRow[]) => {
   const users = await readUsers().catch(() => []);
@@ -1254,8 +1278,8 @@ const resolveHrRecipients = async (employees: DleEmployeeDirectoryRow[]) => {
 
   for (const user of users) {
     if (user.status && user.status !== 'Active') continue;
-    const roles = (user.roles || []).map((role) => role.toLowerCase().trim());
-    if (!roles.some((role) => LEAVE_HR_NOTIFY_ROLES.has(role))) continue;
+    const roles = user.roles || [];
+    if (!isLeaveHrNotifyActor(roles, user.jobTitle, user.jobTitle)) continue;
 
     const code = compact(user.employeeCode || user.employeeId || user.username).toUpperCase();
     if (!code) continue;
@@ -1287,7 +1311,7 @@ const resolveHrRecipients = async (employees: DleEmployeeDirectoryRow[]) => {
   // Fallback: directory titles only when no auth HR Manager recipients exist.
   if (!byKey.size) {
     for (const employee of employees) {
-      if (!/^\s*hr\s+(manager|head|director)\b/i.test(`${employee.jobTitle || ''} ${employee.designation || ''}`)) continue;
+      if (!LEAVE_HR_TITLE_PATTERN.test(`${employee.jobTitle || ''} ${employee.designation || ''}`)) continue;
       const key = employee.employeeId || employee.employeeCode;
       if (!key || byKey.has(key)) continue;
       byKey.set(key, employee);
@@ -1347,22 +1371,25 @@ export const resolveLeaveApproverKind = (input: {
   const { actor, requester, request, roles = [], employees = [] } = input;
   if (!['Line Manager Review', 'HR Review'].includes(request.status)) return null;
 
-  const roleText = roles.map((role) => role.toLowerCase().trim());
-  const isHrActor = roleText.some((role) => LEAVE_HR_ACTION_ROLES.has(role));
+  const isHrActor = isLeaveHrActor(roles, actor.jobTitle, actor.designation);
 
   if (request.status === 'HR Review') {
     return isHrActor ? 'hr' : null;
   }
 
   // Line Manager Review — assigned reporting manager only (no manager-role / department-head fan-out).
-  if (request.lineManagerEmployeeId && employeeRequestMatches(actor, request.lineManagerEmployeeId)) {
+  if (actorMatchesLeaveReference(actor, request.lineManagerEmployeeId) || actorMatchesLeaveReference(actor, request.lineManagerName)) {
     return 'line-manager';
   }
   const resolvedManager = employees.length ? resolveLineManagerForEmployee(requester, employees) : null;
-  if (resolvedManager && employeeRequestMatches(actor, resolvedManager.employee.employeeId)) {
+  if (resolvedManager && (
+    employeeRequestMatches(actor, resolvedManager.employee.employeeId)
+    || actorMatchesLeaveReference(actor, resolvedManager.employee.employeeCode)
+    || actorMatchesLeaveReference(actor, resolvedManager.employee.fullName)
+  )) {
     return 'line-manager';
   }
-  if (namesMatch(actor.fullName, requester.managerName || '')) {
+  if (actorMatchesLeaveReference(actor, requester.managerName)) {
     return 'line-manager';
   }
   return null;
@@ -1386,8 +1413,18 @@ export const pendingLeaveApprovalsForActor = (
     .map((request) => {
       const requester = resolveEmployeeReference(employees, request.employeeId)
         || employeeById.get(request.employeeId)
-        || null;
-      if (!requester) return null;
+        || ({
+          id: request.employeeId,
+          employeeId: request.employeeId,
+          employeeCode: request.employeeId,
+          employeeDbId: 0,
+          fullName: request.title || request.employeeId,
+          jobTitle: 'Employee',
+          designation: 'Employee',
+          department: 'Unassigned',
+          status: 'Active',
+          managerName: request.lineManagerName || '',
+        } as DleEmployeeDirectoryRow);
       const approverKind = resolveLeaveApproverKind({ actor, requester, request, roles, isGlobalAdmin, employees });
       if (!approverKind) return null;
       const requesterAny = requester as DleEmployeeDirectoryRow & { designation?: string; jobTitle?: string; costCenter?: string; salaryGrade?: string };

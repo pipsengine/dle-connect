@@ -76,6 +76,16 @@ export type EssLeavePayload = {
     history: Array<{ type?: string; from?: string; to?: string; days?: number; status?: string; year?: number }>;
     allowance: Array<{ label?: string; value?: string; status?: string }>;
     relieverOptions?: Array<{ employeeId: string; fullName: string; jobTitle?: string; department?: string }>;
+    approvals?: Array<{
+      id?: string;
+      employee?: string;
+      type?: string;
+      days?: number;
+      startDate?: string;
+      endDate?: string;
+      status?: string;
+      stage?: string;
+    }>;
   };
 };
 
@@ -318,6 +328,24 @@ export function EssLeaveDashboardView({ payload, initialNow, activeTab, onTabCha
                 <p className="mt-1 text-[12px] text-[#64748B]">Pending your approval</p>
               </button>
             </div>
+            {(payload?.leave?.approvals || []).length ? (
+              <div className="mt-4 space-y-2">
+                {(payload?.leave?.approvals || []).slice(0, 6).map((item) => (
+                  <button
+                    key={item.id || `${item.employee}-${item.startDate}`}
+                    type="button"
+                    onClick={() => onTabChange('Approvals')}
+                    className="flex w-full items-center justify-between rounded-[12px] border border-[#E5E7EB] bg-white px-3 py-2.5 text-left hover:border-[#2563EB]/30 hover:bg-[#EFF6FF]"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-[13px] font-semibold text-[#0F172A]">{item.employee || 'Leave request'}</p>
+                      <p className="text-[11px] text-[#64748B]">{item.type || 'Leave'} · {item.stage || item.status || 'Pending'}</p>
+                    </div>
+                    <p className="shrink-0 text-[11px] font-semibold text-[#2563EB]">{item.days ? `${item.days}d` : 'Open'}</p>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </EssCard>
         </section>
       ) : null}

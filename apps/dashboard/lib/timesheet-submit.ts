@@ -6,6 +6,7 @@ import {
   applyNightPaperClock,
   isDayRateTimesheetEmployeeCode,
   isManualOffshoreLine,
+  isTimesheetInApprovalCapture,
   maxProductiveHoursFromBiometric,
   reconcileTimesheetLineHours,
   resolveLineAttendanceDuration,
@@ -35,6 +36,7 @@ import {
   resolveOvertimeAuthorizationsForBooking,
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
+import { canonicalProjectManagerForCode, withCanonicalProjectManager } from '@/lib/timesheet-canonical-project-managers';
 
 const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string | null): TimesheetDayContext => ({
   date,
@@ -243,21 +245,29 @@ export const resolveProjectManagerForSubmission = (lines: TimesheetLine[], proje
   }
   const missingProjectManagers = [...hoursByProject.keys()].filter((projectCode) => {
     const project = projects.find((item) => item.code.toLowerCase() === projectCode.toLowerCase());
-    return !project?.projectManager?.trim();
+    const manager = canonicalProjectManagerForCode(projectCode) || project?.projectManager?.trim();
+    return !manager;
   });
   if (missingProjectManagers.length) {
     throw new Error(`Project Manager is required before submission for: ${missingProjectManagers.join(', ')}.`);
   }
   const primaryProjectCode = [...hoursByProject.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
   if (!primaryProjectCode) return null;
-  const project = projects.find((item) => item.code.toLowerCase() === primaryProjectCode.toLowerCase());
+  const project = withCanonicalProjectManager(
+    projects.find((item) => item.code.toLowerCase() === primaryProjectCode.toLowerCase())
+    || { code: primaryProjectCode, name: primaryProjectCode, projectManager: canonicalProjectManagerForCode(primaryProjectCode) },
+  );
   if (!project) {
     throw new Error(`Project ${primaryProjectCode} is not available in the project catalog.`);
   }
+  const projectManager = canonicalProjectManagerForCode(project.code) || String(project.projectManager || '').trim();
+  if (!projectManager) {
+    throw new Error(`Project Manager is required before submission for: ${primaryProjectCode}.`);
+  }
   return {
     projectCode: project.code,
-    projectName: project.name,
-    projectManager: project.projectManager.trim(),
+    projectName: project.name || primaryProjectCode,
+    projectManager,
   };
 };
 
@@ -306,12 +316,27 @@ export async function submitTimesheetForApproval(input: {
   const persist = input.persist !== false;
   await requireOpenPeriod(header.timesheetDate);
   requireEditableTimesheet(header);
+  if (isTimesheetInApprovalCapture(header.status)) {
+    header.workflowHistory = [
+      ...(header.workflowHistory || []),
+      {
+        stage: 'Supervisor',
+        decision: 'Returned',
+        by: input.actor,
+        actedAt: new Date().toISOString(),
+        comment: 'Recalled to Draft so Review & Submit can restart supervisor approval.',
+      },
+    ];
+    header.status = 'Draft';
+    header.currentApprovalStage = null;
+    header.currentApprover = null;
+  }
   if (normalizeTimesheetStatus(header.status) !== 'Draft') {
     throw new Error(`This timesheet is currently ${normalizeTimesheetStatus(header.status).replace(/_/g, ' ')} and is not a draft.`);
   }
 
   const overtimeBooking = resolveOvertimeBookingOptions();
-  const projects = input.projects || await readProjects();
+  const projects = (input.projects || await readProjects()).map(withCanonicalProjectManager);
   const holidayDates = input.holidayDates || await getPayrollPublicHolidayDates();
   if (input.shiftLabel) header.shiftLabel = String(input.shiftLabel);
   const dayContext = dayContextFor(header.timesheetDate, holidayDates, header.shiftLabel);

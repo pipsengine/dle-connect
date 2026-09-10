@@ -70,4 +70,9 @@ const absent = ensureClockedLinesHaveProjectAllocation(
 );
 assert.equal(absent.bookedCount, 0);
 
+assert.equal(
+  resolveBookableTimesheetProject([{ id: 'p-dl0062', code: 'DL0062', name: 'Agege', projectManager: '', status: 'Active' }])?.code,
+  'DL0062',
+);
+
 console.log('timesheet-line-defaults auto-book tests passed');

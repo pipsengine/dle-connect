@@ -1515,7 +1515,7 @@ export async function GET(request: Request) {
         const onLeave = directReports.filter((item) => /leave/i.test(compact(item.status))).length;
         return {
           teamSize,
-          pendingApprovals: leaveApprovals.length + (performanceWorkspace?.metrics.pendingManagerReviews || 0),
+          pendingApprovals: leaveApprovals.length,
           onLeave,
           missingTimesheets: Math.max(0, directReports.length - Math.min(directReports.length, essContext.attendance.records.length)),
           teamAttendancePct: essContext.attendance.monthRate || 0,

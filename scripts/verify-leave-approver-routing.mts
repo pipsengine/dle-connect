@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import type { DleEmployeeDirectoryRow } from '../apps/dashboard/lib/dle-enterprise-db';
 import {
   employeeRequestMatches,
+  isLeaveHrActor,
   pendingLeaveApprovalsForActor,
   resolveLineManagerForEmployee,
   type EssLeaveRequest,
@@ -74,5 +75,74 @@ const approvals = pendingLeaveApprovalsForActor(
 );
 assert.equal(approvals.length, 1, 'P0146 should see NYSC0032 pending leave in approval queue');
 assert.equal(approvals[0]?.approverKind, 'line-manager');
+
+const p0442: DleEmployeeDirectoryRow = {
+  employeeId: 'P0442',
+  employeeCode: 'P0442',
+  fullName: 'Mrs TEMITOPE ABIODUN ODULATE',
+  department: 'CORPORATE OFFICE',
+  jobTitle: 'GMO - GENERAL MANAGER, OPERATIONS',
+  status: 'Active',
+  employmentType: 'Permanent',
+};
+const p0442Report: DleEmployeeDirectoryRow = {
+  employeeId: 'C9999',
+  employeeCode: 'C9999',
+  fullName: 'Test Report',
+  department: 'OPERATIONS',
+  jobTitle: 'Supervisor',
+  status: 'Active',
+  employmentType: 'Contract',
+  managerName: '0442 - Mrs TEMITOPE ABIODUN ODULATE',
+};
+const p0442Request: EssLeaveRequest = {
+  ...pendingRequest,
+  id: 'ess-p0442-report',
+  employeeId: 'C9999',
+  lineManagerEmployeeId: '0442',
+  lineManagerName: '0442 - Mrs TEMITOPE ABIODUN ODULATE',
+};
+const p0442Queue = pendingLeaveApprovalsForActor(
+  p0442,
+  [p0442Request],
+  [p0442, p0442Report],
+  ['Manager'],
+  false,
+);
+assert.equal(approvals.length, 1, 'P0146 queue still has one item');
+assert.equal(p0442Queue.length, 1, 'P0442 should see leave when the request stores unpadded 0442');
+assert.equal(p0442Queue[0]?.approverKind, 'line-manager');
+
+const hrManager: DleEmployeeDirectoryRow = {
+  employeeId: 'P0432',
+  employeeCode: 'P0432',
+  fullName: 'Ms OLAMIDE VICTORIA BADETAN',
+  department: 'HUMAN RESOURCES',
+  jobTitle: 'HR MANAGER',
+  designation: 'HR MANAGER',
+  status: 'Active',
+  employmentType: 'Permanent',
+};
+const hrReviewRequest: EssLeaveRequest = {
+  ...pendingRequest,
+  id: 'ess-hr-review',
+  status: 'HR Review',
+};
+assert.equal(isLeaveHrActor(['HR Administrator'], 'HR MANAGER'), true);
+assert.equal(isLeaveHrActor(['Manager'], 'HR MANAGER'), true);
+assert.equal(isLeaveHrActor(['Manager'], 'HRA - HR ASSISTANT'), false);
+const hrQueueByRole = pendingLeaveApprovalsForActor(hrManager, [hrReviewRequest], employees, ['HR Administrator'], false);
+const hrQueueByTitle = pendingLeaveApprovalsForActor(hrManager, [hrReviewRequest], employees, ['Manager'], false);
+assert.equal(hrQueueByRole.length, 1, 'HR Administrator role should see HR Review queue');
+assert.equal(hrQueueByTitle.length, 1, 'Job title HR MANAGER should see HR Review queue');
+assert.equal(hrQueueByRole[0]?.approverKind, 'hr');
+
+const missingRequesterRequest: EssLeaveRequest = {
+  ...hrReviewRequest,
+  id: 'ess-missing-requester',
+  employeeId: 'UNKNOWN-EMP',
+};
+const hrQueueMissingRequester = pendingLeaveApprovalsForActor(hrManager, [missingRequesterRequest], employees, ['HR Administrator'], false);
+assert.equal(hrQueueMissingRequester.length, 1, 'HR Review items must still appear when the requester is not in the directory');
 
 console.log('Leave approver routing checks passed.');

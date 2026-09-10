@@ -20,6 +20,7 @@ import {
   resolvePrimaryProjectCode,
   isManualOffshoreLine,
 } from '@/lib/timesheet-entry-shared';
+import { withCanonicalProjectManager } from '@/lib/timesheet-canonical-project-managers';
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
 
@@ -33,7 +34,7 @@ export type TimesheetBookableProject = {
 
 /** Prefer a managed Active/Approved/Open project for attendance-backed booking (no hardcoded project code). */
 export const resolveBookableTimesheetProject = (projects: TimesheetBookableProject[]) => {
-  const bookable = projects.filter((project) => {
+  const bookable = projects.map(withCanonicalProjectManager).filter((project) => {
     const status = String(project.status || 'Active');
     if (!['Active', 'Approved', 'Open'].includes(status)) return false;
     if (isIdleTimeProjectCode(project.code)) return false;

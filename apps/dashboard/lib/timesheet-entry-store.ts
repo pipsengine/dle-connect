@@ -9,6 +9,7 @@ import { normalizePayrollMatchKey, readActiveSagePayrollEmployeeKeys, type SageP
 import { approvedPaidLeaveForDate } from '@/lib/leave-management-store';
 import { assignmentMatchesSupervisor, readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
 import { extractSupervisorEmployeeCode, normalizeTimesheetLocationLabel, supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
+import { canonicalProjectManagerForCode, withCanonicalProjectManager } from '@/lib/timesheet-canonical-project-managers';
 import {
   DAILY_BREAK_HOURS,
   buildLeaveIdleTimeAllocation,
@@ -1315,7 +1316,7 @@ export async function readProjects(): Promise<Project[]> {
       tasks.push({ id: row.Id, name: row.Name, activityId: row.ActivityId ?? undefined, activityName: row.ActivityName ?? undefined });
       tasksByProject.set(row.ProjectId, tasks);
     }
-    return projectsResult.recordset.map((row) => ({
+    const projects = projectsResult.recordset.map((row) => withCanonicalProjectManager({
       id: row.Id,
       code: row.Code,
       name: row.Name,
@@ -1325,19 +1326,39 @@ export async function readProjects(): Promise<Project[]> {
       status: row.Status,
       tasks: tasksByProject.get(row.Id) || [],
     }));
+    try {
+      await persistCanonicalTimesheetProjectManagers(pool, projects);
+    } catch (error) {
+      console.warn('[Timesheet] Canonical project manager persist skipped:', error instanceof Error ? error.message : error);
+    }
+    return projects;
   } catch {
     return projectCatalog
       .filter((item) => item.kind === 'project' || item.kind === 'internal')
-      .map((item) => ({
+      .map((item) => withCanonicalProjectManager({
         id: `fallback-${item.code.toLowerCase()}`,
         code: item.code,
         name: item.name,
         clientName: item.client || '',
         site: item.client || item.phase,
         projectManager: '',
-        status: 'Active',
+        status: 'Active' as const,
         tasks: [{ id: `task-${item.code.toLowerCase()}`, name: item.task }],
       }));
+  }
+}
+
+async function persistCanonicalTimesheetProjectManagers(pool: sql.ConnectionPool, projects: Project[]) {
+  for (const project of projects) {
+    const canonical = canonicalProjectManagerForCode(project.code);
+    if (!canonical) continue;
+    await pool.request()
+      .input('Code', sql.NVarChar(50), project.code)
+      .input('ProjectManager', sql.NVarChar(220), canonical)
+      .query(`
+UPDATE [hris].[TimesheetProjects]
+SET [ProjectManager]=@ProjectManager, [UpdatedAt]=SYSUTCDATETIME()
+WHERE [Code]=@Code AND ISNULL([ProjectManager], N'') <> @ProjectManager`);
   }
 }
 
@@ -1353,7 +1374,7 @@ export async function writeProjects(projects: Project[]) {
         .input('Name', sql.NVarChar(255), project.name)
         .input('ClientName', sql.NVarChar(220), project.clientName || null)
         .input('Site', sql.NVarChar(160), project.site)
-        .input('ProjectManager', sql.NVarChar(220), project.projectManager || null)
+        .input('ProjectManager', sql.NVarChar(220), withCanonicalProjectManager(project).projectManager || null)
         .input('Status', sql.NVarChar(40), project.status)
         .query(`
 MERGE [hris].[TimesheetProjects] AS target
@@ -1386,6 +1407,7 @@ export async function upsertProject(project: Project): Promise<Project> {
   const clientName = project.clientName?.trim() || '';
   const site = project.site.trim();
   const status = project.status || 'Active';
+  const projectManager = canonicalProjectManagerForCode(code) || project.projectManager?.trim() || '';
   if (!code) throw new Error('Project code is required.');
   if (!name) throw new Error('Project name is required.');
   if (!clientName) throw new Error('Client name is required.');
@@ -1417,7 +1439,7 @@ WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[Site],[SourceSystem]) VALUES (
       .input('Name', sql.NVarChar(255), name)
       .input('ClientName', sql.NVarChar(220), clientName)
       .input('Site', sql.NVarChar(160), site)
-      .input('ProjectManager', sql.NVarChar(220), project.projectManager?.trim() || null)
+      .input('ProjectManager', sql.NVarChar(220), projectManager || null)
       .input('Status', sql.NVarChar(40), status)
       .query(`
 MERGE [hris].[TimesheetProjects] AS target
@@ -1449,7 +1471,7 @@ WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[ClientName],[Site],[ProjectMan
     name,
     clientName,
     site,
-    projectManager: project.projectManager?.trim() || '',
+    projectManager,
     status,
     tasks: project.tasks?.length ? project.tasks : [{ id: `task-${id}`, name: 'General Project Work' }],
   };
