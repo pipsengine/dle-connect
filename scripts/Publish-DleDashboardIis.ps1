@@ -261,11 +261,33 @@ function Remove-PathWithRetry {
     return
   }
 
+  if (Test-IsDurablePaymentAttachmentsPath -TargetDirectory $TargetDirectory) {
+    Write-Warning "Refusing to delete durable payment attachments at $TargetDirectory"
+    return
+  }
+
+  $extendedPath = Get-ExtendedLengthPath -Path $TargetDirectory
+
   for ($Attempt = 1; $Attempt -le $Attempts; $Attempt++) {
     try {
-      Remove-Item -LiteralPath $TargetDirectory -Recurse -Force -ErrorAction Stop
+      Remove-Item -LiteralPath $extendedPath -Recurse -Force -ErrorAction Stop
       return
     } catch {
+      $originalError = $_.Exception.Message
+      $robocopy = Get-Command robocopy.exe -ErrorAction SilentlyContinue
+      if ($robocopy) {
+        $emptyDir = Join-Path $env:TEMP ("dle-publish-empty-" + [guid]::NewGuid().ToString("N"))
+        try {
+          New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
+          & robocopy.exe $emptyDir $TargetDirectory '/MIR' '/R:1' '/W:1' '/NFL' '/NDL' '/NJH' '/NJS' '/NP' '/XJ' | Out-Null
+          Remove-Item -LiteralPath $extendedPath -Recurse -Force -ErrorAction Stop
+          return
+        } catch {
+          # Fall through to retry / final error.
+        } finally {
+          Remove-Item -LiteralPath $emptyDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+      }
       if ($AttemptStopLocks -and $Attempt -eq 1 -and (Test-UnderPublishSitePath -TargetDirectory $TargetDirectory)) {
         Stop-PublishTargetLocks -TargetDirectory $script:ResolvedOutputPath
       }
@@ -285,13 +307,44 @@ Optional manual stop (run as Administrator):
   Import-Module WebAdministration
   Get-Website | Where-Object { `$_.physicalPath -like '*deployment\iis\site*' } | ForEach-Object { Stop-WebAppPool `$_.applicationPool; Stop-Website `$_.Name }
 
-Original error: $($_.Exception.Message)
+Original error: $originalError
 "@
       }
 
       Start-Sleep -Seconds $DelaySeconds
     }
   }
+}
+
+function Get-DurablePaymentAttachmentsPath {
+  return Get-NormalizedDirectoryPath -TargetDirectory (Join-Path $RepoRoot "data\finance\payment-attachments")
+}
+
+function Test-IsDurablePaymentAttachmentsPath {
+  param([Parameter(Mandatory = $true)][string]$TargetDirectory)
+
+  if ([string]::IsNullOrWhiteSpace($TargetDirectory)) {
+    return $false
+  }
+
+  try {
+    return (Get-NormalizedDirectoryPath -TargetDirectory $TargetDirectory) -eq (Get-DurablePaymentAttachmentsPath)
+  } catch {
+    return $false
+  }
+}
+
+function Get-ExtendedLengthPath {
+  param([Parameter(Mandatory = $true)][string]$Path)
+
+  $full = [System.IO.Path]::GetFullPath($Path)
+  if ($full.StartsWith('\\?\')) {
+    return $full
+  }
+  if ($full.StartsWith('\\')) {
+    return '\\?\UNC\' + $full.TrimStart('\')
+  }
+  return '\\?\' + $full
 }
 
 function Copy-DirectoryContents {
@@ -305,12 +358,76 @@ function Copy-DirectoryContents {
     throw "Required source path was not found: $SourcePath"
   }
 
+  # Durable attachment storage is live finance evidence. Never replace it by wipe-and-copy.
+  if (Test-IsDurablePaymentAttachmentsPath -TargetDirectory $DestinationPath) {
+    Merge-DirectoryContents -SourcePath $SourcePath -DestinationPath $DestinationPath
+    return
+  }
+
   if (Test-Path -LiteralPath $DestinationPath) {
     Remove-PathWithRetry -TargetDirectory $DestinationPath
   }
 
   New-Item -ItemType Directory -Path $DestinationPath -Force | Out-Null
   Copy-TreeSafe -SourcePath $SourcePath -DestinationPath $DestinationPath -ExcludeDirectoryNames $ExcludeDirectoryNames
+}
+
+function Merge-DirectoryContents {
+  param(
+    [Parameter(Mandatory = $true)][string]$SourcePath,
+    [Parameter(Mandatory = $true)][string]$DestinationPath
+  )
+
+  if (-not (Test-Path -LiteralPath $SourcePath)) {
+    return
+  }
+
+  New-Item -ItemType Directory -Path $DestinationPath -Force | Out-Null
+  $sourceFull = [System.IO.Path]::GetFullPath($SourcePath).TrimEnd('\', '/')
+  $destFull = [System.IO.Path]::GetFullPath($DestinationPath).TrimEnd('\', '/')
+  if ($sourceFull.ToLowerInvariant() -eq $destFull.ToLowerInvariant()) {
+    return
+  }
+
+  $robocopy = Get-Command robocopy.exe -ErrorAction SilentlyContinue
+  if ($robocopy) {
+    # Copy missing files only. Do not delete destination files and do not clobber existing ones.
+    $args = @(
+      $sourceFull,
+      $destFull,
+      '/E',
+      '/COPY:DAT',
+      '/R:1',
+      '/W:1',
+      '/NFL',
+      '/NDL',
+      '/NJH',
+      '/NJS',
+      '/NP',
+      '/XJ',
+      '/XC',
+      '/XN',
+      '/XO'
+    )
+    & robocopy.exe @args | Out-Null
+    $code = $LASTEXITCODE
+    if ($code -ge 8) {
+      throw "Merge copy failed (robocopy exit $code) from $sourceFull to $destFull"
+    }
+    return
+  }
+
+  Get-ChildItem -LiteralPath $sourceFull -Force -ErrorAction SilentlyContinue | ForEach-Object {
+    $target = Join-Path $destFull $_.Name
+    if ($_.PSIsContainer) {
+      Merge-DirectoryContents -SourcePath $_.FullName -DestinationPath $target
+      return
+    }
+    if (Test-Path -LiteralPath $target) {
+      return
+    }
+    Copy-Item -LiteralPath $_.FullName -Destination $target -Force
+  }
 }
 
 function Test-IsReparsePoint {
@@ -610,7 +727,7 @@ try {
         Where-Object { $_.Name -ne '.gitkeep' -and $_.Name -ne 'README.md' })
       if ($legacyFiles.Count -gt 0) {
         Write-Host "Pre-publish migrate $($legacyFiles.Count) attachment file(s): $LegacyRoot -> $DurableAttachments"
-        Copy-DirectoryContents -SourcePath $LegacyRoot -DestinationPath $DurableAttachments
+        Merge-DirectoryContents -SourcePath $LegacyRoot -DestinationPath $DurableAttachments
       }
     }
   }
@@ -684,7 +801,7 @@ try {
         Where-Object { $_.Name -ne '.gitkeep' -and $_.Name -ne 'README.md' }
       if ($legacyFiles) {
         Write-Host "Migrating $($legacyFiles.Count) legacy attachment file(s) from $LegacyRoot -> $DurableAttachments"
-        Copy-DirectoryContents -SourcePath $LegacyRoot -DestinationPath $DurableAttachments
+        Merge-DirectoryContents -SourcePath $LegacyRoot -DestinationPath $DurableAttachments
       }
     }
   }
