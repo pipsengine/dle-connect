@@ -1,6 +1,6 @@
 import sql from 'mssql';
 import { getDleEnterpriseDbPool, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
-import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { payrollDataSourceInfo, readPayrollEmployees, type PayrollEmployeeSource } from '@/lib/payroll-employee-source';
 import { calculatePayrollOvertime, type OvertimeDayType } from '@/lib/payroll-earnings-engine';
 import {
   isTimesheetPayrollReadyStatus,
@@ -477,11 +477,24 @@ const initialStatusFor = (payrollReady: boolean, issues: string[]): OvertimeStat
   return 'Submitted';
 };
 
+const unavailableEmployeeSource = (warning: string): PayrollEmployeeSource => ({
+  employees: [],
+  source: 'Local HRIS payroll cache',
+  databaseAvailable: false,
+  warning,
+});
+
 const buildCandidateRecords = async () => {
   const [employeeSource, timesheetData, holidayDates] = await Promise.all([
     readPayrollEmployees(),
-    readTimesheetData(),
-    getPayrollPublicHolidayDates(),
+    readTimesheetData({ softFail: true }).catch(() => ({ headers: [] as TimesheetHeader[], lines: [] as TimesheetLine[] })),
+    getPayrollPublicHolidayDates().catch((error) => {
+      console.warn(
+        '[OvertimeManagement] Public holiday calendar skipped:',
+        error instanceof Error ? error.message : error,
+      );
+      return [] as string[];
+    }),
   ]);
   const employeeByKey = new Map<string, DleEmployeeDirectoryRow>();
   for (const employee of employeeSource.employees) {
@@ -728,26 +741,85 @@ export const validateOvertimeAction = (action: OvertimeAction, role: OvertimeRol
   }
 };
 
+const emptyAuthorizationSetup = (): OvertimeAuthorizationSetup => ({
+  projects: [],
+  workCenters: [],
+  supervisors: [],
+  mdApprover: null,
+  gmOperations: null,
+  hrApprover: null,
+});
+
+export const emptyOvertimeManagementPayload = (roleInput?: string | null, warning?: string | null) => {
+  const role = normalizeOvertimeRole(roleInput);
+  return {
+    generatedAt: new Date().toISOString(),
+    source: 'Overtime Management',
+    dataSource: payrollDataSourceInfo(unavailableEmployeeSource(warning || 'Overtime source data is temporarily unavailable.')),
+    role,
+    permissions: permissionsFor(role),
+    summary: {
+      records: 0,
+      submitted: 0,
+      supervisorApproved: 0,
+      hrApproved: 0,
+      payrollReady: 0,
+      payrollPosted: 0,
+      returned: 0,
+      rejected: 0,
+      blocked: 0,
+      payableHours: 0,
+      grossPay: 0,
+      pendingApprovals: 0,
+    },
+    filterOptions: {
+      statuses: ['Draft', 'Submitted', 'Supervisor Approved', 'HR Approved', 'Payroll Ready', 'Payroll Posted', 'Returned', 'Rejected', 'Blocked'] as OvertimeStatus[],
+      departments: [] as string[],
+      locations: [] as string[],
+      dayTypes: ['Weekday', 'Saturday', 'Sunday', 'Public Holiday', 'Night'] as OvertimeDayType[],
+    },
+    authorizationSetup: emptyAuthorizationSetup(),
+    records: [] as OvertimeRecord[],
+    holidayDates: [] as string[],
+  };
+};
+
 export const readOvertimeManagementPayload = async (roleInput?: string | null) => {
   const role = normalizeOvertimeRole(roleInput);
   const [
-    { employeeSource, records: candidates },
+    candidateResult,
     projects,
     workCenters,
     supervisorAssignments,
   ] = await Promise.all([
-    buildCandidateRecords(),
+    buildCandidateRecords().catch(async (error) => {
+      console.warn(
+        '[OvertimeManagement] Timesheet overtime candidates skipped:',
+        error instanceof Error ? error.message : error,
+      );
+      const employeeSource = await readPayrollEmployees().catch((sourceError) =>
+        unavailableEmployeeSource(sourceError instanceof Error ? sourceError.message : 'Employee source unavailable.'),
+      );
+      return { employeeSource, records: [] as OvertimeRecord[] };
+    }),
     readProjects().catch(() => []),
     readTimesheetWorkCenters().catch(() => []),
     readSupervisorAssignments().catch(() => []),
   ]);
+  const { employeeSource, records: candidates } = candidateResult;
   await upsertCandidates(candidates).catch((error) => {
     console.warn(
       '[OvertimeManagement] Timesheet candidate sync skipped:',
       error instanceof Error ? error.message : error,
     );
   });
-  const records = await readRecords();
+  const records = await readRecords().catch((error) => {
+    console.warn(
+      '[OvertimeManagement] Existing overtime records skipped:',
+      error instanceof Error ? error.message : error,
+    );
+    return [] as OvertimeRecord[];
+  });
   const activeEmployees = employeeSource.employees.filter((employee) => !['Resigned', 'Terminated', 'Retired', 'Inactive'].includes(clean(employee.status)));
   const employeeByCode = new Map(activeEmployees.map((employee) => [clean(employee.employeeCode).toLowerCase(), employee]));
   const uniqueSupervisors = new Map<string, OvertimeAuthorizationOption>();
@@ -884,6 +956,7 @@ export const readOvertimeManagementPayload = async (roleInput?: string | null) =
     },
     authorizationSetup,
     records,
+    holidayDates: await getPayrollPublicHolidayDates().catch(() => [] as string[]),
   };
 };
 

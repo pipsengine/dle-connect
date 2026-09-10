@@ -7,6 +7,7 @@ import {
   readOnlyClass,
 } from './OvertimeManagementEnterpriseView';
 import { OvertimeFormField } from './overtime-management-ui';
+import { hasBiometricClockIn, overtimeDayTypeForDate } from '@/lib/timesheet-entry-shared';
 
 type ComboOption = { value: string; label: string; sublabel?: string };
 
@@ -303,6 +304,7 @@ type AuthorizationBookingLine = {
   hoursByProject: Record<string, number>;
   biometricDuration: number;
   usedHours: number;
+  clockIn: string | null;
   dayType: string;
   selected: boolean;
 };
@@ -338,9 +340,35 @@ type Payload = {
   };
   records: OvertimeRecord[];
   authorizationRequests: OvertimeAuthorizationRequest[];
+  holidayDates?: string[];
 };
 
 type ApiResponse<T> = { status: 'success' | 'error'; data?: T; error?: string };
+
+const humanizeOvertimeClientError = (message: string | undefined, status: number) => {
+  const text = String(message || '');
+  if (/<!DOCTYPE|Unexpected token ['"]<|is not valid JSON/i.test(text) || status === 502 || status === 504) {
+    return 'Overtime Management could not load data from the server. Please refresh. If this continues, the overtime service may still be starting.';
+  }
+  return text || `Overtime management failed (${status || 'unknown'}).`;
+};
+
+async function parseApiResponse<T>(res: Response): Promise<ApiResponse<T>> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as ApiResponse<T>;
+  } catch {
+    throw new Error(humanizeOvertimeClientError(text.slice(0, 80), res.status));
+  }
+}
+
+async function readOvertimeApi<T>(res: Response): Promise<T> {
+  const json = await parseApiResponse<T>(res);
+  if (!res.ok || json.status !== 'success' || !json.data) {
+    throw new Error(humanizeOvertimeClientError(json.error, res.status));
+  }
+  return json.data;
+}
 
 const roles: Role[] = ['Employee', 'Supervisor', 'HR Officer', 'HR Manager', 'Payroll Officer', 'Payroll Manager', 'Finance Controller', 'Executive Management', 'Administrator', 'Super Administrator'];
 const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 });
@@ -426,9 +454,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
     setError('');
     try {
       const res = await fetch('/api/hris/workforce-management/overtime-management', { headers: { 'x-hris-role': role }, cache: 'no-store' });
-      const json = (await res.json()) as ApiResponse<Payload>;
-      if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Overtime management failed (${res.status})`);
-      const data = json.data;
+      const data = await readOvertimeApi<Payload>(res);
       setPayload(data);
       setSelectedId((current) => current || data.records[0]?.id || '');
     } catch (event) {
@@ -447,7 +473,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
     void (async () => {
       try {
         const res = await fetch('/api/current-user?context=hris', { cache: 'no-store' });
-        const json = await res.json();
+        const json = await parseApiResponse<{ rbacRole?: string }>(res);
         const resolved = roles.find((item) => item.toLowerCase() === String(json?.data?.rbacRole || '').toLowerCase());
         if (!cancelled && resolved) setRole(resolved);
       } catch {
@@ -487,8 +513,8 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
         headers: { 'content-type': 'application/json', 'x-hris-role': role },
         body: JSON.stringify({ id: recordId, action, actor: role, comment }),
       });
-      const json = (await res.json()) as ApiResponse<Payload>;
-      if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `${actionLabels[action]} failed`);
+      const json = await parseApiResponse<Payload>(res);
+      if (!res.ok || json.status !== 'success' || !json.data) throw new Error(humanizeOvertimeClientError(json.error, res.status) || `${actionLabels[action]} failed`);
       setPayload(json.data);
       setToast(`${actionLabels[action]} completed.`);
       setComment('');
@@ -539,8 +565,8 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
           reason: requestForm.reason,
         }),
       });
-      const json = (await res.json()) as ApiResponse<Payload>;
-      if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || 'Unable to create overtime request.');
+      const json = await parseApiResponse<Payload>(res);
+      if (!res.ok || json.status !== 'success' || !json.data) throw new Error(humanizeOvertimeClientError(json.error, res.status) || 'Unable to create overtime request.');
       setPayload(json.data);
       setSelectedId(json.data.records[0]?.id || '');
       setToast('Overtime request created.');
@@ -567,41 +593,16 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
     if (authorizationForm.projectCodes.length <= 1) return Number(line.overtimeHours || 0);
     return authorizationForm.projectCodes.reduce((sum, code) => sum + Number(line.hoursByProject[code] || 0), 0);
   };
-  const availableOtHours = (line: AuthorizationBookingLine) => Math.max(0, Math.round((Number(line.biometricDuration || 0) - Number(line.usedHours || 0)) * 100) / 100);
-  const roundHours = (value: number) => Math.max(0, Math.round(Number(value || 0) * 100) / 100);
-  const isDayRateLine = (line: AuthorizationBookingLine) => /^C\d+/i.test(String(line.employeeCode || '').trim());
+  const canBookOt = (line: AuthorizationBookingLine) => hasBiometricClockIn(line.clockIn);
 
-  /** Cap OT to biometric headroom (same pattern as standard timesheet booking). Day-rate C-codes are not capped while devices are incomplete. */
+  /** Zero OT for anyone who did not clock in. Hours are not capped when they did. */
   const capLineOtToHeadroom = (line: AuthorizationBookingLine): AuthorizationBookingLine => {
-    if (isDayRateLine(line)) return line;
-    if (!(line.biometricDuration > 0)) return line;
-    const available = availableOtHours(line);
-    const total = lineOtTotal(line);
-    if (total <= available + 0.001) return line;
-    if (available <= 0) {
-      const cleared = Object.fromEntries(Object.keys(line.hoursByProject || {}).map((code) => [code, 0]));
-      return { ...line, overtimeHours: 0, hoursByProject: cleared, selected: false };
-    }
-    if (authorizationForm.projectCodes.length <= 1) {
-      return { ...line, overtimeHours: available, selected: available > 0 };
-    }
-    const scale = available / total;
-    const hoursByProject = { ...line.hoursByProject };
-    let allocated = 0;
-    const codes = authorizationForm.projectCodes;
-    codes.forEach((code, index) => {
-      if (index === codes.length - 1) {
-        hoursByProject[code] = roundHours(available - allocated);
-      } else {
-        const next = roundHours(Number(line.hoursByProject[code] || 0) * scale);
-        hoursByProject[code] = next;
-        allocated = roundHours(allocated + next);
-      }
-    });
-    return { ...line, hoursByProject, overtimeHours: available, selected: available > 0 };
+    if (canBookOt(line)) return line;
+    const cleared = Object.fromEntries(Object.keys(line.hoursByProject || {}).map((code) => [code, 0]));
+    return { ...line, overtimeHours: 0, hoursByProject: cleared, selected: false };
   };
 
-  const bookedLines = employeeLines.filter((line) => line.selected && lineOtTotal(line) > 0);
+  const bookedLines = employeeLines.filter((line) => line.selected && lineOtTotal(line) > 0 && canBookOt(line));
   const bookedHoursTotal = bookedLines.reduce((sum, line) => sum + lineOtTotal(line), 0);
 
   const matchesEmployeeBookSearch = (line: AuthorizationBookingLine, q: string) => {
@@ -643,14 +644,20 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
       setToast(`No employees match "${raw}".`);
       return;
     }
-    const matchCodes = new Set(matches.map((line) => line.employeeCode));
+    const bookable = matches.filter(canBookOt);
+    if (!bookable.length) {
+      setToast(`Matching employee(s) did not clock in — overtime cannot be booked.`);
+      return;
+    }
+    const matchCodes = new Set(bookable.map((line) => line.employeeCode));
     setEmployeeLines((current) => current.map((line) => (
       matchCodes.has(line.employeeCode) ? { ...line, selected: true } : line
     )));
+    const skipped = matches.length - bookable.length;
     setToast(
-      matches.length === 1
-        ? `Selected ${matches[0].employeeName} (${matches[0].employeeCode}).`
-        : `Selected ${matches.length} matching employee(s).`,
+      bookable.length === 1
+        ? `Selected ${bookable[0].employeeName} (${bookable[0].employeeCode}).${skipped ? ` ${skipped} matching employee(s) skipped (no clock-in).` : ''}`
+        : `Selected ${bookable.length} matching employee(s).${skipped ? ` ${skipped} skipped (no clock-in).` : ''}`,
     );
   };
 
@@ -664,33 +671,19 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
       return;
     }
     if (!bookedLines.length) {
-      setError('Book overtime for at least one employee assigned to the supervisor.');
+      const selectedWithoutClock = employeeLines.filter((line) => line.selected && lineOtTotal(line) > 0 && !canBookOt(line));
+      setError(selectedWithoutClock.length
+        ? 'Overtime cannot be booked for employees who did not clock in on biometric.'
+        : 'Book overtime for at least one employee assigned to the supervisor.');
       return;
     }
 
-    const cappedBookedLines = bookedLines.map(capLineOtToHeadroom).filter((line) => lineOtTotal(line) > 0);
-    const cappedNotices = bookedLines
-      .map((line) => {
-        const capped = capLineOtToHeadroom(line);
-        const before = lineOtTotal(line);
-        const after = lineOtTotal(capped);
-        if (line.biometricDuration > 0 && before > after + 0.001) {
-          return `${line.employeeName} (${line.employeeCode}): ${before}h → ${after}h`;
-        }
-        return null;
-      })
-      .filter(Boolean) as string[];
+    const cappedBookedLines = bookedLines.map(capLineOtToHeadroom).filter((line) => lineOtTotal(line) > 0 && canBookOt(line));
 
     if (!cappedBookedLines.length) {
-      setError('No overtime can be booked — biometric headroom is fully used for the selected employees.');
+      setError('Overtime cannot be booked without a biometric clock-in for the selected employees.');
       return;
     }
-
-    // Reflect capped hours in the booking grid (like timesheet auto-cap).
-    setEmployeeLines((current) => current.map((line) => {
-      const capped = cappedBookedLines.find((item) => item.employeeCode === line.employeeCode);
-      return capped || (bookedLines.some((item) => item.employeeCode === line.employeeCode) ? capLineOtToHeadroom(line) : line);
-    }));
 
     const cappedHoursTotal = cappedBookedLines.reduce((sum, line) => sum + lineOtTotal(line), 0);
 
@@ -751,13 +744,10 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
           requestedHeadcount: cappedBookedLines.length,
         }),
       });
-      const json = (await res.json()) as ApiResponse<Payload>;
-      if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || 'Unable to submit overtime authorization.');
+      const json = await parseApiResponse<Payload>(res);
+      if (!res.ok || json.status !== 'success' || !json.data) throw new Error(humanizeOvertimeClientError(json.error, res.status) || 'Unable to submit overtime authorization.');
       setPayload(json.data);
-      const capNote = cappedNotices.length
-        ? ` OT capped to biometric headroom for ${cappedNotices.length} employee(s).`
-        : '';
-      setToast(`Submitted ${projectsPayload.length} overtime authorization(s) for ${cappedBookedLines.length} employee(s).${capNote}`);
+      setToast(`Submitted ${projectsPayload.length} overtime authorization(s) for ${cappedBookedLines.length} employee(s).`);
       setAuthOpen(false);
       setEmployeeLines([]);
       setEmployeeBookSearch('');
@@ -793,8 +783,8 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
         headers: { 'content-type': 'application/json', 'x-hris-role': role },
         body: JSON.stringify({ action: `bulk-${decision}-authorization`, ids, actor: role, comment }),
       });
-      const json = (await res.json()) as ApiResponse<Payload>;
-      if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Unable to ${decision} selected authorizations.`);
+      const json = await parseApiResponse<Payload>(res);
+      if (!res.ok || json.status !== 'success' || !json.data) throw new Error(humanizeOvertimeClientError(json.error, res.status) || `Unable to ${decision} selected authorizations.`);
       setPayload(json.data);
       setToast(`${ids.length} overtime authorization(s) ${decision === 'approve' ? 'approved' : 'rejected'}.`);
       setSelectedAuthIds(new Set());
@@ -891,15 +881,21 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
         `/api/hris/workforce-management/overtime-management?attendanceDate=${encodeURIComponent(workDate)}&employeeCodes=${encodeURIComponent(codes)}`,
         { headers: { 'x-hris-role': role }, cache: 'no-store' },
       );
-      const json = (await res.json()) as ApiResponse<{ attendance: Array<{ employeeCode: string; biometricDuration: number; usedHours: number }> }>;
+      const json = await parseApiResponse<{ attendance: Array<{ employeeCode: string; biometricDuration: number; usedHours: number; clockIn?: string | null }> }>(res);
       if (!res.ok || json.status !== 'success' || !json.data) return lines;
       const byCode = new Map(json.data.attendance.map((item) => [item.employeeCode.toLowerCase(), item]));
       return lines.map((line) => {
         const attendance = byCode.get(line.employeeCode.toLowerCase());
+        const clockIn = attendance?.clockIn || null;
+        const canBook = hasBiometricClockIn(clockIn);
         return {
           ...line,
           biometricDuration: Number(attendance?.biometricDuration || 0),
           usedHours: Number(attendance?.usedHours || 0),
+          clockIn,
+          overtimeHours: canBook ? line.overtimeHours : 0,
+          hoursByProject: canBook ? line.hoursByProject : Object.fromEntries(Object.keys(line.hoursByProject || {}).map((code) => [code, 0])),
+          selected: canBook ? line.selected : false,
         };
       });
     } catch {
@@ -922,6 +918,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
       hoursByProject: Object.fromEntries(authorizationForm.projectCodes.map((code) => [code, 0])),
       biometricDuration: 0,
       usedHours: 0,
+      clockIn: null,
       dayType: authorizationForm.overtimeType,
       selected: false,
     }));
@@ -949,37 +946,45 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authorizationForm.workDate, authorizationForm.supervisorCode]);
 
+  useEffect(() => {
+    const nextType = overtimeDayTypeForDate(authorizationForm.workDate, payload?.holidayDates || []);
+    if (!nextType) return;
+    setAuthorizationForm((current) => (current.overtimeType === nextType ? current : { ...current, overtimeType: nextType }));
+  }, [authorizationForm.workDate, payload?.holidayDates]);
+
   const toggleEmployeeLine = (code: string) => {
-    setEmployeeLines((current) => current.map((line) => (line.employeeCode === code ? { ...line, selected: !line.selected } : line)));
+    setEmployeeLines((current) => current.map((line) => {
+      if (line.employeeCode !== code) return line;
+      if (!canBookOt(line)) return { ...line, selected: false };
+      return { ...line, selected: !line.selected };
+    }));
   };
 
   const setEmployeeHours = (code: string, hours: number, projectCode?: string) => {
     setEmployeeLines((current) => current.map((line) => {
       if (line.employeeCode !== code) return line;
-      const available = Math.max(0, Math.round((Number(line.biometricDuration || 0) - Number(line.usedHours || 0)) * 100) / 100);
-      const hasBiometric = Number(line.biometricDuration || 0) > 0;
+      if (!canBookOt(line)) {
+        const cleared = Object.fromEntries(Object.keys(line.hoursByProject || {}).map((key) => [key, 0]));
+        return { ...line, overtimeHours: 0, hoursByProject: cleared, selected: false };
+      }
       if (projectCode) {
-        const otherTotal = Object.entries(line.hoursByProject || {})
-          .filter(([key]) => key !== projectCode)
-          .reduce((sum, [, value]) => sum + Number(value || 0), 0);
-        const maxForProject = hasBiometric ? Math.max(0, Math.round((available - otherTotal) * 100) / 100) : Number(hours || 0);
-        const nextHours = hasBiometric ? Math.min(Math.max(0, Number(hours || 0)), maxForProject) : Math.max(0, Number(hours || 0));
+        const nextHours = Math.max(0, Number(hours || 0));
         const hoursByProject = { ...line.hoursByProject, [projectCode]: nextHours };
         const total = Object.values(hoursByProject).reduce((sum, value) => sum + Number(value || 0), 0);
         return { ...line, hoursByProject, overtimeHours: total, selected: total > 0 ? true : line.selected };
       }
-      const nextHours = hasBiometric
-        ? Math.min(Math.max(0, Number(hours || 0)), available)
-        : Math.max(0, Number(hours || 0));
+      const nextHours = Math.max(0, Number(hours || 0));
       return { ...line, overtimeHours: nextHours, selected: nextHours > 0 ? true : line.selected };
     }));
   };
 
   const toggleAllEmployeeLines = (selected: boolean) => {
     const visibleCodes = new Set(filteredEmployeeLines.map((line) => line.employeeCode));
-    setEmployeeLines((current) => current.map((line) => (
-      visibleCodes.has(line.employeeCode) ? { ...line, selected } : line
-    )));
+    setEmployeeLines((current) => current.map((line) => {
+      if (!visibleCodes.has(line.employeeCode)) return line;
+      if (!canBookOt(line)) return { ...line, selected: false };
+      return { ...line, selected };
+    }));
   };
 
   const actOnAuthorization = async (id: string, decision: 'approve' | 'reject') => {
@@ -992,8 +997,8 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
         headers: { 'content-type': 'application/json', 'x-hris-role': role },
         body: JSON.stringify({ id, action: `${decision}-authorization`, actor: role, comment }),
       });
-      const json = (await res.json()) as ApiResponse<Payload>;
-      if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Unable to ${decision} authorization.`);
+      const json = await parseApiResponse<Payload>(res);
+      if (!res.ok || json.status !== 'success' || !json.data) throw new Error(humanizeOvertimeClientError(json.error, res.status) || `Unable to ${decision} authorization.`);
       setPayload(json.data);
       setToast(`Overtime authorization ${decision === 'approve' ? 'approved' : 'rejected'}.`);
       setComment('');
@@ -1048,7 +1053,10 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
             }))}
           />
         </OvertimeFormField>
-        <OvertimeFormField label="Overtime Type">
+        <OvertimeFormField
+          label="Overtime Type"
+          hint={authorizationForm.overtimeType === 'Public Holiday' ? 'Public holiday — all worked hours are overtime (2×). A biometric clock-in is required; hours are not capped to leftover time.' : undefined}
+        >
           <select value={authorizationForm.overtimeType} onChange={(event) => setAuthorizationForm((current) => ({ ...current, overtimeType: event.target.value }))} className={inputClass}>
             {['Weekday', 'Saturday', 'Sunday', 'Public Holiday', 'Night'].map((item) => (
               <option key={item} value={item}>
@@ -1085,7 +1093,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
       </div>
       {authorizationForm.projectCodes.length > 1 ? (
         <p className="mt-2 text-xs font-medium text-[#64748B]">
-          One authorization request will be created per selected project (each routes to that project&apos;s manager). Set OT hours per project below. Salaried staff are still limited to biometric headroom; day-rate (C-code) staff are not, until all biometric devices are live.
+          One authorization request will be created per selected project (each routes to that project&apos;s manager). Set OT hours per project below. Employees who did not clock in cannot be booked.
         </p>
       ) : null}
 
@@ -1096,7 +1104,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
             <h3 className="text-sm font-bold text-[#0F172A]">Book Overtime for Assigned Employees</h3>
             <p className="text-xs text-[#64748B]">
               {authorizationForm.supervisorCode
-                ? `${employeeLines.length} employee(s) report to ${authorizationForm.supervisorName || authorizationForm.supervisorCode}. Select and set OT hours per employee.`
+                ? `${employeeLines.length} employee(s) report to ${authorizationForm.supervisorName || authorizationForm.supervisorCode}. Select and set OT hours. Employees without a biometric clock-in cannot be booked.`
                 : 'Select a supervisor above to load their assigned employees.'}
             </p>
           </div>
@@ -1167,18 +1175,16 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
                 </thead>
                 <tbody className="divide-y divide-[#EDF2F7]">
                   {filteredEmployeeLines.map((line) => {
-                    const available = availableOtHours(line);
-                    const total = lineOtTotal(line);
-                    const overLimit = !isDayRateLine(line) && line.biometricDuration > 0 && total > available + 0.001;
+                    const bookable = canBookOt(line);
                     return (
-                      <tr key={line.employeeCode} className={line.selected ? 'bg-[#EFF6FF]' : ''}>
+                      <tr key={line.employeeCode} className={line.selected ? 'bg-[#EFF6FF]' : bookable ? '' : 'bg-[#F8FAFC] opacity-80'}>
                         <td className="px-4 py-2">
-                          <input type="checkbox" checked={line.selected} onChange={() => toggleEmployeeLine(line.employeeCode)} className="rounded border-[#CBD5E1]" />
+                          <input type="checkbox" checked={line.selected} disabled={!bookable} onChange={() => toggleEmployeeLine(line.employeeCode)} className="rounded border-[#CBD5E1] disabled:cursor-not-allowed" />
                         </td>
                         <td className="px-4 py-2">
                           <div className="font-semibold text-[#0F172A]">{line.employeeName}</div>
                           <div className="text-xs text-[#64748B]">{line.employeeCode}</div>
-                          {overLimit ? <div className="mt-1 text-[11px] font-semibold text-[#B45309]">Will book available {available}h (capped to biometric headroom)</div> : null}
+                          {!bookable ? <div className="mt-1 text-[11px] font-semibold text-[#B45309]">No biometric clock-in — cannot book OT</div> : null}
                         </td>
                         <td className="px-4 py-2 text-xs text-[#64748B]">{[line.jobTitle, line.department].filter(Boolean).join(' · ') || '—'}</td>
                         <td className="px-4 py-2 text-sm font-semibold text-[#0F172A]">{line.biometricDuration > 0 ? `${line.biometricDuration}h` : '—'}</td>
@@ -1190,10 +1196,10 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
                                 type="number"
                                 min="0"
                                 step="0.5"
-                                max={line.biometricDuration > 0 ? available : undefined}
+                                disabled={!bookable}
                                 value={line.hoursByProject[code] ?? 0}
                                 onChange={(event) => setEmployeeHours(line.employeeCode, Number(event.target.value), code)}
-                                className={`h-9 w-28 rounded-lg border px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 ${overLimit ? 'border-[#FCA5A5]' : 'border-[#E5E7EB]'}`}
+                                className="h-9 w-28 rounded-lg border border-[#E5E7EB] px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 disabled:cursor-not-allowed disabled:bg-[#F8FAFC] disabled:text-[#94A3B8]"
                               />
                             </td>
                           ))
@@ -1203,10 +1209,10 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
                               type="number"
                               min="0"
                               step="0.5"
-                              max={line.biometricDuration > 0 ? available : undefined}
+                              disabled={!bookable}
                               value={line.overtimeHours}
                               onChange={(event) => setEmployeeHours(line.employeeCode, Number(event.target.value))}
-                              className={`h-9 w-28 rounded-lg border px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 ${overLimit ? 'border-[#FCA5A5]' : 'border-[#E5E7EB]'}`}
+                              className="h-9 w-28 rounded-lg border border-[#E5E7EB] px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 disabled:cursor-not-allowed disabled:bg-[#F8FAFC] disabled:text-[#94A3B8]"
                             />
                           </td>
                         )}

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import {
+  availableOvertimeHoursFromAttendance,
+  hasBiometricClockIn,
   isPremiumTimesheetDay,
+  overtimeBaseHoursForDayType,
   overtimeDayTypeForDate,
   overtimePaysHoursAboveStandard,
   resolveTimesheetHours,
@@ -26,6 +29,21 @@ assert.equal(overtimePaysHoursAboveStandard('Weekday'), true);
 assert.equal(overtimePaysHoursAboveStandard('Night'), true);
 assert.equal(overtimePaysHoursAboveStandard('Public Holiday'), false);
 assert.equal(timesheetDayKindLabel('PublicHoliday'), 'Public Holiday');
+
+const eidMaulud = '2026-08-25';
+assert.equal(overtimeDayTypeForDate(eidMaulud, [eidMaulud, ...holidays]), 'Public Holiday');
+assert.equal(overtimeBaseHoursForDayType('Public Holiday'), 0);
+assert.equal(overtimeBaseHoursForDayType('Weekday'), 8);
+assert.equal(availableOvertimeHoursFromAttendance({ biometricDuration: 10.8, usedHours: 6, dayType: 'Public Holiday', clockIn: '07:00' }), Number.POSITIVE_INFINITY);
+assert.equal(availableOvertimeHoursFromAttendance({ biometricDuration: 10.8, usedHours: 6, dayType: 'Weekday', clockIn: '07:00' }), Number.POSITIVE_INFINITY);
+assert.equal(availableOvertimeHoursFromAttendance({ biometricDuration: 0, usedHours: 0, dayType: 'Weekday', clockIn: null }), 0);
+assert.equal(availableOvertimeHoursFromAttendance({ biometricDuration: 0, usedHours: 6, dayType: 'Weekday', employeeCode: 'C2528', clockIn: null }), 0);
+assert.equal(availableOvertimeHoursFromAttendance({ biometricDuration: 8, usedHours: 6, dayType: 'Weekday', employeeCode: 'C2528', clockIn: '07:15' }), Number.POSITIVE_INFINITY);
+assert.equal(hasBiometricClockIn('07:00'), true);
+assert.equal(hasBiometricClockIn('07:15'), true);
+assert.equal(hasBiometricClockIn(null), false);
+assert.equal(hasBiometricClockIn(''), false);
+assert.equal(hasBiometricClockIn('--:--'), false);
 
 const phHours = resolveTimesheetHours({ date: independence, holidayDates: holidays, shiftLabel: '01 (Day)' });
 assert.equal(phHours.kind, 'PublicHoliday');

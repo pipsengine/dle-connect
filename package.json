@@ -47,7 +47,8 @@
     "import:performance-domain-sql": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/import-performance-domain-sql.mts",
     "smoke:performance-domain": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/smoke-performance-domain.mts",
     "smoke:performance-sql": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/smoke-performance-sql.mts",
-    "worker:performance": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/run-performance-workers.mts"
+    "worker:performance": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/run-performance-workers.mts",
+    "submit:booked-draft-timesheets": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" npx --yes tsx --tsconfig apps/dashboard/tsconfig.json scripts/submit-booked-draft-timesheets.mts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

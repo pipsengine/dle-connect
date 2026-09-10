@@ -1,1420 +1,1698 @@
 {
-  "blockedPeriods": [],
+  "fetchedAt": "2026-09-10T07:40:03.196Z",
+  "sourceUrl": "https://calendar.google.com/calendar/ical/en.ng%23holiday%40group.v.calendar.google.com/public/basic.ics",
   "holidays": [
     {
       "id": "gcal-20210101_usf2irech683qb77hfnuah2dfc_google_com",
       "label": "New Year's Day",
-      "date": "2021-01-01"
+      "date": "2021-01-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210214_oji628jutetefeehfukalik1a0_google_com",
       "label": "Valentine's Day",
-      "date": "2021-02-14"
+      "date": "2021-02-14",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210217_8j9sk8rh12bm9cu5i6bcipn16c_google_com",
       "label": "Ash Wednesday",
-      "date": "2021-02-17"
+      "date": "2021-02-17",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210308_ii6uplljn1k1185opoe1lk3kdo_google_com",
       "label": "Women's Day",
-      "date": "2021-03-08"
+      "date": "2021-03-08",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210314_bn8ffred4f6al8cceh5asuue0g_google_com",
       "label": "Mothering Sunday",
-      "date": "2021-03-14"
+      "date": "2021-03-14",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210402_o5kjcqas8krqdrr4veqtvjrd9o_google_com",
       "label": "Good Friday",
-      "date": "2021-04-02"
+      "date": "2021-04-02",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210403_o9earljur478885jpd8o9jsio8_google_com",
       "label": "Holy Saturday",
-      "date": "2021-04-03"
+      "date": "2021-04-03",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210404_mopn0ruvetgvu8srmo9dqc79as_google_com",
       "label": "Easter Sunday",
-      "date": "2021-04-04"
+      "date": "2021-04-04",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210405_g1abdjo5rgb86arqf98hds3jdk_google_com",
       "label": "Easter Monday",
-      "date": "2021-04-05"
+      "date": "2021-04-05",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210501_391239c5uodegkuflhp9lbgk8g_google_com",
       "label": "Workers' Day",
-      "date": "2021-05-01"
+      "date": "2021-05-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210503_p6sob1s3v8htm5eq884d6l4r9k_google_com",
       "label": "Day off for Workers' Day",
-      "date": "2021-05-03"
+      "date": "2021-05-03",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210512_329hetls3nfrr10084jrevip7c_google_com",
       "label": "Eid El-Fitr Holiday",
-      "date": "2021-05-12"
+      "date": "2021-05-12",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210513_ci9e792jcq93qfq744jf5rm57g_google_com",
       "label": "Eid El-Fitr",
-      "date": "2021-05-13"
+      "date": "2021-05-13",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210527_qn2d6l86bb4hbhngqvl0iu2764_google_com",
       "label": "Children's Day",
-      "date": "2021-05-27"
+      "date": "2021-05-27",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210612_thud0q3bq370rjv8sg8h9698u8_google_com",
       "label": "Democracy Day",
-      "date": "2021-06-12"
+      "date": "2021-06-12",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210614_rlqkg6qlkuc477gpi8ctd5mjms_google_com",
       "label": "Day off for Democracy Day",
-      "date": "2021-06-14"
+      "date": "2021-06-14",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210620_23pjvrn7aabi54gaj68t9q8l50_google_com",
       "label": "Father's Day",
-      "date": "2021-06-20"
+      "date": "2021-06-20",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210720_it38klkf6msc8sreg824cij37k_google_com",
       "label": "Id el Kabir",
-      "date": "2021-07-20"
+      "date": "2021-07-20",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210721_hl2cag39jhpi0l2e0pv5mi5380_google_com",
       "label": "Id el Kabir Holiday",
-      "date": "2021-07-21"
+      "date": "2021-07-21",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20210809_h1f3lq2avp0ml35jn858oe1nmg_google_com",
       "label": "Al-Hijra",
-      "date": "2021-08-09"
+      "date": "2021-08-09",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20211001_buml5cf90v0qpacmjfu20l88t8_google_com",
       "label": "National Day",
-      "date": "2021-10-01"
+      "date": "2021-10-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20211019_utouqa2kja814uo8rmpbvqqafg_google_com",
       "label": "Id el Maulud",
-      "date": "2021-10-19"
+      "date": "2021-10-19",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20211224_4mdnoh77p8r06lalunlfkv33vk_google_com",
       "label": "Christmas Eve",
-      "date": "2021-12-24"
+      "date": "2021-12-24",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20211225_gq8b3qr3n4n24aasfvb8hfukqc_google_com",
       "label": "Christmas Day",
-      "date": "2021-12-25"
+      "date": "2021-12-25",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20211226_e16bgn0m235haejk3gk1aqb8fo_google_com",
       "label": "Boxing Day",
-      "date": "2021-12-26"
+      "date": "2021-12-26",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20211227_qv6204gf525kaqun3fd9gbe8uc_google_com",
       "label": "Day off for Christmas Day",
-      "date": "2021-12-27"
+      "date": "2021-12-27",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20211228_3mha4uk0lj12d0aa0csjc3sgto_google_com",
       "label": "Day off for Boxing Day",
-      "date": "2021-12-28"
+      "date": "2021-12-28",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20211231_5pcinq0f1cdrj9akuhvj7stlc4_google_com",
       "label": "New Year's Eve",
-      "date": "2021-12-31"
+      "date": "2021-12-31",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220101_38n9sbd5boaf83bpignbi9bgl0_google_com",
       "label": "New Year's Day",
-      "date": "2022-01-01"
+      "date": "2022-01-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220103_49drn0bph46t3ptmif6ompfejc_google_com",
       "label": "Day off for New Year's Day",
-      "date": "2022-01-03"
+      "date": "2022-01-03",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220214_erqr31pinjueqsfgmihp047a2o_google_com",
       "label": "Valentine's Day",
-      "date": "2022-02-14"
+      "date": "2022-02-14",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220302_3dap7larv4krv2t9n2d030ctm0_google_com",
       "label": "Ash Wednesday",
-      "date": "2022-03-02"
+      "date": "2022-03-02",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220308_evd1kbu7v21ehfobqdna0ir9po_google_com",
       "label": "Women's Day",
-      "date": "2022-03-08"
+      "date": "2022-03-08",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220327_3sc3542aklek8lt9mcpl5184ks_google_com",
       "label": "Mothering Sunday",
-      "date": "2022-03-27"
+      "date": "2022-03-27",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220415_1ipuci927nsie0vhd3vu4d80uk_google_com",
       "label": "Good Friday",
-      "date": "2022-04-15"
+      "date": "2022-04-15",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220416_h3jmfl31i0ie14tt3dps3bhto0_google_com",
       "label": "Holy Saturday",
-      "date": "2022-04-16"
+      "date": "2022-04-16",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220417_9iv5tkp85n1fadl54h7i199fas_google_com",
       "label": "Easter Sunday",
-      "date": "2022-04-17"
+      "date": "2022-04-17",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220418_f7342343bjh22i6sm137rbkib8_google_com",
       "label": "Easter Monday",
-      "date": "2022-04-18"
+      "date": "2022-04-18",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220501_h04noi566nil5r5is2odjdkh24_google_com",
       "label": "Workers' Day",
-      "date": "2022-05-01"
+      "date": "2022-05-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220502_nvg45j79lcf9aamatd8kjmprk8_google_com",
       "label": "Day off for Workers' Day",
-      "date": "2022-05-02"
+      "date": "2022-05-02",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220503_inuupsav4m1ka6aubd1pphge90_google_com",
       "label": "Eid El-Fitr Holiday",
-      "date": "2022-05-03"
+      "date": "2022-05-03",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220527_34bae3a11rft1resikkrio3htk_google_com",
       "label": "Children's Day",
-      "date": "2022-05-27"
+      "date": "2022-05-27",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220612_v64h9s9e3s59stn4qdsldvh114_google_com",
       "label": "Democracy Day",
-      "date": "2022-06-12"
+      "date": "2022-06-12",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220613_khh9mh4qtjvrsugeigjbs8ksng_google_com",
       "label": "Day off for Democracy Day",
-      "date": "2022-06-13"
+      "date": "2022-06-13",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220619_hvn2kr4guupl0raln15vp1sm5c_google_com",
       "label": "Father's Day",
-      "date": "2022-06-19"
+      "date": "2022-06-19",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220709_hvldtlcjkdl2g84gluk09hfig4_google_com",
       "label": "Id el Kabir",
-      "date": "2022-07-09"
+      "date": "2022-07-09",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220711_dvsvbq5g1cu88scmq5m579qfvo_google_com",
       "label": "Id el Kabir Holiday",
-      "date": "2022-07-11"
+      "date": "2022-07-11",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220712_af7hgih6r0oi05ds4ih0nqps3c_google_com",
       "label": "Id el Kabir additional holiday",
-      "date": "2022-07-12"
+      "date": "2022-07-12",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20220730_r8g9dlqr5gepr66p9k9fqkrb8o_google_com",
       "label": "Al-Hijra",
-      "date": "2022-07-30"
+      "date": "2022-07-30",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20221001_qkcrqpmbt5vr8tnobrjtslfdfc_google_com",
       "label": "National Day",
-      "date": "2022-10-01"
+      "date": "2022-10-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20221003_aqug09h895r3qpp4h87t462a5o_google_com",
       "label": "Day off for National Day",
-      "date": "2022-10-03"
+      "date": "2022-10-03",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20221008_ika7rdlddeofj3oeqdormn0krc_google_com",
       "label": "Id el Maulud",
-      "date": "2022-10-08"
+      "date": "2022-10-08",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20221010_a0cbe46v9hlr0hguf1kq5275s8_google_com",
       "label": "Day off for Id el Maulud",
-      "date": "2022-10-10"
+      "date": "2022-10-10",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20221224_qcru0j9sellt66r297gk5vtsqs_google_com",
       "label": "Christmas Eve",
-      "date": "2022-12-24"
+      "date": "2022-12-24",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20221225_7ar3dd9jeipfkb56hp5h9814uc_google_com",
       "label": "Christmas Day",
-      "date": "2022-12-25"
+      "date": "2022-12-25",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20221226_bjbet6jki2v65o3u5v88bqale4_google_com",
       "label": "Boxing Day",
-      "date": "2022-12-26"
+      "date": "2022-12-26",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20221227_0i8kdvf0irhacm2tqbeuaumuu4_google_com",
       "label": "Day off for Christmas Day",
-      "date": "2022-12-27"
+      "date": "2022-12-27",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20221231_qlg6rjhi66kv42pa267ns0g66g_google_com",
       "label": "New Year's Eve",
-      "date": "2022-12-31"
+      "date": "2022-12-31",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230101_usce8r4l2k251qvsu0asqkcufc_google_com",
       "label": "New Year's Day",
-      "date": "2023-01-01"
+      "date": "2023-01-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230102_63fd6s6b8dipptpp6lp20degks_google_com",
       "label": "Day off for New Year's Day",
-      "date": "2023-01-02"
+      "date": "2023-01-02",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230214_hbrk34blgam3hhsou6gomams4k_google_com",
       "label": "Valentine's Day",
-      "date": "2023-02-14"
+      "date": "2023-02-14",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230222_j41q1vdl9nho73eq6pll096cts_google_com",
       "label": "Ash Wednesday",
-      "date": "2023-02-22"
+      "date": "2023-02-22",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230308_dfmaj94fnbtahe3ns7id1jpdc0_google_com",
       "label": "Women's Day",
-      "date": "2023-03-08"
+      "date": "2023-03-08",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230319_5m5j1fos269o9ijsvg2ah06n08_google_com",
       "label": "Mothering Sunday",
-      "date": "2023-03-19"
+      "date": "2023-03-19",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230323_cgn4u9tgku1uvs9eln71dt9e98_google_com",
       "label": "Ramadan Start",
-      "date": "2023-03-23"
+      "date": "2023-03-23",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230407_goin495ea8jfur64uhhl60qd74_google_com",
       "label": "Good Friday",
-      "date": "2023-04-07"
+      "date": "2023-04-07",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230408_rar4v4bgj2187meaboti10kqp0_google_com",
       "label": "Holy Saturday",
-      "date": "2023-04-08"
+      "date": "2023-04-08",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230409_2rlnfgd33ukks527g2o7luo75g_google_com",
       "label": "Easter Sunday",
-      "date": "2023-04-09"
+      "date": "2023-04-09",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230410_vqgt1c5jkvn6k3inoth71q7ric_google_com",
       "label": "Easter Monday",
-      "date": "2023-04-10"
+      "date": "2023-04-10",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230421_1ubqksegq20vn0j4qra0uean78_google_com",
       "label": "Eid El-Fitr",
-      "date": "2023-04-21"
+      "date": "2023-04-21",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230424_8244upqg5v7vk24fa75n4pgfkg_google_com",
       "label": "Eid El-Fitr Holiday",
-      "date": "2023-04-24"
+      "date": "2023-04-24",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230501_je4sufmo13g2adafbvbcvtdu1k_google_com",
       "label": "Workers' Day",
-      "date": "2023-05-01"
+      "date": "2023-05-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230527_fbm6vn2ipjfamth7mlancfmvos_google_com",
       "label": "Children's Day",
-      "date": "2023-05-27"
+      "date": "2023-05-27",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230529_5ik0huoh4uvarqalp6m4b9b9g0_google_com",
       "label": "Presidential Inauguration Holiday",
-      "date": "2023-05-29"
+      "date": "2023-05-29",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230612_bfd86upddorc2lu4aqgg0gaj0s_google_com",
       "label": "Democracy Day",
-      "date": "2023-06-12"
+      "date": "2023-06-12",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230618_oqurpe8pri60iinb8vd4t19sl8_google_com",
       "label": "Father's Day",
-      "date": "2023-06-18"
+      "date": "2023-06-18",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230628_4q8ck35ghaf9peijcnfgm3bhe0_google_com",
       "label": "Id el Kabir",
-      "date": "2023-06-28"
+      "date": "2023-06-28",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230629_al8m1kgve16o3682934pd1p9sc_google_com",
       "label": "Id el Kabir Holiday",
-      "date": "2023-06-29"
+      "date": "2023-06-29",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230719_n05kasujb1l19cfjcu61tebq1c_google_com",
       "label": "Al-Hijra",
-      "date": "2023-07-19"
+      "date": "2023-07-19",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20230927_5jfdrql2og6ffsrrgjckorvta4_google_com",
       "label": "Id el Maulud",
-      "date": "2023-09-27"
+      "date": "2023-09-27",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20231001_m5pbm8gj8mv891pg8a2gc4uug4_google_com",
       "label": "National Day",
-      "date": "2023-10-01"
+      "date": "2023-10-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20231002_os71l2di3u1dligjb50hofgpio_google_com",
       "label": "Day off for National Day",
-      "date": "2023-10-02"
+      "date": "2023-10-02",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20231224_e5qed9s05kujhl16dk84eq2eas_google_com",
       "label": "Christmas Eve",
-      "date": "2023-12-24"
+      "date": "2023-12-24",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20231225_hi2uf4ds4hkk494ngpqp3698dg_google_com",
       "label": "Christmas Day",
-      "date": "2023-12-25"
+      "date": "2023-12-25",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20231226_g57r4u6qs9hs3mpgh6gee8ohc8_google_com",
       "label": "Boxing Day",
-      "date": "2023-12-26"
+      "date": "2023-12-26",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20231231_qgfcilcdk9k0qh73kocc9ei5t8_google_com",
       "label": "New Year's Eve",
-      "date": "2023-12-31"
+      "date": "2023-12-31",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240101_nrc3ehntp7avu9qpfrdrkktad0_google_com",
       "label": "New Year's Day",
-      "date": "2024-01-01"
+      "date": "2024-01-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240214_t5rak55pndefsilj3j4s2tf3ok_google_com",
       "label": "Valentine's Day",
-      "date": "2024-02-14"
+      "date": "2024-02-14",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240308_if1umecd2lsnfi9o7gdcv9c4do_google_com",
       "label": "Women's Day",
-      "date": "2024-03-08"
+      "date": "2024-03-08",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240310_hnbqn6ameve49n2q1abk61i7p0_google_com",
       "label": "Mothering Sunday",
-      "date": "2024-03-10"
+      "date": "2024-03-10",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240311_ed0g6lo8m7plpkr2e3qvoafurg_google_com",
       "label": "Ramadan Start",
-      "date": "2024-03-11"
+      "date": "2024-03-11",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240329_rholid22tc9iarnb16nmj49bkg_google_com",
       "label": "Good Friday",
-      "date": "2024-03-29"
+      "date": "2024-03-29",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240330_hnsungeuo55t0cjkm6h3s1icd0_google_com",
       "label": "Holy Saturday",
-      "date": "2024-03-30"
+      "date": "2024-03-30",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240331_5mn6a5hprmdsoaeugs4nrlu9a8_google_com",
       "label": "Easter Sunday",
-      "date": "2024-03-31"
+      "date": "2024-03-31",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240401_027f5abf8184iv7k5cvnc5nkus_google_com",
       "label": "Easter Monday",
-      "date": "2024-04-01"
+      "date": "2024-04-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240410_2t8ftutu995fb400fgfhghs2ug_google_com",
       "label": "Eid El-Fitr",
-      "date": "2024-04-10"
+      "date": "2024-04-10",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240411_rho85fvdkda382jrchpq4pqte0_google_com",
       "label": "Eid El-Fitr Holiday",
-      "date": "2024-04-11"
+      "date": "2024-04-11",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240501_lbh36lc0d6c7gnp6sushjsgjis_google_com",
       "label": "Workers' Day",
-      "date": "2024-05-01"
+      "date": "2024-05-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240527_vmgpcjnld6j7svludlb0q64g40_google_com",
       "label": "Children's Day",
-      "date": "2024-05-27"
+      "date": "2024-05-27",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240612_90lbhbt2ubrl058e0dfpffj294_google_com",
       "label": "Democracy Day",
-      "date": "2024-06-12"
+      "date": "2024-06-12",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240616_69c4e8s0gbcblf3g2pu46ggi5k_google_com",
       "label": "Father's Day",
-      "date": "2024-06-16"
+      "date": "2024-06-16",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240617_c3r91ip16gk26u1ed054b5etl0_google_com",
       "label": "Id el Kabir Holiday",
-      "date": "2024-06-17"
+      "date": "2024-06-17",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240707_384cfvkdd5uvqa9haltflkq5io_google_com",
       "label": "Al-Hijra",
-      "date": "2024-07-07"
+      "date": "2024-07-07",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20240916_vjr4qgm85j8he6as97okmjvt6k_google_com",
       "label": "Id el Maulud",
-      "date": "2024-09-16"
+      "date": "2024-09-16",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20241001_jg482rjvtlt34f2gg9ptpp72p8_google_com",
       "label": "National Day",
-      "date": "2024-10-01"
+      "date": "2024-10-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20241224_aeu69pp3dh1q6fs0o3unu40vpc_google_com",
       "label": "Christmas Eve",
-      "date": "2024-12-24"
+      "date": "2024-12-24",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20241225_psfq7toimv1tdeuavdbidv2d3k_google_com",
       "label": "Christmas Day",
-      "date": "2024-12-25"
+      "date": "2024-12-25",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20241226_0brovqpkg4d4t4tkec99g468n0_google_com",
       "label": "Boxing Day",
-      "date": "2024-12-26"
+      "date": "2024-12-26",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20241231_u5slv8vpgv9vq4ltm1is5n9g80_google_com",
       "label": "New Year's Eve",
-      "date": "2024-12-31"
+      "date": "2024-12-31",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250101_hj4i8q569ci3qcqoe96k4khl50_google_com",
       "label": "New Year's Day",
-      "date": "2025-01-01"
+      "date": "2025-01-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250214_7bv0vv2vonqap4shisviatjjh4_google_com",
       "label": "Valentine's Day",
-      "date": "2025-02-14"
+      "date": "2025-02-14",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250301_mv6ci8s63pg5rnr0naecbpd920_google_com",
       "label": "Ramadan Start",
-      "date": "2025-03-01"
+      "date": "2025-03-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250305_de4iebm6q2f9pkoa490kfvakt8_google_com",
       "label": "Ash Wednesday",
-      "date": "2025-03-05"
+      "date": "2025-03-05",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250308_16iu181uldl76se2mu15kehvck_google_com",
       "label": "Women's Day",
-      "date": "2025-03-08"
+      "date": "2025-03-08",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250330_nk09lf1hitltas7t0u8cfrcq6s_google_com",
       "label": "Mothering Sunday",
-      "date": "2025-03-30"
+      "date": "2025-03-30",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250331_4ak66cqqnfqb2ao282hhelmf7c_google_com",
       "label": "Eid El-Fitr Holiday",
-      "date": "2025-03-31"
+      "date": "2025-03-31",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250401_gqnhhfp20oje6lh3srarmmeec0_google_com",
       "label": "Eid El-Fitr Holiday",
-      "date": "2025-04-01"
+      "date": "2025-04-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250418_msopbdh8djqsacno75f1j9tq6o_google_com",
       "label": "Good Friday",
-      "date": "2025-04-18"
+      "date": "2025-04-18",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250419_akn558tsae883ge1g17r2be1lc_google_com",
       "label": "Holy Saturday",
-      "date": "2025-04-19"
+      "date": "2025-04-19",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250420_h5b5fl81kd982jooe1g9ou3h50_google_com",
       "label": "Easter Sunday",
-      "date": "2025-04-20"
+      "date": "2025-04-20",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250421_dlt63osujgo1mpvku3gt66b080_google_com",
       "label": "Easter Monday",
-      "date": "2025-04-21"
+      "date": "2025-04-21",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250501_jha64huece8na7lmtdrsns931o_google_com",
       "label": "Workers' Day",
-      "date": "2025-05-01"
+      "date": "2025-05-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250527_22b6v1dnau8jng0ejk7vqpf464_google_com",
       "label": "Children's Day",
-      "date": "2025-05-27"
+      "date": "2025-05-27",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250606_8s5p3mv12d19e5pb4bsddvltb0_google_com",
       "label": "Id el Kabir",
-      "date": "2025-06-06"
+      "date": "2025-06-06",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250609_1lluhq62b2i3a41cobprhisl3g_google_com",
       "label": "Id el Kabir Holiday",
-      "date": "2025-06-09"
+      "date": "2025-06-09",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250612_t1739kcr8ta3qrt2mdhpa91o1s_google_com",
       "label": "Democracy Day",
-      "date": "2025-06-12"
+      "date": "2025-06-12",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250615_893k5rfuo1gn7ipvo3k4c5dn3g_google_com",
       "label": "Father's Day",
-      "date": "2025-06-15"
+      "date": "2025-06-15",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250626_pcpp7tblnl4ddi7c6ajpcebs9o_google_com",
       "label": "Al-Hijra",
-      "date": "2025-06-26"
+      "date": "2025-06-26",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250715_484g4sb9o0851r71481ajrhs18_google_com",
       "label": "Day of Mourning for President Muhammadu Buhari",
-      "date": "2025-07-15"
+      "date": "2025-07-15",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20250905_b258m6ao70am9o2a6842ag5glk_google_com",
       "label": "Id el Maulud",
-      "date": "2025-09-05"
+      "date": "2025-09-05",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20251001_ufsn05rat5660evksf8s9pvqck_google_com",
       "label": "National Day",
-      "date": "2025-10-01"
+      "date": "2025-10-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20251224_3ugtc0a4b3o9or9g8oi3agnnao_google_com",
       "label": "Christmas Eve",
-      "date": "2025-12-24"
+      "date": "2025-12-24",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20251225_71b4fg7kqhqjg9703utbiekb6c_google_com",
       "label": "Christmas Day",
-      "date": "2025-12-25"
+      "date": "2025-12-25",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20251226_3fgjg7egpcicj7a24slv1tbi5o_google_com",
       "label": "Boxing Day",
-      "date": "2025-12-26"
+      "date": "2025-12-26",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20251231_1lstqdp5vuu6fgk164s4g5lh3g_google_com",
       "label": "New Year's Eve",
-      "date": "2025-12-31"
+      "date": "2025-12-31",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260101_tjhprlbaugrn7p3jgb4sensl38_google_com",
       "label": "New Year's Day",
-      "date": "2026-01-01"
+      "date": "2026-01-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260214_o59ss8jud0de8a2f0doe3s270g_google_com",
       "label": "Valentine's Day",
-      "date": "2026-02-14"
+      "date": "2026-02-14",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260218_m294pcci91di4h24h34ets6n70_google_com",
       "label": "Ash Wednesday",
-      "date": "2026-02-18"
+      "date": "2026-02-18",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260308_22kvocl3q23oba9ibmjf3smn24_google_com",
       "label": "Women's Day",
-      "date": "2026-03-08"
+      "date": "2026-03-08",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260315_lu7cfee0jgtodg5d2vbjk98rno_google_com",
       "label": "Mothering Sunday",
-      "date": "2026-03-15"
+      "date": "2026-03-15",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260319_uhomo8t838pqd57fka279thpeo_google_com",
       "label": "Eid El-Fitr Holiday",
-      "date": "2026-03-19"
+      "date": "2026-03-19",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260320_ap5qtdr827j2sfi0if6vu1uqis_google_com",
       "label": "Eid El-Fitr",
-      "date": "2026-03-20"
+      "date": "2026-03-20",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260403_k5u8sql9qavo3ehrl2v9ho4l6o_google_com",
       "label": "Good Friday",
-      "date": "2026-04-03"
+      "date": "2026-04-03",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260404_15tti2mgu8j8ketlimhfetrnog_google_com",
       "label": "Holy Saturday",
-      "date": "2026-04-04"
+      "date": "2026-04-04",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260405_btm4d88qsoqi7fic81308ins9k_google_com",
       "label": "Easter Sunday",
-      "date": "2026-04-05"
+      "date": "2026-04-05",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260406_83u9q7745irs68cu6n2qu4uhfg_google_com",
       "label": "Easter Monday",
-      "date": "2026-04-06"
+      "date": "2026-04-06",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260501_9t4s4n7mbshsl26mks803feqfo_google_com",
       "label": "Workers' Day",
-      "date": "2026-05-01"
+      "date": "2026-05-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260527_4diq2itlg6gep5vc2hv68hp17c_google_com",
       "label": "Children's Day",
-      "date": "2026-05-27"
+      "date": "2026-05-27",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260528_e2ff5gm3fmn762fdek5sfvhjvc_google_com",
       "label": "Id el Kabir Holiday",
-      "date": "2026-05-28"
+      "date": "2026-05-28",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260612_v1ja6fgrck53eba39u6jirset8_google_com",
       "label": "Democracy Day",
-      "date": "2026-06-12"
+      "date": "2026-06-12",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260616_p90bbosdee0t902cc7nkqg5v1o_google_com",
       "label": "Al-Hijra",
-      "date": "2026-06-16"
+      "date": "2026-06-16",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260621_verkai2e1fmivmdkl0a522iq5s_google_com",
       "label": "Father's Day",
-      "date": "2026-06-21"
+      "date": "2026-06-21",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20260825_2oaq0bko3kpgtv0mch5etsii1c_google_com",
       "label": "Id el Maulud",
-      "date": "2026-08-25"
+      "date": "2026-08-25",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20261001_ghvlbg103dl6nms3efto63pjb0_google_com",
       "label": "National Day",
-      "date": "2026-10-01"
+      "date": "2026-10-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20261224_hrnl84aejahj3dv2gflu4fifmk_google_com",
       "label": "Christmas Eve",
-      "date": "2026-12-24"
+      "date": "2026-12-24",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20261225_una8dl3fokqvl5ldvj10cu14sg_google_com",
       "label": "Christmas Day",
-      "date": "2026-12-25"
+      "date": "2026-12-25",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20261226_gpjk9c0aig66cr6a0jovdvp8ao_google_com",
       "label": "Boxing Day",
-      "date": "2026-12-26"
+      "date": "2026-12-26",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20261231_nfu5b2pab5o6viemdj9e9bgaag_google_com",
       "label": "New Year's Eve",
-      "date": "2026-12-31"
+      "date": "2026-12-31",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270101_qiraikpj4id2sl1i81hk8u8j78_google_com",
       "label": "New Year's Day",
-      "date": "2027-01-01"
+      "date": "2027-01-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270208_kg30tk5o0a1num6nl21m2na5r0_google_com",
       "label": "Ramadan Start (tentative)",
-      "date": "2027-02-08"
+      "date": "2027-02-08",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270210_uijsrke6h3qo9efer4dse1rnb8_google_com",
       "label": "Ash Wednesday",
-      "date": "2027-02-10"
+      "date": "2027-02-10",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270214_jejqqe5a27fk7435mdqc02c88s_google_com",
       "label": "Valentine's Day",
-      "date": "2027-02-14"
+      "date": "2027-02-14",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270307_4tl18a8bkipdepvqupi0r4sav4_google_com",
       "label": "Mothering Sunday",
-      "date": "2027-03-07"
+      "date": "2027-03-07",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270308_g75oikobivl6tuqo089l9j4978_google_com",
       "label": "Women's Day",
-      "date": "2027-03-08"
+      "date": "2027-03-08",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270310_6rvjbi5epvlc2gpnmurpbbu0q8_google_com",
       "label": "Eid El-Fitr (tentative)",
-      "date": "2027-03-10"
+      "date": "2027-03-10",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270311_otolgn7v4nlql7leh9ktjkmor4_google_com",
       "label": "Eid El-Fitr Holiday (tentative)",
-      "date": "2027-03-11"
+      "date": "2027-03-11",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270326_h4g0drlougegb00u2djacvqqvo_google_com",
       "label": "Good Friday",
-      "date": "2027-03-26"
+      "date": "2027-03-26",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270327_elhdhrk2eki4n4b8j0d7q2tsqs_google_com",
       "label": "Holy Saturday",
-      "date": "2027-03-27"
+      "date": "2027-03-27",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270328_8tjb6jvjvcn98sputt1urka7bc_google_com",
       "label": "Easter Sunday",
-      "date": "2027-03-28"
+      "date": "2027-03-28",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270329_adii2513dra2dle5ho83f0l78o_google_com",
       "label": "Easter Monday",
-      "date": "2027-03-29"
+      "date": "2027-03-29",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270501_pp1svfg3ldsotv89arn2v5u73c_google_com",
       "label": "Workers' Day",
-      "date": "2027-05-01"
+      "date": "2027-05-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270517_4992m4q9ak4u6o9v1pfdnn7q8g_google_com",
       "label": "Id el Kabir (tentative)",
-      "date": "2027-05-17"
+      "date": "2027-05-17",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270518_9pnm02cla85b60f5snqjbltp9o_google_com",
       "label": "Id el Kabir Holiday (tentative)",
-      "date": "2027-05-18"
+      "date": "2027-05-18",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270527_hu3g201l2voulglmt1m8klu634_google_com",
       "label": "Children's Day",
-      "date": "2027-05-27"
+      "date": "2027-05-27",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270606_s74o04s06saqtmefidm74gr0u0_google_com",
       "label": "Al-Hijra (tentative)",
-      "date": "2027-06-06"
+      "date": "2027-06-06",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270612_6jkailt314qlqar65hpk5pcb6o_google_com",
       "label": "Democracy Day",
-      "date": "2027-06-12"
+      "date": "2027-06-12",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270620_q0cat9gj7mhnhq7m6219qrg75g_google_com",
       "label": "Father's Day",
-      "date": "2027-06-20"
+      "date": "2027-06-20",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20270815_vf1mk4dao1kf1ibh1pneuf2npg_google_com",
       "label": "Id el Maulud (tentative)",
-      "date": "2027-08-15"
+      "date": "2027-08-15",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20271001_0se0s9jn4r3aa6p3r4go08n2q8_google_com",
       "label": "National Day",
-      "date": "2027-10-01"
+      "date": "2027-10-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20271224_h5em49hcken154a12uf7q9q0mk_google_com",
       "label": "Christmas Eve",
-      "date": "2027-12-24"
+      "date": "2027-12-24",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20271225_a5qn9n3b03hetvuugp6q8ammos_google_com",
       "label": "Christmas Day",
-      "date": "2027-12-25"
+      "date": "2027-12-25",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20271226_abdf6nkhj6i1372p64h3nfpdr8_google_com",
       "label": "Boxing Day",
-      "date": "2027-12-26"
+      "date": "2027-12-26",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20271231_367eabdlrk0q7agpm4fj0t3910_google_com",
       "label": "New Year's Eve",
-      "date": "2027-12-31"
+      "date": "2027-12-31",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280101_iopsos3g7uij27ofqc9us99v1s_google_com",
       "label": "New Year's Day",
-      "date": "2028-01-01"
+      "date": "2028-01-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280128_8rghualpnp1r3iffing0agjl8g_google_com",
       "label": "Ramadan Start (tentative)",
-      "date": "2028-01-28"
+      "date": "2028-01-28",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280214_b4pc2nefm6q9khuq3tk8u9s2co_google_com",
       "label": "Valentine's Day",
-      "date": "2028-02-14"
+      "date": "2028-02-14",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280227_b54net52mj644k46peto63qfuc_google_com",
       "label": "Eid El-Fitr (tentative)",
-      "date": "2028-02-27"
+      "date": "2028-02-27",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280228_ki5gjplb913nn9vf92k3bp917o_google_com",
       "label": "Eid El-Fitr Holiday (tentative)",
-      "date": "2028-02-28"
+      "date": "2028-02-28",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280301_nqq7ksv7bihslei71llgsd98v4_google_com",
       "label": "Ash Wednesday",
-      "date": "2028-03-01"
+      "date": "2028-03-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280308_97mqtbqekqbi4pqmajvmr86vs8_google_com",
       "label": "Women's Day",
-      "date": "2028-03-08"
+      "date": "2028-03-08",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280326_qen94sekhi39djlai3aj0khbq4_google_com",
       "label": "Mothering Sunday",
-      "date": "2028-03-26"
+      "date": "2028-03-26",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280414_mgskg046hqprcet0grinj4b4us_google_com",
       "label": "Good Friday",
-      "date": "2028-04-14"
+      "date": "2028-04-14",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280415_25vjo1ejgtsefv4nn7rfvviaqc_google_com",
       "label": "Holy Saturday",
-      "date": "2028-04-15"
+      "date": "2028-04-15",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280416_nfu9v7nf3troh9eumr8jramgec_google_com",
       "label": "Easter Sunday",
-      "date": "2028-04-16"
+      "date": "2028-04-16",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280417_vbattcr4up47bipf4l7bdmfps8_google_com",
       "label": "Easter Monday",
-      "date": "2028-04-17"
+      "date": "2028-04-17",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280501_8fge5s7lmbquvk2262rl2f9geg_google_com",
       "label": "Workers' Day",
-      "date": "2028-05-01"
+      "date": "2028-05-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280506_qs8hjfkqh3q8vpvn51547fv5a0_google_com",
       "label": "Id el Kabir (tentative)",
-      "date": "2028-05-06"
+      "date": "2028-05-06",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280507_hcdtqbk6kqpvi96mvm995qlh48_google_com",
       "label": "Id el Kabir Holiday (tentative)",
-      "date": "2028-05-07"
+      "date": "2028-05-07",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280525_95m8us6hdukc0isag0v3227488_google_com",
       "label": "Al-Hijra (tentative)",
-      "date": "2028-05-25"
+      "date": "2028-05-25",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280527_s4no68fqtkbkohgmf122tt47p8_google_com",
       "label": "Children's Day",
-      "date": "2028-05-27"
+      "date": "2028-05-27",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280612_r98i72cr28h0ktdqr18g2admes_google_com",
       "label": "Democracy Day",
-      "date": "2028-06-12"
+      "date": "2028-06-12",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280618_duau9am6bpke74v3pc78gtjnv8_google_com",
       "label": "Father's Day",
-      "date": "2028-06-18"
+      "date": "2028-06-18",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20280803_jrqoptm63b1grn193d1esr1ujk_google_com",
       "label": "Id el Maulud (tentative)",
-      "date": "2028-08-03"
+      "date": "2028-08-03",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20281001_07oqu22qe769ptck8ilggvdg3k_google_com",
       "label": "National Day",
-      "date": "2028-10-01"
+      "date": "2028-10-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20281224_glho203cql7d3ddn0m637baabg_google_com",
       "label": "Christmas Eve",
-      "date": "2028-12-24"
+      "date": "2028-12-24",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20281225_8qo9q5dj1le4u4rk6m69ljv79g_google_com",
       "label": "Christmas Day",
-      "date": "2028-12-25"
+      "date": "2028-12-25",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20281226_tnqvne7slc61ef19lqhs939m18_google_com",
       "label": "Boxing Day",
-      "date": "2028-12-26"
+      "date": "2028-12-26",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20281231_efoj60ieprru8j1rto417jjqog_google_com",
       "label": "New Year's Eve",
-      "date": "2028-12-31"
+      "date": "2028-12-31",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290101_abiu4vhkttnigmp60kpfd8jf08_google_com",
       "label": "New Year's Day",
-      "date": "2029-01-01"
+      "date": "2029-01-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290116_p6730r3d5klsgsih2n6hkhp3lk_google_com",
       "label": "Ramadan Start (tentative)",
-      "date": "2029-01-16"
+      "date": "2029-01-16",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290214_qcoo0n90b1glpo1pd8n75pq91o_google_com",
       "label": "Valentine's Day",
-      "date": "2029-02-14"
+      "date": "2029-02-14",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290215_2252nv0rrvtc573qhtijp4t04o_google_com",
       "label": "Eid El-Fitr (tentative)",
-      "date": "2029-02-15"
+      "date": "2029-02-15",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290216_87f0faq1835ng4knhm14smqua0_google_com",
       "label": "Eid El-Fitr Holiday (tentative)",
-      "date": "2029-02-16"
+      "date": "2029-02-16",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290308_tsv0fqo45elmskusbgiadps1q4_google_com",
       "label": "Women's Day",
-      "date": "2029-03-08"
+      "date": "2029-03-08",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290311_8piblequhdj2i7m5ja7q6g23p8_google_com",
       "label": "Mothering Sunday",
-      "date": "2029-03-11"
+      "date": "2029-03-11",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290330_s377prgtniha407f6hd9ec1m6k_google_com",
       "label": "Good Friday",
-      "date": "2029-03-30"
+      "date": "2029-03-30",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290331_k9icpmfrh7janfkrcrcffp2fgs_google_com",
       "label": "Holy Saturday",
-      "date": "2029-03-31"
+      "date": "2029-03-31",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290401_seva1a7ci6en8gqq5gv8nlbtcc_google_com",
       "label": "Easter Sunday",
-      "date": "2029-04-01"
+      "date": "2029-04-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290402_lilf1k2maunrpfelvca9mlhnss_google_com",
       "label": "Easter Monday",
-      "date": "2029-04-02"
+      "date": "2029-04-02",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290425_7hd1c1r0v0rup9mtqs7poc7ib0_google_com",
       "label": "Id el Kabir (tentative)",
-      "date": "2029-04-25"
+      "date": "2029-04-25",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290426_jgq5cndj2s3pkciut9mh5tcdik_google_com",
       "label": "Id el Kabir Holiday (tentative)",
-      "date": "2029-04-26"
+      "date": "2029-04-26",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290501_344h0lu6sb2pi9ujm8u3n19f40_google_com",
       "label": "Workers' Day",
-      "date": "2029-05-01"
+      "date": "2029-05-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290515_rjtlqn6mr09un5onpl0fs7jqa8_google_com",
       "label": "Al-Hijra (tentative)",
-      "date": "2029-05-15"
+      "date": "2029-05-15",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290527_qbtsu7rt2pfbuqbc0tft5ijdkg_google_com",
       "label": "Children's Day",
-      "date": "2029-05-27"
+      "date": "2029-05-27",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290612_193dljh8o07ohug7vh6t9c2uro_google_com",
       "label": "Democracy Day",
-      "date": "2029-06-12"
+      "date": "2029-06-12",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290617_ljf8704dr2ho9hp61l48ml00oo_google_com",
       "label": "Father's Day",
-      "date": "2029-06-17"
+      "date": "2029-06-17",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20290724_43hnbcids0itrnu8mo5bqp3hp8_google_com",
       "label": "Id el Maulud (tentative)",
-      "date": "2029-07-24"
+      "date": "2029-07-24",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20291001_9m97g71thu0iq7h8s9ktue63lg_google_com",
       "label": "National Day",
-      "date": "2029-10-01"
+      "date": "2029-10-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20291224_qjps8hs17htcogjg0ctth7fnmk_google_com",
       "label": "Christmas Eve",
-      "date": "2029-12-24"
+      "date": "2029-12-24",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20291225_im1q364so7hnmdjoqgv4rld9h0_google_com",
       "label": "Christmas Day",
-      "date": "2029-12-25"
+      "date": "2029-12-25",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20291226_l9hb0g3ck47pm70t6dufst01vo_google_com",
       "label": "Boxing Day",
-      "date": "2029-12-26"
+      "date": "2029-12-26",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20291231_e2vge78hhe2hkbb7u86ueju69s_google_com",
       "label": "New Year's Eve",
-      "date": "2029-12-31"
+      "date": "2029-12-31",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300101_i0s7cebaqgm3rmh2h0ajjddtkc_google_com",
       "label": "New Year's Day",
-      "date": "2030-01-01"
+      "date": "2030-01-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300106_4kdekj829d9g6512fqvl2jb2s4_google_com",
       "label": "Ramadan Start (tentative)",
-      "date": "2030-01-06"
+      "date": "2030-01-06",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300205_h4dvdp3fev0b252t94887s70v0_google_com",
       "label": "Eid El-Fitr (tentative)",
-      "date": "2030-02-05"
+      "date": "2030-02-05",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300206_ahe7g3trlo1o0av8039iosj56g_google_com",
       "label": "Eid El-Fitr Holiday (tentative)",
-      "date": "2030-02-06"
+      "date": "2030-02-06",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300214_23oi95442oi2jshsfts0o7hku0_google_com",
       "label": "Valentine's Day",
-      "date": "2030-02-14"
+      "date": "2030-02-14",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300306_bppve6b6ksdiqvaesoopentkjo_google_com",
       "label": "Ash Wednesday",
-      "date": "2030-03-06"
+      "date": "2030-03-06",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300308_ul20p22j7j2uevt06co8n5dh9c_google_com",
       "label": "Women's Day",
-      "date": "2030-03-08"
+      "date": "2030-03-08",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300331_o29e6ijqv4kc0kbdft34qv382o_google_com",
       "label": "Mothering Sunday",
-      "date": "2030-03-31"
+      "date": "2030-03-31",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300414_gqu1s5vi17kfabpdto3o5as6gc_google_com",
       "label": "Id el Kabir (tentative)",
-      "date": "2030-04-14"
+      "date": "2030-04-14",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300415_b96gs5u6mqep41hobs189se8j0_google_com",
       "label": "Id el Kabir Holiday (tentative)",
-      "date": "2030-04-15"
+      "date": "2030-04-15",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300419_tdeh9nnjseij2abfq17v6cu56s_google_com",
       "label": "Good Friday",
-      "date": "2030-04-19"
+      "date": "2030-04-19",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300420_iinrnhmt39k83qavsrl3254cjk_google_com",
       "label": "Holy Saturday",
-      "date": "2030-04-20"
+      "date": "2030-04-20",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300421_f1ln2mmk42dhifoc10og966boc_google_com",
       "label": "Easter Sunday",
-      "date": "2030-04-21"
+      "date": "2030-04-21",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300422_l87u5bgrdlpum2coksuq008cpc_google_com",
       "label": "Easter Monday",
-      "date": "2030-04-22"
+      "date": "2030-04-22",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300501_om2co5dul8klb62fvbd05kfn3o_google_com",
       "label": "Workers' Day",
-      "date": "2030-05-01"
+      "date": "2030-05-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300504_8tmbc07b7br7hiljcbkep38kec_google_com",
       "label": "Al-Hijra (tentative)",
-      "date": "2030-05-04"
+      "date": "2030-05-04",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300527_ceu4o424fva236fokfjqpcmc6c_google_com",
       "label": "Children's Day",
-      "date": "2030-05-27"
+      "date": "2030-05-27",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300612_rgstlc5v6ih67t9pm6jnl3bu9g_google_com",
       "label": "Democracy Day",
-      "date": "2030-06-12"
+      "date": "2030-06-12",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300616_a6q44ruq0sl337195oqa77hle8_google_com",
       "label": "Father's Day",
-      "date": "2030-06-16"
+      "date": "2030-06-16",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20300713_n0lum2jhmkpt46rrmfl9m2mgs0_google_com",
       "label": "Id el Maulud (tentative)",
-      "date": "2030-07-13"
+      "date": "2030-07-13",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20301001_novk720dsn54d79luviaraagoc_google_com",
       "label": "National Day",
-      "date": "2030-10-01"
+      "date": "2030-10-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20301224_1r7oo5l1iuumvdlmg5dgbnemrs_google_com",
       "label": "Christmas Eve",
-      "date": "2030-12-24"
+      "date": "2030-12-24",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20301225_j5rtnlgeacgqe8n7k4dd9klr2o_google_com",
       "label": "Christmas Day",
-      "date": "2030-12-25"
+      "date": "2030-12-25",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20301226_ecttni3h4aisoedpiit5ko5pv4_google_com",
       "label": "Ramadan Start (tentative)",
-      "date": "2030-12-26"
+      "date": "2030-12-26",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20301231_ktcenvdhkkc8corcml6e0fhcns_google_com",
       "label": "New Year's Eve",
-      "date": "2030-12-31"
+      "date": "2030-12-31",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310101_k28g5gpj6tmq588a33vmfs918s_google_com",
       "label": "New Year's Day",
-      "date": "2031-01-01"
+      "date": "2031-01-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310125_hv8hvhvoja81omfav4n0jbm6i0_google_com",
       "label": "Eid El-Fitr (tentative)",
-      "date": "2031-01-25"
+      "date": "2031-01-25",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310126_i0oar770922rcgkf9mmm2gu76c_google_com",
       "label": "Eid El-Fitr Holiday (tentative)",
-      "date": "2031-01-26"
+      "date": "2031-01-26",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310214_ep56nunjnpf2dnc3hbgcari2gs_google_com",
       "label": "Valentine's Day",
-      "date": "2031-02-14"
+      "date": "2031-02-14",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310226_e444a98rq8ia5lr2ldoo01jdcg_google_com",
       "label": "Ash Wednesday",
-      "date": "2031-02-26"
+      "date": "2031-02-26",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310308_cu5l859lrktf5qbob6uo0h9p2c_google_com",
       "label": "Women's Day",
-      "date": "2031-03-08"
+      "date": "2031-03-08",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310323_95jvfp2hts24l2lr7v3hdssn5c_google_com",
       "label": "Mothering Sunday",
-      "date": "2031-03-23"
+      "date": "2031-03-23",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310403_i6s95k59v65tn8l5shufm49goc_google_com",
       "label": "Id el Kabir (tentative)",
-      "date": "2031-04-03"
+      "date": "2031-04-03",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310404_d3783p68n0csh6au7r1ijqnvl0_google_com",
       "label": "Id el Kabir Holiday (tentative)",
-      "date": "2031-04-04"
+      "date": "2031-04-04",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310411_uk5t8u4re0kng4mku7uvgaotdc_google_com",
       "label": "Good Friday",
-      "date": "2031-04-11"
+      "date": "2031-04-11",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310412_s4l4nm21vr9r3vlpp1j68pgmsc_google_com",
       "label": "Holy Saturday",
-      "date": "2031-04-12"
+      "date": "2031-04-12",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310413_kpgnvtrg4sbgpl8j33r908lrcc_google_com",
       "label": "Easter Sunday",
-      "date": "2031-04-13"
+      "date": "2031-04-13",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310414_sfcgv9mvuifnr0b5b8lmpmmco0_google_com",
       "label": "Easter Monday",
-      "date": "2031-04-14"
+      "date": "2031-04-14",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310423_kt0a8ck0defashhqpk5q3s1a9c_google_com",
       "label": "Al-Hijra (tentative)",
-      "date": "2031-04-23"
+      "date": "2031-04-23",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310501_221su53fdjqj084h19gq9so1pc_google_com",
       "label": "Workers' Day",
-      "date": "2031-05-01"
+      "date": "2031-05-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310527_3euqpr3kj5e7trjp5vireno7fc_google_com",
       "label": "Children's Day",
-      "date": "2031-05-27"
+      "date": "2031-05-27",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310612_r3f0m51nd1h70hkenl9ap6e8k4_google_com",
       "label": "Democracy Day",
-      "date": "2031-06-12"
+      "date": "2031-06-12",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310615_esvdqgkrod283f83v7ge8q20ng_google_com",
       "label": "Father's Day",
-      "date": "2031-06-15"
+      "date": "2031-06-15",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20310702_dqf099mi6slp1hee42v1dgvqko_google_com",
       "label": "Id el Maulud (tentative)",
-      "date": "2031-07-02"
+      "date": "2031-07-02",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20311001_jrm01b0h90022hr2p0dhnns4tk_google_com",
       "label": "National Day",
-      "date": "2031-10-01"
+      "date": "2031-10-01",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20311215_r81t2b9p9ct9lglc91bejdc0ck_google_com",
       "label": "Ramadan Start (tentative)",
-      "date": "2031-12-15"
+      "date": "2031-12-15",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20311224_m6stqeeb61pu0t3fje4rbsmoog_google_com",
       "label": "Christmas Eve",
-      "date": "2031-12-24"
+      "date": "2031-12-24",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20311225_ghpl96qt15b0snmm9gv2gn0pb8_google_com",
       "label": "Christmas Day",
-      "date": "2031-12-25"
+      "date": "2031-12-25",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20311226_ud165g9kveofeogoh1gka0vqsk_google_com",
       "label": "Boxing Day",
-      "date": "2031-12-26"
+      "date": "2031-12-26",
+      "source": "google-calendar"
     },
     {
       "id": "gcal-20311231_kn0gk27i4motiof4sjmookqguo_google_com",
       "label": "New Year's Eve",
-      "date": "2031-12-31"
+      "date": "2031-12-31",
+      "source": "google-calendar"
     }
-  ],
-  "holidayFeed": {
-    "source": "cache",
-    "sourceUrl": "https://calendar.google.com/calendar/ical/en.ng%23holiday%40group.v.calendar.google.com/public/basic.ics",
-    "syncedAt": "2026-09-10T08:02:28.355Z"
-  }
+  ]
 }

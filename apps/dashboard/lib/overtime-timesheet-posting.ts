@@ -10,8 +10,8 @@ import {
 } from '@/lib/timesheet-entry-store';
 import { applyOvertimeBooking } from '@/lib/timesheet-overtime-booking';
 import { resolveOvertimeBookingOptions } from '@/lib/timesheet-overtime-config';
-import type { OvertimeAuthorization } from '@/lib/timesheet-entry-shared';
 import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
+import { hasBiometricClockIn, type OvertimeAuthorization } from '@/lib/timesheet-entry-shared';
 
 export type ApprovedOvertimePostingInput = {
   requestId: string;
@@ -40,10 +40,11 @@ const lineMatchKeys = (line: TimesheetLine) =>
 /**
  * Post approved overtime hours onto the respective employees' timesheet for the
  * authorization work date. Reuses the same booking primitives as the manual
- * timesheet flow so validation, caps, and payroll refresh remain consistent.
+ * timesheet flow so payroll refresh remains consistent.
  *
  * This never throws — approval must still succeed even if timesheet posting is
  * partially unavailable. The returned summary reports what was posted/skipped.
+ * Employees without a biometric clock-in are skipped. Hours are not capped to leftover biometric time.
  */
 export const postApprovedOvertimeToTimesheets = async (
   input: ApprovedOvertimePostingInput,
@@ -98,6 +99,10 @@ export const postApprovedOvertimeToTimesheets = async (
     const index = nextLines.findIndex((line) => lineMatchKeys(line).some((key) => employeeKeys.includes(key)));
     if (index < 0) {
       result.skipped.push({ employeeCode: employee.employeeCode, reason: 'Employee not present on the timesheet for this date.' });
+      continue;
+    }
+    if (!hasBiometricClockIn(nextLines[index].clockIn)) {
+      result.skipped.push({ employeeCode: employee.employeeCode, reason: 'No biometric clock-in on the timesheet for this date.' });
       continue;
     }
     const booked = applyOvertimeBooking(

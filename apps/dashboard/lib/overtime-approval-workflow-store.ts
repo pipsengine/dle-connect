@@ -174,14 +174,6 @@ CREATE TABLE [hris].[OvertimeAuthorizationRequests] (
   [CreatedAt] DATETIME2 NOT NULL CONSTRAINT [DF_OvertimeAuthorizationRequests_CreatedAt] DEFAULT SYSUTCDATETIME(),
   [UpdatedAt] DATETIME2 NOT NULL CONSTRAINT [DF_OvertimeAuthorizationRequests_UpdatedAt] DEFAULT SYSUTCDATETIME()
 );
-IF COL_LENGTH(N'[hris].[OvertimeAuthorizationRequests]', 'GmOperationsName') IS NULL
-  ALTER TABLE [hris].[OvertimeAuthorizationRequests] ADD [GmOperationsName] NVARCHAR(220) NULL;
-IF COL_LENGTH(N'[hris].[OvertimeAuthorizationRequests]', 'GmOperationsEmail') IS NULL
-  ALTER TABLE [hris].[OvertimeAuthorizationRequests] ADD [GmOperationsEmail] NVARCHAR(320) NULL;
-IF COL_LENGTH(N'[hris].[OvertimeAuthorizationRequests]', 'HrApproverName') IS NULL
-  ALTER TABLE [hris].[OvertimeAuthorizationRequests] ADD [HrApproverName] NVARCHAR(220) NULL;
-IF COL_LENGTH(N'[hris].[OvertimeAuthorizationRequests]', 'HrApproverEmail') IS NULL
-  ALTER TABLE [hris].[OvertimeAuthorizationRequests] ADD [HrApproverEmail] NVARCHAR(320) NULL;
 IF OBJECT_ID(N'[hris].[OvertimeAuthorizationEmployees]', N'U') IS NULL
 CREATE TABLE [hris].[OvertimeAuthorizationEmployees] (
   [Id] NVARCHAR(120) NOT NULL CONSTRAINT [PK_OvertimeAuthorizationEmployees] PRIMARY KEY,
@@ -229,6 +221,16 @@ CREATE TABLE [hris].[EmailNotificationOutbox] (
   [ProviderResponse] NVARCHAR(MAX) NULL,
   [CreatedAt] DATETIME2 NOT NULL CONSTRAINT [DF_EmailNotificationOutbox_CreatedAt] DEFAULT SYSUTCDATETIME()
 );`);
+    await pool.request().query(`
+IF COL_LENGTH(N'[hris].[OvertimeAuthorizationRequests]', 'GmOperationsName') IS NULL
+  ALTER TABLE [hris].[OvertimeAuthorizationRequests] ADD [GmOperationsName] NVARCHAR(220) NULL;
+IF COL_LENGTH(N'[hris].[OvertimeAuthorizationRequests]', 'GmOperationsEmail') IS NULL
+  ALTER TABLE [hris].[OvertimeAuthorizationRequests] ADD [GmOperationsEmail] NVARCHAR(320) NULL;
+IF COL_LENGTH(N'[hris].[OvertimeAuthorizationRequests]', 'HrApproverName') IS NULL
+  ALTER TABLE [hris].[OvertimeAuthorizationRequests] ADD [HrApproverName] NVARCHAR(220) NULL;
+IF COL_LENGTH(N'[hris].[OvertimeAuthorizationRequests]', 'HrApproverEmail') IS NULL
+  ALTER TABLE [hris].[OvertimeAuthorizationRequests] ADD [HrApproverEmail] NVARCHAR(320) NULL;
+`);
     dbReady.value = true;
   }
   return pool;

@@ -70,6 +70,7 @@ import {
 import { applyTimesheetLineDefaults, ensureClockedLinesHaveProjectAllocation } from '@/lib/timesheet-line-defaults';
 import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetHeaderShiftKind, timesheetShiftHeaderSlug, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
+import { submitTimesheetForApproval } from '@/lib/timesheet-submit';
 import { mobilizationCoversDate, mobilizationMatchesSupervisor, readTimesheetMobilizations, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
 import {
   applyAgegeBlastingSupervisorContext,
@@ -835,33 +836,6 @@ const workCenterSiteLocation = (workCenter: TimesheetWorkCenter | undefined, wor
   return candidate;
 };
 
-const resolveProjectManagerForSubmission = (lines: TimesheetLine[], projects: Project[]) => {
-  const hoursByProject = new Map<string, number>();
-  for (const line of lines) {
-    for (const allocation of line.projectAllocations || []) {
-      if (!allocation.projectCode || allocation.hours <= 0) continue;
-      hoursByProject.set(allocation.projectCode, (hoursByProject.get(allocation.projectCode) || 0) + allocation.hours);
-    }
-  }
-  const missingProjectManagers = [...hoursByProject.keys()].filter((projectCode) => {
-    const project = projects.find((item) => item.code.toLowerCase() === projectCode.toLowerCase());
-    return !project?.projectManager?.trim();
-  });
-  if (missingProjectManagers.length) {
-    throw new Error(`Project Manager is required before submission for: ${missingProjectManagers.join(', ')}.`);
-  }
-  const primaryProjectCode = [...hoursByProject.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-  if (!primaryProjectCode) return null;
-  const project = projects.find((item) => item.code.toLowerCase() === primaryProjectCode.toLowerCase());
-  if (!project) {
-    throw new Error(`Project ${primaryProjectCode} is not available in the project catalog.`);
-  }
-  return {
-    projectCode: project.code,
-    projectName: project.name,
-    projectManager: project.projectManager.trim(),
-  };
-};
 const todayDateInputValue = () => {
   const now = new Date();
   const offsetMs = now.getTimezoneOffset() * 60 * 1000;
@@ -1891,7 +1865,27 @@ export async function PATCH(request: Request) {
       ));
     }
 
-    if (action === 'MATRIX_SAVE' || action === 'SAVE_DRAFT' || action === 'SUBMIT') {
+    if (action === 'SUBMIT') {
+      if (!headerId || !updatedLines) return err(400, 'Header ID and Lines are required.');
+      const header = headers.find((h) => h.id === headerId);
+      if (!header) return err(404, 'Timesheet header not found.');
+      try {
+        await submitTimesheetForApproval({
+          header,
+          lines: updatedLines,
+          otherHeaders: headers,
+          otherLines: allLines,
+          actor,
+          reviewerNote: payload.reviewerNote,
+          shiftLabel: payload.shiftLabel,
+        });
+      } catch (error) {
+        return err(400, error instanceof Error ? error.message : 'Unable to submit timesheet for approval.');
+      }
+      return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName, mode));
+    }
+
+    if (action === 'MATRIX_SAVE' || action === 'SAVE_DRAFT') {
       if (!headerId || !updatedLines) return err(400, 'Header ID and Lines are required.');
       
       const header = headers.find(h => h.id === headerId);
@@ -1967,38 +1961,7 @@ export async function PATCH(request: Request) {
         ...line,
         idleAllocations: line.idleAllocations.map(withDefaultIdleReason),
       }));
-      if (action === 'SUBMIT') {
-        const projects = await readProjects();
-        let projectManagerAssignment: ReturnType<typeof resolveProjectManagerForSubmission>;
-        try {
-          projectManagerAssignment = resolveProjectManagerForSubmission(normalizedLines, projects);
-        } catch (error) {
-          return err(400, error instanceof Error ? error.message : 'Unable to resolve project manager for submission.');
-        }
-        if (!projectManagerAssignment) {
-          return err(
-            400,
-            'At least one project allocation is required before submitting this timesheet. Sync attendance again or use Auto Distribute after confirming a project has a Project Manager assigned.',
-          );
-        }
-        header.status = 'Submitted';
-        header.submittedAt = new Date().toISOString();
-        header.submittedBy = actor;
-        header.projectManager = projectManagerAssignment.projectManager;
-        header.projectManagerProjectCode = projectManagerAssignment.projectCode;
-        header.currentApprovalStage = 'Supervisor';
-        header.currentApprover = header.supervisorName;
-        header.workflowHistory = [
-          ...(header.workflowHistory || []),
-          {
-            stage: 'Supervisor',
-            decision: 'Submitted',
-            by: actor,
-            actedAt: header.submittedAt,
-            comment: payload.reviewerNote?.trim() || `Submitted for supervisor review before release to ${projectManagerAssignment.projectManager} on ${projectManagerAssignment.projectCode} - ${projectManagerAssignment.projectName}.`,
-          },
-        ];
-      } else if (action === 'SAVE_DRAFT' || (action === 'MATRIX_SAVE' && isTimesheetInApprovalCapture(previousStatus))) {
+      if (action === 'SAVE_DRAFT' || (action === 'MATRIX_SAVE' && isTimesheetInApprovalCapture(previousStatus))) {
         if (isTimesheetInApprovalCapture(previousStatus)) {
           header.workflowHistory = [
             ...(header.workflowHistory || []),
@@ -2030,19 +1993,6 @@ export async function PATCH(request: Request) {
       }
 
       await writeTimesheetHeaderLines(header, persistCheck.lines);
-      if (action === 'SUBMIT') {
-        try {
-          const { notifyTimesheetStageChange } = await import('@/lib/timesheet-workflow-notifications');
-          await notifyTimesheetStageChange({
-            header,
-            action: 'SUBMIT',
-            actor,
-            comment: payload.reviewerNote,
-          });
-        } catch (error) {
-          console.warn('[Timesheet] Submit notification skipped:', error instanceof Error ? error.message : error);
-        }
-      }
       return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName, mode));
     }
 

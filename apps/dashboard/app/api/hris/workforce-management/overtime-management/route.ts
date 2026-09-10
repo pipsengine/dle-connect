@@ -3,6 +3,7 @@ import { permissionsForRequest } from '@/lib/auth/request-permissions';
 import {
   applyOvertimeAction,
   createOvertimeRequest,
+  emptyOvertimeManagementPayload,
   normalizeOvertimeRole,
   overtimeCsv,
   readOvertimeEmployeeAttendance,
@@ -16,9 +17,23 @@ import {
   listOvertimeAuthorizationRequests,
 } from '@/lib/overtime-approval-workflow-store';
 import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
+import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
+import { hasBiometricClockIn } from '@/lib/timesheet-entry-shared';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+export const maxDuration = 120;
 
 const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
+
+const humanizeOvertimeError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error || '');
+  if (/<!DOCTYPE|Unexpected token ['"]<|is not valid JSON/i.test(message)) {
+    return 'Unable to load overtime management. The overtime service returned a web page instead of data. Please refresh and try again.';
+  }
+  return message || 'Unable to load overtime management.';
+};
 
 const permissionsFromRequest = (request: NextRequest) =>
   (request.headers.get('x-auth-permissions') || '')
@@ -96,11 +111,22 @@ export async function GET(request: NextRequest) {
       const attendance = await readOvertimeEmployeeAttendance(attendanceDate, employeeCodes);
       return ok({ workDate: attendanceDate, attendance });
     }
-    const [payload, authorizationRequests] = await Promise.all([
-      readOvertimeManagementPayload(role),
-      listOvertimeAuthorizationRequests().catch(() => []),
+    const [authorizationRequests, payload, holidayDates] = await Promise.all([
+      listOvertimeAuthorizationRequests().catch((error) => {
+        console.warn('[OvertimeManagement] Authorization requests skipped:', error instanceof Error ? error.message : error);
+        return [];
+      }),
+      readOvertimeManagementPayload(role).catch((error) => {
+        console.warn('[OvertimeManagement] Payload load degraded:', error instanceof Error ? error.message : error);
+        return emptyOvertimeManagementPayload(role, humanizeOvertimeError(error));
+      }),
+      getPayrollPublicHolidayDates().catch(() => [] as string[]),
     ]);
-    const data = applyAccessToPayload({ ...payload, authorizationRequests }, request, livePermissions);
+    const data = applyAccessToPayload({
+      ...payload,
+      authorizationRequests,
+      holidayDates: payload.holidayDates?.length ? payload.holidayDates : holidayDates,
+    }, request, livePermissions);
     if (request.nextUrl.searchParams.get('format') === 'csv') {
       if (!hasAnyPermission(request, ['overtime.authorization.export', 'workforce.manage', 'operations.timesheets.export'], livePermissions)) return err(403, 'Permission denied.');
       if (!data.permissions.canExport) return err(403, 'Permission denied.');
@@ -113,7 +139,7 @@ export async function GET(request: NextRequest) {
     }
     return ok(data);
   } catch (error) {
-    return err(500, error instanceof Error ? error.message : 'Unable to load overtime management.');
+    return err(500, humanizeOvertimeError(error));
   }
 }
 
@@ -162,28 +188,27 @@ export async function POST(request: NextRequest) {
           hoursByEmployee.set(code, (hoursByEmployee.get(code) || 0) + hours);
         }
       }
+      const missingClockIn: string[] = [];
       for (const [code, totalHours] of hoursByEmployee) {
-        if (/^c\d+/i.test(code)) continue;
+        if (!(totalHours > 0)) continue;
         const row = attendanceByCode.get(code);
-        if (!row || row.biometricDuration <= 0) continue;
-        const available = Math.max(0, Math.round((row.biometricDuration - row.usedHours) * 100) / 100);
-        if (totalHours <= available + 0.001) continue;
-        // Match timesheet booking: cap to available biometric headroom instead of rejecting.
-        const scale = available <= 0 ? 0 : available / totalHours;
+        if (hasBiometricClockIn(row?.clockIn)) continue;
+        missingClockIn.push(code);
         for (const entry of projectEntries) {
           if (!Array.isArray(entry.employees)) continue;
           entry.employees = entry.employees.map((line: Record<string, unknown>) => {
             const lineCode = String(line.employeeCode || '').trim().toLowerCase();
             if (lineCode !== code) return line;
-            const hours = Number(line.overtimeHours || 0);
-            if (!(hours > 0)) return line;
-            return {
-              ...line,
-              overtimeHours: Math.max(0, Math.round(hours * scale * 100) / 100),
-            };
+            return { ...line, overtimeHours: 0 };
           });
         }
-        hoursByEmployee.set(code, available);
+        hoursByEmployee.set(code, 0);
+      }
+      const remainingHours = Array.from(hoursByEmployee.values()).reduce((sum, hours) => sum + hours, 0);
+      if (!(remainingHours > 0)) {
+        return err(400, missingClockIn.length
+          ? `Overtime cannot be booked without a biometric clock-in (${missingClockIn.join(', ')}).`
+          : 'Book overtime for at least one employee who clocked in on biometric.');
       }
 
       for (const entry of projectEntries) {

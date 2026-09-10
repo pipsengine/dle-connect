@@ -2284,7 +2284,7 @@ VALUES (@Id,@HeaderId,@EmployeeId,@EmployeeNo,@EmployeeName,@BiometricId,@Attend
   }
 }
 
-export async function readTimesheetDraftBookedHeaders(options?: { softFail?: boolean }) {
+export async function readTimesheetDraftBookedHeaders(options?: { softFail?: boolean; limit?: number | null }) {
   let pool: sql.ConnectionPool;
   try {
     pool = await db();
@@ -2293,8 +2293,10 @@ export async function readTimesheetDraftBookedHeaders(options?: { softFail?: boo
     throw error;
   }
 
+  const limit = options?.limit === null ? null : Math.max(1, Math.floor(options?.limit ?? 100));
+  const topClause = limit ? `TOP (${limit})` : '';
   const headersResult = await pool.request().query(`
-    SELECT TOP (100) h.*
+    SELECT ${topClause} h.*
     FROM [hris].[TimesheetHeaders] h
     WHERE h.[Status] = N'Draft'
       AND EXISTS (
@@ -2306,6 +2308,27 @@ export async function readTimesheetDraftBookedHeaders(options?: { softFail?: boo
     ORDER BY h.[TimesheetDate] DESC, h.[SupervisorName], h.[WorkCenterName]
   `);
 
+  const headerIds = headersResult.recordset.map((row) => String(row.Id));
+  const { eventsByHeader, lines } = await loadTimesheetChildData(pool, headerIds);
+  const headers = headersResult.recordset.map((row) => mapTimesheetHeaderRow(row, eventsByHeader));
+  return { headers, lines };
+}
+
+export async function readTimesheetHeadersForWorkDates(dates: string[]) {
+  const uniqueDates = [...new Set(dates.map((value) => String(value || '').trim()).filter(Boolean))];
+  if (!uniqueDates.length) return { headers: [] as TimesheetHeader[], lines: [] as TimesheetLine[] };
+
+  const pool = await db();
+  const request = pool.request();
+  request.input('dates', sql.NVarChar(sql.MAX), JSON.stringify(uniqueDates));
+  const headersResult = await request.query(`
+    SELECT h.*
+    FROM [hris].[TimesheetHeaders] h
+    WHERE CONVERT(date, h.[TimesheetDate]) IN (
+      SELECT CAST([value] AS date) FROM OPENJSON(@dates)
+    )
+    ORDER BY h.[TimesheetDate] DESC, h.[SupervisorName], h.[WorkCenterName]
+  `);
   const headerIds = headersResult.recordset.map((row) => String(row.Id));
   const { eventsByHeader, lines } = await loadTimesheetChildData(pool, headerIds);
   const headers = headersResult.recordset.map((row) => mapTimesheetHeaderRow(row, eventsByHeader));

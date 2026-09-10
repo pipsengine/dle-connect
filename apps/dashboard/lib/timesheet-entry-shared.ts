@@ -126,6 +126,9 @@ export const clockTimeToMinutes = (value?: string | null): number | null => {
   return parseClockMinutes(raw);
 };
 
+/** True when the timesheet/biometric row has a real clock-in punch (not absent / placeholder). */
+export const hasBiometricClockIn = (clockIn?: string | null) => clockTimeToMinutes(clockIn) !== null;
+
 /** Classify a clock-in as Day or Night from punch time (18:00–06:00 = Night). */
 export const classifyAttendanceShiftFromClockIn = (clockIn?: string | null): TimesheetShiftKind => {
   const minutes = clockTimeToMinutes(clockIn);
@@ -424,6 +427,26 @@ export const isPremiumTimesheetDay = (date: string, holidayDates: string[] = [])
 /** Weekday and night pay only hours above 8. Weekend/PH pay all hours worked. */
 export const overtimePaysHoursAboveStandard = (dayType: string) =>
   dayType === 'Weekday' || dayType === 'Night';
+
+/** Regular (non-OT) productive hours for a day type. PH/weekend have none — every hour is overtime. */
+export const overtimeBaseHoursForDayType = (dayType: string) =>
+  overtimePaysHoursAboveStandard(dayType) ? STANDARD_TIMESHEET_HOURS : 0;
+
+export const overtimeBaseHoursForDate = (date?: string | null, holidayDates: string[] = []) =>
+  overtimeBaseHoursForDayType(overtimeDayTypeForDate(String(date || ''), holidayDates));
+
+/**
+ * OT authorization gate (temporary policy):
+ * - No biometric clock-in → cannot book OT (0h).
+ * - Clocked in → any OT hours (leftover/headroom cap suspended).
+ */
+export const availableOvertimeHoursFromAttendance = (input: {
+  biometricDuration?: number;
+  usedHours?: number;
+  dayType?: string;
+  employeeCode?: string | null;
+  clockIn?: string | null;
+}) => (hasBiometricClockIn(input.clockIn) ? Number.POSITIVE_INFINITY : 0);
 
 export const resolveTimesheetHours = (dayContext?: TimesheetDayContext) => {
   const shift = resolveTimesheetShift(dayContext?.shiftLabel);
