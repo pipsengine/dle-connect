@@ -404,8 +404,29 @@ export const timesheetDayRulesForDate = (date: string, holidayDates: string[] = 
   return { kind: 'Weekday', ...standardDay };
 };
 
+export const timesheetDayKindLabel = (kind: TimesheetDayKind) =>
+  kind === 'PublicHoliday' ? 'Public Holiday' : kind;
+
+/** Payroll OT day type. PH beats weekend. Night is a shift, not a calendar day. */
+export const overtimeDayTypeForDate = (
+  date: string,
+  holidayDates: string[] = [],
+): 'Weekday' | 'Saturday' | 'Sunday' | 'Public Holiday' => {
+  const kind = timesheetDayRulesForDate(date, holidayDates).kind;
+  if (kind === 'PublicHoliday') return 'Public Holiday';
+  return kind;
+};
+
+/** Sat / Sun / PH: all worked hours are payable (not only hours above 8). */
+export const isPremiumTimesheetDay = (date: string, holidayDates: string[] = []) =>
+  overtimeDayTypeForDate(date, holidayDates) !== 'Weekday';
+
 export const resolveTimesheetHours = (dayContext?: TimesheetDayContext) => {
   const shift = resolveTimesheetShift(dayContext?.shiftLabel);
+  const rules = dayContext?.date
+    ? timesheetDayRulesForDate(dayContext.date, dayContext.holidayDates)
+    : null;
+  const kind = rules?.kind ?? ('Weekday' as TimesheetDayKind);
   // Night 18:00–02:00 is already net 8h productive — do not require an extra 1h break against biometric.
   if (shift.kind === 'Night') {
     return {
@@ -413,22 +434,24 @@ export const resolveTimesheetHours = (dayContext?: TimesheetDayContext) => {
       grossHours: STANDARD_TIMESHEET_HOURS,
       isReducedDay: false,
       shiftKind: shift.kind,
+      kind,
     };
   }
-  if (!dayContext?.date) {
+  if (!rules) {
     return {
       standardProductiveHours: STANDARD_TIMESHEET_HOURS,
       grossHours: GROSS_TIMESHEET_HOURS,
       isReducedDay: false,
       shiftKind: shift.kind,
+      kind,
     };
   }
-  const rules = timesheetDayRulesForDate(dayContext.date, dayContext.holidayDates);
   return {
     standardProductiveHours: rules.standardProductiveHours,
     grossHours: rules.grossHours,
     isReducedDay: rules.isReducedDay,
     shiftKind: shift.kind,
+    kind: rules.kind,
   };
 };
 

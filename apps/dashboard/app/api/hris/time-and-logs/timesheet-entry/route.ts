@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
-import { appendOrganizationAuditEvent } from '@/lib/organization-audit-store';
+import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 import { getUiPermissions, hasPermission, resolveAccessContext } from '@/lib/hris-access';
 import {
   calculateTimesheetPeriod,
@@ -678,18 +678,7 @@ const resolveDashboardRoot = () => {
   return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
 };
 
-const HOLIDAY_PATH = path.join(resolveDashboardRoot(), 'data', 'hris', 'payroll-public-holidays.json');
-
-const readPublicHolidayDates = async (): Promise<string[]> => {
-  try {
-    const raw = await readFile(HOLIDAY_PATH, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed?.dates)) return parsed.dates.map(String).filter(Boolean);
-  } catch {
-    return [];
-  }
-  return [];
-};
+const readPublicHolidayDates = async (): Promise<string[]> => getPayrollPublicHolidayDates();
 
 const activeText = (value: unknown) => clean(value).toLowerCase();
 const isInactiveText = (value: unknown) => /exited|suspended|terminated|inactive|disabled|resigned|retired|deleted/.test(activeText(value));

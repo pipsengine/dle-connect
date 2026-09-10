@@ -62,6 +62,7 @@ export type TimesheetEnterpriseViewProps = {
   periodIsOpen: boolean;
   headerStatus?: string | null;
   selectedDate: string;
+  isPublicHoliday?: boolean;
   selectedShift: string;
   shiftOptions: string[];
   shiftHint?: string;
@@ -341,7 +342,10 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                 onChange={(e) => props.onDateChange(e.target.value)}
                 className="w-full min-w-0 rounded-xl border border-[#E5E7EB] px-3 py-2 text-sm font-semibold text-[#0F172A] focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20"
               />
-              <p className="mt-1 text-xs text-[#94A3B8]">{formatWorkingDate(props.selectedDate)}</p>
+              <p className="mt-1 text-xs text-[#94A3B8]">
+                {formatWorkingDate(props.selectedDate)}
+                {props.isPublicHoliday ? ' · Public Holiday (2× hours worked)' : ''}
+              </p>
             </ContextField>
             <ContextField label="Supervisor">
               <SearchableContextPicker

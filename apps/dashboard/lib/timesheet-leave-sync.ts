@@ -17,6 +17,7 @@ import {
   normalizeProjectAllocations,
   resolveTimesheetShift,
   timesheetShiftHeaderSlug,
+  timesheetDayRulesForDate,
 } from '@/lib/timesheet-entry-shared';
 import {
   calculateTimesheetPeriod,
@@ -25,6 +26,7 @@ import {
   type TimesheetHeader,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-store';
+import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 
 export type LeaveTimesheetSyncInput = {
   employeeId: string;
@@ -40,19 +42,17 @@ export type LeaveTimesheetSyncInput = {
 const compact = (value: unknown) => String(value || '').trim();
 const leaveRemarkFor = (requestId: string) => `${APPROVED_PAID_LEAVE_REMARK} ${compact(requestId)}`;
 
-const isWorkingDate = (date: string) => {
-  const day = new Date(`${date.slice(0, 10)}T00:00:00.000Z`).getUTCDay();
-  return day !== 0 && day !== 6;
-};
+const isWorkingDate = (date: string, holidayDates: string[] = []) =>
+  timesheetDayRulesForDate(date, holidayDates).kind === 'Weekday';
 
-export const workingDatesInLeaveRange = (startDate: string, endDate: string) => {
+export const workingDatesInLeaveRange = (startDate: string, endDate: string, holidayDates: string[] = []) => {
   const start = compact(startDate).slice(0, 10);
   const end = compact(endDate).slice(0, 10);
   if (!start || !end || end < start) return [] as string[];
   const dates: string[] = [];
   for (let cursor = new Date(`${start}T00:00:00.000Z`); cursor <= new Date(`${end}T00:00:00.000Z`); cursor = new Date(cursor.getTime() + 86400000)) {
     const iso = cursor.toISOString().slice(0, 10);
-    if (isWorkingDate(iso)) dates.push(iso);
+    if (isWorkingDate(iso, holidayDates)) dates.push(iso);
   }
   return dates;
 };
@@ -249,7 +249,8 @@ export async function syncCCodeLeaveToTimesheet(input: LeaveTimesheetSyncInput) 
     return { daysUpdated: 0, skipped: true, reason: 'Employee record not found.' };
   }
 
-  const dates = workingDatesInLeaveRange(input.startDate, input.endDate);
+  const holidayDates = await getPayrollPublicHolidayDates();
+  const dates = workingDatesInLeaveRange(input.startDate, input.endDate, holidayDates);
   if (!dates.length) return { daysUpdated: 0, skipped: true, reason: 'No working days in leave range.' };
 
   const supervisorId = await resolveSupervisorId(employee);

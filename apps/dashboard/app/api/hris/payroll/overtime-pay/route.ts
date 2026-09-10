@@ -1,12 +1,11 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
 import { NextResponse } from 'next/server';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { isTimesheetPayrollReadyStatus, normalizePaidWorkHours, readTimesheetData, type TimesheetHeader, type TimesheetLine } from '@/lib/timesheet-entry-store';
-import { timesheetDayRulesForDate } from '@/lib/timesheet-entry-shared';
+import { timesheetDayRulesForDate, overtimeDayTypeForDate } from '@/lib/timesheet-entry-shared';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { calculatePayrollOvertime } from '@/lib/payroll-earnings-engine';
+import { getPayrollPublicHolidayDates, writePayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Payroll Officer' | 'Finance Controller' | 'Executive Management' | 'Auditor' | 'Employee';
 type DayType = 'Weekday' | 'Saturday' | 'Sunday' | 'Public Holiday';
@@ -21,14 +20,6 @@ const num = (value: unknown) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const resolveDashboardRoot = () => {
-  const cwd = process.cwd();
-  const dashboardSuffix = path.join('apps', 'dashboard');
-  return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
-};
-
-const HOLIDAY_PATH = path.join(resolveDashboardRoot(), 'data', 'hris', 'payroll-public-holidays.json');
-
 const getRole = (request: Request): Role => {
   const value = request.headers.get('x-hris-role');
   const roles: Role[] = ['Super Admin', 'HR Director', 'HR Manager', 'Payroll Officer', 'Finance Controller', 'Executive Management', 'Auditor', 'Employee'];
@@ -41,36 +32,10 @@ const permissions = (role: Role) => ({
   canExport: role !== 'Employee',
 });
 
-const readHolidayDates = async (): Promise<string[]> => {
-  try {
-    const raw = await readFile(HOLIDAY_PATH, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed?.dates)) return parsed.dates.map(String).filter(Boolean);
-  } catch {
-    return [];
-  }
-  return [];
-};
-
-const writeHolidayDates = async (dates: string[]) => {
-  await mkdir(path.dirname(HOLIDAY_PATH), { recursive: true });
-  const normalized = Array.from(new Set(dates.map((date) => String(date || '').trim()).filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date)))).sort();
-  await writeFile(HOLIDAY_PATH, JSON.stringify({ dates: normalized, updatedAt: new Date().toISOString() }, null, 2), 'utf8');
-  return normalized;
-};
-
 const employeeKeys = (employee: DleEmployeeDirectoryRow) =>
   [employee.employeeId, employee.employeeCode, employee.fullName, employee.sourceEmployeeId].map(normalizePayrollMatchKey).filter(Boolean);
 
 const lineKeys = (line: TimesheetLine) => [line.employeeId, line.employeeNo, line.employeeName].map(normalizePayrollMatchKey).filter(Boolean);
-
-const dayTypeFor = (date: string, holidays: Set<string>): DayType => {
-  if (holidays.has(date)) return 'Public Holiday';
-  const day = new Date(`${date}T00:00:00`).getDay();
-  if (day === 6) return 'Saturday';
-  if (day === 0) return 'Sunday';
-  return 'Weekday';
-};
 
 const hourlyRateFor = (employee: DleEmployeeDirectoryRow, hoursPerDay: number) => {
   const ratePerHour = num(employee.ratePerHour);
@@ -93,7 +58,7 @@ const statusFromIssues = (issues: string[]): Status => {
 const buildPayload = async (request: Request) => {
   const role = getRole(request);
   const perms = permissions(role);
-  const [employeeSource, timesheetData, holidayDates] = await Promise.all([readPayrollEmployees(), readTimesheetData(), readHolidayDates()]);
+  const [employeeSource, timesheetData, holidayDates] = await Promise.all([readPayrollEmployees(), readTimesheetData(), getPayrollPublicHolidayDates()]);
   const employees = employeeSource.employees;
   const employeeByKey = new Map<string, DleEmployeeDirectoryRow>();
   for (const employee of employees || []) {
@@ -101,14 +66,13 @@ const buildPayload = async (request: Request) => {
   }
 
   const headerById = new Map<string, TimesheetHeader>(timesheetData.headers.map((header) => [header.id, header]));
-  const holidays = new Set<string>(holidayDates);
   const records = timesheetData.lines
     .map((line) => {
       const header = headerById.get(line.headerId);
       const employee = lineKeys(line).map((key) => employeeByKey.get(key)).find(Boolean);
       if (!header || !employee) return null;
       const date = header.timesheetDate;
-      const dayType = dayTypeFor(date, holidays);
+      const dayType = overtimeDayTypeForDate(date, holidayDates);
       const dayRules = timesheetDayRulesForDate(date, holidayDates);
       const hoursPerDay = dayRules.standardProductiveHours;
       const workedHours = Math.max(normalizePaidWorkHours(num(line.attendanceDuration)), normalizePaidWorkHours(num(line.totalHours)), normalizePaidWorkHours(num(line.usedHours) + num(line.idleHours)));
@@ -295,7 +259,7 @@ export async function POST(request: Request) {
 
     if (!perms.canConfigureHolidays) return err(403, 'Permission denied');
     if (!Array.isArray(body.publicHolidays)) return err(400, 'publicHolidays must be an array of YYYY-MM-DD dates');
-    const publicHolidays = await writeHolidayDates(body.publicHolidays);
+    const publicHolidays = await writePayrollPublicHolidayDates(body.publicHolidays);
     return ok({ updated: true, publicHolidays });
   } catch (error) {
     return err(500, error instanceof Error ? error.message : 'Unable to update overtime pay settings.');

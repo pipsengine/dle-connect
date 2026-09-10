@@ -19,8 +19,7 @@ import {
 import { buildPayrollAttendanceSheet } from '@/lib/timesheet-payroll-attendance-sheet';
 import { buildCCodeProjectFinanceCosts, type ProjectFinanceCostResult } from '@/lib/project-finance-cost-service';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
+import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 
 export const maxDuration = 120;
 
@@ -155,23 +154,6 @@ const includes = (value: unknown, needle: string) => lower(value).includes(needl
 const hoursBetween = (from: string | null | undefined, to: string | null | undefined) =>
   from && to ? Math.max(0, (new Date(to).getTime() - new Date(from).getTime()) / 3600000) : 0;
 
-const resolveDashboardRoot = () => {
-  const cwd = process.cwd();
-  const dashboardSuffix = path.join('apps', 'dashboard');
-  return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
-};
-
-const readHolidayDates = async (): Promise<string[]> => {
-  try {
-    const raw = await readFile(path.join(resolveDashboardRoot(), 'data', 'hris', 'payroll-public-holidays.json'), 'utf8');
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed?.dates)) return parsed.dates.map(String).filter(Boolean);
-  } catch {
-    return [];
-  }
-  return [];
-};
-
 const managementRoles = ['OrganizationAdmin', 'Super Administrator', 'HRBusinessPartner', 'Auditor'];
 const roleScope = (role: string, actor: string) => {
   const text = lower(`${role} ${actor}`);
@@ -288,7 +270,7 @@ export async function GET(request: Request) {
       readTimesheetPayrollUpdates(),
       readProjects(),
       readPayrollEmployees(),
-      readHolidayDates(),
+      getPayrollPublicHolidayDates(),
     ]);
 
     const employeeByCode = new Map(payrollEmployees.employees.map((employee) => [lower(employee.employeeCode || employee.employeeId), employee]));

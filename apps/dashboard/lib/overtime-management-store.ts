@@ -14,6 +14,8 @@ import {
 } from '@/lib/timesheet-entry-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
+import { overtimeDayTypeForDate, isPremiumTimesheetDay } from '@/lib/timesheet-entry-shared';
+import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 
 export type OvertimeRole =
   | 'Employee'
@@ -211,13 +213,6 @@ const jsonArray = (value: string | null | undefined) => {
 
 export const normalizeOvertimeRole = (role?: string | null): OvertimeRole =>
   allRoles.find((item) => item.toLowerCase() === String(role || '').toLowerCase()) || 'HR Manager';
-
-const dayTypeFor = (date: string): OvertimeDayType => {
-  const day = new Date(`${date}T00:00:00`).getDay();
-  if (day === 6) return 'Saturday';
-  if (day === 0) return 'Sunday';
-  return 'Weekday';
-};
 
 const employeeKeys = (employee: DleEmployeeDirectoryRow) => [employee.employeeId, employee.employeeCode, employee.fullName, employee.sourceEmployeeId].map(normalizePayrollMatchKey).filter(Boolean);
 const lineKeys = (line: TimesheetLine) => [line.employeeId, line.employeeNo, line.employeeName].map(normalizePayrollMatchKey).filter(Boolean);
@@ -483,7 +478,11 @@ const initialStatusFor = (payrollReady: boolean, issues: string[]): OvertimeStat
 };
 
 const buildCandidateRecords = async () => {
-  const [employeeSource, timesheetData] = await Promise.all([readPayrollEmployees(), readTimesheetData()]);
+  const [employeeSource, timesheetData, holidayDates] = await Promise.all([
+    readPayrollEmployees(),
+    readTimesheetData(),
+    getPayrollPublicHolidayDates(),
+  ]);
   const employeeByKey = new Map<string, DleEmployeeDirectoryRow>();
   for (const employee of employeeSource.employees) {
     for (const key of employeeKeys(employee)) employeeByKey.set(key, employee);
@@ -495,7 +494,7 @@ const buildCandidateRecords = async () => {
     const employee = lineKeys(line).map((key) => employeeByKey.get(key)).find(Boolean);
     if (!header || !employee) return null;
     const date = header.timesheetDate;
-    const dayType = dayTypeFor(date);
+    const dayType = overtimeDayTypeForDate(date, holidayDates);
     const workedHours = Math.max(normalizePaidWorkHours(line.attendanceDuration), normalizePaidWorkHours(line.totalHours), normalizePaidWorkHours(line.usedHours + line.idleHours));
     const overtimeHours = Math.max(0, round2(workedHours - STANDARD_TIMESHEET_HOURS));
     const payableHours = dayType === 'Weekday' || dayType === 'Night' ? overtimeHours : workedHours;
@@ -895,13 +894,18 @@ export const createOvertimeRequest = async (input: OvertimeCreateRequest, roleIn
   const employeeKey = clean(input.employeeId);
   if (!employeeKey) throw new Error('Employee is required for overtime request.');
   if (!input.date) throw new Error('Overtime date is required.');
+  const holidayDates = await getPayrollPublicHolidayDates();
+  const dayType = input.dayType || overtimeDayTypeForDate(input.date, holidayDates);
   const workedHours = round2(Number(input.workedHours || 0));
-  if (workedHours <= STANDARD_TIMESHEET_HOURS) throw new Error(`Worked hours must exceed ${STANDARD_TIMESHEET_HOURS} hours for overtime.`);
+  const premiumDay = isPremiumTimesheetDay(input.date, holidayDates) || dayType === 'Public Holiday' || dayType === 'Saturday' || dayType === 'Sunday';
+  if (!premiumDay && workedHours <= STANDARD_TIMESHEET_HOURS) {
+    throw new Error(`Worked hours must exceed ${STANDARD_TIMESHEET_HOURS} hours for overtime.`);
+  }
+  if (premiumDay && workedHours <= 0) throw new Error('Worked hours must be greater than zero for a public holiday or weekend.');
 
   const employeeSource = await readPayrollEmployees();
   const employee = employeeSource.employees.find((item) => employeeKeys(item).includes(normalizePayrollMatchKey(employeeKey)));
   if (!employee) throw new Error('Employee was not found in HRIS employee master.');
-  const dayType = input.dayType || dayTypeFor(input.date);
   const payableHours = round2(Number(input.payableHours || (dayType === 'Weekday' || dayType === 'Night' ? workedHours - STANDARD_TIMESHEET_HOURS : workedHours)));
   if (payableHours <= 0) throw new Error('Payable overtime hours must be greater than zero.');
   const overtime = calculatePayrollOvertime(employee, dayType, payableHours);

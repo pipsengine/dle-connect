@@ -11,6 +11,7 @@ import {
 import { applyOvertimeBooking } from '@/lib/timesheet-overtime-booking';
 import { resolveOvertimeBookingOptions } from '@/lib/timesheet-overtime-config';
 import type { OvertimeAuthorization } from '@/lib/timesheet-entry-shared';
+import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 
 export type ApprovedOvertimePostingInput = {
   requestId: string;
@@ -87,7 +88,8 @@ export const postApprovedOvertimeToTimesheets = async (
     requestedHeadcount: employees.length,
     workCenter,
   };
-  const dayContext = { date: input.workDate, holidayDates: [] as string[] };
+  const holidayDates = await getPayrollPublicHolidayDates();
+  const dayContext = { date: input.workDate, holidayDates };
 
   const nextLines = lines.filter((line) => line.headerId === header.id);
 

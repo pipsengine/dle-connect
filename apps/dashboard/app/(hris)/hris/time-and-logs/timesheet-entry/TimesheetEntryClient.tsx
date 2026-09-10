@@ -1464,6 +1464,9 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const displayError = error && canBookOvertime && payrollLockMessage.test(error) ? null : error;
   const displayNotice =
     notice ||
+    (dayRules.kind === 'PublicHoliday'
+      ? 'This date is a Nigeria public holiday. Hours worked pay at 2×. Unworked PH is not auto-filled.'
+      : null) ||
     (isTimesheetInApprovalCapture(headerStatus) && canEditTimesheet
       ? 'This timesheet is not payroll-approved yet. You can still book hours. Saving recalls it to Draft — use Review & Submit when it is complete.'
       : error && canBookOvertime && payrollLockMessage.test(error)
@@ -1560,6 +1563,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           periodIsOpen={periodIsOpen}
           headerStatus={payload?.header?.status || 'Draft'}
           selectedDate={selectedDate}
+          isPublicHoliday={dayRules.kind === 'PublicHoliday'}
           selectedShift={selectedShift}
           shiftOptions={payload?.filterOptions.shifts ?? []}
           supervisorLabel={supervisorLabel}
@@ -1656,9 +1660,11 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           refreshing={refreshing}
           error={displayError}
           notice={
-            isTimesheetInApprovalCapture(headerStatus) && canEditTimesheet && !notice
-              ? null
-              : displayNotice
+            notice || dayRules.kind === 'PublicHoliday'
+              ? displayNotice
+              : isTimesheetInApprovalCapture(headerStatus) && canEditTimesheet
+                ? null
+                : displayNotice
           }
           isOffshoreSheet={isOffshoreSheet}
           offshoreNotice={payload?.mobilizedCrew?.message || null}
@@ -1836,6 +1842,9 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
               <div className="text-right">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Working Date</p>
                 <input type="date" value={selectedDate} onChange={(e) => { setRequestedHeaderId(''); setSelectedDate(e.target.value); }} className="bg-transparent text-sm font-black text-slate-900 focus:outline-none" />
+                {dayRules.kind === 'PublicHoliday' ? (
+                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Public Holiday · 2× hours worked</p>
+                ) : null}
               </div>
             </div>
           </div>

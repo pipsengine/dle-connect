@@ -21,10 +21,9 @@ import {
   type TimesheetHeader,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-store';
-import { timesheetDayRulesForDate, resolveTimesheetShift } from '@/lib/timesheet-entry-shared';
+import { timesheetDayRulesForDate, overtimeDayTypeForDate, resolveTimesheetShift } from '@/lib/timesheet-entry-shared';
 import { isNightTimesheetHeader, postPermanentTimesheetNightAllowanceToPayroll } from '@/lib/payroll-timesheet-night-allowance-posting';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
+import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 const round2 = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
@@ -33,33 +32,6 @@ const num = (value: unknown) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 const compact = (value: unknown) => String(value || '').trim();
-
-const resolveDashboardRoot = () => {
-  const cwd = process.cwd();
-  const dashboardSuffix = path.join('apps', 'dashboard');
-  return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
-};
-
-const HOLIDAY_PATH = path.join(resolveDashboardRoot(), 'data', 'hris', 'payroll-public-holidays.json');
-
-const readHolidayDates = async (): Promise<string[]> => {
-  try {
-    const raw = await readFile(HOLIDAY_PATH, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed?.dates)) return parsed.dates.map(String).filter(Boolean);
-  } catch {
-    return [];
-  }
-  return [];
-};
-
-const dayTypeFor = (date: string, holidays: Set<string>): OvertimeDayType => {
-  if (holidays.has(date)) return 'Public Holiday';
-  const day = new Date(`${date}T00:00:00`).getDay();
-  if (day === 6) return 'Saturday';
-  if (day === 0) return 'Sunday';
-  return 'Weekday';
-};
 
 const employeeKeys = (employee: DleEmployeeDirectoryRow) =>
   [employee.employeeId, employee.employeeCode, employee.fullName, employee.sourceEmployeeId].map(normalizePayrollMatchKey).filter(Boolean);
@@ -108,7 +80,7 @@ export const postPermanentTimesheetOvertimeToPayroll = async (period?: string): 
   const [employeeSource, timesheetData, holidayDates] = await Promise.all([
     readPayrollEmployees(),
     readTimesheetData(),
-    readHolidayDates(),
+    getPayrollPublicHolidayDates(),
   ]);
   const employees = employeeSource.employees || [];
   const employeeByKey = new Map<string, DleEmployeeDirectoryRow>();
@@ -117,7 +89,6 @@ export const postPermanentTimesheetOvertimeToPayroll = async (period?: string): 
   }
 
   const headerById = new Map(timesheetData.headers.map((header) => [header.id, header]));
-  const holidays = new Set(holidayDates);
   const buckets = new Map<string, {
     employee: DleEmployeeDirectoryRow;
     code: string;
@@ -145,7 +116,7 @@ export const postPermanentTimesheetOvertimeToPayroll = async (period?: string): 
     if (!employee || !isPermanentPayrollEmployee(employee)) continue;
 
     const date = header.timesheetDate;
-    const dayType = dayTypeFor(date, holidays);
+    const dayType = overtimeDayTypeForDate(date, holidayDates);
     const dayRules = timesheetDayRulesForDate(date, holidayDates);
     const hoursPerDay = dayRules.standardProductiveHours;
     const workedHours = Math.max(

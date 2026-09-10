@@ -273,3 +273,17 @@ export const nigeriaHolidayDateSet = async (options?: { forceRefresh?: boolean }
   const resolved = await resolveNigeriaPublicHolidays(options);
   return new Set(resolved.dates);
 };
+
+/** Holiday dates for timesheet/OT/payroll day typing. Resolves the Nigeria feed when the cache is empty or stale. */
+export const getPayrollPublicHolidayDates = async (options?: { forceRefresh?: boolean }) => {
+  const resolved = await resolveNigeriaPublicHolidays(options);
+  return resolved.dates;
+};
+
+export const writePayrollPublicHolidayDates = async (dates: string[]) => {
+  const normalized = Array.from(
+    new Set(dates.map(dateOnly).filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))),
+  ).sort();
+  await writeJsonFile(PAYROLL_HOLIDAY_PATH, { dates: normalized, updatedAt: new Date().toISOString() });
+  return normalized;
+};
