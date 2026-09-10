@@ -1024,7 +1024,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           shiftLabel: selectedShift,
         }),
       });
-      const json = await readApiJson(res);
+  const json = await readApiJson(res);
       if (!res.ok || json?.status !== 'success') throw new Error(json?.error || 'Save failed');
       setPayload(json.data);
       setLocalLines(json.data.lines);
@@ -1034,7 +1034,12 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
         setQuery('');
         setBulkProject('');
         setBulkHours(resolveTimesheetHours({ date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift }).standardProductiveHours);
-        setNotice('Timesheet submitted for supervisor review. You can still book hours until HR acknowledges it for payroll. Saving recalls it to Draft.');
+        const skipNotice = String(json.data?.submitNotice || '').trim();
+        setNotice(
+          skipNotice
+            ? skipNotice
+            : 'Timesheet submitted for supervisor review. You can still book hours until HR acknowledges it for payroll. Saving recalls it to Draft.',
+        );
       } else if (saveAsDraft) {
         setNotice(
           isTimesheetInApprovalCapture(payload?.header?.status)

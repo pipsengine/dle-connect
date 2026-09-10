@@ -1886,7 +1886,7 @@ export async function PATCH(request: Request) {
       const header = headers.find((h) => h.id === headerId);
       if (!header) return err(404, 'Timesheet header not found.');
       try {
-        await submitTimesheetForApproval({
+        const submitted = await submitTimesheetForApproval({
           header,
           lines: updatedLines,
           otherHeaders: headers,
@@ -1895,10 +1895,14 @@ export async function PATCH(request: Request) {
           reviewerNote: payload.reviewerNote,
           shiftLabel: payload.shiftLabel,
         });
+        return ok({
+          ...(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName, mode)),
+          submitNotice: submitted.submitNotice,
+          submitSkippedAlreadyBooked: submitted.skippedAlreadyBooked,
+        });
       } catch (error) {
         return err(400, error instanceof Error ? error.message : 'Unable to submit timesheet for approval.');
       }
-      return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName, mode));
     }
 
     if (action === 'MATRIX_SAVE' || action === 'SAVE_DRAFT') {

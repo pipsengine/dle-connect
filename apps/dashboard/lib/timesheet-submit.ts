@@ -38,6 +38,7 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { canonicalProjectManagerForCode, withCanonicalProjectManager } from '@/lib/timesheet-canonical-project-managers';
+import { formatAlreadyBookedSkipNotice, releaseLinesAlreadyBookedElsewhere } from '@/lib/timesheet-booking-clash';
 
 const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string | null): TimesheetDayContext => ({
   date,
@@ -295,6 +296,8 @@ export type SubmitTimesheetResult = {
   projectManager: string;
   projectCode: string;
   projectName: string;
+  skippedAlreadyBooked: Array<{ employeeName: string; employeeNo: string; bookedOn: string }>;
+  submitNotice: string;
 };
 
 export async function submitTimesheetForApproval(input: {
@@ -310,6 +313,7 @@ export async function submitTimesheetForApproval(input: {
   repairBiometricHours?: boolean;
   projects?: Project[];
   holidayDates?: string[];
+  skipAlreadyBookedEmployees?: boolean;
 }): Promise<SubmitTimesheetResult> {
   const header = input.header;
   const persist = input.persist !== false;
@@ -379,24 +383,23 @@ export async function submitTimesheetForApproval(input: {
     const otherHeader = input.otherHeaders.find((item) => item.id === line.headerId);
     return Boolean(otherHeader && otherHeader.timesheetDate === header.timesheetDate && otherHeader.id !== header.id);
   });
-  const headerKind = timesheetHeaderShiftKind(header.shiftLabel);
-  for (const line of reconciledLines) {
-    const bookedHours = Number(line.usedHours || 0) + (line.projectAllocations || []).reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
-    if (bookedHours <= 0.001) continue;
-    const clash = otherDateLines.find((other) => {
-      if (Number(other.usedHours || 0) <= 0.001 && !timesheetLineHasBookedHours(other)) return false;
-      const otherHeader = input.otherHeaders.find((item) => item.id === other.headerId);
-      if (timesheetHeaderShiftKind(otherHeader?.shiftLabel) !== headerKind) return false;
-      return timesheetEmployeeRecordsMatch(line, other);
-    });
-    if (clash) {
-      const otherHeader = input.otherHeaders.find((item) => item.id === clash.headerId);
-      const otherLabel = [otherHeader?.workCenterName, otherHeader?.supervisorName].filter(Boolean).join(' / ') || 'another timesheet';
-      throw new Error(`${line.employeeName} (${line.employeeNo || line.employeeId}) is already booked on ${otherLabel} for this date.`);
-    }
+  const released = releaseLinesAlreadyBookedElsewhere(reconciledLines, header, input.otherHeaders, otherDateLines);
+  if (released.skipped.length && input.skipAlreadyBookedEmployees === false) {
+    const first = released.skipped[0];
+    throw new Error(`${first.employeeName} (${first.employeeNo}) is already booked on ${first.bookedOn} for this date.`);
   }
+  const remainingBooked = released.lines.some((line) => (
+    Number(line.usedHours || 0) + (line.projectAllocations || []).reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0)
+  ) > 0.001);
+  if (!remainingBooked && released.skipped.length) {
+    throw new Error(
+      `Every booked employee is already on another timesheet for this date (${released.skipped[0].bookedOn}). Nothing left to submit here.`,
+    );
+  }
+  const skippedAlreadyBooked = input.skipAlreadyBookedEmployees === false ? [] : released.skipped;
+  const reconciledAfterClash = input.skipAlreadyBookedEmployees === false ? reconciledLines : released.lines;
 
-  const normalizedLines = reconciledLines.map((line) => ({
+  const normalizedLines = reconciledAfterClash.map((line) => ({
     ...line,
     idleAllocations: line.idleAllocations.map(withDefaultIdleReason),
   }));
@@ -415,6 +418,7 @@ export async function submitTimesheetForApproval(input: {
   header.projectManagerProjectCode = projectManagerAssignment.projectCode;
   header.currentApprovalStage = 'Supervisor';
   header.currentApprover = header.supervisorName;
+  const submitNotice = formatAlreadyBookedSkipNotice(skippedAlreadyBooked);
   header.workflowHistory = [
     ...(header.workflowHistory || []),
     {
@@ -423,7 +427,7 @@ export async function submitTimesheetForApproval(input: {
       by: input.actor,
       actedAt: header.submittedAt,
       comment: input.reviewerNote?.trim()
-        || `Submitted for supervisor review before release to ${projectManagerAssignment.projectManager} on ${projectManagerAssignment.projectCode} - ${projectManagerAssignment.projectName}.`,
+        || `Submitted for supervisor review before release to ${projectManagerAssignment.projectManager} on ${projectManagerAssignment.projectCode} - ${projectManagerAssignment.projectName}.${submitNotice ? ` ${submitNotice}` : ''}`,
     },
   ];
 
@@ -461,6 +465,8 @@ export async function submitTimesheetForApproval(input: {
     projectManager: projectManagerAssignment.projectManager,
     projectCode: projectManagerAssignment.projectCode,
     projectName: projectManagerAssignment.projectName,
+    skippedAlreadyBooked,
+    submitNotice,
   };
 }
 
