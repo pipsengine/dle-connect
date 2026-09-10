@@ -14,7 +14,7 @@ import {
 } from '@/lib/timesheet-entry-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
-import { overtimeDayTypeForDate, isPremiumTimesheetDay } from '@/lib/timesheet-entry-shared';
+import { overtimeDayTypeForDate, isPremiumTimesheetDay, overtimePaysHoursAboveStandard } from '@/lib/timesheet-entry-shared';
 import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 
 export type OvertimeRole =
@@ -497,14 +497,14 @@ const buildCandidateRecords = async () => {
     const dayType = overtimeDayTypeForDate(date, holidayDates);
     const workedHours = Math.max(normalizePaidWorkHours(line.attendanceDuration), normalizePaidWorkHours(line.totalHours), normalizePaidWorkHours(line.usedHours + line.idleHours));
     const overtimeHours = Math.max(0, round2(workedHours - STANDARD_TIMESHEET_HOURS));
-    const payableHours = dayType === 'Weekday' || dayType === 'Night' ? overtimeHours : workedHours;
+    const payableHours = overtimePaysHoursAboveStandard(dayType) ? overtimeHours : workedHours;
     if (payableHours <= 0) return null;
     const overtime = calculatePayrollOvertime(employee, dayType, payableHours);
     const payrollReady = isTimesheetPayrollReadyStatus(header.status);
     const issues = [
       ...(!overtime.hourlyRate ? ['Hourly rate cannot be derived from payroll setup'] : []),
       ...(!payrollReady ? ['Timesheet has not reached HR/payroll-ready status'] : []),
-      ...(payableHours > 4 && (dayType === 'Weekday' || dayType === 'Night') ? [`${dayType} overtime exceeds 4 hours`] : []),
+      ...(payableHours > 4 && overtimePaysHoursAboveStandard(dayType) ? [`${dayType} overtime exceeds 4 hours`] : []),
       ...(line.validationStatus === 'Error' ? ['Timesheet line has validation error'] : []),
     ];
     const status = initialStatusFor(payrollReady, issues);
@@ -906,12 +906,12 @@ export const createOvertimeRequest = async (input: OvertimeCreateRequest, roleIn
   const employeeSource = await readPayrollEmployees();
   const employee = employeeSource.employees.find((item) => employeeKeys(item).includes(normalizePayrollMatchKey(employeeKey)));
   if (!employee) throw new Error('Employee was not found in HRIS employee master.');
-  const payableHours = round2(Number(input.payableHours || (dayType === 'Weekday' || dayType === 'Night' ? workedHours - STANDARD_TIMESHEET_HOURS : workedHours)));
+  const payableHours = round2(Number(input.payableHours || (overtimePaysHoursAboveStandard(dayType) ? workedHours - STANDARD_TIMESHEET_HOURS : workedHours)));
   if (payableHours <= 0) throw new Error('Payable overtime hours must be greater than zero.');
   const overtime = calculatePayrollOvertime(employee, dayType, payableHours);
   const issues = [
     ...(!overtime.hourlyRate ? ['Hourly rate cannot be derived from payroll setup'] : []),
-    ...(payableHours > 4 && (dayType === 'Weekday' || dayType === 'Night') ? [`${dayType} overtime exceeds 4 hours`] : []),
+    ...(payableHours > 4 && overtimePaysHoursAboveStandard(dayType) ? [`${dayType} overtime exceeds 4 hours`] : []),
   ];
   const status: OvertimeStatus = issues.some((issue) => issue.toLowerCase().includes('rate')) ? 'Blocked' : 'Draft';
   const id = `ot-req-${Date.now()}-${Math.random().toString(16).slice(2)}`;

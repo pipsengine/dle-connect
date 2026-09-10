@@ -21,7 +21,7 @@ import {
   type TimesheetHeader,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-store';
-import { timesheetDayRulesForDate, overtimeDayTypeForDate, resolveTimesheetShift } from '@/lib/timesheet-entry-shared';
+import { timesheetDayRulesForDate, overtimeDayTypeForDate, overtimePaysHoursAboveStandard, resolveTimesheetShift } from '@/lib/timesheet-entry-shared';
 import { isNightTimesheetHeader, postPermanentTimesheetNightAllowanceToPayroll } from '@/lib/payroll-timesheet-night-allowance-posting';
 import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 
@@ -126,7 +126,7 @@ export const postPermanentTimesheetOvertimeToPayroll = async (period?: string): 
     );
     const productiveHours = normalizePaidWorkHours(num(line.usedHours));
     const overtimeHours = Math.max(0, round2(productiveHours - hoursPerDay));
-    const payableHours = dayType === 'Weekday' || dayType === 'Night' ? overtimeHours : workedHours;
+    const payableHours = overtimePaysHoursAboveStandard(dayType) ? overtimeHours : workedHours;
     if (payableHours <= 0) continue;
 
     const overtime = calculatePayrollOvertime(employee, dayType, payableHours);

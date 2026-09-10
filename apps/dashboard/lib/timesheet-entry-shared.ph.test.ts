@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   isPremiumTimesheetDay,
   overtimeDayTypeForDate,
+  overtimePaysHoursAboveStandard,
   resolveTimesheetHours,
   timesheetDayKindLabel,
   timesheetDayRulesForDate,
@@ -21,6 +22,9 @@ assert.equal(overtimeDayTypeForDate(boxingOnSat, holidays), 'Public Holiday');
 assert.equal(overtimeDayTypeForDate(boxingOnSat, []), 'Saturday');
 assert.equal(isPremiumTimesheetDay(independence, holidays), true);
 assert.equal(isPremiumTimesheetDay(independence, []), false);
+assert.equal(overtimePaysHoursAboveStandard('Weekday'), true);
+assert.equal(overtimePaysHoursAboveStandard('Night'), true);
+assert.equal(overtimePaysHoursAboveStandard('Public Holiday'), false);
 assert.equal(timesheetDayKindLabel('PublicHoliday'), 'Public Holiday');
 
 const phHours = resolveTimesheetHours({ date: independence, holidayDates: holidays, shiftLabel: '01 (Day)' });

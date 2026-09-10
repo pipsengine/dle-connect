@@ -421,6 +421,10 @@ export const overtimeDayTypeForDate = (
 export const isPremiumTimesheetDay = (date: string, holidayDates: string[] = []) =>
   overtimeDayTypeForDate(date, holidayDates) !== 'Weekday';
 
+/** Weekday and night pay only hours above 8. Weekend/PH pay all hours worked. */
+export const overtimePaysHoursAboveStandard = (dayType: string) =>
+  dayType === 'Weekday' || dayType === 'Night';
+
 export const resolveTimesheetHours = (dayContext?: TimesheetDayContext) => {
   const shift = resolveTimesheetShift(dayContext?.shiftLabel);
   const rules = dayContext?.date
