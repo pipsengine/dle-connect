@@ -1698,27 +1698,15 @@ const mapTimesheetLineRows = (
   }));
 };
 
-const bindHeaderIdParams = (request: sql.Request, headerIds: string[]) => {
-  const placeholders = headerIds.map((headerId, index) => {
-    const param = `headerId${index}`;
-    request.input(param, sql.NVarChar(4000), String(headerId));
-    return `@${param}`;
-  });
-  return placeholders.join(', ');
+/** One NVARCHAR(MAX) JSON array instead of per-id @params — SQL Server caps requests at 2100 parameters. */
+const jsonIdListSubquery = (request: sql.Request, paramName: string, ids: string[]) => {
+  request.input(paramName, sql.NVarChar(sql.MAX), JSON.stringify(ids.map(String)));
+  return `SELECT CAST([value] AS NVARCHAR(4000)) FROM OPENJSON(@${paramName})`;
 };
 
-const bindLineIdParams = (request: sql.Request, lineIds: string[]) => {
-  const placeholders = lineIds.map((lineId, index) => {
-    const param = `lineId${index}`;
-    request.input(param, sql.NVarChar(4000), String(lineId));
-    return `@${param}`;
-  });
-  return placeholders.join(', ');
-};
-
-const headerIdInClause = (placeholders: string) => `CONVERT(NVARCHAR(4000), [HeaderId]) IN (${placeholders})`;
-const lineHeaderIdInClause = (placeholders: string) => `CONVERT(NVARCHAR(4000), l.[HeaderId]) IN (${placeholders})`;
-const lineIdInClause = (placeholders: string) => `CONVERT(NVARCHAR(4000), [LineId]) IN (${placeholders})`;
+const headerIdInClause = (idSubquery: string) => `CONVERT(NVARCHAR(4000), [HeaderId]) IN (${idSubquery})`;
+const lineHeaderIdInClause = (idSubquery: string) => `CONVERT(NVARCHAR(4000), l.[HeaderId]) IN (${idSubquery})`;
+const lineIdInClause = (idSubquery: string) => `CONVERT(NVARCHAR(4000), [LineId]) IN (${idSubquery})`;
 const joinHeaderToLine = 'CONVERT(NVARCHAR(4000), h.[Id]) = CONVERT(NVARCHAR(4000), l.[HeaderId])';
 const joinHeaderToEvent = 'CONVERT(NVARCHAR(4000), h.[Id]) = CONVERT(NVARCHAR(4000), e.[HeaderId])';
 const joinLineToAllocation = 'CONVERT(NVARCHAR(4000), l.[Id]) = CONVERT(NVARCHAR(4000), a.[LineId])';
@@ -1732,8 +1720,8 @@ const loadTimesheetChildData = async (pool: sql.ConnectionPool, headerIds: strin
   }
   const eventsRequest = pool.request();
   const linesRequest = pool.request();
-  const headerInClause = bindHeaderIdParams(eventsRequest, headerIds);
-  bindHeaderIdParams(linesRequest, headerIds);
+  const headerInClause = jsonIdListSubquery(eventsRequest, 'headerIds', headerIds);
+  jsonIdListSubquery(linesRequest, 'headerIds', headerIds);
   const [eventsResult, linesResult] = await Promise.all([
     eventsRequest.query(`
       SELECT *
@@ -1763,8 +1751,8 @@ const loadTimesheetChildData = async (pool: sql.ConnectionPool, headerIds: strin
   if (lineIds.length) {
     const projectRequest = pool.request();
     const idleRequest = pool.request();
-    const lineInClause = bindLineIdParams(projectRequest, lineIds);
-    bindLineIdParams(idleRequest, lineIds);
+    const lineInClause = jsonIdListSubquery(projectRequest, 'lineIds', lineIds);
+    jsonIdListSubquery(idleRequest, 'lineIds', lineIds);
     [projectAllocationsResult, idleAllocationsResult] = await Promise.all([
       projectRequest.query(`
         SELECT *
@@ -2306,11 +2294,15 @@ export async function readTimesheetDraftBookedHeaders(options?: { softFail?: boo
   }
 
   const headersResult = await pool.request().query(`
-    SELECT DISTINCT h.*
+    SELECT TOP (100) h.*
     FROM [hris].[TimesheetHeaders] h
-    INNER JOIN [hris].[TimesheetLines] l ON ${joinHeaderToLine}
-    INNER JOIN [hris].[TimesheetProjectAllocations] a ON ${joinLineToAllocation}
-    WHERE h.[Status] = N'Draft' AND a.[Hours] > 0
+    WHERE h.[Status] = N'Draft'
+      AND EXISTS (
+        SELECT 1
+        FROM [hris].[TimesheetLines] l
+        INNER JOIN [hris].[TimesheetProjectAllocations] a ON ${joinLineToAllocation}
+        WHERE ${joinHeaderToLine} AND a.[Hours] > 0
+      )
     ORDER BY h.[TimesheetDate] DESC, h.[SupervisorName], h.[WorkCenterName]
   `);
 

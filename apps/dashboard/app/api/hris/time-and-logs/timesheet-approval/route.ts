@@ -482,7 +482,10 @@ const buildPayload = async (request: Request) => {
     readTimesheetPayrollUpdates(),
     readTimesheetPeriods(),
     readTimesheetApprovalEmployeeMeta(),
-    readTimesheetDraftBookedHeaders(),
+    readTimesheetDraftBookedHeaders().catch((error) => {
+      console.warn('[TimesheetApproval] Draft booked load skipped:', error instanceof Error ? error.message : error);
+      return { headers: [] as TimesheetHeader[], lines: [] as TimesheetLine[] };
+    }),
   ]);
 
   const useSqlPagination = scope === 'enterprise' || scope === 'cost-control';
