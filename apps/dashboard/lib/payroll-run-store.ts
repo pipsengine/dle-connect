@@ -672,17 +672,49 @@ export const readPayrollSnapshot = async (runId: string) => {
 
 const sanitizePayrollPeriodCode = (period: string) => (/^\d{4}-\d{2}$/.test(String(period || '').trim()) ? String(period).trim() : '');
 
-export const readPayrollSnapshotsByPeriods = async (periods: string[]) => {
+export type PayrollPeriodSnapshotRow = {
+  period: string;
+  runId: string;
+  pack: PayrollRunPack | null;
+  company: PayrollCompany | null;
+  status: UnifiedPayrollRunStatus | string | null;
+  payslipsGeneratedAt: string | null;
+  snapshot: PayrollRunSnapshot;
+};
+
+const periodSnapshotRowFromRun = (
+  period: string,
+  runId: string,
+  run: UnifiedPayrollRun | null,
+  snapshot: PayrollRunSnapshot,
+): PayrollPeriodSnapshotRow => ({
+  period,
+  runId,
+  pack: run ? resolvePayrollRunPack(run) : inferPayrollRunPackFromId(runId),
+  company: run ? resolvePayrollRunCompany(run) : inferPayrollCompanyFromId(runId),
+  status: run?.status || null,
+  payslipsGeneratedAt: run?.payslipsGeneratedAt || null,
+  snapshot,
+});
+
+/** Every company/pack snapshot for the requested periods — ESS must not keep only the last SQL row. */
+export const readAllPayrollSnapshotsByPeriods = async (periods: string[]) => {
   const safePeriods = Array.from(new Set(periods.map(sanitizePayrollPeriodCode).filter(Boolean)));
-  const snapshots = new Map<string, PayrollRunSnapshot>();
-  if (!safePeriods.length) return snapshots;
+  const byPeriod = new Map<string, PayrollPeriodSnapshotRow[]>();
+  if (!safePeriods.length) return byPeriod;
+
+  const pushRow = (row: PayrollPeriodSnapshotRow) => {
+    const current = byPeriod.get(row.period) || [];
+    current.push(row);
+    byPeriod.set(row.period, current);
+  };
 
   const pool = await getDleEnterpriseDbPool();
   if (pool) {
     await ensurePayrollSqlSchema(pool);
     const periodList = safePeriods.map((period) => `'${period.replace(/'/g, "''")}'`).join(', ');
     const result = await pool.request().query(`
-      SELECT r.period_code, s.snapshot_json
+      SELECT r.period_code, r.run_id, r.run_json, s.snapshot_json
       FROM [hris].[PayrollRuns] r
       INNER JOIN [hris].[PayrollRunSnapshots] s
         ON s.run_id = r.run_id
@@ -690,20 +722,35 @@ export const readPayrollSnapshotsByPeriods = async (periods: string[]) => {
     `);
     for (const row of result.recordset || []) {
       const period = String(row.period_code || '').trim();
-      if (!period) continue;
+      const runId = String(row.run_id || '').trim();
+      if (!period || !runId) continue;
       try {
-        snapshots.set(period, JSON.parse(String(row.snapshot_json || '')) as PayrollRunSnapshot);
+        const snapshot = JSON.parse(String(row.snapshot_json || '')) as PayrollRunSnapshot;
+        if (!snapshot?.records?.length) continue;
+        pushRow(periodSnapshotRowFromRun(period, runId, parseRunJson(String(row.run_json || '')), snapshot));
       } catch {
         continue;
       }
     }
-    return snapshots;
+    return byPeriod;
   }
 
   const state = await readState();
   for (const period of safePeriods) {
-    const run = state.runs.find((item) => item.period === period);
-    if (run && state.snapshots[run.id]) snapshots.set(period, state.snapshots[run.id]);
+    for (const run of state.runs.filter((item) => item.period === period)) {
+      const snapshot = state.snapshots[run.id];
+      if (snapshot?.records?.length) pushRow(periodSnapshotRowFromRun(period, run.id, run, snapshot));
+    }
+  }
+  return byPeriod;
+};
+
+export const readPayrollSnapshotsByPeriods = async (periods: string[]) => {
+  const snapshots = new Map<string, PayrollRunSnapshot>();
+  const all = await readAllPayrollSnapshotsByPeriods(periods);
+  for (const [period, rows] of all.entries()) {
+    const last = rows[rows.length - 1];
+    if (last) snapshots.set(period, last.snapshot);
   }
   return snapshots;
 };

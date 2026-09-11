@@ -2,7 +2,7 @@ import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { permanentStyleSageEarnings } from '@/lib/payroll-employee-classification';
 import { isEnterprisePayrollPeriod } from '@/lib/payroll-enterprise-source';
-import { readPayrollSnapshotsByPeriods, type PayrollRunSnapshot } from '@/lib/payroll-run-store';
+import { readAllPayrollSnapshotsByPeriods, type PayrollPeriodSnapshotRow, type PayrollRunSnapshot } from '@/lib/payroll-run-store';
 import { normalizePayrollMatchKey, partitionSagePayslipLookupKeys, readSageEmployeePayslipSnapshotsForPeriods, type SageEmployeePayslipSnapshot } from '@/lib/sage-people-payroll-store';
 import { sagePayslipAcceptableForEmployee, sanitizePermanentPayslipEarnings } from '@/lib/payroll-employee-classification';
 
@@ -137,15 +137,46 @@ export const findPayrollCalculationRecord = (
   }) || null;
 };
 
+const compactStatus = (value: unknown) => String(value || '').trim();
+
+export const payslipSnapshotPreferenceScore = (row: Pick<PayrollPeriodSnapshotRow, 'status' | 'payslipsGeneratedAt' | 'snapshot'>) => {
+  const action = compactStatus(row.snapshot.action).toLowerCase();
+  const status = compactStatus(row.status);
+  let score = 0;
+  if (action === 'generate-payslips' || action === 'payslip-generation-release') score += 8000;
+  if (row.payslipsGeneratedAt) score += 4000;
+  if (['Published', 'Posted', 'Closed'].includes(status)) score += 2000;
+  if (['Released', 'Locked'].includes(status)) score += 1500;
+  if (status === 'Approved') score += 800;
+  if (/approve/i.test(action)) score += 200;
+  const captured = Date.parse(String(row.snapshot.capturedAt || '')) || 0;
+  return { score, captured };
+};
+
+export const preferredPayrollCalculationRecord = (
+  candidates: PayrollPeriodSnapshotRow[],
+  matchKeys: string[],
+): PayrollCalculationRecord | null => {
+  const matches = candidates
+    .map((candidate) => {
+      const record = findPayrollCalculationRecord(candidate.snapshot, matchKeys);
+      if (!record || !(Number(record.grossPay) > 0)) return null;
+      return { record, ...payslipSnapshotPreferenceScore(candidate) };
+    })
+    .filter((item): item is { record: PayrollCalculationRecord; score: number; captured: number } => Boolean(item));
+  matches.sort((left, right) => right.score - left.score || right.captured - left.captured);
+  return matches[0]?.record || null;
+};
+
 export async function readEnterpriseEmployeePayslipRecordsByPeriod(
   matchKeys: Array<string | number | null | undefined>,
   periods: string[],
 ): Promise<Map<string, PayrollCalculationRecord>> {
-  const snapshots = await readPayrollSnapshotsByPeriods(periods);
+  const snapshots = await readAllPayrollSnapshotsByPeriods(periods);
   const keys = matchKeys.map((value) => normalizePayrollMatchKey(String(value ?? ''))).filter(Boolean);
   const byPeriod = new Map<string, PayrollCalculationRecord>();
-  for (const [period, snapshot] of snapshots.entries()) {
-    const record = findPayrollCalculationRecord(snapshot, keys);
+  for (const [period, rows] of snapshots.entries()) {
+    const record = preferredPayrollCalculationRecord(rows, keys);
     if (record) byPeriod.set(period, record);
   }
   return byPeriod;
