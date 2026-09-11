@@ -767,13 +767,16 @@ export const upsertMatrixProjectHours = <
   const existing = normalized.find((item) => canonicalProjectCode(item.projectCode) === code);
   const rest = normalized.filter((item) => canonicalProjectCode(item.projectCode) !== code);
   if (hours > 0.001 || existing) {
+    const sameProject = existing && canonicalProjectCode(existing.projectCode) === code;
     rest.push({
       ...(existing || { projectId: code, projectCode: code, projectName: columnName, remarks: null }),
       projectId: existing?.projectId || code,
       projectCode: code,
       projectName: columnName || existing?.projectName || code,
       hours,
-      remarks: existing?.remarks ?? null,
+      remarks: sameProject && !/auto-booked from biometric/i.test(String(existing?.remarks || ''))
+        ? existing?.remarks ?? null
+        : null,
     } as T);
   }
   return normalizeProjectAllocations(rest);
@@ -1138,3 +1141,110 @@ export type OvertimeBookingOptions = {
 
 /** Common overtime increments from site logbooks (1h, m² = 2h, m³ = 3h, …). */
 export const OVERTIME_HOUR_OPTIONS = [1, 2, 3, 4, 5, 6, 8, 10] as const;
+
+const SUPERVISOR_LOAD_FAILURE =
+  'Timesheets could not load completely. Refresh the page. If this continues, contact IT.';
+const SUPERVISOR_SAVE_FAILURE =
+  'Something went wrong while saving this timesheet. Refresh and try again. If it continues, contact IT.';
+
+/** Work-center name only — never the supervisor code or project manager. */
+export const supervisorWorkCenterLabel = (bookedOn?: string | null) => {
+  const text = String(bookedOn || '').trim();
+  if (!text) return 'another timesheet';
+  return text.split('/')[0].trim() || 'another timesheet';
+};
+
+/**
+ * Map server/technical timesheet errors to wording a supervisor can act on.
+ * File paths, EPERM, env vars, and employee-code dumps stay off the screen.
+ */
+export const supervisorTimesheetMessage = (raw?: string | null) => {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+
+  if (/EPERM|EACCES|ENOENT|ECONN|ETIMEOUT|timed out|holiday cache|writeHrisDataFile|permission denied/i.test(text)
+    || /[A-Za-z]:\\|\\\\[A-Za-z]|\/var\/|\/tmp\/|\bnode_modules\b/.test(text)) {
+    return SUPERVISOR_LOAD_FAILURE;
+  }
+  if (/DLE_Enterprise|DLE_ENTERPRISE|database is not configured|credentials on this server/i.test(text)) {
+    return 'Timesheets are temporarily unavailable. Contact IT.';
+  }
+  if (/Internal Server Error/i.test(text)) {
+    return SUPERVISOR_SAVE_FAILURE;
+  }
+
+  if (/Every booked employee is already on another timesheet|Nothing left to submit|nothing new to submit/i.test(text)) {
+    return 'Every worker with hours here is already on another timesheet today. There is nothing new to submit on this sheet.';
+  }
+
+  const clashMatch = text.match(/^(.+?)(?:\s*\([^)]+\))?\s+is already booked on\s+(.+?)(?:\s+for this date)?\.?$/i);
+  if (clashMatch || /already booked on|already on another timesheet/i.test(text)) {
+    const name = clashMatch?.[1]?.trim();
+    const where = supervisorWorkCenterLabel(clashMatch?.[2]);
+    if (name && !/every worker|every booked|this worker/i.test(name)) {
+      return `${name} already has hours on ${where} today. One person cannot be submitted on two timesheets for the same day.`;
+    }
+    return 'This worker already has hours on another timesheet today. One person cannot be submitted on two timesheets for the same day.';
+  }
+
+  if (/period .+ is (Closed|Locked)|period is closed|Reopen the period|Reopen it before/i.test(text)) {
+    return 'This timesheet period is closed. Ask HR to reopen it before you save or submit.';
+  }
+  if (/Project Manager is required/i.test(text)) {
+    return 'This timesheet needs a project with a Project Manager before it can be submitted. Sync attendance again or ask HR to assign a Project Manager.';
+  }
+  if (/project allocation is required/i.test(text)) {
+    return 'Choose the job number this crew worked on, then submit. The system will not put hours on a miscellaneous job for you.';
+  }
+
+  const hoursMismatch = text.match(/Hours mismatch for (.+?):/i);
+  if (hoursMismatch) {
+    return `Hours do not add up for ${hoursMismatch[1]}. Used hours plus break must equal total hours. Go back and check that line.`;
+  }
+  if (/Hours mismatch/i.test(text)) {
+    return 'Hours do not add up for one of the workers. Used hours plus break must equal total hours. Go back and check the line.';
+  }
+
+  const absent = text.match(/Absent employee (.+) cannot receive/i);
+  if (absent) {
+    return `${absent[1]} is marked absent, so hours cannot be booked for them on this timesheet.`;
+  }
+
+  const invalidLine = text.match(/Invalid timesheet line for (.+?)\.?$/i);
+  if (invalidLine) {
+    return `${invalidLine[1]} has an error on their line. Go back and correct it before submitting.`;
+  }
+  if (/Invalid timesheet line/i.test(text)) {
+    return 'One of the workers has an error on their line. Go back and correct it before submitting.';
+  }
+
+  if (/duplicate project code/i.test(text)) {
+    return 'A worker has the same project listed twice. Remove the extra project line and try again.';
+  }
+  if (/not available in the project catalog/i.test(text)) {
+    return 'The project on this timesheet is not available. Choose another project or ask HR to register it.';
+  }
+  if (/payroll-ready|acknowledged by HR/i.test(text)) {
+    return 'This timesheet is already with payroll. Ask HR if it must be reopened for correction.';
+  }
+  if (/cannot be edited/i.test(text) && /currently/i.test(text)) {
+    return 'This timesheet cannot be edited in its current status. Ask HR if it must be returned for correction.';
+  }
+  if (/is not a draft/i.test(text)) {
+    return 'This timesheet is already in review. Save as draft first if you need to make changes, then submit again.';
+  }
+  if (/No timesheet found for previous day/i.test(text)) {
+    return 'There is no timesheet from the previous day to copy.';
+  }
+  if (/header not found|draft could not be opened/i.test(text)) {
+    return 'This timesheet could not be opened. It may have been submitted or removed. Go back and open it again.';
+  }
+  if (/restricted to supervisors/i.test(text)) {
+    return 'You do not have access to Timesheet Entry. Ask HR if you should be set up as a supervisor.';
+  }
+  if (/Empty response|Unexpected server response|Invalid response from server|server error/i.test(text)) {
+    return SUPERVISOR_SAVE_FAILURE;
+  }
+
+  return text;
+};

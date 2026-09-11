@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { releaseLinesAlreadyBookedElsewhere } from './timesheet-booking-clash.ts';
+import {
+  findSameDayBookingConflicts,
+  formatSupervisorBookingConflictMessage,
+  releaseLinesAlreadyBookedElsewhere,
+} from './timesheet-booking-clash.ts';
 import type { TimesheetLine } from './timesheet-entry-shared.ts';
 
 const line = (overrides: Partial<TimesheetLine>): TimesheetLine => ({
@@ -56,5 +60,46 @@ const distinctContract = releaseLinesAlreadyBookedElsewhere(
 );
 
 assert.equal(distinctContract.skipped.length, 0);
+
+const autoBookedGalvanizing = line({
+  headerId: 'hdr-galvanizing',
+  projectAllocations: [{ projectId: 'p1', projectCode: 'DL9999', projectName: 'Misc', hours: 8, remarks: 'Auto-booked from biometric attendance.' }],
+});
+const ignoreDraftAutoBook = releaseLinesAlreadyBookedElsewhere(
+  [line({ projectAllocations: [{ projectId: 'p2', projectCode: 'DL0062', projectName: 'Cutting job', hours: 8, remarks: null }] })],
+  { ...blasting, workCenterName: 'Cutting', supervisorId: 'C2225', status: 'Draft' },
+  [
+    { ...blasting, workCenterName: 'Cutting', supervisorId: 'C2225', status: 'Draft' },
+    { ...galvanizing, supervisorId: 'P0277', status: 'Draft' },
+  ],
+  [autoBookedGalvanizing],
+);
+assert.equal(ignoreDraftAutoBook.skipped.length, 0);
+assert.equal(ignoreDraftAutoBook.lines[0]?.usedHours, 8);
+
+const submittedAutoBook = releaseLinesAlreadyBookedElsewhere(
+  [line({})],
+  blasting,
+  [blasting, { ...galvanizing, status: 'Submitted' }],
+  [autoBookedGalvanizing],
+);
+assert.equal(submittedAutoBook.skipped.length, 1);
+
+const preview = findSameDayBookingConflicts(
+  [line({ usedHours: 0, projectAllocations: [] })],
+  blasting,
+  [blasting, galvanizing],
+  [line({ headerId: 'hdr-galvanizing' })],
+);
+assert.equal(preview.length, 1);
+assert.equal(preview[0]?.bookedOn, 'Galvanizing');
+assert.match(
+  formatSupervisorBookingConflictMessage(preview),
+  /ABEL DANIEL already has hours on Galvanizing today/,
+);
+assert.equal(
+  formatSupervisorBookingConflictMessage(preview, { allBookedAreConflicts: true }),
+  'Every worker with hours here is already on another timesheet today. There is nothing new to submit on this sheet.',
+);
 
 console.log('timesheet-booking-clash.test.ts: ok');

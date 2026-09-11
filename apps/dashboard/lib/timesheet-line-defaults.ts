@@ -17,7 +17,7 @@ import {
   applyNightPaperClock,
   isIdleTimeProjectCode,
   productiveProjectHours,
-  resolvePrimaryProjectCode,
+  configuredTimesheetDefaultProjectCode,
   isManualOffshoreLine,
 } from '@/lib/timesheet-entry-shared';
 import { withCanonicalProjectManager } from '@/lib/timesheet-canonical-project-managers';
@@ -32,30 +32,60 @@ export type TimesheetBookableProject = {
   status?: string | null;
 };
 
-/** Prefer a managed Active/Approved/Open project for attendance-backed booking (no hardcoded project code). */
-export const resolveBookableTimesheetProject = (projects: TimesheetBookableProject[]) => {
-  const bookable = projects.map(withCanonicalProjectManager).filter((project) => {
+export const AUTO_BOOKED_ATTENDANCE_REMARK = 'Auto-booked from biometric attendance.';
+
+const bookableProjects = (projects: TimesheetBookableProject[]) =>
+  projects.map(withCanonicalProjectManager).filter((project) => {
     const status = String(project.status || 'Active');
     if (!['Active', 'Approved', 'Open'].includes(status)) return false;
     if (isIdleTimeProjectCode(project.code)) return false;
     if (!String(project.code || '').trim()) return false;
     return Boolean(String(project.projectManager || '').trim());
   });
+
+/**
+ * Only book onto a job the supervisor already chose, or TIMESHEET_DEFAULT_PROJECT_CODE.
+ * Never guess the first catalog project (supervisors see that as "miscellaneous").
+ */
+export const resolveBookableTimesheetProject = (
+  projects: TimesheetBookableProject[],
+  preferredCode?: string | null,
+) => {
+  const bookable = bookableProjects(projects);
   if (!bookable.length) return null;
-  const preferredCode = resolvePrimaryProjectCode(bookable.map((project) => project.code));
-  return bookable.find((project) => project.code.toUpperCase() === preferredCode) || bookable[0] || null;
+  const preferred = String(preferredCode || '').trim().toUpperCase();
+  if (preferred) {
+    const match = bookable.find((project) => project.code.toUpperCase() === preferred);
+    if (match) return match;
+  }
+  const configured = configuredTimesheetDefaultProjectCode();
+  if (configured) {
+    const match = bookable.find((project) => project.code.toUpperCase() === configured);
+    if (match) return match;
+  }
+  return null;
+};
+
+const preferredProjectCodeFromLines = (lines: TimesheetLine[]) => {
+  for (const line of lines) {
+    const booked = (line.projectAllocations || []).find((item) => (
+      Number(item.hours || 0) > 0.001 && !isIdleTimeProjectCode(item.projectCode)
+    ));
+    if (booked?.projectCode) return booked.projectCode;
+  }
+  return null;
 };
 
 /**
- * Clock sync alone leaves Incomplete rows (break only). Book standard productive hours
- * onto the primary managed project so Agege/day crews can submit after attendance sync.
+ * Fill empty clocked rows from a job already on this sheet.
+ * Does not pick a miscellaneous catalog project for the supervisor.
  */
 export const ensureClockedLinesHaveProjectAllocation = (
   lines: TimesheetLine[],
   projects: TimesheetBookableProject[],
   dayContext: TimesheetDayContext,
 ): { lines: TimesheetLine[]; bookedCount: number; projectCode: string | null } => {
-  const project = resolveBookableTimesheetProject(projects);
+  const project = resolveBookableTimesheetProject(projects, preferredProjectCodeFromLines(lines));
   if (!project) {
     return {
       lines: lines.map((line) => applyTimesheetLineDefaults(line, dayContext, [])),
@@ -87,7 +117,7 @@ export const ensureClockedLinesHaveProjectAllocation = (
         projectCode: project.code,
         projectName: project.name,
         hours: hours.standardProductiveHours,
-        remarks: 'Auto-booked from biometric attendance.',
+        remarks: AUTO_BOOKED_ATTENDANCE_REMARK,
       },
       ...normalizeProjectAllocations(working.projectAllocations).filter((item) => isIdleTimeProjectCode(item.projectCode)),
     ]);

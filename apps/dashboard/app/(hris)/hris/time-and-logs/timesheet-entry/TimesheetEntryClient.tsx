@@ -35,9 +35,14 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, applyNightPaperClock, buildRosterTimesheetLine, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, applyNightPaperClock, buildRosterTimesheetLine, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS, supervisorTimesheetMessage } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
+import {
+  formatSupervisorBookingConflictMessage,
+  timesheetLineMatchesBookingConflict,
+  type TimesheetAlreadyBookedSkip,
+} from '@/lib/timesheet-booking-clash';
 import { TimesheetEntryEnterpriseView } from './TimesheetEntryEnterpriseView';
 
 type TimesheetStatus = 'Draft' | 'Submitted' | 'Supervisor_Reviewed' | 'Project_Manager_Reviewed' | 'Cost_Control_Reviewed' | 'GM_Operations_Reviewed' | 'HR_Acknowledged' | 'HR_Reviewed' | 'Project_Control_Reviewed' | 'Approved' | 'Locked' | 'Rejected' | 'Returned';
@@ -302,6 +307,8 @@ type Payload = {
     workCenterName: string;
     message: string;
   } | null;
+  sameDayBookingConflicts?: TimesheetAlreadyBookedSkip[];
+  submitNotice?: string;
 };
 
 type SearchableOption = {
@@ -1206,9 +1213,40 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       setError(`Use the Idle Time column to book ${IDLE_TIME_PROJECT_CODE} ${IDLE_TIME_PROJECT_NAME}.`);
       return;
     }
+    const previousCode = matrixColumns[colIdx]?.code;
+    const project = (payload?.projects || []).find((item) => canonicalProjectCode(item.code) === canonicalProjectCode(projectCode));
     const next = [...matrixColumns];
-    next[colIdx] = { ...next[colIdx], code: projectCode, label: projectCode };
+    next[colIdx] = { ...next[colIdx], code: projectCode, label: project?.name || projectCode };
     setMatrixColumns(next);
+    if (!previousCode || canonicalProjectCode(previousCode) === canonicalProjectCode(projectCode)) return;
+    const dayContext = { date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift };
+    const standardHours = resolveTimesheetHours(dayContext).standardProductiveHours;
+    setLocalLines((lines) => lines.map((line) => {
+      let projectAllocations = normalizeProjectAllocations(line.projectAllocations).map((item) => (
+        canonicalProjectCode(item.projectCode) === canonicalProjectCode(previousCode)
+          ? {
+            ...item,
+            projectId: project?.id || projectCode,
+            projectCode,
+            projectName: project?.name || projectCode,
+            remarks: null,
+          }
+          : item
+      ));
+      if (
+        !isTimesheetAbsentLine(line)
+        && productiveProjectHours(projectAllocations) <= 0.001
+      ) {
+        projectAllocations = [{
+          projectId: project?.id || projectCode,
+          projectCode,
+          projectName: project?.name || projectCode,
+          hours: standardHours,
+          remarks: null,
+        }];
+      }
+      return applyTimesheetLineDefaults(reconcileTimesheetLineHours({ ...line, projectAllocations }), dayContext);
+    }));
   };
 
   const moveProjectColumn = (colIdx: number, direction: -1 | 1) => {
@@ -1466,8 +1504,20 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     payload?.canBookOvertime ??
     canBookOvertimeOnTimesheet(payload?.header, payload?.period, overtimeBooking);
   const showCaptureMatrix = canEditTimesheet || canBookOvertime;
-  const payrollLockMessage = /payroll-ready|cannot be edited/i;
-  const displayError = error && canBookOvertime && payrollLockMessage.test(error) ? null : error;
+  const payrollLockMessage = /payroll-ready|cannot be edited|already with payroll/i;
+  const bookingConflicts = payload?.sameDayBookingConflicts ?? [];
+  const uniqueSubmittableCount = shiftLines.filter((line) => {
+    if (timesheetLineMatchesBookingConflict(line, bookingConflicts)) return false;
+    if (isTimesheetAbsentLine(line) && productiveProjectHours(line.projectAllocations) <= 0.001) return false;
+    return productiveProjectHours(line.projectAllocations) > 0.001 || Boolean(String(line.clockIn || '').trim());
+  }).length;
+  const bookingConflictMessage = formatSupervisorBookingConflictMessage(bookingConflicts, {
+    allBookedAreConflicts: bookingConflicts.length > 0 && uniqueSubmittableCount === 0,
+  });
+  const mappedError = supervisorTimesheetMessage(error);
+  const displayError = mappedError && canBookOvertime && payrollLockMessage.test(error || '')
+    ? null
+    : (mappedError || bookingConflictMessage);
   const displayNotice =
     notice ||
     (dayRules.kind === 'PublicHoliday'
@@ -1502,6 +1552,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const reviewWarningCount = shiftLines.filter((line) => line.validationStatus === 'Warning' || line.validationStatus === 'Incomplete').length;
   const reviewErrorCount = shiftLines.filter((line) => line.validationStatus === 'Error').length;
   const reviewAbsentCount = shiftLines.filter((line) => isTimesheetAbsentLine(line)).length;
+  const reviewBookingConflictCount = bookingConflicts.length;
+  const reviewFlaggedErrorCount = reviewErrorCount + reviewBookingConflictCount;
   const reviewProjectHours = round1(shiftLines.reduce((sum, line) => sum + productiveProjectHours(line.projectAllocations), 0));
   const reviewIdleHours = round1(shiftLines.reduce((sum, line) => sum + line.idleHours, 0));
   const reviewTotalHours = round1(shiftLines.reduce((sum, line) => sum + line.totalHours, 0));
@@ -1513,9 +1565,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   ))).sort();
   const reviewMissingProjectHours = reviewProjectHours <= 0.001;
   const canOpenSubmitReview = canEditTimesheet && reviewLineCount > 0 && reviewErrorCount === 0;
-  // Server auto-books standard productive hours onto the primary managed project on SUBMIT
-  // when clocked rows still have break-only / empty allocations (Agege attendance sync path).
-  const canConfirmSubmit = canOpenSubmitReview;
+  const canConfirmSubmit = canOpenSubmitReview && uniqueSubmittableCount > 0 && !reviewMissingProjectHours;
   const canManageTimesheetSetup = Boolean(payload?.permissions.canManagePeriod);
   const canCreateProject = canManageTimesheetSetup || canEditTimesheet;
   const pageTitle = isWorkforceSupervisor ? 'Workforce Timesheet Entry' : 'Timesheet Entry';
@@ -1732,7 +1782,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             score: readinessScore,
             readyDays: submittedCount,
             issuesFound: exceptionCount,
-            blockingIssues: reviewErrorCount,
+            blockingIssues: reviewFlaggedErrorCount,
           }}
           onSaveTimesheetSetup={() => handleSave(false, true)}
           defaultIdleReasonId={DEFAULT_BREAK_IDLE_REASON_ID}
@@ -1871,9 +1921,21 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           </div>
         </div>
 
-        {(error || notice) && (
-          <div className={`rounded-xl border px-4 py-3 text-sm font-bold ${error ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-            {error || notice}
+        {(displayError || notice) && (
+          <div className="space-y-2">
+            {displayError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+                <span className="flex items-start gap-2">
+                  <span className="mt-0.5 rounded bg-red-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-white">Error</span>
+                  <span>{displayError}</span>
+                </span>
+              </div>
+            ) : null}
+            {notice ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+                {notice}
+              </div>
+            ) : null}
           </div>
         )}
 
@@ -2512,9 +2574,19 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
               </button>
             </div>
             <div className="max-h-[72vh] overflow-y-auto p-6">
-              {(error || reviewMissingProjectHours) && (
-                <div className={`mb-4 rounded-xl border px-4 py-3 text-sm font-semibold ${error ? 'border-red-200 bg-red-50 text-red-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
-                  {error || 'No project hours yet. Submit will auto-book standard productive hours onto the primary project (with a Project Manager). You can Back to Edit first to choose a different project.'}
+              {(displayError || reviewMissingProjectHours) && (
+                <div className={`mb-4 rounded-xl border px-4 py-3 text-sm font-semibold ${displayError ? 'border-red-200 bg-red-50 text-red-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+                  {displayError ? (
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-red-600">Error</p>
+                        <p className="mt-1">{displayError}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    'No project hours yet. Choose the job number this crew worked on, then submit. The system will not guess a miscellaneous job.'
+                  )}
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
@@ -2522,7 +2594,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                   ['Crew', reviewLineCount],
                   ['Complete', reviewValidCount],
                   ['Warnings', reviewWarningCount],
-                  ['Errors', reviewErrorCount],
+                  ['Errors', reviewFlaggedErrorCount],
                   ['Absent', reviewAbsentCount],
                   ['Projects', reviewProjectCodes.length],
                 ].map(([label, value]) => (
@@ -2569,7 +2641,15 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {shiftLines.map((line) => (
+                      {shiftLines.map((line) => {
+                        const alreadyBooked = timesheetLineMatchesBookingConflict(line, bookingConflicts);
+                        const statusLabel = alreadyBooked ? 'Already booked' : line.validationStatus;
+                        const statusClass = alreadyBooked || line.validationStatus === 'Error'
+                          ? 'bg-red-100 text-red-700'
+                          : line.validationStatus === 'Valid'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-amber-100 text-amber-700';
+                        return (
                         <tr key={line.id} className="hover:bg-slate-50">
                           <td className="px-4 py-3">
                             <div className="font-black text-slate-900">{line.employeeName}</div>
@@ -2581,22 +2661,26 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                           <td className="px-4 py-3 text-right font-black text-orange-700">{idleTimeProjectHours(line.projectAllocations)}</td>
                           <td className="px-4 py-3 text-right font-black text-slate-900">{line.totalHours}</td>
                           <td className="px-4 py-3">
-                            <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${line.validationStatus === 'Valid' ? 'bg-emerald-100 text-emerald-700' : line.validationStatus === 'Error' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{line.validationStatus}</span>
+                            <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${statusClass}`}>{statusLabel}</span>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 p-5">
-              {error ? (
-                <p className="w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{error}</p>
+              {displayError ? (
+                <p className="w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+                  <span className="mr-2 rounded bg-red-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-white">Error</span>
+                  {displayError}
+                </p>
               ) : (
                 <p className="text-xs font-semibold text-slate-500">
                   {reviewMissingProjectHours
-                    ? 'Clock times are present. Submit will allocate standard project hours automatically, then place this timesheet in supervisor review.'
+                    ? 'Clock times are present. Choose the job number this crew worked on before you submit.'
                     : 'Submitting places this timesheet in supervisor review. You can keep correcting it until it is approved and released to the project manager.'}
                 </p>
               )}

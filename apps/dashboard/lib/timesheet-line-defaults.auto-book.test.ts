@@ -30,24 +30,36 @@ const baseLine = (overrides: Partial<TimesheetLine> = {}): TimesheetLine => ({
   ...overrides,
 });
 
-// First managed project in list wins — DL1985 must not be specially preferred.
 const projects = [
   { id: 'p2', code: 'DL9999', name: 'Other', projectManager: 'PM Two', status: 'Active' },
   { id: 'p1', code: 'DL1985', name: 'Legacy Preferred', projectManager: 'PM One', status: 'Active' },
 ];
 
-assert.equal(resolveBookableTimesheetProject(projects)?.code, 'DL9999');
-assert.equal(resolveBookableTimesheetProject([{ ...projects[0], projectManager: '' }, projects[1]])?.code, 'DL1985');
-assert.equal(resolveBookableTimesheetProject([{ ...projects[0], projectManager: '' }, { ...projects[1], projectManager: '' }]), null);
+assert.equal(resolveBookableTimesheetProject(projects), null);
+assert.equal(resolveBookableTimesheetProject(projects, 'DL1985')?.code, 'DL1985');
+assert.equal(
+  resolveBookableTimesheetProject([{ id: 'p-dl0062', code: 'DL0062', name: 'Agege', projectManager: '', status: 'Active' }], 'DL0062')?.code,
+  'DL0062',
+);
 
-const result = ensureClockedLinesHaveProjectAllocation([baseLine()], projects, dayContext);
+const emptySync = ensureClockedLinesHaveProjectAllocation([baseLine()], projects, dayContext);
+assert.equal(emptySync.bookedCount, 0);
+assert.equal(emptySync.projectCode, null);
+
+const result = ensureClockedLinesHaveProjectAllocation(
+  [
+    baseLine({
+      projectAllocations: [{ projectId: 'p1', projectCode: 'DL1985', projectName: 'Legacy Preferred', hours: 8, remarks: null }],
+      usedHours: 8,
+    }),
+    baseLine({ id: 'line-2', employeeId: 'C1720', employeeNo: 'C1720', employeeName: 'ADANOU' }),
+  ],
+  projects,
+  dayContext,
+);
 assert.equal(result.bookedCount, 1);
-assert.equal(result.projectCode, 'DL9999');
-assert.equal(result.lines[0].usedHours, 8);
-assert.equal(result.lines[0].idleHours, 1);
-assert.equal(result.lines[0].totalHours, 9);
-assert.equal(result.lines[0].validationStatus, 'Valid');
-assert.equal(result.lines[0].projectAllocations[0]?.projectCode, 'DL9999');
+assert.equal(result.projectCode, 'DL1985');
+assert.equal(result.lines[1]?.projectAllocations[0]?.projectCode, 'DL1985');
 
 const alreadyBooked = ensureClockedLinesHaveProjectAllocation(
   [baseLine({
@@ -69,10 +81,5 @@ const absent = ensureClockedLinesHaveProjectAllocation(
   dayContext,
 );
 assert.equal(absent.bookedCount, 0);
-
-assert.equal(
-  resolveBookableTimesheetProject([{ id: 'p-dl0062', code: 'DL0062', name: 'Agege', projectManager: '', status: 'Active' }])?.code,
-  'DL0062',
-);
 
 console.log('timesheet-line-defaults auto-book tests passed');

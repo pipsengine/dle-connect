@@ -9,6 +9,7 @@ import { normalizePayrollMatchKey, readActiveSagePayrollEmployeeKeys, type SageP
 import { approvedPaidLeaveForDate } from '@/lib/leave-management-store';
 import { assignmentMatchesSupervisor, readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
 import { extractSupervisorEmployeeCode, normalizeTimesheetLocationLabel, supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
+import { clearEmployeeFromDraftHeaders, employeeIsOtherTimesheetSupervisor } from '@/lib/timesheet-booking-clash';
 import { canonicalProjectManagerForCode, withCanonicalProjectManager } from '@/lib/timesheet-canonical-project-managers';
 import {
   DAILY_BREAK_HOURS,
@@ -3711,7 +3712,7 @@ export async function syncAttendanceForTimesheet(
     isNightShiftEligibleAttendance(candidate.attendance.checkInTime, candidate.attendance.checkOutTime);
   // Night lists people who actually worked night (biometric pair). Paper N is added only when booked.
   // Day still shows the assigned roster so absentees can be reviewed.
-  const attendanceForDay = assignedSupervisorEmployees.length
+  let attendanceForDay = assignedSupervisorEmployees.length
     ? assignedSupervisorEmployees.flatMap((employee) => {
         const employeeKeys = attendanceMatchKeys(employee.employeeCode, employee.fullName);
         const matched = attendanceCandidates.find((candidate) => attendanceCandidateKeys(candidate).some((key) => employeeKeys.includes(key)));
@@ -3780,6 +3781,29 @@ export async function syncAttendanceForTimesheet(
     header.lastSyncAt = new Date().toISOString();
     header.shiftLabel = shift.label;
   }
+
+  const syncHeaderRef = {
+    id: header.id,
+    timesheetDate: date,
+    shiftLabel: header.shiftLabel,
+    workCenterName: header.workCenterName,
+    supervisorId: header.supervisorId,
+    supervisorName: header.supervisorName,
+    status: header.status,
+  };
+  attendanceForDay = attendanceForDay.filter(({ attendance, payrollEmployee }) => {
+    const employeeCode = payrollEmployee
+      ? sageTimesheetEmployeeCode(payrollEmployee, attendance.employeeId)
+      : attendance.employeeId.trim().toUpperCase();
+    const employeeName = payrollEmployee
+      ? formatSageEmployeeFullName(payrollEmployee, attendance.employeeName)
+      : attendance.employeeName;
+    return !employeeIsOtherTimesheetSupervisor(
+      { employeeNo: employeeCode, employeeId: employeeCode, employeeName },
+      syncHeaderRef,
+      headers,
+    );
+  });
 
   // Rebuild lines for this shift-scoped header.
   const existingHeaderLines = lines.filter((l) => l.headerId === header!.id);
@@ -3859,6 +3883,17 @@ export async function syncAttendanceForTimesheet(
 
   if (persist) {
     await writeTimesheetHeaderLines(header, newLines);
+    const supervisorEmployee = {
+      employeeNo: extractSupervisorEmployeeCode(supervisorId) || supervisorId,
+      employeeId: extractSupervisorEmployeeCode(supervisorId) || supervisorId,
+      employeeName: header.supervisorName,
+    };
+    const detached = clearEmployeeFromDraftHeaders(supervisorEmployee, syncHeaderRef, headers, lines);
+    for (const update of detached) {
+      const otherHeader = headers.find((item) => item.id === update.header.id);
+      if (!otherHeader || !isEditableTimesheetStatus(otherHeader.status)) continue;
+      await writeTimesheetHeaderLines(otherHeader, update.lines);
+    }
   }
   return { header, lines: newLines };
 }

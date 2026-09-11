@@ -287,12 +287,22 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
         {(props.error || props.notice || props.offshoreNotice) && (
           <div className="space-y-2">
             {(props.error || props.notice) && (
+          <div className="space-y-2">
+            {props.error ? (
           <div
-            className={`rounded-xl border px-4 py-3 text-sm font-semibold ${
-              props.error ? 'border-[#FECACA] bg-[#FEF2F2] text-[#B91C1C]' : 'border-[#A7F3D0] bg-[#ECFDF5] text-[#047857]'
-            }`}
+            className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-sm font-semibold text-[#B91C1C]"
           >
-            {props.error || props.notice}
+              <span className="flex items-start gap-2">
+                <span className="mt-0.5 rounded bg-[#B91C1C] px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-white">Error</span>
+                <span>{props.error}</span>
+              </span>
+          </div>
+            ) : null}
+            {props.notice ? (
+          <div className="rounded-xl border border-[#A7F3D0] bg-[#ECFDF5] px-4 py-3 text-sm font-semibold text-[#047857]">
+            {props.notice}
+          </div>
+            ) : null}
           </div>
             )}
             {props.offshoreNotice ? (

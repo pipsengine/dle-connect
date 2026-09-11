@@ -38,7 +38,7 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { canonicalProjectManagerForCode, withCanonicalProjectManager } from '@/lib/timesheet-canonical-project-managers';
-import { formatAlreadyBookedSkipNotice, releaseLinesAlreadyBookedElsewhere } from '@/lib/timesheet-booking-clash';
+import { formatAlreadyBookedSkipNotice, displaceUncommittedBookingsOnOtherDrafts, releaseLinesAlreadyBookedElsewhere } from '@/lib/timesheet-booking-clash';
 
 const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string | null): TimesheetDayContext => ({
   date,
@@ -386,18 +386,26 @@ export async function submitTimesheetForApproval(input: {
   const released = releaseLinesAlreadyBookedElsewhere(reconciledLines, header, input.otherHeaders, otherDateLines);
   if (released.skipped.length && input.skipAlreadyBookedEmployees === false) {
     const first = released.skipped[0];
-    throw new Error(`${first.employeeName} (${first.employeeNo}) is already booked on ${first.bookedOn} for this date.`);
+    throw new Error(
+      `${first.employeeName} already has hours on ${first.bookedOn} today. One person cannot be submitted on two timesheets for the same day.`,
+    );
   }
   const remainingBooked = released.lines.some((line) => (
     Number(line.usedHours || 0) + (line.projectAllocations || []).reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0)
   ) > 0.001);
   if (!remainingBooked && released.skipped.length) {
     throw new Error(
-      `Every booked employee is already on another timesheet for this date (${released.skipped[0].bookedOn}). Nothing left to submit here.`,
+      'Every worker with hours here is already on another timesheet today. There is nothing new to submit on this sheet.',
     );
   }
   const skippedAlreadyBooked = input.skipAlreadyBookedEmployees === false ? [] : released.skipped;
   const reconciledAfterClash = input.skipAlreadyBookedEmployees === false ? reconciledLines : released.lines;
+  const displacedDrafts = displaceUncommittedBookingsOnOtherDrafts(
+    reconciledAfterClash,
+    header,
+    input.otherHeaders,
+    input.otherLines,
+  );
 
   const normalizedLines = reconciledAfterClash.map((line) => ({
     ...line,
@@ -444,6 +452,11 @@ export async function submitTimesheetForApproval(input: {
 
   if (persist) {
     await writeTimesheetHeaderLines(header, persistCheck.lines);
+    for (const update of displacedDrafts) {
+      const otherHeader = input.otherHeaders.find((item) => item.id === update.header.id);
+      if (!otherHeader || !isTimesheetEditableStatus(otherHeader.status)) continue;
+      await writeTimesheetHeaderLines(otherHeader, update.lines);
+    }
     if (input.notify !== false) {
       try {
         const { notifyTimesheetStageChange } = await import('@/lib/timesheet-workflow-notifications');

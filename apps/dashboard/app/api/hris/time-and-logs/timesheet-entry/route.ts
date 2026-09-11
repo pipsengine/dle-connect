@@ -68,7 +68,8 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults, ensureClockedLinesHaveProjectAllocation } from '@/lib/timesheet-line-defaults';
-import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetHeaderShiftKind, timesheetShiftHeaderSlug, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetShiftHeaderSlug, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { findSameDayBookingConflicts, releaseLinesAlreadyBookedElsewhere, type TimesheetAlreadyBookedSkip } from '@/lib/timesheet-booking-clash';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { submitTimesheetForApproval } from '@/lib/timesheet-submit';
 import { mobilizationCoversDate, mobilizationMatchesSupervisor, readTimesheetMobilizations, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
@@ -195,6 +196,7 @@ type TimesheetPayload = {
     workCenterName: string;
     message: string;
   } | null;
+  sameDayBookingConflicts: TimesheetAlreadyBookedSkip[];
 };
 
 type UpdatePayload = {
@@ -421,7 +423,8 @@ async function handleCopyPreviousDay(request: Request, date: string, supervisorI
 }
 
 const ok = <T,>(data: T, status = 200) => NextResponse.json({ status: 'success', data }, { status });
-const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
+const err = (status: number, error: string) =>
+  NextResponse.json({ status: 'error', error: supervisorTimesheetMessage(error) || error }, { status });
 const round1 = (value: number) => Math.round(value * 10) / 10;
 const GROSS_TIMESHEET_HOURS = STANDARD_TIMESHEET_HOURS + DAILY_BREAK_HOURS;
 const clean = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
@@ -1474,6 +1477,9 @@ const buildPayload = async (
           message: `${hostMobilizations.length} crew are mobilized offshore today. Open location OFFSHORE to book them.`,
         }
         : null,
+    sameDayBookingConflicts: header
+      ? findSameDayBookingConflicts(lines, header, headers, allLines)
+      : [],
     aiInsights: [
       {
         id: 'ts-ins-1',
@@ -1862,13 +1868,6 @@ export async function PATCH(request: Request) {
         scopedLocationName,
         { shiftLabel: shiftLabel || existingHeader?.shiftLabel || '01 (Day)' },
       );
-      const holidayDates = await readPublicHolidayDates();
-      const dayContext = dayContextFor(synced.header.timesheetDate, holidayDates, synced.header.shiftLabel || shiftLabel);
-      const projects = await readProjects();
-      const autoBooked = ensureClockedLinesHaveProjectAllocation(synced.lines, projects, dayContext);
-      if (autoBooked.bookedCount > 0) {
-        await writeTimesheetHeaderLines(synced.header, autoBooked.lines);
-      }
       return ok(await buildPayload(
         request,
         synced.header.timesheetDate,
@@ -1921,8 +1920,7 @@ export async function PATCH(request: Request) {
       if (payload.shiftLabel) header.shiftLabel = String(payload.shiftLabel);
       const isNightHeader = resolveTimesheetShift(header.shiftLabel).kind === 'Night';
 
-      // Attendance sync leaves clocked Incomplete rows with break only. On save/submit,
-      // book standard productive hours onto the primary managed project when missing.
+      // Fill remaining clocked rows from a job already on this sheet. Do not guess a catalog project.
       const allocationSeed = ensureClockedLinesHaveProjectAllocation(updatedLines, saveProjects, dayContext);
       const linesForSave = allocationSeed.lines;
 
@@ -1956,28 +1954,8 @@ export async function PATCH(request: Request) {
         }
       }
 
-      const otherDateLines = allLines.filter((line) => {
-        const otherHeader = headers.find((item) => item.id === line.headerId);
-        return Boolean(otherHeader && otherHeader.timesheetDate === header.timesheetDate && otherHeader.id !== header.id);
-      });
-      const headerKind = timesheetHeaderShiftKind(header.shiftLabel);
-      for (const line of reconciledLines) {
-        const bookedHours = Number(line.usedHours || 0) + (line.projectAllocations || []).reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
-        if (bookedHours <= 0.001) continue;
-        const clash = otherDateLines.find((other) => {
-          if (Number(other.usedHours || 0) <= 0.001 && !timesheetLineHasBookedHours(other)) return false;
-          const otherHeader = headers.find((item) => item.id === other.headerId);
-          if (timesheetHeaderShiftKind(otherHeader?.shiftLabel) !== headerKind) return false;
-          return timesheetEmployeeRecordsMatch(line, other);
-        });
-        if (clash) {
-          const otherHeader = headers.find((item) => item.id === clash.headerId);
-          const otherLabel = [otherHeader?.workCenterName, otherHeader?.supervisorName].filter(Boolean).join(' / ') || 'another timesheet';
-          return err(400, `${line.employeeName} (${line.employeeNo || line.employeeId}) is already booked on ${otherLabel} for this date.`);
-        }
-      }
-
-      const normalizedLines = reconciledLines.map((line) => ({
+      const released = releaseLinesAlreadyBookedElsewhere(reconciledLines, header, headers, allLines);
+      const normalizedLines = released.lines.map((line) => ({
         ...line,
         idleAllocations: line.idleAllocations.map(withDefaultIdleReason),
       }));
